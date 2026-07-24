@@ -248,11 +248,9 @@ fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
     state.messaging_state_mut().set_dialogue_scroll_speed(4);
 
     state.RenderText_Draw_MessageCharacters();
-    assert!(
-        state
-            .dialogue_scroll_continuation
-            .is_copying_remaining_pixels()
-    );
+    assert!(state
+        .dialogue_scroll_continuation
+        .is_copying_remaining_pixels());
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
     assert_eq!(state.game_state.display.core_update_disable_flag, 0);
 
@@ -260,7 +258,10 @@ fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
     assert!(state.dialogue_scroll_continuation.is_return_only());
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 2);
     assert_eq!(state.game_state.display.core_update_disable_flag, 2);
-    assert_eq!(state.game_state.messaging.runtime.dialogue_msg_read_pos(), 0);
+    assert_eq!(
+        state.game_state.messaging.runtime.dialogue_msg_read_pos(),
+        0
+    );
 }
 
 #[test]
@@ -294,7 +295,10 @@ fn dialogue_return_only_boundary_keeps_current_bg_scroll_scanout() {
 
     state.run_frame_internal(0, crate::RUN_MAIN);
 
-    let next_scanout = state.ppu.bg_layer.map(|layer| [layer.h_scroll, layer.v_scroll]);
+    let next_scanout = state
+        .ppu
+        .bg_layer
+        .map(|layer| [layer.h_scroll, layer.v_scroll]);
     assert_eq!(
         next_scanout,
         [
@@ -305,10 +309,12 @@ fn dialogue_return_only_boundary_keeps_current_bg_scroll_scanout() {
         ]
     );
 
-    let displayed =
-        state.with_display_snapshot(|display| {
-            display.ppu.bg_layer.map(|layer| [layer.h_scroll, layer.v_scroll])
-        });
+    let displayed = state.with_display_snapshot(|display| {
+        display
+            .ppu
+            .bg_layer
+            .map(|layer| [layer.h_scroll, layer.v_scroll])
+    });
     assert_eq!(displayed, current_scanout);
 }
 
@@ -337,7 +343,10 @@ fn dialogue_final_copy_publishes_color_math_without_advancing_held_ppu_generatio
 
     assert!(!state.ppu.half_color);
     assert_eq!(
-        [state.ppu.bg_layer[0].h_scroll, state.ppu.bg_layer[0].v_scroll],
+        [
+            state.ppu.bg_layer[0].h_scroll,
+            state.ppu.bg_layer[0].v_scroll
+        ],
         [0x00f0, 0x00c4]
     );
     let displayed = state.with_display_snapshot(|display| {
@@ -3405,7 +3414,10 @@ fn world_map_fade_completion_runs_the_first_mode7_tick_immediately() {
 
     assert_eq!(state.game_state.ending.attract_scene.state(), 5);
     assert_eq!(state.attract_first_story_render_delay, 0);
-    assert_eq!(state.game_state.ending.attract_scene.mode7_zoom_timer(), 0xfe);
+    assert_eq!(
+        state.game_state.ending.attract_scene.mode7_zoom_timer(),
+        0xfe
+    );
     assert_eq!(state.spotlight_hdma_table_dynamic_entry(0), 0x0174);
 }
 
@@ -3516,10 +3528,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert!(rom_dungeon_exit_spotlight_scanout_is_mixed(0x0f, 1, 0x07));
     assert!(!rom_dungeon_exit_spotlight_scanout_is_mixed(0x0f, 1, 0));
     assert!(!rom_dungeon_exit_spotlight_scanout_is_mixed(0x10, 1, 0x38));
-    assert_eq!(
-        DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES,
-        1
-    );
+    assert_eq!(DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES, 1);
 
     let mut work = PendingRomWork::schedule(
         RomWorkContinuation::FinishSpotlightIteration,
@@ -3569,10 +3578,18 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
 
 #[test]
 fn world_map_fade_publishes_the_previous_scanout_snapshot() {
-    assert!(!rom_attract_world_map_display_is_one_frame_deferred(20, 0, 1, 3));
-    assert!(rom_attract_world_map_display_is_one_frame_deferred(20, 0, 1, 4));
-    assert!(!rom_attract_world_map_display_is_one_frame_deferred(20, 0, 0, 4));
-    assert!(!rom_attract_world_map_display_is_one_frame_deferred(0, 0, 1, 4));
+    assert!(!rom_attract_world_map_display_is_one_frame_deferred(
+        20, 0, 1, 3
+    ));
+    assert!(rom_attract_world_map_display_is_one_frame_deferred(
+        20, 0, 1, 4
+    ));
+    assert!(!rom_attract_world_map_display_is_one_frame_deferred(
+        20, 0, 0, 4
+    ));
+    assert!(!rom_attract_world_map_display_is_one_frame_deferred(
+        0, 0, 1, 4
+    ));
 }
 
 #[test]
@@ -3785,25 +3802,91 @@ fn world_map_force_blank_preserves_the_scanned_prefix() {
 #[test]
 fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
     assert_eq!(
-        overworld_sprite_reload_timing(OverworldSpriteReloadWorkload {
-            sprite_records: 2,
-            in_bounds_proximity_checks: 18,
-        }),
+        overworld_sprite_reload_timing(
+            OverworldSpriteReloadWorkload {
+                sprite_records: 2,
+                in_bounds_proximity_checks: 18,
+            },
+            OverworldSpriteReloadEntryPhase::OrdinaryModuleIteration
+        ),
         OverworldSpriteReloadTiming {
             load_nmi_slices: 3,
             post_return_hold_nmi_slices: 1,
         }
     );
     assert_eq!(
-        overworld_sprite_reload_timing(OverworldSpriteReloadWorkload {
-            sprite_records: 4,
-            in_bounds_proximity_checks: 90,
-        }),
+        overworld_sprite_reload_timing(
+            OverworldSpriteReloadWorkload {
+                sprite_records: 4,
+                in_bounds_proximity_checks: 90,
+            },
+            OverworldSpriteReloadEntryPhase::OrdinaryModuleIteration
+        ),
         OverworldSpriteReloadTiming {
             load_nmi_slices: 4,
             post_return_hold_nmi_slices: 0,
         }
     );
+    assert_eq!(
+        overworld_sprite_reload_timing(
+            OverworldSpriteReloadWorkload {
+                sprite_records: 8,
+                in_bounds_proximity_checks: 66,
+            },
+            OverworldSpriteReloadEntryPhase::VblankEdgeAfterGraphicsTail,
+        ),
+        OverworldSpriteReloadTiming {
+            load_nmi_slices: 2,
+            post_return_hold_nmi_slices: 0,
+        }
+    );
+}
+
+#[test]
+fn overworld_map_graphics_timing_names_both_cpu_visible_generations() {
+    assert_eq!(
+        OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING,
+        OverworldMapAndSpriteGraphicsTiming {
+            quadrant_load_nmi_slices: 17,
+            screen_map_and_sprite_gfx_tail_nmi_slices: 4,
+        }
+    );
+
+    let mut work = PendingRomWork::schedule(
+        RomWorkContinuation::FinishOverworldMapQuadrants,
+        OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING.quadrant_load_nmi_slices,
+    );
+    for _ in 1..OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING.quadrant_load_nmi_slices {
+        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+    }
+    assert_eq!(
+        work.advance_one_nmi_slice(),
+        RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldMapQuadrants)
+    );
+}
+
+#[test]
+fn bg_scroll_scanout_replays_the_nmi_register_write_order() {
+    let mut ppu = snes::ppu::PpuState::default();
+    ppu.scroll_prev = 0x91;
+    ppu.scroll_prev2 = 0x35;
+    let register_bytes = [
+        [0x8b, 0x00, 0x3c, 0x00],
+        [0x18, 0x02, 0x00, 0x02],
+        [0x00, 0x00, 0x00, 0x00],
+    ];
+    let predicted = BgScrollRegisterScanout::after_nmi_writes(&ppu, register_bytes);
+
+    for (layer, [h_low, h_high, v_low, v_high]) in register_bytes.into_iter().enumerate() {
+        let h_register = 0x0d + (layer as u8) * 2;
+        let v_register = h_register + 1;
+        ppu.write(h_register, h_low);
+        ppu.write(h_register, h_high);
+        ppu.write(v_register, v_low);
+        ppu.write(v_register, v_high);
+    }
+
+    assert_eq!(predicted, BgScrollRegisterScanout::capture(&ppu));
 }
 
 #[test]
@@ -4337,12 +4420,7 @@ fn nmi_active_display_overrun_is_classified_by_workload() {
         NmiActiveDisplayBlanking::default()
     );
     assert_eq!(
-        nmi_active_display_blanking_for_pending_work(
-            false,
-            false,
-            1,
-            StripeUploadWork::default(),
-        ),
+        nmi_active_display_blanking_for_pending_work(false, false, 1, StripeUploadWork::default(),),
         NmiActiveDisplayBlanking::default()
     );
     assert_eq!(
@@ -4601,10 +4679,7 @@ fn recomposed_display_memory_publishes_post_nmi_dialogue_metadata_with_vram() {
         )
     });
 
-    assert_eq!(
-        captured,
-        (0x2222, vec![post_nmi_run], vec![0x2e], 0x2e)
-    );
+    assert_eq!(captured, (0x2222, vec![post_nmi_run], vec![0x2e], 0x2e));
     assert_eq!(state.ppu.vram[0x7c00], 0x2222);
     assert_eq!(state.published_bg3_vwf_glyph_runs, vec![post_nmi_run]);
 }
@@ -4642,10 +4717,7 @@ fn dialogue_scroll_override_presents_one_coherent_text_generation() {
         )
     });
 
-    assert_eq!(
-        captured,
-        (0x3333, vec![scroll_run], vec![0x2d], 0x2d, 32)
-    );
+    assert_eq!(captured, (0x3333, vec![scroll_run], vec![0x2d], 0x2d, 32));
 }
 
 #[test]

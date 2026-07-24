@@ -145,9 +145,7 @@ const SNES9X_INTRO_SPRITE_ANIMATION_START_DELAY: u8 = 1;
 const SNES9X_POLY_UPLOAD_DEFER_UNTIL_FRAME_COUNTER: u8 = 0x42;
 const SNES9X_NMI_POLY_UPLOAD_DEFER_FRAMES: u8 = 3;
 
-#[derive(
-    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct NmiActiveDisplayBlanking {
     prefix_scanlines: u8,
     suffix_start_scanline: Option<u8>,
@@ -253,8 +251,7 @@ fn stripe_upload_clears_dialogue_box(stripes: &[u8]) -> bool {
         return false;
     };
     let destination = u16::from_be_bytes([packet[0], packet[1]]);
-    matches!(destination, 0x6125 | 0x6244)
-        && packet[2..] == [0x42, 0x2e, 0x7f, 0x38, 0xff, 0xff]
+    matches!(destination, 0x6125 | 0x6244) && packet[2..] == [0x42, 0x2e, 0x7f, 0x38, 0xff, 0xff]
 }
 
 const fn attract_throne_room_nmi_slices(retained_sprite_subset_2: u8) -> u8 {
@@ -362,10 +359,7 @@ const fn rom_display_oam_publication_is_deferred(
         || rom_player_sprite_scanout_uses_pre_nmi_generation(main_module, submodule)
 }
 
-const fn rom_player_sprite_scanout_uses_pre_nmi_generation(
-    main_module: u8,
-    submodule: u8,
-) -> bool {
+const fn rom_player_sprite_scanout_uses_pre_nmi_generation(main_module: u8, submodule: u8) -> bool {
     // Snes9x returns at vblank before the new OAM and Link OBJ CHR uploads.
     // This applies both to ordinary player control and the overworld doorway
     // auxiliary-GFX load, and scroll transitions, whose Module 9/submodules 1,
@@ -375,10 +369,7 @@ const fn rom_player_sprite_scanout_uses_pre_nmi_generation(
         || (main_module == 9 && matches!(submodule, 1 | 6..=8 | 0x0a))
 }
 
-const fn rom_animated_tile_dma_uses_pre_main_operands(
-    main_module: u8,
-    submodule: u8,
-) -> bool {
+const fn rom_animated_tile_dma_uses_pre_main_operands(main_module: u8, submodule: u8) -> bool {
     // This transition's long main-thread slice advances the animation source
     // before the native scheduler reaches its coarse NMI call. On hardware,
     // Snes9x resumes the already-pending NMI first, so its DMA consumes the
@@ -606,14 +597,30 @@ const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
 const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
 const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
 const OVERWORLD_AUX_GFX_LOAD_NMI_SLICES: u8 = 11;
-const OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES: u8 = 16;
+const OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING: OverworldMapAndSpriteGraphicsTiming =
+    OverworldMapAndSpriteGraphicsTiming {
+        quadrant_load_nmi_slices: 17,
+        screen_map_and_sprite_gfx_tail_nmi_slices: 4,
+    };
 const OVERWORLD_SPRITE_RECORD_TIMING_UNITS: usize = 3;
 const OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS: usize = 39;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OverworldMapAndSpriteGraphicsTiming {
+    quadrant_load_nmi_slices: u8,
+    screen_map_and_sprite_gfx_tail_nmi_slices: u8,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OverworldSpriteReloadWorkload {
     sprite_records: usize,
     in_bounds_proximity_checks: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OverworldSpriteReloadEntryPhase {
+    OrdinaryModuleIteration,
+    VblankEdgeAfterGraphicsTail,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -624,7 +631,25 @@ struct OverworldSpriteReloadTiming {
 
 const fn overworld_sprite_reload_timing(
     workload: OverworldSpriteReloadWorkload,
+    entry_phase: OverworldSpriteReloadEntryPhase,
 ) -> OverworldSpriteReloadTiming {
+    if matches!(
+        entry_phase,
+        OverworldSpriteReloadEntryPhase::VblankEdgeAfterGraphicsTail
+    ) {
+        // Clean Snes9x PC/V-counter traces for screen $1b enter
+        // Module09_LoadNewSprites ($02:abed) at V=254, take NMI inside
+        // Sprite_ResetAll ($09:c47b), resume at $09:c4ac at V=5, reach
+        // Sprite_ActivateAllProxima ($09:c55e) at V=12, and return to
+        // Overworld_StartScrollTransition ($02:ac27) at V=48. That causal
+        // entry phase, rather than the record count alone, makes this reload
+        // span exactly two host NMI boundaries.
+        return OverworldSpriteReloadTiming {
+            load_nmi_slices: 2,
+            post_return_hold_nmi_slices: 0,
+        };
+    }
+
     // The ROM loader is interruptible, so its return frame depends on the
     // actual area workload. Snes9x PC/V-counter traces show screen $2b
     // processing two sprite records and 18 in-bounds proximity checks, then
@@ -708,7 +733,8 @@ enum RomWorkContinuation {
     FinishWorldMapOverlayReload,
     FinishWorldMapAmbientMap8,
     FinishOverworldAuxGraphics,
-    FinishOverworldMapAndSpriteGraphics,
+    FinishOverworldMapQuadrants,
+    FinishOverworldScreenMapAndSpriteGraphicsTail,
     FinishOverworldSpriteReloadTail {
         post_return_hold_nmi_slices: u8,
     },
@@ -2190,18 +2216,31 @@ impl BgScrollRegisterScanout {
             layer.v_scroll = v_scroll;
         }
     }
+
+    fn after_nmi_writes(ppu: &PpuState, register_bytes: [[u8; 4]; 3]) -> Self {
+        let mut scanout = Self::capture(ppu);
+        let mut previous = ppu.scroll_prev;
+        let mut previous2 = ppu.scroll_prev2;
+        for (layer, [h_low, h_high, v_low, v_high]) in register_bytes.into_iter().enumerate() {
+            for value in [h_low, h_high] {
+                scanout.offsets[layer][0] = (((u16::from(value)) << 8)
+                    | (u16::from(previous) & 0xf8)
+                    | (u16::from(previous2) & 0x07))
+                    & 0x03ff;
+                previous = value;
+                previous2 = value;
+            }
+            for value in [v_low, v_high] {
+                scanout.offsets[layer][1] =
+                    (((u16::from(value)) << 8) | u16::from(previous)) & 0x03ff;
+                previous = value;
+            }
+        }
+        scanout
+    }
 }
 
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct DialogueScrollContinuation(u8);
 
@@ -2421,6 +2460,8 @@ pub struct ZeldaState {
     attract_first_story_render_delay: u8,
     #[serde(skip)]
     pending_rom_work: PendingRomWork,
+    #[serde(skip)]
+    next_overworld_sprite_reload_entry_phase: Option<OverworldSpriteReloadEntryPhase>,
     #[serde(skip)]
     joypad_sampled_before_main: bool,
     #[serde(skip)]
@@ -7353,6 +7394,7 @@ impl ZeldaState {
             attract_init_graphics_phase: 0,
             attract_first_story_render_delay: 0,
             pending_rom_work: PendingRomWork::default(),
+            next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
             file_select_initial_graphics_phase: 0,
@@ -7650,10 +7692,8 @@ impl ZeldaState {
             return;
         }
         debug_assert!(!self.pending_rom_work.is_pending());
-        self.pending_rom_work = PendingRomWork::schedule(
-            RomWorkContinuation::FinishItemReceiptGraphics,
-            nmi_slices,
-        );
+        self.pending_rom_work =
+            PendingRomWork::schedule(RomWorkContinuation::FinishItemReceiptGraphics, nmi_slices);
     }
 
     pub(super) fn begin_attract_throne_room_work(&mut self) {
@@ -7672,10 +7712,8 @@ impl ZeldaState {
         // slices elapse before the world-map continuation runs. Seven slices
         // delayed the live scene by two frames and made the source-native
         // renderer faithfully draw the wrong state.
-        self.pending_rom_work = PendingRomWork::schedule(
-            RomWorkContinuation::FinishAttractWorldMap,
-            5,
-        );
+        self.pending_rom_work =
+            PendingRomWork::schedule(RomWorkContinuation::FinishAttractWorldMap, 5);
     }
 
     pub(super) fn begin_world_map_light_load_work(&mut self) -> bool {
@@ -7719,15 +7757,14 @@ impl ZeldaState {
     }
 
     pub(super) fn stage_overworld_transition_scroll_scanout_hold(&mut self) {
-        self.overworld_transition_scroll_hold_pending =
-            Some(std::array::from_fn(|index| {
-                let layer = &self.ppu.bg_layer[index / 2];
-                if index & 1 == 0 {
-                    layer.h_scroll
-                } else {
-                    layer.v_scroll
-                }
-            }));
+        self.overworld_transition_scroll_hold_pending = Some(std::array::from_fn(|index| {
+            let layer = &self.ppu.bg_layer[index / 2];
+            if index & 1 == 0 {
+                layer.h_scroll
+            } else {
+                layer.v_scroll
+            }
+        }));
     }
 
     pub(crate) fn dialogue_text_scanout_from_render_buffer(&self) -> DialogueTextScanout {
@@ -7738,11 +7775,7 @@ impl ZeldaState {
                 .collect(),
             glyph_runs: self.bg3_vwf_glyph_runs.clone(),
             glyph_run_dialogue_offsets: self.bg3_vwf_glyph_run_dialogue_offsets.clone(),
-            dialogue_msg_read_pos: self
-                .game_state
-                .messaging
-                .runtime
-                .dialogue_msg_read_pos(),
+            dialogue_msg_read_pos: self.game_state.messaging.runtime.dialogue_msg_read_pos(),
             dialogue_message_id: self.bg3_vwf_glyph_run_dialogue_message_id,
         }
     }
@@ -7753,11 +7786,7 @@ impl ZeldaState {
             .display
             .palette_filter
             .color_window_selection();
-        let color_math = self
-            .game_state
-            .display
-            .palette_filter
-            .color_math_control();
+        let color_math = self.game_state.display.palette_filter.color_math_control();
         let mut fixed_color = [
             self.ppu.fixed_color_r,
             self.ppu.fixed_color_g,
@@ -7800,6 +7829,33 @@ impl ZeldaState {
         }
     }
 
+    fn bg_scroll_scanout_from_nmi_register_mirrors(&self) -> BgScrollRegisterScanout {
+        let scroll = &self.game_state.display.ppu_scroll_copy;
+        BgScrollRegisterScanout::after_nmi_writes(
+            &self.ppu,
+            [
+                [
+                    scroll.bg1_h_copy_low(),
+                    scroll.bg1_h_high(),
+                    scroll.bg1_v_copy_low(),
+                    scroll.bg1_v_high(),
+                ],
+                [
+                    scroll.bg2_h_copy_low(),
+                    scroll.bg2_h_high(),
+                    scroll.bg2_v_copy_low(),
+                    scroll.bg2_v_high(),
+                ],
+                [
+                    scroll.bg3_h_copy2_low(),
+                    scroll.bg3_h_high(),
+                    scroll.bg3_v_copy2_low(),
+                    scroll.bg3_v_high(),
+                ],
+            ],
+        )
+    }
+
     pub(super) fn capture_display_snapshot(&mut self) {
         self.ppu.refresh_brightness_cache();
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
@@ -7813,10 +7869,8 @@ impl ZeldaState {
         // The completion override displays one boundary after the final copy
         // slice: internally the scroll finishes on frame N, but Snes9x scans
         // the finished text out on N+1.
-        self.dialogue_scroll_completion_scanout =
-            self.dialogue_scroll_completion_staged.take();
-        self.overworld_transition_scroll_hold =
-            self.overworld_transition_scroll_hold_staged.take();
+        self.dialogue_scroll_completion_scanout = self.dialogue_scroll_completion_staged.take();
+        self.overworld_transition_scroll_hold = self.overworld_transition_scroll_hold_staged.take();
         self.overworld_transition_scroll_hold_staged =
             self.overworld_transition_scroll_hold_pending.take();
         let frame = self.game_state.frame;
@@ -8021,28 +8075,26 @@ impl ZeldaState {
             && snapshot_frame.submodule == 0
             && self.game_state.ending.attract_scene.sequence() == 1
             && self.game_state.ending.attract_scene.state() >= 4;
-        let publish_live_dungeon_exit_scroll =
-            rom_dungeon_exit_entry_scroll_publication_is_live(
-                snapshot_frame.main_module,
-                snapshot_frame.submodule,
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule,
-            );
-        let publish_live_overworld_bad_weather_scroll =
-            rom_overworld_bad_weather_scroll_is_live(
-                snapshot_frame.main_module,
-                snapshot_frame.submodule,
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule,
-                display.ppu.bg_layer[0].h_scroll,
-                display.ppu.bg_layer[0].v_scroll,
-                display.ppu.bg_layer[1].h_scroll,
-                display.ppu.bg_layer[1].v_scroll,
-                self.ppu.bg_layer[0].h_scroll,
-                self.ppu.bg_layer[0].v_scroll,
-                self.ppu.bg_layer[1].h_scroll,
-                self.ppu.bg_layer[1].v_scroll,
-            );
+        let publish_live_dungeon_exit_scroll = rom_dungeon_exit_entry_scroll_publication_is_live(
+            snapshot_frame.main_module,
+            snapshot_frame.submodule,
+            self.game_state.frame.main_module,
+            self.game_state.frame.submodule,
+        );
+        let publish_live_overworld_bad_weather_scroll = rom_overworld_bad_weather_scroll_is_live(
+            snapshot_frame.main_module,
+            snapshot_frame.submodule,
+            self.game_state.frame.main_module,
+            self.game_state.frame.submodule,
+            display.ppu.bg_layer[0].h_scroll,
+            display.ppu.bg_layer[0].v_scroll,
+            display.ppu.bg_layer[1].h_scroll,
+            display.ppu.bg_layer[1].v_scroll,
+            self.ppu.bg_layer[0].h_scroll,
+            self.ppu.bg_layer[0].v_scroll,
+            self.ppu.bg_layer[1].h_scroll,
+            self.ppu.bg_layer[1].v_scroll,
+        );
         let publish_live_overworld_transition_half_color =
             rom_overworld_transition_half_color_is_live(
                 snapshot_frame.main_module,
@@ -8175,10 +8227,8 @@ impl ZeldaState {
         // overrides both the retained and the recomposed paths.
         // The completion override (freshly-scrolled buffer, group-completion
         // frame) takes precedence over the frozen (group-start) generation.
-        let previous_dialogue_scanout = self
-            .dialogue_scroll_completion_scanout
-            .clone()
-            .or_else(|| {
+        let previous_dialogue_scanout =
+            self.dialogue_scroll_completion_scanout.clone().or_else(|| {
                 self.dialogue_scroll_stale_scanout
                     .then(|| self.dialogue_scroll_frozen_scanout.clone())
                     .flatten()
@@ -8238,8 +8288,7 @@ impl ZeldaState {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
         }
         if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some()
-            && (self.dialogue_scroll_stale_scanout
-                || !self.dialogue_scroll_continuation.is_idle())
+            && (self.dialogue_scroll_stale_scanout || !self.dialogue_scroll_continuation.is_idle())
         {
             let presented_sum: u64 = self.ppu.vram[0x7c00..0x7ff0]
                 .iter()
@@ -8247,7 +8296,8 @@ impl ZeldaState {
                 .sum();
             eprintln!(
                 "scroll_present host={} presented_sum={presented_sum} stale={} lag={}",
-                self.frame_ctr_dbg, self.dialogue_scroll_stale_scanout,
+                self.frame_ctr_dbg,
+                self.dialogue_scroll_stale_scanout,
                 self.dialogue_scroll_continuation.diagnostic_code(),
             );
         }
@@ -8267,10 +8317,8 @@ impl ZeldaState {
         if live_forced_blank {
             self.ppu.forced_blank_from_scanline =
                 world_map_force_blank_from_scanline.or(live_forced_blank_from_scanline);
-            self.ppu.retain_active_display_history =
-                world_map_force_blank_from_scanline.is_none()
-                    && (self.ppu.retain_active_display_history
-                        || live_retain_active_display_history);
+            self.ppu.retain_active_display_history = world_map_force_blank_from_scanline.is_none()
+                && (self.ppu.retain_active_display_history || live_retain_active_display_history);
         }
         if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && (1648..=1655).contains(&self.frame_ctr_dbg)
@@ -8355,17 +8403,13 @@ impl ZeldaState {
         } else {
             (
                 self.published_bg3_vwf_glyph_runs.clone(),
-                self.published_bg3_vwf_glyph_run_dialogue_offsets
-                    .clone(),
+                self.published_bg3_vwf_glyph_run_dialogue_offsets.clone(),
                 self.published_dialogue_msg_read_pos,
                 self.published_dialogue_message_id,
             )
         };
         let saved_published_dialogue = (
-            std::mem::replace(
-                &mut self.published_bg3_vwf_glyph_runs,
-                presented_dialogue.0,
-            ),
+            std::mem::replace(&mut self.published_bg3_vwf_glyph_runs, presented_dialogue.0),
             std::mem::replace(
                 &mut self.published_bg3_vwf_glyph_run_dialogue_offsets,
                 presented_dialogue.1,
@@ -8786,10 +8830,7 @@ impl ZeldaState {
             )
             && self.game_state.display.has_animated_tile_data_source()
         {
-            let source_address = self
-                .game_state
-                .display
-                .animated_tile_data_source_usize();
+            let source_address = self.game_state.display.animated_tile_data_source_usize();
             let destination_address = self
                 .game_state
                 .display
@@ -8825,9 +8866,7 @@ impl ZeldaState {
         // place the vblank boundary before this CPU slice, including the
         // reset-delay slices that otherwise return before the usual NMI site.
         // This changes only scheduling, never PPU contents.
-        if self.rom_startup_timing()
-            && self.parity_runtime_nmi_rule_matches("pre_nmi")
-        {
+        if self.rom_startup_timing() && self.parity_runtime_nmi_rule_matches("pre_nmi") {
             self.capture_display_snapshot();
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
         }
@@ -9183,18 +9222,16 @@ impl ZeldaState {
                         // PC/V-counter probes show the new reserved-table tail
                         // reaching HDMA before scanlines 221..223. Compose only
                         // that measured suffix into the pre-calculation image.
-                        let byte_start =
-                            DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
+                        let byte_start = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
                         let byte_end = 224 * 2;
-                        let live_tails = [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
-                            .map(|table_base| {
+                        let live_tails =
+                            [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE].map(|table_base| {
                                 self.ram[table_base + byte_start..table_base + byte_end].to_vec()
                             });
                         if let Some(display) = self.display_snapshot.as_mut() {
-                            for (table_base, live_tail) in
-                                [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
-                                    .into_iter()
-                                    .zip(live_tails)
+                            for (table_base, live_tail) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
+                                .into_iter()
+                                .zip(live_tails)
                             {
                                 display.ram[table_base + byte_start..table_base + byte_end]
                                     .copy_from_slice(&live_tail);
@@ -9211,16 +9248,11 @@ impl ZeldaState {
                             DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES;
                     }
                 }
-                RomWorkSlice::Complete(
-                    RomWorkContinuation::FinishPreOverworldProperties {
-                        overworld_screen,
-                        animated_tiles,
-                    },
-                ) => {
-                    self.complete_pre_overworld_load_properties(
-                        overworld_screen,
-                        animated_tiles,
-                    );
+                RomWorkSlice::Complete(RomWorkContinuation::FinishPreOverworldProperties {
+                    overworld_screen,
+                    animated_tiles,
+                }) => {
+                    self.complete_pre_overworld_load_properties(overworld_screen, animated_tiles);
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
@@ -9270,24 +9302,58 @@ impl ZeldaState {
                     self.clear_nmi_update_latch();
                     return;
                 }
-                RomWorkSlice::Complete(
-                    RomWorkContinuation::FinishOverworldMapAndSpriteGraphics,
-                ) => {
-                    // The quadrant decompression, initial screen-map build,
-                    // and sprite conversion return after this vblank.
+                RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldMapQuadrants) => {
+                    // SomeTileMapChange increments the submodule before the
+                    // remaining screen-map build and sprite conversion return.
+                    // Publish that CPU-visible generation after this vblank,
+                    // then keep the caller stack suspended for its measured
+                    // four-boundary tail.
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-                    self.complete_module09_load_new_map_and_gfx();
-                    self.complete_module09_overworld_after_submodule();
-                    self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
+                    self.complete_module09_load_new_map_quadrants();
+                    self.pending_rom_work = PendingRomWork::schedule(
+                        RomWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail,
+                        OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING
+                            .screen_map_and_sprite_gfx_tail_nmi_slices,
+                    );
                     return;
                 }
                 RomWorkSlice::Complete(
-                    RomWorkContinuation::FinishOverworldSpriteReloadTail {
-                        post_return_hold_nmi_slices,
-                    },
+                    RomWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail,
                 ) => {
+                    // The initial screen-map build and 3bpp-to-4bpp sprite
+                    // conversion return after this frame's NMI. The caller
+                    // suffix then publishes sprite DMA sources and releases
+                    // the software NMI latch for the following boundary.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.complete_module09_load_new_map_and_gfx_tail();
+                    self.complete_module09_overworld_after_submodule();
+                    // Although this caller suffix returns after NMI, Snes9x
+                    // exposes its direct BG register writes in the scanout
+                    // returned for this boundary. Publish only that register
+                    // domain into the captured image: VRAM, OAM, CGRAM, and
+                    // the remaining controls still belong to the pre-return
+                    // generation.
+                    let returned_scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
+                    returned_scroll.publish_to(&mut self.ppu);
+                    if let Some(snapshot) = self.display_snapshot.as_mut() {
+                        returned_scroll.publish_to(&mut snapshot.ppu);
+                    }
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    // The next ordinary Module09 iteration begins at the
+                    // vblank edge immediately following this returned
+                    // graphics tail. Carry that CPU phase explicitly into
+                    // the sprite-loader timing decision instead of encoding
+                    // the route or overworld screen number.
+                    self.next_overworld_sprite_reload_entry_phase =
+                        Some(OverworldSpriteReloadEntryPhase::VblankEdgeAfterGraphicsTail);
+                    return;
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldSpriteReloadTail {
+                    post_return_hold_nmi_slices,
+                }) => {
                     // The long sprite reset/load loop is interrupted in the
                     // ROM. On the final slice, the CPU returns through
                     // Overworld_SetFixedColAndScroll before the vblank that
@@ -9325,9 +9391,7 @@ impl ZeldaState {
                     }
                     return;
                 }
-                RomWorkSlice::Complete(
-                    RomWorkContinuation::HoldOverworldSpriteReloadReturn,
-                ) => {
+                RomWorkSlice::Complete(RomWorkContinuation::HoldOverworldSpriteReloadReturn) => {
                     // The light sprite loader returns at V=213, so its camera
                     // and caller suffix are already visible. Snes9x remains in
                     // submodule 5 for the following scanout, however; the next
@@ -9366,10 +9430,9 @@ impl ZeldaState {
                 self.zelda_run_game_loop();
                 self.replay_trace_col("after-game-loop");
                 self.replay_trace_ram_watch("after-game-loop");
-                debug_assert!(
-                    self.dialogue_scroll_continuation
-                        .is_copying_remaining_pixels()
-                );
+                debug_assert!(self
+                    .dialogue_scroll_continuation
+                    .is_copying_remaining_pixels());
                 self.dialogue_scroll_stale_scanout =
                     std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
                 self.assert_native_frame_state_matches_ram();
@@ -9380,18 +9443,16 @@ impl ZeldaState {
             self.nmi_read_joypads(input);
             self.joypad_sampled_before_main = true;
         }
-        let dungeon_exit_spotlight_scanout_prefix =
-            rom_dungeon_exit_spotlight_scanout_is_mixed(
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule,
-                self.game_state.display.spotlight_hdma.window_radius(),
-            )
-            .then(|| {
-                let byte_end = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
-                [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE].map(|table_base| {
-                    self.ram[table_base..table_base + byte_end].to_vec()
-                })
-            });
+        let dungeon_exit_spotlight_scanout_prefix = rom_dungeon_exit_spotlight_scanout_is_mixed(
+            self.game_state.frame.main_module,
+            self.game_state.frame.submodule,
+            self.game_state.display.spotlight_hdma.window_radius(),
+        )
+        .then(|| {
+            let byte_end = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
+            [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
+                .map(|table_base| self.ram[table_base..table_base + byte_end].to_vec())
+        });
         if run_what & crate::RUN_MAIN != 0 {
             self.replay_trace_col("before-game-loop");
             self.replay_trace_ram_watch("before-game-loop");
@@ -9956,10 +10017,6 @@ impl ZeldaState {
         self.ppu.extra_bottom_cur = extra_bottom.min(16) as u8;
     }
 
-
-
-
-
     fn selected_intro_poly_display_buffer(&self) -> Vec<u16> {
         if env::var_os("ZELDA3_INTRO_POLY_PRESENT_OBJ_LATCH").is_some() {
             if let Some(latched_vram) = self.ppu.obj_vram_latch.as_deref() {
@@ -10459,8 +10516,8 @@ impl ZeldaState {
         let raw_inputs = inputs as u16;
         let raw_replay_input_override = replay_input_override;
         let inputs = Self::sanitize_frame_inputs(inputs);
-        let replay_input_override = replay_input_override
-            .map(|input| Self::sanitize_frame_inputs(input as i32));
+        let replay_input_override =
+            replay_input_override.map(|input| Self::sanitize_frame_inputs(input as i32));
         self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
         self.replay_trace_ram_watch("frame-entry");
         let mut state_recorder = std::mem::take(&mut self.state_recorder);
@@ -10990,13 +11047,11 @@ impl ZeldaState {
             // then returns through the RenderText handler after this frame's
             // NMI. Phase 1 is consumed separately by run_frame_internal as a
             // return-only slice so its NMI stays before the game-loop suffix.
-            debug_assert!(
-                self.dialogue_scroll_continuation
-                    .is_copying_remaining_pixels()
-            );
+            debug_assert!(self
+                .dialogue_scroll_continuation
+                .is_copying_remaining_pixels());
             let passes = 3;
-            self.dialogue_scroll_continuation
-                .finish_remaining_pixels();
+            self.dialogue_scroll_continuation.finish_remaining_pixels();
             self.dialogue_scroll_ran_this_frame = true;
             let command_done = self.render_text_scroll_pixels(passes);
             // The slow $0e:cfe2 text-buffer copy has now returned through

@@ -3613,23 +3613,32 @@ impl ZeldaState {
         self.set_overworld_peg_puzzle_progress(0);
         if self.rom_startup_timing() {
             // The first quadrant decompression begins on the caller's entry
-            // slice; Snes9x remains in this routine through sixteen subsequent
-            // host-frame slices before the completed map and sprite graphics
-            // become CPU-visible.
+            // slice. The ROM exposes two distinct interruptible generations:
+            // map quadrants finish first (and advance the visible submodule),
+            // while the initial screen map and sprite conversion remain on
+            // the CPU stack for four more NMI boundaries.
             self.pending_rom_work = PendingRomWork::schedule(
-                RomWorkContinuation::FinishOverworldMapAndSpriteGraphics,
-                OVERWORLD_MAP_AND_SPRITE_GFX_LOAD_NMI_SLICES,
+                RomWorkContinuation::FinishOverworldMapQuadrants,
+                OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING.quadrant_load_nmi_slices,
             );
             return;
         }
         self.complete_module09_load_new_map_and_gfx();
     }
 
-    pub(super) fn complete_module09_load_new_map_and_gfx(&mut self) {
+    pub(super) fn complete_module09_load_new_map_quadrants(&mut self) {
         self.SomeTileMapChange();
         self.increment_core_update_disable_flag();
+    }
+
+    pub(super) fn complete_module09_load_new_map_and_gfx_tail(&mut self) {
         self.CreateInitialNewScreenMapToScroll();
         self.LoadNewSpriteGFXSet();
+    }
+
+    pub(super) fn complete_module09_load_new_map_and_gfx(&mut self) {
+        self.complete_module09_load_new_map_quadrants();
+        self.complete_module09_load_new_map_and_gfx_tail();
     }
 
     pub(super) fn Overworld_DrawQuadrantsAndOverlays(&mut self) {
@@ -3840,6 +3849,17 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_LoadNewSprites(&mut self) {
+        let entry_phase = self
+            .next_overworld_sprite_reload_entry_phase
+            .take()
+            .unwrap_or(OverworldSpriteReloadEntryPhase::OrdinaryModuleIteration);
+        self.module09_load_new_sprites_from_phase(entry_phase);
+    }
+
+    fn module09_load_new_sprites_from_phase(
+        &mut self,
+        entry_phase: OverworldSpriteReloadEntryPhase,
+    ) {
         if self.screen_transition() == 1 {
             let bg2v = self
                 .game_state
@@ -3867,7 +3887,7 @@ impl ZeldaState {
             // NMI boundaries have passed.
             self.publish_module09_transition_sprites_without_scroll();
             self.stage_overworld_transition_scroll_scanout_hold();
-            let reload_timing = overworld_sprite_reload_timing(sprite_reload_workload);
+            let reload_timing = overworld_sprite_reload_timing(sprite_reload_workload, entry_phase);
             self.pending_rom_work = PendingRomWork::schedule(
                 RomWorkContinuation::FinishOverworldSpriteReloadTail {
                     post_return_hold_nmi_slices: reload_timing.post_return_hold_nmi_slices,
