@@ -2170,6 +2170,28 @@ pub(crate) struct DialogueTextScanout {
     dialogue_message_id: u16,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BgScrollRegisterScanout {
+    offsets: [[u16; 2]; 4],
+}
+
+impl BgScrollRegisterScanout {
+    fn capture(ppu: &PpuState) -> Self {
+        Self {
+            offsets: std::array::from_fn(|index| {
+                [ppu.bg_layer[index].h_scroll, ppu.bg_layer[index].v_scroll]
+            }),
+        }
+    }
+
+    fn publish_to(self, ppu: &mut PpuState) {
+        for (layer, [h_scroll, v_scroll]) in ppu.bg_layer.iter_mut().zip(self.offsets) {
+            layer.h_scroll = h_scroll;
+            layer.v_scroll = v_scroll;
+        }
+    }
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ZeldaState {
     pub ram: Vec<u8>,
@@ -8704,6 +8726,7 @@ impl ZeldaState {
             self.zelda_initialization_code();
         }
         if self.rom_startup_timing() && self.dialogue_scroll_lag_frames == 1 {
+            let current_scanout_scroll = BgScrollRegisterScanout::capture(&self.ppu);
             // The scroll copy and RenderText handler returned after the prior
             // frame's NMI. On this boundary the next NMI sees $12 still
             // latched, so it leaves $17/$0710 pending; only afterward does the
@@ -8716,12 +8739,16 @@ impl ZeldaState {
             // state (animated BG tiles, Link DMA, and OAM). Capture after that
             // NMI so the scanout combines those updates with the still-pending
             // dialogue buffer, exactly as the hardware does.
-            // The ROM has returned from the interruptible text thread before
-            // this boundary, so NMI must also publish the current register
-            // mirrors (not retain the scroll registers from the copy slices).
+            // BG scroll is a separate register generation: writes performed by
+            // this NMI configure the next active frame, while retro_run returns
+            // the scanout that just ended. Preserve that pre-NMI register
+            // generation without deferring the newly published memory domains.
             self.dialogue_scroll_stale_scanout = false;
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             self.capture_display_snapshot();
+            if let Some(snapshot) = self.display_snapshot.as_mut() {
+                current_scanout_scroll.publish_to(&mut snapshot.ppu);
+            }
             self.nmi_prepare_sprites();
             self.clear_nmi_update_latch();
             // The completed text becomes visible at the next display

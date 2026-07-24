@@ -260,6 +260,55 @@ fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
 }
 
 #[test]
+fn dialogue_return_only_boundary_keeps_current_bg_scroll_scanout() {
+    let mut state = ZeldaState::new();
+    state.initialized = true;
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.set_animated_tile_data_source_address(0xa680);
+    state.dialogue_scroll_lag_frames = 1;
+    state.audio_nmi_processed_before_main = true;
+
+    let current_scanout = [
+        [0x0111, 0x01db],
+        [0x0222, 0x0233],
+        [0x0344, 0x0355],
+        [0x0066, 0x0077],
+    ];
+    for (layer, [h_scroll, v_scroll]) in state.ppu.bg_layer.iter_mut().zip(current_scanout) {
+        layer.h_scroll = h_scroll;
+        layer.v_scroll = v_scroll;
+    }
+
+    state.set_bg1_h_copy(0x0211);
+    state.set_bg1_v_copy(0x02db);
+    state.set_bg2_h_copy(0x0322);
+    state.set_bg2_v_copy(0x0333);
+    state.set_bg3_h_copy2(0x0044);
+    state.set_bg3_v_copy2(0x0055);
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    let next_scanout = state.ppu.bg_layer.map(|layer| [layer.h_scroll, layer.v_scroll]);
+    assert_eq!(
+        next_scanout,
+        [
+            [0x0211, 0x02db],
+            [0x0322, 0x0333],
+            [0x0044, 0x0055],
+            current_scanout[3],
+        ]
+    );
+
+    let displayed =
+        state.with_display_snapshot(|display| {
+            display.ppu.bg_layer.map(|layer| [layer.h_scroll, layer.v_scroll])
+        });
+    assert_eq!(displayed, current_scanout);
+}
+
+#[test]
 fn dialogue_ir_for_decoded_bytes_uses_runtime_dialogue_flags() {
     let state = ZeldaState::new();
 
