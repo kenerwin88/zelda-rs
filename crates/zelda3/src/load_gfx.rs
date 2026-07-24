@@ -1758,6 +1758,15 @@ impl ZeldaState {
         self.Gfx_LoadSpritesInner(0x7800);
     }
 
+    pub(super) fn overworld_aux_graphics_workload(&self) -> OverworldAuxGraphicsWorkload {
+        let packs = load_gfx_aux_tileset(
+            self.game_state.world.palette_theme.aux_tile_theme_index() as usize,
+        );
+        OverworldAuxGraphicsWorkload {
+            background_packs_to_decompress: packs.into_iter().filter(|&pack| pack != 0).count(),
+        }
+    }
+
     pub(super) fn LoadTransAuxGFX_sprite(&mut self) {
         self.Gfx_LoadSpritesInner(0x7800);
     }

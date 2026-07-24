@@ -3843,25 +3843,59 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
 }
 
 #[test]
-fn overworld_map_graphics_timing_names_both_cpu_visible_generations() {
+fn overworld_graphics_timing_uses_measured_work_receipts() {
     assert_eq!(
-        OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING,
+        overworld_aux_graphics_timing(OverworldAuxGraphicsWorkload {
+            background_packs_to_decompress: 0,
+        }),
+        OverworldAuxGraphicsTiming {
+            load_nmi_slices: 11,
+        }
+    );
+    assert_eq!(
+        overworld_aux_graphics_timing(OverworldAuxGraphicsWorkload {
+            background_packs_to_decompress: 2,
+        }),
+        OverworldAuxGraphicsTiming {
+            load_nmi_slices: 15,
+        }
+    );
+
+    let light_map_timing = overworld_map_and_sprite_graphics_timing(OverworldMapGraphicsWorkload {
+        map32_definition_changes: 670,
+    });
+    assert_eq!(
+        light_map_timing,
         OverworldMapAndSpriteGraphicsTiming {
-            quadrant_load_nmi_slices: 17,
+            quadrant_load_nmi_slices: 13,
+            screen_map_and_sprite_gfx_tail_nmi_slices: 4,
+        }
+    );
+    assert_eq!(
+        overworld_map_and_sprite_graphics_timing(OverworldMapGraphicsWorkload {
+            map32_definition_changes: 796,
+        }),
+        OverworldMapAndSpriteGraphicsTiming {
+            quadrant_load_nmi_slices: 14,
             screen_map_and_sprite_gfx_tail_nmi_slices: 4,
         }
     );
 
     let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishOverworldMapQuadrants,
-        OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING.quadrant_load_nmi_slices,
+        RomWorkContinuation::FinishOverworldMapQuadrants {
+            screen_map_and_sprite_gfx_tail_nmi_slices: light_map_timing
+                .screen_map_and_sprite_gfx_tail_nmi_slices,
+        },
+        light_map_timing.quadrant_load_nmi_slices,
     );
-    for _ in 1..OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING.quadrant_load_nmi_slices {
+    for _ in 1..light_map_timing.quadrant_load_nmi_slices {
         assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldMapQuadrants)
+        RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldMapQuadrants {
+            screen_map_and_sprite_gfx_tail_nmi_slices: 4,
+        })
     );
 }
 

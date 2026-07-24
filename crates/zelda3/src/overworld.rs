@@ -532,13 +532,13 @@ impl ZeldaState {
         self.save_progress_mut().set_dungeon_info_word(40, saved40);
 
         if self.rom_startup_timing() {
-            // Instrumented Snes9x enters after the current frame's vblank and
-            // remains inside the four graphics decompressions plus 3bpp-to-4bpp
-            // conversion for eleven subsequent host-frame slices. The return
-            // becomes CPU-visible after the last slice's scanout.
+            let timing = overworld_aux_graphics_timing(self.overworld_aux_graphics_workload());
+            // The ROM's decompression time follows the actual set of nonzero
+            // auxiliary packs. Carry the measured workload into the scheduler
+            // rather than assigning every tileset the light eleven-slice path.
             self.pending_rom_work = PendingRomWork::schedule(
                 RomWorkContinuation::FinishOverworldAuxGraphics,
-                OVERWORLD_AUX_GFX_LOAD_NMI_SLICES,
+                timing.load_nmi_slices,
             );
             return;
         }
@@ -3612,18 +3612,43 @@ impl ZeldaState {
     pub(super) fn Module09_LoadNewMapAndGFX(&mut self) {
         self.set_overworld_peg_puzzle_progress(0);
         if self.rom_startup_timing() {
+            let timing =
+                overworld_map_and_sprite_graphics_timing(self.overworld_map_graphics_workload());
             // The first quadrant decompression begins on the caller's entry
             // slice. The ROM exposes two distinct interruptible generations:
             // map quadrants finish first (and advance the visible submodule),
             // while the initial screen map and sprite conversion remain on
-            // the CPU stack for four more NMI boundaries.
+            // the CPU stack for a separately named tail.
             self.pending_rom_work = PendingRomWork::schedule(
-                RomWorkContinuation::FinishOverworldMapQuadrants,
-                OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING.quadrant_load_nmi_slices,
+                RomWorkContinuation::FinishOverworldMapQuadrants {
+                    screen_map_and_sprite_gfx_tail_nmi_slices: timing
+                        .screen_map_and_sprite_gfx_tail_nmi_slices,
+                },
+                timing.quadrant_load_nmi_slices,
             );
             return;
         }
         self.complete_module09_load_new_map_and_gfx();
+    }
+
+    fn overworld_map_graphics_workload(&self) -> OverworldMapGraphicsWorkload {
+        let screen = i32::from(self.game_state.world.location.overworld_screen_index());
+        let mut map32_definition_changes = 0;
+        for quadrant in [screen, screen + 1, screen + 8, screen + 9] {
+            let high_bytes = decompress_asset(&self.GetOverworldHibytes(quadrant));
+            let low_bytes = decompress_asset(&self.GetOverworldLobytes(quadrant));
+            let mut last_definition = u16::MAX;
+            for (&high, &low) in high_bytes.iter().zip(&low_bytes).take(256) {
+                let definition = u16::from_le_bytes([low, high]).wrapping_mul(2) & !7;
+                if definition != last_definition {
+                    map32_definition_changes += 1;
+                    last_definition = definition;
+                }
+            }
+        }
+        OverworldMapGraphicsWorkload {
+            map32_definition_changes,
+        }
     }
 
     pub(super) fn complete_module09_load_new_map_quadrants(&mut self) {

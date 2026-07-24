@@ -596,19 +596,53 @@ const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
 const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
 const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
 const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
-const OVERWORLD_AUX_GFX_LOAD_NMI_SLICES: u8 = 11;
-const OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING: OverworldMapAndSpriteGraphicsTiming =
-    OverworldMapAndSpriteGraphicsTiming {
-        quadrant_load_nmi_slices: 17,
-        screen_map_and_sprite_gfx_tail_nmi_slices: 4,
-    };
 const OVERWORLD_SPRITE_RECORD_TIMING_UNITS: usize = 3;
 const OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS: usize = 39;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OverworldAuxGraphicsWorkload {
+    background_packs_to_decompress: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OverworldAuxGraphicsTiming {
+    load_nmi_slices: u8,
+}
+
+const fn overworld_aux_graphics_timing(
+    workload: OverworldAuxGraphicsWorkload,
+) -> OverworldAuxGraphicsTiming {
+    // Sprite decompression and conversion consume the eleven-boundary base.
+    // Each nonzero auxiliary background pack adds one $600-byte decompression;
+    // clean Snes9x traces measure two additional NMI slices per pack.
+    OverworldAuxGraphicsTiming {
+        load_nmi_slices: 11 + workload.background_packs_to_decompress as u8 * 2,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OverworldMapGraphicsWorkload {
+    map32_definition_changes: usize,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OverworldMapAndSpriteGraphicsTiming {
     quadrant_load_nmi_slices: u8,
     screen_map_and_sprite_gfx_tail_nmi_slices: u8,
+}
+
+const fn overworld_map_and_sprite_graphics_timing(
+    workload: OverworldMapGraphicsWorkload,
+) -> OverworldMapAndSpriteGraphicsTiming {
+    // The four quadrants always expand 1,024 map32 cells. The expensive branch
+    // reloads twelve map16 definition bytes whenever the aligned definition
+    // changes. PC/V-counter traces measure 670 changes on screen $1b as 13
+    // boundaries and 796 changes on screen $2b as 14. Keep the invariant in
+    // work units so later screens refine the calibration without route IDs.
+    OverworldMapAndSpriteGraphicsTiming {
+        quadrant_load_nmi_slices: 8 + (workload.map32_definition_changes / 128) as u8,
+        screen_map_and_sprite_gfx_tail_nmi_slices: 4,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -733,7 +767,9 @@ enum RomWorkContinuation {
     FinishWorldMapOverlayReload,
     FinishWorldMapAmbientMap8,
     FinishOverworldAuxGraphics,
-    FinishOverworldMapQuadrants,
+    FinishOverworldMapQuadrants {
+        screen_map_and_sprite_gfx_tail_nmi_slices: u8,
+    },
     FinishOverworldScreenMapAndSpriteGraphicsTail,
     FinishOverworldSpriteReloadTail {
         post_return_hold_nmi_slices: u8,
@@ -9302,7 +9338,9 @@ impl ZeldaState {
                     self.clear_nmi_update_latch();
                     return;
                 }
-                RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldMapQuadrants) => {
+                RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldMapQuadrants {
+                    screen_map_and_sprite_gfx_tail_nmi_slices,
+                }) => {
                     // SomeTileMapChange increments the submodule before the
                     // remaining screen-map build and sprite conversion return.
                     // Publish that CPU-visible generation after this vblank,
@@ -9313,8 +9351,7 @@ impl ZeldaState {
                     self.complete_module09_load_new_map_quadrants();
                     self.pending_rom_work = PendingRomWork::schedule(
                         RomWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail,
-                        OVERWORLD_MAP_AND_SPRITE_GRAPHICS_TIMING
-                            .screen_map_and_sprite_gfx_tail_nmi_slices,
+                        screen_map_and_sprite_gfx_tail_nmi_slices,
                     );
                     return;
                 }
