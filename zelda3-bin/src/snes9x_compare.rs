@@ -5,7 +5,6 @@ use crate::*;
 
 use std::env;
 use std::error::Error;
-use std::ffi::OsString;
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -35,6 +34,7 @@ pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
 #[derive(Debug, Serialize)]
 struct DisplayOracleReceipt {
     frame: u32,
+    stage: &'static str,
     oracle: DisplayPpuProbe,
     rust: DisplayPpuProbe,
 }
@@ -48,6 +48,7 @@ struct DisplayPpuProbe {
     brightness_white: i32,
     cgram: Vec<i32>,
     fixed_color: [i32; 3],
+    display_control: [i32; 6],
     bg_scroll: [i32; 8],
     mode7: [i32; 8],
     mode7_scanlines: Vec<[i32; 8]>,
@@ -63,6 +64,9 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
         brightness_white: oracle.debug_ppu_value(8, 0)?,
         cgram: (0..256).map(|i| oracle.debug_ppu_value(2, i).unwrap_or(-1)).collect(),
         fixed_color: std::array::from_fn(|i| oracle.debug_ppu_value(4, i as i32).unwrap_or(-1)),
+        display_control: std::array::from_fn(|i| {
+            oracle.debug_ppu_value(16, i as i32).unwrap_or(-1)
+        }),
         bg_scroll: std::array::from_fn(|i| {
             oracle.debug_ppu_value(14, i as i32).unwrap_or(-1)
         }),
@@ -88,6 +92,22 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
             i32::from(snapshot.ppu.fixed_color_g),
             i32::from(snapshot.ppu.fixed_color_b),
         ],
+        display_control: [
+            i32::from(snapshot.ppu.screen_enabled[0]),
+            i32::from(snapshot.ppu.screen_enabled[1]),
+            i32::from(snapshot.ppu.screen_windowed[0]),
+            i32::from(snapshot.ppu.screen_windowed[1]),
+            i32::from(
+                u8::from(snapshot.ppu.add_subscreen) << 1
+                    | snapshot.ppu.prevent_math_mode << 4
+                    | snapshot.ppu.clip_mode << 6,
+            ),
+            i32::from(
+                snapshot.ppu.math_enabled
+                    | u8::from(snapshot.ppu.half_color) << 6
+                    | u8::from(snapshot.ppu.subtract_color) << 7,
+            ),
+        ],
         bg_scroll: std::array::from_fn(|i| {
             let layer = &snapshot.ppu.bg_layer[i / 2];
             i32::from(if i % 2 == 0 {
@@ -100,6 +120,33 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
         mode7_scanlines: scanlines.iter().map(|line| line.7.map(i32::from)).collect(),
         }
     })
+}
+
+fn write_display_oracle_receipt(
+    writer: &mut BufWriter<fs::File>,
+    frame: u32,
+    stage: &'static str,
+    oracle: &LibretroCore,
+    game: &mut ZeldaState,
+) {
+    let Some(oracle_ppu) = capture_oracle_ppu_probe(oracle) else {
+        eprintln!("display-oracle capture requires an instrumented Snes9x core");
+        process::exit(2);
+    };
+    let receipt = DisplayOracleReceipt {
+        frame,
+        stage,
+        oracle: oracle_ppu,
+        rust: capture_rust_ppu_probe(game),
+    };
+    serde_json::to_writer(&mut *writer, &receipt).unwrap_or_else(|error| {
+        eprintln!("failed to write display-oracle receipt: {error}");
+        process::exit(1);
+    });
+    writeln!(writer).unwrap_or_else(|error| {
+        eprintln!("failed to terminate display-oracle receipt: {error}");
+        process::exit(1);
+    });
 }
 
 /// The ROM-visible publication flags that delimit an emulated frame.
@@ -960,13 +1007,20 @@ pub(crate) fn run_compare_libretro_oracle(
             process::exit(1);
         }))
     });
-    let display_oracle_frames =
+    let capture_all_display_oracle =
+        env::var_os("ZELDA3_CAPTURE_DISPLAY_ORACLE").is_some();
+    let display_oracle_after_frames =
         debug_frame_selection_from_env("ZELDA3_CAPTURE_DISPLAY_ORACLE_FRAMES", None);
-    let mut display_oracle_receipts = env::var_os("ZELDA3_CAPTURE_DISPLAY_ORACLE")
-        .or_else(|| (!display_oracle_frames.is_empty()).then_some(OsString::new()))
-        .map(|_| {
+    let display_oracle_before_frames =
+        debug_frame_selection_from_env("ZELDA3_CAPTURE_DISPLAY_ORACLE_BEFORE_FRAMES", None);
+    let mut display_oracle_receipts = (capture_all_display_oracle
+        || !display_oracle_after_frames.is_empty()
+        || !display_oracle_before_frames.is_empty())
+        .then(|| {
             let dir = session_dir.as_deref().unwrap_or_else(|| {
-                eprintln!("ZELDA3_CAPTURE_DISPLAY_ORACLE[_FRAMES] requires --session-dir");
+                eprintln!(
+                    "ZELDA3_CAPTURE_DISPLAY_ORACLE[_BEFORE_FRAMES|_FRAMES] requires --session-dir"
+                );
                 process::exit(2);
             });
             BufWriter::new(fs::File::create(dir.join("display_oracle.jsonl")).unwrap_or_else(
@@ -1039,6 +1093,12 @@ pub(crate) fn run_compare_libretro_oracle(
     for frame_index in start_frame..frames {
         let requested_input = input_script.input_for_frame(frame_index);
         let compare_this_frame = frame_index >= effective_compare_from_frame;
+        if let Some(writer) = display_oracle_receipts
+            .as_mut()
+            .filter(|_| display_oracle_before_frames.contains(&frame_index))
+        {
+            write_display_oracle_receipt(writer, frame_index, "before", &oracle, &mut game);
+        }
         if stage_timing {
             stage_mark = Instant::now();
         }
@@ -1145,27 +1205,11 @@ pub(crate) fn run_compare_libretro_oracle(
         if let Some(writer) = display_oracle_receipts
             .as_mut()
             .filter(|_| {
-                display_oracle_frames.is_empty()
-                    || display_oracle_frames.contains(&frame_index)
+                capture_all_display_oracle
+                    || display_oracle_after_frames.contains(&frame_index)
             })
         {
-            let Some(oracle_ppu) = capture_oracle_ppu_probe(&oracle) else {
-                eprintln!("ZELDA3_CAPTURE_DISPLAY_ORACLE requires an instrumented Snes9x core");
-                process::exit(2);
-            };
-            let receipt = DisplayOracleReceipt {
-                frame: frame_index,
-                oracle: oracle_ppu,
-                rust: capture_rust_ppu_probe(&mut game),
-            };
-            serde_json::to_writer(&mut *writer, &receipt).unwrap_or_else(|error| {
-                eprintln!("failed to write display-oracle receipt: {error}");
-                process::exit(1);
-            });
-            writeln!(writer).unwrap_or_else(|error| {
-                eprintln!("failed to terminate display-oracle receipt: {error}");
-                process::exit(1);
-            });
+            write_display_oracle_receipt(writer, frame_index, "after", &oracle, &mut game);
         }
         // Libretro frame numbering starts at one; keep this artifact aligned
         // with `scripts/snes9x_boot_contract.py` rather than the CLI's
