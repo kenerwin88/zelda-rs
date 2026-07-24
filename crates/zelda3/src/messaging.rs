@@ -3730,22 +3730,19 @@ impl ZeldaState {
         }
     }
 
-    /// Rebuild the frozen scroll scanout image from the live VWF WRAM buffer
-    /// (7F:0000) — the exact bytes the ROM's vblank DMAs to VRAM 0x7c00.
-    pub(crate) fn refresh_dialogue_scroll_frozen_text_from_buffer(&mut self) {
+    /// Rebuild the frozen scroll generation from the live VWF WRAM buffer and
+    /// the semantic glyph placements that describe those same pixels.
+    pub(crate) fn refresh_dialogue_scroll_frozen_scanout(&mut self) {
         let buf = &self.ram[0x10000..0x10000 + 0x7e0];
-        self.dialogue_scroll_frozen_text = Some(
-            (0..0x3f0)
-                .map(|i| u16::from(buf[i * 2]) | (u16::from(buf[i * 2 + 1]) << 8))
-                .collect(),
-        );
         if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
-            let wram_sum: u64 = buf.iter().map(|&b| u64::from(b)).sum();
+            let wram_sum = buf.iter().map(|&byte| u64::from(byte)).sum::<u64>();
             eprintln!(
                 "scroll_freeze host={} frozen_buf_sum={wram_sum}",
                 self.frame_ctr_dbg,
             );
         }
+        self.dialogue_scroll_frozen_scanout =
+            Some(self.dialogue_text_scanout_from_render_buffer());
     }
 
     pub(super) fn RenderText_Draw_Scroll(&mut self) -> bool {
@@ -3788,7 +3785,7 @@ impl ZeldaState {
         // checksums — so the frozen image is the pre-pass buffer content,
         // not our VRAM copy (which still holds the previous iteration's
         // upload because no request fired during the continuation slices).
-        self.refresh_dialogue_scroll_frozen_text_from_buffer();
+        self.refresh_dialogue_scroll_frozen_scanout();
         if self.render_text_scroll_pixels(2) {
             return true;
         }

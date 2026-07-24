@@ -2161,6 +2161,15 @@ impl AssetPack {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct DialogueTextScanout {
+    vram: Vec<u16>,
+    glyph_runs: Vec<Bg3VwfGlyphRun>,
+    glyph_run_dialogue_offsets: Vec<u16>,
+    dialogue_msg_read_pos: u16,
+    dialogue_message_id: u16,
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ZeldaState {
     pub ram: Vec<u8>,
@@ -2221,14 +2230,12 @@ pub struct ZeldaState {
     published_dialogue_msg_read_pos: u16,
     #[serde(skip)]
     published_dialogue_message_id: u16,
-    /// BG3 text tile area (VRAM 0x7c00..0x7ff0) as of the scroll call frame's
-    /// scanout. The ROM's NMI only re-uploads the VWF buffer on main-loop
-    /// iteration frames (the upload request comes from the message pump), so
-    /// the displayed text stays frozen at the iteration-start state while the
-    /// pixel-copy slices are in flight (instrumented-core trace: UPLOAD lines
-    /// only on tick frames).
-    #[serde(default)]
-    pub(crate) dialogue_scroll_frozen_text: Option<Vec<u16>>,
+    /// Coherent BG3 text VRAM and semantic glyph metadata as of the scroll call
+    /// frame's scanout. The ROM's NMI only re-uploads the VWF buffer on
+    /// main-loop iteration frames, so both representations stay frozen at the
+    /// iteration-start generation while pixel-copy slices are in flight.
+    #[serde(default, alias = "dialogue_scroll_frozen_text")]
+    pub(crate) dialogue_scroll_frozen_scanout: Option<DialogueTextScanout>,
     /// Set while the current frame performed a long-scroll pixel-copy slice
     /// (the two-pixel start or three-pixel continuation, not the return-only
     /// suffix or cheap completing call). Latched into
@@ -2240,15 +2247,13 @@ pub struct ZeldaState {
     /// (one further than the ordinary dialogue snapshot retention).
     #[serde(default)]
     pub(crate) dialogue_scroll_stale_scanout: bool,
-    /// Dedicated one-frame override presenting the freshly-completed scroll
-    /// buffer on the group-completion frame (see the lag handler). Separate
+    /// Dedicated one-frame override presenting the freshly completed coherent
+    /// scanout on the group-completion frame (see the lag handler). Separate
     /// from the frozen state to avoid cascading into adjacent scroll groups.
     #[serde(skip)]
-    pub(crate) dialogue_scroll_completion_text: Option<Vec<u16>>,
+    pub(crate) dialogue_scroll_completion_scanout: Option<DialogueTextScanout>,
     #[serde(skip)]
-    pub(crate) dialogue_scroll_completion_pending: Option<Vec<u16>>,
-    #[serde(skip)]
-    pub(crate) dialogue_scroll_completion_staged: Option<Vec<u16>>,
+    pub(crate) dialogue_scroll_completion_staged: Option<DialogueTextScanout>,
     /// One scanout of pre-transition BG scroll provenance. The ROM is still
     /// inside the long sprite reload while Rust's atomic simulation has
     /// already authored the next NMI scroll copies.
@@ -7214,9 +7219,8 @@ impl ZeldaState {
             published_bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
             published_dialogue_msg_read_pos: 0,
             published_dialogue_message_id: 0,
-            dialogue_scroll_frozen_text: None,
-            dialogue_scroll_completion_text: None,
-            dialogue_scroll_completion_pending: None,
+            dialogue_scroll_frozen_scanout: None,
+            dialogue_scroll_completion_scanout: None,
             dialogue_scroll_completion_staged: None,
             overworld_transition_scroll_hold: None,
             overworld_transition_scroll_hold_pending: None,
@@ -7624,6 +7628,23 @@ impl ZeldaState {
             }));
     }
 
+    pub(crate) fn dialogue_text_scanout_from_render_buffer(&self) -> DialogueTextScanout {
+        let buffer = self.background_character_buffer();
+        DialogueTextScanout {
+            vram: (0..0x3f0)
+                .map(|index| read_word_from_slice(buffer, index * 2))
+                .collect(),
+            glyph_runs: self.bg3_vwf_glyph_runs.clone(),
+            glyph_run_dialogue_offsets: self.bg3_vwf_glyph_run_dialogue_offsets.clone(),
+            dialogue_msg_read_pos: self
+                .game_state
+                .messaging
+                .runtime
+                .dialogue_msg_read_pos(),
+            dialogue_message_id: self.bg3_vwf_glyph_run_dialogue_message_id,
+        }
+    }
+
     pub(super) fn capture_display_snapshot(&mut self) {
         self.ppu.refresh_brightness_cache();
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
@@ -7632,15 +7653,13 @@ impl ZeldaState {
         self.dialogue_scroll_stale_scanout =
             std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
         if !self.dialogue_scroll_stale_scanout {
-            self.dialogue_scroll_frozen_text = None;
+            self.dialogue_scroll_frozen_scanout = None;
         }
         // The completion override displays one boundary after the final copy
         // slice: internally the scroll finishes on frame N, but Snes9x scans
-        // the finished text out on N+1. Stage the pending buffer for a frame,
-        // then present it.
-        self.dialogue_scroll_completion_text = self.dialogue_scroll_completion_staged.take();
-        self.dialogue_scroll_completion_staged =
-            std::mem::take(&mut self.dialogue_scroll_completion_pending);
+        // the finished text out on N+1.
+        self.dialogue_scroll_completion_scanout =
+            self.dialogue_scroll_completion_staged.take();
         self.overworld_transition_scroll_hold =
             self.overworld_transition_scroll_hold_staged.take();
         self.overworld_transition_scroll_hold_staged =
@@ -8001,12 +8020,12 @@ impl ZeldaState {
         // overrides both the retained and the recomposed paths.
         // The completion override (freshly-scrolled buffer, group-completion
         // frame) takes precedence over the frozen (group-start) generation.
-        let previous_dialogue_text_vram = self
-            .dialogue_scroll_completion_text
+        let previous_dialogue_scanout = self
+            .dialogue_scroll_completion_scanout
             .clone()
             .or_else(|| {
                 self.dialogue_scroll_stale_scanout
-                    .then(|| self.dialogue_scroll_frozen_text.clone())
+                    .then(|| self.dialogue_scroll_frozen_scanout.clone())
                     .flatten()
             });
         if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
@@ -8015,7 +8034,7 @@ impl ZeldaState {
                 self.frame_ctr_dbg,
                 self.dialogue_scroll_lag_frames,
                 self.dialogue_scroll_stale_scanout,
-                self.dialogue_scroll_frozen_text.is_some(),
+                self.dialogue_scroll_frozen_scanout.is_some(),
                 retain_previous_nmi_display_memory,
             );
         }
@@ -8060,8 +8079,8 @@ impl ZeldaState {
                 shown.v_scroll = live.v_scroll;
             }
         }
-        if let Some(previous_dialogue_text_vram) = previous_dialogue_text_vram {
-            self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_text_vram);
+        if let Some(previous_dialogue_scanout) = previous_dialogue_scanout.as_ref() {
+            self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
         }
         if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some()
             && (self.dialogue_scroll_stale_scanout || self.dialogue_scroll_lag_frames > 0)
@@ -8157,27 +8176,51 @@ impl ZeldaState {
             }
         }
         // Semantic dialogue data is another representation of the same BG3
-        // generation as the snapshot's VRAM. Present the two atomically:
-        // renderer-local frame queues cannot model both message-open and
-        // message-close boundaries without guessing which edge to delay.
+        // generation as the presented VRAM. A dialogue scroll override owns
+        // both representations. Otherwise the retained-memory path uses the
+        // pristine pre-NMI snapshot, while recomposed memory uses the live
+        // post-NMI semantic publication still held on `self`.
+        let presented_dialogue = if let Some(scanout) = previous_dialogue_scanout.as_ref() {
+            (
+                scanout.glyph_runs.clone(),
+                scanout.glyph_run_dialogue_offsets.clone(),
+                scanout.dialogue_msg_read_pos,
+                scanout.dialogue_message_id,
+            )
+        } else if retain_previous_nmi_display_memory {
+            (
+                pristine_snapshot.published_bg3_vwf_glyph_runs.clone(),
+                pristine_snapshot
+                    .published_bg3_vwf_glyph_run_dialogue_offsets
+                    .clone(),
+                pristine_snapshot.published_dialogue_msg_read_pos,
+                pristine_snapshot.published_dialogue_message_id,
+            )
+        } else {
+            (
+                self.published_bg3_vwf_glyph_runs.clone(),
+                self.published_bg3_vwf_glyph_run_dialogue_offsets
+                    .clone(),
+                self.published_dialogue_msg_read_pos,
+                self.published_dialogue_message_id,
+            )
+        };
         let saved_published_dialogue = (
             std::mem::replace(
                 &mut self.published_bg3_vwf_glyph_runs,
-                display.published_bg3_vwf_glyph_runs.clone(),
+                presented_dialogue.0,
             ),
             std::mem::replace(
                 &mut self.published_bg3_vwf_glyph_run_dialogue_offsets,
-                display
-                    .published_bg3_vwf_glyph_run_dialogue_offsets
-                    .clone(),
+                presented_dialogue.1,
             ),
             std::mem::replace(
                 &mut self.published_dialogue_msg_read_pos,
-                display.published_dialogue_msg_read_pos,
+                presented_dialogue.2,
             ),
             std::mem::replace(
                 &mut self.published_dialogue_message_id,
-                display.published_dialogue_message_id,
+                presented_dialogue.3,
             ),
         );
         let captured = capture(self);
@@ -8683,13 +8726,10 @@ impl ZeldaState {
             self.clear_nmi_update_latch();
             // The completed text becomes visible at the next display
             // publication. Put it directly in the staged slot so the next
-            // capture promotes it once after this text-buffer hold.
-            let buf = &self.ram[0x10000..0x10000 + 0x7e0];
-            self.dialogue_scroll_completion_staged = Some(
-                (0..0x3f0)
-                    .map(|i| u16::from(buf[i * 2]) | (u16::from(buf[i * 2 + 1]) << 8))
-                    .collect(),
-            );
+            // capture promotes it once after this text-buffer hold. Keep the
+            // semantic glyph positions with the exact buffer they describe.
+            self.dialogue_scroll_completion_staged =
+                Some(self.dialogue_text_scanout_from_render_buffer());
             return;
         }
         if self.file_select_checkerboard_suffix_pending {

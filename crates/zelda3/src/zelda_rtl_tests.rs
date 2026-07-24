@@ -4426,6 +4426,136 @@ fn renderer_publication_exposes_consumed_dialogue_clear_without_advancing_menu_s
 }
 
 #[test]
+fn retained_display_memory_keeps_dialogue_metadata_with_its_vram_generation() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    let pre_nmi_run = Bg3VwfGlyphRun {
+        glyph_code: 0x41,
+        origin_tile_number: 0x180,
+        x: 4,
+        y: -5,
+        width: 3,
+    };
+    state.ppu.vram[0x7c00] = 0x1111;
+    state.published_bg3_vwf_glyph_runs = vec![pre_nmi_run];
+    state.published_bg3_vwf_glyph_run_dialogue_offsets = vec![0x2d];
+    state.published_dialogue_msg_read_pos = 0x2d;
+    state.published_dialogue_message_id = 32;
+    state.capture_display_snapshot();
+
+    let post_nmi_run = Bg3VwfGlyphRun {
+        y: 0,
+        ..pre_nmi_run
+    };
+    state.ppu.vram[0x7c00] = 0x2222;
+    state.published_bg3_vwf_glyph_runs = vec![post_nmi_run];
+    state.published_bg3_vwf_glyph_run_dialogue_offsets = vec![0x2e];
+    state.published_dialogue_msg_read_pos = 0x2e;
+
+    let captured = state.with_display_snapshot(|display| {
+        (
+            display.ppu.vram[0x7c00],
+            display.published_bg3_vwf_glyph_runs().to_vec(),
+            display
+                .published_bg3_vwf_glyph_run_dialogue_offsets()
+                .to_vec(),
+            display.published_dialogue_msg_read_pos,
+        )
+    });
+
+    assert_eq!(captured, (0x1111, vec![pre_nmi_run], vec![0x2d], 0x2d));
+    assert_eq!(state.ppu.vram[0x7c00], 0x2222);
+    assert_eq!(state.published_bg3_vwf_glyph_runs, vec![post_nmi_run]);
+}
+
+#[test]
+fn recomposed_display_memory_publishes_post_nmi_dialogue_metadata_with_vram() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(6);
+    state.set_submodule(0);
+    let pre_nmi_run = Bg3VwfGlyphRun {
+        glyph_code: 0x41,
+        origin_tile_number: 0x180,
+        x: 4,
+        y: -5,
+        width: 3,
+    };
+    state.ppu.vram[0x7c00] = 0x1111;
+    state.published_bg3_vwf_glyph_runs = vec![pre_nmi_run];
+    state.published_bg3_vwf_glyph_run_dialogue_offsets = vec![0x2d];
+    state.published_dialogue_msg_read_pos = 0x2d;
+    state.published_dialogue_message_id = 32;
+    state.capture_display_snapshot();
+
+    let post_nmi_run = Bg3VwfGlyphRun {
+        y: 0,
+        ..pre_nmi_run
+    };
+    state.ppu.vram[0x7c00] = 0x2222;
+    state.published_bg3_vwf_glyph_runs = vec![post_nmi_run];
+    state.published_bg3_vwf_glyph_run_dialogue_offsets = vec![0x2e];
+    state.published_dialogue_msg_read_pos = 0x2e;
+
+    let captured = state.with_display_snapshot(|display| {
+        (
+            display.ppu.vram[0x7c00],
+            display.published_bg3_vwf_glyph_runs().to_vec(),
+            display
+                .published_bg3_vwf_glyph_run_dialogue_offsets()
+                .to_vec(),
+            display.published_dialogue_msg_read_pos,
+        )
+    });
+
+    assert_eq!(
+        captured,
+        (0x2222, vec![post_nmi_run], vec![0x2e], 0x2e)
+    );
+    assert_eq!(state.ppu.vram[0x7c00], 0x2222);
+    assert_eq!(state.published_bg3_vwf_glyph_runs, vec![post_nmi_run]);
+}
+
+#[test]
+fn dialogue_scroll_override_presents_one_coherent_text_generation() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.capture_display_snapshot();
+    let scroll_run = Bg3VwfGlyphRun {
+        glyph_code: 0x41,
+        origin_tile_number: 0x180,
+        x: 4,
+        y: -5,
+        width: 3,
+    };
+    state.dialogue_scroll_completion_scanout = Some(DialogueTextScanout {
+        vram: vec![0x3333; 0x3f0],
+        glyph_runs: vec![scroll_run],
+        glyph_run_dialogue_offsets: vec![0x2d],
+        dialogue_msg_read_pos: 0x2d,
+        dialogue_message_id: 32,
+    });
+
+    let captured = state.with_display_snapshot(|display| {
+        (
+            display.ppu.vram[0x7c00],
+            display.published_bg3_vwf_glyph_runs().to_vec(),
+            display
+                .published_bg3_vwf_glyph_run_dialogue_offsets()
+                .to_vec(),
+            display.published_dialogue_msg_read_pos,
+            display.published_dialogue_message_id,
+        )
+    });
+
+    assert_eq!(
+        captured,
+        (0x3333, vec![scroll_run], vec![0x2d], 0x2d, 32)
+    );
+}
+
+#[test]
 fn nmi_force_blank_gates_the_pre_nmi_display_snapshot() {
     let mut state = ZeldaState::new();
     state.ppu.forced_blank = false;
