@@ -220,6 +220,17 @@ impl ZeldaState {
             && self.game_state.display.nmi_thread_active)
             || (main_module == 0x0e
                 && (self.dialogue_fast_forward_hold_active || self.dialogue_scroll_stale_scanout));
+        if trace_nmi {
+            eprintln!(
+                "nmi_register_publication host={} main={main_module:02x} held={thread_holds_registers} thread={} dialogue_fast={} dialogue_scroll={} ppu_bg1v={:04x} mirror_bg1v={:04x}",
+                self.frame_ctr_dbg,
+                self.game_state.display.nmi_thread_active,
+                self.dialogue_fast_forward_hold_active,
+                self.dialogue_scroll_stale_scanout,
+                self.ppu.bg_layer[0].v_scroll,
+                self.game_state.display.ppu_scroll_copy.bg1_v_copy(),
+            );
+        }
         if !thread_holds_registers {
             self.write_ppu_registers();
         }

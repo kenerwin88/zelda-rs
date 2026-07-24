@@ -5,6 +5,7 @@ use crate::*;
 
 use std::env;
 use std::error::Error;
+use std::ffi::OsString;
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -959,16 +960,22 @@ pub(crate) fn run_compare_libretro_oracle(
             process::exit(1);
         }))
     });
-    let mut display_oracle_receipts = env::var_os("ZELDA3_CAPTURE_DISPLAY_ORACLE").map(|_| {
-        let dir = session_dir.as_deref().unwrap_or_else(|| {
-            eprintln!("ZELDA3_CAPTURE_DISPLAY_ORACLE requires --session-dir");
-            process::exit(2);
+    let display_oracle_frames =
+        debug_frame_selection_from_env("ZELDA3_CAPTURE_DISPLAY_ORACLE_FRAMES", None);
+    let mut display_oracle_receipts = env::var_os("ZELDA3_CAPTURE_DISPLAY_ORACLE")
+        .or_else(|| (!display_oracle_frames.is_empty()).then_some(OsString::new()))
+        .map(|_| {
+            let dir = session_dir.as_deref().unwrap_or_else(|| {
+                eprintln!("ZELDA3_CAPTURE_DISPLAY_ORACLE[_FRAMES] requires --session-dir");
+                process::exit(2);
+            });
+            BufWriter::new(fs::File::create(dir.join("display_oracle.jsonl")).unwrap_or_else(
+                |error| {
+                    eprintln!("failed to create display-oracle receipt: {error}");
+                    process::exit(1);
+                },
+            ))
         });
-        BufWriter::new(fs::File::create(dir.join("display_oracle.jsonl")).unwrap_or_else(|error| {
-            eprintln!("failed to create display-oracle receipt: {error}");
-            process::exit(1);
-        }))
-    });
     let trace_poly_sched = std::env::var_os("TRACE_POLY_SCHED").is_some();
     let trace_shield_dma = std::env::var_os("ZELDA3_DEBUG_SHIELD_DMA").is_some();
     let debug_vram_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_VRAM_FRAMES", None);
@@ -1135,7 +1142,13 @@ pub(crate) fn run_compare_libretro_oracle(
                 process::exit(1);
             });
         let mut capture = oracle.run_frame_with_input(input);
-        if let Some(writer) = display_oracle_receipts.as_mut() {
+        if let Some(writer) = display_oracle_receipts
+            .as_mut()
+            .filter(|_| {
+                display_oracle_frames.is_empty()
+                    || display_oracle_frames.contains(&frame_index)
+            })
+        {
             let Some(oracle_ppu) = capture_oracle_ppu_probe(&oracle) else {
                 eprintln!("ZELDA3_CAPTURE_DISPLAY_ORACLE requires an instrumented Snes9x core");
                 process::exit(2);
