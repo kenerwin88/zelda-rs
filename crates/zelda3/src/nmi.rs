@@ -216,9 +216,10 @@ impl ZeldaState {
         // asserted through every host-frame slice. Preserve the already
         // published scroll and color registers until that thread returns.
         let main_module = self.game_state.frame.main_module;
-        let thread_holds_registers =
-            (main_module == 0x14 && self.game_state.display.nmi_thread_active)
-                || (main_module == 0x0e && self.dialogue_fast_forward_hold_active);
+        let thread_holds_registers = (main_module == 0x14
+            && self.game_state.display.nmi_thread_active)
+            || (main_module == 0x0e
+                && (self.dialogue_fast_forward_hold_active || self.dialogue_scroll_stale_scanout));
         if !thread_holds_registers {
             self.write_ppu_registers();
         }

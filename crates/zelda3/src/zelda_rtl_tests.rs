@@ -238,6 +238,28 @@ fn dialogue_snapshot_exposes_only_nmi_published_vwf_metadata() {
 }
 
 #[test]
+fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state
+        .messaging_text_mut()
+        .load_decoded_dialogue(&[TEXT_COMMAND_START_US + 12]);
+    state.messaging_state_mut().set_dialogue_scroll_speed(4);
+
+    state.RenderText_Draw_MessageCharacters();
+    assert_eq!(state.dialogue_scroll_lag_frames, 2);
+    assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
+    assert_eq!(state.game_state.display.core_update_disable_flag, 0);
+
+    state.zelda_run_game_loop();
+    assert_eq!(state.dialogue_scroll_lag_frames, 1);
+    assert_eq!(state.game_state.display.pending_nmi_subroutine, 2);
+    assert_eq!(state.game_state.display.core_update_disable_flag, 2);
+    assert_eq!(state.game_state.messaging.runtime.dialogue_msg_read_pos(), 0);
+}
+
+#[test]
 fn dialogue_ir_for_decoded_bytes_uses_runtime_dialogue_flags() {
     let state = ZeldaState::new();
 

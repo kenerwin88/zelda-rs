@@ -2191,10 +2191,10 @@ pub struct ZeldaState {
     bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
     #[serde(skip)]
     bg3_vwf_glyph_run_dialogue_message_id: u16,
-    /// Remaining lag frames of an in-flight message-line scroll call. The
-    /// ROM's `scroll_speed+1`-pixel scroll spans three hardware frames
-    /// (2,2,1 pixel passes; the main loop and frame counter run once); while
-    /// nonzero, `zelda_run_game_loop` performs only the pending pixel passes.
+    /// Continuation phase of an in-flight message-line scroll call. A value of
+    /// 2 resumes the remaining three pixel copies; 1 resumes the return-only
+    /// caller suffix. The main loop and frame counter run only on the initial
+    /// two-pixel slice.
     #[serde(default)]
     pub(crate) dialogue_scroll_lag_frames: u8,
     /// Set by `RenderText_Draw_MessageCharacters` when this frame's fast-forward
@@ -2224,15 +2224,15 @@ pub struct ZeldaState {
     /// BG3 text tile area (VRAM 0x7c00..0x7ff0) as of the scroll call frame's
     /// scanout. The ROM's NMI only re-uploads the VWF buffer on main-loop
     /// iteration frames (the upload request comes from the message pump), so
-    /// the displayed text stays FROZEN at the iteration-start state through
-    /// both lag frames — the visible scroll moves in `scroll_speed+1` pixel
-    /// jumps (instrumented-core trace: UPLOAD lines only on tick frames).
+    /// the displayed text stays frozen at the iteration-start state while the
+    /// pixel-copy slices are in flight (instrumented-core trace: UPLOAD lines
+    /// only on tick frames).
     #[serde(default)]
     pub(crate) dialogue_scroll_frozen_text: Option<Vec<u16>>,
-    /// Set while the current frame performed lag-spread scroll pixel passes
-    /// (the full-group call frame and both lag frames — NOT the cheap
-    /// completing call). Latched into `dialogue_scroll_stale_scanout` at the
-    /// display boundary.
+    /// Set while the current frame performed a long-scroll pixel-copy slice
+    /// (the two-pixel start or three-pixel continuation, not the return-only
+    /// suffix or cheap completing call). Latched into
+    /// `dialogue_scroll_stale_scanout` at the display boundary.
     #[serde(skip)]
     pub(crate) dialogue_scroll_ran_this_frame: bool,
     /// The scanout for the presented frame falls while the ROM is mid-scroll:
@@ -7634,10 +7634,10 @@ impl ZeldaState {
         if !self.dialogue_scroll_stale_scanout {
             self.dialogue_scroll_frozen_text = None;
         }
-        // The completion override displays ONE frame after the group-completion
-        // (final lag) frame: internally the scroll finishes on frame N, but
-        // Snes9x scans the finished text out on N+1. Stage the pending buffer
-        // for a frame, then present it.
+        // The completion override displays one boundary after the final copy
+        // slice: internally the scroll finishes on frame N, but Snes9x scans
+        // the finished text out on N+1. Stage the pending buffer for a frame,
+        // then present it.
         self.dialogue_scroll_completion_text = self.dialogue_scroll_completion_staged.take();
         self.dialogue_scroll_completion_staged =
             std::mem::take(&mut self.dialogue_scroll_completion_pending);
@@ -8660,6 +8660,38 @@ impl ZeldaState {
         if initialized_audio_bank_this_frame {
             self.zelda_initialization_code();
         }
+        if self.rom_startup_timing() && self.dialogue_scroll_lag_frames == 1 {
+            // The scroll copy and RenderText handler returned after the prior
+            // frame's NMI. On this boundary the next NMI sees $12 still
+            // latched, so it leaves $17/$0710 pending; only afterward does the
+            // caller suffix reach Main_PrepSpritesForNmi and clear $12.
+            // This measured return-only slice is distinct from both the 2/3
+            // pixel copy slices and from a fresh module iteration.
+            self.dialogue_scroll_lag_frames = 0;
+            // The interrupted NMI cannot consume the pending dialogue upload,
+            // but it still advances the ordinary vblank-owned presentation
+            // state (animated BG tiles, Link DMA, and OAM). Capture after that
+            // NMI so the scanout combines those updates with the still-pending
+            // dialogue buffer, exactly as the hardware does.
+            // The ROM has returned from the interruptible text thread before
+            // this boundary, so NMI must also publish the current register
+            // mirrors (not retain the scroll registers from the copy slices).
+            self.dialogue_scroll_stale_scanout = false;
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            self.capture_display_snapshot();
+            self.nmi_prepare_sprites();
+            self.clear_nmi_update_latch();
+            // The completed text becomes visible at the next display
+            // publication. Put it directly in the staged slot so the next
+            // capture promotes it once after this text-buffer hold.
+            let buf = &self.ram[0x10000..0x10000 + 0x7e0];
+            self.dialogue_scroll_completion_staged = Some(
+                (0..0x3f0)
+                    .map(|i| u16::from(buf[i * 2]) | (u16::from(buf[i * 2 + 1]) << 8))
+                    .collect(),
+            );
+            return;
+        }
         if self.file_select_checkerboard_suffix_pending {
             self.complete_file_select_checkerboard_upload();
             // This continuation resumes after the prior CPU slice crossed an
@@ -9114,6 +9146,33 @@ impl ZeldaState {
             && run_what & crate::RUN_MAIN != 0
             && !self.dungeon_exit_spotlight_resume_module
         {
+            if self.dialogue_long_scroll_starts_this_frame() {
+                // Snes9x enters this host slice with NMI pending, consumes the
+                // prior RenderText publication, then starts the slow scroll
+                // copy. The copy crosses the following vblank before
+                // Main_PrepSpritesForNmi can run. Preserve that real ordering
+                // instead of coalescing both boundaries after Module0E.
+                self.finish_dialogue_character_render_call();
+                // Ordinary host frames consumed the previous handler's NMI
+                // publication at their trailing boundary. Re-open the exact
+                // pre-main boundary here before consuming that carry so this
+                // scroll starts from the ROM's $12 == 0 state.
+                self.clear_nmi_update_latch();
+                self.capture_display_snapshot();
+                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                self.replay_trace_col("before-game-loop");
+                self.replay_trace_ram_watch("before-game-loop");
+                self.zelda_run_game_loop();
+                self.replay_trace_col("after-game-loop");
+                self.replay_trace_ram_watch("after-game-loop");
+                debug_assert_eq!(self.dialogue_scroll_lag_frames, 2);
+                self.dialogue_scroll_stale_scanout =
+                    std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
+                self.assert_native_frame_state_matches_ram();
+                self.assert_native_world_location_state_matches_ram();
+                self.assert_native_display_state_matches_ram();
+                return;
+            }
             self.nmi_read_joypads(input);
             self.joypad_sampled_before_main = true;
         }
@@ -10710,32 +10769,28 @@ impl ZeldaState {
             // Lag frame of an in-flight message-line scroll: the ROM's main
             // loop is still inside the scroll copy, so nothing else runs —
             // no frame-counter tick, no OAM clear, no module routing. The
-            // vblank sees the copy 2 passes further (then the final 1).
-            let passes = if self.dialogue_scroll_lag_frames == 2 { 2 } else { 1 };
-            let is_final_lag = self.dialogue_scroll_lag_frames == 1;
-            self.dialogue_scroll_lag_frames -= 1;
+            // The measured continuation copies the remaining three pixels,
+            // then returns through the RenderText handler after this frame's
+            // NMI. Phase 1 is consumed separately by run_frame_internal as a
+            // return-only slice so its NMI stays before the game-loop suffix.
+            debug_assert_eq!(self.dialogue_scroll_lag_frames, 2);
+            let passes = 3;
+            self.dialogue_scroll_lag_frames = 1;
             self.dialogue_scroll_ran_this_frame = true;
-            self.render_text_scroll_pixels(passes);
-            if is_final_lag {
-                // The slow $0e:cfe2 text-buffer copy has now returned through
-                // RenderText_Draw_MessageCharacters and RunInterface. Only at
-                // this measured continuation boundary does the ROM execute
-                // Module0E_Interface's $00:f873 scroll-register copy suffix.
-                self.complete_module0e_interface_after_run();
-                // The scroll group completes on this frame. Snes9x scans out the
-                // finished (post-pass) text here — one frame before rust's frozen
-                // (group-start) model would jump. Capture the CURRENT scrolled
-                // buffer as a dedicated completion override, separate from the
-                // frozen state machine (mutating the frozen here cascades into
-                // neighbouring groups). Presented in place of the frozen on this
-                // frame only.
-                let buf = &self.ram[0x10000..0x10000 + 0x7e0];
-                self.dialogue_scroll_completion_pending = Some(
-                    (0..0x3f0)
-                        .map(|i| u16::from(buf[i * 2]) | (u16::from(buf[i * 2 + 1]) << 8))
-                        .collect(),
-                );
+            let command_done = self.render_text_scroll_pixels(passes);
+            // The slow $0e:cfe2 text-buffer copy has now returned through
+            // RenderText_Draw_MessageCharacters and RunInterface. The ROM
+            // advances past the scroll command only when the low nibble
+            // wrapped, then publishes $17/$0710 at $0e:c9f9/$0e:c9fc.
+            if command_done {
+                let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos();
+                self.messaging_state_mut()
+                    .set_dialogue_msg_read_pos(read_pos.wrapping_add(1));
             }
+            self.finish_dialogue_character_render_call();
+            // Only at this measured continuation boundary does the ROM
+            // execute Module0E_Interface's $00:f873 scroll-register suffix.
+            self.complete_module0e_interface_after_run();
             return;
         }
         // A held frame is one the ROM spends inside a fast-forward message
@@ -10760,6 +10815,12 @@ impl ZeldaState {
         // mid-glyph $0710 is still zero, while a completed handler sets it to 2.
         self.dialogue_fast_forward_hold_active =
             std::mem::take(&mut self.dialogue_fast_forward_hold_pending);
+        if self.dialogue_scroll_lag_frames != 0 {
+            // The long scroll copy has crossed vblank before the ROM reaches
+            // Main_PrepSpritesForNmi or clears $12. Its continuation is resumed
+            // by the dedicated scheduler in run_frame_internal.
+            return;
+        }
         if self.rom_startup_timing()
             && (self.pending_rom_work.is_pending()
                 || self.dungeon_landing_wipe_carry_pending

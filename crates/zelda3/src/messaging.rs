@@ -3266,12 +3266,15 @@ impl ZeldaState {
         // core maintenance and does not publish the unfinished text buffer.
         // The next host slice resumes only this interrupted main-thread work.
         self.dialogue_fast_forward_hold_pending = yielded_midline;
-        if !yielded_midline {
+        // A long scroll remains inside RenderText_Draw_Scroll; its dedicated
+        // pre-main scheduler owns both the preceding NMI publication and the
+        // eventual handler epilogue. Ordinary commands still finish here.
+        if !yielded_midline && self.dialogue_scroll_lag_frames == 0 {
             self.finish_dialogue_character_render_call();
         }
     }
 
-    fn finish_dialogue_character_render_call(&mut self) {
+    pub(super) fn finish_dialogue_character_render_call(&mut self) {
         self.set_pending_nmi_subroutine(2);
         self.set_core_update_disable_flag(2);
     }
@@ -3748,14 +3751,14 @@ impl ZeldaState {
     pub(super) fn RenderText_Draw_Scroll(&mut self) -> bool {
         // ROM ground truth (instrumented Snes9x oracle, intro telepathy,
         // scroll speed 4): one scroll call drains `scroll_speed + 1` pixel
-        // passes, but the buffer copy is slow enough that the call spans
-        // THREE hardware frames — the vblank interrupts it after 2, then 4,
-        // then 5 passes (WRAM 0x1cdf advances 2,2,1 per frame; frame counter
-        // 0x1a ticks once per call, PC 0x0ed088/0x008053). The trailing
-        // pixel that completes the 16-pixel line is a cheap one-frame call.
-        // Model: do 2 passes now and hand the remaining passes to two LAG
-        // frames (consumed in `zelda_run_game_loop`, which skips the main
-        // loop — including the 0x1a tick — on those frames). Not modeling
+        // passes, but the buffer copy is slow enough that the caller spans
+        // THREE hardware frames. The first slice copies 2 pixels; the next
+        // copies the remaining 3 and reaches $0e:c9f9/$0e:c9fc after that
+        // frame's NMI; the third is the return suffix that publishes sprites
+        // and clears the software NMI latch (WRAM 0x1cdf advances 2,3,0).
+        // The trailing pixel that completes the 16-pixel line is a cheap
+        // one-frame call. Model the two continuations in
+        // `zelda_run_game_loop`/`run_frame_internal`. Not modeling
         // the lag left rust's frame counter 6 frames ahead per line scroll,
         // phase-shifting every `& 3`-gated effect after the message (the
         // post-dialogue COLDATA fade diverged for 350 frames).
@@ -3784,14 +3787,44 @@ impl ZeldaState {
         // (7F:0000) — verified by matching the instrumented core's per-upload
         // checksums — so the frozen image is the pre-pass buffer content,
         // not our VRAM copy (which still holds the previous iteration's
-        // upload because no request fired during the lag frames).
+        // upload because no request fired during the continuation slices).
         self.refresh_dialogue_scroll_frozen_text_from_buffer();
         if self.render_text_scroll_pixels(2) {
             return true;
         }
+        // Phase 2 is the remaining three copy passes. Phase 1 is the
+        // post-vblank caller suffix; it performs no further pixel copies.
         self.dialogue_scroll_lag_frames = 2;
         self.dialogue_scroll_ran_this_frame = true;
         false
+    }
+
+    pub(super) fn dialogue_long_scroll_starts_this_frame(&self) -> bool {
+        if self.dialogue_scroll_lag_frames != 0
+            || self.game_state.frame.main_module != 0x0e
+            || self.game_state.frame.submodule != 2
+            || self.game_state.messaging.runtime.text_render_state() != 3
+            || self.game_state.messaging.runtime.dialogue_scroll_speed() != 4
+        {
+            return false;
+        }
+        let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos() as usize;
+        let decoded = crate::dialogue_ir::decode_dialogue_byte(
+            0,
+            self.game_state.messaging.decoded_text.byte(read_pos),
+            self.game_state.messaging.decoded_text.next_byte(read_pos),
+        );
+        if decoded.command != TEXT_CMD_SCROLL {
+            return false;
+        }
+        let nibble = u16::from(
+            self.game_state
+                .messaging
+                .dialogue_source_offset
+                .bank_offset_low_nibble()
+                & 0x0f,
+        );
+        16u16.saturating_sub(nibble) >= 5
     }
 
     pub(super) fn render_text_scroll_pixels(&mut self, pixels: u16) -> bool {
