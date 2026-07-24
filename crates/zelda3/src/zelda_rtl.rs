@@ -2260,6 +2260,9 @@ pub struct ZeldaState {
     overworld_transition_scroll_hold_staged: Option<[u16; 8]>,
     pub dma: DmaState,
     pub frame_ctr_dbg: u32,
+    /// Legacy serialized host-input history. Retained for z3state compatibility;
+    /// Snes9x libretro resolves opposing directions from its fixed report order,
+    /// not from the preceding frame.
     #[serde(default)]
     previous_host_controller_input: u16,
     rom: Vec<u8>,
@@ -10141,27 +10144,22 @@ impl ZeldaState {
         0
     }
 
-    /// Resolve impossible opposing directions at the host-controller boundary.
+    /// Match Snes9x libretro's opposing-direction handling.
     ///
-    /// Keyboard transitions can briefly report both directions on one axis. If
-    /// exactly one direction is newly pressed, it wins; a genuinely simultaneous
-    /// pair is neutral. The remainder of the SNES controller word is unchanged.
-    fn sanitize_frame_inputs(inputs: i32, previous_input: u16, previous_high: u8) -> u16 {
+    /// The core reports buttons in libretro ID order: Up, Down, Left, Right.
+    /// With `Settings.UpAndDown` disabled, each pressed direction first clears
+    /// both directions on its axis and then sets itself. Consequently Down wins
+    /// Up+Down and Right wins Left+Right. Preserve every non-direction button.
+    fn sanitize_frame_inputs(inputs: i32) -> u16 {
         let inputs = inputs as u16;
-        let mut directions = (inputs as u8).reverse_bits();
-        let previous_directions = (previous_input as u8).reverse_bits();
-        for pair in [0x0c, 0x03] {
-            if directions & pair == pair {
-                let newly_pressed = directions & !previous_directions & pair;
-                directions &= !pair;
-                if newly_pressed.count_ones() == 1 {
-                    directions |= newly_pressed;
-                } else if (previous_high & pair).count_ones() == 1 {
-                    directions |= previous_high & pair;
-                }
-            }
+        let mut directions = inputs & 0x00f0;
+        if directions & 0x0030 == 0x0030 {
+            directions &= !0x0010;
         }
-        (inputs & !0x00f0) | u16::from(directions.reverse_bits() & 0xf0)
+        if directions & 0x00c0 == 0x00c0 {
+            directions &= !0x0040;
+        }
+        (inputs & !0x00f0) | directions
     }
 
     pub fn state_recorder_read_next_replay_state_with_input_override(
@@ -10184,11 +10182,9 @@ impl ZeldaState {
     ) -> bool {
         let raw_inputs = inputs as u16;
         let raw_replay_input_override = replay_input_override;
-        let previous_input = self.previous_host_controller_input;
-        let previous_high = self.game_state.player.follower_link.joypad1h_last();
-        let inputs = Self::sanitize_frame_inputs(inputs, previous_input, previous_high);
+        let inputs = Self::sanitize_frame_inputs(inputs);
         let replay_input_override = replay_input_override
-            .map(|input| Self::sanitize_frame_inputs(input as i32, previous_input, previous_high));
+            .map(|input| Self::sanitize_frame_inputs(input as i32));
         self.frame_ctr_dbg = self.frame_ctr_dbg.wrapping_add(1);
         self.replay_trace_ram_watch("frame-entry");
         let mut state_recorder = std::mem::take(&mut self.state_recorder);

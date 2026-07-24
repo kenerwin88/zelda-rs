@@ -4601,26 +4601,13 @@ fn name_file_x_scroll_both_horizontal_bits_match_c_rom_table() {
 }
 
 #[test]
-fn frame_input_opposites_prefer_the_new_direction_and_preserve_buttons() {
-    assert_eq!(
-        ZeldaState::sanitize_frame_inputs(0x0130, 0x0010, 0x08),
-        0x0120
-    );
-    assert_eq!(
-        ZeldaState::sanitize_frame_inputs(0x00e0, 0x0060, 0x06),
-        0x00a0
-    );
+fn frame_input_opposites_match_snes9x_libretro_report_order() {
+    assert_eq!(ZeldaState::sanitize_frame_inputs(0x0130), 0x0120);
+    assert_eq!(ZeldaState::sanitize_frame_inputs(0x00c0), 0x0080);
+    assert_eq!(ZeldaState::sanitize_frame_inputs(0x00f0), 0x00a0);
 }
 
 #[test]
-fn frame_input_simultaneous_opposites_from_neutral_are_neutral() {
-    assert_eq!(ZeldaState::sanitize_frame_inputs(0x00f0, 0, 0), 0);
-}
-
-#[test]
-fn frame_input_holds_the_chosen_direction_while_both_remain_pressed() {
-    assert_eq!(
-        ZeldaState::sanitize_frame_inputs(0x0030, 0x0030, 0x04),
-        0x0020
-    );
+fn frame_input_opposite_resolution_preserves_non_direction_buttons() {
+    assert_eq!(ZeldaState::sanitize_frame_inputs(0x0f30), 0x0f20);
 }
