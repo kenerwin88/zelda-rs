@@ -106,7 +106,7 @@ impl ZeldaState {
                 // its $0e:cfe2..$0e:d088 copy loop across the next vblanks, so
                 // Module0E_Interface has not reached the scroll-register suffix
                 // at $00:f873 while these continuation slices are pending.
-                || self.dialogue_scroll_lag_frames != 0)
+                || !self.dialogue_scroll_continuation.is_idle())
         {
             return;
         }
@@ -3269,7 +3269,7 @@ impl ZeldaState {
         // A long scroll remains inside RenderText_Draw_Scroll; its dedicated
         // pre-main scheduler owns both the preceding NMI publication and the
         // eventual handler epilogue. Ordinary commands still finish here.
-        if !yielded_midline && self.dialogue_scroll_lag_frames == 0 {
+        if !yielded_midline && self.dialogue_scroll_continuation.is_idle() {
             self.finish_dialogue_character_render_call();
         }
     }
@@ -3791,13 +3791,13 @@ impl ZeldaState {
         }
         // Phase 2 is the remaining three copy passes. Phase 1 is the
         // post-vblank caller suffix; it performs no further pixel copies.
-        self.dialogue_scroll_lag_frames = 2;
+        self.dialogue_scroll_continuation = DialogueScrollContinuation::begin();
         self.dialogue_scroll_ran_this_frame = true;
         false
     }
 
     pub(super) fn dialogue_long_scroll_starts_this_frame(&self) -> bool {
-        if self.dialogue_scroll_lag_frames != 0
+        if !self.dialogue_scroll_continuation.is_idle()
             || self.game_state.frame.main_module != 0x0e
             || self.game_state.frame.submodule != 2
             || self.game_state.messaging.runtime.text_render_state() != 3

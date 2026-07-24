@@ -2192,6 +2192,86 @@ impl BgScrollRegisterScanout {
     }
 }
 
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+#[serde(transparent)]
+pub(crate) struct DialogueScrollContinuation(u8);
+
+impl DialogueScrollContinuation {
+    const IDLE: Self = Self(0);
+    const RETURN_ONLY: Self = Self(1);
+    const COPY_REMAINING_PIXELS: Self = Self(2);
+
+    pub(crate) fn begin() -> Self {
+        Self::COPY_REMAINING_PIXELS
+    }
+
+    pub(crate) fn is_idle(self) -> bool {
+        self == Self::IDLE
+    }
+
+    fn is_copying_remaining_pixels(self) -> bool {
+        self == Self::COPY_REMAINING_PIXELS
+    }
+
+    fn is_return_only(self) -> bool {
+        self == Self::RETURN_ONLY
+    }
+
+    fn finish_remaining_pixels(&mut self) {
+        debug_assert!(self.is_copying_remaining_pixels());
+        *self = Self::RETURN_ONLY;
+    }
+
+    fn finish_return(&mut self) {
+        debug_assert!(self.is_return_only());
+        *self = Self::IDLE;
+    }
+
+    fn diagnostic_code(self) -> u8 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ColorMathRegisterScanout {
+    windowsel: u32,
+    clip_mode: u8,
+    prevent_math_mode: u8,
+    add_subscreen: bool,
+    subtract_color: bool,
+    half_color: bool,
+    math_enabled: u8,
+    fixed_color: [u8; 3],
+    screen_enabled: [u8; 2],
+    screen_windowed: [u8; 2],
+}
+
+impl ColorMathRegisterScanout {
+    fn publish_to(self, ppu: &mut PpuState) {
+        ppu.windowsel = self.windowsel;
+        ppu.clip_mode = self.clip_mode;
+        ppu.prevent_math_mode = self.prevent_math_mode;
+        ppu.add_subscreen = self.add_subscreen;
+        ppu.subtract_color = self.subtract_color;
+        ppu.half_color = self.half_color;
+        ppu.math_enabled = self.math_enabled;
+        ppu.fixed_color_r = self.fixed_color[0];
+        ppu.fixed_color_g = self.fixed_color[1];
+        ppu.fixed_color_b = self.fixed_color[2];
+        ppu.screen_enabled = self.screen_enabled;
+        ppu.screen_windowed = self.screen_windowed;
+    }
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ZeldaState {
     pub ram: Vec<u8>,
@@ -2227,7 +2307,7 @@ pub struct ZeldaState {
     /// caller suffix. The main loop and frame counter run only on the initial
     /// two-pixel slice.
     #[serde(default)]
-    pub(crate) dialogue_scroll_lag_frames: u8,
+    pub(crate) dialogue_scroll_continuation: DialogueScrollContinuation,
     /// Set by `RenderText_Draw_MessageCharacters` when this frame's fast-forward
     /// render stopped mid-line at the per-frame budget; consumed at the START of
     /// the next `zelda_run_game_loop` to hold that frame's core update (frame
@@ -7233,7 +7313,7 @@ impl ZeldaState {
             bg3_vwf_glyph_runs: Vec::new(),
             bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
             bg3_vwf_glyph_run_dialogue_message_id: 0,
-            dialogue_scroll_lag_frames: 0,
+            dialogue_scroll_continuation: DialogueScrollContinuation::IDLE,
             dialogue_fast_forward_hold_pending: false,
             dialogue_fast_forward_hold_active: false,
             dialogue_vwf_glyph_cycle_debt: 0,
@@ -7667,6 +7747,59 @@ impl ZeldaState {
         }
     }
 
+    fn color_math_scanout_from_nmi_register_mirrors(&self) -> ColorMathRegisterScanout {
+        let color_window = self
+            .game_state
+            .display
+            .palette_filter
+            .color_window_selection();
+        let color_math = self
+            .game_state
+            .display
+            .palette_filter
+            .color_math_control();
+        let mut fixed_color = [
+            self.ppu.fixed_color_r,
+            self.ppu.fixed_color_g,
+            self.ppu.fixed_color_b,
+        ];
+        for value in [
+            self.game_state.display.palette_filter.fixed_color_red(),
+            self.game_state.display.palette_filter.fixed_color_green(),
+            self.game_state.display.palette_filter.fixed_color_blue(),
+        ] {
+            if value & 0x20 != 0 {
+                fixed_color[0] = value & 0x1f;
+            }
+            if value & 0x40 != 0 {
+                fixed_color[1] = value & 0x1f;
+            }
+            if value & 0x80 != 0 {
+                fixed_color[2] = value & 0x1f;
+            }
+        }
+        ColorMathRegisterScanout {
+            windowsel: u32::from(self.game_state.display.bg12_window_selection)
+                | (u32::from(self.game_state.display.bg34_window_selection) << 8)
+                | (u32::from(self.game_state.display.object_color_window_selection) << 16),
+            clip_mode: (color_window & 0xc0) >> 6,
+            prevent_math_mode: (color_window & 0x30) >> 4,
+            add_subscreen: color_window & 0x02 != 0,
+            subtract_color: color_math & 0x80 != 0,
+            half_color: color_math & 0x40 != 0,
+            math_enabled: color_math & 0x3f,
+            fixed_color,
+            screen_enabled: [
+                self.game_state.display.main_screen_layers,
+                self.game_state.display.sub_screen_layers,
+            ],
+            screen_windowed: [
+                self.game_state.display.main_screen_window_layers,
+                self.game_state.display.sub_screen_window_layers,
+            ],
+        }
+    }
+
     pub(super) fn capture_display_snapshot(&mut self) {
         self.ppu.refresh_brightness_cache();
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
@@ -8054,7 +8187,7 @@ impl ZeldaState {
             eprintln!(
                 "scroll_retain host={} lag={} stale_scanout={} two_back={} nmi_retained={}",
                 self.frame_ctr_dbg,
-                self.dialogue_scroll_lag_frames,
+                self.dialogue_scroll_continuation.diagnostic_code(),
                 self.dialogue_scroll_stale_scanout,
                 self.dialogue_scroll_frozen_scanout.is_some(),
                 retain_previous_nmi_display_memory,
@@ -8105,7 +8238,8 @@ impl ZeldaState {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
         }
         if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some()
-            && (self.dialogue_scroll_stale_scanout || self.dialogue_scroll_lag_frames > 0)
+            && (self.dialogue_scroll_stale_scanout
+                || !self.dialogue_scroll_continuation.is_idle())
         {
             let presented_sum: u64 = self.ppu.vram[0x7c00..0x7ff0]
                 .iter()
@@ -8114,7 +8248,7 @@ impl ZeldaState {
             eprintln!(
                 "scroll_present host={} presented_sum={presented_sum} stale={} lag={}",
                 self.frame_ctr_dbg, self.dialogue_scroll_stale_scanout,
-                self.dialogue_scroll_lag_frames,
+                self.dialogue_scroll_continuation.diagnostic_code(),
             );
         }
         // OAM publication has an independent cadence from the large VRAM and
@@ -8725,7 +8859,7 @@ impl ZeldaState {
         if initialized_audio_bank_this_frame {
             self.zelda_initialization_code();
         }
-        if self.rom_startup_timing() && self.dialogue_scroll_lag_frames == 1 {
+        if self.rom_startup_timing() && self.dialogue_scroll_continuation.is_return_only() {
             let current_scanout_scroll = BgScrollRegisterScanout::capture(&self.ppu);
             // The scroll copy and RenderText handler returned after the prior
             // frame's NMI. On this boundary the next NMI sees $12 still
@@ -8733,7 +8867,7 @@ impl ZeldaState {
             // caller suffix reach Main_PrepSpritesForNmi and clear $12.
             // This measured return-only slice is distinct from both the 2/3
             // pixel copy slices and from a fresh module iteration.
-            self.dialogue_scroll_lag_frames = 0;
+            self.dialogue_scroll_continuation.finish_return();
             // The interrupted NMI cannot consume the pending dialogue upload,
             // but it still advances the ordinary vblank-owned presentation
             // state (animated BG tiles, Link DMA, and OAM). Capture after that
@@ -9232,7 +9366,10 @@ impl ZeldaState {
                 self.zelda_run_game_loop();
                 self.replay_trace_col("after-game-loop");
                 self.replay_trace_ram_watch("after-game-loop");
-                debug_assert_eq!(self.dialogue_scroll_lag_frames, 2);
+                debug_assert!(
+                    self.dialogue_scroll_continuation
+                        .is_copying_remaining_pixels()
+                );
                 self.dialogue_scroll_stale_scanout =
                     std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
                 self.assert_native_frame_state_matches_ram();
@@ -9262,6 +9399,8 @@ impl ZeldaState {
             self.replay_trace_col("after-game-loop");
             self.replay_trace_ram_watch("after-game-loop");
         }
+        let dialogue_scroll_finished_copy =
+            self.rom_startup_timing() && self.dialogue_scroll_continuation.is_return_only();
         self.capture_display_snapshot();
         if let (Some(prefixes), Some(display)) = (
             dungeon_exit_spotlight_scanout_prefix,
@@ -9286,6 +9425,17 @@ impl ZeldaState {
             oam_dma_source.as_deref(),
             defer_dialogue_exit_bg_upload,
         );
+        if dialogue_scroll_finished_copy {
+            // The final copy slice reaches vblank before the RenderText caller
+            // suffix. The ROM NMI always publishes $2123..$2132 even while
+            // $12 keeps DMA work gated, and Snes9x exposes that color-composition
+            // generation in this scanout. Keep BG scroll and display memory on
+            // their independently measured generations.
+            let color_math_scanout = self.color_math_scanout_from_nmi_register_mirrors();
+            if let Some(snapshot) = self.display_snapshot.as_mut() {
+                color_math_scanout.publish_to(&mut snapshot.ppu);
+            }
+        }
         self.replay_trace_col("after-nmi");
         self.replay_trace_ram_watch("after-nmi");
         self.assert_native_frame_state_matches_ram();
@@ -10832,7 +10982,7 @@ impl ZeldaState {
     }
 
     fn zelda_run_game_loop(&mut self) {
-        if self.dialogue_scroll_lag_frames > 0 {
+        if !self.dialogue_scroll_continuation.is_idle() {
             // Lag frame of an in-flight message-line scroll: the ROM's main
             // loop is still inside the scroll copy, so nothing else runs —
             // no frame-counter tick, no OAM clear, no module routing. The
@@ -10840,9 +10990,13 @@ impl ZeldaState {
             // then returns through the RenderText handler after this frame's
             // NMI. Phase 1 is consumed separately by run_frame_internal as a
             // return-only slice so its NMI stays before the game-loop suffix.
-            debug_assert_eq!(self.dialogue_scroll_lag_frames, 2);
+            debug_assert!(
+                self.dialogue_scroll_continuation
+                    .is_copying_remaining_pixels()
+            );
             let passes = 3;
-            self.dialogue_scroll_lag_frames = 1;
+            self.dialogue_scroll_continuation
+                .finish_remaining_pixels();
             self.dialogue_scroll_ran_this_frame = true;
             let command_done = self.render_text_scroll_pixels(passes);
             // The slow $0e:cfe2 text-buffer copy has now returned through
@@ -10882,7 +11036,7 @@ impl ZeldaState {
         // mid-glyph $0710 is still zero, while a completed handler sets it to 2.
         self.dialogue_fast_forward_hold_active =
             std::mem::take(&mut self.dialogue_fast_forward_hold_pending);
-        if self.dialogue_scroll_lag_frames != 0 {
+        if !self.dialogue_scroll_continuation.is_idle() {
             // The long scroll copy has crossed vblank before the ROM reaches
             // Main_PrepSpritesForNmi or clears $12. Its continuation is resumed
             // by the dedicated scheduler in run_frame_internal.

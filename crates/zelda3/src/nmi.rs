@@ -213,8 +213,10 @@ impl ZeldaState {
         //
         // Fast-forward dialogue slices are the same interrupted Module $0e
         // thread even though the coarse native scheduler does not keep $012a
-        // asserted through every host-frame slice. Preserve the already
-        // published scroll and color registers until that thread returns.
+        // asserted through every host-frame slice. Preserve the live PPU
+        // generation until that thread returns. The final-copy boundary's
+        // independently visible color-composition registers are published to
+        // its immutable display snapshot by run_frame_internal.
         let main_module = self.game_state.frame.main_module;
         let thread_holds_registers = (main_module == 0x14
             && self.game_state.display.nmi_thread_active)

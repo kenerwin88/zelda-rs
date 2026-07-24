@@ -248,12 +248,16 @@ fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
     state.messaging_state_mut().set_dialogue_scroll_speed(4);
 
     state.RenderText_Draw_MessageCharacters();
-    assert_eq!(state.dialogue_scroll_lag_frames, 2);
+    assert!(
+        state
+            .dialogue_scroll_continuation
+            .is_copying_remaining_pixels()
+    );
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
     assert_eq!(state.game_state.display.core_update_disable_flag, 0);
 
     state.zelda_run_game_loop();
-    assert_eq!(state.dialogue_scroll_lag_frames, 1);
+    assert!(state.dialogue_scroll_continuation.is_return_only());
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 2);
     assert_eq!(state.game_state.display.core_update_disable_flag, 2);
     assert_eq!(state.game_state.messaging.runtime.dialogue_msg_read_pos(), 0);
@@ -267,7 +271,7 @@ fn dialogue_return_only_boundary_keeps_current_bg_scroll_scanout() {
     state.set_main_module(14);
     state.set_submodule(2);
     state.set_animated_tile_data_source_address(0xa680);
-    state.dialogue_scroll_lag_frames = 1;
+    state.dialogue_scroll_continuation = DialogueScrollContinuation::RETURN_ONLY;
     state.audio_nmi_processed_before_main = true;
 
     let current_scanout = [
@@ -306,6 +310,46 @@ fn dialogue_return_only_boundary_keeps_current_bg_scroll_scanout() {
             display.ppu.bg_layer.map(|layer| [layer.h_scroll, layer.v_scroll])
         });
     assert_eq!(displayed, current_scanout);
+}
+
+#[test]
+fn dialogue_final_copy_publishes_color_math_without_advancing_held_ppu_generation() {
+    let mut state = ZeldaState::new();
+    state.initialized = true;
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.set_animated_tile_data_source_address(0xa680);
+    state.dialogue_scroll_continuation = DialogueScrollContinuation::begin();
+    state.audio_nmi_processed_before_main = true;
+
+    state.ppu.math_enabled = 0x32;
+    state.ppu.half_color = false;
+    state.set_color_math_control(0x72);
+    state.ppu.bg_layer[0].h_scroll = 0x00f0;
+    state.ppu.bg_layer[0].v_scroll = 0x00c4;
+    state.set_bg1_h_copy(0x01f0);
+    state.set_bg1_v_copy(0x01c4);
+    state.set_bg1_h_copy2(0x01f0);
+    state.set_bg1_v_copy2(0x01c4);
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert!(!state.ppu.half_color);
+    assert_eq!(
+        [state.ppu.bg_layer[0].h_scroll, state.ppu.bg_layer[0].v_scroll],
+        [0x00f0, 0x00c4]
+    );
+    let displayed = state.with_display_snapshot(|display| {
+        (
+            display.ppu.half_color,
+            [
+                display.ppu.bg_layer[0].h_scroll,
+                display.ppu.bg_layer[0].v_scroll,
+            ],
+        )
+    });
+    assert_eq!(displayed, (true, [0x00f0, 0x00c4]));
 }
 
 #[test]
