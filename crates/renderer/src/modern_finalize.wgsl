@@ -185,7 +185,8 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         ob = scale_brightness5(ob, brightness);
         let primary_g = g;
 
-        if ((flags & 0x1u) != 0u) {
+        let subtract_color = (flags & 0x1u) != 0u;
+        if (subtract_color) {
             r = r - or;
             g = g - og;
             b = b - ob;
@@ -196,9 +197,19 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
 
         let half_color = (flags & 0x2u) != 0u;
-        if (half_color && (second_real || !add_subscreen)) {
+        let half_color_applies = half_color && (second_real || !add_subscreen);
+        // Snes9x renderer index 7 (`COLOR_ADD_BRIGHTNESS`) caps every
+        // low-brightness full add at brightness-mapped white. This includes
+        // subscreen addition and the half-add mode's fixed-color fallback.
+        if (brightness < 15u && !subtract_color && !half_color_applies) {
+            let brightness_white = scale_brightness5(31, brightness);
+            r = min(r, brightness_white);
+            g = min(g, brightness_white);
+            b = min(b, brightness_white);
+        }
+        if (half_color_applies) {
             r = r >> 1;
-            if ((flags & 0x1u) == 0u) {
+            if (!subtract_color) {
                 // Snes9x averages packed RGB565 here. Green is expanded to six
                 // bits before the half-add, then its duplicated bit is removed
                 // when the oracle converts the result back to five-bit RGB.

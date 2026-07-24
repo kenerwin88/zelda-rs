@@ -1727,7 +1727,7 @@ pub fn render_modern_frame_full_with_overrides(
     ctx: &crate::modern_hd_overrides::HdOverrideCtx,
 ) -> Vec<u8> {
     let (main, sub) = build_modern_screens_with_overrides(frame, bg_cells, sprite_cells, ctx);
-    finalize_frame(&main, &sub, frame, usize::from(MODERN_FRAME_WIDTH), 1, false)
+    finalize_frame(&main, &sub, frame, usize::from(MODERN_FRAME_WIDTH), 1)
 }
 
 fn build_modern_screens_with_overrides(
@@ -1868,7 +1868,7 @@ pub fn render_modern_frame_full_scaled(
             scale,
         );
     });
-    finalize_frame(&main, &sub, frame, out_width, scale, false)
+    finalize_frame(&main, &sub, frame, out_width, scale)
 }
 
 /// Block-replicate an RGBA frame to `scale`× (nearest upscale): each source pixel
@@ -1917,7 +1917,6 @@ fn finalize_pixel(
     scale: usize,
     fixed: [i32; 3],
     no_effect_math: bool,
-    mode7_brightness_capped_add: bool,
 ) -> [u8; 4] {
     // Per-output pixel color math, but the window data is NATIVE-length, so index
     // it by the native row/col (`out_y / scale`, `out_x / scale`). At scale == 1
@@ -1967,15 +1966,6 @@ fn finalize_pixel(
     for ch in 0..3 {
         c[ch] = scale_brightness5(c[ch], primary_brightness);
     }
-    // Snes9x selects `COLOR_ADD_BRIGHTNESS` for low-brightness Mode 7 fixed
-    // color addition (tile.cpp renderer index 7). Its inputs have already been
-    // master-brightness mapped by `S9xFixColourBrightness` / `GFX.FixedColour`;
-    // it then saturates the sum at the brightness-mapped white level.
-    let mode7_brightness_capped_fixed_add = mode7_brightness_capped_add
-        && do_math
-        && !frame.add_subscreen
-        && !frame.subtract_color
-        && !frame.half_color;
     if do_math {
         let primary_green = c[1];
         let (operand, second_real) = if frame.add_subscreen {
@@ -2005,11 +1995,21 @@ fn finalize_pixel(
             } else {
                 c[ch] += operand;
             }
-            if mode7_brightness_capped_fixed_add {
-                c[ch] = c[ch].min(scale_brightness5(31, frame.brightness));
+        }
+        let half_color_applies = frame.half_color && (second_real || !frame.add_subscreen);
+        // When the frame never reached full brightness, Snes9x selects
+        // `COLOR_ADD_BRIGHTNESS` (tile.cpp renderer index 7) for every full-add
+        // blend, including subscreen addition. Its inputs are already
+        // brightness-scaled, then the sum is capped at brightness-mapped white.
+        // Half-add remains the packed RGB565 average; the add-subsreen fallback
+        // to fixed color is a full add and therefore still takes this cap.
+        if frame.brightness < 15 && !frame.subtract_color && !half_color_applies {
+            let brightness_white = scale_brightness5(31, frame.brightness);
+            for channel in &mut c {
+                *channel = (*channel).min(brightness_white);
             }
         }
-        if frame.half_color && (second_real || !frame.add_subscreen) {
+        if half_color_applies {
             c[0] >>= 1;
             if frame.subtract_color {
                 c[1] >>= 1;
@@ -2033,7 +2033,6 @@ fn finalize_frame(
     frame: &ModernFrame,
     out_width: usize,
     scale: usize,
-    mode7_brightness_capped_add: bool,
 ) -> Vec<u8> {
     let width = out_width;
     let len = main.c5.len();
@@ -2082,7 +2081,6 @@ fn finalize_frame(
                 scale,
                 fixed,
                 no_effect_math,
-                mode7_brightness_capped_add,
             );
             out[i * 4..i * 4 + 4].copy_from_slice(&px);
         }
@@ -2107,7 +2105,6 @@ fn finalize_frame(
                                 scale,
                                 fixed,
                                 no_effect_math,
-                                mode7_brightness_capped_add,
                             );
                             let o = lr * width * 4 + x * 4;
                             chunk[o..o + 4].copy_from_slice(&px);
@@ -2394,14 +2391,7 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
         );
     }
 
-    finalize_frame(
-        &main,
-        &sub,
-        &modern,
-        width,
-        1,
-        modern.brightness < 15,
-    )
+    finalize_frame(&main, &sub, &modern, width, 1)
 }
 
 #[cfg(test)]
@@ -2781,6 +2771,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn low_brightness_full_add_caps_at_brightness_mapped_white() {
+        // Snes9x's `COLOR_ADD_BRIGHTNESS` inputs measured at the world-map
+        // transition: main [5,11,6], subscreen [14,22,30], brightness 8.
+        let (mut frame, cells) = frame_with_single_bg_pixel(0, [5, 11, 6]);
+        let (sub_frame, _) = frame_with_single_bg_pixel(1, [14, 22, 30]);
+        frame.bg_layers[1].index_tiles = sub_frame.bg_layers[1].index_tiles.clone();
+        frame.cgram_rgba[1 * 16 + 1] = sub_frame.cgram_rgba[1 * 16 + 1];
+
+        frame.screen_enabled_main = 0x01;
+        frame.screen_enabled_sub = 0x02;
+        frame.math_enabled = 0x01;
+        frame.add_subscreen = true;
+        frame.half_color = false;
+        frame.subtract_color = false;
+        frame.brightness = 8;
+
+        let out = render_modern_frame_full(&frame, &cells, &[]);
+        // Scaled operands sum to [10,18,19], while brightness-mapped white is
+        // 17. Snes9x therefore emits [10,17,17] before five-bit expansion.
+        assert_eq!(&out[0..4], &[82, 140, 140, 0xff]);
+    }
 
     #[test]
     fn brightness_only_scales_channels() {
