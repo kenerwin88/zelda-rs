@@ -299,8 +299,11 @@ const fn rom_world_map_force_blank_scanline(
     live_forced_blank: bool,
 ) -> Option<u8> {
     // WorldMap_FadeOut reaches zero after the hardware NMI and writes $2100=$80
-    // during active display. Instrumented Snes9x records V=43 and CurrentLine=43:
-    // scanlines 0..42 retain brightness 1, while scanline 43 onward is blank.
+    // during active display. Instrumented Snes9x records V=43 and CurrentLine=43
+    // on the continuous clean route: scanlines 0..42 retain brightness 1, while
+    // scanline 43 onward is blank. Later route instances can reach this write at
+    // scanline 30 depending on the 65816's host-entry NMI phase; do not guess at
+    // that distinction from unrelated ROM latches.
     if main_module == 0x0e
         && submodule == 7
         && map_state == 1
@@ -370,6 +373,17 @@ const fn rom_player_sprite_scanout_uses_pre_nmi_generation(
     // and OBJ CHR when the preceding scanout is presented.
     (submodule == 0 && (main_module == 7 || matches!(main_module, 9 | 11)))
         || (main_module == 9 && matches!(submodule, 1 | 6..=8 | 0x0a))
+}
+
+const fn rom_animated_tile_dma_uses_pre_main_operands(
+    main_module: u8,
+    submodule: u8,
+) -> bool {
+    // This transition's long main-thread slice advances the animation source
+    // before the native scheduler reaches its coarse NMI call. On hardware,
+    // Snes9x resumes the already-pending NMI first, so its DMA consumes the
+    // source and destination operands from the host-frame boundary.
+    main_module == 9 && submodule == 5
 }
 
 const fn rom_dungeon_exit_entry_oam_publication_is_deferred(
@@ -2331,6 +2345,11 @@ pub struct ZeldaState {
     visible_display_snapshot: Option<Box<DisplaySnapshot>>,
     #[serde(skip)]
     deferred_display_snapshot: Option<Box<DisplaySnapshot>>,
+    /// Animated-BG DMA operands as they existed at the host vblank boundary.
+    /// Snes9x resumes a pending NMI before the following main slice can advance
+    /// the animation source.
+    #[serde(skip)]
+    pre_main_animated_tile_dma: Option<PreMainAnimatedTileDma>,
     #[serde(default)]
     nmi_forced_blank_scanlines_pending: u8,
     nmi_forced_blank_from_scanline_pending: Option<u8>,
@@ -2478,6 +2497,13 @@ struct DisplaySnapshot {
     nmi_poly_upload_deferred: u8,
     obj_vram_latch_generation: u64,
     snes9x_poly_scheduler_counter: u8,
+}
+
+#[derive(Clone)]
+struct PreMainAnimatedTileDma {
+    source_address: usize,
+    destination_address: usize,
+    data: Vec<u8>,
 }
 
 pub type ZeldaRunFrameFunc = fn(&mut ZeldaState, u16, i32);
@@ -7235,6 +7261,7 @@ impl ZeldaState {
             display_snapshot: None,
             visible_display_snapshot: None,
             deferred_display_snapshot: None,
+            pre_main_animated_tile_dma: None,
             nmi_forced_blank_scanlines_pending: 0,
             nmi_forced_blank_from_scanline_pending: None,
             nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
@@ -8550,6 +8577,31 @@ impl ZeldaState {
         if !self.initialized {
             self.zelda_initialize();
         }
+        self.pre_main_animated_tile_dma = if self.rom_startup_timing()
+            && rom_animated_tile_dma_uses_pre_main_operands(
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            )
+            && self.game_state.display.has_animated_tile_data_source()
+        {
+            let source_address = self
+                .game_state
+                .display
+                .animated_tile_data_source_usize();
+            let destination_address = self
+                .game_state
+                .display
+                .animated_tile_vram_destination_usize();
+            (source_address + 0x400 <= self.ram.len()
+                && destination_address + 0x200 <= self.ppu.vram.len())
+            .then(|| PreMainAnimatedTileDma {
+                source_address,
+                destination_address,
+                data: self.ram[source_address..source_address + 0x400].to_vec(),
+            })
+        } else {
+            None
+        };
         // Retain the OAM shadow at the host-frame boundary. The interrupted
         // title main thread has one late-authored OBJ region whose NMI source is
         // selected from this coherent snapshot; ordinary OAM remains current.

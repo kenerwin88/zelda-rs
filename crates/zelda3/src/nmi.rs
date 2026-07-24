@@ -306,13 +306,20 @@ impl ZeldaState {
         if !self.game_state.display.core_updates_are_disabled() {
             self.nmi_core_link_graphics_update();
 
-            let src_addr = self.game_state.display.animated_tile_data_source_usize();
-            let dst = self
-                .game_state
-                .display
-                .animated_tile_vram_destination_usize();
-            if dst + 0x200 <= self.ppu.vram.len() && src_addr + 0x400 <= self.ram.len() {
-                let data = self.animated_tile_dma_source_bytes().to_vec();
+            let pre_main_dma = self.pre_main_animated_tile_dma.take();
+            let (src_addr, dst, data) = pre_main_dma.map_or_else(
+                || {
+                    (
+                        self.game_state.display.animated_tile_data_source_usize(),
+                        self.game_state
+                            .display
+                            .animated_tile_vram_destination_usize(),
+                        self.animated_tile_dma_source_bytes().to_vec(),
+                    )
+                },
+                |dma| (dma.source_address, dma.destination_address, dma.data),
+            );
+            if dst + 0x200 <= self.ppu.vram.len() && data.len() >= 0x400 {
                 if std::env::var_os("ZELDA3_DEBUG_BOOT_DMA_SOURCE").is_some()
                     && self.rom_startup_timing()
                     && self.game_state.frame.main_module == 0

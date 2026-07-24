@@ -3707,6 +3707,9 @@ fn overworld_transition_publishes_the_nmi_written_half_color_bit() {
 #[test]
 fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert!(rom_display_oam_publication_is_deferred(7, 0, false, false));
+    assert!(!rom_player_sprite_scanout_uses_pre_nmi_generation(14, 7));
+    assert!(rom_animated_tile_dma_uses_pre_main_operands(9, 5));
+    assert!(!rom_animated_tile_dma_uses_pre_main_operands(9, 0x0a));
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, false, true));
     assert!(rom_display_oam_publication_is_deferred(4, 3, false, false));
