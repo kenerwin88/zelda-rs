@@ -7,7 +7,7 @@ use crate::modern_frame::{
 use crate::modern_index_atlas::{index_cell_for_tilemap_entry, ModernIndexAtlas, ModernIndexTile};
 use crate::modern_source_atlas::source_cell_by_indices;
 use crate::modern_sprite_atlas::{sprite_index_cell, ModernSpriteIndexAtlas};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone)]
 pub struct AssetResolvedModernFrame {
@@ -1395,6 +1395,9 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
     // key: (atlas cell id, hflip, vflip) -> local flip-baked cell id
     let mut cell_ids: HashMap<(u32, bool, bool), u32> = HashMap::new();
     let mut bg3_tile_screen_xy: HashMap<u16, (i16, i16)> = HashMap::new();
+    let dialogue_vwf_tiles =
+        DialogueVwfTileRegion::from_origin(frame.dialogue_layout_origin_tile_number);
+    let mut dialogue_vwf_screen_tiles: HashSet<(i16, i16)> = HashSet::new();
     // BG3 (the HUD/message layer) is partly procedural: digit and item-icon glyphs can
     // be streamed into a small set of 2bpp CHR slots, so the same `(tile_number,
     // palette)` may hold different pixels across the route. The source dump keeps only
@@ -1802,6 +1805,10 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                     bg3_tile_screen_xy
                         .entry(tile_number as u16)
                         .or_insert((sx as i16, sy as i16));
+                    if dialogue_vwf_tiles.is_some_and(|region| region.contains(tile_number as u16))
+                    {
+                        dialogue_vwf_screen_tiles.insert((sx as i16, sy as i16));
+                    }
                 }
                 if can_cull_to_base_scroll && !screen_tile_visible(sx, sy) {
                     continue;
@@ -1872,7 +1879,12 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
     modern.dialogue_box_tilemap_palette = frame
         .dialogue_layout_origin_tile_number
         .and_then(|origin| bg3_tilemap_entry_palette(frame, origin));
-    cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(&mut modern, &mut missing_sources);
+    cull_bg3_vwf_tiles_covered_by_semantic_glyphs(
+        &mut modern,
+        &mut missing_sources,
+        &dialogue_vwf_screen_tiles,
+        dialogue_vwf_tiles,
+    );
     if dbg {
         eprintln!("[SRC_DEBUG] bg_tiles={dbg_total} wrong_cell={dbg_mismatch} gap={dbg_gap} stale_of_kind6={dbg_stale}");
         for (slot, tile, kind, pack, off) in &dbg_samples {
@@ -1884,19 +1896,47 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
     (modern, cells, missing_sources)
 }
 
-fn cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(
+/// The ROM maps the VWF render buffer as six rows of 21 sequential BG3 tiles.
+/// Keeping that hardware-owned tile region explicit prevents semantic glyphs
+/// from deleting adjacent dynamic BG3 art (notably the message-box border).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DialogueVwfTileRegion {
+    first_tile_number: u16,
+    tile_count: u16,
+}
+
+impl DialogueVwfTileRegion {
+    const TILE_NUMBER_MASK: u16 = 0x03ff;
+    const TILE_COUNT: u16 = 6 * 21;
+
+    fn from_origin(origin: Option<u16>) -> Option<Self> {
+        origin.map(|first_tile_number| Self {
+            first_tile_number: first_tile_number & Self::TILE_NUMBER_MASK,
+            tile_count: Self::TILE_COUNT,
+        })
+    }
+
+    fn contains(self, tile_number: u16) -> bool {
+        (tile_number.wrapping_sub(self.first_tile_number) & Self::TILE_NUMBER_MASK)
+            < self.tile_count
+    }
+}
+
+fn cull_bg3_vwf_tiles_covered_by_semantic_glyphs(
     modern: &mut ModernFrame,
     missing_sources: &mut Vec<MissingAssetSource>,
+    dialogue_vwf_screen_tiles: &HashSet<(i16, i16)>,
+    dialogue_vwf_tiles: Option<DialogueVwfTileRegion>,
 ) {
     let vwf_glyph_runs = modern.vwf_glyph_runs_for_draw().to_vec();
-    if vwf_glyph_runs.is_empty() {
+    if vwf_glyph_runs.is_empty() || dialogue_vwf_screen_tiles.is_empty() {
         return;
     }
     let Some(bg3) = modern.bg_layers.get_mut(2) else {
         return;
     };
     bg3.index_tiles.retain(|inst| {
-        !is_dynamic_or_unkeyed_bg3_source(inst.source_key)
+        !dialogue_vwf_screen_tiles.contains(&(inst.screen_x, inst.screen_y))
             || !vwf_glyph_runs.iter().any(|run| {
                 rects_overlap(
                     inst.screen_x,
@@ -1913,6 +1953,9 @@ fn cull_bg3_dynamic_tiles_covered_by_vwf_glyph_runs(
     missing_sources.retain(|missing| {
         missing.surface != MissingAssetSurface::Bg
             || missing.layer_index != Some(2)
+            || !missing.tile_number.is_some_and(|tile_number| {
+                dialogue_vwf_tiles.is_some_and(|region| region.contains(tile_number))
+            })
             || !vwf_glyph_runs.iter().any(|run| {
                 rects_overlap(
                     missing.screen_x,
@@ -2003,13 +2046,6 @@ fn semantic_vwf_layout_matches_live_runs(
                     && semantic.screen_y == origin_y + live.y
                     && semantic.width == live.width
             })
-}
-
-fn is_dynamic_or_unkeyed_bg3_source(source_key: u64) -> bool {
-    if source_key == crate::modern_hd_overrides::NO_SOURCE_KEY {
-        return true;
-    }
-    ((source_key >> 32) as u8) == CHR_KIND_BG3_CONTENT
 }
 
 fn rects_overlap(ax: i16, ay: i16, aw: i16, ah: i16, bx: i16, by: i16, bw: i16, bh: i16) -> bool {
@@ -4204,7 +4240,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_from_sources_culls_dynamic_bg3_tiles_covered_by_vwf_glyph_runs() {
+    fn semantic_vwf_culling_preserves_overlapping_dynamic_dialogue_border_tiles() {
         use crate::gpu_frame::GpuBg3VwfGlyphRun;
         use crate::modern_source_atlas::{modern_source_key, ModernSourceAtlas};
 
@@ -4229,11 +4265,16 @@ mod tests {
         let mut vram = vec![0u16; 0x8000];
         let cgram = vec![0u16; 0x100];
         let oam = vec![0u16; 0x110];
-        vram[0] = 7 | (3 << 10);
-        vram[0x1038] = 0x8000;
+        vram[0] = 0x180 | (3 << 10);
+        // This adjacent message-border tile overlaps the semantic glyph's
+        // 16x16 draw footprint, but is not part of the ROM's 0x180..0x1fd
+        // VWF tile allocation and must remain in the BG3 draw list.
+        vram[1] = 0x0c8 | (3 << 10);
+        vram[0x1000 + 0x180 * 8] = 0x8000;
+        vram[0x1000 + 0x0c8 * 8] = 0x8000;
         let runs = [GpuBg3VwfGlyphRun {
             glyph_code: 0x41,
-            origin_tile_number: 7,
+            origin_tile_number: 0x180,
             x: 0,
             y: 0,
             width: 8,
@@ -4265,7 +4306,7 @@ mod tests {
         frame.bg3_vwf_glyph_runs = &runs;
         frame.dialogue_ir = &dialogue_ir;
         frame.dialogue_layout = &dialogue_layout;
-        frame.dialogue_layout_origin_tile_number = Some(7);
+        frame.dialogue_layout_origin_tile_number = Some(0x180);
 
         let (modern, cells, missing_sources) =
             extract_modern_frame_from_sources_with_missing_sources(&frame, &table, &atlas);
@@ -4275,10 +4316,9 @@ mod tests {
             cells[0].source_key,
             modern_source_key(CHR_KIND_BG3_CONTENT, source_pack, source_tile)
         );
-        assert!(
-            modern.bg_layers[2].index_tiles.is_empty(),
-            "VWF source glyph run should own the covered dynamic BG3 text tile"
-        );
+        assert_eq!(modern.bg_layers[2].index_tiles.len(), 1);
+        assert_eq!(modern.bg_layers[2].index_tiles[0].screen_x, 8);
+        assert_eq!(modern.bg_layers[2].index_tiles[0].screen_y, -1);
         assert!(missing_sources.is_empty());
         assert_eq!(modern.bg3_vwf_glyph_runs.len(), 1);
         assert_eq!(modern.bg3_vwf_glyph_runs[0].glyph_code, 0x41);
