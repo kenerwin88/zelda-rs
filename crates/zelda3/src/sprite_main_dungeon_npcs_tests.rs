@@ -51,10 +51,16 @@ fn uncle_departure_releases_sprite_and_retains_equipment_dma() {
 }
 
 #[test]
-fn uncle_departure_draw_source_wraps_into_low_wram() {
+fn uncle_departure_draw_plan_wraps_into_low_wram() {
     assert_eq!(
-        uncle_draw_source(0xbd, 0),
-        Some(UncleDrawSource::WrappedWram { address: 0x18e3 })
+        uncle_draw_plan(0xbd, 0),
+        Some(UncleDrawPlan {
+            source: UncleDrawSource::WrappedWram { address: 0x18e3 },
+            equipment: UncleEquipmentDmaIndices {
+                sword: 0,
+                shield: 6,
+            },
+        })
     );
 }
 

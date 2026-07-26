@@ -251,10 +251,16 @@ enum UncleDrawSource {
     WrappedWram { address: u16 },
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct UncleEquipmentDmaIndices {
     sword: u8,
     shield: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct UncleDrawPlan {
+    source: UncleDrawSource,
+    equipment: UncleEquipmentDmaIndices,
 }
 
 // sprite_main.c:17369..17371.
@@ -526,10 +532,17 @@ const UNCLE_WRAPPED_DEPARTURE_EQUIPMENT_DMA: UncleEquipmentDmaIndices = UncleEqu
     shield: 6,
 };
 
-fn uncle_draw_source(direction: u8, graphics: u8) -> Option<UncleDrawSource> {
+fn uncle_draw_plan(direction: u8, graphics: u8) -> Option<UncleDrawPlan> {
     if direction <= 3 {
-        return Some(UncleDrawSource::PortedTable {
-            start: usize::from(direction) * 12 + usize::from(graphics) * 6,
+        let equipment_index = usize::from(direction) * 2 + usize::from(graphics);
+        return Some(UncleDrawPlan {
+            source: UncleDrawSource::PortedTable {
+                start: usize::from(direction) * 12 + usize::from(graphics) * 6,
+            },
+            equipment: UncleEquipmentDmaIndices {
+                sword: UNCLE_DRAW_SWORD_DMA_INDEX[equipment_index],
+                shield: UNCLE_DRAW_SHIELD_DMA_INDEX[equipment_index],
+            },
         });
     }
     if direction != UNCLE_LEAVE_HOUSE_DIRECTIONS[2] {
@@ -538,19 +551,10 @@ fn uncle_draw_source(direction: u8, graphics: u8) -> Option<UncleDrawSource> {
     let address = UNCLE_ROM_DRAW_TABLE
         .wrapping_add(u16::from(direction) * UNCLE_ROM_DRAW_DIRECTION_STRIDE)
         .wrapping_add(u16::from(graphics) * UNCLE_ROM_DRAW_GRAPHICS_STRIDE);
-    (address < 0x2000).then_some(UncleDrawSource::WrappedWram { address })
-}
-
-fn uncle_equipment_dma_indices(direction: u8, graphics: u8) -> UncleEquipmentDmaIndices {
-    if direction <= 3 {
-        let index = usize::from(direction) * 2 + usize::from(graphics);
-        UncleEquipmentDmaIndices {
-            sword: UNCLE_DRAW_SWORD_DMA_INDEX[index],
-            shield: UNCLE_DRAW_SHIELD_DMA_INDEX[index],
-        }
-    } else {
-        UNCLE_WRAPPED_DEPARTURE_EQUIPMENT_DMA
-    }
+    (address < 0x2000).then_some(UncleDrawPlan {
+        source: UncleDrawSource::WrappedWram { address },
+        equipment: UNCLE_WRAPPED_DEPARTURE_EQUIPMENT_DMA,
+    })
 }
 
 // CrystalMaiden_RunCutscene message table (sprite_main.c:23297).
@@ -1031,15 +1035,14 @@ impl ZeldaState {
             flags: 0,
         };
 
-        let Some(source) = uncle_draw_source(direction, graphics) else {
+        let Some(plan) = uncle_draw_plan(direction, graphics) else {
             return;
         };
-        let equipment = uncle_equipment_dma_indices(direction, graphics);
         self.follower_link_state_mut()
-            .set_sword_dma_graphics_index(equipment.sword);
+            .set_sword_dma_graphics_index(plan.equipment.sword);
         self.follower_link_state_mut()
-            .set_shield_dma_graphics_index(equipment.shield);
-        match source {
+            .set_shield_dma_graphics_index(plan.equipment.shield);
+        match plan.source {
             UncleDrawSource::PortedTable { start } => {
                 self.sprite_draw_multiple(k, &UNCLE_DRAW_FRAMES[start..start + 6], Some(&mut info));
             }
