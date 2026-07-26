@@ -3567,18 +3567,23 @@ fn world_map_exit_overlay_conversions_resume_at_measured_boundaries() {
 }
 
 #[test]
-fn item_receipt_gfx_14_holds_the_four_snes9x_observed_nmi_slices() {
+fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     assert_eq!(
         rom_item_receipt_graphics_nmi_slices(0x14),
-        ITEM_RECEIPT_GFX_14_NMI_SLICES
+        ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES
     );
-    assert_eq!(rom_item_receipt_graphics_nmi_slices(0x13), 0);
+    assert_eq!(
+        rom_item_receipt_graphics_nmi_slices(0x06),
+        ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES
+    );
+    assert_eq!(rom_item_receipt_graphics_nmi_slices(0x0c), 0);
+    assert_eq!(rom_item_receipt_graphics_nmi_slices(0x23), 0);
 
     let mut work = PendingRomWork::schedule(
         RomWorkContinuation::FinishItemReceiptGraphics,
-        ITEM_RECEIPT_GFX_14_NMI_SLICES,
+        ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
     );
-    for _ in 0..ITEM_RECEIPT_GFX_14_NMI_SLICES - 1 {
+    for _ in 0..ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES - 1 {
         assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
     }
     assert_eq!(

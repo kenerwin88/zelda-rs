@@ -45,6 +45,7 @@ const BYTE_7FFE01: usize = 0x1fe01;
 const FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 // hud.h:8.
 const HUD_ITEM_HAMMER: u8 = 12;
+const SPRITE_TYPE_UNCLE_AND_PRIEST: u8 = 0x73;
 
 // sprite_main.c:13 — `kSpriteKeese_Tab2` (cosine wave used by Cucco_Calm).
 const CUCCO_CALM_CIRCLE_X_VELOCITIES: [i8; 16] = [
@@ -625,6 +626,20 @@ const KIKI_DMA: [u8; 32] = [
 ];
 
 impl ZeldaState {
+    pub(super) fn uncle_passage_item_receipt_starts_this_main_slice(&self) -> bool {
+        if self.game_state.frame.main_module != 7 || self.game_state.frame.submodule != 0 {
+            return false;
+        }
+        (0..16).rev().any(|k| {
+            let sprite = self.sprite_slot_view(k);
+            sprite.sprite_type() == SPRITE_TYPE_UNCLE_AND_PRIEST
+                && sprite.e() == 0
+                && sprite.subtype2() != 0
+                && sprite.ai_state() == 1
+                && !self.sprite_return_if_inactive(k)
+        })
+    }
+
     pub(super) fn sprite_ab_crystal_maiden(&mut self, k: usize) {
         let x = self
             .game_state

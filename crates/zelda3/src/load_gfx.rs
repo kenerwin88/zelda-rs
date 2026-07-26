@@ -17,6 +17,16 @@ use load_gfx_shared::{
 const LOAD_GFX_FEATURES0_MISC_BUG_FIXES: u32 = 4096;
 const LOAD_GFX_FEATURES0_DIM_FLASHES: u32 = 65536;
 
+pub(super) const fn animated_sprite_tile_secondary_sheet(tile: u8) -> u8 {
+    if tile == 0x23 || tile >= 0x37 {
+        0x5d
+    } else if tile == 0x0c || tile >= 0x24 {
+        0x5c
+    } else {
+        0x5b
+    }
+}
+
 const ITEM_ANIMATION_GFX_SOURCE_GROUPS: [usize; 10] = [0, 11, 8, 38, 42, 45, 34, 3, 33, 46];
 const FOLLOWER_GFX_DECOMPRESSION_OFFSETS: [usize; 14] = [
     0, 0x600, 0x300, 0x300, 0x300, 0, 0, 0x900, 0x600, 0x600, 0x900, 0x900, 0x600, 0x900,
@@ -1711,16 +1721,10 @@ impl ZeldaState {
 
     pub(super) fn DecodeAnimatedSpriteTile_variable(&mut self, a: u8) {
         self.replay_trace_ram_watch("loadgfx-before-decode-animated-sprite-tile");
-        let y = if a == 0x23 || a >= 0x37 {
-            0x5d
-        } else if a == 0x0c || a >= 0x24 {
-            0x5c
-        } else {
-            0x5b
-        };
+        let secondary_sheet = animated_sprite_tile_secondary_sheet(a);
         self.decompress_sprite_graphics_to_buffer(
             GraphicsDecompressionScratch::secondary_buffer_offset(),
-            y,
+            secondary_sheet.into(),
         );
         self.decompress_sprite_graphics_to_buffer(
             GraphicsDecompressionScratch::primary_buffer_offset(),

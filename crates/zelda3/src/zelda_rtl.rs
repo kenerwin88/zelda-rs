@@ -141,11 +141,11 @@ const DUNGEON_FALLING_ENTRANCE_ROOM_LOAD_NMI_SLICES: u8 = 56;
 // The immediately following LoadNewSpriteGFXSet/dungeon_reset_sprites call
 // begins on frame 8509 and returns on frame 8512.
 const DUNGEON_FALLING_ENTRANCE_SPRITE_GFX_NMI_SLICES: u8 = 3;
-// Item $12 uses receive-item graphics $14. The ROM decompresses packs $5b and
-// $5a, then expands the selected high-plane tiles while the main-loop NMI
-// latch remains set. Snes9x reaches the main-loop epilogue after four
-// intervening vblanks (PCs $00e7d6, $00e7af, $00d642, then $00805f).
-const ITEM_RECEIPT_GFX_14_NMI_SLICES: u8 = 4;
+// The standard animated-item path decompresses packs $5b and $5a, then
+// expands the selected high-plane tiles while the main-loop NMI latch remains
+// set. Both the measured $14 chest receipt and $06 scripted receipt return to
+// the main-loop epilogue after four intervening vblanks.
+const ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES: u8 = 4;
 const ROM_TEXT_DECODE_FIRST_SLICE_CURSOR: u16 = 94;
 const POLY_WORKER_TWO_FRAME_CYCLE_THRESHOLD: u32 = 28_250;
 const SNES9X_INTRO_POLY_BOOTSTRAP_STEPS: u8 = 0;
@@ -675,11 +675,11 @@ const fn rom_selected_game_load_decision(remaining_frames: u8) -> (bool, bool, u
 }
 
 const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
-    match gfx {
-        // This is the measured $5b/$5a decompression path. Keep unmeasured
-        // graphics on the existing immediate path until their ROM timing has
-        // been traced; shield/sword receipts do additional decompression.
-        0x14 => ITEM_RECEIPT_GFX_14_NMI_SLICES,
+    match load_gfx::animated_sprite_tile_secondary_sheet(gfx) {
+        // Timing belongs to the compressed sheets, not an individual route's
+        // item ID. Keep the separately packed $5c/$5d paths immediate until
+        // their ROM costs have been measured.
+        0x5b => ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
         _ => 0,
     }
 }
@@ -8091,6 +8091,15 @@ impl ZeldaState {
             return;
         }
         debug_assert!(!self.pending_rom_work.is_pending());
+        match self.game_state.player.follower_link.item_receipt_method() {
+            // The two ROM entry paths whose decompression timing has been
+            // measured. Their different entry boundaries are scheduled by
+            // their semantic callers, not stored on the continuation.
+            0 | 1 => {}
+            // Other entry paths remain atomic until their ROM boundary is
+            // measured.
+            _ => return,
+        }
         self.pending_rom_work =
             PendingRomWork::schedule(RomWorkContinuation::FinishItemReceiptGraphics, nmi_slices);
     }
@@ -8361,10 +8370,12 @@ impl ZeldaState {
         }
         if std::env::var_os("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some() {
             eprintln!(
-                "frame_boundary_before host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x} dialogue_runs=authored:{}/published:{}/display:{}",
+                "frame_boundary_before host={} main={:02x} sub={:02x} frame_counter={:02x} link_dma_countdown={:04x} latch={} pending={} target={:04x} disable={:02x} dialogue_runs=authored:{}/published:{}/display:{}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
+                frame.frame_counter,
+                read_le_u16(&self.ram, LINK_DMA_COUNTDOWN),
                 self.game_state.display.nmi_update_is_latched(),
                 self.game_state.display.pending_nmi_subroutine,
                 self.game_state.display.nmi_load_target_address,
@@ -10004,6 +10015,31 @@ impl ZeldaState {
             && run_what & crate::RUN_MAIN != 0
             && !self.dungeon_exit_spotlight_resume_module
         {
+            if self.uncle_passage_item_receipt_starts_this_main_slice() {
+                // ROM trace: Uncle_InPassage enters Link_ReceiveItem only
+                // after the pending NMI has consumed the dialogue-clear
+                // publication. The item decompressor then spans four further
+                // vblanks with the main-loop latch set. Run this boundary
+                // before the atomic port mutates sprite/OAM/palette state so
+                // every display domain belongs to the same hardware
+                // generation.
+                self.clear_nmi_update_latch();
+                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                self.capture_display_snapshot();
+                self.replay_trace_col("before-game-loop");
+                self.replay_trace_ram_watch("before-game-loop");
+                self.zelda_run_game_loop();
+                self.replay_trace_col("after-game-loop");
+                self.replay_trace_ram_watch("after-game-loop");
+                debug_assert_eq!(
+                    self.pending_rom_work.continuation,
+                    Some(RomWorkContinuation::FinishItemReceiptGraphics)
+                );
+                self.assert_native_frame_state_matches_ram();
+                self.assert_native_world_location_state_matches_ram();
+                self.assert_native_display_state_matches_ram();
+                return;
+            }
             if self.dialogue_long_scroll_starts_this_frame() {
                 // Snes9x enters this host slice with NMI pending, consumes the
                 // prior RenderText publication, then starts the slow scroll

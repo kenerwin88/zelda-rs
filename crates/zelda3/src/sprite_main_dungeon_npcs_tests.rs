@@ -6,6 +6,32 @@ fn fresh_state() -> ZeldaState {
 }
 
 #[test]
+fn passage_uncle_item_receipt_predicate_matches_the_executable_ai_state() {
+    let mut state = fresh_state();
+    let k = 5;
+    state.set_main_module(7);
+    state.set_submodule(0);
+    {
+        let mut uncle = state.sprite_slot_view_mut(k);
+        uncle.set_state(9);
+        uncle.set_sprite_type(SPRITE_TYPE_UNCLE_AND_PRIEST);
+        uncle.set_e(0);
+        uncle.set_subtype2(1);
+        uncle.set_ai_state(1);
+    }
+    assert!(state.uncle_passage_item_receipt_starts_this_main_slice());
+
+    state.sprite_slot_view_mut(k).set_ai_state(0);
+    assert!(!state.uncle_passage_item_receipt_starts_this_main_slice());
+    state.sprite_slot_view_mut(k).set_ai_state(1);
+    state.sprite_slot_view_mut(k).set_e(1);
+    assert!(!state.uncle_passage_item_receipt_starts_this_main_slice());
+    state.sprite_slot_view_mut(k).set_e(0);
+    state.set_submodule(1);
+    assert!(!state.uncle_passage_item_receipt_starts_this_main_slice());
+}
+
+#[test]
 fn uncle_departure_releases_sprite_and_retains_equipment_dma() {
     let mut s = fresh_state();
     let k = 0;
