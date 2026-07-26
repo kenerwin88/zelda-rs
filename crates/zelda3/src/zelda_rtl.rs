@@ -8820,20 +8820,18 @@ impl ZeldaState {
         // post-NMI generation.
         let animated_bg_destination = read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
         let previous_animated_bg_vram = (animated_bg_vram_generation
-            == AnimatedBgVramGeneration::HostBoundaryBeforeNmi
-            && animated_bg_destination + 0x200 <= self.ppu.vram.len())
+            == AnimatedBgVramGeneration::HostBoundaryBeforeNmi)
             .then(|| {
-                let vram = self
-                    .pre_nmi_animated_bg_scanout
+                self.pre_nmi_animated_bg_scanout
                     .as_ref()
-                    .filter(|scanout| scanout.destination_address == animated_bg_destination)
-                    .map(|scanout| scanout.vram.clone())
-                    .unwrap_or_else(|| {
-                        self.ppu.vram[animated_bg_destination..animated_bg_destination + 0x200]
-                            .to_vec()
-                    });
-                (animated_bg_destination, vram)
-            });
+                    .filter(|scanout| {
+                        scanout.destination_address == animated_bg_destination
+                            && scanout.destination_address + scanout.vram.len()
+                                <= self.ppu.vram.len()
+                    })
+                    .map(|scanout| (scanout.destination_address, scanout.vram.clone()))
+            })
+            .flatten();
         // During a message-line scroll the ROM's NMI re-uploads the VWF text
         // buffer every frame while the copy is still in flight; Snes9x's
         // scanout shows the generation uploaded at the PREVIOUS vblank.

@@ -3704,6 +3704,18 @@ fn animated_bg_uses_the_current_host_boundary_vram_at_either_destination() {
 }
 
 #[test]
+fn animated_bg_scanout_requires_a_captured_dma_source() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0] = 0x1111;
+    state.capture_display_snapshot();
+    state.ppu.vram[0] = 0x2222;
+
+    let presented_word = state.with_display_snapshot(|display| display.ppu.vram[0]);
+
+    assert_eq!(presented_word, 0x2222);
+}
+
+#[test]
 fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
     let properties = RomWorkContinuation::FinishPreOverworldProperties {
         overworld_screen: 0x00,
