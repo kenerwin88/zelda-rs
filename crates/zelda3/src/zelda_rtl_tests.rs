@@ -3588,7 +3588,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         DisplaySnapshotPublication::AdvanceStaged
     );
     assert_eq!(
-        SpotlightIterationPhase::MixedLiveTail.completion_publication(),
+        SpotlightIterationPhase::MixedTailAfterReturn.completion_publication(),
         DisplaySnapshotPublication::AdvanceStaged
     );
     assert_eq!(
@@ -3597,11 +3597,11 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x38),
-        SpotlightIterationPhase::MixedLiveTail
+        SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x07),
-        SpotlightIterationPhase::MixedLiveTail
+        SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0),
@@ -3627,6 +3627,22 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert!(!rom_spotlight_goal_transition_waits_for_iteration_return(
         16, 0,
     ));
+}
+
+#[test]
+fn spotlight_open_selects_animated_bg_vram_by_cpu_phase() {
+    assert_eq!(
+        spotlight_open_animated_bg_vram_generation(0x10, 1, true),
+        AnimatedBgVramGeneration::CapturedPreNmi
+    );
+    assert_eq!(
+        spotlight_open_animated_bg_vram_generation(0x10, 1, false),
+        AnimatedBgVramGeneration::StagedPreNmi
+    );
+    assert_eq!(
+        spotlight_open_animated_bg_vram_generation(0x0f, 1, false),
+        AnimatedBgVramGeneration::CapturedPreNmi
+    );
 }
 
 #[test]

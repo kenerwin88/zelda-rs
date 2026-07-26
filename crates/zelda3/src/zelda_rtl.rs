@@ -750,7 +750,7 @@ const WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES: u8 = 6;
 // Module $09/$21 then spends four NMI boundaries converting the restored main
 // Map16 page before it publishes INIDISP=0 and advances to fade submodule $22.
 const WORLD_MAP_AMBIENT_MAP8_NMI_SLICES: u8 = 4;
-const DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START: usize = 221;
+const SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START: usize = 221;
 
 const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool {
     // Snes9x PC traces show the $7e and $77 circle builds crossing vblank
@@ -797,8 +797,8 @@ pub(super) enum SpotlightIterationPhase {
     CloseEntry,
     /// HDMA consumes one complete table generation for the scanout.
     WholeTable,
-    /// HDMA consumes the published prefix and the newly authored final lines.
-    MixedLiveTail,
+    /// The close stages a published prefix with newly authored final lines.
+    MixedTailAfterReturn,
 }
 
 impl SpotlightIterationPhase {
@@ -808,7 +808,7 @@ impl SpotlightIterationPhase {
         } else if radius != 0 && radius <= 0x38 {
             // Snes9x PC/V-counter traces show the next circle write reaching
             // HDMA at scanline 221 once the close has reached this CPU phase.
-            Self::MixedLiveTail
+            Self::MixedTailAfterReturn
         } else {
             Self::WholeTable
         }
@@ -817,7 +817,9 @@ impl SpotlightIterationPhase {
     const fn completion_publication(self) -> DisplaySnapshotPublication {
         match self {
             Self::WholeTable => DisplaySnapshotPublication::RetainPublished,
-            Self::CloseEntry | Self::MixedLiveTail => DisplaySnapshotPublication::AdvanceStaged,
+            Self::CloseEntry | Self::MixedTailAfterReturn => {
+                DisplaySnapshotPublication::AdvanceStaged
+            }
         }
     }
 }
@@ -2339,6 +2341,25 @@ enum DisplayVramGeneration {
     #[default]
     ComposeLiveAfterNmi,
     RetainCapturedBeforeNmi,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum AnimatedBgVramGeneration {
+    #[default]
+    CapturedPreNmi,
+    StagedPreNmi,
+}
+
+const fn spotlight_open_animated_bg_vram_generation(
+    main_module: u8,
+    submodule: u8,
+    rom_work_pending: bool,
+) -> AnimatedBgVramGeneration {
+    if main_module == 0x10 && submodule == 1 && !rom_work_pending {
+        AnimatedBgVramGeneration::StagedPreNmi
+    } else {
+        AnimatedBgVramGeneration::CapturedPreNmi
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -8284,12 +8305,13 @@ impl ZeldaState {
                 display.ppu.half_color,
                 self.ppu.half_color,
             );
-        // Module 10 defers the iris control snapshot by one frame, but animated
-        // BG tiles still come from the current frame's pre-NMI VRAM. The live
-        // VRAM below is post-NMI and would expose a newly selected animation
-        // phase one scanout early at the exact Main_PrepSpritesForNmi boundary.
-        let current_pre_nmi_animated_bg_vram = (self.game_state.frame.main_module == 0x10
-            && self.game_state.frame.submodule == 1)
+        let animated_bg_vram_generation = spotlight_open_animated_bg_vram_generation(
+            self.game_state.frame.main_module,
+            self.game_state.frame.submodule,
+            self.pending_rom_work.is_pending(),
+        );
+        let staged_pre_nmi_animated_bg_vram = (animated_bg_vram_generation
+            == AnimatedBgVramGeneration::StagedPreNmi)
             .then(|| {
                 self.deferred_display_snapshot
                     .as_ref()
@@ -8391,15 +8413,16 @@ impl ZeldaState {
             retain_previous_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
         // The normal overworld animation upload targets VRAM $3c00. Snes9x
         // normally returns the active frame that ended at this vblank, so
-        // retain the captured pre-NMI generation across overworld overlays.
-        // The resumed bad-weather tail is the measured exception: its rain
-        // scroll and newly uploaded animated CHR are both visible on the same
-        // scanout. Module 10's interrupted main thread selects its newer
-        // pre-NMI image from `deferred_display_snapshot` above instead.
-        let previous_overworld_animated_bg_vram = (current_pre_nmi_animated_bg_vram.is_none()
-            && !publish_live_overworld_bad_weather_scroll
+        // retain the coherent display snapshot's pre-NMI generation across
+        // overworld overlays and spotlight publication. The resumed
+        // bad-weather tail is the measured exception: its rain scroll and
+        // newly uploaded animated CHR are both visible on the same scanout.
+        let previous_overworld_animated_bg_vram = (!publish_live_overworld_bad_weather_scroll
             && read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) == 0x3c00)
-            .then(|| self.ppu.vram[0x3c00..0x3e00].to_vec());
+            .then(|| match staged_pre_nmi_animated_bg_vram {
+                Some(vram) => vram,
+                None => self.ppu.vram[0x3c00..0x3e00].to_vec(),
+            });
         // During a message-line scroll the ROM's NMI re-uploads the VWF text
         // buffer every frame while the copy is still in flight; Snes9x's
         // scanout shows the generation uploaded at the PREVIOUS vblank.
@@ -8433,9 +8456,6 @@ impl ZeldaState {
             || display.vram_generation == DisplayVramGeneration::RetainCapturedBeforeNmi;
         if !retain_captured_vram {
             self.ppu.vram.clone_from(&display.ppu.vram);
-            if let Some(animated_bg_vram) = current_pre_nmi_animated_bg_vram {
-                self.ppu.vram[0x3c00..0x3e00].copy_from_slice(&animated_bg_vram);
-            }
             if let Some(animated_bg_vram) = previous_overworld_animated_bg_vram {
                 self.ppu.vram[0x3c00..0x3e00].copy_from_slice(&animated_bg_vram);
             }
@@ -9690,9 +9710,9 @@ impl ZeldaState {
         // generation for the scanout that ends here.
         self.capture_display_snapshot_with_override(publication_override);
         if self.pending_rom_work.spotlight_iteration_phase()
-            == Some(SpotlightIterationPhase::MixedLiveTail)
+            == Some(SpotlightIterationPhase::MixedTailAfterReturn)
         {
-            let byte_start = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
+            let byte_start = SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START * 2;
             let published_prefixes = self.display_snapshot.as_ref().map(|display| {
                 [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
                     .map(|table_base| display.ram[table_base..table_base + byte_start].to_vec())
