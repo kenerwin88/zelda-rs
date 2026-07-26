@@ -21,7 +21,7 @@ const MIRE_ENTRANCE_MASK_BITS: [u8; 26] = [
 const OVERWORLD_RAIN_X_OFFSETS: [u8; 4] = [1, 0, 1, 0];
 const OVERWORLD_RAIN_Y_OFFSETS: [u8; 4] = [0, 17, 0, 17];
 const OVERWORLD_SCREEN_TRANSITION_DIRECTION_BITS: [u8; 4] = [8, 4, 2, 1];
-const SECRET_TILE_BELOW_BY_TYPE: [u16; 4] = [0x0dcc, 0x0212, 0xffff, 0x0db4];
+const OVERWORLD_SECRET_TILE_BY_TYPE: [u16; 4] = [0x0dcc, 0x0212, 0xffff, 0x0db4];
 const LW_TURTLE_ROCK_PEG_POSITIONS: [u16; 3] = [0x0826, 0x05a0, 0x081a];
 const PACKED_ENEMY_DAMAGE_SOURCE_BYTES: usize = 0x800;
 const OVERWORLD_DOOR_ANIM_TILES: [u16; 56] = [
@@ -1864,7 +1864,7 @@ impl ZeldaState {
 
         if memoize {
             if check_secret {
-                let secret = self.Overworld_RevealSecret(pos);
+                let secret = self.overworld_reveal_secret(pos);
                 if secret != 0 {
                     yv = secret;
                 }
@@ -4614,22 +4614,22 @@ impl ZeldaState {
             .expect("Overworld_ReadTileAttribute missing kSomeTileAttr asset")[tile]
     }
 
-    pub(super) fn Overworld_RevealSecret(&mut self, pos: u16) -> u16 {
+    pub(super) fn overworld_reveal_secret(&mut self, pos: u16) -> u16 {
         self.dungeon_secret_scratch_mut().clear_pending_kind();
 
         let screen = u16::from(self.game_state.world.location.overworld_screen_index()) as usize;
         if screen >= 0x80 {
-            self.AdjustSecretForPowder();
+            self.adjust_secret_for_powder();
             return 0;
         }
 
         let secret_offsets = self
             .asset_raw(157)
-            .expect("Overworld_RevealSecret missing kOverworldSecrets_Offs asset")
+            .expect("overworld_reveal_secret missing kOverworldSecrets_Offs asset")
             .to_vec();
         let secrets = self
             .asset_raw(158)
-            .expect("Overworld_RevealSecret missing kOverworldSecrets asset")
+            .expect("overworld_reveal_secret missing kOverworldSecrets asset")
             .to_vec();
         let ptr = u16::from(secret_offsets[screen * 2])
             | (u16::from(secret_offsets[screen * 2 + 1]) << 8);
@@ -4637,7 +4637,7 @@ impl ZeldaState {
         loop {
             let x = u16::from(secrets[ptr]) | (u16::from(secrets[ptr + 1]) << 8);
             if x == 0xffff {
-                self.AdjustSecretForPowder();
+                self.adjust_secret_for_powder();
                 return 0;
             }
             if x & 0x7fff == pos {
@@ -4651,7 +4651,7 @@ impl ZeldaState {
             self.dungeon_secret_scratch_mut().or_pending_kind(data);
         }
         if data < 0x80 {
-            self.AdjustSecretForPowder();
+            self.adjust_secret_for_powder();
             return 0;
         }
 
@@ -4667,7 +4667,7 @@ impl ZeldaState {
                 == 0
         {
             if screen == 0x5b && self.game_state.sprites.follower_runtime.indicator() != 13 {
-                self.AdjustSecretForPowder();
+                self.adjust_secret_for_powder();
                 return 0;
             }
             self.set_sound_effect_2(0x1b);
@@ -4675,11 +4675,11 @@ impl ZeldaState {
             self.set_sound_effect_2(0x1b);
         }
 
-        self.AdjustSecretForPowder();
-        SECRET_TILE_BELOW_BY_TYPE[((data & 0x0f) >> 1) as usize]
+        self.adjust_secret_for_powder();
+        OVERWORLD_SECRET_TILE_BY_TYPE[((data & 0x0f) >> 1) as usize]
     }
 
-    pub(super) fn AdjustSecretForPowder(&mut self) {
+    fn adjust_secret_for_powder(&mut self) {
         if self.game_state.player.follower_link.item_in_hand_has(0x40) {
             self.dungeon_secret_scratch_mut().set_powder_pending_kind();
         }
@@ -5378,7 +5378,7 @@ impl ZeldaState {
                 self.overworld_bomb_tile_label_a(pos);
                 return;
             };
-            let mut a = self.overworld_reveal_secret_for_smash(pos);
+            let mut a = self.overworld_reveal_secret(pos);
             if a == 0 {
                 a = j;
             }
@@ -5395,7 +5395,7 @@ impl ZeldaState {
     }
 
     fn overworld_bomb_tile_label_a(&mut self, pos: u16) {
-        let a = self.overworld_reveal_secret_for_smash(pos);
+        let a = self.overworld_reveal_secret(pos);
         if a == 0x0db4 {
             self.dungeon_room_tilemaps_mut()
                 .set_bg2_tile_by_byte_pos(pos, a);

@@ -4161,7 +4161,7 @@ impl ZeldaState {
         x: u16,
         y: u16,
     ) -> u8 {
-        let secret = self.overworld_reveal_secret_for_smash(pos);
+        let secret = self.overworld_reveal_secret(pos);
         if secret != 0 {
             tile = secret;
         }
@@ -4188,7 +4188,7 @@ impl ZeldaState {
         self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(pos);
         self.dungeon_doors_mut().set_door_open_counter(40);
-        let secret = self.overworld_reveal_secret_for_smash(pos);
+        let secret = self.overworld_reveal_secret(pos);
         if secret == 0xffff {
             let screen =
                 u16::from(self.game_state.world.location.overworld_screen_index()) as usize;
@@ -4204,77 +4204,6 @@ impl ZeldaState {
         );
         self.overworld_do_map_update32x32_b_for_smash();
         self.map16_quadrant_attr(a, x, y)
-    }
-
-    pub(super) fn overworld_reveal_secret_for_smash(&mut self, pos: u16) -> u16 {
-        self.dungeon_secret_scratch_mut().clear_pending_kind();
-
-        let screen = u16::from(self.game_state.world.location.overworld_screen_index()) as usize;
-        if screen >= 0x80 {
-            self.adjust_secret_for_powder_for_smash();
-            return 0;
-        }
-
-        let secret_offsets = self
-            .asset_raw(157)
-            .expect("overworld_reveal_secret_for_smash missing kOverworldSecrets_Offs asset")
-            .to_vec();
-        let secrets = self
-            .asset_raw(158)
-            .expect("overworld_reveal_secret_for_smash missing kOverworldSecrets asset")
-            .to_vec();
-        let ptr = u16::from(secret_offsets[screen * 2])
-            | (u16::from(secret_offsets[screen * 2 + 1]) << 8);
-        let mut ptr = ptr as usize;
-        loop {
-            let x = u16::from(secrets[ptr]) | (u16::from(secrets[ptr + 1]) << 8);
-            if x == 0xffff {
-                self.adjust_secret_for_powder_for_smash();
-                return 0;
-            }
-            if x & 0x7fff == pos {
-                break;
-            }
-            ptr += 3;
-        }
-
-        let data = secrets[ptr + 2];
-        if data != 0 && data < 0x80 {
-            self.dungeon_secret_scratch_mut().or_pending_kind(data);
-        }
-        if data < 0x80 {
-            self.adjust_secret_for_powder_for_smash();
-            return 0;
-        }
-
-        self.dungeon_secret_scratch_mut().set_pending_kind(0xff);
-        if data != 0x84
-            && self
-                .game_state
-                .world
-                .overworld
-                .event_info
-                .event_info(screen)
-                & 2
-                == 0
-        {
-            if screen == 0x5b && self.game_state.sprites.follower_runtime.indicator() != 13 {
-                self.adjust_secret_for_powder_for_smash();
-                return 0;
-            }
-            self.set_sound_effect_2(0x1b);
-        } else if data == 0x82 && self.game_state.enhanced_features.has(4096) {
-            self.set_sound_effect_2(0x1b);
-        }
-
-        self.adjust_secret_for_powder_for_smash();
-        OVERWORLD_REVEAL_SECRET_FOR_SMASH_TILE_BELOW[((data & 0x0f) >> 1) as usize]
-    }
-
-    fn adjust_secret_for_powder_for_smash(&mut self) {
-        if self.game_state.player.follower_link.item_in_hand_has(0x40) {
-            self.dungeon_secret_scratch_mut().set_powder_pending_kind();
-        }
     }
 
     pub(super) fn overworld_memorize_map16_change_for_smash(&mut self, pos: u16, value: u16) {

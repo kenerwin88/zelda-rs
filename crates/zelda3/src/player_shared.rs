@@ -187,9 +187,6 @@ pub(super) const SMASH_ROCK_PILE_FROM_LIFT_IMPL_BIG_ROCK_QUADRANT_Y_OFFSETS: [i1
 pub(super) const SMASH_ROCK_PILE_FROM_LIFT_IMPL_BIG_ROCK_QUADRANT_X_OFFSETS: [i16; 4] =
     [0, -1, 0, -1];
 
-pub(super) const OVERWORLD_REVEAL_SECRET_FOR_SMASH_TILE_BELOW: [u16; 4] =
-    [0x0dcc, 0x0212, 0xffff, 0x0db4];
-
 pub(super) const OVERWORLD_DO_MAP_UPDATE32X32_FOR_SMASH_DOOR_ANIM_TILES: [u16; 56] = [
     0x0da8, 0x0da9, 0x0daa, 0x0dab, 0x0dac, 0x0dad, 0x0dae, 0x0daf, 0x0db0, 0x0db1, 0x0db2, 0x0db3,
     0x0db6, 0x0db7, 0x0db8, 0x0db9, 0x0dba, 0x0dbb, 0x0dbc, 0x0dbd, 0x0dcd, 0x0dce, 0x0dcf, 0x0dd0,
