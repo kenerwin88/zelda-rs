@@ -76,33 +76,39 @@ fn sprite_func22_sets_transition_state_and_advances_rng() {
 }
 
 #[test]
-fn cartridge_random_adc_preserves_the_rom_carry_chain() {
+fn outdoor_secret_gate_uses_the_shared_rng_sequence() {
     let mut s = fresh_state();
+    s.set_indoor_flag(0);
+    s.set_frame_counter(0x3e);
+    s.set_rng_seed(0x88);
+    s.dungeon_secret_scratch_mut().set_pending_kind(1);
 
-    s.set_frame_counter(0x20);
-    s.set_rng_seed(0);
-    assert_eq!(s.get_random_number_from_ppu_read(0xbe, false), (0xde, false));
+    let mut expected = s.clone();
+    let expected_seed = expected.get_random_number();
+    assert_ne!(expected_seed & 8, 0);
 
-    s.set_frame_counter(0x99);
-    assert_eq!(s.get_random_number_from_ppu_read(0xbe, false), (0x36, true));
-    assert_eq!(s.get_random_number_from_ppu_read(0xe2, true), (0xb3, false));
+    s.sprite_spawn_secret(14);
+
+    assert_eq!(s.game_state.world.region.rng_seed(), expected_seed);
+    assert!((0..16).all(|slot| s.sprite_slot_view(slot).state() == 0));
 }
 
 #[test]
-fn outdoor_powder_secret_uses_the_cartridge_ppu_roll() {
+fn outdoor_powder_secret_consumes_two_shared_rng_values() {
     let mut s = fresh_state();
-    let parent = 14;
+    s.set_indoor_flag(0);
     s.set_frame_counter(0x99);
-    s.set_rng_seed(0xde);
+    s.set_rng_seed(0xa8);
     s.dungeon_secret_scratch_mut().set_pending_kind(4);
 
-    s.sprite_spawn_secret(parent);
+    let mut expected = s.clone();
+    let gate_roll = expected.get_random_number();
+    assert_eq!(gate_roll & 8, 0);
+    let expected_seed = expected.get_random_number();
 
-    assert_eq!(s.game_state.world.region.rng_seed(), 0xb3);
-    assert!(
-        (0..16).all(|slot| s.sprite_slot_view(slot).state() == 0),
-        "the cartridge's b=22 table entry is empty"
-    );
+    s.sprite_spawn_secret(14);
+
+    assert_eq!(s.game_state.world.region.rng_seed(), expected_seed);
 }
 
 #[test]

@@ -5848,20 +5848,9 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_spawn_secret(&mut self, k: usize) {
-        // Unlike the C port's deterministic LFSR, the cartridge routine at
-        // $8dba71 reads the PPU H counter and preserves 65816 carry across its
-        // two ADCs. Snes9x execution probes at this exact translated boundary
-        // return $be for the outdoor gate. The immediately-following powder
-        // item roll returns $e2 and inherits the gate call's carry.
-        const OUTDOOR_SECRET_GATE_PPU_READ: u8 = 0xbe;
-        const OUTDOOR_POWDER_ITEM_PPU_READ: u8 = 0xe2;
-
-        let mut random_carry = false;
         if self.game_state.world.location.is_outdoors() {
             let before_rng = self.game_state.world.region.rng_seed();
-            let (roll, carry) =
-                self.get_random_number_from_ppu_read(OUTDOOR_SECRET_GATE_PPU_READ, false);
-            random_carry = carry;
+            let roll = self.get_random_number();
             if std::env::var_os("ZELDA3_REPLAY_SPRITE_LOAD_DUMP").is_some() {
                 println!(
                     "secret-spawn frame={} parent={} before=0x{:02x} roll=0x{:02x} b=0x{:02x} indoors={}",
@@ -5882,16 +5871,7 @@ impl ZeldaState {
             return;
         }
         if b == 4 {
-            let random = if self.game_state.world.location.is_outdoors() {
-                self.get_random_number_from_ppu_read(
-                    OUTDOOR_POWDER_ITEM_PPU_READ,
-                    random_carry,
-                )
-                .0
-            } else {
-                self.get_random_number()
-            };
-            b = 19 + (random & 3);
+            b = 19 + (self.get_random_number() & 3);
         }
         let i = b.wrapping_sub(1) as usize;
         if i >= SPRITE_SPAWN_SECRET_SECRET_SPAWN_ITEMS_BY_TILE.len()
