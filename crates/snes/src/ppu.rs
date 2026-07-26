@@ -631,17 +631,16 @@ impl PpuState {
 
     fn write_bg_hofs(&mut self, adr: u8, val: u8) {
         let i = ((adr - 0xd) / 2) as usize;
-        self.bg_layer[i].h_scroll = (((val as u16) << 8)
+        self.bg_layer[i].h_scroll = ((val as u16) << 8)
             | (self.scroll_prev as u16 & 0xf8)
-            | (self.scroll_prev2 as u16 & 0x7))
-            & 0x3ff;
+            | (self.scroll_prev2 as u16 & 0x7);
         self.scroll_prev = val;
         self.scroll_prev2 = val;
     }
 
     fn write_bg_vofs(&mut self, adr: u8, val: u8) {
         let i = ((adr - 0xe) / 2) as usize;
-        self.bg_layer[i].v_scroll = (((val as u16) << 8) | self.scroll_prev as u16) & 0x3ff;
+        self.bg_layer[i].v_scroll = ((val as u16) << 8) | self.scroll_prev as u16;
         self.scroll_prev = val;
     }
 
@@ -2427,6 +2426,19 @@ mod tests {
         ppu.write(0x22, 0x12); // hi
         assert_eq!(ppu.cgram[0], 0x1234);
         assert_eq!(ppu.cgram_pointer, 1);
+    }
+
+    #[test]
+    fn bg_scroll_registers_retain_full_latched_offsets() {
+        let mut ppu = PpuState::new();
+
+        ppu.write(0x0d, 0x91);
+        ppu.write(0x0d, 0x24);
+        ppu.write(0x0e, 0x00);
+        ppu.write(0x0e, 0x41);
+
+        assert_eq!(ppu.bg_layer[0].h_scroll, 0x2491);
+        assert_eq!(ppu.bg_layer[0].v_scroll, 0x4100);
     }
 
     #[test]

@@ -10,7 +10,7 @@ use crate::game_state::constants::{
     DMA_SOURCE_ADDR_14, DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17,
     DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20,
     DMA_SOURCE_ADDR_21, DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6,
-    DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, TM_COPY, TS_COPY,
+    DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, DUNG_BG2, TM_COPY, TS_COPY,
 };
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
 
@@ -934,6 +934,41 @@ fn overworld_map16_wram_slots_are_bridge_only() {
             "{symbol} should appear only at its const declaration and optional bridge write"
         );
     }
+}
+
+#[test]
+fn overworld_map16_stripes_follow_rom_long_indexed_wram_reads_past_bg2_page() {
+    let mut data = Vec::new();
+    let mut ranges = vec![(0, 0); 71];
+    put_test_asset(&mut data, &mut ranges, 70, vec![0; 9 * 8]);
+
+    let mut state = ZeldaState::new();
+    state.assets = Some(AssetPack::from_data_ranges(data, ranges));
+    state.set_overworld_map16_load_state(OverworldMap16LoadState {
+        src_off: 0x1802,
+        dst_off: 0x001a,
+        y_unit: 0x0008,
+    });
+    state.set_screen_transition_direction_bits(1);
+
+    let crossed_page_words = [
+        0x0dc4, 0x0c68, 0x0270, 0x0271, 0x0c6c, 0x0272, 0x0273, 0x0c69,
+    ];
+    for (index, value) in crossed_page_words.into_iter().enumerate() {
+        let source_offset = 0x2032 + index * 0x80;
+        write_le_u16(&mut state.ram, DUNG_BG2 + source_offset, value);
+    }
+
+    state.BufferAndBuildMap16Stripes_X(0);
+
+    let captured = std::array::from_fn(|index| {
+        state
+            .game_state
+            .world
+            .transient
+            .dung_replacement_tile_state(index)
+    });
+    assert_eq!(captured, crossed_page_words);
 }
 
 #[test]
@@ -3905,7 +3940,7 @@ fn bg_scroll_scanout_replays_the_nmi_register_write_order() {
     ppu.scroll_prev = 0x91;
     ppu.scroll_prev2 = 0x35;
     let register_bytes = [
-        [0x8b, 0x00, 0x3c, 0x00],
+        [0x91, 0x24, 0x00, 0x41],
         [0x18, 0x02, 0x00, 0x02],
         [0x00, 0x00, 0x00, 0x00],
     ];
@@ -3921,6 +3956,61 @@ fn bg_scroll_scanout_replays_the_nmi_register_write_order() {
     }
 
     assert_eq!(predicted, BgScrollRegisterScanout::capture(&ppu));
+    assert_eq!(predicted.offsets[0], [0x2491, 0x4100]);
+    assert_eq!(predicted.offsets[1], [0x0218, 0x0200]);
+}
+
+#[test]
+fn display_snapshot_consumes_vram_once_and_retains_active_oam_generation() {
+    let mut state = ZeldaState::new();
+    let held_oam = vec![0x1234; state.ppu.oam.len()];
+    state.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+    state.next_display_bg_scroll_generation = DisplayBgScrollGeneration::ComposeLiveAfterNmi;
+    state.active_display_oam_generation = DisplayOamGeneration::RetainOverworldTransitionEntry {
+        oam: held_oam.clone(),
+    };
+
+    state.capture_display_snapshot();
+
+    let snapshot = state.display_snapshot.as_ref().expect("display snapshot");
+    assert_eq!(
+        snapshot.vram_generation,
+        DisplayVramGeneration::RetainCapturedBeforeNmi,
+    );
+    assert_eq!(
+        snapshot.bg_scroll_generation,
+        DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+    );
+    assert_eq!(
+        snapshot.oam_generation,
+        DisplayOamGeneration::RetainOverworldTransitionEntry {
+            oam: held_oam.clone(),
+        },
+    );
+    assert_eq!(
+        state.next_display_vram_generation,
+        DisplayVramGeneration::ComposeLiveAfterNmi,
+    );
+    assert_eq!(
+        state.next_display_bg_scroll_generation,
+        DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
+    );
+    assert_eq!(
+        state.active_display_oam_generation,
+        DisplayOamGeneration::RetainOverworldTransitionEntry {
+            oam: held_oam.clone(),
+        },
+    );
+
+    state.capture_display_snapshot();
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .expect("second display snapshot")
+            .oam_generation,
+        DisplayOamGeneration::RetainOverworldTransitionEntry { oam: held_oam },
+    );
 }
 
 #[test]

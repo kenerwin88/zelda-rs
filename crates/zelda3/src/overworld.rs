@@ -1,6 +1,7 @@
 // Methods ported from zelda3/src/overworld.c and included inside ZeldaState.
 
 use super::*;
+use crate::game_state::constants::DUNG_BG2;
 use crate::types::{sign16, Point16U};
 
 mod overworld_shared;
@@ -2960,6 +2961,15 @@ impl ZeldaState {
         self.game_state.dungeon.room_tilemaps.bg2_tile(word_index)
     }
 
+    fn overworld_map16_stripe_source_word(&self, source_offset: u16) -> u16 {
+        // $82:F3DB/$82:F4A5 use `LDA [$00],Y` with a $7E:2000 base.
+        // The 65816 therefore keeps reading contiguous WRAM when the 16-bit
+        // source offset passes the nominal $2000-byte BG2 map page. Those
+        // adjacent words are intentional inputs to edge stripes; clamping to
+        // the typed BG2 page changes the published tilemap.
+        read_le_u16(&self.ram, DUNG_BG2 + usize::from(source_offset))
+    }
+
     fn overworld_map16_to_map8_word(&self, map8: &[u8], map16: u16, quarter: usize) -> u16 {
         read_word_from_slice(map8, ((map16 as usize) * 4 + quarter) * 2)
     }
@@ -3023,11 +3033,7 @@ impl ZeldaState {
         let mut pos = self.overworld_map16_src_off().wrapping_sub(strip);
         let mut y_unit_index = self.overworld_map16_y_unit() as usize & 0x1f;
         for _ in 0..32 {
-            let tile = if pos >= 0x2000 {
-                0
-            } else {
-                self.overworld_bg2_word((pos >> 1) as usize)
-            };
+            let tile = self.overworld_map16_stripe_source_word(pos);
             self.set_dung_replacement_tile_state(y_unit_index, tile);
             y_unit_index = (y_unit_index + 1) & 0x1f;
             pos = pos.wrapping_add(0x80);
@@ -3077,11 +3083,7 @@ impl ZeldaState {
             .wrapping_sub(OVERWORLD_MAP16_STRIP_BACKTRACK_BY_DIRECTION[strip_index]);
         let mut dst_unit_index = self.overworld_map16_dst_off() as usize & 0x1f;
         for _ in 0..32 {
-            let tile = if pos >= 0x2000 {
-                0
-            } else {
-                self.overworld_bg2_word((pos >> 1) as usize)
-            };
+            let tile = self.overworld_map16_stripe_source_word(pos);
             self.set_dung_replacement_tile_state(dst_unit_index, tile);
             pos = pos.wrapping_add(2);
             dst_unit_index = (dst_unit_index + 1) & 0x1f;

@@ -658,6 +658,11 @@ enum OverworldSpriteReloadEntryPhase {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OverworldModuleEntryPhase {
+    AfterVblankFromAuxGraphicsReturn,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OverworldSpriteReloadTiming {
     load_nmi_slices: u8,
     post_return_hold_nmi_slices: u8,
@@ -2259,21 +2264,42 @@ impl BgScrollRegisterScanout {
         let mut previous2 = ppu.scroll_prev2;
         for (layer, [h_low, h_high, v_low, v_high]) in register_bytes.into_iter().enumerate() {
             for value in [h_low, h_high] {
-                scanout.offsets[layer][0] = (((u16::from(value)) << 8)
+                scanout.offsets[layer][0] = ((u16::from(value)) << 8)
                     | (u16::from(previous) & 0xf8)
-                    | (u16::from(previous2) & 0x07))
-                    & 0x03ff;
+                    | (u16::from(previous2) & 0x07);
                 previous = value;
                 previous2 = value;
             }
             for value in [v_low, v_high] {
-                scanout.offsets[layer][1] =
-                    (((u16::from(value)) << 8) | u16::from(previous)) & 0x03ff;
+                scanout.offsets[layer][1] = ((u16::from(value)) << 8) | u16::from(previous);
                 previous = value;
             }
         }
         scanout
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum DisplayVramGeneration {
+    #[default]
+    ComposeLiveAfterNmi,
+    RetainCapturedBeforeNmi,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum DisplayBgScrollGeneration {
+    #[default]
+    RetainCapturedBeforeNmi,
+    ComposeLiveAfterNmi,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+enum DisplayOamGeneration {
+    #[default]
+    FollowModuleCadence,
+    RetainOverworldTransitionEntry {
+        oam: Vec<u16>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -2497,6 +2523,14 @@ pub struct ZeldaState {
     #[serde(skip)]
     pending_rom_work: PendingRomWork,
     #[serde(skip)]
+    next_display_vram_generation: DisplayVramGeneration,
+    #[serde(skip)]
+    next_display_bg_scroll_generation: DisplayBgScrollGeneration,
+    #[serde(skip)]
+    active_display_oam_generation: DisplayOamGeneration,
+    #[serde(skip)]
+    next_overworld_module_entry_phase: Option<OverworldModuleEntryPhase>,
+    #[serde(skip)]
     next_overworld_sprite_reload_entry_phase: Option<OverworldSpriteReloadEntryPhase>,
     #[serde(skip)]
     joypad_sampled_before_main: bool,
@@ -2673,6 +2707,9 @@ struct DisplaySnapshot {
     ram: Vec<u8>,
     ppu: PpuState,
     dma: DmaState,
+    vram_generation: DisplayVramGeneration,
+    bg_scroll_generation: DisplayBgScrollGeneration,
+    oam_generation: DisplayOamGeneration,
     published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
     published_bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
     published_dialogue_msg_read_pos: u16,
@@ -7430,6 +7467,10 @@ impl ZeldaState {
             attract_init_graphics_phase: 0,
             attract_first_story_render_delay: 0,
             pending_rom_work: PendingRomWork::default(),
+            next_display_vram_generation: DisplayVramGeneration::default(),
+            next_display_bg_scroll_generation: DisplayBgScrollGeneration::default(),
+            active_display_oam_generation: DisplayOamGeneration::default(),
+            next_overworld_module_entry_phase: None,
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
@@ -7957,6 +7998,9 @@ impl ZeldaState {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
             dma: self.dma.clone(),
+            vram_generation: std::mem::take(&mut self.next_display_vram_generation),
+            bg_scroll_generation: std::mem::take(&mut self.next_display_bg_scroll_generation),
+            oam_generation: self.active_display_oam_generation.clone(),
             published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
             published_bg3_vwf_glyph_run_dialogue_offsets: self
                 .published_bg3_vwf_glyph_run_dialogue_offsets
@@ -8097,16 +8141,21 @@ impl ZeldaState {
                 // sequence has entered its fade-in state.
                 && !(self.game_state.ending.attract_scene.sequence() == 1
                     && self.game_state.ending.attract_scene.state() >= 4));
-        let retain_previous_nmi_oam = rom_display_oam_publication_is_deferred(
-            snapshot_frame.main_module,
-            snapshot_frame.submodule,
-            display.ppu.forced_blank_scanlines != 0,
-            pending_main_thread_stripe,
-        ) || rom_dungeon_exit_entry_oam_publication_is_deferred(
-            snapshot_frame.main_module,
-            self.game_state.frame.main_module,
-            self.game_state.frame.submodule,
-        );
+        let retain_previous_nmi_oam = match &display.oam_generation {
+            DisplayOamGeneration::FollowModuleCadence => {
+                rom_display_oam_publication_is_deferred(
+                    snapshot_frame.main_module,
+                    snapshot_frame.submodule,
+                    display.ppu.forced_blank_scanlines != 0,
+                    pending_main_thread_stripe,
+                ) || rom_dungeon_exit_entry_oam_publication_is_deferred(
+                    snapshot_frame.main_module,
+                    self.game_state.frame.main_module,
+                    self.game_state.frame.submodule,
+                )
+            }
+            DisplayOamGeneration::RetainOverworldTransitionEntry { .. } => true,
+        };
         let world_map_fade_display = snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
             && self.game_state.ending.attract_scene.sequence() == 1
@@ -8208,6 +8257,12 @@ impl ZeldaState {
                 layer.v_scroll = scroll[index * 2 + 1];
             }
         }
+        if display.bg_scroll_generation == DisplayBgScrollGeneration::ComposeLiveAfterNmi {
+            for (shown, live) in self.ppu.bg_layer.iter_mut().zip(&display.ppu.bg_layer) {
+                shown.h_scroll = live.h_scroll;
+                shown.v_scroll = live.v_scroll;
+            }
+        }
         if publish_live_dungeon_exit_scroll {
             for (shown, live) in self.ppu.bg_layer.iter_mut().zip(&display.ppu.bg_layer) {
                 shown.h_scroll = live.h_scroll;
@@ -8279,7 +8334,9 @@ impl ZeldaState {
                 retain_previous_nmi_display_memory,
             );
         }
-        if !retain_previous_nmi_display_memory {
+        let retain_captured_vram = retain_previous_nmi_display_memory
+            || display.vram_generation == DisplayVramGeneration::RetainCapturedBeforeNmi;
+        if !retain_captured_vram {
             self.ppu.vram.clone_from(&display.ppu.vram);
             if let Some(animated_bg_vram) = current_pre_nmi_animated_bg_vram {
                 self.ppu.vram[0x3c00..0x3e00].copy_from_slice(&animated_bg_vram);
@@ -8291,6 +8348,8 @@ impl ZeldaState {
                 self.ppu.vram[0x4000..0x4400].copy_from_slice(&previous_link_obj_vram);
             }
             self.ppu.vram[0x5800..0x5c00].copy_from_slice(&presented_poly);
+        }
+        if !retain_previous_nmi_display_memory {
             // CGRAM: the NMI's main-palette-buffer upload is only visible on
             // the NEXT scanout (hardware uploads it in the vblank after this
             // frame was scanned), so when that upload ran this frame, display
@@ -8343,6 +8402,11 @@ impl ZeldaState {
         // sprite DMA has already completed and is visible on this scanout.
         if !retain_previous_nmi_oam {
             self.ppu.oam.clone_from(&display.ppu.oam);
+        }
+        if let DisplayOamGeneration::RetainOverworldTransitionEntry { oam } =
+            &display.oam_generation
+        {
+            self.ppu.oam.clone_from(oam);
         }
         self.ppu.obj_vram_latch = None;
         self.ppu.obj_previous_frame_vram = display.ppu.obj_previous_frame_vram.clone();
@@ -9330,12 +9394,20 @@ impl ZeldaState {
                     // that ordering: this scanout uses the pre-load display,
                     // while the completed graphics and caller suffix become
                     // CPU-visible before the next frame.
+                    //
+                    // The interrupt's scroll-register writes occur at this
+                    // vblank and are visible in the scanout even though the
+                    // decompressed VRAM generation remains the captured one.
+                    self.next_display_bg_scroll_generation =
+                        DisplayBgScrollGeneration::ComposeLiveAfterNmi;
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                     self.complete_module09_load_aux_gfx();
                     self.complete_module09_overworld_after_submodule();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
+                    self.next_overworld_module_entry_phase =
+                        Some(OverworldModuleEntryPhase::AfterVblankFromAuxGraphicsReturn);
                     return;
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldMapQuadrants {
@@ -9379,6 +9451,11 @@ impl ZeldaState {
                     }
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
+                    // The map/sprite graphics tail has now returned and
+                    // rebuilt the same transition-entry sprite image. The
+                    // snapshot above still owns the held hardware OAM for
+                    // this scanout; subsequent frames resume normal cadence.
+                    self.active_display_oam_generation = DisplayOamGeneration::FollowModuleCadence;
                     // The next ordinary Module09 iteration begins at the
                     // vblank edge immediately following this returned
                     // graphics tail. Carry that CPU phase explicitly into
@@ -9460,8 +9537,12 @@ impl ZeldaState {
                 // pre-main boundary here before consuming that carry so this
                 // scroll starts from the ROM's $12 == 0 state.
                 self.clear_nmi_update_latch();
-                self.capture_display_snapshot();
                 self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                // This host scanout includes the upload consumed by the
+                // boundary above, while the CPU state returned below includes
+                // the next upload authored by submodule 2. Capture between
+                // those two generations.
+                self.capture_display_snapshot();
                 self.replay_trace_col("before-game-loop");
                 self.replay_trace_ram_watch("before-game-loop");
                 self.zelda_run_game_loop();
@@ -9472,6 +9553,56 @@ impl ZeldaState {
                     .is_copying_remaining_pixels());
                 self.dialogue_scroll_stale_scanout =
                     std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
+                self.assert_native_frame_state_matches_ram();
+                self.assert_native_world_location_state_matches_ram();
+                self.assert_native_display_state_matches_ram();
+                return;
+            }
+            if matches!(
+                self.next_overworld_module_entry_phase.take(),
+                Some(OverworldModuleEntryPhase::AfterVblankFromAuxGraphicsReturn)
+            ) {
+                // The auxiliary decompression returns after the preceding
+                // vblank. Snes9x then consumes upload 9 at the next host
+                // boundary before Module09/submodule 2 runs at V=1. That
+                // main slice authors upload 10 for the following NMI; it must
+                // remain pending in the post-frame state and must not leak
+                // into the scanout that just ended.
+                //
+                // Scroll-register writes belong to the NMI that starts this
+                // scanout, unlike upload 10 authored by the subsequent main
+                // slice. Select that post-NMI register generation before
+                // capturing the independently retained VRAM generation.
+                self.next_display_bg_scroll_generation =
+                    DisplayBgScrollGeneration::ComposeLiveAfterNmi;
+                self.capture_display_snapshot();
+                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                self.replay_trace_col("before-game-loop");
+                self.replay_trace_ram_watch("before-game-loop");
+                self.zelda_run_game_loop();
+                self.replay_trace_col("after-game-loop");
+                self.replay_trace_ram_watch("after-game-loop");
+                // The following ordinary boundary captures before upload 10
+                // is consumed, then runs that NMI. Preserve the captured VRAM
+                // once and retain the transition-entry hardware OAM until the
+                // measured map/sprite graphics tail returns. CGRAM and
+                // registers continue on their independent cadence; the NMI's
+                // scroll-register writes were already selected for this scanout.
+                self.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+                // A light return can reach a second capture in the caller
+                // suffix before the host presents either snapshot. Keep the
+                // post-NMI scroll generation active for that capture as well;
+                // heavier returns present the first capture and consume this
+                // selection on their following boundary.
+                self.next_display_bg_scroll_generation =
+                    DisplayBgScrollGeneration::ComposeLiveAfterNmi;
+                let oam = self
+                    .display_snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.ppu.oam.clone())
+                    .unwrap_or_else(|| self.ppu.oam.clone());
+                self.active_display_oam_generation =
+                    DisplayOamGeneration::RetainOverworldTransitionEntry { oam };
                 self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
