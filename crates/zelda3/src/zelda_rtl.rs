@@ -452,7 +452,10 @@ const fn rom_overworld_transition_half_color_is_live(
         && snapshot_half_color != live_half_color
 }
 
-const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: u8) -> bool {
+const fn rom_display_snapshot_publication(
+    main_module: u8,
+    submodule: u8,
+) -> DisplaySnapshotPublication {
     // The dungeon-exit entry setup authors its first circle before NMI enables
     // the window controls, so retain the preceding display once for submodule
     // zero. During the active close, Snes9x PC/V-counter traces show the ROM
@@ -461,9 +464,14 @@ const fn rom_display_snapshot_is_one_frame_deferred(main_module: u8, submodule: 
     //
     // The landing wipe and overworld-entry open retain their independently
     // measured following-frame publication boundaries.
-    rom_dungeon_landing_wipe_is_active(main_module, submodule)
+    if rom_dungeon_landing_wipe_is_active(main_module, submodule)
         || (main_module == 0x0f && submodule == 0)
         || (main_module == 0x10 && submodule == 1)
+    {
+        DisplaySnapshotPublication::AdvanceStaged
+    } else {
+        DisplaySnapshotPublication::PublishCaptured
+    }
 }
 
 const fn rom_attract_world_map_display_is_one_frame_deferred(
@@ -777,7 +785,9 @@ enum RomWorkContinuation {
     FinishAttractMaidenWarp,
     FinishAttractEndOfStory,
     FinishItemReceiptGraphics,
-    FinishSpotlightIteration,
+    FinishSpotlightIteration {
+        phase: SpotlightIterationPhase,
+    },
     FinishPreOverworldProperties {
         overworld_screen: u8,
         animated_tiles: u8,
@@ -796,6 +806,21 @@ enum RomWorkContinuation {
         post_return_hold_nmi_slices: u8,
     },
     HoldOverworldSpriteReloadReturn,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SpotlightIterationPhase {
+    CloseEntry,
+    Active,
+}
+
+impl SpotlightIterationPhase {
+    const fn completion_publication_override(self) -> Option<DisplaySnapshotPublication> {
+        match self {
+            Self::Active => Some(DisplaySnapshotPublication::RetainPublished),
+            Self::CloseEntry => Some(DisplaySnapshotPublication::AdvanceStaged),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -821,6 +846,15 @@ impl PendingRomWork {
 
     fn is_pending(self) -> bool {
         self.continuation.is_some()
+    }
+
+    fn in_flight_display_snapshot_publication_override(self) -> Option<DisplaySnapshotPublication> {
+        match self.continuation {
+            Some(RomWorkContinuation::FinishSpotlightIteration { .. }) => {
+                Some(DisplaySnapshotPublication::AdvanceStaged)
+            }
+            _ => None,
+        }
     }
 
     fn advance_one_nmi_slice(&mut self) -> RomWorkSlice {
@@ -2299,6 +2333,17 @@ enum DisplayVramGeneration {
     #[default]
     ComposeLiveAfterNmi,
     RetainCapturedBeforeNmi,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum DisplaySnapshotPublication {
+    #[default]
+    /// Publish this capture immediately and discard any staged generation.
+    PublishCaptured,
+    /// Stage this capture while publishing the generation staged previously.
+    AdvanceStaged,
+    /// Keep both the currently published and staged generations unchanged.
+    RetainPublished,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -7705,13 +7750,13 @@ impl ZeldaState {
         self.rom_startup_timing
     }
 
-    pub(super) fn schedule_spotlight_iteration_return(&mut self) {
+    pub(super) fn schedule_spotlight_iteration_return(&mut self, phase: SpotlightIterationPhase) {
         if !self.rom_startup_timing() {
             return;
         }
         debug_assert!(!self.pending_rom_work.is_pending());
         self.pending_rom_work = PendingRomWork::schedule(
-            RomWorkContinuation::FinishSpotlightIteration,
+            RomWorkContinuation::FinishSpotlightIteration { phase },
             SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
         );
     }
@@ -7949,6 +7994,33 @@ impl ZeldaState {
     }
 
     pub(super) fn capture_display_snapshot(&mut self) {
+        self.capture_display_snapshot_with_override(None);
+    }
+
+    fn capture_display_snapshot_with_override(
+        &mut self,
+        publication_override: Option<DisplaySnapshotPublication>,
+    ) {
+        let frame = self.game_state.frame;
+        let publication = publication_override.unwrap_or_else(|| {
+            if rom_attract_world_map_display_is_one_frame_deferred(
+                frame.main_module,
+                frame.submodule,
+                self.game_state.ending.attract_scene.sequence(),
+                self.game_state.ending.attract_scene.state(),
+            ) {
+                DisplaySnapshotPublication::AdvanceStaged
+            } else {
+                rom_display_snapshot_publication(frame.main_module, frame.submodule)
+            }
+        });
+        self.capture_display_snapshot_with_publication(publication);
+    }
+
+    fn capture_display_snapshot_with_publication(
+        &mut self,
+        publication: DisplaySnapshotPublication,
+    ) {
         self.ppu.refresh_brightness_cache();
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
         // from the previous frame has been consumed by that frame's renders.
@@ -8080,19 +8152,21 @@ impl ZeldaState {
             self.intro_poly_vram_history.clear();
         }
         self.visible_display_snapshot = None;
-        if rom_display_snapshot_is_one_frame_deferred(frame.main_module, frame.submodule)
-            || rom_attract_world_map_display_is_one_frame_deferred(
-                frame.main_module,
-                frame.submodule,
-                self.game_state.ending.attract_scene.sequence(),
-                self.game_state.ending.attract_scene.state(),
-            )
-        {
-            let previous = self.deferred_display_snapshot.replace(snapshot);
-            self.display_snapshot = previous.or_else(|| self.deferred_display_snapshot.clone());
-        } else {
-            self.deferred_display_snapshot = None;
-            self.display_snapshot = Some(snapshot);
+        match publication {
+            DisplaySnapshotPublication::AdvanceStaged => {
+                let previous = self.deferred_display_snapshot.replace(snapshot);
+                self.display_snapshot = previous.or_else(|| self.deferred_display_snapshot.clone());
+            }
+            DisplaySnapshotPublication::PublishCaptured => {
+                self.deferred_display_snapshot = None;
+                self.display_snapshot = Some(snapshot);
+            }
+            DisplaySnapshotPublication::RetainPublished => {
+                if self.display_snapshot.is_none() {
+                    self.display_snapshot =
+                        self.deferred_display_snapshot.clone().or(Some(snapshot));
+                }
+            }
         }
     }
 
@@ -9260,12 +9334,23 @@ impl ZeldaState {
                 self.latch_nmi_update();
                 self.dungeon_exit_spotlight_resume_module = true;
             }
-            self.capture_display_snapshot();
+            self.capture_display_snapshot_with_publication(
+                DisplaySnapshotPublication::AdvanceStaged,
+            );
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.rom_startup_timing() && self.pending_rom_work.is_pending() {
-            match self.pending_rom_work.advance_one_nmi_slice() {
+            let work_slice = self.pending_rom_work.advance_one_nmi_slice();
+            let publication_override = match work_slice {
+                RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration { phase }) => {
+                    phase.completion_publication_override()
+                }
+                _ => self
+                    .pending_rom_work
+                    .in_flight_display_snapshot_publication_override(),
+            };
+            match work_slice {
                 RomWorkSlice::Waiting => {}
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractWorldMap) => {
                     self.complete_attract_scene_world_map();
@@ -9300,7 +9385,9 @@ impl ZeldaState {
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
-                RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration) => {
+                RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration {
+                    ..
+                }) => {
                     // The opening or closing iris has returned through
                     // LinkOam_Main and the normal game-loop suffix. Publish its
                     // DMA sources and release the software NMI latch at the
@@ -9537,7 +9624,7 @@ impl ZeldaState {
             // The original ROM returns to the NMI boundary after the final
             // main-thread work slice. Attract loaders and item graphics both
             // publish only after their measured continuation completes.
-            self.capture_display_snapshot();
+            self.capture_display_snapshot_with_override(publication_override);
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
@@ -9636,7 +9723,13 @@ impl ZeldaState {
         }
         let dialogue_scroll_finished_copy =
             self.rom_startup_timing() && self.dialogue_scroll_continuation.is_return_only();
-        self.capture_display_snapshot();
+        let publication_override = self
+            .pending_rom_work
+            .in_flight_display_snapshot_publication_override();
+        // The circle builder is suspended across this vblank. Its WRAM table
+        // is CPU-visible, but HDMA has already consumed the preceding staged
+        // generation for the scanout that ends here.
+        self.capture_display_snapshot_with_override(publication_override);
         if let (Some(prefixes), Some(display)) = (
             dungeon_exit_spotlight_scanout_prefix,
             self.display_snapshot.as_mut(),

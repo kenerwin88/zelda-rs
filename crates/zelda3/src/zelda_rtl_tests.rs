@@ -3571,8 +3571,22 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e));
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x77));
     assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(0x70));
-    assert!(rom_display_snapshot_is_one_frame_deferred(0x0f, 0));
-    assert!(!rom_display_snapshot_is_one_frame_deferred(0x0f, 1));
+    assert_eq!(
+        rom_display_snapshot_publication(0x0f, 0),
+        DisplaySnapshotPublication::AdvanceStaged
+    );
+    assert_eq!(
+        rom_display_snapshot_publication(0x0f, 1),
+        DisplaySnapshotPublication::PublishCaptured
+    );
+    assert_eq!(
+        SpotlightIterationPhase::Active.completion_publication_override(),
+        Some(DisplaySnapshotPublication::RetainPublished)
+    );
+    assert_eq!(
+        SpotlightIterationPhase::CloseEntry.completion_publication_override(),
+        Some(DisplaySnapshotPublication::AdvanceStaged)
+    );
     assert!(!rom_dungeon_exit_spotlight_resumes_during_return(0x46));
     assert!(rom_dungeon_exit_spotlight_resumes_during_return(0x3f));
     assert!(!rom_dungeon_exit_spotlight_resumes_during_return(0x38));
@@ -3584,12 +3598,16 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert_eq!(DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES, 1);
 
     let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishSpotlightIteration,
+        RomWorkContinuation::FinishSpotlightIteration {
+            phase: SpotlightIterationPhase::Active,
+        },
         SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
     );
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration)
+        RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration {
+            phase: SpotlightIterationPhase::Active,
+        })
     );
     assert!(rom_spotlight_goal_transition_waits_for_iteration_return(
         16, 1,
@@ -3772,9 +3790,18 @@ fn file_select_main_publishes_display_memory_at_the_following_nmi() {
 fn dungeon_landing_wipe_publishes_display_memory_at_the_following_nmi() {
     assert!(rom_display_memory_publication_is_deferred(7, 15, false));
     assert!(!rom_display_memory_publication_is_deferred(7, 14, false));
-    assert!(rom_display_snapshot_is_one_frame_deferred(7, 15));
-    assert!(rom_display_snapshot_is_one_frame_deferred(16, 1));
-    assert!(!rom_display_snapshot_is_one_frame_deferred(16, 0));
+    assert_eq!(
+        rom_display_snapshot_publication(7, 15),
+        DisplaySnapshotPublication::AdvanceStaged
+    );
+    assert_eq!(
+        rom_display_snapshot_publication(16, 1),
+        DisplaySnapshotPublication::AdvanceStaged
+    );
+    assert_eq!(
+        rom_display_snapshot_publication(16, 0),
+        DisplaySnapshotPublication::PublishCaptured
+    );
 
     let mut state = ZeldaState::new();
     state.set_main_module(7);
