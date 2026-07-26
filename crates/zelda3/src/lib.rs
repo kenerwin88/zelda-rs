@@ -18,6 +18,7 @@ mod modern_sample_bank;
 pub mod modern_sfx_catalog;
 pub mod modern_sfx_dsp_catalog;
 pub mod modern_sfx_pitch_catalog;
+mod rom_random;
 mod spc_driver_clock;
 pub mod types;
 pub mod util;
@@ -29,6 +30,7 @@ pub use chr_source::{
     CHR_KIND_SPRITE, CHR_LINK_SRC_RAM_FLAG, VRAM_CHR_SLOTS,
 };
 pub use game_state::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
+pub use rom_random::{parse_rom_random_script, RomRandomSample};
 pub use zelda3_dialogue as dialogue_ir;
 pub use zelda_rtl::{Bg3VwfGlyphRun, ZeldaState, SRAM_SIZE, VRAM_WORDS};
 

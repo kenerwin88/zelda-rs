@@ -62,17 +62,23 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
         mode7_scanout_brightness_override: None,
         forced_blank: oracle.debug_ppu_value(7, 0)? != 0,
         brightness_white: oracle.debug_ppu_value(8, 0)?,
-        cgram: (0..256).map(|i| oracle.debug_ppu_value(2, i).unwrap_or(-1)).collect(),
+        cgram: (0..256)
+            .map(|i| oracle.debug_ppu_value(2, i).unwrap_or(-1))
+            .collect(),
         fixed_color: std::array::from_fn(|i| oracle.debug_ppu_value(4, i as i32).unwrap_or(-1)),
         display_control: std::array::from_fn(|i| {
             oracle.debug_ppu_value(16, i as i32).unwrap_or(-1)
         }),
-        bg_scroll: std::array::from_fn(|i| {
-            oracle.debug_ppu_value(14, i as i32).unwrap_or(-1)
-        }),
+        bg_scroll: std::array::from_fn(|i| oracle.debug_ppu_value(14, i as i32).unwrap_or(-1)),
         mode7: std::array::from_fn(|i| oracle.debug_ppu_value(5, i as i32).unwrap_or(-1)),
         mode7_scanlines: (0..224)
-            .map(|line| std::array::from_fn(|field| oracle.debug_scanline_mode7_value(line, field as i32).unwrap_or(-1)))
+            .map(|line| {
+                std::array::from_fn(|field| {
+                    oracle
+                        .debug_scanline_mode7_value(line, field as i32)
+                        .unwrap_or(-1)
+                })
+            })
             .collect(),
     })
 }
@@ -81,43 +87,50 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
     game.with_display_snapshot(|snapshot| {
         let scanlines = snapshot.ppu_scanline_windows();
         DisplayPpuProbe {
-        mode: i32::from(snapshot.ppu.mode),
-        brightness: i32::from(snapshot.ppu.brightness),
-        mode7_scanout_brightness_override: snapshot.ppu.mode7_scanout_brightness_override,
-        forced_blank: snapshot.ppu.forced_blank,
-        brightness_white: i32::from(snapshot.ppu.brightness_mult.get(31).copied().unwrap_or(0) >> 3),
-        cgram: snapshot.ppu.cgram.iter().map(|&value| i32::from(value)).collect(),
-        fixed_color: [
-            i32::from(snapshot.ppu.fixed_color_r),
-            i32::from(snapshot.ppu.fixed_color_g),
-            i32::from(snapshot.ppu.fixed_color_b),
-        ],
-        display_control: [
-            i32::from(snapshot.ppu.screen_enabled[0]),
-            i32::from(snapshot.ppu.screen_enabled[1]),
-            i32::from(snapshot.ppu.screen_windowed[0]),
-            i32::from(snapshot.ppu.screen_windowed[1]),
-            i32::from(
-                u8::from(snapshot.ppu.add_subscreen) << 1
-                    | snapshot.ppu.prevent_math_mode << 4
-                    | snapshot.ppu.clip_mode << 6,
+            mode: i32::from(snapshot.ppu.mode),
+            brightness: i32::from(snapshot.ppu.brightness),
+            mode7_scanout_brightness_override: snapshot.ppu.mode7_scanout_brightness_override,
+            forced_blank: snapshot.ppu.forced_blank,
+            brightness_white: i32::from(
+                snapshot.ppu.brightness_mult.get(31).copied().unwrap_or(0) >> 3,
             ),
-            i32::from(
-                snapshot.ppu.math_enabled
-                    | u8::from(snapshot.ppu.half_color) << 6
-                    | u8::from(snapshot.ppu.subtract_color) << 7,
-            ),
-        ],
-        bg_scroll: std::array::from_fn(|i| {
-            let layer = &snapshot.ppu.bg_layer[i / 2];
-            i32::from(if i % 2 == 0 {
-                layer.h_scroll
-            } else {
-                layer.v_scroll
-            })
-        }),
-        mode7: snapshot.ppu.m7_matrix.map(i32::from),
-        mode7_scanlines: scanlines.iter().map(|line| line.7.map(i32::from)).collect(),
+            cgram: snapshot
+                .ppu
+                .cgram
+                .iter()
+                .map(|&value| i32::from(value))
+                .collect(),
+            fixed_color: [
+                i32::from(snapshot.ppu.fixed_color_r),
+                i32::from(snapshot.ppu.fixed_color_g),
+                i32::from(snapshot.ppu.fixed_color_b),
+            ],
+            display_control: [
+                i32::from(snapshot.ppu.screen_enabled[0]),
+                i32::from(snapshot.ppu.screen_enabled[1]),
+                i32::from(snapshot.ppu.screen_windowed[0]),
+                i32::from(snapshot.ppu.screen_windowed[1]),
+                i32::from(
+                    u8::from(snapshot.ppu.add_subscreen) << 1
+                        | snapshot.ppu.prevent_math_mode << 4
+                        | snapshot.ppu.clip_mode << 6,
+                ),
+                i32::from(
+                    snapshot.ppu.math_enabled
+                        | u8::from(snapshot.ppu.half_color) << 6
+                        | u8::from(snapshot.ppu.subtract_color) << 7,
+                ),
+            ],
+            bg_scroll: std::array::from_fn(|i| {
+                let layer = &snapshot.ppu.bg_layer[i / 2];
+                i32::from(if i % 2 == 0 {
+                    layer.h_scroll
+                } else {
+                    layer.v_scroll
+                })
+            }),
+            mode7: snapshot.ppu.m7_matrix.map(i32::from),
+            mode7_scanlines: scanlines.iter().map(|line| line.7.map(i32::from)).collect(),
         }
     })
 }
@@ -414,7 +427,7 @@ pub(crate) fn run_compare_libretro_oracle(
         Some(p) => p,
         None => {
             eprintln!(
-                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
+                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
             );
             process::exit(2);
         }
@@ -423,13 +436,14 @@ pub(crate) fn run_compare_libretro_oracle(
         Some(p) => p,
         None => {
             eprintln!(
-                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
+                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
             );
             process::exit(2);
         }
     };
     let mut frames = 300u32;
     let mut input_script = InputScript::default();
+    let mut rom_random_script = None::<PathBuf>;
     let mut replay_save = None::<PathBuf>;
     let mut load_sram = None::<PathBuf>;
     let mut resume_rust_state = None::<PathBuf>;
@@ -492,6 +506,14 @@ pub(crate) fn run_compare_libretro_oracle(
                         process::exit(2);
                     }
                 };
+                i += 2;
+            }
+            "--rom-random-script" => {
+                let Some(path) = args.get(i + 1) else {
+                    eprintln!("--rom-random-script requires a path");
+                    process::exit(2);
+                };
+                rom_random_script = Some(PathBuf::from(path));
                 i += 2;
             }
             "--load-sram" => {
@@ -837,6 +859,23 @@ pub(crate) fn run_compare_libretro_oracle(
         let sram = read_file_or_exit(path, "SRAM");
         apply_sram_to_game_or_exit(&mut game, path, &sram);
     }
+    if let Some(path) = rom_random_script.as_deref() {
+        let text = fs::read_to_string(path).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to read ROM random script {}: {error}",
+                path.display()
+            );
+            process::exit(2);
+        });
+        let samples = zelda3::parse_rom_random_script(&text).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to parse ROM random script {}: {error}",
+                path.display()
+            );
+            process::exit(2);
+        });
+        game.install_rom_random_replay(samples, start_frame);
+    }
     let width = 256u32;
     let height = 224u32;
     let mut rust_audio = Vec::new();
@@ -981,6 +1020,7 @@ pub(crate) fn run_compare_libretro_oracle(
         audio_comparison,
         timing_options,
         replay_save.as_deref(),
+        rom_random_script.as_deref(),
     );
     let mut debug_dsp_globals = if env::var_os("ZELDA3_DEBUG_DSP_GLOBALS").is_some() {
         session_dir.as_deref().map(|dir| {
@@ -1007,8 +1047,7 @@ pub(crate) fn run_compare_libretro_oracle(
             process::exit(1);
         }))
     });
-    let capture_all_display_oracle =
-        env::var_os("ZELDA3_CAPTURE_DISPLAY_ORACLE").is_some();
+    let capture_all_display_oracle = env::var_os("ZELDA3_CAPTURE_DISPLAY_ORACLE").is_some();
     let display_oracle_after_frames =
         debug_frame_selection_from_env("ZELDA3_CAPTURE_DISPLAY_ORACLE_FRAMES", None);
     let display_oracle_before_frames =
@@ -1016,30 +1055,28 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut display_oracle_receipts = (capture_all_display_oracle
         || !display_oracle_after_frames.is_empty()
         || !display_oracle_before_frames.is_empty())
-        .then(|| {
-            let dir = session_dir.as_deref().unwrap_or_else(|| {
-                eprintln!(
-                    "ZELDA3_CAPTURE_DISPLAY_ORACLE[_BEFORE_FRAMES|_FRAMES] requires --session-dir"
-                );
-                process::exit(2);
-            });
-            BufWriter::new(fs::File::create(dir.join("display_oracle.jsonl")).unwrap_or_else(
-                |error| {
-                    eprintln!("failed to create display-oracle receipt: {error}");
-                    process::exit(1);
-                },
-            ))
+    .then(|| {
+        let dir = session_dir.as_deref().unwrap_or_else(|| {
+            eprintln!(
+                "ZELDA3_CAPTURE_DISPLAY_ORACLE[_BEFORE_FRAMES|_FRAMES] requires --session-dir"
+            );
+            process::exit(2);
         });
+        BufWriter::new(
+            fs::File::create(dir.join("display_oracle.jsonl")).unwrap_or_else(|error| {
+                eprintln!("failed to create display-oracle receipt: {error}");
+                process::exit(1);
+            }),
+        )
+    });
     let trace_poly_sched = std::env::var_os("TRACE_POLY_SCHED").is_some();
     let trace_shield_dma = std::env::var_os("ZELDA3_DEBUG_SHIELD_DMA").is_some();
     let debug_vram_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_VRAM_FRAMES", None);
     let debug_video_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_VIDEO_FRAMES", None);
     let debug_text_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_TEXT_FRAMES", None);
     let debug_sprite_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_SPRITE_FRAMES", None);
-    let debug_wram_frames = debug_frame_selection_from_env(
-        "ZELDA3_DEBUG_WRAM_FRAMES",
-        Some("ZELDA3_DEBUG_WRAM_FRAME"),
-    );
+    let debug_wram_frames =
+        debug_frame_selection_from_env("ZELDA3_DEBUG_WRAM_FRAMES", Some("ZELDA3_DEBUG_WRAM_FRAME"));
     // Oracle-side publication probe. This deliberately compares the raw PPU
     // VRAM bytes after every emulated frame, independently of RGBA output, so
     // a simulation/DMA skew can be located before a later rendering mismatch
@@ -1069,11 +1106,12 @@ pub(crate) fn run_compare_libretro_oracle(
     // renderer used by `cargo run`.  Do not replace this with an offscreen or
     // CPU/headless compositor: a successful oracle receipt must prove what
     // the user actually sees in the window.
-    let mut native_window_video = (compare_video || trace_video_pixel.is_some())
-        .then(|| NativeWindowOracleRenderer::load_from_env().unwrap_or_else(|error| {
+    let mut native_window_video = (compare_video || trace_video_pixel.is_some()).then(|| {
+        NativeWindowOracleRenderer::load_from_env().unwrap_or_else(|error| {
             eprintln!("failed to initialize native-window oracle video renderer: {error}");
             process::exit(1);
-        }));
+        })
+    });
     use std::time::Instant;
     let stage_timing = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
     // [pre_state, poly, run_frame, video, oracle, audio+compare, receipts]
@@ -1202,13 +1240,9 @@ pub(crate) fn run_compare_libretro_oracle(
                 process::exit(1);
             });
         let mut capture = oracle.run_frame_with_input(input);
-        if let Some(writer) = display_oracle_receipts
-            .as_mut()
-            .filter(|_| {
-                capture_all_display_oracle
-                    || display_oracle_after_frames.contains(&frame_index)
-            })
-        {
+        if let Some(writer) = display_oracle_receipts.as_mut().filter(|_| {
+            capture_all_display_oracle || display_oracle_after_frames.contains(&frame_index)
+        }) {
             write_display_oracle_receipt(writer, frame_index, "after", &oracle, &mut game);
         }
         // Libretro frame numbering starts at one; keep this artifact aligned
@@ -1233,8 +1267,7 @@ pub(crate) fn run_compare_libretro_oracle(
                     eprintln!("{oracle_name} did not expose WRAM for boot-contract comparison");
                     process::exit(1);
                 });
-            let oracle_boundary =
-                BootBoundaryState::from_ram(contract_frame, "after", oracle_ram);
+            let oracle_boundary = BootBoundaryState::from_ram(contract_frame, "after", oracle_ram);
             if let Some((field, rust, oracle)) = rust_boundary.first_difference(&oracle_boundary) {
                 eprintln!(
                     "oracle_boot_contract_divergence frame={contract_frame} stage=after field={field} rust={rust:02x} oracle={oracle:02x}"
@@ -1462,8 +1495,18 @@ pub(crate) fn run_compare_libretro_oracle(
             } else {
                 Vec::new()
             };
-            let fc_oracle = if oracle_ram.len() > 0x1a { oracle_ram[0x1a] } else { 0xff };
-            let mo = |a: usize| if oracle_ram.len() > a { oracle_ram[a] } else { 0xff };
+            let fc_oracle = if oracle_ram.len() > 0x1a {
+                oracle_ram[0x1a]
+            } else {
+                0xff
+            };
+            let mo = |a: usize| {
+                if oracle_ram.len() > a {
+                    oracle_ram[a]
+                } else {
+                    0xff
+                }
+            };
             let mow = |a: usize| {
                 if oracle_ram.len() > a + 1 {
                     u16::from_le_bytes([oracle_ram[a], oracle_ram[a + 1]])
@@ -1491,8 +1534,7 @@ pub(crate) fn run_compare_libretro_oracle(
             } else {
                 0xdead
             };
-            let displayed =
-                game.with_display_snapshot(|snapshot| snapshot.ppu.cgram[23]);
+            let displayed = game.with_display_snapshot(|snapshot| snapshot.ppu.cgram[23]);
             let thread_rust = game.ram[0x12a];
             let thread_oracle = if oracle_ram.len() > 0x12a {
                 oracle_ram[0x12a]
@@ -1515,11 +1557,14 @@ pub(crate) fn run_compare_libretro_oracle(
                 .iter()
                 .flat_map(|word| word.to_le_bytes())
                 .collect::<Vec<_>>();
-            fs::write(dir.join(format!("rust_vram_frame_{frame_index}.bin")), &rust_vram)
-                .unwrap_or_else(|error| {
-                    eprintln!("failed to write Rust VRAM capture: {error}");
-                    process::exit(1);
-                });
+            fs::write(
+                dir.join(format!("rust_vram_frame_{frame_index}.bin")),
+                &rust_vram,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write Rust VRAM capture: {error}");
+                process::exit(1);
+            });
             // The DISPLAYED generation: the compose snapshot VRAM, which is
             // what the renderer scans out (may differ from the live post-frame
             // VRAM above).
@@ -1983,12 +2028,11 @@ pub(crate) fn run_compare_libretro_oracle(
                         height,
                     );
                     if let Some(stride) = snes9x_pixel_stride(capture.pixel_format) {
-                        let mut oracle_argb = vec![
-                            0u8;
-                            capture.video_width as usize
-                                * capture.video_height as usize
-                                * 4
-                        ];
+                        let mut oracle_argb =
+                            vec![
+                                0u8;
+                                capture.video_width as usize * capture.video_height as usize * 4
+                            ];
                         for y in 0..capture.video_height as usize {
                             for x in 0..capture.video_width as usize {
                                 let src = y * capture.video_pitch + x * stride;
@@ -2120,6 +2164,10 @@ pub(crate) fn run_compare_libretro_oracle(
         }
     }
 
+    if let Err(error) = game.finish_rom_random_replay() {
+        eprintln!("ROM random replay did not complete: {error}");
+        process::exit(1);
+    }
     let audio_report = compare_audio.then(|| continuous_audio.finish());
     finalize_libretro_session(
         session_dir.as_deref(),
@@ -2265,12 +2313,19 @@ pub(crate) fn debug_frame_selection_from_env(primary: &str, legacy: Option<&str>
 
 pub(crate) fn parse_debug_frame_selection(value: &str) -> Vec<u32> {
     let mut frames = Vec::new();
-    for part in value.split(',').map(str::trim).filter(|part| !part.is_empty()) {
+    for part in value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
         let range = part
             .split_once("..=")
             .or_else(|| part.split_once('-'))
             .and_then(|(start, end)| {
-                Some((start.trim().parse::<u32>().ok()?, end.trim().parse::<u32>().ok()?))
+                Some((
+                    start.trim().parse::<u32>().ok()?,
+                    end.trim().parse::<u32>().ok()?,
+                ))
             });
         match range {
             Some((start, end)) if start <= end => frames.extend(start..=end),
@@ -2293,7 +2348,10 @@ fn parse_debug_byte_range(value: &str) -> Option<std::ops::Range<usize>> {
         let part = part.trim();
         part.strip_prefix("0x")
             .or_else(|| part.strip_prefix("0X"))
-            .map_or_else(|| part.parse::<usize>().ok(), |hex| usize::from_str_radix(hex, 16).ok())
+            .map_or_else(
+                || part.parse::<usize>().ok(),
+                |hex| usize::from_str_radix(hex, 16).ok(),
+            )
     };
     let start = parse(start)?;
     let end = parse(end)?;
@@ -2341,6 +2399,7 @@ pub(crate) fn initialize_libretro_session(
     audio_comparison: AudioComparisonMode,
     timing: AudioTimingOptions,
     replay_save: Option<&Path>,
+    rom_random_script: Option<&Path>,
 ) -> Option<BufWriter<fs::File>> {
     let dir = session_dir?;
     fs::create_dir_all(dir).unwrap_or_else(|e| {
@@ -2358,6 +2417,7 @@ pub(crate) fn initialize_libretro_session(
         "oracle_final.state",
         "rust_final.z3state",
         "result.json",
+        "rom-random.txt",
     ] {
         match fs::remove_file(dir.join(stale)) {
             Ok(()) => {}
@@ -2406,6 +2466,48 @@ pub(crate) fn initialize_libretro_session(
         });
         serde_json::json!({ "path": path, "sha256": sha256 })
     });
+    let rom_random_manifest = rom_random_script.map(|path| {
+        let bytes = fs::read(path).unwrap_or_else(|e| {
+            eprintln!(
+                "failed to read ROM random replay script {}: {e}",
+                path.display()
+            );
+            process::exit(1);
+        });
+        fs::write(dir.join("rom-random.txt"), &bytes).unwrap_or_else(|e| {
+            eprintln!("failed to persist ROM random replay script: {e}");
+            process::exit(1);
+        });
+        let artifact_path = dir.join("rom-random.txt");
+        serde_json::json!({
+            "source_path": path,
+            "artifact": "rom-random.txt",
+            "sha256": parity::runner::sha256_file(&artifact_path).unwrap_or_else(|e| {
+                eprintln!("failed to hash persisted ROM random replay script: {e}");
+                process::exit(1);
+            }),
+        })
+    });
+    let mut artifacts = vec![
+        "initial.srm",
+        "rust_initial.z3state",
+        "oracle_initial.state",
+        "oracle_last_before.state",
+        "input.txt",
+        "frame_receipts.jsonl",
+        "audio_frame_ends.json",
+        "audio_report.json",
+        "first_audio_mismatch.json",
+        "first_audio_mismatch_rust.wav",
+        "first_audio_mismatch_oracle.wav",
+        "oracle_final.state",
+        "rust_final.z3state",
+        "result.json",
+        "replay.sh",
+    ];
+    if rom_random_script.is_some() {
+        artifacts.push("rom-random.txt");
+    }
     let manifest = serde_json::json!({
         "schema": 1,
         "status": "running",
@@ -2418,6 +2520,7 @@ pub(crate) fn initialize_libretro_session(
         },
         "rom": { "path": rom_path, "sha256": rom_sha256 },
         "replay_save": replay_save_manifest,
+        "rom_random_replay": rom_random_manifest,
         "timing": {
             "fps": oracle.av_info.timing.fps,
             "sample_rate": oracle.av_info.timing.sample_rate,
@@ -2438,23 +2541,7 @@ pub(crate) fn initialize_libretro_session(
             "max_timing_error_sample_frames": timing.max_timing_error_frames,
             "max_envelope_error": timing.max_envelope_error,
         },
-        "artifacts": [
-            "initial.srm",
-            "rust_initial.z3state",
-            "oracle_initial.state",
-            "oracle_last_before.state",
-            "input.txt",
-            "frame_receipts.jsonl",
-            "audio_frame_ends.json",
-            "audio_report.json",
-            "first_audio_mismatch.json",
-            "first_audio_mismatch_rust.wav",
-            "first_audio_mismatch_oracle.wav",
-            "oracle_final.state",
-            "rust_final.z3state",
-            "result.json",
-            "replay.sh"
-        ]
+        "artifacts": artifacts,
     });
     fs::write(
         dir.join("manifest.json"),
@@ -2487,8 +2574,16 @@ pub(crate) fn initialize_libretro_session(
             shell_single_quote(&absolute_dir.join("oracle_initial.state").to_string_lossy()),
         )
     };
+    let rom_random_flags = if rom_random_script.is_some() {
+        format!(
+            " --rom-random-script {}",
+            shell_single_quote(&absolute_dir.join("rom-random.txt").to_string_lossy()),
+        )
+    } else {
+        String::new()
+    };
     let replay = format!(
-        "#!/bin/sh\nset -eu\ncd {}\nZELDA3_ASSET_PACK={} cargo run -q -p zelda3-bin{} -- --compare-snes9x-oracle {} {} {} --expected-core-sha256 {} --expected-rom-sha256 {} --input-script {} {} --compare-from-frame {}{} --audio-comparison {} --audio-window-ms {} --audio-silence-threshold {} --audio-timing-tolerance-ms {} --audio-envelope-tolerance {} --session-dir {} --scan-all\n",
+        "#!/bin/sh\nset -eu\ncd {}\nZELDA3_ASSET_PACK={} cargo run -q -p zelda3-bin{} -- --compare-snes9x-oracle {} {} {} --expected-core-sha256 {} --expected-rom-sha256 {} --input-script {}{} {} --compare-from-frame {}{} --audio-comparison {} --audio-window-ms {} --audio-silence-threshold {} --audio-timing-tolerance-ms {} --audio-envelope-tolerance {} --session-dir {} --scan-all\n",
         shell_single_quote(&repo_root.to_string_lossy()),
         shell_single_quote(&asset_pack.to_string_lossy()),
         feature,
@@ -2498,6 +2593,7 @@ pub(crate) fn initialize_libretro_session(
         core_sha256,
         rom_sha256,
         shell_single_quote(&absolute_dir.join("input.txt").to_string_lossy()),
+        rom_random_flags,
         initial_state_flags,
         compare_from_frame,
         lane_flags,

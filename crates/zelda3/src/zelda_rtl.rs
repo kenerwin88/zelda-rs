@@ -2542,6 +2542,11 @@ pub struct ZeldaState {
     pub ram: Vec<u8>,
     #[serde(default)]
     pub(crate) game_state: GameState,
+    /// Optional hardware-random input for exact ROM replays. The cartridge's
+    /// `$8dba71` routine samples the PPU beam counter, so controller input alone
+    /// cannot reproduce it in an atomic translated engine.
+    #[serde(skip)]
+    rom_random_replay: crate::rom_random::RomRandomReplay,
     pub sram: Vec<u8>,
     pub ppu: PpuState,
     /// Per-VRAM-slot logical CHR source bookkeeping (animation-modeled asset
@@ -7587,6 +7592,7 @@ impl ZeldaState {
                 ram
             },
             game_state: GameState::default(),
+            rom_random_replay: crate::rom_random::RomRandomReplay::default(),
             sram: vec![0; SRAM_SIZE],
             ppu: PpuState::new(),
             vram_chr_source: crate::chr_source::VramChrSourceTable::new(),
@@ -10852,6 +10858,7 @@ impl ZeldaState {
         inputs: i32,
         replay_input_override: Option<u16>,
     ) -> bool {
+        self.rom_random_replay.begin_frame();
         let raw_inputs = inputs as u16;
         let raw_replay_input_override = replay_input_override;
         let inputs = Self::sanitize_frame_inputs(inputs);
@@ -11028,6 +11035,19 @@ impl ZeldaState {
         self.zelda_push_apu_state();
         self.replay_trace_ram_watch("after-apu");
         is_replay
+    }
+
+    pub fn install_rom_random_replay(
+        &mut self,
+        samples: Vec<crate::RomRandomSample>,
+        start_execution_frame: u32,
+    ) {
+        self.rom_random_replay
+            .install(samples, start_execution_frame);
+    }
+
+    pub fn finish_rom_random_replay(&self) -> Result<(), String> {
+        self.rom_random_replay.finish()
     }
 
     pub fn zelda_set_language(&mut self, language: Option<&str>) {
