@@ -8,6 +8,24 @@ const VWF_LATER_LINE_ENTRY_MASTER_CYCLES: u32 = 255_000;
 const VWF_RESUMED_FRAME_MASTER_CYCLES: u32 = 348_000;
 const VWF_GLYPH_ENTRY_MASTER_CYCLES: u32 = 2_240;
 const VWF_GLYPH_TRANSITION_MASTER_CYCLES: u32 = 2_620;
+// Snes9x defines a scanline as 341 dots at four master cycles per dot.
+// At a 255,000-cycle entry the final scroll return lands five scanlines after
+// vblank; add that measured margin to separate it from the 283,400-cycle entry
+// that returns before vblank.
+const SNES_MASTER_CYCLES_PER_SCANLINE: u32 = 341 * 4;
+const VWF_SCROLL_RETURN_VBLANK_MARGIN_MASTER_CYCLES: u32 = 5 * SNES_MASTER_CYCLES_PER_SCANLINE;
+const VWF_SCROLL_COMPLETES_BEFORE_NEXT_VBLANK_MASTER_CYCLES: u32 =
+    VWF_LATER_LINE_ENTRY_MASTER_CYCLES + VWF_SCROLL_RETURN_VBLANK_MARGIN_MASTER_CYCLES;
+
+impl DialogueScrollCompletionTiming {
+    pub(crate) const fn at_scroll_entry(cycles_before_vblank: u32) -> Self {
+        if cycles_before_vblank >= VWF_SCROLL_COMPLETES_BEFORE_NEXT_VBLANK_MASTER_CYCLES {
+            Self::BeforeNextVblank
+        } else {
+            Self::AfterReturnBoundary
+        }
+    }
+}
 
 fn vwf_render_loop_cycle_budget(resuming: bool, current_line: u16) -> u32 {
     if resuming {
@@ -3352,7 +3370,7 @@ impl ZeldaState {
                     self.messaging_state_mut().set_dialogue_scroll_speed(param);
                     command_done = true;
                 }
-                TEXT_CMD_SCROLL => command_done = self.RenderText_Draw_Scroll(),
+                TEXT_CMD_SCROLL => command_done = self.RenderText_Draw_Scroll(cycles_left),
                 TEXT_CMD_1 | TEXT_CMD_2 | TEXT_CMD_3 => {
                     let idx = (cmd - TEXT_CMD_1) as usize;
                     self.set_vwf_current_line(VWF_ROW_POSITIONS[idx]);
@@ -3730,22 +3748,34 @@ impl ZeldaState {
         }
     }
 
-    /// Rebuild the frozen scroll generation from the live VWF WRAM buffer and
-    /// the semantic glyph placements that describe those same pixels.
-    pub(crate) fn refresh_dialogue_scroll_frozen_scanout(&mut self) {
-        let buf = &self.ram[0x10000..0x10000 + 0x7e0];
+    /// Freeze the hardware text generation owned by this scroll group.
+    pub(crate) fn freeze_dialogue_scanout_for_scroll(
+        &mut self,
+        generation: DialogueTextGeneration,
+    ) {
+        let scanout = match generation {
+            DialogueTextGeneration::PublishedDisplay => {
+                self.dialogue_text_scanout_from_published_display()
+            }
+            DialogueTextGeneration::CurrentRenderBuffer => {
+                self.dialogue_text_scanout_from_render_buffer()
+            }
+        };
         if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
-            let wram_sum = buf.iter().map(|&byte| u64::from(byte)).sum::<u64>();
+            let vram_sum = scanout
+                .vram
+                .iter()
+                .map(|&word| u64::from(word & 0xff) + u64::from(word >> 8))
+                .sum::<u64>();
             eprintln!(
-                "scroll_freeze host={} frozen_buf_sum={wram_sum}",
+                "scroll_freeze host={} generation={generation:?} vram_sum={vram_sum}",
                 self.frame_ctr_dbg,
             );
         }
-        self.dialogue_scroll_frozen_scanout =
-            Some(self.dialogue_text_scanout_from_render_buffer());
+        self.dialogue_scroll_frozen_scanout = Some(scanout);
     }
 
-    pub(super) fn RenderText_Draw_Scroll(&mut self) -> bool {
+    pub(super) fn RenderText_Draw_Scroll(&mut self, cycles_before_vblank: u32) -> bool {
         // ROM ground truth (instrumented Snes9x oracle, intro telepathy,
         // scroll speed 4): one scroll call drains `scroll_speed + 1` pixel
         // passes, but the buffer copy is slow enough that the caller spans
@@ -3779,19 +3809,18 @@ impl ZeldaState {
             // normal frame with no lag.
             return self.render_text_scroll_pixels(remaining_in_line);
         }
-        // Freeze the scanout image of the text area for this iteration. The
-        // ROM's vblank at the iteration start DMAs the CURRENT WRAM buffer
-        // (7F:0000) — verified by matching the instrumented core's per-upload
-        // checksums — so the frozen image is the pre-pass buffer content,
-        // not our VRAM copy (which still holds the previous iteration's
-        // upload because no request fired during the continuation slices).
-        self.refresh_dialogue_scroll_frozen_scanout();
+        // Copy slices retain the published display. CPU/vblank headroom only
+        // decides whether the caller finishes before the next boundary or
+        // requires the measured return-only continuation.
+        self.freeze_dialogue_scanout_for_scroll(DialogueTextGeneration::PublishedDisplay);
+        let completion_timing =
+            DialogueScrollCompletionTiming::at_scroll_entry(cycles_before_vblank);
         if self.render_text_scroll_pixels(2) {
             return true;
         }
         // Phase 2 is the remaining three copy passes. Phase 1 is the
         // post-vblank caller suffix; it performs no further pixel copies.
-        self.dialogue_scroll_continuation = DialogueScrollContinuation::begin();
+        self.dialogue_scroll_continuation = DialogueScrollContinuation::begin(completion_timing);
         self.dialogue_scroll_ran_this_frame = true;
         false
     }

@@ -326,7 +326,8 @@ fn dialogue_final_copy_publishes_color_math_without_advancing_held_ppu_generatio
     state.set_main_module(14);
     state.set_submodule(2);
     state.set_animated_tile_data_source_address(0xa680);
-    state.dialogue_scroll_continuation = DialogueScrollContinuation::begin();
+    state.dialogue_scroll_continuation =
+        DialogueScrollContinuation::begin(DialogueScrollCompletionTiming::AfterReturnBoundary);
     state.audio_nmi_processed_before_main = true;
 
     state.ppu.math_enabled = 0x32;
@@ -4155,6 +4156,70 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
             vram: held_obj_vram,
         },
     );
+}
+
+#[test]
+fn presented_vram_generation_combines_snapshot_and_domain_retention_once() {
+    assert_eq!(
+        DisplayVramGeneration::ComposeLiveAfterNmi.resolve_for_scanout(false),
+        DisplayVramGeneration::ComposeLiveAfterNmi,
+    );
+    assert_eq!(
+        DisplayVramGeneration::ComposeLiveAfterNmi.resolve_for_scanout(true),
+        DisplayVramGeneration::RetainCapturedBeforeNmi,
+    );
+    assert_eq!(
+        DisplayVramGeneration::RetainCapturedBeforeNmi.resolve_for_scanout(false),
+        DisplayVramGeneration::RetainCapturedBeforeNmi,
+    );
+}
+
+#[test]
+fn dialogue_scroll_freezes_the_published_hardware_generation() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x7c00] = 0x1111;
+    state.ram[0x10000] = 0x22;
+    state.ram[0x10001] = 0x22;
+    state.bg3_vwf_glyph_runs = vec![Bg3VwfGlyphRun {
+        glyph_code: 2,
+        ..Bg3VwfGlyphRun::default()
+    }];
+    state.published_bg3_vwf_glyph_runs = vec![Bg3VwfGlyphRun {
+        glyph_code: 1,
+        ..Bg3VwfGlyphRun::default()
+    }];
+    state.published_dialogue_msg_read_pos = 0x34;
+    state.published_dialogue_message_id = 0x56;
+
+    state.freeze_dialogue_scanout_for_scroll(DialogueTextGeneration::PublishedDisplay);
+
+    let frozen = state
+        .dialogue_scroll_frozen_scanout
+        .as_ref()
+        .expect("published dialogue scanout");
+    assert_eq!(frozen.vram[0], 0x1111);
+    assert_eq!(frozen.glyph_runs[0].glyph_code, 1);
+    assert_eq!(frozen.dialogue_msg_read_pos, 0x34);
+    assert_eq!(frozen.dialogue_message_id, 0x56);
+}
+
+#[test]
+fn dialogue_scroll_completion_timing_follows_measured_vblank_headroom() {
+    assert_eq!(
+        DialogueScrollCompletionTiming::at_scroll_entry(255_000),
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
+    assert_eq!(
+        DialogueScrollCompletionTiming::at_scroll_entry(283_400),
+        DialogueScrollCompletionTiming::BeforeNextVblank,
+    );
+
+    let mut continuation =
+        DialogueScrollContinuation::begin(DialogueScrollCompletionTiming::BeforeNextVblank);
+    continuation.finish_remaining_pixels();
+    assert!(continuation.is_completion_pending_publication());
+    continuation.publish_early_completion();
+    assert!(continuation.is_idle());
 }
 
 #[test]
