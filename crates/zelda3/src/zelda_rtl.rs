@@ -2079,7 +2079,8 @@ struct AssetPack {
     #[serde(default)]
     names: Vec<String>,
     #[serde(skip)]
-    dialogue_source_ir_table: Option<Vec<Vec<crate::dialogue_ir::DialogueIrOp>>>,
+    dialogue_source_ir_table:
+        std::sync::OnceLock<Option<Vec<Vec<crate::dialogue_ir::DialogueIrOp>>>>,
 }
 
 impl AssetPack {
@@ -2137,7 +2138,7 @@ impl AssetPack {
             data,
             ranges,
             names,
-            dialogue_source_ir_table,
+            dialogue_source_ir_table: std::sync::OnceLock::from(dialogue_source_ir_table),
         })
     }
 
@@ -2155,7 +2156,7 @@ impl AssetPack {
             data,
             ranges,
             names,
-            dialogue_source_ir_table,
+            dialogue_source_ir_table: std::sync::OnceLock::from(dialogue_source_ir_table),
         }
     }
 
@@ -2227,14 +2228,12 @@ impl AssetPack {
         &self,
         message_id: u16,
     ) -> Option<Vec<crate::dialogue_ir::DialogueIrOp>> {
-        let parsed_table;
-        let table = if let Some(table) = self.dialogue_source_ir_table.as_ref() {
-            table
-        } else {
-            parsed_table =
-                Self::parse_dialogue_source_ir_table(&self.data, &self.ranges, &self.names)?;
-            &parsed_table
-        };
+        let table = self
+            .dialogue_source_ir_table
+            .get_or_init(|| {
+                Self::parse_dialogue_source_ir_table(&self.data, &self.ranges, &self.names)
+            })
+            .as_ref()?;
         table.get(usize::from(message_id)).cloned()
     }
 

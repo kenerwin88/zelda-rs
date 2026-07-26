@@ -472,6 +472,24 @@ fn source_dialogue_ir_reads_named_semantic_sidecar_asset() {
 }
 
 #[test]
+fn deserialized_asset_pack_caches_dialogue_semantic_sidecar_after_first_read() {
+    let sidecar =
+        dialogue_source_sidecar_asset(&[vec![1, TEXT_COMMAND_START_US + TEXT_CMD_END_MESSAGE]]);
+    let bytes = test_asset_pack_bytes(&[(DIALOGUE_SOURCE_SIDECAR_ASSET_NAME, sidecar)]);
+    let asset_pack = AssetPack::parse(&bytes).unwrap();
+    let restored: AssetPack =
+        bincode::deserialize(&bincode::serialize(&asset_pack).unwrap()).unwrap();
+
+    assert!(restored.dialogue_source_ir_table.get().is_none());
+
+    let source_ir = restored.source_dialogue_ir_for_message(0).unwrap();
+
+    assert_eq!(source_ir[0].kind, DialogueIrKind::Glyph { code: 1 });
+    assert_eq!(source_ir[1].kind, DialogueIrKind::EndMessage);
+    assert!(restored.dialogue_source_ir_table.get().is_some());
+}
+
+#[test]
 fn asset_pack_parse_requires_named_dialogue_semantic_sidecar_when_kdialogue_exists() {
     let err = AssetPack::parse(&test_asset_pack_bytes(&[("kDialogue", vec![0])]))
         .err()
