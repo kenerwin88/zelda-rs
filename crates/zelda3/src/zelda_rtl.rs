@@ -8133,11 +8133,9 @@ impl ZeldaState {
         &mut self,
         publication_override: Option<DisplaySnapshotPublication>,
     ) {
-        // The ROM can switch modules through WRAM during the main-loop slice
-        // before the native projection is synchronized at the following NMI.
-        // Snapshot publication must classify the same WRAM generation that it
-        // captures, not a temporarily stale native FrameState.
-        let frame = crate::game_state::FrameState::load_from_ram(&self.ram);
+        // The native frame identifies the CPU publication phase. It can
+        // deliberately lag a direct WRAM module handoff until NMI resumes.
+        let frame = self.game_state.frame;
         let publication = publication_override.unwrap_or_else(|| {
             if rom_attract_world_map_display_is_one_frame_deferred(
                 frame.main_module,
@@ -8173,7 +8171,7 @@ impl ZeldaState {
         self.overworld_transition_scroll_hold = self.overworld_transition_scroll_hold_staged.take();
         self.overworld_transition_scroll_hold_staged =
             self.overworld_transition_scroll_hold_pending.take();
-        let frame = crate::game_state::FrameState::load_from_ram(&self.ram);
+        let frame = self.game_state.frame;
         if std::env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some()
             && (5640..=5700).contains(&self.frame_ctr_dbg)
         {
@@ -8217,13 +8215,17 @@ impl ZeldaState {
                 self.game_state.display.core_update_disable_flag,
             );
         }
+        // Unlike the CPU phase above, transition identity belongs to the WRAM
+        // generation copied into this snapshot. Keep both meanings explicit:
+        // collapsing them regresses the later staged landing-wipe cadence.
+        let captured_frame = crate::game_state::FrameState::load_from_ram(&self.ram);
         let transition_entry_obj = self.display_snapshot.as_ref().and_then(|published| {
             let published_frame = crate::game_state::FrameState::load_from_ram(&published.ram);
             rom_dungeon_falling_entry_retains_published_obj_generation(
                 published_frame.main_module,
                 published_frame.submodule,
-                frame.main_module,
-                frame.submodule,
+                captured_frame.main_module,
+                captured_frame.submodule,
             )
             .then(|| {
                 (
