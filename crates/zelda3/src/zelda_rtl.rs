@@ -416,6 +416,22 @@ const fn rom_dungeon_exit_entry_oam_publication_is_deferred(
     snapshot_main_module == 0x0f && live_main_module == 0x0f && live_submodule == 0
 }
 
+const fn rom_dungeon_falling_entry_retains_published_obj_generation(
+    published_main_module: u8,
+    published_submodule: u8,
+    current_main_module: u8,
+    current_submodule: u8,
+) -> bool {
+    // The overworld main loop hides the pit marker in its next OAM shadow and
+    // then switches to Module 11. Snes9x returns at the intervening vblank
+    // before that shadow reaches hardware, so the falling-entrance entry
+    // scanout still owns the OAM generation published by Module 9.
+    published_main_module == 9
+        && published_submodule == 0
+        && current_main_module == 0x11
+        && current_submodule == 0
+}
+
 const fn rom_dungeon_exit_entry_scroll_publication_is_live(
     snapshot_main_module: u8,
     snapshot_submodule: u8,
@@ -2458,11 +2474,12 @@ enum DisplayBgScrollGeneration {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-enum DisplayOamGeneration {
+enum DisplayObjGeneration {
     #[default]
     FollowModuleCadence,
-    RetainOverworldTransitionEntry {
+    RetainTransitionEntry {
         oam: Vec<u16>,
+        vram: Vec<u16>,
     },
 }
 
@@ -2696,7 +2713,7 @@ pub struct ZeldaState {
     #[serde(skip)]
     next_display_bg_scroll_generation: DisplayBgScrollGeneration,
     #[serde(skip)]
-    active_display_oam_generation: DisplayOamGeneration,
+    active_display_obj_generation: DisplayObjGeneration,
     #[serde(skip)]
     next_overworld_pre_main_nmi_resume: Option<OverworldPreMainNmiResume>,
     #[serde(skip)]
@@ -2882,7 +2899,7 @@ struct DisplaySnapshot {
     dma: DmaState,
     vram_generation: DisplayVramGeneration,
     bg_scroll_generation: DisplayBgScrollGeneration,
-    oam_generation: DisplayOamGeneration,
+    obj_generation: DisplayObjGeneration,
     published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
     published_bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
     published_dialogue_msg_read_pos: u16,
@@ -7643,7 +7660,7 @@ impl ZeldaState {
             pending_rom_work: PendingRomWork::default(),
             next_display_vram_generation: DisplayVramGeneration::default(),
             next_display_bg_scroll_generation: DisplayBgScrollGeneration::default(),
-            active_display_oam_generation: DisplayOamGeneration::default(),
+            active_display_obj_generation: DisplayObjGeneration::default(),
             next_overworld_pre_main_nmi_resume: None,
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
@@ -8116,7 +8133,11 @@ impl ZeldaState {
         &mut self,
         publication_override: Option<DisplaySnapshotPublication>,
     ) {
-        let frame = self.game_state.frame;
+        // The ROM can switch modules through WRAM during the main-loop slice
+        // before the native projection is synchronized at the following NMI.
+        // Snapshot publication must classify the same WRAM generation that it
+        // captures, not a temporarily stale native FrameState.
+        let frame = crate::game_state::FrameState::load_from_ram(&self.ram);
         let publication = publication_override.unwrap_or_else(|| {
             if rom_attract_world_map_display_is_one_frame_deferred(
                 frame.main_module,
@@ -8152,7 +8173,7 @@ impl ZeldaState {
         self.overworld_transition_scroll_hold = self.overworld_transition_scroll_hold_staged.take();
         self.overworld_transition_scroll_hold_staged =
             self.overworld_transition_scroll_hold_pending.take();
-        let frame = self.game_state.frame;
+        let frame = crate::game_state::FrameState::load_from_ram(&self.ram);
         if std::env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some()
             && (5640..=5700).contains(&self.frame_ctr_dbg)
         {
@@ -8196,13 +8217,31 @@ impl ZeldaState {
                 self.game_state.display.core_update_disable_flag,
             );
         }
+        let transition_entry_obj = self.display_snapshot.as_ref().and_then(|published| {
+            let published_frame = crate::game_state::FrameState::load_from_ram(&published.ram);
+            rom_dungeon_falling_entry_retains_published_obj_generation(
+                published_frame.main_module,
+                published_frame.submodule,
+                frame.main_module,
+                frame.submodule,
+            )
+            .then(|| {
+                (
+                    published.ppu.oam.clone(),
+                    published.ppu.vram[0x4000..0x4400].to_vec(),
+                )
+            })
+        });
+        let obj_generation = transition_entry_obj
+            .map(|(oam, vram)| DisplayObjGeneration::RetainTransitionEntry { oam, vram })
+            .unwrap_or_else(|| self.active_display_obj_generation.clone());
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
             dma: self.dma.clone(),
             vram_generation: std::mem::take(&mut self.next_display_vram_generation),
             bg_scroll_generation: std::mem::take(&mut self.next_display_bg_scroll_generation),
-            oam_generation: self.active_display_oam_generation.clone(),
+            obj_generation,
             published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
             published_bg3_vwf_glyph_run_dialogue_offsets: self
                 .published_bg3_vwf_glyph_run_dialogue_offsets
@@ -8345,8 +8384,8 @@ impl ZeldaState {
                 // sequence has entered its fade-in state.
                 && !(self.game_state.ending.attract_scene.sequence() == 1
                     && self.game_state.ending.attract_scene.state() >= 4));
-        let retain_previous_nmi_oam = match &display.oam_generation {
-            DisplayOamGeneration::FollowModuleCadence => {
+        let retain_previous_nmi_oam = match &display.obj_generation {
+            DisplayObjGeneration::FollowModuleCadence => {
                 rom_display_oam_publication_is_deferred(
                     snapshot_frame.main_module,
                     snapshot_frame.submodule,
@@ -8358,7 +8397,7 @@ impl ZeldaState {
                     self.game_state.frame.submodule,
                 )
             }
-            DisplayOamGeneration::RetainOverworldTransitionEntry { .. } => true,
+            DisplayObjGeneration::RetainTransitionEntry { .. } => true,
         };
         let world_map_fade_display = snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
@@ -8598,10 +8637,9 @@ impl ZeldaState {
         if !retain_previous_nmi_oam {
             self.ppu.oam.clone_from(&display.ppu.oam);
         }
-        if let DisplayOamGeneration::RetainOverworldTransitionEntry { oam } =
-            &display.oam_generation
-        {
+        if let DisplayObjGeneration::RetainTransitionEntry { oam, vram } = &display.obj_generation {
             self.ppu.oam.clone_from(oam);
+            self.ppu.vram[0x4000..0x4400].copy_from_slice(vram);
         }
         self.ppu.obj_vram_latch = None;
         self.ppu.obj_previous_frame_vram = display.ppu.obj_previous_frame_vram.clone();
@@ -9638,7 +9676,7 @@ impl ZeldaState {
                     // rebuilt the same transition-entry sprite image. The
                     // snapshot above still owns the held hardware OAM for
                     // this scanout; subsequent frames resume normal cadence.
-                    self.active_display_oam_generation = DisplayOamGeneration::FollowModuleCadence;
+                    self.active_display_obj_generation = DisplayObjGeneration::FollowModuleCadence;
                     // The next ordinary Module09 iteration begins at the
                     // vblank edge immediately following this returned
                     // graphics tail. Carry that CPU phase explicitly into
@@ -9774,8 +9812,13 @@ impl ZeldaState {
                         .as_ref()
                         .map(|snapshot| snapshot.ppu.oam.clone())
                         .unwrap_or_else(|| self.ppu.oam.clone());
-                    self.active_display_oam_generation =
-                        DisplayOamGeneration::RetainOverworldTransitionEntry { oam };
+                    let vram = self
+                        .display_snapshot
+                        .as_ref()
+                        .map(|snapshot| snapshot.ppu.vram[0x4000..0x4400].to_vec())
+                        .unwrap_or_else(|| self.ppu.vram[0x4000..0x4400].to_vec());
+                    self.active_display_obj_generation =
+                        DisplayObjGeneration::RetainTransitionEntry { oam, vram };
                 }
                 self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();

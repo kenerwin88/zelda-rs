@@ -4078,13 +4078,15 @@ fn bg_scroll_scanout_replays_the_nmi_register_write_order() {
 }
 
 #[test]
-fn display_snapshot_consumes_vram_once_and_retains_active_oam_generation() {
+fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
     let mut state = ZeldaState::new();
     let held_oam = vec![0x1234; state.ppu.oam.len()];
+    let held_obj_vram = vec![0x5678; 0x400];
     state.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
     state.next_display_bg_scroll_generation = DisplayBgScrollGeneration::ComposeLiveAfterNmi;
-    state.active_display_oam_generation = DisplayOamGeneration::RetainOverworldTransitionEntry {
+    state.active_display_obj_generation = DisplayObjGeneration::RetainTransitionEntry {
         oam: held_oam.clone(),
+        vram: held_obj_vram.clone(),
     };
 
     state.capture_display_snapshot();
@@ -4099,9 +4101,10 @@ fn display_snapshot_consumes_vram_once_and_retains_active_oam_generation() {
         DisplayBgScrollGeneration::ComposeLiveAfterNmi,
     );
     assert_eq!(
-        snapshot.oam_generation,
-        DisplayOamGeneration::RetainOverworldTransitionEntry {
+        snapshot.obj_generation,
+        DisplayObjGeneration::RetainTransitionEntry {
             oam: held_oam.clone(),
+            vram: held_obj_vram.clone(),
         },
     );
     assert_eq!(
@@ -4113,9 +4116,10 @@ fn display_snapshot_consumes_vram_once_and_retains_active_oam_generation() {
         DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
     );
     assert_eq!(
-        state.active_display_oam_generation,
-        DisplayOamGeneration::RetainOverworldTransitionEntry {
+        state.active_display_obj_generation,
+        DisplayObjGeneration::RetainTransitionEntry {
             oam: held_oam.clone(),
+            vram: held_obj_vram.clone(),
         },
     );
 
@@ -4125,9 +4129,44 @@ fn display_snapshot_consumes_vram_once_and_retains_active_oam_generation() {
             .display_snapshot
             .as_ref()
             .expect("second display snapshot")
-            .oam_generation,
-        DisplayOamGeneration::RetainOverworldTransitionEntry { oam: held_oam },
+            .obj_generation,
+        DisplayObjGeneration::RetainTransitionEntry {
+            oam: held_oam,
+            vram: held_obj_vram,
+        },
     );
+}
+
+#[test]
+fn dungeon_falling_entry_retains_the_pre_transition_obj_generation() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(9);
+    state.set_submodule(0);
+    state.ppu.oam[204] = 0x6c8a;
+    state.ppu.vram[0x4000] = 0x1234;
+    state.capture_display_snapshot();
+
+    // The ROM module switch reaches WRAM before the native frame projection is
+    // synchronized by NMI. Exercise that real publication-boundary ownership.
+    state.ram[crate::game_state::constants::MAIN_MODULE] = 0x11;
+    state.ram[crate::game_state::constants::SUBMODULE] = 0;
+    assert_eq!(state.game_state.frame.main_module, 9);
+    state.ppu.oam[204] = 0xf08a;
+    state.ppu.vram[0x4000] = 0x5678;
+    state.capture_display_snapshot();
+
+    assert!(rom_dungeon_falling_entry_retains_published_obj_generation(
+        9, 0, 0x11, 0,
+    ));
+    assert!(!rom_dungeon_falling_entry_retains_published_obj_generation(
+        9, 1, 0x11, 0,
+    ));
+    assert_eq!(
+        state.with_display_snapshot(|display| (display.ppu.oam[204], display.ppu.vram[0x4000])),
+        (0x6c8a, 0x1234),
+    );
+    assert_eq!(state.ppu.oam[204], 0xf08a);
+    assert_eq!(state.ppu.vram[0x4000], 0x5678);
 }
 
 #[test]
