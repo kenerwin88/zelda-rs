@@ -658,8 +658,24 @@ enum OverworldSpriteReloadEntryPhase {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum OverworldModuleEntryPhase {
-    AfterVblankFromAuxGraphicsReturn,
+enum OverworldPreMainNmiResume {
+    AuxGraphicsReturn,
+    SpriteReloadReturn,
+}
+
+impl OverworldPreMainNmiResume {
+    const fn scanout_generations(self) -> (DisplayVramGeneration, DisplayBgScrollGeneration) {
+        match self {
+            Self::AuxGraphicsReturn => (
+                DisplayVramGeneration::ComposeLiveAfterNmi,
+                DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+            ),
+            Self::SpriteReloadReturn => (
+                DisplayVramGeneration::RetainCapturedBeforeNmi,
+                DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
+            ),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2529,7 +2545,7 @@ pub struct ZeldaState {
     #[serde(skip)]
     active_display_oam_generation: DisplayOamGeneration,
     #[serde(skip)]
-    next_overworld_module_entry_phase: Option<OverworldModuleEntryPhase>,
+    next_overworld_pre_main_nmi_resume: Option<OverworldPreMainNmiResume>,
     #[serde(skip)]
     next_overworld_sprite_reload_entry_phase: Option<OverworldSpriteReloadEntryPhase>,
     #[serde(skip)]
@@ -7470,7 +7486,7 @@ impl ZeldaState {
             next_display_vram_generation: DisplayVramGeneration::default(),
             next_display_bg_scroll_generation: DisplayBgScrollGeneration::default(),
             active_display_oam_generation: DisplayOamGeneration::default(),
-            next_overworld_module_entry_phase: None,
+            next_overworld_pre_main_nmi_resume: None,
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
@@ -9406,8 +9422,8 @@ impl ZeldaState {
                     self.complete_module09_overworld_after_submodule();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
-                    self.next_overworld_module_entry_phase =
-                        Some(OverworldModuleEntryPhase::AfterVblankFromAuxGraphicsReturn);
+                    self.next_overworld_pre_main_nmi_resume =
+                        Some(OverworldPreMainNmiResume::AuxGraphicsReturn);
                     return;
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldMapQuadrants {
@@ -9502,6 +9518,9 @@ impl ZeldaState {
                             RomWorkContinuation::HoldOverworldSpriteReloadReturn,
                             post_return_hold_nmi_slices,
                         );
+                    } else {
+                        self.next_overworld_pre_main_nmi_resume =
+                            Some(OverworldPreMainNmiResume::SpriteReloadReturn);
                     }
                     return;
                 }
@@ -9512,6 +9531,8 @@ impl ZeldaState {
                     // Overworld_StartScrollTransition call lands at V=255,
                     // after that image has been emitted. Hold only that next
                     // main-loop iteration while still running the frame NMI.
+                    self.next_overworld_pre_main_nmi_resume =
+                        Some(OverworldPreMainNmiResume::SpriteReloadReturn);
                 }
             }
             // The original ROM returns to the NMI boundary after the final
@@ -9558,23 +9579,14 @@ impl ZeldaState {
                 self.assert_native_display_state_matches_ram();
                 return;
             }
-            if matches!(
-                self.next_overworld_module_entry_phase.take(),
-                Some(OverworldModuleEntryPhase::AfterVblankFromAuxGraphicsReturn)
-            ) {
-                // The auxiliary decompression returns after the preceding
-                // vblank. Snes9x then consumes upload 9 at the next host
-                // boundary before Module09/submodule 2 runs at V=1. That
-                // main slice authors upload 10 for the following NMI; it must
-                // remain pending in the post-frame state and must not leak
-                // into the scanout that just ended.
-                //
-                // Scroll-register writes belong to the NMI that starts this
-                // scanout, unlike upload 10 authored by the subsequent main
-                // slice. Select that post-NMI register generation before
-                // capturing the independently retained VRAM generation.
-                self.next_display_bg_scroll_generation =
-                    DisplayBgScrollGeneration::ComposeLiveAfterNmi;
+            if let Some(resume) = self.next_overworld_pre_main_nmi_resume.take() {
+                // Both interruptible loaders return to Module09 after a vblank:
+                // publish the scanout at that boundary, run NMI, then resume
+                // the ordinary module iteration. The display domains select
+                // their hardware generation independently.
+                let (vram_generation, bg_scroll_generation) = resume.scanout_generations();
+                self.next_display_vram_generation = vram_generation;
+                self.next_display_bg_scroll_generation = bg_scroll_generation;
                 self.capture_display_snapshot();
                 self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                 self.replay_trace_col("before-game-loop");
@@ -9582,27 +9594,22 @@ impl ZeldaState {
                 self.zelda_run_game_loop();
                 self.replay_trace_col("after-game-loop");
                 self.replay_trace_ram_watch("after-game-loop");
-                // The following ordinary boundary captures before upload 10
-                // is consumed, then runs that NMI. Preserve the captured VRAM
-                // once and retain the transition-entry hardware OAM until the
-                // measured map/sprite graphics tail returns. CGRAM and
-                // registers continue on their independent cadence; the NMI's
-                // scroll-register writes were already selected for this scanout.
-                self.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
-                // A light return can reach a second capture in the caller
-                // suffix before the host presents either snapshot. Keep the
-                // post-NMI scroll generation active for that capture as well;
-                // heavier returns present the first capture and consume this
-                // selection on their following boundary.
-                self.next_display_bg_scroll_generation =
-                    DisplayBgScrollGeneration::ComposeLiveAfterNmi;
-                let oam = self
-                    .display_snapshot
-                    .as_ref()
-                    .map(|snapshot| snapshot.ppu.oam.clone())
-                    .unwrap_or_else(|| self.ppu.oam.clone());
-                self.active_display_oam_generation =
-                    DisplayOamGeneration::RetainOverworldTransitionEntry { oam };
+                if resume == OverworldPreMainNmiResume::AuxGraphicsReturn {
+                    // The main slice authors the following upload. Keep it
+                    // private until the next NMI, while retaining the hardware
+                    // OAM that was active when the transition began.
+                    self.next_display_vram_generation =
+                        DisplayVramGeneration::RetainCapturedBeforeNmi;
+                    self.next_display_bg_scroll_generation =
+                        DisplayBgScrollGeneration::ComposeLiveAfterNmi;
+                    let oam = self
+                        .display_snapshot
+                        .as_ref()
+                        .map(|snapshot| snapshot.ppu.oam.clone())
+                        .unwrap_or_else(|| self.ppu.oam.clone());
+                    self.active_display_oam_generation =
+                        DisplayOamGeneration::RetainOverworldTransitionEntry { oam };
+                }
                 self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();

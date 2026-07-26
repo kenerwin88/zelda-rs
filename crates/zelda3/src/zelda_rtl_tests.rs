@@ -4014,6 +4014,24 @@ fn display_snapshot_consumes_vram_once_and_retains_active_oam_generation() {
 }
 
 #[test]
+fn overworld_pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
+    assert_eq!(
+        OverworldPreMainNmiResume::AuxGraphicsReturn.scanout_generations(),
+        (
+            DisplayVramGeneration::ComposeLiveAfterNmi,
+            DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+        ),
+    );
+    assert_eq!(
+        OverworldPreMainNmiResume::SpriteReloadReturn.scanout_generations(),
+        (
+            DisplayVramGeneration::RetainCapturedBeforeNmi,
+            DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
+        ),
+    );
+}
+
+#[test]
 fn overworld_transition_publishes_the_nmi_written_half_color_bit() {
     assert!(rom_overworld_transition_half_color_is_live(
         9, 3, 9, 3, true, false,
