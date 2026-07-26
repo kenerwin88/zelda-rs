@@ -10596,9 +10596,12 @@ impl ZeldaState {
             return;
         }
         self.ApplyPaletteFilter_bounce();
-        if self.game_state.display.palette_filter.countdown() != 0 {
+        if !self.rom_startup_timing()
+            && self.game_state.display.palette_filter.countdown() != 0
+        {
             self.ApplyPaletteFilter_bounce();
         }
+        self.suspend_dungeon_subtile_palette_filter_until_return();
     }
 
     pub(super) fn DungeonTransition_Subtile_ResetShutters(&mut self) {

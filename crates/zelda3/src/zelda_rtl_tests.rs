@@ -3682,19 +3682,25 @@ fn overworld_animated_bg_vram_generation_follows_scanout_authority() {
 }
 
 #[test]
-fn overworld_animated_bg_uses_the_current_host_boundary_vram() {
-    let mut state = ZeldaState::new();
-    state.set_animated_tile_vram_destination_address(0x3c00);
-    state.ppu.vram[0x3c00..0x3e00].fill(0x1111);
-    state.capture_display_snapshot();
+fn animated_bg_uses_the_current_host_boundary_vram_at_either_destination() {
+    for destination in [0x3b00, 0x3c00] {
+        let mut state = ZeldaState::new();
+        state.set_animated_tile_vram_destination_address(destination as u16);
+        state.ppu.vram[destination..destination + 0x200].fill(0x1111);
+        state.capture_display_snapshot();
 
-    state.pre_nmi_animated_bg_vram = Some(vec![0x2222; 0x200]);
-    state.ppu.vram[0x3c00..0x3e00].fill(0x3333);
+        state.pre_nmi_animated_bg_scanout = Some(PreNmiAnimatedBgScanout {
+            destination_address: destination,
+            vram: vec![0x2222; 0x200],
+        });
+        state.ppu.vram[destination..destination + 0x200].fill(0x3333);
 
-    let presented_word = state.with_display_snapshot(|display| display.ppu.vram[0x3c00]);
+        let presented_word =
+            state.with_display_snapshot(|display| display.ppu.vram[destination]);
 
-    assert_eq!(presented_word, 0x2222);
-    assert_eq!(state.ppu.vram[0x3c00], 0x3333);
+        assert_eq!(presented_word, 0x2222);
+        assert_eq!(state.ppu.vram[destination], 0x3333);
+    }
 }
 
 #[test]
@@ -4374,6 +4380,16 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     });
 
     assert_eq!(captured, (0xaaaa, 0x4444, 0x2222, 0xcccc));
+}
+
+#[test]
+fn subtile_lightening_filter_can_begin_in_the_post_nmi_cpu_interval() {
+    assert_eq!(
+        rom_post_nmi_main_iteration(7, 1, 5, 7, 1, 6, true),
+        Some(PostNmiMainIteration::DungeonSubtileLighteningFilter)
+    );
+    assert_eq!(rom_post_nmi_main_iteration(7, 1, 0, 7, 1, 1, true), None);
+    assert_eq!(rom_post_nmi_main_iteration(7, 1, 5, 7, 1, 6, false), None);
 }
 
 #[test]

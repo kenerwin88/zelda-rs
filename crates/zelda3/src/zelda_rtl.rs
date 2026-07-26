@@ -413,6 +413,19 @@ struct GraphicsDmaPlan {
     animated_bg_operands: GraphicsDmaGeneration,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct GraphicsDmaOverride {
+    link_obj_operands: Option<GraphicsDmaGeneration>,
+}
+
+impl GraphicsDmaOverride {
+    const fn host_boundary_link_operands() -> Self {
+        Self {
+            link_obj_operands: Some(GraphicsDmaGeneration::HostBoundaryBeforeMain),
+        }
+    }
+}
+
 const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPlan {
     // These phase rules describe where the hardware NMI falls relative to the
     // native main-thread slice. OAM, Link OBJ CHR, and animated-BG DMA do not
@@ -878,6 +891,7 @@ enum RomWorkContinuation {
         work: DungeonFallingEntranceWork,
     },
     FinishItemReceiptGraphics,
+    FinishDungeonSubtilePaletteFilter,
     FinishSpotlightIteration {
         iteration: SpotlightIteration,
     },
@@ -1040,6 +1054,41 @@ impl PendingRomWork {
 
     fn finish(&mut self) {
         *self = Self::default();
+    }
+}
+
+const DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES: u8 = 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PostNmiMainIteration {
+    DungeonSubtileLighteningFilter,
+}
+
+const fn rom_post_nmi_main_iteration(
+    entry_main_module: u8,
+    entry_submodule: u8,
+    entry_subsubmodule: u8,
+    current_main_module: u8,
+    current_submodule: u8,
+    current_subsubmodule: u8,
+    wants_lights_out: bool,
+) -> Option<PostNmiMainIteration> {
+    // The completed subtile landing returns immediately before vblank. After
+    // that NMI the 65816 has enough active-frame time to begin the next main
+    // iteration and enter the lightening filter before retro_run returns.
+    // The darkening entry reaches its corresponding handoff later and does
+    // not start the filter until the following host interval.
+    if entry_main_module == 7
+        && entry_submodule == 1
+        && entry_subsubmodule == 5
+        && current_main_module == 7
+        && current_submodule == 1
+        && current_subsubmodule == 6
+        && wants_lights_out
+    {
+        Some(PostNmiMainIteration::DungeonSubtileLighteningFilter)
+    } else {
+        None
     }
 }
 
@@ -2833,6 +2882,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     next_display_bg_scroll_generation: DisplayBgScrollGeneration,
     #[serde(skip)]
+    next_display_oam_scanout_generation: Option<GraphicsDmaGeneration>,
+    #[serde(skip)]
     active_display_obj_generation: DisplayObjGeneration,
     #[serde(skip)]
     next_overworld_pre_main_nmi_resume: Option<OverworldPreMainNmiResume>,
@@ -2877,10 +2928,14 @@ pub struct ZeldaState {
     /// the animated-BG or Link OBJ sources.
     #[serde(skip)]
     pre_main_graphics_dma: Option<PreMainGraphicsDma>,
-    /// VRAM $3c00 as it existed when the host entered this frame, before the
-    /// frame's NMI could upload a newly selected overworld animation phase.
+    /// One-shot graphics-DMA generations selected by an interrupted CPU
+    /// continuation for the upcoming NMI.
     #[serde(skip)]
-    pre_nmi_animated_bg_vram: Option<Vec<u16>>,
+    next_nmi_graphics_dma_override: GraphicsDmaOverride,
+    /// Animated-BG VRAM as it existed when the host entered this frame, before
+    /// the frame's NMI could upload a newly selected animation phase.
+    #[serde(skip)]
+    pre_nmi_animated_bg_scanout: Option<PreNmiAnimatedBgScanout>,
     #[serde(default)]
     nmi_forced_blank_scanlines_pending: u8,
     nmi_forced_blank_from_scanline_pending: Option<u8>,
@@ -3021,6 +3076,7 @@ struct DisplaySnapshot {
     hud_vram_generation: DisplayVramGeneration,
     hud_vram_destination: usize,
     link_obj_scanout_generation: GraphicsDmaGeneration,
+    oam_scanout_generation: GraphicsDmaGeneration,
     bg_scroll_generation: DisplayBgScrollGeneration,
     obj_generation: DisplayObjGeneration,
     published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
@@ -3041,6 +3097,12 @@ struct PreMainAnimatedTileDma {
     source_address: usize,
     destination_address: usize,
     data: Vec<u8>,
+}
+
+#[derive(Clone)]
+struct PreNmiAnimatedBgScanout {
+    destination_address: usize,
+    vram: Vec<u16>,
 }
 
 #[derive(Clone)]
@@ -5069,6 +5131,15 @@ impl ZeldaState {
 
     pub(crate) fn clear_nmi_update_latch(&mut self) {
         self.display_core_mut().clear_nmi_update_latch();
+    }
+
+    pub(super) fn suspend_dungeon_subtile_palette_filter_until_return(&mut self) {
+        if self.rom_startup_timing() {
+            self.pending_rom_work = PendingRomWork::schedule(
+                RomWorkContinuation::FinishDungeonSubtilePaletteFilter,
+                DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES,
+            );
+        }
     }
 
     pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
@@ -7790,6 +7861,7 @@ impl ZeldaState {
             pending_rom_work: PendingRomWork::default(),
             next_display_vram_generation: DisplayVramGeneration::default(),
             next_display_bg_scroll_generation: DisplayBgScrollGeneration::default(),
+            next_display_oam_scanout_generation: None,
             active_display_obj_generation: DisplayObjGeneration::default(),
             next_overworld_pre_main_nmi_resume: None,
             next_overworld_sprite_reload_entry_phase: None,
@@ -7811,7 +7883,8 @@ impl ZeldaState {
             visible_display_snapshot: None,
             deferred_display_snapshot: None,
             pre_main_graphics_dma: None,
-            pre_nmi_animated_bg_vram: None,
+            next_nmi_graphics_dma_override: GraphicsDmaOverride::default(),
+            pre_nmi_animated_bg_scanout: None,
             nmi_forced_blank_scanlines_pending: 0,
             nmi_forced_blank_from_scanline_pending: None,
             nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
@@ -8417,6 +8490,18 @@ impl ZeldaState {
                 rom_graphics_dma_plan(captured_frame.main_module, captured_frame.submodule)
                     .link_obj_scanout
             });
+        let oam_scanout_generation = self
+            .next_display_oam_scanout_generation
+            .take()
+            .or_else(|| {
+                self.pre_main_graphics_dma
+                    .as_ref()
+                    .map(|graphics| graphics.entry_plan.oam_scanout)
+            })
+            .unwrap_or_else(|| {
+                rom_graphics_dma_plan(captured_frame.main_module, captured_frame.submodule)
+                    .oam_scanout
+            });
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
@@ -8432,6 +8517,7 @@ impl ZeldaState {
                 .display
                 .message_dma_destination_address_usize(),
             link_obj_scanout_generation,
+            oam_scanout_generation,
             bg_scroll_generation: std::mem::take(&mut self.next_display_bg_scroll_generation),
             obj_generation,
             published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
@@ -8466,7 +8552,7 @@ impl ZeldaState {
             // live native PPU remains configured for the normal Zelda OBJ CHR
             // base used once initialization resumes.
             snapshot.ppu.obj_tile_adr1 = 0;
-            snapshot.ppu.obj_tile_adr2 = 0x1000;
+            snapshot.ppu.obj_tile_adr2 = 0;
         }
         // A high-bit V-counter request is a one-frame raster event. Publish it
         // in this immutable display snapshot, then advance live simulation to
@@ -8583,6 +8669,9 @@ impl ZeldaState {
                     snapshot_frame.submodule,
                     display.ppu.forced_blank_scanlines != 0,
                     pending_main_thread_stripe,
+                ) || matches!(
+                    display.oam_scanout_generation,
+                    GraphicsDmaGeneration::HostBoundaryBeforeMain
                 ) || rom_dungeon_exit_entry_oam_publication_is_deferred(
                     snapshot_frame.main_module,
                     self.game_state.frame.main_module,
@@ -8724,20 +8813,26 @@ impl ZeldaState {
             (end <= self.ppu.vram.len()).then(|| (start, self.ppu.vram[start..end].to_vec()))
         })
         .flatten();
-        // The normal overworld animation upload targets VRAM $3c00. Select its
-        // display generation once, alongside the other memory-domain
-        // publication decisions above. Most scanouts retain the coherent
-        // pre-NMI image. The resumed bad-weather tail explicitly publishes the
-        // live post-NMI generation instead; ordinary spotlight frames advance
-        // naturally because the next host boundary captures the completed
-        // upload.
-        let previous_overworld_animated_bg_vram = (animated_bg_vram_generation
+        // Animated-BG DMA configures the next active frame. Retain the
+        // host-boundary VRAM generation at whichever destination the current
+        // tileset selected ($3b00 indoors, $3c00 outdoors). The resumed
+        // bad-weather tail is the measured exception that publishes the live
+        // post-NMI generation.
+        let animated_bg_destination = read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
+        let previous_animated_bg_vram = (animated_bg_vram_generation
             == AnimatedBgVramGeneration::HostBoundaryBeforeNmi
-            && read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) == 0x3c00)
+            && animated_bg_destination + 0x200 <= self.ppu.vram.len())
             .then(|| {
-                self.pre_nmi_animated_bg_vram
-                    .clone()
-                    .unwrap_or_else(|| self.ppu.vram[0x3c00..0x3e00].to_vec())
+                let vram = self
+                    .pre_nmi_animated_bg_scanout
+                    .as_ref()
+                    .filter(|scanout| scanout.destination_address == animated_bg_destination)
+                    .map(|scanout| scanout.vram.clone())
+                    .unwrap_or_else(|| {
+                        self.ppu.vram[animated_bg_destination..animated_bg_destination + 0x200]
+                            .to_vec()
+                    });
+                (animated_bg_destination, vram)
             });
         // During a message-line scroll the ROM's NMI re-uploads the VWF text
         // buffer every frame while the copy is still in flight; Snes9x's
@@ -8785,8 +8880,9 @@ impl ZeldaState {
             .resolve_for_scanout(retain_previous_nmi_display_memory);
         if presented_vram_generation == DisplayVramGeneration::ComposeLiveAfterNmi {
             self.ppu.vram.clone_from(&display.ppu.vram);
-            if let Some(animated_bg_vram) = previous_overworld_animated_bg_vram {
-                self.ppu.vram[0x3c00..0x3e00].copy_from_slice(&animated_bg_vram);
+            if let Some((destination, animated_bg_vram)) = previous_animated_bg_vram {
+                self.ppu.vram[destination..destination + animated_bg_vram.len()]
+                    .copy_from_slice(&animated_bg_vram);
             }
             if let Some(entry_link_obj_vram) = entry_link_obj_vram {
                 self.ppu.vram[0x4000..0x4400].copy_from_slice(&entry_link_obj_vram);
@@ -9386,14 +9482,22 @@ impl ZeldaState {
         if !self.initialized {
             self.zelda_initialize();
         }
-        self.pre_nmi_animated_bg_vram = (self.rom_startup_timing()
-            && self.game_state.display.has_animated_tile_data_source()
-            && self
-                .game_state
-                .display
-                .animated_tile_vram_destination_usize()
-                == 0x3c00)
-            .then(|| self.ppu.vram[0x3c00..0x3e00].to_vec());
+        self.pre_nmi_animated_bg_scanout = (self.rom_startup_timing()
+            && self.game_state.display.has_animated_tile_data_source())
+            .then(|| {
+                let destination_address = self
+                    .game_state
+                    .display
+                    .animated_tile_vram_destination_usize();
+                (destination_address + 0x200 <= self.ppu.vram.len()).then(|| {
+                    PreNmiAnimatedBgScanout {
+                        destination_address,
+                        vram: self.ppu.vram[destination_address..destination_address + 0x200]
+                            .to_vec(),
+                    }
+                })
+            })
+            .flatten();
         self.pre_main_graphics_dma = if self.rom_startup_timing() {
             // Capture the small operand snapshot at the host boundary, then
             // decide which domains consume it from the live state at NMI.
@@ -9805,6 +9909,26 @@ impl ZeldaState {
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
+                RomWorkSlice::Complete(
+                    RomWorkContinuation::FinishDungeonSubtilePaletteFilter,
+                ) => {
+                    // ApplyPaletteFilter_bounce returns after the NMI that
+                    // interrupted its color loop. Resume the caller's optional
+                    // second filter pass only after that boundary instead of
+                    // collapsing both passes into one host frame.
+                    if self.game_state.display.palette_filter.countdown() != 0 {
+                        self.ApplyPaletteFilter_bounce();
+                    }
+                    // The resumed caller reaches NMI_PrepareSprites before
+                    // vblank, but the pending NMI has already latched its Link
+                    // DMA operands at the host boundary.
+                    self.next_nmi_graphics_dma_override =
+                        GraphicsDmaOverride::host_boundary_link_operands();
+                    self.next_display_oam_scanout_generation =
+                        Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration {
                     ..
                 }) => {
@@ -10126,6 +10250,19 @@ impl ZeldaState {
         }
         let dialogue_scroll_finished_copy =
             self.rom_startup_timing() && self.dialogue_scroll_continuation.is_return_only();
+        let post_nmi_main_iteration = if self.rom_startup_timing() {
+            rom_post_nmi_main_iteration(
+                frame.main_module,
+                frame.submodule,
+                frame.subsubmodule,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                self.game_state.frame.subsubmodule,
+                self.game_state.dungeon.torch.wants_lights_out() != 0,
+            )
+        } else {
+            None
+        };
         let publication_override = self
             .pending_rom_work
             .in_flight_display_snapshot_publication_override();
@@ -10185,6 +10322,15 @@ impl ZeldaState {
             if let Some(snapshot) = self.display_snapshot.as_mut() {
                 color_math_scanout.publish_to(&mut snapshot.ppu);
             }
+        }
+        if let Some(PostNmiMainIteration::DungeonSubtileLighteningFilter) =
+            post_nmi_main_iteration
+        {
+            self.zelda_run_game_loop();
+            debug_assert_eq!(
+                self.pending_rom_work.continuation,
+                Some(RomWorkContinuation::FinishDungeonSubtilePaletteFilter)
+            );
         }
         self.replay_trace_col("after-nmi");
         self.replay_trace_ram_watch("after-nmi");

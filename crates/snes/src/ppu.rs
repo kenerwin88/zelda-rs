@@ -325,7 +325,7 @@ impl PpuState {
         self.oam_second_write = false;
         self.oam_buffer = 0;
         self.obj_tile_adr1 = 0x4000;
-        self.obj_tile_adr2 = 0x5000;
+        self.obj_tile_adr2 = 0x4000;
         self.obj_size = 0;
         for bg in &mut self.bg_layer {
             *bg = BgLayer::default();
@@ -449,8 +449,14 @@ impl PpuState {
                 self.forced_blank = val & 0x80 != 0;
             }
             0x01 => {
-                // OBSEL — game writes 2 (obj_size=0, addr1=0x4000)
-                debug_assert_eq!(val, 2, "OBSEL expected 2");
+                // OBSEL addresses are byte-based in the register encoding and
+                // word-based in VRAM. The tile-number high bit selects the
+                // configured name offset, which may legitimately be zero.
+                self.obj_tile_adr1 = u16::from(val & 3) << 13;
+                self.obj_tile_adr2 =
+                    self.obj_tile_adr1
+                        .wrapping_add(u16::from((val >> 3) & 3) << 12);
+                self.obj_size = (val >> 5) & 7;
             }
             0x02 => {
                 self.oam_adr = (self.oam_adr & 0xff00) | val as u16;
@@ -2523,6 +2529,22 @@ mod tests {
             &ppu.render_buffer.as_ref().unwrap()[pixel..pixel + 4],
             &[0x00, 0x00, 0xff, 0x00]
         );
+    }
+
+    #[test]
+    fn obsel_decodes_base_name_offset_and_size_in_vram_words() {
+        let mut ppu = PpuState::new();
+
+        ppu.write(0x01, 0b1011_1010);
+
+        assert_eq!(ppu.obj_tile_adr1, 0x4000);
+        assert_eq!(ppu.obj_tile_adr2, 0x7000);
+        assert_eq!(ppu.obj_size, 5);
+
+        ppu.write(0x01, 2);
+        assert_eq!(ppu.obj_tile_adr1, 0x4000);
+        assert_eq!(ppu.obj_tile_adr2, 0x4000);
+        assert_eq!(ppu.obj_size, 0);
     }
 
     #[test]
