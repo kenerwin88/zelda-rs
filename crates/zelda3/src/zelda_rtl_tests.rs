@@ -3918,18 +3918,36 @@ fn full_tilemap_upload_publishes_vram_at_the_following_nmi() {
 }
 
 #[test]
-fn world_map_force_blank_preserves_the_scanned_prefix() {
+fn world_map_force_blank_fallback_preserves_the_scanned_prefix() {
     assert_eq!(
-        rom_world_map_force_blank_scanline(0x0e, 7, 1, 0x80, false, true),
-        Some(43)
+        rom_world_map_force_blank_fallback_scanline(0x0e, 7, 1, 0x80, false, true),
+        Some(48)
     );
     assert_eq!(
-        rom_world_map_force_blank_scanline(0x0e, 7, 0, 0x01, false, false),
+        rom_world_map_force_blank_fallback_scanline(0x0e, 7, 0, 0x01, false, false),
         None
     );
     assert_eq!(
-        rom_world_map_force_blank_scanline(0x0e, 7, 2, 0x00, true, false),
+        rom_world_map_force_blank_fallback_scanline(0x0e, 7, 2, 0x00, true, false),
         None
+    );
+}
+
+#[test]
+fn explicit_force_blank_event_outranks_the_world_map_fallback() {
+    assert_eq!(
+        resolve_active_display_blanking_scanout(false, Some(30), true, Some(48)),
+        ActiveDisplayBlankingScanout {
+            suffix_start_scanline: Some(30),
+            retain_prior_surface: true,
+        }
+    );
+    assert_eq!(
+        resolve_active_display_blanking_scanout(true, None, false, Some(48)),
+        ActiveDisplayBlankingScanout {
+            suffix_start_scanline: Some(48),
+            retain_prior_surface: false,
+        }
     );
 }
 

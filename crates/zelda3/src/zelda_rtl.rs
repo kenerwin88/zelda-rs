@@ -151,6 +151,37 @@ struct NmiActiveDisplayBlanking {
     suffix_start_scanline: Option<u8>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ActiveDisplayBlankingScanout {
+    suffix_start_scanline: Option<u8>,
+    retain_prior_surface: bool,
+}
+
+const fn resolve_active_display_blanking_scanout(
+    captured_retain_prior_surface: bool,
+    live_suffix_start_scanline: Option<u8>,
+    live_retain_prior_surface: bool,
+    inferred_suffix_start_scanline: Option<u8>,
+) -> ActiveDisplayBlankingScanout {
+    // An explicit raster event recorded while the simulation ran is the
+    // authoritative boundary. Only infer a boundary when the coarse native
+    // execution path could not record one.
+    match (live_suffix_start_scanline, inferred_suffix_start_scanline) {
+        (Some(line), _) => ActiveDisplayBlankingScanout {
+            suffix_start_scanline: Some(line),
+            retain_prior_surface: captured_retain_prior_surface || live_retain_prior_surface,
+        },
+        (None, Some(line)) => ActiveDisplayBlankingScanout {
+            suffix_start_scanline: Some(line),
+            retain_prior_surface: false,
+        },
+        (None, None) => ActiveDisplayBlankingScanout {
+            suffix_start_scanline: None,
+            retain_prior_surface: captured_retain_prior_surface || live_retain_prior_surface,
+        },
+    }
+}
+
 fn nmi_active_display_blanking_for_pending_work(
     core_updates_disabled: bool,
     forced_blank: bool,
@@ -287,7 +318,7 @@ const fn rom_full_tilemap_scanout_uses_pre_nmi_vram(
     pending_full_tilemap_upload && forced_blank_prefix_scanlines == 0
 }
 
-const fn rom_world_map_force_blank_scanline(
+const fn rom_world_map_force_blank_fallback_scanline(
     main_module: u8,
     submodule: u8,
     map_state: u8,
@@ -296,11 +327,8 @@ const fn rom_world_map_force_blank_scanline(
     live_forced_blank: bool,
 ) -> Option<u8> {
     // WorldMap_FadeOut reaches zero after the hardware NMI and writes $2100=$80
-    // during active display. Instrumented Snes9x records V=43 and CurrentLine=43
-    // on the continuous clean route: scanlines 0..42 retain brightness 1, while
-    // scanline 43 onward is blank. Later route instances can reach this write at
-    // scanline 30 depending on the 65816's host-entry NMI phase; do not guess at
-    // that distinction from unrelated ROM latches.
+    // during active display. When the coarse native call does not carry an
+    // explicit raster event, instrumented Snes9x records V=49/CurrentLine=48.
     if main_module == 0x0e
         && submodule == 7
         && map_state == 1
@@ -308,7 +336,7 @@ const fn rom_world_map_force_blank_scanline(
         && !snapshot_forced_blank
         && live_forced_blank
     {
-        Some(43)
+        Some(48)
     } else {
         None
     }
@@ -8387,7 +8415,7 @@ impl ZeldaState {
         let live_forced_blank_from_scanline = self.ppu.forced_blank_from_scanline;
         let live_retain_active_display_history = self.ppu.retain_active_display_history;
         let live_brightness = self.ppu.brightness;
-        let world_map_force_blank_from_scanline = rom_world_map_force_blank_scanline(
+        let world_map_force_blank_fallback_scanline = rom_world_map_force_blank_fallback_scanline(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
             display.ram[crate::game_state::constants::OVERWORLD_MAP_STATE],
@@ -8576,10 +8604,14 @@ impl ZeldaState {
         // from the coherent pre-NMI display snapshot.
         self.ppu.forced_blank |= live_forced_blank;
         if live_forced_blank {
-            self.ppu.forced_blank_from_scanline =
-                world_map_force_blank_from_scanline.or(live_forced_blank_from_scanline);
-            self.ppu.retain_active_display_history = world_map_force_blank_from_scanline.is_none()
-                && (self.ppu.retain_active_display_history || live_retain_active_display_history);
+            let scanout = resolve_active_display_blanking_scanout(
+                self.ppu.retain_active_display_history,
+                live_forced_blank_from_scanline,
+                live_retain_active_display_history,
+                world_map_force_blank_fallback_scanline,
+            );
+            self.ppu.forced_blank_from_scanline = scanout.suffix_start_scanline;
+            self.ppu.retain_active_display_history = scanout.retain_prior_surface;
         }
         if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && (1648..=1655).contains(&self.frame_ctr_dbg)
