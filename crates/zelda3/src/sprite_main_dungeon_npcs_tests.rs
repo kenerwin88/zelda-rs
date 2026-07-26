@@ -11,23 +11,51 @@ fn uncle_departure_releases_sprite_and_retains_equipment_dma() {
     let k = 0;
     s.sprite_slot_view_mut(k).set_state(9);
     s.sprite_slot_view_mut(k).set_ai_state(4);
+    s.sprite_slot_view_mut(k).set_direction(0xbd);
+    s.sprite_slot_view_mut(k).set_flags2(6);
+    s.sprite_slot_view_mut(k).set_oam_flags(0x27);
+    s.sprite_workspace_mut().set_current_sprite_x(0x78);
+    s.sprite_workspace_mut().set_current_sprite_y(0x106);
+    s.ram[0x18e3..0x1913].copy_from_slice(&[
+        0x01, 0x94, 0x35, 0x11, 0x03, 0x40, 0x32, 0x7f, 0x34, 0x11, 0x23, 0x40, 0x32, 0x7f, 0x34,
+        0x11, 0x43, 0x40, 0x32, 0x7f, 0x34, 0x11, 0x63, 0x40, 0x32, 0x7f, 0x34, 0x11, 0x83, 0x40,
+        0x32, 0x7f, 0x34, 0x11, 0xa3, 0x40, 0x32, 0x7f, 0x34, 0x11, 0xc3, 0x40, 0x32, 0x7f, 0x34,
+        0x11, 0xe3, 0x40,
+    ]);
     s.follower_link_state_mut().set_shield_dma_graphics_index(0);
     s.follower_link_state_mut().immobilize();
+    s.oam_reset_region_bases();
+    let oam = 0x800 + usize::from(s.game_state.oam.region_base_word(1));
 
-    s.uncle_at_house(k);
+    s.sprite_uncle(k);
 
+    assert_eq!(
+        &s.ram[oam..oam + 24],
+        &[
+            0x79, 0xf0, 0x03, 0x67, 0xac, 0xf0, 0x32, 0x58, 0xbb, 0xf0, 0x34, 0x36, 0xaa, 0xf0,
+            0x83, 0x67, 0xac, 0xf0, 0x32, 0x58, 0x3b, 0xf0, 0x34, 0x36,
+        ]
+    );
     assert_eq!(s.sprite_slot_view(k).state(), 0);
     assert_eq!(
         s.game_state
             .player
             .follower_link
             .shield_dma_graphics_index(),
-        UNCLE_DEPARTURE_RETAINED_SHIELD_DMA_INDEX
+        UNCLE_WRAPPED_DEPARTURE_EQUIPMENT_DMA.shield
     );
     assert!(!s.game_state.player.follower_link.is_immobilized());
 
     s.nmi_prepare_sprites();
     assert_eq!(read_le_u16(&s.ram, DMA_SOURCE_ADDR_7), 0x9480);
+}
+
+#[test]
+fn uncle_departure_draw_source_wraps_into_low_wram() {
+    assert_eq!(
+        uncle_draw_source(0xbd, 0),
+        Some(UncleDrawSource::WrappedWram { address: 0x18e3 })
+    );
 }
 
 #[test]

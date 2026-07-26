@@ -241,6 +241,21 @@ const UNCLE_DRAW_FRAMES: [DrawMultipleData; 48] = [
 ];
 const UNCLE_DRAW_SWORD_DMA_INDEX: [u8; 8] = [8, 8, 0, 0, 6, 6, 0, 0];
 const UNCLE_DRAW_SHIELD_DMA_INDEX: [u8; 8] = [0, 0, 0, 0, 4, 4, 0, 0x8b];
+const UNCLE_ROM_DRAW_TABLE: u16 = 0xd203;
+const UNCLE_ROM_DRAW_DIRECTION_STRIDE: u16 = 12 * 8;
+const UNCLE_ROM_DRAW_GRAPHICS_STRIDE: u16 = 6 * 8;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum UncleDrawSource {
+    PortedTable { start: usize },
+    WrappedWram { address: u16 },
+}
+
+#[derive(Clone, Copy)]
+struct UncleEquipmentDmaIndices {
+    sword: u8,
+    shield: u8,
+}
 
 // sprite_main.c:17369..17371.
 const THIEF_GFX: [u8; 12] = [11, 8, 2, 5, 9, 6, 0, 3, 10, 7, 1, 4];
@@ -506,7 +521,37 @@ const UNCLE_LEAVE_HOUSE_Y_VELOCITIES: [i8; 4] = [-12, 12, 0, 0];
 // lookup of the final step), observed via the instrumented Snes9x trace.
 const UNCLE_LEAVE_HOUSE_OOB_X_VELOCITY: i8 = 0x90u8 as i8;
 const UNCLE_LEAVE_HOUSE_OOB_Y_VELOCITY: i8 = 0x0d;
-const UNCLE_DEPARTURE_RETAINED_SHIELD_DMA_INDEX: u8 = 6;
+const UNCLE_WRAPPED_DEPARTURE_EQUIPMENT_DMA: UncleEquipmentDmaIndices = UncleEquipmentDmaIndices {
+    sword: 0,
+    shield: 6,
+};
+
+fn uncle_draw_source(direction: u8, graphics: u8) -> Option<UncleDrawSource> {
+    if direction <= 3 {
+        return Some(UncleDrawSource::PortedTable {
+            start: usize::from(direction) * 12 + usize::from(graphics) * 6,
+        });
+    }
+    if direction != UNCLE_LEAVE_HOUSE_DIRECTIONS[2] {
+        return None;
+    }
+    let address = UNCLE_ROM_DRAW_TABLE
+        .wrapping_add(u16::from(direction) * UNCLE_ROM_DRAW_DIRECTION_STRIDE)
+        .wrapping_add(u16::from(graphics) * UNCLE_ROM_DRAW_GRAPHICS_STRIDE);
+    (address < 0x2000).then_some(UncleDrawSource::WrappedWram { address })
+}
+
+fn uncle_equipment_dma_indices(direction: u8, graphics: u8) -> UncleEquipmentDmaIndices {
+    if direction <= 3 {
+        let index = usize::from(direction) * 2 + usize::from(graphics);
+        UncleEquipmentDmaIndices {
+            sword: UNCLE_DRAW_SWORD_DMA_INDEX[index],
+            shield: UNCLE_DRAW_SHIELD_DMA_INDEX[index],
+        }
+    } else {
+        UNCLE_WRAPPED_DEPARTURE_EQUIPMENT_DMA
+    }
+}
 
 // CrystalMaiden_RunCutscene message table (sprite_main.c:23297).
 const CRYSTAL_MAIDEN_MSGS: [u16; 9] = [
@@ -942,12 +987,6 @@ impl ZeldaState {
                 self.follower_state_mut().set_indicator(5);
                 self.start_shared_message_timer(0x0df3);
                 self.save_progress_mut().or_progress_flags(0x10);
-                // The original machine leaves this equipment bank selected when the
-                // departing Uncle slot is retired. Keep that observable lifetime
-                // explicitly instead of reproducing the inactive slot's corrupt
-                // direction byte and out-of-range ROM table lookup.
-                self.follower_link_state_mut()
-                    .set_shield_dma_graphics_index(UNCLE_DEPARTURE_RETAINED_SHIELD_DMA_INDEX);
                 self.sprite_slot_view_mut(k).set_state(0);
                 self.follower_link_state_mut().clear_immobilized();
             }
@@ -983,34 +1022,35 @@ impl ZeldaState {
     // void Uncle_Draw(int k) {  // 8dd391
     pub(super) fn uncle_draw(&mut self, k: usize) {
         self.oam_allocate_from_region_b(0x18);
-        // On the departure frame the slot's direction holds the ROM's corrupt
-        // out-of-range byte 0xBD (see UNCLE_LEAVE_HOUSE_DIRECTIONS); the ROM's
-        // draw then reads garbage far past these tables. Its OAM output that
-        // frame is transient (the buffer is cleared next frame, and the screen
-        // is mid room-transition) and the persistent equipment-index effect is
-        // reproduced by UNCLE_DEPARTURE_RETAINED_SHIELD_DMA_INDEX in the
-        // departure handler, so skip the unreproducible garbage draw here.
-        if usize::from(self.sprite_slot_view(k).direction()) > 3 {
-            return;
-        }
-        let j = usize::from(self.sprite_slot_view(k).direction()) * 2
-            + usize::from(self.sprite_slot_view(k).graphics());
-        {
-            self.follower_link_state_mut()
-                .set_sword_dma_graphics_index(UNCLE_DRAW_SWORD_DMA_INDEX[j]);
-            self.follower_link_state_mut()
-                .set_shield_dma_graphics_index(UNCLE_DRAW_SHIELD_DMA_INDEX[j]);
-        }
-        let base = self.sprite_slot_view(k).direction() as usize * 12
-            + self.sprite_slot_view(k).graphics() as usize * 6;
+        let direction = self.sprite_slot_view(k).direction();
+        let graphics = self.sprite_slot_view(k).graphics();
         let mut info = PrepOamCoordsRet {
             x: 0,
             y: 0,
             r4: 0,
             flags: 0,
         };
-        self.sprite_draw_multiple(k, &UNCLE_DRAW_FRAMES[base..base + 6], Some(&mut info));
-        if self.sprite_slot_view(k).direction() != 0 && self.sprite_slot_view(k).direction() != 3 {
+
+        let Some(source) = uncle_draw_source(direction, graphics) else {
+            return;
+        };
+        let equipment = uncle_equipment_dma_indices(direction, graphics);
+        self.follower_link_state_mut()
+            .set_sword_dma_graphics_index(equipment.sword);
+        self.follower_link_state_mut()
+            .set_shield_dma_graphics_index(equipment.shield);
+        match source {
+            UncleDrawSource::PortedTable { start } => {
+                self.sprite_draw_multiple(k, &UNCLE_DRAW_FRAMES[start..start + 6], Some(&mut info));
+            }
+            UncleDrawSource::WrappedWram { address } => {
+                // The final departure step gives the ROM direction 0xbd. Its
+                // 16-bit table calculation wraps from $0d:d203 to low WRAM at
+                // $18e3, so the generic routine consumes six live WRAM records.
+                self.sprite_draw_multiple_from_wram_records::<6>(k, address, Some(&mut info));
+            }
+        }
+        if direction != 0 && direction != 3 {
             self.sprite_draw_shadow_custom(k, &mut info, 10);
         }
     }

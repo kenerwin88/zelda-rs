@@ -15,6 +15,14 @@ pub(super) struct DrawMultipleData {
     pub ext: u8,
 }
 
+#[derive(Copy, Clone)]
+struct DrawMultipleWordData {
+    x: u16,
+    y: u16,
+    char_flags: u16,
+    ext: u8,
+}
+
 // `Sprite_SetSpawnedCoordinates` consumes this struct (sprite.h:28-34).
 #[derive(Copy, Clone, Default)]
 pub(super) struct SpriteSpawnInfo {
@@ -6371,6 +6379,26 @@ impl ZeldaState {
         src: &[DrawMultipleData],
         info: Option<&mut PrepOamCoordsRet>,
     ) {
+        let Some(info) = self.sprite_prepare_draw_multiple(k, info) else {
+            return;
+        };
+        self.sprite_draw_multiple_words_with_info(
+            k,
+            src.iter().map(|entry| DrawMultipleWordData {
+                x: entry.x as i16 as u16,
+                y: entry.y as i16 as u16,
+                char_flags: entry.char_flags,
+                ext: entry.ext,
+            }),
+            info,
+        );
+    }
+
+    fn sprite_prepare_draw_multiple(
+        &mut self,
+        k: usize,
+        info: Option<&mut PrepOamCoordsRet>,
+    ) -> Option<(u16, u16, u8)> {
         let (prepped, out_of_bounds) = self.sprite_prep_oam_coord_or_double_ret_raw(k);
         if let Some(out) = info {
             out.x = prepped.x;
@@ -6379,9 +6407,38 @@ impl ZeldaState {
             out.flags = prepped.flags;
         }
         if out_of_bounds {
-            return;
+            return None;
         }
-        self.sprite_draw_multiple_with_info(k, src, (prepped.x, prepped.y, prepped.flags));
+        Some((prepped.x, prepped.y, prepped.flags))
+    }
+
+    /// Draw the ROM's native eight-byte `DrawMultipleData` records after a
+    /// 16-bit table-address calculation has wrapped into low WRAM.
+    pub(super) fn sprite_draw_multiple_from_wram_records<const N: usize>(
+        &mut self,
+        k: usize,
+        source: u16,
+        info: Option<&mut PrepOamCoordsRet>,
+    ) {
+        let mut cursor = source;
+        let entries: [DrawMultipleWordData; N] = std::array::from_fn(|_| {
+            let word = |address: u16| {
+                u16::from(self.ram[usize::from(address)])
+                    | (u16::from(self.ram[usize::from(address.wrapping_add(1))]) << 8)
+            };
+            let entry = DrawMultipleWordData {
+                x: word(cursor),
+                y: word(cursor.wrapping_add(2)),
+                char_flags: word(cursor.wrapping_add(4)),
+                ext: self.ram[usize::from(cursor.wrapping_add(7))],
+            };
+            cursor = cursor.wrapping_add(8);
+            entry
+        });
+        let Some(info) = self.sprite_prepare_draw_multiple(k, info) else {
+            return;
+        };
+        self.sprite_draw_multiple_words_with_info(k, entries, info);
     }
 
     // Variant that takes a precomputed PrepOamCoord triple (x, y, flags). The
@@ -6391,6 +6448,24 @@ impl ZeldaState {
         &mut self,
         k: usize,
         src: &[DrawMultipleData],
+        info: (u16, u16, u8),
+    ) {
+        self.sprite_draw_multiple_words_with_info(
+            k,
+            src.iter().map(|entry| DrawMultipleWordData {
+                x: entry.x as i16 as u16,
+                y: entry.y as i16 as u16,
+                char_flags: entry.char_flags,
+                ext: entry.ext,
+            }),
+            info,
+        );
+    }
+
+    fn sprite_draw_multiple_words_with_info(
+        &mut self,
+        k: usize,
+        src: impl IntoIterator<Item = DrawMultipleWordData>,
         info: (u16, u16, u8),
     ) {
         let (info_x, info_y, info_flags) = info;
@@ -6413,8 +6488,8 @@ impl ZeldaState {
             if self.game_state.sprites.workspace.draw_priority_override() >= 1 {
                 d = (d & !0x0e00) | 0x0400;
             }
-            let x = info_x.wrapping_add(entry.x as i8 as i16 as u16);
-            let y = info_y.wrapping_add(entry.y as i8 as i16 as u16);
+            let x = info_x.wrapping_add(entry.x);
+            let y = info_y.wrapping_add(entry.y);
             self.set_oam_helper0_at(oam, x, y, d as u8, (d >> 8) as u8, entry.ext);
             oam += 4;
         }
