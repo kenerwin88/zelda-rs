@@ -602,7 +602,10 @@ const SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES: u8 = 1;
 const DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES: u8 = 1;
 const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
 const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
-const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 17;
+// The entry call consumes the CPU time before the first interrupted slice.
+// Snes9x therefore crosses eighteen vblanks between beginning the final
+// Overworld_LoadAndBuildScreen pass and returning into Module 10.
+const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 18;
 const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
 const OVERWORLD_SPRITE_RECORD_TIMING_UNITS: usize = 3;
 const OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS: usize = 39;
@@ -769,7 +772,7 @@ enum RomWorkContinuation {
     FinishAttractEndOfStory,
     FinishItemReceiptGraphics,
     FinishSpotlightIteration {
-        phase: SpotlightIterationPhase,
+        iteration: SpotlightIteration,
     },
     FinishPreOverworldProperties {
         overworld_screen: u8,
@@ -801,6 +804,52 @@ pub(super) enum SpotlightIterationPhase {
     MixedTailAfterReturn,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SpotlightDirection {
+    Opening { completes_goal_transition: bool },
+    Closing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct SpotlightIteration {
+    direction: SpotlightDirection,
+    phase: SpotlightIterationPhase,
+}
+
+impl SpotlightIteration {
+    pub(super) const fn opening(completes_goal_transition: bool) -> Self {
+        Self {
+            direction: SpotlightDirection::Opening {
+                completes_goal_transition,
+            },
+            phase: SpotlightIterationPhase::WholeTable,
+        }
+    }
+
+    pub(super) const fn closing(phase: SpotlightIterationPhase) -> Self {
+        Self {
+            direction: SpotlightDirection::Closing,
+            phase,
+        }
+    }
+
+    const fn in_flight_publication(self) -> DisplaySnapshotPublication {
+        DisplaySnapshotPublication::AdvanceStaged
+    }
+
+    const fn completion_publication(self) -> DisplaySnapshotPublication {
+        match self.direction {
+            SpotlightDirection::Opening {
+                completes_goal_transition: true,
+            } => DisplaySnapshotPublication::PublishCaptured,
+            SpotlightDirection::Opening {
+                completes_goal_transition: false,
+            } => DisplaySnapshotPublication::AdvanceStaged,
+            SpotlightDirection::Closing => self.phase.close_completion_publication(),
+        }
+    }
+}
+
 impl SpotlightIterationPhase {
     const fn for_close_iteration(submodule: u8, radius: u16) -> Self {
         if submodule == 0 {
@@ -814,7 +863,7 @@ impl SpotlightIterationPhase {
         }
     }
 
-    const fn completion_publication(self) -> DisplaySnapshotPublication {
+    const fn close_completion_publication(self) -> DisplaySnapshotPublication {
         match self {
             Self::WholeTable => DisplaySnapshotPublication::RetainPublished,
             Self::CloseEntry | Self::MixedTailAfterReturn => {
@@ -851,8 +900,8 @@ impl PendingRomWork {
 
     fn in_flight_display_snapshot_publication_override(self) -> Option<DisplaySnapshotPublication> {
         match self.continuation {
-            Some(RomWorkContinuation::FinishSpotlightIteration { .. }) => {
-                Some(DisplaySnapshotPublication::AdvanceStaged)
+            Some(RomWorkContinuation::FinishSpotlightIteration { iteration }) => {
+                Some(iteration.in_flight_publication())
             }
             _ => None,
         }
@@ -860,7 +909,9 @@ impl PendingRomWork {
 
     fn spotlight_iteration_phase(self) -> Option<SpotlightIterationPhase> {
         match self.continuation {
-            Some(RomWorkContinuation::FinishSpotlightIteration { phase }) => Some(phase),
+            Some(RomWorkContinuation::FinishSpotlightIteration { iteration }) => {
+                Some(iteration.phase)
+            }
             _ => None,
         }
     }
@@ -2346,19 +2397,17 @@ enum DisplayVramGeneration {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum AnimatedBgVramGeneration {
     #[default]
-    CapturedPreNmi,
-    StagedPreNmi,
+    HostBoundaryBeforeNmi,
+    LiveAfterNmi,
 }
 
-const fn spotlight_open_animated_bg_vram_generation(
-    main_module: u8,
-    submodule: u8,
-    rom_work_pending: bool,
-) -> AnimatedBgVramGeneration {
-    if main_module == 0x10 && submodule == 1 && !rom_work_pending {
-        AnimatedBgVramGeneration::StagedPreNmi
-    } else {
-        AnimatedBgVramGeneration::CapturedPreNmi
+impl AnimatedBgVramGeneration {
+    const fn for_scanout(bad_weather_scroll_is_live: bool) -> Self {
+        if bad_weather_scroll_is_live {
+            Self::LiveAfterNmi
+        } else {
+            Self::HostBoundaryBeforeNmi
+        }
     }
 }
 
@@ -2658,6 +2707,10 @@ pub struct ZeldaState {
     /// the animation source.
     #[serde(skip)]
     pre_main_animated_tile_dma: Option<PreMainAnimatedTileDma>,
+    /// VRAM $3c00 as it existed when the host entered this frame, before the
+    /// frame's NMI could upload a newly selected overworld animation phase.
+    #[serde(skip)]
+    pre_nmi_animated_bg_vram: Option<Vec<u16>>,
     #[serde(default)]
     nmi_forced_blank_scanlines_pending: u8,
     nmi_forced_blank_from_scanline_pending: Option<u8>,
@@ -7577,6 +7630,7 @@ impl ZeldaState {
             visible_display_snapshot: None,
             deferred_display_snapshot: None,
             pre_main_animated_tile_dma: None,
+            pre_nmi_animated_bg_vram: None,
             nmi_forced_blank_scanlines_pending: 0,
             nmi_forced_blank_from_scanline_pending: None,
             nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
@@ -7777,13 +7831,13 @@ impl ZeldaState {
         self.rom_startup_timing
     }
 
-    pub(super) fn schedule_spotlight_iteration_return(&mut self, phase: SpotlightIterationPhase) {
+    pub(super) fn schedule_spotlight_iteration_return(&mut self, iteration: SpotlightIteration) {
         if !self.rom_startup_timing() {
             return;
         }
         debug_assert!(!self.pending_rom_work.is_pending());
         self.pending_rom_work = PendingRomWork::schedule(
-            RomWorkContinuation::FinishSpotlightIteration { phase },
+            RomWorkContinuation::FinishSpotlightIteration { iteration },
             SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
         );
     }
@@ -8305,19 +8359,8 @@ impl ZeldaState {
                 display.ppu.half_color,
                 self.ppu.half_color,
             );
-        let animated_bg_vram_generation = spotlight_open_animated_bg_vram_generation(
-            self.game_state.frame.main_module,
-            self.game_state.frame.submodule,
-            self.pending_rom_work.is_pending(),
-        );
-        let staged_pre_nmi_animated_bg_vram = (animated_bg_vram_generation
-            == AnimatedBgVramGeneration::StagedPreNmi)
-            .then(|| {
-                self.deferred_display_snapshot
-                    .as_ref()
-                    .map(|snapshot| snapshot.ppu.vram[0x3c00..0x3e00].to_vec())
-            })
-            .flatten();
+        let animated_bg_vram_generation =
+            AnimatedBgVramGeneration::for_scanout(publish_live_overworld_bad_weather_scroll);
         if std::env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
             && (snapshot_frame.main_module == 20 || self.game_state.frame.main_module == 20)
         {
@@ -8411,17 +8454,20 @@ impl ZeldaState {
         );
         let previous_link_obj_vram =
             retain_previous_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
-        // The normal overworld animation upload targets VRAM $3c00. Snes9x
-        // normally returns the active frame that ended at this vblank, so
-        // retain the coherent display snapshot's pre-NMI generation across
-        // overworld overlays and spotlight publication. The resumed
-        // bad-weather tail is the measured exception: its rain scroll and
-        // newly uploaded animated CHR are both visible on the same scanout.
-        let previous_overworld_animated_bg_vram = (!publish_live_overworld_bad_weather_scroll
+        // The normal overworld animation upload targets VRAM $3c00. Select its
+        // display generation once, alongside the other memory-domain
+        // publication decisions above. Most scanouts retain the coherent
+        // pre-NMI image. The resumed bad-weather tail explicitly publishes the
+        // live post-NMI generation instead; ordinary spotlight frames advance
+        // naturally because the next host boundary captures the completed
+        // upload.
+        let previous_overworld_animated_bg_vram = (animated_bg_vram_generation
+            == AnimatedBgVramGeneration::HostBoundaryBeforeNmi
             && read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) == 0x3c00)
-            .then(|| match staged_pre_nmi_animated_bg_vram {
-                Some(vram) => vram,
-                None => self.ppu.vram[0x3c00..0x3e00].to_vec(),
+            .then(|| {
+                self.pre_nmi_animated_bg_vram
+                    .clone()
+                    .unwrap_or_else(|| self.ppu.vram[0x3c00..0x3e00].to_vec())
             });
         // During a message-line scroll the ROM's NMI re-uploads the VWF text
         // buffer every frame while the copy is still in flight; Snes9x's
@@ -9038,6 +9084,14 @@ impl ZeldaState {
         if !self.initialized {
             self.zelda_initialize();
         }
+        self.pre_nmi_animated_bg_vram = (self.rom_startup_timing()
+            && self.game_state.display.has_animated_tile_data_source()
+            && self
+                .game_state
+                .display
+                .animated_tile_vram_destination_usize()
+                == 0x3c00)
+            .then(|| self.ppu.vram[0x3c00..0x3e00].to_vec());
         self.pre_main_animated_tile_dma = if self.rom_startup_timing()
             && rom_animated_tile_dma_uses_pre_main_operands(
                 self.game_state.frame.main_module,
@@ -9369,9 +9423,9 @@ impl ZeldaState {
         if self.rom_startup_timing() && self.pending_rom_work.is_pending() {
             let work_slice = self.pending_rom_work.advance_one_nmi_slice();
             let publication_override = match work_slice {
-                RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration { phase }) => {
-                    Some(phase.completion_publication())
-                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration {
+                    iteration,
+                }) => Some(iteration.completion_publication()),
                 _ => self
                     .pending_rom_work
                     .in_flight_display_snapshot_publication_override(),

@@ -3580,16 +3580,29 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         DisplaySnapshotPublication::PublishCaptured
     );
     assert_eq!(
-        SpotlightIterationPhase::WholeTable.completion_publication(),
+        SpotlightIteration::closing(SpotlightIterationPhase::WholeTable).completion_publication(),
         DisplaySnapshotPublication::RetainPublished
     );
     assert_eq!(
-        SpotlightIterationPhase::CloseEntry.completion_publication(),
+        SpotlightIteration::closing(SpotlightIterationPhase::CloseEntry).completion_publication(),
         DisplaySnapshotPublication::AdvanceStaged
     );
     assert_eq!(
-        SpotlightIterationPhase::MixedTailAfterReturn.completion_publication(),
+        SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
+            .completion_publication(),
         DisplaySnapshotPublication::AdvanceStaged
+    );
+    assert_eq!(
+        SpotlightIteration::opening(false).in_flight_publication(),
+        DisplaySnapshotPublication::AdvanceStaged
+    );
+    assert_eq!(
+        SpotlightIteration::opening(false).completion_publication(),
+        DisplaySnapshotPublication::AdvanceStaged
+    );
+    assert_eq!(
+        SpotlightIteration::opening(true).completion_publication(),
+        DisplaySnapshotPublication::PublishCaptured
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x3f),
@@ -3609,16 +3622,17 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     );
     assert_eq!(DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES, 1);
 
+    let closing_iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
     let mut work = PendingRomWork::schedule(
         RomWorkContinuation::FinishSpotlightIteration {
-            phase: SpotlightIterationPhase::WholeTable,
+            iteration: closing_iteration,
         },
         SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
     );
     assert_eq!(
         work.advance_one_nmi_slice(),
         RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration {
-            phase: SpotlightIterationPhase::WholeTable,
+            iteration: closing_iteration,
         })
     );
     assert!(rom_spotlight_goal_transition_waits_for_iteration_return(
@@ -3630,19 +3644,31 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
 }
 
 #[test]
-fn spotlight_open_selects_animated_bg_vram_by_cpu_phase() {
+fn overworld_animated_bg_vram_generation_follows_scanout_authority() {
     assert_eq!(
-        spotlight_open_animated_bg_vram_generation(0x10, 1, true),
-        AnimatedBgVramGeneration::CapturedPreNmi
+        AnimatedBgVramGeneration::for_scanout(false),
+        AnimatedBgVramGeneration::HostBoundaryBeforeNmi
     );
     assert_eq!(
-        spotlight_open_animated_bg_vram_generation(0x10, 1, false),
-        AnimatedBgVramGeneration::StagedPreNmi
+        AnimatedBgVramGeneration::for_scanout(true),
+        AnimatedBgVramGeneration::LiveAfterNmi
     );
-    assert_eq!(
-        spotlight_open_animated_bg_vram_generation(0x0f, 1, false),
-        AnimatedBgVramGeneration::CapturedPreNmi
-    );
+}
+
+#[test]
+fn overworld_animated_bg_uses_the_current_host_boundary_vram() {
+    let mut state = ZeldaState::new();
+    state.set_animated_tile_vram_destination_address(0x3c00);
+    state.ppu.vram[0x3c00..0x3e00].fill(0x1111);
+    state.capture_display_snapshot();
+
+    state.pre_nmi_animated_bg_vram = Some(vec![0x2222; 0x200]);
+    state.ppu.vram[0x3c00..0x3e00].fill(0x3333);
+
+    let presented_word = state.with_display_snapshot(|display| display.ppu.vram[0x3c00]);
+
+    assert_eq!(presented_word, 0x2222);
+    assert_eq!(state.ppu.vram[0x3c00], 0x3333);
 }
 
 #[test]

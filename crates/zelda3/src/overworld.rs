@@ -2485,7 +2485,9 @@ impl ZeldaState {
             self.Spotlight_ConfigureTableAndControl();
         }
         self.link_oam_main();
-        self.schedule_spotlight_iteration_return(SpotlightIterationPhase::WholeTable);
+        self.schedule_spotlight_iteration_return(SpotlightIteration::opening(
+            self.iris_spotlight_goal_transition_pending,
+        ));
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {
@@ -2524,7 +2526,7 @@ impl ZeldaState {
             .set_direction_and_last_direction(dir);
         self.link_handle_moving_animation_full_long_entry();
         self.link_oam_main();
-        self.schedule_spotlight_iteration_return(phase);
+        self.schedule_spotlight_iteration_return(SpotlightIteration::closing(phase));
     }
 
     pub(super) fn Dungeon_PrepExitWithSpotlight(&mut self) {
