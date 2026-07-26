@@ -3580,33 +3580,45 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         DisplaySnapshotPublication::PublishCaptured
     );
     assert_eq!(
-        SpotlightIterationPhase::Active.completion_publication_override(),
-        Some(DisplaySnapshotPublication::RetainPublished)
+        SpotlightIterationPhase::WholeTable.completion_publication(),
+        DisplaySnapshotPublication::RetainPublished
     );
     assert_eq!(
-        SpotlightIterationPhase::CloseEntry.completion_publication_override(),
-        Some(DisplaySnapshotPublication::AdvanceStaged)
+        SpotlightIterationPhase::CloseEntry.completion_publication(),
+        DisplaySnapshotPublication::AdvanceStaged
     );
-    assert!(!rom_dungeon_exit_spotlight_resumes_during_return(0x46));
-    assert!(rom_dungeon_exit_spotlight_resumes_during_return(0x3f));
-    assert!(!rom_dungeon_exit_spotlight_resumes_during_return(0x38));
-    assert!(!rom_dungeon_exit_spotlight_scanout_is_mixed(0x0f, 1, 0x3f));
-    assert!(rom_dungeon_exit_spotlight_scanout_is_mixed(0x0f, 1, 0x38));
-    assert!(rom_dungeon_exit_spotlight_scanout_is_mixed(0x0f, 1, 0x07));
-    assert!(!rom_dungeon_exit_spotlight_scanout_is_mixed(0x0f, 1, 0));
-    assert!(!rom_dungeon_exit_spotlight_scanout_is_mixed(0x10, 1, 0x38));
+    assert_eq!(
+        SpotlightIterationPhase::MixedLiveTail.completion_publication(),
+        DisplaySnapshotPublication::AdvanceStaged
+    );
+    assert_eq!(
+        SpotlightIterationPhase::for_close_iteration(1, 0x3f),
+        SpotlightIterationPhase::WholeTable
+    );
+    assert_eq!(
+        SpotlightIterationPhase::for_close_iteration(1, 0x38),
+        SpotlightIterationPhase::MixedLiveTail
+    );
+    assert_eq!(
+        SpotlightIterationPhase::for_close_iteration(1, 0x07),
+        SpotlightIterationPhase::MixedLiveTail
+    );
+    assert_eq!(
+        SpotlightIterationPhase::for_close_iteration(1, 0),
+        SpotlightIterationPhase::WholeTable
+    );
     assert_eq!(DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES, 1);
 
     let mut work = PendingRomWork::schedule(
         RomWorkContinuation::FinishSpotlightIteration {
-            phase: SpotlightIterationPhase::Active,
+            phase: SpotlightIterationPhase::WholeTable,
         },
         SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
     );
     assert_eq!(
         work.advance_one_nmi_slice(),
         RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration {
-            phase: SpotlightIterationPhase::Active,
+            phase: SpotlightIterationPhase::WholeTable,
         })
     );
     assert!(rom_spotlight_goal_transition_waits_for_iteration_return(

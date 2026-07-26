@@ -2485,15 +2485,14 @@ impl ZeldaState {
             self.Spotlight_ConfigureTableAndControl();
         }
         self.link_oam_main();
-        self.schedule_spotlight_iteration_return(SpotlightIterationPhase::Active);
+        self.schedule_spotlight_iteration_return(SpotlightIterationPhase::WholeTable);
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {
-        let phase = if self.game_state.frame.submodule == 0 {
-            SpotlightIterationPhase::CloseEntry
-        } else {
-            SpotlightIterationPhase::Active
-        };
+        let phase = SpotlightIterationPhase::for_close_iteration(
+            self.game_state.frame.submodule,
+            self.game_state.display.spotlight_hdma.window_radius(),
+        );
         self.sprite_main();
         if self.game_state.frame.submodule == 0 {
             self.Dungeon_PrepExitWithSpotlight();

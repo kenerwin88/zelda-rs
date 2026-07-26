@@ -759,23 +759,6 @@ const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool
     radius >= 0x77
 }
 
-const fn rom_dungeon_exit_spotlight_resumes_during_return(radius: u16) -> bool {
-    // The radius-$46 build returns at V=228 with radius $3f, then the next
-    // main-loop iteration begins at V=261. That radius-$3f build commits $38
-    // at V=221 of the following active scanout, before Snes9x returns the host
-    // frame. Collapse that single phase-changing return boundary so subsequent
-    // iterations remain aligned to the even host frames measured in WRAM.
-    radius == 0x3f
-}
-
-const fn rom_dungeon_exit_spotlight_scanout_is_mixed(
-    main_module: u8,
-    submodule: u8,
-    radius: u16,
-) -> bool {
-    main_module == 0x0f && submodule == 1 && radius != 0 && radius <= 0x38
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RomWorkContinuation {
     FinishAttractWorldMap,
@@ -810,15 +793,31 @@ enum RomWorkContinuation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SpotlightIterationPhase {
+    /// The close has authored its first table, but NMI has not enabled it yet.
     CloseEntry,
-    Active,
+    /// HDMA consumes one complete table generation for the scanout.
+    WholeTable,
+    /// HDMA consumes the published prefix and the newly authored final lines.
+    MixedLiveTail,
 }
 
 impl SpotlightIterationPhase {
-    const fn completion_publication_override(self) -> Option<DisplaySnapshotPublication> {
+    const fn for_close_iteration(submodule: u8, radius: u16) -> Self {
+        if submodule == 0 {
+            Self::CloseEntry
+        } else if radius != 0 && radius <= 0x38 {
+            // Snes9x PC/V-counter traces show the next circle write reaching
+            // HDMA at scanline 221 once the close has reached this CPU phase.
+            Self::MixedLiveTail
+        } else {
+            Self::WholeTable
+        }
+    }
+
+    const fn completion_publication(self) -> DisplaySnapshotPublication {
         match self {
-            Self::Active => Some(DisplaySnapshotPublication::RetainPublished),
-            Self::CloseEntry => Some(DisplaySnapshotPublication::AdvanceStaged),
+            Self::WholeTable => DisplaySnapshotPublication::RetainPublished,
+            Self::CloseEntry | Self::MixedLiveTail => DisplaySnapshotPublication::AdvanceStaged,
         }
     }
 }
@@ -853,6 +852,13 @@ impl PendingRomWork {
             Some(RomWorkContinuation::FinishSpotlightIteration { .. }) => {
                 Some(DisplaySnapshotPublication::AdvanceStaged)
             }
+            _ => None,
+        }
+    }
+
+    fn spotlight_iteration_phase(self) -> Option<SpotlightIterationPhase> {
+        match self.continuation {
+            Some(RomWorkContinuation::FinishSpotlightIteration { phase }) => Some(phase),
             _ => None,
         }
     }
@@ -9344,7 +9350,7 @@ impl ZeldaState {
             let work_slice = self.pending_rom_work.advance_one_nmi_slice();
             let publication_override = match work_slice {
                 RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration { phase }) => {
-                    phase.completion_publication_override()
+                    Some(phase.completion_publication())
                 }
                 _ => self
                     .pending_rom_work
@@ -9405,43 +9411,6 @@ impl ZeldaState {
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                     if self.game_state.frame.main_module == 15
-                        && rom_dungeon_exit_spotlight_resumes_during_return(
-                            self.game_state.display.spotlight_hdma.window_radius(),
-                        )
-                    {
-                        // The ROM has enough vblank time at this exact phase to
-                        // return through the suffix and enter the next main-loop
-                        // iteration before the host-visible scanout completes.
-                        // Preserve the table generation already consumed by
-                        // scanlines 0..220 before advancing the CPU state.
-                        self.capture_display_snapshot();
-                        self.nmi_read_joypads(input);
-                        self.joypad_sampled_before_main = true;
-                        self.increment_frame_counter();
-                        self.clear_oam_buffer();
-                        self.latch_nmi_update();
-                        self.module_main_routing();
-                        // PC/V-counter probes show the new reserved-table tail
-                        // reaching HDMA before scanlines 221..223. Compose only
-                        // that measured suffix into the pre-calculation image.
-                        let byte_start = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
-                        let byte_end = 224 * 2;
-                        let live_tails =
-                            [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE].map(|table_base| {
-                                self.ram[table_base + byte_start..table_base + byte_end].to_vec()
-                            });
-                        if let Some(display) = self.display_snapshot.as_mut() {
-                            for (table_base, live_tail) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
-                                .into_iter()
-                                .zip(live_tails)
-                            {
-                                display.ram[table_base + byte_start..table_base + byte_end]
-                                    .copy_from_slice(&live_tail);
-                            }
-                        }
-                        self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-                        return;
-                    } else if self.game_state.frame.main_module == 15
                         && rom_dungeon_exit_spotlight_table_needs_entry_slice(
                             self.game_state.display.spotlight_hdma.window_radius(),
                         )
@@ -9704,16 +9673,6 @@ impl ZeldaState {
             self.nmi_read_joypads(input);
             self.joypad_sampled_before_main = true;
         }
-        let dungeon_exit_spotlight_scanout_prefix = rom_dungeon_exit_spotlight_scanout_is_mixed(
-            self.game_state.frame.main_module,
-            self.game_state.frame.submodule,
-            self.game_state.display.spotlight_hdma.window_radius(),
-        )
-        .then(|| {
-            let byte_end = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
-            [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
-                .map(|table_base| self.ram[table_base..table_base + byte_end].to_vec())
-        });
         if run_what & crate::RUN_MAIN != 0 {
             self.replay_trace_col("before-game-loop");
             self.replay_trace_ram_watch("before-game-loop");
@@ -9730,16 +9689,23 @@ impl ZeldaState {
         // is CPU-visible, but HDMA has already consumed the preceding staged
         // generation for the scanout that ends here.
         self.capture_display_snapshot_with_override(publication_override);
-        if let (Some(prefixes), Some(display)) = (
-            dungeon_exit_spotlight_scanout_prefix,
-            self.display_snapshot.as_mut(),
-        ) {
-            let byte_end = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
-            for (table_base, prefix) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
-                .into_iter()
-                .zip(prefixes)
+        if self.pending_rom_work.spotlight_iteration_phase()
+            == Some(SpotlightIterationPhase::MixedLiveTail)
+        {
+            let byte_start = DUNGEON_EXIT_SPOTLIGHT_ACTIVE_SCANOUT_LIVE_TAIL_START * 2;
+            let published_prefixes = self.display_snapshot.as_ref().map(|display| {
+                [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
+                    .map(|table_base| display.ram[table_base..table_base + byte_start].to_vec())
+            });
+            if let (Some(prefixes), Some(staged)) =
+                (published_prefixes, self.deferred_display_snapshot.as_mut())
             {
-                display.ram[table_base..table_base + byte_end].copy_from_slice(&prefix);
+                for (table_base, prefix) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
+                    .into_iter()
+                    .zip(prefixes)
+                {
+                    staged.ram[table_base..table_base + byte_start].copy_from_slice(&prefix);
+                }
             }
         }
         self.replay_trace_col("before-nmi");
