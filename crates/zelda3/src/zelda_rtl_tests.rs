@@ -3366,6 +3366,26 @@ fn throne_room_rom_work_resumes_only_after_every_intervening_nmi_slice() {
 }
 
 #[test]
+fn dungeon_falling_entrance_work_resumes_at_measured_cpu_boundaries() {
+    let stages = [
+        DungeonFallingEntranceWork::RoomAndTilesets,
+        DungeonFallingEntranceWork::SpriteGraphics,
+    ];
+
+    for stage in stages {
+        let continuation = RomWorkContinuation::FinishDungeonFallingEntrance { work: stage };
+        let mut work = PendingRomWork::schedule(continuation, stage.nmi_slices());
+        for _ in 0..stage.nmi_slices() - 1 {
+            assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        }
+        assert_eq!(
+            work.advance_one_nmi_slice(),
+            RomWorkSlice::Complete(continuation)
+        );
+    }
+}
+
+#[test]
 fn throne_room_work_budget_follows_the_retained_sprite_tileset() {
     assert_eq!(attract_throne_room_nmi_slices(19), 42);
     assert_eq!(attract_throne_room_nmi_slices(66), 44);
@@ -4203,9 +4223,42 @@ fn overworld_transition_publishes_the_nmi_written_half_color_bit() {
 #[test]
 fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert!(rom_display_oam_publication_is_deferred(7, 0, false, false));
-    assert!(!rom_player_sprite_scanout_uses_pre_nmi_generation(14, 7));
-    assert!(rom_animated_tile_dma_uses_pre_main_operands(9, 5));
-    assert!(!rom_animated_tile_dma_uses_pre_main_operands(9, 0x0a));
+    assert_eq!(
+        rom_graphics_dma_plan(9, 5),
+        GraphicsDmaPlan {
+            oam_scanout: GraphicsDmaGeneration::LiveAfterMain,
+            link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
+            link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
+            animated_bg_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        },
+    );
+    assert_eq!(
+        rom_graphics_dma_plan(0x11, 7),
+        GraphicsDmaPlan {
+            oam_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
+            link_obj_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            animated_bg_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        },
+    );
+    assert_eq!(
+        rom_graphics_dma_plan(9, 0x0a),
+        GraphicsDmaPlan {
+            oam_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
+            animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
+        },
+    );
+    assert_eq!(
+        rom_graphics_dma_plan(14, 7),
+        GraphicsDmaPlan {
+            oam_scanout: GraphicsDmaGeneration::LiveAfterMain,
+            link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
+            link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
+            animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
+        },
+    );
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, false, true));
     assert!(rom_display_oam_publication_is_deferred(4, 3, false, false));
@@ -4251,6 +4304,24 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     });
 
     assert_eq!(captured, (0xaaaa, 0x4444, 0x2222, 0xcccc));
+}
+
+#[test]
+fn hud_tilemap_upload_publishes_at_the_following_scanout() {
+    let mut state = ZeldaState::new();
+    state.set_message_dma_destination_address(0x60b9);
+    state.ppu.vram[0] = 0x1111;
+    state.ppu.vram[0x60b9] = 0x2222;
+    state.increment_hud_update_flag();
+    state.capture_display_snapshot();
+
+    state.ppu.vram[0] = 0xaaaa;
+    state.ppu.vram[0x60b9] = 0xbbbb;
+
+    let captured =
+        state.with_display_snapshot(|display| (display.ppu.vram[0], display.ppu.vram[0x60b9]));
+
+    assert_eq!(captured, (0xaaaa, 0x2222));
 }
 
 #[test]

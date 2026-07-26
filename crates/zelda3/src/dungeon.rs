@@ -10309,7 +10309,13 @@ impl ZeldaState {
                 }
             }
             2 => self.Module11_02_LoadEntrance(),
-            3 => self.DungeonTransition_LoadSpriteGFX(),
+            3 => {
+                if !self
+                    .begin_dungeon_falling_entrance_work(DungeonFallingEntranceWork::SpriteGraphics)
+                {
+                    self.DungeonTransition_LoadSpriteGFX();
+                }
+            }
             4 => {
                 let screen_brightness =
                     self.game_state.display.screen_brightness.wrapping_add(1) & 0x0f;
@@ -10341,6 +10347,13 @@ impl ZeldaState {
     pub(super) fn Module11_02_LoadEntrance(&mut self) {
         self.EnableForceBlank();
         self.set_color_window_selection(2);
+        if self.begin_dungeon_falling_entrance_work(DungeonFallingEntranceWork::RoomAndTilesets) {
+            return;
+        }
+        self.complete_module11_02_load_entrance();
+    }
+
+    pub(super) fn complete_module11_02_load_entrance(&mut self) {
         self.Dungeon_LoadEntrance();
 
         let dung = self.game_state.inventory.save_progress.palace_index_x2();

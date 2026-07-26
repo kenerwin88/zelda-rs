@@ -21,7 +21,7 @@ mod world;
 
 pub(crate) use display::{
     palette_provenance_check_mode, DisplayState, GraphicsDecompressionScratch, HudStateRead,
-    HudTilemapState, LinkDmaSourceSlot, NativeAttractVramDestinationBridgeMut,
+    HudTilemapState, LinkDmaSourceSlot, LinkDmaSources, NativeAttractVramDestinationBridgeMut,
     NativeDisplayStateBridgeMut, NativeHudInventoryOrderBridgeMut, NativeHudStateBridgeMut,
     NativeOverworldPaletteBackupBridgeMut, NativePaletteBufferBridgeMut,
     NativePaletteFilterBridgeMut, NativePpuScrollCopyBridgeMut, NativeSpotlightHdmaBridgeMut,

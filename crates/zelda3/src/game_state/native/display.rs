@@ -749,7 +749,7 @@ pub(crate) struct LinkDmaSources {
 }
 
 impl LinkDmaSources {
-    fn load_from_ram(ram: &[u8]) -> Self {
+    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut sources = [0; LINK_DMA_SOURCE_SLOTS.len()];
         for slot in LINK_DMA_SOURCE_SLOTS {
             let address = slot.ram_address();
@@ -768,7 +768,7 @@ impl LinkDmaSources {
         }
     }
 
-    fn source(&self, slot: LinkDmaSourceSlot) -> u16 {
+    pub(crate) fn source(&self, slot: LinkDmaSourceSlot) -> u16 {
         self.sources[slot.index()]
     }
 

@@ -32,12 +32,13 @@ use crate::game_state::{
     FollowerLinkState, GameState, GraphicsDecompressionScratch, HappinessPondRupeeSlotState,
     HappinessPondRupeeSnapshot, HistoryPositionState, HudStateRead, HudTilemapState,
     IntroActorRead, LanmolaFlatTrailEntry, LanmolaSegmentMotionState, LinkDmaSourceSlot,
-    MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead, NativeAncillaSlotBridgeMut,
-    NativeAncillaSlotView, NativeArcheryGameBridgeMut, NativeArmosKnightHomePositionBridgeMut,
-    NativeArrghusPuffHomePositionBridgeMut, NativeAttractSceneBridgeMut,
-    NativeAttractVramDestinationBridgeMut, NativeBeamosLaserHistoryBridgeMut,
-    NativeBg1MovementAccumulatorBridgeMut, NativeBirdTravelDestinationBridgeMut,
-    NativeBlastWallBridgeMut, NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
+    LinkDmaSources, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
+    NativeAncillaSlotBridgeMut, NativeAncillaSlotView, NativeArcheryGameBridgeMut,
+    NativeArmosKnightHomePositionBridgeMut, NativeArrghusPuffHomePositionBridgeMut,
+    NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
+    NativeBeamosLaserHistoryBridgeMut, NativeBg1MovementAccumulatorBridgeMut,
+    NativeBirdTravelDestinationBridgeMut, NativeBlastWallBridgeMut,
+    NativeBlastWallExplosionBridgeMut, NativeBlastWallFireballBridgeMut,
     NativeBlastWallFragmentBridgeMut, NativeBombosBlastBridgeMut, NativeBombosFireColumnBridgeMut,
     NativeBombosSpellBridgeMut, NativeCachedSpriteBridgeMut, NativeChainChompHistoryBridgeMut,
     NativeDecodedMessageTextBridgeMut, NativeDialogueMessageIndexBridgeMut,
@@ -132,6 +133,14 @@ const ATTRACT_MAIDEN_WARP_NMI_SLICES: u8 = 41;
 // before returning to the intro module. The ROM's main CPU resumes after 45
 // intervening NMIs; keep that work attached to the transition itself.
 const ATTRACT_END_OF_STORY_NMI_SLICES: u8 = 45;
+// Module11_02_LoadEntrance enters the room/tile construction call on host
+// frame 8452 and returns through Module_MainRouting on frame 8508. The entry
+// slice performs the prefix before the first interrupt, leaving 56 subsequent
+// NMI boundaries while the original CPU remains inside that semantic work.
+const DUNGEON_FALLING_ENTRANCE_ROOM_LOAD_NMI_SLICES: u8 = 56;
+// The immediately following LoadNewSpriteGFXSet/dungeon_reset_sprites call
+// begins on frame 8509 and returns on frame 8512.
+const DUNGEON_FALLING_ENTRANCE_SPRITE_GFX_NMI_SLICES: u8 = 3;
 // Item $12 uses receive-item graphics $14. The ROM decompresses packs $5b and
 // $5a, then expands the selected high-plane tiles while the main-loop NMI
 // latch remains set. Snes9x reaches the main-loop epilogue after four
@@ -384,25 +393,61 @@ const fn rom_display_oam_publication_is_deferred(
         )
         || (main_module == 4 && submodule == 3)
         || (main_module == 14 && submodule == 7)
-        || rom_player_sprite_scanout_uses_pre_nmi_generation(main_module, submodule)
+        || matches!(
+            rom_graphics_dma_plan(main_module, submodule).oam_scanout,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        )
 }
 
-const fn rom_player_sprite_scanout_uses_pre_nmi_generation(main_module: u8, submodule: u8) -> bool {
-    // Snes9x returns at vblank before the new OAM and Link OBJ CHR uploads.
-    // This applies both to ordinary player control and the overworld doorway
-    // auxiliary-GFX load, and scroll transitions, whose Module 9/submodules 1,
-    // 6 through 8, and $0a slices have already authored the following Link pose
-    // and OBJ CHR when the preceding scanout is presented.
-    (submodule == 0 && (main_module == 7 || matches!(main_module, 9 | 11)))
-        || (main_module == 9 && matches!(submodule, 1 | 6..=8 | 0x0a))
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GraphicsDmaGeneration {
+    HostBoundaryBeforeMain,
+    LiveAfterMain,
 }
 
-const fn rom_animated_tile_dma_uses_pre_main_operands(main_module: u8, submodule: u8) -> bool {
-    // This transition's long main-thread slice advances the animation source
-    // before the native scheduler reaches its coarse NMI call. On hardware,
-    // Snes9x resumes the already-pending NMI first, so its DMA consumes the
-    // source and destination operands from the host-frame boundary.
-    main_module == 9 && submodule == 5
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct GraphicsDmaPlan {
+    oam_scanout: GraphicsDmaGeneration,
+    link_obj_scanout: GraphicsDmaGeneration,
+    link_obj_operands: GraphicsDmaGeneration,
+    animated_bg_operands: GraphicsDmaGeneration,
+}
+
+const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPlan {
+    // These phase rules describe where the hardware NMI falls relative to the
+    // native main-thread slice. OAM, Link OBJ CHR, and animated-BG DMA do not
+    // always use the same generation, so keep the domains explicit while
+    // deriving the complete plan in one place.
+    let dungeon_entrance_nmi_precedes_main = main_module == 0x11 && submodule == 7;
+    let player_obj_nmi_precedes_main = (submodule == 0
+        && (main_module == 7 || matches!(main_module, 9 | 11)))
+        || (main_module == 9 && matches!(submodule, 1 | 6..=8 | 0x0a));
+
+    GraphicsDmaPlan {
+        oam_scanout: if dungeon_entrance_nmi_precedes_main || player_obj_nmi_precedes_main {
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        } else {
+            GraphicsDmaGeneration::LiveAfterMain
+        },
+        link_obj_scanout: if player_obj_nmi_precedes_main {
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        } else {
+            GraphicsDmaGeneration::LiveAfterMain
+        },
+        link_obj_operands: if dungeon_entrance_nmi_precedes_main {
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        } else {
+            GraphicsDmaGeneration::LiveAfterMain
+        },
+        animated_bg_operands: if dungeon_entrance_nmi_precedes_main
+            || (main_module == 7 && submodule == 0)
+            || (main_module == 9 && submodule == 5)
+        {
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        } else {
+            GraphicsDmaGeneration::LiveAfterMain
+        },
+    }
 }
 
 const fn rom_dungeon_exit_entry_oam_publication_is_deferred(
@@ -807,6 +852,21 @@ const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DungeonFallingEntranceWork {
+    RoomAndTilesets,
+    SpriteGraphics,
+}
+
+impl DungeonFallingEntranceWork {
+    const fn nmi_slices(self) -> u8 {
+        match self {
+            Self::RoomAndTilesets => DUNGEON_FALLING_ENTRANCE_ROOM_LOAD_NMI_SLICES,
+            Self::SpriteGraphics => DUNGEON_FALLING_ENTRANCE_SPRITE_GFX_NMI_SLICES,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RomWorkContinuation {
     FinishAttractWorldMap,
     FinishWorldMapLightLoad,
@@ -814,6 +874,9 @@ enum RomWorkContinuation {
     FinishAttractZeldaPrison,
     FinishAttractMaidenWarp,
     FinishAttractEndOfStory,
+    FinishDungeonFallingEntrance {
+        work: DungeonFallingEntranceWork,
+    },
     FinishItemReceiptGraphics,
     FinishSpotlightIteration {
         iteration: SpotlightIteration,
@@ -1257,6 +1320,7 @@ const NMI_LOAD_BG_FROM_VRAM: usize = 0x14;
 const NMI_COPY_PACKETS_FLAG: usize = 0x18;
 const FLAG_UPDATE_CGRAM_IN_NMI: usize = 0x15;
 const FLAG_UPDATE_HUD_IN_NMI: usize = 0x16;
+const HUD_TILEMAP_NMI_WORDS: usize = 165;
 // Shared zero-page scratch; NES_Ver2 aliases include BMWORK/CRTNL/CRTNR, but these slots
 // are reused by unrelated player, overworld, and tile-detection code paths.
 const SCRATCH_0: usize = 0x72;
@@ -2752,11 +2816,11 @@ pub struct ZeldaState {
     visible_display_snapshot: Option<Box<DisplaySnapshot>>,
     #[serde(skip)]
     deferred_display_snapshot: Option<Box<DisplaySnapshot>>,
-    /// Animated-BG DMA operands as they existed at the host vblank boundary.
+    /// Graphics DMA operands as they existed at the host vblank boundary.
     /// Snes9x resumes a pending NMI before the following main slice can advance
-    /// the animation source.
+    /// the animated-BG or Link OBJ sources.
     #[serde(skip)]
-    pre_main_animated_tile_dma: Option<PreMainAnimatedTileDma>,
+    pre_main_graphics_dma: Option<PreMainGraphicsDma>,
     /// VRAM $3c00 as it existed when the host entered this frame, before the
     /// frame's NMI could upload a newly selected overworld animation phase.
     #[serde(skip)]
@@ -2898,6 +2962,9 @@ struct DisplaySnapshot {
     ppu: PpuState,
     dma: DmaState,
     vram_generation: DisplayVramGeneration,
+    hud_vram_generation: DisplayVramGeneration,
+    hud_vram_destination: usize,
+    link_obj_scanout_generation: GraphicsDmaGeneration,
     bg_scroll_generation: DisplayBgScrollGeneration,
     obj_generation: DisplayObjGeneration,
     published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
@@ -2918,6 +2985,13 @@ struct PreMainAnimatedTileDma {
     source_address: usize,
     destination_address: usize,
     data: Vec<u8>,
+}
+
+#[derive(Clone)]
+struct PreMainGraphicsDma {
+    entry_plan: GraphicsDmaPlan,
+    animated_tile: Option<PreMainAnimatedTileDma>,
+    link_sources: LinkDmaSources,
 }
 
 pub type ZeldaRunFrameFunc = fn(&mut ZeldaState, u16, i32);
@@ -7680,7 +7754,7 @@ impl ZeldaState {
             display_snapshot: None,
             visible_display_snapshot: None,
             deferred_display_snapshot: None,
-            pre_main_animated_tile_dma: None,
+            pre_main_graphics_dma: None,
             pre_nmi_animated_bg_vram: None,
             nmi_forced_blank_scanlines_pending: 0,
             nmi_forced_blank_from_scanline_pending: None,
@@ -7965,6 +8039,22 @@ impl ZeldaState {
             PendingRomWork::schedule(RomWorkContinuation::FinishItemReceiptGraphics, nmi_slices);
     }
 
+    pub(super) fn begin_dungeon_falling_entrance_work(
+        &mut self,
+        work: DungeonFallingEntranceWork,
+    ) -> bool {
+        if !self.rom_startup_timing() {
+            return false;
+        }
+        debug_assert_eq!(self.game_state.frame.main_module, 0x11);
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishDungeonFallingEntrance { work },
+            work.nmi_slices(),
+        );
+        true
+    }
+
     pub(super) fn begin_attract_throne_room_work(&mut self) {
         debug_assert!(!self.pending_rom_work.is_pending());
         let retained_sprite_subset_2 = self.game_state.sprites.workspace.graphics_subset(2);
@@ -8237,11 +8327,29 @@ impl ZeldaState {
         let obj_generation = transition_entry_obj
             .map(|(oam, vram)| DisplayObjGeneration::RetainTransitionEntry { oam, vram })
             .unwrap_or_else(|| self.active_display_obj_generation.clone());
+        let link_obj_scanout_generation = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.entry_plan.link_obj_scanout)
+            .unwrap_or_else(|| {
+                rom_graphics_dma_plan(captured_frame.main_module, captured_frame.submodule)
+                    .link_obj_scanout
+            });
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
             dma: self.dma.clone(),
             vram_generation: std::mem::take(&mut self.next_display_vram_generation),
+            hud_vram_generation: if self.game_state.system_signals.should_update_hud() {
+                DisplayVramGeneration::RetainCapturedBeforeNmi
+            } else {
+                DisplayVramGeneration::ComposeLiveAfterNmi
+            },
+            hud_vram_destination: self
+                .game_state
+                .display
+                .message_dma_destination_address_usize(),
+            link_obj_scanout_generation,
             bg_scroll_generation: std::mem::take(&mut self.next_display_bg_scroll_generation),
             obj_generation,
             published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
@@ -8518,17 +8626,22 @@ impl ZeldaState {
         // of the frame. Preserve that completed pre-NMI buffer rather than a
         // job that may have finished later in the current CPU slice.
         let presented_poly = self.selected_intro_poly_display_buffer();
-        // Snes9x ends `retro_run` at vblank entry: active gameplay has already
-        // authored the next Link pose, but the returned scanout still uses the
-        // OBJ CHR generation uploaded at the preceding NMI. Keep that pre-NMI
-        // generation for player control and the measured overworld doorway
-        // transition instead of composing the post-main-loop upload one frame early.
-        let retain_previous_link_obj_vram = rom_player_sprite_scanout_uses_pre_nmi_generation(
-            snapshot_frame.main_module,
-            snapshot_frame.submodule,
+        let retain_entry_link_obj_vram = matches!(
+            display.link_obj_scanout_generation,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
         );
-        let previous_link_obj_vram =
-            retain_previous_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
+        let entry_link_obj_vram =
+            retain_entry_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
+        let retained_hud_vram = matches!(
+            display.hud_vram_generation,
+            DisplayVramGeneration::RetainCapturedBeforeNmi
+        )
+        .then(|| {
+            let start = display.hud_vram_destination;
+            let end = start.saturating_add(HUD_TILEMAP_NMI_WORDS);
+            (end <= self.ppu.vram.len()).then(|| (start, self.ppu.vram[start..end].to_vec()))
+        })
+        .flatten();
         // The normal overworld animation upload targets VRAM $3c00. Select its
         // display generation once, alongside the other memory-domain
         // publication decisions above. Most scanouts retain the coherent
@@ -8580,8 +8693,12 @@ impl ZeldaState {
             if let Some(animated_bg_vram) = previous_overworld_animated_bg_vram {
                 self.ppu.vram[0x3c00..0x3e00].copy_from_slice(&animated_bg_vram);
             }
-            if let Some(previous_link_obj_vram) = previous_link_obj_vram {
-                self.ppu.vram[0x4000..0x4400].copy_from_slice(&previous_link_obj_vram);
+            if let Some(entry_link_obj_vram) = entry_link_obj_vram {
+                self.ppu.vram[0x4000..0x4400].copy_from_slice(&entry_link_obj_vram);
+            }
+            if let Some((start, retained_hud_vram)) = retained_hud_vram {
+                self.ppu.vram[start..start + retained_hud_vram.len()]
+                    .copy_from_slice(&retained_hud_vram);
             }
             self.ppu.vram[0x5800..0x5c00].copy_from_slice(&presented_poly);
         }
@@ -9170,24 +9287,37 @@ impl ZeldaState {
                 .animated_tile_vram_destination_usize()
                 == 0x3c00)
             .then(|| self.ppu.vram[0x3c00..0x3e00].to_vec());
-        self.pre_main_animated_tile_dma = if self.rom_startup_timing()
-            && rom_animated_tile_dma_uses_pre_main_operands(
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule,
-            )
-            && self.game_state.display.has_animated_tile_data_source()
-        {
-            let source_address = self.game_state.display.animated_tile_data_source_usize();
-            let destination_address = self
+        self.pre_main_graphics_dma = if self.rom_startup_timing() {
+            // Capture the small operand snapshot at the host boundary, then
+            // decide which domains consume it from the live state at NMI.
+            // Main may switch modules before that boundary, so selecting the
+            // plan here would attach the old module's timing to the new one.
+            let animated_tile = self
                 .game_state
                 .display
-                .animated_tile_vram_destination_usize();
-            (source_address + 0x400 <= self.ram.len()
-                && destination_address + 0x200 <= self.ppu.vram.len())
-            .then(|| PreMainAnimatedTileDma {
-                source_address,
-                destination_address,
-                data: self.ram[source_address..source_address + 0x400].to_vec(),
+                .has_animated_tile_data_source()
+                .then(|| {
+                    let source_address = self.game_state.display.animated_tile_data_source_usize();
+                    let destination_address = self
+                        .game_state
+                        .display
+                        .animated_tile_vram_destination_usize();
+                    (source_address + 0x400 <= self.ram.len()
+                        && destination_address + 0x200 <= self.ppu.vram.len())
+                    .then(|| PreMainAnimatedTileDma {
+                        source_address,
+                        destination_address,
+                        data: self.ram[source_address..source_address + 0x400].to_vec(),
+                    })
+                })
+                .flatten();
+            Some(PreMainGraphicsDma {
+                entry_plan: rom_graphics_dma_plan(
+                    self.game_state.frame.main_module,
+                    self.game_state.frame.submodule,
+                ),
+                animated_tile,
+                link_sources: LinkDmaSources::load_from_ram(&self.ram),
             })
         } else {
             None
@@ -9535,6 +9665,31 @@ impl ZeldaState {
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractEndOfStory) => {
                     self.complete_attract_scene_end_of_story();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishDungeonFallingEntrance {
+                    work,
+                }) => {
+                    // Both long Module 11 calls return just after the final
+                    // interrupted NMI. Preserve that ordering: the scanout and
+                    // NMI consume the in-flight generation first; only then
+                    // does the caller suffix publish work for the next
+                    // boundary. In particular, the room loader's HUD/CGRAM
+                    // requests must remain pending for the following frame.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    match work {
+                        DungeonFallingEntranceWork::RoomAndTilesets => {
+                            self.complete_module11_02_load_entrance();
+                        }
+                        DungeonFallingEntranceWork::SpriteGraphics => {
+                            self.DungeonTransition_LoadSpriteGFX();
+                        }
+                    }
+                    // Both calls return through Module11 and the ordinary game
+                    // loop suffix after their final interrupted NMI slice.
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    return;
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishItemReceiptGraphics) => {
                     // The decompressor has finally returned through

@@ -318,9 +318,29 @@ impl ZeldaState {
 
     fn nmi_do_updates_from(&mut self, oam_dma_source: Option<&[u8]>, defer_bg_vram_upload: bool) {
         if !self.game_state.display.core_updates_are_disabled() {
-            self.nmi_core_link_graphics_update();
+            let pre_main_graphics = self.pre_main_graphics_dma.take();
+            let graphics_dma_plan = rom_graphics_dma_plan(
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            );
+            let captured_link_sources = matches!(
+                graphics_dma_plan.link_obj_operands,
+                GraphicsDmaGeneration::HostBoundaryBeforeMain
+            )
+            .then(|| {
+                pre_main_graphics
+                    .as_ref()
+                    .map(|graphics| graphics.link_sources)
+            })
+            .flatten();
+            self.nmi_core_link_graphics_update(captured_link_sources);
 
-            let pre_main_dma = self.pre_main_animated_tile_dma.take();
+            let pre_main_dma = matches!(
+                graphics_dma_plan.animated_bg_operands,
+                GraphicsDmaGeneration::HostBoundaryBeforeMain
+            )
+            .then(|| pre_main_graphics.and_then(|graphics| graphics.animated_tile))
+            .flatten();
             let (src_addr, dst, data) = pre_main_dma.map_or_else(
                 || {
                     (
@@ -427,9 +447,9 @@ impl ZeldaState {
                 .game_state
                 .display
                 .message_dma_destination_address_usize();
-            if dst + 165 <= self.ppu.vram.len() {
+            if dst + HUD_TILEMAP_NMI_WORDS <= self.ppu.vram.len() {
                 let hud_buf = self.message_dma_tile_indices().to_vec();
-                for i in 0..165 {
+                for i in 0..HUD_TILEMAP_NMI_WORDS {
                     self.ppu.vram[dst + i] = read_word_from_slice(&hud_buf, i * 2);
                 }
             }
@@ -918,7 +938,10 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn nmi_core_link_graphics_update(&mut self) {
+    pub(super) fn nmi_core_link_graphics_update(
+        &mut self,
+        captured_sources: Option<LinkDmaSources>,
+    ) {
         // Animation-modeled asset renderer M1: tag the Link CHR VRAM slots with
         // the active Link DMA graphics index as the logical source. Write-only
         // bookkeeping; does not affect the VRAM bytes written below.
@@ -942,9 +965,11 @@ impl ZeldaState {
                 // Link sprite asset, 32 bytes / 4bpp tile) so distinct pose pieces
                 // that share `(pack, relative-tile)` no longer collide. Asset
                 // offsets use the `0x8000`-relative source address; buffer flag 0.
-                let src_addr = self.live_link_dma_source(source);
+                let src_addr = captured_sources
+                    .map(|sources| usize::from(sources.source(source)))
+                    .unwrap_or_else(|| self.live_link_dma_source(source));
                 let base_off = (src_addr.saturating_sub(0x8000) >> 5) as u16;
-                self.copy_asset_bytes_to_vram(dst, &link_graphics, source, len);
+                self.copy_asset_bytes_to_vram(dst, &link_graphics, src_addr, len);
                 self.vram_chr_source.record_tiles_from(
                     dst,
                     (len / 2).div_ceil(16),
@@ -972,9 +997,11 @@ impl ZeldaState {
             // WRAM-sourced Link tiles: key by the WRAM source tile offset, tagged
             // with the buffer flag so they never collide with asset-sourced tiles
             // (the raw address spaces overlap). See `CHR_LINK_SRC_RAM_FLAG`.
-            let src_addr = self.live_link_dma_source(source);
+            let src_addr = captured_sources
+                .map(|sources| usize::from(sources.source(source)))
+                .unwrap_or_else(|| self.live_link_dma_source(source));
             let base_off = crate::chr_source::CHR_LINK_SRC_RAM_FLAG | ((src_addr >> 5) as u16);
-            self.copy_ram_bytes_to_vram(dst, source, len);
+            self.copy_ram_bytes_to_vram(dst, src_addr, len);
             self.vram_chr_source.record_tiles_from(
                 dst,
                 (len / 2).div_ceil(16),
@@ -988,7 +1015,10 @@ impl ZeldaState {
             (0x4300, LinkDmaSourceSlot::HeadPointerLower),
             (0x4320, LinkDmaSourceSlot::BodyPointerLower),
         ] {
-            self.copy_ram_bytes_to_vram(dst, source, 0x40);
+            let src_addr = captured_sources
+                .map(|sources| usize::from(sources.source(source)))
+                .unwrap_or_else(|| self.live_link_dma_source(source));
+            self.copy_ram_bytes_to_vram(dst, src_addr, 0x40);
         }
         self.copy_ram_bytes_to_vram_absolute(0x4340, 0xbd80, 0x40);
 
@@ -997,7 +1027,10 @@ impl ZeldaState {
                 (0x40e0, LinkDmaSourceSlot::TravelBirdUpper),
                 (0x41e0, LinkDmaSourceSlot::TravelBirdLower),
             ] {
-                self.copy_ram_bytes_to_vram(dst, source, 0x40);
+                let src_addr = captured_sources
+                    .map(|sources| usize::from(sources.source(source)))
+                    .unwrap_or_else(|| self.live_link_dma_source(source));
+                self.copy_ram_bytes_to_vram(dst, src_addr, 0x40);
             }
         }
     }
@@ -1058,10 +1091,9 @@ impl ZeldaState {
         &mut self,
         dst_word: usize,
         source: &[u8],
-        source_slot: LinkDmaSourceSlot,
+        source_addr: usize,
         len: usize,
     ) {
-        let source_addr = self.live_link_dma_source(source_slot);
         if self.is_first_boot_nmi_dma_source(source_addr, len) {
             self.copy_bytes_to_vram(dst_word, &FIRST_BOOT_NMI_DMA_SOURCE, 0, len);
             return;
@@ -1075,10 +1107,9 @@ impl ZeldaState {
     pub(super) fn copy_ram_bytes_to_vram(
         &mut self,
         dst_word: usize,
-        source_slot: LinkDmaSourceSlot,
+        source_addr: usize,
         len: usize,
     ) {
-        let source_addr = self.live_link_dma_source(source_slot);
         // At the first boot NMI, ROM $008aa2 DMA uploads this exact
         // $7e:0000 source through the startup Link channels. Snes9x records
         // the bytes as
