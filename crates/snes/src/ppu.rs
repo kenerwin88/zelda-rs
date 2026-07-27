@@ -325,7 +325,7 @@ impl PpuState {
         self.oam_second_write = false;
         self.oam_buffer = 0;
         self.obj_tile_adr1 = 0x4000;
-        self.obj_tile_adr2 = 0x4000;
+        self.obj_tile_adr2 = 0x5000;
         self.obj_size = 0;
         for bg in &mut self.bg_layer {
             *bg = BgLayer::default();
@@ -449,13 +449,13 @@ impl PpuState {
                 self.forced_blank = val & 0x80 != 0;
             }
             0x01 => {
-                // OBSEL addresses are byte-based in the register encoding and
-                // word-based in VRAM. The tile-number high bit selects the
-                // configured name offset, which may legitimately be zero.
+                // OBJ tile bit 8 always advances to the second 256-tile page;
+                // OBSEL's name-select field adds a further configurable offset.
+                // Convert both byte-addressed hardware fields to VRAM words.
                 self.obj_tile_adr1 = u16::from(val & 3) << 13;
                 self.obj_tile_adr2 =
                     self.obj_tile_adr1
-                        .wrapping_add(u16::from((val >> 3) & 3) << 12);
+                        .wrapping_add(u16::from(((val >> 3) & 3) + 1) << 12);
                 self.obj_size = (val >> 5) & 7;
             }
             0x02 => {
@@ -2538,12 +2538,12 @@ mod tests {
         ppu.write(0x01, 0b1011_1010);
 
         assert_eq!(ppu.obj_tile_adr1, 0x4000);
-        assert_eq!(ppu.obj_tile_adr2, 0x7000);
+        assert_eq!(ppu.obj_tile_adr2, 0x8000);
         assert_eq!(ppu.obj_size, 5);
 
         ppu.write(0x01, 2);
         assert_eq!(ppu.obj_tile_adr1, 0x4000);
-        assert_eq!(ppu.obj_tile_adr2, 0x4000);
+        assert_eq!(ppu.obj_tile_adr2, 0x5000);
         assert_eq!(ppu.obj_size, 0);
     }
 
