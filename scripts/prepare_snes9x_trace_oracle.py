@@ -20,6 +20,7 @@ EXPECTED_PATCH_PATHS = frozenset(
         "cpuexec.cpp",
         "dma.cpp",
         "getset.h",
+        "gfx.cpp",
         "libretro/Makefile.common",
         "libretro/libretro.cpp",
         "ppu.cpp",
