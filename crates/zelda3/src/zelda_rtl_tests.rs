@@ -4395,13 +4395,29 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
 }
 
 #[test]
-fn subtile_lightening_filter_can_begin_in_the_post_nmi_cpu_interval() {
+fn subtile_palette_filter_schedules_only_measured_return_slices() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+
+    state.set_countdown(1);
+    state.suspend_dungeon_subtile_palette_filter_if_return_crosses_nmi();
     assert_eq!(
-        rom_post_nmi_main_iteration(7, 1, 5, 7, 1, 6, true),
-        Some(PostNmiMainIteration::DungeonSubtileLighteningFilter)
+        state.pending_rom_work.continuation,
+        Some(RomWorkContinuation::FinishDungeonSubtilePaletteFilter)
     );
-    assert_eq!(rom_post_nmi_main_iteration(7, 1, 0, 7, 1, 1, true), None);
-    assert_eq!(rom_post_nmi_main_iteration(7, 1, 5, 7, 1, 6, false), None);
+
+    state.pending_rom_work.finish();
+    state.set_countdown(0);
+    state.set_darkening_or_lightening_screen(2);
+    state.suspend_dungeon_subtile_palette_filter_if_return_crosses_nmi();
+    assert!(!state.pending_rom_work.is_pending());
+
+    state.set_darkening_or_lightening_screen(0);
+    state.suspend_dungeon_subtile_palette_filter_if_return_crosses_nmi();
+    assert_eq!(
+        state.pending_rom_work.continuation,
+        Some(RomWorkContinuation::FinishDungeonSubtilePaletteFilter)
+    );
 }
 
 #[test]

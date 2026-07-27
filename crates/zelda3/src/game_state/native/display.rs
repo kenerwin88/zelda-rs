@@ -225,6 +225,10 @@ impl PaletteFilterState {
             | (u16::from(self.darkening_or_lightening_screen_high) << 8)
     }
 
+    pub(crate) fn is_darkening(&self) -> bool {
+        self.darkening_or_lightening_screen_word() != 0
+    }
+
     pub(crate) fn color_window_selection(&self) -> u8 {
         self.color_window_selection
     }

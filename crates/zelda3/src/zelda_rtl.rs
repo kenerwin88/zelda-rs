@@ -1059,39 +1059,6 @@ impl PendingRomWork {
 
 const DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES: u8 = 1;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PostNmiMainIteration {
-    DungeonSubtileLighteningFilter,
-}
-
-const fn rom_post_nmi_main_iteration(
-    entry_main_module: u8,
-    entry_submodule: u8,
-    entry_subsubmodule: u8,
-    current_main_module: u8,
-    current_submodule: u8,
-    current_subsubmodule: u8,
-    wants_lights_out: bool,
-) -> Option<PostNmiMainIteration> {
-    // The completed subtile landing returns immediately before vblank. After
-    // that NMI the 65816 has enough active-frame time to begin the next main
-    // iteration and enter the lightening filter before retro_run returns.
-    // The darkening entry reaches its corresponding handoff later and does
-    // not start the filter until the following host interval.
-    if entry_main_module == 7
-        && entry_submodule == 1
-        && entry_subsubmodule == 5
-        && current_main_module == 7
-        && current_submodule == 1
-        && current_subsubmodule == 6
-        && wants_lights_out
-    {
-        Some(PostNmiMainIteration::DungeonSubtileLighteningFilter)
-    } else {
-        None
-    }
-}
-
 const fn rom_dungeon_landing_wipe_is_active(main_module: u8, submodule: u8) -> bool {
     main_module == 7 && submodule == 15
 }
@@ -5133,8 +5100,15 @@ impl ZeldaState {
         self.display_core_mut().clear_nmi_update_latch();
     }
 
-    pub(super) fn suspend_dungeon_subtile_palette_filter_until_return(&mut self) {
-        if self.rom_startup_timing() {
+    pub(super) fn suspend_dungeon_subtile_palette_filter_if_return_crosses_nmi(&mut self) {
+        let filter = &self.game_state.display.palette_filter;
+        let return_crosses_nmi = filter.countdown() != 0 || !filter.is_darkening();
+        if self.rom_startup_timing() && return_crosses_nmi {
+            // An unfinished color loop always crosses the following vblank.
+            // On its terminal step the direction has already toggled: a
+            // completed darkening pass (now lightening) still returns after
+            // that boundary, while a completed lightening pass (now
+            // darkening) returns before it.
             self.pending_rom_work = PendingRomWork::schedule(
                 RomWorkContinuation::FinishDungeonSubtilePaletteFilter,
                 DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES,
@@ -10248,19 +10222,6 @@ impl ZeldaState {
         }
         let dialogue_scroll_finished_copy =
             self.rom_startup_timing() && self.dialogue_scroll_continuation.is_return_only();
-        let post_nmi_main_iteration = if self.rom_startup_timing() {
-            rom_post_nmi_main_iteration(
-                frame.main_module,
-                frame.submodule,
-                frame.subsubmodule,
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule,
-                self.game_state.frame.subsubmodule,
-                self.game_state.dungeon.torch.wants_lights_out() != 0,
-            )
-        } else {
-            None
-        };
         let publication_override = self
             .pending_rom_work
             .in_flight_display_snapshot_publication_override();
@@ -10320,15 +10281,6 @@ impl ZeldaState {
             if let Some(snapshot) = self.display_snapshot.as_mut() {
                 color_math_scanout.publish_to(&mut snapshot.ppu);
             }
-        }
-        if let Some(PostNmiMainIteration::DungeonSubtileLighteningFilter) =
-            post_nmi_main_iteration
-        {
-            self.zelda_run_game_loop();
-            debug_assert_eq!(
-                self.pending_rom_work.continuation,
-                Some(RomWorkContinuation::FinishDungeonSubtilePaletteFilter)
-            );
         }
         self.replay_trace_col("after-nmi");
         self.replay_trace_ram_watch("after-nmi");

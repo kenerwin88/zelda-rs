@@ -10601,7 +10601,7 @@ impl ZeldaState {
         {
             self.ApplyPaletteFilter_bounce();
         }
-        self.suspend_dungeon_subtile_palette_filter_until_return();
+        self.suspend_dungeon_subtile_palette_filter_if_return_crosses_nmi();
     }
 
     pub(super) fn DungeonTransition_Subtile_ResetShutters(&mut self) {

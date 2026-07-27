@@ -313,12 +313,7 @@ impl ZeldaState {
 
     pub(super) fn palette_filter_range(&mut self, from: usize, to: usize) {
         let countdown = self.game_state.display.palette_filter.countdown_word();
-        let darkening = self
-            .game_state
-            .display
-            .palette_filter
-            .darkening_or_lightening_screen_word()
-            != 0;
+        let darkening = self.game_state.display.palette_filter.is_darkening();
         self.transform_main_range(
             from,
             to,
