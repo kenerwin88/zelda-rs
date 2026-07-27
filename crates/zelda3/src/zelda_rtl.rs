@@ -8799,7 +8799,11 @@ impl ZeldaState {
         let live_forced_blank = self.ppu.forced_blank;
         let live_forced_blank_from_scanline = self.ppu.forced_blank_from_scanline;
         let live_retain_active_display_history = self.ppu.retain_active_display_history;
-        let live_brightness = self.ppu.brightness;
+        // This capture owns the game-authored INIDISP value for the active
+        // frame. The live PPU has already run the following NMI boundary and
+        // can therefore be one fade step ahead.
+        let captured_screen_brightness =
+            display.ram[crate::game_state::constants::INIDISP_COPY] & 0x0f;
         let world_map_force_blank_fallback_scanline = rom_world_map_force_blank_fallback_scanline(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
@@ -9036,12 +9040,11 @@ impl ZeldaState {
             );
         }
         // During the opening world-map fade Snes9x consumes the newly written
-        // INIDISP level for Mode 7 BG1 while CGRAM remains on the deferred
-        // display generation. Preserve that source-specific scanout timing for
-        // the modern GPU finalizer without changing the composed frame's
-        // global brightness or reintroducing a PPU compositor.
+        // INIDISP level while CGRAM remains on the deferred display generation.
+        // Its palette map, fixed-color map, and color-add cap all come from
+        // that one brightness generation, independently of CGRAM publication.
         self.ppu.mode7_scanout_brightness_override =
-            world_map_fade_display.then_some(live_brightness);
+            world_map_fade_display.then_some(captured_screen_brightness);
         self.sync_native_game_state_from_ram();
         // The RAM-derived rebuild reconstitutes the palette mirror from the
         // snapshot's WRAM shadow, which already holds THIS frame's palette

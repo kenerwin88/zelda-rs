@@ -1956,15 +1956,12 @@ fn finalize_pixel(
     // brightness before color math, fixed color included; mirror that order
     // (identical to math-then-brightness at full brightness). See the same
     // transform in modern_finalize.wgsl.
-    // The opening world-map scanout advances INIDISP one step ahead of the
-    // deferred display palette. This frame is produced exclusively by the
-    // Mode-7 presenter, so its primary composite uses that sampled level;
-    // its secondary color-math operand remains at the display brightness.
-    let primary_brightness = frame
-        .mode7_scanout_brightness_override
-        .unwrap_or(frame.brightness);
+    // Snes9x derives its palette map, fixed-color map, and full-add cap from
+    // the same INIDISP generation. CGRAM may be deferred independently, but
+    // brightness cannot be split between the color-math operands.
+    let scanout_brightness = frame.scanout_brightness();
     for ch in 0..3 {
-        c[ch] = scale_brightness5(c[ch], primary_brightness);
+        c[ch] = scale_brightness5(c[ch], scanout_brightness);
     }
     if do_math {
         let primary_green = c[1];
@@ -1986,7 +1983,7 @@ fn finalize_pixel(
         };
         let mut second_green = 0;
         for ch in 0..3 {
-            let operand = scale_brightness5(operand[ch], frame.brightness);
+            let operand = scale_brightness5(operand[ch], scanout_brightness);
             if ch == 1 {
                 second_green = operand;
             }
@@ -2003,8 +2000,8 @@ fn finalize_pixel(
         // brightness-scaled, then the sum is capped at brightness-mapped white.
         // Half-add remains the packed RGB565 average; the add-subsreen fallback
         // to fixed color is a full add and therefore still takes this cap.
-        if frame.brightness < 15 && !frame.subtract_color && !half_color_applies {
-            let brightness_white = scale_brightness5(31, frame.brightness);
+        if scanout_brightness < 15 && !frame.subtract_color && !half_color_applies {
+            let brightness_white = scale_brightness5(31, scanout_brightness);
             for channel in &mut c {
                 *channel = (*channel).min(brightness_white);
             }
@@ -2769,6 +2766,23 @@ mod tests {
             &[33, 33, 33, 0xff],
             "backdrop pixel with no sub stays backdrop"
         );
+    }
+
+    #[test]
+    fn mode7_scanout_brightness_owns_color_math_generation() {
+        let (mut frame, cells) = frame_with_single_bg_pixel(0, [27, 28, 30]);
+        frame.screen_enabled_main = 0x01;
+        frame.math_enabled = 0x01;
+        frame.add_subscreen = false;
+        frame.fixed_color_r = 5;
+        frame.fixed_color_g = 5;
+        frame.fixed_color_b = 5;
+        frame.brightness = 0;
+        frame.mode7_scanout_brightness_override = Some(1);
+
+        let out = render_modern_frame_full(&frame, &cells, &[]);
+
+        assert_eq!(&out[0..4], &[16, 16, 16, 0xff]);
     }
 
     #[test]

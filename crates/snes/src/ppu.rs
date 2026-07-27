@@ -96,7 +96,7 @@ pub struct PpuState {
     #[serde(default)]
     pub retain_active_display_history: bool,
     pub brightness: u8,
-    /// One-frame scanout brightness for the Mode 7 BG1 source when the ROM
+    /// One-frame master-brightness generation for Mode 7 scanout when the ROM
     /// publishes its INIDISP step ahead of the deferred display palette.
     /// This is presentation metadata consumed by the modern renderer, never a
     /// VRAM/CGRAM composition path.

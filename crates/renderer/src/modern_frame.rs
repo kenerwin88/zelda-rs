@@ -35,7 +35,8 @@ pub struct ModernFrame {
     pub dialogue_box_tilemap_palette: Option<u8>,
     pub backdrop_color_rgba: [u8; 4],
     pub brightness: u8,
-    /// Mode 7 BG1-only scanout brightness for the deferred world-map fade.
+    /// One-frame Mode 7 master-brightness generation for the deferred
+    /// world-map fade.
     pub mode7_scanout_brightness_override: Option<u8>,
     pub forced_blank: bool,
     /// Number of leading visible scanlines that began while INIDISP was still
@@ -113,6 +114,11 @@ pub struct ModernFrame {
 }
 
 impl ModernFrame {
+    pub(crate) fn scanout_brightness(&self) -> u8 {
+        self.mode7_scanout_brightness_override
+            .unwrap_or(self.brightness)
+    }
+
     pub fn empty() -> Self {
         Self {
             width: MODERN_FRAME_WIDTH,
