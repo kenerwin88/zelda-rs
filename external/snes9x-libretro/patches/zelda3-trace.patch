@@ -1,0 +1,515 @@
+diff --git a/cpuexec.cpp b/cpuexec.cpp
+index aa43b2f..4ae7a73 100644
+--- a/cpuexec.cpp
++++ b/cpuexec.cpp
+@@ -12,6 +12,7 @@
+ #include "fxemu.h"
+ #include "snapshot.h"
+ #include "movie.h"
++#include "zelda3_trace.h"
+ #ifdef DEBUGGER
+ #include "debug.h"
+ #include "missing.h"
+@@ -52,6 +53,7 @@ void S9xMainLoop (void)
+ 			#endif
+ 			if (Timings.NMITriggerPos <= CPU.Cycles)
+ 			{
++				Zelda3TraceNmi();
+ 				CPU.NMIPending = FALSE;
+ 				Timings.NMITriggerPos = 0xffff;
+ 				if (CPU.WaitingForInterrupt)
+@@ -138,6 +140,8 @@ void S9xMainLoop (void)
+ 		uint8				Op;
+ 		struct	SOpcodes	*Opcodes;
+ 
++		if (Zelda3TracePcEnabled)
++			Zelda3TraceInstruction();
+ 		if (CPU.PCBase)
+ 		{
+ 			Op = CPU.PCBase[Registers.PCw];
+diff --git a/dma.cpp b/dma.cpp
+index e1ad324..5fb2ad4 100644
+--- a/dma.cpp
++++ b/dma.cpp
+@@ -10,6 +10,7 @@
+ #include "apu/apu.h"
+ #include "sdd1emu.h"
+ #include "spc7110emu.h"
++#include "zelda3_trace.h"
+ #ifdef DEBUGGER
+ #include "missing.h"
+ #endif
+@@ -56,6 +57,8 @@ bool8 S9xDoDMA (uint8 Channel)
+ 	CPU.CurrentDMAorHDMAChannel = Channel;
+ 
+     SDMA	*d = &DMA[Channel];
++	if (Zelda3TraceDmaEnabled)
++		Zelda3TraceDma(Channel, d);
+ 
+ 	// Check invalid DMA first
+ 	if ((d->ABank == 0x7E || d->ABank == 0x7F) && d->BAddress == 0x80 && !d->ReverseTransfer)
+diff --git a/getset.h b/getset.h
+index ec55ea9..287741c 100644
+--- a/getset.h
++++ b/getset.h
+@@ -16,6 +16,7 @@
+ #include "seta.h"
+ #include "bsx.h"
+ #include "msu1.h"
++#include "zelda3_trace.h"
+ 
+ #define addCyclesInMemoryAccess \
+ 	if (!CPU.InDMAorHDMA) \
+@@ -319,6 +320,8 @@ inline uint16 S9xGetWord (uint32 Address, enum s9xwrap_t w = WRAP_NONE)
+ 
+ inline void S9xSetByte (uint8 Byte, uint32 Address)
+ {
++	if (Zelda3TraceWramEnabled)
++		Zelda3TraceWramWrite(Address, Byte);
+ 	int		block = (Address & 0xffffff) >> MEMMAP_SHIFT;
+ 	uint8	*SetAddress = Memory.WriteMap[block];
+ 	int32	speed = memory_speed(Address);
+diff --git a/libretro/Makefile.common b/libretro/Makefile.common
+index 6ed99a5..ba8a4c8 100644
+--- a/libretro/Makefile.common
++++ b/libretro/Makefile.common
+@@ -58,6 +58,7 @@ SOURCES_CXX := $(CORE_DIR)/apu/apu.cpp \
+ 				 $(CORE_DIR)/tileimpl-n1x1.cpp \
+ 				 $(CORE_DIR)/tileimpl-n2x1.cpp \
+ 				 $(CORE_DIR)/tileimpl-h2x1.cpp \
++				 $(CORE_DIR)/zelda3_trace.cpp \
+ 				 $(CORE_DIR)/sha256.cpp \
+ 				 $(CORE_DIR)/bml.cpp \
+ 				 $(CORE_DIR)/movie.cpp \
+@@ -73,4 +74,4 @@ ifneq (,$(findstring win,$(platform)))
+    INCFLAGS += -I$(CORE_DIR)/unzip
+    SOURCES_C += $(CORE_DIR)/unzip/unzip.c \
+                 $(CORE_DIR)/unzip/ioapi.c
+-endif
+\ No newline at end of file
++endif
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+index d381c61..fb7d6b7 100644
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -14,6 +14,7 @@
+ #include "display.h"
+ #include "conffile.h"
+ #include "crosshairs.h"
++#include "zelda3_trace.h"
+ #include <stdio.h>
+ #include <vector>
+ #include <string>
+@@ -891,6 +892,38 @@ unsigned retro_api_version()
+     return RETRO_API_VERSION;
+ }
+ 
++extern "C" int zelda3_snes9x_debug_ppu_value(int field, int index)
++{
++    switch (field)
++    {
++        case 0: return PPU.BGMode;
++        case 1: return PPU.Brightness;
++        case 2: return index >= 0 && index < 256 ? PPU.CGDATA[index] : -1;
++        case 4:
++            if (index == 0) return PPU.FixedColourRed;
++            if (index == 1) return PPU.FixedColourGreen;
++            if (index == 2) return PPU.FixedColourBlue;
++            return -1;
++        case 7: return PPU.ForcedBlanking ? 1 : 0;
++        case 14:
++            if (index < 0 || index >= 8) return -1;
++            return index & 1 ? PPU.BG[index >> 1].VOffset : PPU.BG[index >> 1].HOffset;
++        case 15: return index >= 0 && index < 544 ? PPU.OAMData[index] : -1;
++        case 16: return index >= 0 && index < 6 ? Memory.FillRAM[0x212c + index] : -1;
++        case 17:
++            if (index == 0) return PPU.OBJNameBase;
++            if (index == 1) return PPU.OBJNameSelect;
++            if (index == 2) return PPU.OBJSizeSelect;
++            return -1;
++        case 18:
++            return index >= 0 && index < 512
++                ? Memory.VRAM[0x7600 + index * 2] |
++                    (Memory.VRAM[0x7601 + index * 2] << 8)
++                : -1;
++        default: return -1;
++    }
++}
++
+ 
+ void retro_reset()
+ {
+@@ -2006,7 +2039,9 @@ void retro_run()
+ 
+     poll_cb();
+     report_buttons();
++    Zelda3TraceFrameBoundary("entry");
+     S9xMainLoop();
++    Zelda3TraceFrameBoundary("return");
+ }
+ 
+ void retro_deinit()
+diff --git a/ppu.cpp b/ppu.cpp
+index 4611540..4c00c64 100644
+--- a/ppu.cpp
++++ b/ppu.cpp
+@@ -14,6 +14,7 @@
+ #include "controls.h"
+ #include "movie.h"
+ #include "display.h"
++#include "zelda3_trace.h"
+ #ifdef NETPLAY_SUPPORT
+ #include "netplay.h"
+ #endif
+@@ -209,6 +210,8 @@ void S9xFixColourBrightness (void)
+ void S9xSetPPU (uint8 Byte, uint16 Address)
+ {
+ 	// MAP_PPU: $2000-$3FFF
++	if (Zelda3TracePpuEnabled)
++		Zelda3TracePpuWrite(Address, Byte);
+ 
+ 	if (CPU.InDMAorHDMA)
+ 	{
+@@ -1067,6 +1070,7 @@ uint8 S9xGetPPU (uint16 Address)
+ 
+ 			case 0x2137: // SLHV
+ 				S9xLatchCounters(0);
++				Zelda3TracePpuRead(Address, PPU.OpenBus1);
+ 				return (PPU.OpenBus1);
+ 
+ 			case 0x2138: // OAMDATAREAD
+@@ -1157,6 +1161,7 @@ uint8 S9xGetPPU (uint16 Address)
+ 					byte = (PPU.OpenBus2 & 0xfe) | ((PPU.HBeamPosLatched >> 8) & 0x01);
+ 				else
+ 					byte = (uint8) PPU.HBeamPosLatched;
++				Zelda3TracePpuRead(Address, byte);
+ 				PPU.HBeamFlip ^= 1;
+ 			#ifdef DEBUGGER
+ 				missing.h_counter_read = 1;
+diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
+new file mode 100644
+index 0000000..f64ba50
+--- /dev/null
++++ b/zelda3_trace.cpp
+@@ -0,0 +1,294 @@
++#include "zelda3_trace.h"
++
++#include "dma.h"
++#include "memmap.h"
++#include "ppu.h"
++
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++
++bool Zelda3TraceDmaEnabled = false;
++bool Zelda3TracePcEnabled = false;
++bool Zelda3TracePpuEnabled = false;
++bool Zelda3TraceWramEnabled = false;
++
++namespace
++{
++
++enum TraceEvent
++{
++	TRACE_FRAME = 1 << 0,
++	TRACE_NMI = 1 << 1,
++	TRACE_RNG = 1 << 2,
++	TRACE_PC = 1 << 3,
++	TRACE_DMA = 1 << 4,
++	TRACE_PPU = 1 << 5,
++	TRACE_WRAM = 1 << 6,
++};
++
++struct AddressRange
++{
++	uint32 first;
++	uint32 last;
++};
++
++struct TraceConfig
++{
++	bool initialized;
++	FILE *output;
++	uint32 events;
++	uint32 first_frame;
++	uint32 last_frame;
++	uint32 pcs[64];
++	unsigned pc_count;
++	AddressRange ppu[32];
++	unsigned ppu_count;
++	AddressRange wram[32];
++	unsigned wram_count;
++};
++
++TraceConfig config = {};
++
++uint32 parse_hex(const char *text, const char **end)
++{
++	char normalized[32];
++	unsigned length = 0;
++	while (*text && *text != ',' && *text != '-' && length + 1 < sizeof(normalized))
++	{
++		if (*text != ':' && *text != '$')
++			normalized[length++] = *text;
++		text++;
++	}
++	normalized[length] = '\0';
++	char *parsed_end = nullptr;
++	const uint32 value = (uint32) std::strtoul(normalized, &parsed_end, 16);
++	*end = text;
++	return parsed_end != normalized ? value : 0xffffffff;
++}
++
++void parse_ranges(const char *text, AddressRange *ranges, unsigned capacity, unsigned *count)
++{
++	*count = 0;
++	while (text && *text && *count < capacity)
++	{
++		const char *end = nullptr;
++		const uint32 first = parse_hex(text, &end);
++		if (first == 0xffffffff)
++			break;
++		uint32 last = first;
++		if (*end == '-')
++		{
++			text = end + 1;
++			last = parse_hex(text, &end);
++			if (last == 0xffffffff)
++				break;
++		}
++		ranges[*count].first = first;
++		ranges[*count].last = last;
++		(*count)++;
++		text = *end == ',' ? end + 1 : end;
++	}
++}
++
++bool has_token(const char *list, const char *token)
++{
++	if (!list || !*list)
++		return false;
++	const size_t token_length = std::strlen(token);
++	for (const char *p = list; *p;)
++	{
++		while (*p == ',' || *p == ' ')
++			p++;
++		const char *end = p;
++		while (*end && *end != ',')
++			end++;
++		if ((size_t) (end - p) == token_length && std::strncmp(p, token, token_length) == 0)
++			return true;
++		p = end;
++	}
++	return false;
++}
++
++void initialize()
++{
++	if (config.initialized)
++		return;
++	config.initialized = true;
++	config.first_frame = 0;
++	config.last_frame = 0xffffffff;
++
++	const char *path = std::getenv("ZELDA3_SNES9X_TRACE");
++	if (!path || !*path)
++		return;
++	config.output = std::fopen(path, "a");
++	if (!config.output)
++		return;
++
++	const char *events = std::getenv("ZELDA3_SNES9X_TRACE_EVENTS");
++	if (!events || !*events)
++		events = "frame,nmi,rng";
++	if (has_token(events, "frame")) config.events |= TRACE_FRAME;
++	if (has_token(events, "nmi")) config.events |= TRACE_NMI;
++	if (has_token(events, "rng")) config.events |= TRACE_RNG;
++	if (has_token(events, "pc")) config.events |= TRACE_PC;
++	if (has_token(events, "dma")) config.events |= TRACE_DMA;
++	if (has_token(events, "ppu")) config.events |= TRACE_PPU;
++	if (has_token(events, "wram")) config.events |= TRACE_WRAM;
++	Zelda3TraceDmaEnabled = (config.events & TRACE_DMA) != 0;
++	Zelda3TracePcEnabled = (config.events & TRACE_PC) != 0;
++	Zelda3TracePpuEnabled = (config.events & TRACE_PPU) != 0;
++	Zelda3TraceWramEnabled = (config.events & (TRACE_RNG | TRACE_WRAM)) != 0;
++
++	const char *frames = std::getenv("ZELDA3_SNES9X_TRACE_FRAMES");
++	if (frames && *frames)
++	{
++		char *end = nullptr;
++		config.first_frame = (uint32) std::strtoul(frames, &end, 10);
++		config.last_frame = config.first_frame;
++		if (*end == '-')
++			config.last_frame = (uint32) std::strtoul(end + 1, nullptr, 10);
++	}
++
++	AddressRange pc_ranges[64];
++	unsigned pc_range_count = 0;
++	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_PCS"), pc_ranges, 64, &pc_range_count);
++	for (unsigned i = 0; i < pc_range_count && config.pc_count < 64; i++)
++	{
++		for (uint32 pc = pc_ranges[i].first; pc <= pc_ranges[i].last && config.pc_count < 64; pc++)
++			config.pcs[config.pc_count++] = pc;
++	}
++	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_PPU"), config.ppu, 32, &config.ppu_count);
++	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_WRAM"), config.wram, 32, &config.wram_count);
++}
++
++bool active(uint32 event)
++{
++	initialize();
++	return config.output && (config.events & event) &&
++		IPPU.TotalEmulatedFrames >= config.first_frame &&
++		IPPU.TotalEmulatedFrames <= config.last_frame;
++}
++
++bool includes(const AddressRange *ranges, unsigned count, uint32 value)
++{
++	for (unsigned i = 0; i < count; i++)
++		if (value >= ranges[i].first && value <= ranges[i].last)
++			return true;
++	return false;
++}
++
++void write_machine_state(const char *event)
++{
++	const uint32 return_address =
++		Memory.RAM[(Registers.S.W + 1) & 0xffff] |
++		(Memory.RAM[(Registers.S.W + 2) & 0xffff] << 8) |
++		(Memory.RAM[(Registers.S.W + 3) & 0xffff] << 16);
++	std::fprintf(config.output,
++		"{\"event\":\"%s\",\"frame\":%u,\"v\":%d,\"cycles\":%d,"
++		"\"pc\":%u,\"a\":%u,\"x\":%u,\"y\":%u,\"s\":%u,"
++		"\"main\":%u,\"sub\":%u,\"subsub\":%u,\"frame_counter\":%u,"
++		"\"rng_seed\":%u,\"nmi_latch\":%u,\"nmi_disable\":%u,\"nmi_pending\":%u,"
++		"\"return_address\":%u,"
++		"\"stack1\":%u,\"stack2\":%u,\"stack3\":%u,\"stack4\":%u",
++		event, IPPU.TotalEmulatedFrames, CPU.V_Counter, CPU.Cycles,
++		Registers.PBPC & 0xffffff, Registers.A.W, Registers.X.W, Registers.Y.W,
++		Registers.S.W, Memory.RAM[0x10], Memory.RAM[0x11], Memory.RAM[0xb0],
++		Memory.RAM[0x1a], Memory.RAM[0x0fa1], Memory.RAM[0x12],
++		Memory.RAM[0x0710], Memory.RAM[0x17], return_address,
++		Memory.RAM[(Registers.S.W + 1) & 0xffff],
++		Memory.RAM[(Registers.S.W + 2) & 0xffff],
++		Memory.RAM[(Registers.S.W + 3) & 0xffff],
++		Memory.RAM[(Registers.S.W + 4) & 0xffff]);
++}
++
++void finish_event()
++{
++	std::fputs("}\n", config.output);
++	std::fflush(config.output);
++}
++
++}
++
++void Zelda3TraceFrameBoundary(const char *stage)
++{
++	if (!active(TRACE_FRAME))
++		return;
++	write_machine_state("frame");
++	std::fprintf(config.output, ",\"stage\":\"%s\"", stage);
++	finish_event();
++}
++
++void Zelda3TraceInstruction(void)
++{
++	if (!active(TRACE_PC))
++		return;
++	const uint32 pc = Registers.PBPC & 0xffffff;
++	for (unsigned i = 0; i < config.pc_count; i++)
++		if (config.pcs[i] == pc)
++		{
++			write_machine_state("pc");
++			finish_event();
++			return;
++		}
++}
++
++void Zelda3TraceNmi(void)
++{
++	if (!active(TRACE_NMI))
++		return;
++	write_machine_state("nmi");
++	finish_event();
++}
++
++void Zelda3TraceDma(uint8 channel, const SDMA *dma)
++{
++	if (!active(TRACE_DMA))
++		return;
++	write_machine_state("dma");
++	std::fprintf(config.output,
++		",\"channel\":%u,\"source\":%u,\"b_address\":%u,\"bytes\":%u,"
++		"\"mode\":%u,\"fixed\":%u,\"decrement\":%u,\"vram_address\":%u",
++		channel, ((uint32) dma->ABank << 16) | dma->AAddress, dma->BAddress,
++		dma->TransferBytes ? dma->TransferBytes : 0x10000,
++		dma->TransferMode, dma->AAddressFixed, dma->AAddressDecrement, PPU.VMA.Address);
++	finish_event();
++}
++
++void Zelda3TracePpuRead(uint16 address, uint8 value)
++{
++	const bool rng = address == 0x2137 || address == 0x213c;
++	if ((!rng || !active(TRACE_RNG)) &&
++		(!active(TRACE_PPU) || !includes(config.ppu, config.ppu_count, address)))
++		return;
++	write_machine_state(rng ? "rng-ppu-read" : "ppu-read");
++	std::fprintf(config.output, ",\"address\":%u,\"value\":%u,\"h_latched\":%u",
++		address, value, PPU.HBeamPosLatched);
++	finish_event();
++}
++
++void Zelda3TracePpuWrite(uint16 address, uint8 value)
++{
++	if (!active(TRACE_PPU) || !includes(config.ppu, config.ppu_count, address))
++		return;
++	write_machine_state("ppu-write");
++	std::fprintf(config.output, ",\"address\":%u,\"value\":%u", address, value);
++	finish_event();
++}
++
++void Zelda3TraceWramWrite(uint32 address, uint8 value)
++{
++	const uint32 bank = (address >> 16) & 0xff;
++	const uint32 offset = address & 0xffff;
++	const bool wram_bank = bank == 0x7e || bank == 0x7f || bank <= 0x3f ||
++		(bank >= 0x80 && bank <= 0xbf);
++	if (!wram_bank)
++		return;
++	const bool rng = offset == 0x0fa1;
++	if ((!rng || !active(TRACE_RNG)) &&
++		(!active(TRACE_WRAM) || !includes(config.wram, config.wram_count, offset)))
++		return;
++	write_machine_state(rng ? "rng-write" : "wram-write");
++	std::fprintf(config.output, ",\"address\":%u,\"value\":%u", offset, value);
++	finish_event();
++}
+diff --git a/zelda3_trace.h b/zelda3_trace.h
+new file mode 100644
+index 0000000..ce6e63a
+--- /dev/null
++++ b/zelda3_trace.h
+@@ -0,0 +1,21 @@
++#ifndef ZELDA3_TRACE_H
++#define ZELDA3_TRACE_H
++
++#include "snes9x.h"
++
++struct SDMA;
++
++extern bool Zelda3TraceDmaEnabled;
++extern bool Zelda3TracePcEnabled;
++extern bool Zelda3TracePpuEnabled;
++extern bool Zelda3TraceWramEnabled;
++
++void Zelda3TraceFrameBoundary(const char *stage);
++void Zelda3TraceInstruction(void);
++void Zelda3TraceNmi(void);
++void Zelda3TraceDma(uint8 channel, const SDMA *dma);
++void Zelda3TracePpuRead(uint16 address, uint8 value);
++void Zelda3TracePpuWrite(uint16 address, uint8 value);
++void Zelda3TraceWramWrite(uint32 address, uint8 value);
++
++#endif
