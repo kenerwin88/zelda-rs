@@ -137,7 +137,7 @@ index d381c61..6d6469a 100644
  #include <stdio.h>
  #include <vector>
  #include <string>
-@@ -891,6 +892,54 @@ unsigned retro_api_version()
+@@ -891,6 +892,59 @@ unsigned retro_api_version()
      return RETRO_API_VERSION;
  }
  
@@ -189,10 +189,15 @@ index d381c61..6d6469a 100644
 +    }
 +}
 +
++extern "C" int zelda3_snes9x_debug_scanline_mode7_value(int line, int field)
++{
++    return Zelda3TracePresentedMode7Value(line, field);
++}
++
  
  void retro_reset()
  {
-@@ -2006,7 +2055,9 @@ void retro_run()
+@@ -2006,7 +2060,9 @@ void retro_run()
  
      poll_cb();
      report_buttons();
@@ -244,7 +249,7 @@ new file mode 100644
 index 0000000..6902398
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,351 @@
+@@ -0,0 +1,374 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -255,6 +260,8 @@ index 0000000..6902398
 +#include <cstdio>
 +#include <cstdlib>
 +#include <cstring>
++
++extern struct SLineMatrixData LineMatrixData[240];
 +
 +bool Zelda3TraceDmaEnabled = false;
 +bool Zelda3TracePcEnabled = false;
@@ -305,6 +312,7 @@ index 0000000..6902398
 +uint8 presented_obj_flags[SNES_HEIGHT_EXTENDED] = {};
 +uint8 presented_obj_visible_tiles[128] = {};
 +uint8 presented_obj_widths[128] = {};
++SLineMatrixData presented_mode7[240] = {};
 +
 +uint32 parse_hex(const char *text, const char **end)
 +{
@@ -478,6 +486,7 @@ index 0000000..6902398
 +	std::memcpy(presented_obj_visible_tiles, GFX.OBJVisibleTiles,
 +		sizeof(presented_obj_visible_tiles));
 +	std::memcpy(presented_obj_widths, GFX.OBJWidths, sizeof(presented_obj_widths));
++	std::memcpy(presented_mode7, LineMatrixData, sizeof(presented_mode7));
 +}
 +
 +int Zelda3TracePresentedOamValue(int index)
@@ -501,6 +510,25 @@ index 0000000..6902398
 +		case 5:
 +			return index < SNES_HEIGHT_EXTENDED * 128
 +				? presented_obj_rows[index / 128][index % 128] : -1;
++		default: return -1;
++	}
++}
++
++int Zelda3TracePresentedMode7Value(int line, int field)
++{
++	if (line < 0 || line >= 240)
++		return -1;
++	const SLineMatrixData &values = presented_mode7[line];
++	switch (field)
++	{
++		case 0: return values.MatrixA;
++		case 1: return values.MatrixB;
++		case 2: return values.MatrixC;
++		case 3: return values.MatrixD;
++		case 4: return values.CentreX;
++		case 5: return values.CentreY;
++		case 6: return values.M7HOFS;
++		case 7: return values.M7VOFS;
 +		default: return -1;
 +	}
 +}
@@ -601,7 +629,7 @@ new file mode 100644
 index 0000000..f13324d
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,27 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -618,6 +646,7 @@ index 0000000..f13324d
 +void Zelda3TraceCapturePresentedPpuState();
 +int Zelda3TracePresentedOamValue(int index);
 +int Zelda3TracePresentedObjValue(int field, int index);
++int Zelda3TracePresentedMode7Value(int line, int field);
 +void Zelda3TraceRetroRunBegin();
 +void Zelda3TraceRetroRunEnd();
 +void Zelda3TraceInstruction(void);

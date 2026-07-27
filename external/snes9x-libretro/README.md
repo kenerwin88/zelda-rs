@@ -45,7 +45,9 @@ the event, as well as Snes9x's `frame` counter, CPU position, registers, the top
 four stack bytes, the decoded long-call return address, CPU carry, and the
 Zelda main/NMI/RNG state. Use `run` for host-frame timing; use `frame` for the
 emulator's internal video boundary. The trace patch also exports the optional
-PPU inspection function consumed by the parity harness.
+PPU inspection functions consumed by the parity harness, including OAM/OBJ
+evaluation and the per-scanline Mode 7 matrix captured at the completed-screen
+publication boundary.
 
 Generate a strict Rust RNG replay script from a route trace with:
 
