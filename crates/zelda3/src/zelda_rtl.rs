@@ -741,6 +741,10 @@ const DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES: u8 = 1;
 const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
 const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
 const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
+// Attract_DramatizeWorldMap enters the tilemap erase immediately after
+// vblank, but the clear crosses the next scanout boundary before the caller
+// can advance the attract sequence.
+const ATTRACT_WORLD_MAP_EXIT_NMI_SLICES: u8 = 1;
 const OVERWORLD_SPRITE_RECORD_TIMING_UNITS: usize = 3;
 const OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS: usize = 39;
 
@@ -914,6 +918,7 @@ impl DungeonFallingEntranceWork {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RomWorkContinuation {
     FinishAttractWorldMap,
+    FinishAttractWorldMapExit,
     FinishWorldMapLightLoad,
     FinishAttractThroneRoom,
     FinishAttractZeldaPrison,
@@ -1057,6 +1062,9 @@ impl PendingRomWork {
         match self.continuation {
             Some(RomWorkContinuation::FinishSpotlightIteration { iteration }) => {
                 Some(iteration.in_flight_publication())
+            }
+            Some(RomWorkContinuation::FinishAttractWorldMapExit) => {
+                Some(DisplaySnapshotPublication::RetainPublished)
             }
             _ => None,
         }
@@ -8318,6 +8326,14 @@ impl ZeldaState {
             PendingRomWork::schedule(RomWorkContinuation::FinishAttractWorldMap, 5);
     }
 
+    pub(super) fn begin_attract_world_map_exit_work(&mut self) {
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishAttractWorldMapExit,
+            ATTRACT_WORLD_MAP_EXIT_NMI_SLICES,
+        );
+    }
+
     pub(super) fn begin_world_map_light_load_work(&mut self) -> bool {
         if !self.rom_startup_timing() {
             return false;
@@ -9983,6 +9999,9 @@ impl ZeldaState {
                 RomWorkSlice::Waiting => {}
                 RomWorkSlice::Complete(RomWorkContinuation::FinishAttractWorldMap) => {
                     self.complete_attract_scene_world_map();
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishAttractWorldMapExit) => {
+                    self.complete_attract_world_map_exit();
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishWorldMapLightLoad) => {
                     self.world_map_load_light_world_map();

@@ -425,9 +425,17 @@ impl ZeldaState {
             self.enable_force_blank();
             self.set_bg_mode(9);
             self.erase_tile_maps_normal();
-            self.attract_scene_mut().increment_sequence();
-            self.attract_scene_mut().subtract_state(2);
+            if self.rom_startup_timing() {
+                self.begin_attract_world_map_exit_work();
+                return;
+            }
+            self.complete_attract_world_map_exit();
         }
+    }
+
+    pub(super) fn complete_attract_world_map_exit(&mut self) {
+        self.attract_scene_mut().increment_sequence();
+        self.attract_scene_mut().subtract_state(2);
     }
 
     pub(super) fn attract_throne_room(&mut self) {

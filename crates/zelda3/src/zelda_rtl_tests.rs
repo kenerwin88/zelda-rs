@@ -25,6 +25,18 @@ fn attract_map_mode7_brightness_override_ends_with_fade_in() {
 }
 
 #[test]
+fn attract_map_exit_retains_scanout_until_the_tilemap_clear_returns() {
+    let pending = PendingRomWork::schedule(
+        RomWorkContinuation::FinishAttractWorldMapExit,
+        ATTRACT_WORLD_MAP_EXIT_NMI_SLICES,
+    );
+    assert_eq!(
+        pending.in_flight_display_snapshot_publication_override(),
+        Some(DisplaySnapshotPublication::RetainPublished)
+    );
+}
+
+#[test]
 fn attract_map_projection_generation_follows_the_cpu_hdma_race() {
     let first_current = (0..ATTRACT_MAP_PROJECTION_WORDS)
         .find(|&line| attract_map_projection_current_word_is_visible(line));
