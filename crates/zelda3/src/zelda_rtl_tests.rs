@@ -3387,6 +3387,33 @@ fn dungeon_falling_entrance_work_resumes_at_measured_cpu_boundaries() {
 }
 
 #[test]
+fn pre_dungeon_work_resumes_at_room_and_song_bank_boundaries() {
+    assert_eq!(PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES, 58);
+    let stages = [
+        (
+            RomWorkContinuation::FinishPreDungeonEntranceLoad,
+            PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES,
+        ),
+        (
+            RomWorkContinuation::FinishPreDungeonSongBankLoad,
+            PRE_DUNGEON_SONG_BANK_LOAD_NMI_SLICES,
+        ),
+    ];
+
+    for (continuation, nmi_slices) in stages {
+        let mut work = PendingRomWork::schedule(continuation, nmi_slices);
+        for _ in 0..nmi_slices - 1 {
+            assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        }
+        assert_eq!(
+            work.advance_one_nmi_slice(),
+            RomWorkSlice::Complete(continuation)
+        );
+        assert!(!work.is_pending());
+    }
+}
+
+#[test]
 fn throne_room_work_budget_follows_the_retained_sprite_tileset() {
     assert_eq!(attract_throne_room_nmi_slices(19), 42);
     assert_eq!(attract_throne_room_nmi_slices(66), 44);

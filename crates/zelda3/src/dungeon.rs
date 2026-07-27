@@ -12043,6 +12043,9 @@ fn replay_room_write_trace_enabled() -> bool {
 impl ZeldaState {
     pub(super) fn module_pre_dungeon(&mut self) {
         self.module_pre_dungeon_audio_prefix();
+        if self.begin_pre_dungeon_entrance_load_work() {
+            return;
+        }
         self.module_pre_dungeon_after_audio_prefix();
     }
 
@@ -12052,6 +12055,20 @@ impl ZeldaState {
     }
 
     pub(super) fn module_pre_dungeon_after_audio_prefix(&mut self) {
+        self.module_pre_dungeon_after_audio_prefix_with_song_bank_timing(true);
+    }
+
+    pub(super) fn complete_module_pre_dungeon_after_selected_game_load(&mut self) {
+        // The selected-game continuation already spans the complete load,
+        // including LoadSongBank. Reuse the semantic state mutations without
+        // scheduling the ordinary module-6 song-bank continuation twice.
+        self.module_pre_dungeon_after_audio_prefix_with_song_bank_timing(false);
+    }
+
+    fn module_pre_dungeon_after_audio_prefix_with_song_bank_timing(
+        &mut self,
+        defer_song_bank: bool,
+    ) {
         self.set_dungeon_room(0);
         self.dungeon_room_tracking_mut()
             .set_previous_room_index_word(0);
@@ -12146,6 +12163,13 @@ impl ZeldaState {
         self.set_saved_module_for_menu(7);
         self.set_main_module(7);
         self.set_submodule(15);
+        if defer_song_bank && self.begin_pre_dungeon_song_bank_load_work() {
+            return;
+        }
+        self.complete_module_pre_dungeon_after_song_bank_load();
+    }
+
+    pub(super) fn complete_module_pre_dungeon_after_song_bank_load(&mut self) {
         self.Dungeon_LoadSongBankIfNeeded();
         self.module_pre_dungeon_set_ambient_sfx();
     }

@@ -674,7 +674,7 @@ impl ZeldaState {
         self.hud_rebuild();
         self.hud_update_equipped_item();
         if pre_dungeon_audio_already_started {
-            self.module_pre_dungeon_after_audio_prefix();
+            self.complete_module_pre_dungeon_after_selected_game_load();
         } else {
             self.module_pre_dungeon();
         }

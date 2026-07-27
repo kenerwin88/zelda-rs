@@ -117,6 +117,27 @@ const ROM_SELECTED_GAME_LOAD_FRAMES: u8 = 77;
 // The original CPU reaches Module_PreDungeon's audio prefix after 19 NMI
 // slices, then continues the room build while NMI publishes that command.
 const ROM_SELECTED_GAME_LOAD_PRE_DUNGEON_AUDIO_REMAINING: u8 = 58;
+// Module_PreDungeon's audio prefix returns before the interruptible entrance
+// load begins. Clean Snes9x NMI-PC traces divide the remaining caller into
+// semantic workloads: ten boundaries in entrance/room construction, four in
+// animated-tile decompression, ten in the attribute table, 33 in tileset
+// decompression/conversion, and one in the final sprite reset/caller suffix.
+// Keep the total derived from those workloads so later room-specific timing
+// can refine a stage instead of growing a route/frame exception.
+const PRE_DUNGEON_ROOM_CONSTRUCTION_NMI_SLICES: u8 = 10;
+const PRE_DUNGEON_ANIMATED_TILES_NMI_SLICES: u8 = 4;
+const PRE_DUNGEON_ATTRIBUTE_TABLE_NMI_SLICES: u8 = 10;
+const PRE_DUNGEON_TILESETS_NMI_SLICES: u8 = 33;
+const PRE_DUNGEON_RETURN_SUFFIX_NMI_SLICES: u8 = 1;
+const PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES: u8 = PRE_DUNGEON_ROOM_CONSTRUCTION_NMI_SLICES
+    + PRE_DUNGEON_ANIMATED_TILES_NMI_SLICES
+    + PRE_DUNGEON_ATTRIBUTE_TABLE_NMI_SLICES
+    + PRE_DUNGEON_TILESETS_NMI_SLICES
+    + PRE_DUNGEON_RETURN_SUFFIX_NMI_SLICES;
+// Module_PreDungeon publishes module $07/$0f before its final
+// Dungeon_LoadSongBankIfNeeded call. The $00:8888 LoadSongBank copy then spans
+// 22 host boundaries before the caller can release the main-loop NMI latch.
+const PRE_DUNGEON_SONG_BANK_LOAD_NMI_SLICES: u8 = 22;
 const DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES: usize = 4;
 // The ROM enters AttractScene_ThroneRoom on frame 5939 and does not return
 // from its dungeon-room construction work until frame 5981. NMI continues to
@@ -886,6 +907,8 @@ enum RomWorkContinuation {
     FinishDungeonFallingEntrance {
         work: DungeonFallingEntranceWork,
     },
+    FinishPreDungeonEntranceLoad,
+    FinishPreDungeonSongBankLoad,
     FinishItemReceiptGraphics,
     FinishDungeonSubtilePaletteFilter,
     FinishSpotlightIteration {
@@ -8166,6 +8189,33 @@ impl ZeldaState {
         true
     }
 
+    pub(super) fn begin_pre_dungeon_entrance_load_work(&mut self) -> bool {
+        if !self.rom_startup_timing() {
+            return false;
+        }
+        debug_assert_eq!(self.game_state.frame.main_module, 6);
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishPreDungeonEntranceLoad,
+            PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES,
+        );
+        true
+    }
+
+    pub(super) fn begin_pre_dungeon_song_bank_load_work(&mut self) -> bool {
+        if !self.rom_startup_timing() {
+            return false;
+        }
+        debug_assert_eq!(self.game_state.frame.main_module, 7);
+        debug_assert_eq!(self.game_state.frame.submodule, 15);
+        debug_assert!(!self.pending_rom_work.is_pending());
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishPreDungeonSongBankLoad,
+            PRE_DUNGEON_SONG_BANK_LOAD_NMI_SLICES,
+        );
+        true
+    }
+
     pub(super) fn begin_attract_throne_room_work(&mut self) {
         debug_assert!(!self.pending_rom_work.is_pending());
         let retained_sprite_subset_2 = self.game_state.sprites.workspace.graphics_subset(2);
@@ -9869,6 +9919,33 @@ impl ZeldaState {
                     }
                     // Both calls return through Module11 and the ordinary game
                     // loop suffix after their final interrupted NMI slice.
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    return;
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishPreDungeonEntranceLoad) => {
+                    // The final sprite-reset slice is interrupted before
+                    // Module_PreDungeon publishes module 7 and releases the
+                    // main-loop NMI latch. Resume that caller suffix only
+                    // after this scanout boundary.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.module_pre_dungeon_after_audio_prefix();
+                    if self.pending_rom_work.is_pending() {
+                        return;
+                    }
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    return;
+                }
+                RomWorkSlice::Complete(RomWorkContinuation::FinishPreDungeonSongBankLoad) => {
+                    // The song-bank copy starts after module $07/$0f is
+                    // already CPU-visible, but the original caller remains
+                    // suspended through this boundary. Finish its semantic
+                    // suffix only after the copy returns.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.complete_module_pre_dungeon_after_song_bank_load();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                     return;
