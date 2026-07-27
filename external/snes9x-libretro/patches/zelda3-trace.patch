@@ -112,7 +112,7 @@ index d381c61..6d6469a 100644
  #include <stdio.h>
  #include <vector>
  #include <string>
-@@ -891,6 +892,38 @@ unsigned retro_api_version()
+@@ -891,6 +892,45 @@ unsigned retro_api_version()
      return RETRO_API_VERSION;
  }
  
@@ -144,6 +144,13 @@ index d381c61..6d6469a 100644
 +                ? Memory.VRAM[0x7600 + index * 2] |
 +                    (Memory.VRAM[0x7601 + index * 2] << 8)
 +                : -1;
++        case 19:
++            if (index == 0) return PPU.FirstSprite;
++            if (index == 1) return PPU.OAMPriorityRotation;
++            if (index == 2) return PPU.OAMFlip;
++            if (index == 3) return PPU.OAMAddr;
++            if (index == 4) return PPU.SavedOAMAddr;
++            return -1;
 +        default: return -1;
 +    }
 +}
@@ -151,7 +158,7 @@ index d381c61..6d6469a 100644
  
  void retro_reset()
  {
-@@ -2006,7 +2039,9 @@ void retro_run()
+@@ -2006,7 +2046,9 @@ void retro_run()
  
      poll_cb();
      report_buttons();
