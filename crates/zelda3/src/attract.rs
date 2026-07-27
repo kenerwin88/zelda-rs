@@ -346,7 +346,15 @@ impl ZeldaState {
 
     pub(super) fn attract_control_map_zoom(&mut self) {
         let zoom = self.game_state.ending.attract_scene.mode7_zoom_timer() as u16;
-        for (i, value) in ATTRACT_MAP_ZOOM_HDMA_BASES.iter().enumerate() {
+        if self.rom_startup_timing() {
+            self.attract_map_hdma_projection_before = Some(self.hdma_dynamic_table_bytes());
+        }
+        // The ROM loop starts at X=$01BE and stops after word 223. The final
+        // sixteen constants are outside the 224-line HDMA scanout.
+        for (i, value) in ATTRACT_MAP_ZOOM_HDMA_BASES[..ATTRACT_MAP_PROJECTION_WORDS]
+            .iter()
+            .enumerate()
+        {
             self.set_spotlight_hdma_table_dynamic_entry(
                 i,
                 ((*value as u32 * zoom as u32) >> 8) as u16,

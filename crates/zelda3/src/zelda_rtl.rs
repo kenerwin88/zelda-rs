@@ -14,6 +14,9 @@ use std::{env, fs};
 use snes::{DmaChannel, DmaState, PpuState, WRAM_SIZE};
 
 use crate::config::config_value_bytes;
+use crate::raster_timing::{
+    attract_map_projection_current_word_is_visible, ATTRACT_MAP_PROJECTION_WORDS,
+};
 #[cfg(test)]
 use crate::game_state::constants::messaging::MODULE as MESSAGING_MODULE;
 use crate::game_state::constants::nmi::{
@@ -2623,6 +2626,30 @@ enum DisplaySnapshotPublication {
     RetainPublished,
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+enum DisplayHdmaTableGeneration {
+    #[default]
+    Captured,
+    /// The CPU is still projecting the new table while HDMA consumes it.
+    /// Words that miss their scanline retain the pre-projection generation.
+    AttractMapProjectionDuringScanout { before_projection: Vec<u8> },
+}
+
+impl DisplayHdmaTableGeneration {
+    fn compose_into(&self, ram: &mut [u8]) {
+        let Self::AttractMapProjectionDuringScanout { before_projection } = self else {
+            return;
+        };
+        for scanline in 0..ATTRACT_MAP_PROJECTION_WORDS {
+            if !attract_map_projection_current_word_is_visible(scanline) {
+                let offset = scanline * 2;
+                ram[HDMA_TABLE_DYNAMIC + offset..HDMA_TABLE_DYNAMIC + offset + 2]
+                    .copy_from_slice(&before_projection[offset..offset + 2]);
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum DisplayBgScrollGeneration {
     #[default]
@@ -2945,6 +2972,11 @@ pub struct ZeldaState {
     visible_display_snapshot: Option<Box<DisplaySnapshot>>,
     #[serde(skip)]
     deferred_display_snapshot: Option<Box<DisplaySnapshot>>,
+    /// Dynamic Mode 7 table generation before the ROM begins its descending
+    /// projection loop. Captured separately because HDMA can consume the old
+    /// and new generations within one field.
+    #[serde(skip)]
+    pub(super) attract_map_hdma_projection_before: Option<Vec<u8>>,
     /// Graphics DMA operands as they existed at the host vblank boundary.
     /// Snes9x resumes a pending NMI before the following main slice can advance
     /// the animated-BG or Link OBJ sources.
@@ -3094,6 +3126,7 @@ struct DisplaySnapshot {
     ram: Vec<u8>,
     ppu: PpuState,
     dma: DmaState,
+    hdma_table_generation: DisplayHdmaTableGeneration,
     vram_generation: DisplayVramGeneration,
     hud_vram_generation: DisplayVramGeneration,
     hud_vram_destination: usize,
@@ -7911,6 +7944,7 @@ impl ZeldaState {
             display_snapshot: None,
             visible_display_snapshot: None,
             deferred_display_snapshot: None,
+            attract_map_hdma_projection_before: None,
             pre_main_graphics_dma: None,
             next_nmi_graphics_dma_override: GraphicsDmaOverride::default(),
             pre_nmi_animated_bg_scanout: None,
@@ -8565,6 +8599,15 @@ impl ZeldaState {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
             dma: self.dma.clone(),
+            hdma_table_generation: self
+                .attract_map_hdma_projection_before
+                .take()
+                .map(|before_projection| {
+                    DisplayHdmaTableGeneration::AttractMapProjectionDuringScanout {
+                        before_projection,
+                    }
+                })
+                .unwrap_or_default(),
             vram_generation: std::mem::take(&mut self.next_display_vram_generation),
             hud_vram_generation: if self.game_state.system_signals.should_update_hud() {
                 DisplayVramGeneration::RetainCapturedBeforeNmi
@@ -8828,6 +8871,7 @@ impl ZeldaState {
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
+        display.hdma_table_generation.compose_into(&mut self.ram);
         if let Some(scroll) = self.overworld_transition_scroll_hold {
             for (index, layer) in self.ppu.bg_layer.iter_mut().enumerate() {
                 layer.h_scroll = scroll[index * 2];

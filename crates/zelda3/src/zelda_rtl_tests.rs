@@ -14,6 +14,27 @@ use crate::game_state::constants::{
 };
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
 
+#[test]
+fn attract_map_projection_generation_follows_the_cpu_hdma_race() {
+    let first_current = (0..ATTRACT_MAP_PROJECTION_WORDS)
+        .find(|&line| attract_map_projection_current_word_is_visible(line));
+    assert_eq!(first_current, Some(45));
+
+    let mut ram = vec![0x55; 0x20000];
+    let before_projection = vec![0xaa; ZeldaState::HDMA_DYNAMIC_TABLE_LEN];
+    DisplayHdmaTableGeneration::AttractMapProjectionDuringScanout { before_projection }
+        .compose_into(&mut ram);
+
+    assert_eq!(
+        &ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + 45 * 2],
+        vec![0xaa; 45 * 2]
+    );
+    assert_eq!(
+        &ram[HDMA_TABLE_DYNAMIC + 45 * 2..HDMA_TABLE_DYNAMIC + ATTRACT_MAP_PROJECTION_WORDS * 2],
+        vec![0x55; (ATTRACT_MAP_PROJECTION_WORDS - 45) * 2]
+    );
+}
+
 fn test_sync_all(state: &mut ZeldaState) {
     state.ram[0x42] = state.ram[0x42].wrapping_add(1);
 }

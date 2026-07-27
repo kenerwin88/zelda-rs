@@ -18,6 +18,7 @@ mod modern_sample_bank;
 pub mod modern_sfx_catalog;
 pub mod modern_sfx_dsp_catalog;
 pub mod modern_sfx_pitch_catalog;
+mod raster_timing;
 mod rom_random;
 mod spc_driver_clock;
 pub mod types;
