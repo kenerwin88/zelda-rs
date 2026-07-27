@@ -100,6 +100,32 @@ index 953b13b..c3da89f 100644
  	m.regs [addr] = (uint8_t) data;
  	m.external_regs [addr] = (uint8_t) data;
  	switch ( addr & 0x0F )
+diff --git a/apu/bapu/smp/core.cpp b/apu/bapu/smp/core.cpp
+index f5c2e6e..f690c09 100644
+--- a/apu/bapu/smp/core.cpp
++++ b/apu/bapu/smp/core.cpp
+@@ -58,6 +58,9 @@ void SMP::op_step() {
+ 
+   if(opcode_cycle == 0)
+   {
++    Zelda3TraceCaptureSmpInstruction(regs.pc, apuram[regs.pc], regs.B.a, regs.x,
++      regs.B.y, regs.sp, regs.p, timer0.stage1_ticks, timer0.stage2_ticks,
++      timer0.stage3_ticks);
+ #ifdef DEBUGGER
+     if (Settings.TraceSMP)
+     {
+diff --git a/apu/bapu/smp/smp.cpp b/apu/bapu/smp/smp.cpp
+index 2cf58af..9433173 100644
+--- a/apu/bapu/smp/smp.cpp
++++ b/apu/bapu/smp/smp.cpp
+@@ -5,6 +5,7 @@ char tmp[1024];
+ #endif
+ 
+ #include "../snes/snes.hpp"
++#include "../../../zelda3_trace.h"
+ 
+ #define SMP_CPP
+ namespace SNES {
 diff --git a/cpuexec.cpp b/cpuexec.cpp
 index aa43b2f..a5440ab 100644
 --- a/cpuexec.cpp
@@ -228,7 +254,7 @@ index 6ed99a5..ba8a4c8 100644
 \ No newline at end of file
 +endif
 diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
-index d381c61..af6b468 100644
+index d381c61..4569c7a 100644
 --- a/libretro/libretro.cpp
 +++ b/libretro/libretro.cpp
 @@ -14,6 +14,7 @@
@@ -239,7 +265,7 @@ index d381c61..af6b468 100644
  #include <stdio.h>
  #include <vector>
  #include <string>
-@@ -891,6 +892,94 @@ unsigned retro_api_version()
+@@ -891,6 +892,104 @@ unsigned retro_api_version()
      return RETRO_API_VERSION;
  }
  
@@ -331,10 +357,20 @@ index d381c61..af6b468 100644
 +    return Zelda3TraceApuPortWriteValue(write, field);
 +}
 +
++extern "C" int zelda3_snes9x_debug_smp_instruction_count()
++{
++    return Zelda3TraceSmpInstructionCount();
++}
++
++extern "C" int zelda3_snes9x_debug_smp_instruction_value(int instruction, int field)
++{
++    return Zelda3TraceSmpInstructionValue(instruction, field);
++}
++
  
  void retro_reset()
  {
-@@ -2006,7 +2095,9 @@ void retro_run()
+@@ -2006,7 +2105,9 @@ void retro_run()
  
      poll_cb();
      report_buttons();
@@ -395,10 +431,10 @@ index 4611540..7458d84 100644
  				missing.h_counter_read = 1;
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 0000000..ec01b4f
+index 0000000..1b47e7e
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,466 @@
+@@ -0,0 +1,503 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -475,6 +511,10 @@ index 0000000..ec01b4f
 +constexpr int apu_port_write_field_count = 6;
 +int apu_port_write_count = 0;
 +int apu_port_writes[apu_port_write_capacity][apu_port_write_field_count] = {};
++constexpr int smp_instruction_capacity = 8192;
++constexpr int smp_instruction_field_count = 12;
++int smp_instruction_count = 0;
++int smp_instructions[smp_instruction_capacity][smp_instruction_field_count] = {};
 +
 +uint32 parse_hex(const char *text, const char **end)
 +{
@@ -771,11 +811,44 @@ index 0000000..ec01b4f
 +		? apu_port_writes[write][field] : -1;
 +}
 +
++void Zelda3TraceCaptureSmpInstruction(int pc, int opcode, int a, int x, int y, int sp,
++	int psw, int timer0_stage1, int timer0_stage2, int timer0_stage3)
++{
++	if (smp_instruction_count >= smp_instruction_capacity)
++		return;
++	int *instruction = smp_instructions[smp_instruction_count++];
++	instruction[0] = pc;
++	instruction[1] = opcode;
++	instruction[2] = a;
++	instruction[3] = x;
++	instruction[4] = y;
++	instruction[5] = sp;
++	instruction[6] = psw;
++	instruction[7] = timer0_stage1;
++	instruction[8] = timer0_stage2;
++	instruction[9] = timer0_stage3;
++	instruction[10] = dsp_sample_count;
++	instruction[11] = SNES::dsp.spc_dsp.zelda3_debug_value(7);
++}
++
++int Zelda3TraceSmpInstructionCount()
++{
++	return smp_instruction_count;
++}
++
++int Zelda3TraceSmpInstructionValue(int instruction, int field)
++{
++	return instruction >= 0 && instruction < smp_instruction_count &&
++		field >= 0 && field < smp_instruction_field_count
++		? smp_instructions[instruction][field] : -1;
++}
++
 +void Zelda3TraceRetroRunBegin()
 +{
 +	dsp_sample_count = 0;
 +	dsp_write_count = 0;
 +	apu_port_write_count = 0;
++	smp_instruction_count = 0;
 +	if (!active(TRACE_FRAME))
 +		return;
 +	write_machine_state("frame");
@@ -867,10 +940,10 @@ index 0000000..ec01b4f
 +}
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 new file mode 100644
-index 0000000..da5d14c
+index 0000000..230fbb5
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,45 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -902,6 +975,10 @@ index 0000000..da5d14c
 +void Zelda3TraceCaptureApuPortWrite(int port, int value);
 +int Zelda3TraceApuPortWriteCount();
 +int Zelda3TraceApuPortWriteValue(int write, int field);
++void Zelda3TraceCaptureSmpInstruction(int pc, int opcode, int a, int x, int y, int sp,
++	int psw, int timer0_stage1, int timer0_stage2, int timer0_stage3);
++int Zelda3TraceSmpInstructionCount();
++int Zelda3TraceSmpInstructionValue(int instruction, int field);
 +void Zelda3TraceRetroRunBegin();
 +void Zelda3TraceRetroRunEnd();
 +void Zelda3TraceInstruction(void);

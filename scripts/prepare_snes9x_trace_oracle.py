@@ -19,6 +19,8 @@ EXPECTED_PATCH_PATHS = frozenset(
     {
         "apu/bapu/dsp/SPC_DSP.cpp",
         "apu/bapu/dsp/SPC_DSP.h",
+        "apu/bapu/smp/core.cpp",
+        "apu/bapu/smp/smp.cpp",
         "cpuexec.cpp",
         "dma.cpp",
         "getset.h",

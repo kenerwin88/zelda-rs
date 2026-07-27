@@ -127,6 +127,9 @@ pub(crate) struct LibretroCore {
     pub(crate) debug_dsp_register_write_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_apu_port_write_count: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_apu_port_write_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
+    pub(crate) debug_smp_instruction_count: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_smp_instruction_value:
+        Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_ppu_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_scanline_mode7_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) api_version: c_uint,
@@ -234,6 +237,10 @@ impl LibretroCore {
                 optional_symbol(handle, "zelda3_snes9x_debug_apu_port_write_count");
             let debug_apu_port_write_value =
                 optional_symbol(handle, "zelda3_snes9x_debug_apu_port_write_value");
+            let debug_smp_instruction_count =
+                optional_symbol(handle, "zelda3_snes9x_debug_smp_instruction_count");
+            let debug_smp_instruction_value =
+                optional_symbol(handle, "zelda3_snes9x_debug_smp_instruction_value");
             let debug_ppu_value = optional_symbol(handle, "zelda3_snes9x_debug_ppu_value");
             let debug_scanline_mode7_value =
                 optional_symbol(handle, "zelda3_snes9x_debug_scanline_mode7_value");
@@ -309,6 +316,8 @@ impl LibretroCore {
                 debug_dsp_register_write_value,
                 debug_apu_port_write_count,
                 debug_apu_port_write_value,
+                debug_smp_instruction_count,
+                debug_smp_instruction_value,
                 debug_ppu_value,
                 debug_scanline_mode7_value,
                 api_version,
@@ -597,6 +606,34 @@ impl LibretroCore {
         )
     }
 
+    pub(crate) fn debug_smp_instructions(&self) -> Option<Vec<LibretroSmpInstruction>> {
+        let (Some(count), Some(value)) = (
+            self.debug_smp_instruction_count,
+            self.debug_smp_instruction_value,
+        ) else {
+            return None;
+        };
+        let count = unsafe { count() }.max(0);
+        Some(
+            (0..count)
+                .map(|instruction| LibretroSmpInstruction {
+                    program_counter: unsafe { value(instruction, 0) },
+                    opcode: unsafe { value(instruction, 1) },
+                    a: unsafe { value(instruction, 2) },
+                    x: unsafe { value(instruction, 3) },
+                    y: unsafe { value(instruction, 4) },
+                    stack_pointer: unsafe { value(instruction, 5) },
+                    status: unsafe { value(instruction, 6) },
+                    timer0_stage1: unsafe { value(instruction, 7) },
+                    timer0_stage2: unsafe { value(instruction, 8) },
+                    timer0_stage3: unsafe { value(instruction, 9) },
+                    output_sample: unsafe { value(instruction, 10) },
+                    dsp_phase: unsafe { value(instruction, 11) },
+                })
+                .collect(),
+        )
+    }
+
     pub(crate) fn debug_ppu_value(&self, field: i32, index: i32) -> Option<i32> {
         self.debug_ppu_value
             .map(|probe| unsafe { probe(field, index) })
@@ -679,6 +716,22 @@ pub(crate) struct LibretroApuPortWrite {
     pub(crate) v_counter: i32,
     pub(crate) cpu_cycle: i32,
     pub(crate) program_counter: i32,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct LibretroSmpInstruction {
+    pub(crate) program_counter: i32,
+    pub(crate) opcode: i32,
+    pub(crate) a: i32,
+    pub(crate) x: i32,
+    pub(crate) y: i32,
+    pub(crate) stack_pointer: i32,
+    pub(crate) status: i32,
+    pub(crate) timer0_stage1: i32,
+    pub(crate) timer0_stage2: i32,
+    pub(crate) timer0_stage3: i32,
+    pub(crate) output_sample: i32,
+    pub(crate) dsp_phase: i32,
 }
 
 impl Drop for LibretroCore {
