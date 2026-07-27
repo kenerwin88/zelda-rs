@@ -3717,6 +3717,10 @@ fn animated_bg_scanout_requires_a_captured_dma_source() {
 
 #[test]
 fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
+    let screen_build_workload = OverworldMapGraphicsWorkload {
+        map32_definition_changes: 796,
+    };
+    let screen_build_timing = overworld_map_and_sprite_graphics_timing(screen_build_workload);
     let properties = RomWorkContinuation::FinishPreOverworldProperties {
         overworld_screen: 0x00,
         animated_tiles: 0x58,
@@ -3729,7 +3733,8 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
         ),
         (
             RomWorkContinuation::FinishPreOverworldScreenBuild,
-            PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES,
+            screen_build_timing.quadrant_load_nmi_slices
+                + screen_build_timing.screen_map_and_sprite_gfx_tail_nmi_slices,
         ),
     ];
 

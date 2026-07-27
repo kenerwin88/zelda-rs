@@ -3639,7 +3639,7 @@ impl ZeldaState {
         self.complete_module09_load_new_map_and_gfx();
     }
 
-    fn overworld_map_graphics_workload(&self) -> OverworldMapGraphicsWorkload {
+    pub(super) fn overworld_map_graphics_workload(&self) -> OverworldMapGraphicsWorkload {
         let screen = i32::from(self.game_state.world.location.overworld_screen_index());
         let mut map32_definition_changes = 0;
         for quadrant in [screen, screen + 1, screen + 8, screen + 9] {

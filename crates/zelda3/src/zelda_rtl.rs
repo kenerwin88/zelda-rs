@@ -704,10 +704,6 @@ const SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES: u8 = 1;
 const DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES: u8 = 1;
 const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
 const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
-// The entry call consumes the CPU time before the first interrupted slice.
-// Snes9x therefore crosses eighteen vblanks between beginning the final
-// Overworld_LoadAndBuildScreen pass and returning into Module 10.
-const PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES: u8 = 18;
 const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
 const OVERWORLD_SPRITE_RECORD_TIMING_UNITS: usize = 3;
 const OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS: usize = 39;
@@ -8106,9 +8102,12 @@ impl ZeldaState {
             return false;
         }
         debug_assert!(!self.pending_rom_work.is_pending());
+        let timing =
+            overworld_map_and_sprite_graphics_timing(self.overworld_map_graphics_workload());
         self.pending_rom_work = PendingRomWork::schedule(
             RomWorkContinuation::FinishPreOverworldScreenBuild,
-            PRE_OVERWORLD_SCREEN_BUILD_NMI_SLICES,
+            timing.quadrant_load_nmi_slices
+                + timing.screen_map_and_sprite_gfx_tail_nmi_slices,
         );
         true
     }
