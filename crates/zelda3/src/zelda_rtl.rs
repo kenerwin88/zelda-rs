@@ -690,9 +690,9 @@ const fn rom_selected_game_load_decision(remaining_frames: u8) -> (bool, bool, u
 const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
     match load_gfx::animated_sprite_tile_secondary_sheet(gfx) {
         // Timing belongs to the compressed sheets, not an individual route's
-        // item ID. Keep the separately packed $5c/$5d paths immediate until
-        // their ROM costs have been measured.
-        0x5b => ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
+        // item ID. Both $5b and $5c cross four NMI boundaries; keep the
+        // separately packed $5d path immediate until its ROM cost is measured.
+        0x5b | 0x5c => ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
         _ => 0,
     }
 }

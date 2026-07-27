@@ -3576,7 +3576,14 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
         rom_item_receipt_graphics_nmi_slices(0x06),
         ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES
     );
-    assert_eq!(rom_item_receipt_graphics_nmi_slices(0x0c), 0);
+    assert_eq!(
+        rom_item_receipt_graphics_nmi_slices(0x0c),
+        ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES
+    );
+    assert_eq!(
+        rom_item_receipt_graphics_nmi_slices(0x24),
+        ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES
+    );
     assert_eq!(rom_item_receipt_graphics_nmi_slices(0x23), 0);
 
     let mut work = PendingRomWork::schedule(
