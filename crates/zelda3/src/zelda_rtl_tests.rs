@@ -4435,19 +4435,13 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert!(rom_display_oam_publication_is_deferred(14, 7, false, false));
     assert!(!rom_display_oam_publication_is_deferred(4, 2, false, false));
     assert!(!rom_display_memory_publication_is_deferred(7, 0, false));
-    assert!(rom_dungeon_exit_entry_oam_publication_is_deferred(
-        0x0f, 0x0f, 0
-    ));
-    assert!(!rom_dungeon_exit_entry_oam_publication_is_deferred(
-        0x0f, 0x0f, 1
-    ));
-    assert!(rom_dungeon_exit_entry_scroll_publication_is_live(
+    assert!(rom_dungeon_exit_entry_crosses_nmi_boundary(
         0x0f, 0, 0x0f, 1
     ));
-    assert!(!rom_dungeon_exit_entry_scroll_publication_is_live(
+    assert!(!rom_dungeon_exit_entry_crosses_nmi_boundary(
         0x0f, 0, 0x0f, 0
     ));
-    assert!(!rom_dungeon_exit_entry_scroll_publication_is_live(
+    assert!(!rom_dungeon_exit_entry_crosses_nmi_boundary(
         0x0f, 1, 0x0f, 1
     ));
 

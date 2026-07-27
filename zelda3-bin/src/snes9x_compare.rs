@@ -50,6 +50,11 @@ struct DisplayPpuProbe {
     fixed_color: [i32; 3],
     display_control: [i32; 6],
     bg_scroll: [i32; 8],
+    /// OAM visible after the most recent DMA and the generation actually used
+    /// for the completed scanout. Snes9x can advance the former before the
+    /// host observes the latter, so keep both domains explicit.
+    oam: Vec<i32>,
+    presented_oam: Vec<i32>,
     mode7: [i32; 8],
     mode7_scanlines: Vec<[i32; 8]>,
 }
@@ -70,6 +75,12 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
             oracle.debug_ppu_value(16, i as i32).unwrap_or(-1)
         }),
         bg_scroll: std::array::from_fn(|i| oracle.debug_ppu_value(14, i as i32).unwrap_or(-1)),
+        oam: (0..544)
+            .map(|i| oracle.debug_ppu_value(15, i).unwrap_or(-1))
+            .collect(),
+        presented_oam: (0..544)
+            .map(|i| oracle.debug_ppu_value(20, i).unwrap_or(-1))
+            .collect(),
         mode7: std::array::from_fn(|i| oracle.debug_ppu_value(5, i as i32).unwrap_or(-1)),
         mode7_scanlines: (0..224)
             .map(|line| {
@@ -84,7 +95,13 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
 }
 
 fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
-    game.with_display_snapshot(|snapshot| {
+    let live_oam = game
+        .ppu
+        .oam
+        .iter()
+        .flat_map(|word| word.to_le_bytes().map(i32::from))
+        .collect();
+    game.with_display_snapshot(move |snapshot| {
         let scanlines = snapshot.ppu_scanline_windows();
         DisplayPpuProbe {
             mode: i32::from(snapshot.ppu.mode),
@@ -129,6 +146,13 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
                     layer.v_scroll
                 })
             }),
+            oam: live_oam,
+            presented_oam: snapshot
+                .ppu
+                .oam
+                .iter()
+                .flat_map(|word| word.to_le_bytes().map(i32::from))
+                .collect(),
             mode7: snapshot.ppu.m7_matrix.map(i32::from),
             mode7_scanlines: scanlines.iter().map(|line| line.7.map(i32::from)).collect(),
         }
@@ -158,6 +182,10 @@ fn write_display_oracle_receipt(
     });
     writeln!(writer).unwrap_or_else(|error| {
         eprintln!("failed to terminate display-oracle receipt: {error}");
+        process::exit(1);
+    });
+    writer.flush().unwrap_or_else(|error| {
+        eprintln!("failed to flush display-oracle receipt: {error}");
         process::exit(1);
     });
 }
@@ -1483,18 +1511,6 @@ pub(crate) fn run_compare_libretro_oracle(
             // 0x1cd8 module / 0x1cd9 read_pos / 0x1cd4 render state /
             // 0x1cd5 line speed counter / 0x1cd6.
             let oracle_ram = oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM).unwrap_or(&[]);
-            let rust_bytes: Vec<u8> = (0x1cd0..0x1ce0).map(|a| game.ram[a]).collect();
-            let oracle_bytes: Vec<u8> = if oracle_ram.len() >= 0x1ce0 {
-                oracle_ram[0x1cd0..0x1ce0].to_vec()
-            } else {
-                Vec::new()
-            };
-            let rust_coldata: Vec<u8> = (0x9c..0xa0).map(|a| game.ram[a]).collect();
-            let oracle_coldata: Vec<u8> = if oracle_ram.len() >= 0xa0 {
-                oracle_ram[0x9c..0xa0].to_vec()
-            } else {
-                Vec::new()
-            };
             let fc_oracle = if oracle_ram.len() > 0x1a {
                 oracle_ram[0x1a]
             } else {

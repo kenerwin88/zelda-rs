@@ -487,15 +487,20 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
     }
 }
 
-const fn rom_dungeon_exit_entry_oam_publication_is_deferred(
+const fn rom_dungeon_exit_entry_crosses_nmi_boundary(
     snapshot_main_module: u8,
+    snapshot_submodule: u8,
     live_main_module: u8,
     live_submodule: u8,
 ) -> bool {
-    // The module switch occurs after the active frame's OAM DMA. The following
-    // main-loop slice runs Dungeon_PrepExitWithSpotlight and advances to
-    // submodule 1, whose next NMI legitimately publishes the new sprite table.
-    snapshot_main_module == 0x0f && live_main_module == 0x0f && live_submodule == 0
+    // Module 7's pre-main graphics plan is still attached to the captured
+    // snapshot, but the transition into Dungeon_PrepExitWithSpotlight crosses
+    // the next hardware NMI: its OAM DMA and doorway scroll are already visible
+    // while the remaining staged display controls still belong to submodule 0.
+    snapshot_main_module == 0x0f
+        && snapshot_submodule == 0
+        && live_main_module == 0x0f
+        && live_submodule == 1
 }
 
 const fn rom_dungeon_falling_entry_retains_published_obj_generation(
@@ -512,24 +517,6 @@ const fn rom_dungeon_falling_entry_retains_published_obj_generation(
         && published_submodule == 0
         && current_main_module == 0x11
         && current_submodule == 0
-}
-
-const fn rom_dungeon_exit_entry_scroll_publication_is_live(
-    snapshot_main_module: u8,
-    snapshot_submodule: u8,
-    live_main_module: u8,
-    live_submodule: u8,
-) -> bool {
-    // The first module-0x0f main-loop slice arms the deferred iris HDMA table,
-    // but the preceding NMI has already published the doorway camera step.
-    // Snes9x route frame 4782 scans BG1/BG2 at V=0x113 (the PPU's raw 0x112
-    // plus its render-line increment), while the deferred control snapshot is
-    // still at raw V=0x110. Publish only those live scroll registers here; the
-    // iris controls, table, and OAM retain their independently measured lag.
-    snapshot_main_module == 0x0f
-        && snapshot_submodule == 0
-        && live_main_module == 0x0f
-        && live_submodule == 1
 }
 
 const fn rom_overworld_bad_weather_scroll_is_live(
@@ -8794,21 +8781,26 @@ impl ZeldaState {
                 // sequence has entered its fade-in state.
                 && !(snapshot_attract_scene.sequence() == 1
                     && snapshot_attract_scene.state() >= 4));
+        let module_oam_publication_is_deferred = rom_display_oam_publication_is_deferred(
+            snapshot_frame.main_module,
+            snapshot_frame.submodule,
+            display.ppu.forced_blank_scanlines != 0,
+            pending_main_thread_stripe,
+        );
+        let oam_scanout_uses_host_boundary = matches!(
+            display.oam_scanout_generation,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        );
+        let dungeon_exit_crosses_nmi_boundary = rom_dungeon_exit_entry_crosses_nmi_boundary(
+            snapshot_frame.main_module,
+            snapshot_frame.submodule,
+            self.game_state.frame.main_module,
+            self.game_state.frame.submodule,
+        );
         let retain_previous_nmi_oam = match &display.obj_generation {
             DisplayObjGeneration::FollowModuleCadence => {
-                rom_display_oam_publication_is_deferred(
-                    snapshot_frame.main_module,
-                    snapshot_frame.submodule,
-                    display.ppu.forced_blank_scanlines != 0,
-                    pending_main_thread_stripe,
-                ) || matches!(
-                    display.oam_scanout_generation,
-                    GraphicsDmaGeneration::HostBoundaryBeforeMain
-                ) || rom_dungeon_exit_entry_oam_publication_is_deferred(
-                    snapshot_frame.main_module,
-                    self.game_state.frame.main_module,
-                    self.game_state.frame.submodule,
-                )
+                !dungeon_exit_crosses_nmi_boundary
+                    && (module_oam_publication_is_deferred || oam_scanout_uses_host_boundary)
             }
             DisplayObjGeneration::RetainTransitionEntry { .. } => true,
         };
@@ -8823,7 +8815,10 @@ impl ZeldaState {
                 snapshot_attract_scene.sequence(),
                 snapshot_attract_scene.state(),
             );
-        let publish_live_dungeon_exit_scroll = rom_dungeon_exit_entry_scroll_publication_is_live(
+        // At the same split boundary, OAM above and the doorway scroll below
+        // publish from live state while the remaining staged display controls
+        // retain their independently measured generation.
+        let publish_live_dungeon_exit_scroll = rom_dungeon_exit_entry_crosses_nmi_boundary(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
             self.game_state.frame.main_module,
@@ -8854,16 +8849,22 @@ impl ZeldaState {
             );
         let animated_bg_vram_generation =
             AnimatedBgVramGeneration::for_scanout(publish_live_overworld_bad_weather_scroll);
+        let display_phase_differs_from_live = snapshot_frame.main_module
+            != self.game_state.frame.main_module
+            || snapshot_frame.submodule != self.game_state.frame.submodule;
         if std::env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
-            && (snapshot_frame.main_module == 20 || self.game_state.frame.main_module == 20)
+            && display_phase_differs_from_live
         {
             eprintln!(
-                "display_oam snapshot={:02x}/{:02x} live={:02x}/{:02x} retain={} snapshot_math={:02x}/{:02x}/{}/{} live_math={:02x}/{:02x}/{}/{} snapshot_oam={:02x?} live_oam={:02x?}",
+                "display_oam snapshot={:02x}/{:02x} live={:02x}/{:02x} retain={} reasons=module:{}/host_boundary:{}/dungeon_exit:{} snapshot_math={:02x}/{:02x}/{}/{} live_math={:02x}/{:02x}/{}/{} snapshot_oam={:02x?} live_oam={:02x?}",
                 snapshot_frame.main_module,
                 snapshot_frame.submodule,
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
                 retain_previous_nmi_oam,
+                module_oam_publication_is_deferred,
+                oam_scanout_uses_host_boundary,
+                dungeon_exit_crosses_nmi_boundary,
                 display.ppu.math_enabled,
                 display.ppu.prevent_math_mode,
                 display.ppu.subtract_color,
