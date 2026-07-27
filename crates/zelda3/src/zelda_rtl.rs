@@ -1082,6 +1082,42 @@ const fn rom_dungeon_landing_wipe_is_active(main_module: u8, submodule: u8) -> b
     main_module == 7 && submodule == 15
 }
 
+// A cartridge-state sweep around the goal iteration found the exact CPU/NMI
+// crossover at 184 generated row pairs, symmetrically at vertical centers
+// 41/42 and 182/183. Below it, the goal-only $80:f427 reset returns before the
+// next NMI; at and above it, that reset is interrupted once more.
+const SPOTLIGHT_GOAL_RESET_TWO_SLICE_MIN_ROW_PAIRS: u16 = 184;
+
+const fn spotlight_vertical_center(link_y: u16, bg2_y: u16) -> u16 {
+    link_y.wrapping_sub(bg2_y).wrapping_add(12)
+}
+
+const fn spotlight_table_row_pairs(vertical_center: u16) -> u16 {
+    let doubled_center = vertical_center.wrapping_mul(2);
+    let lower_cursor = if doubled_center < 224 {
+        224
+    } else {
+        doubled_center
+    };
+    lower_cursor
+        .wrapping_sub(vertical_center)
+        .wrapping_add(1)
+}
+
+const fn dungeon_landing_wipe_return_slices(
+    vertical_center: u16,
+    completes_goal_transition: bool,
+) -> u8 {
+    if completes_goal_transition
+        && spotlight_table_row_pairs(vertical_center)
+            >= SPOTLIGHT_GOAL_RESET_TWO_SLICE_MIN_ROW_PAIRS
+    {
+        2
+    } else {
+        1
+    }
+}
+
 const fn rom_spotlight_goal_transition_waits_for_iteration_return(
     main_module: u8,
     submodule: u8,
@@ -2888,7 +2924,7 @@ pub struct ZeldaState {
     #[serde(skip)]
     selected_game_load_remaining_frames: u8,
     #[serde(skip)]
-    dungeon_landing_wipe_carry_pending: bool,
+    dungeon_landing_wipe_return_slices_remaining: u8,
     #[serde(skip)]
     dungeon_exit_spotlight_table_delay: u8,
     #[serde(skip)]
@@ -7864,7 +7900,7 @@ impl ZeldaState {
             file_select_checkerboard_suffix_pending: false,
             name_player_tilemap_suffix_pending: false,
             selected_game_load_remaining_frames: 0,
-            dungeon_landing_wipe_carry_pending: false,
+            dungeon_landing_wipe_return_slices_remaining: 0,
             dungeon_exit_spotlight_table_delay: 0,
             dungeon_exit_spotlight_resume_module: false,
             iris_spotlight_goal_transition_pending: false,
@@ -7970,7 +8006,7 @@ impl ZeldaState {
         self.file_select_checkerboard_suffix_pending = false;
         self.name_player_tilemap_suffix_pending = false;
         self.selected_game_load_remaining_frames = 0;
-        self.dungeon_landing_wipe_carry_pending = false;
+        self.dungeon_landing_wipe_return_slices_remaining = 0;
         self.dungeon_exit_spotlight_table_delay = 0;
         self.dungeon_exit_spotlight_resume_module = false;
         self.iris_spotlight_goal_transition_pending = false;
@@ -8025,7 +8061,7 @@ impl ZeldaState {
             self.file_select_checkerboard_suffix_pending = false;
             self.name_player_tilemap_suffix_pending = false;
             self.selected_game_load_remaining_frames = 0;
-            self.dungeon_landing_wipe_carry_pending = false;
+            self.dungeon_landing_wipe_return_slices_remaining = 0;
             self.dungeon_exit_spotlight_table_delay = 0;
             self.dungeon_exit_spotlight_resume_module = false;
             self.iris_spotlight_goal_transition_pending = false;
@@ -9694,8 +9730,13 @@ impl ZeldaState {
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
-        if self.rom_startup_timing() && self.dungeon_landing_wipe_carry_pending {
-            self.dungeon_landing_wipe_carry_pending = false;
+        if self.rom_startup_timing() && self.dungeon_landing_wipe_return_slices_remaining != 0 {
+            self.dungeon_landing_wipe_return_slices_remaining -= 1;
+            if self.dungeon_landing_wipe_return_slices_remaining != 0 {
+                self.capture_display_snapshot();
+                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                return;
+            }
             if self.iris_spotlight_goal_transition_pending {
                 self.iris_spotlight_goal_transition_pending = false;
                 self.spotlight_hdma_reset_prefix = Some(std::array::from_fn(|index| {
@@ -11984,7 +12025,7 @@ impl ZeldaState {
         }
         if self.rom_startup_timing()
             && (self.pending_rom_work.is_pending()
-                || self.dungeon_landing_wipe_carry_pending
+                || self.dungeon_landing_wipe_return_slices_remaining != 0
                 || self.normal_dialogue_initialization_phase != 0)
         {
             return;

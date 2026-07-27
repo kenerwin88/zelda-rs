@@ -4522,10 +4522,27 @@ fn selected_game_load_resumes_until_the_cpu_heavy_setup_finishes() {
 }
 
 #[test]
-fn dungeon_landing_wipe_carries_work_into_the_following_display_frame() {
+fn dungeon_landing_wipe_timing_follows_spotlight_row_workload() {
     assert!(rom_dungeon_landing_wipe_is_active(7, 15));
     assert!(!rom_dungeon_landing_wipe_is_active(7, 14));
     assert!(!rom_dungeon_landing_wipe_is_active(14, 15));
+
+    assert_eq!(spotlight_vertical_center(0x215a, 0x2110), 86);
+    assert_eq!(spotlight_table_row_pairs(86), 139);
+    assert_eq!(dungeon_landing_wipe_return_slices(86, true), 1);
+
+    assert_eq!(spotlight_table_row_pairs(42), 183);
+    assert_eq!(spotlight_table_row_pairs(182), 183);
+    assert_eq!(dungeon_landing_wipe_return_slices(42, true), 1);
+    assert_eq!(dungeon_landing_wipe_return_slices(182, true), 1);
+
+    assert_eq!(spotlight_table_row_pairs(41), 184);
+    assert_eq!(spotlight_table_row_pairs(183), 184);
+    assert_eq!(dungeon_landing_wipe_return_slices(41, true), 2);
+    assert_eq!(dungeon_landing_wipe_return_slices(183, true), 2);
+
+    assert_eq!(dungeon_landing_wipe_return_slices(41, false), 1);
+    assert_eq!(dungeon_landing_wipe_return_slices(183, false), 1);
 }
 
 #[test]

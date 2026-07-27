@@ -3422,13 +3422,10 @@ impl ZeldaState {
     }
 
     pub(super) fn iris_spotlight_configure_table(&mut self) {
-        let r14 = self
-            .game_state
-            .player
-            .follower_link
-            .y()
-            .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_v_copy2())
-            .wrapping_add(12);
+        let r14 = spotlight_vertical_center(
+            self.game_state.player.follower_link.y(),
+            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+        );
         let radius = self.game_state.display.spotlight_hdma.window_radius();
         self.set_spotlight_y_lower(r14.wrapping_sub(radius));
         self.set_spotlight_y_upper(r14.wrapping_add(radius));

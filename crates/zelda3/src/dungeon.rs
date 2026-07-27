@@ -11373,7 +11373,15 @@ impl ZeldaState {
                 self.game_state.frame.submodule,
             )
         {
-            self.dungeon_landing_wipe_carry_pending = true;
+            let vertical_center = spotlight_vertical_center(
+                self.game_state.player.follower_link.y(),
+                self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+            );
+            self.dungeon_landing_wipe_return_slices_remaining =
+                dungeon_landing_wipe_return_slices(
+                    vertical_center,
+                    self.iris_spotlight_goal_transition_pending,
+                );
         }
     }
 
@@ -12281,7 +12289,7 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module07-after-layer-effect");
         self.run_dungeon_submodule();
         self.replay_trace_ram_watch("module07-after-submodule");
-        if self.rom_startup_timing() && self.dungeon_landing_wipe_carry_pending {
+        if self.rom_startup_timing() && self.dungeon_landing_wipe_return_slices_remaining != 0 {
             return;
         }
         self.complete_module07_dungeon_after_submodule();
