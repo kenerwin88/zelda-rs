@@ -39,6 +39,14 @@ index aa43b2f..a5440ab 100644
  		if (CPU.PCBase)
  		{
  			Op = CPU.PCBase[Registers.PCw];
+@@ -329,6 +338,7 @@ void S9xMainLoop (void)
+ 
+ 			if (CPU.V_Counter == PPU.ScreenHeight + FIRST_VISIBLE_LINE)	// VBlank starts from V=225(240).
+ 			{
++				Zelda3TraceCapturePresentedPpuState();
+ 				S9xEndScreenRefresh();
+ 				#ifdef DEBUGGER
+ 					if (!(CPU.Flags & FRAME_ADVANCE_FLAG))
 diff --git a/dma.cpp b/dma.cpp
 index e1ad324..5fb2ad4 100644
 --- a/dma.cpp
@@ -112,7 +120,7 @@ index d381c61..6d6469a 100644
  #include <stdio.h>
  #include <vector>
  #include <string>
-@@ -891,6 +892,45 @@ unsigned retro_api_version()
+@@ -891,6 +892,46 @@ unsigned retro_api_version()
      return RETRO_API_VERSION;
  }
  
@@ -151,6 +159,7 @@ index d381c61..6d6469a 100644
 +            if (index == 3) return PPU.OAMAddr;
 +            if (index == 4) return PPU.SavedOAMAddr;
 +            return -1;
++        case 20: return Zelda3TracePresentedOamValue(index);
 +        default: return -1;
 +    }
 +}
@@ -158,7 +167,7 @@ index d381c61..6d6469a 100644
  
  void retro_reset()
  {
-@@ -2006,7 +2046,9 @@ void retro_run()
+@@ -2006,7 +2047,9 @@ void retro_run()
  
      poll_cb();
      report_buttons();
@@ -210,7 +219,7 @@ new file mode 100644
 index 0000000..6902398
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,300 @@
+@@ -0,0 +1,311 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -263,6 +272,7 @@ index 0000000..6902398
 +
 +TraceConfig config = {};
 +uint64 retro_run_index = 0;
++uint8 presented_oam[544] = {};
 +
 +uint32 parse_hex(const char *text, const char **end)
 +{
@@ -420,6 +430,16 @@ index 0000000..6902398
 +
 +}
 +
++void Zelda3TraceCapturePresentedPpuState()
++{
++	std::memcpy(presented_oam, PPU.OAMData, sizeof(presented_oam));
++}
++
++int Zelda3TracePresentedOamValue(int index)
++{
++	return index >= 0 && index < (int) sizeof(presented_oam) ? presented_oam[index] : -1;
++}
++
 +void Zelda3TraceRetroRunBegin()
 +{
 +	if (!active(TRACE_FRAME))
@@ -516,7 +536,7 @@ new file mode 100644
 index 0000000..f13324d
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,23 @@
+@@ -0,0 +1,25 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -530,6 +550,8 @@ index 0000000..f13324d
 +extern bool Zelda3TraceWramEnabled;
 +
 +bool Zelda3TraceCpuCarry();
++void Zelda3TraceCapturePresentedPpuState();
++int Zelda3TracePresentedOamValue(int index);
 +void Zelda3TraceRetroRunBegin();
 +void Zelda3TraceRetroRunEnd();
 +void Zelda3TraceInstruction(void);
