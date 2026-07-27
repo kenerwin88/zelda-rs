@@ -89,7 +89,7 @@ index 6ed99a5..ba8a4c8 100644
 \ No newline at end of file
 +endif
 diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
-index d381c61..fb7d6b7 100644
+index d381c61..6d6469a 100644
 --- a/libretro/libretro.cpp
 +++ b/libretro/libretro.cpp
 @@ -14,6 +14,7 @@
@@ -143,9 +143,9 @@ index d381c61..fb7d6b7 100644
  
      poll_cb();
      report_buttons();
-+    Zelda3TraceFrameBoundary("entry");
++    Zelda3TraceRetroRunBegin();
      S9xMainLoop();
-+    Zelda3TraceFrameBoundary("return");
++    Zelda3TraceRetroRunEnd();
  }
  
  void retro_deinit()
@@ -188,10 +188,10 @@ index 4611540..4c00c64 100644
  				missing.h_counter_read = 1;
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 0000000..f64ba50
+index 0000000..2d1e9b5
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,294 @@
+@@ -0,0 +1,307 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -243,6 +243,7 @@ index 0000000..f64ba50
 +};
 +
 +TraceConfig config = {};
++uint64 retro_run_index = 0;
 +
 +uint32 parse_hex(const char *text, const char **end)
 +{
@@ -379,13 +380,14 @@ index 0000000..f64ba50
 +		(Memory.RAM[(Registers.S.W + 2) & 0xffff] << 8) |
 +		(Memory.RAM[(Registers.S.W + 3) & 0xffff] << 16);
 +	std::fprintf(config.output,
-+		"{\"event\":\"%s\",\"frame\":%u,\"v\":%d,\"cycles\":%d,"
++		"{\"event\":\"%s\",\"run\":%llu,\"frame\":%u,\"v\":%d,\"cycles\":%d,"
 +		"\"pc\":%u,\"a\":%u,\"x\":%u,\"y\":%u,\"s\":%u,"
 +		"\"main\":%u,\"sub\":%u,\"subsub\":%u,\"frame_counter\":%u,"
 +		"\"rng_seed\":%u,\"nmi_latch\":%u,\"nmi_disable\":%u,\"nmi_pending\":%u,"
 +		"\"return_address\":%u,"
 +		"\"stack1\":%u,\"stack2\":%u,\"stack3\":%u,\"stack4\":%u",
-+		event, IPPU.TotalEmulatedFrames, CPU.V_Counter, CPU.Cycles,
++		event, (unsigned long long) retro_run_index, IPPU.TotalEmulatedFrames,
++		CPU.V_Counter, CPU.Cycles,
 +		Registers.PBPC & 0xffffff, Registers.A.W, Registers.X.W, Registers.Y.W,
 +		Registers.S.W, Memory.RAM[0x10], Memory.RAM[0x11], Memory.RAM[0xb0],
 +		Memory.RAM[0x1a], Memory.RAM[0x0fa1], Memory.RAM[0x12],
@@ -404,13 +406,24 @@ index 0000000..f64ba50
 +
 +}
 +
-+void Zelda3TraceFrameBoundary(const char *stage)
++void Zelda3TraceRetroRunBegin()
 +{
 +	if (!active(TRACE_FRAME))
 +		return;
 +	write_machine_state("frame");
-+	std::fprintf(config.output, ",\"stage\":\"%s\"", stage);
++	std::fputs(",\"stage\":\"entry\"", config.output);
 +	finish_event();
++}
++
++void Zelda3TraceRetroRunEnd()
++{
++	if (active(TRACE_FRAME))
++	{
++		write_machine_state("frame");
++		std::fputs(",\"stage\":\"return\"", config.output);
++		finish_event();
++	}
++	retro_run_index++;
 +}
 +
 +void Zelda3TraceInstruction(void)
@@ -488,10 +501,10 @@ index 0000000..f64ba50
 +}
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 new file mode 100644
-index 0000000..ce6e63a
+index 0000000..63675ea
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,22 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -504,7 +517,8 @@ index 0000000..ce6e63a
 +extern bool Zelda3TracePpuEnabled;
 +extern bool Zelda3TraceWramEnabled;
 +
-+void Zelda3TraceFrameBoundary(const char *stage);
++void Zelda3TraceRetroRunBegin();
++void Zelda3TraceRetroRunEnd();
 +void Zelda3TraceInstruction(void);
 +void Zelda3TraceNmi(void);
 +void Zelda3TraceDma(uint8 channel, const SDMA *dma);

@@ -1,0 +1,45 @@
+import importlib.util
+import io
+import unittest
+from pathlib import Path
+
+
+SCRIPT = Path(__file__).with_name("extract_snes9x_rom_random.py")
+SPEC = importlib.util.spec_from_file_location("extract_snes9x_rom_random", SCRIPT)
+MODULE = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+SPEC.loader.exec_module(MODULE)
+
+
+class ExtractSnes9xRomRandomTests(unittest.TestCase):
+    def test_extracts_rng_writes_by_explicit_retro_run(self) -> None:
+        trace = io.StringIO(
+            "\n".join(
+                [
+                    '{"event":"frame","run":9,"frame":10}',
+                    '{"event":"rng-ppu-read","run":9,"address":8508,"value":12}',
+                    '{"event":"rng-write","run":9,"frame":10,"address":4001,"value":5}',
+                    '{"event":"rng-write","run":9,"frame":10,"address":4001,"value":255}',
+                    '{"event":"wram-write","run":10,"address":32,"value":1}',
+                ]
+            )
+        )
+
+        samples = MODULE.extract_samples(trace)
+        output = io.StringIO()
+        MODULE.write_script(samples, output)
+
+        self.assertEqual(samples, [(9, 5), (9, 255)])
+        self.assertTrue(output.getvalue().endswith("9 0x05\n9 0xff\n"))
+
+    def test_rejects_rng_write_without_host_run(self) -> None:
+        trace = io.StringIO(
+            '{"event":"rng-write","frame":10,"address":4001,"value":5}\n'
+        )
+
+        with self.assertRaisesRegex(ValueError, "missing.*run"):
+            MODULE.extract_samples(trace)
+
+
+if __name__ == "__main__":
+    unittest.main()

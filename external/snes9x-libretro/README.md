@@ -31,13 +31,23 @@ python3 scripts/snes9x_route_recorder.py compare-route \
 Available event domains are `frame`, `nmi`, `rng`, `pc`, `dma`, `ppu`, and
 `wram`. `frame,nmi,rng` is the default. Optional filters:
 
-- `ZELDA3_SNES9X_TRACE_FRAMES=FIRST-LAST` uses Snes9x execution-frame numbers.
+- `ZELDA3_SNES9X_TRACE_FRAMES=FIRST-LAST` filters Snes9x's completed-frame
+  counter. That counter can advance during one `retro_run` call.
 - `ZELDA3_SNES9X_TRACE_PCS=BB:AAAA,...` selects instruction addresses.
 - `ZELDA3_SNES9X_TRACE_PPU=2100,212c-2132` selects PPU writes. RNG
   counter reads are emitted by the `rng` domain.
 - `ZELDA3_SNES9X_TRACE_WRAM=0010-0017,0fa1` selects WRAM writes.
 
-Every record includes CPU position, registers, the top four stack bytes, the
-decoded long-call return address, and the Zelda main/NMI/RNG state. The trace
-patch also exports the optional PPU inspection function consumed by the parity
-harness.
+Every record includes `run`, the zero-based `retro_run` invocation that owns
+the event, as well as Snes9x's `frame` counter, CPU position, registers, the top
+four stack bytes, the decoded long-call return address, and the Zelda
+main/NMI/RNG state. Use `run` for host-frame timing; use `frame` for the
+emulator's internal video boundary. The trace patch also exports the optional
+PPU inspection function consumed by the parity harness.
+
+Generate a strict Rust RNG replay script from a route trace with:
+
+```sh
+python3 scripts/extract_snes9x_rom_random.py /tmp/rng.jsonl \
+  --output routes/clean/takes/0004/rom-random.txt
+```
