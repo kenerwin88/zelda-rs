@@ -172,7 +172,6 @@ mod tests {
             RendererMode::from_effective_mode(EffectiveRendererMode::from_name("modern-compare")),
             RendererMode::ModernCompare
         );
-
     }
 
     #[test]

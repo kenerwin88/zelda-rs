@@ -64,4 +64,3 @@ pub(crate) fn print_audio_window(
 pub(crate) fn replay_checksum_samples(samples: &[i16]) -> u32 {
     checksum_samples(samples)
 }
-

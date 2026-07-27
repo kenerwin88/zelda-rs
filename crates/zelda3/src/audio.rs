@@ -612,9 +612,7 @@ impl ZeldaState {
             }
             2 => snapshot_state::decode_v2(payload)?,
             1 => {
-                return Err(
-                    "audio snapshot v1 predates the modern-only audio runtime".to_string(),
-                );
+                return Err("audio snapshot v1 predates the modern-only audio runtime".to_string());
             }
             0 => snapshot_state::decode_v2(payload)?,
             _ => unreachable!(),

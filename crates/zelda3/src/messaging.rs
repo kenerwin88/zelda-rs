@@ -3303,8 +3303,7 @@ impl ZeldaState {
         let resuming = self.dialogue_fast_forward_hold_active;
         let current_line = self.game_state.messaging.vwf_render.current_line();
         let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line);
-        let mut first_glyph_in_slice =
-            !resuming && self.dialogue_vwf_glyph_cycle_debt == 0;
+        let mut first_glyph_in_slice = !resuming && self.dialogue_vwf_glyph_cycle_debt == 0;
         let mut frame_advance: u16 = 0;
         let mut midline_yield = false;
         loop {
@@ -3480,7 +3479,13 @@ impl ZeldaState {
     /// from font memblk 95 index 1 — the same table `VWF_RenderSingle` uses.
     fn dialogue_glyph_width(&self, c: u8) -> u8 {
         self.asset_memblk(95, self.dialogue_font_blk_index)
-            .map(|font| find_index_in_memblk(font, 1).ptr.get(c as usize).copied().unwrap_or(0))
+            .map(|font| {
+                find_index_in_memblk(font, 1)
+                    .ptr
+                    .get(c as usize)
+                    .copied()
+                    .unwrap_or(0)
+            })
             .unwrap_or(0)
     }
 

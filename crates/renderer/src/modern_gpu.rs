@@ -211,13 +211,7 @@ impl ModernGpuVariantRenderer {
         let output_view = output_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let mut execution =
             PreparedModernVariantExecution::new(prepared, PreparedModernVariantOutput::Live);
-        self.render_live_execution(
-            device,
-            queue,
-            output_texture,
-            &output_view,
-            &mut execution,
-        );
+        self.render_live_execution(device, queue, output_texture, &output_view, &mut execution);
         ModernGpuVariantLiveRender {
             stats: execution.finish(),
             rendered: true,
@@ -252,12 +246,7 @@ impl ModernGpuVariantRenderer {
                 self.render_effect_material_mode1_order(device, queue, execution, output_view);
             }
             ModernVariantRenderPath::LiveIndexBaseWithOverlay => {
-                self.render_live_index_base_with_overlay(
-                    device,
-                    queue,
-                    output_texture,
-                    execution,
-                );
+                self.render_live_index_base_with_overlay(device, queue, output_texture, execution);
             }
             ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
                 self.render_effect_material_with_stable_overlay(
@@ -1271,8 +1260,15 @@ fn mixed_variant_overlay_bg_packets_with_policy<'a>(
             continue;
         }
         let overlap_reject = if allow_color_math {
-            bg_packet_prefinal_overlap_reject_reason(frame, packet_index, packet, plan, &pixel_index)
-        } else if bg_packet_overlaps_other_packets(frame, packet_index, packet, plan, &pixel_index) {
+            bg_packet_prefinal_overlap_reject_reason(
+                frame,
+                packet_index,
+                packet,
+                plan,
+                &pixel_index,
+            )
+        } else if bg_packet_overlaps_other_packets(frame, packet_index, packet, plan, &pixel_index)
+        {
             Some(MixedOverlayOverlapRejectReason::Bg)
         } else {
             None
@@ -1996,8 +1992,7 @@ const PLAN_PIXEL_INDEX_GRID_H: usize = 28;
 
 impl PlanPixelIndex {
     fn new(plan: &crate::modern_variant_draw::VariantDrawPlan<'_>) -> Self {
-        let mut bg_buckets =
-            vec![Vec::new(); PLAN_PIXEL_INDEX_GRID_W * PLAN_PIXEL_INDEX_GRID_H];
+        let mut bg_buckets = vec![Vec::new(); PLAN_PIXEL_INDEX_GRID_W * PLAN_PIXEL_INDEX_GRID_H];
         let mut sprite_buckets =
             vec![Vec::new(); PLAN_PIXEL_INDEX_GRID_W * PLAN_PIXEL_INDEX_GRID_H];
         for (index, packet) in plan.bg.iter().enumerate() {
@@ -4785,9 +4780,7 @@ impl ModernGpuVariantHeadless {
     /// Render the exact Mode-1 GPU path used by the native window into this
     /// headless target. Unlike `render_rgba_with_live_index_base_from_sources`,
     /// this never constructs a VRAM-decoded base frame.
-    pub fn render_live_gpu_rgba_from_sources<
-        S: crate::modern_extract::SourceTableView + ?Sized,
-    >(
+    pub fn render_live_gpu_rgba_from_sources<S: crate::modern_extract::SourceTableView + ?Sized>(
         &self,
         frame: &crate::gpu_frame::GpuFrame<'_>,
         src_table: &S,

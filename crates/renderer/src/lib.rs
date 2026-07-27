@@ -984,7 +984,6 @@ impl PresentationContext {
     }
 }
 
-
 const MAX_PRESENTATION_LIGHTS: usize = 8;
 const PRESENTATION_LIGHT_MASK_GRID_W: usize = 16;
 const PRESENTATION_LIGHT_MASK_GRID_H: usize = 14;
@@ -1003,8 +1002,6 @@ struct PresentationLight {
     radius: f32,
     intensity: f32,
 }
-
-
 
 fn build_low_res_light_mask(lights: &[PresentationLight]) -> [f32; PRESENTATION_LIGHT_MASK_CELLS] {
     let mut mask = [0.0f32; PRESENTATION_LIGHT_MASK_CELLS];
@@ -1086,7 +1083,6 @@ fn build_presentation_uniform_bytes_with_notice(
     debug_assert_eq!(bytes.len(), PRESENTATION_UNIFORM_BYTES);
     bytes
 }
-
 
 /// Compute the centered game rect that fits in `surface`.
 fn compute_viewport(
@@ -2136,9 +2132,9 @@ impl ModernIndexCompareResources {
         }
         let src_table = source_table_from_entries(source_entries);
         if frame.mode != 7 {
-            let source_atlas = self
-                .source_atlas()
-                .ok_or_else(|| "modern production GPU readback requires a source atlas".to_string())?;
+            let source_atlas = self.source_atlas().ok_or_else(|| {
+                "modern production GPU readback requires a source atlas".to_string()
+            })?;
             // Native play presents this exact source-keyed GPU compositor. Do
             // not send oracle readback through the separate variant planner:
             // its dynamic-material accounting describes pre-baked variant
@@ -2990,7 +2986,9 @@ impl FrameRenderer {
     ) -> Result<(), RenderError> {
         let (mut modern, mut bg_cells) =
             modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
-        if let Some(glyph_atlas) = variant_atlas.and_then(|atlas| atlas.dialogue_vwf_glyph_atlas.as_ref()) {
+        if let Some(glyph_atlas) =
+            variant_atlas.and_then(|atlas| atlas.dialogue_vwf_glyph_atlas.as_ref())
+        {
             let visible_runs = modern.vwf_glyph_runs_for_draw().to_vec();
             modern_extract::append_source_vwf_glyph_cells(
                 &mut modern,
@@ -3509,11 +3507,7 @@ impl FrameRenderer {
         self.tick_presentation_notice();
         Ok(())
     }
-
-
 }
-
-
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -4055,8 +4049,6 @@ mod tests {
         );
     }
 
-
-
     #[test]
     fn viewport_exact_fit() {
         let vp = compute_viewport(768, 672, 256, 224, ViewportScaleMode::Integer);
@@ -4484,24 +4476,6 @@ mod tests {
 
         assert_eq!(u32::from_ne_bytes(bytes[16..20].try_into().unwrap()), 1);
     }
-
-    
-
-    
-
-
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
 
     #[test]
     fn upload_frame_swaps_bgr_to_rgb() {

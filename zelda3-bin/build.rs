@@ -831,7 +831,8 @@ fn verify_source_asset_matches_manifest(
     let expected_size = manifest_asset
         .get("size")
         .and_then(serde_json::Value::as_u64)
-        .unwrap_or_else(|| panic!("manifest asset {name} missing size")) as usize;
+        .unwrap_or_else(|| panic!("manifest asset {name} missing size"))
+        as usize;
     assert_eq!(
         asset.len(),
         expected_size,

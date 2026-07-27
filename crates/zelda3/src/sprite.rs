@@ -1542,11 +1542,7 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn sprite_overworld_proximity_motivated_load(
-        &mut self,
-        x: u16,
-        y: u16,
-    ) -> bool {
+    pub(super) fn sprite_overworld_proximity_motivated_load(&mut self, x: u16, y: u16) -> bool {
         let sprcoll_x_base = self.game_state.sprites.garnish_runtime.sprcoll_x_word();
         let sprcoll_y_base = self.game_state.sprites.garnish_runtime.sprcoll_y_word();
         let xt = x.wrapping_sub(sprcoll_x_base);

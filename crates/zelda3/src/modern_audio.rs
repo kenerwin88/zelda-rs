@@ -2138,21 +2138,21 @@ impl ModernAudioEngine {
                     voice_right = voice_right * i32::from(self.music_volume) / 96;
                 }
                 if !voice.dsp_key_on_timed {
-                    let (mut previous_left, mut previous_right) =
-                        if voice.stereo_volume_configured {
-                            (
-                                previous_output_sample * i32::from(voice.volume_left) >> 7,
-                                previous_output_sample * i32::from(voice.volume_right) >> 7,
-                            )
-                        } else {
-                            let pan = i32::from(voice.pan);
-                            let left_gain = 127 - pan.max(0);
-                            let right_gain = 127 + pan.min(0);
-                            (
-                                previous_output_sample * left_gain / 127,
-                                previous_output_sample * right_gain / 127,
-                            )
-                        };
+                    let (mut previous_left, mut previous_right) = if voice.stereo_volume_configured
+                    {
+                        (
+                            previous_output_sample * i32::from(voice.volume_left) >> 7,
+                            previous_output_sample * i32::from(voice.volume_right) >> 7,
+                        )
+                    } else {
+                        let pan = i32::from(voice.pan);
+                        let left_gain = 127 - pan.max(0);
+                        let right_gain = 127 + pan.min(0);
+                        (
+                            previous_output_sample * left_gain / 127,
+                            previous_output_sample * right_gain / 127,
+                        )
+                    };
                     if voice.note_origin == Some(crate::game_output::AudioNoteOrigin::Music) {
                         previous_left = previous_left * i32::from(self.music_volume) / 96;
                         previous_right = previous_right * i32::from(self.music_volume) / 96;

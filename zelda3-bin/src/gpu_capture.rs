@@ -78,9 +78,12 @@ fn bg3_tilemap_entry_palette(ppu: &snes::ppu::PpuState, tile_number: u16) -> Opt
         + usize::from(layer.tilemap_higher) * (1 + usize::from(layer.tilemap_wider));
     (0..quadrants).find_map(|quadrant| {
         let start = base + quadrant * 0x400;
-        ppu.vram.get(start..start + 0x400)?.iter().find_map(|entry| {
-            (*entry & 0x03ff == tile_number).then_some(((*entry >> 10) & 7) as u8)
-        })
+        ppu.vram
+            .get(start..start + 0x400)?
+            .iter()
+            .find_map(|entry| {
+                (*entry & 0x03ff == tile_number).then_some(((*entry >> 10) & 7) as u8)
+            })
     })
 }
 
@@ -213,13 +216,12 @@ impl LiveGpuFrameCapture {
         let dialogue_vwf_widths = game.dialogue_vwf_widths().unwrap_or_default();
         let dialogue_layout =
             zelda3::dialogue_ir::layout_dialogue_ir(&dialogue_ir, &dialogue_vwf_widths);
-        let dialogue_layout_origin_tile_number =
-            (!dialogue_layout.is_empty()).then(|| {
-                game.published_bg3_vwf_glyph_runs()
-                    .first()
-                    .map(|run| run.origin_tile_number)
-                    .unwrap_or_else(|| game.dialogue_vwf_origin_tile_number())
-            });
+        let dialogue_layout_origin_tile_number = (!dialogue_layout.is_empty()).then(|| {
+            game.published_bg3_vwf_glyph_runs()
+                .first()
+                .map(|run| run.origin_tile_number)
+                .unwrap_or_else(|| game.dialogue_vwf_origin_tile_number())
+        });
         let bg3_vwf_glyph_runs = if dialogue_generation_visible {
             game.published_bg3_vwf_glyph_runs()
                 .iter()
@@ -299,8 +301,6 @@ impl LiveGpuFrameCapture {
         &self.cgram
     }
 
-
-
     pub fn source_entries(&self) -> &[zelda3::LogicalChrSrc] {
         &self.source_entries
     }
@@ -328,8 +328,6 @@ impl LiveGpuFrameCapture {
     pub fn dialogue_layout_origin_tile_number(&self) -> Option<u16> {
         self.dialogue_layout_origin_tile_number
     }
-
-
 
     pub fn player_indoors(&self) -> u8 {
         self.player_indoors
@@ -408,15 +406,22 @@ fn scale_boot_asset_brightness(rgba: [u8; 4], brightness: u8) -> [u8; 4] {
     [scale(rgba[0]), scale(rgba[1]), scale(rgba[2]), rgba[3]]
 }
 
-fn nintendo_presents_asset_pixels() -> &'static [renderer::gpu_frame::HardwareStartupDirectPixel]
-{
+fn nintendo_presents_asset_pixels() -> &'static [renderer::gpu_frame::HardwareStartupDirectPixel] {
     static PIXELS: OnceLock<Vec<renderer::gpu_frame::HardwareStartupDirectPixel>> = OnceLock::new();
     PIXELS.get_or_init(|| {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../assets/boot/nintendo_presents.png");
-        let (rgba, width, height) = decode_rgba_png(&path)
-            .unwrap_or_else(|| panic!("required boot PNG asset failed to decode: {}", path.display()));
-        assert_eq!((width, height), (56, 16), "boot PNG asset has unexpected dimensions");
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/boot/nintendo_presents.png");
+        let (rgba, width, height) = decode_rgba_png(&path).unwrap_or_else(|| {
+            panic!(
+                "required boot PNG asset failed to decode: {}",
+                path.display()
+            )
+        });
+        assert_eq!(
+            (width, height),
+            (56, 16),
+            "boot PNG asset has unexpected dimensions"
+        );
         rgba.chunks_exact(4)
             .enumerate()
             .filter_map(|(index, rgba)| {
@@ -494,9 +499,8 @@ impl ModernAssetGpuReadbackRenderer {
         let frame = if self.cpu_video {
             let gpu_frame = capture.gpu_frame();
             let src_table = renderer::source_table_from_entries(capture.source_entries());
-            let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(
-                capture.player_indoors(),
-            );
+            let scene =
+                renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
             let render = renderer::modern_gpu::render_modern_index_compare_frame(
                 &gpu_frame,
                 Some(&src_table),
@@ -527,21 +531,33 @@ impl ModernAssetGpuReadbackRenderer {
         let gpu_frame = capture.gpu_frame();
         let scene =
             renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
-        let production = self.resources.render_production_gpu_asset_rgba_from_entries(
-            &gpu_frame,
-            capture.source_entries(),
-            scene,
-        )?;
+        let production = self
+            .resources
+            .render_production_gpu_asset_rgba_from_entries(
+                &gpu_frame,
+                capture.source_entries(),
+                scene,
+            )?;
         let pixel_offset = (usize::try_from(y).unwrap_or(usize::MAX) * 256
             + usize::try_from(x).unwrap_or(usize::MAX))
         .saturating_mul(4);
-        let production_pixel = production.rgba
+        let production_pixel = production
+            .rgba
             .get(pixel_offset..pixel_offset.saturating_add(4))
             .unwrap_or(&[]);
         Ok(vec![format!(
             "production pixel={production_pixel:02x?} via={}",
             production.via,
-        )])
+        )]
+        .into_iter()
+        .chain(trace_modern_asset_capture_pixel(
+            &capture,
+            self.resources.source_atlas(),
+            self.resources.variant_atlas(),
+            x,
+            y,
+        )?)
+        .collect())
     }
 
     pub(crate) fn validate_game_full_gpu_path(
@@ -628,10 +644,67 @@ impl NativeWindowOracleRenderer {
         self.frontend
             .read_modern_gpu_target_rgba()
             .map(GpuRgbaReadbackFrame::from_rgba)
-            .ok_or_else(|| {
-                "native window renderer did not produce a modern GPU target".to_string()
-            })
+            .ok_or_else(|| "native window renderer did not produce a modern GPU target".to_string())
     }
+
+    pub(crate) fn trace_game_pixel(
+        &self,
+        game: &mut ZeldaState,
+        x: i16,
+        y: i16,
+    ) -> Result<Vec<String>, String> {
+        let capture = capture_gpu_frame_from_game(game);
+        trace_modern_asset_capture_pixel(
+            &capture,
+            self.resources.source_atlas(),
+            self.resources.variant_atlas(),
+            x,
+            y,
+        )
+    }
+}
+
+fn trace_modern_asset_capture_pixel(
+    capture: &LiveGpuFrameCapture,
+    source_atlas: Option<&renderer::modern_source_atlas::ModernSourceAtlas>,
+    variant_atlas: Option<&renderer::modern_variant_atlas::ModernVariantAtlas>,
+    x: i16,
+    y: i16,
+) -> Result<Vec<String>, String> {
+    let source_atlas =
+        source_atlas.ok_or_else(|| "pixel trace requires the source atlas".to_string())?;
+    let variant_atlas =
+        variant_atlas.ok_or_else(|| "pixel trace requires the variant atlas".to_string())?;
+    let frame = capture.gpu_frame();
+    let source_table = renderer::source_table_from_entries(capture.source_entries());
+    let assets = renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
+        &frame,
+        &source_table,
+        source_atlas,
+    );
+    let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
+    let plan = renderer::modern_variant_draw::compile_variant_draws(
+        &assets.frame,
+        &assets.bg_cells,
+        &assets.sprite_cells,
+        variant_atlas,
+        scene.bg_palette_name(),
+        scene.sprite_palette_name(),
+    );
+    let traces = renderer::modern_variant_draw::trace_variant_plan_pixel(
+        &assets.frame,
+        variant_atlas,
+        &plan,
+        x,
+        y,
+    );
+    if traces.is_empty() {
+        return Ok(vec!["semantic pixel hits=0".to_string()]);
+    }
+    Ok(traces
+        .iter()
+        .map(renderer::modern_variant_draw::VariantPixelTrace::describe)
+        .collect())
 }
 
 fn repo_root() -> PathBuf {
@@ -1040,11 +1113,14 @@ impl crate::play_renderer::PlayRendererBackend for GpuPlayRenderer {
             if std::env::var_os("ZELDA3_DEBUG_ASSET_COVERAGE").is_some() {
                 let gpu_frame = capture.gpu_frame();
                 let source_table = renderer::source_table_from_entries(capture.source_entries());
-                let resolved = renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
-                    &gpu_frame,
-                    &source_table,
-                    self.modern_assets.source_atlas().expect("live renderer has source atlas"),
-                );
+                let resolved =
+                    renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
+                        &gpu_frame,
+                        &source_table,
+                        self.modern_assets
+                            .source_atlas()
+                            .expect("live renderer has source atlas"),
+                    );
                 let unkeyed = resolved
                     .sprite_cells
                     .iter()
@@ -1357,7 +1433,9 @@ fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {
     registers.screen_enabled.hash(&mut hasher);
     registers.screen_windowed.hash(&mut hasher);
     registers.brightness.hash(&mut hasher);
-    registers.mode7_scanout_brightness_override.hash(&mut hasher);
+    registers
+        .mode7_scanout_brightness_override
+        .hash(&mut hasher);
     registers.forced_blank.hash(&mut hasher);
     registers.math_enabled.hash(&mut hasher);
     registers.subtract_color.hash(&mut hasher);
@@ -1815,10 +1893,6 @@ mod tests {
         let capture = capture_gpu_frame_from_game(&mut game);
         assert_no_dynamic_bg3_text_chunks(&capture);
     }
-
-    
-
-    
 
     #[test]
     fn live_game_dialogue_vwf_runs_render_from_png_glyph_atlas() {

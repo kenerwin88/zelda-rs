@@ -386,9 +386,7 @@ pub(super) fn decode_v7(payload: &[u8]) -> Result<(AudioState, bool), String> {
         ));
     }
     if snapshot.sequencer_backend == SnapshotSequencerBackend::ExactSpcDriver {
-        return Err(
-            "audio snapshot recorded the removed exact SPC-driver sequencer".to_string(),
-        );
+        return Err("audio snapshot recorded the removed exact SPC-driver sequencer".to_string());
     }
     let mut state = snapshot.modern.into_audio_state();
     state
@@ -508,4 +506,3 @@ pub(super) fn encode_v3_with_opaque_sidecar_for_test(
     })
     .unwrap()
 }
-

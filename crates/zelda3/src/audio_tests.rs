@@ -305,10 +305,7 @@ fn modern_backend_renders_from_typed_events() {
     state.zelda_push_apu_state();
     let mut audio = [123i16; 8];
 
-    let frame = state.zelda_render_audio(&mut audio,
-        4,
-        2,
-    );
+    let frame = state.zelda_render_audio(&mut audio, 4, 2);
     let stats = state.zelda_modern_audio_last_stats();
     let sequence = state.zelda_modern_audio_sequence_last_stats();
 
@@ -376,10 +373,7 @@ fn modern_audio_consumes_typed_engine_commands_instead_of_apui_bytes() {
     state.zelda_push_apu_state();
     let mut audio = [0i16; 32];
 
-    let frame = state.zelda_render_audio(&mut audio,
-        16,
-        2,
-    );
+    let frame = state.zelda_render_audio(&mut audio, 16, 2);
 
     assert!(frame.events.iter().any(|event| {
         matches!(
@@ -397,10 +391,7 @@ fn gameplay_sound_latch_becomes_a_typed_nmi_command() {
     state.zelda_push_apu_state();
     let mut audio = [0i16; 32];
 
-    let frame = state.zelda_render_audio(&mut audio,
-        16,
-        2,
-    );
+    let frame = state.zelda_render_audio(&mut audio, 16, 2);
 
     assert!(frame.events.iter().any(|event| {
         matches!(
@@ -448,10 +439,7 @@ fn typed_engine_command_latches_preserve_last_write_wins() {
     state.zelda_push_apu_state();
     let mut audio = [0i16; 32];
 
-    let frame = state.zelda_render_audio(&mut audio,
-        16,
-        2,
-    );
+    let frame = state.zelda_render_audio(&mut audio, 16, 2);
     let commands = frame
         .events
         .iter()
@@ -478,10 +466,7 @@ fn modern_runtime_acknowledges_typed_commands_without_apui_reads() {
     state.zelda_push_apu_state();
     let mut audio = [0i16; 32];
 
-    state.zelda_render_audio(&mut audio,
-        16,
-        2,
-    );
+    state.zelda_render_audio(&mut audio, 16, 2);
 
     assert!(state.zelda_audio_command_acknowledged(command));
     assert!(
@@ -521,10 +506,7 @@ fn queued_typed_engine_commands_survive_audio_snapshot_restore() {
     restored.zelda_audio_restore_from_bytes(&snapshot).unwrap();
     let mut audio = [0i16; 32];
 
-    let frame = restored.zelda_render_audio(&mut audio,
-        16,
-        2,
-    );
+    let frame = restored.zelda_render_audio(&mut audio, 16, 2);
 
     assert!(frame.events.iter().any(|event| {
         matches!(
@@ -596,10 +578,7 @@ fn normal_audio_entry_point_uses_selected_modern_backend() {
     let mut explicit_audio = [0i16; 16];
 
     normal.zelda_render_audio(&mut normal_audio, 8, 2);
-    explicit.zelda_render_audio(&mut explicit_audio,
-        8,
-        2,
-    );
+    explicit.zelda_render_audio(&mut explicit_audio, 8, 2);
 
     assert_eq!(normal_audio, explicit_audio);
     assert!(normal_audio.iter().any(|sample| *sample != 0));
@@ -612,10 +591,7 @@ fn modern_backend_acknowledges_apui_commands_without_the_legacy_interpreter() {
     state.zelda_push_apu_state();
     let mut audio = [0i16; 16];
 
-    state.zelda_render_audio(&mut audio,
-        8,
-        2,
-    );
+    state.zelda_render_audio(&mut audio, 8, 2);
 
     assert_eq!(state.zelda_apu_read(0x2141), 0x88);
 }
@@ -654,21 +630,12 @@ fn zero_sample_modern_callback_defers_command_until_audio_can_advance() {
     let mut direct = deferred.clone();
     let mut empty = [];
 
-    deferred.zelda_render_audio(&mut empty,
-        0,
-        2,
-    );
+    deferred.zelda_render_audio(&mut empty, 0, 2);
 
     let mut deferred_audio = [0i16; 16];
     let mut direct_audio = [0i16; 16];
-    deferred.zelda_render_audio(&mut deferred_audio,
-        8,
-        2,
-    );
-    direct.zelda_render_audio(&mut direct_audio,
-        8,
-        2,
-    );
+    deferred.zelda_render_audio(&mut deferred_audio, 8, 2);
+    direct.zelda_render_audio(&mut direct_audio, 8, 2);
 
     assert_eq!(deferred_audio, direct_audio);
     assert_eq!(
@@ -823,4 +790,3 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
         Err("audio snapshot oracle sidecar flag mismatch".to_string())
     );
 }
-

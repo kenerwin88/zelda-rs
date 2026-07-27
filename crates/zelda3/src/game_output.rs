@@ -757,7 +757,6 @@ pub struct GameFrameOutput {
     pub audio: AudioEventFrame,
 }
 
-
 pub fn checksum_samples(samples: &[i16]) -> u32 {
     AudioSampleStats::from_interleaved(samples, 2).checksum
 }

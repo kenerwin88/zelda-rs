@@ -2379,11 +2379,7 @@ pub fn append_source_vwf_glyph_cells(
         // comes from the box's own tilemap attribute (the intro telepathy box
         // maps its cells with palette 6, ordinary boxes with 7); an explicit
         // message color command still overrides it.
-        let palette = run
-            .dialogue_color
-            .or(box_palette)
-            .unwrap_or(7)
-            & 7;
+        let palette = run.dialogue_color.or(box_palette).unwrap_or(7) & 7;
         for quadrant in 0..4usize {
             let mut indices = [0u8; 64];
             let qx = (quadrant & 1) * 8;
@@ -2404,9 +2400,7 @@ pub fn append_source_vwf_glyph_cells(
                 .index_tiles
                 .iter()
                 .rev()
-                .find(|instance| {
-                    instance.screen_x == screen_x && instance.screen_y == screen_y
-                })
+                .find(|instance| instance.screen_x == screen_x && instance.screen_y == screen_y)
                 .map(|instance| instance.priority)
                 .unwrap_or(true);
             let cell_id = bg_cells.len() as u32;
@@ -3988,10 +3982,8 @@ mod tests {
             hflip: false,
             vflip: false,
         };
-        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
-            vec![source_cell],
-            &[(2, 0x5e, 0x12, 0)],
-        );
+        let atlas =
+            ModernSourceAtlas::from_keyed_cells_for_test(vec![source_cell], &[(2, 0x5e, 0x12, 0)]);
         let cgram = vec![0u16; 0x100];
         let mut oam = vec![0u16; 0x110];
         oam[0] = 0x5555;

@@ -7,7 +7,6 @@ use platform::{
 use snes::ppu::PpuRenderFlags;
 use zelda3::ZeldaState;
 
-
 pub(crate) trait PlayRendererBackend {
     fn name(&self) -> &'static str;
 

@@ -641,195 +641,199 @@ pub(crate) fn run_dump_assets_by_source(args: &[String]) {
         // Use the same display-latched PPU snapshot as the live GPU presenter.
         // Inspecting `game.ppu` directly can discover a different OBJ set.
         game.with_display_snapshot(|game| {
-        let ppu = &game.ppu;
+            let ppu = &game.ppu;
 
-        for layer_index in 0..3usize {
-            let bg = &ppu.bg_layer[layer_index];
-            let base = bg.tilemap_adr as usize;
-            let chr_base = bg.tile_adr as usize;
-            if base == 0 && chr_base == 0 {
-                continue;
-            }
-            let is_bg3 = layer_index == 2;
-            let wide = bg.tilemap_wider;
-            let tall = bg.tilemap_higher;
-            let cols = if wide { 64usize } else { 32 };
-            let rows = if tall { 64usize } else { 32 };
-            for ty in 0..rows {
-                for tx in 0..cols {
-                    let q = (if wide && tx >= 32 { 1 } else { 0 })
-                        + (if tall && ty >= 32 {
-                            if wide {
-                                2
+            for layer_index in 0..3usize {
+                let bg = &ppu.bg_layer[layer_index];
+                let base = bg.tilemap_adr as usize;
+                let chr_base = bg.tile_adr as usize;
+                if base == 0 && chr_base == 0 {
+                    continue;
+                }
+                let is_bg3 = layer_index == 2;
+                let wide = bg.tilemap_wider;
+                let tall = bg.tilemap_higher;
+                let cols = if wide { 64usize } else { 32 };
+                let rows = if tall { 64usize } else { 32 };
+                for ty in 0..rows {
+                    for tx in 0..cols {
+                        let q = (if wide && tx >= 32 { 1 } else { 0 })
+                            + (if tall && ty >= 32 {
+                                if wide {
+                                    2
+                                } else {
+                                    1
+                                }
                             } else {
-                                1
+                                0
+                            });
+                        let within = (ty % 32) * 32 + (tx % 32);
+                        let addr = base + q * 0x400 + within;
+                        let entry_word = ppu.vram.get(addr).copied().unwrap_or(0);
+                        let tile_number = usize::from(entry_word & 0x03ff);
+                        if is_bg3 {
+                            if entry_word == 0 {
+                                continue;
                             }
-                        } else {
-                            0
-                        });
-                    let within = (ty % 32) * 32 + (tx % 32);
-                    let addr = base + q * 0x400 + within;
-                    let entry_word = ppu.vram.get(addr).copied().unwrap_or(0);
-                    let tile_number = usize::from(entry_word & 0x03ff);
-                    if is_bg3 {
-                        if entry_word == 0 {
+                            let palette = ((entry_word >> 10) & 7) as u16;
+                            let pack = (tile_number as u16) | (palette << 10);
+                            let key = modern_source_key(CHR_KIND_BG3, pack, 0);
+                            let raw = decode_snes_2bpp_tile_indices(
+                                &ppu.vram,
+                                chr_base,
+                                entry_word & 0x03ff,
+                            );
+                            let mut baked = [0u8; 64];
+                            for (b, &p) in baked.iter_mut().zip(raw.iter()) {
+                                *b = if p == 0 { 0 } else { (palette as u8) * 4 + p };
+                            }
+                            record_keyed(key, baked, chr_base + tile_number * 8);
+                            record_keyed(
+                                bg3_content_source_key(&baked),
+                                baked,
+                                chr_base + tile_number * 8,
+                            );
                             continue;
                         }
-                        let palette = ((entry_word >> 10) & 7) as u16;
-                        let pack = (tile_number as u16) | (palette << 10);
-                        let key = modern_source_key(CHR_KIND_BG3, pack, 0);
-                        let raw =
-                            decode_snes_2bpp_tile_indices(&ppu.vram, chr_base, entry_word & 0x03ff);
-                        let mut baked = [0u8; 64];
-                        for (b, &p) in baked.iter_mut().zip(raw.iter()) {
-                            *b = if p == 0 { 0 } else { (palette as u8) * 4 + p };
+                        let slot = (chr_base + tile_number * 16) / 16;
+                        let mut src = game.vram_chr_source().get(slot);
+                        if src.kind == CHR_KIND_NONE {
+                            let Some(key) = content_hash_source_key(&ppu.vram, slot) else {
+                                continue;
+                            };
+                            src = zelda3::LogicalChrSrc {
+                                kind: CHR_KIND_BG_STREAM,
+                                pack: ((key >> 16) & 0xffff) as u16,
+                                tile_off: (key & 0xffff) as u16,
+                            };
                         }
-                        record_keyed(key, baked, chr_base + tile_number * 8);
-                        record_keyed(
-                            bg3_content_source_key(&baked),
-                            baked,
-                            chr_base + tile_number * 8,
+                        let palette_row = ((entry_word >> 10) & 7) as u8;
+                        let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(
+                            game.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0),
                         );
-                        continue;
-                    }
-                    let slot = (chr_base + tile_number * 16) / 16;
-                    let mut src = game.vram_chr_source().get(slot);
-                    if src.kind == CHR_KIND_NONE {
-                        let Some(key) = content_hash_source_key(&ppu.vram, slot) else {
-                            continue;
-                        };
-                        src = zelda3::LogicalChrSrc {
-                            kind: CHR_KIND_BG_STREAM,
-                            pack: ((key >> 16) & 0xffff) as u16,
-                            tile_off: (key & 0xffff) as u16,
-                        };
-                    }
-                    let palette_row = ((entry_word >> 10) & 7) as u8;
-                    let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(
-                        game.ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0),
-                    );
-                    let preview_src = game.vram_chr_preview_source().get(slot);
-                    let usage_src =
-                        if src.kind == CHR_KIND_BG_STREAM && preview_src.kind == CHR_KIND_BG {
-                            preview_src
-                        } else {
-                            src
-                        };
-                    record_palette_usage_count(
-                        &mut palette_usage_counts,
-                        usage_src,
-                        scene.bg_palette_name(),
-                        palette_row,
-                    );
-                    let key = rekey_content_hash(&ppu.vram, slot, src);
-                    let pattern = decode_snes_4bpp_tile_indices(&ppu.vram, slot * 16, 0);
-                    if watch_key == Some(key) {
-                        let mut h: u32 = 0x811c_9dc5;
-                        for &b in pattern.iter() {
-                            h ^= b as u32;
-                            h = h.wrapping_mul(0x0100_0193);
+                        let preview_src = game.vram_chr_preview_source().get(slot);
+                        let usage_src =
+                            if src.kind == CHR_KIND_BG_STREAM && preview_src.kind == CHR_KIND_BG {
+                                preview_src
+                            } else {
+                                src
+                            };
+                        record_palette_usage_count(
+                            &mut palette_usage_counts,
+                            usage_src,
+                            scene.bg_palette_name(),
+                            palette_row,
+                        );
+                        let key = rekey_content_hash(&ppu.vram, slot, src);
+                        let pattern = decode_snes_4bpp_tile_indices(&ppu.vram, slot * 16, 0);
+                        if watch_key == Some(key) {
+                            let mut h: u32 = 0x811c_9dc5;
+                            for &b in pattern.iter() {
+                                h ^= b as u32;
+                                h = h.wrapping_mul(0x0100_0193);
+                            }
+                            let module = game.ram.get(0x10).copied().unwrap_or(0);
+                            let submodule = game.ram.get(0x11).copied().unwrap_or(0);
+                            let indoor = game.ram.get(0x1b).copied().unwrap_or(0);
+                            let anim_pack = game.animated_tile_pack;
+                            let e = watch_patterns.entry(h).or_insert((
+                                cur_frame, cur_frame, 0, slot, module, submodule, indoor, anim_pack,
+                            ));
+                            e.1 = cur_frame;
+                            e.2 += 1;
                         }
-                        let module = game.ram.get(0x10).copied().unwrap_or(0);
-                        let submodule = game.ram.get(0x11).copied().unwrap_or(0);
-                        let indoor = game.ram.get(0x1b).copied().unwrap_or(0);
-                        let anim_pack = game.animated_tile_pack;
-                        let e = watch_patterns.entry(h).or_insert((
-                            cur_frame, cur_frame, 0, slot, module, submodule, indoor, anim_pack,
-                        ));
-                        e.1 = cur_frame;
-                        e.2 += 1;
-                    }
-                    record_keyed(key, pattern, slot);
-                    if src.kind != CHR_KIND_BG_STREAM {
-                        // The renderer rekeys non-injective BG1/BG2 source tags to the
-                        // frame-end 4bpp content hash and resolves that exact key from the
-                        // source atlas when present. Emit the same key here so generic BG
-                        // draws can use PNG/source art instead of staying live-indexed.
-                        if let Some(hash_key) = content_hash_source_key(&ppu.vram, slot) {
-                            record_keyed(hash_key, pattern, slot);
+                        record_keyed(key, pattern, slot);
+                        if src.kind != CHR_KIND_BG_STREAM {
+                            // The renderer rekeys non-injective BG1/BG2 source tags to the
+                            // frame-end 4bpp content hash and resolves that exact key from the
+                            // source atlas when present. Emit the same key here so generic BG
+                            // draws can use PNG/source art instead of staying live-indexed.
+                            if let Some(hash_key) = content_hash_source_key(&ppu.vram, slot) {
+                                record_keyed(hash_key, pattern, slot);
+                            }
                         }
                     }
                 }
             }
-        }
 
-        for sprite_num in 0..128usize {
-            let idx = sprite_num * 2;
-            let oam0 = ppu.oam.get(idx).copied().unwrap_or(0);
-            let y_byte = ((oam0 >> 8) & 0xff) as i32;
-            if y_byte == 0xf0 {
-                continue;
-            }
-            let hi_word = ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
-            let hi_bits = (hi_word >> (idx % 16)) as i32;
-            let size = SPRITE_SIZES[(ppu.obj_size & 7) as usize][((hi_bits >> 1) & 1) as usize];
-            let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
-            if object_x > 256 && object_x + size - 1 < 512 {
-                continue;
-            }
-            let mut x = object_x;
-            if x >= 256 {
-                x -= 512;
-            }
-            if x <= -size {
-                continue;
-            }
-            let oam1 = ppu.oam.get(idx + 1).copied().unwrap_or(0);
-            let obj_addr = if oam1 & 0x0100 != 0 {
-                ppu.obj_tile_adr2
-            } else {
-                ppu.obj_tile_adr1
-            };
-            let tile_row_base = ((oam1 & 0xff) >> 4) as i32;
-            let tile_col_base = (oam1 & 0x0f) as i32;
-            let tiles_per_side = size / 8;
-            for sty in 0..tiles_per_side {
-                for stx in 0..tiles_per_side {
-                    let used_tile =
-                        (((tile_row_base + sty) << 4) | ((tile_col_base + stx) & 0x0f)) as u16;
-                    let tile_word_base =
-                        obj_addr.wrapping_add(used_tile.wrapping_mul(16)) as usize & 0x7fff;
-                    let slot = tile_word_base / 16;
-                    let mut src = game.vram_chr_source().get(slot);
-                    if src.kind == CHR_KIND_NONE {
-                        let Some(key) = content_hash_source_key_for_kind(
-                            &ppu.vram,
-                            slot,
-                            CHR_KIND_SPRITE,
-                        ) else {
-                            continue;
-                        };
-                        src = zelda3::LogicalChrSrc {
-                            kind: CHR_KIND_SPRITE,
-                            pack: ((key >> 16) & 0xffff) as u16,
-                            tile_off: (key & 0xffff) as u16,
-                        };
-                    }
-                    let preview_src = game.vram_chr_preview_source().get(slot);
-                    let usage_src =
-                        if src.kind == CHR_KIND_BG_STREAM && preview_src.kind == CHR_KIND_SPRITE {
+            for sprite_num in 0..128usize {
+                let idx = sprite_num * 2;
+                let oam0 = ppu.oam.get(idx).copied().unwrap_or(0);
+                let y_byte = ((oam0 >> 8) & 0xff) as i32;
+                if y_byte == 0xf0 {
+                    continue;
+                }
+                let hi_word = ppu.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+                let hi_bits = (hi_word >> (idx % 16)) as i32;
+                let size = SPRITE_SIZES[(ppu.obj_size & 7) as usize][((hi_bits >> 1) & 1) as usize];
+                let object_x = (oam0 & 0xff) as i32 + (hi_bits & 1) * 256;
+                if object_x > 256 && object_x + size - 1 < 512 {
+                    continue;
+                }
+                let mut x = object_x;
+                if x >= 256 {
+                    x -= 512;
+                }
+                if x <= -size {
+                    continue;
+                }
+                let oam1 = ppu.oam.get(idx + 1).copied().unwrap_or(0);
+                let obj_addr = if oam1 & 0x0100 != 0 {
+                    ppu.obj_tile_adr2
+                } else {
+                    ppu.obj_tile_adr1
+                };
+                let tile_row_base = ((oam1 & 0xff) >> 4) as i32;
+                let tile_col_base = (oam1 & 0x0f) as i32;
+                let tiles_per_side = size / 8;
+                for sty in 0..tiles_per_side {
+                    for stx in 0..tiles_per_side {
+                        let used_tile =
+                            (((tile_row_base + sty) << 4) | ((tile_col_base + stx) & 0x0f)) as u16;
+                        let tile_word_base =
+                            obj_addr.wrapping_add(used_tile.wrapping_mul(16)) as usize & 0x7fff;
+                        let slot = tile_word_base / 16;
+                        let mut src = game.vram_chr_source().get(slot);
+                        if src.kind == CHR_KIND_NONE {
+                            let Some(key) =
+                                content_hash_source_key_for_kind(&ppu.vram, slot, CHR_KIND_SPRITE)
+                            else {
+                                continue;
+                            };
+                            src = zelda3::LogicalChrSrc {
+                                kind: CHR_KIND_SPRITE,
+                                pack: ((key >> 16) & 0xffff) as u16,
+                                tile_off: (key & 0xffff) as u16,
+                            };
+                        }
+                        let preview_src = game.vram_chr_preview_source().get(slot);
+                        let usage_src = if src.kind == CHR_KIND_BG_STREAM
+                            && preview_src.kind == CHR_KIND_SPRITE
+                        {
                             preview_src
                         } else {
                             src
                         };
-                    let palette_row = ((oam1 >> 9) & 7) as u8;
-                    record_palette_usage_count(
-                        &mut palette_usage_counts,
-                        usage_src,
-                        renderer::ModernAssetFrameScene::SPRITE_PALETTE_NAME,
-                        palette_row,
-                    );
-                    let key = if src.kind == CHR_KIND_LINK {
-                        content_hash_source_key_for_kind(&ppu.vram, slot, CHR_KIND_LINK_CONTENT)
-                            .unwrap_or_else(|| modern_source_key(src.kind, src.pack, src.tile_off))
-                    } else {
-                        rekey_content_hash(&ppu.vram, slot, src)
-                    };
-                    let pattern = decode_snes_4bpp_tile_indices(&ppu.vram, slot * 16, 0);
-                    record_keyed(key, pattern, slot);
+                        let palette_row = ((oam1 >> 9) & 7) as u8;
+                        record_palette_usage_count(
+                            &mut palette_usage_counts,
+                            usage_src,
+                            renderer::ModernAssetFrameScene::SPRITE_PALETTE_NAME,
+                            palette_row,
+                        );
+                        let key = if src.kind == CHR_KIND_LINK {
+                            content_hash_source_key_for_kind(&ppu.vram, slot, CHR_KIND_LINK_CONTENT)
+                                .unwrap_or_else(|| {
+                                    modern_source_key(src.kind, src.pack, src.tile_off)
+                                })
+                        } else {
+                            rekey_content_hash(&ppu.vram, slot, src)
+                        };
+                        let pattern = decode_snes_4bpp_tile_indices(&ppu.vram, slot * 16, 0);
+                        record_keyed(key, pattern, slot);
+                    }
                 }
             }
-        }
         });
     };
 

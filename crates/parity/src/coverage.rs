@@ -86,8 +86,6 @@ impl RouteCoverage {
         }
     }
 
-
-
     pub fn merge(&mut self, other: &Self) {
         self.frames = self.frames.saturating_add(other.frames);
         self.last_frame = self.last_frame.max(other.last_frame);
@@ -300,10 +298,6 @@ impl RouteCoverage {
         }
     }
 
-
-
-
-
     fn record_first_seen(&mut self, category: &str, value: String, frame: u32) {
         let entry = self
             .first_seen
@@ -313,8 +307,6 @@ impl RouteCoverage {
             .or_insert(frame);
         *entry = (*entry).min(frame);
     }
-
-
 
     fn route_evidence_u8(&self, category: &str, hits: &BTreeSet<u8>) -> BTreeSet<u8> {
         hits.iter()
@@ -435,8 +427,6 @@ impl CoverageUniverse {
             active_items: (0x01..=0x14).collect(),
         }
     }
-
-
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -616,14 +606,6 @@ fn missed_u16_values(report: &CoverageReport, category: &str) -> Vec<u16> {
         .unwrap_or_default()
 }
 
-
-
-
-
-
-
-
-
 fn parse_hex_u16(text: &str) -> Option<u16> {
     u16::from_str_radix(text.strip_prefix("0x")?, 16).ok()
 }
@@ -775,6 +757,3 @@ fn percent(hit: usize, expected: usize) -> f64 {
         (hit as f64 / expected as f64) * 100.0
     }
 }
-
-
-

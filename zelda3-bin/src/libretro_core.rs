@@ -469,11 +469,13 @@ impl LibretroCore {
     }
 
     pub(crate) fn debug_ppu_value(&self, field: i32, index: i32) -> Option<i32> {
-        self.debug_ppu_value.map(|probe| unsafe { probe(field, index) })
+        self.debug_ppu_value
+            .map(|probe| unsafe { probe(field, index) })
     }
 
     pub(crate) fn debug_scanline_mode7_value(&self, line: i32, field: i32) -> Option<i32> {
-        self.debug_scanline_mode7_value.map(|probe| unsafe { probe(line, field) })
+        self.debug_scanline_mode7_value
+            .map(|probe| unsafe { probe(line, field) })
     }
 }
 

@@ -18,6 +18,7 @@ mod image_output;
 mod index_dump_commands;
 mod index_source_keys;
 mod input_script;
+mod libretro_core;
 mod libretro_timeline;
 mod live_input_recording;
 mod overworld_dump_commands;
@@ -28,12 +29,11 @@ mod replay_diagnostics;
 mod replay_save_config;
 mod route_coverage_commands;
 mod sheet_dump_commands;
-mod snes9x_route_recorder;
-mod snes9x_segment_matrix;
-mod libretro_core;
 mod snes9x_apu_tools;
 mod snes9x_compare;
 mod snes9x_record_commands;
+mod snes9x_route_recorder;
+mod snes9x_segment_matrix;
 #[allow(unused_imports)]
 use libretro_core::*;
 #[allow(unused_imports)]
@@ -87,10 +87,7 @@ use route_coverage_commands::{
 use serde::{Deserialize, Serialize};
 use sheet_dump_commands::{run_dump_dungeon_sheet_png, run_dump_sprite_sheet_png};
 use snes::{consts::PPU_EXTRA_LEFT_RIGHT, cpu_run_opcode, load_rom, Snes};
-use zelda3::{
-    config::parse_config_file_context,
-    ZeldaState, RUN_MAIN, RUN_POLY,
-};
+use zelda3::{config::parse_config_file_context, ZeldaState, RUN_MAIN, RUN_POLY};
 
 const PLAY_CRASH_CHECKPOINT_MAGIC: &[u8; 8] = b"Z3RSPC01";
 const ACTION_TILE_X: [i16; 4] = [7, 7, -3, 16];
@@ -607,7 +604,6 @@ fn write_asset_gpu_checkpoint_or_exit(game: &ZeldaState, frames: u32, dir: &Path
         process::exit(2);
     });
 }
-
 
 fn run_replay_save(args: &[String]) {
     let ReplaySaveConfig {
@@ -1148,7 +1144,6 @@ fn run_replay_save(args: &[String]) {
         println!("{}", replay_save_palette_dump(&game));
     }
 }
-
 
 // Trailer appended after the C-style state-recorder checkpoint to make resume
 // byte-identical to a from-scratch run. The state-recorder save only round-trips
@@ -2453,7 +2448,6 @@ pub(crate) fn select_run_what(ram: &[u8]) -> u8 {
         RUN_MAIN
     }
 }
-
 
 /// FNV-1a 64-bit, just so two runs can be compared without pulling in a
 /// hashing dep. Not cryptographic — fine for a state digest.

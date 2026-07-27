@@ -1990,9 +1990,28 @@ pub(crate) fn run_compare_libretro_oracle(
             );
         }
         if let Some((x, y)) = trace_video_pixel.filter(|_| compare_this_frame) {
-            let displayed_ppu = game.with_display_snapshot(|snapshot| {
-                crate::render_diagnostics::format_render_ppu_summary(snapshot)
-            });
+            let (displayed_ppu, rust_bg_pal4, rust_obj_pal) =
+                game.with_display_snapshot(|snapshot| {
+                    (
+                        crate::render_diagnostics::format_render_ppu_summary(snapshot),
+                        (0x40..=0x4f)
+                            .map(|i| format!("{:04x}", snapshot.ppu.cgram[i]))
+                            .collect::<Vec<_>>()
+                            .join(","),
+                        (0x90..=0x9f)
+                            .map(|i| format!("{:04x}", snapshot.ppu.cgram[i]))
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    )
+                });
+            let oracle_bg_pal4 = (0x40..=0x4f)
+                .map(|i| {
+                    oracle
+                        .debug_ppu_value(2, i)
+                        .map_or_else(|| "none".to_string(), |value| format!("{value:04x}"))
+                })
+                .collect::<Vec<_>>()
+                .join(",");
             let pixel_index = y.saturating_mul(width as usize).saturating_add(x);
             let rust_offset = pixel_index.saturating_mul(4);
             let snes9x_offset = y.saturating_mul(capture.video_pitch)
@@ -2002,18 +2021,22 @@ pub(crate) fn run_compare_libretro_oracle(
                 .and_then(|frame| rgba_pixel_at(frame, rust_offset))
                 .unwrap_or([0; 4]);
             let oracle_pixel = snes9x_rgba_pixel_at(&capture, snes9x_offset).unwrap_or([0; 4]);
-            let obj_pal = (0x90..=0x9f)
-                .map(|i| format!("{:04x}", game.ppu.cgram[i]))
-                .collect::<Vec<_>>()
-                .join(",");
             println!(
-                "pixel frame={frame_index} xy=({x},{y}) rust={rust_pixel:02x?} {oracle_name}={oracle_pixel:02x?} main={:02x} sub={:02x} subsub={:02x} inidisp={:02x} obj_pal90=[{}]",
-                game.ram[0x10], game.ram[0x11], game.ram[0xb0], game.ram[0x13], obj_pal,
+                "pixel frame={frame_index} xy=({x},{y}) rust={rust_pixel:02x?} {oracle_name}={oracle_pixel:02x?} main={:02x} sub={:02x} subsub={:02x} inidisp={:02x} rust_bg_pal4=[{rust_bg_pal4}] oracle_bg_pal4=[{oracle_bg_pal4}] rust_obj_pal90=[{rust_obj_pal}]",
+                game.ram[0x10], game.ram[0x11], game.ram[0xb0], game.ram[0x13],
             );
             println!("pixel displayed_ppu frame={frame_index} {displayed_ppu}");
             println!(
                 "modern_pixel_trace frame={frame_index} xy=({x},{y}) via=native-window-source-gpu"
             );
+            let semantic_trace = native_window_video
+                .as_ref()
+                .expect("native window renderer allocated for pixel trace")
+                .trace_game_pixel(&mut game, x as i16, y as i16)
+                .unwrap_or_else(|error| vec![format!("semantic pixel trace failed: {error}")]);
+            for line in semantic_trace {
+                println!("modern_pixel_owner frame={frame_index} xy=({x},{y}) {line}");
+            }
         }
         if compare_this_frame && compare_video {
             let rust_video_frame = rust_video_frame

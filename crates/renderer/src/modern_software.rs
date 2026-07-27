@@ -631,7 +631,8 @@ fn apply_hardware_startup_transient(
             }
             for dy in 0..scale {
                 for dx in 0..scale {
-                    let offset = ((y as usize * scale + dy) * out_width + x as usize * scale + dx) * 4;
+                    let offset =
+                        ((y as usize * scale + dy) * out_width + x as usize * scale + dx) * 4;
                     out[offset..offset + 4].copy_from_slice(rgba);
                 }
             }
@@ -2069,16 +2070,7 @@ fn finalize_frame(
     const PARALLEL_MIN_PIXELS: usize = 200_000; // native 256×224 stays serial; scale≥2 parallelizes
     if n_threads <= 1 || len < PARALLEL_MIN_PIXELS {
         for i in 0..len {
-            let px = finalize_pixel(
-                i,
-                main,
-                sub,
-                frame,
-                width,
-                scale,
-                fixed,
-                no_effect_math,
-            );
+            let px = finalize_pixel(i, main, sub, frame, width, scale, fixed, no_effect_math);
             out[i * 4..i * 4 + 4].copy_from_slice(&px);
         }
     } else {
@@ -2280,11 +2272,7 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
                     + (y_center << 8);
                 let sample_x = ((start_x + m0 * sx as i32) >> 8) & 0x3ff;
                 let sample_y = ((start_y + m2 * sx as i32) >> 8) & 0x3ff;
-                let window = modern
-                    .window_scanlines
-                    .get(sy)
-                    .copied()
-                    .unwrap_or([0; 4]);
+                let window = modern.window_scanlines.get(sy).copied().unwrap_or([0; 4]);
                 let cm_window = in_cm_window(sx as u32, window, modern.windowsel_cm);
                 let trace = format!(
                     "mode7_pixel xy=({sx},{sy}) src=({sample_x},{sample_y}) matrix={m:04x?} scroll=({h_scroll},{v_scroll}) center=({x_center},{y_center}) index={index:02x} cgram={:04x} rgba={:02x?} brightness={} math={:02x} sub={} subtract={} half={} fixed=({:02x},{:02x},{:02x}) window={window:02x?} cm_window={cm_window} prevent_math={} math_ok={}",

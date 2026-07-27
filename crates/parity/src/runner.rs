@@ -79,9 +79,6 @@ impl Paths {
     }
 }
 
-
-
-
 /// Build a Rust replay command that records route-surface coverage.
 pub fn rust_coverage_cmd(p: &Paths, frames: u32, coverage_out: &Path) -> Command {
     rust_coverage_cmd_with_options(p, frames, coverage_out, &CoverageRunOptions::default())

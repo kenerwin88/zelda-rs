@@ -248,9 +248,7 @@ impl ModernGpuFinalizer {
         });
         let startup_material_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("modern_startup_material"),
-            source: wgpu::ShaderSource::Wgsl(
-                include_str!("modern_startup_material.wgsl").into(),
-            ),
+            source: wgpu::ShaderSource::Wgsl(include_str!("modern_startup_material.wgsl").into()),
         });
         let startup_material_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -319,34 +317,35 @@ impl ModernGpuFinalizer {
         let fixed = u32::from(frame.fixed_color_r)
             | (u32::from(frame.fixed_color_g) << 8)
             | (u32::from(frame.fixed_color_b) << 16);
-        let (startup_origin0, startup_origin1, startup_overlay, direct_pixels, direct_pixel_count) = match frame.hardware_startup_transient.as_ref() {
-            Some(transient) => {
-                let origin = |(x, y): (i16, i16)| {
-                    0x8000_0000 | u32::from(x.max(0) as u16) | (u32::from(y.max(0) as u16) << 8)
-                };
-                let pixels = transient.rgba.map(u32::from_le_bytes);
-                let mut overlays = [0; 128];
-                overlays[..64].copy_from_slice(&pixels);
-                overlays[64..].copy_from_slice(&pixels);
-                let mut direct_pixels = [[0; 4]; 512];
-                for (out, pixel) in direct_pixels.iter_mut().zip(&transient.direct_pixels) {
-                    *out = [
-                        pixel.screen_x.max(0) as u32,
-                        pixel.screen_y.max(0) as u32,
-                        u32::from_le_bytes(pixel.rgba),
-                        0,
-                    ];
+        let (startup_origin0, startup_origin1, startup_overlay, direct_pixels, direct_pixel_count) =
+            match frame.hardware_startup_transient.as_ref() {
+                Some(transient) => {
+                    let origin = |(x, y): (i16, i16)| {
+                        0x8000_0000 | u32::from(x.max(0) as u16) | (u32::from(y.max(0) as u16) << 8)
+                    };
+                    let pixels = transient.rgba.map(u32::from_le_bytes);
+                    let mut overlays = [0; 128];
+                    overlays[..64].copy_from_slice(&pixels);
+                    overlays[64..].copy_from_slice(&pixels);
+                    let mut direct_pixels = [[0; 4]; 512];
+                    for (out, pixel) in direct_pixels.iter_mut().zip(&transient.direct_pixels) {
+                        *out = [
+                            pixel.screen_x.max(0) as u32,
+                            pixel.screen_y.max(0) as u32,
+                            u32::from_le_bytes(pixel.rgba),
+                            0,
+                        ];
+                    }
+                    (
+                        origin(transient.origins[0]),
+                        origin(transient.origins[1]),
+                        overlays,
+                        direct_pixels,
+                        transient.direct_pixels.len().min(512) as u32,
+                    )
                 }
-                (
-                    origin(transient.origins[0]),
-                    origin(transient.origins[1]),
-                    overlays,
-                    direct_pixels,
-                    transient.direct_pixels.len().min(512) as u32,
-                )
-            }
-            None => (0, 0, [0; 128], [[0; 4]; 512], 0),
-        };
+                None => (0, 0, [0; 128], [[0; 4]; 512], 0),
+            };
         let params = [
             len,
             width,
