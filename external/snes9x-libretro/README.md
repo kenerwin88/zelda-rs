@@ -42,8 +42,8 @@ Available event domains are `frame`, `nmi`, `rng`, `pc`, `dma`, `ppu`, and
 
 Every record includes `run`, the zero-based `retro_run` invocation that owns
 the event, as well as Snes9x's `frame` counter, CPU position, registers, the top
-four stack bytes, the decoded long-call return address, and the Zelda
-main/NMI/RNG state. Use `run` for host-frame timing; use `frame` for the
+four stack bytes, the decoded long-call return address, CPU carry, and the
+Zelda main/NMI/RNG state. Use `run` for host-frame timing; use `frame` for the
 emulator's internal video boundary. The trace patch also exports the optional
 PPU inspection function consumed by the parity harness.
 
@@ -53,3 +53,7 @@ Generate a strict Rust RNG replay script from a route trace with:
 python3 scripts/extract_snes9x_rom_random.py /tmp/rng.jsonl \
   --output routes/clean/takes/0004/rom-random.txt
 ```
+
+Each replay row records `run`, the RNG byte, and `carry=0|1`. The carry bit is
+part of the routine's observable result because ROM callers can preserve it
+across logical instructions and consume it in a following `ADC`.

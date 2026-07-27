@@ -1,5 +1,5 @@
 diff --git a/cpuexec.cpp b/cpuexec.cpp
-index aa43b2f..4ae7a73 100644
+index aa43b2f..a5440ab 100644
 --- a/cpuexec.cpp
 +++ b/cpuexec.cpp
 @@ -12,6 +12,7 @@
@@ -10,7 +10,19 @@ index aa43b2f..4ae7a73 100644
  #ifdef DEBUGGER
  #include "debug.h"
  #include "missing.h"
-@@ -52,6 +53,7 @@ void S9xMainLoop (void)
+@@ -19,6 +20,11 @@
+ 
+ static inline void S9xReschedule (void);
+ 
++bool Zelda3TraceCpuCarry()
++{
++	return CheckCarry();
++}
++
+ void S9xMainLoop (void)
+ {
+ 	#define CHECK_FOR_IRQ_CHANGE() \
+@@ -52,6 +58,7 @@ void S9xMainLoop (void)
  			#endif
  			if (Timings.NMITriggerPos <= CPU.Cycles)
  			{
@@ -18,7 +30,7 @@ index aa43b2f..4ae7a73 100644
  				CPU.NMIPending = FALSE;
  				Timings.NMITriggerPos = 0xffff;
  				if (CPU.WaitingForInterrupt)
-@@ -138,6 +140,8 @@ void S9xMainLoop (void)
+@@ -138,6 +145,8 @@ void S9xMainLoop (void)
  		uint8				Op;
  		struct	SOpcodes	*Opcodes;
  
@@ -188,10 +200,10 @@ index 4611540..4c00c64 100644
  				missing.h_counter_read = 1;
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 0000000..8ca5cf8
+index 0000000..6902398
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,298 @@
+@@ -0,0 +1,300 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -375,6 +387,7 @@ index 0000000..8ca5cf8
 +	std::fprintf(config.output,
 +		"{\"event\":\"%s\",\"run\":%llu,\"frame\":%u,\"v\":%d,\"cycles\":%d,"
 +		"\"pc\":%u,\"a\":%u,\"x\":%u,\"y\":%u,\"s\":%u,"
++		"\"carry\":%u,"
 +		"\"main\":%u,\"sub\":%u,\"subsub\":%u,\"frame_counter\":%u,"
 +		"\"rng_seed\":%u,\"nmi_latch\":%u,\"nmi_disable\":%u,\"nmi_pending\":%u,"
 +		"\"return_address\":%u,"
@@ -382,7 +395,8 @@ index 0000000..8ca5cf8
 +		event, (unsigned long long) retro_run_index, IPPU.TotalEmulatedFrames,
 +		CPU.V_Counter, CPU.Cycles,
 +		Registers.PBPC & 0xffffff, Registers.A.W, Registers.X.W, Registers.Y.W,
-+		Registers.S.W, Memory.RAM[0x10], Memory.RAM[0x11], Memory.RAM[0xb0],
++		Registers.S.W, Zelda3TraceCpuCarry(),
++		Memory.RAM[0x10], Memory.RAM[0x11], Memory.RAM[0xb0],
 +		Memory.RAM[0x1a], Memory.RAM[0x0fa1], Memory.RAM[0x12],
 +		Memory.RAM[0x0710], Memory.RAM[0x17], return_address,
 +		Memory.RAM[(Registers.S.W + 1) & 0xffff],
@@ -492,10 +506,10 @@ index 0000000..8ca5cf8
 +}
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 new file mode 100644
-index 0000000..63675ea
+index 0000000..f13324d
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,23 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -508,6 +522,7 @@ index 0000000..63675ea
 +extern bool Zelda3TracePpuEnabled;
 +extern bool Zelda3TraceWramEnabled;
 +
++bool Zelda3TraceCpuCarry();
 +void Zelda3TraceRetroRunBegin();
 +void Zelda3TraceRetroRunEnd();
 +void Zelda3TraceInstruction(void);

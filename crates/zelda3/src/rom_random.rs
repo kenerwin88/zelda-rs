@@ -4,14 +4,47 @@ use std::collections::VecDeque;
 pub struct RomRandomSample {
     pub execution_frame: u32,
     pub value: u8,
+    /// Carry left by the cartridge RNG routine's final `ADC`. Logical
+    /// operations such as `AND` preserve this flag, so a few callers consume
+    /// it in their next arithmetic instruction.
+    pub carry: bool,
 }
 
 impl RomRandomSample {
     pub const fn new(execution_frame: u32, value: u8) -> Self {
+        Self::with_carry(execution_frame, value, false)
+    }
+
+    pub const fn with_carry(execution_frame: u32, value: u8, carry: bool) -> Self {
         Self {
             execution_frame,
             value,
+            carry,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RomRandomResult {
+    value: u8,
+    carry: bool,
+}
+
+impl RomRandomResult {
+    pub(crate) const fn new(value: u8, carry: bool) -> Self {
+        Self { value, carry }
+    }
+
+    pub(crate) const fn value(self) -> u8 {
+        self.value
+    }
+
+    /// Models the common ROM sequence `AND #mask; ADC #operand`: `AND`
+    /// changes the accumulator but deliberately leaves RNG's carry intact.
+    pub(crate) const fn masked_adc(self, mask: u8, operand: u8) -> u8 {
+        (self.value & mask)
+            .wrapping_add(operand)
+            .wrapping_add(self.carry as u8)
     }
 }
 
@@ -32,9 +65,14 @@ pub fn parse_rom_random_script(text: &str) -> Result<Vec<RomRandomSample>, Strin
             .next()
             .ok_or_else(|| format!("line {line_number}: missing random value"))
             .and_then(|value| parse_u8(value, line_number))?;
+        let carry = fields
+            .next()
+            .map(|value| parse_carry(value, line_number))
+            .transpose()?
+            .unwrap_or(false);
         if let Some(extra) = fields.next() {
             return Err(format!(
-                "line {line_number}: unexpected third field {extra:?}"
+                "line {line_number}: unexpected fourth field {extra:?}"
             ));
         }
         if let Some(previous) = samples.last() {
@@ -45,7 +83,7 @@ pub fn parse_rom_random_script(text: &str) -> Result<Vec<RomRandomSample>, Strin
                 ));
             }
         }
-        samples.push(RomRandomSample::new(execution_frame, value));
+        samples.push(RomRandomSample::with_carry(execution_frame, value, carry));
     }
     Ok(samples)
 }
@@ -66,6 +104,16 @@ fn parse_u8(value: &str, line_number: usize) -> Result<u8, String> {
         value.parse()
     };
     parsed.map_err(|error| format!("line {line_number}: invalid random value {value:?}: {error}"))
+}
+
+fn parse_carry(value: &str, line_number: usize) -> Result<bool, String> {
+    match value {
+        "carry=0" => Ok(false),
+        "carry=1" => Ok(true),
+        _ => Err(format!(
+            "line {line_number}: invalid RNG carry {value:?}; expected carry=0 or carry=1"
+        )),
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -92,7 +140,7 @@ impl RomRandomReplay {
         self.next_execution_frame = self.next_execution_frame.wrapping_add(1);
     }
 
-    pub(crate) fn take_next(&mut self) -> Option<u8> {
+    pub(crate) fn take_next(&mut self) -> Option<RomRandomResult> {
         if !self.enabled {
             return None;
         }
@@ -109,7 +157,7 @@ impl RomRandomReplay {
             "ROM random call order diverged: replay expected execution frame {}, Rust called during {execution_frame}",
             sample.execution_frame
         );
-        Some(sample.value)
+        Some(RomRandomResult::new(sample.value, sample.carry))
     }
 
     pub(crate) fn remaining(&self) -> Option<usize> {
@@ -141,8 +189,8 @@ mod tests {
             "
             # Outputs written by ROM $8dba71.
             4976 0x22
-            4976 0x45 # second call in the same frame
-            0x13a2 216
+            4976 0x45 carry=1 # second call in the same frame
+            0x13a2 216 carry=0
             ",
         )
         .unwrap();
@@ -151,7 +199,7 @@ mod tests {
             samples,
             vec![
                 RomRandomSample::new(4976, 0x22),
-                RomRandomSample::new(4976, 0x45),
+                RomRandomSample::with_carry(4976, 0x45, true),
                 RomRandomSample::new(5026, 0xd8),
             ]
         );
@@ -162,18 +210,30 @@ mod tests {
         let mut replay = RomRandomReplay::default();
         replay.install(
             vec![
-                RomRandomSample::new(12, 0x34),
-                RomRandomSample::new(12, 0x56),
-                RomRandomSample::new(13, 0x78),
+                RomRandomSample::with_carry(12, 0x34, true),
+                RomRandomSample::with_carry(12, 0x56, false),
+                RomRandomSample::with_carry(13, 0x78, true),
             ],
             12,
         );
 
         replay.begin_frame();
-        assert_eq!(replay.take_next(), Some(0x34));
-        assert_eq!(replay.take_next(), Some(0x56));
+        assert_eq!(replay.take_next(), Some(RomRandomResult::new(0x34, true)));
+        assert_eq!(replay.take_next(), Some(RomRandomResult::new(0x56, false)));
         replay.begin_frame();
-        assert_eq!(replay.take_next(), Some(0x78));
+        assert_eq!(replay.take_next(), Some(RomRandomResult::new(0x78, true)));
         assert_eq!(replay.remaining(), Some(0));
+    }
+
+    #[test]
+    fn masked_adc_preserves_rng_carry_across_the_mask() {
+        assert_eq!(
+            RomRandomResult::new(0x03, false).masked_adc(0x3f, 0x30),
+            0x33
+        );
+        assert_eq!(
+            RomRandomResult::new(0x03, true).masked_adc(0x3f, 0x30),
+            0x34
+        );
     }
 }

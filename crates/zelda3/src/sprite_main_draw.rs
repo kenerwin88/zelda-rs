@@ -14233,7 +14233,9 @@ impl ZeldaState {
             return;
         }
 
-        let value = (self.get_random_number() & 0x3f).wrapping_add(0x30);
+        // ROM $05:bccd calls the RNG, then executes `AND #$3f; ADC #$30`
+        // without clearing carry between them.
+        let value = self.get_random_number_with_carry().masked_adc(0x3f, 0x30);
 
         self.sprite_slot_view_mut(k).set_delay_main(value);
         self.sprite_slot_view_mut(k).add_ai_state(1);

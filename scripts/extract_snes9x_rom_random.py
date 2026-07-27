@@ -13,8 +13,8 @@ from typing import TextIO
 RNG_SEED_ADDRESS = 0x0FA1
 
 
-def extract_samples(lines: TextIO) -> list[tuple[int, int]]:
-    samples: list[tuple[int, int]] = []
+def extract_samples(lines: TextIO) -> list[tuple[int, int, bool]]:
+    samples: list[tuple[int, int, bool]] = []
     for line_number, line in enumerate(lines, 1):
         if not line.strip():
             continue
@@ -26,6 +26,7 @@ def extract_samples(lines: TextIO) -> list[tuple[int, int]]:
             continue
         run = event.get("run")
         value = event.get("value")
+        carry = event.get("carry")
         if not isinstance(run, int) or run < 0:
             raise ValueError(
                 f"line {line_number}: RNG write is missing a non-negative integer run"
@@ -34,22 +35,26 @@ def extract_samples(lines: TextIO) -> list[tuple[int, int]]:
             raise ValueError(
                 f"line {line_number}: RNG write has invalid byte value {value!r}"
             )
+        if not isinstance(carry, int) or carry not in (0, 1):
+            raise ValueError(
+                f"line {line_number}: RNG write has invalid carry {carry!r}"
+            )
         if samples and run < samples[-1][0]:
             raise ValueError(
                 f"line {line_number}: retro_run index {run} precedes {samples[-1][0]}"
             )
-        samples.append((run, value))
+        samples.append((run, value, bool(carry)))
     return samples
 
 
-def write_script(samples: list[tuple[int, int]], output: TextIO) -> None:
+def write_script(samples: list[tuple[int, int, bool]], output: TextIO) -> None:
     output.write(
         "# Cartridge $8dba71 beam-counter RNG outputs, keyed by zero-based retro_run.\n"
         "# Generated from the trace event's explicit run index; Snes9x's completed-frame\n"
         "# counter can advance inside one retro_run and must not be used as this coordinate.\n"
     )
-    for run, value in samples:
-        output.write(f"{run} 0x{value:02x}\n")
+    for run, value, carry in samples:
+        output.write(f"{run} 0x{value:02x} carry={int(carry)}\n")
 
 
 def main() -> int:

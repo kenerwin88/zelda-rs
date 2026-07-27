@@ -191,15 +191,24 @@ fn value_to_give_item_to_misc(item: u8) -> u8 {
 impl ZeldaState {
     #[track_caller]
     pub(super) fn get_random_number(&mut self) -> u8 {
+        self.get_random_number_with_carry().value()
+    }
+
+    #[track_caller]
+    pub(super) fn get_random_number_with_carry(&mut self) -> crate::rom_random::RomRandomResult {
         let before = self.game_state.world.region.rng_seed();
-        let t = self.rom_random_replay.take_next().unwrap_or_else(|| {
+        let result = self.rom_random_replay.take_next().unwrap_or_else(|| {
             let value = before.wrapping_add(self.game_state.frame.frame_counter);
-            if value & 1 != 0 {
+            let value = if value & 1 != 0 {
                 value >> 1
             } else {
                 (value >> 1) ^ 0xb8
-            }
+            };
+            // The translated engine's deterministic fallback is not a CPU
+            // instruction stream and historically exposed only the byte.
+            crate::rom_random::RomRandomResult::new(value, false)
         });
+        let t = result.value();
         self.set_rng_seed(t);
         let trace_rng = std::env::var_os("ZELDA3_TRACE_RNG").is_some();
         let trace_frame_matches = std::env::var("ZELDA3_TRACE_RNG_FRAME")
@@ -226,7 +235,7 @@ impl ZeldaState {
                 self.game_state.player.follower_link.y(),
             );
         }
-        t
+        result
     }
 
     pub(super) fn module_reserved_12(&mut self) {
