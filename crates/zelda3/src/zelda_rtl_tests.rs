@@ -15,6 +15,16 @@ use crate::game_state::constants::{
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
 
 #[test]
+fn attract_map_mode7_brightness_override_ends_with_fade_in() {
+    assert!(rom_attract_world_map_mode7_brightness_is_early_published(
+        20, 0, 1, 4
+    ));
+    assert!(!rom_attract_world_map_mode7_brightness_is_early_published(
+        20, 0, 1, 5
+    ));
+}
+
+#[test]
 fn attract_map_projection_generation_follows_the_cpu_hdma_race() {
     let first_current = (0..ATTRACT_MAP_PROJECTION_WORDS)
         .find(|&line| attract_map_projection_current_word_is_visible(line));

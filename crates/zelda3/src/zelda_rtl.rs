@@ -609,6 +609,18 @@ const fn rom_attract_world_map_display_is_one_frame_deferred(
     main_module == 20 && submodule == 0 && sequence == 1 && attract_state >= 4
 }
 
+const fn rom_attract_world_map_mode7_brightness_is_early_published(
+    main_module: u8,
+    submodule: u8,
+    sequence: u8,
+    attract_state: u8,
+) -> bool {
+    // Only Attract_FadeInSequence publishes the new INIDISP step ahead of the
+    // deferred CGRAM generation. Once Attract_EnactStory takes over (state 5),
+    // the presented PPU brightness owns scanout again.
+    main_module == 20 && submodule == 0 && sequence == 1 && attract_state == 4
+}
+
 const fn rom_intro_wait_player_tears_down_poly_thread(
     main_module: u8,
     submodule: u8,
@@ -8733,6 +8745,8 @@ impl ZeldaState {
         let pristine_snapshot = display.clone();
 
         let snapshot_frame = crate::game_state::FrameState::load_from_ram(&display.ram);
+        let snapshot_attract_scene =
+            crate::game_state::AttractSceneState::load_from_ram(&display.ram);
         let pending_main_thread_stripe = display.ram[NMI_LOAD_BG_FROM_VRAM] == 1;
         let pending_full_tilemap_upload =
             display.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX] == 1;
@@ -8762,8 +8776,8 @@ impl ZeldaState {
                 // Snes9x retains the pre-NMI attract image through the sequence-1
                 // load/fade-out. Mode 7 begins publishing immediately once that
                 // sequence has entered its fade-in state.
-                && !(self.game_state.ending.attract_scene.sequence() == 1
-                    && self.game_state.ending.attract_scene.state() >= 4));
+                && !(snapshot_attract_scene.sequence() == 1
+                    && snapshot_attract_scene.state() >= 4));
         let retain_previous_nmi_oam = match &display.obj_generation {
             DisplayObjGeneration::FollowModuleCadence => {
                 rom_display_oam_publication_is_deferred(
@@ -8784,8 +8798,15 @@ impl ZeldaState {
         };
         let world_map_fade_display = snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
-            && self.game_state.ending.attract_scene.sequence() == 1
-            && self.game_state.ending.attract_scene.state() >= 4;
+            && snapshot_attract_scene.sequence() == 1
+            && snapshot_attract_scene.state() >= 4;
+        let world_map_mode7_brightness_is_early_published =
+            rom_attract_world_map_mode7_brightness_is_early_published(
+                snapshot_frame.main_module,
+                snapshot_frame.submodule,
+                snapshot_attract_scene.sequence(),
+                snapshot_attract_scene.state(),
+            );
         let publish_live_dungeon_exit_scroll = rom_dungeon_exit_entry_scroll_publication_is_live(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
@@ -9087,8 +9108,8 @@ impl ZeldaState {
         // INIDISP level while CGRAM remains on the deferred display generation.
         // Its palette map, fixed-color map, and color-add cap all come from
         // that one brightness generation, independently of CGRAM publication.
-        self.ppu.mode7_scanout_brightness_override =
-            world_map_fade_display.then_some(captured_screen_brightness);
+        self.ppu.mode7_scanout_brightness_override = world_map_mode7_brightness_is_early_published
+            .then_some(captured_screen_brightness);
         self.sync_native_game_state_from_ram();
         // The RAM-derived rebuild reconstitutes the palette mirror from the
         // snapshot's WRAM shadow, which already holds THIS frame's palette

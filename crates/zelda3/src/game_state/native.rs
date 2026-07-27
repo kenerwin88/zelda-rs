@@ -59,7 +59,7 @@ pub(crate) use effects::{
     TowerSealOrbitState, TowerSealSparkleState, WeatherVaneDebrisSlotState,
 };
 pub(crate) use ending::{
-    EndingState, IntroActorRead, IntroActorState, NativeAttractSceneBridgeMut,
+    AttractSceneState, EndingState, IntroActorRead, IntroActorState, NativeAttractSceneBridgeMut,
     NativeEndingCreditBridgeMut, NativeIntroActorBridgeMut, NativeIntroSceneBridgeMut,
 };
 pub(crate) use frame::{FrameState, NativeFrameStateBridgeMut};
