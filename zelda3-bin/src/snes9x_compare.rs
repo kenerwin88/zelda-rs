@@ -1861,6 +1861,8 @@ pub(crate) fn run_compare_libretro_oracle(
                 let receipt = serde_json::json!({
                     "oracle_trace": oracle.debug_dsp_trace(),
                     "oracle_dsp_samples": oracle.debug_dsp_samples(),
+                    "oracle_dsp_register_writes": oracle.debug_dsp_register_writes(),
+                    "oracle_apu_port_writes": oracle.debug_apu_port_writes(),
                     "oracle_audio": capture.audio,
                     "rust_audio": rust_audio,
                     "rust_voice_samples": modern_audio_state.1.debug_voice_samples(),
@@ -1962,6 +1964,8 @@ pub(crate) fn run_compare_libretro_oracle(
                             .collect::<Vec<_>>(),
                         "rust_audio_event_frame": rust_event_frame,
                         "oracle_dsp_samples": oracle.debug_dsp_samples(),
+                        "oracle_dsp_register_writes": oracle.debug_dsp_register_writes(),
+                        "oracle_apu_port_writes": oracle.debug_apu_port_writes(),
                     });
                     fs::write(
                         dir.join("first_audio_mismatch.json"),

@@ -1,17 +1,18 @@
 diff --git a/apu/bapu/dsp/SPC_DSP.cpp b/apu/bapu/dsp/SPC_DSP.cpp
-index f74a173..bf65207 100644
+index f74a173..7cada90 100644
 --- a/apu/bapu/dsp/SPC_DSP.cpp
 +++ b/apu/bapu/dsp/SPC_DSP.cpp
-@@ -20,6 +20,8 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
+@@ -20,6 +20,9 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
  
  #include "blargg_source.h"
  
 +void Zelda3TraceCaptureDspSample(const SPC_DSP *dsp, int left, int right);
++void Zelda3TraceCaptureDspWrite(const SPC_DSP *dsp, int reg, int value);
 +
  #ifdef BLARGG_ENABLE_OPTIMIZER
  	#include BLARGG_ENABLE_OPTIMIZER
  #endif
-@@ -70,11 +72,61 @@ static BOOST::uint8_t const initial_regs [SPC_DSP::register_count] =
+@@ -70,11 +73,66 @@ static BOOST::uint8_t const initial_regs [SPC_DSP::register_count] =
  
  #define SPC_DSP_OUT_HOOK(l, r)  \
      {                           \
@@ -70,21 +71,35 @@ index f74a173..bf65207 100644
 +	}
 +}
 +
++void SPC_DSP::zelda3_debug_capture_write( int addr, int data ) const
++{
++	Zelda3TraceCaptureDspWrite(this, addr, data);
++}
++
  void SPC_DSP::set_output( Resampler *resampler )
  {
  	this->resampler = resampler;
 diff --git a/apu/bapu/dsp/SPC_DSP.h b/apu/bapu/dsp/SPC_DSP.h
-index 953b13b..56721ec 100644
+index 953b13b..c3da89f 100644
 --- a/apu/bapu/dsp/SPC_DSP.h
 +++ b/apu/bapu/dsp/SPC_DSP.h
-@@ -78,6 +78,7 @@ public:
+@@ -78,6 +78,8 @@ public:
  	void    set_stereo_switch( int );
  	uint8_t reg_value( int, int );
  	int     envx_value( int );
 +	int     zelda3_debug_value( int field ) const;
++	void    zelda3_debug_capture_write( int addr, int data ) const;
  
  // DSP register addresses
  
+@@ -269,6 +271,7 @@ inline void SPC_DSP::write( int addr, int data )
+ {
+ 	assert( (unsigned) addr < register_count );
+ 
++	zelda3_debug_capture_write( addr, data );
+ 	m.regs [addr] = (uint8_t) data;
+ 	m.external_regs [addr] = (uint8_t) data;
+ 	switch ( addr & 0x0F )
 diff --git a/cpuexec.cpp b/cpuexec.cpp
 index aa43b2f..a5440ab 100644
 --- a/cpuexec.cpp
@@ -213,7 +228,7 @@ index 6ed99a5..ba8a4c8 100644
 \ No newline at end of file
 +endif
 diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
-index d381c61..2a5e97b 100644
+index d381c61..af6b468 100644
 --- a/libretro/libretro.cpp
 +++ b/libretro/libretro.cpp
 @@ -14,6 +14,7 @@
@@ -224,7 +239,7 @@ index d381c61..2a5e97b 100644
  #include <stdio.h>
  #include <vector>
  #include <string>
-@@ -891,6 +892,74 @@ unsigned retro_api_version()
+@@ -891,6 +892,94 @@ unsigned retro_api_version()
      return RETRO_API_VERSION;
  }
  
@@ -296,10 +311,30 @@ index d381c61..2a5e97b 100644
 +    return Zelda3TraceDspSampleValue(sample, field);
 +}
 +
++extern "C" int zelda3_snes9x_debug_dsp_write_count()
++{
++    return Zelda3TraceDspWriteCount();
++}
++
++extern "C" int zelda3_snes9x_debug_dsp_write_value(int write, int field)
++{
++    return Zelda3TraceDspWriteValue(write, field);
++}
++
++extern "C" int zelda3_snes9x_debug_apu_port_write_count()
++{
++    return Zelda3TraceApuPortWriteCount();
++}
++
++extern "C" int zelda3_snes9x_debug_apu_port_write_value(int write, int field)
++{
++    return Zelda3TraceApuPortWriteValue(write, field);
++}
++
  
  void retro_reset()
  {
-@@ -2006,7 +2075,9 @@ void retro_run()
+@@ -2006,7 +2095,9 @@ void retro_run()
  
      poll_cb();
      report_buttons();
@@ -310,7 +345,7 @@ index d381c61..2a5e97b 100644
  
  void retro_deinit()
 diff --git a/ppu.cpp b/ppu.cpp
-index 4611540..4c00c64 100644
+index 4611540..7458d84 100644
 --- a/ppu.cpp
 +++ b/ppu.cpp
 @@ -14,6 +14,7 @@
@@ -330,7 +365,19 @@ index 4611540..4c00c64 100644
  
  	if (CPU.InDMAorHDMA)
  	{
-@@ -1067,6 +1070,7 @@ uint8 S9xGetPPU (uint16 Address)
+@@ -246,8 +249,11 @@ void S9xSetPPU (uint8 Byte, uint16 Address)
+ 		S9xMSU1WritePort(Address & 7, Byte);
+ 	else
+ 	if ((Address & 0xffc0) == 0x2140) // APUIO0, APUIO1, APUIO2, APUIO3
++	{
+ 		// write_port will run the APU until given clock before writing value
++		Zelda3TraceCaptureApuPortWrite(Address & 3, Byte);
+ 		S9xAPUWritePort(Address & 3, Byte);
++	}
+ 	else
+ 	if (Address <= 0x2183)
+ 	{
+@@ -1067,6 +1073,7 @@ uint8 S9xGetPPU (uint16 Address)
  
  			case 0x2137: // SLHV
  				S9xLatchCounters(0);
@@ -338,7 +385,7 @@ index 4611540..4c00c64 100644
  				return (PPU.OpenBus1);
  
  			case 0x2138: // OAMDATAREAD
-@@ -1157,6 +1161,7 @@ uint8 S9xGetPPU (uint16 Address)
+@@ -1157,6 +1164,7 @@ uint8 S9xGetPPU (uint16 Address)
  					byte = (PPU.OpenBus2 & 0xfe) | ((PPU.HBeamPosLatched >> 8) & 0x01);
  				else
  					byte = (uint8) PPU.HBeamPosLatched;
@@ -348,10 +395,10 @@ index 4611540..4c00c64 100644
  				missing.h_counter_read = 1;
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 0000000..35b0387
+index 0000000..ec01b4f
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,408 @@
+@@ -0,0 +1,466 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -420,6 +467,14 @@ index 0000000..35b0387
 +constexpr int dsp_field_count = 128;
 +int dsp_sample_count = 0;
 +int dsp_samples[dsp_sample_capacity][dsp_field_count] = {};
++constexpr int dsp_write_capacity = 1024;
++constexpr int dsp_write_field_count = 4;
++int dsp_write_count = 0;
++int dsp_writes[dsp_write_capacity][dsp_write_field_count] = {};
++constexpr int apu_port_write_capacity = 32;
++constexpr int apu_port_write_field_count = 6;
++int apu_port_write_count = 0;
++int apu_port_writes[apu_port_write_capacity][apu_port_write_field_count] = {};
 +
 +uint32 parse_hex(const char *text, const char **end)
 +{
@@ -668,9 +723,59 @@ index 0000000..35b0387
 +		? dsp_samples[sample][field] : -1;
 +}
 +
++void SNES::Zelda3TraceCaptureDspWrite(const SPC_DSP *dsp, int reg, int value)
++{
++	if (dsp_write_count >= dsp_write_capacity)
++		return;
++	int *write = dsp_writes[dsp_write_count++];
++	write[0] = reg;
++	write[1] = value;
++	write[2] = dsp_sample_count;
++	write[3] = dsp->zelda3_debug_value(7);
++}
++
++int Zelda3TraceDspWriteCount()
++{
++	return dsp_write_count;
++}
++
++int Zelda3TraceDspWriteValue(int write, int field)
++{
++	return write >= 0 && write < dsp_write_count &&
++		field >= 0 && field < dsp_write_field_count
++		? dsp_writes[write][field] : -1;
++}
++
++void Zelda3TraceCaptureApuPortWrite(int port, int value)
++{
++	if (apu_port_write_count >= apu_port_write_capacity)
++		return;
++	int *write = apu_port_writes[apu_port_write_count++];
++	write[0] = port;
++	write[1] = value;
++	write[2] = dsp_sample_count;
++	write[3] = CPU.V_Counter;
++	write[4] = CPU.Cycles;
++	write[5] = Registers.PBPC & 0xffffff;
++}
++
++int Zelda3TraceApuPortWriteCount()
++{
++	return apu_port_write_count;
++}
++
++int Zelda3TraceApuPortWriteValue(int write, int field)
++{
++	return write >= 0 && write < apu_port_write_count &&
++		field >= 0 && field < apu_port_write_field_count
++		? apu_port_writes[write][field] : -1;
++}
++
 +void Zelda3TraceRetroRunBegin()
 +{
 +	dsp_sample_count = 0;
++	dsp_write_count = 0;
++	apu_port_write_count = 0;
 +	if (!active(TRACE_FRAME))
 +		return;
 +	write_machine_state("frame");
@@ -762,10 +867,10 @@ index 0000000..35b0387
 +}
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 new file mode 100644
-index 0000000..3c5a621
+index 0000000..da5d14c
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,41 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -776,6 +881,7 @@ index 0000000..3c5a621
 +{
 +class SPC_DSP;
 +void Zelda3TraceCaptureDspSample(const SPC_DSP *dsp, int left, int right);
++void Zelda3TraceCaptureDspWrite(const SPC_DSP *dsp, int reg, int value);
 +}
 +
 +extern bool Zelda3TraceDmaEnabled;
@@ -791,6 +897,11 @@ index 0000000..3c5a621
 +int Zelda3TraceDspSampleCount();
 +int Zelda3TraceDspFieldCount();
 +int Zelda3TraceDspSampleValue(int sample, int field);
++int Zelda3TraceDspWriteCount();
++int Zelda3TraceDspWriteValue(int write, int field);
++void Zelda3TraceCaptureApuPortWrite(int port, int value);
++int Zelda3TraceApuPortWriteCount();
++int Zelda3TraceApuPortWriteValue(int write, int field);
 +void Zelda3TraceRetroRunBegin();
 +void Zelda3TraceRetroRunEnd();
 +void Zelda3TraceInstruction(void);
