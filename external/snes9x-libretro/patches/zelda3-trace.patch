@@ -188,10 +188,10 @@ index 4611540..4c00c64 100644
  				missing.h_counter_read = 1;
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 0000000..2d1e9b5
+index 0000000..8ca5cf8
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,307 @@
+@@ -0,0 +1,298 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -234,7 +234,7 @@ index 0000000..2d1e9b5
 +	uint32 events;
 +	uint32 first_frame;
 +	uint32 last_frame;
-+	uint32 pcs[64];
++	AddressRange pc[64];
 +	unsigned pc_count;
 +	AddressRange ppu[32];
 +	unsigned ppu_count;
@@ -345,14 +345,7 @@ index 0000000..2d1e9b5
 +			config.last_frame = (uint32) std::strtoul(end + 1, nullptr, 10);
 +	}
 +
-+	AddressRange pc_ranges[64];
-+	unsigned pc_range_count = 0;
-+	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_PCS"), pc_ranges, 64, &pc_range_count);
-+	for (unsigned i = 0; i < pc_range_count && config.pc_count < 64; i++)
-+	{
-+		for (uint32 pc = pc_ranges[i].first; pc <= pc_ranges[i].last && config.pc_count < 64; pc++)
-+			config.pcs[config.pc_count++] = pc;
-+	}
++	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_PCS"), config.pc, 64, &config.pc_count);
 +	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_PPU"), config.ppu, 32, &config.ppu_count);
 +	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_WRAM"), config.wram, 32, &config.wram_count);
 +}
@@ -431,13 +424,11 @@ index 0000000..2d1e9b5
 +	if (!active(TRACE_PC))
 +		return;
 +	const uint32 pc = Registers.PBPC & 0xffffff;
-+	for (unsigned i = 0; i < config.pc_count; i++)
-+		if (config.pcs[i] == pc)
-+		{
-+			write_machine_state("pc");
-+			finish_event();
-+			return;
-+		}
++	if (includes(config.pc, config.pc_count, pc))
++	{
++		write_machine_state("pc");
++		finish_event();
++	}
 +}
 +
 +void Zelda3TraceNmi(void)

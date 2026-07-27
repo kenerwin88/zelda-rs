@@ -33,7 +33,9 @@ Available event domains are `frame`, `nmi`, `rng`, `pc`, `dma`, `ppu`, and
 
 - `ZELDA3_SNES9X_TRACE_FRAMES=FIRST-LAST` filters Snes9x's completed-frame
   counter. That counter can advance during one `retro_run` call.
-- `ZELDA3_SNES9X_TRACE_PCS=BB:AAAA,...` selects instruction addresses.
+- `ZELDA3_SNES9X_TRACE_PCS=BB:AAAA,...` selects up to 64 instruction-address
+  ranges. A range is matched directly, so a large routine does not consume one
+  filter slot per byte.
 - `ZELDA3_SNES9X_TRACE_PPU=2100,212c-2132` selects PPU writes. RNG
   counter reads are emitted by the `rng` domain.
 - `ZELDA3_SNES9X_TRACE_WRAM=0010-0017,0fa1` selects WRAM writes.
