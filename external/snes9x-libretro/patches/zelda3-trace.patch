@@ -1,3 +1,90 @@
+diff --git a/apu/bapu/dsp/SPC_DSP.cpp b/apu/bapu/dsp/SPC_DSP.cpp
+index f74a173..bf65207 100644
+--- a/apu/bapu/dsp/SPC_DSP.cpp
++++ b/apu/bapu/dsp/SPC_DSP.cpp
+@@ -20,6 +20,8 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
+ 
+ #include "blargg_source.h"
+ 
++void Zelda3TraceCaptureDspSample(const SPC_DSP *dsp, int left, int right);
++
+ #ifdef BLARGG_ENABLE_OPTIMIZER
+ 	#include BLARGG_ENABLE_OPTIMIZER
+ #endif
+@@ -70,11 +72,61 @@ static BOOST::uint8_t const initial_regs [SPC_DSP::register_count] =
+ 
+ #define SPC_DSP_OUT_HOOK(l, r)  \
+     {                           \
++        Zelda3TraceCaptureDspSample(this, l, r); \
+         resampler->push_sample(l, r);  \
+         if (Settings.MSU1)      \
+             S9xMSU1Generate(2); \
+     }
+ 
++int SPC_DSP::zelda3_debug_value( int field ) const
++{
++	switch ( field )
++	{
++		case 2: return m.counter;
++		case 3: return m.every_other_sample;
++		case 4: return m.kon;
++		case 5: return m.new_kon;
++		case 6: return m.t_koff;
++		case 7: return m.phase;
++		case 8: return REG(koff);
++		case 9: return REG(kon);
++		case 10: return REG(flg);
++		case 11: return m.t_output;
++		case 12: return m.t_pmon;
++		case 13: return m.t_non;
++		case 14: return m.t_eon;
++		case 15: return m.t_dir;
++	}
++
++	if ( field < 16 )
++		return 0;
++	const int voice_index = (field - 16) / 14;
++	const int voice_field = (field - 16) % 14;
++	if ( voice_index >= voice_count )
++		return -1;
++	const voice_t &voice = m.voices [voice_index];
++	switch ( voice_field )
++	{
++		case 0: return voice.env;
++		case 1: return voice.hidden_env;
++		case 2: return voice.env_mode;
++		case 3: return voice.kon_delay;
++		case 4: return voice.interp_pos;
++		case 5: return voice.brr_addr;
++		case 6: return voice.brr_offset;
++		case 7: return voice.t_envx_out;
++		case 8: return VREG(voice.regs, voll);
++		case 9: return VREG(voice.regs, volr);
++		case 10:
++			return VREG(voice.regs, pitchl) |
++				(VREG(voice.regs, pitchh) << 8);
++		case 11: return VREG(voice.regs, adsr0);
++		case 12: return VREG(voice.regs, adsr1);
++		case 13: return VREG(voice.regs, gain);
++		default: return -1;
++	}
++}
++
+ void SPC_DSP::set_output( Resampler *resampler )
+ {
+ 	this->resampler = resampler;
+diff --git a/apu/bapu/dsp/SPC_DSP.h b/apu/bapu/dsp/SPC_DSP.h
+index 953b13b..56721ec 100644
+--- a/apu/bapu/dsp/SPC_DSP.h
++++ b/apu/bapu/dsp/SPC_DSP.h
+@@ -78,6 +78,7 @@ public:
+ 	void    set_stereo_switch( int );
+ 	uint8_t reg_value( int, int );
+ 	int     envx_value( int );
++	int     zelda3_debug_value( int field ) const;
+ 
+ // DSP register addresses
+ 
 diff --git a/cpuexec.cpp b/cpuexec.cpp
 index aa43b2f..a5440ab 100644
 --- a/cpuexec.cpp
@@ -126,7 +213,7 @@ index 6ed99a5..ba8a4c8 100644
 \ No newline at end of file
 +endif
 diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
-index d381c61..6d6469a 100644
+index d381c61..2a5e97b 100644
 --- a/libretro/libretro.cpp
 +++ b/libretro/libretro.cpp
 @@ -14,6 +14,7 @@
@@ -137,7 +224,7 @@ index d381c61..6d6469a 100644
  #include <stdio.h>
  #include <vector>
  #include <string>
-@@ -891,6 +892,59 @@ unsigned retro_api_version()
+@@ -891,6 +892,74 @@ unsigned retro_api_version()
      return RETRO_API_VERSION;
  }
  
@@ -194,10 +281,25 @@ index d381c61..6d6469a 100644
 +    return Zelda3TracePresentedMode7Value(line, field);
 +}
 +
++extern "C" int zelda3_snes9x_debug_dsp_sample_count()
++{
++    return Zelda3TraceDspSampleCount();
++}
++
++extern "C" int zelda3_snes9x_debug_dsp_field_count()
++{
++    return Zelda3TraceDspFieldCount();
++}
++
++extern "C" int zelda3_snes9x_debug_dsp_sample_value(int sample, int field)
++{
++    return Zelda3TraceDspSampleValue(sample, field);
++}
++
  
  void retro_reset()
  {
-@@ -2006,7 +2060,9 @@ void retro_run()
+@@ -2006,7 +2075,9 @@ void retro_run()
  
      poll_cb();
      report_buttons();
@@ -246,16 +348,17 @@ index 4611540..4c00c64 100644
  				missing.h_counter_read = 1;
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 0000000..6902398
+index 0000000..35b0387
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,374 @@
+@@ -0,0 +1,408 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
 +#include "gfx.h"
 +#include "memmap.h"
 +#include "ppu.h"
++#include "apu/bapu/snes/snes.hpp"
 +
 +#include <cstdio>
 +#include <cstdlib>
@@ -313,6 +416,10 @@ index 0000000..6902398
 +uint8 presented_obj_visible_tiles[128] = {};
 +uint8 presented_obj_widths[128] = {};
 +SLineMatrixData presented_mode7[240] = {};
++constexpr int dsp_sample_capacity = 600;
++constexpr int dsp_field_count = 128;
++int dsp_sample_count = 0;
++int dsp_samples[dsp_sample_capacity][dsp_field_count] = {};
 +
 +uint32 parse_hex(const char *text, const char **end)
 +{
@@ -533,8 +640,37 @@ index 0000000..6902398
 +	}
 +}
 +
++void SNES::Zelda3TraceCaptureDspSample(const SPC_DSP *dsp, int left, int right)
++{
++	if (dsp_sample_count >= dsp_sample_capacity)
++		return;
++	int *sample = dsp_samples[dsp_sample_count++];
++	sample[0] = left;
++	sample[1] = right;
++	for (int field = 2; field < dsp_field_count; field++)
++		sample[field] = dsp->zelda3_debug_value(field);
++}
++
++int Zelda3TraceDspSampleCount()
++{
++	return dsp_sample_count;
++}
++
++int Zelda3TraceDspFieldCount()
++{
++	return dsp_field_count;
++}
++
++int Zelda3TraceDspSampleValue(int sample, int field)
++{
++	return sample >= 0 && sample < dsp_sample_count &&
++		field >= 0 && field < dsp_field_count
++		? dsp_samples[sample][field] : -1;
++}
++
 +void Zelda3TraceRetroRunBegin()
 +{
++	dsp_sample_count = 0;
 +	if (!active(TRACE_FRAME))
 +		return;
 +	write_machine_state("frame");
@@ -626,16 +762,21 @@ index 0000000..6902398
 +}
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 new file mode 100644
-index 0000000..f13324d
+index 0000000..3c5a621
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,27 @@
+@@ -0,0 +1,35 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
 +#include "snes9x.h"
 +
 +struct SDMA;
++namespace SNES
++{
++class SPC_DSP;
++void Zelda3TraceCaptureDspSample(const SPC_DSP *dsp, int left, int right);
++}
 +
 +extern bool Zelda3TraceDmaEnabled;
 +extern bool Zelda3TracePcEnabled;
@@ -647,6 +788,9 @@ index 0000000..f13324d
 +int Zelda3TracePresentedOamValue(int index);
 +int Zelda3TracePresentedObjValue(int field, int index);
 +int Zelda3TracePresentedMode7Value(int line, int field);
++int Zelda3TraceDspSampleCount();
++int Zelda3TraceDspFieldCount();
++int Zelda3TraceDspSampleValue(int sample, int field);
 +void Zelda3TraceRetroRunBegin();
 +void Zelda3TraceRetroRunEnd();
 +void Zelda3TraceInstruction(void);

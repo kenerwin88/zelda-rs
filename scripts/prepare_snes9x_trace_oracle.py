@@ -17,6 +17,8 @@ REVISION = "185488cd83aaf274752a742c94d45561cbecb7af"
 SOURCE_URL = "https://github.com/libretro/snes9x.git"
 EXPECTED_PATCH_PATHS = frozenset(
     {
+        "apu/bapu/dsp/SPC_DSP.cpp",
+        "apu/bapu/dsp/SPC_DSP.h",
         "cpuexec.cpp",
         "dma.cpp",
         "getset.h",

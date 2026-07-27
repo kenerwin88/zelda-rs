@@ -120,6 +120,9 @@ pub(crate) struct LibretroCore {
     pub(crate) debug_frame_first_output_cycle: Option<unsafe extern "C" fn() -> u64>,
     pub(crate) debug_frame_last_output_cycle: Option<unsafe extern "C" fn() -> u64>,
     pub(crate) debug_frame_output_count: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_dsp_sample_count: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_dsp_field_count: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_dsp_sample_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_ppu_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_scanline_mode7_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) api_version: c_uint,
@@ -213,6 +216,12 @@ impl LibretroCore {
                 optional_symbol(handle, "zelda3_snes9x_debug_frame_last_output_cycle");
             let debug_frame_output_count =
                 optional_symbol(handle, "zelda3_snes9x_debug_frame_output_count");
+            let debug_dsp_sample_count =
+                optional_symbol(handle, "zelda3_snes9x_debug_dsp_sample_count");
+            let debug_dsp_field_count =
+                optional_symbol(handle, "zelda3_snes9x_debug_dsp_field_count");
+            let debug_dsp_sample_value =
+                optional_symbol(handle, "zelda3_snes9x_debug_dsp_sample_value");
             let debug_ppu_value = optional_symbol(handle, "zelda3_snes9x_debug_ppu_value");
             let debug_scanline_mode7_value =
                 optional_symbol(handle, "zelda3_snes9x_debug_scanline_mode7_value");
@@ -281,6 +290,9 @@ impl LibretroCore {
                 debug_frame_first_output_cycle,
                 debug_frame_last_output_cycle,
                 debug_frame_output_count,
+                debug_dsp_sample_count,
+                debug_dsp_field_count,
+                debug_dsp_sample_value,
                 debug_ppu_value,
                 debug_scanline_mode7_value,
                 api_version,
@@ -468,6 +480,65 @@ impl LibretroCore {
         })
     }
 
+    pub(crate) fn debug_dsp_samples(&self) -> Option<Vec<LibretroDspSample>> {
+        let (Some(count), Some(field_count), Some(value)) = (
+            self.debug_dsp_sample_count,
+            self.debug_dsp_field_count,
+            self.debug_dsp_sample_value,
+        ) else {
+            return None;
+        };
+        if unsafe { field_count() } != 128 {
+            return None;
+        }
+        let count = unsafe { count() }.max(0);
+        Some(
+            (0..count)
+                .map(|sample| {
+                    let field = |field| unsafe { value(sample, field) };
+                    LibretroDspSample {
+                        output: [field(0), field(1)],
+                        counter: field(2),
+                        every_other_sample: field(3),
+                        kon: field(4),
+                        new_kon: field(5),
+                        latched_koff: field(6),
+                        phase: field(7),
+                        koff_register: field(8),
+                        kon_register: field(9),
+                        flags_register: field(10),
+                        pipeline_output: field(11),
+                        pitch_modulation: field(12),
+                        noise_enable: field(13),
+                        echo_enable: field(14),
+                        source_directory_page: field(15),
+                        voices: (0..8)
+                            .map(|voice| {
+                                let base = 16 + voice * 14;
+                                LibretroDspVoice {
+                                    envelope: field(base),
+                                    hidden_envelope: field(base + 1),
+                                    envelope_mode: field(base + 2),
+                                    key_on_delay: field(base + 3),
+                                    interpolation_position: field(base + 4),
+                                    brr_address: field(base + 5),
+                                    brr_offset: field(base + 6),
+                                    envelope_register_output: field(base + 7),
+                                    volume_left: field(base + 8),
+                                    volume_right: field(base + 9),
+                                    pitch: field(base + 10),
+                                    adsr0: field(base + 11),
+                                    adsr1: field(base + 12),
+                                    gain: field(base + 13),
+                                }
+                            })
+                            .collect(),
+                    }
+                })
+                .collect(),
+        )
+    }
+
     pub(crate) fn debug_ppu_value(&self, field: i32, index: i32) -> Option<i32> {
         self.debug_ppu_value
             .map(|probe| unsafe { probe(field, index) })
@@ -494,6 +565,44 @@ pub(crate) struct LibretroDspFrameClock {
     pub(crate) first_output_cycle: u64,
     pub(crate) last_output_cycle: u64,
     pub(crate) output_count: i32,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct LibretroDspSample {
+    pub(crate) output: [i32; 2],
+    pub(crate) counter: i32,
+    pub(crate) every_other_sample: i32,
+    pub(crate) kon: i32,
+    pub(crate) new_kon: i32,
+    pub(crate) latched_koff: i32,
+    pub(crate) phase: i32,
+    pub(crate) koff_register: i32,
+    pub(crate) kon_register: i32,
+    pub(crate) flags_register: i32,
+    pub(crate) pipeline_output: i32,
+    pub(crate) pitch_modulation: i32,
+    pub(crate) noise_enable: i32,
+    pub(crate) echo_enable: i32,
+    pub(crate) source_directory_page: i32,
+    pub(crate) voices: Vec<LibretroDspVoice>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct LibretroDspVoice {
+    pub(crate) envelope: i32,
+    pub(crate) hidden_envelope: i32,
+    pub(crate) envelope_mode: i32,
+    pub(crate) key_on_delay: i32,
+    pub(crate) interpolation_position: i32,
+    pub(crate) brr_address: i32,
+    pub(crate) brr_offset: i32,
+    pub(crate) envelope_register_output: i32,
+    pub(crate) volume_left: i32,
+    pub(crate) volume_right: i32,
+    pub(crate) pitch: i32,
+    pub(crate) adsr0: i32,
+    pub(crate) adsr1: i32,
+    pub(crate) gain: i32,
 }
 
 impl Drop for LibretroCore {

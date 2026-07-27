@@ -1768,6 +1768,14 @@ pub(crate) fn run_compare_libretro_oracle(
                 )
                 .unwrap();
             }
+            if let (Some(dir), Some(samples)) = (session_dir.as_deref(), oracle.debug_dsp_samples())
+            {
+                fs::write(
+                    dir.join(format!("oracle_dsp_samples_frame_{frame_index}.json")),
+                    serde_json::to_vec(&samples).unwrap(),
+                )
+                .unwrap();
+            }
         }
         let sample_frames = capture.audio.len() / 2;
         let debug_dsp_trace_frame = std::env::var("ZELDA3_DEBUG_DSP_TRACE_FRAME")
@@ -1852,6 +1860,7 @@ pub(crate) fn run_compare_libretro_oracle(
                 let modern_audio_state = game.zelda_modern_audio_state();
                 let receipt = serde_json::json!({
                     "oracle_trace": oracle.debug_dsp_trace(),
+                    "oracle_dsp_samples": oracle.debug_dsp_samples(),
                     "oracle_audio": capture.audio,
                     "rust_audio": rust_audio,
                     "rust_voice_samples": modern_audio_state.1.debug_voice_samples(),
@@ -1952,7 +1961,7 @@ pub(crate) fn run_compare_libretro_oracle(
                             .filter_map(|voice| modern_audio_state.1.debug_voice_sample_data(voice))
                             .collect::<Vec<_>>(),
                         "rust_audio_event_frame": rust_event_frame,
-                        "oracle_dsp_voice_7_trace": oracle.debug_dsp_trace(),
+                        "oracle_dsp_samples": oracle.debug_dsp_samples(),
                     });
                     fs::write(
                         dir.join("first_audio_mismatch.json"),
