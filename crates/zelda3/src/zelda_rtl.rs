@@ -799,6 +799,51 @@ enum OverworldPreMainNmiResume {
     SpriteReloadReturn,
 }
 
+/// Selects which CPU-authored audio generation the next hardware NMI can see.
+///
+/// Normally an NMI publishes and consumes the live CPU latches. When an
+/// interruptible ROM caller returns across an NMI boundary, three generations
+/// are distinct: the ports already published before the return, the latches
+/// materialized by the return, and the next live CPU generation. The middle
+/// generation must be published once without consuming it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum AudioNmiGeneration {
+    #[default]
+    LiveCpuLatches,
+    PreviouslyPublishedPorts,
+    InterruptibleReturnLatches,
+}
+
+impl AudioNmiGeneration {
+    fn advance(&mut self) -> Option<AudioNmiPublication> {
+        let (next_generation, publication) = match *self {
+            Self::LiveCpuLatches => (
+                Self::LiveCpuLatches,
+                Some(AudioNmiPublication::PublishAndConsume),
+            ),
+            Self::PreviouslyPublishedPorts => (Self::InterruptibleReturnLatches, None),
+            Self::InterruptibleReturnLatches => (
+                Self::LiveCpuLatches,
+                Some(AudioNmiPublication::PublishAndRetain),
+            ),
+        };
+        *self = next_generation;
+        publication
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AudioNmiPublication {
+    PublishAndConsume,
+    PublishAndRetain,
+}
+
+impl AudioNmiPublication {
+    const fn consumes_latches(self) -> bool {
+        matches!(self, Self::PublishAndConsume)
+    }
+}
+
 impl OverworldPreMainNmiResume {
     const fn scanout_generations(self) -> (DisplayVramGeneration, DisplayBgScrollGeneration) {
         match self {
@@ -2949,6 +2994,8 @@ pub struct ZeldaState {
     joypad_sampled_before_main: bool,
     #[serde(skip)]
     audio_nmi_processed_before_main: bool,
+    #[serde(skip)]
+    next_audio_nmi_generation: AudioNmiGeneration,
     #[serde(skip)]
     file_select_initial_graphics_phase: u8,
     #[serde(skip)]
@@ -7936,6 +7983,7 @@ impl ZeldaState {
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
+            next_audio_nmi_generation: AudioNmiGeneration::default(),
             file_select_initial_graphics_phase: 0,
             file_select_checkerboard_suffix_pending: false,
             name_player_tilemap_suffix_pending: false,
@@ -8043,6 +8091,7 @@ impl ZeldaState {
         self.pending_rom_work = PendingRomWork::default();
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
+        self.next_audio_nmi_generation = AudioNmiGeneration::default();
         self.file_select_initial_graphics_phase = 0;
         self.file_select_checkerboard_suffix_pending = false;
         self.name_player_tilemap_suffix_pending = false;
@@ -8098,6 +8147,7 @@ impl ZeldaState {
             self.pending_rom_work = PendingRomWork::default();
             self.joypad_sampled_before_main = false;
             self.audio_nmi_processed_before_main = false;
+            self.next_audio_nmi_generation = AudioNmiGeneration::default();
             self.file_select_initial_graphics_phase = 0;
             self.file_select_checkerboard_suffix_pending = false;
             self.name_player_tilemap_suffix_pending = false;
@@ -9722,7 +9772,7 @@ impl ZeldaState {
             // main CPU performs this frame's game work. This is also true on the
             // first initialized frame: the intro chime written by `intro_init`
             // must wait for the following NMI rather than leaking out early.
-            self.interrupt_nmi_audio_parts_locked();
+            self.interrupt_nmi_audio_parts_for_generation();
             self.audio_nmi_processed_before_main = true;
         }
         if initialized_audio_bank_this_frame {
@@ -10139,6 +10189,11 @@ impl ZeldaState {
                     animated_tiles,
                 }) => {
                     self.complete_pre_overworld_load_properties(overworld_screen, animated_tiles);
+                    // The atomic continuation materializes its caller suffix
+                    // after this frame's audio NMI was already sampled. Keep
+                    // that boundary's APU command batch; the ambient latch
+                    // authored above belongs to the following NMI generation.
+                    self.next_audio_nmi_generation = AudioNmiGeneration::PreviouslyPublishedPorts;
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }

@@ -103,7 +103,7 @@ impl ZeldaState {
         let joypad_already_sampled = std::mem::take(&mut self.joypad_sampled_before_main);
         let audio_already_processed = std::mem::take(&mut self.audio_nmi_processed_before_main);
         if !audio_already_processed {
-            self.interrupt_nmi_audio_parts_locked();
+            self.interrupt_nmi_audio_parts_for_generation();
         }
 
         if self.parity_runtime_hold_nmi_this_frame() {
@@ -268,7 +268,17 @@ impl ZeldaState {
         }
     }
 
+    pub(super) fn interrupt_nmi_audio_parts_for_generation(&mut self) {
+        if let Some(publication) = self.next_audio_nmi_generation.advance() {
+            self.interrupt_nmi_audio_parts(publication);
+        }
+    }
+
     pub(super) fn interrupt_nmi_audio_parts_locked(&mut self) {
+        self.interrupt_nmi_audio_parts(AudioNmiPublication::PublishAndConsume);
+    }
+
+    fn interrupt_nmi_audio_parts(&mut self, publication: AudioNmiPublication) {
         let music_control = self.game_state.system_signals.music_control();
         if music_control != 0 && !self.zelda_is_playing_music_track_with_bug(music_control) {
             self.set_last_music_control(music_control);
@@ -276,7 +286,9 @@ impl ZeldaState {
             if music_control < 0xf2 {
                 self.set_current_music_control(music_control);
             }
-            self.set_music_control(0);
+            if publication.consumes_latches() {
+                self.set_music_control(0);
+            }
         }
 
         let ambient_sound_effect = self.game_state.system_signals.ambient_sound_effect();
@@ -286,7 +298,9 @@ impl ZeldaState {
                 AudioSfxBank::Ambient,
                 ambient_sound_effect,
             ));
-            self.clear_ambient_sound_effect();
+            if publication.consumes_latches() {
+                self.clear_ambient_sound_effect();
+            }
         } else if self.zelda_audio_command_acknowledged(EngineAudioCommand::from_sfx_port_value(
             AudioSfxBank::Ambient,
             self.game_state.system_signals.last_ambient_sound_effect(),
@@ -304,8 +318,10 @@ impl ZeldaState {
             AudioSfxBank::Effect2,
             self.game_state.system_signals.sound_effect_2(),
         ));
-        self.clear_sound_effect_1();
-        self.clear_sound_effect_2();
+        if publication.consumes_latches() {
+            self.clear_sound_effect_1();
+            self.clear_sound_effect_2();
+        }
     }
 
     pub(super) fn nmi_do_updates(&mut self) {

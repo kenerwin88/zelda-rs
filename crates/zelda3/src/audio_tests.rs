@@ -402,6 +402,47 @@ fn gameplay_sound_latch_becomes_a_typed_nmi_command() {
 }
 
 #[test]
+fn audio_nmi_generation_publishes_then_consumes_after_interruptible_caller_returns() {
+    let mut state = ZeldaState::new();
+    state.set_ambient_sound_effect(1);
+    state.next_audio_nmi_generation = AudioNmiGeneration::PreviouslyPublishedPorts;
+
+    state.interrupt_nmi_audio_parts_for_generation();
+    state.zelda_push_apu_state();
+    let mut retained_audio = [0i16; 32];
+    let retained_frame = state.zelda_render_audio(&mut retained_audio, 16, 2);
+
+    assert_eq!(state.game_state.system_signals.ambient_sound_effect(), 1);
+    assert!(!retained_frame.events.iter().any(|event| {
+        matches!(
+            event.kind,
+            crate::game_output::AudioEventKind::PlaySfx { bank: 0, id: 1 }
+        )
+    }));
+
+    state.interrupt_nmi_audio_parts_for_generation();
+    state.zelda_push_apu_state();
+    let mut published_audio = [0i16; 32];
+    let published_frame = state.zelda_render_audio(&mut published_audio, 16, 2);
+
+    assert_eq!(state.game_state.system_signals.ambient_sound_effect(), 1);
+    assert!(published_frame.events.iter().any(|event| {
+        matches!(
+            event.kind,
+            crate::game_output::AudioEventKind::PlaySfx { bank: 0, id: 1 }
+        )
+    }));
+
+    state.interrupt_nmi_audio_parts_for_generation();
+    state.zelda_push_apu_state();
+    let mut consumed_audio = [0i16; 32];
+    state.zelda_render_audio(&mut consumed_audio, 16, 2);
+
+    assert_eq!(state.game_state.system_signals.ambient_sound_effect(), 0);
+    assert_eq!(state.zelda_debug_apu_write_ports()[1], 1);
+}
+
+#[test]
 fn rom_startup_audio_stays_silent_until_the_boot_chime_keyon() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
