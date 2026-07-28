@@ -3834,6 +3834,28 @@ fn dungeon_entrance_publishes_the_animated_bg_written_by_its_leading_nmi() {
 }
 
 #[test]
+fn gameplay_leading_nmi_does_not_restore_stale_animated_bg_over_full_tilemap() {
+    let mut state = ZeldaState::new();
+    let destination = 0x3b00;
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.set_animated_tile_vram_destination_address(destination as u16);
+    state.ppu.vram[destination..destination + 0x200].fill(0x1111);
+    state.capture_display_snapshot();
+
+    state.pre_nmi_animated_bg_scanout = Some(PreNmiAnimatedBgScanout {
+        destination_address: destination,
+        vram: vec![0x2222; 0x200],
+    });
+    state.ppu.vram[destination..destination + 0x200].fill(0x3333);
+
+    let presented_word = state.with_display_snapshot(|display| display.ppu.vram[destination]);
+
+    assert_eq!(presented_word, 0x3333);
+    assert_eq!(state.ppu.vram[destination], 0x3333);
+}
+
+#[test]
 fn animated_bg_scanout_requires_a_captured_dma_source() {
     let mut state = ZeldaState::new();
     state.ppu.vram[0] = 0x1111;
@@ -4077,7 +4099,7 @@ fn full_tilemap_upload_publishes_vram_at_the_following_nmi() {
     assert!(!rom_full_tilemap_scanout_uses_pre_nmi_vram(false, 0));
 
     let mut state = ZeldaState::new();
-    state.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX] = 1;
+    state.set_pending_nmi_subroutine(1);
     state.ppu.vram[0] = 0x1111;
     state.capture_display_snapshot();
     state.ppu.vram[0] = 0x2222;

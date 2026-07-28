@@ -477,6 +477,8 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
     let player_obj_nmi_precedes_main = (submodule == 0
         && (main_module == 7 || matches!(main_module, 9 | 11)))
         || (main_module == 9 && matches!(submodule, 1 | 6..=8 | 0x0a));
+    let animated_bg_nmi_precedes_scanout =
+        dungeon_entrance_nmi_precedes_main || (main_module == 7 && submodule == 0);
 
     GraphicsDmaPlan {
         oam_scanout: if dungeon_entrance_nmi_precedes_main || player_obj_nmi_precedes_main {
@@ -502,11 +504,10 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
         } else {
             GraphicsDmaGeneration::LiveAfterMain
         },
-        animated_bg_scanout: if dungeon_entrance_nmi_precedes_main {
-            // This NMI's animated-tile upload precedes the active display that
-            // follows the resumed entrance slice, so its output is visible
-            // immediately even though its operands belong to the host-boundary
-            // generation above.
+        animated_bg_scanout: if animated_bg_nmi_precedes_scanout {
+            // A leading NMI completes its VRAM uploads before the active
+            // display, so the overlapping animated-background region must use
+            // that same live generation.
             AnimatedBgScanoutGeneration::LiveAfterNmi
         } else {
             AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
