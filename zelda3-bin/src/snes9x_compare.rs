@@ -57,6 +57,14 @@ struct DisplayPpuProbe {
     presented_oam: Vec<i32>,
     mode7: [i32; 8],
     mode7_scanlines: Vec<[i32; 8]>,
+    /// Snes9x's renderer-resolved main/sub clip spans for BG1..backdrop.
+    ///
+    /// Each of the twelve clips contributes Count followed by six
+    /// (DrawMode, Left, Right) spans. Rust does not cache this derived form,
+    /// so its receipt leaves the field absent.
+    presented_clip: Option<Vec<i32>>,
+    /// Final Snes9x draw operands for `ZELDA3_SNES9X_TRACE_PIXEL=x,y`.
+    presented_pixel: Option<Vec<i32>>,
 }
 
 fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
@@ -91,6 +99,16 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
                 })
             })
             .collect(),
+        presented_clip: Some(
+            (0..228)
+                .map(|i| oracle.debug_ppu_value(27, i).unwrap_or(-1))
+                .collect(),
+        ),
+        presented_pixel: Some(
+            (0..10)
+                .map(|i| oracle.debug_ppu_value(28, i).unwrap_or(-1))
+                .collect(),
+        ),
     })
 }
 
@@ -155,6 +173,8 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
                 .collect(),
             mode7: snapshot.ppu.m7_matrix.map(i32::from),
             mode7_scanlines: scanlines.iter().map(|line| line.7.map(i32::from)).collect(),
+            presented_clip: None,
+            presented_pixel: None,
         }
     })
 }

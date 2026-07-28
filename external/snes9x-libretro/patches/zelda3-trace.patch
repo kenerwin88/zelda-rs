@@ -301,7 +301,7 @@ index 6ed99a5..ba8a4c8 100644
 \ No newline at end of file
 +endif
 diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
-index d381c61..4569c7a 100644
+index d381c61..bc121a3 100644
 --- a/libretro/libretro.cpp
 +++ b/libretro/libretro.cpp
 @@ -14,6 +14,7 @@
@@ -312,7 +312,7 @@ index d381c61..4569c7a 100644
  #include <stdio.h>
  #include <vector>
  #include <string>
-@@ -891,6 +892,104 @@ unsigned retro_api_version()
+@@ -891,6 +892,111 @@ unsigned retro_api_version()
      return RETRO_API_VERSION;
  }
  
@@ -360,6 +360,13 @@ index d381c61..4569c7a 100644
 +        case 24: return Zelda3TracePresentedObjValue(3, index);
 +        case 25: return Zelda3TracePresentedObjValue(4, index);
 +        case 26: return Zelda3TracePresentedObjValue(5, index);
++        // Flattened [main/sub][BG1..backdrop] ClipData snapshots. Each clip
++        // contributes Count followed by six (DrawMode, Left, Right) spans.
++        case 27: return Zelda3TracePresentedClipValue(index);
++        // Selected pixel's final winning draw:
++        // offset, palette index, main, sub, sub depth, result, Z1, Z2,
++        // clip-colors, layer-math-enable.
++        case 28: return Zelda3TracePresentedPixelValue(index);
 +        default: return -1;
 +    }
 +}
@@ -417,7 +424,7 @@ index d381c61..4569c7a 100644
  
  void retro_reset()
  {
-@@ -2006,7 +2105,9 @@ void retro_run()
+@@ -2006,7 +2112,9 @@ void retro_run()
  
      poll_cb();
      report_buttons();
@@ -476,12 +483,72 @@ index 4611540..7458d84 100644
  				PPU.HBeamFlip ^= 1;
  			#ifdef DEBUGGER
  				missing.h_counter_read = 1;
+diff --git a/tileimpl-n1x1.cpp b/tileimpl-n1x1.cpp
+index 1c37c60..85d58cc 100644
+--- a/tileimpl-n1x1.cpp
++++ b/tileimpl-n1x1.cpp
+@@ -6,6 +6,7 @@
+ 
+ #define _TILEIMPL_CPP_
+ #include "tileimpl.h"
++#include "zelda3_trace.h"
+ 
+ namespace TileImpl {
+ 
+@@ -15,7 +16,14 @@ namespace TileImpl {
+ 		(void) OffsetInLine;
+ 		if (Z1 > GFX.DB[Offset + N] && (M))
+ 		{
+-			GFX.S[Offset + N] = MATH::Calc(GFX.ScreenColors[Pix], GFX.SubScreen[Offset + N], GFX.SubZBuffer[Offset + N]);
++			const uint16 main_color = GFX.ScreenColors[Pix];
++			const uint16 sub_color = GFX.SubScreen[Offset + N];
++			const uint8 sub_depth = GFX.SubZBuffer[Offset + N];
++			const uint16 result = MATH::Calc(main_color, sub_color, sub_depth);
++			if (Zelda3TracePixelEnabled)
++				Zelda3TraceCapturePresentedPixel(Offset + N, Pix, main_color,
++					sub_color, sub_depth, result, Z1, Z2);
++			GFX.S[Offset + N] = result;
+ 			GFX.DB[Offset + N] = Z2;
+ 		}
+ 	}
+diff --git a/tileimpl-n2x1.cpp b/tileimpl-n2x1.cpp
+index 4025c69..e27bc42 100644
+--- a/tileimpl-n2x1.cpp
++++ b/tileimpl-n2x1.cpp
+@@ -6,6 +6,7 @@
+ 
+ #define _TILEIMPL_CPP_
+ #include "tileimpl.h"
++#include "zelda3_trace.h"
+ 
+ namespace TileImpl {
+ 
+@@ -15,7 +16,18 @@ namespace TileImpl {
+ 		(void) OffsetInLine;
+ 		if (Z1 > GFX.DB[Offset + 2 * N] && (M))
+ 		{
+-			GFX.S[Offset + 2 * N] = GFX.S[Offset + 2 * N + 1] = MATH::Calc(GFX.ScreenColors[Pix], GFX.SubScreen[Offset + 2 * N], GFX.SubZBuffer[Offset + 2 * N]);
++			const uint16 main_color = GFX.ScreenColors[Pix];
++			const uint16 sub_color = GFX.SubScreen[Offset + 2 * N];
++			const uint8 sub_depth = GFX.SubZBuffer[Offset + 2 * N];
++			const uint16 result = MATH::Calc(main_color, sub_color, sub_depth);
++			if (Zelda3TracePixelEnabled)
++			{
++				Zelda3TraceCapturePresentedPixel(Offset + 2 * N, Pix, main_color,
++					sub_color, sub_depth, result, Z1, Z2);
++				Zelda3TraceCapturePresentedPixel(Offset + 2 * N + 1, Pix, main_color,
++					sub_color, sub_depth, result, Z1, Z2);
++			}
++			GFX.S[Offset + 2 * N] = GFX.S[Offset + 2 * N + 1] = result;
+ 			GFX.DB[Offset + 2 * N] = GFX.DB[Offset + 2 * N + 1] = Z2;
+ 		}
+ 	}
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 0000000..f63a438
+index 0000000..65b2caf
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,545 @@
+@@ -0,0 +1,602 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -490,6 +557,7 @@ index 0000000..f63a438
 +#include "ppu.h"
 +#include "apu/bapu/snes/snes.hpp"
 +
++#include <algorithm>
 +#include <cstdio>
 +#include <cstdlib>
 +#include <cstring>
@@ -498,6 +566,7 @@ index 0000000..f63a438
 +
 +bool Zelda3TraceDmaEnabled = false;
 +bool Zelda3TracePcEnabled = false;
++bool Zelda3TracePixelEnabled = false;
 +bool Zelda3TracePpuEnabled = false;
 +bool Zelda3TraceWramEnabled = false;
 +
@@ -546,6 +615,11 @@ index 0000000..f63a438
 +uint8 presented_obj_visible_tiles[128] = {};
 +uint8 presented_obj_widths[128] = {};
 +SLineMatrixData presented_mode7[240] = {};
++ClipData presented_clip[2][6] = {};
++int trace_pixel_x = -1;
++int trace_pixel_y = -1;
++constexpr int presented_pixel_field_count = 10;
++int presented_pixel[presented_pixel_field_count] = {};
 +constexpr int dsp_sample_capacity = 600;
 +constexpr int dsp_field_count = 217;
 +int dsp_sample_count = 0;
@@ -670,6 +744,9 @@ index 0000000..f63a438
 +	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_PCS"), config.pc, 64, &config.pc_count);
 +	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_PPU"), config.ppu, 32, &config.ppu_count);
 +	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_WRAM"), config.wram, 32, &config.wram_count);
++	const char *pixel = std::getenv("ZELDA3_SNES9X_TRACE_PIXEL");
++	Zelda3TracePixelEnabled =
++		pixel && std::sscanf(pixel, "%d,%d", &trace_pixel_x, &trace_pixel_y) == 2;
 +}
 +
 +bool active(uint32 event)
@@ -740,11 +817,57 @@ index 0000000..f63a438
 +		sizeof(presented_obj_visible_tiles));
 +	std::memcpy(presented_obj_widths, GFX.OBJWidths, sizeof(presented_obj_widths));
 +	std::memcpy(presented_mode7, LineMatrixData, sizeof(presented_mode7));
++	std::memcpy(presented_clip, IPPU.Clip, sizeof(presented_clip));
 +}
 +
 +int Zelda3TracePresentedOamValue(int index)
 +{
 +	return index >= 0 && index < (int) sizeof(presented_oam) ? presented_oam[index] : -1;
++}
++
++int Zelda3TracePresentedClipValue(int index)
++{
++	constexpr int fields_per_clip = 1 + 6 * 3;
++	if (index < 0 || index >= 2 * 6 * fields_per_clip)
++		return -1;
++	const int clip_index = index / fields_per_clip;
++	const int field = index % fields_per_clip;
++	const ClipData &clip = presented_clip[clip_index / 6][clip_index % 6];
++	if (field == 0)
++		return clip.Count;
++	const int span = (field - 1) / 3;
++	switch ((field - 1) % 3)
++	{
++		case 0: return clip.DrawMode[span];
++		case 1: return clip.Left[span];
++		case 2: return clip.Right[span];
++		default: return -1;
++	}
++}
++
++void Zelda3TraceCapturePresentedPixel(int offset, int palette_index, int main_color,
++	int sub_color, int sub_depth, int result, int z1, int z2)
++{
++	const int target_offset =
++		trace_pixel_y * static_cast<int>(GFX.PPL) + trace_pixel_x;
++	if (!Zelda3TracePixelEnabled || offset != target_offset)
++		return;
++	presented_pixel[0] = offset;
++	presented_pixel[1] = palette_index;
++	presented_pixel[2] = main_color;
++	presented_pixel[3] = sub_color;
++	presented_pixel[4] = sub_depth;
++	presented_pixel[5] = result;
++	presented_pixel[6] = z1;
++	presented_pixel[7] = z2;
++	presented_pixel[8] = GFX.ClipColors;
++	presented_pixel[9] = BG.EnableMath;
++}
++
++int Zelda3TracePresentedPixelValue(int index)
++{
++	return index >= 0 && index < presented_pixel_field_count
++		? presented_pixel[index] : -1;
 +}
 +
 +int Zelda3TracePresentedObjValue(int field, int index)
@@ -934,6 +1057,7 @@ index 0000000..f63a438
 +
 +void Zelda3TraceRetroRunBegin()
 +{
++	std::fill_n(presented_pixel, presented_pixel_field_count, -1);
 +	dsp_sample_count = 0;
 +	dsp_write_count = 0;
 +	apu_port_write_count = 0;
@@ -1029,10 +1153,10 @@ index 0000000..f63a438
 +}
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 new file mode 100644
-index 0000000..fbddf53
+index 0000000..0937134
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,50 @@
+@@ -0,0 +1,55 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -1053,6 +1177,7 @@ index 0000000..fbddf53
 +
 +extern bool Zelda3TraceDmaEnabled;
 +extern bool Zelda3TracePcEnabled;
++extern bool Zelda3TracePixelEnabled;
 +extern bool Zelda3TracePpuEnabled;
 +extern bool Zelda3TraceWramEnabled;
 +
@@ -1061,6 +1186,10 @@ index 0000000..fbddf53
 +int Zelda3TracePresentedOamValue(int index);
 +int Zelda3TracePresentedObjValue(int field, int index);
 +int Zelda3TracePresentedMode7Value(int line, int field);
++int Zelda3TracePresentedClipValue(int index);
++void Zelda3TraceCapturePresentedPixel(int offset, int palette_index, int main_color,
++	int sub_color, int sub_depth, int result, int z1, int z2);
++int Zelda3TracePresentedPixelValue(int index);
 +int Zelda3TraceDspSampleCount();
 +int Zelda3TraceDspFieldCount();
 +int Zelda3TraceDspSampleValue(int sample, int field);

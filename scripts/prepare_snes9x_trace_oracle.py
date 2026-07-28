@@ -28,6 +28,8 @@ EXPECTED_PATCH_PATHS = frozenset(
         "libretro/Makefile.common",
         "libretro/libretro.cpp",
         "ppu.cpp",
+        "tileimpl-n1x1.cpp",
+        "tileimpl-n2x1.cpp",
         "zelda3_trace.cpp",
         "zelda3_trace.h",
     }

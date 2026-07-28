@@ -39,6 +39,9 @@ Available event domains are `frame`, `nmi`, `rng`, `pc`, `dma`, `ppu`, and
 - `ZELDA3_SNES9X_TRACE_PPU=2100,212c-2132` selects PPU writes. RNG
   counter reads are emitted by the `rng` domain.
 - `ZELDA3_SNES9X_TRACE_WRAM=0010-0017,0fa1` selects WRAM writes.
+- `ZELDA3_SNES9X_TRACE_PIXEL=52,56` captures the final winning draw operands
+  for one active-display pixel in the parity receipt. Leave it unset for the
+  ordinary zero-overhead render path.
 
 Every record includes `run`, the zero-based `retro_run` invocation that owns
 the event, as well as Snes9x's `frame` counter, CPU position, registers, the top
@@ -46,7 +49,8 @@ four stack bytes, the decoded long-call return address, CPU carry, and the
 Zelda main/NMI/RNG state. Use `run` for host-frame timing; use `frame` for the
 emulator's internal video boundary. The trace patch also exports the optional
 PPU inspection functions consumed by the parity harness, including OAM/OBJ
-evaluation and the per-scanline Mode 7 matrix captured at the completed-screen
+evaluation, resolved clip spans, a selected pixel's palette/color-math
+operands, and the per-scanline Mode 7 matrix captured at the completed-screen
 publication boundary.
 
 Generate a strict Rust RNG replay script from a route trace with:
