@@ -429,12 +429,30 @@ enum GraphicsDmaGeneration {
     LiveAfterMain,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum AnimatedBgScanoutGeneration {
+    #[default]
+    HostBoundaryBeforeNmi,
+    LiveAfterNmi,
+}
+
+impl AnimatedBgScanoutGeneration {
+    const fn resolve_live_override(self, publish_live_after_nmi: bool) -> Self {
+        if publish_live_after_nmi {
+            Self::LiveAfterNmi
+        } else {
+            self
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct GraphicsDmaPlan {
     oam_scanout: GraphicsDmaGeneration,
     link_obj_scanout: GraphicsDmaGeneration,
     link_obj_operands: GraphicsDmaGeneration,
     animated_bg_operands: GraphicsDmaGeneration,
+    animated_bg_scanout: AnimatedBgScanoutGeneration,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -483,6 +501,15 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         } else {
             GraphicsDmaGeneration::LiveAfterMain
+        },
+        animated_bg_scanout: if dungeon_entrance_nmi_precedes_main {
+            // This NMI's animated-tile upload precedes the active display that
+            // follows the resumed entrance slice, so its output is visible
+            // immediately even though its operands belong to the host-boundary
+            // generation above.
+            AnimatedBgScanoutGeneration::LiveAfterNmi
+        } else {
+            AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
         },
     }
 }
@@ -2652,23 +2679,6 @@ impl DisplayVramGeneration {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum AnimatedBgVramGeneration {
-    #[default]
-    HostBoundaryBeforeNmi,
-    LiveAfterNmi,
-}
-
-impl AnimatedBgVramGeneration {
-    const fn for_scanout(bad_weather_scroll_is_live: bool) -> Self {
-        if bad_weather_scroll_is_live {
-            Self::LiveAfterNmi
-        } else {
-            Self::HostBoundaryBeforeNmi
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum DisplaySnapshotPublication {
     #[default]
     /// Publish this capture immediately and discard any staged generation.
@@ -3193,6 +3203,7 @@ struct DisplaySnapshot {
     hud_vram_destination: usize,
     link_obj_scanout_generation: GraphicsDmaGeneration,
     oam_scanout_generation: GraphicsDmaGeneration,
+    animated_bg_scanout_generation: AnimatedBgScanoutGeneration,
     bg_scroll_generation: DisplayBgScrollGeneration,
     obj_generation: DisplayObjGeneration,
     published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
@@ -8648,26 +8659,18 @@ impl ZeldaState {
         let obj_generation = transition_entry_obj
             .map(|(oam, vram)| DisplayObjGeneration::RetainTransitionEntry { oam, vram })
             .unwrap_or_else(|| self.active_display_obj_generation.clone());
-        let link_obj_scanout_generation = self
+        let entry_graphics_dma_plan = self
             .pre_main_graphics_dma
             .as_ref()
-            .map(|graphics| graphics.entry_plan.link_obj_scanout)
+            .map(|graphics| graphics.entry_plan)
             .unwrap_or_else(|| {
                 rom_graphics_dma_plan(captured_frame.main_module, captured_frame.submodule)
-                    .link_obj_scanout
             });
+        let link_obj_scanout_generation = entry_graphics_dma_plan.link_obj_scanout;
         let oam_scanout_generation = self
             .next_display_oam_scanout_generation
             .take()
-            .or_else(|| {
-                self.pre_main_graphics_dma
-                    .as_ref()
-                    .map(|graphics| graphics.entry_plan.oam_scanout)
-            })
-            .unwrap_or_else(|| {
-                rom_graphics_dma_plan(captured_frame.main_module, captured_frame.submodule)
-                    .oam_scanout
-            });
+            .unwrap_or(entry_graphics_dma_plan.oam_scanout);
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
@@ -8693,6 +8696,7 @@ impl ZeldaState {
                 .message_dma_destination_address_usize(),
             link_obj_scanout_generation,
             oam_scanout_generation,
+            animated_bg_scanout_generation: entry_graphics_dma_plan.animated_bg_scanout,
             bg_scroll_generation: std::mem::take(&mut self.next_display_bg_scroll_generation),
             obj_generation,
             published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
@@ -8905,8 +8909,9 @@ impl ZeldaState {
                 display.ppu.half_color,
                 self.ppu.half_color,
             );
-        let animated_bg_vram_generation =
-            AnimatedBgVramGeneration::for_scanout(publish_live_overworld_bad_weather_scroll);
+        let animated_bg_scanout_generation = display
+            .animated_bg_scanout_generation
+            .resolve_live_override(publish_live_overworld_bad_weather_scroll);
         let display_phase_differs_from_live = snapshot_frame.main_module
             != self.game_state.frame.main_module
             || snapshot_frame.submodule != self.game_state.frame.submodule;
@@ -9022,8 +9027,8 @@ impl ZeldaState {
         // bad-weather tail is the measured exception that publishes the live
         // post-NMI generation.
         let animated_bg_destination = read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
-        let previous_animated_bg_vram = (animated_bg_vram_generation
-            == AnimatedBgVramGeneration::HostBoundaryBeforeNmi)
+        let previous_animated_bg_vram = (animated_bg_scanout_generation
+            == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi)
             .then(|| {
                 self.pre_nmi_animated_bg_scanout
                     .as_ref()

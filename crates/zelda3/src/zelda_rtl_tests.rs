@@ -3780,12 +3780,12 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
 #[test]
 fn overworld_animated_bg_vram_generation_follows_scanout_authority() {
     assert_eq!(
-        AnimatedBgVramGeneration::for_scanout(false),
-        AnimatedBgVramGeneration::HostBoundaryBeforeNmi
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi.resolve_live_override(false),
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
     );
     assert_eq!(
-        AnimatedBgVramGeneration::for_scanout(true),
-        AnimatedBgVramGeneration::LiveAfterNmi
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi.resolve_live_override(true),
+        AnimatedBgScanoutGeneration::LiveAfterNmi
     );
 }
 
@@ -3809,6 +3809,28 @@ fn animated_bg_uses_the_current_host_boundary_vram_at_either_destination() {
         assert_eq!(presented_word, 0x2222);
         assert_eq!(state.ppu.vram[destination], 0x3333);
     }
+}
+
+#[test]
+fn dungeon_entrance_publishes_the_animated_bg_written_by_its_leading_nmi() {
+    let mut state = ZeldaState::new();
+    let destination = 0x3b00;
+    state.set_main_module(0x11);
+    state.set_submodule(7);
+    state.set_animated_tile_vram_destination_address(destination as u16);
+    state.ppu.vram[destination..destination + 0x200].fill(0x1111);
+    state.capture_display_snapshot();
+
+    state.pre_nmi_animated_bg_scanout = Some(PreNmiAnimatedBgScanout {
+        destination_address: destination,
+        vram: vec![0x2222; 0x200],
+    });
+    state.ppu.vram[destination..destination + 0x200].fill(0x3333);
+
+    let presented_word = state.with_display_snapshot(|display| display.ppu.vram[destination]);
+
+    assert_eq!(presented_word, 0x3333);
+    assert_eq!(state.ppu.vram[destination], 0x3333);
 }
 
 #[test]
@@ -4431,6 +4453,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
             link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            animated_bg_scanout: AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi,
         },
     );
     assert_eq!(
@@ -4440,6 +4463,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
             link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             animated_bg_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            animated_bg_scanout: AnimatedBgScanoutGeneration::LiveAfterNmi,
         },
     );
     assert_eq!(
@@ -4449,6 +4473,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
             link_obj_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
+            animated_bg_scanout: AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi,
         },
     );
     assert_eq!(
@@ -4458,6 +4483,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
             link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
+            animated_bg_scanout: AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi,
         },
     );
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));
