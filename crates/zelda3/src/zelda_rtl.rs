@@ -384,15 +384,11 @@ const fn rom_display_memory_publication_is_deferred(
     // the main thread after the active frame's hardware NMI. It is consumed by
     // the following NMI, so publishing live post-NMI memory here would expose
     // every menu stripe (file select, naming, copy, erase) one frame early.
-    // The dungeon landing wipe has the same split CPU/NMI cadence: each iris
-    // and sprite step is authored after its active-frame upload boundary.
     // Dialogue character tiles use their own BG3 NMI packet but share that
     // next-publication cadence. WorldMap_HandleSprites likewise authors the
     // map marker after the active frame's OAM DMA; it appears at the following
     // NMI rather than immediately in Module 14/submodule 7.
-    pending_main_thread_stripe
-        || rom_dungeon_landing_wipe_is_active(main_module, submodule)
-        || (main_module == 14 && submodule == 2)
+    pending_main_thread_stripe || (main_module == 14 && submodule == 2)
 }
 
 const fn rom_display_oam_publication_is_deferred(
@@ -1135,6 +1131,7 @@ impl SpotlightIteration {
             )
         )
     }
+
 }
 
 impl SpotlightIterationPhase {
@@ -8382,6 +8379,20 @@ impl ZeldaState {
             RomWorkContinuation::FinishSpotlightIteration { iteration },
             SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
         );
+    }
+
+    pub(super) fn schedule_dungeon_landing_wipe_return(&mut self, nmi_slices: u8) {
+        if !self.rom_startup_timing() {
+            return;
+        }
+        self.dungeon_landing_wipe_return_slices_remaining = nmi_slices;
+        // Module07_0F authored Link's OAM and OBJ tiles after the active
+        // scanout's DMA boundary. Retain the captured hardware generation
+        // while its continuation is waiting; the completion path runs
+        // NMI_PrepareSprites and publishes the live generation explicitly.
+        self.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+        self.next_display_obj_scanout_generation =
+            Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
     }
 
     pub(super) fn begin_pre_overworld_properties_work(

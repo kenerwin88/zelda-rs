@@ -11377,11 +11377,10 @@ impl ZeldaState {
                 self.game_state.player.follower_link.y(),
                 self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
             );
-            self.dungeon_landing_wipe_return_slices_remaining =
-                dungeon_landing_wipe_return_slices(
-                    vertical_center,
-                    self.iris_spotlight_goal_transition_pending,
-                );
+            self.schedule_dungeon_landing_wipe_return(dungeon_landing_wipe_return_slices(
+                vertical_center,
+                self.iris_spotlight_goal_transition_pending,
+            ));
         }
     }
 

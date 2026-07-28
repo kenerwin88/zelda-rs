@@ -3747,6 +3747,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert!(
         !SpotlightIteration::opening(false).publishes_hdma_table_ahead_of_other_display_domains()
     );
+    assert!(!rom_display_memory_publication_is_deferred(7, 15, false));
     assert_eq!(
         SpotlightIteration::opening(false).completion_publication(),
         DisplaySnapshotPublication::AdvanceStaged
@@ -3815,6 +3816,24 @@ fn overworld_animated_bg_vram_generation_follows_scanout_authority() {
     assert_eq!(
         AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi.resolve_live_override(true),
         AnimatedBgScanoutGeneration::LiveAfterNmi
+    );
+}
+
+#[test]
+fn dungeon_landing_wait_retains_the_pre_return_obj_dma_generation() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+
+    state.schedule_dungeon_landing_wipe_return(1);
+
+    assert_eq!(state.dungeon_landing_wipe_return_slices_remaining, 1);
+    assert_eq!(
+        state.next_display_vram_generation,
+        DisplayVramGeneration::RetainCapturedBeforeNmi
+    );
+    assert_eq!(
+        state.next_display_obj_scanout_generation,
+        Some(GraphicsDmaGeneration::HostBoundaryBeforeMain)
     );
 }
 
