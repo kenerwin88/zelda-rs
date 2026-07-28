@@ -1070,8 +1070,10 @@ enum RomWorkContinuation {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SpotlightIterationPhase {
-    /// The close has authored its first table, but NMI has not enabled it yet.
-    CloseEntry,
+    /// The entry table is still being calculated when the next scanout starts.
+    CloseEntryBeforeTablePublication,
+    /// The entry table reaches HDMA before the next scanout starts.
+    CloseEntryAfterTablePublication,
     /// HDMA consumes one complete table generation for the scanout.
     WholeTable,
     /// The close stages a published prefix with newly authored final lines.
@@ -1125,9 +1127,17 @@ impl SpotlightIteration {
 }
 
 impl SpotlightIterationPhase {
-    const fn for_close_iteration(submodule: u8, radius: u16) -> Self {
+    const fn for_close_iteration(
+        submodule: u8,
+        radius: u16,
+        vertical_center: u16,
+    ) -> Self {
         if submodule == 0 {
-            Self::CloseEntry
+            if spotlight_table_has_long_nmi_workload(vertical_center) {
+                Self::CloseEntryBeforeTablePublication
+            } else {
+                Self::CloseEntryAfterTablePublication
+            }
         } else if radius != 0 && radius <= 0x38 {
             // Snes9x PC/V-counter traces show the next circle write reaching
             // HDMA at scanline 221 once the close has reached this CPU phase.
@@ -1139,8 +1149,11 @@ impl SpotlightIterationPhase {
 
     const fn close_completion_publication(self) -> DisplaySnapshotPublication {
         match self {
+            Self::CloseEntryAfterTablePublication => {
+                DisplaySnapshotPublication::PublishCaptured
+            }
             Self::WholeTable => DisplaySnapshotPublication::RetainPublished,
-            Self::CloseEntry | Self::MixedTailAfterReturn => {
+            Self::CloseEntryBeforeTablePublication | Self::MixedTailAfterReturn => {
                 DisplaySnapshotPublication::AdvanceStaged
             }
         }
@@ -1219,11 +1232,13 @@ const fn rom_dungeon_landing_wipe_is_active(main_module: u8, submodule: u8) -> b
     main_module == 7 && submodule == 15
 }
 
-// A cartridge-state sweep around the goal iteration found the exact CPU/NMI
-// crossover at 184 generated row pairs, symmetrically at vertical centers
-// 41/42 and 182/183. Below it, the goal-only $80:f427 reset returns before the
-// next NMI; at and above it, that reset is interrupted once more.
-const SPOTLIGHT_GOAL_RESET_TWO_SLICE_MIN_ROW_PAIRS: u16 = 184;
+// Cartridge-state sweeps and Snes9x PC/V-counter traces place the exact
+// CPU/NMI workload crossover at 184 generated row pairs, symmetrically at
+// vertical centers 41/42 and 182/183. Below it, the table and its $80:f427
+// goal reset reach the next hardware publication boundary; at and above it,
+// the calculation remains on the preceding table generation for one more
+// scanout.
+const SPOTLIGHT_LONG_NMI_WORKLOAD_MIN_ROW_PAIRS: u16 = 184;
 
 const fn spotlight_vertical_center(link_y: u16, bg2_y: u16) -> u16 {
     link_y.wrapping_sub(bg2_y).wrapping_add(12)
@@ -1241,14 +1256,15 @@ const fn spotlight_table_row_pairs(vertical_center: u16) -> u16 {
         .wrapping_add(1)
 }
 
+const fn spotlight_table_has_long_nmi_workload(vertical_center: u16) -> bool {
+    spotlight_table_row_pairs(vertical_center) >= SPOTLIGHT_LONG_NMI_WORKLOAD_MIN_ROW_PAIRS
+}
+
 const fn dungeon_landing_wipe_return_slices(
     vertical_center: u16,
     completes_goal_transition: bool,
 ) -> u8 {
-    if completes_goal_transition
-        && spotlight_table_row_pairs(vertical_center)
-            >= SPOTLIGHT_GOAL_RESET_TWO_SLICE_MIN_ROW_PAIRS
-    {
+    if completes_goal_transition && spotlight_table_has_long_nmi_workload(vertical_center) {
         2
     } else {
         1
@@ -10333,9 +10349,13 @@ impl ZeldaState {
                     ..
                 }) => {
                     // The opening or closing iris has returned through
-                    // LinkOam_Main and the normal game-loop suffix. Publish its
-                    // DMA sources and release the software NMI latch at the
-                    // measured boundary.
+                    // LinkOam_Main and the normal game-loop suffix only after
+                    // this scanout has started. Its HDMA table can already be
+                    // visible, but OAM and Link OBJ CHR still belong to the
+                    // host-boundary generation; the NMI below publishes their
+                    // newly prepared sources for the following scanout.
+                    self.next_display_obj_scanout_generation =
+                        Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
                     if self.iris_spotlight_goal_transition_pending {
                         self.iris_spotlight_goal_transition_pending = false;
                         self.complete_iris_spotlight_goal_transition();

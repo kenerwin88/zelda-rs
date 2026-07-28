@@ -3718,8 +3718,18 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         DisplaySnapshotPublication::RetainPublished
     );
     assert_eq!(
-        SpotlightIteration::closing(SpotlightIterationPhase::CloseEntry).completion_publication(),
+        SpotlightIteration::closing(
+            SpotlightIterationPhase::CloseEntryBeforeTablePublication
+        )
+        .completion_publication(),
         DisplaySnapshotPublication::AdvanceStaged
+    );
+    assert_eq!(
+        SpotlightIteration::closing(
+            SpotlightIterationPhase::CloseEntryAfterTablePublication
+        )
+        .completion_publication(),
+        DisplaySnapshotPublication::PublishCaptured
     );
     assert_eq!(
         SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
@@ -3739,19 +3749,19 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         DisplaySnapshotPublication::PublishCaptured
     );
     assert_eq!(
-        SpotlightIterationPhase::for_close_iteration(1, 0x3f),
+        SpotlightIterationPhase::for_close_iteration(1, 0x3f, 0),
         SpotlightIterationPhase::WholeTable
     );
     assert_eq!(
-        SpotlightIterationPhase::for_close_iteration(1, 0x38),
+        SpotlightIterationPhase::for_close_iteration(1, 0x38, 0),
         SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
-        SpotlightIterationPhase::for_close_iteration(1, 0x07),
+        SpotlightIterationPhase::for_close_iteration(1, 0x07, 0),
         SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
-        SpotlightIterationPhase::for_close_iteration(1, 0),
+        SpotlightIterationPhase::for_close_iteration(1, 0, 0),
         SpotlightIterationPhase::WholeTable
     );
     assert_eq!(DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES, 1);
@@ -4758,6 +4768,27 @@ fn dungeon_exit_nmi_publishes_coherent_oam_link_tiles_and_scroll() {
 }
 
 #[test]
+fn spotlight_return_keeps_obj_dma_on_the_pre_return_boundary() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.next_display_obj_scanout_generation =
+        Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    state.ppu.vram[0x4000] = 0x1111;
+    state.ppu.oam[0] = 0x2222;
+    state.capture_display_snapshot();
+
+    state.ppu.vram[0x4000] = 0xaaaa;
+    state.ppu.oam[0] = 0xbbbb;
+
+    let captured = state.with_display_snapshot(|display| {
+        (display.ppu.vram[0x4000], display.ppu.oam[0])
+    });
+
+    assert_eq!(captured, (0x1111, 0x2222));
+}
+
+#[test]
 fn nmi_operand_consumption_preserves_the_scanout_plan() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);
@@ -4881,16 +4912,43 @@ fn dungeon_landing_wipe_timing_follows_spotlight_row_workload() {
 
     assert_eq!(spotlight_table_row_pairs(42), 183);
     assert_eq!(spotlight_table_row_pairs(182), 183);
+    assert!(!spotlight_table_has_long_nmi_workload(42));
+    assert!(!spotlight_table_has_long_nmi_workload(182));
     assert_eq!(dungeon_landing_wipe_return_slices(42, true), 1);
     assert_eq!(dungeon_landing_wipe_return_slices(182, true), 1);
 
     assert_eq!(spotlight_table_row_pairs(41), 184);
     assert_eq!(spotlight_table_row_pairs(183), 184);
+    assert!(spotlight_table_has_long_nmi_workload(41));
+    assert!(spotlight_table_has_long_nmi_workload(183));
     assert_eq!(dungeon_landing_wipe_return_slices(41, true), 2);
     assert_eq!(dungeon_landing_wipe_return_slices(183, true), 2);
 
     assert_eq!(dungeon_landing_wipe_return_slices(41, false), 1);
     assert_eq!(dungeon_landing_wipe_return_slices(183, false), 1);
+}
+
+#[test]
+fn spotlight_close_entry_publication_follows_circle_workload() {
+    let short_entry = SpotlightIterationPhase::for_close_iteration(0, 0x7e, 42);
+    assert_eq!(
+        short_entry,
+        SpotlightIterationPhase::CloseEntryAfterTablePublication
+    );
+    assert_eq!(
+        short_entry.close_completion_publication(),
+        DisplaySnapshotPublication::PublishCaptured
+    );
+
+    let long_entry = SpotlightIterationPhase::for_close_iteration(0, 0x7e, 41);
+    assert_eq!(
+        long_entry,
+        SpotlightIterationPhase::CloseEntryBeforeTablePublication
+    );
+    assert_eq!(
+        long_entry.close_completion_publication(),
+        DisplaySnapshotPublication::AdvanceStaged
+    );
 }
 
 #[test]

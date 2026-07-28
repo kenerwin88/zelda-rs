@@ -2491,9 +2491,14 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {
+        let vertical_center = spotlight_vertical_center(
+            self.game_state.player.follower_link.y(),
+            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+        );
         let phase = SpotlightIterationPhase::for_close_iteration(
             self.game_state.frame.submodule,
             self.game_state.display.spotlight_hdma.window_radius(),
+            vertical_center,
         );
         self.sprite_main();
         if self.game_state.frame.submodule == 0 {
