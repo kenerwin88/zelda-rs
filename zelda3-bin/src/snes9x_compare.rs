@@ -1218,30 +1218,33 @@ pub(crate) fn run_compare_libretro_oracle(
         };
         input_history.push((frame_index, input));
         stage(2, &mut stage_ns, &mut stage_mark);
-        let rust_video_frame =
-            (compare_this_frame && (trace_video_pixel.is_some() || compare_video)).then(|| {
-                let restored = if debug_anim_lag {
-                    pre_anim_region.as_ref().map(|prev| {
-                        let cur = game.ppu.vram[0x3c00..0x3e00].to_vec();
-                        game.ppu.vram[0x3c00..0x3e00].copy_from_slice(prev);
-                        cur
-                    })
-                } else {
-                    None
-                };
-                let frame = native_window_video
-                    .as_mut()
-                    .expect("native window renderer allocated for libretro video comparison")
-                    .render_game_rgba(&mut game)
-                    .unwrap_or_else(|error| {
-                        eprintln!("native-window oracle video render failed: {error}");
-                        process::exit(1);
-                    });
-                if let Some(cur) = restored {
-                    game.ppu.vram[0x3c00..0x3e00].copy_from_slice(&cur);
-                }
-                frame
-            });
+        // The production renderer retains hardware-visible history (notably
+        // OBJ evaluation) across scanouts. Warm it on every emulated frame so
+        // --compare-from-frame changes only the reporting window, never the
+        // renderer state being measured.
+        let rust_video_frame = (trace_video_pixel.is_some() || compare_video).then(|| {
+            let restored = if debug_anim_lag {
+                pre_anim_region.as_ref().map(|prev| {
+                    let cur = game.ppu.vram[0x3c00..0x3e00].to_vec();
+                    game.ppu.vram[0x3c00..0x3e00].copy_from_slice(prev);
+                    cur
+                })
+            } else {
+                None
+            };
+            let frame = native_window_video
+                .as_mut()
+                .expect("native window renderer allocated for libretro video comparison")
+                .render_game_rgba(&mut game)
+                .unwrap_or_else(|error| {
+                    eprintln!("native-window oracle video render failed: {error}");
+                    process::exit(1);
+                });
+            if let Some(cur) = restored {
+                game.ppu.vram[0x3c00..0x3e00].copy_from_slice(&cur);
+            }
+            frame
+        });
         if debug_anim_lag {
             pre_anim_region = Some(game.ppu.vram[0x3c00..0x3e00].to_vec());
         }
