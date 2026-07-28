@@ -4592,7 +4592,10 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     subtile_landing.subsubmodule = 6;
     assert_eq!(
         rom_graphics_dma_plan_at_host_boundary(subtile_landing),
-        rom_graphics_dma_plan(7, 1),
+        rom_graphics_dma_plan_at_host_boundary(crate::game_state::FrameState {
+            subsubmodule: 5,
+            ..subtile_landing
+        }),
     );
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, false, true));
@@ -4633,6 +4636,30 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     });
 
     assert_eq!(captured, (0xaaaa, 0x4444, 0x2222, 0xcccc));
+}
+
+#[test]
+fn nmi_operand_consumption_preserves_the_scanout_plan() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(1);
+    state.set_subsubmodule(6);
+    let entry_plan = rom_graphics_dma_plan_at_host_boundary(state.game_state.frame);
+    state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
+        entry_plan,
+        animated_tile: None,
+        link_sources: LinkDmaSources::load_from_ram(&state.ram),
+    });
+
+    state.nmi_do_updates();
+
+    assert_eq!(
+        state
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.entry_plan),
+        Some(entry_plan),
+    );
 }
 
 #[test]

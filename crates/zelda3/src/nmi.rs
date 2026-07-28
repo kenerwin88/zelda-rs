@@ -337,7 +337,6 @@ impl ZeldaState {
 
     fn nmi_do_updates_from(&mut self, oam_dma_source: Option<&[u8]>, defer_bg_vram_upload: bool) {
         if !self.game_state.display.core_updates_are_disabled() {
-            let pre_main_graphics = self.pre_main_graphics_dma.take();
             let graphics_dma_plan = rom_graphics_dma_plan(
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
@@ -348,19 +347,23 @@ impl ZeldaState {
                 GraphicsDmaGeneration::HostBoundaryBeforeMain
             )
             .then(|| {
-                pre_main_graphics
+                self.pre_main_graphics_dma
                     .as_ref()
                     .map(|graphics| graphics.link_sources)
             })
             .flatten();
             self.nmi_core_link_graphics_update(captured_link_sources);
 
-            let pre_main_dma = matches!(
+            let pre_main_dma = if matches!(
                 graphics_dma_plan.animated_bg_operands,
                 GraphicsDmaGeneration::HostBoundaryBeforeMain
-            )
-            .then(|| pre_main_graphics.and_then(|graphics| graphics.animated_tile))
-            .flatten();
+            ) {
+                self.pre_main_graphics_dma
+                    .as_mut()
+                    .and_then(|graphics| graphics.animated_tile.take())
+            } else {
+                None
+            };
             let (src_addr, dst, data) = pre_main_dma.map_or_else(
                 || {
                     (
