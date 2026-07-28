@@ -429,6 +429,16 @@ enum GraphicsDmaGeneration {
     LiveAfterMain,
 }
 
+impl GraphicsDmaGeneration {
+    const fn resolve_live_override(self, publish_live_generation: bool) -> Self {
+        if publish_live_generation {
+            Self::LiveAfterMain
+        } else {
+            self
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum AnimatedBgScanoutGeneration {
     #[default]
@@ -565,8 +575,9 @@ const fn rom_dungeon_exit_entry_crosses_nmi_boundary(
 ) -> bool {
     // Module 7's pre-main graphics plan is still attached to the captured
     // snapshot, but the transition into Dungeon_PrepExitWithSpotlight crosses
-    // the next hardware NMI: its OAM DMA and doorway scroll are already visible
-    // while the remaining staged display controls still belong to submodule 0.
+    // the next hardware NMI: its OAM DMA, Link OBJ DMA, and doorway scroll are
+    // already visible while the remaining staged display controls still belong
+    // to submodule 0.
     snapshot_main_module == 0x0f
         && snapshot_submodule == 0
         && live_main_module == 0x0f
@@ -8999,15 +9010,9 @@ impl ZeldaState {
                 snapshot_attract_scene.sequence(),
                 snapshot_attract_scene.state(),
             );
-        // At the same split boundary, OAM above and the doorway scroll below
-        // publish from live state while the remaining staged display controls
-        // retain their independently measured generation.
-        let publish_live_dungeon_exit_scroll = rom_dungeon_exit_entry_crosses_nmi_boundary(
-            snapshot_frame.main_module,
-            snapshot_frame.submodule,
-            self.game_state.frame.main_module,
-            self.game_state.frame.submodule,
-        );
+        // At the same split boundary, OAM above, Link OBJ VRAM below, and the
+        // doorway scroll publish from live state while the remaining staged
+        // display controls retain their independently measured generation.
         let publish_live_overworld_bad_weather_scroll = rom_overworld_bad_weather_scroll_is_live(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
@@ -9107,7 +9112,7 @@ impl ZeldaState {
                 shown.v_scroll = live.v_scroll;
             }
         }
-        if publish_live_dungeon_exit_scroll {
+        if dungeon_exit_crosses_nmi_boundary {
             for (shown, live) in self.ppu.bg_layer.iter_mut().zip(&display.ppu.bg_layer) {
                 shown.h_scroll = live.h_scroll;
                 shown.v_scroll = live.v_scroll;
@@ -9127,8 +9132,11 @@ impl ZeldaState {
         // of the frame. Preserve that completed pre-NMI buffer rather than a
         // job that may have finished later in the current CPU slice.
         let presented_poly = self.selected_intro_poly_display_buffer();
+        let link_obj_scanout_generation = display
+            .link_obj_scanout_generation
+            .resolve_live_override(dungeon_exit_crosses_nmi_boundary);
         let retain_entry_link_obj_vram = matches!(
-            display.link_obj_scanout_generation,
+            link_obj_scanout_generation,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         );
         let entry_link_obj_vram =

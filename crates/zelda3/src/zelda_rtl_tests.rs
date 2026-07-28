@@ -4695,6 +4695,14 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert!(!rom_dungeon_exit_entry_crosses_nmi_boundary(
         0x0f, 1, 0x0f, 1
     ));
+    assert_eq!(
+        GraphicsDmaGeneration::HostBoundaryBeforeMain.resolve_live_override(false),
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    );
+    assert_eq!(
+        GraphicsDmaGeneration::HostBoundaryBeforeMain.resolve_live_override(true),
+        GraphicsDmaGeneration::LiveAfterMain,
+    );
 
     let mut state = ZeldaState::new();
     state.set_main_module(7);
@@ -4719,6 +4727,34 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     });
 
     assert_eq!(captured, (0xaaaa, 0x4444, 0x2222, 0xcccc));
+}
+
+#[test]
+fn dungeon_exit_nmi_publishes_coherent_oam_link_tiles_and_scroll() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(0x0f);
+    state.set_submodule(0);
+    state.next_display_obj_scanout_generation =
+        Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    state.ppu.vram[0x4000] = 0x1111;
+    state.ppu.oam[0] = 0x2222;
+    state.ppu.bg_layer[1].v_scroll = 0x3333;
+    state.capture_display_snapshot();
+
+    state.set_submodule(1);
+    state.ppu.vram[0x4000] = 0xaaaa;
+    state.ppu.oam[0] = 0xbbbb;
+    state.ppu.bg_layer[1].v_scroll = 0xcccc;
+
+    let captured = state.with_display_snapshot(|display| {
+        (
+            display.ppu.vram[0x4000],
+            display.ppu.oam[0],
+            display.ppu.bg_layer[1].v_scroll,
+        )
+    });
+
+    assert_eq!(captured, (0xaaaa, 0xbbbb, 0xcccc));
 }
 
 #[test]
