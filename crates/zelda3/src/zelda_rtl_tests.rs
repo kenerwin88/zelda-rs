@@ -3838,6 +3838,33 @@ fn dungeon_landing_wait_retains_the_pre_return_obj_dma_generation() {
 }
 
 #[test]
+fn spotlight_projection_generation_is_a_scanout_local_table_mix() {
+    let len = ZeldaState::HDMA_DYNAMIC_TABLE_LEN;
+    let before_projection = [vec![0x11; len], vec![0x33; len]];
+    let after_projection = [vec![0x22; len], vec![0x44; len]];
+    let mut ram = vec![0; WRAM_SIZE];
+
+    DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
+        before_projection,
+        after_projection,
+    }
+    .compose_into(&mut ram);
+
+    let split = SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START * 2;
+    for (table_base, [before, after]) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
+        .into_iter()
+        .zip([[0x11, 0x22], [0x33, 0x44]])
+    {
+        assert!(ram[table_base..table_base + split]
+            .iter()
+            .all(|&byte| byte == before));
+        assert!(ram[table_base + split..table_base + len]
+            .iter()
+            .all(|&byte| byte == after));
+    }
+}
+
+#[test]
 fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
     let gameplay = rom_graphics_dma_plan(7, 0);
     let brightness = rom_graphics_dma_plan(7, 10);
@@ -4989,6 +5016,9 @@ fn dungeon_landing_wipe_timing_follows_spotlight_row_workload() {
 
     assert_eq!(dungeon_landing_wipe_return_slices(41, false), 1);
     assert_eq!(dungeon_landing_wipe_return_slices(183, false), 1);
+    assert!(spotlight_opening_projects_live_tail_before_hdma(0x3f, 183));
+    assert!(!spotlight_opening_projects_live_tail_before_hdma(0x46, 183));
+    assert!(!spotlight_opening_projects_live_tail_before_hdma(0x3f, 182));
 }
 
 #[test]

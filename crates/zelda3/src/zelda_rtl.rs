@@ -1247,6 +1247,11 @@ const fn rom_dungeon_landing_wipe_is_active(main_module: u8, submodule: u8) -> b
 // the calculation remains on the preceding table generation for one more
 // scanout.
 const SPOTLIGHT_LONG_NMI_WORKLOAD_MIN_ROW_PAIRS: u16 = 184;
+// With the dungeon landing's 189-row workload, Snes9x PC/V-counter traces
+// show the opening calculation reaching the scanline-221 HDMA read through
+// radius $3f. The following ROM step ($46) misses that consumer, so the tail
+// remains on the preceding table generation.
+const SPOTLIGHT_OPENING_LIVE_TAIL_MAX_RADIUS: u16 = 0x3f;
 
 const fn spotlight_vertical_center(link_y: u16, bg2_y: u16) -> u16 {
     link_y.wrapping_sub(bg2_y).wrapping_add(12)
@@ -1264,6 +1269,14 @@ const fn spotlight_table_row_pairs(vertical_center: u16) -> u16 {
 
 const fn spotlight_table_has_long_nmi_workload(vertical_center: u16) -> bool {
     spotlight_table_row_pairs(vertical_center) >= SPOTLIGHT_LONG_NMI_WORKLOAD_MIN_ROW_PAIRS
+}
+
+const fn spotlight_opening_projects_live_tail_before_hdma(
+    radius: u16,
+    vertical_center: u16,
+) -> bool {
+    spotlight_table_has_long_nmi_workload(vertical_center)
+        && radius <= SPOTLIGHT_OPENING_LIVE_TAIL_MAX_RADIUS
 }
 
 const fn dungeon_landing_wipe_return_slices(
@@ -2798,6 +2811,13 @@ enum DisplayHdmaTableGeneration {
     /// The CPU is still projecting the new table while HDMA consumes it.
     /// Words that miss their scanline retain the pre-projection generation.
     AttractMapProjectionDuringScanout { before_projection: Vec<u8> },
+    /// The spotlight circle builder crosses HDMA at scanline 221. The active
+    /// scanout therefore owns the preceding table above that boundary and the
+    /// newly projected table from that boundary downward.
+    SpotlightProjectionDuringScanout {
+        before_projection: [Vec<u8>; 2],
+        after_projection: [Vec<u8>; 2],
+    },
 }
 
 impl DisplayHdmaTableGeneration {
@@ -2818,8 +2838,34 @@ impl DisplayHdmaTableGeneration {
                     }
                 }
             }
+            Self::SpotlightProjectionDuringScanout {
+                before_projection,
+                after_projection,
+            } => {
+                let byte_start = SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START * 2;
+                for ((table_base, before), after) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
+                    .into_iter()
+                    .zip(before_projection)
+                    .zip(after_projection)
+                {
+                    let byte_count = before
+                        .len()
+                        .min(after.len())
+                        .min(ZeldaState::HDMA_DYNAMIC_TABLE_LEN);
+                    let split = byte_start.min(byte_count);
+                    ram[table_base..table_base + split].copy_from_slice(&before[..split]);
+                    ram[table_base + split..table_base + byte_count]
+                        .copy_from_slice(&after[split..byte_count]);
+                }
+            }
         }
     }
+}
+
+fn spotlight_hdma_tables_from_ram(ram: &[u8]) -> [Vec<u8>; 2] {
+    [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE].map(|table_base| {
+        ram[table_base..table_base + ZeldaState::HDMA_DYNAMIC_TABLE_LEN].to_vec()
+    })
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -8731,11 +8777,31 @@ impl ZeldaState {
                     active_table: self.hdma_dynamic_table_bytes(),
                 },
             );
+        let landing_spotlight_after_projection =
+            (self.dungeon_landing_wipe_return_slices_remaining != 0
+                && spotlight_opening_projects_live_tail_before_hdma(
+                    self.game_state.display.spotlight_hdma.window_radius(),
+                    spotlight_vertical_center(
+                        self.game_state.player.follower_link.y(),
+                        self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+                    ),
+                ))
+            .then(|| spotlight_hdma_tables_from_ram(&self.ram));
         self.capture_display_snapshot_with_publication(publication);
         if let (Some(generation), Some(display)) =
             (hdma_table_generation, self.display_snapshot.as_mut())
         {
             display.hdma_table_generation = generation;
+        }
+        if let (Some(after_projection), Some(display)) = (
+            landing_spotlight_after_projection,
+            self.display_snapshot.as_mut(),
+        ) {
+            display.hdma_table_generation =
+                DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
+                    before_projection: spotlight_hdma_tables_from_ram(&display.ram),
+                    after_projection,
+                };
         }
     }
 
@@ -10726,20 +10792,18 @@ impl ZeldaState {
         if self.pending_rom_work.spotlight_iteration_phase()
             == Some(SpotlightIterationPhase::MixedTailAfterReturn)
         {
-            let byte_start = SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START * 2;
-            let published_prefixes = self.display_snapshot.as_ref().map(|display| {
-                [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
-                    .map(|table_base| display.ram[table_base..table_base + byte_start].to_vec())
-            });
-            if let (Some(prefixes), Some(staged)) =
-                (published_prefixes, self.deferred_display_snapshot.as_mut())
+            let published_tables = self
+                .display_snapshot
+                .as_ref()
+                .map(|display| spotlight_hdma_tables_from_ram(&display.ram));
+            if let (Some(before_projection), Some(staged)) =
+                (published_tables, self.deferred_display_snapshot.as_mut())
             {
-                for (table_base, prefix) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
-                    .into_iter()
-                    .zip(prefixes)
-                {
-                    staged.ram[table_base..table_base + byte_start].copy_from_slice(&prefix);
-                }
+                staged.hdma_table_generation =
+                    DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
+                        before_projection,
+                        after_projection: spotlight_hdma_tables_from_ram(&staged.ram),
+                    };
             }
         }
         self.replay_trace_col("before-nmi");
