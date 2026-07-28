@@ -9793,11 +9793,11 @@ impl ZeldaState {
             self.nmi_prepare_sprites();
             self.clear_nmi_update_latch();
             self.capture_display_snapshot();
-            // This continuation runs after the frame's NMI and returns without
-            // entering `interrupt_nmi`, whose entry normally consumes this
-            // marker. Do that boundary bookkeeping here so the following
-            // frame's NMI publishes the latches authored by this CPU suffix.
-            self.audio_nmi_processed_before_main = false;
+            // The interrupted caller has now reached the ordinary game-loop
+            // boundary. Run its trailing NMI exactly once: it consumes the
+            // preprocessed-audio marker and publishes the completed BG3 text
+            // for the following scanout.
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.rom_startup_timing() && self.dialogue_scroll_continuation.is_return_only() {

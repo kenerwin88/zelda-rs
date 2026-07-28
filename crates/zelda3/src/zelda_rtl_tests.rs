@@ -373,6 +373,9 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     state.dialogue_fast_forward_hold_active = true;
     state.audio_nmi_processed_before_main = true;
     state.set_sound_effect_2(12);
+    state.set_pending_nmi_subroutine(2);
+    state.set_core_update_disable_flag(2);
+    state.set_messaging_render_buffer_word(0, 0x1234);
 
     state.run_frame_internal(0, crate::RUN_MAIN);
 
@@ -380,6 +383,9 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     assert!(!state.dialogue_fast_forward_hold_active);
     assert!(!state.audio_nmi_processed_before_main);
     assert_eq!(state.game_state.system_signals.sound_effect_2(), 12);
+    assert_eq!(state.ppu.vram[0x7c00], 0x1234);
+    assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
+    assert_eq!(state.game_state.display.core_update_disable_flag, 0);
 
     state.interrupt_nmi_audio_parts_for_generation();
     assert_eq!(state.game_state.system_signals.sound_effect_2(), 0);
