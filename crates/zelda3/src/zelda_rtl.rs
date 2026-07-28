@@ -2614,6 +2614,32 @@ pub(crate) enum DialogueTextGeneration {
     CurrentRenderBuffer,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct DialogueScanoutOwnership(u8);
+
+impl DialogueScanoutOwnership {
+    const SNAPSHOT: Self = Self(0);
+    const FROZEN_SCROLL_COPY: Self = Self(1);
+    const COMPLETION_PENDING: Self = Self(2);
+    const COMPLETED_SCROLL: Self = Self(3);
+
+    const fn is_snapshot(self) -> bool {
+        self.0 == Self::SNAPSHOT.0
+    }
+
+    const fn uses_frozen_scroll(self) -> bool {
+        matches!(
+            self,
+            Self::FROZEN_SCROLL_COPY | Self::COMPLETION_PENDING
+        )
+    }
+
+    pub(crate) const fn holds_nmi_registers(self) -> bool {
+        self.0 == Self::FROZEN_SCROLL_COPY.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DialogueScrollCompletionTiming {
     AfterReturnBoundary,
@@ -2915,15 +2941,15 @@ pub struct ZeldaState {
     pub(crate) dialogue_scroll_frozen_scanout: Option<DialogueTextScanout>,
     /// Set while the current frame performed a long-scroll pixel-copy slice
     /// (the two-pixel start or three-pixel continuation, not the return-only
-    /// suffix or cheap completing call). Latched into
-    /// `dialogue_scroll_stale_scanout` at the display boundary.
+    /// suffix or cheap completing call). Promoted to frozen ownership at the
+    /// display boundary.
     #[serde(skip)]
     pub(crate) dialogue_scroll_ran_this_frame: bool,
-    /// The scanout for the presented frame falls while the ROM is mid-scroll:
-    /// Snes9x displays the text generation from TWO boundaries back there
-    /// (one further than the ordinary dialogue snapshot retention).
-    #[serde(default)]
-    pub(crate) dialogue_scroll_stale_scanout: bool,
+    /// Selects the single coherent BG3 text generation presented at this
+    /// display boundary. The transparent byte preserves compatibility with
+    /// snapshots whose old boolean field encoded snapshot/frozen ownership.
+    #[serde(default, alias = "dialogue_scroll_stale_scanout")]
+    pub(crate) dialogue_scanout_ownership: DialogueScanoutOwnership,
     /// Dedicated one-frame override presenting the freshly completed coherent
     /// scanout on the group-completion frame (see the lag handler). Separate
     /// from the frozen state to avoid cascading into adjacent scroll groups.
@@ -7970,7 +7996,7 @@ impl ZeldaState {
             overworld_transition_scroll_hold_pending: None,
             overworld_transition_scroll_hold_staged: None,
             dialogue_scroll_ran_this_frame: false,
-            dialogue_scroll_stale_scanout: false,
+            dialogue_scanout_ownership: DialogueScanoutOwnership::SNAPSHOT,
             dma: DmaState::new(),
             frame_ctr_dbg: 0,
             previous_host_controller_input: 0,
@@ -8575,15 +8601,28 @@ impl ZeldaState {
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
         // from the previous frame has been consumed by that frame's renders.
         self.cgram_upload_latch = None;
-        self.dialogue_scroll_stale_scanout =
-            std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
-        if !self.dialogue_scroll_stale_scanout {
-            self.dialogue_scroll_frozen_scanout = None;
-        }
         // The completion override displays one boundary after the final copy
         // slice: internally the scroll finishes on frame N, but Snes9x scans
         // the finished text out on N+1.
         self.dialogue_scroll_completion_scanout = self.dialogue_scroll_completion_staged.take();
+        let scroll_copy_crossed_boundary =
+            std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
+        self.dialogue_scanout_ownership =
+            if self.dialogue_scroll_completion_scanout.is_some() {
+                DialogueScanoutOwnership::COMPLETED_SCROLL
+            } else if scroll_copy_crossed_boundary {
+                DialogueScanoutOwnership::FROZEN_SCROLL_COPY
+            } else if self
+                .dialogue_scroll_continuation
+                .is_completion_pending_publication()
+            {
+                DialogueScanoutOwnership::COMPLETION_PENDING
+            } else {
+                DialogueScanoutOwnership::SNAPSHOT
+            };
+        if self.dialogue_scanout_ownership.is_snapshot() {
+            self.dialogue_scroll_frozen_scanout = None;
+        }
         self.overworld_transition_scroll_hold = self.overworld_transition_scroll_hold_staged.take();
         self.overworld_transition_scroll_hold_staged =
             self.overworld_transition_scroll_hold_pending.take();
@@ -9054,13 +9093,22 @@ impl ZeldaState {
         // overrides both the retained and the recomposed paths.
         // The completion override (freshly-scrolled buffer, group-completion
         // frame) takes precedence over the frozen (group-start) generation.
-        let previous_dialogue_scanout =
-            self.dialogue_scroll_completion_scanout.clone().or_else(|| {
-                self.dialogue_scroll_stale_scanout
-                    .then(|| self.dialogue_scroll_frozen_scanout.clone())
-                    .flatten()
-            });
-        if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
+        let previous_dialogue_scanout = if self
+            .dialogue_scanout_ownership
+            .uses_frozen_scroll()
+        {
+            self.dialogue_scroll_frozen_scanout.clone()
+        } else if self.dialogue_scanout_ownership
+            == DialogueScanoutOwnership::COMPLETED_SCROLL
+        {
+            self.dialogue_scroll_completion_scanout.clone()
+        } else {
+            None
+        };
+        if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some()
+            && (!self.dialogue_scanout_ownership.is_snapshot()
+                || !self.dialogue_scroll_continuation.is_idle())
+        {
             let scanout_sum = |scanout: &DialogueTextScanout| {
                 scanout
                     .vram
@@ -9069,10 +9117,10 @@ impl ZeldaState {
                     .sum::<u64>()
             };
             eprintln!(
-                "scroll_retain host={} lag={} stale={} frozen={:?} completion={:?} nmi_retained={}",
+                "scroll_retain host={} lag={} ownership={} frozen={:?} completion={:?} nmi_retained={}",
                 self.frame_ctr_dbg,
                 self.dialogue_scroll_continuation.diagnostic_code(),
-                self.dialogue_scroll_stale_scanout,
+                self.dialogue_scanout_ownership.0,
                 self.dialogue_scroll_frozen_scanout
                     .as_ref()
                     .map(&scanout_sum),
@@ -9134,16 +9182,17 @@ impl ZeldaState {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
         }
         if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some()
-            && (self.dialogue_scroll_stale_scanout || !self.dialogue_scroll_continuation.is_idle())
+            && (!self.dialogue_scanout_ownership.is_snapshot()
+                || !self.dialogue_scroll_continuation.is_idle())
         {
             let presented_sum: u64 = self.ppu.vram[0x7c00..0x7ff0]
                 .iter()
                 .map(|w| u64::from(w & 0xff) + u64::from(w >> 8))
                 .sum();
             eprintln!(
-                "scroll_present host={} presented_sum={presented_sum} stale={} lag={}",
+                "scroll_present host={} presented_sum={presented_sum} ownership={} lag={}",
                 self.frame_ctr_dbg,
-                self.dialogue_scroll_stale_scanout,
+                self.dialogue_scanout_ownership.0,
                 self.dialogue_scroll_continuation.diagnostic_code(),
             );
         }
@@ -9824,7 +9873,7 @@ impl ZeldaState {
             // this NMI configure the next active frame, while retro_run returns
             // the scanout that just ended. Preserve that pre-NMI register
             // generation without deferring the newly published memory domains.
-            self.dialogue_scroll_stale_scanout = false;
+            self.dialogue_scanout_ownership = DialogueScanoutOwnership::SNAPSHOT;
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             self.capture_display_snapshot();
             if let Some(snapshot) = self.display_snapshot.as_mut() {
@@ -10450,8 +10499,11 @@ impl ZeldaState {
                 debug_assert!(self
                     .dialogue_scroll_continuation
                     .is_copying_remaining_pixels());
-                self.dialogue_scroll_stale_scanout =
+                let scroll_copy_crossed_boundary =
                     std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
+                debug_assert!(scroll_copy_crossed_boundary);
+                self.dialogue_scanout_ownership =
+                    DialogueScanoutOwnership::FROZEN_SCROLL_COPY;
                 self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();

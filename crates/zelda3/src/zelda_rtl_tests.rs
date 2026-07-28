@@ -4390,6 +4390,10 @@ fn dialogue_scroll_completion_timing_follows_measured_vblank_headroom() {
         DialogueScrollCompletionTiming::AfterReturnBoundary,
     );
     assert_eq!(
+        DialogueScrollCompletionTiming::at_scroll_entry(262_662),
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
+    assert_eq!(
         DialogueScrollCompletionTiming::at_scroll_entry(283_400),
         DialogueScrollCompletionTiming::BeforeNextVblank,
     );
@@ -4400,6 +4404,50 @@ fn dialogue_scroll_completion_timing_follows_measured_vblank_headroom() {
     assert!(continuation.is_completion_pending_publication());
     continuation.publish_early_completion();
     assert!(continuation.is_idle());
+}
+
+#[test]
+fn dialogue_completion_before_vblank_keeps_frozen_scanout_until_publication() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.ppu.vram[0x7c00] = 0x1111;
+    state.freeze_dialogue_scanout_for_scroll(DialogueTextGeneration::PublishedDisplay);
+    state.ppu.vram[0x7c00] = 0x2222;
+    state.dialogue_scroll_continuation =
+        DialogueScrollContinuation::begin(DialogueScrollCompletionTiming::BeforeNextVblank);
+    state
+        .dialogue_scroll_continuation
+        .finish_remaining_pixels();
+
+    state.capture_display_snapshot();
+
+    assert_eq!(
+        state.dialogue_scanout_ownership,
+        DialogueScanoutOwnership::COMPLETION_PENDING
+    );
+    assert_eq!(
+        state.with_display_snapshot(|display| display.ppu.vram[0x7c00]),
+        0x1111
+    );
+
+    state
+        .dialogue_scroll_continuation
+        .publish_early_completion();
+    state.dialogue_scroll_completion_staged = Some(DialogueTextScanout {
+        vram: vec![0x3333; 0x3f0],
+        ..DialogueTextScanout::default()
+    });
+    state.capture_display_snapshot();
+
+    assert_eq!(
+        state.dialogue_scanout_ownership,
+        DialogueScanoutOwnership::COMPLETED_SCROLL
+    );
+    assert_eq!(
+        state.with_display_snapshot(|display| display.ppu.vram[0x7c00]),
+        0x3333
+    );
 }
 
 #[test]
@@ -5359,6 +5407,7 @@ fn dialogue_scroll_override_presents_one_coherent_text_generation() {
         dialogue_msg_read_pos: 0x2d,
         dialogue_message_id: 32,
     });
+    state.dialogue_scanout_ownership = DialogueScanoutOwnership::COMPLETED_SCROLL;
 
     let captured = state.with_display_snapshot(|display| {
         (

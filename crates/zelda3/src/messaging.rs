@@ -19,10 +19,10 @@ const VWF_GLYPH_TRANSITION_MASTER_CYCLES: u32 = 510;
 // cycles for this caller suffix; a completion with less headroom is resumed
 // after the intervening vblank instead of being folded into the same callback.
 const VWF_CALLER_SUFFIX_MASTER_CYCLES: u32 = 16_500;
-// At a 255,000-cycle entry the final scroll return lands five scanlines after
-// vblank; add that measured margin to separate it from the 283,400-cycle entry
-// that returns before vblank.
-const VWF_SCROLL_RETURN_VBLANK_MARGIN_MASTER_CYCLES: u32 = 5 * SNES_MASTER_CYCLES_PER_SCANLINE;
+// A 262,662-cycle entry still returns after vblank in the Snes9x PC trace,
+// while the 283,400-cycle entry returns before it. Six scanlines is the
+// smallest whole-scanline return cost consistent with both measurements.
+const VWF_SCROLL_RETURN_VBLANK_MARGIN_MASTER_CYCLES: u32 = 6 * SNES_MASTER_CYCLES_PER_SCANLINE;
 const VWF_SCROLL_COMPLETES_BEFORE_NEXT_VBLANK_MASTER_CYCLES: u32 =
     VWF_LATER_LINE_ENTRY_MASTER_CYCLES + VWF_SCROLL_RETURN_VBLANK_MARGIN_MASTER_CYCLES;
 
@@ -3864,6 +3864,12 @@ impl ZeldaState {
         self.freeze_dialogue_scanout_for_scroll(DialogueTextGeneration::PublishedDisplay);
         let completion_timing =
             DialogueScrollCompletionTiming::at_scroll_entry(cycles_before_vblank);
+        if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
+            eprintln!(
+                "scroll_schedule host={} headroom={} timing={completion_timing:?}",
+                self.frame_ctr_dbg, cycles_before_vblank,
+            );
+        }
         if self.render_text_scroll_pixels(2) {
             return true;
         }

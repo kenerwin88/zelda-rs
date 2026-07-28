@@ -214,17 +214,20 @@ impl ZeldaState {
         // independently visible color-composition registers are published to
         // its immutable display snapshot by run_frame_internal.
         let main_module = self.game_state.frame.main_module;
+        let dialogue_scroll_holds_registers =
+            self.dialogue_scanout_ownership.holds_nmi_registers();
         let thread_holds_registers = (main_module == 0x14
             && self.game_state.display.nmi_thread_active)
             || (main_module == 0x0e
-                && (self.dialogue_fast_forward_hold_active || self.dialogue_scroll_stale_scanout));
+                && (self.dialogue_fast_forward_hold_active
+                    || dialogue_scroll_holds_registers));
         if trace_nmi {
             eprintln!(
                 "nmi_register_publication host={} main={main_module:02x} held={thread_holds_registers} thread={} dialogue_fast={} dialogue_scroll={} ppu_bg1v={:04x} mirror_bg1v={:04x}",
                 self.frame_ctr_dbg,
                 self.game_state.display.nmi_thread_active,
                 self.dialogue_fast_forward_hold_active,
-                self.dialogue_scroll_stale_scanout,
+                dialogue_scroll_holds_registers,
                 self.ppu.bg_layer[0].v_scroll,
                 self.game_state.display.ppu_scroll_copy.bg1_v_copy(),
             );
