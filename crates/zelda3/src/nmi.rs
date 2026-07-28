@@ -336,16 +336,13 @@ impl ZeldaState {
     }
 
     fn nmi_do_updates_from(&mut self, oam_dma_source: Option<&[u8]>, defer_bg_vram_upload: bool) {
-        let graphics_dma_override = std::mem::take(&mut self.next_nmi_graphics_dma_override);
         if !self.game_state.display.core_updates_are_disabled() {
             let pre_main_graphics = self.pre_main_graphics_dma.take();
             let graphics_dma_plan = rom_graphics_dma_plan(
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
             );
-            let link_obj_operands_generation = graphics_dma_override
-                .link_obj_operands
-                .unwrap_or(graphics_dma_plan.link_obj_operands);
+            let link_obj_operands_generation = graphics_dma_plan.link_obj_operands;
             let captured_link_sources = matches!(
                 link_obj_operands_generation,
                 GraphicsDmaGeneration::HostBoundaryBeforeMain

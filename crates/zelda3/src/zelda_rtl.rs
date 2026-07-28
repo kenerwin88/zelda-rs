@@ -455,19 +455,6 @@ struct GraphicsDmaPlan {
     animated_bg_scanout: AnimatedBgScanoutGeneration,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct GraphicsDmaOverride {
-    link_obj_operands: Option<GraphicsDmaGeneration>,
-}
-
-impl GraphicsDmaOverride {
-    const fn host_boundary_link_operands() -> Self {
-        Self {
-            link_obj_operands: Some(GraphicsDmaGeneration::HostBoundaryBeforeMain),
-        }
-    }
-}
-
 const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPlan {
     // These phase rules describe where the hardware NMI falls relative to the
     // native main-thread slice. OAM, Link OBJ CHR, and animated-BG DMA do not
@@ -513,6 +500,33 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
             AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
         },
     }
+}
+
+const fn rom_dungeon_subtile_obj_scanout_uses_host_boundary(
+    main_module: u8,
+    submodule: u8,
+    subsubmodule: u8,
+) -> bool {
+    // DungeonTransition_FindSubtileLanding and MoveLinkOutDoor run between
+    // consecutive OBJ uploads. Their main-thread work authors the following
+    // OAM/Link-CHR generation, while the active scanout keeps the coherent OBJ
+    // image resident at the host boundary.
+    main_module == 7 && submodule == 1 && matches!(subsubmodule, 4 | 5)
+}
+
+fn rom_graphics_dma_plan_at_host_boundary(
+    frame: crate::game_state::FrameState,
+) -> GraphicsDmaPlan {
+    let mut plan = rom_graphics_dma_plan(frame.main_module, frame.submodule);
+    if rom_dungeon_subtile_obj_scanout_uses_host_boundary(
+        frame.main_module,
+        frame.submodule,
+        frame.subsubmodule,
+    ) {
+        plan.oam_scanout = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+        plan.link_obj_scanout = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    }
+    plan
 }
 
 const fn rom_dungeon_exit_entry_crosses_nmi_boundary(
@@ -2751,10 +2765,19 @@ enum DisplayBgScrollGeneration {
 enum DisplayObjGeneration {
     #[default]
     FollowModuleCadence,
-    RetainTransitionEntry {
+    RetainCapturedMemory {
         oam: Vec<u16>,
         vram: Vec<u16>,
     },
+}
+
+impl DisplayObjGeneration {
+    fn retained_memory(&self) -> Option<(&[u16], &[u16])> {
+        match self {
+            Self::FollowModuleCadence => None,
+            Self::RetainCapturedMemory { oam, vram } => Some((oam, vram)),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -3027,7 +3050,7 @@ pub struct ZeldaState {
     #[serde(skip)]
     next_display_bg_scroll_generation: DisplayBgScrollGeneration,
     #[serde(skip)]
-    next_display_oam_scanout_generation: Option<GraphicsDmaGeneration>,
+    next_display_obj_scanout_generation: Option<GraphicsDmaGeneration>,
     #[serde(skip)]
     active_display_obj_generation: DisplayObjGeneration,
     #[serde(skip)]
@@ -3080,10 +3103,6 @@ pub struct ZeldaState {
     /// the animated-BG or Link OBJ sources.
     #[serde(skip)]
     pre_main_graphics_dma: Option<PreMainGraphicsDma>,
-    /// One-shot graphics-DMA generations selected by an interrupted CPU
-    /// continuation for the upcoming NMI.
-    #[serde(skip)]
-    next_nmi_graphics_dma_override: GraphicsDmaOverride,
     /// Animated-BG VRAM as it existed when the host entered this frame, before
     /// the frame's NMI could upload a newly selected animation phase.
     #[serde(skip)]
@@ -8023,7 +8042,7 @@ impl ZeldaState {
             pending_rom_work: PendingRomWork::default(),
             next_display_vram_generation: DisplayVramGeneration::default(),
             next_display_bg_scroll_generation: DisplayBgScrollGeneration::default(),
-            next_display_oam_scanout_generation: None,
+            next_display_obj_scanout_generation: None,
             active_display_obj_generation: DisplayObjGeneration::default(),
             next_overworld_pre_main_nmi_resume: None,
             next_overworld_sprite_reload_entry_phase: None,
@@ -8047,7 +8066,6 @@ impl ZeldaState {
             deferred_display_snapshot: None,
             attract_map_hdma_projection_before: None,
             pre_main_graphics_dma: None,
-            next_nmi_graphics_dma_override: GraphicsDmaOverride::default(),
             pre_nmi_animated_bg_scanout: None,
             nmi_forced_blank_scanlines_pending: 0,
             nmi_forced_blank_from_scanline_pending: None,
@@ -8697,7 +8715,7 @@ impl ZeldaState {
             })
         });
         let obj_generation = transition_entry_obj
-            .map(|(oam, vram)| DisplayObjGeneration::RetainTransitionEntry { oam, vram })
+            .map(|(oam, vram)| DisplayObjGeneration::RetainCapturedMemory { oam, vram })
             .unwrap_or_else(|| self.active_display_obj_generation.clone());
         let entry_graphics_dma_plan = self
             .pre_main_graphics_dma
@@ -8706,11 +8724,11 @@ impl ZeldaState {
             .unwrap_or_else(|| {
                 rom_graphics_dma_plan(captured_frame.main_module, captured_frame.submodule)
             });
-        let link_obj_scanout_generation = entry_graphics_dma_plan.link_obj_scanout;
-        let oam_scanout_generation = self
-            .next_display_oam_scanout_generation
-            .take()
-            .unwrap_or(entry_graphics_dma_plan.oam_scanout);
+        let obj_scanout_generation = self.next_display_obj_scanout_generation.take();
+        let link_obj_scanout_generation =
+            obj_scanout_generation.unwrap_or(entry_graphics_dma_plan.link_obj_scanout);
+        let oam_scanout_generation =
+            obj_scanout_generation.unwrap_or(entry_graphics_dma_plan.oam_scanout);
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
@@ -8904,7 +8922,7 @@ impl ZeldaState {
                 !dungeon_exit_crosses_nmi_boundary
                     && (module_oam_publication_is_deferred || oam_scanout_uses_host_boundary)
             }
-            DisplayObjGeneration::RetainTransitionEntry { .. } => true,
+            DisplayObjGeneration::RetainCapturedMemory { .. } => true,
         };
         let world_map_fade_display = snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
@@ -9203,8 +9221,8 @@ impl ZeldaState {
         if !retain_previous_nmi_oam {
             self.ppu.oam.clone_from(&display.ppu.oam);
         }
-        if let DisplayObjGeneration::RetainTransitionEntry { oam, vram } = &display.obj_generation {
-            self.ppu.oam.clone_from(oam);
+        if let Some((oam, vram)) = display.obj_generation.retained_memory() {
+            self.ppu.oam.clone_from_slice(oam);
             self.ppu.vram[0x4000..0x4400].copy_from_slice(vram);
         }
         self.ppu.obj_vram_latch = None;
@@ -9778,10 +9796,7 @@ impl ZeldaState {
                 })
                 .flatten();
             Some(PreMainGraphicsDma {
-                entry_plan: rom_graphics_dma_plan(
-                    self.game_state.frame.main_module,
-                    self.game_state.frame.submodule,
-                ),
+                entry_plan: rom_graphics_dma_plan_at_host_boundary(self.game_state.frame),
                 animated_tile,
                 link_sources: LinkDmaSources::load_from_ram(&self.ram),
             })
@@ -10223,12 +10238,12 @@ impl ZeldaState {
                     if self.game_state.display.palette_filter.countdown() != 0 {
                         self.ApplyPaletteFilter_bounce();
                     }
-                    // The resumed caller reaches NMI_PrepareSprites before
-                    // vblank, but the pending NMI has already latched its Link
-                    // DMA operands at the host boundary.
-                    self.next_nmi_graphics_dma_override =
-                        GraphicsDmaOverride::host_boundary_link_operands();
-                    self.next_display_oam_scanout_generation =
+                    // The resumed caller reaches NMI_PrepareSprites and clears
+                    // the software NMI latch before vblank, so the ensuing NMI
+                    // consumes the newly prepared OBJ sources. The active
+                    // scanout remains the coherent pre-NMI OAM/CHR generation;
+                    // the upload becomes visible on the following scanout.
+                    self.next_display_obj_scanout_generation =
                         Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
@@ -10543,7 +10558,7 @@ impl ZeldaState {
                         .map(|snapshot| snapshot.ppu.vram[0x4000..0x4400].to_vec())
                         .unwrap_or_else(|| self.ppu.vram[0x4000..0x4400].to_vec());
                     self.active_display_obj_generation =
-                        DisplayObjGeneration::RetainTransitionEntry { oam, vram };
+                        DisplayObjGeneration::RetainCapturedMemory { oam, vram };
                 }
                 self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();

@@ -4285,7 +4285,9 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
     let held_obj_vram = vec![0x5678; 0x400];
     state.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
     state.next_display_bg_scroll_generation = DisplayBgScrollGeneration::ComposeLiveAfterNmi;
-    state.active_display_obj_generation = DisplayObjGeneration::RetainTransitionEntry {
+    state.next_display_obj_scanout_generation =
+        Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    state.active_display_obj_generation = DisplayObjGeneration::RetainCapturedMemory {
         oam: held_oam.clone(),
         vram: held_obj_vram.clone(),
     };
@@ -4302,8 +4304,16 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
         DisplayBgScrollGeneration::ComposeLiveAfterNmi,
     );
     assert_eq!(
+        snapshot.oam_scanout_generation,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    );
+    assert_eq!(
+        snapshot.link_obj_scanout_generation,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    );
+    assert_eq!(
         snapshot.obj_generation,
-        DisplayObjGeneration::RetainTransitionEntry {
+        DisplayObjGeneration::RetainCapturedMemory {
             oam: held_oam.clone(),
             vram: held_obj_vram.clone(),
         },
@@ -4316,9 +4326,10 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
         state.next_display_bg_scroll_generation,
         DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
     );
+    assert_eq!(state.next_display_obj_scanout_generation, None);
     assert_eq!(
         state.active_display_obj_generation,
-        DisplayObjGeneration::RetainTransitionEntry {
+        DisplayObjGeneration::RetainCapturedMemory {
             oam: held_oam.clone(),
             vram: held_obj_vram.clone(),
         },
@@ -4331,7 +4342,7 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
             .as_ref()
             .expect("second display snapshot")
             .obj_generation,
-        DisplayObjGeneration::RetainTransitionEntry {
+        DisplayObjGeneration::RetainCapturedMemory {
             oam: held_oam,
             vram: held_obj_vram,
         },
@@ -4555,6 +4566,33 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
             animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_scanout: AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi,
         },
+    );
+    let mut subtile_landing = crate::game_state::FrameState::default();
+    subtile_landing.main_module = 7;
+    subtile_landing.submodule = 1;
+    subtile_landing.subsubmodule = 4;
+    assert_eq!(
+        rom_graphics_dma_plan_at_host_boundary(subtile_landing),
+        GraphicsDmaPlan {
+            oam_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
+            animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
+            animated_bg_scanout: AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi,
+        },
+    );
+    subtile_landing.subsubmodule = 5;
+    assert_eq!(
+        rom_graphics_dma_plan_at_host_boundary(subtile_landing),
+        rom_graphics_dma_plan_at_host_boundary(crate::game_state::FrameState {
+            subsubmodule: 4,
+            ..subtile_landing
+        }),
+    );
+    subtile_landing.subsubmodule = 6;
+    assert_eq!(
+        rom_graphics_dma_plan_at_host_boundary(subtile_landing),
+        rom_graphics_dma_plan(7, 1),
     );
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, false, true));
