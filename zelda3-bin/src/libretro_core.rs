@@ -128,8 +128,7 @@ pub(crate) struct LibretroCore {
     pub(crate) debug_apu_port_write_count: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_apu_port_write_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_smp_instruction_count: Option<unsafe extern "C" fn() -> c_int>,
-    pub(crate) debug_smp_instruction_value:
-        Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
+    pub(crate) debug_smp_instruction_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_ppu_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_scanline_mode7_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) api_version: c_uint,
@@ -513,7 +512,7 @@ impl LibretroCore {
         ) else {
             return None;
         };
-        if unsafe { field_count() } != 128 {
+        if unsafe { field_count() } != 217 {
             return None;
         }
         let count = unsafe { count() }.max(0);
@@ -537,6 +536,36 @@ impl LibretroCore {
                         noise_enable: field(13),
                         echo_enable: field(14),
                         source_directory_page: field(15),
+                        echo_filtered: [field(128), field(129)],
+                        echo_write: [field(130), field(131)],
+                        echo_offset: field(132),
+                        echo_length: field(133),
+                        echo_history_position: field(134),
+                        echo_history: [
+                            std::array::from_fn(|tap| field(135 + tap as i32)),
+                            std::array::from_fn(|tap| field(143 + tap as i32)),
+                        ],
+                        raw_main: [field(151), field(152)],
+                        voice_output: std::array::from_fn(|voice| {
+                            [field(153 + voice as i32 * 2), field(154 + voice as i32 * 2)]
+                        }),
+                        voice_pipeline_output: std::array::from_fn(|voice| {
+                            field(169 + voice as i32)
+                        }),
+                        interpolation: (0..8)
+                            .map(|voice| {
+                                let base = 177 + voice * 5;
+                                LibretroDspInterpolation {
+                                    offset: field(base),
+                                    samples: [
+                                        field(base + 1),
+                                        field(base + 2),
+                                        field(base + 3),
+                                        field(base + 4),
+                                    ],
+                                }
+                            })
+                            .collect(),
                         voices: (0..8)
                             .map(|voice| {
                                 let base = 16 + voice * 14;
@@ -679,7 +708,23 @@ pub(crate) struct LibretroDspSample {
     pub(crate) noise_enable: i32,
     pub(crate) echo_enable: i32,
     pub(crate) source_directory_page: i32,
+    pub(crate) echo_filtered: [i32; 2],
+    pub(crate) echo_write: [i32; 2],
+    pub(crate) echo_offset: i32,
+    pub(crate) echo_length: i32,
+    pub(crate) echo_history_position: i32,
+    pub(crate) echo_history: [[i32; 8]; 2],
+    pub(crate) raw_main: [i32; 2],
+    pub(crate) voice_output: [[i32; 2]; 8],
+    pub(crate) voice_pipeline_output: [i32; 8],
+    pub(crate) interpolation: Vec<LibretroDspInterpolation>,
     pub(crate) voices: Vec<LibretroDspVoice>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct LibretroDspInterpolation {
+    pub(crate) offset: i32,
+    pub(crate) samples: [i32; 4],
 }
 
 #[derive(serde::Serialize)]

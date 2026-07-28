@@ -1069,6 +1069,13 @@ pub(crate) fn run_compare_libretro_oracle(
             process::exit(1);
         }))
     });
+    let mut debug_dsp_register_writes =
+        env::var_os("ZELDA3_DEBUG_SNES9X_DSP_REGISTER_WRITES").map(|path| {
+            BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
+                eprintln!("failed to create Snes9x DSP-register-write trace: {error}");
+                process::exit(1);
+            }))
+        });
     let mut debug_native_apu_dsp_writes = native_apu_trace_path.map(|path| {
         BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
             eprintln!("failed to create native APU DSP-write trace: {error}");
@@ -1730,6 +1737,24 @@ pub(crate) fn run_compare_libretro_oracle(
                         music[2],
                     ],
                     "dsp_write_events": writes,
+                }),
+            )
+            .unwrap();
+            writer.write_all(b"\n").unwrap();
+            writer.flush().unwrap();
+        }
+        if let (Some(writer), Some(writes)) = (
+            debug_dsp_register_writes.as_mut(),
+            oracle.debug_dsp_register_writes(),
+        ) {
+            let apu_port_writes = oracle.debug_apu_port_writes();
+            serde_json::to_writer(
+                &mut *writer,
+                &serde_json::json!({
+                    "frame": frame_index,
+                    "audio_sample_frames": capture.audio.len() / 2,
+                    "dsp_write_events": writes,
+                    "apu_port_writes": apu_port_writes,
                 }),
             )
             .unwrap();

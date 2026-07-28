@@ -1,18 +1,23 @@
 diff --git a/apu/bapu/dsp/SPC_DSP.cpp b/apu/bapu/dsp/SPC_DSP.cpp
-index f74a173..7cada90 100644
+index f74a173..f4b001e 100644
 --- a/apu/bapu/dsp/SPC_DSP.cpp
 +++ b/apu/bapu/dsp/SPC_DSP.cpp
-@@ -20,6 +20,9 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
+@@ -20,6 +20,14 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
  
  #include "blargg_source.h"
  
 +void Zelda3TraceCaptureDspSample(const SPC_DSP *dsp, int left, int right);
 +void Zelda3TraceCaptureDspWrite(const SPC_DSP *dsp, int reg, int value);
++void Zelda3TraceCaptureDspRawMain(int left, int right);
++void Zelda3TraceCaptureDspVoiceOutput(
++	int voice, int channel, int output, int pipeline_output);
++void Zelda3TraceCaptureDspInterpolation(
++	int voice, int offset, int oldest, int older, int old, int newest);
 +
  #ifdef BLARGG_ENABLE_OPTIMIZER
  	#include BLARGG_ENABLE_OPTIMIZER
  #endif
-@@ -70,11 +73,66 @@ static BOOST::uint8_t const initial_regs [SPC_DSP::register_count] =
+@@ -70,11 +78,80 @@ static BOOST::uint8_t const initial_regs [SPC_DSP::register_count] =
  
  #define SPC_DSP_OUT_HOOK(l, r)  \
      {                           \
@@ -40,6 +45,20 @@ index f74a173..7cada90 100644
 +		case 13: return m.t_non;
 +		case 14: return m.t_eon;
 +		case 15: return m.t_dir;
++		case 128: return m.t_echo_in [0];
++		case 129: return m.t_echo_in [1];
++		case 130: return m.t_echo_out [0];
++		case 131: return m.t_echo_out [1];
++		case 132: return m.echo_offset;
++		case 133: return m.echo_length;
++		case 134: return (int) (m.echo_hist_pos - m.echo_hist);
++	}
++
++	if ( field >= 135 && field < 151 )
++	{
++		const int channel = (field - 135) / 8;
++		const int tap = (field - 135) % 8;
++		return m.echo_hist_pos [tap] [channel];
 +	}
 +
 +	if ( field < 16 )
@@ -79,6 +98,34 @@ index f74a173..7cada90 100644
  void SPC_DSP::set_output( Resampler *resampler )
  {
  	this->resampler = resampler;
+@@ -432,6 +509,9 @@ inline int SPC_DSP::interpolate( voice_t const* v )
+ {
+     int out;
+     int const* in = &v->buf [(v->interp_pos >> 12) + v->buf_pos];
++    Zelda3TraceCaptureDspInterpolation(
++        v->voice_number, v->interp_pos >> 4 & 0xFF,
++        in [0], in [1], in [2], in [3]);
+ 
+     switch (Settings.InterpolationMethod)
+     {
+@@ -871,6 +951,8 @@ inline void SPC_DSP::voice_output( voice_t const* v, int ch )
+ 	    amp = amp * Settings.ChannelsVolumePercent[v->voice_number] / 100;
+ 	}
+ 	#endif
++
++	Zelda3TraceCaptureDspVoiceOutput(v->voice_number, ch, amp, m.t_output);
+ 	
+ 	// Add to output total
+ 	m.t_main_out [ch] += amp;
+@@ -1050,6 +1132,8 @@ inline int SPC_DSP::echo_output( int ch )
+ }
+ ECHO_CLOCK( 26 )
+ {
++	Zelda3TraceCaptureDspRawMain(m.t_main_out [0], m.t_main_out [1]);
++
+ 	// Left output volumes
+ 	// (save sample for next clock so we can output both together)
+ 	m.t_main_out [0] = echo_output( 0 );
 diff --git a/apu/bapu/dsp/SPC_DSP.h b/apu/bapu/dsp/SPC_DSP.h
 index 953b13b..c3da89f 100644
 --- a/apu/bapu/dsp/SPC_DSP.h
@@ -431,10 +478,10 @@ index 4611540..7458d84 100644
  				missing.h_counter_read = 1;
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 0000000..1b47e7e
+index 0000000..f63a438
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,503 @@
+@@ -0,0 +1,545 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -500,9 +547,13 @@ index 0000000..1b47e7e
 +uint8 presented_obj_widths[128] = {};
 +SLineMatrixData presented_mode7[240] = {};
 +constexpr int dsp_sample_capacity = 600;
-+constexpr int dsp_field_count = 128;
++constexpr int dsp_field_count = 217;
 +int dsp_sample_count = 0;
 +int dsp_samples[dsp_sample_capacity][dsp_field_count] = {};
++int dsp_raw_main[2] = {};
++int dsp_voice_output[8][2] = {};
++int dsp_voice_pipeline_output[8] = {};
++int dsp_interpolation[8][5] = {};
 +constexpr int dsp_write_capacity = 1024;
 +constexpr int dsp_write_field_count = 4;
 +int dsp_write_count = 0;
@@ -744,6 +795,44 @@ index 0000000..1b47e7e
 +	sample[1] = right;
 +	for (int field = 2; field < dsp_field_count; field++)
 +		sample[field] = dsp->zelda3_debug_value(field);
++	sample[151] = dsp_raw_main[0];
++	sample[152] = dsp_raw_main[1];
++	for (int voice = 0; voice < 8; voice++)
++	{
++		sample[153 + voice * 2] = dsp_voice_output[voice][0];
++		sample[154 + voice * 2] = dsp_voice_output[voice][1];
++		sample[169 + voice] = dsp_voice_pipeline_output[voice];
++		for (int field = 0; field < 5; field++)
++			sample[177 + voice * 5 + field] = dsp_interpolation[voice][field];
++	}
++}
++
++void SNES::Zelda3TraceCaptureDspRawMain(int left, int right)
++{
++	dsp_raw_main[0] = left;
++	dsp_raw_main[1] = right;
++}
++
++void SNES::Zelda3TraceCaptureDspVoiceOutput(
++	int voice, int channel, int output, int pipeline_output)
++{
++	if (voice >= 0 && voice < 8 && channel >= 0 && channel < 2)
++	{
++		dsp_voice_output[voice][channel] = output;
++		dsp_voice_pipeline_output[voice] = pipeline_output;
++	}
++}
++
++void SNES::Zelda3TraceCaptureDspInterpolation(
++	int voice, int offset, int oldest, int older, int old, int newest)
++{
++	if (voice < 0 || voice >= 8)
++		return;
++	dsp_interpolation[voice][0] = offset;
++	dsp_interpolation[voice][1] = oldest;
++	dsp_interpolation[voice][2] = older;
++	dsp_interpolation[voice][3] = old;
++	dsp_interpolation[voice][4] = newest;
 +}
 +
 +int Zelda3TraceDspSampleCount()
@@ -940,10 +1029,10 @@ index 0000000..1b47e7e
 +}
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 new file mode 100644
-index 0000000..230fbb5
+index 0000000..fbddf53
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,50 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -955,6 +1044,11 @@ index 0000000..230fbb5
 +class SPC_DSP;
 +void Zelda3TraceCaptureDspSample(const SPC_DSP *dsp, int left, int right);
 +void Zelda3TraceCaptureDspWrite(const SPC_DSP *dsp, int reg, int value);
++void Zelda3TraceCaptureDspRawMain(int left, int right);
++void Zelda3TraceCaptureDspVoiceOutput(
++	int voice, int channel, int output, int pipeline_output);
++void Zelda3TraceCaptureDspInterpolation(
++	int voice, int offset, int oldest, int older, int old, int newest);
 +}
 +
 +extern bool Zelda3TraceDmaEnabled;
