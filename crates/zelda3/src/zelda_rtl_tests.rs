@@ -3772,6 +3772,10 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
+        SpotlightIterationPhase::for_close_iteration(1, 0x38, 42),
+        SpotlightIterationPhase::WholeTableAfterTablePublication
+    );
+    assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x07, 0),
         SpotlightIterationPhase::MixedTailAfterReturn
     );

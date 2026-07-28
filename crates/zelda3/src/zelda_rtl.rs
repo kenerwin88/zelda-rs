@@ -1145,12 +1145,12 @@ impl SpotlightIterationPhase {
             } else {
                 Self::CloseEntryAfterTablePublication
             }
+        } else if !spotlight_table_has_long_nmi_workload(vertical_center) {
+            Self::WholeTableAfterTablePublication
         } else if radius != 0 && radius <= 0x38 {
             // Snes9x PC/V-counter traces show the next circle write reaching
             // HDMA at scanline 221 once the close has reached this CPU phase.
             Self::MixedTailAfterReturn
-        } else if !spotlight_table_has_long_nmi_workload(vertical_center) {
-            Self::WholeTableAfterTablePublication
         } else {
             Self::WholeTable
         }
