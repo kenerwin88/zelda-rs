@@ -268,6 +268,7 @@ def merge_takes_across_boundary(project: Path, boundary_id: int) -> dict:
     source_ids = [int(before["id"]), int(after["id"])]
     new_id = max((int(take["id"]) for take in takes), default=-1) + 1
     input_path = Path(f"takes/{new_id:04}/input.txt")
+    rom_random_path = Path(f"takes/{new_id:04}/rom-random.txt")
     receipts_path = Path(f"takes/{new_id:04}/frame_receipts.jsonl")
     takes_by_id = {int(take["id"]): take for take in takes}
     frames = write_continuous_input(
@@ -285,6 +286,10 @@ def merge_takes_across_boundary(project: Path, boundary_id: int) -> dict:
         "merged_from_takes": source_ids,
         "merged_across_boundary": boundary_id,
     }
+    if write_continuous_rom_random(
+        project, source_ids, project / rom_random_path, takes_by_id=takes_by_id
+    ):
+        merged["rom_random_path"] = str(rom_random_path)
     if write_continuous_receipts(
         project, source_ids, project / receipts_path, takes_by_id=takes_by_id
     ):
@@ -466,6 +471,12 @@ def promote_passed_take(project: Path, take_id: int, session_dir: Path) -> dict:
             "rust_state_created_by": "zelda3-rs replay",
         },
     }
+    rom_random_path = take_rom_random_path(project, take)
+    if rom_random_path is not None:
+        receipt["rom_random_replay"] = {
+            "path": rom_random_path.relative_to(project).as_posix(),
+            "sha256": sha256(rom_random_path),
+        }
     receipt_path.write_text(json.dumps(receipt, indent=2) + "\n")
     pairings = load_pairings(project)
     pairings["boundaries"][str(end_boundary)] = {
@@ -504,6 +515,7 @@ def compare_command(
         boundary_id=boundary_id,
         frames=int(take["frames"]),
         input_path=project / take["input_path"],
+        rom_random_path=take_rom_random_path(project, take),
         session_dir=session_dir,
     )
 
@@ -517,6 +529,7 @@ def compare_input_command(
     boundary_id: int,
     frames: int,
     input_path: Path,
+    rom_random_path: Path | None = None,
     session_dir: Path,
 ) -> list[str]:
     manifest = load_manifest(project)
@@ -535,6 +548,8 @@ def compare_input_command(
         "--input-script",
         str(input_path),
     ]
+    if rom_random_path is not None:
+        command.extend(["--rom-random-script", str(rom_random_path)])
     if boundary.get("reset_start", False):
         command.extend(
             [
@@ -706,6 +721,69 @@ def write_continuous_input(
     return offset
 
 
+def take_rom_random_path(project: Path, take: dict) -> Path | None:
+    relative_path = take.get("rom_random_path")
+    if not relative_path:
+        return None
+    path = resolve_project_path(project, relative_path)
+    if not path.is_file():
+        raise SystemExit(f"recorded ROM RNG trace does not exist: {path}")
+    return path
+
+
+def write_continuous_rom_random(
+    project: Path,
+    take_ids: list[int],
+    output: Path,
+    *,
+    takes_by_id: dict[int, dict] | None = None,
+) -> int:
+    if takes_by_id is None:
+        manifest = load_manifest(project)
+        takes_by_id = {int(take["id"]): take for take in manifest.get("takes", [])}
+
+    samples: list[str] = []
+    offset = 0
+    for take_id in take_ids:
+        take = takes_by_id[take_id]
+        path = take_rom_random_path(project, take)
+        if path is not None:
+            with path.open() as source:
+                for line_no, raw in enumerate(source, start=1):
+                    stripped = raw.strip()
+                    if not stripped or stripped.startswith("#"):
+                        continue
+                    parts = stripped.split()
+                    if len(parts) not in (2, 3):
+                        raise SystemExit(
+                            f"unsupported recorder ROM RNG sample at "
+                            f"{path}:{line_no}: {stripped}"
+                        )
+                    try:
+                        frame = int(parts[0], 0) + offset
+                    except ValueError as error:
+                        raise SystemExit(
+                            f"unsupported recorder ROM RNG frame at "
+                            f"{path}:{line_no}: {parts[0]}"
+                        ) from error
+                    samples.append(" ".join([str(frame), *parts[1:]]))
+        offset += int(take["frames"])
+
+    if not samples:
+        if output.exists():
+            output.unlink()
+        return 0
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    source_list = ", ".join(str(take_id) for take_id in take_ids)
+    output.write_text(
+        f"# Continuous cartridge RNG trace assembled from takes {source_list}.\n"
+        + "\n".join(samples)
+        + "\n"
+    )
+    return len(samples)
+
+
 def write_continuous_receipts(
     project: Path,
     take_ids: list[int],
@@ -865,6 +943,10 @@ def compare_continuous(
     frames = write_continuous_input(project, take_ids, input_path)
     manifest = load_manifest(project)
     takes = {int(take["id"]): take for take in manifest.get("takes", [])}
+    rom_random_path = session_dir / "continuous-rom-random.txt"
+    rom_random_samples = write_continuous_rom_random(
+        project, take_ids, rom_random_path, takes_by_id=takes
+    )
     start_boundary = int(takes[take_ids[0]]["start_boundary"])
     command = compare_input_command(
         binary=binary,
@@ -874,6 +956,7 @@ def compare_continuous(
         boundary_id=start_boundary,
         frames=frames,
         input_path=input_path,
+        rom_random_path=rom_random_path if rom_random_samples else None,
         session_dir=session_dir,
     )
     completed = subprocess.run(command, cwd=ROOT)

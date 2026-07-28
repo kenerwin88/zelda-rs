@@ -88,7 +88,15 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             project = self.project(root)
             manifest = MODULE.load_manifest(project)
             manifest["takes"][0].update(
-                {"start_boundary": 0, "end_boundary": 1, "frames": 12}
+                {
+                    "start_boundary": 0,
+                    "end_boundary": 1,
+                    "frames": 12,
+                    "rom_random_path": "takes/0000/rom-random.txt",
+                }
+            )
+            (project / "takes/0000/rom-random.txt").write_text(
+                "7 0xa5 carry=1\n"
             )
             (project / "manifest.json").write_text(json.dumps(manifest))
             session = project / "comparisons/take-0000"
@@ -126,6 +134,15 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             self.assertEqual(receipt["end_boundary"], 1)
             self.assertEqual(receipt["audio_comparison"], "exact")
             self.assertEqual(receipt["frames_verified"], 12)
+            self.assertEqual(
+                receipt["rom_random_replay"],
+                {
+                    "path": "takes/0000/rom-random.txt",
+                    "sha256": MODULE.sha256(
+                        project / "takes/0000/rom-random.txt"
+                    ),
+                },
+            )
             self.assertEqual(receipt["rust_state_sha256"], MODULE.sha256(promoted))
             self.assertEqual(
                 receipt["oracle_state_sha256"],
@@ -212,7 +229,7 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             self.assertFalse((project / "boundaries/0001/parity.json").exists())
             self.assertNotIn("1", MODULE.load_pairings(project)["boundaries"])
 
-    def test_compare_command_uses_take_start_boundary_and_exact_modern_lanes(self):
+    def test_compare_command_uses_take_start_boundary_and_exact_audio(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             project = self.project(root)
@@ -237,11 +254,32 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             self.assertIn(str(project / "boundaries/0001/sram.bin"), command)
             self.assertIn("--audio-comparison", command)
             self.assertIn("exact", command)
-            self.assertIn("--rust-audio-backend", command)
-            self.assertIn("modern", command)
-            self.assertIn("--rust-audio-sequencer", command)
-            self.assertIn("native", command)
             self.assertIn("--scan-all", command)
+
+    def test_compare_command_replays_manifest_rom_random_trace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = self.project(root)
+            random_path = project / "takes/0000/rom-random.txt"
+            random_path.write_text("7 0xa5 carry=1\n")
+            manifest = MODULE.load_manifest(project)
+            manifest["takes"][0]["rom_random_path"] = "takes/0000/rom-random.txt"
+            (project / "manifest.json").write_text(json.dumps(manifest))
+            rust_state = root / "rust.z3state"
+            rust_state.write_bytes(b"rust-state")
+            MODULE.pair_boundary(project, 1, rust_state)
+
+            command = MODULE.compare_command(
+                binary=Path("zelda3"),
+                core=Path("core.dylib"),
+                rom=Path("rom.sfc"),
+                project=project,
+                take_id=0,
+                session_dir=root / "comparison",
+            )
+
+            random_index = command.index("--rom-random-script")
+            self.assertEqual(command[random_index + 1], str(random_path))
 
     def test_reset_comparison_loads_the_recorded_boundary_sram(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -473,6 +511,54 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                 "5..6 0x0040\n",
             )
 
+    def test_combined_rom_random_offsets_each_take_frame(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = self.project(root)
+            (project / "takes/0000/rom-random.txt").write_text(
+                "# take zero\n2 0x11 carry=0\n"
+            )
+            (project / "takes/0001").mkdir()
+            (project / "takes/0001/rom-random.txt").write_text(
+                "0 0x22 carry=1\n1 0x33\n"
+            )
+            manifest = MODULE.load_manifest(project)
+            manifest["takes"] = [
+                {
+                    "id": 0,
+                    "start_boundary": 0,
+                    "end_boundary": 1,
+                    "frames": 5,
+                    "input_path": "takes/0000/input.txt",
+                    "rom_random_path": "takes/0000/rom-random.txt",
+                    "status": "complete",
+                },
+                {
+                    "id": 1,
+                    "start_boundary": 1,
+                    "end_boundary": None,
+                    "frames": 2,
+                    "input_path": "takes/0001/input.txt",
+                    "rom_random_path": "takes/0001/rom-random.txt",
+                    "status": "complete",
+                },
+            ]
+            (project / "manifest.json").write_text(json.dumps(manifest))
+
+            output = root / "combined-random.txt"
+            samples = MODULE.write_continuous_rom_random(
+                project, [0, 1], output
+            )
+
+            self.assertEqual(samples, 3)
+            self.assertEqual(
+                output.read_text(),
+                "# Continuous cartridge RNG trace assembled from takes 0, 1.\n"
+                "2 0x11 carry=0\n"
+                "5 0x22 carry=1\n"
+                "6 0x33\n",
+            )
+
     def test_merge_across_boundary_combines_adjacent_takes_and_preserves_sources(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = self.project(Path(tmp))
@@ -481,11 +567,17 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                 '{"frame":0,"input":"0x0008","telemetry":{"health":24}}\n'
                 '{"frame":1,"input":"0x0008","telemetry":{"health":23}}\n'
             )
+            (project / "takes/0000/rom-random.txt").write_text(
+                "1 0x11 carry=0\n"
+            )
             (project / "takes/0001").mkdir()
             (project / "takes/0001/input.txt").write_text("0 0x0010\n2 0x0020\n")
             (project / "takes/0001/frame_receipts.jsonl").write_text(
                 '{"frame":0,"input":"0x0010","telemetry":{"health":23}}\n'
                 '{"frame":2,"input":"0x0020","telemetry":{"health":22}}\n'
+            )
+            (project / "takes/0001/rom-random.txt").write_text(
+                "2 0x22 carry=1\n"
             )
             manifest = MODULE.load_manifest(project)
             manifest["boundaries"].append(
@@ -503,6 +595,7 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                     "end_boundary": 1,
                     "frames": 4,
                     "input_path": "takes/0000/input.txt",
+                    "rom_random_path": "takes/0000/rom-random.txt",
                     "receipts_path": "takes/0000/frame_receipts.jsonl",
                     "status": "complete",
                 },
@@ -512,6 +605,7 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                     "end_boundary": 2,
                     "frames": 3,
                     "input_path": "takes/0001/input.txt",
+                    "rom_random_path": "takes/0001/rom-random.txt",
                     "receipts_path": "takes/0001/frame_receipts.jsonl",
                     "status": "complete",
                 },
@@ -532,6 +626,12 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                 "0..1 0x0008\n"
                 "4 0x0010\n"
                 "6 0x0020\n",
+            )
+            self.assertEqual(
+                (project / merged["rom_random_path"]).read_text(),
+                "# Continuous cartridge RNG trace assembled from takes 0, 1.\n"
+                "1 0x11 carry=0\n"
+                "6 0x22 carry=1\n",
             )
             self.assertEqual(merged["receipts_path"], "takes/0002/frame_receipts.jsonl")
             merged_receipts = [

@@ -594,6 +594,7 @@
       "end_boundary": 3,
       "frames": 11735,
       "input_path": "takes/0004/input.txt",
+      "rom_random_path": "takes/0004/rom-random.txt",
       "receipts_path": "",
       "status": "complete"
     },
