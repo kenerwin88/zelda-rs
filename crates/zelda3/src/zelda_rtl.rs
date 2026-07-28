@@ -461,24 +461,34 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
     // always use the same generation, so keep the domains explicit while
     // deriving the complete plan in one place.
     let dungeon_entrance_nmi_precedes_main = main_module == 0x11 && submodule == 7;
-    let player_obj_nmi_precedes_main = (submodule == 0
+    // Both intra-room stair directions run their Link movement/animation
+    // update after the vblank that uploads OBJ CHR. The source words authored
+    // by that main-thread work therefore belong to the following NMI.
+    let dungeon_intra_room_stairs_nmi_precedes_link_animation =
+        main_module == 7 && matches!(submodule, 8 | 0x10);
+    let player_obj_scanout_uses_host_boundary = (submodule == 0
         && (main_module == 7 || matches!(main_module, 9 | 11)))
         || (main_module == 9 && matches!(submodule, 1 | 6..=8 | 0x0a));
+    let oam_scanout_uses_host_boundary = dungeon_entrance_nmi_precedes_main
+        || player_obj_scanout_uses_host_boundary
+        || dungeon_intra_room_stairs_nmi_precedes_link_animation;
     let animated_bg_nmi_precedes_scanout =
         dungeon_entrance_nmi_precedes_main || (main_module == 7 && submodule == 0);
 
     GraphicsDmaPlan {
-        oam_scanout: if dungeon_entrance_nmi_precedes_main || player_obj_nmi_precedes_main {
+        oam_scanout: if oam_scanout_uses_host_boundary {
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         } else {
             GraphicsDmaGeneration::LiveAfterMain
         },
-        link_obj_scanout: if player_obj_nmi_precedes_main {
+        link_obj_scanout: if player_obj_scanout_uses_host_boundary {
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         } else {
             GraphicsDmaGeneration::LiveAfterMain
         },
-        link_obj_operands: if dungeon_entrance_nmi_precedes_main {
+        link_obj_operands: if dungeon_entrance_nmi_precedes_main
+            || dungeon_intra_room_stairs_nmi_precedes_link_animation
+        {
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         } else {
             GraphicsDmaGeneration::LiveAfterMain

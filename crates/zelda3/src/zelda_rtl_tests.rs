@@ -4607,6 +4607,21 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
             animated_bg_scanout: AnimatedBgScanoutGeneration::LiveAfterNmi,
         },
     );
+    for submodule in [8, 0x10] {
+        let plan = rom_graphics_dma_plan(7, submodule);
+        assert_eq!(
+            plan.oam_scanout,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        );
+        assert_eq!(
+            plan.link_obj_scanout,
+            GraphicsDmaGeneration::LiveAfterMain
+        );
+        assert_eq!(
+            plan.link_obj_operands,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        );
+    }
     assert_eq!(
         rom_graphics_dma_plan(9, 0x0a),
         GraphicsDmaPlan {
