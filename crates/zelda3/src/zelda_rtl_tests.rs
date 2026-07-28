@@ -3718,17 +3718,13 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         DisplaySnapshotPublication::RetainPublished
     );
     assert_eq!(
-        SpotlightIteration::closing(
-            SpotlightIterationPhase::CloseEntryBeforeTablePublication
-        )
-        .completion_publication(),
+        SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryBeforeTablePublication)
+            .completion_publication(),
         DisplaySnapshotPublication::AdvanceStaged
     );
     assert_eq!(
-        SpotlightIteration::closing(
-            SpotlightIterationPhase::CloseEntryAfterTablePublication
-        )
-        .completion_publication(),
+        SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryAfterTablePublication)
+            .completion_publication(),
         DisplaySnapshotPublication::PublishCaptured
     );
     assert_eq!(
@@ -3740,6 +3736,17 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         SpotlightIteration::opening(false).in_flight_publication(),
         DisplaySnapshotPublication::AdvanceStaged
     );
+    assert!(
+        SpotlightIteration::closing(SpotlightIterationPhase::WholeTableAfterTablePublication)
+            .publishes_hdma_table_ahead_of_other_display_domains()
+    );
+    assert!(
+        !SpotlightIteration::closing(SpotlightIterationPhase::WholeTable)
+            .publishes_hdma_table_ahead_of_other_display_domains()
+    );
+    assert!(
+        !SpotlightIteration::opening(false).publishes_hdma_table_ahead_of_other_display_domains()
+    );
     assert_eq!(
         SpotlightIteration::opening(false).completion_publication(),
         DisplaySnapshotPublication::AdvanceStaged
@@ -3750,6 +3757,14 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x3f, 0),
+        SpotlightIterationPhase::WholeTable
+    );
+    assert_eq!(
+        SpotlightIterationPhase::for_close_iteration(1, 0x3f, 42),
+        SpotlightIterationPhase::WholeTableAfterTablePublication
+    );
+    assert_eq!(
+        SpotlightIterationPhase::for_close_iteration(1, 0x3f, 41),
         SpotlightIterationPhase::WholeTable
     );
     assert_eq!(
@@ -3873,8 +3888,7 @@ fn animated_bg_uses_the_current_host_boundary_vram_at_either_destination() {
         });
         state.ppu.vram[destination..destination + 0x200].fill(0x3333);
 
-        let presented_word =
-            state.with_display_snapshot(|display| display.ppu.vram[destination]);
+        let presented_word = state.with_display_snapshot(|display| display.ppu.vram[destination]);
 
         assert_eq!(presented_word, 0x2222);
         assert_eq!(state.ppu.vram[destination], 0x3333);
@@ -4355,8 +4369,7 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
     let held_obj_vram = vec![0x5678; 0x400];
     state.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
     state.next_display_bg_scroll_generation = DisplayBgScrollGeneration::ComposeLiveAfterNmi;
-    state.next_display_obj_scanout_generation =
-        Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    state.next_display_obj_scanout_generation = Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
     state.active_display_obj_generation = DisplayObjGeneration::RetainCapturedMemory {
         oam: held_oam.clone(),
         vram: held_obj_vram.clone(),
@@ -4497,9 +4510,7 @@ fn dialogue_completion_before_vblank_keeps_frozen_scanout_until_publication() {
     state.ppu.vram[0x7c00] = 0x2222;
     state.dialogue_scroll_continuation =
         DialogueScrollContinuation::begin(DialogueScrollCompletionTiming::BeforeNextVblank);
-    state
-        .dialogue_scroll_continuation
-        .finish_remaining_pixels();
+    state.dialogue_scroll_continuation.finish_remaining_pixels();
 
     state.capture_display_snapshot();
 
@@ -4623,10 +4634,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
             plan.oam_scanout,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         );
-        assert_eq!(
-            plan.link_obj_scanout,
-            GraphicsDmaGeneration::LiveAfterMain
-        );
+        assert_eq!(plan.link_obj_scanout, GraphicsDmaGeneration::LiveAfterMain);
         assert_eq!(
             plan.link_obj_operands,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
@@ -4744,8 +4752,7 @@ fn dungeon_exit_nmi_publishes_coherent_oam_link_tiles_and_scroll() {
     let mut state = ZeldaState::new();
     state.set_main_module(0x0f);
     state.set_submodule(0);
-    state.next_display_obj_scanout_generation =
-        Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    state.next_display_obj_scanout_generation = Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
     state.ppu.vram[0x4000] = 0x1111;
     state.ppu.oam[0] = 0x2222;
     state.ppu.bg_layer[1].v_scroll = 0x3333;
@@ -4772,8 +4779,7 @@ fn spotlight_return_keeps_obj_dma_on_the_pre_return_boundary() {
     let mut state = ZeldaState::new();
     state.set_main_module(0x0f);
     state.set_submodule(1);
-    state.next_display_obj_scanout_generation =
-        Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    state.next_display_obj_scanout_generation = Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
     state.ppu.vram[0x4000] = 0x1111;
     state.ppu.oam[0] = 0x2222;
     state.capture_display_snapshot();
@@ -4781,11 +4787,45 @@ fn spotlight_return_keeps_obj_dma_on_the_pre_return_boundary() {
     state.ppu.vram[0x4000] = 0xaaaa;
     state.ppu.oam[0] = 0xbbbb;
 
-    let captured = state.with_display_snapshot(|display| {
-        (display.ppu.vram[0x4000], display.ppu.oam[0])
-    });
+    let captured =
+        state.with_display_snapshot(|display| (display.ppu.vram[0x4000], display.ppu.oam[0]));
 
     assert_eq!(captured, (0x1111, 0x2222));
+}
+
+#[test]
+fn spotlight_hdma_can_publish_ahead_of_retained_obj_domains() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.set_spotlight_hdma_table_dynamic_entry(0, 0xea0e);
+    state.ppu.oam[0] = 0x2222;
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
+
+    // Mirror the ordinary staged boundary immediately before the next circle
+    // iteration. The whole-display generation remains the old one.
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+
+    state.set_spotlight_hdma_table_dynamic_entry(0, 0xe612);
+    state.ppu.oam[0] = 0xbbbb;
+    state.pending_rom_work = PendingRomWork::schedule(
+        RomWorkContinuation::FinishSpotlightIteration {
+            iteration: SpotlightIteration::closing(
+                SpotlightIterationPhase::WholeTableAfterTablePublication,
+            ),
+        },
+        SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
+    );
+    state.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::AdvanceStaged));
+
+    let display = state.display_snapshot.as_ref().unwrap();
+    let mut composed_ram = display.ram.clone();
+    display
+        .hdma_table_generation
+        .compose_into(&mut composed_ram);
+
+    assert_eq!(read_le_u16(&composed_ram, HDMA_TABLE_DYNAMIC), 0xe612);
+    assert_eq!(display.ppu.oam[0], 0x2222);
 }
 
 #[test]

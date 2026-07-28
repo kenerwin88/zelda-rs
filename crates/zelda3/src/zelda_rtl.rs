@@ -14,9 +14,6 @@ use std::{env, fs};
 use snes::{DmaChannel, DmaState, PpuState, WRAM_SIZE};
 
 use crate::config::config_value_bytes;
-use crate::raster_timing::{
-    attract_map_projection_current_word_is_visible, ATTRACT_MAP_PROJECTION_WORDS,
-};
 #[cfg(test)]
 use crate::game_state::constants::messaging::MODULE as MESSAGING_MODULE;
 use crate::game_state::constants::nmi::{
@@ -102,6 +99,9 @@ use crate::game_state::{
     SkullWoodsFireSlotState, SmallOverworldMap16ScrollBackupState, SpotlightHdmaState,
     SystemSignalsState, SystemWorkArea, TagalongSlotRead, TowerSealOrbitState,
     TowerSealSparkleState, WeatherVaneDebrisSlotState,
+};
+use crate::raster_timing::{
+    attract_map_projection_current_word_is_visible, ATTRACT_MAP_PROJECTION_WORDS,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -535,9 +535,7 @@ const fn rom_dungeon_subtile_obj_scanout_uses_host_boundary(
     main_module == 7 && submodule == 1 && matches!(subsubmodule, 4..=7)
 }
 
-fn rom_graphics_dma_plan_at_host_boundary(
-    frame: crate::game_state::FrameState,
-) -> GraphicsDmaPlan {
+fn rom_graphics_dma_plan_at_host_boundary(frame: crate::game_state::FrameState) -> GraphicsDmaPlan {
     let mut plan = rom_graphics_dma_plan(frame.main_module, frame.submodule);
     if rom_dungeon_subtile_obj_scanout_uses_host_boundary(
         frame.main_module,
@@ -1076,6 +1074,9 @@ pub(super) enum SpotlightIterationPhase {
     CloseEntryAfterTablePublication,
     /// HDMA consumes one complete table generation for the scanout.
     WholeTable,
+    /// The circle calculation finishes early enough for HDMA to consume the
+    /// completed table before the remaining display domains publish.
+    WholeTableAfterTablePublication,
     /// The close stages a published prefix with newly authored final lines.
     MixedTailAfterReturn,
 }
@@ -1124,14 +1125,20 @@ impl SpotlightIteration {
             SpotlightDirection::Closing => self.phase.close_completion_publication(),
         }
     }
+
+    const fn publishes_hdma_table_ahead_of_other_display_domains(self) -> bool {
+        matches!(
+            (self.direction, self.phase),
+            (
+                SpotlightDirection::Closing,
+                SpotlightIterationPhase::WholeTableAfterTablePublication
+            )
+        )
+    }
 }
 
 impl SpotlightIterationPhase {
-    const fn for_close_iteration(
-        submodule: u8,
-        radius: u16,
-        vertical_center: u16,
-    ) -> Self {
+    const fn for_close_iteration(submodule: u8, radius: u16, vertical_center: u16) -> Self {
         if submodule == 0 {
             if spotlight_table_has_long_nmi_workload(vertical_center) {
                 Self::CloseEntryBeforeTablePublication
@@ -1142,6 +1149,8 @@ impl SpotlightIterationPhase {
             // Snes9x PC/V-counter traces show the next circle write reaching
             // HDMA at scanline 221 once the close has reached this CPU phase.
             Self::MixedTailAfterReturn
+        } else if !spotlight_table_has_long_nmi_workload(vertical_center) {
+            Self::WholeTableAfterTablePublication
         } else {
             Self::WholeTable
         }
@@ -1149,10 +1158,10 @@ impl SpotlightIterationPhase {
 
     const fn close_completion_publication(self) -> DisplaySnapshotPublication {
         match self {
-            Self::CloseEntryAfterTablePublication => {
-                DisplaySnapshotPublication::PublishCaptured
+            Self::CloseEntryAfterTablePublication => DisplaySnapshotPublication::PublishCaptured,
+            Self::WholeTable | Self::WholeTableAfterTablePublication => {
+                DisplaySnapshotPublication::RetainPublished
             }
-            Self::WholeTable => DisplaySnapshotPublication::RetainPublished,
             Self::CloseEntryBeforeTablePublication | Self::MixedTailAfterReturn => {
                 DisplaySnapshotPublication::AdvanceStaged
             }
@@ -1198,10 +1207,12 @@ impl PendingRomWork {
     }
 
     fn spotlight_iteration_phase(self) -> Option<SpotlightIterationPhase> {
+        self.spotlight_iteration().map(|iteration| iteration.phase)
+    }
+
+    fn spotlight_iteration(self) -> Option<SpotlightIteration> {
         match self.continuation {
-            Some(RomWorkContinuation::FinishSpotlightIteration { iteration }) => {
-                Some(iteration.phase)
-            }
+            Some(RomWorkContinuation::FinishSpotlightIteration { iteration }) => Some(iteration),
             _ => None,
         }
     }
@@ -1251,9 +1262,7 @@ const fn spotlight_table_row_pairs(vertical_center: u16) -> u16 {
     } else {
         doubled_center
     };
-    lower_cursor
-        .wrapping_sub(vertical_center)
-        .wrapping_add(1)
+    lower_cursor.wrapping_sub(vertical_center).wrapping_add(1)
 }
 
 const fn spotlight_table_has_long_nmi_workload(vertical_center: u16) -> bool {
@@ -2698,10 +2707,7 @@ impl DialogueScanoutOwnership {
     }
 
     const fn uses_frozen_scroll(self) -> bool {
-        matches!(
-            self,
-            Self::FROZEN_SCROLL_COPY | Self::COMPLETION_PENDING
-        )
+        matches!(self, Self::FROZEN_SCROLL_COPY | Self::COMPLETION_PENDING)
     }
 
     pub(crate) const fn holds_nmi_registers(self) -> bool {
@@ -2789,6 +2795,9 @@ enum DisplaySnapshotPublication {
 enum DisplayHdmaTableGeneration {
     #[default]
     Captured,
+    /// The spotlight circle has been projected before HDMA starts, while OAM,
+    /// VRAM, and the remaining display domains still own the older snapshot.
+    SpotlightPublishedAheadOfSnapshot { active_table: Vec<u8> },
     /// The CPU is still projecting the new table while HDMA consumes it.
     /// Words that miss their scanline retain the pre-projection generation.
     AttractMapProjectionDuringScanout { before_projection: Vec<u8> },
@@ -2796,14 +2805,21 @@ enum DisplayHdmaTableGeneration {
 
 impl DisplayHdmaTableGeneration {
     fn compose_into(&self, ram: &mut [u8]) {
-        let Self::AttractMapProjectionDuringScanout { before_projection } = self else {
-            return;
-        };
-        for scanline in 0..ATTRACT_MAP_PROJECTION_WORDS {
-            if !attract_map_projection_current_word_is_visible(scanline) {
-                let offset = scanline * 2;
-                ram[HDMA_TABLE_DYNAMIC + offset..HDMA_TABLE_DYNAMIC + offset + 2]
-                    .copy_from_slice(&before_projection[offset..offset + 2]);
+        match self {
+            Self::Captured => {}
+            Self::SpotlightPublishedAheadOfSnapshot { active_table } => {
+                let byte_count = active_table.len().min(ZeldaState::HDMA_DYNAMIC_TABLE_LEN);
+                ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + byte_count]
+                    .copy_from_slice(&active_table[..byte_count]);
+            }
+            Self::AttractMapProjectionDuringScanout { before_projection } => {
+                for scanline in 0..ATTRACT_MAP_PROJECTION_WORDS {
+                    if !attract_map_projection_current_word_is_visible(scanline) {
+                        let offset = scanline * 2;
+                        ram[HDMA_TABLE_DYNAMIC + offset..HDMA_TABLE_DYNAMIC + offset + 2]
+                            .copy_from_slice(&before_projection[offset..offset + 2]);
+                    }
+                }
             }
         }
     }
@@ -8408,8 +8424,7 @@ impl ZeldaState {
             overworld_map_and_sprite_graphics_timing(self.overworld_map_graphics_workload());
         self.pending_rom_work = PendingRomWork::schedule(
             RomWorkContinuation::FinishPreOverworldScreenBuild,
-            timing.quadrant_load_nmi_slices
-                + timing.screen_map_and_sprite_gfx_tail_nmi_slices,
+            timing.quadrant_load_nmi_slices + timing.screen_map_and_sprite_gfx_tail_nmi_slices,
         );
         true
     }
@@ -8696,7 +8711,21 @@ impl ZeldaState {
                 rom_display_snapshot_publication(frame.main_module, frame.submodule)
             }
         });
+        let hdma_table_generation = self
+            .pending_rom_work
+            .spotlight_iteration()
+            .filter(|iteration| iteration.publishes_hdma_table_ahead_of_other_display_domains())
+            .map(
+                |_| DisplayHdmaTableGeneration::SpotlightPublishedAheadOfSnapshot {
+                    active_table: self.hdma_dynamic_table_bytes(),
+                },
+            );
         self.capture_display_snapshot_with_publication(publication);
+        if let (Some(generation), Some(display)) =
+            (hdma_table_generation, self.display_snapshot.as_mut())
+        {
+            display.hdma_table_generation = generation;
+        }
     }
 
     fn capture_display_snapshot_with_publication(
@@ -8711,21 +8740,19 @@ impl ZeldaState {
         // slice: internally the scroll finishes on frame N, but Snes9x scans
         // the finished text out on N+1.
         self.dialogue_scroll_completion_scanout = self.dialogue_scroll_completion_staged.take();
-        let scroll_copy_crossed_boundary =
-            std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
-        self.dialogue_scanout_ownership =
-            if self.dialogue_scroll_completion_scanout.is_some() {
-                DialogueScanoutOwnership::COMPLETED_SCROLL
-            } else if scroll_copy_crossed_boundary {
-                DialogueScanoutOwnership::FROZEN_SCROLL_COPY
-            } else if self
-                .dialogue_scroll_continuation
-                .is_completion_pending_publication()
-            {
-                DialogueScanoutOwnership::COMPLETION_PENDING
-            } else {
-                DialogueScanoutOwnership::SNAPSHOT
-            };
+        let scroll_copy_crossed_boundary = std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
+        self.dialogue_scanout_ownership = if self.dialogue_scroll_completion_scanout.is_some() {
+            DialogueScanoutOwnership::COMPLETED_SCROLL
+        } else if scroll_copy_crossed_boundary {
+            DialogueScanoutOwnership::FROZEN_SCROLL_COPY
+        } else if self
+            .dialogue_scroll_continuation
+            .is_completion_pending_publication()
+        {
+            DialogueScanoutOwnership::COMPLETION_PENDING
+        } else {
+            DialogueScanoutOwnership::SNAPSHOT
+        };
         if self.dialogue_scanout_ownership.is_snapshot() {
             self.dialogue_scroll_frozen_scanout = None;
         }
@@ -9058,8 +9085,7 @@ impl ZeldaState {
         let display_phase_differs_from_live = snapshot_frame.main_module
             != self.game_state.frame.main_module
             || snapshot_frame.submodule != self.game_state.frame.submodule;
-        if std::env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
-            && display_phase_differs_from_live
+        if std::env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some() && display_phase_differs_from_live
         {
             eprintln!(
                 "display_oam snapshot={:02x}/{:02x} live={:02x}/{:02x} retain={} reasons=module:{}/host_boundary:{}/dungeon_exit:{} snapshot_math={:02x}/{:02x}/{}/{} live_math={:02x}/{:02x}/{}/{} snapshot_oam={:02x?} live_oam={:02x?}",
@@ -9205,14 +9231,9 @@ impl ZeldaState {
         // overrides both the retained and the recomposed paths.
         // The completion override (freshly-scrolled buffer, group-completion
         // frame) takes precedence over the frozen (group-start) generation.
-        let previous_dialogue_scanout = if self
-            .dialogue_scanout_ownership
-            .uses_frozen_scroll()
-        {
+        let previous_dialogue_scanout = if self.dialogue_scanout_ownership.uses_frozen_scroll() {
             self.dialogue_scroll_frozen_scanout.clone()
-        } else if self.dialogue_scanout_ownership
-            == DialogueScanoutOwnership::COMPLETED_SCROLL
-        {
+        } else if self.dialogue_scanout_ownership == DialogueScanoutOwnership::COMPLETED_SCROLL {
             self.dialogue_scroll_completion_scanout.clone()
         } else {
             None
@@ -9353,8 +9374,8 @@ impl ZeldaState {
         // INIDISP level while CGRAM remains on the deferred display generation.
         // Its palette map, fixed-color map, and color-add cap all come from
         // that one brightness generation, independently of CGRAM publication.
-        self.ppu.mode7_scanout_brightness_override = world_map_mode7_brightness_is_early_published
-            .then_some(captured_screen_brightness);
+        self.ppu.mode7_scanout_brightness_override =
+            world_map_mode7_brightness_is_early_published.then_some(captured_screen_brightness);
         self.sync_native_game_state_from_ram();
         // The RAM-derived rebuild reconstitutes the palette mirror from the
         // snapshot's WRAM shadow, which already holds THIS frame's palette
@@ -9854,20 +9875,17 @@ impl ZeldaState {
         }
         self.pre_nmi_animated_bg_scanout = (self.rom_startup_timing()
             && self.game_state.display.has_animated_tile_data_source())
-            .then(|| {
-                let destination_address = self
-                    .game_state
-                    .display
-                    .animated_tile_vram_destination_usize();
-                (destination_address + 0x200 <= self.ppu.vram.len()).then(|| {
-                    PreNmiAnimatedBgScanout {
-                        destination_address,
-                        vram: self.ppu.vram[destination_address..destination_address + 0x200]
-                            .to_vec(),
-                    }
-                })
+        .then(|| {
+            let destination_address = self
+                .game_state
+                .display
+                .animated_tile_vram_destination_usize();
+            (destination_address + 0x200 <= self.ppu.vram.len()).then(|| PreNmiAnimatedBgScanout {
+                destination_address,
+                vram: self.ppu.vram[destination_address..destination_address + 0x200].to_vec(),
             })
-            .flatten();
+        })
+        .flatten();
         self.pre_main_graphics_dma = if self.rom_startup_timing() {
             // Capture the small operand snapshot at the host boundary, then
             // decide which domains consume it from the live state at NMI.
@@ -10325,9 +10343,7 @@ impl ZeldaState {
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
-                RomWorkSlice::Complete(
-                    RomWorkContinuation::FinishDungeonSubtilePaletteFilter,
-                ) => {
+                RomWorkSlice::Complete(RomWorkContinuation::FinishDungeonSubtilePaletteFilter) => {
                     // ApplyPaletteFilter_bounce returns after the NMI that
                     // interrupted its color loop. Resume the caller's optional
                     // second filter pass only after that boundary instead of
@@ -10618,8 +10634,7 @@ impl ZeldaState {
                 let scroll_copy_crossed_boundary =
                     std::mem::take(&mut self.dialogue_scroll_ran_this_frame);
                 debug_assert!(scroll_copy_crossed_boundary);
-                self.dialogue_scanout_ownership =
-                    DialogueScanoutOwnership::FROZEN_SCROLL_COPY;
+                self.dialogue_scanout_ownership = DialogueScanoutOwnership::FROZEN_SCROLL_COPY;
                 self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
