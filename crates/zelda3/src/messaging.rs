@@ -3,16 +3,25 @@
 use super::*;
 use crate::types::{sign16, Pair16U, Point16U};
 
-const VWF_FIRST_LINE_ENTRY_MASTER_CYCLES: u32 = 238_000;
-const VWF_LATER_LINE_ENTRY_MASTER_CYCLES: u32 = 255_000;
-const VWF_RESUMED_FRAME_MASTER_CYCLES: u32 = 348_000;
-const VWF_GLYPH_ENTRY_MASTER_CYCLES: u32 = 2_240;
-const VWF_GLYPH_TRANSITION_MASTER_CYCLES: u32 = 2_620;
 // Snes9x defines a scanline as 341 dots at four master cycles per dot.
+const SNES_MASTER_CYCLES_PER_SCANLINE: u32 = 341 * 4;
+const SNES_NTSC_MASTER_CYCLES_PER_FRAME: u32 = 262 * SNES_MASTER_CYCLES_PER_SCANLINE;
+// Measured at the VWF handler entry in Snes9x PC traces. The first line enters
+// later because message setup precedes it; subsequent lines enter directly.
+const VWF_FIRST_LINE_ENTRY_MASTER_CYCLES: u32 = 239_000;
+const VWF_LATER_LINE_ENTRY_MASTER_CYCLES: u32 = 255_000;
+const VWF_RESUMED_FRAME_MASTER_CYCLES: u32 = SNES_NTSC_MASTER_CYCLES_PER_FRAME;
+// Successive glyph-loop entries were 488-530 master cycles apart in the
+// oracle trace. Use their midpoint as the fixed handler-loop overhead.
+const VWF_GLYPH_TRANSITION_MASTER_CYCLES: u32 = 510;
+// From the RenderText handler epilogue through Module0E's scroll-register
+// copies and NMI_PrepareSprites. Oracle PC traces measure about 16,300 master
+// cycles for this caller suffix; a completion with less headroom is resumed
+// after the intervening vblank instead of being folded into the same callback.
+const VWF_CALLER_SUFFIX_MASTER_CYCLES: u32 = 16_500;
 // At a 255,000-cycle entry the final scroll return lands five scanlines after
 // vblank; add that measured margin to separate it from the 283,400-cycle entry
 // that returns before vblank.
-const SNES_MASTER_CYCLES_PER_SCANLINE: u32 = 341 * 4;
 const VWF_SCROLL_RETURN_VBLANK_MARGIN_MASTER_CYCLES: u32 = 5 * SNES_MASTER_CYCLES_PER_SCANLINE;
 const VWF_SCROLL_COMPLETES_BEFORE_NEXT_VBLANK_MASTER_CYCLES: u32 =
     VWF_LATER_LINE_ENTRY_MASTER_CYCLES + VWF_SCROLL_RETURN_VBLANK_MARGIN_MASTER_CYCLES;
@@ -43,15 +52,32 @@ fn vwf_render_glyph_master_cycles(width: u8, x: u8) -> u32 {
     // seed word. The exact traced cost therefore follows this inner-loop
     // iteration count rather than raw glyph width.
     let columns = u32::from(width.min(8 - (x & 7)));
-    16_000 + columns * 8_000
+    18_000 + columns * 8_000
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VwfCpuSliceOutcome {
+    InterruptedMidGlyph,
+    HandlerComplete { master_cycles_before_vblank: u32 },
+}
+
+impl VwfCpuSliceOutcome {
+    const fn caller_suffix_crosses_vblank(self) -> bool {
+        matches!(
+            self,
+            Self::HandlerComplete {
+                master_cycles_before_vblank
+            } if master_cycles_before_vblank < VWF_CALLER_SUFFIX_MASTER_CYCLES
+        )
+    }
 }
 
 #[cfg(test)]
 mod fast_forward_cycle_tests {
     use super::{
-        vwf_render_glyph_master_cycles, vwf_render_loop_cycle_budget,
-        VWF_FIRST_LINE_ENTRY_MASTER_CYCLES, VWF_LATER_LINE_ENTRY_MASTER_CYCLES,
-        VWF_RESUMED_FRAME_MASTER_CYCLES,
+        vwf_render_glyph_master_cycles, vwf_render_loop_cycle_budget, VwfCpuSliceOutcome,
+        VWF_CALLER_SUFFIX_MASTER_CYCLES, VWF_FIRST_LINE_ENTRY_MASTER_CYCLES,
+        VWF_LATER_LINE_ENTRY_MASTER_CYCLES, VWF_RESUMED_FRAME_MASTER_CYCLES,
     };
 
     #[test]
@@ -72,9 +98,22 @@ mod fast_forward_cycle_tests {
 
     #[test]
     fn glyph_cost_stops_at_the_current_tile_boundary() {
-        assert_eq!(vwf_render_glyph_master_cycles(6, 0), 64_000);
-        assert_eq!(vwf_render_glyph_master_cycles(6, 5), 40_000);
-        assert_eq!(vwf_render_glyph_master_cycles(7, 7), 24_000);
+        assert_eq!(vwf_render_glyph_master_cycles(6, 0), 66_000);
+        assert_eq!(vwf_render_glyph_master_cycles(6, 5), 42_000);
+        assert_eq!(vwf_render_glyph_master_cycles(7, 7), 26_000);
+    }
+
+    #[test]
+    fn caller_suffix_continues_only_when_vblank_owns_the_boundary() {
+        assert!(VwfCpuSliceOutcome::HandlerComplete {
+            master_cycles_before_vblank: VWF_CALLER_SUFFIX_MASTER_CYCLES - 1,
+        }
+        .caller_suffix_crosses_vblank());
+        assert!(!VwfCpuSliceOutcome::HandlerComplete {
+            master_cycles_before_vblank: VWF_CALLER_SUFFIX_MASTER_CYCLES,
+        }
+        .caller_suffix_crosses_vblank());
+        assert!(!VwfCpuSliceOutcome::InterruptedMidGlyph.caller_suffix_crosses_vblank());
     }
 }
 
@@ -124,7 +163,8 @@ impl ZeldaState {
                 // its $0e:cfe2..$0e:d088 copy loop across the next vblanks, so
                 // Module0E_Interface has not reached the scroll-register suffix
                 // at $00:f873 while these continuation slices are pending.
-                || !self.dialogue_scroll_continuation.is_idle())
+                || !self.dialogue_scroll_continuation.is_idle()
+                || self.dialogue_vwf_return_suffix_pending)
         {
             return;
         }
@@ -3277,18 +3317,23 @@ impl ZeldaState {
         // text path does not split a glyph across synthetic host work slices.
         // Keeping that artificial budget delayed the first story glyph by one
         // display boundary, leaving the Triforce caption partially absent.
-        let yielded_midline = self.render_text_draw_message_characters();
+        let outcome = self.render_text_draw_message_characters();
+        let yielded_midline = outcome == VwfCpuSliceOutcome::InterruptedMidGlyph;
+        let caller_suffix_crosses_vblank = !yielded_midline
+            && self.dialogue_scroll_continuation.is_idle()
+            && outcome.caller_suffix_crosses_vblank();
         // A mid-line yield models Snes9x returning at vblank while the 65816 PC
         // is still inside VWF_RenderCharacter. The ROM has not reached the
         // handler epilogue yet, so $17/$0710 remain zero: NMI performs normal
         // core maintenance and does not publish the unfinished text buffer.
         // The next host slice resumes only this interrupted main-thread work.
-        self.dialogue_fast_forward_hold_pending = yielded_midline;
+        self.dialogue_fast_forward_hold_pending = yielded_midline || caller_suffix_crosses_vblank;
         // A long scroll remains inside RenderText_Draw_Scroll; its dedicated
         // pre-main scheduler owns both the preceding NMI publication and the
         // eventual handler epilogue. Ordinary commands still finish here.
         if !yielded_midline && self.dialogue_scroll_continuation.is_idle() {
             self.finish_dialogue_character_render_call();
+            self.dialogue_vwf_return_suffix_pending = caller_suffix_crosses_vblank;
         }
     }
 
@@ -3297,13 +3342,12 @@ impl ZeldaState {
         self.set_core_update_disable_flag(2);
     }
 
-    /// Runs the interruptible 65816 message loop up to this display boundary.
-    /// Returns `true` while the ROM PC is still inside a max-speed glyph loop.
-    fn render_text_draw_message_characters(&mut self) -> bool {
+    /// Runs the interruptible 65816 message loop up to this display boundary
+    /// and reports whether vblank owns the glyph loop or its caller suffix.
+    fn render_text_draw_message_characters(&mut self) -> VwfCpuSliceOutcome {
         let resuming = self.dialogue_fast_forward_hold_active;
         let current_line = self.game_state.messaging.vwf_render.current_line();
         let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line);
-        let mut first_glyph_in_slice = !resuming && self.dialogue_vwf_glyph_cycle_debt == 0;
         let mut frame_advance: u16 = 0;
         let mut midline_yield = false;
         loop {
@@ -3331,13 +3375,7 @@ impl ZeldaState {
                                 self.dialogue_vwf_glyph_cycle_debt
                             } else {
                                 vwf_render_glyph_master_cycles(width, x)
-                                    + if first_glyph_in_slice {
-                                        VWF_GLYPH_ENTRY_MASTER_CYCLES
-                                    } else {
-                                        0
-                                    }
                             };
-                            first_glyph_in_slice = false;
                             if required > cycles_left {
                                 self.dialogue_vwf_glyph_cycle_debt = required - cycles_left;
                                 cycles_left = 0;
@@ -3458,7 +3496,13 @@ impl ZeldaState {
                 midline_yield,
             );
         }
-        midline_yield
+        if midline_yield {
+            VwfCpuSliceOutcome::InterruptedMidGlyph
+        } else {
+            VwfCpuSliceOutcome::HandlerComplete {
+                master_cycles_before_vblank: cycles_left,
+            }
+        }
     }
 
     pub(super) fn RenderText_Draw_Finish(&mut self) {

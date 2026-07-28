@@ -805,7 +805,8 @@ enum OverworldPreMainNmiResume {
 /// interruptible ROM caller returns across an NMI boundary, three generations
 /// are distinct: the ports already published before the return, the latches
 /// materialized by the return, and the next live CPU generation. The middle
-/// generation must be published once without consuming it.
+/// generation must be published once without consuming its control latches.
+/// Effect ports remain edge-triggered and are consumed by every NMI generation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum AudioNmiGeneration {
     #[default]
@@ -839,7 +840,7 @@ enum AudioNmiPublication {
 }
 
 impl AudioNmiPublication {
-    const fn consumes_latches(self) -> bool {
+    const fn consumes_control_latches(self) -> bool {
         matches!(self, Self::PublishAndConsume)
     }
 }
@@ -2874,6 +2875,12 @@ pub struct ZeldaState {
     pub(crate) dialogue_fast_forward_hold_pending: bool,
     #[serde(skip)]
     pub(crate) dialogue_fast_forward_hold_active: bool,
+    /// The VWF handler has published its NMI request, but vblank interrupted
+    /// the Module0E/NMI_PrepareSprites caller suffix. The next host slice
+    /// resumes only that suffix and leaves the pending upload for the
+    /// following NMI, matching the 65816 return boundary.
+    #[serde(skip)]
+    pub(crate) dialogue_vwf_return_suffix_pending: bool,
     /// Remaining 65816 master-cycle work for a VWF glyph interrupted by the
     /// preceding display boundary. The glyph becomes architecturally complete
     /// only when this reaches zero on a resumed main-thread slice.
@@ -7938,6 +7945,7 @@ impl ZeldaState {
             dialogue_scroll_continuation: DialogueScrollContinuation::IDLE,
             dialogue_fast_forward_hold_pending: false,
             dialogue_fast_forward_hold_active: false,
+            dialogue_vwf_return_suffix_pending: false,
             dialogue_vwf_glyph_cycle_debt: 0,
             published_bg3_vwf_glyph_runs: Vec::new(),
             published_bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
@@ -9777,6 +9785,20 @@ impl ZeldaState {
         }
         if initialized_audio_bank_this_frame {
             self.zelda_initialization_code();
+        }
+        if self.rom_startup_timing() && self.dialogue_vwf_return_suffix_pending {
+            self.dialogue_vwf_return_suffix_pending = false;
+            self.dialogue_fast_forward_hold_active = false;
+            self.complete_module0e_interface_after_run();
+            self.nmi_prepare_sprites();
+            self.clear_nmi_update_latch();
+            self.capture_display_snapshot();
+            // This continuation runs after the frame's NMI and returns without
+            // entering `interrupt_nmi`, whose entry normally consumes this
+            // marker. Do that boundary bookkeeping here so the following
+            // frame's NMI publishes the latches authored by this CPU suffix.
+            self.audio_nmi_processed_before_main = false;
+            return;
         }
         if self.rom_startup_timing() && self.dialogue_scroll_continuation.is_return_only() {
             let current_scanout_scroll = BgScrollRegisterScanout::capture(&self.ppu);

@@ -271,6 +271,8 @@ impl ZeldaState {
     pub(super) fn interrupt_nmi_audio_parts_for_generation(&mut self) {
         if let Some(publication) = self.next_audio_nmi_generation.advance() {
             self.interrupt_nmi_audio_parts(publication);
+        } else {
+            self.consume_nmi_effect_latches();
         }
     }
 
@@ -286,7 +288,7 @@ impl ZeldaState {
             if music_control < 0xf2 {
                 self.set_current_music_control(music_control);
             }
-            if publication.consumes_latches() {
+            if publication.consumes_control_latches() {
                 self.set_music_control(0);
             }
         }
@@ -298,7 +300,7 @@ impl ZeldaState {
                 AudioSfxBank::Ambient,
                 ambient_sound_effect,
             ));
-            if publication.consumes_latches() {
+            if publication.consumes_control_latches() {
                 self.clear_ambient_sound_effect();
             }
         } else if self.zelda_audio_command_acknowledged(EngineAudioCommand::from_sfx_port_value(
@@ -318,10 +320,12 @@ impl ZeldaState {
             AudioSfxBank::Effect2,
             self.game_state.system_signals.sound_effect_2(),
         ));
-        if publication.consumes_latches() {
-            self.clear_sound_effect_1();
-            self.clear_sound_effect_2();
-        }
+        self.consume_nmi_effect_latches();
+    }
+
+    fn consume_nmi_effect_latches(&mut self) {
+        self.clear_sound_effect_1();
+        self.clear_sound_effect_2();
     }
 
     pub(super) fn nmi_do_updates(&mut self) {

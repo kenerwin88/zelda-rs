@@ -405,6 +405,7 @@ fn gameplay_sound_latch_becomes_a_typed_nmi_command() {
 fn audio_nmi_generation_publishes_then_consumes_after_interruptible_caller_returns() {
     let mut state = ZeldaState::new();
     state.set_ambient_sound_effect(1);
+    state.set_sound_effect_2(12);
     state.next_audio_nmi_generation = AudioNmiGeneration::PreviouslyPublishedPorts;
 
     state.interrupt_nmi_audio_parts_for_generation();
@@ -413,6 +414,7 @@ fn audio_nmi_generation_publishes_then_consumes_after_interruptible_caller_retur
     let retained_frame = state.zelda_render_audio(&mut retained_audio, 16, 2);
 
     assert_eq!(state.game_state.system_signals.ambient_sound_effect(), 1);
+    assert_eq!(state.game_state.system_signals.sound_effect_2(), 0);
     assert!(!retained_frame.events.iter().any(|event| {
         matches!(
             event.kind,

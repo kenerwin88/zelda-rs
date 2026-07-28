@@ -362,6 +362,31 @@ fn dialogue_return_only_boundary_keeps_current_bg_scroll_scanout() {
 }
 
 #[test]
+fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
+    let mut state = ZeldaState::new();
+    state.initialized = true;
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.set_animated_tile_data_source_address(0xa680);
+    state.dialogue_vwf_return_suffix_pending = true;
+    state.dialogue_fast_forward_hold_active = true;
+    state.audio_nmi_processed_before_main = true;
+    state.set_sound_effect_2(12);
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert!(!state.dialogue_vwf_return_suffix_pending);
+    assert!(!state.dialogue_fast_forward_hold_active);
+    assert!(!state.audio_nmi_processed_before_main);
+    assert_eq!(state.game_state.system_signals.sound_effect_2(), 12);
+
+    state.interrupt_nmi_audio_parts_for_generation();
+    assert_eq!(state.game_state.system_signals.sound_effect_2(), 0);
+    assert_eq!(state.zelda_debug_apu_write_ports()[3], 12);
+}
+
+#[test]
 fn dialogue_final_copy_publishes_color_math_without_advancing_held_ppu_generation() {
     let mut state = ZeldaState::new();
     state.initialized = true;
