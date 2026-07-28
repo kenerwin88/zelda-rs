@@ -11,6 +11,50 @@ const FIRST_BOOT_NMI_DMA_SOURCE: [u8; 0x40] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum NmiVramCopyDirection {
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct NmiVramCopyPacket<'a> {
+    pub(super) destination: usize,
+    pub(super) direction: NmiVramCopyDirection,
+    pub(super) data: &'a [u8],
+}
+
+/// Decode the packet stream consumed by `NMI_CopyPackets`.
+///
+/// Keeping packet interpretation in one place is important for display
+/// publication: the active scanout may retain the pre-NMI words at these exact
+/// destinations while live emulation advances through the DMA.
+pub(super) fn nmi_vram_copy_packets(data: &[u8]) -> Vec<NmiVramCopyPacket<'_>> {
+    let mut packets = Vec::new();
+    let mut pos = 0usize;
+    while pos + 4 <= data.len() && read_word_from_slice(data, pos) != 0xffff {
+        let destination = read_word_from_slice(data, pos) as usize;
+        let vmain = data[pos + 2];
+        let len = data[pos + 3] as usize;
+        pos += 4;
+        if pos + len > data.len() {
+            break;
+        }
+        let direction = match vmain {
+            0x80 => NmiVramCopyDirection::Horizontal,
+            0x81 => NmiVramCopyDirection::Vertical,
+            _ => panic!("invalid NMI packet vmain {vmain:#04x}"),
+        };
+        packets.push(NmiVramCopyPacket {
+            destination,
+            direction,
+            data: &data[pos..pos + len],
+        });
+        pos += len;
+    }
+    packets
+}
+
 impl ZeldaState {
     /// Optional hot-reloaded parity experiment for NMI publication timing.
     ///
@@ -940,23 +984,19 @@ impl ZeldaState {
 
     pub(super) fn NMI_CopyPackets(&mut self) {
         let data = self.nmi_vram_packet_buffer().to_vec();
-        let mut pos = 0usize;
-        while pos + 4 <= data.len() && read_word_from_slice(&data, pos) != 0xffff {
-            let dst = read_word_from_slice(&data, pos) as usize;
-            let vmain = data[pos + 2];
-            let len = data[pos + 3] as usize;
-            pos += 4;
-            if pos + len > data.len() {
-                break;
+        for packet in nmi_vram_copy_packets(&data) {
+            match packet.direction {
+                NmiVramCopyDirection::Horizontal => {
+                    self.copy_to_vram_slice(packet.destination, packet.data, packet.data.len());
+                }
+                NmiVramCopyDirection::Vertical => {
+                    self.copy_to_vram_vertical_slice(
+                        packet.destination,
+                        packet.data,
+                        packet.data.len(),
+                    );
+                }
             }
-            if vmain == 0x80 {
-                self.copy_to_vram_slice(dst, &data[pos..], len);
-            } else if vmain == 0x81 {
-                self.copy_to_vram_vertical_slice(dst, &data[pos..], len);
-            } else {
-                panic!("invalid NMI packet vmain {vmain:#04x}");
-            }
-            pos += len;
         }
     }
 

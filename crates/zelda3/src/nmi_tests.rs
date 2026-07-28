@@ -52,3 +52,29 @@ fn nmi_copy_packets_reads_uvram_data_not_uvram_header() {
     assert_eq!(s.ppu.vram[0x2000], 0x1234);
     assert_eq!(s.ppu.vram[0x2001], 0x5678);
 }
+
+#[test]
+fn nmi_copy_packet_decoder_shares_horizontal_and_vertical_packet_semantics() {
+    let data = [
+        0x00, 0x20, 0x80, 0x04, 0x34, 0x12, 0x78, 0x56, 0x10, 0x20, 0x81, 0x02, 0xbc, 0x9a, 0xff,
+        0xff,
+    ];
+
+    let packets = nmi_vram_copy_packets(&data);
+
+    assert_eq!(
+        packets,
+        vec![
+            NmiVramCopyPacket {
+                destination: 0x2000,
+                direction: NmiVramCopyDirection::Horizontal,
+                data: &[0x34, 0x12, 0x78, 0x56],
+            },
+            NmiVramCopyPacket {
+                destination: 0x2010,
+                direction: NmiVramCopyDirection::Vertical,
+                data: &[0xbc, 0x9a],
+            },
+        ]
+    );
+}

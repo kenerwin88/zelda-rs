@@ -530,6 +530,23 @@ fn rom_graphics_dma_plan_at_host_boundary(
     plan
 }
 
+fn animated_bg_scanout_across_main(
+    entry: GraphicsDmaPlan,
+    exit: GraphicsDmaPlan,
+) -> AnimatedBgScanoutGeneration {
+    // When main changes CPU/NMI phases, the NMI after that main slice belongs
+    // to the following active frame. Its DMA may legitimately consume the
+    // exit phase's operands, but the scanout that just completed still owns
+    // the VRAM resident at the host boundary. Combining the entry scanout rule
+    // with the exit operand rule creates a generation that never existed on
+    // hardware.
+    if entry.animated_bg_scanout != exit.animated_bg_scanout {
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
+    } else {
+        entry.animated_bg_scanout
+    }
+}
+
 const fn rom_dungeon_exit_entry_crosses_nmi_boundary(
     snapshot_main_module: u8,
     snapshot_submodule: u8,
@@ -3277,6 +3294,39 @@ struct PreMainAnimatedTileDma {
 struct PreNmiAnimatedBgScanout {
     destination_address: usize,
     vram: Vec<u16>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct NmiCopyPacketScanout {
+    words: Vec<(usize, u16)>,
+}
+
+impl NmiCopyPacketScanout {
+    fn capture(vram: &[u16], packet_bytes: &[u8]) -> Self {
+        let mut words = Vec::new();
+        for packet in nmi::nmi_vram_copy_packets(packet_bytes) {
+            let word_count = packet.data.len().div_ceil(2);
+            let stride = match packet.direction {
+                nmi::NmiVramCopyDirection::Horizontal => 1,
+                nmi::NmiVramCopyDirection::Vertical => 32,
+            };
+            for index in 0..word_count {
+                let address = packet.destination + index * stride;
+                if let Some(&value) = vram.get(address) {
+                    words.push((address, value));
+                }
+            }
+        }
+        Self { words }
+    }
+
+    fn publish_to(&self, vram: &mut [u16]) {
+        for &(address, value) in &self.words {
+            if let Some(word) = vram.get_mut(address) {
+                *word = value;
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -8755,7 +8805,10 @@ impl ZeldaState {
                 .message_dma_destination_address_usize(),
             link_obj_scanout_generation,
             oam_scanout_generation,
-            animated_bg_scanout_generation: entry_graphics_dma_plan.animated_bg_scanout,
+            animated_bg_scanout_generation: animated_bg_scanout_across_main(
+                entry_graphics_dma_plan,
+                rom_graphics_dma_plan(captured_frame.main_module, captured_frame.submodule),
+            ),
             bg_scroll_generation: std::mem::take(&mut self.next_display_bg_scroll_generation),
             obj_generation,
             published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
@@ -9080,6 +9133,12 @@ impl ZeldaState {
             (end <= self.ppu.vram.len()).then(|| (start, self.ppu.vram[start..end].to_vec()))
         })
         .flatten();
+        let retained_nmi_copy_packet_vram = (self.ram[NMI_COPY_PACKETS_FLAG] != 0).then(|| {
+            NmiCopyPacketScanout::capture(
+                &self.ppu.vram,
+                &self.ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF..],
+            )
+        });
         // Animated-BG DMA configures the next active frame. Retain the
         // host-boundary VRAM generation at whichever destination the current
         // tileset selected ($3b00 indoors, $3c00 outdoors). The resumed
@@ -9164,6 +9223,9 @@ impl ZeldaState {
             if let Some((start, retained_hud_vram)) = retained_hud_vram {
                 self.ppu.vram[start..start + retained_hud_vram.len()]
                     .copy_from_slice(&retained_hud_vram);
+            }
+            if let Some(scanout) = retained_nmi_copy_packet_vram.as_ref() {
+                scanout.publish_to(&mut self.ppu.vram);
             }
             self.ppu.vram[0x5800..0x5c00].copy_from_slice(&presented_poly);
         }

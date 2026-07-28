@@ -3790,6 +3790,66 @@ fn overworld_animated_bg_vram_generation_follows_scanout_authority() {
 }
 
 #[test]
+fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
+    let gameplay = rom_graphics_dma_plan(7, 0);
+    let brightness = rom_graphics_dma_plan(7, 10);
+
+    assert_eq!(
+        animated_bg_scanout_across_main(gameplay, gameplay),
+        AnimatedBgScanoutGeneration::LiveAfterNmi
+    );
+    assert_eq!(
+        animated_bg_scanout_across_main(brightness, brightness),
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
+    );
+    assert_eq!(
+        animated_bg_scanout_across_main(gameplay, brightness),
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
+    );
+    assert_eq!(
+        animated_bg_scanout_across_main(brightness, gameplay),
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
+    );
+}
+
+#[test]
+fn nmi_copy_packets_publish_only_after_the_dma_boundary() {
+    let mut state = ZeldaState::new();
+    let packet_base = crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF;
+    state.ppu.vram[0x2000] = 0x1111;
+    state.ppu.vram[0x2001] = 0x2222;
+    state.ppu.vram[0x2020] = 0x3333;
+    write_le_u16(&mut state.ram, packet_base, 0x2000);
+    state.ram[packet_base + 2] = 0x80;
+    state.ram[packet_base + 3] = 2;
+    state.ram[packet_base + 4..packet_base + 6].copy_from_slice(&[0xaa, 0xaa]);
+    write_le_u16(&mut state.ram, packet_base + 6, 0x2020);
+    state.ram[packet_base + 8] = 0x81;
+    state.ram[packet_base + 9] = 2;
+    state.ram[packet_base + 10..packet_base + 12].copy_from_slice(&[0xbb, 0xbb]);
+    write_le_u16(&mut state.ram, packet_base + 12, 0xffff);
+    state.ram[NMI_COPY_PACKETS_FLAG] = 1;
+    state.sync_native_game_state_from_ram();
+    state.capture_display_snapshot();
+
+    state.ppu.vram[0x2000] = 0xaaaa;
+    state.ppu.vram[0x2001] = 0x9999;
+    state.ppu.vram[0x2020] = 0xbbbb;
+
+    let presented = state.with_display_snapshot(|display| {
+        [
+            display.ppu.vram[0x2000],
+            display.ppu.vram[0x2001],
+            display.ppu.vram[0x2020],
+        ]
+    });
+
+    assert_eq!(presented, [0x1111, 0x9999, 0x3333]);
+    assert_eq!(state.ppu.vram[0x2000], 0xaaaa);
+    assert_eq!(state.ppu.vram[0x2020], 0xbbbb);
+}
+
+#[test]
 fn animated_bg_uses_the_current_host_boundary_vram_at_either_destination() {
     for destination in [0x3b00, 0x3c00] {
         let mut state = ZeldaState::new();
