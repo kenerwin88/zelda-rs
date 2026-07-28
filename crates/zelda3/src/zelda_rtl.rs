@@ -3059,6 +3059,11 @@ pub struct ZeldaState {
     /// following NMI, matching the 65816 return boundary.
     #[serde(skip)]
     pub(crate) dialogue_vwf_return_suffix_pending: bool,
+    /// CPU entry phase for the next fresh VWF handler iteration. A caller
+    /// suffix that returned in its own host slice reaches the following module
+    /// iteration earlier than an ordinary game-loop entry.
+    #[serde(skip)]
+    pub(crate) dialogue_vwf_handler_entry_phase: messaging::VwfHandlerEntryPhase,
     /// CPU phase of an interruptible VWF glyph. `Entering` has not reached the
     /// ROM's dialogue-click store; `Drawing` has already performed entry-time
     /// effects and owns only pixel-loop work.
@@ -8154,6 +8159,7 @@ impl ZeldaState {
             dialogue_fast_forward_hold_pending: false,
             dialogue_fast_forward_hold_active: false,
             dialogue_vwf_return_suffix_pending: false,
+            dialogue_vwf_handler_entry_phase: messaging::VwfHandlerEntryPhase::default(),
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
             published_bg3_vwf_glyph_runs: Vec::new(),
             published_bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
@@ -10112,6 +10118,8 @@ impl ZeldaState {
             // preprocessed-audio marker and publishes the completed BG3 text
             // for the following scanout.
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            self.dialogue_vwf_handler_entry_phase =
+                messaging::VwfHandlerEntryPhase::AfterDeferredCallerSuffix;
             return;
         }
         if self.rom_startup_timing() && self.dialogue_scroll_continuation.is_return_only() {

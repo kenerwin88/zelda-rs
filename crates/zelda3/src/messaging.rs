@@ -9,7 +9,11 @@ const SNES_NTSC_MASTER_CYCLES_PER_FRAME: u32 = 262 * SNES_MASTER_CYCLES_PER_SCAN
 // Measured at the VWF handler entry in Snes9x PC traces. The first line enters
 // later because message setup precedes it; subsequent lines enter directly.
 const VWF_FIRST_LINE_ENTRY_MASTER_CYCLES: u32 = 239_000;
-const VWF_LATER_LINE_ENTRY_MASTER_CYCLES: u32 = 255_000;
+// PC traces place an ordinary later-line handler entry 260,598 master cycles
+// before NMI. When the prior handler's caller suffix returned in its own host
+// slice, the next module iteration enters 271,344 cycles before NMI.
+const VWF_LATER_LINE_ENTRY_MASTER_CYCLES: u32 = 260_598;
+const VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES: u32 = 271_344;
 const VWF_RESUMED_FRAME_MASTER_CYCLES: u32 = SNES_NTSC_MASTER_CYCLES_PER_FRAME;
 // Successive glyph-loop entries were 488-530 master cycles apart in the
 // oracle trace. Use their midpoint as the fixed handler-loop overhead.
@@ -41,14 +45,27 @@ impl DialogueScrollCompletionTiming {
     }
 }
 
-fn vwf_render_loop_cycle_budget(resuming: bool, current_line: u16) -> u32 {
+fn vwf_render_loop_cycle_budget(
+    resuming: bool,
+    current_line: u16,
+    entry_phase: VwfHandlerEntryPhase,
+) -> u32 {
     if resuming {
         VWF_RESUMED_FRAME_MASTER_CYCLES
     } else if current_line == 0 {
         VWF_FIRST_LINE_ENTRY_MASTER_CYCLES
+    } else if entry_phase == VwfHandlerEntryPhase::AfterDeferredCallerSuffix {
+        VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES
     } else {
         VWF_LATER_LINE_ENTRY_MASTER_CYCLES
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum VwfHandlerEntryPhase {
+    #[default]
+    OrdinaryModuleIteration,
+    AfterDeferredCallerSuffix,
 }
 
 fn vwf_render_glyph_master_cycles(width: u8, x: u8) -> u32 {
@@ -62,6 +79,18 @@ fn vwf_render_glyph_master_cycles(width: u8, x: u8) -> u32 {
 
 fn vwf_render_glyph_drawing_master_cycles(width: u8, x: u8) -> u32 {
     vwf_render_glyph_master_cycles(width, x) - VWF_GLYPH_ENTRY_MASTER_CYCLES
+}
+
+fn vwf_glyph_cursor_after_pending_line_transition(
+    current_cursor: usize,
+    current_line: u16,
+    next_line_requested: bool,
+) -> usize {
+    if next_line_requested {
+        VWF_RENDER_CHARACTER_LINE_POSITIONS[(current_line >> 1) as usize] as usize
+    } else {
+        current_cursor
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -191,26 +220,40 @@ impl VwfCpuSliceOutcome {
 #[cfg(test)]
 mod fast_forward_cycle_tests {
     use super::{
+        vwf_glyph_cursor_after_pending_line_transition,
         vwf_render_glyph_drawing_master_cycles, vwf_render_glyph_master_cycles,
         vwf_render_loop_cycle_budget, VwfCpuSliceOutcome, VwfGlyphCpuPhase,
+        VwfHandlerEntryPhase, VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES,
         VWF_CALLER_SUFFIX_MASTER_CYCLES, VWF_FIRST_LINE_ENTRY_MASTER_CYCLES,
         VWF_GLYPH_ENTRY_MASTER_CYCLES, VWF_LATER_LINE_ENTRY_MASTER_CYCLES,
-        VWF_RESUMED_FRAME_MASTER_CYCLES,
+        VWF_RENDER_CHARACTER_LINE_POSITIONS, VWF_RESUMED_FRAME_MASTER_CYCLES,
     };
 
     #[test]
     fn render_loop_budget_tracks_rom_entry_and_resume_phases() {
         assert_eq!(
-            vwf_render_loop_cycle_budget(false, 0),
+            vwf_render_loop_cycle_budget(false, 0, VwfHandlerEntryPhase::OrdinaryModuleIteration),
             VWF_FIRST_LINE_ENTRY_MASTER_CYCLES
         );
         assert_eq!(
-            vwf_render_loop_cycle_budget(false, 2),
+            vwf_render_loop_cycle_budget(false, 2, VwfHandlerEntryPhase::OrdinaryModuleIteration),
             VWF_LATER_LINE_ENTRY_MASTER_CYCLES
         );
         assert_eq!(
-            vwf_render_loop_cycle_budget(true, 0),
+            vwf_render_loop_cycle_budget(
+                true,
+                0,
+                VwfHandlerEntryPhase::AfterDeferredCallerSuffix
+            ),
             VWF_RESUMED_FRAME_MASTER_CYCLES
+        );
+        assert_eq!(
+            vwf_render_loop_cycle_budget(
+                false,
+                2,
+                VwfHandlerEntryPhase::AfterDeferredCallerSuffix
+            ),
+            VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES
         );
     }
 
@@ -241,6 +284,18 @@ mod fast_forward_cycle_tests {
             after_entry.next_phase,
             VwfGlyphCpuPhase::Drawing { .. }
         ));
+    }
+
+    #[test]
+    fn pending_line_transition_selects_the_rom_render_cursor() {
+        assert_eq!(
+            vwf_glyph_cursor_after_pending_line_transition(24, 2, true),
+            VWF_RENDER_CHARACTER_LINE_POSITIONS[1] as usize
+        );
+        assert_eq!(
+            vwf_glyph_cursor_after_pending_line_transition(24, 2, false),
+            24
+        );
     }
 
     #[test]
@@ -3487,7 +3542,13 @@ impl ZeldaState {
     fn render_text_draw_message_characters(&mut self) -> VwfCpuSliceOutcome {
         let resuming = self.dialogue_fast_forward_hold_active;
         let current_line = self.game_state.messaging.vwf_render.current_line();
-        let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line);
+        let entry_phase = if resuming {
+            VwfHandlerEntryPhase::OrdinaryModuleIteration
+        } else {
+            std::mem::take(&mut self.dialogue_vwf_handler_entry_phase)
+        };
+        let mut cycles_left =
+            vwf_render_loop_cycle_budget(resuming, current_line, entry_phase);
         let mut frame_advance: u16 = 0;
         let mut midline_yield = false;
         loop {
@@ -3508,8 +3569,18 @@ impl ZeldaState {
                         let fast_forward =
                             self.game_state.messaging.runtime.vwf_line_speed_cur() == 0;
                         if fast_forward {
-                            let glyph_cursor =
-                                self.game_state.messaging.vwf_render.glyph_cursor_usize();
+                            // VWF_RenderSingle applies $0720 before reading
+                            // vwf_arr[i]. Time the first glyph from that line's
+                            // reset cursor, not the stale prior-line cursor.
+                            let glyph_cursor = vwf_glyph_cursor_after_pending_line_transition(
+                                self.game_state.messaging.vwf_render.glyph_cursor_usize(),
+                                self.game_state.messaging.vwf_render.current_line(),
+                                self.game_state
+                                    .messaging
+                                    .vwf_render
+                                    .next_line_requested()
+                                    != 0,
+                            );
                             let x = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
                             let advance = self.dialogue_vwf_glyph_cpu_phase.advance(
                                 cycles_left,
@@ -3680,17 +3751,22 @@ impl ZeldaState {
         if c != 0x59 {
             self.set_sound_effect_2(12);
         }
-    }
-
-    fn complete_vwf_glyph(&mut self, c: u8, dialogue_offset: u16) {
         let speed = self.game_state.messaging.runtime.vwf_line_speed();
         self.messaging_state_mut().set_vwf_line_speed_cur(speed);
+        // ROM VWF_RenderSingle applies the pending line transition before it
+        // reads vwf_arr[i] and enters the interruptible pixel loops. Make that
+        // state visible at the same function-entry boundary; delaying it until
+        // the drawing completed made resumed slices reuse the prior-line
+        // cursor when estimating their remaining work.
         if self.game_state.messaging.vwf_render.next_line_requested() != 0 {
             let line = (self.game_state.messaging.vwf_render.current_line() >> 1) as usize;
             self.set_vwf_line_render_offset(VWF_RENDER_CHARACTER_RENDER_POS[line]);
             self.set_vwf_glyph_cursor(VWF_RENDER_CHARACTER_LINE_POSITIONS[line]);
             self.clear_vwf_next_line_request();
         }
+    }
+
+    fn complete_vwf_glyph(&mut self, c: u8, dialogue_offset: u16) {
         let Some(dialogue_font) = self.asset_memblk(95, self.dialogue_font_blk_index) else {
             return;
         };
