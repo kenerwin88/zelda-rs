@@ -5016,6 +5016,8 @@ fn dungeon_landing_wipe_timing_follows_spotlight_row_workload() {
 
     assert_eq!(dungeon_landing_wipe_return_slices(41, false), 1);
     assert_eq!(dungeon_landing_wipe_return_slices(183, false), 1);
+    assert!(dungeon_landing_goal_reset_preserves_scanout_prefix(86));
+    assert!(!dungeon_landing_goal_reset_preserves_scanout_prefix(183));
     assert!(spotlight_opening_projects_live_tail_before_hdma(0x3f, 183));
     assert!(!spotlight_opening_projects_live_tail_before_hdma(0x46, 183));
     assert!(!spotlight_opening_projects_live_tail_before_hdma(0x3f, 182));

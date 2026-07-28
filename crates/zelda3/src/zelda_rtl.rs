@@ -1290,6 +1290,10 @@ const fn dungeon_landing_wipe_return_slices(
     }
 }
 
+const fn dungeon_landing_goal_reset_preserves_scanout_prefix(vertical_center: u16) -> bool {
+    !spotlight_table_has_long_nmi_workload(vertical_center)
+}
+
 const fn rom_spotlight_goal_transition_waits_for_iteration_return(
     main_module: u8,
     submodule: u8,
@@ -8441,6 +8445,54 @@ impl ZeldaState {
             Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
     }
 
+    #[cold]
+    #[inline(never)]
+    fn resume_dungeon_landing_wipe_return(
+        &mut self,
+        input: u16,
+        oam_dma_source: Option<&[u8]>,
+    ) -> bool {
+        if !self.rom_startup_timing()
+            || self.dungeon_landing_wipe_return_slices_remaining == 0
+        {
+            return false;
+        }
+
+        let vertical_center = spotlight_vertical_center(
+            self.game_state.player.follower_link.y(),
+            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+        );
+        let long_workload = spotlight_table_has_long_nmi_workload(vertical_center);
+        // Only a long goal calculation spans a second return slice. That
+        // waiting scanout keeps the last published circle; the completion
+        // below publishes the fully returned module state normally.
+        let waiting_publication =
+            (self.iris_spotlight_goal_transition_pending && long_workload)
+                .then_some(DisplaySnapshotPublication::RetainPublished);
+        self.dungeon_landing_wipe_return_slices_remaining -= 1;
+        if self.dungeon_landing_wipe_return_slices_remaining != 0 {
+            self.capture_display_snapshot_with_override(waiting_publication);
+            self.interrupt_nmi(input, oam_dma_source, false);
+            return true;
+        }
+        if self.iris_spotlight_goal_transition_pending {
+            self.iris_spotlight_goal_transition_pending = false;
+            if dungeon_landing_goal_reset_preserves_scanout_prefix(vertical_center) {
+                self.spotlight_hdma_reset_prefix = Some(std::array::from_fn(|index| {
+                    self.spotlight_hdma_table_dynamic_entry(index)
+                }));
+            }
+            self.complete_iris_spotlight_goal_transition();
+            self.complete_module07_0f_operate_spotlight_suffix();
+        }
+        self.complete_module07_dungeon_after_submodule();
+        self.nmi_prepare_sprites();
+        self.clear_nmi_update_latch();
+        self.capture_display_snapshot();
+        self.interrupt_nmi(input, oam_dma_source, false);
+        true
+    }
+
     pub(super) fn begin_pre_overworld_properties_work(
         &mut self,
         overworld_screen: u8,
@@ -10149,26 +10201,7 @@ impl ZeldaState {
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
-        if self.rom_startup_timing() && self.dungeon_landing_wipe_return_slices_remaining != 0 {
-            self.dungeon_landing_wipe_return_slices_remaining -= 1;
-            if self.dungeon_landing_wipe_return_slices_remaining != 0 {
-                self.capture_display_snapshot();
-                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-                return;
-            }
-            if self.iris_spotlight_goal_transition_pending {
-                self.iris_spotlight_goal_transition_pending = false;
-                self.spotlight_hdma_reset_prefix = Some(std::array::from_fn(|index| {
-                    self.spotlight_hdma_table_dynamic_entry(index)
-                }));
-                self.complete_iris_spotlight_goal_transition();
-                self.complete_module07_0f_operate_spotlight_suffix();
-            }
-            self.complete_module07_dungeon_after_submodule();
-            self.nmi_prepare_sprites();
-            self.clear_nmi_update_latch();
-            self.capture_display_snapshot();
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+        if self.resume_dungeon_landing_wipe_return(input, oam_dma_source.as_deref()) {
             return;
         }
         if self.rom_startup_timing() && self.normal_dialogue_initialization_phase != 0 {
