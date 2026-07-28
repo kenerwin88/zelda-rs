@@ -4597,6 +4597,14 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
             ..subtile_landing
         }),
     );
+    subtile_landing.subsubmodule = 7;
+    assert_eq!(
+        rom_graphics_dma_plan_at_host_boundary(subtile_landing),
+        rom_graphics_dma_plan_at_host_boundary(crate::game_state::FrameState {
+            subsubmodule: 6,
+            ..subtile_landing
+        }),
+    );
     assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));
     assert!(rom_display_oam_publication_is_deferred(4, 3, false, true));
     assert!(rom_display_oam_publication_is_deferred(4, 3, false, false));

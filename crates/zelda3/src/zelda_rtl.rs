@@ -507,11 +507,12 @@ const fn rom_dungeon_subtile_obj_scanout_uses_host_boundary(
     submodule: u8,
     subsubmodule: u8,
 ) -> bool {
-    // The landing, movement, and palette-filter phases run between consecutive
-    // OBJ uploads. Their main-thread work authors the following OAM/Link-CHR
+    // The landing tail runs between consecutive OBJ uploads: it finds the
+    // landing, moves Link out of the doorway, restores the palette, and
+    // triggers the shutters. That work authors the following OAM/Link-CHR
     // generation, while the active scanout keeps the coherent OBJ image
     // resident at the host boundary.
-    main_module == 7 && submodule == 1 && matches!(subsubmodule, 4..=6)
+    main_module == 7 && submodule == 1 && matches!(subsubmodule, 4..=7)
 }
 
 fn rom_graphics_dma_plan_at_host_boundary(
