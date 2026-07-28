@@ -14,6 +14,11 @@ const VWF_RESUMED_FRAME_MASTER_CYCLES: u32 = SNES_NTSC_MASTER_CYCLES_PER_FRAME;
 // Successive glyph-loop entries were 488-530 master cycles apart in the
 // oracle trace. Use their midpoint as the fixed handler-loop overhead.
 const VWF_GLYPH_TRANSITION_MASTER_CYCLES: u32 = 510;
+// Fixed work from the message-loop dispatch through VWF_RenderSingle's entry
+// effects. Snes9x PC traces place the $0E:CACC dialogue-click store on this
+// side of the expensive $0E:CBF2/$0E:CC90 pixel loops. Keeping this phase
+// separate is observable when vblank lands between function entry and drawing.
+const VWF_GLYPH_ENTRY_MASTER_CYCLES: u32 = 18_000;
 // From the RenderText handler epilogue through Module0E's scroll-register
 // copies and NMI_PrepareSprites. Oracle PC traces measure about 16,300 master
 // cycles for this caller suffix; a completion with less headroom is resumed
@@ -52,7 +57,118 @@ fn vwf_render_glyph_master_cycles(width: u8, x: u8) -> u32 {
     // seed word. The exact traced cost therefore follows this inner-loop
     // iteration count rather than raw glyph width.
     let columns = u32::from(width.min(8 - (x & 7)));
-    18_000 + columns * 8_000
+    VWF_GLYPH_ENTRY_MASTER_CYCLES + columns * 8_000
+}
+
+fn vwf_render_glyph_drawing_master_cycles(width: u8, x: u8) -> u32 {
+    vwf_render_glyph_master_cycles(width, x) - VWF_GLYPH_ENTRY_MASTER_CYCLES
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum VwfGlyphCpuPhase {
+    #[default]
+    Ready,
+    Entering {
+        remaining_master_cycles: u32,
+        drawing_master_cycles: u32,
+    },
+    Drawing {
+        remaining_master_cycles: u32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct VwfGlyphCpuAdvance {
+    next_phase: VwfGlyphCpuPhase,
+    consumed_master_cycles: u32,
+    entered_function: bool,
+    completed: bool,
+}
+
+impl VwfGlyphCpuPhase {
+    fn advance(self, available: u32, drawing_master_cycles: u32) -> VwfGlyphCpuAdvance {
+        match self {
+            Self::Ready => Self::advance_entry(
+                VWF_GLYPH_ENTRY_MASTER_CYCLES,
+                drawing_master_cycles,
+                available,
+            ),
+            Self::Entering {
+                remaining_master_cycles,
+                drawing_master_cycles,
+            } => Self::advance_entry(
+                remaining_master_cycles,
+                drawing_master_cycles,
+                available,
+            ),
+            Self::Drawing {
+                remaining_master_cycles,
+            } if remaining_master_cycles > available => VwfGlyphCpuAdvance {
+                next_phase: Self::Drawing {
+                    remaining_master_cycles: remaining_master_cycles - available,
+                },
+                consumed_master_cycles: available,
+                entered_function: false,
+                completed: false,
+            },
+            Self::Drawing {
+                remaining_master_cycles,
+            } => VwfGlyphCpuAdvance {
+                next_phase: Self::Ready,
+                consumed_master_cycles: remaining_master_cycles,
+                entered_function: false,
+                completed: true,
+            },
+        }
+    }
+
+    fn advance_entry(
+        entry_master_cycles: u32,
+        drawing_master_cycles: u32,
+        available: u32,
+    ) -> VwfGlyphCpuAdvance {
+        if entry_master_cycles > available {
+            return VwfGlyphCpuAdvance {
+                next_phase: Self::Entering {
+                    remaining_master_cycles: entry_master_cycles - available,
+                    drawing_master_cycles,
+                },
+                consumed_master_cycles: available,
+                entered_function: false,
+                completed: false,
+            };
+        }
+        let after_entry = available - entry_master_cycles;
+        if drawing_master_cycles > after_entry {
+            return VwfGlyphCpuAdvance {
+                next_phase: Self::Drawing {
+                    remaining_master_cycles: drawing_master_cycles - after_entry,
+                },
+                consumed_master_cycles: available,
+                entered_function: true,
+                completed: false,
+            };
+        }
+        VwfGlyphCpuAdvance {
+            next_phase: Self::Ready,
+            consumed_master_cycles: entry_master_cycles + drawing_master_cycles,
+            entered_function: true,
+            completed: true,
+        }
+    }
+
+    const fn remaining_master_cycles(self) -> u32 {
+        match self {
+            Self::Ready => 0,
+            Self::Entering {
+                remaining_master_cycles,
+                drawing_master_cycles,
+            } => remaining_master_cycles + drawing_master_cycles,
+            Self::Drawing {
+                remaining_master_cycles,
+            } => remaining_master_cycles,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -75,9 +191,11 @@ impl VwfCpuSliceOutcome {
 #[cfg(test)]
 mod fast_forward_cycle_tests {
     use super::{
-        vwf_render_glyph_master_cycles, vwf_render_loop_cycle_budget, VwfCpuSliceOutcome,
+        vwf_render_glyph_drawing_master_cycles, vwf_render_glyph_master_cycles,
+        vwf_render_loop_cycle_budget, VwfCpuSliceOutcome, VwfGlyphCpuPhase,
         VWF_CALLER_SUFFIX_MASTER_CYCLES, VWF_FIRST_LINE_ENTRY_MASTER_CYCLES,
-        VWF_LATER_LINE_ENTRY_MASTER_CYCLES, VWF_RESUMED_FRAME_MASTER_CYCLES,
+        VWF_GLYPH_ENTRY_MASTER_CYCLES, VWF_LATER_LINE_ENTRY_MASTER_CYCLES,
+        VWF_RESUMED_FRAME_MASTER_CYCLES,
     };
 
     #[test]
@@ -101,6 +219,28 @@ mod fast_forward_cycle_tests {
         assert_eq!(vwf_render_glyph_master_cycles(6, 0), 66_000);
         assert_eq!(vwf_render_glyph_master_cycles(6, 5), 42_000);
         assert_eq!(vwf_render_glyph_master_cycles(7, 7), 26_000);
+    }
+
+    #[test]
+    fn glyph_entry_and_drawing_cross_vblank_as_distinct_phases() {
+        let drawing = vwf_render_glyph_drawing_master_cycles(6, 1);
+        let before_entry =
+            VwfGlyphCpuPhase::Ready.advance(VWF_GLYPH_ENTRY_MASTER_CYCLES - 1, drawing);
+        assert!(!before_entry.entered_function);
+        assert!(!before_entry.completed);
+        assert!(matches!(
+            before_entry.next_phase,
+            VwfGlyphCpuPhase::Entering { .. }
+        ));
+
+        let after_entry =
+            VwfGlyphCpuPhase::Ready.advance(VWF_GLYPH_ENTRY_MASTER_CYCLES + 1, drawing);
+        assert!(after_entry.entered_function);
+        assert!(!after_entry.completed);
+        assert!(matches!(
+            after_entry.next_phase,
+            VwfGlyphCpuPhase::Drawing { .. }
+        ));
     }
 
     #[test]
@@ -3371,22 +3511,24 @@ impl ZeldaState {
                             let glyph_cursor =
                                 self.game_state.messaging.vwf_render.glyph_cursor_usize();
                             let x = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
-                            let required = if self.dialogue_vwf_glyph_cycle_debt != 0 {
-                                self.dialogue_vwf_glyph_cycle_debt
-                            } else {
-                                vwf_render_glyph_master_cycles(width, x)
-                            };
-                            if required > cycles_left {
-                                self.dialogue_vwf_glyph_cycle_debt = required - cycles_left;
-                                cycles_left = 0;
+                            let advance = self.dialogue_vwf_glyph_cpu_phase.advance(
+                                cycles_left,
+                                vwf_render_glyph_drawing_master_cycles(width, x),
+                            );
+                            self.dialogue_vwf_glyph_cpu_phase = advance.next_phase;
+                            cycles_left -= advance.consumed_master_cycles;
+                            if advance.entered_function {
+                                self.begin_vwf_glyph(param);
+                            }
+                            if !advance.completed {
                                 midline_yield = true;
                                 break;
                             }
-                            cycles_left -= required;
-                            self.dialogue_vwf_glyph_cycle_debt = 0;
+                        } else {
+                            self.begin_vwf_glyph(param);
                         }
                         frame_advance = frame_advance.saturating_add(u16::from(width));
-                        self.VWF_RenderSingle(param as i32, read_pos as u16);
+                        self.complete_vwf_glyph(param, read_pos as u16);
                         command_done = true;
                         if fast_forward {
                             cycles_left =
@@ -3479,7 +3621,7 @@ impl ZeldaState {
             }
         }
         if !midline_yield {
-            self.dialogue_vwf_glyph_cycle_debt = 0;
+            self.dialogue_vwf_glyph_cpu_phase = VwfGlyphCpuPhase::Ready;
         }
         if std::env::var_os("ZELDA3_DEBUG_VWF_BUDGET").is_some() {
             let cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
@@ -3492,7 +3634,8 @@ impl ZeldaState {
                 cursor,
                 arrval,
                 cycles_left,
-                self.dialogue_vwf_glyph_cycle_debt,
+                self.dialogue_vwf_glyph_cpu_phase
+                    .remaining_master_cycles(),
                 midline_yield,
             );
         }
@@ -3533,11 +3676,13 @@ impl ZeldaState {
             .unwrap_or(0)
     }
 
-    pub(super) fn VWF_RenderSingle(&mut self, c: i32, dialogue_offset: u16) {
-        let c = c as u8;
+    fn begin_vwf_glyph(&mut self, c: u8) {
         if c != 0x59 {
             self.set_sound_effect_2(12);
         }
+    }
+
+    fn complete_vwf_glyph(&mut self, c: u8, dialogue_offset: u16) {
         let speed = self.game_state.messaging.runtime.vwf_line_speed();
         self.messaging_state_mut().set_vwf_line_speed_cur(speed);
         if self.game_state.messaging.vwf_render.next_line_requested() != 0 {

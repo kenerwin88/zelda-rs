@@ -2942,11 +2942,11 @@ pub struct ZeldaState {
     /// following NMI, matching the 65816 return boundary.
     #[serde(skip)]
     pub(crate) dialogue_vwf_return_suffix_pending: bool,
-    /// Remaining 65816 master-cycle work for a VWF glyph interrupted by the
-    /// preceding display boundary. The glyph becomes architecturally complete
-    /// only when this reaches zero on a resumed main-thread slice.
+    /// CPU phase of an interruptible VWF glyph. `Entering` has not reached the
+    /// ROM's dialogue-click store; `Drawing` has already performed entry-time
+    /// effects and owns only pixel-loop work.
     #[serde(skip)]
-    pub(crate) dialogue_vwf_glyph_cycle_debt: u32,
+    pub(crate) dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase,
     /// Semantic VWF metadata follows the same NMI publication boundary as the
     /// hardware text VRAM. CPU-authored glyphs stay private until subroutine 2
     /// uploads the completed buffer.
@@ -8004,7 +8004,7 @@ impl ZeldaState {
             dialogue_fast_forward_hold_pending: false,
             dialogue_fast_forward_hold_active: false,
             dialogue_vwf_return_suffix_pending: false,
-            dialogue_vwf_glyph_cycle_debt: 0,
+            dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
             published_bg3_vwf_glyph_runs: Vec::new(),
             published_bg3_vwf_glyph_run_dialogue_offsets: Vec::new(),
             published_dialogue_msg_read_pos: 0,
