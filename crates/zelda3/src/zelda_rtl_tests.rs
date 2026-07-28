@@ -3687,16 +3687,38 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     );
     assert_eq!(rom_item_receipt_graphics_nmi_slices(0x23), 0);
 
-    let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishItemReceiptGraphics,
+    let continuation = RomWorkContinuation::FinishItemReceiptGraphics {
+        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted,
+    };
+    let mut work =
+        PendingRomWork::schedule(continuation, ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES);
+    assert!(!work.suspends_translated_call_stack());
+    let suspended = PendingRomWork::schedule(
+        RomWorkContinuation::FinishItemReceiptGraphics {
+            continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage {
+                receipt: ItemReceiptReturn {
+                    ancilla_slot: 4,
+                    item: 0,
+                    chest_position: 0,
+                },
+                sprite_slot: 0,
+                dungeon: DungeonSpriteMainReturn {
+                    bg2_x: 1,
+                    bg2_y: 2,
+                    bg1_x: 3,
+                    bg1_y: 4,
+                },
+            },
+        },
         ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
     );
+    assert!(suspended.suspends_translated_call_stack());
     for _ in 0..ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES - 1 {
         assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishItemReceiptGraphics)
+        RomWorkSlice::Complete(continuation)
     );
 }
 

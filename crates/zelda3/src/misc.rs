@@ -898,8 +898,23 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_add_item_receipt(&mut self, ain: u8, yin: u8, chest_pos: u16) {
+        let _ = self.ancilla_add_item_receipt_from(
+            ain,
+            yin,
+            chest_pos,
+            ItemReceiptCaller::AtomicCaller,
+        );
+    }
+
+    pub(super) fn ancilla_add_item_receipt_from(
+        &mut self,
+        ain: u8,
+        yin: u8,
+        chest_pos: u16,
+        caller: ItemReceiptCaller,
+    ) -> RomCallStatus {
         let Some(k) = self.ancilla_add_simple(ain, yin) else {
-            return;
+            return RomCallStatus::Returned;
         };
         let item = self.game_state.player.follower_link.receive_item_index();
 
@@ -1050,8 +1065,23 @@ impl ZeldaState {
             self.DecompressSwordGraphics();
             self.Palette_Load_Sword();
         }
-        self.begin_item_receipt_graphics_work(gfx);
+        let receipt = ItemReceiptReturn {
+            ancilla_slot: k as u8,
+            item,
+            chest_position: chest_pos,
+        };
+        let call_status = self.begin_item_receipt_graphics_work(gfx, receipt, caller);
+        if call_status.is_suspended() {
+            return call_status;
+        }
+        self.complete_ancilla_add_item_receipt(receipt);
+        RomCallStatus::Returned
+    }
 
+    pub(super) fn complete_ancilla_add_item_receipt(&mut self, receipt: ItemReceiptReturn) {
+        let k = receipt.ancilla_slot as usize;
+        let item = receipt.item;
+        let chest_pos = receipt.chest_position;
         {
             let mut receipt = self.ancilla_slot_view_mut(k);
             receipt.set_item_to_link(item);

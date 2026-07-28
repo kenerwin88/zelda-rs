@@ -1027,15 +1027,30 @@ impl ZeldaState {
             }
             1 => {
                 self.follower_link_state_mut().set_item_receipt_method(0);
-                self.link_receive_item(0, 0);
-                self.sprite_slot_view_mut(k).increment_ai_state();
-                self.sprite_slot_view_mut(k).set_graphics(1);
-                self.save_progress_mut().set_which_starting_point(3);
-                self.save_progress_mut().or_progress_flags(1);
-                self.save_progress_mut().set_progress_indicator(1);
+                if self
+                    .link_receive_item_from(
+                        0,
+                        0,
+                        ItemReceiptCaller::UnclePassage {
+                            sprite_slot: k as u8,
+                        },
+                    )
+                    .is_suspended()
+                {
+                    return;
+                }
+                self.complete_uncle_passage_item_receipt(k);
             }
             _ => {}
         }
+    }
+
+    pub(super) fn complete_uncle_passage_item_receipt(&mut self, k: usize) {
+        self.sprite_slot_view_mut(k).increment_ai_state();
+        self.sprite_slot_view_mut(k).set_graphics(1);
+        self.save_progress_mut().set_which_starting_point(3);
+        self.save_progress_mut().or_progress_flags(1);
+        self.save_progress_mut().set_progress_indicator(1);
     }
 
     // void Uncle_Draw(int k) {  // 8dd391

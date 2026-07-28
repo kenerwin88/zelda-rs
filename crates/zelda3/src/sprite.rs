@@ -1922,10 +1922,26 @@ impl ZeldaState {
                 self.replay_trace_ram_watch(&format!("sprite-before-execute-single slot={k}"));
             }
             self.sprite_execute_single(k);
+            if self.pending_rom_work.suspends_translated_call_stack() {
+                return;
+            }
             if trace_sprite_slots {
                 self.replay_trace_ram_watch(&format!("sprite-after-execute-single slot={k}"));
             }
         }
+        self.complete_sprite_main_after_all_slots();
+    }
+
+    pub(super) fn complete_sprite_main_after_interrupted_slot(&mut self, interrupted_slot: usize) {
+        for k in (0..interrupted_slot).rev() {
+            self.sprite_system_mut().set_cur_object_index(k as u8);
+            self.sprite_execute_single(k);
+            debug_assert!(!self.pending_rom_work.is_pending());
+        }
+        self.complete_sprite_main_after_all_slots();
+    }
+
+    fn complete_sprite_main_after_all_slots(&mut self) {
         self.garnish_execute_lower_slots();
         self.clear_overworld_vertical_scroll_delta_low();
         self.set_overworld_horizontal_scroll_delta_low(0);

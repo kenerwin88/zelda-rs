@@ -1967,6 +1967,16 @@ impl ZeldaState {
     }
 
     pub(super) fn link_receive_item(&mut self, item: u8, chest_position: u16) {
+        let _ =
+            self.link_receive_item_from(item, chest_position, ItemReceiptCaller::AtomicCaller);
+    }
+
+    pub(super) fn link_receive_item_from(
+        &mut self,
+        item: u8,
+        chest_position: u16,
+        caller: ItemReceiptCaller,
+    ) -> RomCallStatus {
         if self.game_state.player.follower_link.has_auxiliary_state() {
             self.follower_link_state_mut().clear_auxiliary_state();
             self.follower_link_state_mut().set_incapacitated_timer(0);
@@ -1998,7 +2008,16 @@ impl ZeldaState {
                 self.follower_link_state_mut().set_item_hold_pose(2);
             }
         }
-        self.ancilla_add_item_receipt(0x22, 4, chest_position);
+        let call_status =
+            self.ancilla_add_item_receipt_from(0x22, 4, chest_position, caller);
+        if call_status.is_suspended() {
+            return call_status;
+        }
+        self.complete_link_receive_item(item);
+        RomCallStatus::Returned
+    }
+
+    pub(super) fn complete_link_receive_item(&mut self, item: u8) {
         if item != 0x20 && item != 0x37 && item != 0x38 && item != 0x39 {
             self.hud_refresh_icon();
         }

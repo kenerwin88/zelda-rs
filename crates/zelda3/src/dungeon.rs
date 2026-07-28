@@ -12399,13 +12399,33 @@ impl ZeldaState {
 
         self.sprite_dungeon_draw_all_push_blocks();
         self.replay_trace_ram_watch("module07-after-draw-push-blocks");
+        let sprite_return = DungeonSpriteMainReturn {
+            bg2_x: bg2x,
+            bg2_y: bg2y,
+            bg1_x: bg1x_restore,
+            bg1_y: bg1y_restore,
+        };
+        self.active_dungeon_sprite_main_return = Some(sprite_return);
         self.sprite_main();
+        if self.pending_rom_work.suspends_translated_call_stack() {
+            return;
+        }
+        let sprite_return = self
+            .active_dungeon_sprite_main_return
+            .take()
+            .expect("Module 7 sprite return frame must remain active");
         self.replay_trace_ram_watch("module07-after-sprite-main");
+        self.complete_module07_after_sprite_main(sprite_return);
+    }
 
-        self.set_bg2_x(bg2x);
-        self.set_bg2_y(bg2y);
-        self.set_bg1_x(bg1x_restore);
-        self.set_bg1_y(bg1y_restore);
+    pub(super) fn complete_module07_after_sprite_main(
+        &mut self,
+        sprite_return: DungeonSpriteMainReturn,
+    ) {
+        self.set_bg2_x(sprite_return.bg2_x);
+        self.set_bg2_y(sprite_return.bg2_y);
+        self.set_bg1_x(sprite_return.bg1_x);
+        self.set_bg1_y(sprite_return.bg1_y);
 
         self.link_oam_main();
         self.replay_trace_ram_watch("module07-after-link-oam");

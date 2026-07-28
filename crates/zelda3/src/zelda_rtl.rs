@@ -1024,6 +1024,54 @@ impl DungeonFallingEntranceWork {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ItemReceiptCaller {
+    AtomicCaller,
+    UnclePassage { sprite_slot: u8 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RomCallStatus {
+    Returned,
+    Suspended,
+}
+
+impl RomCallStatus {
+    pub(super) const fn is_suspended(self) -> bool {
+        matches!(self, Self::Suspended)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ItemReceiptReturn {
+    pub(super) ancilla_slot: u8,
+    pub(super) item: u8,
+    pub(super) chest_position: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct DungeonSpriteMainReturn {
+    bg2_x: u16,
+    bg2_y: u16,
+    bg1_x: u16,
+    bg1_y: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ItemReceiptGraphicsContinuation {
+    /// The translated caller is still atomic. Its suffix has already run, so
+    /// the measured graphics delay only owns the ordinary main-loop epilogue.
+    CallerAlreadyCompleted,
+    /// `DecodeAnimatedSpriteTile_variable` interrupted this real ROM call
+    /// stack. Resume each typed caller suffix after the graphics routine
+    /// returns instead of publishing selected side effects early.
+    ResumeUnclePassage {
+        receipt: ItemReceiptReturn,
+        sprite_slot: u8,
+        dungeon: DungeonSpriteMainReturn,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RomWorkContinuation {
     FinishAttractWorldMap,
     FinishAttractWorldMapExit,
@@ -1037,7 +1085,9 @@ enum RomWorkContinuation {
     },
     FinishPreDungeonEntranceLoad,
     FinishPreDungeonSongBankLoad,
-    FinishItemReceiptGraphics,
+    FinishItemReceiptGraphics {
+        continuation: ItemReceiptGraphicsContinuation,
+    },
     FinishDungeonSubtilePaletteFilter,
     FinishSpotlightIteration {
         iteration: SpotlightIteration,
@@ -1189,6 +1239,15 @@ impl PendingRomWork {
 
     fn is_pending(self) -> bool {
         self.continuation.is_some()
+    }
+
+    fn suspends_translated_call_stack(self) -> bool {
+        matches!(
+            self.continuation,
+            Some(RomWorkContinuation::FinishItemReceiptGraphics {
+                continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
+            })
+        )
     }
 
     fn in_flight_display_snapshot_publication_override(self) -> Option<DisplaySnapshotPublication> {
@@ -3168,6 +3227,11 @@ pub struct ZeldaState {
     attract_first_story_render_delay: u8,
     #[serde(skip)]
     pending_rom_work: PendingRomWork,
+    /// Return frame for a `Sprite_Main` call made by Module 7. Long ROM
+    /// subroutines take this frame into their continuation so the translated
+    /// call stack resumes at the same semantic boundary.
+    #[serde(skip)]
+    active_dungeon_sprite_main_return: Option<DungeonSpriteMainReturn>,
     #[serde(skip)]
     next_display_vram_generation: DisplayVramGeneration,
     #[serde(skip)]
@@ -8197,6 +8261,7 @@ impl ZeldaState {
             attract_init_graphics_phase: 0,
             attract_first_story_render_delay: 0,
             pending_rom_work: PendingRomWork::default(),
+            active_dungeon_sprite_main_return: None,
             next_display_vram_generation: DisplayVramGeneration::default(),
             next_display_bg_scroll_generation: DisplayBgScrollGeneration::default(),
             next_display_obj_scanout_generation: None,
@@ -8560,13 +8625,18 @@ impl ZeldaState {
         self.selected_game_load_remaining_frames
     }
 
-    pub(super) fn begin_item_receipt_graphics_work(&mut self, gfx: u8) {
+    pub(super) fn begin_item_receipt_graphics_work(
+        &mut self,
+        gfx: u8,
+        receipt: ItemReceiptReturn,
+        caller: ItemReceiptCaller,
+    ) -> RomCallStatus {
         if !self.rom_startup_timing() {
-            return;
+            return RomCallStatus::Returned;
         }
         let nmi_slices = rom_item_receipt_graphics_nmi_slices(gfx);
         if nmi_slices == 0 {
-            return;
+            return RomCallStatus::Returned;
         }
         debug_assert!(!self.pending_rom_work.is_pending());
         match self.game_state.player.follower_link.item_receipt_method() {
@@ -8576,10 +8646,37 @@ impl ZeldaState {
             0 | 1 => {}
             // Other entry paths remain atomic until their ROM boundary is
             // measured.
-            _ => return,
+            _ => return RomCallStatus::Returned,
         }
-        self.pending_rom_work =
-            PendingRomWork::schedule(RomWorkContinuation::FinishItemReceiptGraphics, nmi_slices);
+        let continuation = match caller {
+            ItemReceiptCaller::AtomicCaller => {
+                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted
+            }
+            ItemReceiptCaller::UnclePassage { sprite_slot } => {
+                let dungeon = self
+                    .active_dungeon_sprite_main_return
+                    .take()
+                    .expect("uncle passage item receipt must suspend a Module 7 sprite loop");
+                ItemReceiptGraphicsContinuation::ResumeUnclePassage {
+                    receipt,
+                    sprite_slot,
+                    dungeon,
+                }
+            }
+        };
+        let call_status = if matches!(
+            continuation,
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted
+        ) {
+            RomCallStatus::Returned
+        } else {
+            RomCallStatus::Suspended
+        };
+        self.pending_rom_work = PendingRomWork::schedule(
+            RomWorkContinuation::FinishItemReceiptGraphics { continuation },
+            nmi_slices,
+        );
+        call_status
     }
 
     pub(super) fn begin_dungeon_falling_entrance_work(
@@ -10454,7 +10551,21 @@ impl ZeldaState {
                     self.clear_nmi_update_latch();
                     return;
                 }
-                RomWorkSlice::Complete(RomWorkContinuation::FinishItemReceiptGraphics) => {
+                RomWorkSlice::Complete(RomWorkContinuation::FinishItemReceiptGraphics {
+                    continuation,
+                }) => {
+                    if let ItemReceiptGraphicsContinuation::ResumeUnclePassage {
+                        receipt,
+                        sprite_slot,
+                        dungeon,
+                    } = continuation
+                    {
+                        self.complete_ancilla_add_item_receipt(receipt);
+                        self.complete_link_receive_item(receipt.item);
+                        self.complete_uncle_passage_item_receipt(sprite_slot as usize);
+                        self.complete_sprite_main_after_interrupted_slot(sprite_slot as usize);
+                        self.complete_module07_after_sprite_main(dungeon);
+                    }
                     // The decompressor has finally returned through
                     // Module_MainRouting. Only now can the ROM publish sprite
                     // DMA sources and release the software NMI latch.
@@ -10714,10 +10825,10 @@ impl ZeldaState {
                 self.zelda_run_game_loop();
                 self.replay_trace_col("after-game-loop");
                 self.replay_trace_ram_watch("after-game-loop");
-                debug_assert_eq!(
+                debug_assert!(matches!(
                     self.pending_rom_work.continuation,
-                    Some(RomWorkContinuation::FinishItemReceiptGraphics)
-                );
+                    Some(RomWorkContinuation::FinishItemReceiptGraphics { .. })
+                ));
                 self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
