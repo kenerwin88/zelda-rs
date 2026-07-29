@@ -3188,6 +3188,61 @@ fn spotlight_hdma_tables_from_ram(ram: &[u8]) -> [Vec<u8>; 2] {
         .map(|table_base| ram[table_base..table_base + ZeldaState::HDMA_DYNAMIC_TABLE_LEN].to_vec())
 }
 
+#[derive(Clone, Debug)]
+struct LiveSpotlightScanout {
+    windowsel: u32,
+    screen_windowed: [u8; 2],
+    hdma_enable_mask: u8,
+    dma_channels: [DmaChannel; 2],
+    hdma_tables: [Vec<u8>; 2],
+}
+
+impl LiveSpotlightScanout {
+    fn capture(state: &ZeldaState) -> Self {
+        let windowsel = u32::from(state.ram[crate::game_state::constants::W12SEL_COPY])
+            | (u32::from(state.ram[crate::game_state::constants::W34SEL_COPY]) << 8)
+            | (u32::from(state.ram[crate::game_state::constants::WOBJSEL_COPY]) << 16);
+        Self {
+            windowsel,
+            screen_windowed: [
+                state.ram[crate::game_state::constants::TMW_COPY],
+                state.ram[crate::game_state::constants::TSW_COPY],
+            ],
+            hdma_enable_mask: state.ram[crate::game_state::constants::HDMAEN_COPY],
+            dma_channels: [state.dma.channel[6], state.dma.channel[7]],
+            hdma_tables: spotlight_hdma_tables_from_ram(&state.ram),
+        }
+    }
+
+    fn compose_into(&self, ram: &mut [u8], ppu: &mut PpuState, dma: &mut DmaState) {
+        ppu.windowsel = self.windowsel;
+        ppu.screen_windowed = self.screen_windowed;
+        ram[crate::game_state::constants::HDMAEN_COPY] = self.hdma_enable_mask;
+        dma.channel[6..8].copy_from_slice(&self.dma_channels);
+        for (table_base, table) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
+            .into_iter()
+            .zip(&self.hdma_tables)
+        {
+            let byte_count = table.len().min(ZeldaState::HDMA_DYNAMIC_TABLE_LEN);
+            ram[table_base..table_base + byte_count].copy_from_slice(&table[..byte_count]);
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum SpotlightScanoutGeneration {
+    CapturedBeforeNmi,
+    ComposeLiveAfterNmi(LiveSpotlightScanout),
+}
+
+impl SpotlightScanoutGeneration {
+    fn compose_into(&self, ram: &mut [u8], ppu: &mut PpuState, dma: &mut DmaState) {
+        if let Self::ComposeLiveAfterNmi(live) = self {
+            live.compose_into(ram, ppu, dma);
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum DisplayBgScrollGeneration {
     #[default]
@@ -3510,6 +3565,8 @@ pub struct ZeldaState {
     #[serde(skip)]
     next_display_obj_scanout_generation: Option<ObjScanoutGenerations>,
     #[serde(skip)]
+    next_display_spotlight_scanout: Option<LiveSpotlightScanout>,
+    #[serde(skip)]
     active_display_obj_generation: DisplayObjGeneration,
     #[serde(skip)]
     next_pre_main_nmi_resume: Option<PreMainNmiResume>,
@@ -3710,6 +3767,7 @@ struct DisplaySnapshot {
     published_shadow_oam_dma: Option<Vec<u16>>,
     animated_bg_scanout_generation: AnimatedBgScanoutGeneration,
     bg_scroll_generation: DisplayBgScrollGeneration,
+    spotlight_scanout_generation: SpotlightScanoutGeneration,
     obj_generation: DisplayObjGeneration,
     published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
     published_bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
@@ -8581,6 +8639,7 @@ impl ZeldaState {
             next_display_animated_bg_scanout_generation: None,
             next_display_bg_scroll_generation: DisplayBgScrollGeneration::default(),
             next_display_obj_scanout_generation: None,
+            next_display_spotlight_scanout: None,
             active_display_obj_generation: DisplayObjGeneration::default(),
             next_pre_main_nmi_resume: None,
             next_overworld_sprite_reload_entry_phase: None,
@@ -8827,6 +8886,10 @@ impl ZeldaState {
             RomWorkContinuation::FinishSpotlightIteration { iteration },
             SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
         );
+    }
+
+    pub(super) fn stage_spotlight_scanout_for_next_display(&mut self) {
+        self.next_display_spotlight_scanout = Some(LiveSpotlightScanout::capture(self));
     }
 
     pub(super) fn schedule_dungeon_landing_wipe_return(&mut self, nmi_slices: u8) {
@@ -9523,6 +9586,11 @@ impl ZeldaState {
                     )
                 }),
             bg_scroll_generation: std::mem::take(&mut self.next_display_bg_scroll_generation),
+            spotlight_scanout_generation: self
+                .next_display_spotlight_scanout
+                .take()
+                .map(SpotlightScanoutGeneration::ComposeLiveAfterNmi)
+                .unwrap_or(SpotlightScanoutGeneration::CapturedBeforeNmi),
             obj_generation,
             published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
             published_bg3_vwf_glyph_run_dialogue_offsets: self
@@ -9807,6 +9875,14 @@ impl ZeldaState {
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
         display.hdma_table_generation.compose_into(&mut self.ram);
+        // The ROM's iris setup authors window controls, HDMA channel state,
+        // enable state, and both indirect tables as one scanout generation.
+        // Never combine live controls with the captured (still-open) circle.
+        display.spotlight_scanout_generation.compose_into(
+            &mut self.ram,
+            &mut self.ppu,
+            &mut self.dma,
+        );
         if let Some(scroll) = self.overworld_transition_scroll_hold {
             for (index, layer) in self.ppu.bg_layer.iter_mut().enumerate() {
                 layer.h_scroll = scroll[index * 2];

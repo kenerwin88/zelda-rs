@@ -3419,6 +3419,7 @@ impl ZeldaState {
         self.iris_spotlight_configure_table();
         self.set_hdma_enable_mask(0x80);
         self.set_screen_brightness(0x0f);
+        self.stage_spotlight_scanout_for_next_display();
     }
 
     pub(super) fn iris_spotlight_configure_table(&mut self) {

@@ -5047,6 +5047,61 @@ fn dungeon_exit_nmi_publishes_coherent_oam_link_tiles_and_scroll() {
 }
 
 #[test]
+fn staged_spotlight_scanout_publishes_one_coherent_hardware_generation() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.set_bg12_window_selection(0x33);
+    state.set_bg34_window_selection(0x03);
+    state.set_object_color_window_selection(0x33);
+    state.set_main_screen_window_layers(0x16);
+    state.set_sub_screen_window_layers(0x00);
+    state.set_hdma_enable_mask(0xc0);
+    state.dma.channel[6].b_adr = 0x26;
+    state.dma.channel[7].b_adr = 0x26;
+    state.set_spotlight_hdma_table_dynamic_entry(0, 0xff00);
+    write_le_u16(&mut state.ram, RESERVED_HDMA_TABLE, 0xfe01);
+    state.stage_spotlight_scanout_for_next_display();
+
+    // The ordinary snapshot is still the pre-NMI hardware generation. The
+    // staged iris domain must replace all of its coupled controls together.
+    state.set_bg12_window_selection(0);
+    state.set_bg34_window_selection(0);
+    state.set_object_color_window_selection(0);
+    state.set_main_screen_window_layers(0);
+    state.set_sub_screen_window_layers(0);
+    state.set_hdma_enable_mask(0);
+    state.dma.channel[6].b_adr = 0x20;
+    state.dma.channel[7].b_adr = 0x21;
+    state.set_spotlight_hdma_table_dynamic_entry(0, 0x00ff);
+    write_le_u16(&mut state.ram, RESERVED_HDMA_TABLE, 0x01fe);
+    state.capture_display_snapshot();
+
+    let captured = state.with_display_snapshot(|display| {
+        (
+            display.ppu.windowsel,
+            display.ppu.screen_windowed,
+            display.ram[crate::game_state::constants::HDMAEN_COPY],
+            [display.dma.channel[6].b_adr, display.dma.channel[7].b_adr],
+            read_le_u16(&display.ram, HDMA_TABLE_DYNAMIC),
+            read_le_u16(&display.ram, RESERVED_HDMA_TABLE),
+        )
+    });
+
+    assert_eq!(
+        captured,
+        (
+            0x0033_0333,
+            [0x16, 0x00],
+            0xc0,
+            [0x26, 0x26],
+            0xff00,
+            0xfe01,
+        )
+    );
+}
+
+#[test]
 fn spotlight_return_keeps_obj_dma_on_the_pre_return_boundary() {
     let mut state = ZeldaState::new();
     state.set_main_module(0x0f);
