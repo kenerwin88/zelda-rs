@@ -2649,6 +2649,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         &capture,
                         &oracle_before_state,
                         &oracle_after_state,
+                        &pre_ram,
                         &input_history,
                         frame_index,
                         input,
@@ -3855,6 +3856,7 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
     capture: &LibretroFrame,
     oracle_before_state: &[u8],
     oracle_after_state: &[u8],
+    rust_before_ram: &[u8],
     input_history: &[(u32, u16)],
     frame: u32,
     input: u16,
@@ -3867,6 +3869,7 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
 ) -> Result<PathBuf, Box<dyn Error>> {
     let dir = create_parity_failure_dir()?;
     fs::write(dir.join("input.txt"), format_input_history(input_history))?;
+    fs::write(dir.join("rust_before_ram.bin"), rust_before_ram)?;
     // The comparison loop no longer clones the full pre-frame state every
     // frame; the pre-state artifact exists only when the loop had one on hand
     // (poly frames). input.txt + the initial states reproduce it otherwise.
@@ -3885,6 +3888,9 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
     }
     fs::write(dir.join("oracle_before.state"), oracle_before_state)?;
     fs::write(dir.join("oracle_after.state"), oracle_after_state)?;
+    if let Some(oracle_before_ram) = snes9x_state_section(oracle_before_state, b"RAM") {
+        fs::write(dir.join("oracle_before_ram.bin"), oracle_before_ram)?;
+    }
     if let Some(oracle_before_vram) = oracle_before_vram {
         fs::write(dir.join("oracle_before_vram.bin"), oracle_before_vram)?;
     }
@@ -4046,6 +4052,8 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
             "rust_after.z3state".to_string(),
             "oracle_before.state".to_string(),
             "oracle_after.state".to_string(),
+            "oracle_before_ram.bin".to_string(),
+            "rust_before_ram.bin".to_string(),
             "oracle_before_vram.bin".to_string(),
             "rust_after_vram.bin".to_string(),
             "oracle_after_vram.bin".to_string(),
@@ -4069,6 +4077,8 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
         ],
         notes: vec![
             "oracle_before.state is the exact libretro state immediately before the failing frame"
+                .to_string(),
+            "rust_before_ram.bin is the translated runtime WRAM at that same pre-frame boundary"
                 .to_string(),
             "oracle_before_vram.bin is the VRAM generation that produced the failing Snes9x scanout"
                 .to_string(),
