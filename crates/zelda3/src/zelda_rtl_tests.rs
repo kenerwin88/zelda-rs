@@ -3815,14 +3815,26 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     );
     assert!(
         SpotlightIteration::closing(SpotlightIterationPhase::WholeTableAfterTablePublication)
-            .publishes_whole_hdma_table_to_active_scanout()
+            .publishes_completed_hdma_table_to_active_scanout()
     );
     assert!(
         SpotlightIteration::closing(SpotlightIterationPhase::WholeTable)
-            .publishes_whole_hdma_table_to_active_scanout()
+            .publishes_completed_hdma_table_to_active_scanout()
     );
     assert!(
-        !SpotlightIteration::opening(false).publishes_whole_hdma_table_to_active_scanout()
+        SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
+            .publishes_completed_hdma_table_to_active_scanout()
+    );
+    assert!(
+        SpotlightIteration::closing(SpotlightIterationPhase::WholeTable)
+            .projects_following_table_tail_on_completion()
+    );
+    assert!(
+        SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
+            .projects_following_table_tail_on_completion()
+    );
+    assert!(
+        !SpotlightIteration::opening(false).publishes_completed_hdma_table_to_active_scanout()
     );
     assert!(!rom_display_memory_publication_is_deferred(7, 15, 0, false));
     assert_eq!(

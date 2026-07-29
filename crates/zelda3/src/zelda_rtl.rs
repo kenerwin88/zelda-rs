@@ -1424,13 +1424,25 @@ impl SpotlightIteration {
         }
     }
 
-    const fn publishes_whole_hdma_table_to_active_scanout(self) -> bool {
+    const fn publishes_completed_hdma_table_to_active_scanout(self) -> bool {
         matches!(
             (self.direction, self.phase),
             (
                 SpotlightDirection::Closing,
                 SpotlightIterationPhase::WholeTable
                     | SpotlightIterationPhase::WholeTableAfterTablePublication
+                    | SpotlightIterationPhase::MixedTailAfterReturn
+            )
+        )
+    }
+
+    const fn projects_following_table_tail_on_completion(self) -> bool {
+        matches!(
+            (self.direction, self.phase),
+            (
+                SpotlightDirection::Closing,
+                SpotlightIterationPhase::WholeTable
+                    | SpotlightIterationPhase::MixedTailAfterReturn
             )
         )
     }
@@ -1512,10 +1524,6 @@ impl PendingRomWork {
             }
             _ => None,
         }
-    }
-
-    fn spotlight_iteration_phase(self) -> Option<SpotlightIterationPhase> {
-        self.spotlight_iteration().map(|iteration| iteration.phase)
     }
 
     fn spotlight_iteration(self) -> Option<SpotlightIteration> {
@@ -9332,7 +9340,7 @@ impl ZeldaState {
         let hdma_table_generation = self
             .pending_rom_work
             .spotlight_iteration()
-            .filter(|iteration| iteration.publishes_whole_hdma_table_to_active_scanout())
+            .filter(|iteration| iteration.publishes_completed_hdma_table_to_active_scanout())
             .map(
                 |_| DisplayHdmaTableGeneration::SpotlightPublishedAheadOfSnapshot {
                     active_table: self.hdma_dynamic_table_bytes(),
@@ -9361,6 +9369,82 @@ impl ZeldaState {
             display.hdma_table_generation =
                 DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
                     before_projection: spotlight_hdma_tables_from_ram(&display.ram),
+                    after_projection,
+                };
+        }
+    }
+
+    fn project_following_spotlight_tail_to_active_scanout(
+        &mut self,
+        phase: SpotlightIterationPhase,
+    ) {
+        let before_projection = spotlight_hdma_tables_from_ram(&self.ram);
+        let mut after_projection = before_projection.clone();
+        let vertical_center = spotlight_vertical_center(
+            self.game_state.player.follower_link.y(),
+            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+        );
+        let radius = self.game_state.display.spotlight_hdma.window_radius();
+        if phase == SpotlightIterationPhase::MixedTailAfterReturn {
+            // Once the return itself crosses vblank, only the following
+            // iteration's bottom-edge writes can catch HDMA. Those writes use
+            // the direct distance from the circle center.
+            for scanline in SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START..224 {
+                // The builder tests and decrements its Y operand before the
+                // following lower-edge write, so this partial iteration owns
+                // the one-based distance rather than the completed table's
+                // zero-based center distance.
+                let radial_distance = vertical_center
+                    .abs_diff(scanline as u16)
+                    .wrapping_add(1);
+                let value = if radial_distance >= radius {
+                    0x00ff
+                } else {
+                    self.iris_spotlight_calculate_circle_value(radial_distance as u8)
+                };
+                for table in &mut after_projection {
+                    let offset = scanline * 2;
+                    table[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+                }
+            }
+        } else {
+            // Follow the ROM builder's paired lower/upper cursors exactly. The
+            // lower cursor starts at max(2*center, 224), so its radial operand
+            // is not equivalent to abs(scanline-center) at the bottom edge.
+            let mut lower_cursor = vertical_center.wrapping_mul(2).max(224);
+            let mut upper_cursor = vertical_center
+                .wrapping_mul(2)
+                .wrapping_sub(lower_cursor);
+            let y_upper = vertical_center.wrapping_add(radius);
+            let mut radial_operand = radius;
+            loop {
+                let value = if lower_cursor < y_upper {
+                    let operand = radial_operand as u8;
+                    radial_operand = radial_operand.saturating_sub(1);
+                    self.iris_spotlight_calculate_circle_value(operand)
+                } else {
+                    0x00ff
+                };
+                for scanline in [upper_cursor, lower_cursor] {
+                    let scanline = scanline as usize;
+                    if (SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START..224).contains(&scanline) {
+                        for table in &mut after_projection {
+                            let offset = scanline * 2;
+                            table[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+                        }
+                    }
+                }
+                if upper_cursor == vertical_center {
+                    break;
+                }
+                upper_cursor = upper_cursor.wrapping_add(1);
+                lower_cursor = lower_cursor.wrapping_sub(1);
+            }
+        }
+        if let Some(display) = self.display_snapshot.as_mut() {
+            display.hdma_table_generation =
+                DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
+                    before_projection,
                     after_projection,
                 };
         }
@@ -11388,6 +11472,14 @@ impl ZeldaState {
             // main-thread work slice. Attract loaders and item graphics both
             // publish only after their measured continuation completes.
             self.capture_display_snapshot_with_override(publication_override);
+            if let RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration {
+                iteration,
+            }) = work_slice
+            {
+                if iteration.projects_following_table_tail_on_completion() {
+                    self.project_following_spotlight_tail_to_active_scanout(iteration.phase);
+                }
+            }
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
@@ -11531,23 +11623,6 @@ impl ZeldaState {
             self.dialogue_scroll_continuation.publish_early_completion();
             self.dialogue_scroll_completion_staged =
                 Some(self.dialogue_text_scanout_from_render_buffer());
-        }
-        if self.pending_rom_work.spotlight_iteration_phase()
-            == Some(SpotlightIterationPhase::MixedTailAfterReturn)
-        {
-            let published_tables = self
-                .display_snapshot
-                .as_ref()
-                .map(|display| spotlight_hdma_tables_from_ram(&display.ram));
-            if let (Some(before_projection), Some(staged)) =
-                (published_tables, self.deferred_display_snapshot.as_mut())
-            {
-                staged.hdma_table_generation =
-                    DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
-                        before_projection,
-                        after_projection: spotlight_hdma_tables_from_ram(&staged.ram),
-                    };
-            }
         }
         self.replay_trace_col("before-nmi");
         self.replay_trace_ram_watch("before-nmi");
