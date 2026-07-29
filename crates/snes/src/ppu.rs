@@ -224,9 +224,9 @@ impl Default for PpuState {
             obj_tile_adr1: 0,
             obj_tile_adr2: 0,
             obj_size: 0,
-            window1_left: 0,
+            window1_left: 1,
             window1_right: 0,
-            window2_left: 0,
+            window2_left: 1,
             window2_right: 0,
             windowsel: 0,
             clip_mode: 0,
@@ -345,9 +345,11 @@ impl PpuState {
         self.m7_start_x = 0;
         self.m7_start_y = 0;
         self.windowsel = 0;
-        self.window1_left = 0;
+        // Snes9x initializes both windows to the canonical empty interval.
+        // The game can enable a window before ever writing its edges.
+        self.window1_left = 1;
         self.window1_right = 0;
-        self.window2_left = 0;
+        self.window2_left = 1;
         self.window2_right = 0;
         self.clip_mode = 0;
         self.prevent_math_mode = 0;
@@ -2401,6 +2403,35 @@ impl PpuState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_edges_start_as_snes9x_empty_intervals() {
+        let mut ppu = PpuState::new();
+        assert_eq!(
+            (
+                ppu.window1_left,
+                ppu.window1_right,
+                ppu.window2_left,
+                ppu.window2_right
+            ),
+            (1, 0, 1, 0)
+        );
+
+        ppu.window1_left = 10;
+        ppu.window1_right = 20;
+        ppu.window2_left = 30;
+        ppu.window2_right = 40;
+        ppu.reset();
+        assert_eq!(
+            (
+                ppu.window1_left,
+                ppu.window1_right,
+                ppu.window2_left,
+                ppu.window2_right
+            ),
+            (1, 0, 1, 0)
+        );
+    }
 
     #[test]
     fn vmdatal_writes_low_byte() {
