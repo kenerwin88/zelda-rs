@@ -48,7 +48,7 @@ fn parse_paired_resume_capture(frame: &str, dir: &str) -> Result<PairedResumeCap
 /// tells us whether a failure is a ROM/state-publication issue or a renderer
 /// issue before any pixel-level investigation begins.
 #[derive(Debug, Serialize)]
-struct DisplayOracleReceipt {
+pub(crate) struct DisplayOracleReceipt {
     frame: u32,
     stage: &'static str,
     oracle: DisplayPpuProbe,
@@ -81,6 +81,117 @@ struct DisplayPpuProbe {
     presented_clip: Option<Vec<i32>>,
     /// Final Snes9x draw operands for `ZELDA3_SNES9X_TRACE_PIXEL=x,y`.
     presented_pixel: Option<Vec<i32>>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+struct ValueDomainDiff {
+    rust_values: usize,
+    oracle_values: usize,
+    mismatched_values: usize,
+    first_mismatch: Option<usize>,
+}
+
+impl ValueDomainDiff {
+    fn is_exact(&self) -> bool {
+        self.mismatched_values == 0
+    }
+}
+
+fn summarize_value_domain<T: PartialEq>(rust: &[T], oracle: &[T]) -> ValueDomainDiff {
+    let mismatched_shared = rust
+        .iter()
+        .zip(oracle)
+        .filter(|(rust, oracle)| rust != oracle)
+        .count();
+    let first_mismatch = rust
+        .iter()
+        .zip(oracle)
+        .position(|(rust, oracle)| rust != oracle)
+        .or_else(|| (rust.len() != oracle.len()).then(|| rust.len().min(oracle.len())));
+    ValueDomainDiff {
+        rust_values: rust.len(),
+        oracle_values: oracle.len(),
+        mismatched_values: mismatched_shared + rust.len().abs_diff(oracle.len()),
+        first_mismatch,
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct DisplayOracleDifferences {
+    divergent_domains: Vec<&'static str>,
+    registers: ValueDomainDiff,
+    cgram: ValueDomainDiff,
+    live_oam: ValueDomainDiff,
+    presented_oam: ValueDomainDiff,
+    mode7: Option<ValueDomainDiff>,
+    mode7_scanlines: Option<ValueDomainDiff>,
+}
+
+fn display_register_values(probe: &DisplayPpuProbe) -> Vec<i32> {
+    let mut values = vec![probe.mode, probe.brightness, i32::from(probe.forced_blank)];
+    values.extend(probe.fixed_color);
+    values.extend(probe.display_control);
+    values.extend(probe.bg_scroll);
+    values
+}
+
+fn display_oracle_differences(receipt: &DisplayOracleReceipt) -> DisplayOracleDifferences {
+    let rust_registers = display_register_values(&receipt.rust);
+    let oracle_registers = display_register_values(&receipt.oracle);
+    let rust_scanlines = receipt
+        .rust
+        .mode7_scanlines
+        .iter()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
+    let oracle_scanlines = receipt
+        .oracle
+        .mode7_scanlines
+        .iter()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
+    let registers = summarize_value_domain(&rust_registers, &oracle_registers);
+    let cgram = summarize_value_domain(&receipt.rust.cgram, &receipt.oracle.cgram);
+    let live_oam = summarize_value_domain(&receipt.rust.oam, &receipt.oracle.oam);
+    let presented_oam =
+        summarize_value_domain(&receipt.rust.presented_oam, &receipt.oracle.presented_oam);
+    let mode7_active = receipt.rust.mode == 7 || receipt.oracle.mode == 7;
+    let mode7 =
+        mode7_active.then(|| summarize_value_domain(&receipt.rust.mode7, &receipt.oracle.mode7));
+    let mode7_scanlines =
+        mode7_active.then(|| summarize_value_domain(&rust_scanlines, &oracle_scanlines));
+    let mut divergent_domains = [
+        ("registers", &registers),
+        ("cgram", &cgram),
+        ("live_oam", &live_oam),
+        ("presented_oam", &presented_oam),
+    ]
+    .into_iter()
+    .filter_map(|(name, difference)| (!difference.is_exact()).then_some(name))
+    .collect::<Vec<_>>();
+    if mode7
+        .as_ref()
+        .is_some_and(|difference| !difference.is_exact())
+    {
+        divergent_domains.push("mode7");
+    }
+    if mode7_scanlines
+        .as_ref()
+        .is_some_and(|difference| !difference.is_exact())
+    {
+        divergent_domains.push("mode7_scanlines");
+    }
+    DisplayOracleDifferences {
+        divergent_domains,
+        registers,
+        cgram,
+        live_oam,
+        presented_oam,
+        mode7,
+        mode7_scanlines,
+    }
 }
 
 fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
@@ -2523,6 +2634,13 @@ pub(crate) fn run_compare_libretro_oracle(
                             );
                             process::exit(1);
                         });
+                    let display_oracle_receipt =
+                        capture_oracle_ppu_probe(&oracle).map(|oracle_ppu| DisplayOracleReceipt {
+                            frame: frame_index,
+                            stage: "after",
+                            oracle: oracle_ppu,
+                            rust: capture_rust_ppu_probe(&mut game),
+                        });
                     let artifact_dir = write_libretro_parity_failure_artifacts(
                         pre_game.as_ref(),
                         &game,
@@ -2538,6 +2656,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         oracle_name.as_str(),
                         oracle_system_ram.as_deref(),
                         Some(&oracle_before_vram),
+                        display_oracle_receipt.as_ref(),
                         format!("{oracle_name} video divergence: {video_diff}"),
                     )
                     .ok();
@@ -3743,6 +3862,7 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
     oracle_name: &str,
     oracle_system_ram: Option<&[u8]>,
     oracle_before_vram: Option<&[u8]>,
+    display_oracle_receipt: Option<&DisplayOracleReceipt>,
     message: String,
 ) -> Result<PathBuf, Box<dyn Error>> {
     let dir = create_parity_failure_dir()?;
@@ -3817,9 +3937,18 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
                     .collect::<Vec<_>>(),
             )
         });
-    fs::write(dir.join("rust_visible_vram.bin"), visible_vram)?;
-    fs::write(dir.join("rust_visible_oam.bin"), visible_oam)?;
-    fs::write(dir.join("rust_visible_cgram.bin"), visible_cgram)?;
+    fs::write(dir.join("rust_visible_vram.bin"), &visible_vram)?;
+    fs::write(dir.join("rust_visible_oam.bin"), &visible_oam)?;
+    fs::write(dir.join("rust_visible_cgram.bin"), &visible_cgram)?;
+    if let Some(receipt) = display_oracle_receipt {
+        fs::write(
+            dir.join("display_oracle.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "receipt": receipt,
+                "differences": display_oracle_differences(receipt),
+            }))?,
+        )?;
+    }
 
     let vram_capture = gpu_capture::capture_gpu_frame_from_game(&mut visible_game);
     let vram_gpu_frame = vram_capture.gpu_frame();
@@ -3843,24 +3972,24 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
     }
     if let Some(oracle_vram) = snes9x_state_section(oracle_after_state, b"VRA") {
         fs::write(dir.join("oracle_after_vram.bin"), oracle_vram)?;
-        let mismatched_bytes = rust_vram
-            .iter()
-            .zip(oracle_vram)
-            .filter(|(rust, oracle)| rust != oracle)
-            .count()
-            + rust_vram.len().abs_diff(oracle_vram.len());
-        let first_mismatch_byte = rust_vram
-            .iter()
-            .zip(oracle_vram)
-            .position(|(rust, oracle)| rust != oracle);
+        let live_after = summarize_value_domain(&rust_vram, oracle_vram);
+        let visible_scanout = oracle_before_vram
+            .map(|oracle_vram| summarize_value_domain(&visible_vram, oracle_vram));
         fs::write(
             dir.join("vram_diff.json"),
             serde_json::to_vec_pretty(&serde_json::json!({
-                "rust_bytes": rust_vram.len(),
-                "oracle_bytes": oracle_vram.len(),
-                "mismatched_bytes": mismatched_bytes,
-                "first_mismatch_byte": first_mismatch_byte,
-                "first_mismatch_word": first_mismatch_byte.map(|offset| offset / 2),
+                "rust_bytes": live_after.rust_values,
+                "oracle_bytes": live_after.oracle_values,
+                "mismatched_bytes": live_after.mismatched_values,
+                "first_mismatch_byte": live_after.first_mismatch,
+                "first_mismatch_word": live_after.first_mismatch.map(|offset| offset / 2),
+            }))?,
+        )?;
+        fs::write(
+            dir.join("vram_generations.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "live_after_frame": live_after,
+                "visible_scanout": visible_scanout,
             }))?,
         )?;
     }
@@ -3925,7 +4054,9 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
             "rust_visible_vram.bin".to_string(),
             "rust_visible_oam.bin".to_string(),
             "rust_visible_cgram.bin".to_string(),
+            "display_oracle.json".to_string(),
             "vram_diff.json".to_string(),
+            "vram_generations.json".to_string(),
             "rust_frame.png".to_string(),
             "rust_classic_frame.png".to_string(),
             "classic_video_diff.txt".to_string(),
@@ -3948,6 +4079,10 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
             "trace_theirs is decoded from the oracle core's exposed post-frame SNES WRAM"
                 .to_string(),
             "ppu_mine and rust_visible_*.bin describe the composed display snapshot actually rendered, not the live post-frame state"
+                .to_string(),
+            "display_oracle.json classifies post-frame register, CGRAM, live OAM, presented OAM, and raster differences automatically"
+                .to_string(),
+            "vram_generations.json separates live post-frame VRAM from the generation that produced the failed scanout"
                 .to_string(),
         ],
     };
@@ -3975,8 +4110,8 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_debug_frame_selection, parse_paired_resume_capture, BootBoundaryState,
-        PairedResumeCapture,
+        parse_debug_frame_selection, parse_paired_resume_capture, summarize_value_domain,
+        BootBoundaryState, PairedResumeCapture, ValueDomainDiff,
     };
     use std::path::PathBuf;
 
@@ -4015,5 +4150,19 @@ mod tests {
             rust.first_difference(&oracle),
             Some(("inidisp", 0x0f, 0x0e))
         );
+    }
+
+    #[test]
+    fn value_domain_diff_reports_content_and_generation_length_skew() {
+        assert_eq!(
+            summarize_value_domain(&[1, 2, 3], &[1, 4, 3, 5]),
+            ValueDomainDiff {
+                rust_values: 3,
+                oracle_values: 4,
+                mismatched_values: 2,
+                first_mismatch: Some(1),
+            }
+        );
+        assert!(summarize_value_domain(&[1, 2], &[1, 2]).is_exact());
     }
 }
