@@ -1424,12 +1424,13 @@ impl SpotlightIteration {
         }
     }
 
-    const fn publishes_hdma_table_ahead_of_other_display_domains(self) -> bool {
+    const fn publishes_whole_hdma_table_to_active_scanout(self) -> bool {
         matches!(
             (self.direction, self.phase),
             (
                 SpotlightDirection::Closing,
-                SpotlightIterationPhase::WholeTableAfterTablePublication
+                SpotlightIterationPhase::WholeTable
+                    | SpotlightIterationPhase::WholeTableAfterTablePublication
             )
         )
     }
@@ -9331,7 +9332,7 @@ impl ZeldaState {
         let hdma_table_generation = self
             .pending_rom_work
             .spotlight_iteration()
-            .filter(|iteration| iteration.publishes_hdma_table_ahead_of_other_display_domains())
+            .filter(|iteration| iteration.publishes_whole_hdma_table_to_active_scanout())
             .map(
                 |_| DisplayHdmaTableGeneration::SpotlightPublishedAheadOfSnapshot {
                     active_table: self.hdma_dynamic_table_bytes(),
@@ -9874,7 +9875,6 @@ impl ZeldaState {
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
-        display.hdma_table_generation.compose_into(&mut self.ram);
         // The ROM's iris setup authors window controls, HDMA channel state,
         // enable state, and both indirect tables as one scanout generation.
         // Never combine live controls with the captured (still-open) circle.
@@ -9883,6 +9883,11 @@ impl ZeldaState {
             &mut self.ppu,
             &mut self.dma,
         );
+        // A table projection can complete after that coupled iris generation
+        // is staged but before HDMA consumes the next scanout. Apply this
+        // scanout-local table generation last so it refines, rather than gets
+        // overwritten by, the coherent controls/channels/tables baseline.
+        display.hdma_table_generation.compose_into(&mut self.ram);
         if let Some(scroll) = self.overworld_transition_scroll_hold {
             for (index, layer) in self.ppu.bg_layer.iter_mut().enumerate() {
                 layer.h_scroll = scroll[index * 2];

@@ -3815,14 +3815,14 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     );
     assert!(
         SpotlightIteration::closing(SpotlightIterationPhase::WholeTableAfterTablePublication)
-            .publishes_hdma_table_ahead_of_other_display_domains()
+            .publishes_whole_hdma_table_to_active_scanout()
     );
     assert!(
-        !SpotlightIteration::closing(SpotlightIterationPhase::WholeTable)
-            .publishes_hdma_table_ahead_of_other_display_domains()
+        SpotlightIteration::closing(SpotlightIterationPhase::WholeTable)
+            .publishes_whole_hdma_table_to_active_scanout()
     );
     assert!(
-        !SpotlightIteration::opening(false).publishes_hdma_table_ahead_of_other_display_domains()
+        !SpotlightIteration::opening(false).publishes_whole_hdma_table_to_active_scanout()
     );
     assert!(!rom_display_memory_publication_is_deferred(7, 15, 0, false));
     assert_eq!(
@@ -5099,6 +5099,46 @@ fn staged_spotlight_scanout_publishes_one_coherent_hardware_generation() {
             0xfe01,
         )
     );
+}
+
+#[test]
+fn completed_spotlight_table_projection_overlays_the_staged_scanout_generation() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.set_bg12_window_selection(0x33);
+    state.set_bg34_window_selection(0x03);
+    state.set_object_color_window_selection(0x33);
+    state.set_main_screen_window_layers(0x16);
+    state.set_sub_screen_window_layers(0x00);
+    state.set_hdma_enable_mask(0xc0);
+    state.set_spotlight_hdma_table_dynamic_entry(0, 0xff00);
+    state.stage_spotlight_scanout_for_next_display();
+    state.capture_display_snapshot();
+
+    state.set_spotlight_hdma_table_dynamic_entry(0, 0xfe01);
+    state
+        .display_snapshot
+        .as_mut()
+        .expect("captured display")
+        .hdma_table_generation = DisplayHdmaTableGeneration::SpotlightPublishedAheadOfSnapshot {
+        active_table: {
+            let mut table = vec![0; ZeldaState::HDMA_DYNAMIC_TABLE_LEN];
+            table[..2].copy_from_slice(&0xfe01_u16.to_le_bytes());
+            table
+        },
+    };
+
+    let captured = state.with_display_snapshot(|display| {
+        (
+            display.ppu.windowsel,
+            display.ppu.screen_windowed,
+            display.ram[crate::game_state::constants::HDMAEN_COPY],
+            read_le_u16(&display.ram, HDMA_TABLE_DYNAMIC),
+        )
+    });
+
+    assert_eq!(captured, (0x0033_0333, [0x16, 0x00], 0xc0, 0xfe01));
 }
 
 #[test]
