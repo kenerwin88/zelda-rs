@@ -521,45 +521,6 @@ impl ModernAssetGpuReadbackRenderer {
         Ok(frame)
     }
 
-    pub(crate) fn trace_game_pixel(
-        &self,
-        game: &mut ZeldaState,
-        x: i16,
-        y: i16,
-    ) -> Result<Vec<String>, String> {
-        let capture = capture_gpu_frame_from_game(game);
-        let gpu_frame = capture.gpu_frame();
-        let scene =
-            renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
-        let production = self
-            .resources
-            .render_production_gpu_asset_rgba_from_entries(
-                &gpu_frame,
-                capture.source_entries(),
-                scene,
-            )?;
-        let pixel_offset = (usize::try_from(y).unwrap_or(usize::MAX) * 256
-            + usize::try_from(x).unwrap_or(usize::MAX))
-        .saturating_mul(4);
-        let production_pixel = production
-            .rgba
-            .get(pixel_offset..pixel_offset.saturating_add(4))
-            .unwrap_or(&[]);
-        Ok(vec![format!(
-            "production pixel={production_pixel:02x?} via={}",
-            production.via,
-        )]
-        .into_iter()
-        .chain(trace_modern_asset_capture_pixel(
-            &capture,
-            self.resources.source_atlas(),
-            self.resources.variant_atlas(),
-            x,
-            y,
-        )?)
-        .collect())
-    }
-
     pub(crate) fn validate_game_full_gpu_path(
         &mut self,
         game: &mut ZeldaState,
@@ -1032,6 +993,7 @@ fn dialogue_glyph_source_tiles_from_ppu(
     Vec::new()
 }
 
+#[cfg(test)]
 fn dialogue_glyph_source_tiles_from_ppu_with_matcher(
     ppu: &snes::ppu::PpuState,
     matcher: &DialogueGlyphSourceMatcher,

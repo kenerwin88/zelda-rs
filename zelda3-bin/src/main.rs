@@ -1843,20 +1843,6 @@ fn load_modern_asset_gpu_readback_or_exit(context: &str) -> ModernAssetGpuReadba
     }
 }
 
-fn render_modern_asset_gpu_frame_rgba_or_exit(
-    renderer: &ModernAssetGpuReadbackRenderer,
-    game: &mut ZeldaState,
-    context: &str,
-) -> Vec<u8> {
-    match renderer.render_game_rgba(game) {
-        Ok(frame) => frame.as_slice().to_vec(),
-        Err(e) => {
-            eprintln!("failed to render {context} via modern asset GPU path: {e}");
-            process::exit(1);
-        }
-    }
-}
-
 pub(crate) fn read_file_or_exit(path: &Path, label: &str) -> Vec<u8> {
     match fs::read(path) {
         Ok(bytes) => bytes,
