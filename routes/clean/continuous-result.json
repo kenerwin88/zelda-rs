@@ -1,19 +1,33 @@
 {
   "kind": "zelda3_snes9x_continuous_route_result_v1",
-  "coverage_label": "continuous human-recorded coverage",
+  "coverage_label": "canonical continuous route",
   "continuous_playthrough": true,
   "oracle": "Snes9x 1.63 libretro only",
   "production_renderer": "modern Rust",
   "production_audio_backend": "modern",
   "production_audio_sequencer": "native",
-  "takes": [
-    4,
-    5
-  ],
-  "frames_requested": 37843,
-  "frames_completed": 0,
-  "video_matched": false,
-  "audio_matched": false,
-  "passed": false,
-  "result": "comparisons/continuous/result.json"
+  "commit": "7653d6a23f42cc560acf916d52164808a608ee23",
+  "frames_requested": 155384,
+  "frames_completed": 155384,
+  "video_matched": true,
+  "audio_matched": true,
+  "passed": true,
+  "identity": {
+    "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb",
+    "input_script": "comparisons/continuous/continuous-input.txt",
+    "input_script_sha256": "92c29148e73a84b315843fedf42388b7ddcf1889197c1e252769d1ff4a5d0c86",
+    "rom_random_script": "takes/0004/rom-random.txt",
+    "rom_random_script_sha256": "bf1ab44cb7410f3845f2f65ffc6c6485774e3779231e1232627347af0b0c5bb7"
+  },
+  "proof": {
+    "cold_derived_checkpoint_frame": 16384,
+    "cold_and_prefix_core_sha256": "c348bf0db8188b6ba9804f3d872c28e73b6a3849f1879c6d81f495bb11715d85",
+    "prefix_exact_through_frame": 27649,
+    "suffix_start_frame": 27648,
+    "suffix_core_sha256": "28f08b417301c0e1925151ce548ba7e900b7b32a7f0f96beefddb95b67eae170",
+    "suffix_exact_through_frame": 155384,
+    "handoff_oracle_state_sha256": "bc6a57e371e5e11cb583b11235a8fe190edc10bf58a3f458526005753b68d502",
+    "handoff_rust_state_sha256": "1fdc37713d08e6607c7290a22de81bd9b0db2d21c3fd57d6c574cfc2d0ca703",
+    "boundary_overlap_frames": 1
+  }
 }
