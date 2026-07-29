@@ -3141,6 +3141,91 @@ fn checkpoint_resume_restores_live_timing_without_rephasing_audio() {
 }
 
 #[test]
+fn dialogue_scroll_checkpoint_projection_preserves_stable_phases_and_normalizes_transients() {
+    fn round_trip(state: &ZeldaState) -> ZeldaState {
+        bincode::deserialize(
+            &bincode::serialize(state).expect("serialize dialogue-scroll checkpoint"),
+        )
+        .expect("deserialize dialogue-scroll checkpoint")
+    }
+
+    fn scrolling_state(completion_timing: DialogueScrollCompletionTiming) -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.ppu.vram[0x7c00] = 0x1234;
+        state.begin_dialogue_scroll(
+            DialogueTextGeneration::PublishedDisplay,
+            completion_timing,
+        );
+        state
+    }
+
+    let copying = round_trip(&scrolling_state(
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    ));
+    assert_eq!(
+        copying.dialogue_scroll_phase(),
+        DialogueScrollPhase::CopyingRemainingPixels {
+            completion_timing: DialogueScrollCompletionTiming::AfterReturnBoundary,
+        }
+    );
+    assert_eq!(
+        copying.dialogue_scroll_frozen_scanout.as_ref().unwrap().vram[0],
+        0x1234
+    );
+
+    let mut return_only =
+        scrolling_state(DialogueScrollCompletionTiming::AfterReturnBoundary);
+    return_only.finish_dialogue_scroll_remaining_pixels();
+    let return_only = round_trip(&return_only);
+    assert_eq!(
+        return_only.dialogue_scroll_phase(),
+        DialogueScrollPhase::ReturnOnly
+    );
+
+    let mut pending = scrolling_state(DialogueScrollCompletionTiming::BeforeNextVblank);
+    pending.finish_dialogue_scroll_remaining_pixels();
+    let pending = round_trip(&pending);
+    assert_eq!(
+        pending.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionPendingPublication
+    );
+
+    let mut staged = scrolling_state(DialogueScrollCompletionTiming::BeforeNextVblank);
+    staged.finish_dialogue_scroll_remaining_pixels();
+    staged.stage_early_dialogue_scroll_completion(DialogueTextScanout::default());
+    let mut staged = round_trip(&staged);
+    staged.restore_live_rom_timing_after_checkpoint();
+    assert_eq!(
+        staged.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionStagedAfterFrozenScanout
+    );
+
+    let mut completed = scrolling_state(DialogueScrollCompletionTiming::BeforeNextVblank);
+    completed.finish_dialogue_scroll_remaining_pixels();
+    completed.stage_early_dialogue_scroll_completion(DialogueTextScanout::default());
+    completed.advance_dialogue_scroll_display_boundary();
+    let mut completed = round_trip(&completed);
+    completed.restore_live_rom_timing_after_checkpoint();
+    assert_eq!(
+        completed.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletedScroll
+    );
+
+    let mut staged_after_return =
+        scrolling_state(DialogueScrollCompletionTiming::AfterReturnBoundary);
+    staged_after_return.finish_dialogue_scroll_remaining_pixels();
+    staged_after_return.finish_dialogue_scroll_return();
+    staged_after_return
+        .stage_dialogue_scroll_completion_after_return(DialogueTextScanout::default());
+    let mut staged_after_return = round_trip(&staged_after_return);
+    staged_after_return.restore_live_rom_timing_after_checkpoint();
+    assert_eq!(
+        staged_after_return.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionStagedAfterSnapshot
+    );
+}
+
+#[test]
 fn rom_startup_holds_only_the_interrupted_intro_initialization_frame() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -4081,6 +4166,9 @@ fn file_select_initial_graphics_work_resumes_before_the_next_module() {
 fn name_player_tilemap_finishes_after_the_intervening_nmi_slice() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
+    state.rom_reset_frame_delay = 0;
+    state.initialized = true;
+    state.set_animated_tile_data_source_address(0xa680);
     state.set_main_module(4);
     state.set_submodule(1);
 
@@ -4093,15 +4181,39 @@ fn name_player_tilemap_finishes_after_the_intervening_nmi_slice() {
     assert!(state.rom_load_partial_nmi_this_frame);
     assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
 
-    state.complete_module_name_player_1();
+    state.run_frame_internal(0, crate::RUN_MAIN);
 
     assert_eq!(state.game_state.frame.submodule, 2);
     assert!(state.pre_main_caller_continuation.is_none());
-    assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 1);
+    assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
     let terminator = state.game_state.display.vram_upload_buffer_base()
         + 4
         + select_file::SELECT_FILE_CHECKERBOARD_TILE_COUNT * 2;
     assert_eq!(read_le_u16(&state.ram, terminator), 0xffff);
+}
+
+#[test]
+fn file_select_checkerboard_finishes_through_the_pre_main_dispatcher() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.rom_reset_frame_delay = 0;
+    state.initialized = true;
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_main_module(3);
+    state.set_submodule(1);
+
+    state.module_erase_file_1();
+
+    assert!(state.pre_main_caller_continuation_is(
+        PreMainCallerContinuation::FileSelectCheckerboardUpload
+    ));
+    assert_eq!(state.game_state.frame.submodule, 1);
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert!(state.pre_main_caller_continuation.is_none());
+    assert_eq!(state.game_state.frame.submodule, 2);
+    assert_eq!(state.game_state.display.bg_vram_load_mode, 0);
 }
 
 #[test]

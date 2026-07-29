@@ -3053,6 +3053,8 @@ impl DialogueScanoutOwnership {
     const FROZEN_SCROLL_COPY: Self = Self(1);
     const COMPLETION_PENDING: Self = Self(2);
     const COMPLETED_SCROLL: Self = Self(3);
+    const COMPLETION_STAGED_AFTER_FROZEN: Self = Self(4);
+    const COMPLETION_STAGED_AFTER_SNAPSHOT: Self = Self(5);
 
     const fn is_snapshot(self) -> bool {
         self.0 == Self::SNAPSHOT.0
@@ -3517,11 +3519,14 @@ fn dialogue_scroll_phase(
     }
     if has_staged_completion {
         debug_assert!(!has_completion_scanout);
-        if publication == DialogueScanoutOwnership::COMPLETION_PENDING {
+        if publication == DialogueScanoutOwnership::COMPLETION_STAGED_AFTER_FROZEN {
             debug_assert!(has_frozen_scanout);
             return DialogueScrollPhase::CompletionStagedAfterFrozenScanout;
         }
-        debug_assert!(publication.is_snapshot());
+        debug_assert_eq!(
+            publication,
+            DialogueScanoutOwnership::COMPLETION_STAGED_AFTER_SNAPSHOT
+        );
         return DialogueScrollPhase::CompletionStagedAfterSnapshot;
     }
     if has_completion_scanout {
@@ -3602,6 +3607,7 @@ impl DialogueScrollMachineMut<'_> {
     fn stage_completion_after_return(&mut self, completed_scanout: DialogueTextScanout) {
         debug_assert_eq!(self.phase(), DialogueScrollPhase::Idle);
         *self.staged_completion = Some(completed_scanout);
+        *self.publication = DialogueScanoutOwnership::COMPLETION_STAGED_AFTER_SNAPSHOT;
         debug_assert_eq!(
             self.phase(),
             DialogueScrollPhase::CompletionStagedAfterSnapshot
@@ -3615,6 +3621,7 @@ impl DialogueScrollMachineMut<'_> {
         );
         self.continuation.publish_early_completion();
         *self.staged_completion = Some(completed_scanout);
+        *self.publication = DialogueScanoutOwnership::COMPLETION_STAGED_AFTER_FROZEN;
         debug_assert_eq!(
             self.phase(),
             DialogueScrollPhase::CompletionStagedAfterFrozenScanout
@@ -3642,6 +3649,46 @@ impl DialogueScrollMachineMut<'_> {
                 *self.publication = DialogueScanoutOwnership::COMPLETION_PENDING;
             }
             DialogueScrollPhase::Idle => {
+                *self.publication = DialogueScanoutOwnership::SNAPSHOT;
+                *self.frozen_scanout = None;
+            }
+        }
+    }
+
+    fn restore_transient_after_checkpoint(
+        &mut self,
+        completed_scanout: DialogueTextScanout,
+    ) {
+        if !self.continuation.is_idle()
+            || self.completion_scanout.is_some()
+            || self.staged_completion.is_some()
+        {
+            return;
+        }
+        match *self.publication {
+            DialogueScanoutOwnership::COMPLETION_STAGED_AFTER_FROZEN => {
+                *self.staged_completion = Some(completed_scanout);
+            }
+            DialogueScanoutOwnership::COMPLETION_STAGED_AFTER_SNAPSHOT => {
+                *self.staged_completion = Some(completed_scanout);
+                *self.frozen_scanout = None;
+            }
+            DialogueScanoutOwnership::COMPLETED_SCROLL => {
+                *self.completion_scanout = Some(completed_scanout);
+                *self.frozen_scanout = None;
+            }
+            // Compatibility with checkpoints produced before staged
+            // publication received its own serialized ownership value.
+            DialogueScanoutOwnership::COMPLETION_PENDING => {
+                *self.publication = DialogueScanoutOwnership::COMPLETION_STAGED_AFTER_FROZEN;
+                *self.staged_completion = Some(completed_scanout);
+            }
+            DialogueScanoutOwnership::FROZEN_SCROLL_COPY => {
+                *self.publication = DialogueScanoutOwnership::SNAPSHOT;
+                *self.frozen_scanout = None;
+            }
+            DialogueScanoutOwnership::SNAPSHOT => {}
+            _ => {
                 *self.publication = DialogueScanoutOwnership::SNAPSHOT;
                 *self.frozen_scanout = None;
             }
@@ -4121,9 +4168,23 @@ impl PublishedDialogueMetadata {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct DisplayDiagnostics {
+struct CaptureDisplayDiagnostics {
     attract_timeline: bool,
     frame_boundary: bool,
+}
+
+impl CaptureDisplayDiagnostics {
+    fn from_env() -> Self {
+        Self {
+            attract_timeline: env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some(),
+            frame_boundary: env::var_os("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct DisplayDiagnostics {
+    capture: CaptureDisplayDiagnostics,
     display_oam: bool,
     nmi_latch: bool,
     scroll_retain: bool,
@@ -4132,8 +4193,7 @@ struct DisplayDiagnostics {
 impl DisplayDiagnostics {
     fn from_env() -> Self {
         Self {
-            attract_timeline: env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some(),
-            frame_boundary: env::var_os("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some(),
+            capture: CaptureDisplayDiagnostics::from_env(),
             display_oam: env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some(),
             nmi_latch: env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some(),
             scroll_retain: env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some(),
@@ -9233,6 +9293,9 @@ impl ZeldaState {
     /// Calling `set_rom_startup_timing(true)` here would also reapply the SPC
     /// bootstrap phase and corrupt the checkpoint's exact audio position.
     pub fn restore_live_rom_timing_after_checkpoint(&mut self) {
+        let completed_scanout = self.dialogue_text_scanout_from_render_buffer();
+        self.dialogue_scroll_machine_mut()
+            .restore_transient_after_checkpoint(completed_scanout);
         self.rom_startup_timing = true;
     }
 
@@ -9951,7 +10014,7 @@ impl ZeldaState {
         &mut self,
         publication: DisplaySnapshotPublication,
     ) {
-        let diagnostics = DisplayDiagnostics::from_env();
+        let diagnostics = CaptureDisplayDiagnostics::from_env();
         self.ppu.refresh_brightness_cache();
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
         // from the previous frame has been consumed by that frame's renders.
@@ -10694,7 +10757,7 @@ impl ZeldaState {
             .palette_provenance
             .0
             .reconstitute_cgram(&self.ppu.cgram);
-        if diagnostics.attract_timeline && (5640..=5700).contains(&self.frame_ctr_dbg) {
+        if diagnostics.capture.attract_timeline && (5640..=5700).contains(&self.frame_ctr_dbg) {
             let trace = format!(
                 "attract_display_present host={} snapshot={:02x}/{:02x} live={:02x}/{:02x} world_map_fade={} bright={} c0={:04x} c1={:04x} fixed={:02x},{:02x},{:02x} math={:02x}/{:02x}",
                 self.frame_ctr_dbg,
@@ -10725,7 +10788,7 @@ impl ZeldaState {
             previous_dialogue_scanout.as_ref(),
             publication_plan.vram_generation,
         );
-        if diagnostics.frame_boundary {
+        if diagnostics.capture.frame_boundary {
             eprintln!(
                 "frame_boundary_present host={} vram={:?} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
                 self.frame_ctr_dbg,
