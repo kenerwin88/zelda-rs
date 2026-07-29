@@ -681,10 +681,22 @@ impl ZeldaState {
                 NATIVE as u32
             }
         };
-        let route = self.zelda_modern_audio_route_state();
+        let mut route = self.zelda_modern_audio_route_state();
         let frame = if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
             let window = clock.advance(self.audio.modern.queue.input_commands, native_samples);
             let acknowledgements = clock.host_acknowledgements();
+            let completed_song_bank_id = clock.take_completed_song_bank_id();
+            if let Some(bank_id) = completed_song_bank_id {
+                self.audio.modern.sample_bank_id = bank_id;
+                self.audio.modern.sample_bank_generation =
+                    self.audio.modern.sample_bank_generation.wrapping_add(1);
+                self.audio
+                    .modern
+                    .renderer
+                    .complete_sample_bank_upload(bank_id, self.audio.modern.sample_bank_generation);
+                route.sample_bank_id = self.audio.modern.sample_bank_id;
+                route.sample_bank_generation = self.audio.modern.sample_bank_generation;
+            }
             self.audio
                 .modern
                 .queue
@@ -848,6 +860,15 @@ impl ZeldaState {
 
     pub(crate) fn select_modern_sample_bank(&mut self, bank_id: u8) {
         self.audio.modern.renderer.select_sample_bank(bank_id);
+    }
+
+    pub(crate) fn begin_runtime_song_bank_transfer(&mut self, bank_id: u8, stream: &[u8]) -> bool {
+        if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
+            clock.begin_song_bank_transfer(bank_id, stream);
+            true
+        } else {
+            false
+        }
     }
 
     pub(crate) fn initialize_spc_driver_clock(

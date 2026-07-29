@@ -889,9 +889,17 @@ pub(crate) fn run_compare_libretro_oracle(
         game.restore_live_rom_timing_after_checkpoint();
         (game, checkpoint.host_frame)
     } else {
-        // Compare the same extracted-asset-only state that plain `cargo run` uses.
+        // Start from the same embedded asset pack as plain `cargo run`.
         (load_default_play_state(), 0)
     };
+    // A parity oracle is always tied to a concrete ROM. Attach those bytes to
+    // the translated state as well so ROM-semantic operations (including the
+    // byte-exact CPU<->SPC upload streams) use the same source authority.
+    let translated_rom = fs::read(rom_path).unwrap_or_else(|error| {
+        eprintln!("failed to read ROM {rom_path}: {error}");
+        process::exit(2);
+    });
+    game.set_rom(&translated_rom);
     if let Some(path) = replay_save.as_deref() {
         game.replay_save_file(path).unwrap_or_else(|error| {
             eprintln!("failed to load replay save {}: {error}", path.display());
@@ -2835,6 +2843,10 @@ pub(crate) fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
         "nmi_thread_stack": word(0x1f0a),
         "poly_buffer_nonzero_bytes": poly_buffer_nonzero_bytes,
     });
+    receipt.as_object_mut().unwrap().insert(
+        "resident_song_bank_kind".to_string(),
+        serde_json::Value::from(byte(0x0136)),
+    );
     if let Some(map) = receipt.as_object_mut() {
         map.insert("bg_tile_animation_countdown".into(), word(0xc00d).into());
         map.insert("link_dma_source_offset".into(), word(0xc00f).into());

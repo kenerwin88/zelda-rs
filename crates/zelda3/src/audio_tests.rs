@@ -461,7 +461,7 @@ fn rom_startup_audio_stays_silent_until_the_boot_chime_keyon() {
                 .map(|offset| (frame, offset));
         }
     }
-    assert_eq!(first_nonzero, Some((84, 362)));
+    assert_eq!(first_nonzero, Some((84, 361)));
 }
 
 #[test]

@@ -18,6 +18,10 @@ const APU_CYCLES_PER_DSP_SAMPLE: u64 = 32;
 const SNES_MASTER_CLOCKS_PER_SCANLINE: u64 = 1_364;
 const SNES_NTSC_SCANLINES_PER_FRAME: u64 = 262;
 const SNES_SHORT_SCANLINE_MASTER_CLOCKS: u64 = 4;
+const SNES_SHORT_SCANLINE: u64 = 240;
+const SNES_WRAM_REFRESH_MASTER_CLOCK: u64 = 538;
+const SNES_SHORT_SCANLINE_WRAM_REFRESH_MASTER_CLOCK: u64 = 534;
+const SNES_WRAM_REFRESH_STALL_MASTER_CLOCKS: u64 = 40;
 const NMI_AUDIO_VCOUNTER: u64 = 225;
 // Normal NTSC NMI entry jitters with the interrupted CPU instruction. H=84 is
 // the route-stable nominal entry used by the absolute clock; the SPC scheduler
@@ -27,6 +31,26 @@ const NMI_AUDIO_NOMINAL_ENTRY_HCLOCK: u64 = 84;
 const SNES9X_APU_RATIO_NUMERATOR: u64 = 15_664;
 const SNES9X_APU_RATIO_DENOMINATOR: u64 = 328_125;
 const SMP_CPU_LOOKAHEAD_CYCLES: u64 = 19;
+// Main-CPU instruction paths through the ROM's $80:8888 LoadSongBank
+// routine, expressed in SNES master clocks. These are protocol timings, not
+// route coordinates: every runtime song-bank upload executes these paths.
+const SONG_BANK_WRITE_TO_FIRST_READY_POLL_MASTER_CLOCKS: u64 = 386;
+const SONG_BANK_READY_LOW_TO_HIGH_MASTER_CLOCKS: u64 = 6;
+const SONG_BANK_READY_HIGH_TO_NEXT_LOW_MASTER_CLOCKS: u64 = 52;
+const SONG_BANK_ACK_POLL_MASTER_CLOCKS: u64 = 52;
+const SONG_BANK_READY_TO_HEADER_MASTER_CLOCKS: u64 = 332;
+const SONG_BANK_LAST_BYTE_ACK_TO_HEADER_MASTER_CLOCKS: u64 = 304;
+const SONG_BANK_HEADER_TARGET_LOW_TO_HIGH_MASTER_CLOCKS: u64 = 6;
+const SONG_BANK_HEADER_TARGET_HIGH_TO_FLAG_MASTER_CLOCKS: u64 = 106;
+const SONG_BANK_HEADER_FLAG_TO_TOKEN_MASTER_CLOCKS: u64 = 74;
+const SONG_BANK_HEADER_TOKEN_TO_ACK_POLL_MASTER_CLOCKS: u64 = 30;
+const SONG_BANK_HEADER_ACK_TO_FIRST_BYTE_MASTER_CLOCKS: u64 = 210;
+const SONG_BANK_BYTE_COUNTER_TO_VALUE_MASTER_CLOCKS: u64 = 6;
+const SONG_BANK_BYTE_VALUE_TO_ACK_POLL_MASTER_CLOCKS: u64 = 236;
+const SONG_BANK_LAST_BYTE_VALUE_TO_ACK_POLL_MASTER_CLOCKS: u64 = 82;
+const SONG_BANK_BYTE_ACK_TO_NEXT_COUNTER_MASTER_CLOCKS: u64 = 82;
+const SONG_BANK_TERMINAL_ACK_TO_CLEAR_MASTER_CLOCKS: u64 = 62;
+const SONG_BANK_CLEAR_PORT_MASTER_CLOCKS: u64 = 30;
 // Clean-ROM Snes9x 1.63 reaches the uploaded Zelda SPC entry point at this
 // absolute APU cycle. The translated CPU skips the IPL transfer itself, so the
 // timing clock holds the extracted program dormant until the equivalent
@@ -98,6 +122,287 @@ struct HostPortWrites {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+struct SongBankHostTransfer {
+    bank_id: u8,
+    stream: Vec<u8>,
+    cursor: usize,
+    phase: SongBankHostTransferPhase,
+    command_pending: bool,
+    next_host_access_master_clock: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+enum SongBankHostTransferPhase {
+    AwaitReceiverReadyLow,
+    AwaitReceiverReadyHigh {
+        low_matched: bool,
+    },
+    WriteBlockTargetLow {
+        token: u8,
+        length: u16,
+        target: u16,
+    },
+    WriteBlockTargetHigh {
+        token: u8,
+        length: u16,
+        target: u16,
+    },
+    WriteBlockFlag {
+        token: u8,
+        length: u16,
+    },
+    WriteBlockToken {
+        token: u8,
+        length: u16,
+    },
+    AwaitBlockAck {
+        token: u8,
+        length: u16,
+    },
+    WriteByteCounter {
+        counter: u8,
+        value: u8,
+        bytes_remaining: u16,
+    },
+    WriteByteValue {
+        counter: u8,
+        value: u8,
+        bytes_remaining: u16,
+    },
+    AwaitByteAck {
+        counter: u8,
+        bytes_remaining: u16,
+    },
+    ClearPort {
+        port: u8,
+    },
+}
+
+impl SongBankHostTransfer {
+    fn new(bank_id: u8, stream: &[u8]) -> Self {
+        Self {
+            bank_id,
+            stream: stream.to_vec(),
+            cursor: 0,
+            phase: SongBankHostTransferPhase::AwaitReceiverReadyLow,
+            command_pending: true,
+            next_host_access_master_clock: None,
+        }
+    }
+
+    fn suppresses_nmi_transport(&self) -> bool {
+        !self.command_pending
+    }
+
+    fn mark_command_scheduled(&mut self, command_apu_cycle: u64) {
+        if !self.command_pending {
+            return;
+        }
+        self.command_pending = false;
+        let command_master_clock = apu_cycle_to_snes_master_clock(command_apu_cycle);
+        self.next_host_access_master_clock =
+            Some(command_master_clock + SONG_BANK_WRITE_TO_FIRST_READY_POLL_MASTER_CLOCKS);
+    }
+
+    fn advance_host_cpu_until(
+        &mut self,
+        execution_apu_cycle: u64,
+        in_ports: &mut [u8; 6],
+        out_ports: [u8; 4],
+    ) -> bool {
+        while self
+            .next_host_access_apu_cycle()
+            .is_some_and(|cycle| cycle <= execution_apu_cycle)
+        {
+            if self.perform_host_access(in_ports, out_ports) {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn perform_host_access(&mut self, in_ports: &mut [u8; 6], out_ports: [u8; 4]) -> bool {
+        match self.phase {
+            SongBankHostTransferPhase::AwaitReceiverReadyLow => {
+                self.phase = SongBankHostTransferPhase::AwaitReceiverReadyHigh {
+                    low_matched: out_ports[0] == 0xaa,
+                };
+                self.schedule_after(SONG_BANK_READY_LOW_TO_HIGH_MASTER_CLOCKS);
+            }
+            SongBankHostTransferPhase::AwaitReceiverReadyHigh { low_matched } => {
+                if low_matched && out_ports[1] == 0xbb {
+                    self.schedule_block_header(0xcc, SONG_BANK_READY_TO_HEADER_MASTER_CLOCKS);
+                } else {
+                    self.phase = SongBankHostTransferPhase::AwaitReceiverReadyLow;
+                    self.schedule_after(SONG_BANK_READY_HIGH_TO_NEXT_LOW_MASTER_CLOCKS);
+                }
+            }
+            SongBankHostTransferPhase::WriteBlockTargetLow {
+                token,
+                length,
+                target,
+            } => {
+                Self::write_input_port(in_ports, 2, target as u8);
+                self.phase = SongBankHostTransferPhase::WriteBlockTargetHigh {
+                    token,
+                    length,
+                    target,
+                };
+                self.schedule_after(SONG_BANK_HEADER_TARGET_LOW_TO_HIGH_MASTER_CLOCKS);
+            }
+            SongBankHostTransferPhase::WriteBlockTargetHigh {
+                token,
+                length,
+                target,
+            } => {
+                Self::write_input_port(in_ports, 3, (target >> 8) as u8);
+                self.phase = SongBankHostTransferPhase::WriteBlockFlag { token, length };
+                self.schedule_after(SONG_BANK_HEADER_TARGET_HIGH_TO_FLAG_MASTER_CLOCKS);
+            }
+            SongBankHostTransferPhase::WriteBlockFlag { token, length } => {
+                Self::write_input_port(in_ports, 1, u8::from(length != 0));
+                self.phase = SongBankHostTransferPhase::WriteBlockToken { token, length };
+                self.schedule_after(SONG_BANK_HEADER_FLAG_TO_TOKEN_MASTER_CLOCKS);
+            }
+            SongBankHostTransferPhase::WriteBlockToken { token, length } => {
+                Self::write_input_port(in_ports, 0, token);
+                self.phase = SongBankHostTransferPhase::AwaitBlockAck { token, length };
+                self.schedule_after(SONG_BANK_HEADER_TOKEN_TO_ACK_POLL_MASTER_CLOCKS);
+            }
+            SongBankHostTransferPhase::AwaitBlockAck { token, length } => {
+                if out_ports[0] != token {
+                    self.schedule_after(SONG_BANK_ACK_POLL_MASTER_CLOCKS);
+                } else if length == 0 {
+                    self.phase = SongBankHostTransferPhase::ClearPort { port: 0 };
+                    self.schedule_after(SONG_BANK_TERMINAL_ACK_TO_CLEAR_MASTER_CLOCKS);
+                } else {
+                    self.schedule_byte(0, length, SONG_BANK_HEADER_ACK_TO_FIRST_BYTE_MASTER_CLOCKS);
+                }
+            }
+            SongBankHostTransferPhase::WriteByteCounter {
+                counter,
+                value,
+                bytes_remaining,
+            } => {
+                Self::write_input_port(in_ports, 0, counter);
+                self.phase = SongBankHostTransferPhase::WriteByteValue {
+                    counter,
+                    value,
+                    bytes_remaining,
+                };
+                self.schedule_after(SONG_BANK_BYTE_COUNTER_TO_VALUE_MASTER_CLOCKS);
+            }
+            SongBankHostTransferPhase::WriteByteValue {
+                counter,
+                value,
+                bytes_remaining,
+            } => {
+                Self::write_input_port(in_ports, 1, value);
+                self.phase = SongBankHostTransferPhase::AwaitByteAck {
+                    counter,
+                    bytes_remaining,
+                };
+                self.schedule_after(if bytes_remaining == 0 {
+                    SONG_BANK_LAST_BYTE_VALUE_TO_ACK_POLL_MASTER_CLOCKS
+                } else {
+                    SONG_BANK_BYTE_VALUE_TO_ACK_POLL_MASTER_CLOCKS
+                });
+            }
+            SongBankHostTransferPhase::AwaitByteAck {
+                counter,
+                bytes_remaining,
+            } => {
+                if out_ports[0] != counter {
+                    self.schedule_after(SONG_BANK_ACK_POLL_MASTER_CLOCKS);
+                } else if bytes_remaining == 0 {
+                    self.schedule_block_header(
+                        // The preceding CMP $2140 equality leaves carry set,
+                        // so the ROM's ADC #$03 advances the next block token
+                        // by four, not three.
+                        counter.wrapping_add(4),
+                        SONG_BANK_LAST_BYTE_ACK_TO_HEADER_MASTER_CLOCKS,
+                    );
+                } else {
+                    self.schedule_byte(
+                        counter.wrapping_add(1),
+                        bytes_remaining,
+                        SONG_BANK_BYTE_ACK_TO_NEXT_COUNTER_MASTER_CLOCKS,
+                    );
+                }
+            }
+            SongBankHostTransferPhase::ClearPort { port } => {
+                Self::write_input_port(in_ports, port, 0);
+                if port == 3 {
+                    self.next_host_access_master_clock = None;
+                    return true;
+                }
+                self.phase = SongBankHostTransferPhase::ClearPort { port: port + 1 };
+                self.schedule_after(SONG_BANK_CLEAR_PORT_MASTER_CLOCKS);
+            }
+        }
+        false
+    }
+
+    fn schedule_block_header(&mut self, token: u8, delay_master_clocks: u64) {
+        let length = self.read_stream_word();
+        let target = if length == 0 {
+            // Zelda's runtime receiver returns to the resident driver after a
+            // zero-length block. The extracted asset ends at the length word;
+            // the ROM's adjacent stream supplies this $0800 return address.
+            SPC_DRIVER_START as u16
+        } else {
+            self.read_stream_word()
+        };
+        self.phase = SongBankHostTransferPhase::WriteBlockTargetLow {
+            token,
+            length,
+            target,
+        };
+        self.schedule_after(delay_master_clocks);
+    }
+
+    fn schedule_byte(&mut self, counter: u8, bytes_remaining: u16, delay_master_clocks: u64) {
+        let value = *self
+            .stream
+            .get(self.cursor)
+            .expect("validated song-bank stream ended inside a block");
+        self.cursor += 1;
+        self.phase = SongBankHostTransferPhase::WriteByteCounter {
+            counter,
+            value,
+            bytes_remaining: bytes_remaining - 1,
+        };
+        self.schedule_after(delay_master_clocks);
+    }
+
+    fn schedule_after(&mut self, master_clocks: u64) {
+        let next = self
+            .next_host_access_master_clock
+            .expect("scheduled song-bank host transfer has no CPU clock");
+        self.next_host_access_master_clock =
+            Some(advance_snes_cpu_master_clock(next, master_clocks));
+    }
+
+    fn next_host_access_apu_cycle(&self) -> Option<u64> {
+        self.next_host_access_master_clock
+            .map(snes_master_clock_to_apu_cycle)
+    }
+
+    fn write_input_port(in_ports: &mut [u8; 6], port: u8, value: u8) {
+        in_ports[usize::from(port)] = value;
+    }
+
+    fn read_stream_word(&mut self) -> u16 {
+        let bytes = self
+            .stream
+            .get(self.cursor..self.cursor + 2)
+            .expect("validated song-bank stream ended before its terminator");
+        self.cursor += 2;
+        u16::from_le_bytes(bytes.try_into().unwrap())
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct AbsoluteDspEventClock {
     apu: ApuState,
     startup_template: ApuState,
@@ -105,6 +410,12 @@ pub(crate) struct AbsoluteDspEventClock {
     apu_cycle_origin: u64,
     next_poll_boundary: u16,
     pending_writes: Vec<(u64, u8, u8)>,
+    #[serde(default)]
+    pending_main_cpu_port_writes: Vec<(u8, u8)>,
+    #[serde(default)]
+    song_bank_transfer: Option<SongBankHostTransfer>,
+    #[serde(default)]
+    completed_song_bank_id: Option<u8>,
     #[serde(default)]
     host_frame_index: u64,
     #[serde(default)]
@@ -139,6 +450,9 @@ impl AbsoluteDspEventClock {
             apu_cycle_origin: 0,
             next_poll_boundary: DRIVER_POLL_PUSH_Y_PC,
             pending_writes: Vec::new(),
+            pending_main_cpu_port_writes: Vec::new(),
+            song_bank_transfer: None,
+            completed_song_bank_id: None,
             host_frame_index: 0,
             host_transport: HostPortTransport::default(),
         };
@@ -165,6 +479,9 @@ impl AbsoluteDspEventClock {
         }
         self.next_poll_boundary = DRIVER_POLL_PUSH_Y_PC;
         self.pending_writes.clear();
+        self.pending_main_cpu_port_writes.clear();
+        self.song_bank_transfer = None;
+        self.completed_song_bank_id = None;
         self.host_frame_index = 0;
         self.host_transport = HostPortTransport::default();
         self.apu.dsp_write_history.clear();
@@ -184,10 +501,40 @@ impl AbsoluteDspEventClock {
         }
         self.apu.debug_dsp_write_trace.as_mut().unwrap().clear();
         let mut polls = Vec::new();
-        let host_writes = self
-            .host_transport
-            .frame_writes(commands, self.apu.out_ports);
+        let host_writes = if self
+            .song_bank_transfer
+            .as_ref()
+            .is_some_and(SongBankHostTransfer::suppresses_nmi_transport)
+        {
+            HostPortWrites { writes: [None; 4] }
+        } else {
+            self.host_transport
+                .frame_writes(commands, self.apu.out_ports)
+        };
         let host_port_targets = host_port_target_cycles(self.host_frame_index, host_writes);
+        let mut host_port_events: Vec<(u64, u8, u8)> = host_writes
+            .writes
+            .into_iter()
+            .enumerate()
+            .filter_map(|(port, value)| {
+                value.map(|value| (host_port_targets[port], port as u8, value))
+            })
+            .collect();
+        // Main-CPU port writes occur after the frame's NMI audio handler. The
+        // translated engine executes main work as one semantic slice, so the
+        // end of the current host window is its hardware-ordering boundary.
+        // Keeping these writes separate from the NMI latches preserves their
+        // one-shot nature and lets the real SPC program decide when it sees
+        // them at its next instruction boundary.
+        host_port_events.extend(
+            std::mem::take(&mut self.pending_main_cpu_port_writes)
+                .into_iter()
+                .map(|(port, value)| (frame_end_cycle, port, value)),
+        );
+        if let Some(transfer) = self.song_bank_transfer.as_mut() {
+            transfer.mark_command_scheduled(frame_end_cycle);
+        }
+        host_port_events.sort_by_key(|&(target, port, _)| (target, port));
         let mut next_host_port = 0usize;
         let mut last_host_boundary = 0u64;
         let execution_target = frame_end_cycle + SMP_CPU_LOOKAHEAD_CYCLES;
@@ -199,15 +546,12 @@ impl AbsoluteDspEventClock {
             if let Some(step_durations) = step_durations {
                 let instruction_cycles = step_durations.iter().copied().map(u64::from).sum::<u64>();
                 let instruction_end = instruction_start + instruction_cycles;
-                while next_host_port < 4 {
-                    let Some(value) = host_writes.writes[next_host_port] else {
-                        next_host_port += 1;
-                        continue;
-                    };
-                    if host_port_targets[next_host_port] > instruction_end {
+                while next_host_port < host_port_events.len() {
+                    let (event_target, port, value) = host_port_events[next_host_port];
+                    if event_target > instruction_end {
                         break;
                     }
-                    let target = host_port_targets[next_host_port].max(last_host_boundary);
+                    let target = event_target.max(last_host_boundary);
                     let boundary = if target <= instruction_start {
                         instruction_start
                     } else {
@@ -223,7 +567,7 @@ impl AbsoluteDspEventClock {
                     };
                     self.apu.schedule_input_port_event(
                         boundary.saturating_sub(self.apu_cycle_origin) as u32,
-                        next_host_port as u8,
+                        port,
                         value,
                     );
                     last_host_boundary = boundary;
@@ -234,6 +578,17 @@ impl AbsoluteDspEventClock {
                 self.apu.run_cycle_sequenced_instruction_without_dsp();
             }
             execution_cycle = self.apu_cycle_origin + u64::from(self.apu.cycles);
+            let transfer_completed = self.song_bank_transfer.as_mut().is_some_and(|transfer| {
+                transfer.advance_host_cpu_until(
+                    execution_cycle,
+                    &mut self.apu.in_ports,
+                    self.apu.out_ports,
+                )
+            });
+            if transfer_completed {
+                let transfer = self.song_bank_transfer.take().unwrap();
+                self.completed_song_bank_id = Some(transfer.bank_id);
+            }
             if let Some(step_durations) = step_durations {
                 let predicted_end =
                     instruction_start + step_durations.iter().copied().map(u64::from).sum::<u64>();
@@ -242,15 +597,12 @@ impl AbsoluteDspEventClock {
                 // Single-step opcodes do not yield back to the CPU until the
                 // whole instruction completes. Writes whose nominal clock
                 // falls inside one become visible immediately afterward.
-                while next_host_port < 4 {
-                    let Some(value) = host_writes.writes[next_host_port] else {
-                        next_host_port += 1;
-                        continue;
-                    };
-                    if host_port_targets[next_host_port] > execution_cycle {
+                while next_host_port < host_port_events.len() {
+                    let (event_target, port, value) = host_port_events[next_host_port];
+                    if event_target > execution_cycle {
                         break;
                     }
-                    self.apu.in_ports[next_host_port] = value;
+                    self.apu.in_ports[usize::from(port)] = value;
                     last_host_boundary = execution_cycle;
                     next_host_port += 1;
                 }
@@ -306,9 +658,24 @@ impl AbsoluteDspEventClock {
         self.apu.out_ports
     }
 
+    pub(crate) fn queue_main_cpu_port_write(&mut self, port: u8, value: u8) {
+        debug_assert!(port < 4);
+        self.pending_main_cpu_port_writes.push((port, value));
+    }
+
+    pub(crate) fn begin_song_bank_transfer(&mut self, bank_id: u8, stream: &[u8]) {
+        debug_assert!(self.song_bank_transfer.is_none());
+        self.song_bank_transfer = Some(SongBankHostTransfer::new(bank_id, stream));
+        self.queue_main_cpu_port_write(0, 0xff);
+    }
+
+    pub(crate) fn take_completed_song_bank_id(&mut self) -> Option<u8> {
+        self.completed_song_bank_id.take()
+    }
+
     pub(crate) fn debug_state_summary(&self) -> String {
         format!(
-            "abs={} origin={} local={} pc={:04x} sp={:02x} a={:02x} x={:02x} y={:02x} z={} c={} t0={},{},{},{},{} ram43={} ports={:02x?}",
+            "abs={} origin={} local={} pc={:04x} sp={:02x} a={:02x} x={:02x} y={:02x} z={} c={} t0={},{},{},{},{} ram43={} in={:02x?} out={:02x?} transfer={:?}",
             self.absolute_apu_cycle,
             self.apu_cycle_origin,
             self.apu.cycles,
@@ -326,6 +693,10 @@ impl AbsoluteDspEventClock {
             self.apu.timer[0].enabled,
             self.apu.ram[0x43],
             self.apu.in_ports,
+            self.apu.out_ports,
+            self.song_bank_transfer
+                .as_ref()
+                .map(|transfer| transfer.phase),
         )
     }
 
@@ -421,15 +792,120 @@ fn snes9x_opcode_step_durations(opcode: u8) -> Option<&'static [u8]> {
     })
 }
 
+fn snes_master_clock_to_apu_cycle(master_clock: u64) -> u64 {
+    master_clock.saturating_mul(SNES9X_APU_RATIO_NUMERATOR) / SNES9X_APU_RATIO_DENOMINATOR
+}
+
+fn apu_cycle_to_snes_master_clock(apu_cycle: u64) -> u64 {
+    let scaled = u128::from(apu_cycle) * u128::from(SNES9X_APU_RATIO_DENOMINATOR);
+    let numerator = u128::from(SNES9X_APU_RATIO_NUMERATOR);
+    ((scaled + numerator - 1) / numerator) as u64
+}
+
+fn snes_frame_start_master_clock(frame: u64) -> u64 {
+    frame
+        .saturating_mul(SNES_MASTER_CLOCKS_PER_SCANLINE * SNES_NTSC_SCANLINES_PER_FRAME)
+        .saturating_sub((frame / 2) * SNES_SHORT_SCANLINE_MASTER_CLOCKS)
+}
+
+fn snes_frame_for_master_clock(master_clock: u64) -> u64 {
+    let nominal_frame_clocks = SNES_MASTER_CLOCKS_PER_SCANLINE * SNES_NTSC_SCANLINES_PER_FRAME;
+    let mut frame = master_clock / (nominal_frame_clocks - 2);
+    while snes_frame_start_master_clock(frame) > master_clock {
+        frame -= 1;
+    }
+    while snes_frame_start_master_clock(frame + 1) <= master_clock {
+        frame += 1;
+    }
+    frame
+}
+
+fn snes_scanline_clock(master_clock: u64) -> (u64, u64, u64, u64) {
+    let frame = snes_frame_for_master_clock(master_clock);
+    let frame_start = snes_frame_start_master_clock(frame);
+    let frame_clock = master_clock - frame_start;
+    let short_field = frame & 1 != 0;
+    let short_line_start = SNES_SHORT_SCANLINE * SNES_MASTER_CLOCKS_PER_SCANLINE;
+
+    if short_field && frame_clock >= short_line_start {
+        let short_line_length = SNES_MASTER_CLOCKS_PER_SCANLINE - SNES_SHORT_SCANLINE_MASTER_CLOCKS;
+        if frame_clock < short_line_start + short_line_length {
+            return (
+                frame,
+                SNES_SHORT_SCANLINE,
+                frame_start + short_line_start,
+                frame_clock - short_line_start,
+            );
+        }
+        let after_short_line = frame_clock - short_line_start - short_line_length;
+        let scanline = SNES_SHORT_SCANLINE + 1 + after_short_line / SNES_MASTER_CLOCKS_PER_SCANLINE;
+        let scanline_start = frame_start
+            + short_line_start
+            + short_line_length
+            + (scanline - SNES_SHORT_SCANLINE - 1) * SNES_MASTER_CLOCKS_PER_SCANLINE;
+        return (
+            frame,
+            scanline,
+            scanline_start,
+            master_clock - scanline_start,
+        );
+    }
+
+    let scanline = frame_clock / SNES_MASTER_CLOCKS_PER_SCANLINE;
+    let scanline_start = frame_start + scanline * SNES_MASTER_CLOCKS_PER_SCANLINE;
+    (
+        frame,
+        scanline,
+        scanline_start,
+        master_clock - scanline_start,
+    )
+}
+
+fn next_wram_refresh_master_clock(master_clock: u64) -> u64 {
+    let (frame, scanline, scanline_start, scanline_clock) = snes_scanline_clock(master_clock);
+    let refresh_clock = if frame & 1 != 0 && scanline == SNES_SHORT_SCANLINE {
+        SNES_SHORT_SCANLINE_WRAM_REFRESH_MASTER_CLOCK
+    } else {
+        SNES_WRAM_REFRESH_MASTER_CLOCK
+    };
+    if scanline_clock < refresh_clock {
+        return scanline_start + refresh_clock;
+    }
+
+    let scanline_length = if frame & 1 != 0 && scanline == SNES_SHORT_SCANLINE {
+        SNES_MASTER_CLOCKS_PER_SCANLINE - SNES_SHORT_SCANLINE_MASTER_CLOCKS
+    } else {
+        SNES_MASTER_CLOCKS_PER_SCANLINE
+    };
+    let next_scanline_start = scanline_start + scanline_length;
+    let (next_frame, next_scanline, _, _) = snes_scanline_clock(next_scanline_start);
+    next_scanline_start
+        + if next_frame & 1 != 0 && next_scanline == SNES_SHORT_SCANLINE {
+            SNES_SHORT_SCANLINE_WRAM_REFRESH_MASTER_CLOCK
+        } else {
+            SNES_WRAM_REFRESH_MASTER_CLOCK
+        }
+}
+
+fn advance_snes_cpu_master_clock(mut master_clock: u64, mut cpu_master_clocks: u64) -> u64 {
+    while cpu_master_clocks != 0 {
+        let refresh = next_wram_refresh_master_clock(master_clock);
+        let clocks_until_refresh = refresh - master_clock;
+        if cpu_master_clocks < clocks_until_refresh {
+            return master_clock + cpu_master_clocks;
+        }
+        master_clock = refresh + SNES_WRAM_REFRESH_STALL_MASTER_CLOCKS;
+        cpu_master_clocks -= clocks_until_refresh;
+    }
+    master_clock
+}
+
 fn host_port_target_cycles(frame_index: u64, writes: HostPortWrites) -> [u64; 4] {
     // Libretro frame zero begins while the reset/bootstrap frame is already in
     // progress, so normal NMI frame N is one host callback behind the callback
     // index. Non-interlace NTSC loses one dot on scanline 240 every other field.
     let completed_video_frames = frame_index.saturating_sub(1);
-    let short_scanlines = completed_video_frames / 2;
-    let frame_start_master_clock = completed_video_frames
-        .saturating_mul(SNES_MASTER_CLOCKS_PER_SCANLINE * SNES_NTSC_SCANLINES_PER_FRAME)
-        .saturating_sub(short_scanlines * SNES_SHORT_SCANLINE_MASTER_CLOCKS);
+    let frame_start_master_clock = snes_frame_start_master_clock(completed_video_frames);
     let nmi_entry_master_clock = frame_start_master_clock
         + NMI_AUDIO_VCOUNTER * SNES_MASTER_CLOCKS_PER_SCANLINE
         + NMI_AUDIO_NOMINAL_ENTRY_HCLOCK;
@@ -456,10 +932,8 @@ fn host_port_target_cycles(frame_index: u64, writes: HostPortWrites) -> [u64; 4]
         port_two_offset + music_suffix,
         port_three_offset + music_suffix,
     ];
-    master_clock_offsets.map(|offset| {
-        (nmi_entry_master_clock + offset).saturating_mul(SNES9X_APU_RATIO_NUMERATOR)
-            / SNES9X_APU_RATIO_DENOMINATOR
-    })
+    master_clock_offsets
+        .map(|offset| snes_master_clock_to_apu_cycle(nmi_entry_master_clock + offset))
 }
 
 fn upload_song_bank_to_ram(ram: &mut [u8], data: &[u8]) -> Result<(), String> {
@@ -514,6 +988,74 @@ mod tests {
         let error = upload_song_bank_to_ram(&mut ram, &[3, 0, 0, 0x20, 1]).unwrap_err();
 
         assert!(error.contains("truncated block payload"));
+    }
+
+    #[test]
+    fn runtime_song_bank_transfer_follows_the_rom_block_protocol() {
+        let stream = [
+            2, 0, 0x00, 0x20, 0x11, 0x22, // first block
+            1, 0, 0x00, 0x30, 0x33, // second block
+            0, 0, // return to the resident driver
+        ];
+        let mut transfer = SongBankHostTransfer::new(1, &stream);
+        transfer.mark_command_scheduled(0);
+        let mut in_ports = [0u8; 6];
+        let mut targets = Vec::new();
+        let mut tokens = Vec::new();
+        let mut bytes = Vec::new();
+        let mut completed = false;
+
+        for _ in 0..64 {
+            let phase = transfer.phase;
+            match phase {
+                SongBankHostTransferPhase::WriteBlockTargetLow { target, .. } => {
+                    targets.push(target);
+                }
+                SongBankHostTransferPhase::WriteBlockToken { token, .. } => tokens.push(token),
+                SongBankHostTransferPhase::WriteByteValue { counter, value, .. } => {
+                    bytes.push((counter, value));
+                }
+                _ => {}
+            }
+            let mut out_ports = [0u8; 4];
+            match phase {
+                SongBankHostTransferPhase::AwaitReceiverReadyLow => out_ports[0] = 0xaa,
+                SongBankHostTransferPhase::AwaitReceiverReadyHigh { .. } => out_ports[1] = 0xbb,
+                SongBankHostTransferPhase::AwaitBlockAck { token, .. } => out_ports[0] = token,
+                SongBankHostTransferPhase::AwaitByteAck { counter, .. } => {
+                    out_ports[0] = counter;
+                }
+                _ => {}
+            }
+            if transfer.perform_host_access(&mut in_ports, out_ports) {
+                completed = true;
+                break;
+            }
+        }
+
+        assert!(completed);
+        assert_eq!(targets, [0x2000, 0x3000, SPC_DRIVER_START as u16]);
+        // CMP $2140 leaves carry set, so the ROM's ADC #3 advances the
+        // terminal counter by four between blocks.
+        assert_eq!(tokens, [0xcc, 5, 4]);
+        assert_eq!(bytes, [(0, 0x11), (1, 0x22), (0, 0x33)]);
+        assert_eq!(&in_ports[..4], &[0; 4]);
+    }
+
+    #[test]
+    fn cpu_timeline_accounts_for_normal_and_short_scanline_wram_refresh() {
+        let normal_start = snes_frame_start_master_clock(0);
+        assert_eq!(
+            advance_snes_cpu_master_clock(normal_start + 500, 100),
+            normal_start + 640
+        );
+
+        let short_line_start = snes_frame_start_master_clock(1)
+            + SNES_SHORT_SCANLINE * SNES_MASTER_CLOCKS_PER_SCANLINE;
+        assert_eq!(
+            advance_snes_cpu_master_clock(short_line_start + 500, 100),
+            short_line_start + 640
+        );
     }
 
     #[test]

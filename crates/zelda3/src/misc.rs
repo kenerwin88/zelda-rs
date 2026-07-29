@@ -12,6 +12,13 @@ enum SelectedGameLoadDestination {
     Message,
 }
 
+// Source pointers selected by the ROM's three LoadSongBank entry points at
+// $80:8901, $80:8913, and $80:8925. The extracted sound-bank assets describe
+// the final SPC RAM image and may normalize block order or trailing zeroes;
+// the CPU<->SPC upload protocol must retain the original stream byte-for-byte
+// because block lengths and order determine its acknowledgment timing.
+const SONG_BANK_UPLOAD_STREAM_SNES_ADDRS: [u32; 3] = [0x19_8000, 0x1b_8000, 0x1a_9ef5];
+
 // Static lookup tables ported from misc.c.
 const RECEIVE_ITEM_OAM_EXT_SIZES: [u8; 76] = [
     0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 0, 2, 0, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2,
@@ -249,22 +256,63 @@ impl ZeldaState {
     }
 
     pub(super) fn sound_load_intro_song_bank(&mut self) {
-        self.load_song_bank_asset(0);
+        self.select_song_bank_asset(0);
     }
 
     pub(super) fn load_overworld_songs(&mut self) {
-        self.load_song_bank_asset(0);
+        self.begin_song_bank_transfer(0);
     }
 
     pub(super) fn load_dungeon_songs(&mut self) {
-        self.load_song_bank_asset(1);
+        self.begin_song_bank_transfer(1);
     }
 
     pub(super) fn load_credits_songs(&mut self) {
-        self.load_song_bank_asset(2);
+        self.begin_song_bank_transfer(2);
     }
 
-    fn load_song_bank_asset(&mut self, asset: usize) {
+    fn begin_song_bank_transfer(&mut self, asset: usize) {
+        // Runtime bank changes first ask the resident SPC driver to enter its
+        // upload receiver with a direct main-CPU APUI0 write. It is not an NMI
+        // music latch: the real driver observes the one-shot write on its own
+        // instruction boundary and performs the voice reset. The intro bank is
+        // different because the IPL upload receiver is already active.
+        let asset_stream = self
+            .asset_raw(asset)
+            .expect("runtime song bank asset must be loaded")
+            .to_vec();
+        let stream = self
+            .rom_song_bank_upload_stream(asset)
+            .unwrap_or_else(|| asset_stream.clone());
+        if !self.begin_runtime_song_bank_transfer(asset as u8, &stream) {
+            // The semantic sequencer has no SPC receiver to acknowledge the
+            // byte stream. Preserve its established atomic bank publication.
+            self.load_song_bank(&asset_stream);
+        }
+    }
+
+    fn rom_song_bank_upload_stream(&self, asset: usize) -> Option<Vec<u8>> {
+        let mut address = *SONG_BANK_UPLOAD_STREAM_SNES_ADDRS.get(asset)?;
+        let mut stream = Vec::new();
+        loop {
+            let length_low = self.rom_byte_snes(address)?;
+            address = next_snes_addr(address);
+            let length_high = self.rom_byte_snes(address)?;
+            address = next_snes_addr(address);
+            stream.extend_from_slice(&[length_low, length_high]);
+            let length = u16::from_le_bytes([length_low, length_high]);
+            if length == 0 {
+                return Some(stream);
+            }
+
+            for _ in 0..usize::from(length) + 2 {
+                stream.push(self.rom_byte_snes(address)?);
+                address = next_snes_addr(address);
+            }
+        }
+    }
+
+    fn select_song_bank_asset(&mut self, asset: usize) {
         self.select_modern_sample_bank(asset as u8);
     }
 

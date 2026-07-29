@@ -137,10 +137,10 @@ const PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES: u8 = PRE_DUNGEON_ROOM_CONSTRUCTION_N
     + PRE_DUNGEON_ATTRIBUTE_TABLE_NMI_SLICES
     + PRE_DUNGEON_TILESETS_NMI_SLICES
     + PRE_DUNGEON_RETURN_SUFFIX_NMI_SLICES;
-// Module_PreDungeon publishes module $07/$0f before its final
-// Dungeon_LoadSongBankIfNeeded call. The $00:8888 LoadSongBank copy then spans
-// 22 host boundaries before the caller can release the main-loop NMI latch.
-const PRE_DUNGEON_SONG_BANK_LOAD_NMI_SLICES: u8 = 22;
+// Module_PreDungeon publishes module $07/$0f, starts LoadSongBank by writing
+// $ff to APUI0, then remains inside the $00:8888 transfer loop for 22 host
+// boundaries before its caller can release the main-loop NMI latch.
+const PRE_DUNGEON_SONG_BANK_TRANSFER_NMI_SLICES: u8 = 22;
 const DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES: usize = 4;
 // The ROM enters AttractScene_ThroneRoom on frame 5939 and does not return
 // from its dungeon-room construction work until frame 5981. NMI continues to
@@ -1084,7 +1084,7 @@ enum RomWorkContinuation {
         work: DungeonFallingEntranceWork,
     },
     FinishPreDungeonEntranceLoad,
-    FinishPreDungeonSongBankLoad,
+    FinishPreDungeonSongBankTransfer,
     FinishItemReceiptGraphics {
         continuation: ItemReceiptGraphicsContinuation,
     },
@@ -4269,6 +4269,20 @@ impl ZeldaState {
 
     pub(crate) fn set_queued_music_control(&mut self, value: u8) {
         self.system_signals_mut().set_queued_music_control(value);
+    }
+
+    pub(crate) fn resident_song_bank_is_dungeon(&self) -> bool {
+        self.game_state
+            .system_signals
+            .resident_song_bank_is_dungeon()
+    }
+
+    pub(crate) fn select_overworld_song_bank(&mut self) {
+        self.system_signals_mut().select_overworld_song_bank();
+    }
+
+    pub(crate) fn select_dungeon_song_bank(&mut self) {
+        self.system_signals_mut().select_dungeon_song_bank();
     }
 
     pub(crate) fn set_ambient_sound_effect(&mut self, value: u8) {
@@ -8708,7 +8722,7 @@ impl ZeldaState {
         true
     }
 
-    pub(super) fn begin_pre_dungeon_song_bank_load_work(&mut self) -> bool {
+    pub(super) fn begin_pre_dungeon_song_bank_transfer_work(&mut self) -> bool {
         if !self.rom_startup_timing() {
             return false;
         }
@@ -8716,8 +8730,8 @@ impl ZeldaState {
         debug_assert_eq!(self.game_state.frame.submodule, 15);
         debug_assert!(!self.pending_rom_work.is_pending());
         self.pending_rom_work = PendingRomWork::schedule(
-            RomWorkContinuation::FinishPreDungeonSongBankLoad,
-            PRE_DUNGEON_SONG_BANK_LOAD_NMI_SLICES,
+            RomWorkContinuation::FinishPreDungeonSongBankTransfer,
+            PRE_DUNGEON_SONG_BANK_TRANSFER_NMI_SLICES,
         );
         true
     }
@@ -10539,14 +10553,14 @@ impl ZeldaState {
                     self.clear_nmi_update_latch();
                     return;
                 }
-                RomWorkSlice::Complete(RomWorkContinuation::FinishPreDungeonSongBankLoad) => {
-                    // The song-bank copy starts after module $07/$0f is
-                    // already CPU-visible, but the original caller remains
-                    // suspended through this boundary. Finish its semantic
-                    // suffix only after the copy returns.
+                RomWorkSlice::Complete(RomWorkContinuation::FinishPreDungeonSongBankTransfer) => {
+                    // The upload receiver was selected when the transfer
+                    // began. The original caller remains suspended through
+                    // this boundary, so finish its semantic suffix only after
+                    // the copy returns.
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-                    self.complete_module_pre_dungeon_after_song_bank_load();
+                    self.complete_module_pre_dungeon_after_song_bank_transfer();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                     return;

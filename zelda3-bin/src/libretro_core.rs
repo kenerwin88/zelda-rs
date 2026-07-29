@@ -630,6 +630,15 @@ impl LibretroCore {
                     v_counter: unsafe { value(write, 3) },
                     cpu_cycle: unsafe { value(write, 4) },
                     program_counter: unsafe { value(write, 5) },
+                    apu_cycle_before: unsafe { value(write, 6) },
+                    apu_cycle_after: unsafe { value(write, 7) },
+                    smp_clock_before: unsafe { value(write, 8) },
+                    smp_clock_after: unsafe { value(write, 9) },
+                    smp_pc_before: unsafe { value(write, 14) },
+                    smp_pc_after: unsafe { value(write, 15) },
+                    smp_opcode_before: unsafe { value(write, 16) },
+                    smp_opcode_after: unsafe { value(write, 17) },
+                    is_read: unsafe { value(write, 20) } != 0,
                 })
                 .collect(),
         )
@@ -761,6 +770,15 @@ pub(crate) struct LibretroApuPortWrite {
     pub(crate) v_counter: i32,
     pub(crate) cpu_cycle: i32,
     pub(crate) program_counter: i32,
+    pub(crate) apu_cycle_before: i32,
+    pub(crate) apu_cycle_after: i32,
+    pub(crate) smp_clock_before: i32,
+    pub(crate) smp_clock_after: i32,
+    pub(crate) smp_pc_before: i32,
+    pub(crate) smp_pc_after: i32,
+    pub(crate) smp_opcode_before: i32,
+    pub(crate) smp_opcode_after: i32,
+    pub(crate) is_read: bool,
 }
 
 #[derive(serde::Serialize)]

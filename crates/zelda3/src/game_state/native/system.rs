@@ -82,6 +82,7 @@ pub(crate) struct SystemSignalsState {
     current_music_control: u8,
     last_music_control: u8,
     queued_music_control: u8,
+    resident_song_bank_kind: u8,
     sound_effect_1: u8,
     sound_effect_2: u8,
     ambient_sound_effect: u8,
@@ -107,6 +108,7 @@ impl SystemSignalsState {
             current_music_control: ram_byte(ram, CURRENT_MUSIC_CONTROL),
             last_music_control: ram_byte(ram, LAST_MUSIC_CONTROL),
             queued_music_control: ram_byte(ram, QUEUED_MUSIC_CONTROL),
+            resident_song_bank_kind: ram_byte(ram, RESIDENT_SONG_BANK_KIND),
             sound_effect_1: ram_byte(ram, SOUND_EFFECT_1),
             sound_effect_2: ram_byte(ram, SOUND_EFFECT_2),
             ambient_sound_effect: ram_byte(ram, SOUND_EFFECT_AMBIENT),
@@ -134,6 +136,7 @@ impl SystemSignalsState {
         ram[CURRENT_MUSIC_CONTROL] = self.current_music_control;
         ram[LAST_MUSIC_CONTROL] = self.last_music_control;
         ram[QUEUED_MUSIC_CONTROL] = self.queued_music_control;
+        ram[RESIDENT_SONG_BANK_KIND] = self.resident_song_bank_kind;
         ram[SOUND_EFFECT_1] = self.sound_effect_1;
         ram[SOUND_EFFECT_2] = self.sound_effect_2;
         ram[SOUND_EFFECT_AMBIENT] = self.ambient_sound_effect;
@@ -172,6 +175,10 @@ impl SystemSignalsState {
 
     pub(crate) fn queued_music_control(&self) -> u8 {
         self.queued_music_control
+    }
+
+    pub(crate) fn resident_song_bank_is_dungeon(&self) -> bool {
+        self.resident_song_bank_kind != 0
     }
 
     pub(crate) fn sound_effect_1(&self) -> u8 {
@@ -263,6 +270,14 @@ impl SystemSignalsState {
 
     pub(crate) fn set_queued_music_control(&mut self, value: u8) {
         self.queued_music_control = value;
+    }
+
+    pub(crate) fn select_overworld_song_bank(&mut self) {
+        self.resident_song_bank_kind = 0;
+    }
+
+    pub(crate) fn select_dungeon_song_bank(&mut self) {
+        self.resident_song_bank_kind = 1;
     }
 
     pub(crate) fn set_sound_effect_1(&mut self, value: u8) {
@@ -515,6 +530,16 @@ impl<'a> NativeSystemSignalsBridgeMut<'a> {
 
     pub(crate) fn set_queued_music_control(&mut self, value: u8) {
         self.system_signals.set_queued_music_control(value);
+        self.sync();
+    }
+
+    pub(crate) fn select_overworld_song_bank(&mut self) {
+        self.system_signals.select_overworld_song_bank();
+        self.sync();
+    }
+
+    pub(crate) fn select_dungeon_song_bank(&mut self) {
+        self.system_signals.select_dungeon_song_bank();
         self.sync();
     }
 

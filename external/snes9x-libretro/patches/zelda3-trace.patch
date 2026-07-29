@@ -435,7 +435,7 @@ index d381c61..bc121a3 100644
  
  void retro_deinit()
 diff --git a/ppu.cpp b/ppu.cpp
-index 4611540..7458d84 100644
+index 4611540..d8fa414 100644
 --- a/ppu.cpp
 +++ b/ppu.cpp
 @@ -14,6 +14,7 @@
@@ -455,7 +455,7 @@ index 4611540..7458d84 100644
  
  	if (CPU.InDMAorHDMA)
  	{
-@@ -246,8 +249,11 @@ void S9xSetPPU (uint8 Byte, uint16 Address)
+@@ -246,8 +249,12 @@ void S9xSetPPU (uint8 Byte, uint16 Address)
  		S9xMSU1WritePort(Address & 7, Byte);
  	else
  	if ((Address & 0xffc0) == 0x2140) // APUIO0, APUIO1, APUIO2, APUIO3
@@ -463,11 +463,27 @@ index 4611540..7458d84 100644
  		// write_port will run the APU until given clock before writing value
 +		Zelda3TraceCaptureApuPortWrite(Address & 3, Byte);
  		S9xAPUWritePort(Address & 3, Byte);
++		Zelda3TraceFinalizeApuPortWrite();
 +	}
  	else
  	if (Address <= 0x2183)
  	{
-@@ -1067,6 +1073,7 @@ uint8 S9xGetPPU (uint16 Address)
+@@ -1020,8 +1027,13 @@ uint8 S9xGetPPU (uint16 Address)
+ 	}
+ 
+ 	if ((Address & 0xffc0) == 0x2140) // APUIO0, APUIO1, APUIO2, APUIO3
++	{
+ 		// read_port will run the APU until given APU time before reading value
+-		return (S9xAPUReadPort(Address & 3));
++		Zelda3TraceCaptureApuPortRead(Address & 3);
++		uint8 value = S9xAPUReadPort(Address & 3);
++		Zelda3TraceFinalizeApuPortRead(value);
++		return value;
++	}
+ 	else
+ 	if (Address <= 0x2183)
+     {
+@@ -1067,6 +1079,7 @@ uint8 S9xGetPPU (uint16 Address)
  
  			case 0x2137: // SLHV
  				S9xLatchCounters(0);
@@ -475,7 +491,7 @@ index 4611540..7458d84 100644
  				return (PPU.OpenBus1);
  
  			case 0x2138: // OAMDATAREAD
-@@ -1157,6 +1164,7 @@ uint8 S9xGetPPU (uint16 Address)
+@@ -1157,6 +1170,7 @@ uint8 S9xGetPPU (uint16 Address)
  					byte = (PPU.OpenBus2 & 0xfe) | ((PPU.HBeamPosLatched >> 8) & 0x01);
  				else
  					byte = (uint8) PPU.HBeamPosLatched;
@@ -545,10 +561,10 @@ index 4025c69..e27bc42 100644
  	}
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 0000000..65b2caf
+index 0000000..4dc9956
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,602 @@
+@@ -0,0 +1,645 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -632,8 +648,8 @@ index 0000000..65b2caf
 +constexpr int dsp_write_field_count = 4;
 +int dsp_write_count = 0;
 +int dsp_writes[dsp_write_capacity][dsp_write_field_count] = {};
-+constexpr int apu_port_write_capacity = 32;
-+constexpr int apu_port_write_field_count = 6;
++constexpr int apu_port_write_capacity = 65536;
++constexpr int apu_port_write_field_count = 21;
 +int apu_port_write_count = 0;
 +int apu_port_writes[apu_port_write_capacity][apu_port_write_field_count] = {};
 +constexpr int smp_instruction_capacity = 8192;
@@ -1009,6 +1025,49 @@ index 0000000..65b2caf
 +	write[3] = CPU.V_Counter;
 +	write[4] = CPU.Cycles;
 +	write[5] = Registers.PBPC & 0xffffff;
++	write[6] = dsp_sample_count * 32 +
++		SNES::dsp.spc_dsp.zelda3_debug_value(7) + SNES::dsp.clock;
++	write[7] = -1;
++	write[8] = SNES::smp.clock;
++	write[9] = -1;
++	write[10] = SNES::dsp.clock;
++	write[11] = -1;
++	write[12] = SNES::dsp.spc_dsp.zelda3_debug_value(7);
++	write[13] = -1;
++	write[14] = SNES::smp.regs.pc;
++	write[15] = -1;
++	write[16] = SNES::smp.opcode_number;
++	write[17] = -1;
++	write[18] = SNES::smp.opcode_cycle;
++	write[19] = -1;
++	write[20] = 0;
++}
++
++void Zelda3TraceFinalizeApuPortWrite()
++{
++	if (apu_port_write_count == 0)
++		return;
++	int *write = apu_port_writes[apu_port_write_count - 1];
++	write[7] = dsp_sample_count * 32 +
++		SNES::dsp.spc_dsp.zelda3_debug_value(7) + SNES::dsp.clock;
++	write[9] = SNES::smp.clock;
++	write[11] = SNES::dsp.clock;
++	write[13] = SNES::dsp.spc_dsp.zelda3_debug_value(7);
++	write[15] = SNES::smp.regs.pc;
++	write[17] = SNES::smp.opcode_number;
++	write[19] = SNES::smp.opcode_cycle;
++}
++
++void Zelda3TraceCaptureApuPortRead(int port)
++{
++	Zelda3TraceCaptureApuPortWrite(port, -1);
++	apu_port_writes[apu_port_write_count - 1][20] = 1;
++}
++
++void Zelda3TraceFinalizeApuPortRead(int value)
++{
++	Zelda3TraceFinalizeApuPortWrite();
++	apu_port_writes[apu_port_write_count - 1][1] = value;
 +}
 +
 +int Zelda3TraceApuPortWriteCount()
@@ -1153,10 +1212,10 @@ index 0000000..65b2caf
 +}
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 new file mode 100644
-index 0000000..0937134
+index 0000000..d64b1b5
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,58 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -1196,6 +1255,9 @@ index 0000000..0937134
 +int Zelda3TraceDspWriteCount();
 +int Zelda3TraceDspWriteValue(int write, int field);
 +void Zelda3TraceCaptureApuPortWrite(int port, int value);
++void Zelda3TraceFinalizeApuPortWrite();
++void Zelda3TraceCaptureApuPortRead(int port);
++void Zelda3TraceFinalizeApuPortRead(int value);
 +int Zelda3TraceApuPortWriteCount();
 +int Zelda3TraceApuPortWriteValue(int write, int field);
 +void Zelda3TraceCaptureSmpInstruction(int pc, int opcode, int a, int x, int y, int sp,

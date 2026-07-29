@@ -359,41 +359,29 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn LoadOWMusicIfNeeded(&mut self) {
-        if self
-            .game_state
-            .dungeon
-            .room_runtime
-            .dungeon_music_type_flag()
-            == 0
-        {
-            return;
+    pub(super) fn LoadOWMusicIfNeeded(&mut self) -> bool {
+        if !self.resident_song_bank_is_dungeon() {
+            return false;
         }
-        self.dungeon_room_runtime_mut()
-            .clear_dungeon_music_type_flag();
+        self.select_overworld_song_bank();
         self.load_overworld_songs();
+        true
     }
 
-    pub(super) fn Dungeon_LoadSongBankIfNeeded(&mut self) {
+    pub(super) fn Dungeon_LoadSongBankIfNeeded(&mut self) -> bool {
         let queued = self.game_state.system_signals.queued_music_control();
         if queued == 0xff || queued == 0xf2 {
-            return;
+            return false;
         }
         if queued == 3 || queued == 7 || queued == 14 {
-            self.LoadOWMusicIfNeeded();
+            self.LoadOWMusicIfNeeded()
         } else {
-            if self
-                .game_state
-                .dungeon
-                .room_runtime
-                .dungeon_music_type_flag()
-                != 0
-            {
-                return;
+            if self.resident_song_bank_is_dungeon() {
+                return false;
             }
-            self.dungeon_room_runtime_mut()
-                .set_dungeon_music_type_flag(1);
+            self.select_dungeon_song_bank();
             self.load_dungeon_songs();
+            true
         }
     }
 
@@ -10425,7 +10413,7 @@ impl ZeldaState {
         self.hud_refill_logic();
         self.module_pre_dungeon_set_ambient_sfx();
         self.set_submodule(7);
-        self.Dungeon_LoadSongBankIfNeeded();
+        let _ = self.Dungeon_LoadSongBankIfNeeded();
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State10(&mut self) {
@@ -12170,14 +12158,17 @@ impl ZeldaState {
         self.set_saved_module_for_menu(7);
         self.set_main_module(7);
         self.set_submodule(15);
-        if defer_song_bank && self.begin_pre_dungeon_song_bank_load_work() {
+        let song_bank_transfer_started = self.Dungeon_LoadSongBankIfNeeded();
+        if defer_song_bank
+            && song_bank_transfer_started
+            && self.begin_pre_dungeon_song_bank_transfer_work()
+        {
             return;
         }
-        self.complete_module_pre_dungeon_after_song_bank_load();
+        self.complete_module_pre_dungeon_after_song_bank_transfer();
     }
 
-    pub(super) fn complete_module_pre_dungeon_after_song_bank_load(&mut self) {
-        self.Dungeon_LoadSongBankIfNeeded();
+    pub(super) fn complete_module_pre_dungeon_after_song_bank_transfer(&mut self) {
         self.module_pre_dungeon_set_ambient_sfx();
     }
 

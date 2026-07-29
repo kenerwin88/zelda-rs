@@ -29,7 +29,7 @@ use crate::game_state::constants::{
     DUNG_SAVEGAME_STATE_BITS, DUNG_TOGGLE_FLOOR_POS, DUNG_TOGGLE_PALACE_POS,
     DUNG_TRANSITION_LANDING_CLASS, DUNG_WANT_LIGHTS_OUT, DUNG_WANT_LIGHTS_OUT_COPY,
     DUNG_WHICH_KEY_X2_DUNGEON, DUNG_WIDTH_ROAD_ADDRESS, FLAG_SKIP_CALL_TAG_ROUTINES,
-    FLAG_WHICH_MUSIC_TYPE_DUNGEON, FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT,
+    FLOOR_1_FILLER_TILES, FLOOR_2_FILLER_TILES, GANON_TORCH_COUNT,
     HDR_DUNGEON_DARK_WITH_LANTERN, INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX,
     MESSAGING_BUF_DUNGEON, MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS,
     MOVING_WALL_DOT_POINTER, MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE,
@@ -1938,7 +1938,6 @@ impl DungeonMovableBlockState {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonRoomRuntimeState {
-    dungeon_music_type_flag: u8,
     room_tag_skip_count: u8,
     landing_class: u8,
     room_index_x3: u16,
@@ -1948,7 +1947,6 @@ pub(crate) struct DungeonRoomRuntimeState {
 impl DungeonRoomRuntimeState {
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
-            dungeon_music_type_flag: ram.get(FLAG_WHICH_MUSIC_TYPE_DUNGEON).copied().unwrap_or(0),
             room_tag_skip_count: ram.get(FLAG_SKIP_CALL_TAG_ROUTINES).copied().unwrap_or(0),
             landing_class: ram.get(DUNG_TRANSITION_LANDING_CLASS).copied().unwrap_or(0),
             room_index_x3: read_le_u16(ram, DUNG_INDEX_X3),
@@ -1957,15 +1955,10 @@ impl DungeonRoomRuntimeState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[FLAG_WHICH_MUSIC_TYPE_DUNGEON] = self.dungeon_music_type_flag;
         ram[FLAG_SKIP_CALL_TAG_ROUTINES] = self.room_tag_skip_count;
         ram[DUNG_TRANSITION_LANDING_CLASS] = self.landing_class;
         write_le_u16(ram, DUNG_INDEX_X3, self.room_index_x3);
         write_le_u16(ram, RESERVED_GFX_CONFIG_WORD, self.reserved_gfx_config_word);
-    }
-
-    pub(crate) fn dungeon_music_type_flag(&self) -> u8 {
-        self.dungeon_music_type_flag
     }
 
     pub(crate) fn landing_class(&self) -> u8 {
@@ -1980,14 +1973,6 @@ impl DungeonRoomRuntimeState {
 
     pub(crate) fn should_run_room_tags(&self) -> bool {
         self.room_tag_skip_count == 0
-    }
-
-    fn clear_dungeon_music_type_flag(&mut self) {
-        self.dungeon_music_type_flag = 0;
-    }
-
-    fn set_dungeon_music_type_flag(&mut self, value: u8) {
-        self.dungeon_music_type_flag = value;
     }
 
     fn set_room_index_x3(&mut self, value: u16) {
@@ -5424,16 +5409,6 @@ impl<'a> NativeDungeonRoomRuntimeBridgeMut<'a> {
             *self.state,
             DungeonRoomRuntimeState::load_from_ram(self.ram)
         );
-    }
-
-    pub(crate) fn clear_dungeon_music_type_flag(&mut self) {
-        self.state.clear_dungeon_music_type_flag();
-        self.sync();
-    }
-
-    pub(crate) fn set_dungeon_music_type_flag(&mut self, value: u8) {
-        self.state.set_dungeon_music_type_flag(value);
-        self.sync();
     }
 
     pub(crate) fn set_room_index_x3(&mut self, value: u16) {

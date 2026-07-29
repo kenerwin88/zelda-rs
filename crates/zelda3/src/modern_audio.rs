@@ -300,6 +300,19 @@ impl ModernAudioEngine {
         }
     }
 
+    /// Publish a completed SPC upload without replacing DSP-owned echo state.
+    ///
+    /// The song-bank stream changes instrument data in shared APU RAM while
+    /// the S-DSP continues advancing its echo cursor and FIR history. Those
+    /// live values belong to the renderer, so completing the host transfer
+    /// changes the BRR bank identity but must not re-seed the echo ring.
+    pub fn complete_sample_bank_upload(&mut self, bank_id: u8, generation: u32) {
+        // Validate eagerly so a corrupt upload cannot fail later in mixing.
+        let _ = crate::modern_sample_bank::bank_name(bank_id);
+        self.sample_bank_id = bank_id;
+        self.sample_bank_generation = generation;
+    }
+
     pub fn sample_bank_id(&self) -> u8 {
         self.sample_bank_id
     }
@@ -4438,6 +4451,44 @@ mod tests {
             assert_eq!(engine.voices[voice].dsp_envelope_state, 4);
             assert!(engine.voices[voice].active);
         }
+    }
+
+    #[test]
+    fn completed_sample_bank_upload_is_an_idempotent_publication() {
+        let mut engine = ModernAudioEngine::default();
+        engine.echo_left = vec![-2; 16];
+        engine.echo_right = vec![-4; 16];
+        engine.echo_ring_index = 7;
+        engine.echo_ram_initialized = true;
+        engine.fir_history_left = [-1; 8];
+        engine.fir_history_right = [-2; 8];
+        engine.echo_mix_left = 13;
+        engine.echo_mix_right = 14;
+
+        engine.complete_sample_bank_upload(1, 7);
+
+        assert_eq!(engine.sample_bank_id, 1);
+        assert_eq!(engine.sample_bank_generation, 7);
+        assert_eq!(engine.echo_left, vec![-2; 16]);
+        assert_eq!(engine.echo_right, vec![-4; 16]);
+        assert_eq!(engine.echo_ring_index, 7);
+        assert_eq!(engine.fir_history_left, [-1; 8]);
+        assert_eq!(engine.fir_history_right, [-2; 8]);
+
+        let already_published = AudioEventFrame::from_route_and_dsp_writes(
+            AudioRouteState {
+                sample_bank_id: 1,
+                sample_bank_generation: 7,
+                ..AudioRouteState::default()
+            },
+            &[],
+        );
+        engine.render_frame(&already_published, &mut [], 0, 2);
+
+        assert_eq!(engine.echo_mix_left, 13);
+        assert_eq!(engine.echo_mix_right, 14);
+        assert_eq!(engine.echo_ring_index, 7);
+        assert!(engine.echo_ram_initialized);
     }
 
     #[test]

@@ -1230,8 +1230,7 @@ impl ZeldaState {
             self.set_bg1_v_copy(0);
             self.set_bg2_v_copy(0);
             self.save_progress_mut().clear_dungeon_info();
-            self.messaging_state_mut()
-                .clear_flag_which_music_type_messaging();
+            self.select_overworld_song_bank();
             self.load_overworld_songs();
         }
     }

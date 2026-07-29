@@ -602,7 +602,6 @@ pub(crate) struct MessagingRuntimeState {
     pub(crate) text_wait_countdown2: u8,
     pub(crate) menu_animation_timer: u8,
     pub(crate) game_over_letter_cursor: u8,
-    pub(crate) flag_which_music_type_messaging: u8,
     pub(crate) dialogue_text_color: u8,
     pub(crate) dialogue_scroll_speed: u8,
     pub(crate) text_incremental_state: u8,
@@ -624,10 +623,6 @@ impl MessagingRuntimeState {
             text_wait_countdown2: ram.get(TEXT_WAIT_COUNTDOWN2).copied().unwrap_or(0),
             menu_animation_timer: ram.get(MENU_ANIMATION_TIMER).copied().unwrap_or(0),
             game_over_letter_cursor: ram.get(GAME_OVER_LETTER_CURSOR).copied().unwrap_or(0),
-            flag_which_music_type_messaging: ram
-                .get(FLAG_WHICH_MUSIC_TYPE_MESSAGING)
-                .copied()
-                .unwrap_or(0),
             dialogue_text_color: ram.get(DIALOGUE_TEXT_COLOR).copied().unwrap_or(0),
             dialogue_scroll_speed: ram.get(DIALOGUE_SCROLL_SPEED).copied().unwrap_or(0),
             text_incremental_state: ram.get(TEXT_INCREMENTAL_STATE).copied().unwrap_or(0),
@@ -656,7 +651,6 @@ impl MessagingRuntimeState {
         // set_menu_animation_timer instead, so it reaches RAM exactly when menu code changes
         // it (matching C) without the stale re-stamp.
         ram[GAME_OVER_LETTER_CURSOR] = self.game_over_letter_cursor;
-        ram[FLAG_WHICH_MUSIC_TYPE_MESSAGING] = self.flag_which_music_type_messaging;
         ram[DIALOGUE_TEXT_COLOR] = self.dialogue_text_color;
         ram[DIALOGUE_SCROLL_SPEED] = self.dialogue_scroll_speed;
         ram[TEXT_INCREMENTAL_STATE] = self.text_incremental_state;
@@ -692,10 +686,6 @@ impl MessagingRuntimeState {
 
     pub(crate) fn effect_index(&self) -> u8 {
         self.game_over_letter_cursor
-    }
-
-    pub(crate) fn flag_which_music_type_messaging(&self) -> u8 {
-        self.flag_which_music_type_messaging
     }
 
     pub(crate) fn dialogue_text_color(&self) -> u8 {
@@ -1630,11 +1620,6 @@ impl<'a> NativeMessagingRuntimeBridgeMut<'a> {
             .wrapping_sub(1);
         self.set_game_over_letter_cursor(next);
         next
-    }
-
-    pub(crate) fn clear_flag_which_music_type_messaging(&mut self) {
-        self.messaging.runtime.flag_which_music_type_messaging = 0;
-        self.sync();
     }
 
     pub(crate) fn xor_message_or_sprite_state_cache(&mut self, value: u8) {

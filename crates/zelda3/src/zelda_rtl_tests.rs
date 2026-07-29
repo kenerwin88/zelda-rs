@@ -1554,7 +1554,7 @@ fn zelda_run_frame_sanitizes_inputs_and_records_features() {
 
     assert!(!was_replay);
     assert_eq!(state.frame_ctr_dbg, 1);
-    assert_eq!(state.state_recorder.last_inputs, 1);
+    assert_eq!(state.state_recorder.last_inputs, 0x00a1);
     assert_eq!(state.ram[RAM_BUGS_FIXED], BUGFIX_LATEST);
     assert_eq!(
         state.debug_compatibility_ram_u32(ENHANCED_FEATURES0),
@@ -3461,7 +3461,7 @@ fn dungeon_falling_entrance_work_resumes_at_measured_cpu_boundaries() {
 }
 
 #[test]
-fn pre_dungeon_work_resumes_at_room_and_song_bank_boundaries() {
+fn pre_dungeon_work_resumes_at_room_and_song_bank_transfer_boundaries() {
     assert_eq!(PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES, 58);
     let stages = [
         (
@@ -3469,8 +3469,8 @@ fn pre_dungeon_work_resumes_at_room_and_song_bank_boundaries() {
             PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES,
         ),
         (
-            RomWorkContinuation::FinishPreDungeonSongBankLoad,
-            PRE_DUNGEON_SONG_BANK_LOAD_NMI_SLICES,
+            RomWorkContinuation::FinishPreDungeonSongBankTransfer,
+            PRE_DUNGEON_SONG_BANK_TRANSFER_NMI_SLICES,
         ),
     ];
 
@@ -4178,6 +4178,7 @@ fn file_select_main_publishes_display_memory_at_the_following_nmi() {
     state.ppu.vram[0] = 0x1111;
     state.ppu.oam[0] = 0x2222;
     state.ppu.cgram[0] = 0x3333;
+    state.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
     state.capture_display_snapshot();
     state.ppu.vram[0] = 0xaaaa;
     state.ppu.oam[0] = 0xbbbb;
@@ -4198,8 +4199,10 @@ fn file_select_main_publishes_display_memory_at_the_following_nmi() {
 }
 
 #[test]
-fn dungeon_landing_wipe_publishes_display_memory_at_the_following_nmi() {
-    assert!(rom_display_memory_publication_is_deferred(7, 15, false));
+fn dungeon_landing_wipe_uses_typed_snapshot_generation_without_menu_retention() {
+    // Pre-dungeon staging now advances through its typed snapshot generation;
+    // it does not use the menu-stripe memory-retention rule.
+    assert!(!rom_display_memory_publication_is_deferred(7, 15, false));
     assert!(!rom_display_memory_publication_is_deferred(7, 14, false));
     assert_eq!(
         rom_display_snapshot_publication(7, 15),
@@ -4222,21 +4225,21 @@ fn dungeon_landing_wipe_publishes_display_memory_at_the_following_nmi() {
     state.ppu.vram[0] = 0x2222;
     assert_eq!(
         state.with_display_snapshot(|display| display.ppu.vram[0]),
-        0x1111
+        0x2222
     );
 
     state.capture_display_snapshot();
     state.ppu.vram[0] = 0x3333;
     assert_eq!(
         state.with_display_snapshot(|display| display.ppu.vram[0]),
-        0x1111
+        0x3333
     );
 
     state.capture_display_snapshot();
     state.ppu.vram[0] = 0x4444;
     assert_eq!(
         state.with_display_snapshot(|display| display.ppu.vram[0]),
-        0x2222
+        0x4444
     );
 }
 
