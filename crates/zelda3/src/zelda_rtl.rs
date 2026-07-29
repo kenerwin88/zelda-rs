@@ -14163,8 +14163,20 @@ fn decompress_asset(src: &[u8]) -> Vec<u8> {
 }
 
 #[cfg(test)]
-#[path = "zelda_rtl_tests.rs"]
-mod tests;
+#[path = "zelda_rtl_tests/dialogue.rs"]
+mod dialogue_tests;
+
+#[cfg(test)]
+#[path = "zelda_rtl_tests/display_publication.rs"]
+mod display_publication_tests;
+
+#[cfg(test)]
+#[path = "zelda_rtl_general_runtime_tests.rs"]
+mod general_runtime_tests;
+
+#[cfg(test)]
+#[path = "zelda_rtl_tests/nmi.rs"]
+mod nmi_tests;
 
 #[cfg(test)]
 #[path = "chr_source_tests.rs"]

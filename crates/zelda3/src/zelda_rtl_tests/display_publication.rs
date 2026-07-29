@@ -1,0 +1,197 @@
+use super::*;
+
+#[test]
+fn post_nmi_bg_scroll_writes_target_the_following_scanout() {
+    let mut state = ZeldaState::new();
+    let current_scanout = [
+        [0x0111, 0x0122],
+        [0x0233, 0x0244],
+        [0x0355, 0x0366],
+        [0x0077, 0x0088],
+    ];
+    for (layer, [h_scroll, v_scroll]) in state.ppu.bg_layer.iter_mut().zip(current_scanout) {
+        layer.h_scroll = h_scroll;
+        layer.v_scroll = v_scroll;
+    }
+    state.capture_display_snapshot();
+
+    let following_scanout = [
+        [0x1111, 0x1122],
+        [0x1233, 0x1244],
+        [0x1355, 0x1366],
+        [0x1077, 0x1088],
+    ];
+    state.publish_bg_scroll_for_following_scanout(BgScrollRegisterScanout {
+        offsets: following_scanout,
+    });
+
+    let displayed = state.with_display_snapshot(|display| {
+        display
+            .ppu
+            .bg_layer
+            .map(|layer| [layer.h_scroll, layer.v_scroll])
+    });
+    assert_eq!(displayed, current_scanout);
+
+    state.capture_display_snapshot();
+    let displayed = state.with_display_snapshot(|display| {
+        display
+            .ppu
+            .bg_layer
+            .map(|layer| [layer.h_scroll, layer.v_scroll])
+    });
+    assert_eq!(displayed, following_scanout);
+}
+
+#[test]
+fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
+    let mut state = ZeldaState::new();
+    let held_oam = vec![0x1234; state.ppu.oam.len()];
+    let held_obj_vram = vec![0x5678; 0x400];
+    state.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+    state.next_display_bg_scroll_generation = DisplayBgScrollGeneration::ComposeLiveAfterNmi;
+    state.next_display_obj_scanout_generation = Some(ObjScanoutGenerations::coherent(
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    ));
+    state.active_display_obj_generation = DisplayObjGeneration::RetainCapturedMemory {
+        oam: held_oam.clone(),
+        vram: held_obj_vram.clone(),
+    };
+
+    state.capture_display_snapshot();
+
+    let snapshot = state.display_snapshot.as_ref().expect("display snapshot");
+    assert_eq!(
+        snapshot.vram_generation,
+        DisplayVramGeneration::RetainCapturedBeforeNmi,
+    );
+    assert_eq!(
+        snapshot.bg_scroll_generation,
+        DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+    );
+    assert_eq!(
+        snapshot.oam_scanout_source,
+        OamScanoutSource::RetainCapturedBeforeNmi,
+    );
+    assert_eq!(
+        snapshot.link_obj_scanout_generation,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    );
+    assert_eq!(
+        snapshot.obj_generation,
+        DisplayObjGeneration::RetainCapturedMemory {
+            oam: held_oam.clone(),
+            vram: held_obj_vram.clone(),
+        },
+    );
+    assert_eq!(
+        state.next_display_vram_generation,
+        DisplayVramGeneration::ComposeLiveAfterNmi,
+    );
+    assert_eq!(
+        state.next_display_bg_scroll_generation,
+        DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
+    );
+    assert_eq!(state.next_display_obj_scanout_generation, None);
+    assert_eq!(
+        state.active_display_obj_generation,
+        DisplayObjGeneration::RetainCapturedMemory {
+            oam: held_oam.clone(),
+            vram: held_obj_vram.clone(),
+        },
+    );
+
+    state.capture_display_snapshot();
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .expect("second display snapshot")
+            .obj_generation,
+        DisplayObjGeneration::RetainCapturedMemory {
+            oam: held_oam,
+            vram: held_obj_vram,
+        },
+    );
+}
+
+#[test]
+fn presented_vram_generation_combines_snapshot_and_domain_retention_once() {
+    assert_eq!(
+        DisplayVramGeneration::ComposeLiveAfterNmi.resolve_for_scanout(false),
+        DisplayVramGeneration::ComposeLiveAfterNmi,
+    );
+    assert_eq!(
+        DisplayVramGeneration::ComposeLiveAfterNmi.resolve_for_scanout(true),
+        DisplayVramGeneration::RetainCapturedBeforeNmi,
+    );
+    assert_eq!(
+        DisplayVramGeneration::RetainCapturedBeforeNmi.resolve_for_scanout(false),
+        DisplayVramGeneration::RetainCapturedBeforeNmi,
+    );
+}
+
+#[test]
+fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
+    assert_eq!(
+        PreMainNmiResume::OverworldAuxGraphicsReturn.scanout_generations(),
+        PreMainNmiScanoutGenerations {
+            vram: DisplayVramGeneration::ComposeLiveAfterNmi,
+            animated_bg: None,
+            bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+            obj: None,
+        },
+    );
+    for (return_phase, bg_scroll) in [
+        (
+            NmiPhase::BeforeNmi,
+            DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+        ),
+        (
+            NmiPhase::AfterNmi,
+            DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
+        ),
+    ] {
+        assert_eq!(
+            PreMainNmiResume::OverworldSpriteReloadReturn { return_phase }
+                .scanout_generations(),
+            PreMainNmiScanoutGenerations {
+                vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
+                animated_bg: None,
+                bg_scroll,
+                obj: None,
+            },
+        );
+    }
+    assert_eq!(
+        PreMainNmiResume::DungeonSupertileQuadrantUploads.scanout_generations(),
+        PreMainNmiScanoutGenerations {
+            vram: DisplayVramGeneration::ComposeLiveAfterNmi,
+            animated_bg: Some(AnimatedBgScanoutGeneration::LiveAfterNmi),
+            bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+            obj: Some(ObjScanoutGenerations {
+                oam: GraphicsDmaGeneration::LiveAfterMain,
+                link_obj: GraphicsDmaGeneration::LiveAfterMain,
+            }),
+        },
+    );
+    let dungeon_phase = PreMainNmiResume::DungeonSupertileQuadrantUploads;
+    for subsubmodule in 5..=15 {
+        assert!(
+            dungeon_phase.continues_after_main(crate::game_state::FrameState {
+                main_module: 7,
+                submodule: 2,
+                subsubmodule,
+                ..Default::default()
+            })
+        );
+    }
+    assert!(
+        !dungeon_phase.continues_after_main(crate::game_state::FrameState {
+            main_module: 7,
+            submodule: 0,
+            subsubmodule: 0,
+            ..Default::default()
+        })
+    );
+}
