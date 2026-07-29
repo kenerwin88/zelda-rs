@@ -4491,37 +4491,36 @@ fn full_tilemap_upload_publishes_vram_at_the_following_nmi() {
 }
 
 #[test]
-fn world_map_force_blank_fallback_preserves_the_scanned_prefix() {
+fn explicit_force_blank_event_owns_the_active_display_suffix() {
     assert_eq!(
-        rom_world_map_force_blank_fallback_scanline(0x0e, 7, 1, 0x80, false, true),
-        Some(48)
-    );
-    assert_eq!(
-        rom_world_map_force_blank_fallback_scanline(0x0e, 7, 0, 0x01, false, false),
-        None
-    );
-    assert_eq!(
-        rom_world_map_force_blank_fallback_scanline(0x0e, 7, 2, 0x00, true, false),
-        None
-    );
-}
-
-#[test]
-fn explicit_force_blank_event_outranks_the_world_map_fallback() {
-    assert_eq!(
-        resolve_active_display_blanking_scanout(false, Some(30), true, Some(48)),
+        resolve_active_display_blanking_scanout(false, Some(30), true),
         ActiveDisplayBlankingScanout {
             suffix_start_scanline: Some(30),
             retain_prior_surface: true,
         }
     );
     assert_eq!(
-        resolve_active_display_blanking_scanout(true, None, false, Some(48)),
+        resolve_active_display_blanking_scanout(true, None, false),
         ActiveDisplayBlankingScanout {
-            suffix_start_scanline: Some(48),
-            retain_prior_surface: false,
+            suffix_start_scanline: None,
+            retain_prior_surface: true,
         }
     );
+}
+
+#[test]
+fn world_map_fade_out_records_its_measured_active_display_boundary() {
+    let mut state = ZeldaState::new();
+    state.set_screen_brightness(1);
+    state.set_overworld_map_state(0);
+
+    state.WorldMap_FadeOut();
+
+    assert_eq!(state.game_state.display.screen_brightness, 0x80);
+    assert_eq!(state.overworld_map_state(), 1);
+    assert!(state.ppu.forced_blank);
+    assert_eq!(state.active_display_force_blank_event, Some(43));
+    assert_eq!(state.ppu.forced_blank_from_scanline, None);
 }
 
 #[test]

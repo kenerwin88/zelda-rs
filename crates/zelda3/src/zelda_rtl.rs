@@ -194,21 +194,13 @@ const fn resolve_active_display_blanking_scanout(
     captured_retain_prior_surface: bool,
     live_suffix_start_scanline: Option<u8>,
     live_retain_prior_surface: bool,
-    inferred_suffix_start_scanline: Option<u8>,
 ) -> ActiveDisplayBlankingScanout {
-    // An explicit raster event recorded while the simulation ran is the
-    // authoritative boundary. Only infer a boundary when the coarse native
-    // execution path could not record one.
-    match (live_suffix_start_scanline, inferred_suffix_start_scanline) {
-        (Some(line), _) => ActiveDisplayBlankingScanout {
+    match live_suffix_start_scanline {
+        Some(line) => ActiveDisplayBlankingScanout {
             suffix_start_scanline: Some(line),
             retain_prior_surface: captured_retain_prior_surface || live_retain_prior_surface,
         },
-        (None, Some(line)) => ActiveDisplayBlankingScanout {
-            suffix_start_scanline: Some(line),
-            retain_prior_surface: false,
-        },
-        (None, None) => ActiveDisplayBlankingScanout {
+        None => ActiveDisplayBlankingScanout {
             suffix_start_scanline: None,
             retain_prior_surface: captured_retain_prior_surface || live_retain_prior_surface,
         },
@@ -352,30 +344,6 @@ const fn rom_full_tilemap_scanout_retains_uploaded_region(
     // new tilemap visible from scanline one while only the first line retains
     // forced blank.
     pending_full_tilemap_upload && forced_blank_prefix_scanlines == 0
-}
-
-const fn rom_world_map_force_blank_fallback_scanline(
-    main_module: u8,
-    submodule: u8,
-    map_state: u8,
-    inidisp_copy: u8,
-    snapshot_forced_blank: bool,
-    live_forced_blank: bool,
-) -> Option<u8> {
-    // WorldMap_FadeOut reaches zero after the hardware NMI and writes $2100=$80
-    // during active display. When the coarse native call does not carry an
-    // explicit raster event, instrumented Snes9x records V=49/CurrentLine=48.
-    if main_module == 0x0e
-        && submodule == 7
-        && map_state == 1
-        && inidisp_copy == 0x80
-        && !snapshot_forced_blank
-        && live_forced_blank
-    {
-        Some(48)
-    } else {
-        None
-    }
 }
 
 const fn rom_display_memory_publication_is_deferred(
@@ -3649,6 +3617,8 @@ pub struct ZeldaState {
     nmi_forced_blank_from_scanline_pending: Option<u8>,
     #[serde(default)]
     nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking,
+    #[serde(skip)]
+    active_display_force_blank_event: Option<u8>,
     spotlight_hdma_reset_prefix: Option<[u16; DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES]>,
     #[serde(skip)]
     nmi_poly_upload_deferred: u8,
@@ -8685,6 +8655,7 @@ impl ZeldaState {
             nmi_forced_blank_scanlines_pending: 0,
             nmi_forced_blank_from_scanline_pending: None,
             nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
+            active_display_force_blank_event: None,
             spotlight_hdma_reset_prefix: None,
             nmi_poly_upload_deferred: 0,
             nmi_poly_upload_started: false,
@@ -9927,21 +9898,15 @@ impl ZeldaState {
             );
         }
         let live_forced_blank = self.ppu.forced_blank;
-        let live_forced_blank_from_scanline = self.ppu.forced_blank_from_scanline;
+        let live_forced_blank_from_scanline = self
+            .active_display_force_blank_event
+            .or(self.ppu.forced_blank_from_scanline);
         let live_retain_active_display_history = self.ppu.retain_active_display_history;
         // This capture owns the game-authored INIDISP value for the active
         // frame. The live PPU has already run the following NMI boundary and
         // can therefore be one fade step ahead.
         let captured_screen_brightness =
             display.ram[crate::game_state::constants::INIDISP_COPY] & 0x0f;
-        let world_map_force_blank_fallback_scanline = rom_world_map_force_blank_fallback_scanline(
-            snapshot_frame.main_module,
-            snapshot_frame.submodule,
-            display.ram[crate::game_state::constants::OVERWORLD_MAP_STATE],
-            display.ram[crate::game_state::constants::INIDISP_COPY],
-            display.ppu.forced_blank,
-            live_forced_blank,
-        );
         if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && (1648..=1655).contains(&self.frame_ctr_dbg)
         {
@@ -10183,7 +10148,6 @@ impl ZeldaState {
                 self.ppu.retain_active_display_history,
                 live_forced_blank_from_scanline,
                 live_retain_active_display_history,
-                world_map_force_blank_fallback_scanline,
             );
             self.ppu.forced_blank_from_scanline = scanout.suffix_start_scanline;
             self.ppu.retain_active_display_history = scanout.retain_prior_surface;
@@ -10694,6 +10658,7 @@ impl ZeldaState {
     /// lockstep oracle starts validating them immediately.
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
         self.sync_native_game_state_from_ram();
+        self.active_display_force_blank_event = None;
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();

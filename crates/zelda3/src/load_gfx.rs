@@ -1661,6 +1661,11 @@ impl ZeldaState {
         self.enable_force_blank();
     }
 
+    pub(super) fn enable_force_blank_during_active_scanout(&mut self, scanline: u8) {
+        self.enable_force_blank();
+        self.active_display_force_blank_event = Some(scanline);
+    }
+
     pub(super) fn LoadItemGFXIntoWRAM4BPPBuffer(&mut self) {
         self.load_item_gfx_into_wram_4bpp_buffer();
     }
