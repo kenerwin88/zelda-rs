@@ -56,6 +56,11 @@ evaluation, resolved clip spans, a selected pixel's palette/color-math
 operands, and the per-scanline Mode 7 matrix and Window 1/2 edges captured at
 the completed-screen publication boundary.
 
+For a long oracle-only survey, pass both `--ignore-video` and `--ignore-audio`
+to the comparison command. This retains deterministic input, paired-resume,
+and trace handling while skipping Rust video/audio comparison and its artifact
+cost.
+
 Generate a strict Rust RNG replay script from a route trace with:
 
 ```sh

@@ -2576,11 +2576,11 @@ mod tests {
     }
 
     #[test]
-    fn libretro_comparison_scope_cannot_pass_without_work() {
-        assert!(validate_libretro_comparison_scope(0, 0, true, true).is_err());
-        assert!(validate_libretro_comparison_scope(10, 10, true, true).is_err());
-        assert!(validate_libretro_comparison_scope(10, 0, false, false).is_err());
-        assert!(validate_libretro_comparison_scope(10, 9, true, false).is_ok());
+    fn libretro_frame_window_requires_at_least_one_replayed_frame() {
+        assert!(validate_libretro_frame_window(0, 0).is_err());
+        assert!(validate_libretro_frame_window(10, 10).is_err());
+        assert!(validate_libretro_frame_window(10, 0).is_ok());
+        assert!(validate_libretro_frame_window(10, 9).is_ok());
     }
 
     #[test]

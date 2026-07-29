@@ -26,7 +26,7 @@ use zelda3::{game_output::DspWriteEvent, ZeldaState, RUN_MAIN};
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
 pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
-const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]";
+const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all] (pass both --ignore-video and --ignore-audio for trace-only replay)";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PairedResumeCapture {
@@ -1376,9 +1376,7 @@ pub(crate) fn run_compare_libretro_oracle(
         eprintln!("invalid audio comparison thresholds");
         process::exit(2);
     }
-    if let Err(error) =
-        validate_libretro_comparison_scope(frames, compare_from_frame, compare_video, compare_audio)
-    {
+    if let Err(error) = validate_libretro_frame_window(frames, compare_from_frame) {
         eprintln!("{error}");
         process::exit(2);
     }
@@ -2956,9 +2954,13 @@ pub(crate) fn run_compare_libretro_oracle(
         process::exit(1);
     }
 
-    println!(
-        "{oracle_name} oracle compare completed {frames} frame(s) with no enabled video/audio diff"
-    );
+    if compare_video || compare_audio {
+        println!(
+            "{oracle_name} oracle compare completed {frames} frame(s) with no enabled video/audio diff"
+        );
+    } else {
+        println!("{oracle_name} oracle trace replay completed {frames} frame(s)");
+    }
 }
 
 pub(crate) fn oracle_name_from_core_path(core_path: &str) -> String {
@@ -2969,11 +2971,9 @@ pub(crate) fn oracle_name_from_core_path(core_path: &str) -> String {
     stem.strip_suffix("_libretro").unwrap_or(stem).to_string()
 }
 
-pub(crate) fn validate_libretro_comparison_scope(
+pub(crate) fn validate_libretro_frame_window(
     frames: u32,
     compare_from_frame: u32,
-    compare_video: bool,
-    compare_audio: bool,
 ) -> Result<(), String> {
     if frames == 0 {
         return Err("libretro parity requires at least one frame".to_string());
@@ -2982,9 +2982,6 @@ pub(crate) fn validate_libretro_comparison_scope(
         return Err(format!(
             "--compare-from-frame {compare_from_frame} leaves no compared frames in a {frames}-frame route"
         ));
-    }
-    if !compare_video && !compare_audio {
-        return Err("libretro parity requires video, audio, or both comparison lanes".to_string());
     }
     Ok(())
 }
