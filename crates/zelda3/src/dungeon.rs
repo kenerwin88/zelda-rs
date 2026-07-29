@@ -12304,7 +12304,10 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module07-after-layer-effect");
         self.run_dungeon_submodule();
         self.replay_trace_ram_watch("module07-after-submodule");
-        if self.pending_rom_work.suspends_translated_call_stack() {
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
             return;
         }
         if self.rom_startup_timing() && self.dungeon_landing_wipe_return_slices_remaining != 0 {
@@ -12426,7 +12429,10 @@ impl ZeldaState {
         };
         self.active_dungeon_sprite_main_return = Some(sprite_return);
         self.sprite_main();
-        if self.pending_rom_work.suspends_translated_call_stack() {
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
             return;
         }
         let sprite_return = self

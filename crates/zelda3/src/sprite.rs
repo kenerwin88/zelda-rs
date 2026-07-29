@@ -1938,7 +1938,10 @@ impl ZeldaState {
                 self.replay_trace_ram_watch(&format!("sprite-before-execute-single slot={k}"));
             }
             self.sprite_execute_single(k);
-            if self.pending_rom_work.suspends_translated_call_stack() {
+            if self
+                .game_execution_scheduler
+                .work_suspends_translated_call_stack()
+            {
                 return;
             }
             if trace_sprite_slots {
@@ -1952,7 +1955,7 @@ impl ZeldaState {
         for k in (0..interrupted_slot).rev() {
             self.sprite_system_mut().set_cur_object_index(k as u8);
             self.sprite_execute_single(k);
-            debug_assert!(!self.pending_rom_work.is_pending());
+            debug_assert!(!self.game_execution_scheduler.work_is_pending());
         }
         self.complete_sprite_main_after_all_slots();
     }

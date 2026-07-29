@@ -26,8 +26,8 @@ fn attract_map_mode7_brightness_override_ends_with_fade_in() {
 
 #[test]
 fn attract_map_exit_retains_scanout_until_the_tilemap_clear_returns() {
-    let pending = PendingRomWork::schedule(
-        RomWorkContinuation::FinishAttractWorldMapExit,
+    let pending = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishAttractWorldMapExit,
         ATTRACT_WORLD_MAP_EXIT_NMI_SLICES,
     );
     assert_eq!(
@@ -3152,10 +3152,7 @@ fn dialogue_scroll_checkpoint_projection_preserves_stable_phases_and_normalizes_
     fn scrolling_state(completion_timing: DialogueScrollCompletionTiming) -> ZeldaState {
         let mut state = ZeldaState::new();
         state.ppu.vram[0x7c00] = 0x1234;
-        state.begin_dialogue_scroll(
-            DialogueTextGeneration::PublishedDisplay,
-            completion_timing,
-        );
+        state.begin_dialogue_scroll(DialogueTextGeneration::PublishedDisplay, completion_timing);
         state
     }
 
@@ -3169,12 +3166,15 @@ fn dialogue_scroll_checkpoint_projection_preserves_stable_phases_and_normalizes_
         }
     );
     assert_eq!(
-        copying.dialogue_scroll_frozen_scanout.as_ref().unwrap().vram[0],
+        copying
+            .dialogue_scroll_frozen_scanout
+            .as_ref()
+            .unwrap()
+            .vram[0],
         0x1234
     );
 
-    let mut return_only =
-        scrolling_state(DialogueScrollCompletionTiming::AfterReturnBoundary);
+    let mut return_only = scrolling_state(DialogueScrollCompletionTiming::AfterReturnBoundary);
     return_only.finish_dialogue_scroll_remaining_pixels();
     let return_only = round_trip(&return_only);
     assert_eq!(
@@ -3285,20 +3285,99 @@ fn attract_graphics_initializer_resumes_at_semantic_work_boundaries() {
 }
 
 #[test]
+fn game_execution_scheduler_transitions_between_typed_continuations() {
+    let mut scheduler = GameExecutionScheduler::default();
+    scheduler.schedule_work(GameWorkContinuation::FinishAttractThroneRoom, 2);
+    assert_eq!(
+        scheduler.current_work(),
+        Some(GameWorkContinuation::FinishAttractThroneRoom)
+    );
+    assert_eq!(
+        scheduler.advance_work_one_nmi_slice(),
+        Some(GameWorkStep::Waiting)
+    );
+    assert_eq!(
+        scheduler.advance_work_one_nmi_slice(),
+        Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishAttractThroneRoom
+        ))
+    );
+
+    scheduler.schedule_pre_main_nmi_resume(PreMainNmiResume::OverworldAuxGraphicsReturn);
+    assert!(!scheduler.is_idle());
+    assert_eq!(
+        scheduler.take_pre_main_nmi_resume(),
+        Some(PreMainNmiResume::OverworldAuxGraphicsReturn)
+    );
+
+    scheduler.schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+    assert!(scheduler.pre_main_caller_continuation_is(PreMainCallerContinuation::DialogueVwfReturn));
+    scheduler.finish_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+    assert_eq!(scheduler, GameExecutionScheduler::default());
+}
+
+#[test]
+fn game_execution_scheduler_preserves_non_work_continuations_when_advanced() {
+    let mut scheduler = GameExecutionScheduler::default();
+    scheduler.schedule_pre_main_nmi_resume(PreMainNmiResume::OverworldAuxGraphicsReturn);
+    assert_eq!(scheduler.advance_work_one_nmi_slice(), None);
+    assert_eq!(
+        scheduler.take_pre_main_nmi_resume(),
+        Some(PreMainNmiResume::OverworldAuxGraphicsReturn)
+    );
+
+    scheduler.schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+    assert_eq!(scheduler.advance_work_one_nmi_slice(), None);
+    assert!(scheduler.pre_main_caller_continuation_is(PreMainCallerContinuation::DialogueVwfReturn));
+    scheduler.finish_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+}
+
+#[test]
+fn paired_resume_requires_every_execution_continuation_to_be_idle() {
+    let mut state = ZeldaState::new();
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+
+    state
+        .game_execution_scheduler
+        .schedule_work(GameWorkContinuation::FinishAttractThroneRoom, 1);
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.game_execution_scheduler.reset();
+
+    state
+        .game_execution_scheduler
+        .schedule_pre_main_nmi_resume(PreMainNmiResume::OverworldAuxGraphicsReturn);
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.game_execution_scheduler.reset();
+
+    state
+        .game_execution_scheduler
+        .schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+}
+
+#[test]
+#[should_panic(expected = "cannot schedule")]
+fn game_execution_scheduler_rejects_parallel_continuation_kinds() {
+    let mut scheduler = GameExecutionScheduler::default();
+    scheduler.schedule_work(GameWorkContinuation::FinishAttractThroneRoom, 1);
+    scheduler.schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+}
+
+#[test]
 fn throne_room_rom_work_resumes_only_after_every_intervening_nmi_slice() {
-    let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishAttractThroneRoom,
+    let mut work = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishAttractThroneRoom,
         ATTRACT_THRONE_ROOM_NMI_SLICES,
     );
 
     for _ in 0..ATTRACT_THRONE_ROOM_NMI_SLICES - 1 {
-        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishAttractThroneRoom)
+        GameWorkStep::Complete(GameWorkContinuation::FinishAttractThroneRoom)
     );
-    assert!(!work.is_pending());
+    assert!(work.is_complete());
 }
 
 #[test]
@@ -3309,14 +3388,14 @@ fn dungeon_falling_entrance_work_resumes_at_measured_cpu_boundaries() {
     ];
 
     for stage in stages {
-        let continuation = RomWorkContinuation::FinishDungeonFallingEntrance { work: stage };
-        let mut work = PendingRomWork::schedule(continuation, stage.nmi_slices());
+        let continuation = GameWorkContinuation::FinishDungeonFallingEntrance { work: stage };
+        let mut work = ScheduledGameWork::schedule(continuation, stage.nmi_slices());
         for _ in 0..stage.nmi_slices() - 1 {
-            assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+            assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
         }
         assert_eq!(
             work.advance_one_nmi_slice(),
-            RomWorkSlice::Complete(continuation)
+            GameWorkStep::Complete(continuation)
         );
     }
 }
@@ -3325,8 +3404,8 @@ fn dungeon_falling_entrance_work_resumes_at_measured_cpu_boundaries() {
 fn dungeon_supertile_transition_resumes_at_rom_call_boundaries() {
     let mut state = ZeldaState::new();
     assert!(state.paired_resume_cpu_boundary_is_quiescent());
-    state.pending_rom_work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishDungeonSupertileTransition {
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishDungeonSupertileTransition {
             work: DungeonSupertileTransitionWork::RoomLoad,
         },
         DUNGEON_SUPERTILE_ROOM_LOAD_NMI_SLICES,
@@ -3358,17 +3437,17 @@ fn dungeon_supertile_transition_resumes_at_rom_call_boundaries() {
 
     for (stage, nmi_slices) in stages {
         assert_eq!(stage.nmi_slices(), nmi_slices);
-        let continuation = RomWorkContinuation::FinishDungeonSupertileTransition { work: stage };
-        let mut work = PendingRomWork::schedule(continuation, stage.nmi_slices());
+        let continuation = GameWorkContinuation::FinishDungeonSupertileTransition { work: stage };
+        let mut work = ScheduledGameWork::schedule(continuation, stage.nmi_slices());
         assert!(work.suspends_translated_call_stack());
         for _ in 0..stage.nmi_slices() - 1 {
-            assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+            assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
         }
         assert_eq!(
             work.advance_one_nmi_slice(),
-            RomWorkSlice::Complete(continuation)
+            GameWorkStep::Complete(continuation)
         );
-        assert!(!work.is_pending());
+        assert!(work.is_complete());
     }
     assert!(!DungeonSupertileTransitionWork::RoomLoadCallerResume
         .next_module_resumes_after_pre_main_nmi());
@@ -3381,25 +3460,25 @@ fn pre_dungeon_work_resumes_at_room_and_song_bank_transfer_boundaries() {
     assert_eq!(PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES, 58);
     let stages = [
         (
-            RomWorkContinuation::FinishPreDungeonEntranceLoad,
+            GameWorkContinuation::FinishPreDungeonEntranceLoad,
             PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES,
         ),
         (
-            RomWorkContinuation::FinishPreDungeonSongBankTransfer,
+            GameWorkContinuation::FinishPreDungeonSongBankTransfer,
             PRE_DUNGEON_SONG_BANK_TRANSFER_NMI_SLICES,
         ),
     ];
 
     for (continuation, nmi_slices) in stages {
-        let mut work = PendingRomWork::schedule(continuation, nmi_slices);
+        let mut work = ScheduledGameWork::schedule(continuation, nmi_slices);
         for _ in 0..nmi_slices - 1 {
-            assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+            assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
         }
         assert_eq!(
             work.advance_one_nmi_slice(),
-            RomWorkSlice::Complete(continuation)
+            GameWorkStep::Complete(continuation)
         );
-        assert!(!work.is_pending());
+        assert!(work.is_complete());
     }
 }
 
@@ -3411,49 +3490,49 @@ fn throne_room_work_budget_follows_the_retained_sprite_tileset() {
 
 #[test]
 fn prison_room_rom_work_resumes_after_its_room_build_nmis() {
-    let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishAttractZeldaPrison,
+    let mut work = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishAttractZeldaPrison,
         ATTRACT_ZELDA_PRISON_NMI_SLICES,
     );
 
     for _ in 0..ATTRACT_ZELDA_PRISON_NMI_SLICES - 1 {
-        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishAttractZeldaPrison)
+        GameWorkStep::Complete(GameWorkContinuation::FinishAttractZeldaPrison)
     );
 }
 
 #[test]
 fn maiden_warp_room_rom_work_resumes_after_its_room_build_nmis() {
-    let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishAttractMaidenWarp,
+    let mut work = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishAttractMaidenWarp,
         ATTRACT_MAIDEN_WARP_NMI_SLICES,
     );
 
     for _ in 0..ATTRACT_MAIDEN_WARP_NMI_SLICES - 1 {
-        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishAttractMaidenWarp)
+        GameWorkStep::Complete(GameWorkContinuation::FinishAttractMaidenWarp)
     );
 }
 
 #[test]
 fn end_of_story_rom_work_resumes_after_memory_and_palette_nmis() {
-    let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishAttractEndOfStory,
+    let mut work = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishAttractEndOfStory,
         ATTRACT_END_OF_STORY_NMI_SLICES,
     );
 
     for _ in 0..ATTRACT_END_OF_STORY_NMI_SLICES - 1 {
-        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishAttractEndOfStory)
+        GameWorkStep::Complete(GameWorkContinuation::FinishAttractEndOfStory)
     );
 }
 
@@ -3514,47 +3593,47 @@ fn world_map_fade_completion_runs_the_first_mode7_tick_immediately() {
 
 #[test]
 fn world_map_rom_work_completes_after_the_five_snes9x_observed_nmi_slices() {
-    let mut work = PendingRomWork::schedule(RomWorkContinuation::FinishAttractWorldMap, 5);
+    let mut work = ScheduledGameWork::schedule(GameWorkContinuation::FinishAttractWorldMap, 5);
 
     for _ in 0..4 {
-        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishAttractWorldMap)
+        GameWorkStep::Complete(GameWorkContinuation::FinishAttractWorldMap)
     );
 }
 
 #[test]
 fn player_world_map_load_completes_after_the_five_post_entry_nmi_slices() {
-    let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishWorldMapLightLoad,
+    let mut work = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishWorldMapLightLoad,
         WORLD_MAP_LIGHT_LOAD_NMI_SLICES,
     );
 
     for _ in 0..WORLD_MAP_LIGHT_LOAD_NMI_SLICES - 1 {
-        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishWorldMapLightLoad)
+        GameWorkStep::Complete(GameWorkContinuation::FinishWorldMapLightLoad)
     );
 }
 
 #[test]
 fn world_map_exit_tilesets_resume_after_the_measured_nmi_slices() {
     assert_eq!(WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES, 33);
-    let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishWorldMapExitTilesets,
+    let mut work = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishWorldMapExitTilesets,
         WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES,
     );
 
     for _ in 0..WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES - 1 {
-        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishWorldMapExitTilesets)
+        GameWorkStep::Complete(GameWorkContinuation::FinishWorldMapExitTilesets)
     );
 }
 
@@ -3564,21 +3643,21 @@ fn world_map_exit_overlay_conversions_resume_at_measured_boundaries() {
     assert_eq!(WORLD_MAP_AMBIENT_MAP8_NMI_SLICES, 4);
     for (continuation, nmi_slices) in [
         (
-            RomWorkContinuation::FinishWorldMapOverlayReload,
+            GameWorkContinuation::FinishWorldMapOverlayReload,
             WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES,
         ),
         (
-            RomWorkContinuation::FinishWorldMapAmbientMap8,
+            GameWorkContinuation::FinishWorldMapAmbientMap8,
             WORLD_MAP_AMBIENT_MAP8_NMI_SLICES,
         ),
     ] {
-        let mut work = PendingRomWork::schedule(continuation, nmi_slices);
+        let mut work = ScheduledGameWork::schedule(continuation, nmi_slices);
         for _ in 0..nmi_slices - 1 {
-            assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+            assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
         }
         assert_eq!(
             work.advance_one_nmi_slice(),
-            RomWorkSlice::Complete(continuation)
+            GameWorkStep::Complete(continuation)
         );
     }
 }
@@ -3603,14 +3682,14 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     );
     assert_eq!(rom_item_receipt_graphics_nmi_slices(0x23), 0);
 
-    let continuation = RomWorkContinuation::FinishItemReceiptGraphics {
+    let continuation = GameWorkContinuation::FinishItemReceiptGraphics {
         continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted,
     };
     let mut work =
-        PendingRomWork::schedule(continuation, ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES);
+        ScheduledGameWork::schedule(continuation, ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES);
     assert!(!work.suspends_translated_call_stack());
-    let suspended = PendingRomWork::schedule(
-        RomWorkContinuation::FinishItemReceiptGraphics {
+    let suspended = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishItemReceiptGraphics {
             continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage {
                 receipt: ItemReceiptReturn {
                     ancilla_slot: 4,
@@ -3630,11 +3709,11 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     );
     assert!(suspended.suspends_translated_call_stack());
     for _ in 0..ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES - 1 {
-        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(continuation)
+        GameWorkStep::Complete(continuation)
     );
 }
 
@@ -3643,15 +3722,11 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e));
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x77));
     assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(0x70));
-    assert!(!rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
-        0x46
-    ));
+    assert!(!rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(0x46));
     assert!(rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
         0x3f
     ));
-    assert!(!rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
-        0x38
-    ));
+    assert!(!rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(0x38));
     assert_eq!(
         rom_display_snapshot_publication(0x0f, 0),
         DisplaySnapshotPublication::AdvanceStaged
@@ -3703,9 +3778,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
             .projects_following_table_tail_on_completion()
     );
-    assert!(
-        !SpotlightIteration::opening(false).publishes_completed_hdma_table_to_active_scanout()
-    );
+    assert!(!SpotlightIteration::opening(false).publishes_completed_hdma_table_to_active_scanout());
     assert!(!rom_display_memory_publication_is_deferred(7, 15, 0, false));
     assert_eq!(
         SpotlightIteration::opening(false).completion_publication(),
@@ -3746,15 +3819,15 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert_eq!(DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES, 1);
 
     let closing_iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
-    let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishSpotlightIteration {
+    let mut work = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishSpotlightIteration {
             iteration: closing_iteration,
         },
         SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES,
     );
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration {
+        GameWorkStep::Complete(GameWorkContinuation::FinishSpotlightIteration {
             iteration: closing_iteration,
         })
     );
@@ -3865,10 +3938,7 @@ fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
 fn dialogue_message_finish_retains_only_the_entry_oam_scanout() {
     let dialogue = rom_graphics_dma_plan(14, 2);
 
-    assert_eq!(
-        dialogue.oam_operands,
-        GraphicsDmaGeneration::LiveAfterMain
-    );
+    assert_eq!(dialogue.oam_operands, GraphicsDmaGeneration::LiveAfterMain);
     assert_eq!(
         oam_operands_for_nmi(
             dialogue.oam_operands,
@@ -4040,42 +4110,42 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
         map32_definition_changes: 796,
     };
     let screen_build_timing = overworld_map_and_sprite_graphics_timing(screen_build_workload);
-    let properties = RomWorkContinuation::FinishPreOverworldProperties {
+    let properties = GameWorkContinuation::FinishPreOverworldProperties {
         overworld_screen: 0x00,
         animated_tiles: 0x58,
     };
     let stages = [
         (properties, PRE_OVERWORLD_PROPERTIES_NMI_SLICES),
         (
-            RomWorkContinuation::FinishPreOverworldOverlays,
+            GameWorkContinuation::FinishPreOverworldOverlays,
             PRE_OVERWORLD_OVERLAYS_NMI_SLICES,
         ),
     ];
 
     for (continuation, nmi_slices) in stages {
-        let mut work = PendingRomWork::schedule(continuation, nmi_slices);
+        let mut work = ScheduledGameWork::schedule(continuation, nmi_slices);
         for _ in 0..nmi_slices - 1 {
-            assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+            assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
         }
         assert_eq!(
             work.advance_one_nmi_slice(),
-            RomWorkSlice::Complete(continuation)
+            GameWorkStep::Complete(continuation)
         );
     }
 
     let screen_build_nmi_slices = screen_build_timing.quadrant_load_nmi_slices
         + screen_build_timing.screen_map_and_sprite_gfx_tail_nmi_slices;
-    let continuation = RomWorkContinuation::FinishPreOverworldScreenBuild;
+    let continuation = GameWorkContinuation::FinishPreOverworldScreenBuild;
     let mut work =
-        PendingRomWork::schedule_before_trailing_nmi(continuation, screen_build_nmi_slices);
+        ScheduledGameWork::schedule_before_trailing_nmi(continuation, screen_build_nmi_slices);
     // Module08_02 starts before the entry frame's trailing NMI, so only the
     // subsequent 17 boundaries are consumed by future host calls.
     for _ in 1..screen_build_nmi_slices - 1 {
-        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(continuation)
+        GameWorkStep::Complete(continuation)
     );
 }
 
@@ -4175,16 +4245,19 @@ fn name_player_tilemap_finishes_after_the_intervening_nmi_slice() {
     state.module_name_player_1();
 
     assert_eq!(state.game_state.frame.submodule, 1);
-    assert!(state.pre_main_caller_continuation_is(
-        PreMainCallerContinuation::NamePlayerTilemapUpload
-    ));
+    assert!(
+        state.pre_main_caller_continuation_is(PreMainCallerContinuation::NamePlayerTilemapUpload)
+    );
     assert!(state.rom_load_partial_nmi_this_frame);
     assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
 
     state.run_frame_internal(0, crate::RUN_MAIN);
 
     assert_eq!(state.game_state.frame.submodule, 2);
-    assert!(state.pre_main_caller_continuation.is_none());
+    assert!(state
+        .game_execution_scheduler
+        .pre_main_caller_continuation()
+        .is_none());
     assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
     let terminator = state.game_state.display.vram_upload_buffer_base()
         + 4
@@ -4204,14 +4277,16 @@ fn file_select_checkerboard_finishes_through_the_pre_main_dispatcher() {
 
     state.module_erase_file_1();
 
-    assert!(state.pre_main_caller_continuation_is(
-        PreMainCallerContinuation::FileSelectCheckerboardUpload
-    ));
+    assert!(state
+        .pre_main_caller_continuation_is(PreMainCallerContinuation::FileSelectCheckerboardUpload));
     assert_eq!(state.game_state.frame.submodule, 1);
 
     state.run_frame_internal(0, crate::RUN_MAIN);
 
-    assert!(state.pre_main_caller_continuation.is_none());
+    assert!(state
+        .game_execution_scheduler
+        .pre_main_caller_continuation()
+        .is_none());
     assert_eq!(state.game_state.frame.submodule, 2);
     assert_eq!(state.game_state.display.bg_vram_load_mode, 0);
 }
@@ -4220,9 +4295,7 @@ fn file_select_checkerboard_finishes_through_the_pre_main_dispatcher() {
 #[should_panic(expected = "cannot schedule")]
 fn pre_main_scheduler_rejects_parallel_caller_suffixes() {
     let mut state = ZeldaState::new();
-    state.schedule_pre_main_caller_continuation(
-        PreMainCallerContinuation::DialogueVwfReturn,
-    );
+    state.schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
     state.schedule_pre_main_caller_continuation(
         PreMainCallerContinuation::FileSelectCheckerboardUpload,
     );
@@ -4491,19 +4564,19 @@ fn overworld_graphics_timing_uses_measured_work_receipts() {
         }
     );
 
-    let mut work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishOverworldMapQuadrants {
+    let mut work = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishOverworldMapQuadrants {
             screen_map_and_sprite_gfx_tail_nmi_slices: light_map_timing
                 .screen_map_and_sprite_gfx_tail_nmi_slices,
         },
         light_map_timing.quadrant_load_nmi_slices,
     );
     for _ in 1..light_map_timing.quadrant_load_nmi_slices {
-        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
     assert_eq!(
         work.advance_one_nmi_slice(),
-        RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldMapQuadrants {
+        GameWorkStep::Complete(GameWorkContinuation::FinishOverworldMapQuadrants {
             screen_map_and_sprite_gfx_tail_nmi_slices: 4,
         })
     );
@@ -4748,7 +4821,7 @@ fn dungeon_falling_entry_retains_the_pre_transition_obj_generation() {
 #[test]
 fn completed_rom_work_selects_scroll_generation_by_measured_nmi_side() {
     assert_eq!(
-        RomWorkContinuation::FinishOverworldAuxGraphics.completed_bg_scroll_generation(),
+        GameWorkContinuation::FinishOverworldAuxGraphics.completed_bg_scroll_generation(),
         Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
     );
     // Return phase selects publication independently from any host hold.
@@ -4764,7 +4837,7 @@ fn completed_rom_work_selects_scroll_generation_by_measured_nmi_side() {
             ),
         ] {
             assert_eq!(
-                RomWorkContinuation::FinishOverworldSpriteReloadTail {
+                GameWorkContinuation::FinishOverworldSpriteReloadTail {
                     post_return_hold_nmi_slices,
                     return_phase,
                     epilogue_phase: NmiPhase::BeforeNmi,
@@ -4775,12 +4848,11 @@ fn completed_rom_work_selects_scroll_generation_by_measured_nmi_side() {
         }
     }
     assert_eq!(
-        RomWorkContinuation::HoldOverworldSpriteReloadReturn
-            .completed_bg_scroll_generation(),
+        GameWorkContinuation::HoldOverworldSpriteReloadReturn.completed_bg_scroll_generation(),
         Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
     );
     assert_eq!(
-        RomWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail
+        GameWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail
             .completed_bg_scroll_generation(),
         None,
     );
@@ -4834,10 +4906,7 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
     );
     for submodule in [8, 0x10] {
         let plan = rom_graphics_dma_plan(7, submodule);
-        assert_eq!(
-            plan.oam_scanout,
-            OamScanoutSource::RetainCapturedBeforeNmi
-        );
+        assert_eq!(plan.oam_scanout, OamScanoutSource::RetainCapturedBeforeNmi);
         assert_eq!(plan.link_obj_scanout, GraphicsDmaGeneration::LiveAfterMain);
         assert_eq!(
             plan.link_obj_operands,
@@ -5126,8 +5195,8 @@ fn spotlight_hdma_can_publish_ahead_of_retained_obj_domains() {
 
     state.set_spotlight_hdma_table_dynamic_entry(0, 0xe612);
     state.ppu.oam[0] = 0xbbbb;
-    state.pending_rom_work = PendingRomWork::schedule(
-        RomWorkContinuation::FinishSpotlightIteration {
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishSpotlightIteration {
             iteration: SpotlightIteration::closing(
                 SpotlightIterationPhase::WholeTableAfterTablePublication,
             ),
@@ -5208,21 +5277,21 @@ fn subtile_palette_filter_schedules_only_measured_return_slices() {
     state.set_countdown(1);
     state.suspend_dungeon_subtile_palette_filter_if_return_crosses_nmi();
     assert_eq!(
-        state.pending_rom_work.continuation,
-        Some(RomWorkContinuation::FinishDungeonSubtilePaletteFilter)
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonSubtilePaletteFilter)
     );
 
-    state.pending_rom_work.finish();
+    state.game_execution_scheduler.finish_work();
     state.set_countdown(0);
     state.set_darkening_or_lightening_screen(2);
     state.suspend_dungeon_subtile_palette_filter_if_return_crosses_nmi();
-    assert!(!state.pending_rom_work.is_pending());
+    assert!(!state.game_execution_scheduler.work_is_pending());
 
     state.set_darkening_or_lightening_screen(0);
     state.suspend_dungeon_subtile_palette_filter_if_return_crosses_nmi();
     assert_eq!(
-        state.pending_rom_work.continuation,
-        Some(RomWorkContinuation::FinishDungeonSubtilePaletteFilter)
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonSubtilePaletteFilter)
     );
 }
 

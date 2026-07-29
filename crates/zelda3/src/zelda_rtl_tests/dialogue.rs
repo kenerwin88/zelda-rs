@@ -160,9 +160,7 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     state.set_main_module(14);
     state.set_submodule(2);
     state.set_animated_tile_data_source_address(0xa680);
-    state.schedule_pre_main_caller_continuation(
-        PreMainCallerContinuation::DialogueVwfReturn,
-    );
+    state.schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
     state.dialogue_fast_forward_hold_active = true;
     state.audio_nmi_processed_before_main = true;
     state.set_sound_effect_2(12);
@@ -172,7 +170,10 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
 
     state.run_frame_internal(0, crate::RUN_MAIN);
 
-    assert!(state.pre_main_caller_continuation.is_none());
+    assert!(state
+        .game_execution_scheduler
+        .pre_main_caller_continuation()
+        .is_none());
     assert!(!state.dialogue_fast_forward_hold_active);
     assert!(!state.audio_nmi_processed_before_main);
     assert_eq!(state.game_state.system_signals.sound_effect_2(), 12);

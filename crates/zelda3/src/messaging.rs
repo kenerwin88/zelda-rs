@@ -125,11 +125,7 @@ impl VwfGlyphCpuPhase {
             Self::Entering {
                 remaining_master_cycles,
                 drawing_master_cycles,
-            } => Self::advance_entry(
-                remaining_master_cycles,
-                drawing_master_cycles,
-                available,
-            ),
+            } => Self::advance_entry(remaining_master_cycles, drawing_master_cycles, available),
             Self::Drawing {
                 remaining_master_cycles,
             } if remaining_master_cycles > available => VwfGlyphCpuAdvance {
@@ -220,10 +216,9 @@ impl VwfCpuSliceOutcome {
 #[cfg(test)]
 mod fast_forward_cycle_tests {
     use super::{
-        vwf_glyph_cursor_after_pending_line_transition,
-        vwf_render_glyph_drawing_master_cycles, vwf_render_glyph_master_cycles,
-        vwf_render_loop_cycle_budget, VwfCpuSliceOutcome, VwfGlyphCpuPhase,
-        VwfHandlerEntryPhase, VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES,
+        vwf_glyph_cursor_after_pending_line_transition, vwf_render_glyph_drawing_master_cycles,
+        vwf_render_glyph_master_cycles, vwf_render_loop_cycle_budget, VwfCpuSliceOutcome,
+        VwfGlyphCpuPhase, VwfHandlerEntryPhase, VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES,
         VWF_CALLER_SUFFIX_MASTER_CYCLES, VWF_FIRST_LINE_ENTRY_MASTER_CYCLES,
         VWF_GLYPH_ENTRY_MASTER_CYCLES, VWF_LATER_LINE_ENTRY_MASTER_CYCLES,
         VWF_RENDER_CHARACTER_LINE_POSITIONS, VWF_RESUMED_FRAME_MASTER_CYCLES,
@@ -240,19 +235,11 @@ mod fast_forward_cycle_tests {
             VWF_LATER_LINE_ENTRY_MASTER_CYCLES
         );
         assert_eq!(
-            vwf_render_loop_cycle_budget(
-                true,
-                0,
-                VwfHandlerEntryPhase::AfterDeferredCallerSuffix
-            ),
+            vwf_render_loop_cycle_budget(true, 0, VwfHandlerEntryPhase::AfterDeferredCallerSuffix),
             VWF_RESUMED_FRAME_MASTER_CYCLES
         );
         assert_eq!(
-            vwf_render_loop_cycle_budget(
-                false,
-                2,
-                VwfHandlerEntryPhase::AfterDeferredCallerSuffix
-            ),
+            vwf_render_loop_cycle_budget(false, 2, VwfHandlerEntryPhase::AfterDeferredCallerSuffix),
             VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES
         );
     }
@@ -352,7 +339,7 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module0e-after-run-interface");
         if self.rom_startup_timing()
             && (self.normal_dialogue_initialization_phase != 0
-                || self.pending_rom_work.is_pending()
+                || self.game_execution_scheduler.work_is_pending()
                 // RenderText_Draw_Scroll is an interruptible caller frame, not
                 // an atomic buffer rewrite. Instrumented Snes9x runs remain in
                 // its $0e:cfe2..$0e:d088 copy loop across the next vblanks, so
@@ -1757,8 +1744,8 @@ impl ZeldaState {
             // path. The ROM remains in module $0e/$07 under forced blank
             // while vblank interrupts it; do not expose its caller suffix as
             // an atomic main-thread operation.
-            self.pending_rom_work = PendingRomWork::schedule(
-                RomWorkContinuation::FinishWorldMapExitTilesets,
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishWorldMapExitTilesets,
                 WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES,
             );
             return;
@@ -3562,8 +3549,7 @@ impl ZeldaState {
         } else {
             std::mem::take(&mut self.dialogue_vwf_handler_entry_phase)
         };
-        let mut cycles_left =
-            vwf_render_loop_cycle_budget(resuming, current_line, entry_phase);
+        let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line, entry_phase);
         let mut frame_advance: u16 = 0;
         let mut midline_yield = false;
         loop {
@@ -3590,11 +3576,7 @@ impl ZeldaState {
                             let glyph_cursor = vwf_glyph_cursor_after_pending_line_transition(
                                 self.game_state.messaging.vwf_render.glyph_cursor_usize(),
                                 self.game_state.messaging.vwf_render.current_line(),
-                                self.game_state
-                                    .messaging
-                                    .vwf_render
-                                    .next_line_requested()
-                                    != 0,
+                                self.game_state.messaging.vwf_render.next_line_requested() != 0,
                             );
                             let x = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
                             let advance = self.dialogue_vwf_glyph_cpu_phase.advance(
@@ -4078,10 +4060,7 @@ impl ZeldaState {
                 self.frame_ctr_dbg, cycles_before_vblank,
             );
         }
-        self.begin_dialogue_scroll(
-            DialogueTextGeneration::PublishedDisplay,
-            completion_timing,
-        );
+        self.begin_dialogue_scroll(DialogueTextGeneration::PublishedDisplay, completion_timing);
         let command_done = self.render_text_scroll_pixels(2);
         debug_assert!(!command_done);
         // Phase 2 is the remaining three copy passes. Phase 1 is the

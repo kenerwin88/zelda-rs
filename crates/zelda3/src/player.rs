@@ -1967,8 +1967,7 @@ impl ZeldaState {
     }
 
     pub(super) fn link_receive_item(&mut self, item: u8, chest_position: u16) {
-        let _ =
-            self.link_receive_item_from(item, chest_position, ItemReceiptCaller::AtomicCaller);
+        let _ = self.link_receive_item_from(item, chest_position, ItemReceiptCaller::AtomicCaller);
     }
 
     pub(super) fn link_receive_item_from(
@@ -1976,7 +1975,7 @@ impl ZeldaState {
         item: u8,
         chest_position: u16,
         caller: ItemReceiptCaller,
-    ) -> RomCallStatus {
+    ) -> GameCallStatus {
         if self.game_state.player.follower_link.has_auxiliary_state() {
             self.follower_link_state_mut().clear_auxiliary_state();
             self.follower_link_state_mut().set_incapacitated_timer(0);
@@ -2008,13 +2007,12 @@ impl ZeldaState {
                 self.follower_link_state_mut().set_item_hold_pose(2);
             }
         }
-        let call_status =
-            self.ancilla_add_item_receipt_from(0x22, 4, chest_position, caller);
+        let call_status = self.ancilla_add_item_receipt_from(0x22, 4, chest_position, caller);
         if call_status.is_suspended() {
             return call_status;
         }
         self.complete_link_receive_item(item);
-        RomCallStatus::Returned
+        GameCallStatus::Returned
     }
 
     pub(super) fn complete_link_receive_item(&mut self, item: u8) {

@@ -537,8 +537,8 @@ impl ZeldaState {
             // The ROM's decompression time follows the actual set of nonzero
             // auxiliary packs. Carry the measured workload into the scheduler
             // rather than assigning every tileset the light eleven-slice path.
-            self.pending_rom_work = PendingRomWork::schedule(
-                RomWorkContinuation::FinishOverworldAuxGraphics,
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishOverworldAuxGraphics,
                 timing.load_nmi_slices,
             );
             return;
@@ -677,8 +677,8 @@ impl ZeldaState {
             // Map16ToMap8 conversion across the measured vblank boundaries.
             // Keep the temporary overlay screen index live until that work
             // returns instead of restoring the gameplay screen atomically.
-            self.pending_rom_work = PendingRomWork::schedule(
-                RomWorkContinuation::FinishWorldMapOverlayReload,
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishWorldMapOverlayReload,
                 WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES,
             );
             return;
@@ -739,8 +739,8 @@ impl ZeldaState {
         {
             // The main-page Map16ToMap8 conversion is likewise interruptible;
             // INIDISP=0 and submodule $22 are reached only after it returns.
-            self.pending_rom_work = PendingRomWork::schedule(
-                RomWorkContinuation::FinishWorldMapAmbientMap8,
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishWorldMapAmbientMap8,
                 WORLD_MAP_AMBIENT_MAP8_NMI_SLICES,
             );
             return;
@@ -845,7 +845,7 @@ impl ZeldaState {
             submodule => panic!("Module09_Overworld invalid submodule_index: {submodule}"),
         }
         self.replay_trace_submodule("module09-after-submodule");
-        if self.rom_startup_timing() && self.pending_rom_work.is_pending() {
+        if self.rom_startup_timing() && self.game_execution_scheduler.work_is_pending() {
             return;
         }
         self.complete_module09_overworld_after_submodule();
@@ -3632,8 +3632,8 @@ impl ZeldaState {
             // map quadrants finish first (and advance the visible submodule),
             // while the initial screen map and sprite conversion remain on
             // the CPU stack for a separately named tail.
-            self.pending_rom_work = PendingRomWork::schedule(
-                RomWorkContinuation::FinishOverworldMapQuadrants {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishOverworldMapQuadrants {
                     screen_map_and_sprite_gfx_tail_nmi_slices: timing
                         .screen_map_and_sprite_gfx_tail_nmi_slices,
                 },
@@ -3925,8 +3925,8 @@ impl ZeldaState {
             // NMI boundaries have passed.
             self.publish_module09_transition_sprites_without_scroll();
             let reload_timing = overworld_sprite_reload_timing(sprite_reload_workload, entry_phase);
-            self.pending_rom_work = PendingRomWork::schedule(
-                RomWorkContinuation::FinishOverworldSpriteReloadTail {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishOverworldSpriteReloadTail {
                     post_return_hold_nmi_slices: reload_timing.post_return_hold_nmi_slices,
                     return_phase: reload_timing.return_phase,
                     epilogue_phase: reload_timing.epilogue_phase,

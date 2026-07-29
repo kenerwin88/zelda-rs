@@ -960,9 +960,9 @@ impl ZeldaState {
         yin: u8,
         chest_pos: u16,
         caller: ItemReceiptCaller,
-    ) -> RomCallStatus {
+    ) -> GameCallStatus {
         let Some(k) = self.ancilla_add_simple(ain, yin) else {
-            return RomCallStatus::Returned;
+            return GameCallStatus::Returned;
         };
         let item = self.game_state.player.follower_link.receive_item_index();
 
@@ -1123,7 +1123,7 @@ impl ZeldaState {
             return call_status;
         }
         self.complete_ancilla_add_item_receipt(receipt);
-        RomCallStatus::Returned
+        GameCallStatus::Returned
     }
 
     pub(super) fn complete_ancilla_add_item_receipt(&mut self, receipt: ItemReceiptReturn) {
