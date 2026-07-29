@@ -3985,6 +3985,22 @@ fn parity_trace_path(file_name: &str) -> PathBuf {
         .join(file_name)
 }
 
+fn append_parity_trace(file_name: &str, trace: &str) {
+    let trace_path = parity_trace_path(file_name);
+    if trace_path
+        .parent()
+        .is_some_and(|directory| fs::create_dir_all(directory).is_ok())
+    {
+        if let Ok(mut file) = fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(trace_path)
+        {
+            let _ = writeln!(file, "{trace}");
+        }
+    }
+}
+
 #[derive(Clone)]
 struct PreMainAnimatedTileDma {
     source_address: usize,
@@ -9639,6 +9655,7 @@ impl ZeldaState {
         &mut self,
         publication: DisplaySnapshotPublication,
     ) {
+        let diagnostics = DisplayDiagnostics::from_env();
         self.ppu.refresh_brightness_cache();
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
         // from the previous frame has been consumed by that frame's renders.
@@ -9664,8 +9681,7 @@ impl ZeldaState {
             self.dialogue_scroll_frozen_scanout = None;
         }
         let frame = self.game_state.frame;
-        if std::env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some()
-            && (5640..=5700).contains(&self.frame_ctr_dbg)
+        if diagnostics.attract_timeline && (5640..=5700).contains(&self.frame_ctr_dbg)
         {
             let trace = format!(
                 "attract_display_capture host={} state={} seq={} zoom={:02x} timer={} brightness={} c0={:04x} c1={:04x} fixed={:02x},{:02x},{:02x} math={:02x}/{:02x} table0={:04x} ppu_a={:04x}",
@@ -9686,18 +9702,9 @@ impl ZeldaState {
                 self.ppu.m7_matrix[0] as u16,
             );
             eprintln!("{trace}");
-            let trace_path = parity_trace_path("attract-display-timeline.trace");
-            if trace_path.parent().is_some_and(|dir| fs::create_dir_all(dir).is_ok()) {
-                if let Ok(mut file) = fs::OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(trace_path)
-                {
-                    let _ = writeln!(file, "{trace}");
-                }
-            }
+            append_parity_trace("attract-display-timeline.trace", &trace);
         }
-        if std::env::var_os("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some() {
+        if diagnostics.frame_boundary {
             eprintln!(
                 "frame_boundary_before host={} main={:02x} sub={:02x} frame_counter={:02x} link_dma_countdown={:04x} latch={} pending={} target={:04x} disable={:02x} dialogue_runs=authored:{}/published:{}/display:{}",
                 self.frame_ctr_dbg,
@@ -10428,14 +10435,7 @@ impl ZeldaState {
                 self.ppu.math_enabled,
                 self.ppu.prevent_math_mode,
             );
-            use std::io::Write;
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open("/tmp/zelda3-attract-display-timeline.trace")
-            {
-                let _ = writeln!(file, "{trace}");
-            }
+            append_parity_trace("attract-display-timeline.trace", &trace);
         }
         // Semantic dialogue data is another representation of the same BG3
         // generation as the presented VRAM. Resolve that generation once
