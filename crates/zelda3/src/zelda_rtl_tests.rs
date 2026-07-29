@@ -3952,7 +3952,7 @@ fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
         gameplay.oam_operands,
         GraphicsDmaGeneration::HostBoundaryBeforeMain
     );
-    assert_eq!(gameplay.oam_scanout, GraphicsDmaGeneration::LiveAfterMain);
+    assert_eq!(gameplay.oam_scanout, OamScanoutSource::ComposeLiveAfterNmi);
     assert_eq!(
         gameplay.link_obj_scanout,
         GraphicsDmaGeneration::LiveAfterMain
@@ -4026,7 +4026,7 @@ fn dialogue_message_finish_retains_only_the_entry_oam_scanout() {
     assert_eq!(
         dialogue_oam_scanout_transition(
             DialogueOamPublicationPhase::Idle,
-            GraphicsDmaGeneration::LiveAfterMain,
+            OamScanoutSource::ComposeLiveAfterNmi,
             true,
             Some(&[0x1111]),
             &[0x2222],
@@ -4865,7 +4865,7 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
         rom_graphics_dma_plan(9, 5),
         GraphicsDmaPlan {
             oam_operands: GraphicsDmaGeneration::LiveAfterMain,
-            oam_scanout: GraphicsDmaGeneration::LiveAfterMain,
+            oam_scanout: OamScanoutSource::ComposeLiveAfterNmi,
             link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
@@ -4876,7 +4876,7 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
         rom_graphics_dma_plan(0x11, 7),
         GraphicsDmaPlan {
             oam_operands: GraphicsDmaGeneration::LiveAfterMain,
-            oam_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            oam_scanout: OamScanoutSource::RetainCapturedBeforeNmi,
             link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             animated_bg_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
@@ -4887,7 +4887,7 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
         let plan = rom_graphics_dma_plan(7, submodule);
         assert_eq!(
             plan.oam_scanout,
-            GraphicsDmaGeneration::HostBoundaryBeforeMain
+            OamScanoutSource::RetainCapturedBeforeNmi
         );
         assert_eq!(plan.link_obj_scanout, GraphicsDmaGeneration::LiveAfterMain);
         assert_eq!(
@@ -4899,7 +4899,7 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
         rom_graphics_dma_plan(9, 0x0a),
         GraphicsDmaPlan {
             oam_operands: GraphicsDmaGeneration::LiveAfterMain,
-            oam_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            oam_scanout: OamScanoutSource::RetainCapturedBeforeNmi,
             link_obj_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
@@ -4910,7 +4910,7 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
         rom_graphics_dma_plan(14, 7),
         GraphicsDmaPlan {
             oam_operands: GraphicsDmaGeneration::LiveAfterMain,
-            oam_scanout: GraphicsDmaGeneration::LiveAfterMain,
+            oam_scanout: OamScanoutSource::ComposeLiveAfterNmi,
             link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
@@ -4925,7 +4925,7 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
         rom_graphics_dma_plan_at_host_boundary(subtile_landing),
         GraphicsDmaPlan {
             oam_operands: GraphicsDmaGeneration::LiveAfterMain,
-            oam_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            oam_scanout: OamScanoutSource::RetainCapturedBeforeNmi,
             link_obj_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
@@ -5110,10 +5110,12 @@ fn nmi_operand_consumption_preserves_the_scanout_plan() {
     state.set_subsubmodule(6);
     let entry_plan = rom_graphics_dma_plan_at_host_boundary(state.game_state.frame);
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
+        entry_frame: state.game_state.frame,
         entry_plan,
         entry_dialogue_text_render_state: 0,
         animated_tile: None,
         link_sources: LinkDmaSources::load_from_ram(&state.ram),
+        oam_shadow: state.sprite_oam_shadow_buffer().to_vec(),
     });
 
     state.nmi_do_updates();
@@ -5124,6 +5126,33 @@ fn nmi_operand_consumption_preserves_the_scanout_plan() {
             .as_ref()
             .map(|graphics| graphics.entry_plan),
         Some(entry_plan),
+    );
+}
+
+#[test]
+fn dungeon_exit_prep_oam_scanout_uses_the_published_shadow_generation() {
+    let mut entry = crate::game_state::FrameState::default();
+    entry.main_module = 7;
+    let mut exit = entry;
+    exit.main_module = 0x0f;
+    let entry_scanout = rom_graphics_dma_plan(entry.main_module, entry.submodule).oam_scanout;
+    let transition_scanout = oam_scanout_across_main(entry, exit, entry_scanout);
+
+    assert_eq!(
+        rom_graphics_dma_plan(exit.main_module, exit.submodule).oam_operands,
+        GraphicsDmaGeneration::LiveAfterMain,
+    );
+    assert_eq!(
+        transition_scanout,
+        OamScanoutSource::ComposePublishedShadowDma,
+    );
+    assert_eq!(
+        transition_scanout.resolve_live_override(false),
+        OamScanoutSource::ComposePublishedShadowDma,
+    );
+    assert_eq!(
+        transition_scanout.resolve_live_override(true),
+        OamScanoutSource::ComposeLiveAfterNmi,
     );
 }
 

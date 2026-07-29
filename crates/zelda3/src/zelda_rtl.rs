@@ -425,7 +425,7 @@ const fn rom_display_oam_publication_is_deferred(
         || (main_module == 14 && submodule == 7)
         || matches!(
             rom_graphics_dma_plan(main_module, submodule).oam_scanout,
-            GraphicsDmaGeneration::HostBoundaryBeforeMain
+            OamScanoutSource::RetainCapturedBeforeNmi
         )
 }
 
@@ -457,6 +457,16 @@ impl From<GraphicsDmaGeneration> for OamScanoutSource {
         match generation {
             GraphicsDmaGeneration::HostBoundaryBeforeMain => Self::RetainCapturedBeforeNmi,
             GraphicsDmaGeneration::LiveAfterMain => Self::ComposeLiveAfterNmi,
+        }
+    }
+}
+
+impl OamScanoutSource {
+    const fn resolve_live_override(self, publish_live_after_nmi: bool) -> Self {
+        if publish_live_after_nmi {
+            Self::ComposeLiveAfterNmi
+        } else {
+            self
         }
     }
 }
@@ -531,7 +541,7 @@ impl AnimatedBgScanoutGeneration {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct GraphicsDmaPlan {
     oam_operands: GraphicsDmaGeneration,
-    oam_scanout: GraphicsDmaGeneration,
+    oam_scanout: OamScanoutSource,
     link_obj_scanout: GraphicsDmaGeneration,
     link_obj_operands: GraphicsDmaGeneration,
     animated_bg_operands: GraphicsDmaGeneration,
@@ -565,9 +575,9 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
             GraphicsDmaGeneration::LiveAfterMain
         },
         oam_scanout: if oam_scanout_uses_host_boundary {
-            GraphicsDmaGeneration::HostBoundaryBeforeMain
+            OamScanoutSource::RetainCapturedBeforeNmi
         } else {
-            GraphicsDmaGeneration::LiveAfterMain
+            OamScanoutSource::ComposeLiveAfterNmi
         },
         link_obj_scanout: if player_obj_scanout_uses_host_boundary {
             GraphicsDmaGeneration::HostBoundaryBeforeMain
@@ -621,7 +631,7 @@ fn rom_graphics_dma_plan_at_host_boundary(frame: crate::game_state::FrameState) 
         frame.submodule,
         frame.subsubmodule,
     ) {
-        plan.oam_scanout = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+        plan.oam_scanout = OamScanoutSource::RetainCapturedBeforeNmi;
         plan.link_obj_scanout = GraphicsDmaGeneration::HostBoundaryBeforeMain;
     }
     plan
@@ -644,15 +654,37 @@ fn animated_bg_scanout_across_main(
     }
 }
 
+const fn oam_scanout_across_main(
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+    entry_scanout: OamScanoutSource,
+) -> OamScanoutSource {
+    // Module 7 enters Dungeon_PrepExitWithSpotlight after the leading NMI has
+    // consumed the host-boundary OAM shadow. The atomic native main slice then
+    // advances to module $0f, but its newly authored shadow belongs to the
+    // following NMI. Publish the exact shadow sampled at entry for this active
+    // scanout; once module $0f advances to submodule 1, the ordinary live
+    // override publishes the next generation.
+    if entry.main_module == 7
+        && entry.submodule == 0
+        && exit.main_module == 0x0f
+        && exit.submodule == 0
+    {
+        OamScanoutSource::ComposePublishedShadowDma
+    } else {
+        entry_scanout
+    }
+}
+
 fn dialogue_oam_scanout_transition(
     phase: DialogueOamPublicationPhase,
-    module_scanout: GraphicsDmaGeneration,
+    module_scanout: OamScanoutSource,
     publish_dialogue_completion_shadow: bool,
     published_shadow_dma: Option<&[u16]>,
     resident_ppu_oam: &[u16],
 ) -> (OamScanoutSource, DialogueOamPublicationPhase) {
     if !publish_dialogue_completion_shadow {
-        return (module_scanout.into(), DialogueOamPublicationPhase::Idle);
+        return (module_scanout, DialogueOamPublicationPhase::Idle);
     }
     match phase {
         DialogueOamPublicationPhase::Idle
@@ -664,10 +696,10 @@ fn dialogue_oam_scanout_transition(
             )
         }
         DialogueOamPublicationPhase::PublishedShadow => (
-            module_scanout.into(),
+            module_scanout,
             DialogueOamPublicationPhase::Completed,
         ),
-        phase => (module_scanout.into(), phase),
+        phase => (module_scanout, phase),
     }
 }
 
@@ -3182,6 +3214,16 @@ impl DisplayObjGeneration {
     }
 }
 
+fn retain_captured_oam_for_scanout(
+    obj_generation: &DisplayObjGeneration,
+    scanout_source: OamScanoutSource,
+) -> bool {
+    matches!(
+        obj_generation,
+        DisplayObjGeneration::RetainCapturedMemory { .. }
+    ) || matches!(scanout_source, OamScanoutSource::RetainCapturedBeforeNmi)
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub(crate) struct DialogueScrollContinuation(u8);
@@ -3755,10 +3797,12 @@ impl NmiCopyPacketScanout {
 
 #[derive(Clone)]
 struct PreMainGraphicsDma {
+    entry_frame: crate::game_state::FrameState,
     entry_plan: GraphicsDmaPlan,
     entry_dialogue_text_render_state: u8,
     animated_tile: Option<PreMainAnimatedTileDma>,
     link_sources: LinkDmaSources,
+    oam_shadow: Vec<u8>,
 }
 
 pub type ZeldaRunFrameFunc = fn(&mut ZeldaState, u16, i32);
@@ -9374,12 +9418,22 @@ impl ZeldaState {
             .unwrap_or_else(|| {
                 rom_graphics_dma_plan(captured_frame.main_module, captured_frame.submodule)
             });
+        let entry_frame = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.entry_frame)
+            .unwrap_or(captured_frame);
+        let module_oam_scanout_source = oam_scanout_across_main(
+            entry_frame,
+            captured_frame,
+            entry_graphics_dma_plan.oam_scanout,
+        );
         let obj_scanout_generation = self.next_display_obj_scanout_generation.take();
         let link_obj_scanout_generation = obj_scanout_generation
             .map(|generation| generation.link_obj)
             .unwrap_or(entry_graphics_dma_plan.link_obj_scanout);
         let oam_dma_byte_len = self.ppu.oam.len() * 2;
-        let published_shadow_oam_dma = self
+        let previously_published_shadow_oam_dma = self
             .display_snapshot
             .as_ref()
             .and_then(|published| published.ram.get(OAM_BUF..OAM_BUF + oam_dma_byte_len))
@@ -9389,14 +9443,24 @@ impl ZeldaState {
                     .map(|word| u16::from_le_bytes([word[0], word[1]]))
                     .collect::<Vec<_>>()
             });
+        let host_boundary_shadow_oam_dma = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .and_then(|graphics| graphics.oam_shadow.get(..oam_dma_byte_len))
+            .map(|bytes| {
+                bytes
+                    .chunks_exact(2)
+                    .map(|word| u16::from_le_bytes([word[0], word[1]]))
+                    .collect::<Vec<_>>()
+            });
         let (dialogue_oam_scanout_source, next_dialogue_oam_phase) =
             dialogue_oam_scanout_transition(
                 self.dialogue_oam_publication_phase,
-                entry_graphics_dma_plan.oam_scanout,
+                module_oam_scanout_source,
                 captured_frame.main_module == 14
                     && captured_frame.submodule == 2
                     && captured_messaging.runtime.text_render_state() == 4,
-                published_shadow_oam_dma.as_deref(),
+                previously_published_shadow_oam_dma.as_deref(),
                 &self.ppu.oam,
             );
         let entry_text_render_state = self
@@ -9416,6 +9480,13 @@ impl ZeldaState {
         let oam_scanout_source = obj_scanout_generation
             .map(|generation| generation.oam.into())
             .unwrap_or(dialogue_oam_scanout_source);
+        let published_shadow_oam_dma = if module_oam_scanout_source
+            == OamScanoutSource::ComposePublishedShadowDma
+        {
+            host_boundary_shadow_oam_dma
+        } else {
+            previously_published_shadow_oam_dma
+        };
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
@@ -9611,23 +9682,31 @@ impl ZeldaState {
             display.ppu.forced_blank_scanlines != 0,
             pending_main_thread_stripe,
         );
-        let oam_scanout_retains_captured_ppu = matches!(
-            display.oam_scanout_source,
-            OamScanoutSource::RetainCapturedBeforeNmi
-        );
         let dungeon_exit_crosses_nmi_boundary = rom_dungeon_exit_entry_crosses_nmi_boundary(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
             self.game_state.frame.main_module,
             self.game_state.frame.submodule,
         );
-        let retain_previous_nmi_oam = match &display.obj_generation {
-            DisplayObjGeneration::FollowModuleCadence => {
-                !dungeon_exit_crosses_nmi_boundary
-                    && (module_oam_publication_is_deferred || oam_scanout_retains_captured_ppu)
-            }
-            DisplayObjGeneration::RetainCapturedMemory { .. } => true,
+        let module_oam_scanout_source = if module_oam_publication_is_deferred {
+            OamScanoutSource::RetainCapturedBeforeNmi
+        } else {
+            display.oam_scanout_source
         };
+        let oam_scanout_source =
+            module_oam_scanout_source.resolve_live_override(dungeon_exit_crosses_nmi_boundary);
+        let oam_scanout_retains_captured_ppu = matches!(
+            oam_scanout_source,
+            OamScanoutSource::RetainCapturedBeforeNmi
+        );
+        // Resolve OAM's scanout generation independently from the doorway
+        // scroll and Link OBJ-CHR domains. NMI still commits the current shadow
+        // OAM for the following scanout while the active image can retain the
+        // host-boundary generation.
+        let retain_previous_nmi_oam = retain_captured_oam_for_scanout(
+            &display.obj_generation,
+            oam_scanout_source,
+        );
         let world_map_fade_display = snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
             && snapshot_attract_scene.sequence() == 1
@@ -9930,7 +10009,7 @@ impl ZeldaState {
             self.ppu.oam.clone_from(&display.ppu.oam);
         }
         if matches!(
-            display.oam_scanout_source,
+            oam_scanout_source,
             OamScanoutSource::ComposePublishedShadowDma
         ) {
             if let Some(published_shadow_oam) = display
@@ -10512,6 +10591,7 @@ impl ZeldaState {
                 })
                 .flatten();
             Some(PreMainGraphicsDma {
+                entry_frame: self.game_state.frame,
                 entry_plan: rom_graphics_dma_plan_at_host_boundary(self.game_state.frame),
                 entry_dialogue_text_render_state: self
                     .game_state
@@ -10520,16 +10600,17 @@ impl ZeldaState {
                     .text_render_state(),
                 animated_tile,
                 link_sources: LinkDmaSources::load_from_ram(&self.ram),
+                oam_shadow: self.sprite_oam_shadow_buffer().to_vec(),
             })
         } else {
             None
         };
-        // Retain the OAM shadow at the host-frame boundary. The interrupted
-        // title main thread has one late-authored OBJ region whose NMI source is
-        // selected from this coherent snapshot; ordinary OAM remains current.
+        // Reuse the OAM shadow captured with the other pre-main DMA operands so
+        // NMI consumption and display publication cannot select adjacent copies.
         let oam_dma_source = self
-            .rom_startup_timing()
-            .then(|| self.sprite_oam_shadow_buffer().to_vec());
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.oam_shadow.clone());
         let frame = self.game_state.frame;
         if self.rom_startup_timing
             && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
