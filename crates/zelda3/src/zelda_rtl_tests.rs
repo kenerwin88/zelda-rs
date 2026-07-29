@@ -4946,8 +4946,14 @@ fn overworld_transition_publishes_the_nmi_written_half_color_bit() {
     assert!(!rom_overworld_transition_half_color_is_live(
         9, 3, 9, 3, false, false,
     ));
-    assert!(!rom_overworld_transition_half_color_is_live(
+    assert!(rom_overworld_transition_half_color_is_live(
         9, 2, 9, 3, true, false,
+    ));
+    assert!(!rom_overworld_transition_half_color_is_live(
+        9, 1, 9, 3, true, false,
+    ));
+    assert!(!rom_overworld_transition_half_color_is_live(
+        9, 2, 9, 2, true, false,
     ));
 }
 

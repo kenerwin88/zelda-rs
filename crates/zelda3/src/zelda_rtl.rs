@@ -769,9 +769,12 @@ const fn rom_overworld_transition_half_color_is_live(
     // scanout therefore uses the post-NMI half-color bit even though its VRAM
     // and remaining controls retain their existing publication cadence.
     snapshot_main_module == 9
-        && snapshot_submodule == 3
         && live_main_module == 9
         && live_submodule == 3
+        // Depending on whether capture owns the interrupted ROM call or its
+        // returned caller, the immutable CPU generation is either the
+        // preceding transition step or submodule 3 itself.
+        && matches!(snapshot_submodule, 2 | 3)
         && snapshot_half_color != live_half_color
 }
 
