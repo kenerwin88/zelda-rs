@@ -50,8 +50,8 @@ Zelda main/NMI/RNG state. Use `run` for host-frame timing; use `frame` for the
 emulator's internal video boundary. The trace patch also exports the optional
 PPU inspection functions consumed by the parity harness, including OAM/OBJ
 evaluation, resolved clip spans, a selected pixel's palette/color-math
-operands, and the per-scanline Mode 7 matrix captured at the completed-screen
-publication boundary.
+operands, and the per-scanline Mode 7 matrix and Window 1/2 edges captured at
+the completed-screen publication boundary.
 
 Generate a strict Rust RNG replay script from a route trace with:
 

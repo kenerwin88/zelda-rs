@@ -276,6 +276,14 @@ index 98f9941..1a437f8 100644
  
  		if (GFX.DoInterlace && S9xInterlaceField() == 0)
  		{
+@@ -267,6 +269,7 @@ void RenderLine (uint8 C)
+ {
+ 	if (IPPU.RenderThisFrame)
+ 	{
++		Zelda3TraceCaptureScanlinePpuState(C);
+ 		LineData[C].BG[0].VOffset = PPU.BG[0].VOffset + 1;
+ 		LineData[C].BG[0].HOffset = PPU.BG[0].HOffset;
+ 		LineData[C].BG[1].VOffset = PPU.BG[1].VOffset + 1;
 @@ -2184,4 +2186,3 @@ void S9xDrawCrosshair (const char *crosshair, uint8 fgcolor, uint8 bgcolor, int1
  		}
  	}
@@ -564,7 +572,7 @@ new file mode 100644
 index 0000000..4dc9956
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,646 @@
+@@ -0,0 +1,663 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -631,6 +639,8 @@ index 0000000..4dc9956
 +uint8 presented_obj_visible_tiles[128] = {};
 +uint8 presented_obj_widths[128] = {};
 +SLineMatrixData presented_mode7[240] = {};
++int scanline_windows[240][4] = {};
++int presented_windows[240][4] = {};
 +ClipData presented_clip[2][6] = {};
 +int trace_pixel_x = -1;
 +int trace_pixel_y = -1;
@@ -834,7 +844,18 @@ index 0000000..4dc9956
 +		sizeof(presented_obj_visible_tiles));
 +	std::memcpy(presented_obj_widths, GFX.OBJWidths, sizeof(presented_obj_widths));
 +	std::memcpy(presented_mode7, LineMatrixData, sizeof(presented_mode7));
++	std::memcpy(presented_windows, scanline_windows, sizeof(presented_windows));
 +	std::memcpy(presented_clip, IPPU.Clip, sizeof(presented_clip));
++}
++
++void Zelda3TraceCaptureScanlinePpuState(int line)
++{
++	if (line < 0 || line >= 240)
++		return;
++	scanline_windows[line][0] = PPU.Window1Left;
++	scanline_windows[line][1] = PPU.Window1Right;
++	scanline_windows[line][2] = PPU.Window2Left;
++	scanline_windows[line][3] = PPU.Window2Right;
 +}
 +
 +int Zelda3TracePresentedOamValue(int index)
@@ -922,6 +943,10 @@ index 0000000..4dc9956
 +		case 5: return values.CentreY;
 +		case 6: return values.M7HOFS;
 +		case 7: return values.M7VOFS;
++		case 8: return presented_windows[line][0];
++		case 9: return presented_windows[line][1];
++		case 10: return presented_windows[line][2];
++		case 11: return presented_windows[line][3];
 +		default: return -1;
 +	}
 +}
@@ -1216,7 +1241,7 @@ new file mode 100644
 index 0000000..d64b1b5
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,59 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -1242,6 +1267,7 @@ index 0000000..d64b1b5
 +extern bool Zelda3TraceWramEnabled;
 +
 +bool Zelda3TraceCpuCarry();
++void Zelda3TraceCaptureScanlinePpuState(int line);
 +void Zelda3TraceCapturePresentedPpuState();
 +int Zelda3TracePresentedOamValue(int index);
 +int Zelda3TracePresentedObjValue(int field, int index);

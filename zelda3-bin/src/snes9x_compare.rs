@@ -189,6 +189,9 @@ struct DisplayPpuProbe {
     presented_oam: Vec<i32>,
     mode7: [i32; 8],
     mode7_scanlines: Vec<[i32; 8]>,
+    /// Window 1/2 left/right positions actually consumed for each completed
+    /// scanline, after HDMA writes.
+    window_scanlines: Vec<[i32; 4]>,
     /// Snes9x's renderer-resolved main/sub clip spans for BG1..backdrop.
     ///
     /// Each of the twelve clips contributes Count followed by six
@@ -239,6 +242,8 @@ struct DisplayOracleDifferences {
     cgram: ValueDomainDiff,
     live_oam: ValueDomainDiff,
     presented_oam: ValueDomainDiff,
+    window1_scanlines: ValueDomainDiff,
+    window2_scanlines: ValueDomainDiff,
     mode7: Option<ValueDomainDiff>,
     mode7_scanlines: Option<ValueDomainDiff>,
 }
@@ -268,11 +273,26 @@ fn display_oracle_differences(receipt: &DisplayOracleReceipt) -> DisplayOracleDi
         .flatten()
         .copied()
         .collect::<Vec<_>>();
+    let window_scanlines = |probe: &DisplayPpuProbe, window: usize| {
+        probe
+            .window_scanlines
+            .iter()
+            .flat_map(|scanline| scanline[window * 2..window * 2 + 2].iter().copied())
+            .collect::<Vec<_>>()
+    };
+    let rust_window1_scanlines = window_scanlines(&receipt.rust, 0);
+    let oracle_window1_scanlines = window_scanlines(&receipt.oracle, 0);
+    let rust_window2_scanlines = window_scanlines(&receipt.rust, 1);
+    let oracle_window2_scanlines = window_scanlines(&receipt.oracle, 1);
     let registers = summarize_value_domain(&rust_registers, &oracle_registers);
     let cgram = summarize_value_domain(&receipt.rust.cgram, &receipt.oracle.cgram);
     let live_oam = summarize_value_domain(&receipt.rust.oam, &receipt.oracle.oam);
     let presented_oam =
         summarize_value_domain(&receipt.rust.presented_oam, &receipt.oracle.presented_oam);
+    let window1_scanlines =
+        summarize_value_domain(&rust_window1_scanlines, &oracle_window1_scanlines);
+    let window2_scanlines =
+        summarize_value_domain(&rust_window2_scanlines, &oracle_window2_scanlines);
     let mode7_active = receipt.rust.mode == 7 || receipt.oracle.mode == 7;
     let mode7 =
         mode7_active.then(|| summarize_value_domain(&receipt.rust.mode7, &receipt.oracle.mode7));
@@ -283,6 +303,8 @@ fn display_oracle_differences(receipt: &DisplayOracleReceipt) -> DisplayOracleDi
         ("cgram", &cgram),
         ("live_oam", &live_oam),
         ("presented_oam", &presented_oam),
+        ("window1_scanlines", &window1_scanlines),
+        ("window2_scanlines", &window2_scanlines),
     ]
     .into_iter()
     .filter_map(|(name, difference)| (!difference.is_exact()).then_some(name))
@@ -305,6 +327,8 @@ fn display_oracle_differences(receipt: &DisplayOracleReceipt) -> DisplayOracleDi
         cgram,
         live_oam,
         presented_oam,
+        window1_scanlines,
+        window2_scanlines,
         mode7,
         mode7_scanlines,
     }
@@ -338,6 +362,15 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
                 std::array::from_fn(|field| {
                     oracle
                         .debug_scanline_mode7_value(line, field as i32)
+                        .unwrap_or(-1)
+                })
+            })
+            .collect(),
+        window_scanlines: (0..224)
+            .map(|line| {
+                std::array::from_fn(|field| {
+                    oracle
+                        .debug_scanline_mode7_value(line, field as i32 + 8)
                         .unwrap_or(-1)
                 })
             })
@@ -416,6 +449,10 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
                 .collect(),
             mode7: snapshot.ppu.m7_matrix.map(i32::from),
             mode7_scanlines: scanlines.iter().map(|line| line.7.map(i32::from)).collect(),
+            window_scanlines: scanlines
+                .iter()
+                .map(|line| [line.0, line.1, line.2, line.3].map(i32::from))
+                .collect(),
             presented_clip: None,
             presented_pixel: None,
         }
