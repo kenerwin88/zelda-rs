@@ -1810,7 +1810,8 @@ pub(crate) fn run_compare_libretro_oracle(
         let poly_pending = game.ram[0x1f00] != 0;
         let pre_game = poly_pending.then(|| game.clone());
         let pre_ram = game.ram.to_vec();
-        let pre_load_remaining_frames = game.zelda_debug_selected_game_load_remaining_frames();
+        let pre_load_remaining_nmi_slices =
+            game.zelda_debug_selected_game_load_remaining_nmi_slices();
         stage(0, &mut stage_ns, &mut stage_mark);
         let rust_poly_cycles: Option<u64> = None;
         stage(1, &mut stage_ns, &mut stage_mark);
@@ -2651,8 +2652,8 @@ pub(crate) fn run_compare_libretro_oracle(
             capture.video_height,
             &pre_ram,
             &game.ram,
-            pre_load_remaining_frames,
-            game.zelda_debug_selected_game_load_remaining_frames(),
+            pre_load_remaining_nmi_slices,
+            game.zelda_debug_selected_game_load_remaining_nmi_slices(),
             game.debug_last_poly_work(),
             rust_poly_cycles,
             game.zelda_modern_audio_sfx_clock_checkpoint(),

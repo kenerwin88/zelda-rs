@@ -3319,8 +3319,18 @@ fn game_execution_scheduler_transitions_between_typed_continuations() {
 #[test]
 fn game_execution_scheduler_preserves_non_work_continuations_when_advanced() {
     let mut scheduler = GameExecutionScheduler::default();
+    scheduler.schedule_work(GameWorkContinuation::FinishAttractThroneRoom, 1);
+    assert_eq!(scheduler.advance_startup_sequence(), None);
+    assert_eq!(
+        scheduler.advance_work_one_nmi_slice(),
+        Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishAttractThroneRoom
+        ))
+    );
+
     scheduler.schedule_pre_main_nmi_resume(PreMainNmiResume::OverworldAuxGraphicsReturn);
     assert_eq!(scheduler.advance_work_one_nmi_slice(), None);
+    assert_eq!(scheduler.advance_startup_sequence(), None);
     assert_eq!(
         scheduler.take_pre_main_nmi_resume(),
         Some(PreMainNmiResume::OverworldAuxGraphicsReturn)
@@ -3328,8 +3338,28 @@ fn game_execution_scheduler_preserves_non_work_continuations_when_advanced() {
 
     scheduler.schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
     assert_eq!(scheduler.advance_work_one_nmi_slice(), None);
+    assert_eq!(scheduler.advance_startup_sequence(), None);
     assert!(scheduler.pre_main_caller_continuation_is(PreMainCallerContinuation::DialogueVwfReturn));
     scheduler.finish_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+
+    scheduler.schedule_file_select_graphics();
+    assert_eq!(scheduler.advance_work_one_nmi_slice(), None);
+    assert_eq!(
+        scheduler.advance_startup_sequence(),
+        Some(StartupSequenceStep::FileSelectGraphics(
+            FileSelectGraphicsStep::Waiting
+        ))
+    );
+    scheduler.reset();
+
+    scheduler.schedule_selected_game_load();
+    assert_eq!(scheduler.advance_work_one_nmi_slice(), None);
+    assert_eq!(
+        scheduler.advance_startup_sequence(),
+        Some(StartupSequenceStep::SelectedGameLoad(
+            SelectedGameLoadStep::Waiting
+        ))
+    );
 }
 
 #[test]
@@ -3352,6 +3382,18 @@ fn paired_resume_requires_every_execution_continuation_to_be_idle() {
     state
         .game_execution_scheduler
         .schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.game_execution_scheduler.reset();
+
+    state
+        .game_execution_scheduler
+        .schedule_file_select_graphics();
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+    state.game_execution_scheduler.reset();
+
+    state
+        .game_execution_scheduler
+        .schedule_selected_game_load();
     assert!(!state.paired_resume_cpu_boundary_is_quiescent());
 }
 
@@ -4217,19 +4259,70 @@ fn rom_timed_audio_commands_written_by_main_wait_for_the_next_nmi() {
 }
 
 #[test]
-fn file_select_initial_graphics_work_resumes_before_the_next_module() {
+fn file_select_graphics_resumes_the_module_after_every_intervening_nmi() {
+    let mut scheduler = GameExecutionScheduler::default();
+    scheduler.schedule_file_select_graphics();
+
+    for _ in 0..FILE_SELECT_GRAPHICS_NMI_SLICES - 1 {
+        assert_eq!(
+            scheduler.advance_startup_sequence(),
+            Some(StartupSequenceStep::FileSelectGraphics(
+                FileSelectGraphicsStep::Waiting
+            ))
+        );
+    }
     assert_eq!(
-        rom_file_select_initial_graphics_decision(57),
-        (true, false, 56)
+        scheduler.advance_startup_sequence(),
+        Some(StartupSequenceStep::FileSelectGraphics(
+            FileSelectGraphicsStep::CompleteGraphics
+        ))
+    );
+    assert!(!scheduler.is_idle());
+    assert_eq!(
+        scheduler.advance_startup_sequence(),
+        Some(StartupSequenceStep::FileSelectGraphics(
+            FileSelectGraphicsStep::ResumeModule
+        ))
+    );
+    assert!(scheduler.is_idle());
+}
+
+#[test]
+fn startup_dispatcher_runs_pre_dungeon_audio_at_the_measured_boundary() {
+    let mut selected_game = ZeldaState::new();
+    selected_game.set_rom_startup_timing(true);
+    selected_game.rom_reset_frame_delay = 0;
+    selected_game.initialized = true;
+    selected_game.set_animated_tile_data_source_address(1);
+    selected_game
+        .game_execution_scheduler
+        .schedule_selected_game_load();
+
+    for _ in 0..SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES - 1 {
+        selected_game.run_frame_internal(0, crate::RUN_MAIN);
+    }
+    assert_ne!(
+        selected_game
+            .game_state
+            .system_signals
+            .ambient_sound_effect(),
+        5
+    );
+    selected_game.run_frame_internal(0, crate::RUN_MAIN);
+    assert_eq!(
+        selected_game
+            .game_state
+            .system_signals
+            .ambient_sound_effect(),
+        5
     );
     assert_eq!(
-        rom_file_select_initial_graphics_decision(2),
-        (true, true, 1)
+        selected_game
+            .game_execution_scheduler
+            .selected_game_load_remaining_nmi_slices(),
+        SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES
     );
-    assert_eq!(
-        rom_file_select_initial_graphics_decision(1),
-        (false, false, 0)
-    );
+    assert!(selected_game.display_snapshot.is_some());
 }
 
 #[test]
@@ -5350,11 +5443,51 @@ fn dungeon_landing_hdma_reset_preserves_the_already_consumed_prefix() {
 
 #[test]
 fn selected_game_load_resumes_until_the_cpu_heavy_setup_finishes() {
-    assert_eq!(rom_selected_game_load_decision(77), (false, false, 76));
-    assert_eq!(rom_selected_game_load_decision(58), (true, false, 57));
-    assert_eq!(rom_selected_game_load_decision(2), (false, false, 1));
-    assert_eq!(rom_selected_game_load_decision(1), (false, true, 0));
-    assert_eq!(rom_selected_game_load_decision(0), (false, false, 0));
+    let mut scheduler = GameExecutionScheduler::default();
+    scheduler.schedule_selected_game_load();
+    assert_eq!(
+        scheduler.selected_game_load_remaining_nmi_slices(),
+        SELECTED_GAME_LOAD_NMI_SLICES
+    );
+
+    for _ in 0..SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES - 1 {
+        assert_eq!(
+            scheduler.advance_startup_sequence(),
+            Some(StartupSequenceStep::SelectedGameLoad(
+                SelectedGameLoadStep::Waiting
+            ))
+        );
+    }
+    assert_eq!(
+        scheduler.selected_game_load_remaining_nmi_slices(),
+        SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES + 1
+    );
+    assert_eq!(
+        scheduler.advance_startup_sequence(),
+        Some(StartupSequenceStep::SelectedGameLoad(
+            SelectedGameLoadStep::BeginPreDungeonAudio
+        ))
+    );
+    assert_eq!(
+        scheduler.selected_game_load_remaining_nmi_slices(),
+        SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES
+    );
+
+    for _ in 0..SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES - 1 {
+        assert_eq!(
+            scheduler.advance_startup_sequence(),
+            Some(StartupSequenceStep::SelectedGameLoad(
+                SelectedGameLoadStep::Waiting
+            ))
+        );
+    }
+    assert_eq!(
+        scheduler.advance_startup_sequence(),
+        Some(StartupSequenceStep::SelectedGameLoad(
+            SelectedGameLoadStep::CompleteLoad
+        ))
+    );
+    assert!(scheduler.is_idle());
 }
 
 #[test]

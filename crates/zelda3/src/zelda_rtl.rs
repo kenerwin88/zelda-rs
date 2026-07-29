@@ -117,10 +117,17 @@ const ROM_INTRO_MESSAGE_POINTER_CONTINUATION_FRAMES: u8 = 48;
 const ROM_INTRO_ITEM_GFX_CONTINUATION_FRAMES: u8 = 15;
 const ROM_INTRO_FOLLOWER_GFX_CONTINUATION_FRAMES: u8 = 3;
 const ROM_INTRO_MEMORY_INITIALIZATION_FRAMES: u8 = 41;
-const ROM_SELECTED_GAME_LOAD_FRAMES: u8 = 77;
-// The original CPU reaches Module_PreDungeon's audio prefix after 19 NMI
-// slices, then continues the room build while NMI publishes that command.
-const ROM_SELECTED_GAME_LOAD_PRE_DUNGEON_AUDIO_REMAINING: u8 = 58;
+// File-select graphics completes after 56 interrupted CPU slices. The next
+// host frame resumes the caller without consuming another display boundary.
+const FILE_SELECT_GRAPHICS_NMI_SLICES: u8 = 56;
+// The original CPU reaches Module_PreDungeon's audio prefix after 19 complete
+// NMI slices. The twentieth CPU slice writes the command before its NMI, then
+// 57 more interrupted slices finish the selected-game load.
+const SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES: u8 = 20;
+const SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES: u8 = 57;
+const SELECTED_GAME_LOAD_NMI_SLICES: u8 =
+    SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES
+        + SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES;
 // Module_PreDungeon's audio prefix returns before the interruptible entrance
 // load begins. Clean Snes9x NMI-PC traces divide the remaining caller into
 // semantic workloads: ten boundaries in entrance/room construction, four in
@@ -906,23 +913,6 @@ const fn rom_attract_story_render_nmi_slices(sequence: u8) -> u8 {
     }
 }
 
-const fn rom_file_select_initial_graphics_decision(phase: u8) -> (bool, bool, u8) {
-    if phase > 1 {
-        (true, phase == 2, phase - 1)
-    } else {
-        (false, false, 0)
-    }
-}
-
-const fn rom_selected_game_load_decision(remaining_frames: u8) -> (bool, bool, u8) {
-    match remaining_frames {
-        0 => (false, false, 0),
-        1 => (false, true, 0),
-        ROM_SELECTED_GAME_LOAD_PRE_DUNGEON_AUDIO_REMAINING => (true, false, remaining_frames - 1),
-        _ => (false, false, remaining_frames - 1),
-    }
-}
-
 const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
     match load_gfx::animated_sprite_tile_secondary_sheet(gfx) {
         // Timing belongs to the compressed sheets, not an individual route's
@@ -1546,6 +1536,114 @@ impl ScheduledGameWork {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FileSelectGraphicsContinuation {
+    Loading { nmi_slices_remaining: u8 },
+    ResumeModule,
+}
+
+impl FileSelectGraphicsContinuation {
+    fn begin() -> Self {
+        Self::Loading {
+            nmi_slices_remaining: FILE_SELECT_GRAPHICS_NMI_SLICES,
+        }
+    }
+
+    fn advance_one_nmi_slice(&mut self) -> FileSelectGraphicsStep {
+        match self {
+            Self::Loading {
+                nmi_slices_remaining,
+            } => {
+                debug_assert_ne!(*nmi_slices_remaining, 0);
+                *nmi_slices_remaining = nmi_slices_remaining.saturating_sub(1);
+                if *nmi_slices_remaining == 0 {
+                    *self = Self::ResumeModule;
+                    FileSelectGraphicsStep::CompleteGraphics
+                } else {
+                    FileSelectGraphicsStep::Waiting
+                }
+            }
+            Self::ResumeModule => FileSelectGraphicsStep::ResumeModule,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FileSelectGraphicsStep {
+    Waiting,
+    CompleteGraphics,
+    ResumeModule,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SelectedGameLoadContinuation {
+    BeforePreDungeonAudio { nmi_slices_remaining: u8 },
+    AfterPreDungeonAudio { nmi_slices_remaining: u8 },
+}
+
+impl SelectedGameLoadContinuation {
+    fn begin() -> Self {
+        Self::BeforePreDungeonAudio {
+            nmi_slices_remaining: SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES,
+        }
+    }
+
+    fn remaining_nmi_slices(self) -> u8 {
+        match self {
+            Self::BeforePreDungeonAudio {
+                nmi_slices_remaining,
+            } => nmi_slices_remaining + SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
+            Self::AfterPreDungeonAudio {
+                nmi_slices_remaining,
+            } => nmi_slices_remaining,
+        }
+    }
+
+    fn advance_one_nmi_slice(&mut self) -> SelectedGameLoadStep {
+        match self {
+            Self::BeforePreDungeonAudio {
+                nmi_slices_remaining,
+            } => {
+                debug_assert_ne!(*nmi_slices_remaining, 0);
+                *nmi_slices_remaining = nmi_slices_remaining.saturating_sub(1);
+                if *nmi_slices_remaining == 0 {
+                    *self = Self::AfterPreDungeonAudio {
+                        nmi_slices_remaining:
+                            SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
+                    };
+                    SelectedGameLoadStep::BeginPreDungeonAudio
+                } else {
+                    SelectedGameLoadStep::Waiting
+                }
+            }
+            Self::AfterPreDungeonAudio {
+                nmi_slices_remaining,
+            } => {
+                debug_assert_ne!(*nmi_slices_remaining, 0);
+                *nmi_slices_remaining = nmi_slices_remaining.saturating_sub(1);
+                if *nmi_slices_remaining == 0 {
+                    SelectedGameLoadStep::CompleteLoad
+                } else {
+                    SelectedGameLoadStep::Waiting
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SelectedGameLoadStep {
+    Waiting,
+    BeginPreDungeonAudio,
+    CompleteLoad,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StartupSequenceStep {
+    FileSelectGraphics(FileSelectGraphicsStep),
+    SelectedGameLoad(SelectedGameLoadStep),
+}
+
 /// Host representation of the translated game thread around vblank.
 ///
 /// Only execution ownership belongs here: suspended game work, a continuation
@@ -1556,6 +1654,8 @@ impl ScheduledGameWork {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GameExecutionContinuation {
     ScheduledWork(ScheduledGameWork),
+    FileSelectGraphics(FileSelectGraphicsContinuation),
+    SelectedGameLoad(SelectedGameLoadContinuation),
     PreMainNmiResume(PreMainNmiResume),
     PreMainCaller(PreMainCallerContinuation),
 }
@@ -1597,6 +1697,47 @@ impl GameExecutionScheduler {
         self.schedule_continuation(GameExecutionContinuation::ScheduledWork(
             ScheduledGameWork::schedule_before_trailing_nmi(continuation, total_nmi_slices),
         ));
+    }
+
+    fn schedule_file_select_graphics(&mut self) {
+        self.schedule_continuation(GameExecutionContinuation::FileSelectGraphics(
+            FileSelectGraphicsContinuation::begin(),
+        ));
+    }
+
+    fn schedule_selected_game_load(&mut self) {
+        self.schedule_continuation(GameExecutionContinuation::SelectedGameLoad(
+            SelectedGameLoadContinuation::begin(),
+        ));
+    }
+
+    fn advance_startup_sequence(&mut self) -> Option<StartupSequenceStep> {
+        let step = match self.continuation.as_mut()? {
+            GameExecutionContinuation::FileSelectGraphics(continuation) => {
+                StartupSequenceStep::FileSelectGraphics(continuation.advance_one_nmi_slice())
+            }
+            GameExecutionContinuation::SelectedGameLoad(continuation) => {
+                StartupSequenceStep::SelectedGameLoad(continuation.advance_one_nmi_slice())
+            }
+            _ => return None,
+        };
+        if matches!(
+            step,
+            StartupSequenceStep::FileSelectGraphics(FileSelectGraphicsStep::ResumeModule)
+                | StartupSequenceStep::SelectedGameLoad(SelectedGameLoadStep::CompleteLoad)
+        ) {
+            self.continuation = None;
+        }
+        Some(step)
+    }
+
+    fn selected_game_load_remaining_nmi_slices(self) -> u8 {
+        match self.continuation {
+            Some(GameExecutionContinuation::SelectedGameLoad(continuation)) => {
+                continuation.remaining_nmi_slices()
+            }
+            _ => 0,
+        }
     }
 
     fn scheduled_work(self) -> Option<ScheduledGameWork> {
@@ -4015,10 +4156,6 @@ pub struct ZeldaState {
     joypad_sampled_before_main: bool,
     #[serde(skip)]
     audio_nmi_processed_before_main: bool,
-    #[serde(skip)]
-    file_select_initial_graphics_phase: u8,
-    #[serde(skip)]
-    selected_game_load_remaining_frames: u8,
     #[serde(skip)]
     dungeon_landing_wipe_return_slices_remaining: u8,
     #[serde(skip)]
@@ -9191,8 +9328,6 @@ impl ZeldaState {
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
-            file_select_initial_graphics_phase: 0,
-            selected_game_load_remaining_frames: 0,
             dungeon_landing_wipe_return_slices_remaining: 0,
             dungeon_exit_spotlight_table_delay: 0,
             dungeon_exit_spotlight_resume_module: false,
@@ -9297,8 +9432,6 @@ impl ZeldaState {
         self.game_execution_scheduler.reset();
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
-        self.file_select_initial_graphics_phase = 0;
-        self.selected_game_load_remaining_frames = 0;
         self.dungeon_landing_wipe_return_slices_remaining = 0;
         self.dungeon_exit_spotlight_table_delay = 0;
         self.dungeon_exit_spotlight_resume_module = false;
@@ -9350,8 +9483,6 @@ impl ZeldaState {
             self.game_execution_scheduler.reset();
             self.joypad_sampled_before_main = false;
             self.audio_nmi_processed_before_main = false;
-            self.file_select_initial_graphics_phase = 0;
-            self.selected_game_load_remaining_frames = 0;
             self.dungeon_landing_wipe_return_slices_remaining = 0;
             self.dungeon_exit_spotlight_table_delay = 0;
             self.dungeon_exit_spotlight_resume_module = false;
@@ -9534,7 +9665,7 @@ impl ZeldaState {
 
     pub(super) fn begin_selected_game_load(&mut self) {
         self.enable_force_blank();
-        self.selected_game_load_remaining_frames = ROM_SELECTED_GAME_LOAD_FRAMES;
+        self.game_execution_scheduler.schedule_selected_game_load();
         // The ROM starts the heavy save-file load on this frame; its NMI is
         // PARTIAL (no Main_PrepSpritesForNmi — Snes9x holds 0xc00d here while
         // rust's game loop otherwise decrements once more on this entry frame,
@@ -9544,8 +9675,9 @@ impl ZeldaState {
     }
 
     #[doc(hidden)]
-    pub fn zelda_debug_selected_game_load_remaining_frames(&self) -> u8 {
-        self.selected_game_load_remaining_frames
+    pub fn zelda_debug_selected_game_load_remaining_nmi_slices(&self) -> u8 {
+        self.game_execution_scheduler
+            .selected_game_load_remaining_nmi_slices()
     }
 
     pub(super) fn begin_item_receipt_graphics_work(
@@ -11494,35 +11626,42 @@ impl ZeldaState {
             self.stage_dialogue_scroll_completion_after_return(completed_scanout);
             return;
         }
-        if self.rom_startup_timing() && self.file_select_initial_graphics_phase > 1 {
-            let (_, complete_graphics, next_phase) =
-                rom_file_select_initial_graphics_decision(self.file_select_initial_graphics_phase);
-            self.file_select_initial_graphics_phase = next_phase;
-            if complete_graphics {
-                self.complete_module_select_file_0();
+        if self.rom_startup_timing() {
+            let startup_step = self.game_execution_scheduler.advance_startup_sequence();
+            let consumes_frame = match startup_step {
+                Some(StartupSequenceStep::FileSelectGraphics(
+                    FileSelectGraphicsStep::Waiting,
+                )) => true,
+                Some(StartupSequenceStep::FileSelectGraphics(
+                    FileSelectGraphicsStep::CompleteGraphics,
+                )) => {
+                    self.complete_module_select_file_0();
+                    true
+                }
+                Some(StartupSequenceStep::FileSelectGraphics(
+                    FileSelectGraphicsStep::ResumeModule,
+                ))
+                | None => false,
+                Some(StartupSequenceStep::SelectedGameLoad(step)) => {
+                    match step {
+                        SelectedGameLoadStep::Waiting => {}
+                        SelectedGameLoadStep::BeginPreDungeonAudio => {
+                            self.begin_selected_game_load_pre_dungeon_audio();
+                        }
+                        SelectedGameLoadStep::CompleteLoad => {
+                            self.complete_module05_load_file_after_resumption();
+                            self.nmi_prepare_sprites();
+                            self.clear_nmi_update_latch();
+                        }
+                    }
+                    true
+                }
+            };
+            if consumes_frame {
+                self.capture_display_snapshot();
+                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                return;
             }
-            self.capture_display_snapshot();
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-            return;
-        }
-        if self.file_select_initial_graphics_phase == 1 {
-            self.file_select_initial_graphics_phase = 0;
-        }
-        if self.rom_startup_timing() && self.selected_game_load_remaining_frames != 0 {
-            let (begin_pre_dungeon_audio, complete_load, next_remaining_frames) =
-                rom_selected_game_load_decision(self.selected_game_load_remaining_frames);
-            self.selected_game_load_remaining_frames = next_remaining_frames;
-            if begin_pre_dungeon_audio {
-                self.begin_selected_game_load_pre_dungeon_audio();
-            }
-            if complete_load {
-                self.complete_module05_load_file_after_resumption();
-                self.nmi_prepare_sprites();
-                self.clear_nmi_update_latch();
-            }
-            self.capture_display_snapshot();
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-            return;
         }
         if self.resume_dungeon_landing_wipe_return(input, oam_dma_source.as_deref()) {
             return;

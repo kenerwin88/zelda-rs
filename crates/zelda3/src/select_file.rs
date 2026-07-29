@@ -111,7 +111,8 @@ impl ZeldaState {
         self.set_music_control(11);
         self.increment_submodule();
         if self.rom_startup_timing() {
-            self.file_select_initial_graphics_phase = 57;
+            self.game_execution_scheduler
+                .schedule_file_select_graphics();
             return;
         }
         self.complete_module_select_file_0();
