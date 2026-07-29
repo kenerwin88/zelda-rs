@@ -362,6 +362,49 @@ fn dialogue_return_only_boundary_keeps_current_bg_scroll_scanout() {
 }
 
 #[test]
+fn post_nmi_bg_scroll_writes_target_the_following_scanout() {
+    let mut state = ZeldaState::new();
+    let current_scanout = [
+        [0x0111, 0x0122],
+        [0x0233, 0x0244],
+        [0x0355, 0x0366],
+        [0x0077, 0x0088],
+    ];
+    for (layer, [h_scroll, v_scroll]) in state.ppu.bg_layer.iter_mut().zip(current_scanout) {
+        layer.h_scroll = h_scroll;
+        layer.v_scroll = v_scroll;
+    }
+    state.capture_display_snapshot();
+
+    let following_scanout = [
+        [0x1111, 0x1122],
+        [0x1233, 0x1244],
+        [0x1355, 0x1366],
+        [0x1077, 0x1088],
+    ];
+    state.publish_bg_scroll_for_following_scanout(BgScrollRegisterScanout {
+        offsets: following_scanout,
+    });
+
+    let displayed = state.with_display_snapshot(|display| {
+        display
+            .ppu
+            .bg_layer
+            .map(|layer| [layer.h_scroll, layer.v_scroll])
+    });
+    assert_eq!(displayed, current_scanout);
+
+    state.capture_display_snapshot();
+    let displayed = state.with_display_snapshot(|display| {
+        display
+            .ppu
+            .bg_layer
+            .map(|layer| [layer.h_scroll, layer.v_scroll])
+    });
+    assert_eq!(displayed, following_scanout);
+}
+
+#[test]
 fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     let mut state = ZeldaState::new();
     state.initialized = true;

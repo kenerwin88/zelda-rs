@@ -3924,7 +3924,6 @@ impl ZeldaState {
             // but the transition-control tail does not return until four more
             // NMI boundaries have passed.
             self.publish_module09_transition_sprites_without_scroll();
-            self.stage_overworld_transition_scroll_scanout_hold();
             let reload_timing = overworld_sprite_reload_timing(sprite_reload_workload, entry_phase);
             self.pending_rom_work = PendingRomWork::schedule(
                 RomWorkContinuation::FinishOverworldSpriteReloadTail {

@@ -3242,6 +3242,47 @@ enum DisplayBgScrollGeneration {
     ComposeLiveAfterNmi,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DisplayedBgScrollSource {
+    CapturedBeforeNmi,
+    LiveAfterNmi,
+    LiveBg1AfterNmi,
+}
+
+impl DisplayedBgScrollSource {
+    fn resolve(
+        captured_generation: DisplayBgScrollGeneration,
+        dungeon_exit_crosses_nmi_boundary: bool,
+        publish_live_overworld_bad_weather_scroll: bool,
+    ) -> Self {
+        if captured_generation == DisplayBgScrollGeneration::ComposeLiveAfterNmi
+            || dungeon_exit_crosses_nmi_boundary
+        {
+            Self::LiveAfterNmi
+        } else if publish_live_overworld_bad_weather_scroll {
+            Self::LiveBg1AfterNmi
+        } else {
+            Self::CapturedBeforeNmi
+        }
+    }
+
+    fn compose_into(self, shown: &mut PpuState, live: &PpuState) {
+        match self {
+            Self::CapturedBeforeNmi => {}
+            Self::LiveAfterNmi => {
+                for (shown, live) in shown.bg_layer.iter_mut().zip(&live.bg_layer) {
+                    shown.h_scroll = live.h_scroll;
+                    shown.v_scroll = live.v_scroll;
+                }
+            }
+            Self::LiveBg1AfterNmi => {
+                shown.bg_layer[0].h_scroll = live.bg_layer[0].h_scroll;
+                shown.bg_layer[0].v_scroll = live.bg_layer[0].v_scroll;
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 enum DisplayObjGeneration {
     #[default]
@@ -3478,15 +3519,6 @@ pub struct ZeldaState {
     pub(crate) dialogue_scroll_completion_scanout: Option<DialogueTextScanout>,
     #[serde(skip)]
     pub(crate) dialogue_scroll_completion_staged: Option<DialogueTextScanout>,
-    /// One scanout of pre-transition BG scroll provenance. The ROM is still
-    /// inside the long sprite reload while Rust's atomic simulation has
-    /// already authored the next NMI scroll copies.
-    #[serde(skip)]
-    overworld_transition_scroll_hold: Option<[u16; 8]>,
-    #[serde(skip)]
-    overworld_transition_scroll_hold_pending: Option<[u16; 8]>,
-    #[serde(skip)]
-    overworld_transition_scroll_hold_staged: Option<[u16; 8]>,
     pub dma: DmaState,
     pub frame_ctr_dbg: u32,
     /// Legacy serialized host-input history. Retained for z3state compatibility;
@@ -8594,9 +8626,6 @@ impl ZeldaState {
             dialogue_scroll_frozen_scanout: None,
             dialogue_scroll_completion_scanout: None,
             dialogue_scroll_completion_staged: None,
-            overworld_transition_scroll_hold: None,
-            overworld_transition_scroll_hold_pending: None,
-            overworld_transition_scroll_hold_staged: None,
             dialogue_scroll_ran_this_frame: false,
             dialogue_scanout_ownership: DialogueScanoutOwnership::SNAPSHOT,
             dialogue_oam_publication_phase: DialogueOamPublicationPhase::Idle,
@@ -9182,15 +9211,8 @@ impl ZeldaState {
         );
     }
 
-    pub(super) fn stage_overworld_transition_scroll_scanout_hold(&mut self) {
-        self.overworld_transition_scroll_hold_pending = Some(std::array::from_fn(|index| {
-            let layer = &self.ppu.bg_layer[index / 2];
-            if index & 1 == 0 {
-                layer.h_scroll
-            } else {
-                layer.v_scroll
-            }
-        }));
+    fn publish_bg_scroll_for_following_scanout(&mut self, scroll: BgScrollRegisterScanout) {
+        scroll.publish_to(&mut self.ppu);
     }
 
     pub(crate) fn dialogue_text_scanout_from_render_buffer(&self) -> DialogueTextScanout {
@@ -9458,9 +9480,6 @@ impl ZeldaState {
         if self.dialogue_scanout_ownership.is_snapshot() {
             self.dialogue_scroll_frozen_scanout = None;
         }
-        self.overworld_transition_scroll_hold = self.overworld_transition_scroll_hold_staged.take();
-        self.overworld_transition_scroll_hold_staged =
-            self.overworld_transition_scroll_hold_pending.take();
         let frame = self.game_state.frame;
         if std::env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some()
             && (5640..=5700).contains(&self.frame_ctr_dbg)
@@ -9952,28 +9971,12 @@ impl ZeldaState {
         // scanout-local table generation last so it refines, rather than gets
         // overwritten by, the coherent controls/channels/tables baseline.
         display.hdma_table_generation.compose_into(&mut self.ram);
-        if let Some(scroll) = self.overworld_transition_scroll_hold {
-            for (index, layer) in self.ppu.bg_layer.iter_mut().enumerate() {
-                layer.h_scroll = scroll[index * 2];
-                layer.v_scroll = scroll[index * 2 + 1];
-            }
-        }
-        if display.bg_scroll_generation == DisplayBgScrollGeneration::ComposeLiveAfterNmi {
-            for (shown, live) in self.ppu.bg_layer.iter_mut().zip(&display.ppu.bg_layer) {
-                shown.h_scroll = live.h_scroll;
-                shown.v_scroll = live.v_scroll;
-            }
-        }
-        if dungeon_exit_crosses_nmi_boundary {
-            for (shown, live) in self.ppu.bg_layer.iter_mut().zip(&display.ppu.bg_layer) {
-                shown.h_scroll = live.h_scroll;
-                shown.v_scroll = live.v_scroll;
-            }
-        }
-        if publish_live_overworld_bad_weather_scroll {
-            self.ppu.bg_layer[0].h_scroll = display.ppu.bg_layer[0].h_scroll;
-            self.ppu.bg_layer[0].v_scroll = display.ppu.bg_layer[0].v_scroll;
-        }
+        DisplayedBgScrollSource::resolve(
+            display.bg_scroll_generation,
+            dungeon_exit_crosses_nmi_boundary,
+            publish_live_overworld_bad_weather_scroll,
+        )
+        .compose_into(&mut self.ppu, &display.ppu);
         if publish_live_overworld_transition_half_color {
             self.ppu.half_color = display.ppu.half_color;
         }
@@ -11376,10 +11379,11 @@ impl ZeldaState {
                     // the remaining controls still belong to the pre-return
                     // generation.
                     let returned_scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
-                    returned_scroll.publish_to(&mut self.ppu);
-                    if let Some(snapshot) = self.display_snapshot.as_mut() {
-                        returned_scroll.publish_to(&mut snapshot.ppu);
-                    }
+                    // These direct PPU writes occur after this scanout's NMI.
+                    // They configure the following active frame; the immutable
+                    // snapshot captured above retains the registers that were
+                    // already being scanned out.
+                    self.publish_bg_scroll_for_following_scanout(returned_scroll);
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                     // The map/sprite graphics tail has now returned and
