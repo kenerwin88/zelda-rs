@@ -387,7 +387,7 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
     assert_eq!(state.game_state.display.core_update_disable_flag, 0);
 
-    state.interrupt_nmi_audio_parts_for_generation();
+    state.interrupt_nmi_audio_parts();
     assert_eq!(state.game_state.system_signals.sound_effect_2(), 0);
     assert_eq!(state.zelda_debug_apu_write_ports()[3], 12);
 }
@@ -3782,6 +3782,15 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e));
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x77));
     assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(0x70));
+    assert!(!rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
+        0x46
+    ));
+    assert!(rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
+        0x3f
+    ));
+    assert!(!rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
+        0x38
+    ));
     assert_eq!(
         rom_display_snapshot_publication(0x0f, 0),
         DisplaySnapshotPublication::AdvanceStaged
@@ -3822,7 +3831,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
             .publishes_completed_hdma_table_to_active_scanout()
     );
     assert!(
-        SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
+        !SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
             .publishes_completed_hdma_table_to_active_scanout()
     );
     assert!(
@@ -3847,7 +3856,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x3f, 0),
-        SpotlightIterationPhase::WholeTable
+        SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x3f, 42),
@@ -3855,7 +3864,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x3f, 41),
-        SpotlightIterationPhase::WholeTable
+        SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x38, 0),

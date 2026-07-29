@@ -3648,6 +3648,8 @@ pub(crate) fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
         ("sound_effect_1", u64::from(byte(0x012e))),
         ("sound_effect_2", u64::from(byte(0x012f))),
         ("queued_music_control", u64::from(byte(0x0132))),
+        ("spotlight_window_radius", u64::from(word(0x067c))),
+        ("spotlight_window_state", u64::from(word(0x067e))),
         ("joypad_high", u64::from(byte(0x00f0))),
         ("joypad_low", u64::from(byte(0x00f2))),
         ("joypad_high_filtered", u64::from(byte(0x00f4))),

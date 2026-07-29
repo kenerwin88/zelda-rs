@@ -44,7 +44,8 @@ const INCREMENTAL_VRAM_UPLOAD_SOURCES: [u16; 16] = [
 
 const AGAHNIM_WARP_SHADOW_PALETTE_OFFSETS: [usize; 3] = [0x160, 0x180, 0x1a0];
 const LIT_TORCHES_COLOR_PLUS: [u8; 4] = [31, 8, 4, 0];
-const SPOTLIGHT_DELTA_SIZE: [i8; 4] = [-7, 7, 7, 7];
+pub(super) const SPOTLIGHT_RADIUS_STEP: u16 = 7;
+const SPOTLIGHT_DELTA_SIZE: [i8; 4] = [-(SPOTLIGHT_RADIUS_STEP as i8), 7, 7, 7];
 const SPOTLIGHT_GOAL: [u16; 4] = [0, 126, 35, 126];
 const SPOTLIGHT_CIRCLE_X_RADIUS_CURVE: [u8; 129] = [
     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe, 0xfe, 0xfe, 0xfe,

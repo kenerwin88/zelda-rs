@@ -572,7 +572,7 @@ new file mode 100644
 index 0000000..4dc9956
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,663 @@
+@@ -0,0 +1,667 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -663,7 +663,7 @@ index 0000000..4dc9956
 +int apu_port_write_count = 0;
 +int apu_port_writes[apu_port_write_capacity][apu_port_write_field_count] = {};
 +constexpr int smp_instruction_capacity = 8192;
-+constexpr int smp_instruction_field_count = 12;
++constexpr int smp_instruction_field_count = 13;
 +int smp_instruction_count = 0;
 +int smp_instructions[smp_instruction_capacity][smp_instruction_field_count] = {};
 +
@@ -802,6 +802,7 @@ index 0000000..4dc9956
 +		"\"pc\":%u,\"a\":%u,\"x\":%u,\"y\":%u,\"s\":%u,"
 +		"\"carry\":%u,"
 +		"\"main\":%u,\"sub\":%u,\"subsub\":%u,\"frame_counter\":%u,\"room\":%u,"
++		"\"spotlight_radius\":%u,\"spotlight_state\":%u,"
 +		"\"rng_seed\":%u,\"nmi_latch\":%u,\"nmi_disable\":%u,\"nmi_pending\":%u,"
 +		"\"return_address\":%u,"
 +		"\"stack1\":%u,\"stack2\":%u,\"stack3\":%u,\"stack4\":%u",
@@ -811,6 +812,8 @@ index 0000000..4dc9956
 +		Registers.S.W, Zelda3TraceCpuCarry(),
 +		Memory.RAM[0x10], Memory.RAM[0x11], Memory.RAM[0xb0],
 +		Memory.RAM[0x1a], Memory.RAM[0xa0] | (Memory.RAM[0xa1] << 8),
++		Memory.RAM[0x067c] | (Memory.RAM[0x067d] << 8),
++		Memory.RAM[0x067e] | (Memory.RAM[0x067f] << 8),
 +		Memory.RAM[0x0fa1], Memory.RAM[0x12],
 +		Memory.RAM[0x0710], Memory.RAM[0x17], return_address,
 +		Memory.RAM[(Registers.S.W + 1) & 0xffff],
@@ -1126,6 +1129,7 @@ index 0000000..4dc9956
 +	instruction[9] = timer0_stage3;
 +	instruction[10] = dsp_sample_count;
 +	instruction[11] = SNES::dsp.spc_dsp.zelda3_debug_value(7);
++	instruction[12] = SNES::smp.clock;
 +}
 +
 +int Zelda3TraceSmpInstructionCount()

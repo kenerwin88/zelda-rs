@@ -1105,6 +1105,7 @@ pub struct SpcInstructionTrace {
     pub cycle: u32,
     pub pc: u16,
     pub opcode: u8,
+    pub operands: [u8; 2],
     pub a: u8,
     pub x: u8,
     pub y: u8,
@@ -1348,6 +1349,10 @@ impl ApuState {
                 cycle: self.cycles,
                 pc: self.spc.pc,
                 opcode: self.ram[self.spc.pc as usize],
+                operands: [
+                    self.ram[self.spc.pc.wrapping_add(1) as usize],
+                    self.ram[self.spc.pc.wrapping_add(2) as usize],
+                ],
                 a: self.spc.a,
                 x: self.spc.x,
                 y: self.spc.y,

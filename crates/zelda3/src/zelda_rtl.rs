@@ -1042,52 +1042,6 @@ enum PreMainNmiResume {
     DungeonSupertileQuadrantUploads,
 }
 
-/// Selects which CPU-authored audio generation the next hardware NMI can see.
-///
-/// Normally an NMI publishes and consumes the live CPU latches. When an
-/// interruptible ROM caller returns across an NMI boundary, three generations
-/// are distinct: the ports already published before the return, the latches
-/// materialized by the return, and the next live CPU generation. The middle
-/// generation must be published once without consuming its control latches.
-/// Effect ports remain edge-triggered and are consumed by every NMI generation.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum AudioNmiGeneration {
-    #[default]
-    LiveCpuLatches,
-    PreviouslyPublishedPorts,
-    InterruptibleReturnLatches,
-}
-
-impl AudioNmiGeneration {
-    fn advance(&mut self) -> Option<AudioNmiPublication> {
-        let (next_generation, publication) = match *self {
-            Self::LiveCpuLatches => (
-                Self::LiveCpuLatches,
-                Some(AudioNmiPublication::PublishAndConsume),
-            ),
-            Self::PreviouslyPublishedPorts => (Self::InterruptibleReturnLatches, None),
-            Self::InterruptibleReturnLatches => (
-                Self::LiveCpuLatches,
-                Some(AudioNmiPublication::PublishAndRetain),
-            ),
-        };
-        *self = next_generation;
-        publication
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AudioNmiPublication {
-    PublishAndConsume,
-    PublishAndRetain,
-}
-
-impl AudioNmiPublication {
-    const fn consumes_control_latches(self) -> bool {
-        matches!(self, Self::PublishAndConsume)
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PreMainNmiScanoutGenerations {
     vram: DisplayVramGeneration,
@@ -1229,6 +1183,22 @@ const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool
     // inside IrisSpotlight_ConfigureTable. From $70 downward the next table is
     // far enough along at the first boundary to publish in that same slice.
     radius >= 0x77
+}
+
+// IrisSpotlight_ConfigureTable waits for V=192, copies its 448-byte table, and
+// only then writes the next radius at $00:f3cf. PC/V-counter traces place the
+// write producing $3f after vblank and the write producing $38 before vblank.
+// The crossing iteration can therefore return and begin the next main slice
+// before the host's trailing NMI instead of consuming a return-only host frame.
+const SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX: u16 = 0x38;
+
+const fn spotlight_close_next_radius(radius: u16) -> u16 {
+    radius.saturating_sub(load_gfx::SPOTLIGHT_RADIUS_STEP)
+}
+
+const fn rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(radius: u16) -> bool {
+    radius > SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
+        && spotlight_close_next_radius(radius) <= SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1431,7 +1401,6 @@ impl SpotlightIteration {
                 SpotlightDirection::Closing,
                 SpotlightIterationPhase::WholeTable
                     | SpotlightIterationPhase::WholeTableAfterTablePublication
-                    | SpotlightIterationPhase::MixedTailAfterReturn
             )
         )
     }
@@ -1458,7 +1427,10 @@ impl SpotlightIterationPhase {
             }
         } else if !spotlight_table_has_long_nmi_workload(vertical_center) {
             Self::WholeTableAfterTablePublication
-        } else if radius != 0 && radius <= 0x38 {
+        } else if radius != 0
+            && spotlight_close_next_radius(radius)
+                <= SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
+        {
             // Snes9x PC/V-counter traces show the next circle write reaching
             // HDMA at scanline 221 once the close has reached this CPU phase.
             Self::MixedTailAfterReturn
@@ -3585,8 +3557,6 @@ pub struct ZeldaState {
     joypad_sampled_before_main: bool,
     #[serde(skip)]
     audio_nmi_processed_before_main: bool,
-    #[serde(skip)]
-    next_audio_nmi_generation: AudioNmiGeneration,
     #[serde(skip)]
     file_select_initial_graphics_phase: u8,
     #[serde(skip)]
@@ -8654,7 +8624,6 @@ impl ZeldaState {
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
-            next_audio_nmi_generation: AudioNmiGeneration::default(),
             file_select_initial_graphics_phase: 0,
             file_select_checkerboard_suffix_pending: false,
             name_player_tilemap_suffix_pending: false,
@@ -8762,7 +8731,6 @@ impl ZeldaState {
         self.next_pre_main_nmi_resume = None;
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
-        self.next_audio_nmi_generation = AudioNmiGeneration::default();
         self.file_select_initial_graphics_phase = 0;
         self.file_select_checkerboard_suffix_pending = false;
         self.name_player_tilemap_suffix_pending = false;
@@ -8819,7 +8787,6 @@ impl ZeldaState {
             self.next_pre_main_nmi_resume = None;
             self.joypad_sampled_before_main = false;
             self.audio_nmi_processed_before_main = false;
-            self.next_audio_nmi_generation = AudioNmiGeneration::default();
             self.file_select_initial_graphics_phase = 0;
             self.file_select_checkerboard_suffix_pending = false;
             self.name_player_tilemap_suffix_pending = false;
@@ -9337,15 +9304,17 @@ impl ZeldaState {
                 rom_display_snapshot_publication(frame.main_module, frame.submodule)
             }
         });
-        let hdma_table_generation = self
-            .pending_rom_work
-            .spotlight_iteration()
+        let spotlight_iteration = self.pending_rom_work.spotlight_iteration();
+        let hdma_table_generation = spotlight_iteration
             .filter(|iteration| iteration.publishes_completed_hdma_table_to_active_scanout())
             .map(
                 |_| DisplayHdmaTableGeneration::SpotlightPublishedAheadOfSnapshot {
                     active_table: self.hdma_dynamic_table_bytes(),
                 },
             );
+        let mixed_spotlight_after_projection = spotlight_iteration
+            .filter(|iteration| iteration.phase == SpotlightIterationPhase::MixedTailAfterReturn)
+            .map(|_| spotlight_hdma_tables_from_ram(&self.ram));
         let landing_spotlight_after_projection =
             (self.dungeon_landing_wipe_return_slices_remaining != 0
                 && spotlight_opening_projects_live_tail_before_hdma(
@@ -9363,6 +9332,16 @@ impl ZeldaState {
             display.hdma_table_generation = generation;
         }
         if let (Some(after_projection), Some(display)) = (
+            mixed_spotlight_after_projection,
+            self.display_snapshot.as_mut(),
+        ) {
+            display.hdma_table_generation =
+                DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
+                    before_projection: spotlight_hdma_tables_from_ram(&display.ram),
+                    after_projection,
+                };
+        }
+        if let (Some(after_projection), Some(display)) = (
             landing_spotlight_after_projection,
             self.display_snapshot.as_mut(),
         ) {
@@ -9378,35 +9357,25 @@ impl ZeldaState {
         &mut self,
         phase: SpotlightIterationPhase,
     ) {
-        let before_projection = spotlight_hdma_tables_from_ram(&self.ram);
-        let mut after_projection = before_projection.clone();
+        let live_tables = spotlight_hdma_tables_from_ram(&self.ram);
+        let before_projection = if phase == SpotlightIterationPhase::MixedTailAfterReturn {
+            self.display_snapshot
+                .as_ref()
+                .map(|display| spotlight_hdma_tables_from_ram(&display.ram))
+                .unwrap_or_else(|| live_tables.clone())
+        } else {
+            live_tables.clone()
+        };
+        let mut after_projection = live_tables;
         let vertical_center = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
         );
         let radius = self.game_state.display.spotlight_hdma.window_radius();
         if phase == SpotlightIterationPhase::MixedTailAfterReturn {
-            // Once the return itself crosses vblank, only the following
-            // iteration's bottom-edge writes can catch HDMA. Those writes use
-            // the direct distance from the circle center.
-            for scanline in SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START..224 {
-                // The builder tests and decrements its Y operand before the
-                // following lower-edge write, so this partial iteration owns
-                // the one-based distance rather than the completed table's
-                // zero-based center distance.
-                let radial_distance = vertical_center
-                    .abs_diff(scanline as u16)
-                    .wrapping_add(1);
-                let value = if radial_distance >= radius {
-                    0x00ff
-                } else {
-                    self.iris_spotlight_calculate_circle_value(radial_distance as u8)
-                };
-                for table in &mut after_projection {
-                    let offset = scanline * 2;
-                    table[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-                }
-            }
+            // The fixed 448-byte copy crosses HDMA at scanline 221. HDMA has
+            // already consumed the published table above that line; from the
+            // crossing onward it reads the table which just completed in WRAM.
         } else {
             // Follow the ROM builder's paired lower/upper cursors exactly. The
             // lower cursor starts at max(2*center, 224), so its radial operand
@@ -10817,7 +10786,7 @@ impl ZeldaState {
             // main CPU performs this frame's game work. This is also true on the
             // first initialized frame: the intro chime written by `intro_init`
             // must wait for the following NMI rather than leaking out early.
-            self.interrupt_nmi_audio_parts_for_generation();
+            self.interrupt_nmi_audio_parts();
             self.audio_nmi_processed_before_main = true;
         }
         if initialized_audio_bank_this_frame {
@@ -11078,6 +11047,8 @@ impl ZeldaState {
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
+        let mut resume_main_after_spotlight_return = false;
+        let mut spotlight_scanout_started_before_resumed_main = None;
         if self.rom_startup_timing() && self.pending_rom_work.is_pending() {
             let work_slice = self.pending_rom_work.advance_one_nmi_slice();
             let publication_override = match work_slice {
@@ -11283,6 +11254,11 @@ impl ZeldaState {
                     }
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
+                    resume_main_after_spotlight_return =
+                        self.game_state.frame.main_module == 15
+                            && rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
+                                self.game_state.display.spotlight_hdma.window_radius(),
+                            );
                     if self.game_state.frame.main_module == 15
                         && rom_dungeon_exit_spotlight_table_needs_entry_slice(
                             self.game_state.display.spotlight_hdma.window_radius(),
@@ -11297,11 +11273,6 @@ impl ZeldaState {
                     animated_tiles,
                 }) => {
                     self.complete_pre_overworld_load_properties(overworld_screen, animated_tiles);
-                    // The atomic continuation materializes its caller suffix
-                    // after this frame's audio NMI was already sampled. Keep
-                    // that boundary's APU command batch; the ambient latch
-                    // authored above belongs to the following NMI generation.
-                    self.next_audio_nmi_generation = AudioNmiGeneration::PreviouslyPublishedPorts;
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
@@ -11480,8 +11451,17 @@ impl ZeldaState {
                     self.project_following_spotlight_tail_to_active_scanout(iteration.phase);
                 }
             }
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-            return;
+            if resume_main_after_spotlight_return {
+                // The $3f->$38 circle update occurs before the trailing NMI,
+                // but that main slice cannot replace the scanout which already
+                // started at the return boundary above. Preserve the active
+                // display generation while the ordinary capture below stages
+                // the resumed CPU generation for the following scanout.
+                spotlight_scanout_started_before_resumed_main = self.display_snapshot.clone();
+            } else {
+                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                return;
+            }
         }
         if self.rom_startup_timing()
             && run_what & crate::RUN_MAIN != 0
@@ -11645,6 +11625,9 @@ impl ZeldaState {
             if let Some(snapshot) = self.display_snapshot.as_mut() {
                 color_math_scanout.publish_to(&mut snapshot.ppu);
             }
+        }
+        if let Some(scanout) = spotlight_scanout_started_before_resumed_main {
+            self.display_snapshot = Some(scanout);
         }
         self.replay_trace_col("after-nmi");
         self.replay_trace_ram_watch("after-nmi");

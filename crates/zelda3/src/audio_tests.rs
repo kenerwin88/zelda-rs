@@ -387,7 +387,7 @@ fn modern_audio_consumes_typed_engine_commands_instead_of_apui_bytes() {
 fn gameplay_sound_latch_becomes_a_typed_nmi_command() {
     let mut state = ZeldaState::new();
     state.set_sound_effect_1(0x4a);
-    state.interrupt_nmi_audio_parts_locked();
+    state.interrupt_nmi_audio_parts();
     state.zelda_push_apu_state();
     let mut audio = [0i16; 32];
 
@@ -399,49 +399,6 @@ fn gameplay_sound_latch_becomes_a_typed_nmi_command() {
             crate::game_output::AudioEventKind::PlaySfx { bank: 1, id: 0x4a }
         )
     }));
-}
-
-#[test]
-fn audio_nmi_generation_publishes_then_consumes_after_interruptible_caller_returns() {
-    let mut state = ZeldaState::new();
-    state.set_ambient_sound_effect(1);
-    state.set_sound_effect_2(12);
-    state.next_audio_nmi_generation = AudioNmiGeneration::PreviouslyPublishedPorts;
-
-    state.interrupt_nmi_audio_parts_for_generation();
-    state.zelda_push_apu_state();
-    let mut retained_audio = [0i16; 32];
-    let retained_frame = state.zelda_render_audio(&mut retained_audio, 16, 2);
-
-    assert_eq!(state.game_state.system_signals.ambient_sound_effect(), 1);
-    assert_eq!(state.game_state.system_signals.sound_effect_2(), 0);
-    assert!(!retained_frame.events.iter().any(|event| {
-        matches!(
-            event.kind,
-            crate::game_output::AudioEventKind::PlaySfx { bank: 0, id: 1 }
-        )
-    }));
-
-    state.interrupt_nmi_audio_parts_for_generation();
-    state.zelda_push_apu_state();
-    let mut published_audio = [0i16; 32];
-    let published_frame = state.zelda_render_audio(&mut published_audio, 16, 2);
-
-    assert_eq!(state.game_state.system_signals.ambient_sound_effect(), 1);
-    assert!(published_frame.events.iter().any(|event| {
-        matches!(
-            event.kind,
-            crate::game_output::AudioEventKind::PlaySfx { bank: 0, id: 1 }
-        )
-    }));
-
-    state.interrupt_nmi_audio_parts_for_generation();
-    state.zelda_push_apu_state();
-    let mut consumed_audio = [0i16; 32];
-    state.zelda_render_audio(&mut consumed_audio, 16, 2);
-
-    assert_eq!(state.game_state.system_signals.ambient_sound_effect(), 0);
-    assert_eq!(state.zelda_debug_apu_write_ports()[1], 1);
 }
 
 #[test]

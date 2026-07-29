@@ -667,6 +667,7 @@ impl LibretroCore {
                     timer0_stage3: unsafe { value(instruction, 9) },
                     output_sample: unsafe { value(instruction, 10) },
                     dsp_phase: unsafe { value(instruction, 11) },
+                    smp_clock: unsafe { value(instruction, 12) },
                 })
                 .collect(),
         )
@@ -795,6 +796,7 @@ pub(crate) struct LibretroSmpInstruction {
     pub(crate) timer0_stage3: i32,
     pub(crate) output_sample: i32,
     pub(crate) dsp_phase: i32,
+    pub(crate) smp_clock: i32,
 }
 
 impl Drop for LibretroCore {
