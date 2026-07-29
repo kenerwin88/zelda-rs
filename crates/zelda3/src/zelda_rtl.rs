@@ -470,6 +470,33 @@ enum DialogueOamPublicationPhase {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DialogueOamCpuBoundary {
+    Ordinary,
+    // Module0E authors sprite OAM before Text_Render. When state 3 accepts the
+    // end-message command and enters state 4, the leading NMI's active display
+    // still owns entry OAM, while that NMI's DMA commits live OAM for the next
+    // display. Keep this a scanout boundary rather than delaying the DMA.
+    MessageFinishedAfterLeadingNmi,
+}
+
+const fn dialogue_oam_cpu_boundary(
+    main_module: u8,
+    submodule: u8,
+    entry_text_render_state: u8,
+    exit_text_render_state: u8,
+) -> DialogueOamCpuBoundary {
+    if main_module == 14
+        && submodule == 2
+        && entry_text_render_state == 3
+        && exit_text_render_state == 4
+    {
+        DialogueOamCpuBoundary::MessageFinishedAfterLeadingNmi
+    } else {
+        DialogueOamCpuBoundary::Ordinary
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ObjScanoutGenerations {
     oam: GraphicsDmaGeneration,
     link_obj: GraphicsDmaGeneration,
@@ -523,7 +550,6 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
     let dungeon_intra_room_stairs_nmi_precedes_link_animation =
         main_module == 7 && matches!(submodule, 8 | 0x10);
     let dungeon_main_nmi_precedes_main = main_module == 7 && submodule == 0;
-    let dialogue_nmi_precedes_oam_authorship = main_module == 14 && submodule == 2;
     let player_obj_scanout_uses_host_boundary = (submodule == 0 && matches!(main_module, 9 | 11))
         || (main_module == 9 && matches!(submodule, 1 | 6..=8 | 0x0a));
     let oam_scanout_uses_host_boundary = dungeon_entrance_nmi_precedes_main
@@ -533,7 +559,7 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
         dungeon_entrance_nmi_precedes_main || dungeon_main_nmi_precedes_main;
 
     GraphicsDmaPlan {
-        oam_operands: if dungeon_main_nmi_precedes_main || dialogue_nmi_precedes_oam_authorship {
+        oam_operands: if dungeon_main_nmi_precedes_main {
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         } else {
             GraphicsDmaGeneration::LiveAfterMain
@@ -647,12 +673,26 @@ fn dialogue_oam_scanout_transition(
 
 fn oam_operands_for_nmi(
     module_operands: GraphicsDmaGeneration,
-    dialogue_phase: DialogueOamPublicationPhase,
+    publication_phase: DialogueOamPublicationPhase,
 ) -> GraphicsDmaGeneration {
-    if dialogue_phase == DialogueOamPublicationPhase::PublishedShadow {
+    if publication_phase == DialogueOamPublicationPhase::PublishedShadow {
         GraphicsDmaGeneration::LiveAfterMain
     } else {
         module_operands
+    }
+}
+
+const fn oam_scanout_for_cpu_boundary(
+    module_scanout: OamScanoutSource,
+    cpu_boundary: DialogueOamCpuBoundary,
+) -> OamScanoutSource {
+    if matches!(
+        cpu_boundary,
+        DialogueOamCpuBoundary::MessageFinishedAfterLeadingNmi
+    ) {
+        OamScanoutSource::RetainCapturedBeforeNmi
+    } else {
+        module_scanout
     }
 }
 
@@ -3716,6 +3756,7 @@ impl NmiCopyPacketScanout {
 #[derive(Clone)]
 struct PreMainGraphicsDma {
     entry_plan: GraphicsDmaPlan,
+    entry_dialogue_text_render_state: u8,
     animated_tile: Option<PreMainAnimatedTileDma>,
     link_sources: LinkDmaSources,
 }
@@ -9358,6 +9399,19 @@ impl ZeldaState {
                 published_shadow_oam_dma.as_deref(),
                 &self.ppu.oam,
             );
+        let entry_text_render_state = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.entry_dialogue_text_render_state)
+            .unwrap_or_else(|| captured_messaging.runtime.text_render_state());
+        let dialogue_cpu_boundary = dialogue_oam_cpu_boundary(
+            captured_frame.main_module,
+            captured_frame.submodule,
+            entry_text_render_state,
+            captured_messaging.runtime.text_render_state(),
+        );
+        let dialogue_oam_scanout_source =
+            oam_scanout_for_cpu_boundary(dialogue_oam_scanout_source, dialogue_cpu_boundary);
         self.dialogue_oam_publication_phase = next_dialogue_oam_phase;
         let oam_scanout_source = obj_scanout_generation
             .map(|generation| generation.oam.into())
@@ -10459,6 +10513,11 @@ impl ZeldaState {
                 .flatten();
             Some(PreMainGraphicsDma {
                 entry_plan: rom_graphics_dma_plan_at_host_boundary(self.game_state.frame),
+                entry_dialogue_text_render_state: self
+                    .game_state
+                    .messaging
+                    .runtime
+                    .text_render_state(),
                 animated_tile,
                 link_sources: LinkDmaSources::load_from_ram(&self.ram),
             })

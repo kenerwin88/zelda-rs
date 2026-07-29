@@ -3947,35 +3947,10 @@ fn spotlight_projection_generation_is_a_scanout_local_table_mix() {
 fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
     let gameplay = rom_graphics_dma_plan(7, 0);
     let brightness = rom_graphics_dma_plan(7, 10);
-    let dialogue = rom_graphics_dma_plan(14, 2);
 
     assert_eq!(
         gameplay.oam_operands,
         GraphicsDmaGeneration::HostBoundaryBeforeMain
-    );
-    assert_eq!(
-        dialogue.oam_operands,
-        GraphicsDmaGeneration::HostBoundaryBeforeMain
-    );
-    assert_eq!(
-        oam_operands_for_nmi(
-            dialogue.oam_operands,
-            DialogueOamPublicationPhase::PublishedShadow,
-        ),
-        GraphicsDmaGeneration::LiveAfterMain,
-    );
-    assert_eq!(
-        dialogue_oam_scanout_transition(
-            DialogueOamPublicationPhase::Idle,
-            GraphicsDmaGeneration::LiveAfterMain,
-            true,
-            Some(&[0x1111]),
-            &[0x2222],
-        ),
-        (
-            OamScanoutSource::ComposePublishedShadowDma,
-            DialogueOamPublicationPhase::PublishedShadow,
-        ),
     );
     assert_eq!(gameplay.oam_scanout, GraphicsDmaGeneration::LiveAfterMain);
     assert_eq!(
@@ -4001,6 +3976,65 @@ fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
     assert_eq!(
         animated_bg_scanout_across_main(brightness, gameplay),
         AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
+    );
+}
+
+#[test]
+fn dialogue_message_finish_retains_only_the_entry_oam_scanout() {
+    let dialogue = rom_graphics_dma_plan(14, 2);
+
+    assert_eq!(
+        dialogue.oam_operands,
+        GraphicsDmaGeneration::LiveAfterMain
+    );
+    assert_eq!(
+        oam_operands_for_nmi(
+            dialogue.oam_operands,
+            DialogueOamPublicationPhase::PublishedShadow,
+        ),
+        GraphicsDmaGeneration::LiveAfterMain,
+    );
+    assert_eq!(
+        oam_operands_for_nmi(
+            dialogue.oam_operands,
+            DialogueOamPublicationPhase::Completed,
+        ),
+        GraphicsDmaGeneration::LiveAfterMain,
+    );
+    assert_eq!(
+        dialogue_oam_cpu_boundary(14, 2, 3, 4),
+        DialogueOamCpuBoundary::MessageFinishedAfterLeadingNmi,
+    );
+    assert_eq!(
+        dialogue_oam_cpu_boundary(14, 2, 3, 3),
+        DialogueOamCpuBoundary::Ordinary,
+    );
+    assert_eq!(
+        oam_scanout_for_cpu_boundary(
+            OamScanoutSource::ComposeLiveAfterNmi,
+            DialogueOamCpuBoundary::MessageFinishedAfterLeadingNmi,
+        ),
+        OamScanoutSource::RetainCapturedBeforeNmi,
+    );
+    assert_eq!(
+        oam_scanout_for_cpu_boundary(
+            OamScanoutSource::ComposeLiveAfterNmi,
+            DialogueOamCpuBoundary::Ordinary,
+        ),
+        OamScanoutSource::ComposeLiveAfterNmi,
+    );
+    assert_eq!(
+        dialogue_oam_scanout_transition(
+            DialogueOamPublicationPhase::Idle,
+            GraphicsDmaGeneration::LiveAfterMain,
+            true,
+            Some(&[0x1111]),
+            &[0x2222],
+        ),
+        (
+            OamScanoutSource::ComposePublishedShadowDma,
+            DialogueOamPublicationPhase::PublishedShadow,
+        ),
     );
 }
 
@@ -5077,6 +5111,7 @@ fn nmi_operand_consumption_preserves_the_scanout_plan() {
     let entry_plan = rom_graphics_dma_plan_at_host_boundary(state.game_state.frame);
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_plan,
+        entry_dialogue_text_render_state: 0,
         animated_tile: None,
         link_sources: LinkDmaSources::load_from_ram(&state.ram),
     });
