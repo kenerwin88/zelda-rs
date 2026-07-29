@@ -3928,6 +3928,8 @@ impl ZeldaState {
             self.pending_rom_work = PendingRomWork::schedule(
                 RomWorkContinuation::FinishOverworldSpriteReloadTail {
                     post_return_hold_nmi_slices: reload_timing.post_return_hold_nmi_slices,
+                    return_phase: reload_timing.return_phase,
+                    epilogue_phase: reload_timing.epilogue_phase,
                 },
                 reload_timing.load_nmi_slices,
             );

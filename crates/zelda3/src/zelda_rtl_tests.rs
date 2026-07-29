@@ -4542,6 +4542,8 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
         OverworldSpriteReloadTiming {
             load_nmi_slices: 3,
             post_return_hold_nmi_slices: 1,
+            return_phase: NmiPhase::BeforeNmi,
+            epilogue_phase: NmiPhase::AfterNmi,
         }
     );
     assert_eq!(
@@ -4555,6 +4557,8 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
         OverworldSpriteReloadTiming {
             load_nmi_slices: 4,
             post_return_hold_nmi_slices: 0,
+            return_phase: NmiPhase::AfterNmi,
+            epilogue_phase: NmiPhase::BeforeNmi,
         }
     );
     assert_eq!(
@@ -4568,6 +4572,23 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
         OverworldSpriteReloadTiming {
             load_nmi_slices: 2,
             post_return_hold_nmi_slices: 0,
+            return_phase: NmiPhase::AfterNmi,
+            epilogue_phase: NmiPhase::BeforeNmi,
+        }
+    );
+    assert_eq!(
+        overworld_sprite_reload_timing(
+            OverworldSpriteReloadWorkload {
+                sprite_records: 2,
+                in_bounds_proximity_checks: 18,
+            },
+            OverworldSpriteReloadEntryPhase::VblankEdgeAfterGraphicsTail,
+        ),
+        OverworldSpriteReloadTiming {
+            load_nmi_slices: 2,
+            post_return_hold_nmi_slices: 0,
+            return_phase: NmiPhase::BeforeNmi,
+            epilogue_phase: NmiPhase::BeforeNmi,
         }
     );
 }
@@ -4870,20 +4891,39 @@ fn dungeon_falling_entry_retains_the_pre_transition_obj_generation() {
 }
 
 #[test]
-fn completed_rom_work_selects_post_nmi_scroll_only_at_measured_return_boundaries() {
+fn completed_rom_work_selects_scroll_generation_by_measured_nmi_side() {
     assert_eq!(
         RomWorkContinuation::FinishOverworldAuxGraphics.completed_bg_scroll_generation(),
         Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
     );
+    // Return phase selects publication independently from any host hold.
     for post_return_hold_nmi_slices in [0, 1] {
-        assert_eq!(
-            RomWorkContinuation::FinishOverworldSpriteReloadTail {
-                post_return_hold_nmi_slices,
-            }
-            .completed_bg_scroll_generation(),
-            Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
-        );
+        for (return_phase, generation) in [
+            (
+                NmiPhase::BeforeNmi,
+                Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
+            ),
+            (
+                NmiPhase::AfterNmi,
+                Some(DisplayBgScrollGeneration::RetainCapturedBeforeNmi),
+            ),
+        ] {
+            assert_eq!(
+                RomWorkContinuation::FinishOverworldSpriteReloadTail {
+                    post_return_hold_nmi_slices,
+                    return_phase,
+                    epilogue_phase: NmiPhase::BeforeNmi,
+                }
+                .completed_bg_scroll_generation(),
+                generation,
+            );
+        }
     }
+    assert_eq!(
+        RomWorkContinuation::HoldOverworldSpriteReloadReturn
+            .completed_bg_scroll_generation(),
+        Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
+    );
     assert_eq!(
         RomWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail
             .completed_bg_scroll_generation(),
@@ -4902,15 +4942,27 @@ fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
             obj: None,
         },
     );
-    assert_eq!(
-        PreMainNmiResume::OverworldSpriteReloadReturn.scanout_generations(),
-        PreMainNmiScanoutGenerations {
-            vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
-            animated_bg: None,
-            bg_scroll: DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
-            obj: None,
-        },
-    );
+    for (return_phase, bg_scroll) in [
+        (
+            NmiPhase::BeforeNmi,
+            DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+        ),
+        (
+            NmiPhase::AfterNmi,
+            DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
+        ),
+    ] {
+        assert_eq!(
+            PreMainNmiResume::OverworldSpriteReloadReturn { return_phase }
+                .scanout_generations(),
+            PreMainNmiScanoutGenerations {
+                vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
+                animated_bg: None,
+                bg_scroll,
+                obj: None,
+            },
+        );
+    }
     assert_eq!(
         PreMainNmiResume::DungeonSupertileQuadrantUploads.scanout_generations(),
         PreMainNmiScanoutGenerations {

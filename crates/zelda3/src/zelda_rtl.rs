@@ -1010,8 +1010,25 @@ enum OverworldSpriteReloadEntryPhase {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreMainNmiResume {
     OverworldAuxGraphicsReturn,
-    OverworldSpriteReloadReturn,
+    OverworldSpriteReloadReturn {
+        return_phase: NmiPhase,
+    },
     DungeonSupertileQuadrantUploads,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NmiPhase {
+    BeforeNmi,
+    AfterNmi,
+}
+
+impl NmiPhase {
+    const fn return_bg_scroll_generation(self) -> DisplayBgScrollGeneration {
+        match self {
+            Self::BeforeNmi => DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+            Self::AfterNmi => DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1031,12 +1048,14 @@ impl PreMainNmiResume {
                 bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
                 obj: None,
             },
-            Self::OverworldSpriteReloadReturn => PreMainNmiScanoutGenerations {
-                vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
-                animated_bg: None,
-                bg_scroll: DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
-                obj: None,
-            },
+            Self::OverworldSpriteReloadReturn { return_phase } => {
+                PreMainNmiScanoutGenerations {
+                    vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
+                    animated_bg: None,
+                    bg_scroll: return_phase.return_bg_scroll_generation(),
+                    obj: None,
+                }
+            }
             Self::DungeonSupertileQuadrantUploads => PreMainNmiScanoutGenerations {
                 vram: DisplayVramGeneration::ComposeLiveAfterNmi,
                 // This continuation captures before a leading hardware NMI.
@@ -1068,29 +1087,14 @@ impl PreMainNmiResume {
 struct OverworldSpriteReloadTiming {
     load_nmi_slices: u8,
     post_return_hold_nmi_slices: u8,
+    return_phase: NmiPhase,
+    epilogue_phase: NmiPhase,
 }
 
 const fn overworld_sprite_reload_timing(
     workload: OverworldSpriteReloadWorkload,
     entry_phase: OverworldSpriteReloadEntryPhase,
 ) -> OverworldSpriteReloadTiming {
-    if matches!(
-        entry_phase,
-        OverworldSpriteReloadEntryPhase::VblankEdgeAfterGraphicsTail
-    ) {
-        // Clean Snes9x PC/V-counter traces for screen $1b enter
-        // Module09_LoadNewSprites ($02:abed) at V=254, take NMI inside
-        // Sprite_ResetAll ($09:c47b), resume at $09:c4ac at V=5, reach
-        // Sprite_ActivateAllProxima ($09:c55e) at V=12, and return to
-        // Overworld_StartScrollTransition ($02:ac27) at V=48. That causal
-        // entry phase, rather than the record count alone, makes this reload
-        // span exactly two host NMI boundaries.
-        return OverworldSpriteReloadTiming {
-            load_nmi_slices: 2,
-            post_return_hold_nmi_slices: 0,
-        };
-    }
-
     // The ROM loader is interruptible, so its return frame depends on the
     // actual area workload. Snes9x PC/V-counter traces show screen $2b
     // processing two sprite records and 18 in-bounds proximity checks, then
@@ -1101,18 +1105,42 @@ const fn overworld_sprite_reload_timing(
     let timing_units = workload
         .in_bounds_proximity_checks
         .saturating_add(workload.sprite_records * OVERWORLD_SPRITE_RECORD_TIMING_UNITS);
-    if timing_units <= OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS {
+    let returns_before_nmi =
+        timing_units <= OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS;
+    let return_phase = if returns_before_nmi {
+        NmiPhase::BeforeNmi
+    } else {
+        NmiPhase::AfterNmi
+    };
+    if matches!(
+        entry_phase,
+        OverworldSpriteReloadEntryPhase::VblankEdgeAfterGraphicsTail
+    ) {
+        // The graphics tail enters Module09_LoadNewSprites at the vblank edge.
+        // That phase makes the reload span two host NMI boundaries, while the
+        // workload independently decides which scroll generation is visible.
+        OverworldSpriteReloadTiming {
+            load_nmi_slices: 2,
+            post_return_hold_nmi_slices: 0,
+            return_phase,
+            epilogue_phase: NmiPhase::BeforeNmi,
+        }
+    } else if returns_before_nmi {
         OverworldSpriteReloadTiming {
             load_nmi_slices: 3,
             // The light loader returns before NMI, but its next Module09
             // iteration does not reach Overworld_StartScrollTransition until
             // V=255 of the following scanout.
             post_return_hold_nmi_slices: 1,
+            return_phase,
+            epilogue_phase: NmiPhase::AfterNmi,
         }
     } else {
         OverworldSpriteReloadTiming {
             load_nmi_slices: 4,
             post_return_hold_nmi_slices: 0,
+            return_phase,
+            epilogue_phase: NmiPhase::BeforeNmi,
         }
     }
 }
@@ -1302,6 +1330,8 @@ enum RomWorkContinuation {
     FinishOverworldScreenMapAndSpriteGraphicsTail,
     FinishOverworldSpriteReloadTail {
         post_return_hold_nmi_slices: u8,
+        return_phase: NmiPhase,
+        epilogue_phase: NmiPhase,
     },
     HoldOverworldSpriteReloadReturn,
 }
@@ -1310,8 +1340,11 @@ impl RomWorkContinuation {
     const fn completed_bg_scroll_generation(self) -> Option<DisplayBgScrollGeneration> {
         match self {
             Self::FinishOverworldAuxGraphics
-            | Self::FinishOverworldSpriteReloadTail { .. } => {
+            | Self::HoldOverworldSpriteReloadReturn => {
                 Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi)
+            }
+            Self::FinishOverworldSpriteReloadTail { return_phase, .. } => {
+                Some(return_phase.return_bg_scroll_generation())
             }
             _ => None,
         }
@@ -11392,37 +11425,25 @@ impl ZeldaState {
                 }
                 RomWorkSlice::Complete(RomWorkContinuation::FinishOverworldSpriteReloadTail {
                     post_return_hold_nmi_slices,
+                    return_phase,
+                    epilogue_phase,
                 }) => {
                     // The long sprite reset/load loop is interrupted in the
-                    // ROM. On the final slice, the CPU returns through
-                    // Overworld_SetFixedColAndScroll before the vblank that
-                    // ends this scanout. Snes9x therefore exposes the returned
-                    // camera registers on this frame, not the following one.
-                    //
-                    // The measured light screen returns from $09:c55e to
-                    // $02:ac27 at V=213. That leaves enough time for the
-                    // submodule tail and Module09's caller suffix, but not for
-                    // Main_PrepSpritesForNmi and the subsequent $0710 latch
-                    // clear. The suffix's direct scroll writes are therefore
-                    // visible while this NMI still suppresses OAM/animated-tile
-                    // DMA. Finish the game-loop epilogue after the interrupt.
+                    // ROM. Workload-derived return phase owns publication and
+                    // epilogue order independently from the host hold count.
                     self.complete_module09_load_new_sprites_after_reload();
                     self.complete_module09_overworld_after_submodule();
-                    if post_return_hold_nmi_slices == 0 {
-                        // The measured heavy screen crosses the preceding NMI
-                        // inside the loader and reaches this completion
-                        // boundary early in the following scanout. Its full
-                        // game-loop epilogue therefore precedes this NMI.
+                    if epilogue_phase == NmiPhase::BeforeNmi {
                         self.nmi_prepare_sprites();
                         self.clear_nmi_update_latch();
                     }
-                    // The camera mirrors above are consumed by the NMI which
-                    // closes this ROM-work slice. Select that post-NMI
-                    // register generation without advancing the independently
-                    // retained VRAM/OAM generations.
+                    // A V=213 return reaches this NMI before the full epilogue,
+                    // so its camera mirrors are live in the emitted scanout.
+                    // A return just after NMI retains the captured scroll.
+                    // VRAM and OAM keep their independent generations.
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-                    if post_return_hold_nmi_slices != 0 {
+                    if epilogue_phase == NmiPhase::AfterNmi {
                         self.nmi_prepare_sprites();
                         self.clear_nmi_update_latch();
                     }
@@ -11433,7 +11454,9 @@ impl ZeldaState {
                         );
                     } else {
                         self.next_pre_main_nmi_resume =
-                            Some(PreMainNmiResume::OverworldSpriteReloadReturn);
+                            Some(PreMainNmiResume::OverworldSpriteReloadReturn {
+                                return_phase,
+                            });
                     }
                     return;
                 }
@@ -11445,7 +11468,9 @@ impl ZeldaState {
                     // after that image has been emitted. Hold only that next
                     // main-loop iteration while still running the frame NMI.
                     self.next_pre_main_nmi_resume =
-                        Some(PreMainNmiResume::OverworldSpriteReloadReturn);
+                        Some(PreMainNmiResume::OverworldSpriteReloadReturn {
+                            return_phase: NmiPhase::BeforeNmi,
+                        });
                 }
             }
             // The original ROM returns to the NMI boundary after the final
