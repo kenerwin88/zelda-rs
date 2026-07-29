@@ -258,13 +258,11 @@ impl ZeldaState {
         // independently visible color-composition registers are published to
         // its immutable display snapshot by run_frame_internal.
         let main_module = self.game_state.frame.main_module;
-        let dialogue_scroll_holds_registers =
-            self.dialogue_scanout_ownership.holds_nmi_registers();
+        let dialogue_scroll_holds_registers = self.dialogue_scanout_ownership.holds_nmi_registers();
         let thread_holds_registers = (main_module == 0x14
             && self.game_state.display.nmi_thread_active)
             || (main_module == 0x0e
-                && (self.dialogue_fast_forward_hold_active
-                    || dialogue_scroll_holds_registers));
+                && (self.dialogue_fast_forward_hold_active || dialogue_scroll_holds_registers));
         if trace_nmi {
             eprintln!(
                 "nmi_register_publication host={} main={main_module:02x} held={thread_holds_registers} thread={} dialogue_fast={} dialogue_scroll={} ppu_bg1v={:04x} mirror_bg1v={:04x}",
@@ -385,6 +383,10 @@ impl ZeldaState {
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
             );
+            // Link's source words are sampled by the NMI after the current
+            // main-thread slice. If that slice switched modules, its exit
+            // phase owns the operands; ordinary leading-NMI phases still
+            // select the captured host-boundary sources through this plan.
             let link_obj_operands_generation = graphics_dma_plan.link_obj_operands;
             let captured_link_sources = matches!(
                 link_obj_operands_generation,
@@ -525,8 +527,22 @@ impl ZeldaState {
         if !defer_intro_cgram {
             self.clear_cgram_update_flag();
         }
-        let mut oam_buf = self.sprite_oam_shadow_buffer().to_vec();
         let frame = self.game_state.frame;
+        let graphics_dma_plan = rom_graphics_dma_plan(frame.main_module, frame.submodule);
+        let oam_operands_generation = oam_operands_for_nmi(
+            graphics_dma_plan.oam_operands,
+            self.dialogue_oam_publication_phase,
+        );
+        let mut oam_buf = if matches!(
+            oam_operands_generation,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        ) {
+            oam_dma_source
+                .map(Vec::from)
+                .unwrap_or_else(|| self.sprite_oam_shadow_buffer().to_vec())
+        } else {
+            self.sprite_oam_shadow_buffer().to_vec()
+        };
         // Snes9x shows the normal $00:0800 OAM DMA on the first initialized
         // vblank.  The startup CPU work has not yet authored the regular
         // sprite list, but its hardware-visible reset word is still a real
@@ -668,10 +684,14 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_upload_tilemap(&mut self) {
-        let target = NMI_VRAM_ADDRS[self.game_state.display.nmi_load_target_page() as usize] << 8;
-        if target + 0x400 <= self.ppu.vram.len() {
+        let Some((target, word_count)) =
+            full_tilemap_nmi_vram_region(self.game_state.display.nmi_load_target_page())
+        else {
+            return;
+        };
+        if target + word_count <= self.ppu.vram.len() {
             let buf = self.tilemap_upload_stripe_buffer().to_vec();
-            for i in 0..0x400 {
+            for i in 0..word_count {
                 self.ppu.vram[target + i] = read_word_from_slice(&buf, i * 2);
             }
         }

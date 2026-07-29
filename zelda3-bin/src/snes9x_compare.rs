@@ -2374,6 +2374,30 @@ pub(crate) fn run_compare_libretro_oracle(
                 game.ram[0x10], game.ram[0x11], game.ram[0xb0], game.ram[0x13],
             );
             println!("pixel displayed_ppu frame={frame_index} {displayed_ppu}");
+            let oracle_obj_control = (0..5)
+                .map(|index| oracle.debug_ppu_value(19, index).unwrap_or(-1))
+                .collect::<Vec<_>>();
+            let oracle_obj_config = (0..3)
+                .map(|index| oracle.debug_ppu_value(17, index).unwrap_or(-1))
+                .collect::<Vec<_>>();
+            let oracle_obj_line = (0..128)
+                .map(|slot| {
+                    let index = (y * 128 + slot) as i32;
+                    (
+                        oracle.debug_ppu_value(21, index).unwrap_or(-1),
+                        oracle.debug_ppu_value(26, index).unwrap_or(-1),
+                    )
+                })
+                .take_while(|&(sprite, _)| sprite >= 0)
+                .collect::<Vec<_>>();
+            let oracle_pixel_operands = (0..10)
+                .map(|index| oracle.debug_ppu_value(28, index).unwrap_or(-1))
+                .collect::<Vec<_>>();
+            println!(
+                "pixel oracle_obj frame={frame_index} line={y} config={oracle_obj_config:?} control={oracle_obj_control:?} tiles={} flags={} evaluated={oracle_obj_line:?} operands={oracle_pixel_operands:?}",
+                oracle.debug_ppu_value(22, y as i32).unwrap_or(-1),
+                oracle.debug_ppu_value(23, y as i32).unwrap_or(-1),
+            );
             println!(
                 "modern_pixel_trace frame={frame_index} xy=({x},{y}) via=native-window-source-gpu"
             );

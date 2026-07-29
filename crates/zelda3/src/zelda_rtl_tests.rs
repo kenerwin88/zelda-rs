@@ -3461,6 +3461,61 @@ fn dungeon_falling_entrance_work_resumes_at_measured_cpu_boundaries() {
 }
 
 #[test]
+fn dungeon_supertile_transition_resumes_at_rom_call_boundaries() {
+    let mut state = ZeldaState::new();
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+    state.pending_rom_work = PendingRomWork::schedule(
+        RomWorkContinuation::FinishDungeonSupertileTransition {
+            work: DungeonSupertileTransitionWork::RoomLoad,
+        },
+        DUNGEON_SUPERTILE_ROOM_LOAD_NMI_SLICES,
+    );
+    assert!(!state.paired_resume_cpu_boundary_is_quiescent());
+
+    let stages = [
+        (
+            DungeonSupertileTransitionWork::RoomLoad,
+            DUNGEON_SUPERTILE_ROOM_LOAD_NMI_SLICES,
+        ),
+        (
+            DungeonSupertileTransitionWork::AuxiliarySpriteGraphics,
+            DUNGEON_SUPERTILE_AUX_SPRITE_GFX_NMI_SLICES,
+        ),
+        (
+            DungeonSupertileTransitionWork::SpriteConversion,
+            DUNGEON_SUPERTILE_SPRITE_CONVERSION_NMI_SLICES,
+        ),
+        (
+            DungeonSupertileTransitionWork::RoomLoadCallerResume,
+            DUNGEON_SUPERTILE_CALLER_RESUME_NMI_SLICES,
+        ),
+        (
+            DungeonSupertileTransitionWork::SpriteConversionCallerResume,
+            DUNGEON_SUPERTILE_CALLER_RESUME_NMI_SLICES,
+        ),
+    ];
+
+    for (stage, nmi_slices) in stages {
+        assert_eq!(stage.nmi_slices(), nmi_slices);
+        let continuation = RomWorkContinuation::FinishDungeonSupertileTransition { work: stage };
+        let mut work = PendingRomWork::schedule(continuation, stage.nmi_slices());
+        assert!(work.suspends_translated_call_stack());
+        for _ in 0..stage.nmi_slices() - 1 {
+            assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+        }
+        assert_eq!(
+            work.advance_one_nmi_slice(),
+            RomWorkSlice::Complete(continuation)
+        );
+        assert!(!work.is_pending());
+    }
+    assert!(!DungeonSupertileTransitionWork::RoomLoadCallerResume
+        .next_module_resumes_after_pre_main_nmi());
+    assert!(DungeonSupertileTransitionWork::SpriteConversionCallerResume
+        .next_module_resumes_after_pre_main_nmi());
+}
+
+#[test]
 fn pre_dungeon_work_resumes_at_room_and_song_bank_transfer_boundaries() {
     assert_eq!(PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES, 58);
     let stages = [
@@ -3769,7 +3824,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert!(
         !SpotlightIteration::opening(false).publishes_hdma_table_ahead_of_other_display_domains()
     );
-    assert!(!rom_display_memory_publication_is_deferred(7, 15, false));
+    assert!(!rom_display_memory_publication_is_deferred(7, 15, 0, false));
     assert_eq!(
         SpotlightIteration::opening(false).completion_publication(),
         DisplaySnapshotPublication::AdvanceStaged
@@ -3855,7 +3910,9 @@ fn dungeon_landing_wait_retains_the_pre_return_obj_dma_generation() {
     );
     assert_eq!(
         state.next_display_obj_scanout_generation,
-        Some(GraphicsDmaGeneration::HostBoundaryBeforeMain)
+        Some(ObjScanoutGenerations::coherent(
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        ))
     );
 }
 
@@ -3890,7 +3947,45 @@ fn spotlight_projection_generation_is_a_scanout_local_table_mix() {
 fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
     let gameplay = rom_graphics_dma_plan(7, 0);
     let brightness = rom_graphics_dma_plan(7, 10);
+    let dialogue = rom_graphics_dma_plan(14, 2);
 
+    assert_eq!(
+        gameplay.oam_operands,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    );
+    assert_eq!(
+        dialogue.oam_operands,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    );
+    assert_eq!(
+        oam_operands_for_nmi(
+            dialogue.oam_operands,
+            DialogueOamPublicationPhase::PublishedShadow,
+        ),
+        GraphicsDmaGeneration::LiveAfterMain,
+    );
+    assert_eq!(
+        dialogue_oam_scanout_transition(
+            DialogueOamPublicationPhase::Idle,
+            GraphicsDmaGeneration::LiveAfterMain,
+            true,
+            Some(&[0x1111]),
+            &[0x2222],
+        ),
+        (
+            OamScanoutSource::ComposePublishedShadowDma,
+            DialogueOamPublicationPhase::PublishedShadow,
+        ),
+    );
+    assert_eq!(gameplay.oam_scanout, GraphicsDmaGeneration::LiveAfterMain);
+    assert_eq!(
+        gameplay.link_obj_scanout,
+        GraphicsDmaGeneration::LiveAfterMain
+    );
+    assert_eq!(
+        gameplay.link_obj_operands,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    );
     assert_eq!(
         animated_bg_scanout_across_main(gameplay, gameplay),
         AnimatedBgScanoutGeneration::LiveAfterNmi
@@ -4168,9 +4263,9 @@ fn name_player_tilemap_finishes_after_the_intervening_nmi_slice() {
 
 #[test]
 fn file_select_main_publishes_display_memory_at_the_following_nmi() {
-    assert!(rom_display_memory_publication_is_deferred(1, 5, true));
-    assert!(!rom_display_memory_publication_is_deferred(1, 4, false));
-    assert!(!rom_display_memory_publication_is_deferred(2, 5, false));
+    assert!(rom_display_memory_publication_is_deferred(1, 5, 0, true));
+    assert!(!rom_display_memory_publication_is_deferred(1, 4, 0, false));
+    assert!(!rom_display_memory_publication_is_deferred(2, 5, 0, false));
 
     let mut state = ZeldaState::new();
     state.set_main_module(1);
@@ -4202,8 +4297,8 @@ fn file_select_main_publishes_display_memory_at_the_following_nmi() {
 fn dungeon_landing_wipe_uses_typed_snapshot_generation_without_menu_retention() {
     // Pre-dungeon staging now advances through its typed snapshot generation;
     // it does not use the menu-stripe memory-retention rule.
-    assert!(!rom_display_memory_publication_is_deferred(7, 15, false));
-    assert!(!rom_display_memory_publication_is_deferred(7, 14, false));
+    assert!(!rom_display_memory_publication_is_deferred(7, 15, 0, false));
+    assert!(!rom_display_memory_publication_is_deferred(7, 14, 0, false));
     assert_eq!(
         rom_display_snapshot_publication(7, 15),
         DisplaySnapshotPublication::AdvanceStaged
@@ -4245,34 +4340,44 @@ fn dungeon_landing_wipe_uses_typed_snapshot_generation_without_menu_retention() 
 
 #[test]
 fn dialogue_character_tiles_publish_at_the_following_nmi() {
-    assert!(rom_display_memory_publication_is_deferred(14, 2, false));
-    assert!(rom_display_memory_publication_is_deferred(4, 3, true));
-    assert!(!rom_display_memory_publication_is_deferred(4, 3, false));
-    assert!(!rom_display_memory_publication_is_deferred(14, 1, false));
+    assert!(rom_display_memory_publication_is_deferred(14, 2, 3, false));
+    assert!(rom_display_memory_publication_is_deferred(4, 3, 0, true));
+    assert!(!rom_display_memory_publication_is_deferred(4, 3, 0, false));
+    assert!(!rom_display_memory_publication_is_deferred(14, 1, 0, false));
 }
 
 #[test]
 fn full_tilemap_upload_publishes_vram_at_the_following_nmi() {
-    assert!(rom_full_tilemap_scanout_uses_pre_nmi_vram(true, 0));
-    assert!(!rom_full_tilemap_scanout_uses_pre_nmi_vram(true, 1));
-    assert!(!rom_full_tilemap_scanout_uses_pre_nmi_vram(false, 0));
+    assert!(rom_full_tilemap_scanout_retains_uploaded_region(true, 0));
+    assert!(!rom_full_tilemap_scanout_retains_uploaded_region(true, 1));
+    assert!(!rom_full_tilemap_scanout_retains_uploaded_region(false, 0));
 
     let mut state = ZeldaState::new();
     state.set_pending_nmi_subroutine(1);
-    state.ppu.vram[0] = 0x1111;
+    state.set_nmi_load_target_page(14);
+    let (tilemap_start, tilemap_words) =
+        full_tilemap_nmi_vram_region(14).expect("valid NMI tilemap destination");
+    let outside_tilemap = tilemap_start + tilemap_words;
+    state.ppu.vram[tilemap_start] = 0x1111;
+    state.ppu.vram[outside_tilemap] = 0xaaaa;
     state.capture_display_snapshot();
-    state.ppu.vram[0] = 0x2222;
+    state.ppu.vram[tilemap_start] = 0x2222;
+    state.ppu.vram[outside_tilemap] = 0xbbbb;
     assert_eq!(
-        state.with_display_snapshot(|display| display.ppu.vram[0]),
-        0x1111
+        state.with_display_snapshot(|display| [
+            display.ppu.vram[tilemap_start],
+            display.ppu.vram[outside_tilemap],
+        ]),
+        [0x1111, 0xbbbb],
+        "only the pending tilemap DMA destination retains its pre-NMI words"
     );
 
     state.nmi_forced_blank_scanlines_pending = 1;
-    state.ppu.vram[0] = 0x3333;
+    state.ppu.vram[tilemap_start] = 0x3333;
     state.capture_display_snapshot();
-    state.ppu.vram[0] = 0x4444;
+    state.ppu.vram[tilemap_start] = 0x4444;
     assert_eq!(
-        state.with_display_snapshot(|display| display.ppu.vram[0]),
+        state.with_display_snapshot(|display| display.ppu.vram[tilemap_start]),
         0x4444
     );
 }
@@ -4444,7 +4549,9 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
     let held_obj_vram = vec![0x5678; 0x400];
     state.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
     state.next_display_bg_scroll_generation = DisplayBgScrollGeneration::ComposeLiveAfterNmi;
-    state.next_display_obj_scanout_generation = Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    state.next_display_obj_scanout_generation = Some(ObjScanoutGenerations::coherent(
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    ));
     state.active_display_obj_generation = DisplayObjGeneration::RetainCapturedMemory {
         oam: held_oam.clone(),
         vram: held_obj_vram.clone(),
@@ -4462,8 +4569,8 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
         DisplayBgScrollGeneration::ComposeLiveAfterNmi,
     );
     assert_eq!(
-        snapshot.oam_scanout_generation,
-        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        snapshot.oam_scanout_source,
+        OamScanoutSource::RetainCapturedBeforeNmi,
     );
     assert_eq!(
         snapshot.link_obj_scanout_generation,
@@ -4650,20 +4757,55 @@ fn dungeon_falling_entry_retains_the_pre_transition_obj_generation() {
 }
 
 #[test]
-fn overworld_pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
+fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
     assert_eq!(
-        OverworldPreMainNmiResume::AuxGraphicsReturn.scanout_generations(),
-        (
-            DisplayVramGeneration::ComposeLiveAfterNmi,
-            DisplayBgScrollGeneration::ComposeLiveAfterNmi,
-        ),
+        PreMainNmiResume::OverworldAuxGraphicsReturn.scanout_generations(),
+        PreMainNmiScanoutGenerations {
+            vram: DisplayVramGeneration::ComposeLiveAfterNmi,
+            animated_bg: None,
+            bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+            obj: None,
+        },
     );
     assert_eq!(
-        OverworldPreMainNmiResume::SpriteReloadReturn.scanout_generations(),
-        (
-            DisplayVramGeneration::RetainCapturedBeforeNmi,
-            DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
-        ),
+        PreMainNmiResume::OverworldSpriteReloadReturn.scanout_generations(),
+        PreMainNmiScanoutGenerations {
+            vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
+            animated_bg: None,
+            bg_scroll: DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
+            obj: None,
+        },
+    );
+    assert_eq!(
+        PreMainNmiResume::DungeonSupertileQuadrantUploads.scanout_generations(),
+        PreMainNmiScanoutGenerations {
+            vram: DisplayVramGeneration::ComposeLiveAfterNmi,
+            animated_bg: Some(AnimatedBgScanoutGeneration::LiveAfterNmi),
+            bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+            obj: Some(ObjScanoutGenerations {
+                oam: GraphicsDmaGeneration::LiveAfterMain,
+                link_obj: GraphicsDmaGeneration::LiveAfterMain,
+            }),
+        },
+    );
+    let dungeon_phase = PreMainNmiResume::DungeonSupertileQuadrantUploads;
+    for subsubmodule in 5..=15 {
+        assert!(
+            dungeon_phase.continues_after_main(crate::game_state::FrameState {
+                main_module: 7,
+                submodule: 2,
+                subsubmodule,
+                ..Default::default()
+            })
+        );
+    }
+    assert!(
+        !dungeon_phase.continues_after_main(crate::game_state::FrameState {
+            main_module: 7,
+            submodule: 0,
+            subsubmodule: 0,
+            ..Default::default()
+        })
     );
 }
 
@@ -4681,11 +4823,14 @@ fn overworld_transition_publishes_the_nmi_written_half_color_bit() {
 }
 
 #[test]
-fn normal_gameplay_oam_publishes_at_the_following_nmi() {
-    assert!(rom_display_oam_publication_is_deferred(7, 0, false, false));
+fn graphics_dma_plan_separates_operands_from_visible_scanout() {
+    assert!(!rom_display_oam_publication_is_deferred(
+        7, 0, 0, false, false
+    ));
     assert_eq!(
         rom_graphics_dma_plan(9, 5),
         GraphicsDmaPlan {
+            oam_operands: GraphicsDmaGeneration::LiveAfterMain,
             oam_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
@@ -4696,6 +4841,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert_eq!(
         rom_graphics_dma_plan(0x11, 7),
         GraphicsDmaPlan {
+            oam_operands: GraphicsDmaGeneration::LiveAfterMain,
             oam_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
@@ -4718,6 +4864,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert_eq!(
         rom_graphics_dma_plan(9, 0x0a),
         GraphicsDmaPlan {
+            oam_operands: GraphicsDmaGeneration::LiveAfterMain,
             oam_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
@@ -4728,6 +4875,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert_eq!(
         rom_graphics_dma_plan(14, 7),
         GraphicsDmaPlan {
+            oam_operands: GraphicsDmaGeneration::LiveAfterMain,
             oam_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
@@ -4742,6 +4890,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
     assert_eq!(
         rom_graphics_dma_plan_at_host_boundary(subtile_landing),
         GraphicsDmaPlan {
+            oam_operands: GraphicsDmaGeneration::LiveAfterMain,
             oam_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
@@ -4773,12 +4922,24 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
             ..subtile_landing
         }),
     );
-    assert!(rom_display_oam_publication_is_deferred(4, 3, true, false));
-    assert!(rom_display_oam_publication_is_deferred(4, 3, false, true));
-    assert!(rom_display_oam_publication_is_deferred(4, 3, false, false));
-    assert!(rom_display_oam_publication_is_deferred(14, 7, false, false));
-    assert!(!rom_display_oam_publication_is_deferred(4, 2, false, false));
-    assert!(!rom_display_memory_publication_is_deferred(7, 0, false));
+    assert!(rom_display_oam_publication_is_deferred(
+        4, 3, 0, true, false
+    ));
+    assert!(rom_display_oam_publication_is_deferred(
+        4, 3, 0, false, true
+    ));
+    assert!(rom_display_oam_publication_is_deferred(
+        4, 3, 0, false, false
+    ));
+    assert!(rom_display_oam_publication_is_deferred(
+        14, 7, 0, false, false
+    ));
+    assert!(!rom_display_oam_publication_is_deferred(
+        4, 2, 0, false, false
+    ));
+    assert!(!rom_display_memory_publication_is_deferred(7, 0, 0, false));
+    assert!(rom_display_memory_publication_is_deferred(14, 2, 3, false));
+    assert!(!rom_display_memory_publication_is_deferred(14, 2, 4, false));
     assert!(rom_dungeon_exit_entry_crosses_nmi_boundary(
         0x0f, 0, 0x0f, 1
     ));
@@ -4819,7 +4980,7 @@ fn normal_gameplay_oam_publishes_at_the_following_nmi() {
         )
     });
 
-    assert_eq!(captured, (0xaaaa, 0x4444, 0x2222, 0xcccc));
+    assert_eq!(captured, (0xaaaa, 0xdddd, 0xbbbb, 0xcccc));
 }
 
 #[test]
@@ -4827,7 +4988,9 @@ fn dungeon_exit_nmi_publishes_coherent_oam_link_tiles_and_scroll() {
     let mut state = ZeldaState::new();
     state.set_main_module(0x0f);
     state.set_submodule(0);
-    state.next_display_obj_scanout_generation = Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    state.next_display_obj_scanout_generation = Some(ObjScanoutGenerations::coherent(
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    ));
     state.ppu.vram[0x4000] = 0x1111;
     state.ppu.oam[0] = 0x2222;
     state.ppu.bg_layer[1].v_scroll = 0x3333;
@@ -4854,7 +5017,9 @@ fn spotlight_return_keeps_obj_dma_on_the_pre_return_boundary() {
     let mut state = ZeldaState::new();
     state.set_main_module(0x0f);
     state.set_submodule(1);
-    state.next_display_obj_scanout_generation = Some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
+    state.next_display_obj_scanout_generation = Some(ObjScanoutGenerations::coherent(
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    ));
     state.ppu.vram[0x4000] = 0x1111;
     state.ppu.oam[0] = 0x2222;
     state.capture_display_snapshot();

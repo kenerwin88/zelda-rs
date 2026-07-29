@@ -5380,10 +5380,12 @@ impl ZeldaState {
     }
 
     pub(super) fn upload_tilemap_now(&mut self) {
-        let target = self.game_state.display.nmi_load_target_page() as usize;
-        let vram_page = NMI_VRAM_ADDRS[target];
-        let dst = vram_page << 8;
-        for i in 0..0x400 {
+        let Some((dst, word_count)) =
+            full_tilemap_nmi_vram_region(self.game_state.display.nmi_load_target_page())
+        else {
+            return;
+        };
+        for i in 0..word_count {
             self.ppu.vram[dst + i] = self.vram_upload_tilemap_word(i * 2);
         }
         self.clear_vram_upload_cursor();
@@ -10150,8 +10152,24 @@ impl ZeldaState {
 
     pub(super) fn Module07_02_01_LoadNextRoom(&mut self) {
         self.Dungeon_LoadRoom();
+        if self.begin_dungeon_supertile_transition_work(DungeonSupertileTransitionWork::RoomLoad) {
+            return;
+        }
+        self.continue_module07_02_01_after_room_load();
+    }
+
+    pub(super) fn continue_module07_02_01_after_room_load(&mut self) {
         self.ResetStarTileGraphics();
         self.LoadTransAuxGFX_sprite();
+        if self.begin_dungeon_supertile_transition_work(
+            DungeonSupertileTransitionWork::AuxiliarySpriteGraphics,
+        ) {
+            return;
+        }
+        self.complete_module07_02_01_after_auxiliary_sprite_graphics();
+    }
+
+    pub(super) fn complete_module07_02_01_after_auxiliary_sprite_graphics(&mut self) {
         self.increment_subsubmodule();
         self.set_overworld_map_state(0);
         let dungeon_room_index = self.game_state.world.location.dungeon_room_index();
@@ -10170,6 +10188,15 @@ impl ZeldaState {
         }
         self.Dungeon_AdjustForRoomLayout();
         self.LoadNewSpriteGFXSet();
+        if self.begin_dungeon_supertile_transition_work(
+            DungeonSupertileTransitionWork::SpriteConversion,
+        ) {
+            return;
+        }
+        self.complete_dungeon_inter_room_transition_state3_after_sprite_conversion();
+    }
+
+    pub(super) fn complete_dungeon_inter_room_transition_state3_after_sprite_conversion(&mut self) {
         self.MirrorBg1Bg2Offs();
         self.WaterFlood_BuildOneQuadrantForVRAM();
         self.increment_subsubmodule();
@@ -10584,9 +10611,7 @@ impl ZeldaState {
             return;
         }
         self.ApplyPaletteFilter_bounce();
-        if !self.rom_startup_timing()
-            && self.game_state.display.palette_filter.countdown() != 0
-        {
+        if !self.rom_startup_timing() && self.game_state.display.palette_filter.countdown() != 0 {
             self.ApplyPaletteFilter_bounce();
         }
         self.suspend_dungeon_subtile_palette_filter_if_return_crosses_nmi();
@@ -12279,6 +12304,9 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module07-after-layer-effect");
         self.run_dungeon_submodule();
         self.replay_trace_ram_watch("module07-after-submodule");
+        if self.pending_rom_work.suspends_translated_call_stack() {
+            return;
+        }
         if self.rom_startup_timing() && self.dungeon_landing_wipe_return_slices_remaining != 0 {
             return;
         }
