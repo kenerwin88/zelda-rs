@@ -235,6 +235,26 @@ index e1ad324..5fb2ad4 100644
  
  	// Check invalid DMA first
  	if ((d->ABank == 0x7E || d->ABank == 0x7F) && d->BAddress == 0x80 && !d->ReverseTransfer)
+@@ -1244,6 +1247,9 @@ uint8 S9xDoHDMA (uint8 byte)
+ 	int	d;
+ 	uint8	mask;
+ 
++	if (Zelda3TraceHdmaEnabled)
++		Zelda3TraceHdma("start", byte);
++
+ 	CPU.InHDMA = TRUE;
+ 	CPU.InDMAorHDMA = TRUE;
+ 	CPU.HDMARanInDMA = CPU.InDMA ? byte : 0;
+@@ -1608,6 +1614,9 @@ uint8 S9xDoHDMA (uint8 byte)
+ 	CPU.InWRAMDMAorHDMA = temp;
+ 	CPU.CurrentDMAorHDMAChannel = tmpch;
+ 
++	if (Zelda3TraceHdmaEnabled)
++		Zelda3TraceHdma("end", byte);
++
+ 	return (byte);
+ }
+ 
 diff --git a/getset.h b/getset.h
 index ec55ea9..287741c 100644
 --- a/getset.h
@@ -572,7 +592,7 @@ new file mode 100644
 index 0000000..4dc9956
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,667 @@
+@@ -0,0 +1,680 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -589,6 +609,7 @@ index 0000000..4dc9956
 +extern struct SLineMatrixData LineMatrixData[240];
 +
 +bool Zelda3TraceDmaEnabled = false;
++bool Zelda3TraceHdmaEnabled = false;
 +bool Zelda3TracePcEnabled = false;
 +bool Zelda3TracePixelEnabled = false;
 +bool Zelda3TracePpuEnabled = false;
@@ -606,6 +627,7 @@ index 0000000..4dc9956
 +	TRACE_DMA = 1 << 4,
 +	TRACE_PPU = 1 << 5,
 +	TRACE_WRAM = 1 << 6,
++	TRACE_HDMA = 1 << 7,
 +};
 +
 +struct AddressRange
@@ -750,9 +772,11 @@ index 0000000..4dc9956
 +	if (has_token(events, "rng")) config.events |= TRACE_RNG;
 +	if (has_token(events, "pc")) config.events |= TRACE_PC;
 +	if (has_token(events, "dma")) config.events |= TRACE_DMA;
++	if (has_token(events, "hdma")) config.events |= TRACE_HDMA;
 +	if (has_token(events, "ppu")) config.events |= TRACE_PPU;
 +	if (has_token(events, "wram")) config.events |= TRACE_WRAM;
 +	Zelda3TraceDmaEnabled = (config.events & TRACE_DMA) != 0;
++	Zelda3TraceHdmaEnabled = (config.events & TRACE_HDMA) != 0;
 +	Zelda3TracePcEnabled = (config.events & TRACE_PC) != 0;
 +	Zelda3TracePpuEnabled = (config.events & TRACE_PPU) != 0;
 +	Zelda3TraceWramEnabled = (config.events & (TRACE_RNG | TRACE_WRAM)) != 0;
@@ -1203,6 +1227,15 @@ index 0000000..4dc9956
 +	finish_event();
 +}
 +
++void Zelda3TraceHdma(const char *phase, uint8 channels)
++{
++	if (!active(TRACE_HDMA))
++		return;
++	write_machine_state(phase[0] == 's' ? "hdma-start" : "hdma-end");
++	std::fprintf(config.output, ",\"channels\":%u", channels);
++	finish_event();
++}
++
 +void Zelda3TracePpuRead(uint16 address, uint8 value)
 +{
 +	const bool rng = address == 0x2137 || address == 0x213c;
@@ -1245,7 +1278,7 @@ new file mode 100644
 index 0000000..d64b1b5
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,61 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -1265,6 +1298,7 @@ index 0000000..d64b1b5
 +}
 +
 +extern bool Zelda3TraceDmaEnabled;
++extern bool Zelda3TraceHdmaEnabled;
 +extern bool Zelda3TracePcEnabled;
 +extern bool Zelda3TracePixelEnabled;
 +extern bool Zelda3TracePpuEnabled;
@@ -1300,6 +1334,7 @@ index 0000000..d64b1b5
 +void Zelda3TraceInstruction(void);
 +void Zelda3TraceNmi(void);
 +void Zelda3TraceDma(uint8 channel, const SDMA *dma);
++void Zelda3TraceHdma(const char *phase, uint8 channels);
 +void Zelda3TracePpuRead(uint16 address, uint8 value);
 +void Zelda3TracePpuWrite(uint16 address, uint8 value);
 +void Zelda3TraceWramWrite(uint32 address, uint8 value);

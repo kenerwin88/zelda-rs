@@ -28,8 +28,11 @@ python3 scripts/snes9x_route_recorder.py compare-route \
   --no-build
 ```
 
-Available event domains are `frame`, `nmi`, `rng`, `pc`, `dma`, `ppu`, and
-`wram`. `frame,nmi,rng` is the default. Optional filters:
+Available event domains are `frame`, `nmi`, `rng`, `pc`, `dma`, `hdma`, `ppu`,
+and `wram`. `frame,nmi,rng` is the default. `hdma` emits paired start/end
+records for every active scanline, including the active-channel mask and exact
+Snes9x CPU position, so bus-stall cost can be measured without instruction
+tracing. Optional filters:
 
 - `ZELDA3_SNES9X_TRACE_FRAMES=FIRST-LAST` filters Snes9x's completed-frame
   counter. That counter can advance during one `retro_run` call.
