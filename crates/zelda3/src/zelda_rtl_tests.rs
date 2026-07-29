@@ -4189,11 +4189,6 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
             RomWorkContinuation::FinishPreOverworldOverlays,
             PRE_OVERWORLD_OVERLAYS_NMI_SLICES,
         ),
-        (
-            RomWorkContinuation::FinishPreOverworldScreenBuild,
-            screen_build_timing.quadrant_load_nmi_slices
-                + screen_build_timing.screen_map_and_sprite_gfx_tail_nmi_slices,
-        ),
     ];
 
     for (continuation, nmi_slices) in stages {
@@ -4206,6 +4201,21 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
             RomWorkSlice::Complete(continuation)
         );
     }
+
+    let screen_build_nmi_slices = screen_build_timing.quadrant_load_nmi_slices
+        + screen_build_timing.screen_map_and_sprite_gfx_tail_nmi_slices;
+    let continuation = RomWorkContinuation::FinishPreOverworldScreenBuild;
+    let mut work =
+        PendingRomWork::schedule_before_trailing_nmi(continuation, screen_build_nmi_slices);
+    // Module08_02 starts before the entry frame's trailing NMI, so only the
+    // subsequent 17 boundaries are consumed by future host calls.
+    for _ in 1..screen_build_nmi_slices - 1 {
+        assert_eq!(work.advance_one_nmi_slice(), RomWorkSlice::Waiting);
+    }
+    assert_eq!(
+        work.advance_one_nmi_slice(),
+        RomWorkSlice::Complete(continuation)
+    );
 }
 
 #[test]

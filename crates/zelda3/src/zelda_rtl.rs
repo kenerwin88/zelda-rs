@@ -1473,6 +1473,17 @@ impl PendingRomWork {
         }
     }
 
+    fn schedule_before_trailing_nmi(
+        continuation: RomWorkContinuation,
+        total_nmi_slices: u8,
+    ) -> Self {
+        // The translated main call will still run its trailing NMI after this
+        // schedule point. Count that boundary here because future host calls
+        // only advance the remaining slices.
+        debug_assert!(total_nmi_slices > 1);
+        Self::schedule(continuation, total_nmi_slices.saturating_sub(1))
+    }
+
     fn is_pending(self) -> bool {
         self.continuation.is_some()
     }
@@ -8966,7 +8977,7 @@ impl ZeldaState {
         debug_assert!(!self.pending_rom_work.is_pending());
         let timing =
             overworld_map_and_sprite_graphics_timing(self.overworld_map_graphics_workload());
-        self.pending_rom_work = PendingRomWork::schedule(
+        self.pending_rom_work = PendingRomWork::schedule_before_trailing_nmi(
             RomWorkContinuation::FinishPreOverworldScreenBuild,
             timing.quadrant_load_nmi_slices + timing.screen_map_and_sprite_gfx_tail_nmi_slices,
         );
