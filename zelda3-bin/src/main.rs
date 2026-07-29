@@ -158,6 +158,10 @@ fn main() {
         run_validate_snes9x_replay(&args[2..]);
         return;
     }
+    if args.get(1).map(String::as_str) == Some("--run-snes9x-script") {
+        run_snes9x_script(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--record-snes9x-route") {
         run_record_snes9x_route(&args[2..]);
         return;

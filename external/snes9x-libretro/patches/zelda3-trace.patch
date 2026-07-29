@@ -564,7 +564,7 @@ new file mode 100644
 index 0000000..4dc9956
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,645 @@
+@@ -0,0 +1,646 @@
 +#include "zelda3_trace.h"
 +
 +#include "dma.h"
@@ -791,7 +791,7 @@ index 0000000..4dc9956
 +		"{\"event\":\"%s\",\"run\":%llu,\"frame\":%u,\"v\":%d,\"cycles\":%d,"
 +		"\"pc\":%u,\"a\":%u,\"x\":%u,\"y\":%u,\"s\":%u,"
 +		"\"carry\":%u,"
-+		"\"main\":%u,\"sub\":%u,\"subsub\":%u,\"frame_counter\":%u,"
++		"\"main\":%u,\"sub\":%u,\"subsub\":%u,\"frame_counter\":%u,\"room\":%u,"
 +		"\"rng_seed\":%u,\"nmi_latch\":%u,\"nmi_disable\":%u,\"nmi_pending\":%u,"
 +		"\"return_address\":%u,"
 +		"\"stack1\":%u,\"stack2\":%u,\"stack3\":%u,\"stack4\":%u",
@@ -800,7 +800,8 @@ index 0000000..4dc9956
 +		Registers.PBPC & 0xffffff, Registers.A.W, Registers.X.W, Registers.Y.W,
 +		Registers.S.W, Zelda3TraceCpuCarry(),
 +		Memory.RAM[0x10], Memory.RAM[0x11], Memory.RAM[0xb0],
-+		Memory.RAM[0x1a], Memory.RAM[0x0fa1], Memory.RAM[0x12],
++		Memory.RAM[0x1a], Memory.RAM[0xa0] | (Memory.RAM[0xa1] << 8),
++		Memory.RAM[0x0fa1], Memory.RAM[0x12],
 +		Memory.RAM[0x0710], Memory.RAM[0x17], return_address,
 +		Memory.RAM[(Registers.S.W + 1) & 0xffff],
 +		Memory.RAM[(Registers.S.W + 2) & 0xffff],

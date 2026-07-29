@@ -481,6 +481,180 @@ pub(crate) fn run_validate_snes9x_replay(args: &[String]) {
     );
 }
 
+/// Run a native Snes9x boundary forward with a deterministic input script.
+///
+/// This is deliberately oracle-only: it makes route-wide CPU/NMI/DMA tracing
+/// available even when the translated runtime has not reached that boundary
+/// yet. The trace core remains controlled by its `ZELDA3_SNES9X_TRACE_*`
+/// environment variables.
+pub(crate) fn run_snes9x_script(args: &[String]) {
+    let (core_path, rom_path, state_path, input_path, frames) = match (
+        args.first(),
+        args.get(1),
+        args.get(2),
+        args.get(3),
+        args.get(4),
+    ) {
+        (Some(core), Some(rom), Some(state), Some(input), Some(frames)) => {
+            let frames = frames.parse::<u32>().unwrap_or_else(|error| {
+                eprintln!("invalid frame count `{frames}`: {error}");
+                process::exit(2);
+            });
+            (
+                core.as_str(),
+                rom.as_str(),
+                Path::new(state),
+                Path::new(input),
+                frames,
+            )
+        }
+        _ => {
+            eprintln!(
+                "usage: zelda3 --run-snes9x-script <snes9x_libretro.dylib> <rom.sfc> <oracle.state> <input.txt> <frames> [--load-sram <path>] [--input-frame-offset <n>] [--save-state <path>] [--expected-core-sha256 <sha>] [--expected-rom-sha256 <sha>]"
+            );
+            process::exit(2);
+        }
+    };
+
+    let mut load_sram = None::<PathBuf>;
+    let mut input_frame_offset = 0u32;
+    let mut save_state = None::<PathBuf>;
+    let mut expected_core_sha256 = None::<String>;
+    let mut expected_rom_sha256 = None::<String>;
+    let mut i = 5usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--load-sram" => {
+                load_sram = Some(PathBuf::from(args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--load-sram requires a path");
+                    process::exit(2);
+                })));
+                i += 2;
+            }
+            "--input-frame-offset" => {
+                input_frame_offset = args
+                    .get(i + 1)
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or_else(|| {
+                        eprintln!("--input-frame-offset requires an unsigned integer");
+                        process::exit(2);
+                    });
+                i += 2;
+            }
+            "--save-state" => {
+                save_state = Some(PathBuf::from(args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--save-state requires a path");
+                    process::exit(2);
+                })));
+                i += 2;
+            }
+            "--expected-core-sha256" => {
+                expected_core_sha256 = Some(
+                    args.get(i + 1)
+                        .unwrap_or_else(|| {
+                            eprintln!("--expected-core-sha256 requires a hash");
+                            process::exit(2);
+                        })
+                        .clone(),
+                );
+                i += 2;
+            }
+            "--expected-rom-sha256" => {
+                expected_rom_sha256 = Some(
+                    args.get(i + 1)
+                        .unwrap_or_else(|| {
+                            eprintln!("--expected-rom-sha256 requires a hash");
+                            process::exit(2);
+                        })
+                        .clone(),
+                );
+                i += 2;
+            }
+            flag => {
+                eprintln!("unknown --run-snes9x-script option: {flag}");
+                process::exit(2);
+            }
+        }
+    }
+
+    verify_expected_sha256(core_path, "libretro core", expected_core_sha256.as_deref());
+    verify_expected_sha256(rom_path, "ROM", expected_rom_sha256.as_deref());
+    let input_script = InputScript::from_path(input_path).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to parse input script {}: {error}",
+            input_path.display()
+        );
+        process::exit(2);
+    });
+    let state = read_file_or_exit(state_path, "Snes9x state");
+    let sram = load_sram
+        .as_deref()
+        .map(|path| read_file_or_exit(path, "SRAM"));
+
+    let _compare_lock = acquire_snes9x_compare_lock();
+    let mut oracle = LibretroCore::load_with_sram(core_path, rom_path, sram.as_deref())
+        .unwrap_or_else(|error| {
+            eprintln!("failed to initialize Snes9x libretro core: {error}");
+            process::exit(1);
+        });
+    validate_required_libretro_core(
+        Some(("Snes9x", "1.63")),
+        &oracle.library_name,
+        &oracle.library_version,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("{error}");
+        process::exit(2);
+    });
+    oracle.unserialize_state(&state).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to restore Snes9x state {}: {error}",
+            state_path.display()
+        );
+        process::exit(2);
+    });
+
+    LIBRETRO_CAPTURE_ENABLED.store(false, Ordering::Relaxed);
+    for frame in 0..frames {
+        let script_frame = input_frame_offset.wrapping_add(frame);
+        oracle.run_frame_discard_with_input(input_script.input_for_frame(script_frame));
+        let completed = frame + 1;
+        if completed % 100_000 == 0 {
+            println!("Snes9x script progress {completed}/{frames}");
+        }
+    }
+    LIBRETRO_CAPTURE_ENABLED.store(true, Ordering::Relaxed);
+
+    if let Some(path) = save_state {
+        let state = oracle.serialize_state().unwrap_or_else(|error| {
+            eprintln!("failed to serialize final Snes9x state: {error}");
+            process::exit(1);
+        });
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap_or_else(|error| {
+                eprintln!("failed to create {}: {error}", parent.display());
+                process::exit(1);
+            });
+        }
+        fs::write(&path, state).unwrap_or_else(|error| {
+            eprintln!("failed to write {}: {error}", path.display());
+            process::exit(1);
+        });
+    }
+
+    let ram = oracle
+        .memory_bytes(RETRO_MEMORY_SYSTEM_RAM)
+        .unwrap_or_default();
+    let byte = |address: usize| ram.get(address).copied().unwrap_or(0);
+    println!(
+        "Snes9x script completed {frames} frame(s): module={:02x}/{:02x}/{:02x} room={:04x}",
+        byte(0x10),
+        byte(0x11),
+        byte(0xb0),
+        u16::from_le_bytes([byte(0xa0), byte(0xa1)])
+    );
+}
+
 pub(crate) fn run_compare_libretro_oracle(
     args: &[String],
     default_oracle_name: Option<&str>,
