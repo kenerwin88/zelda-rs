@@ -31,7 +31,7 @@
     "boundary_overlap_frames": 1
   },
   "latest_housekeeping_verification": {
-    "commit": "a91200ee9c6603f47757958eb1ad862864ca8a7a",
+    "commit": "6d02a13525302b6bb222e767c282769666077c20",
     "prefix_resume_frame": 16384,
     "prefix_exact_through_frame": 27649,
     "suffix_resume_frame": 27648,
