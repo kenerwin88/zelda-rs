@@ -4864,6 +4864,28 @@ fn dungeon_falling_entry_retains_the_pre_transition_obj_generation() {
 }
 
 #[test]
+fn completed_rom_work_selects_post_nmi_scroll_only_at_measured_return_boundaries() {
+    assert_eq!(
+        RomWorkContinuation::FinishOverworldAuxGraphics.completed_bg_scroll_generation(),
+        Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
+    );
+    for post_return_hold_nmi_slices in [0, 1] {
+        assert_eq!(
+            RomWorkContinuation::FinishOverworldSpriteReloadTail {
+                post_return_hold_nmi_slices,
+            }
+            .completed_bg_scroll_generation(),
+            Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
+        );
+    }
+    assert_eq!(
+        RomWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail
+            .completed_bg_scroll_generation(),
+        None,
+    );
+}
+
+#[test]
 fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
     assert_eq!(
         PreMainNmiResume::OverworldAuxGraphicsReturn.scanout_generations(),

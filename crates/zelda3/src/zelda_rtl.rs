@@ -1302,6 +1302,18 @@ enum RomWorkContinuation {
     HoldOverworldSpriteReloadReturn,
 }
 
+impl RomWorkContinuation {
+    const fn completed_bg_scroll_generation(self) -> Option<DisplayBgScrollGeneration> {
+        match self {
+            Self::FinishOverworldAuxGraphics
+            | Self::FinishOverworldSpriteReloadTail { .. } => {
+                Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi)
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SpotlightIterationPhase {
     /// The entry table is still being calculated when the next scanout starts.
@@ -11030,6 +11042,11 @@ impl ZeldaState {
         let mut spotlight_scanout_started_before_resumed_main = None;
         if self.rom_startup_timing() && self.pending_rom_work.is_pending() {
             let work_slice = self.pending_rom_work.advance_one_nmi_slice();
+            if let RomWorkSlice::Complete(continuation) = work_slice {
+                if let Some(generation) = continuation.completed_bg_scroll_generation() {
+                    self.next_display_bg_scroll_generation = generation;
+                }
+            }
             let publication_override = match work_slice {
                 RomWorkSlice::Complete(RomWorkContinuation::FinishSpotlightIteration {
                     iteration,
@@ -11297,8 +11314,6 @@ impl ZeldaState {
                     // The interrupt's scroll-register writes occur at this
                     // vblank and are visible in the scanout even though the
                     // decompressed VRAM generation remains the captured one.
-                    self.next_display_bg_scroll_generation =
-                        DisplayBgScrollGeneration::ComposeLiveAfterNmi;
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                     self.complete_module09_load_aux_gfx();
@@ -11391,6 +11406,10 @@ impl ZeldaState {
                         self.nmi_prepare_sprites();
                         self.clear_nmi_update_latch();
                     }
+                    // The camera mirrors above are consumed by the NMI which
+                    // closes this ROM-work slice. Select that post-NMI
+                    // register generation without advancing the independently
+                    // retained VRAM/OAM generations.
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                     if post_return_hold_nmi_slices != 0 {
