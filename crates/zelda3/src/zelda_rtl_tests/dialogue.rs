@@ -80,14 +80,12 @@ fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
     state.messaging_state_mut().set_dialogue_scroll_speed(4);
 
     state.RenderText_Draw_MessageCharacters();
-    assert!(state
-        .dialogue_scroll_continuation
-        .is_copying_remaining_pixels());
+    assert!(state.dialogue_scroll_is_copying_remaining_pixels());
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
     assert_eq!(state.game_state.display.core_update_disable_flag, 0);
 
     state.zelda_run_game_loop();
-    assert!(state.dialogue_scroll_continuation.is_return_only());
+    assert!(state.dialogue_scroll_is_return_only());
     assert_eq!(state.game_state.display.pending_nmi_subroutine, 2);
     assert_eq!(state.game_state.display.core_update_disable_flag, 2);
     assert_eq!(
@@ -104,7 +102,11 @@ fn dialogue_return_only_boundary_keeps_current_bg_scroll_scanout() {
     state.set_main_module(14);
     state.set_submodule(2);
     state.set_animated_tile_data_source_address(0xa680);
-    state.dialogue_scroll_continuation = DialogueScrollContinuation::RETURN_ONLY;
+    state.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
+    state.finish_dialogue_scroll_remaining_pixels();
     state.audio_nmi_processed_before_main = true;
 
     let current_scanout = [
@@ -189,8 +191,10 @@ fn dialogue_final_copy_publishes_color_math_without_advancing_held_ppu_generatio
     state.set_main_module(14);
     state.set_submodule(2);
     state.set_animated_tile_data_source_address(0xa680);
-    state.dialogue_scroll_continuation =
-        DialogueScrollContinuation::begin(DialogueScrollCompletionTiming::AfterReturnBoundary);
+    state.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
     state.audio_nmi_processed_before_main = true;
 
     state.ppu.math_enabled = 0x32;

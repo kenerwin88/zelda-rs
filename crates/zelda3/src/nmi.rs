@@ -258,7 +258,7 @@ impl ZeldaState {
         // independently visible color-composition registers are published to
         // its immutable display snapshot by run_frame_internal.
         let main_module = self.game_state.frame.main_module;
-        let dialogue_scroll_holds_registers = self.dialogue_scanout_ownership.holds_nmi_registers();
+        let dialogue_scroll_holds_registers = self.dialogue_scroll_holds_nmi_registers();
         let thread_holds_registers = (main_module == 0x14
             && self.game_state.display.nmi_thread_active)
             || (main_module == 0x0e

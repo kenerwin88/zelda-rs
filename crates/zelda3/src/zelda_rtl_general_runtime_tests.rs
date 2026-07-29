@@ -4426,7 +4426,10 @@ fn dialogue_scroll_freezes_the_published_hardware_generation() {
     state.published_dialogue_msg_read_pos = 0x34;
     state.published_dialogue_message_id = 0x56;
 
-    state.freeze_dialogue_scanout_for_scroll(DialogueTextGeneration::PublishedDisplay);
+    state.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
 
     let frozen = state
         .dialogue_scroll_frozen_scanout
@@ -4453,12 +4456,24 @@ fn dialogue_scroll_completion_timing_follows_measured_vblank_headroom() {
         DialogueScrollCompletionTiming::BeforeNextVblank,
     );
 
-    let mut continuation =
-        DialogueScrollContinuation::begin(DialogueScrollCompletionTiming::BeforeNextVblank);
-    continuation.finish_remaining_pixels();
-    assert!(continuation.is_completion_pending_publication());
-    continuation.publish_early_completion();
-    assert!(continuation.is_idle());
+    let mut state = ZeldaState::new();
+    state.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::BeforeNextVblank,
+    );
+    assert_eq!(
+        state.finish_dialogue_scroll_remaining_pixels(),
+        DialogueScrollCompletionTiming::BeforeNextVblank
+    );
+    assert_eq!(
+        state.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionPendingPublication
+    );
+    state.stage_early_dialogue_scroll_completion(DialogueTextScanout::default());
+    assert_eq!(
+        state.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionStagedAfterFrozenScanout
+    );
 }
 
 #[test]
@@ -4467,39 +4482,108 @@ fn dialogue_completion_before_vblank_keeps_frozen_scanout_until_publication() {
     state.set_main_module(14);
     state.set_submodule(2);
     state.ppu.vram[0x7c00] = 0x1111;
-    state.freeze_dialogue_scanout_for_scroll(DialogueTextGeneration::PublishedDisplay);
+    state.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::BeforeNextVblank,
+    );
     state.ppu.vram[0x7c00] = 0x2222;
-    state.dialogue_scroll_continuation =
-        DialogueScrollContinuation::begin(DialogueScrollCompletionTiming::BeforeNextVblank);
-    state.dialogue_scroll_continuation.finish_remaining_pixels();
+    state.finish_dialogue_scroll_remaining_pixels();
 
     state.capture_display_snapshot();
 
     assert_eq!(
-        state.dialogue_scanout_ownership,
-        DialogueScanoutOwnership::COMPLETION_PENDING
+        state.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionPendingPublication
     );
     assert_eq!(
         state.with_display_snapshot(|display| display.ppu.vram[0x7c00]),
         0x1111
     );
 
-    state
-        .dialogue_scroll_continuation
-        .publish_early_completion();
-    state.dialogue_scroll_completion_staged = Some(DialogueTextScanout {
+    state.stage_early_dialogue_scroll_completion(DialogueTextScanout {
         vram: vec![0x3333; 0x3f0],
         ..DialogueTextScanout::default()
     });
     state.capture_display_snapshot();
 
     assert_eq!(
-        state.dialogue_scanout_ownership,
-        DialogueScanoutOwnership::COMPLETED_SCROLL
+        state.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletedScroll
     );
     assert_eq!(
         state.with_display_snapshot(|display| display.ppu.vram[0x7c00]),
         0x3333
+    );
+}
+
+#[test]
+fn dialogue_scroll_machine_has_closed_hardware_boundary_sequences() {
+    let mut after_return = ZeldaState::new();
+    after_return.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
+    assert_eq!(
+        after_return.dialogue_scroll_phase(),
+        DialogueScrollPhase::CopyingRemainingPixels {
+            completion_timing: DialogueScrollCompletionTiming::AfterReturnBoundary,
+        }
+    );
+    after_return.finish_dialogue_scroll_remaining_pixels();
+    assert_eq!(
+        after_return.dialogue_scroll_phase(),
+        DialogueScrollPhase::ReturnOnly
+    );
+    after_return.finish_dialogue_scroll_return();
+    assert_eq!(
+        after_return.dialogue_scroll_phase(),
+        DialogueScrollPhase::Idle
+    );
+    after_return.stage_dialogue_scroll_completion_after_return(DialogueTextScanout::default());
+    assert_eq!(
+        after_return.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionStagedAfterSnapshot
+    );
+    after_return.advance_dialogue_scroll_display_boundary();
+    assert_eq!(
+        after_return.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletedScroll
+    );
+    after_return.advance_dialogue_scroll_display_boundary();
+    assert_eq!(
+        after_return.dialogue_scroll_phase(),
+        DialogueScrollPhase::Idle
+    );
+
+    let mut before_vblank = ZeldaState::new();
+    before_vblank.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::BeforeNextVblank,
+    );
+    before_vblank.finish_dialogue_scroll_remaining_pixels();
+    assert_eq!(
+        before_vblank.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionPendingPublication
+    );
+    before_vblank.advance_dialogue_scroll_display_boundary();
+    assert_eq!(
+        before_vblank.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionPendingPublication
+    );
+    before_vblank.stage_early_dialogue_scroll_completion(DialogueTextScanout::default());
+    assert_eq!(
+        before_vblank.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionStagedAfterFrozenScanout
+    );
+    before_vblank.advance_dialogue_scroll_display_boundary();
+    assert_eq!(
+        before_vblank.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletedScroll
+    );
+    before_vblank.advance_dialogue_scroll_display_boundary();
+    assert_eq!(
+        before_vblank.dialogue_scroll_phase(),
+        DialogueScrollPhase::Idle
     );
 }
 
@@ -5679,14 +5763,14 @@ fn dialogue_scroll_override_presents_one_coherent_text_generation() {
         y: -5,
         width: 3,
     };
-    state.dialogue_scroll_completion_scanout = Some(DialogueTextScanout {
+    state.stage_dialogue_scroll_completion_after_return(DialogueTextScanout {
         vram: vec![0x3333; 0x3f0],
         glyph_runs: vec![scroll_run],
         glyph_run_dialogue_offsets: vec![0x2d],
         dialogue_msg_read_pos: 0x2d,
         dialogue_message_id: 32,
     });
-    state.dialogue_scanout_ownership = DialogueScanoutOwnership::COMPLETED_SCROLL;
+    state.capture_display_snapshot();
 
     let captured = state.with_display_snapshot(|display| {
         (

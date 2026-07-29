@@ -358,7 +358,7 @@ impl ZeldaState {
                 // its $0e:cfe2..$0e:d088 copy loop across the next vblanks, so
                 // Module0E_Interface has not reached the scroll-register suffix
                 // at $00:f873 while these continuation slices are pending.
-                || !self.dialogue_scroll_continuation.is_idle()
+                || !self.dialogue_scroll_cpu_is_idle()
                 || self.dialogue_vwf_return_suffix_pending)
         {
             return;
@@ -3524,7 +3524,7 @@ impl ZeldaState {
         let outcome = self.render_text_draw_message_characters();
         let yielded_midline = outcome == VwfCpuSliceOutcome::InterruptedMidGlyph;
         let caller_suffix_crosses_vblank = !yielded_midline
-            && self.dialogue_scroll_continuation.is_idle()
+            && self.dialogue_scroll_cpu_is_idle()
             && outcome.caller_suffix_crosses_vblank();
         // A mid-line yield models Snes9x returning at vblank while the 65816 PC
         // is still inside VWF_RenderCharacter. The ROM has not reached the
@@ -3535,7 +3535,7 @@ impl ZeldaState {
         // A long scroll remains inside RenderText_Draw_Scroll; its dedicated
         // pre-main scheduler owns both the preceding NMI publication and the
         // eventual handler epilogue. Ordinary commands still finish here.
-        if !yielded_midline && self.dialogue_scroll_continuation.is_idle() {
+        if !yielded_midline && self.dialogue_scroll_cpu_is_idle() {
             self.finish_dialogue_character_render_call();
             self.dialogue_vwf_return_suffix_pending = caller_suffix_crosses_vblank;
         }
@@ -4027,33 +4027,6 @@ impl ZeldaState {
         }
     }
 
-    /// Freeze the hardware text generation owned by this scroll group.
-    pub(crate) fn freeze_dialogue_scanout_for_scroll(
-        &mut self,
-        generation: DialogueTextGeneration,
-    ) {
-        let scanout = match generation {
-            DialogueTextGeneration::PublishedDisplay => {
-                self.dialogue_text_scanout_from_published_display()
-            }
-            DialogueTextGeneration::CurrentRenderBuffer => {
-                self.dialogue_text_scanout_from_render_buffer()
-            }
-        };
-        if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
-            let vram_sum = scanout
-                .vram
-                .iter()
-                .map(|&word| u64::from(word & 0xff) + u64::from(word >> 8))
-                .sum::<u64>();
-            eprintln!(
-                "scroll_freeze host={} generation={generation:?} vram_sum={vram_sum}",
-                self.frame_ctr_dbg,
-            );
-        }
-        self.dialogue_scroll_frozen_scanout = Some(scanout);
-    }
-
     pub(super) fn RenderText_Draw_Scroll(&mut self, cycles_before_vblank: u32) -> bool {
         // ROM ground truth (instrumented Snes9x oracle, intro telepathy,
         // scroll speed 4): one scroll call drains `scroll_speed + 1` pixel
@@ -4091,7 +4064,6 @@ impl ZeldaState {
         // Copy slices retain the published display. CPU/vblank headroom only
         // decides whether the caller finishes before the next boundary or
         // requires the measured return-only continuation.
-        self.freeze_dialogue_scanout_for_scroll(DialogueTextGeneration::PublishedDisplay);
         let completion_timing =
             DialogueScrollCompletionTiming::at_scroll_entry(cycles_before_vblank);
         if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some() {
@@ -4100,18 +4072,19 @@ impl ZeldaState {
                 self.frame_ctr_dbg, cycles_before_vblank,
             );
         }
-        if self.render_text_scroll_pixels(2) {
-            return true;
-        }
+        self.begin_dialogue_scroll(
+            DialogueTextGeneration::PublishedDisplay,
+            completion_timing,
+        );
+        let command_done = self.render_text_scroll_pixels(2);
+        debug_assert!(!command_done);
         // Phase 2 is the remaining three copy passes. Phase 1 is the
         // post-vblank caller suffix; it performs no further pixel copies.
-        self.dialogue_scroll_continuation = DialogueScrollContinuation::begin(completion_timing);
-        self.dialogue_scroll_ran_this_frame = true;
         false
     }
 
     pub(super) fn dialogue_long_scroll_starts_this_frame(&self) -> bool {
-        if !self.dialogue_scroll_continuation.is_idle()
+        if !self.dialogue_scroll_cpu_is_idle()
             || self.game_state.frame.main_module != 0x0e
             || self.game_state.frame.submodule != 2
             || self.game_state.messaging.runtime.text_render_state() != 3
