@@ -3271,9 +3271,11 @@ impl DisplayedBgScrollSource {
         captured_generation: DisplayBgScrollGeneration,
         dungeon_exit_crosses_nmi_boundary: bool,
         publish_live_overworld_bad_weather_scroll: bool,
+        attract_map_retains_display_memory: bool,
     ) -> Self {
         if captured_generation == DisplayBgScrollGeneration::ComposeLiveAfterNmi
             || dungeon_exit_crosses_nmi_boundary
+            || attract_map_retains_display_memory
         {
             Self::LiveAfterNmi
         } else if publish_live_overworld_bad_weather_scroll {
@@ -3327,6 +3329,73 @@ fn retain_captured_oam_for_scanout(
         obj_generation,
         DisplayObjGeneration::RetainCapturedMemory { .. }
     ) || matches!(scanout_source, OamScanoutSource::RetainCapturedBeforeNmi)
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct DisplayPublicationSignals {
+    retain_previous_nmi_display_memory: bool,
+    module_oam_publication_is_deferred: bool,
+    dungeon_exit_crosses_nmi_boundary: bool,
+    publish_live_overworld_bad_weather_scroll: bool,
+    publish_live_overworld_transition_half_color: bool,
+    attract_map_retains_display_memory: bool,
+    world_map_fade_display: bool,
+    world_map_mode7_brightness_is_early_published: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DisplayPublicationPlan {
+    vram_generation: DisplayVramGeneration,
+    compose_live_cgram: bool,
+    oam_scanout_source: OamScanoutSource,
+    retain_captured_oam: bool,
+    link_obj_scanout_generation: GraphicsDmaGeneration,
+    animated_bg_scanout_generation: AnimatedBgScanoutGeneration,
+    bg_scroll_source: DisplayedBgScrollSource,
+    publish_live_overworld_transition_half_color: bool,
+    world_map_fade_display: bool,
+    world_map_mode7_brightness_is_early_published: bool,
+}
+
+impl DisplayPublicationPlan {
+    fn resolve(snapshot: &DisplaySnapshot, signals: DisplayPublicationSignals) -> Self {
+        let module_oam_scanout_source = if signals.module_oam_publication_is_deferred {
+            OamScanoutSource::RetainCapturedBeforeNmi
+        } else {
+            snapshot.oam_scanout_source
+        };
+        let oam_scanout_source = module_oam_scanout_source
+            .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary);
+
+        Self {
+            vram_generation: snapshot
+                .vram_generation
+                .resolve_for_scanout(signals.retain_previous_nmi_display_memory),
+            compose_live_cgram: !signals.retain_previous_nmi_display_memory,
+            oam_scanout_source,
+            retain_captured_oam: retain_captured_oam_for_scanout(
+                &snapshot.obj_generation,
+                oam_scanout_source,
+            ),
+            link_obj_scanout_generation: snapshot
+                .link_obj_scanout_generation
+                .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary),
+            animated_bg_scanout_generation: snapshot
+                .animated_bg_scanout_generation
+                .resolve_live_override(signals.publish_live_overworld_bad_weather_scroll),
+            bg_scroll_source: DisplayedBgScrollSource::resolve(
+                snapshot.bg_scroll_generation,
+                signals.dungeon_exit_crosses_nmi_boundary,
+                signals.publish_live_overworld_bad_weather_scroll,
+                signals.attract_map_retains_display_memory,
+            ),
+            publish_live_overworld_transition_half_color: signals
+                .publish_live_overworld_transition_half_color,
+            world_map_fade_display: signals.world_map_fade_display,
+            world_map_mode7_brightness_is_early_published: signals
+                .world_map_mode7_brightness_is_early_published,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -3825,6 +3894,95 @@ struct DisplaySnapshot {
     nmi_poly_upload_deferred: u8,
     obj_vram_latch_generation: u64,
     snes9x_poly_scheduler_counter: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PublishedDialogueMetadata {
+    glyph_runs: Vec<Bg3VwfGlyphRun>,
+    glyph_run_dialogue_offsets: Vec<u16>,
+    message_read_position: u16,
+    message_id: u16,
+}
+
+impl PublishedDialogueMetadata {
+    fn from_scanout(scanout: &DialogueTextScanout) -> Self {
+        Self {
+            glyph_runs: scanout.glyph_runs.clone(),
+            glyph_run_dialogue_offsets: scanout.glyph_run_dialogue_offsets.clone(),
+            message_read_position: scanout.dialogue_msg_read_pos,
+            message_id: scanout.dialogue_message_id,
+        }
+    }
+
+    fn from_snapshot(snapshot: &DisplaySnapshot) -> Self {
+        Self {
+            glyph_runs: snapshot.published_bg3_vwf_glyph_runs.clone(),
+            glyph_run_dialogue_offsets: snapshot
+                .published_bg3_vwf_glyph_run_dialogue_offsets
+                .clone(),
+            message_read_position: snapshot.published_dialogue_msg_read_pos,
+            message_id: snapshot.published_dialogue_message_id,
+        }
+    }
+
+    fn from_live_state(state: &ZeldaState) -> Self {
+        Self {
+            glyph_runs: state.published_bg3_vwf_glyph_runs.clone(),
+            glyph_run_dialogue_offsets: state
+                .published_bg3_vwf_glyph_run_dialogue_offsets
+                .clone(),
+            message_read_position: state.published_dialogue_msg_read_pos,
+            message_id: state.published_dialogue_message_id,
+        }
+    }
+
+    fn replace_in(self, state: &mut ZeldaState) -> Self {
+        Self {
+            glyph_runs: std::mem::replace(
+                &mut state.published_bg3_vwf_glyph_runs,
+                self.glyph_runs,
+            ),
+            glyph_run_dialogue_offsets: std::mem::replace(
+                &mut state.published_bg3_vwf_glyph_run_dialogue_offsets,
+                self.glyph_run_dialogue_offsets,
+            ),
+            message_read_position: std::mem::replace(
+                &mut state.published_dialogue_msg_read_pos,
+                self.message_read_position,
+            ),
+            message_id: std::mem::replace(
+                &mut state.published_dialogue_message_id,
+                self.message_id,
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct DisplayDiagnostics {
+    attract_timeline: bool,
+    frame_boundary: bool,
+    display_oam: bool,
+    nmi_latch: bool,
+    scroll_retain: bool,
+}
+
+impl DisplayDiagnostics {
+    fn from_env() -> Self {
+        Self {
+            attract_timeline: env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some(),
+            frame_boundary: env::var_os("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some(),
+            display_oam: env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some(),
+            nmi_latch: env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some(),
+            scroll_retain: env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some(),
+        }
+    }
+}
+
+fn parity_trace_path(file_name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/parity-traces")
+        .join(file_name)
 }
 
 #[derive(Clone)]
@@ -9528,13 +9686,15 @@ impl ZeldaState {
                 self.ppu.m7_matrix[0] as u16,
             );
             eprintln!("{trace}");
-            use std::io::Write;
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open("/tmp/zelda3-attract-display-timeline.trace")
-            {
-                let _ = writeln!(file, "{trace}");
+            let trace_path = parity_trace_path("attract-display-timeline.trace");
+            if trace_path.parent().is_some_and(|dir| fs::create_dir_all(dir).is_ok()) {
+                if let Ok(mut file) = fs::OpenOptions::new()
+                    .append(true)
+                    .create(true)
+                    .open(trace_path)
+                {
+                    let _ = writeln!(file, "{trace}");
+                }
             }
         }
         if std::env::var_os("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some() {
@@ -9783,6 +9943,209 @@ impl ZeldaState {
         }
     }
 
+    fn compose_display_registers(
+        &mut self,
+        following: &DisplaySnapshot,
+        plan: &DisplayPublicationPlan,
+    ) {
+        // The ROM's iris setup authors window controls, HDMA channel state,
+        // enable state, and both indirect tables as one scanout generation.
+        // Never combine live controls with the captured (still-open) circle.
+        following.spotlight_scanout_generation.compose_into(
+            &mut self.ram,
+            &mut self.ppu,
+            &mut self.dma,
+        );
+        // A table projection can complete after that coupled iris generation
+        // is staged but before HDMA consumes the next scanout. Apply this
+        // scanout-local table generation last so it refines, rather than gets
+        // overwritten by, the coherent controls/channels/tables baseline.
+        following
+            .hdma_table_generation
+            .compose_into(&mut self.ram);
+        plan.bg_scroll_source
+            .compose_into(&mut self.ppu, &following.ppu);
+        if plan.publish_live_overworld_transition_half_color {
+            self.ppu.half_color = following.ppu.half_color;
+        }
+    }
+
+    fn compose_display_vram(
+        &mut self,
+        following: &DisplaySnapshot,
+        plan: &DisplayPublicationPlan,
+        retained_full_tilemap_vram: Option<&RetainedVramRegion>,
+    ) {
+        // The polygon worker publishes through its NMI handshake at the start
+        // of the frame. Preserve that completed pre-NMI buffer rather than a
+        // job that may have finished later in the current CPU slice.
+        let presented_poly = self.selected_intro_poly_display_buffer();
+        let entry_link_obj_vram = matches!(
+            plan.link_obj_scanout_generation,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        )
+        .then(|| self.ppu.vram[0x4000..0x4400].to_vec());
+        let retained_hud_vram = matches!(
+            following.hud_vram_generation,
+            DisplayVramGeneration::RetainCapturedBeforeNmi
+        )
+        .then(|| {
+            RetainedVramRegion::capture(
+                &self.ppu.vram,
+                following.hud_vram_destination,
+                HUD_TILEMAP_NMI_WORDS,
+            )
+        })
+        .flatten();
+        let retained_nmi_copy_packet_vram = (self.ram[NMI_COPY_PACKETS_FLAG] != 0).then(|| {
+            NmiCopyPacketScanout::capture(
+                &self.ppu.vram,
+                &self.ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF..],
+            )
+        });
+
+        // Animated-BG DMA configures the next active frame. Retain the
+        // host-boundary VRAM generation at whichever destination the current
+        // tileset selected ($3b00 indoors, $3c00 outdoors). The resumed
+        // bad-weather tail is the measured exception that publishes the live
+        // post-NMI generation.
+        let animated_bg_destination = read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
+        let previous_animated_bg_vram = (plan.animated_bg_scanout_generation
+            == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi)
+            .then(|| {
+                self.pre_nmi_animated_bg_scanout
+                    .as_ref()
+                    .filter(|scanout| {
+                        scanout.destination_address == animated_bg_destination
+                            && scanout.destination_address + scanout.vram.len()
+                                <= self.ppu.vram.len()
+                    })
+                    .map(|scanout| (scanout.destination_address, scanout.vram.clone()))
+            })
+            .flatten();
+
+        if plan.vram_generation == DisplayVramGeneration::ComposeLiveAfterNmi {
+            self.ppu.vram.clone_from(&following.ppu.vram);
+            if let Some((destination, animated_bg_vram)) = previous_animated_bg_vram {
+                self.ppu.vram[destination..destination + animated_bg_vram.len()]
+                    .copy_from_slice(&animated_bg_vram);
+            }
+            if let Some(entry_link_obj_vram) = entry_link_obj_vram {
+                self.ppu.vram[0x4000..0x4400].copy_from_slice(&entry_link_obj_vram);
+            }
+            if let Some(retained_hud_vram) = retained_hud_vram.as_ref() {
+                retained_hud_vram.publish_to(&mut self.ppu.vram);
+            }
+            if let Some(scanout) = retained_nmi_copy_packet_vram.as_ref() {
+                scanout.publish_to(&mut self.ppu.vram);
+            }
+            self.ppu.vram[0x5800..0x5c00].copy_from_slice(&presented_poly);
+        }
+        if let Some(retained_full_tilemap_vram) = retained_full_tilemap_vram {
+            retained_full_tilemap_vram.publish_to(&mut self.ppu.vram);
+        }
+    }
+
+    fn compose_display_cgram(
+        &mut self,
+        following: &DisplaySnapshot,
+        plan: &DisplayPublicationPlan,
+    ) {
+        if !plan.compose_live_cgram {
+            return;
+        }
+
+        // The NMI's main-palette-buffer upload is only visible on the next
+        // scanout. Direct CGRAM writes outside that upload stay same-frame
+        // visible through the following image.
+        if plan.world_map_fade_display {
+            // The world-map fade publishes Mode 7 memory and INIDISP now, but
+            // CGRAM remains on the generation consumed by the preceding NMI.
+        } else if let Some(latch) = self.cgram_upload_latch.as_ref() {
+            self.ppu.cgram.copy_from_slice(latch);
+        } else {
+            self.ppu.cgram.clone_from(&following.ppu.cgram);
+        }
+    }
+
+    fn compose_display_oam(
+        &mut self,
+        following: &DisplaySnapshot,
+        plan: &DisplayPublicationPlan,
+    ) {
+        if !plan.retain_captured_oam {
+            self.ppu.oam.clone_from(&following.ppu.oam);
+        }
+        if matches!(
+            plan.oam_scanout_source,
+            OamScanoutSource::ComposePublishedShadowDma
+        ) {
+            if let Some(published_shadow_oam) = following
+                .published_shadow_oam_dma
+                .as_deref()
+                .filter(|oam| oam.len() == self.ppu.oam.len())
+            {
+                self.ppu.oam.clone_from_slice(published_shadow_oam);
+            }
+        }
+        if let Some((oam, vram)) = following.obj_generation.retained_memory() {
+            self.ppu.oam.clone_from_slice(oam);
+            self.ppu.vram[0x4000..0x4400].copy_from_slice(vram);
+        }
+        self.ppu.obj_vram_latch = None;
+        self.ppu.obj_previous_frame_vram = following.ppu.obj_previous_frame_vram.clone();
+    }
+
+    fn compose_display_raster(
+        &mut self,
+        live_forced_blank: bool,
+        live_forced_blank_from_scanline: Option<u8>,
+        live_retain_active_display_history: bool,
+        captured_screen_brightness: u8,
+        plan: &DisplayPublicationPlan,
+    ) {
+        // A force-blank write published by NMI takes effect before the next
+        // active scanline even when other domains retain the pre-NMI snapshot.
+        self.ppu.forced_blank |= live_forced_blank;
+        if live_forced_blank {
+            let scanout = resolve_active_display_blanking_scanout(
+                self.ppu.retain_active_display_history,
+                live_forced_blank_from_scanline,
+                live_retain_active_display_history,
+            );
+            self.ppu.forced_blank_from_scanline = scanout.suffix_start_scanline;
+            self.ppu.retain_active_display_history = scanout.retain_prior_surface;
+        }
+        self.ppu.mode7_scanout_brightness_override = plan
+            .world_map_mode7_brightness_is_early_published
+            .then_some(captured_screen_brightness);
+    }
+
+    fn displayed_dialogue_scanout(&self) -> Option<DialogueTextScanout> {
+        if self.dialogue_scanout_ownership.uses_frozen_scroll() {
+            self.dialogue_scroll_frozen_scanout.clone()
+        } else if self.dialogue_scanout_ownership == DialogueScanoutOwnership::COMPLETED_SCROLL {
+            self.dialogue_scroll_completion_scanout.clone()
+        } else {
+            None
+        }
+    }
+
+    fn resolve_displayed_dialogue_metadata(
+        &self,
+        pristine_snapshot: &DisplaySnapshot,
+        dialogue_scanout: Option<&DialogueTextScanout>,
+        vram_generation: DisplayVramGeneration,
+    ) -> PublishedDialogueMetadata {
+        if let Some(scanout) = dialogue_scanout {
+            PublishedDialogueMetadata::from_scanout(scanout)
+        } else if vram_generation == DisplayVramGeneration::RetainCapturedBeforeNmi {
+            PublishedDialogueMetadata::from_snapshot(pristine_snapshot)
+        } else {
+            PublishedDialogueMetadata::from_live_state(self)
+        }
+    }
+
     /// Runs a renderer capture against the coherent pre-NMI display state while
     /// leaving the live post-NMI simulation untouched.
     ///
@@ -9810,6 +10173,7 @@ impl ZeldaState {
         // latch clears). Store back the PRISTINE snapshot so repeated captures
         // and later consumers see exactly what NMI published.
         let pristine_snapshot = display.clone();
+        let diagnostics = DisplayDiagnostics::from_env();
 
         let snapshot_frame = crate::game_state::FrameState::load_from_ram(&display.ram);
         let snapshot_attract_scene =
@@ -9865,25 +10229,6 @@ impl ZeldaState {
             self.game_state.frame.main_module,
             self.game_state.frame.submodule,
         );
-        let module_oam_scanout_source = if module_oam_publication_is_deferred {
-            OamScanoutSource::RetainCapturedBeforeNmi
-        } else {
-            display.oam_scanout_source
-        };
-        let oam_scanout_source =
-            module_oam_scanout_source.resolve_live_override(dungeon_exit_crosses_nmi_boundary);
-        let oam_scanout_retains_captured_ppu = matches!(
-            oam_scanout_source,
-            OamScanoutSource::RetainCapturedBeforeNmi
-        );
-        // Resolve OAM's scanout generation independently from the doorway
-        // scroll and Link OBJ-CHR domains. NMI still commits the current shadow
-        // OAM for the following scanout while the active image can retain the
-        // host-boundary generation.
-        let retain_previous_nmi_oam = retain_captured_oam_for_scanout(
-            &display.obj_generation,
-            oam_scanout_source,
-        );
         let world_map_fade_display = snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
             && snapshot_attract_scene.sequence() == 1
@@ -9921,23 +10266,35 @@ impl ZeldaState {
                 display.ppu.half_color,
                 self.ppu.half_color,
             );
-        let animated_bg_scanout_generation = display
-            .animated_bg_scanout_generation
-            .resolve_live_override(publish_live_overworld_bad_weather_scroll);
+        let publication_signals = DisplayPublicationSignals {
+            retain_previous_nmi_display_memory,
+            module_oam_publication_is_deferred,
+            dungeon_exit_crosses_nmi_boundary,
+            publish_live_overworld_bad_weather_scroll,
+            publish_live_overworld_transition_half_color,
+            attract_map_retains_display_memory: retain_previous_nmi_display_memory
+                && snapshot_frame.main_module == 20
+                && snapshot_frame.submodule == 0,
+            world_map_fade_display,
+            world_map_mode7_brightness_is_early_published,
+        };
+        let publication_plan = DisplayPublicationPlan::resolve(&display, publication_signals);
         let display_phase_differs_from_live = snapshot_frame.main_module
             != self.game_state.frame.main_module
             || snapshot_frame.submodule != self.game_state.frame.submodule;
-        if std::env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some() && display_phase_differs_from_live
-        {
+        if diagnostics.display_oam && display_phase_differs_from_live {
             eprintln!(
                 "display_oam snapshot={:02x}/{:02x} live={:02x}/{:02x} retain={} reasons=module:{}/captured_ppu:{}/dungeon_exit:{} snapshot_math={:02x}/{:02x}/{}/{} live_math={:02x}/{:02x}/{}/{} snapshot_oam={:02x?} live_oam={:02x?}",
                 snapshot_frame.main_module,
                 snapshot_frame.submodule,
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
-                retain_previous_nmi_oam,
+                publication_plan.retain_captured_oam,
                 module_oam_publication_is_deferred,
-                oam_scanout_retains_captured_ppu,
+                matches!(
+                    publication_plan.oam_scanout_source,
+                    OamScanoutSource::RetainCapturedBeforeNmi
+                ),
                 dungeon_exit_crosses_nmi_boundary,
                 display.ppu.math_enabled,
                 display.ppu.prevent_math_mode,
@@ -9961,9 +10318,7 @@ impl ZeldaState {
         // can therefore be one fade step ahead.
         let captured_screen_brightness =
             display.ram[crate::game_state::constants::INIDISP_COPY] & 0x0f;
-        if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
-            && (1648..=1655).contains(&self.frame_ctr_dbg)
-        {
+        if diagnostics.nmi_latch && (1648..=1655).contains(&self.frame_ctr_dbg) {
             eprintln!(
                 "display_blanking host={} snapshot_forced={} snapshot_prefix={} snapshot_from={:?} live_forced={} live_from={:?}",
                 self.frame_ctr_dbg,
@@ -9977,102 +10332,9 @@ impl ZeldaState {
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
-        // The ROM's iris setup authors window controls, HDMA channel state,
-        // enable state, and both indirect tables as one scanout generation.
-        // Never combine live controls with the captured (still-open) circle.
-        display.spotlight_scanout_generation.compose_into(
-            &mut self.ram,
-            &mut self.ppu,
-            &mut self.dma,
-        );
-        // A table projection can complete after that coupled iris generation
-        // is staged but before HDMA consumes the next scanout. Apply this
-        // scanout-local table generation last so it refines, rather than gets
-        // overwritten by, the coherent controls/channels/tables baseline.
-        display.hdma_table_generation.compose_into(&mut self.ram);
-        DisplayedBgScrollSource::resolve(
-            display.bg_scroll_generation,
-            dungeon_exit_crosses_nmi_boundary,
-            publish_live_overworld_bad_weather_scroll,
-        )
-        .compose_into(&mut self.ppu, &display.ppu);
-        if publish_live_overworld_transition_half_color {
-            self.ppu.half_color = display.ppu.half_color;
-        }
-        // NMI publishes display memory for the upcoming active frame. Keep the
-        // captured control registers, but compose them with the newly uploaded
-        // VRAM/OAM/CGRAM rather than showing the previous frame's memory.
-        // The polygon worker publishes through its NMI handshake at the start
-        // of the frame. Preserve that completed pre-NMI buffer rather than a
-        // job that may have finished later in the current CPU slice.
-        let presented_poly = self.selected_intro_poly_display_buffer();
-        let link_obj_scanout_generation = display
-            .link_obj_scanout_generation
-            .resolve_live_override(dungeon_exit_crosses_nmi_boundary);
-        let retain_entry_link_obj_vram = matches!(
-            link_obj_scanout_generation,
-            GraphicsDmaGeneration::HostBoundaryBeforeMain
-        );
-        let entry_link_obj_vram =
-            retain_entry_link_obj_vram.then(|| self.ppu.vram[0x4000..0x4400].to_vec());
-        let retained_hud_vram = matches!(
-            display.hud_vram_generation,
-            DisplayVramGeneration::RetainCapturedBeforeNmi
-        )
-        .then(|| {
-            RetainedVramRegion::capture(
-                &self.ppu.vram,
-                display.hud_vram_destination,
-                HUD_TILEMAP_NMI_WORDS,
-            )
-        })
-        .flatten();
-        let retained_nmi_copy_packet_vram = (self.ram[NMI_COPY_PACKETS_FLAG] != 0).then(|| {
-            NmiCopyPacketScanout::capture(
-                &self.ppu.vram,
-                &self.ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF..],
-            )
-        });
-        // Animated-BG DMA configures the next active frame. Retain the
-        // host-boundary VRAM generation at whichever destination the current
-        // tileset selected ($3b00 indoors, $3c00 outdoors). The resumed
-        // bad-weather tail is the measured exception that publishes the live
-        // post-NMI generation.
-        let animated_bg_destination = read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
-        let previous_animated_bg_vram = (animated_bg_scanout_generation
-            == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi)
-            .then(|| {
-                self.pre_nmi_animated_bg_scanout
-                    .as_ref()
-                    .filter(|scanout| {
-                        scanout.destination_address == animated_bg_destination
-                            && scanout.destination_address + scanout.vram.len()
-                                <= self.ppu.vram.len()
-                    })
-                    .map(|scanout| (scanout.destination_address, scanout.vram.clone()))
-            })
-            .flatten();
-        // During a message-line scroll the ROM's NMI re-uploads the VWF text
-        // buffer every frame while the copy is still in flight; Snes9x's
-        // scanout shows the generation uploaded at the PREVIOUS vblank.
-        // Present that pre-NMI generation of the text tile area while the
-        // scroll is active (typing frames are unaffected: the region is
-        // static between letter uploads).
-        // During a message-line scroll's spanned frames, Snes9x's scanout
-        // shows the text generation from TWO display boundaries back (the
-        // ordinary dialogue presentation keeps the whole pre-NMI snapshot,
-        // which is only one back). Applied after the branch below so it
-        // overrides both the retained and the recomposed paths.
-        // The completion override (freshly-scrolled buffer, group-completion
-        // frame) takes precedence over the frozen (group-start) generation.
-        let previous_dialogue_scanout = if self.dialogue_scanout_ownership.uses_frozen_scroll() {
-            self.dialogue_scroll_frozen_scanout.clone()
-        } else if self.dialogue_scanout_ownership == DialogueScanoutOwnership::COMPLETED_SCROLL {
-            self.dialogue_scroll_completion_scanout.clone()
-        } else {
-            None
-        };
-        if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some()
+        self.compose_display_registers(&display, &publication_plan);
+        let previous_dialogue_scanout = self.displayed_dialogue_scanout();
+        if diagnostics.scroll_retain
             && (!self.dialogue_scanout_ownership.is_snapshot()
                 || !self.dialogue_scroll_continuation.is_idle())
         {
@@ -10088,72 +10350,23 @@ impl ZeldaState {
                 self.frame_ctr_dbg,
                 self.dialogue_scroll_continuation.diagnostic_code(),
                 self.dialogue_scanout_ownership.0,
-                self.dialogue_scroll_frozen_scanout
-                    .as_ref()
-                    .map(&scanout_sum),
+                self.dialogue_scroll_frozen_scanout.as_ref().map(&scanout_sum),
                 self.dialogue_scroll_completion_scanout
                     .as_ref()
                     .map(&scanout_sum),
                 retain_previous_nmi_display_memory,
             );
         }
-        let presented_vram_generation = display
-            .vram_generation
-            .resolve_for_scanout(retain_previous_nmi_display_memory);
-        if presented_vram_generation == DisplayVramGeneration::ComposeLiveAfterNmi {
-            self.ppu.vram.clone_from(&display.ppu.vram);
-            if let Some((destination, animated_bg_vram)) = previous_animated_bg_vram {
-                self.ppu.vram[destination..destination + animated_bg_vram.len()]
-                    .copy_from_slice(&animated_bg_vram);
-            }
-            if let Some(entry_link_obj_vram) = entry_link_obj_vram {
-                self.ppu.vram[0x4000..0x4400].copy_from_slice(&entry_link_obj_vram);
-            }
-            if let Some(retained_hud_vram) = retained_hud_vram.as_ref() {
-                retained_hud_vram.publish_to(&mut self.ppu.vram);
-            }
-            if let Some(scanout) = retained_nmi_copy_packet_vram.as_ref() {
-                scanout.publish_to(&mut self.ppu.vram);
-            }
-            self.ppu.vram[0x5800..0x5c00].copy_from_slice(&presented_poly);
-        }
-        if let Some(retained_full_tilemap_vram) = retained_full_tilemap_vram.as_ref() {
-            retained_full_tilemap_vram.publish_to(&mut self.ppu.vram);
-        }
-        if !retain_previous_nmi_display_memory {
-            // CGRAM: the NMI's main-palette-buffer upload is only visible on
-            // the NEXT scanout (hardware uploads it in the vblank after this
-            // frame was scanned), so when that upload ran this frame, display
-            // its latched pre-upload image. Direct CGRAM writes outside that
-            // upload (e.g. the intro poly flash, which the real game performs
-            // mid-frame from the IRQ thread) stay same-frame visible via the
-            // live image. The attract palette filter is byte-exact against
-            // Snes9x only with this split.
-            if world_map_fade_display {
-                // Keep the palette from the scanout preceding the world-map
-                // fade. The new Mode 7 memory and INIDISP step are visible,
-                // but CGRAM is consumed on the following NMI boundary.
-            } else if let Some(latch) = self.cgram_upload_latch.as_ref() {
-                self.ppu.cgram.copy_from_slice(latch);
-            } else {
-                self.ppu.cgram.clone_from(&display.ppu.cgram);
-            }
-        } else if snapshot_frame.main_module == 20 && snapshot_frame.submodule == 0 {
-            // The opening-attract transition retains its prior VRAM/CGRAM image
-            // for this scanout, but its main-thread scene handoff has already
-            // published the new BG scroll registers. Snes9x displays that
-            // combination (old memory at the new origin); retaining the whole
-            // PPU snapshot leaves the GPU one pixel up/left on the legend's
-            // first active frame.
-            for (shown, live) in self.ppu.bg_layer.iter_mut().zip(&display.ppu.bg_layer) {
-                shown.h_scroll = live.h_scroll;
-                shown.v_scroll = live.v_scroll;
-            }
-        }
+        self.compose_display_vram(
+            &display,
+            &publication_plan,
+            retained_full_tilemap_vram.as_ref(),
+        );
+        self.compose_display_cgram(&display, &publication_plan);
         if let Some(previous_dialogue_scanout) = previous_dialogue_scanout.as_ref() {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
         }
-        if std::env::var_os("ZELDA3_DEBUG_SCROLL_RETAIN").is_some()
+        if diagnostics.scroll_retain
             && (!self.dialogue_scanout_ownership.is_snapshot()
                 || !self.dialogue_scroll_continuation.is_idle())
         {
@@ -10168,47 +10381,15 @@ impl ZeldaState {
                 self.dialogue_scroll_continuation.diagnostic_code(),
             );
         }
-        // OAM publication has an independent cadence from the large VRAM and
-        // CGRAM uploads above.  The opening attract scene deliberately keeps
-        // its story image in the previous display-memory generation, while its
-        // sprite DMA has already completed and is visible on this scanout.
-        if !retain_previous_nmi_oam {
-            self.ppu.oam.clone_from(&display.ppu.oam);
-        }
-        if matches!(
-            oam_scanout_source,
-            OamScanoutSource::ComposePublishedShadowDma
-        ) {
-            if let Some(published_shadow_oam) = display
-                .published_shadow_oam_dma
-                .as_deref()
-                .filter(|oam| oam.len() == self.ppu.oam.len())
-            {
-                self.ppu.oam.clone_from_slice(published_shadow_oam);
-            }
-        }
-        if let Some((oam, vram)) = display.obj_generation.retained_memory() {
-            self.ppu.oam.clone_from_slice(oam);
-            self.ppu.vram[0x4000..0x4400].copy_from_slice(vram);
-        }
-        self.ppu.obj_vram_latch = None;
-        self.ppu.obj_previous_frame_vram = display.ppu.obj_previous_frame_vram.clone();
-        // A force-blank write published by NMI takes effect before the next
-        // active scanline even though the rest of the frame remains sourced
-        // from the coherent pre-NMI display snapshot.
-        self.ppu.forced_blank |= live_forced_blank;
-        if live_forced_blank {
-            let scanout = resolve_active_display_blanking_scanout(
-                self.ppu.retain_active_display_history,
-                live_forced_blank_from_scanline,
-                live_retain_active_display_history,
-            );
-            self.ppu.forced_blank_from_scanline = scanout.suffix_start_scanline;
-            self.ppu.retain_active_display_history = scanout.retain_prior_surface;
-        }
-        if std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
-            && (1648..=1655).contains(&self.frame_ctr_dbg)
-        {
+        self.compose_display_oam(&display, &publication_plan);
+        self.compose_display_raster(
+            live_forced_blank,
+            live_forced_blank_from_scanline,
+            live_retain_active_display_history,
+            captured_screen_brightness,
+            &publication_plan,
+        );
+        if diagnostics.nmi_latch && (1648..=1655).contains(&self.frame_ctr_dbg) {
             eprintln!(
                 "display_blanking_composed host={} forced={} prefix={} from={:?}",
                 self.frame_ctr_dbg,
@@ -10217,12 +10398,6 @@ impl ZeldaState {
                 self.ppu.forced_blank_from_scanline,
             );
         }
-        // During the opening world-map fade Snes9x consumes the newly written
-        // INIDISP level while CGRAM remains on the deferred display generation.
-        // Its palette map, fixed-color map, and color-add cap all come from
-        // that one brightness generation, independently of CGRAM publication.
-        self.ppu.mode7_scanout_brightness_override =
-            world_map_mode7_brightness_is_early_published.then_some(captured_screen_brightness);
         self.sync_native_game_state_from_ram();
         // The RAM-derived rebuild reconstitutes the palette mirror from the
         // snapshot's WRAM shadow, which already holds THIS frame's palette
@@ -10235,9 +10410,7 @@ impl ZeldaState {
             .palette_provenance
             .0
             .reconstitute_cgram(&self.ppu.cgram);
-        if std::env::var_os("ZELDA3_DEBUG_ATTRACT_TIMELINE").is_some()
-            && (5640..=5700).contains(&self.frame_ctr_dbg)
-        {
+        if diagnostics.attract_timeline && (5640..=5700).contains(&self.frame_ctr_dbg) {
             let trace = format!(
                 "attract_display_present host={} snapshot={:02x}/{:02x} live={:02x}/{:02x} world_map_fade={} bright={} c0={:04x} c1={:04x} fixed={:02x},{:02x},{:02x} math={:02x}/{:02x}",
                 self.frame_ctr_dbg,
@@ -10270,63 +10443,25 @@ impl ZeldaState {
         // only part of the VRAM-retention condition lets semantic text lead
         // the exact hardware pixels during an interrupted VWF render.
         // A dialogue scroll override still owns both representations.
-        let presented_dialogue = if let Some(scanout) = previous_dialogue_scanout.as_ref() {
-            (
-                scanout.glyph_runs.clone(),
-                scanout.glyph_run_dialogue_offsets.clone(),
-                scanout.dialogue_msg_read_pos,
-                scanout.dialogue_message_id,
-            )
-        } else if presented_vram_generation == DisplayVramGeneration::RetainCapturedBeforeNmi {
-            (
-                pristine_snapshot.published_bg3_vwf_glyph_runs.clone(),
-                pristine_snapshot
-                    .published_bg3_vwf_glyph_run_dialogue_offsets
-                    .clone(),
-                pristine_snapshot.published_dialogue_msg_read_pos,
-                pristine_snapshot.published_dialogue_message_id,
-            )
-        } else {
-            (
-                self.published_bg3_vwf_glyph_runs.clone(),
-                self.published_bg3_vwf_glyph_run_dialogue_offsets.clone(),
-                self.published_dialogue_msg_read_pos,
-                self.published_dialogue_message_id,
-            )
-        };
-        if std::env::var_os("ZELDA3_DEBUG_FRAME_BOUNDARY").is_some() {
+        let presented_dialogue = self.resolve_displayed_dialogue_metadata(
+            &pristine_snapshot,
+            previous_dialogue_scanout.as_ref(),
+            publication_plan.vram_generation,
+        );
+        if diagnostics.frame_boundary {
             eprintln!(
                 "frame_boundary_present host={} vram={:?} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
                 self.frame_ctr_dbg,
-                presented_vram_generation,
+                publication_plan.vram_generation,
                 self.published_bg3_vwf_glyph_runs.len(),
                 pristine_snapshot.published_bg3_vwf_glyph_runs.len(),
-                presented_dialogue.0.len(),
+                presented_dialogue.glyph_runs.len(),
                 previous_dialogue_scanout.is_some(),
             );
         }
-        let saved_published_dialogue = (
-            std::mem::replace(&mut self.published_bg3_vwf_glyph_runs, presented_dialogue.0),
-            std::mem::replace(
-                &mut self.published_bg3_vwf_glyph_run_dialogue_offsets,
-                presented_dialogue.1,
-            ),
-            std::mem::replace(
-                &mut self.published_dialogue_msg_read_pos,
-                presented_dialogue.2,
-            ),
-            std::mem::replace(
-                &mut self.published_dialogue_message_id,
-                presented_dialogue.3,
-            ),
-        );
+        let saved_published_dialogue = presented_dialogue.replace_in(self);
         let captured = capture(self);
-        (
-            self.published_bg3_vwf_glyph_runs,
-            self.published_bg3_vwf_glyph_run_dialogue_offsets,
-            self.published_dialogue_msg_read_pos,
-            self.published_dialogue_message_id,
-        ) = saved_published_dialogue;
+        saved_published_dialogue.replace_in(self);
 
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);

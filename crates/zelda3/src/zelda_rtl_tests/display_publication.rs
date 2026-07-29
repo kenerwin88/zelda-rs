@@ -1,5 +1,144 @@
 use super::*;
 
+fn captured_display_snapshot() -> DisplaySnapshot {
+    let mut state = ZeldaState::new();
+    state.capture_display_snapshot();
+    *state.display_snapshot.take().unwrap()
+}
+
+#[test]
+fn parity_diagnostics_stay_under_the_repository_target() {
+    let path = parity_trace_path("display.trace");
+    assert!(path.ends_with("target/parity-traces/display.trace"));
+    assert!(!path.starts_with("/tmp"));
+}
+
+#[test]
+fn publication_plan_keeps_memory_domains_independent() {
+    let mut snapshot = captured_display_snapshot();
+    snapshot.vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+    snapshot.oam_scanout_source = OamScanoutSource::ComposePublishedShadowDma;
+    snapshot.link_obj_scanout_generation = GraphicsDmaGeneration::LiveAfterMain;
+    snapshot.animated_bg_scanout_generation =
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
+    snapshot.bg_scroll_generation = DisplayBgScrollGeneration::RetainCapturedBeforeNmi;
+
+    let plan = DisplayPublicationPlan::resolve(
+        &snapshot,
+        DisplayPublicationSignals {
+            publish_live_overworld_transition_half_color: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+
+    assert_eq!(
+        plan.vram_generation,
+        DisplayVramGeneration::RetainCapturedBeforeNmi
+    );
+    assert!(plan.compose_live_cgram);
+    assert_eq!(
+        plan.oam_scanout_source,
+        OamScanoutSource::ComposePublishedShadowDma
+    );
+    assert_eq!(
+        plan.link_obj_scanout_generation,
+        GraphicsDmaGeneration::LiveAfterMain
+    );
+    assert_eq!(
+        plan.animated_bg_scanout_generation,
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
+    );
+    assert_eq!(
+        plan.bg_scroll_source,
+        DisplayedBgScrollSource::CapturedBeforeNmi
+    );
+    assert!(plan.publish_live_overworld_transition_half_color);
+}
+
+#[test]
+fn dungeon_exit_publication_plan_promotes_only_live_boundary_domains() {
+    let mut snapshot = captured_display_snapshot();
+    snapshot.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
+    snapshot.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    snapshot.bg_scroll_generation = DisplayBgScrollGeneration::RetainCapturedBeforeNmi;
+
+    let plan = DisplayPublicationPlan::resolve(
+        &snapshot,
+        DisplayPublicationSignals {
+            dungeon_exit_crosses_nmi_boundary: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+
+    assert_eq!(
+        plan.oam_scanout_source,
+        OamScanoutSource::ComposeLiveAfterNmi
+    );
+    assert_eq!(
+        plan.link_obj_scanout_generation,
+        GraphicsDmaGeneration::LiveAfterMain
+    );
+    assert_eq!(
+        plan.bg_scroll_source,
+        DisplayedBgScrollSource::LiveAfterNmi
+    );
+}
+
+#[test]
+fn attract_memory_retention_still_publishes_the_live_scroll_origin() {
+    let mut snapshot = captured_display_snapshot();
+    snapshot.vram_generation = DisplayVramGeneration::ComposeLiveAfterNmi;
+    snapshot.bg_scroll_generation = DisplayBgScrollGeneration::RetainCapturedBeforeNmi;
+
+    let plan = DisplayPublicationPlan::resolve(
+        &snapshot,
+        DisplayPublicationSignals {
+            retain_previous_nmi_display_memory: true,
+            attract_map_retains_display_memory: true,
+            world_map_fade_display: true,
+            world_map_mode7_brightness_is_early_published: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+
+    assert_eq!(
+        plan.vram_generation,
+        DisplayVramGeneration::RetainCapturedBeforeNmi
+    );
+    assert!(!plan.compose_live_cgram);
+    assert_eq!(
+        plan.bg_scroll_source,
+        DisplayedBgScrollSource::LiveAfterNmi
+    );
+    assert!(plan.world_map_fade_display);
+    assert!(plan.world_map_mode7_brightness_is_early_published);
+}
+
+#[test]
+fn bad_weather_publication_promotes_bg1_and_animated_tiles_together() {
+    let mut snapshot = captured_display_snapshot();
+    snapshot.bg_scroll_generation = DisplayBgScrollGeneration::RetainCapturedBeforeNmi;
+    snapshot.animated_bg_scanout_generation =
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
+
+    let plan = DisplayPublicationPlan::resolve(
+        &snapshot,
+        DisplayPublicationSignals {
+            publish_live_overworld_bad_weather_scroll: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+
+    assert_eq!(
+        plan.bg_scroll_source,
+        DisplayedBgScrollSource::LiveBg1AfterNmi
+    );
+    assert_eq!(
+        plan.animated_bg_scanout_generation,
+        AnimatedBgScanoutGeneration::LiveAfterNmi
+    );
+}
+
 #[test]
 fn post_nmi_bg_scroll_writes_target_the_following_scanout() {
     let mut state = ZeldaState::new();
