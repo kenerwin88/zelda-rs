@@ -118,6 +118,10 @@ Run the combined behavior/render/audio oracle driver:
 python3 scripts/full_parity.py --rom /path/to/zelda3.sfc
 ```
 
+For the complete 155,384-frame Snes9x route, its proof contract, and local
+checkpoint retention policy, see
+[docs/parity/canonical-route.md](docs/parity/canonical-route.md).
+
 The default driver runs the Rust lockstep behavior/render comparison and the
 translated C engine audio oracle under `../zelda3`.
 Override the C checkout with `ZELDA3_C_REPO=/path/to/zelda3`, `--c-repo`, or
