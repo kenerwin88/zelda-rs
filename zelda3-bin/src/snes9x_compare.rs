@@ -7,7 +7,7 @@ use std::env;
 use std::error::Error;
 use std::fs;
 use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -20,18 +20,27 @@ use crate::libretro_timeline::{
     format_input_history, AudioComparisonMode, AudioTimingOptions, StreamingAudioComparator,
 };
 use crate::render_diagnostics::format_render_ppu_summary;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use zelda3::{game_output::DspWriteEvent, ZeldaState, RUN_MAIN};
 
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
 pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
+const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PairedResumeCapture {
     frame: u32,
     dir: PathBuf,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RollingPairedResumeCapture {
+    interval: u32,
+    root: PathBuf,
+}
+
+const ROLLING_PAIRED_RESUME_GENERATIONS_KEPT: usize = 2;
 
 fn parse_paired_resume_capture(frame: &str, dir: &str) -> Result<PairedResumeCapture, String> {
     let frame = frame
@@ -41,6 +50,113 @@ fn parse_paired_resume_capture(frame: &str, dir: &str) -> Result<PairedResumeCap
         frame,
         dir: PathBuf::from(dir),
     })
+}
+
+fn parse_rolling_paired_resume_capture(
+    interval: &str,
+    root: &str,
+) -> Result<RollingPairedResumeCapture, String> {
+    let interval = interval
+        .parse()
+        .map_err(|error| format!("invalid rolling paired-resume interval `{interval}`: {error}"))?;
+    if interval == 0 {
+        return Err("rolling paired-resume interval must be greater than zero".to_string());
+    }
+    Ok(RollingPairedResumeCapture {
+        interval,
+        root: PathBuf::from(root),
+    })
+}
+
+fn rolling_capture_frame_after(frame: u32, interval: u32) -> u32 {
+    debug_assert_ne!(interval, 0);
+    frame
+        .checked_div(interval)
+        .expect("rolling paired-resume interval is validated")
+        .saturating_add(1)
+        .saturating_mul(interval)
+}
+
+#[derive(Debug, Deserialize)]
+struct PairedResumeManifest {
+    schema: u32,
+    boundary: String,
+    frame: u32,
+    rust_state: String,
+    oracle_state: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LatestPairedResume {
+    schema: u32,
+    frame: u32,
+    checkpoint: String,
+}
+
+fn checkpoint_member(dir: &Path, member: &str) -> Result<PathBuf, String> {
+    let mut components = Path::new(member).components();
+    let Some(Component::Normal(name)) = components.next() else {
+        return Err(format!("invalid paired-resume path member `{member}`"));
+    };
+    if components.next().is_some() {
+        return Err(format!("invalid paired-resume path member `{member}`"));
+    }
+    Ok(dir.join(name))
+}
+
+fn resolve_paired_resume_dir(path: &Path) -> Result<(PathBuf, Option<u32>), String> {
+    if path.join("manifest.json").is_file() {
+        return Ok((path.to_path_buf(), None));
+    }
+    let latest_path = path.join("latest.json");
+    let latest: LatestPairedResume = serde_json::from_slice(
+        &fs::read(&latest_path)
+            .map_err(|error| format!("failed to read {}: {error}", latest_path.display()))?,
+    )
+    .map_err(|error| format!("failed to parse {}: {error}", latest_path.display()))?;
+    if latest.schema != 1 {
+        return Err(format!(
+            "{} has unsupported schema {}",
+            latest_path.display(),
+            latest.schema
+        ));
+    }
+    let checkpoint = checkpoint_member(path, &latest.checkpoint)?;
+    Ok((checkpoint, Some(latest.frame)))
+}
+
+fn paired_resume_paths(path: &Path) -> Result<(PathBuf, PathBuf), String> {
+    let (dir, expected_frame) = resolve_paired_resume_dir(path)?;
+    let manifest_path = dir.join("manifest.json");
+    let manifest: PairedResumeManifest = serde_json::from_slice(
+        &fs::read(&manifest_path)
+            .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?,
+    )
+    .map_err(|error| format!("failed to parse {}: {error}", manifest_path.display()))?;
+    if manifest.schema != 1 || manifest.boundary != "pre-frame" {
+        return Err(format!(
+            "{} is not a supported pre-frame paired resume",
+            manifest_path.display()
+        ));
+    }
+    if let Some(expected_frame) = expected_frame {
+        if expected_frame != manifest.frame {
+            return Err(format!(
+                "{} points to frame {expected_frame}, but its checkpoint records frame {}",
+                path.join("latest.json").display(),
+                manifest.frame
+            ));
+        }
+    }
+    let rust_state = checkpoint_member(&dir, &manifest.rust_state)?;
+    let oracle_state = checkpoint_member(&dir, &manifest.oracle_state)?;
+    if !rust_state.is_file() || !oracle_state.is_file() {
+        return Err(format!(
+            "{} does not contain both paired state files",
+            dir.display()
+        ));
+    }
+    Ok((rust_state, oracle_state))
 }
 
 /// Display-domain receipt captured from the Snes9x PPU and the immutable Rust
@@ -775,18 +891,14 @@ pub(crate) fn run_compare_libretro_oracle(
     let core_path = match args.first() {
         Some(p) => p,
         None => {
-            eprintln!(
-                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
-            );
+            eprintln!("usage: zelda3 {operation} {COMPARE_ORACLE_USAGE}");
             process::exit(2);
         }
     };
     let rom_path = match args.get(1) {
         Some(p) => p,
         None => {
-            eprintln!(
-                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
-            );
+            eprintln!("usage: zelda3 {operation} {COMPARE_ORACLE_USAGE}");
             process::exit(2);
         }
     };
@@ -799,7 +911,9 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut resume_rust_state = None::<PathBuf>;
     let mut resume_oracle_state = None::<PathBuf>;
     let mut resume_oracle_sram = None::<PathBuf>;
+    let mut resume_paired = None::<PathBuf>;
     let mut paired_resume_captures = Vec::<PairedResumeCapture>::new();
+    let mut rolling_paired_resume = None::<RollingPairedResumeCapture>;
     let mut native_apu_bootstrap = None::<PathBuf>;
     let mut compare_video = true;
     let mut compare_audio = true;
@@ -900,6 +1014,16 @@ pub(crate) fn run_compare_libretro_oracle(
                 resume_oracle_sram = Some(PathBuf::from(path));
                 i += 2;
             }
+            "--resume-paired" => {
+                let Some(path) = args.get(i + 1) else {
+                    eprintln!(
+                        "--resume-paired requires a checkpoint or rolling-checkpoint directory"
+                    );
+                    process::exit(2);
+                };
+                resume_paired = Some(PathBuf::from(path));
+                i += 2;
+            }
             "--save-paired-resume-at" => {
                 let (Some(frame), Some(dir)) = (args.get(i + 1), args.get(i + 2)) else {
                     eprintln!("--save-paired-resume-at requires a frame and directory");
@@ -907,6 +1031,19 @@ pub(crate) fn run_compare_libretro_oracle(
                 };
                 paired_resume_captures.push(
                     parse_paired_resume_capture(frame, dir).unwrap_or_else(|error| {
+                        eprintln!("{error}");
+                        process::exit(2);
+                    }),
+                );
+                i += 3;
+            }
+            "--save-rolling-paired-resume" => {
+                let (Some(interval), Some(dir)) = (args.get(i + 1), args.get(i + 2)) else {
+                    eprintln!("--save-rolling-paired-resume requires an interval and directory");
+                    process::exit(2);
+                };
+                rolling_paired_resume = Some(
+                    parse_rolling_paired_resume_capture(interval, dir).unwrap_or_else(|error| {
                         eprintln!("{error}");
                         process::exit(2);
                     }),
@@ -1121,6 +1258,27 @@ pub(crate) fn run_compare_libretro_oracle(
                 process::exit(2);
             }
         }
+    }
+    if resume_paired.is_some()
+        && (resume_rust_state.is_some()
+            || resume_oracle_state.is_some()
+            || resume_oracle_sram.is_some())
+    {
+        eprintln!(
+            "--resume-paired cannot be combined with explicit Rust, oracle, or oracle SRAM resume paths"
+        );
+        process::exit(2);
+    }
+    if let Some(path) = resume_paired.as_deref() {
+        let (rust_state, oracle_state) = paired_resume_paths(path).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to resolve paired resume {}: {error}",
+                path.display()
+            );
+            process::exit(2);
+        });
+        resume_rust_state = Some(rust_state);
+        resume_oracle_state = Some(oracle_state);
     }
     if resume_rust_state.is_some() != resume_oracle_state.is_some() {
         eprintln!(
@@ -1530,6 +1688,9 @@ pub(crate) fn run_compare_libretro_oracle(
     let debug_anim_lag = std::env::var_os("ZELDA3_DEBUG_ANIM_LAG").is_some();
     let mut pre_anim_region: Option<Vec<u16>> = None;
     let mut next_paired_resume_capture = 0usize;
+    let mut next_rolling_resume_frame = rolling_paired_resume
+        .as_ref()
+        .map(|rolling| rolling_capture_frame_after(start_frame, rolling.interval));
     for frame_index in start_frame..frames {
         while paired_resume_captures
             .get(next_paired_resume_capture)
@@ -1563,6 +1724,38 @@ pub(crate) fn run_compare_libretro_oracle(
                 capture.dir.display()
             );
             next_paired_resume_capture += 1;
+        }
+        if next_rolling_resume_frame.is_some_and(|due| frame_index >= due)
+            && video_mismatch_ranges.is_empty()
+            && !wrote_first_audio_mismatch
+            && game.paired_resume_cpu_boundary_is_quiescent()
+        {
+            let rolling = rolling_paired_resume
+                .as_ref()
+                .expect("rolling resume schedule requires a configuration");
+            let capture_dir = write_rolling_paired_resume_capture(
+                rolling,
+                frame_index,
+                core_path,
+                rom_path,
+                input_script_path.as_deref(),
+                rom_random_script.as_deref(),
+                &game,
+                &oracle,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!(
+                    "failed to save rolling paired resume at frame {frame_index} in {}: {error}",
+                    rolling.root.display()
+                );
+                process::exit(1);
+            });
+            println!(
+                "saved rolling paired pre-frame resume at frame {frame_index}: {}",
+                capture_dir.display()
+            );
+            next_rolling_resume_frame =
+                Some(rolling_capture_frame_after(frame_index, rolling.interval));
         }
         let requested_input = input_script.input_for_frame(frame_index);
         let compare_this_frame = frame_index >= effective_compare_from_frame;
@@ -2960,6 +3153,80 @@ fn write_paired_resume_capture(
     Ok(())
 }
 
+fn write_rolling_paired_resume_capture(
+    rolling: &RollingPairedResumeCapture,
+    frame: u32,
+    core_path: &str,
+    rom_path: &str,
+    input_script_path: Option<&Path>,
+    rom_random_script: Option<&Path>,
+    game: &ZeldaState,
+    oracle: &LibretroCore,
+) -> Result<PathBuf, Box<dyn Error>> {
+    fs::create_dir_all(&rolling.root)?;
+    let checkpoint_name = format!("frame-{frame:08}");
+    let capture = PairedResumeCapture {
+        frame,
+        dir: rolling.root.join(&checkpoint_name),
+    };
+    write_paired_resume_capture(
+        &capture,
+        core_path,
+        rom_path,
+        input_script_path,
+        rom_random_script,
+        game,
+        oracle,
+    )?;
+    fs::write(
+        rolling.root.join("latest.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema": 1,
+            "frame": frame,
+            "checkpoint": checkpoint_name,
+        }))?,
+    )?;
+    prune_rolling_paired_resume_captures(
+        &rolling.root,
+        ROLLING_PAIRED_RESUME_GENERATIONS_KEPT,
+        &capture.dir,
+    );
+    Ok(capture.dir)
+}
+
+fn prune_rolling_paired_resume_captures(root: &Path, keep: usize, current: &Path) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    let mut captures = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_str()?;
+            name.strip_prefix("frame-")?.parse::<u32>().ok()?;
+            let path = entry.path();
+            let modified = entry.metadata().ok()?.modified().ok()?;
+            path.join("manifest.json")
+                .is_file()
+                .then_some((modified, path))
+        })
+        .collect::<Vec<_>>();
+    // A restarted run may capture a lower frame into an existing root. Keep
+    // the generation named by latest.json plus the most recently written
+    // fallback; numeric frame order alone could immediately delete the new
+    // capture and leave latest.json dangling.
+    captures.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
+    captures.sort_by_key(|(_, path)| path != current);
+    for (_, path) in captures.into_iter().skip(keep.max(1)) {
+        if let Err(error) = fs::remove_dir_all(&path) {
+            eprintln!(
+                "failed to prune generated rolling checkpoint {}: {error}",
+                path.display()
+            );
+        }
+    }
+}
+
 pub(crate) fn initialize_libretro_session(
     session_dir: Option<&Path>,
     core_path: &str,
@@ -4120,10 +4387,14 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_debug_frame_selection, parse_paired_resume_capture, summarize_value_domain,
-        BootBoundaryState, PairedResumeCapture, ValueDomainDiff,
+        checkpoint_member, paired_resume_paths, parse_debug_frame_selection,
+        parse_paired_resume_capture, parse_rolling_paired_resume_capture,
+        prune_rolling_paired_resume_captures, rolling_capture_frame_after, summarize_value_domain,
+        BootBoundaryState, PairedResumeCapture, RollingPairedResumeCapture, ValueDomainDiff,
     };
-    use std::path::PathBuf;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn parse_debug_frame_selection_expands_and_deduplicates_ranges() {
@@ -4143,6 +4414,111 @@ mod tests {
             }
         );
         assert!(parse_paired_resume_capture("not-a-frame", "unused").is_err());
+    }
+
+    #[test]
+    fn rolling_paired_resume_schedules_the_next_interval_boundary() {
+        assert_eq!(
+            parse_rolling_paired_resume_capture("256", "target/parity-checkpoints/frontier")
+                .unwrap(),
+            RollingPairedResumeCapture {
+                interval: 256,
+                root: PathBuf::from("target/parity-checkpoints/frontier"),
+            }
+        );
+        assert!(parse_rolling_paired_resume_capture("0", "unused").is_err());
+        assert_eq!(rolling_capture_frame_after(0, 256), 256);
+        assert_eq!(rolling_capture_frame_after(255, 256), 256);
+        assert_eq!(rolling_capture_frame_after(256, 256), 512);
+        assert_eq!(rolling_capture_frame_after(3400, 256), 3584);
+    }
+
+    #[test]
+    fn paired_resume_manifest_paths_cannot_escape_the_checkpoint() {
+        let root = Path::new("target/parity-checkpoints/frontier");
+        assert_eq!(
+            checkpoint_member(root, "rust.z3state").unwrap(),
+            root.join("rust.z3state")
+        );
+        assert!(checkpoint_member(root, "../rust.z3state").is_err());
+        assert!(checkpoint_member(root, "/tmp/rust.z3state").is_err());
+    }
+
+    #[test]
+    fn paired_resume_root_resolves_its_latest_complete_generation() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-paired-resume-{}-{unique}",
+            std::process::id()
+        ));
+        let checkpoint = root.join("frame-00003700");
+        fs::create_dir_all(&checkpoint).unwrap();
+        fs::write(checkpoint.join("rust.z3state"), b"rust").unwrap();
+        fs::write(checkpoint.join("oracle.state"), b"oracle").unwrap();
+        fs::write(
+            checkpoint.join("manifest.json"),
+            br#"{
+                "schema": 1,
+                "boundary": "pre-frame",
+                "frame": 3700,
+                "rust_state": "rust.z3state",
+                "oracle_state": "oracle.state"
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("latest.json"),
+            br#"{
+                "schema": 1,
+                "frame": 3700,
+                "checkpoint": "frame-00003700"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            paired_resume_paths(&root).unwrap(),
+            (
+                checkpoint.join("rust.z3state"),
+                checkpoint.join("oracle.state")
+            )
+        );
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rolling_prune_preserves_the_new_generation_after_a_restart() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-rolling-prune-{}-{unique}",
+            std::process::id()
+        ));
+        for frame in [3600, 3700, 100] {
+            let dir = root.join(format!("frame-{frame:08}"));
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("manifest.json"), b"{}").unwrap();
+        }
+        let current = root.join("frame-00000100");
+
+        prune_rolling_paired_resume_captures(&root, 2, &current);
+
+        assert!(current.is_dir());
+        assert_eq!(
+            fs::read_dir(&root)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().is_dir())
+                .count(),
+            2
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
