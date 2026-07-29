@@ -29,5 +29,15 @@
     "handoff_oracle_state_sha256": "bc6a57e371e5e11cb583b11235a8fe190edc10bf58a3f458526005753b68d502",
     "handoff_rust_state_sha256": "1fdc37713d08e6607c7290a22de81bd9b0db2d21c3fd57d6c574cfc2d0ca703",
     "boundary_overlap_frames": 1
+  },
+  "latest_housekeeping_verification": {
+    "commit": "4c8b496392c8be86c4887cf35887de23fa4d63df",
+    "prefix_resume_frame": 16384,
+    "prefix_exact_through_frame": 27649,
+    "suffix_resume_frame": 27648,
+    "suffix_exact_through_frame": 155384,
+    "boundary_overlap_frames": 1,
+    "video_matched": true,
+    "audio_matched": true
   }
 }
