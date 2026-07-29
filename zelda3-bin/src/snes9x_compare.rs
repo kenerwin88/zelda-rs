@@ -27,6 +27,22 @@ pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
 pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PairedResumeCapture {
+    frame: u32,
+    dir: PathBuf,
+}
+
+fn parse_paired_resume_capture(frame: &str, dir: &str) -> Result<PairedResumeCapture, String> {
+    let frame = frame
+        .parse()
+        .map_err(|error| format!("invalid paired-resume frame `{frame}`: {error}"))?;
+    Ok(PairedResumeCapture {
+        frame,
+        dir: PathBuf::from(dir),
+    })
+}
+
 /// Display-domain receipt captured from the Snes9x PPU and the immutable Rust
 /// scanout snapshot. This is deliberately upstream of RGBA comparison: it
 /// tells us whether a failure is a ROM/state-publication issue or a renderer
@@ -475,7 +491,7 @@ pub(crate) fn run_compare_libretro_oracle(
         Some(p) => p,
         None => {
             eprintln!(
-                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
+                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
             );
             process::exit(2);
         }
@@ -484,19 +500,21 @@ pub(crate) fn run_compare_libretro_oracle(
         Some(p) => p,
         None => {
             eprintln!(
-                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
+                "usage: zelda3 {operation} <path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path>] [--load-sram <path>] [--resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all]"
             );
             process::exit(2);
         }
     };
     let mut frames = 300u32;
     let mut input_script = InputScript::default();
+    let mut input_script_path = None::<PathBuf>;
     let mut rom_random_script = None::<PathBuf>;
     let mut replay_save = None::<PathBuf>;
     let mut load_sram = None::<PathBuf>;
     let mut resume_rust_state = None::<PathBuf>;
     let mut resume_oracle_state = None::<PathBuf>;
     let mut resume_oracle_sram = None::<PathBuf>;
+    let mut paired_resume_captures = Vec::<PairedResumeCapture>::new();
     let mut native_apu_bootstrap = None::<PathBuf>;
     let mut compare_video = true;
     let mut compare_audio = true;
@@ -554,6 +572,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         process::exit(2);
                     }
                 };
+                input_script_path = Some(PathBuf::from(path));
                 i += 2;
             }
             "--rom-random-script" => {
@@ -595,6 +614,19 @@ pub(crate) fn run_compare_libretro_oracle(
                 };
                 resume_oracle_sram = Some(PathBuf::from(path));
                 i += 2;
+            }
+            "--save-paired-resume-at" => {
+                let (Some(frame), Some(dir)) = (args.get(i + 1), args.get(i + 2)) else {
+                    eprintln!("--save-paired-resume-at requires a frame and directory");
+                    process::exit(2);
+                };
+                paired_resume_captures.push(
+                    parse_paired_resume_capture(frame, dir).unwrap_or_else(|error| {
+                        eprintln!("{error}");
+                        process::exit(2);
+                    }),
+                );
+                i += 3;
             }
             "--native-apu-bootstrap" => {
                 let Some(path) = args.get(i + 1) else {
@@ -870,6 +902,17 @@ pub(crate) fn run_compare_libretro_oracle(
         eprintln!("{error}");
         process::exit(2);
     }
+    paired_resume_captures.sort_by_key(|capture| capture.frame);
+    if let Some(capture) = paired_resume_captures
+        .iter()
+        .find(|capture| capture.frame >= frames)
+    {
+        eprintln!(
+            "paired-resume frame {} must be earlier than final frame count {frames}",
+            capture.frame
+        );
+        process::exit(2);
+    }
     if session_dir.is_some() {
         scan_all = true;
     }
@@ -908,6 +951,16 @@ pub(crate) fn run_compare_libretro_oracle(
     }
     if start_frame >= frames {
         eprintln!("resume frame {start_frame} must be earlier than final frame count {frames}");
+        process::exit(2);
+    }
+    if let Some(capture) = paired_resume_captures
+        .iter()
+        .find(|capture| capture.frame < start_frame)
+    {
+        eprintln!(
+            "paired-resume frame {} precedes resumed route frame {start_frame}",
+            capture.frame
+        );
         process::exit(2);
     }
     let effective_compare_from_frame = compare_from_frame.max(start_frame);
@@ -1191,7 +1244,41 @@ pub(crate) fn run_compare_libretro_oracle(
     // as it was before this frame's step, to test a one-step animation skew.
     let debug_anim_lag = std::env::var_os("ZELDA3_DEBUG_ANIM_LAG").is_some();
     let mut pre_anim_region: Option<Vec<u16>> = None;
+    let mut next_paired_resume_capture = 0usize;
     for frame_index in start_frame..frames {
+        while paired_resume_captures
+            .get(next_paired_resume_capture)
+            .is_some_and(|capture| capture.frame == frame_index)
+        {
+            if !video_mismatch_ranges.is_empty() || wrote_first_audio_mismatch {
+                eprintln!(
+                    "refusing to save paired resume at frame {frame_index} after an earlier parity mismatch"
+                );
+                process::exit(1);
+            }
+            let capture = &paired_resume_captures[next_paired_resume_capture];
+            write_paired_resume_capture(
+                capture,
+                core_path,
+                rom_path,
+                input_script_path.as_deref(),
+                rom_random_script.as_deref(),
+                &game,
+                &oracle,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!(
+                    "failed to save paired resume at frame {frame_index} in {}: {error}",
+                    capture.dir.display()
+                );
+                process::exit(1);
+            });
+            println!(
+                "saved paired pre-frame resume at frame {frame_index}: {}",
+                capture.dir.display()
+            );
+            next_paired_resume_capture += 1;
+        }
         let requested_input = input_script.input_for_frame(frame_index);
         let compare_this_frame = frame_index >= effective_compare_from_frame;
         if let Some(writer) = display_oracle_receipts
@@ -2274,7 +2361,7 @@ pub(crate) fn run_compare_libretro_oracle(
         }
     }
 
-    if let Err(error) = game.finish_rom_random_replay() {
+    if let Err(error) = game.finish_rom_random_replay_through(frames) {
         eprintln!("ROM random replay did not complete: {error}");
         process::exit(1);
     }
@@ -2490,6 +2577,69 @@ pub(crate) fn format_u32_ranges(ranges: &[(u32, u32)]) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn write_paired_resume_capture(
+    capture: &PairedResumeCapture,
+    core_path: &str,
+    rom_path: &str,
+    input_script_path: Option<&Path>,
+    rom_random_script: Option<&Path>,
+    game: &ZeldaState,
+    oracle: &LibretroCore,
+) -> Result<(), Box<dyn Error>> {
+    if !game.paired_resume_cpu_boundary_is_quiescent() {
+        return Err(
+            "frame is inside an unserialized ROM-call continuation; choose a quiescent pre-frame boundary"
+                .into(),
+        );
+    }
+    fs::create_dir_all(&capture.dir)?;
+    let rust_state = PlayCrashCheckpoint {
+        magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
+        host_frame: capture.frame,
+        input: 0,
+        run_what: select_run_what(&game.ram),
+        game: game.clone(),
+    };
+    let rust_path = capture.dir.join("rust.z3state");
+    let oracle_path = capture.dir.join("oracle.state");
+    fs::write(&rust_path, bincode::serialize(&rust_state)?)?;
+    fs::write(&oracle_path, oracle.serialize_state()?)?;
+
+    let source_manifest = |path: Option<&Path>| -> Result<serde_json::Value, Box<dyn Error>> {
+        Ok(match path {
+            Some(path) => serde_json::json!({
+                "path": path,
+                "sha256": parity::runner::sha256_file(path)?,
+            }),
+            None => serde_json::Value::Null,
+        })
+    };
+    let manifest = serde_json::json!({
+        "schema": 1,
+        "boundary": "pre-frame",
+        "frame": capture.frame,
+        "cpu_boundary": "quiescent",
+        "renderer_warmup_required": true,
+        "rust_state": "rust.z3state",
+        "oracle_state": "oracle.state",
+        "core": {
+            "path": core_path,
+            "sha256": parity::runner::sha256_file(Path::new(core_path))?,
+        },
+        "rom": {
+            "path": rom_path,
+            "sha256": parity::runner::sha256_file(Path::new(rom_path))?,
+        },
+        "input_script": source_manifest(input_script_path)?,
+        "rom_random_script": source_manifest(rom_random_script)?,
+    });
+    fs::write(
+        capture.dir.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest)?,
+    )?;
+    Ok(())
 }
 
 pub(crate) fn initialize_libretro_session(
@@ -3626,7 +3776,11 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_debug_frame_selection, BootBoundaryState};
+    use super::{
+        parse_debug_frame_selection, parse_paired_resume_capture, BootBoundaryState,
+        PairedResumeCapture,
+    };
+    use std::path::PathBuf;
 
     #[test]
     fn parse_debug_frame_selection_expands_and_deduplicates_ranges() {
@@ -3634,6 +3788,18 @@ mod tests {
             parse_debug_frame_selection("81,79-81,84..=85,invalid,8-3"),
             vec![79, 80, 81, 84, 85]
         );
+    }
+
+    #[test]
+    fn paired_resume_capture_keeps_an_absolute_pre_frame_boundary() {
+        assert_eq!(
+            parse_paired_resume_capture("12120", "target/parity-checkpoints/frontier").unwrap(),
+            PairedResumeCapture {
+                frame: 12120,
+                dir: PathBuf::from("target/parity-checkpoints/frontier"),
+            }
+        );
+        assert!(parse_paired_resume_capture("not-a-frame", "unused").is_err());
     }
 
     #[test]

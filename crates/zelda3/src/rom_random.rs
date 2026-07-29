@@ -129,7 +129,10 @@ impl RomRandomReplay {
         self.enabled = true;
         self.current_execution_frame = None;
         self.next_execution_frame = start_execution_frame;
-        self.samples = samples.into();
+        self.samples = samples
+            .into_iter()
+            .skip_while(|sample| sample.execution_frame < start_execution_frame)
+            .collect();
     }
 
     pub(crate) fn begin_frame(&mut self) {
@@ -165,6 +168,15 @@ impl RomRandomReplay {
     }
 
     pub(crate) fn finish(&self) -> Result<(), String> {
+        match self.remaining() {
+            None | Some(0) => Ok(()),
+            Some(remaining) => Err(format!(
+                "{remaining} ROM random sample(s) were not consumed"
+            )),
+        }
+    }
+
+    pub(crate) fn finish_through(&self, end_execution_frame: u32) -> Result<(), String> {
         let Some(remaining) = self.remaining() else {
             return Ok(());
         };
@@ -172,8 +184,17 @@ impl RomRandomReplay {
             return Ok(());
         }
         let next = self.samples.front().unwrap();
+        if next.execution_frame >= end_execution_frame {
+            return Ok(());
+        }
+        let overdue = self
+            .samples
+            .iter()
+            .take_while(|sample| sample.execution_frame < end_execution_frame)
+            .count();
         Err(format!(
-            "{remaining} ROM random sample(s) were not consumed; next sample is for execution frame {}",
+            "{overdue} ROM random sample(s) through execution frame {} were not consumed; next sample is for execution frame {} ({remaining} total sample(s) remain)",
+            end_execution_frame.saturating_sub(1),
             next.execution_frame
         ))
     }
@@ -223,6 +244,38 @@ mod tests {
         replay.begin_frame();
         assert_eq!(replay.take_next(), Some(RomRandomResult::new(0x78, true)));
         assert_eq!(replay.remaining(), Some(0));
+    }
+
+    #[test]
+    fn resumed_replay_discards_samples_before_its_execution_frame() {
+        let mut replay = RomRandomReplay::default();
+        replay.install(
+            vec![
+                RomRandomSample::new(10, 0x12),
+                RomRandomSample::new(11, 0x34),
+                RomRandomSample::new(12, 0x56),
+            ],
+            12,
+        );
+
+        replay.begin_frame();
+        assert_eq!(replay.take_next(), Some(RomRandomResult::new(0x56, false)));
+        assert_eq!(replay.remaining(), Some(0));
+    }
+
+    #[test]
+    fn prefix_replay_allows_future_samples_but_rejects_missed_calls() {
+        let mut replay = RomRandomReplay::default();
+        replay.install(
+            vec![
+                RomRandomSample::new(12, 0x12),
+                RomRandomSample::new(15, 0x34),
+            ],
+            10,
+        );
+
+        assert_eq!(replay.finish_through(12), Ok(()));
+        assert!(replay.finish_through(13).unwrap_err().contains("frame 12"));
     }
 
     #[test]

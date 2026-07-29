@@ -8501,6 +8501,15 @@ impl ZeldaState {
         self.rom_startup_timing = true;
     }
 
+    /// Paired emulator checkpoints may only be captured between translated
+    /// ROM calls. `pending_rom_work` represents a suspended 65816 call stack
+    /// and is intentionally absent from ordinary playable save states.
+    pub fn paired_resume_cpu_boundary_is_quiescent(&self) -> bool {
+        !self.pending_rom_work.is_pending()
+            && self.active_dungeon_sprite_main_return.is_none()
+            && self.next_overworld_pre_main_nmi_resume.is_none()
+    }
+
     pub(super) fn rom_startup_timing(&self) -> bool {
         self.rom_startup_timing
     }
@@ -12200,6 +12209,14 @@ impl ZeldaState {
 
     pub fn finish_rom_random_replay(&self) -> Result<(), String> {
         self.rom_random_replay.finish()
+    }
+
+    pub fn finish_rom_random_replay_through(
+        &self,
+        end_execution_frame: u32,
+    ) -> Result<(), String> {
+        self.rom_random_replay
+            .finish_through(end_execution_frame)
     }
 
     pub fn zelda_set_language(&mut self, language: Option<&str>) {
