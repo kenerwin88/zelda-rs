@@ -4087,19 +4087,33 @@ fn name_player_tilemap_finishes_after_the_intervening_nmi_slice() {
     state.module_name_player_1();
 
     assert_eq!(state.game_state.frame.submodule, 1);
-    assert!(state.name_player_tilemap_suffix_pending);
+    assert!(state.pre_main_caller_continuation_is(
+        PreMainCallerContinuation::NamePlayerTilemapUpload
+    ));
     assert!(state.rom_load_partial_nmi_this_frame);
     assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 0);
 
     state.complete_module_name_player_1();
 
     assert_eq!(state.game_state.frame.submodule, 2);
-    assert!(!state.name_player_tilemap_suffix_pending);
+    assert!(state.pre_main_caller_continuation.is_none());
     assert_eq!(state.ram[NMI_LOAD_BG_FROM_VRAM], 1);
     let terminator = state.game_state.display.vram_upload_buffer_base()
         + 4
         + select_file::SELECT_FILE_CHECKERBOARD_TILE_COUNT * 2;
     assert_eq!(read_le_u16(&state.ram, terminator), 0xffff);
+}
+
+#[test]
+#[should_panic(expected = "cannot schedule")]
+fn pre_main_scheduler_rejects_parallel_caller_suffixes() {
+    let mut state = ZeldaState::new();
+    state.schedule_pre_main_caller_continuation(
+        PreMainCallerContinuation::DialogueVwfReturn,
+    );
+    state.schedule_pre_main_caller_continuation(
+        PreMainCallerContinuation::FileSelectCheckerboardUpload,
+    );
 }
 
 #[test]

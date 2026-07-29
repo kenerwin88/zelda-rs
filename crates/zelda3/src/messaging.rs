@@ -359,7 +359,9 @@ impl ZeldaState {
                 // Module0E_Interface has not reached the scroll-register suffix
                 // at $00:f873 while these continuation slices are pending.
                 || !self.dialogue_scroll_cpu_is_idle()
-                || self.dialogue_vwf_return_suffix_pending)
+                || self.pre_main_caller_continuation_is(
+                    PreMainCallerContinuation::DialogueVwfReturn,
+                ))
         {
             return;
         }
@@ -3537,7 +3539,11 @@ impl ZeldaState {
         // eventual handler epilogue. Ordinary commands still finish here.
         if !yielded_midline && self.dialogue_scroll_cpu_is_idle() {
             self.finish_dialogue_character_render_call();
-            self.dialogue_vwf_return_suffix_pending = caller_suffix_crosses_vblank;
+            if caller_suffix_crosses_vblank {
+                self.schedule_pre_main_caller_continuation(
+                    PreMainCallerContinuation::DialogueVwfReturn,
+                );
+            }
         }
     }
 

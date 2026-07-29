@@ -225,14 +225,18 @@ impl ZeldaState {
         }
         self.write_vram_upload_absolute_byte(dst, 0xff);
         if self.rom_startup_timing() {
-            self.file_select_checkerboard_suffix_pending = true;
+            self.schedule_pre_main_caller_continuation(
+                PreMainCallerContinuation::FileSelectCheckerboardUpload,
+            );
         } else {
             self.complete_file_select_checkerboard_upload();
         }
     }
 
     pub(super) fn complete_file_select_checkerboard_upload(&mut self) {
-        self.file_select_checkerboard_suffix_pending = false;
+        self.finish_pre_main_caller_continuation(
+            PreMainCallerContinuation::FileSelectCheckerboardUpload,
+        );
         self.increment_submodule();
         self.set_bg_vram_load_mode(1);
     }
@@ -1028,7 +1032,9 @@ impl ZeldaState {
             // The 65816 is still in SelectFile_Func1 when Snes9x reaches the
             // next vblank (ROM PC 0x0cce3a on the clean route). Leave the NMI
             // latch set and publish the fixed suffix only after that slice.
-            self.name_player_tilemap_suffix_pending = true;
+            self.schedule_pre_main_caller_continuation(
+                PreMainCallerContinuation::NamePlayerTilemapUpload,
+            );
             self.rom_load_partial_nmi_this_frame = true;
             return;
         }
@@ -1036,7 +1042,9 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module_name_player_1(&mut self) {
-        self.name_player_tilemap_suffix_pending = false;
+        self.finish_pre_main_caller_continuation(
+            PreMainCallerContinuation::NamePlayerTilemapUpload,
+        );
         let dst = self.game_state.display.vram_upload_buffer_base()
             + 4
             + SELECT_FILE_CHECKERBOARD_TILE_COUNT * 2;

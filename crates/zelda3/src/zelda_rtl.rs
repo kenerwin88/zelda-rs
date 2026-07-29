@@ -1016,6 +1016,18 @@ enum PreMainNmiResume {
     DungeonSupertileQuadrantUploads,
 }
 
+/// Caller suffixes that resume before the next fresh module iteration.
+///
+/// These continuations are mutually exclusive on the 65816 call stack. Keep
+/// that invariant explicit instead of representing one program counter with
+/// several booleans that could all be true at once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PreMainCallerContinuation {
+    DialogueVwfReturn,
+    FileSelectCheckerboardUpload,
+    NamePlayerTilemapUpload,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NmiPhase {
     BeforeNmi,
@@ -3717,12 +3729,6 @@ pub struct ZeldaState {
     pub(crate) dialogue_fast_forward_hold_pending: bool,
     #[serde(skip)]
     pub(crate) dialogue_fast_forward_hold_active: bool,
-    /// The VWF handler has published its NMI request, but vblank interrupted
-    /// the Module0E/NMI_PrepareSprites caller suffix. The next host slice
-    /// resumes only that suffix and leaves the pending upload for the
-    /// following NMI, matching the 65816 return boundary.
-    #[serde(skip)]
-    pub(crate) dialogue_vwf_return_suffix_pending: bool,
     /// CPU entry phase for the next fresh VWF handler iteration. A caller
     /// suffix that returned in its own host slice reaches the following module
     /// iteration earlier than an ordinary game-loop entry.
@@ -3847,9 +3853,7 @@ pub struct ZeldaState {
     #[serde(skip)]
     file_select_initial_graphics_phase: u8,
     #[serde(skip)]
-    file_select_checkerboard_suffix_pending: bool,
-    #[serde(skip)]
-    name_player_tilemap_suffix_pending: bool,
+    pre_main_caller_continuation: Option<PreMainCallerContinuation>,
     #[serde(skip)]
     selected_game_load_remaining_frames: u8,
     #[serde(skip)]
@@ -8971,7 +8975,6 @@ impl ZeldaState {
             dialogue_scroll_continuation: DialogueScrollContinuation::IDLE,
             dialogue_fast_forward_hold_pending: false,
             dialogue_fast_forward_hold_active: false,
-            dialogue_vwf_return_suffix_pending: false,
             dialogue_vwf_handler_entry_phase: messaging::VwfHandlerEntryPhase::default(),
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
             published_bg3_vwf_glyph_runs: Vec::new(),
@@ -9019,8 +9022,7 @@ impl ZeldaState {
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
             file_select_initial_graphics_phase: 0,
-            file_select_checkerboard_suffix_pending: false,
-            name_player_tilemap_suffix_pending: false,
+            pre_main_caller_continuation: None,
             selected_game_load_remaining_frames: 0,
             dungeon_landing_wipe_return_slices_remaining: 0,
             dungeon_exit_spotlight_table_delay: 0,
@@ -9128,8 +9130,7 @@ impl ZeldaState {
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
         self.file_select_initial_graphics_phase = 0;
-        self.file_select_checkerboard_suffix_pending = false;
-        self.name_player_tilemap_suffix_pending = false;
+        self.pre_main_caller_continuation = None;
         self.selected_game_load_remaining_frames = 0;
         self.dungeon_landing_wipe_return_slices_remaining = 0;
         self.dungeon_exit_spotlight_table_delay = 0;
@@ -9184,8 +9185,7 @@ impl ZeldaState {
             self.joypad_sampled_before_main = false;
             self.audio_nmi_processed_before_main = false;
             self.file_select_initial_graphics_phase = 0;
-            self.file_select_checkerboard_suffix_pending = false;
-            self.name_player_tilemap_suffix_pending = false;
+            self.pre_main_caller_continuation = None;
             self.selected_game_load_remaining_frames = 0;
             self.dungeon_landing_wipe_return_slices_remaining = 0;
             self.dungeon_exit_spotlight_table_delay = 0;
@@ -9638,6 +9638,41 @@ impl ZeldaState {
             self.dialogue_scroll_phase(),
             DialogueScrollPhase::CopyingRemainingPixels { .. } | DialogueScrollPhase::ReturnOnly
         )
+    }
+
+    fn schedule_pre_main_caller_continuation(
+        &mut self,
+        continuation: PreMainCallerContinuation,
+    ) {
+        assert!(
+            self.pre_main_caller_continuation.is_none(),
+            "cannot schedule {continuation:?} while {:?} is pending",
+            self.pre_main_caller_continuation
+        );
+        self.pre_main_caller_continuation = Some(continuation);
+    }
+
+    fn pre_main_caller_continuation_is(
+        &self,
+        continuation: PreMainCallerContinuation,
+    ) -> bool {
+        self.pre_main_caller_continuation == Some(continuation)
+    }
+
+    fn finish_pre_main_caller_continuation(
+        &mut self,
+        expected: PreMainCallerContinuation,
+    ) {
+        let Some(actual) = self.pre_main_caller_continuation else {
+            // Untimed execution completes these calls atomically and therefore
+            // has no scheduled caller continuation to consume.
+            return;
+        };
+        assert_eq!(
+            actual, expected,
+            "pre-main caller completed through the wrong ROM return path"
+        );
+        self.pre_main_caller_continuation = None;
     }
 
     pub(crate) fn begin_dialogue_scroll(
@@ -11203,20 +11238,44 @@ impl ZeldaState {
         if initialized_audio_bank_this_frame {
             self.zelda_initialization_code();
         }
-        if self.rom_startup_timing() && self.dialogue_vwf_return_suffix_pending {
-            self.dialogue_vwf_return_suffix_pending = false;
-            self.dialogue_fast_forward_hold_active = false;
-            self.complete_module0e_interface_after_run();
-            self.nmi_prepare_sprites();
-            self.clear_nmi_update_latch();
-            self.capture_display_snapshot();
-            // The interrupted caller has now reached the ordinary game-loop
-            // boundary. Run its trailing NMI exactly once: it consumes the
-            // preprocessed-audio marker and publishes the completed BG3 text
-            // for the following scanout.
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-            self.dialogue_vwf_handler_entry_phase =
-                messaging::VwfHandlerEntryPhase::AfterDeferredCallerSuffix;
+        if let Some(continuation) = self.pre_main_caller_continuation {
+            match continuation {
+                PreMainCallerContinuation::DialogueVwfReturn => {
+                    self.finish_pre_main_caller_continuation(continuation);
+                    self.dialogue_fast_forward_hold_active = false;
+                    self.complete_module0e_interface_after_run();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    self.capture_display_snapshot();
+                    // The interrupted caller has now reached the ordinary
+                    // game-loop boundary. Run its trailing NMI exactly once:
+                    // it consumes the preprocessed-audio marker and publishes
+                    // the completed BG3 text for the following scanout.
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.dialogue_vwf_handler_entry_phase =
+                        messaging::VwfHandlerEntryPhase::AfterDeferredCallerSuffix;
+                }
+                PreMainCallerContinuation::FileSelectCheckerboardUpload => {
+                    self.complete_file_select_checkerboard_upload();
+                    // This continuation resumes after the prior CPU slice
+                    // crossed an NMI boundary. Allow the checkerboard stripe
+                    // packet completed above to be consumed now instead of
+                    // carrying the stale latch into the next fixed upload.
+                    self.clear_nmi_update_latch();
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                }
+                PreMainCallerContinuation::NamePlayerTilemapUpload => {
+                    self.complete_module_name_player_1();
+                    // SelectFile_Func1 crosses exactly one vblank in the ROM.
+                    // Its suffix has now returned through Module_MainRouting,
+                    // so Main_PrepSpritesForNmi may publish the tilemap packet.
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                }
+            }
             return;
         }
         if self.rom_startup_timing() && self.dialogue_scroll_is_return_only() {
@@ -11250,29 +11309,6 @@ impl ZeldaState {
             // semantic glyph positions with the exact buffer they describe.
             let completed_scanout = self.dialogue_text_scanout_from_render_buffer();
             self.stage_dialogue_scroll_completion_after_return(completed_scanout);
-            return;
-        }
-        if self.file_select_checkerboard_suffix_pending {
-            self.complete_file_select_checkerboard_upload();
-            // This continuation resumes after the prior CPU slice crossed an
-            // NMI boundary. Allow the checkerboard stripe packet completed
-            // above to be consumed now instead of carrying the stale latch
-            // into the next fixed file-select upload.
-            self.clear_nmi_update_latch();
-            self.capture_display_snapshot();
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-            return;
-        }
-        if self.name_player_tilemap_suffix_pending {
-            self.complete_module_name_player_1();
-            // SelectFile_Func1 crosses exactly one vblank in the ROM. By this
-            // boundary its suffix has returned through Module_MainRouting, so
-            // Main_PrepSpritesForNmi has run and the next NMI may consume the
-            // completed tilemap packet.
-            self.nmi_prepare_sprites();
-            self.clear_nmi_update_latch();
-            self.capture_display_snapshot();
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
         if self.rom_startup_timing() && self.file_select_initial_graphics_phase > 1 {
