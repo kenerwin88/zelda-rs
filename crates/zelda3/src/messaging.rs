@@ -1519,18 +1519,23 @@ impl ZeldaState {
     }
 
     pub(super) fn WorldMap_FadeOut(&mut self) {
-        const FORCE_BLANK_SCANLINE: u8 = 43;
-
         self.decrement_screen_brightness();
         if self.game_state.display.screen_brightness != 0 {
             return;
         }
         let hdmaen = self.game_state.display.hdma_enable_mask;
         self.set_mapbak_hdmaen(hdmaen);
-        // The preceding NMI restores brightness 1 at V=250. The measured ROM
-        // path reaches this $2100=$80 write at V=43, so the active prefix has
-        // already scanned out while the suffix is force-blanked.
-        self.enable_force_blank_during_active_scanout(FORCE_BLANK_SCANLINE);
+        // Module0E runs Sprite_Main before this write. Its variable CPU work
+        // decides how much of the active field has already scanned out.
+        if let Some(scanline) = self
+            .last_sprite_main_timing_workload
+            .and_then(SpriteMainTimingWorkload::world_map_fade_force_blank_scanline)
+        {
+            self.enable_force_blank_during_active_scanout(scanline);
+        } else {
+            // Do not project an unmeasured workload onto a known route case.
+            self.enable_force_blank();
+        }
         self.set_mosaic_copy(3);
         self.increment_overworld_map_state();
         // C backs up MAPBAK_TM:MAPBAK_TS from the RAM word TM_COPY:TS_COPY (the last-projected

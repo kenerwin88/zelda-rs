@@ -101,7 +101,8 @@ use crate::game_state::{
     TowerSealSparkleState, WeatherVaneDebrisSlotState,
 };
 use crate::raster_timing::{
-    attract_map_projection_current_word_is_visible, ATTRACT_MAP_PROJECTION_WORDS,
+    attract_map_projection_current_word_is_visible, SpriteMainTimingWorkload,
+    ATTRACT_MAP_PROJECTION_WORDS,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -3634,6 +3635,10 @@ pub struct ZeldaState {
     nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking,
     #[serde(skip)]
     active_display_force_blank_event: Option<u8>,
+    /// Work performed by the most recent `Sprite_Main` call in this host
+    /// frame. Consumers use it only through measured raster timing models.
+    #[serde(skip)]
+    last_sprite_main_timing_workload: Option<SpriteMainTimingWorkload>,
     spotlight_hdma_reset_prefix: Option<[u16; DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES]>,
     #[serde(skip)]
     nmi_poly_upload_deferred: u8,
@@ -8671,6 +8676,7 @@ impl ZeldaState {
             nmi_forced_blank_from_scanline_pending: None,
             nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
             active_display_force_blank_event: None,
+            last_sprite_main_timing_workload: None,
             spotlight_hdma_reset_prefix: None,
             nmi_poly_upload_deferred: 0,
             nmi_poly_upload_started: false,
@@ -10674,6 +10680,7 @@ impl ZeldaState {
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
         self.sync_native_game_state_from_ram();
         self.active_display_force_blank_event = None;
+        self.last_sprite_main_timing_workload = None;
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
         self.assert_native_display_state_matches_ram();

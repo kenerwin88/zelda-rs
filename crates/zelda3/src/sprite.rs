@@ -1876,6 +1876,22 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_main(&mut self) {
+        let mut timing_workload = SpriteMainTimingWorkload::default();
+        for slot in 0..16 {
+            let sprite = self.sprite_slot_view(slot);
+            if sprite.state() != 0 {
+                timing_workload.record_active_sprite(sprite.sprite_type());
+            }
+        }
+        let active_garnish_count = (0..30)
+            .filter(|&slot| !self.garnish_slot_view(slot).is_empty())
+            .count() as u8;
+        timing_workload.record_garnish_table(
+            self.game_state.sprites.garnish_runtime.active_type() != 0,
+            active_garnish_count,
+        );
+        self.last_sprite_main_timing_workload = Some(timing_workload);
+
         if self.game_state.world.location.is_outdoors() {
             for j in 0..5 {
                 self.ancilla_slot_view_mut(j).set_floor(0);

@@ -4509,10 +4509,16 @@ fn explicit_force_blank_event_owns_the_active_display_suffix() {
 }
 
 #[test]
-fn world_map_fade_out_records_its_measured_active_display_boundary() {
+fn world_map_fade_out_uses_the_preceding_sprite_main_workload() {
     let mut state = ZeldaState::new();
     state.set_screen_brightness(1);
     state.set_overworld_map_state(0);
+    let mut workload = SpriteMainTimingWorkload::default();
+    workload.record_active_sprite(0x6c);
+    workload.record_active_sprite(0x3f);
+    workload.record_active_sprite(0x3f);
+    workload.record_garnish_table(false, 0);
+    state.last_sprite_main_timing_workload = Some(workload);
 
     state.WorldMap_FadeOut();
 
