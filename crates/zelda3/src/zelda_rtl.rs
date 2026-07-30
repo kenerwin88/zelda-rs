@@ -12105,8 +12105,15 @@ impl ZeldaState {
         {
             // This main-thread slice resumed after the preceding NMI and
             // reached the next display boundary with a VWF upload armed.
-            // Snes9x returns before entering that NMI; the scheduled leading
-            // boundary consumes it on the following host call.
+            // Snes9x returns before entering the display/DMA portion of that
+            // NMI; the scheduled leading boundary consumes it on the
+            // following host call.
+            //
+            // Audio preprocessing belongs to the NMI that opened this host
+            // slice, not to the deferred display boundary. Let the following
+            // host slice preprocess its own NMI so one-shot APUI02/APUI03
+            // latches authored by this main-thread work are sampled there.
+            self.audio_nmi_processed_before_main = false;
             self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
