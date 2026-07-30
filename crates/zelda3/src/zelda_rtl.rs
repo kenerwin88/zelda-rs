@@ -998,6 +998,7 @@ enum OverworldSpriteReloadEntryPhase {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreMainNmiResume {
+    DialogueVwfUpload,
     OverworldAuxGraphicsReturn,
     OverworldSpriteReloadReturn { return_phase: NmiPhase },
     DungeonSupertileQuadrantUploads,
@@ -1042,6 +1043,13 @@ struct PreMainNmiScanoutGenerations {
 impl PreMainNmiResume {
     const fn scanout_generations(self) -> PreMainNmiScanoutGenerations {
         match self {
+            Self::DialogueVwfUpload => PreMainNmiScanoutGenerations {
+                publication: DisplaySnapshotPublication::PublishCaptured,
+                vram: DisplayVramGeneration::ComposeLiveAfterNmi,
+                animated_bg: None,
+                bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+                obj: None,
+            },
             Self::OverworldAuxGraphicsReturn => PreMainNmiScanoutGenerations {
                 publication: DisplaySnapshotPublication::PublishCaptured,
                 vram: DisplayVramGeneration::ComposeLiveAfterNmi,
@@ -1084,6 +1092,10 @@ impl PreMainNmiResume {
             && frame.main_module == 7
             && frame.submodule == 2
             && matches!(frame.subsubmodule, 5..=15)
+    }
+
+    const fn defers_current_trailing_nmi(self) -> bool {
+        matches!(self, Self::DialogueVwfUpload)
     }
 }
 
@@ -1568,15 +1580,12 @@ const fn rom_spotlight_goal_transition_waits_for_iteration_return(
 
 const fn rom_dialogue_initialization_nmi_slices(
     main_module: u8,
-    submodule: u8,
     messaging_module: u8,
     attract_sequence: u8,
 ) -> u8 {
     if messaging_module != 0 {
         0
-    } else if (main_module == 14 && submodule == 2)
-        || (main_module == 20 && matches!(attract_sequence, 3 | 4))
-    {
+    } else if main_module == 14 || (main_module == 20 && matches!(attract_sequence, 3 | 4)) {
         5
     } else {
         0
@@ -9612,6 +9621,11 @@ impl ZeldaState {
             .schedule_pre_main_caller_continuation(continuation);
     }
 
+    pub(super) fn schedule_dialogue_vwf_upload_at_next_leading_nmi(&mut self) {
+        self.game_execution_scheduler
+            .schedule_pre_main_nmi_resume(PreMainNmiResume::DialogueVwfUpload);
+    }
+
     fn pre_main_caller_continuation_is(&self, continuation: PreMainCallerContinuation) -> bool {
         self.game_execution_scheduler
             .pre_main_caller_continuation_is(continuation)
@@ -12071,6 +12085,21 @@ impl ZeldaState {
             // boundary so the next capture promotes it exactly once.
             let completed_scanout = self.dialogue_text_scanout_from_render_buffer();
             self.stage_early_dialogue_scroll_completion(completed_scanout);
+        }
+        if self
+            .game_execution_scheduler
+            .pre_main_nmi_resume()
+            .is_some_and(PreMainNmiResume::defers_current_trailing_nmi)
+        {
+            // This main-thread slice resumed after the preceding NMI and
+            // reached the next display boundary with a VWF upload armed.
+            // Snes9x returns before entering that NMI; the scheduled leading
+            // boundary consumes it on the following host call.
+            self.assert_native_frame_state_matches_ram();
+            self.assert_native_world_location_state_matches_ram();
+            self.assert_native_display_state_matches_ram();
+            self.sync_overworld_map16_state_from_ram();
+            return;
         }
         self.replay_trace_col("before-nmi");
         self.replay_trace_ram_watch("before-nmi");

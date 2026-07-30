@@ -3186,7 +3186,6 @@ impl ZeldaState {
     pub(super) fn Text_Initialize(&mut self) {
         let rom_initialization_slices = rom_dialogue_initialization_nmi_slices(
             self.game_state.frame.main_module,
-            self.game_state.frame.submodule,
             self.game_state.messaging.runtime.module(),
             self.game_state.ending.attract_scene.sequence(),
         );
@@ -3510,6 +3509,7 @@ impl ZeldaState {
         // text path does not split a glyph across synthetic host work slices.
         // Keeping that artificial budget delayed the first story glyph by one
         // display boundary, leaving the Triforce caption partially absent.
+        let resumed_after_nmi = self.dialogue_fast_forward_hold_active;
         let outcome = self.render_text_draw_message_characters();
         let yielded_midline = outcome == VwfCpuSliceOutcome::InterruptedMidGlyph;
         let caller_suffix_crosses_vblank = !yielded_midline
@@ -3530,6 +3530,8 @@ impl ZeldaState {
                 self.schedule_pre_main_caller_continuation(
                     PreMainCallerContinuation::DialogueVwfReturn,
                 );
+            } else if resumed_after_nmi {
+                self.schedule_dialogue_vwf_upload_at_next_leading_nmi();
             }
         }
     }

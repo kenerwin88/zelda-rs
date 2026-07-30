@@ -272,6 +272,18 @@ fn presented_vram_generation_combines_snapshot_and_domain_retention_once() {
 
 #[test]
 fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
+    let dialogue_upload = PreMainNmiResume::DialogueVwfUpload;
+    assert!(dialogue_upload.defers_current_trailing_nmi());
+    assert_eq!(
+        dialogue_upload.scanout_generations(),
+        PreMainNmiScanoutGenerations {
+            publication: DisplaySnapshotPublication::PublishCaptured,
+            vram: DisplayVramGeneration::ComposeLiveAfterNmi,
+            animated_bg: None,
+            bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+            obj: None,
+        },
+    );
     assert_eq!(
         PreMainNmiResume::OverworldAuxGraphicsReturn.scanout_generations(),
         PreMainNmiScanoutGenerations {

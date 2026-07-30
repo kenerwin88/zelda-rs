@@ -3584,15 +3584,15 @@ fn intro_poly_initialization_resumes_for_cold_start_and_attract_restart() {
 
 #[test]
 fn heavy_prison_animation_makes_dialogue_initialization_resumable() {
-    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 0, 3), 5);
-    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 0, 2), 0);
-    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 2, 0, 0), 5);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 3), 5);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 2), 0);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 0, 0), 5);
 }
 
 #[test]
 fn heavy_attract_scenes_share_the_dialogue_initialization_phase() {
-    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 0, 3), 5);
-    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 0, 4), 5);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 3), 5);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 4), 5);
 }
 
 #[test]
@@ -5600,9 +5600,9 @@ fn spotlight_close_entry_publication_follows_circle_workload() {
 
 #[test]
 fn normal_dialogue_initialization_is_a_resumable_engine_operation() {
-    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 2, 0, 0), 5);
-    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 2, 1, 0), 0);
-    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 2, 0, 2), 0);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 0, 0), 5);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 1, 0), 0);
+    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 2), 0);
 }
 
 #[test]

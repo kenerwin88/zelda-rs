@@ -334,14 +334,17 @@ impl GameExecutionScheduler {
         self.schedule_continuation(GameExecutionContinuation::PreMainNmiResume(continuation));
     }
 
-    pub(super) fn take_pre_main_nmi_resume(&mut self) -> Option<PreMainNmiResume> {
+    pub(super) fn pre_main_nmi_resume(self) -> Option<PreMainNmiResume> {
         match self.continuation {
-            Some(GameExecutionContinuation::PreMainNmiResume(continuation)) => {
-                self.continuation = None;
-                Some(continuation)
-            }
+            Some(GameExecutionContinuation::PreMainNmiResume(continuation)) => Some(continuation),
             _ => None,
         }
+    }
+
+    pub(super) fn take_pre_main_nmi_resume(&mut self) -> Option<PreMainNmiResume> {
+        let continuation = self.pre_main_nmi_resume()?;
+        self.continuation = None;
+        Some(continuation)
     }
 
     pub(super) fn schedule_pre_main_caller_continuation(
