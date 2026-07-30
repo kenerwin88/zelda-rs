@@ -5005,6 +5005,10 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
         7, 0, 0, false, false
     ));
     assert_eq!(
+        rom_graphics_dma_plan(7, 0).oam_operands,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    );
+    assert_eq!(
         rom_graphics_dma_plan(9, 5),
         GraphicsDmaPlan {
             oam_operands: GraphicsDmaGeneration::LiveAfterMain,

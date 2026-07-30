@@ -34,6 +34,20 @@ fn logical_chr_src_converts_to_renderer_source_tuple() {
 }
 
 #[test]
+fn copying_a_vram_word_range_publishes_every_touched_chr_slot() {
+    let mut captured = VramChrSourceTable::new();
+    let mut following = VramChrSourceTable::new();
+    captured.record_tiles(0x4000, 4, CHR_KIND_LINK, 7);
+    following.record_tiles(0x4000, 4, CHR_KIND_LINK, 9);
+
+    following.copy_word_range_from(&captured, 0x4008, 16);
+
+    assert_eq!(following.get(0x400).pack, 7);
+    assert_eq!(following.get(0x401).pack, 7);
+    assert_eq!(following.get(0x402).pack, 9);
+}
+
+#[test]
 fn bg_chr_upload_keeps_raw_preview_source_after_render_source_is_hashed() {
     let mut state = ZeldaState::new();
     let data = vec![0u8; 0x600];

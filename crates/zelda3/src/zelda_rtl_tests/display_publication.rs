@@ -187,6 +187,7 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
     let mut state = ZeldaState::new();
     let held_oam = vec![0x1234; state.ppu.oam.len()];
     let held_obj_vram = vec![0x5678; 0x400];
+    let held_vram_sources = DisplayVramSources::capture(&state);
     state.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
     state.next_display_bg_scroll_generation = DisplayBgScrollGeneration::ComposeLiveAfterNmi;
     state.next_display_obj_scanout_generation = Some(ObjScanoutGenerations::coherent(
@@ -195,6 +196,7 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
     state.active_display_obj_generation = DisplayObjGeneration::RetainCapturedMemory {
         oam: held_oam.clone(),
         vram: held_obj_vram.clone(),
+        vram_sources: held_vram_sources.clone(),
     };
 
     state.capture_display_snapshot();
@@ -221,6 +223,7 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
         DisplayObjGeneration::RetainCapturedMemory {
             oam: held_oam.clone(),
             vram: held_obj_vram.clone(),
+            vram_sources: held_vram_sources.clone(),
         },
     );
     assert_eq!(
@@ -237,6 +240,7 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
         DisplayObjGeneration::RetainCapturedMemory {
             oam: held_oam.clone(),
             vram: held_obj_vram.clone(),
+            vram_sources: held_vram_sources.clone(),
         },
     );
 
@@ -250,6 +254,7 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
         DisplayObjGeneration::RetainCapturedMemory {
             oam: held_oam,
             vram: held_obj_vram,
+            vram_sources: held_vram_sources,
         },
     );
 }
@@ -267,6 +272,10 @@ fn presented_vram_generation_combines_snapshot_and_domain_retention_once() {
     assert_eq!(
         DisplayVramGeneration::RetainCapturedBeforeNmi.resolve_for_scanout(false),
         DisplayVramGeneration::RetainCapturedBeforeNmi,
+    );
+    assert_eq!(
+        DisplayVramGeneration::PublishCompletedNmiTransfer.resolve_for_scanout(true),
+        DisplayVramGeneration::ComposeLiveAfterNmi,
     );
 }
 

@@ -626,7 +626,7 @@ const KIKI_DMA: [u8; 32] = [
 ];
 
 impl ZeldaState {
-    pub(super) fn uncle_passage_item_receipt_starts_this_main_slice(&self) -> bool {
+    fn uncle_passage_item_receipt_starts_this_main_slice(&self) -> bool {
         if self.game_state.frame.main_module != 7 || self.game_state.frame.submodule != 0 {
             return false;
         }
@@ -638,6 +638,11 @@ impl ZeldaState {
                 && sprite.ai_state() == 1
                 && !self.sprite_return_if_inactive(k)
         })
+    }
+
+    pub(super) fn item_receipt_graphics_starts_after_leading_nmi(&self, input: u16) -> bool {
+        self.uncle_passage_item_receipt_starts_this_main_slice()
+            || self.chest_item_receipt_starts_this_main_slice(input)
     }
 
     pub(super) fn sprite_ab_crystal_maiden(&mut self, k: usize) {

@@ -5517,6 +5517,24 @@ impl ZeldaState {
         self.link_receive_item(item, chest_position);
     }
 
+    pub(super) fn chest_item_receipt_starts_this_main_slice(&self, input: u16) -> bool {
+        if self.game_state.frame.main_module != 7 || self.game_state.frame.submodule != 0 {
+            return false;
+        }
+
+        // The leading NMI owns joypad edge detection, and the A-button handler
+        // owns every eligibility, collision, ability, and chest rule. Probe
+        // those real paths on isolated state so this scheduler prediction
+        // cannot drift into a second implementation of player interaction.
+        let mut action_probe = self.clone();
+        action_probe.nmi_read_joypads(input);
+        action_probe.link_handle_a_press();
+        matches!(
+            action_probe.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishItemReceiptGraphics { .. })
+        )
+    }
+
     pub(super) fn link_perform_statue_drag(&mut self) {
         self.follower_link_state_mut().set_grabbing_wall(2);
         self.follower_link_state_mut().set_direction_lock_bits(1);

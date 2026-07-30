@@ -3015,14 +3015,21 @@ enum DisplayVramGeneration {
     #[default]
     ComposeLiveAfterNmi,
     RetainCapturedBeforeNmi,
+    /// A long-running CPU operation completed the transfer consumed by this
+    /// NMI. Publish its post-NMI VRAM even if a generic pending-stripe signal
+    /// would otherwise retain the pre-NMI image.
+    PublishCompletedNmiTransfer,
 }
 
 impl DisplayVramGeneration {
     const fn resolve_for_scanout(self, retain_previous_nmi_display_memory: bool) -> Self {
-        if retain_previous_nmi_display_memory || matches!(self, Self::RetainCapturedBeforeNmi) {
-            Self::RetainCapturedBeforeNmi
-        } else {
-            Self::ComposeLiveAfterNmi
+        match self {
+            Self::PublishCompletedNmiTransfer => Self::ComposeLiveAfterNmi,
+            Self::RetainCapturedBeforeNmi => Self::RetainCapturedBeforeNmi,
+            Self::ComposeLiveAfterNmi if retain_previous_nmi_display_memory => {
+                Self::RetainCapturedBeforeNmi
+            }
+            Self::ComposeLiveAfterNmi => Self::ComposeLiveAfterNmi,
         }
     }
 }
@@ -3216,14 +3223,19 @@ enum DisplayObjGeneration {
     RetainCapturedMemory {
         oam: Vec<u16>,
         vram: Vec<u16>,
+        vram_sources: DisplayVramSources,
     },
 }
 
 impl DisplayObjGeneration {
-    fn retained_memory(&self) -> Option<(&[u16], &[u16])> {
+    fn retained_memory(&self) -> Option<(&[u16], &[u16], &DisplayVramSources)> {
         match self {
             Self::FollowModuleCadence => None,
-            Self::RetainCapturedMemory { oam, vram } => Some((oam, vram)),
+            Self::RetainCapturedMemory {
+                oam,
+                vram,
+                vram_sources,
+            } => Some((oam, vram, vram_sources)),
         }
     }
 }
@@ -3966,6 +3978,7 @@ struct DisplaySnapshot {
     ram: Vec<u8>,
     ppu: PpuState,
     dma: DmaState,
+    vram_sources: DisplayVramSources,
     hdma_table_generation: DisplayHdmaTableGeneration,
     vram_generation: DisplayVramGeneration,
     hud_vram_generation: DisplayVramGeneration,
@@ -3988,6 +4001,40 @@ struct DisplaySnapshot {
     nmi_poly_upload_deferred: u8,
     obj_vram_latch_generation: u64,
     snes9x_poly_scheduler_counter: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DisplayVramSources {
+    render: crate::chr_source::VramChrSourceTable,
+    preview: crate::chr_source::VramChrSourceTable,
+}
+
+impl DisplayVramSources {
+    fn capture(state: &ZeldaState) -> Self {
+        Self {
+            render: state.vram_chr_source.clone(),
+            preview: state.vram_chr_preview_source.clone(),
+        }
+    }
+
+    fn swap_with_state(&mut self, state: &mut ZeldaState) {
+        std::mem::swap(&mut self.render, &mut state.vram_chr_source);
+        std::mem::swap(&mut self.preview, &mut state.vram_chr_preview_source);
+    }
+
+    fn publish_all_to(&self, state: &mut ZeldaState) {
+        state.vram_chr_source.clone_from(&self.render);
+        state.vram_chr_preview_source.clone_from(&self.preview);
+    }
+
+    fn publish_word_range_to(&self, state: &mut ZeldaState, start_word: usize, num_words: usize) {
+        state
+            .vram_chr_source
+            .copy_word_range_from(&self.render, start_word, num_words);
+        state
+            .vram_chr_preview_source
+            .copy_word_range_from(&self.preview, start_word, num_words);
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -9912,11 +9959,18 @@ impl ZeldaState {
                 (
                     published.ppu.oam.clone(),
                     published.ppu.vram[0x4000..0x4400].to_vec(),
+                    published.vram_sources.clone(),
                 )
             })
         });
         let obj_generation = transition_entry_obj
-            .map(|(oam, vram)| DisplayObjGeneration::RetainCapturedMemory { oam, vram })
+            .map(
+                |(oam, vram, vram_sources)| DisplayObjGeneration::RetainCapturedMemory {
+                    oam,
+                    vram,
+                    vram_sources,
+                },
+            )
             .unwrap_or_else(|| self.active_display_obj_generation.clone());
         let entry_graphics_dma_plan = self
             .pre_main_graphics_dma
@@ -9993,10 +10047,24 @@ impl ZeldaState {
             } else {
                 previously_published_shadow_oam_dma
             };
+        let vram_generation = std::mem::take(&mut self.next_display_vram_generation);
+        let hud_vram_generation = match vram_generation {
+            // This long-running call held the NMI latch until its CHR and HUD
+            // transactions were both ready. Their completion boundary
+            // supersedes the ordinary one-field HUD deferral.
+            DisplayVramGeneration::PublishCompletedNmiTransfer => {
+                DisplayVramGeneration::ComposeLiveAfterNmi
+            }
+            _ if self.game_state.system_signals.should_update_hud() => {
+                DisplayVramGeneration::RetainCapturedBeforeNmi
+            }
+            _ => DisplayVramGeneration::ComposeLiveAfterNmi,
+        };
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
             dma: self.dma.clone(),
+            vram_sources: DisplayVramSources::capture(self),
             hdma_table_generation: self
                 .attract_map_hdma_projection_before
                 .take()
@@ -10006,12 +10074,8 @@ impl ZeldaState {
                     }
                 })
                 .unwrap_or_default(),
-            vram_generation: std::mem::take(&mut self.next_display_vram_generation),
-            hud_vram_generation: if self.game_state.system_signals.should_update_hud() {
-                DisplayVramGeneration::RetainCapturedBeforeNmi
-            } else {
-                DisplayVramGeneration::ComposeLiveAfterNmi
-            },
+            vram_generation,
+            hud_vram_generation,
             hud_vram_destination: self
                 .game_state
                 .display
@@ -10148,6 +10212,7 @@ impl ZeldaState {
         plan: &DisplayPublicationPlan,
         retained_full_tilemap_vram: Option<&RetainedVramRegion>,
     ) {
+        let captured_vram_sources = DisplayVramSources::capture(self);
         // The polygon worker publishes through its NMI handshake at the start
         // of the frame. Preserve that completed pre-NMI buffer rather than a
         // job that may have finished later in the current CPU slice.
@@ -10156,12 +10221,8 @@ impl ZeldaState {
         // transaction independently from the general VRAM cadence so a
         // deferred stripe packet cannot hide a Link upload that already ran.
         let presented_link_obj_vram = match plan.link_obj_scanout_generation {
-            GraphicsDmaGeneration::HostBoundaryBeforeMain => {
-                self.ppu.vram[0x4000..0x4400].to_vec()
-            }
-            GraphicsDmaGeneration::LiveAfterMain => {
-                following.ppu.vram[0x4000..0x4400].to_vec()
-            }
+            GraphicsDmaGeneration::HostBoundaryBeforeMain => self.ppu.vram[0x4000..0x4400].to_vec(),
+            GraphicsDmaGeneration::LiveAfterMain => following.ppu.vram[0x4000..0x4400].to_vec(),
         };
         let retained_hud_vram = matches!(
             following.hud_vram_generation,
@@ -10204,9 +10265,15 @@ impl ZeldaState {
 
         if plan.vram_generation == DisplayVramGeneration::ComposeLiveAfterNmi {
             self.ppu.vram.clone_from(&following.ppu.vram);
+            following.vram_sources.publish_all_to(self);
             if let Some((destination, animated_bg_vram)) = previous_animated_bg_vram {
                 self.ppu.vram[destination..destination + animated_bg_vram.len()]
                     .copy_from_slice(&animated_bg_vram);
+                captured_vram_sources.publish_word_range_to(
+                    self,
+                    destination,
+                    animated_bg_vram.len(),
+                );
             }
             if let Some(retained_hud_vram) = retained_hud_vram.as_ref() {
                 retained_hud_vram.publish_to(&mut self.ppu.vram);
@@ -10215,8 +10282,14 @@ impl ZeldaState {
                 scanout.publish_to(&mut self.ppu.vram);
             }
             self.ppu.vram[0x5800..0x5c00].copy_from_slice(&presented_poly);
+            captured_vram_sources.publish_word_range_to(self, 0x5800, 0x400);
         }
         self.ppu.vram[0x4000..0x4400].copy_from_slice(&presented_link_obj_vram);
+        match plan.link_obj_scanout_generation {
+            GraphicsDmaGeneration::HostBoundaryBeforeMain => &captured_vram_sources,
+            GraphicsDmaGeneration::LiveAfterMain => &following.vram_sources,
+        }
+        .publish_word_range_to(self, 0x4000, 0x400);
         if let Some(retained_full_tilemap_vram) = retained_full_tilemap_vram {
             retained_full_tilemap_vram.publish_to(&mut self.ppu.vram);
         }
@@ -10260,9 +10333,10 @@ impl ZeldaState {
                 self.ppu.oam.clone_from_slice(published_shadow_oam);
             }
         }
-        if let Some((oam, vram)) = following.obj_generation.retained_memory() {
+        if let Some((oam, vram, vram_sources)) = following.obj_generation.retained_memory() {
             self.ppu.oam.clone_from_slice(oam);
             self.ppu.vram[0x4000..0x4400].copy_from_slice(vram);
+            vram_sources.publish_word_range_to(self, 0x4000, 0x400);
         }
         self.ppu.obj_vram_latch = None;
         self.ppu.obj_previous_frame_vram = following.ppu.obj_previous_frame_vram.clone();
@@ -10507,6 +10581,7 @@ impl ZeldaState {
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
+        display.vram_sources.swap_with_state(self);
         self.compose_display_registers(&display, &publication_plan);
         let previous_dialogue_scanout = self.displayed_dialogue_scanout();
         if diagnostics.scroll_retain && self.dialogue_scroll_phase() != DialogueScrollPhase::Idle {
@@ -10630,6 +10705,7 @@ impl ZeldaState {
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
+        display.vram_sources.swap_with_state(self);
         self.game_state = saved_game_state;
         drop(display);
         if from_display_slot {
@@ -11100,8 +11176,16 @@ impl ZeldaState {
                 .as_ref()
                 .map(|snapshot| snapshot.ppu.vram[0x4000..0x4400].to_vec())
                 .unwrap_or_else(|| self.ppu.vram[0x4000..0x4400].to_vec());
-            self.active_display_obj_generation =
-                DisplayObjGeneration::RetainCapturedMemory { oam, vram };
+            let vram_sources = self
+                .display_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.vram_sources.clone())
+                .unwrap_or_else(|| DisplayVramSources::capture(self));
+            self.active_display_obj_generation = DisplayObjGeneration::RetainCapturedMemory {
+                oam,
+                vram,
+                vram_sources,
+            };
         }
         self.assert_native_frame_state_matches_ram();
         self.assert_native_world_location_state_matches_ram();
@@ -11599,6 +11683,12 @@ impl ZeldaState {
                 GameWorkStep::Complete(GameWorkContinuation::FinishItemReceiptGraphics {
                     continuation,
                 }) => {
+                    // The final decompressor slice is still inside the
+                    // interrupted call when vblank begins. Let that NMI
+                    // observe the held main-loop latch before the caller
+                    // return publishes sprite DMA sources and releases it.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                     if let ItemReceiptGraphicsContinuation::ResumeUnclePassage {
                         receipt,
                         sprite_slot,
@@ -11616,6 +11706,16 @@ impl ZeldaState {
                     // DMA sources and release the software NMI latch.
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
+                    // The completed NMI transaction publishes OAM and OBJ CHR
+                    // coherently. Normal Module 7 frames retain their
+                    // host-boundary OBJ generation; only this measured
+                    // decompressor completion promotes the live transaction.
+                    self.next_display_obj_scanout_generation = Some(
+                        ObjScanoutGenerations::coherent(GraphicsDmaGeneration::LiveAfterMain),
+                    );
+                    self.next_display_vram_generation =
+                        DisplayVramGeneration::PublishCompletedNmiTransfer;
+                    return;
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonSubtilePaletteFilter) => {
                     // ApplyPaletteFilter_bounce returns after the NMI that
@@ -11869,13 +11969,13 @@ impl ZeldaState {
             && run_what & crate::RUN_MAIN != 0
             && !self.dungeon_exit_spotlight_resume_module
         {
-            if self.uncle_passage_item_receipt_starts_this_main_slice() {
-                // ROM trace: Uncle_InPassage enters Link_ReceiveItem only
-                // after the pending NMI has consumed the dialogue-clear
-                // publication. The item decompressor then spans four further
-                // vblanks with the main-loop latch set. Run this boundary
-                // before the atomic port mutates sprite/OAM/palette state so
-                // every display domain belongs to the same hardware
+            if self.item_receipt_graphics_starts_after_leading_nmi(input) {
+                // ROM trace: both the chest and uncle entry paths reach
+                // Link_ReceiveItem after the pending NMI has published the
+                // preceding main slice. The item decompressor then spans
+                // further vblanks with the main-loop latch set. Run this
+                // boundary before the atomic port mutates sprite/OAM/palette
+                // state so every display domain belongs to the same hardware
                 // generation.
                 self.clear_nmi_update_latch();
                 self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
