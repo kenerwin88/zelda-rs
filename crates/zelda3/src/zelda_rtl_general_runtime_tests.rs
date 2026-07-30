@@ -4903,8 +4903,13 @@ fn dungeon_falling_entry_retains_the_pre_transition_obj_generation() {
 
 #[test]
 fn completed_rom_work_selects_scroll_generation_by_measured_nmi_side() {
+    let cpu_slice_entry = BgScrollRegisterScanout {
+        offsets: [[0x1111, 0x2222]; 4],
+    };
     assert_eq!(
-        GameWorkContinuation::FinishOverworldAuxGraphics.completed_bg_scroll_generation(),
+        GameWorkContinuation::FinishOverworldAuxGraphics
+            .completion_publication(cpu_slice_entry)
+            .bg_scroll,
         Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
     );
     // Return phase selects publication independently from any host hold.
@@ -4916,27 +4921,36 @@ fn completed_rom_work_selects_scroll_generation_by_measured_nmi_side() {
             ),
             (
                 NmiPhase::AfterNmi,
-                Some(DisplayBgScrollGeneration::RetainCapturedBeforeNmi),
+                Some(DisplayBgScrollGeneration::RetainCpuSliceEntry(
+                    cpu_slice_entry,
+                )),
             ),
         ] {
+            let publication = GameWorkContinuation::FinishOverworldSpriteReloadTail {
+                post_return_hold_nmi_slices,
+                return_phase,
+                epilogue_phase: NmiPhase::BeforeNmi,
+            }
+            .completion_publication(cpu_slice_entry);
+            assert_eq!(publication.bg_scroll, generation);
             assert_eq!(
-                GameWorkContinuation::FinishOverworldSpriteReloadTail {
-                    post_return_hold_nmi_slices,
-                    return_phase,
-                    epilogue_phase: NmiPhase::BeforeNmi,
-                }
-                .completed_bg_scroll_generation(),
-                generation,
+                publication.obj,
+                Some(ObjScanoutGenerations::coherent(
+                    GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                )),
             );
         }
     }
     assert_eq!(
-        GameWorkContinuation::HoldOverworldSpriteReloadReturn.completed_bg_scroll_generation(),
+        GameWorkContinuation::HoldOverworldSpriteReloadReturn
+            .completion_publication(cpu_slice_entry)
+            .bg_scroll,
         Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
     );
     assert_eq!(
         GameWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail
-            .completed_bg_scroll_generation(),
+            .completion_publication(cpu_slice_entry)
+            .bg_scroll,
         None,
     );
 }
@@ -5116,6 +5130,51 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
     });
 
     assert_eq!(captured, (0xaaaa, 0xdddd, 0xbbbb, 0xcccc));
+}
+
+#[test]
+fn display_snapshot_keeps_link_chr_identity_with_its_vram_generation() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(9);
+    state.set_submodule(6);
+    let link_slot = 0x4000 / 16;
+    let background_slot = 0x2000 / 16;
+    let record = |table: &mut crate::chr_source::VramChrSourceTable, slot, hash| {
+        table.record_tile_content_hash(slot, crate::chr_source::CHR_KIND_LINK_CONTENT, hash);
+    };
+
+    state.ppu.vram[0x4000] = 0x1111;
+    record(&mut state.vram_chr_source, link_slot, 0x1111_1111);
+    record(&mut state.vram_chr_preview_source, link_slot, 0x2222_2222);
+    state.capture_display_snapshot();
+
+    state.ppu.vram[0x4000] = 0xaaaa;
+    record(&mut state.vram_chr_source, link_slot, 0xaaaa_aaaa);
+    record(&mut state.vram_chr_preview_source, link_slot, 0xbbbb_bbbb);
+    record(&mut state.vram_chr_source, background_slot, 0xcccc_cccc);
+
+    let visible = state.with_display_snapshot(|display| {
+        (
+            display.ppu.vram[0x4000],
+            display.vram_chr_source.get(link_slot),
+            display.vram_chr_preview_source.get(link_slot),
+            display.vram_chr_source.get(background_slot),
+        )
+    });
+    assert_eq!(
+        (
+            visible.0,
+            visible.1.pack,
+            visible.1.tile_off,
+            visible.2.pack,
+            visible.2.tile_off,
+            visible.3.pack,
+            visible.3.tile_off,
+        ),
+        (0x1111, 0x1111, 0x1111, 0x2222, 0x2222, 0xcccc, 0xcccc),
+    );
+    assert_eq!(state.ppu.vram[0x4000], 0xaaaa);
+    assert_eq!(state.vram_chr_source.get(link_slot).pack, 0xaaaa);
 }
 
 #[test]

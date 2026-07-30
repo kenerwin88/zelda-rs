@@ -1032,6 +1032,7 @@ impl NmiPhase {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PreMainNmiScanoutGenerations {
+    publication: DisplaySnapshotPublication,
     vram: DisplayVramGeneration,
     animated_bg: Option<AnimatedBgScanoutGeneration>,
     bg_scroll: DisplayBgScrollGeneration,
@@ -1042,18 +1043,24 @@ impl PreMainNmiResume {
     const fn scanout_generations(self) -> PreMainNmiScanoutGenerations {
         match self {
             Self::OverworldAuxGraphicsReturn => PreMainNmiScanoutGenerations {
+                publication: DisplaySnapshotPublication::PublishCaptured,
                 vram: DisplayVramGeneration::ComposeLiveAfterNmi,
                 animated_bg: None,
                 bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
                 obj: None,
             },
             Self::OverworldSpriteReloadReturn { return_phase } => PreMainNmiScanoutGenerations {
+                publication: match return_phase {
+                    NmiPhase::BeforeNmi => DisplaySnapshotPublication::PublishCaptured,
+                    NmiPhase::AfterNmi => DisplaySnapshotPublication::RetainPublished,
+                },
                 vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
                 animated_bg: None,
                 bg_scroll: return_phase.return_bg_scroll_generation(),
                 obj: None,
             },
             Self::DungeonSupertileQuadrantUploads => PreMainNmiScanoutGenerations {
+                publication: DisplaySnapshotPublication::PublishCaptured,
                 vram: DisplayVramGeneration::ComposeLiveAfterNmi,
                 // This continuation captures before a leading hardware NMI.
                 // Its animated-CHR DMA and BG scroll-register writes therefore
@@ -1332,16 +1339,44 @@ enum GameWorkContinuation {
     HoldOverworldSpriteReloadReturn,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct GameWorkCompletionPublication {
+    bg_scroll: Option<DisplayBgScrollGeneration>,
+    obj: Option<ObjScanoutGenerations>,
+}
+
 impl GameWorkContinuation {
-    const fn completed_bg_scroll_generation(self) -> Option<DisplayBgScrollGeneration> {
+    const fn completion_publication(
+        self,
+        cpu_slice_entry: BgScrollRegisterScanout,
+    ) -> GameWorkCompletionPublication {
         match self {
             Self::FinishOverworldAuxGraphics | Self::HoldOverworldSpriteReloadReturn => {
-                Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi)
+                GameWorkCompletionPublication {
+                    bg_scroll: Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
+                    obj: None,
+                }
             }
             Self::FinishOverworldSpriteReloadTail { return_phase, .. } => {
-                Some(return_phase.return_bg_scroll_generation())
+                GameWorkCompletionPublication {
+                    bg_scroll: Some(match return_phase {
+                        NmiPhase::BeforeNmi => DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+                        NmiPhase::AfterNmi => {
+                            DisplayBgScrollGeneration::RetainCpuSliceEntry(cpu_slice_entry)
+                        }
+                    }),
+                    // The reload returns during the NMI that begins the next
+                    // hardware frame. Its new OAM and overlapping Link/BG CHR
+                    // upload therefore belong to the following scanout.
+                    obj: Some(ObjScanoutGenerations::coherent(
+                        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    )),
+                }
             }
-            _ => None,
+            _ => GameWorkCompletionPublication {
+                bg_scroll: None,
+                obj: None,
+            },
         }
     }
 }
@@ -3163,12 +3198,17 @@ impl SpotlightScanoutGeneration {
 enum DisplayBgScrollGeneration {
     #[default]
     RetainCapturedBeforeNmi,
+    /// A scheduled CPU continuation returned after NMI, so the active scanout
+    /// owns the scroll registers from the start of that interrupted host slice
+    /// rather than the snapshot captured after its caller suffix completed.
+    RetainCpuSliceEntry(BgScrollRegisterScanout),
     ComposeLiveAfterNmi,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DisplayedBgScrollSource {
     CapturedBeforeNmi,
+    CpuSliceEntry(BgScrollRegisterScanout),
     LiveAfterNmi,
     LiveBg1AfterNmi,
 }
@@ -3187,6 +3227,8 @@ impl DisplayedBgScrollSource {
             Self::LiveAfterNmi
         } else if publish_live_overworld_bad_weather_scroll {
             Self::LiveBg1AfterNmi
+        } else if let DisplayBgScrollGeneration::RetainCpuSliceEntry(scroll) = captured_generation {
+            Self::CpuSliceEntry(scroll)
         } else {
             Self::CapturedBeforeNmi
         }
@@ -3195,6 +3237,7 @@ impl DisplayedBgScrollSource {
     fn compose_into(self, shown: &mut PpuState, live: &PpuState) {
         match self {
             Self::CapturedBeforeNmi => {}
+            Self::CpuSliceEntry(scroll) => scroll.publish_to(shown),
             Self::LiveAfterNmi => {
                 for (shown, live) in shown.bg_layer.iter_mut().zip(&live.bg_layer) {
                     shown.h_scroll = live.h_scroll;
@@ -3966,6 +4009,8 @@ struct DisplaySnapshot {
     ram: Vec<u8>,
     ppu: PpuState,
     dma: DmaState,
+    vram_chr_source: crate::chr_source::VramChrSourceTable,
+    vram_chr_preview_source: crate::chr_source::VramChrSourceTable,
     hdma_table_generation: DisplayHdmaTableGeneration,
     vram_generation: DisplayVramGeneration,
     hud_vram_generation: DisplayVramGeneration,
@@ -9874,11 +9919,15 @@ impl ZeldaState {
         }
         if diagnostics.frame_boundary {
             eprintln!(
-                "frame_boundary_before host={} main={:02x} sub={:02x} frame_counter={:02x} link_dma_countdown={:04x} latch={} pending={} target={:04x} disable={:02x} dialogue_runs=authored:{}/published:{}/display:{}",
+                "frame_boundary_before host={} main={:02x} sub={:02x} frame_counter={:02x} work={:?} next_obj={:?} bg1=({:04x},{:04x}) link_dma_countdown={:04x} latch={} pending={} target={:04x} disable={:02x} dialogue_runs=authored:{}/published:{}/display:{}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
                 frame.frame_counter,
+                self.game_execution_scheduler.current_work(),
+                self.next_display_obj_scanout_generation,
+                self.ppu.bg_layer[0].h_scroll,
+                self.ppu.bg_layer[0].v_scroll,
                 read_le_u16(&self.ram, LINK_DMA_COUNTDOWN),
                 self.game_state.display.nmi_update_is_latched(),
                 self.game_state.display.pending_nmi_subroutine,
@@ -9997,6 +10046,8 @@ impl ZeldaState {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
             dma: self.dma.clone(),
+            vram_chr_source: self.vram_chr_source.clone(),
+            vram_chr_preview_source: self.vram_chr_preview_source.clone(),
             hdma_table_generation: self
                 .attract_map_hdma_projection_before
                 .take()
@@ -10215,6 +10266,35 @@ impl ZeldaState {
         }
         if let Some(retained_full_tilemap_vram) = retained_full_tilemap_vram {
             retained_full_tilemap_vram.publish_to(&mut self.ppu.vram);
+        }
+    }
+
+    fn compose_display_chr_sources(
+        &mut self,
+        following: &DisplaySnapshot,
+        plan: &DisplayPublicationPlan,
+    ) {
+        let retained_link_obj_sources = matches!(
+            plan.link_obj_scanout_generation,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        )
+        .then(|| {
+            (
+                self.vram_chr_source.clone(),
+                self.vram_chr_preview_source.clone(),
+            )
+        });
+
+        if plan.vram_generation == DisplayVramGeneration::ComposeLiveAfterNmi {
+            self.vram_chr_source.clone_from(&following.vram_chr_source);
+            self.vram_chr_preview_source
+                .clone_from(&following.vram_chr_preview_source);
+            if let Some((logical, preview)) = retained_link_obj_sources.as_ref() {
+                self.vram_chr_source
+                    .copy_word_range_from(logical, 0x4000..0x4400);
+                self.vram_chr_preview_source
+                    .copy_word_range_from(preview, 0x4000..0x4400);
+            }
         }
     }
 
@@ -10503,6 +10583,11 @@ impl ZeldaState {
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
+        std::mem::swap(&mut self.vram_chr_source, &mut display.vram_chr_source);
+        std::mem::swap(
+            &mut self.vram_chr_preview_source,
+            &mut display.vram_chr_preview_source,
+        );
         self.compose_display_registers(&display, &publication_plan);
         let previous_dialogue_scanout = self.displayed_dialogue_scanout();
         if diagnostics.scroll_retain && self.dialogue_scroll_phase() != DialogueScrollPhase::Idle {
@@ -10529,6 +10614,7 @@ impl ZeldaState {
             &publication_plan,
             retained_full_tilemap_vram.as_ref(),
         );
+        self.compose_display_chr_sources(&display, &publication_plan);
         self.compose_display_cgram(&display, &publication_plan);
         if let Some(previous_dialogue_scanout) = previous_dialogue_scanout.as_ref() {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
@@ -10606,9 +10692,18 @@ impl ZeldaState {
         );
         if diagnostics.capture.frame_boundary {
             eprintln!(
-                "frame_boundary_present host={} vram={:?} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
+                "frame_boundary_present host={} vram={:?} link_obj={:?} oam={:?} bg_scroll={:?} bg1=({:04x},{:04x}) retained_obj={} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
                 self.frame_ctr_dbg,
                 publication_plan.vram_generation,
+                publication_plan.link_obj_scanout_generation,
+                publication_plan.oam_scanout_source,
+                publication_plan.bg_scroll_source,
+                self.ppu.bg_layer[0].h_scroll,
+                self.ppu.bg_layer[0].v_scroll,
+                matches!(
+                    pristine_snapshot.obj_generation,
+                    DisplayObjGeneration::RetainCapturedMemory { .. }
+                ),
                 self.published_bg3_vwf_glyph_runs.len(),
                 pristine_snapshot.published_bg3_vwf_glyph_runs.len(),
                 presented_dialogue.glyph_runs.len(),
@@ -10622,6 +10717,11 @@ impl ZeldaState {
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
         std::mem::swap(&mut self.dma, &mut display.dma);
+        std::mem::swap(&mut self.vram_chr_source, &mut display.vram_chr_source);
+        std::mem::swap(
+            &mut self.vram_chr_preview_source,
+            &mut display.vram_chr_preview_source,
+        );
         self.game_state = saved_game_state;
         drop(display);
         if from_display_slot {
@@ -11064,7 +11164,7 @@ impl ZeldaState {
         self.next_display_animated_bg_scanout_generation = scanout.animated_bg;
         self.next_display_bg_scroll_generation = scanout.bg_scroll;
         self.next_display_obj_scanout_generation = scanout.obj;
-        self.capture_display_snapshot();
+        self.capture_display_snapshot_with_override(Some(scanout.publication));
         self.interrupt_nmi(input, oam_dma_source, false);
         self.replay_trace_col("before-game-loop");
         self.replay_trace_ram_watch("before-game-loop");
@@ -11439,6 +11539,7 @@ impl ZeldaState {
         }
         let mut resume_main_after_spotlight_return = false;
         let mut spotlight_scanout_started_before_resumed_main = None;
+        let scheduled_work_entry_scroll = BgScrollRegisterScanout::capture(&self.ppu);
         let scheduled_work_step = if self.rom_startup_timing() {
             self.game_execution_scheduler.advance_work_one_nmi_slice()
         } else {
@@ -11446,8 +11547,12 @@ impl ZeldaState {
         };
         if let Some(work_slice) = scheduled_work_step {
             if let GameWorkStep::Complete(continuation) = work_slice {
-                if let Some(generation) = continuation.completed_bg_scroll_generation() {
+                let publication = continuation.completion_publication(scheduled_work_entry_scroll);
+                if let Some(generation) = publication.bg_scroll {
                     self.next_display_bg_scroll_generation = generation;
+                }
+                if let Some(generation) = publication.obj {
+                    self.next_display_obj_scanout_generation = Some(generation);
                 }
             }
             let publication_override = match work_slice {
@@ -11792,7 +11897,7 @@ impl ZeldaState {
                     // ROM. Workload-derived return phase owns publication and
                     // epilogue order independently from the host hold count.
                     self.complete_module09_load_new_sprites_after_reload();
-                    self.complete_module09_overworld_after_submodule();
+                    self.complete_module09_overworld_after_prepublished_rain();
                     if epilogue_phase == NmiPhase::BeforeNmi {
                         self.nmi_prepare_sprites();
                         self.clear_nmi_update_latch();

@@ -852,6 +852,20 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module09_overworld_after_submodule(&mut self) {
+        self.complete_module09_sprite_and_hud_suffix();
+        self.OverworldOverlay_HandleRain();
+        self.replay_trace_ram_watch("module09-after-rain");
+        self.replay_trace_submodule("module09-exit");
+    }
+
+    /// Finish the caller suffix after an interrupted sprite load whose
+    /// provisional display generation already advanced the rain overlay.
+    pub(super) fn complete_module09_overworld_after_prepublished_rain(&mut self) {
+        self.complete_module09_sprite_and_hud_suffix();
+        self.replay_trace_submodule("module09-exit");
+    }
+
+    fn complete_module09_sprite_and_hud_suffix(&mut self) {
         let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         let bg1x = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
@@ -883,9 +897,6 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module09-after-link-oam");
         self.hud_refill_logic();
         self.replay_trace_ram_watch("module09-after-refill");
-        self.OverworldOverlay_HandleRain();
-        self.replay_trace_ram_watch("module09-after-rain");
-        self.replay_trace_submodule("module09-exit");
     }
 
     fn publish_module09_transition_sprites_without_scroll(&mut self) {
@@ -909,6 +920,12 @@ impl ZeldaState {
         self.set_bg1_x(bg1x);
         self.set_bg1_y(bg1y);
 
+        // These calls only build the provisional sprite generation needed
+        // while the loader is interrupted. The remaining Module09 caller
+        // suffix runs after the scheduled loader continuation returns. Rain is
+        // the exception: the ROM reaches that weather tick before Snes9x
+        // publishes the first submodule-6 scanout, so record it in this
+        // provisional generation and do not advance it again on completion.
         self.link_oam_main();
         self.hud_refill_logic();
         self.OverworldOverlay_HandleRain();

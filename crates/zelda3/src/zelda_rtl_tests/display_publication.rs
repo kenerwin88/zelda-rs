@@ -275,19 +275,22 @@ fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
     assert_eq!(
         PreMainNmiResume::OverworldAuxGraphicsReturn.scanout_generations(),
         PreMainNmiScanoutGenerations {
+            publication: DisplaySnapshotPublication::PublishCaptured,
             vram: DisplayVramGeneration::ComposeLiveAfterNmi,
             animated_bg: None,
             bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
             obj: None,
         },
     );
-    for (return_phase, bg_scroll) in [
+    for (return_phase, publication, bg_scroll) in [
         (
             NmiPhase::BeforeNmi,
+            DisplaySnapshotPublication::PublishCaptured,
             DisplayBgScrollGeneration::ComposeLiveAfterNmi,
         ),
         (
             NmiPhase::AfterNmi,
+            DisplaySnapshotPublication::RetainPublished,
             DisplayBgScrollGeneration::RetainCapturedBeforeNmi,
         ),
     ] {
@@ -295,6 +298,7 @@ fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
             PreMainNmiResume::OverworldSpriteReloadReturn { return_phase }
                 .scanout_generations(),
             PreMainNmiScanoutGenerations {
+                publication,
                 vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
                 animated_bg: None,
                 bg_scroll,
@@ -305,6 +309,7 @@ fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
     assert_eq!(
         PreMainNmiResume::DungeonSupertileQuadrantUploads.scanout_generations(),
         PreMainNmiScanoutGenerations {
+            publication: DisplaySnapshotPublication::PublishCaptured,
             vram: DisplayVramGeneration::ComposeLiveAfterNmi,
             animated_bg: Some(AnimatedBgScanoutGeneration::LiveAfterNmi),
             bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,

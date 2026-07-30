@@ -129,6 +129,23 @@ impl VramChrSourceTable {
         self.entries.get(slot).copied().unwrap_or_default()
     }
 
+    /// Copy the logical identities covering a VRAM word range from another
+    /// display generation. Publication must compose these slots with the same
+    /// range of exact VRAM words or the modern renderer can select adjacent art.
+    pub(crate) fn copy_word_range_from(
+        &mut self,
+        source: &Self,
+        word_range: std::ops::Range<usize>,
+    ) {
+        let start_slot = word_range.start / 16;
+        let end_slot = word_range.end.div_ceil(16);
+        let end_slot = end_slot.min(self.entries.len()).min(source.entries.len());
+        if start_slot < end_slot {
+            self.entries[start_slot..end_slot]
+                .copy_from_slice(&source.entries[start_slot..end_slot]);
+        }
+    }
+
     /// Record the logical source for `num_tiles` consecutive CHR tile slots
     /// starting at VRAM word address `start_word`.
     ///
