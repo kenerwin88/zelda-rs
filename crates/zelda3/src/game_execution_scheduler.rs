@@ -330,6 +330,21 @@ impl GameExecutionScheduler {
             .and_then(ScheduledGameWork::spotlight_iteration)
     }
 
+    pub(super) fn mark_spotlight_started_before_trailing_nmi(&mut self) {
+        let Some(GameExecutionContinuation::ScheduledWork(work)) = self.continuation.as_mut()
+        else {
+            debug_assert!(false, "resumed spotlight main slice did not schedule work");
+            return;
+        };
+        let GameWorkContinuation::FinishSpotlightIteration { iteration } =
+            &mut work.continuation
+        else {
+            debug_assert!(false, "resumed spotlight main slice scheduled unrelated work");
+            return;
+        };
+        iteration.mark_started_before_trailing_nmi();
+    }
+
     pub(super) fn schedule_pre_main_nmi_resume(&mut self, continuation: PreMainNmiResume) {
         self.schedule_continuation(GameExecutionContinuation::PreMainNmiResume(continuation));
     }

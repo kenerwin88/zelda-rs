@@ -56,6 +56,24 @@ fn publication_plan_keeps_memory_domains_independent() {
 }
 
 #[test]
+fn forced_blank_generation_keeps_post_nmi_write_out_of_selected_scanout() {
+    let mut snapshot = captured_display_snapshot();
+    snapshot.forced_blank_generation = DisplayForcedBlankGeneration::RetainCapturedBeforeNmi;
+    let retained_plan =
+        DisplayPublicationPlan::resolve(&snapshot, DisplayPublicationSignals::default());
+
+    let mut state = ZeldaState::new();
+    state.ppu.forced_blank = false;
+    state.compose_display_raster(true, None, false, 15, &retained_plan);
+    assert!(!state.ppu.forced_blank);
+
+    snapshot.forced_blank_generation = DisplayForcedBlankGeneration::ComposeLiveAfterNmi;
+    let live_plan = DisplayPublicationPlan::resolve(&snapshot, DisplayPublicationSignals::default());
+    state.compose_display_raster(true, None, false, 15, &live_plan);
+    assert!(state.ppu.forced_blank);
+}
+
+#[test]
 fn dungeon_exit_publication_plan_promotes_only_live_boundary_domains() {
     let mut snapshot = captured_display_snapshot();
     snapshot.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;

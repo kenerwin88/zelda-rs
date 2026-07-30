@@ -2491,17 +2491,23 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {
+        let submodule = self.game_state.frame.submodule;
+        let radius = self.game_state.display.spotlight_hdma.window_radius();
         let vertical_center = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
         );
         let phase = SpotlightIterationPhase::for_close_iteration(
-            self.game_state.frame.submodule,
-            self.game_state.display.spotlight_hdma.window_radius(),
+            submodule,
+            radius,
             vertical_center,
         );
+        // IrisSpotlight_ConfigureTable changes modules immediately when this
+        // update reaches the closed goal. Preserve that entry fact because
+        // the generic pending-return flag is deliberately clear afterwards.
+        let completes_goal_transition = submodule != 0 && spotlight_close_reaches_goal(radius);
         self.sprite_main();
-        if self.game_state.frame.submodule == 0 {
+        if submodule == 0 {
             self.Dungeon_PrepExitWithSpotlight();
         } else {
             self.Spotlight_ConfigureTableAndControl();
@@ -2531,7 +2537,9 @@ impl ZeldaState {
             .set_direction_and_last_direction(dir);
         self.link_handle_moving_animation_full_long_entry();
         self.link_oam_main();
-        self.schedule_spotlight_iteration_return(SpotlightIteration::closing(phase));
+        self.schedule_spotlight_iteration_return(
+            SpotlightIteration::closing_with_goal_transition(phase, completes_goal_transition),
+        );
     }
 
     pub(super) fn Dungeon_PrepExitWithSpotlight(&mut self) {

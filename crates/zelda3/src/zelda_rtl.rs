@@ -1152,7 +1152,7 @@ const WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES: u8 = 6;
 // Module $09/$21 then spends four NMI boundaries converting the restored main
 // Map16 page before it publishes INIDISP=0 and advances to fade submodule $22.
 const WORLD_MAP_AMBIENT_MAP8_NMI_SLICES: u8 = 4;
-const SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START: usize = 221;
+const SPOTLIGHT_PROJECTION_LIVE_TAIL_START: usize = 221;
 
 // Module07_02's room transition is one uninterrupted 65816 call stack, but it
 // has three useful semantic return boundaries. A clean Snes9x PC/V-counter
@@ -1190,6 +1190,10 @@ const SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX: u16 = 0x38;
 
 const fn spotlight_close_next_radius(radius: u16) -> u16 {
     radius.saturating_sub(load_gfx::SPOTLIGHT_RADIUS_STEP)
+}
+
+const fn spotlight_close_reaches_goal(radius: u16) -> bool {
+    radius != 0 && spotlight_close_next_radius(radius) == 0
 }
 
 const fn rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(radius: u16) -> bool {
@@ -1357,20 +1361,27 @@ pub(super) enum SpotlightIterationPhase {
     /// The circle calculation finishes early enough for HDMA to consume the
     /// completed table before the remaining display domains publish.
     WholeTableAfterTablePublication,
-    /// The close stages a published prefix with newly authored final lines.
-    MixedTailAfterReturn,
+    /// The circle return reaches the next main slice before the following NMI.
+    EarlyReturnBeforeNextNmi,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SpotlightDirection {
     Opening { completes_goal_transition: bool },
-    Closing,
+    Closing { completes_goal_transition: bool },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SpotlightIterationEntryBoundary {
+    OrdinaryHostFrame,
+    ResumedBeforeTrailingNmi,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct SpotlightIteration {
     direction: SpotlightDirection,
     phase: SpotlightIterationPhase,
+    entry_boundary: SpotlightIterationEntryBoundary,
 }
 
 impl SpotlightIteration {
@@ -1380,18 +1391,40 @@ impl SpotlightIteration {
                 completes_goal_transition,
             },
             phase: SpotlightIterationPhase::WholeTable,
+            entry_boundary: SpotlightIterationEntryBoundary::OrdinaryHostFrame,
         }
     }
 
     pub(super) const fn closing(phase: SpotlightIterationPhase) -> Self {
+        Self::closing_with_goal_transition(phase, false)
+    }
+
+    pub(super) const fn closing_with_goal_transition(
+        phase: SpotlightIterationPhase,
+        completes_goal_transition: bool,
+    ) -> Self {
         Self {
-            direction: SpotlightDirection::Closing,
+            direction: SpotlightDirection::Closing {
+                completes_goal_transition,
+            },
             phase,
+            entry_boundary: SpotlightIterationEntryBoundary::OrdinaryHostFrame,
         }
     }
 
+    pub(super) fn mark_started_before_trailing_nmi(&mut self) {
+        self.entry_boundary = SpotlightIterationEntryBoundary::ResumedBeforeTrailingNmi;
+    }
+
     const fn in_flight_publication(self) -> DisplaySnapshotPublication {
-        DisplaySnapshotPublication::AdvanceStaged
+        match (self.direction, self.phase, self.entry_boundary) {
+            (
+                SpotlightDirection::Closing { .. },
+                SpotlightIterationPhase::EarlyReturnBeforeNextNmi,
+                SpotlightIterationEntryBoundary::OrdinaryHostFrame,
+            ) => DisplaySnapshotPublication::RetainPublished,
+            _ => DisplaySnapshotPublication::AdvanceStaged,
+        }
     }
 
     const fn completion_publication(self) -> DisplaySnapshotPublication {
@@ -1402,29 +1435,52 @@ impl SpotlightIteration {
             SpotlightDirection::Opening {
                 completes_goal_transition: false,
             } => DisplaySnapshotPublication::AdvanceStaged,
-            SpotlightDirection::Closing => self.phase.close_completion_publication(),
+            SpotlightDirection::Closing { .. }
+                if matches!(
+                    self.phase,
+                    SpotlightIterationPhase::EarlyReturnBeforeNextNmi
+                ) =>
+            {
+                // The table completed after the active scanout began. Promote
+                // its staged generation when the suspended call returns.
+                DisplaySnapshotPublication::AdvanceStaged
+            }
+            SpotlightDirection::Closing { .. } => self.phase.close_completion_publication(),
         }
+    }
+
+    const fn retains_captured_forced_blank_on_active_scanout(self) -> bool {
+        matches!(
+            self.direction,
+            SpotlightDirection::Closing {
+                completes_goal_transition: true,
+            }
+        )
     }
 
     const fn publishes_completed_hdma_table_to_active_scanout(self) -> bool {
         matches!(
             (self.direction, self.phase),
             (
-                SpotlightDirection::Closing,
-                SpotlightIterationPhase::WholeTable
-                    | SpotlightIterationPhase::WholeTableAfterTablePublication
+                SpotlightDirection::Closing { .. },
+                SpotlightIterationPhase::WholeTableAfterTablePublication
             )
         )
     }
 
-    const fn projects_following_table_tail_on_completion(self) -> bool {
+    const fn projects_completed_table_tail_on_completion(self) -> bool {
         matches!(
-            (self.direction, self.phase),
+            (self.direction, self.phase, self.entry_boundary),
             (
-                SpotlightDirection::Closing,
-                SpotlightIterationPhase::WholeTable | SpotlightIterationPhase::MixedTailAfterReturn
+                SpotlightDirection::Closing { .. },
+                SpotlightIterationPhase::EarlyReturnBeforeNextNmi,
+                SpotlightIterationEntryBoundary::OrdinaryHostFrame,
             )
         )
+    }
+
+    const fn publishes_staged_table_projection_to_active_scanout(self) -> bool {
+        self.projects_completed_table_tail_on_completion()
     }
 }
 
@@ -1441,9 +1497,11 @@ impl SpotlightIterationPhase {
         } else if radius != 0
             && spotlight_close_next_radius(radius) <= SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
         {
-            // Snes9x PC/V-counter traces show the next circle write reaching
-            // HDMA at scanline 221 once the close has reached this CPU phase.
-            Self::MixedTailAfterReturn
+            // Once the close reaches this CPU phase, Snes9x PC/V-counter
+            // traces show the caller returning early enough to begin the next
+            // main slice before the following NMI. The completed table itself
+            // remains staged behind the active HDMA generation.
+            Self::EarlyReturnBeforeNextNmi
         } else {
             Self::WholeTable
         }
@@ -1452,11 +1510,18 @@ impl SpotlightIterationPhase {
     const fn close_completion_publication(self) -> DisplaySnapshotPublication {
         match self {
             Self::CloseEntryAfterTablePublication => DisplaySnapshotPublication::PublishCaptured,
+            // The long entry build returns at V=221, after HDMA consumed the
+            // active window table. Keep the open scanout through that return;
+            // the existing inter-iteration hold advances the completed table
+            // at the following display boundary.
+            Self::CloseEntryBeforeTablePublication => {
+                DisplaySnapshotPublication::RetainPublished
+            }
             Self::WholeTable | Self::WholeTableAfterTablePublication => {
                 DisplaySnapshotPublication::RetainPublished
             }
-            Self::CloseEntryBeforeTablePublication | Self::MixedTailAfterReturn => {
-                DisplaySnapshotPublication::AdvanceStaged
+            Self::EarlyReturnBeforeNextNmi => {
+                DisplaySnapshotPublication::RetainPublished
             }
         }
     }
@@ -3045,6 +3110,13 @@ enum DisplaySnapshotPublication {
     RetainPublished,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum DisplayForcedBlankGeneration {
+    #[default]
+    ComposeLiveAfterNmi,
+    RetainCapturedBeforeNmi,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 enum DisplayHdmaTableGeneration {
     #[default]
@@ -3065,6 +3137,15 @@ enum DisplayHdmaTableGeneration {
 }
 
 impl DisplayHdmaTableGeneration {
+    fn diagnostic_label(&self) -> &'static str {
+        match self {
+            Self::Captured => "captured",
+            Self::SpotlightPublishedAheadOfSnapshot { .. } => "spotlight-ahead",
+            Self::AttractMapProjectionDuringScanout { .. } => "attract-projection",
+            Self::SpotlightProjectionDuringScanout { .. } => "spotlight-projection",
+        }
+    }
+
     fn compose_into(&self, ram: &mut [u8]) {
         match self {
             Self::Captured => {}
@@ -3086,7 +3167,7 @@ impl DisplayHdmaTableGeneration {
                 before_projection,
                 after_projection,
             } => {
-                let byte_start = SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START * 2;
+                let byte_start = SPOTLIGHT_PROJECTION_LIVE_TAIL_START * 2;
                 for ((table_base, before), after) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
                     .into_iter()
                     .zip(before_projection)
@@ -3274,6 +3355,7 @@ struct DisplayPublicationPlan {
     publish_live_overworld_transition_half_color: bool,
     world_map_fade_display: bool,
     world_map_mode7_brightness_is_early_published: bool,
+    compose_live_forced_blank: bool,
 }
 
 impl DisplayPublicationPlan {
@@ -3313,6 +3395,8 @@ impl DisplayPublicationPlan {
             world_map_fade_display: signals.world_map_fade_display,
             world_map_mode7_brightness_is_early_published: signals
                 .world_map_mode7_brightness_is_early_published,
+            compose_live_forced_blank: snapshot.forced_blank_generation
+                == DisplayForcedBlankGeneration::ComposeLiveAfterNmi,
         }
     }
 }
@@ -3989,6 +4073,7 @@ struct DisplaySnapshot {
     animated_bg_scanout_generation: AnimatedBgScanoutGeneration,
     bg_scroll_generation: DisplayBgScrollGeneration,
     spotlight_scanout_generation: SpotlightScanoutGeneration,
+    forced_blank_generation: DisplayForcedBlankGeneration,
     obj_generation: DisplayObjGeneration,
     published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
     published_bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
@@ -9771,6 +9856,9 @@ impl ZeldaState {
             }
         });
         let spotlight_iteration = self.game_execution_scheduler.spotlight_iteration();
+        let retain_captured_forced_blank = spotlight_iteration.is_some_and(|iteration| {
+            iteration.retains_captured_forced_blank_on_active_scanout()
+        });
         let hdma_table_generation = spotlight_iteration
             .filter(|iteration| iteration.publishes_completed_hdma_table_to_active_scanout())
             .map(
@@ -9778,9 +9866,18 @@ impl ZeldaState {
                     active_table: self.hdma_dynamic_table_bytes(),
                 },
             );
-        let mixed_spotlight_after_projection = spotlight_iteration
-            .filter(|iteration| iteration.phase == SpotlightIterationPhase::MixedTailAfterReturn)
-            .map(|_| spotlight_hdma_tables_from_ram(&self.ram));
+        let staged_spotlight_projection = spotlight_iteration
+            .filter(|iteration| {
+                iteration.publishes_staged_table_projection_to_active_scanout()
+            })
+            .and_then(|_| self.deferred_display_snapshot.as_mut())
+            .and_then(|staged| {
+                matches!(
+                    &staged.hdma_table_generation,
+                    DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout { .. }
+                )
+                .then(|| std::mem::take(&mut staged.hdma_table_generation))
+            });
         let landing_spotlight_after_projection =
             (self.dungeon_landing_wipe_return_slices_remaining != 0
                 && spotlight_opening_projects_live_tail_before_hdma(
@@ -9792,20 +9889,21 @@ impl ZeldaState {
                 ))
             .then(|| spotlight_hdma_tables_from_ram(&self.ram));
         self.capture_display_snapshot_with_publication(publication);
+        if retain_captured_forced_blank {
+            if let Some(display) = self.display_snapshot.as_mut() {
+                display.forced_blank_generation =
+                    DisplayForcedBlankGeneration::RetainCapturedBeforeNmi;
+            }
+        }
         if let (Some(generation), Some(display)) =
             (hdma_table_generation, self.display_snapshot.as_mut())
         {
             display.hdma_table_generation = generation;
         }
-        if let (Some(after_projection), Some(display)) = (
-            mixed_spotlight_after_projection,
-            self.display_snapshot.as_mut(),
-        ) {
-            display.hdma_table_generation =
-                DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
-                    before_projection: spotlight_hdma_tables_from_ram(&display.ram),
-                    after_projection,
-                };
+        if let (Some(generation), Some(display)) =
+            (staged_spotlight_projection, self.display_snapshot.as_mut())
+        {
+            display.hdma_table_generation = generation;
         }
         if let (Some(after_projection), Some(display)) = (
             landing_spotlight_after_projection,
@@ -9819,68 +9917,27 @@ impl ZeldaState {
         }
     }
 
-    fn project_following_spotlight_tail_to_active_scanout(
-        &mut self,
-        phase: SpotlightIterationPhase,
-    ) {
-        let live_tables = spotlight_hdma_tables_from_ram(&self.ram);
-        let before_projection = if phase == SpotlightIterationPhase::MixedTailAfterReturn {
-            self.display_snapshot
-                .as_ref()
-                .map(|display| spotlight_hdma_tables_from_ram(&display.ram))
-                .unwrap_or_else(|| live_tables.clone())
-        } else {
-            live_tables.clone()
+    fn stage_completed_spotlight_tail_for_following_scanout(&mut self) {
+        let Some(before_projection) = self
+            .display_snapshot
+            .as_ref()
+            .map(|display| spotlight_hdma_tables_from_ram(&display.ram))
+        else {
+            return;
         };
-        let mut after_projection = live_tables;
-        let vertical_center = spotlight_vertical_center(
-            self.game_state.player.follower_link.y(),
-            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
-        );
-        let radius = self.game_state.display.spotlight_hdma.window_radius();
-        if phase == SpotlightIterationPhase::MixedTailAfterReturn {
-            // The fixed 448-byte copy crosses HDMA at scanline 221. HDMA has
-            // already consumed the published table above that line; from the
-            // crossing onward it reads the table which just completed in WRAM.
-        } else {
-            // Follow the ROM builder's paired lower/upper cursors exactly. The
-            // lower cursor starts at max(2*center, 224), so its radial operand
-            // is not equivalent to abs(scanline-center) at the bottom edge.
-            let mut lower_cursor = vertical_center.wrapping_mul(2).max(224);
-            let mut upper_cursor = vertical_center.wrapping_mul(2).wrapping_sub(lower_cursor);
-            let y_upper = vertical_center.wrapping_add(radius);
-            let mut radial_operand = radius;
-            loop {
-                let value = if lower_cursor < y_upper {
-                    let operand = radial_operand as u8;
-                    radial_operand = radial_operand.saturating_sub(1);
-                    self.iris_spotlight_calculate_circle_value(operand)
-                } else {
-                    0x00ff
-                };
-                for scanline in [upper_cursor, lower_cursor] {
-                    let scanline = scanline as usize;
-                    if (SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START..224).contains(&scanline) {
-                        for table in &mut after_projection {
-                            let offset = scanline * 2;
-                            table[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-                        }
-                    }
-                }
-                if upper_cursor == vertical_center {
-                    break;
-                }
-                upper_cursor = upper_cursor.wrapping_add(1);
-                lower_cursor = lower_cursor.wrapping_sub(1);
-            }
-        }
-        if let Some(display) = self.display_snapshot.as_mut() {
-            display.hdma_table_generation =
-                DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
-                    before_projection,
-                    after_projection,
-                };
-        }
+        // The fixed 448-byte projection completes at V=221. HDMA has already
+        // selected the current scanout at this host boundary; the following
+        // scanout retains that published table above line 221, while its final
+        // three active lines read the table which just completed in WRAM.
+        let after_projection = spotlight_hdma_tables_from_ram(&self.ram);
+        let Some(staged) = self.deferred_display_snapshot.as_mut() else {
+            return;
+        };
+        staged.hdma_table_generation =
+            DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
+                before_projection,
+                after_projection,
+            };
     }
 
     fn capture_display_snapshot_with_publication(
@@ -9920,12 +9977,22 @@ impl ZeldaState {
             append_parity_trace("attract-display-timeline.trace", &trace);
         }
         if diagnostics.frame_boundary {
+            let active_spotlight_radius = self
+                .display_snapshot
+                .as_ref()
+                .map(|snapshot| read_le_u16(&snapshot.ram, SPOTLIGHT_WINDOW_RADIUS));
+            let staged_spotlight_radius = self
+                .deferred_display_snapshot
+                .as_ref()
+                .map(|snapshot| read_le_u16(&snapshot.ram, SPOTLIGHT_WINDOW_RADIUS));
             eprintln!(
-                "frame_boundary_before host={} main={:02x} sub={:02x} frame_counter={:02x} link_dma_countdown={:04x} latch={} pending={} target={:04x} disable={:02x} dialogue_runs=authored:{}/published:{}/display:{}",
+                "frame_boundary_before host={} main={:02x} sub={:02x} frame_counter={:02x} publication={publication:?} work={:?} spotlight_radius=active:{active_spotlight_radius:?}/staged:{staged_spotlight_radius:?}/live:{} link_dma_countdown={:04x} latch={} pending={} target={:04x} disable={:02x} dialogue_runs=authored:{}/published:{}/display:{}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
                 frame.frame_counter,
+                self.game_execution_scheduler.current_work(),
+                self.game_state.display.spotlight_hdma.window_radius(),
                 read_le_u16(&self.ram, LINK_DMA_COUNTDOWN),
                 self.game_state.display.nmi_update_is_latched(),
                 self.game_state.display.pending_nmi_subroutine,
@@ -10098,6 +10165,7 @@ impl ZeldaState {
                 .take()
                 .map(SpotlightScanoutGeneration::ComposeLiveAfterNmi)
                 .unwrap_or(SpotlightScanoutGeneration::CapturedBeforeNmi),
+            forced_blank_generation: DisplayForcedBlankGeneration::ComposeLiveAfterNmi,
             obj_generation,
             published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
             published_bg3_vwf_glyph_run_dialogue_offsets: self
@@ -10352,8 +10420,10 @@ impl ZeldaState {
     ) {
         // A force-blank write published by NMI takes effect before the next
         // active scanline even when other domains retain the pre-NMI snapshot.
-        self.ppu.forced_blank |= live_forced_blank;
-        if live_forced_blank {
+        if plan.compose_live_forced_blank {
+            self.ppu.forced_blank |= live_forced_blank;
+        }
+        if plan.compose_live_forced_blank && live_forced_blank {
             let scanout = resolve_active_display_blanking_scanout(
                 self.ppu.retain_active_display_history,
                 live_forced_blank_from_scanline,
@@ -10685,8 +10755,14 @@ impl ZeldaState {
         );
         if diagnostics.capture.frame_boundary {
             eprintln!(
-                "frame_boundary_present host={} vram={:?} obj=oam:{:?}/link:{:?}/animated:{:?}/retained:{} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
+                "frame_boundary_present host={} spotlight_radius=presented:{}/live:{}/snapshot:{} spotlight_scanout={:?} hdma_table={} forced_blank={:?} vram={:?} obj=oam:{:?}/link:{:?}/animated:{:?}/retained:{} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
                 self.frame_ctr_dbg,
+                read_le_u16(&self.ram, SPOTLIGHT_WINDOW_RADIUS),
+                read_le_u16(&display.ram, SPOTLIGHT_WINDOW_RADIUS),
+                read_le_u16(&pristine_snapshot.ram, SPOTLIGHT_WINDOW_RADIUS),
+                pristine_snapshot.spotlight_scanout_generation,
+                pristine_snapshot.hdma_table_generation.diagnostic_label(),
+                pristine_snapshot.forced_blank_generation,
                 publication_plan.vram_generation,
                 publication_plan.oam_scanout_source,
                 publication_plan.link_obj_scanout_generation,
@@ -11530,7 +11606,7 @@ impl ZeldaState {
             return;
         }
         let mut resume_main_after_spotlight_return = false;
-        let mut spotlight_scanout_started_before_resumed_main = None;
+        let mut spotlight_scanout_queue_before_resumed_main = None;
         let scheduled_work_step = if self.rom_startup_timing() {
             self.game_execution_scheduler.advance_work_one_nmi_slice()
         } else {
@@ -11949,17 +12025,20 @@ impl ZeldaState {
                 iteration,
             }) = work_slice
             {
-                if iteration.projects_following_table_tail_on_completion() {
-                    self.project_following_spotlight_tail_to_active_scanout(iteration.phase);
+                if iteration.projects_completed_table_tail_on_completion() {
+                    self.stage_completed_spotlight_tail_for_following_scanout();
                 }
             }
             if resume_main_after_spotlight_return {
-                // The $3f->$38 circle update occurs before the trailing NMI,
-                // but that main slice cannot replace the scanout which already
-                // started at the return boundary above. Preserve the active
-                // display generation while the ordinary capture below stages
-                // the resumed CPU generation for the following scanout.
-                spotlight_scanout_started_before_resumed_main = self.display_snapshot.clone();
+                // This return reaches the next ordinary main slice before the
+                // trailing NMI. The slice below advances the scanout consumed
+                // by that NMI, but the persistent queue still belongs to the
+                // return boundary until the suspended iteration completes.
+                spotlight_scanout_queue_before_resumed_main = self
+                    .display_snapshot
+                    .clone()
+                    .zip(self.deferred_display_snapshot.clone());
+                debug_assert!(spotlight_scanout_queue_before_resumed_main.is_some());
             } else {
                 self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                 return;
@@ -12036,6 +12115,10 @@ impl ZeldaState {
             self.replay_trace_col("after-game-loop");
             self.replay_trace_ram_watch("after-game-loop");
         }
+        if resume_main_after_spotlight_return {
+            self.game_execution_scheduler
+                .mark_spotlight_started_before_trailing_nmi();
+        }
         let dialogue_scroll_finished_copy =
             self.rom_startup_timing() && self.dialogue_scroll_is_return_only();
         let publication_override = self
@@ -12075,8 +12158,9 @@ impl ZeldaState {
                 color_math_scanout.publish_to(&mut snapshot.ppu);
             }
         }
-        if let Some(scanout) = spotlight_scanout_started_before_resumed_main {
-            self.display_snapshot = Some(scanout);
+        if let Some((active, staged)) = spotlight_scanout_queue_before_resumed_main {
+            self.display_snapshot = Some(active);
+            self.deferred_display_snapshot = Some(staged);
         }
         self.replay_trace_col("after-nmi");
         self.replay_trace_ram_watch("after-nmi");
