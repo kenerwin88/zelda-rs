@@ -390,13 +390,13 @@ const fn rom_display_oam_publication_is_deferred(
     // the preceding OAM generation regardless of module identity. The steady
     // name-player loop has the same ordinary main-then-next-NMI cadence for its
     // cursor and underline sprites, including input-driven row transitions.
+    // File-select modules build OAM and their stripe packet together after the
+    // active frame's NMI, so both transactions publish at the next boundary.
+    // Outside those menus a pending VRAM stripe does not own OAM: the typed
+    // graphics-DMA plan below resolves its independent hardware generation.
     active_display_nmi_overrun
-        || rom_display_memory_publication_is_deferred(
-            main_module,
-            submodule,
-            text_render_state,
-            pending_main_thread_stripe,
-        )
+        || (pending_main_thread_stripe && matches!(main_module, 1..=4))
+        || (main_module == 14 && submodule == 2 && text_render_state != 4)
         || (main_module == 4 && submodule == 3)
         || (main_module == 14 && submodule == 7)
         || matches!(

@@ -5099,8 +5099,17 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
     assert!(rom_display_oam_publication_is_deferred(
         4, 3, 0, true, false
     ));
-    assert!(rom_display_oam_publication_is_deferred(
-        4, 3, 0, false, true
+    for menu_module in 1..=4 {
+        assert!(rom_display_oam_publication_is_deferred(
+            menu_module,
+            0,
+            0,
+            false,
+            true,
+        ));
+    }
+    assert!(!rom_display_oam_publication_is_deferred(
+        7, 0, 0, false, true,
     ));
     assert!(rom_display_oam_publication_is_deferred(
         4, 3, 0, false, false
