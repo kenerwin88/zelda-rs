@@ -3346,9 +3346,7 @@ fn game_execution_scheduler_preserves_non_work_continuations_when_advanced() {
     assert_eq!(scheduler.advance_work_one_nmi_slice(), None);
     assert_eq!(
         scheduler.advance_startup_sequence(),
-        Some(StartupSequenceStep::FileSelectGraphics(
-            FileSelectGraphicsStep::Waiting
-        ))
+        Some(StartupSequenceStep::FileSelectWaiting)
     );
     scheduler.reset();
 
@@ -3356,9 +3354,7 @@ fn game_execution_scheduler_preserves_non_work_continuations_when_advanced() {
     assert_eq!(scheduler.advance_work_one_nmi_slice(), None);
     assert_eq!(
         scheduler.advance_startup_sequence(),
-        Some(StartupSequenceStep::SelectedGameLoad(
-            SelectedGameLoadStep::Waiting
-        ))
+        Some(StartupSequenceStep::SelectedGameLoadWaiting)
     );
 }
 
@@ -4266,23 +4262,17 @@ fn file_select_graphics_resumes_the_module_after_every_intervening_nmi() {
     for _ in 0..FILE_SELECT_GRAPHICS_NMI_SLICES - 1 {
         assert_eq!(
             scheduler.advance_startup_sequence(),
-            Some(StartupSequenceStep::FileSelectGraphics(
-                FileSelectGraphicsStep::Waiting
-            ))
+            Some(StartupSequenceStep::FileSelectWaiting)
         );
     }
     assert_eq!(
         scheduler.advance_startup_sequence(),
-        Some(StartupSequenceStep::FileSelectGraphics(
-            FileSelectGraphicsStep::CompleteGraphics
-        ))
+        Some(StartupSequenceStep::CompleteFileSelectGraphics)
     );
     assert!(!scheduler.is_idle());
     assert_eq!(
         scheduler.advance_startup_sequence(),
-        Some(StartupSequenceStep::FileSelectGraphics(
-            FileSelectGraphicsStep::ResumeModule
-        ))
+        Some(StartupSequenceStep::ResumeFileSelectModule)
     );
     assert!(scheduler.is_idle());
 }
@@ -5453,9 +5443,7 @@ fn selected_game_load_resumes_until_the_cpu_heavy_setup_finishes() {
     for _ in 0..SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES - 1 {
         assert_eq!(
             scheduler.advance_startup_sequence(),
-            Some(StartupSequenceStep::SelectedGameLoad(
-                SelectedGameLoadStep::Waiting
-            ))
+            Some(StartupSequenceStep::SelectedGameLoadWaiting)
         );
     }
     assert_eq!(
@@ -5464,9 +5452,7 @@ fn selected_game_load_resumes_until_the_cpu_heavy_setup_finishes() {
     );
     assert_eq!(
         scheduler.advance_startup_sequence(),
-        Some(StartupSequenceStep::SelectedGameLoad(
-            SelectedGameLoadStep::BeginPreDungeonAudio
-        ))
+        Some(StartupSequenceStep::BeginPreDungeonAudio)
     );
     assert_eq!(
         scheduler.selected_game_load_remaining_nmi_slices(),
@@ -5476,16 +5462,12 @@ fn selected_game_load_resumes_until_the_cpu_heavy_setup_finishes() {
     for _ in 0..SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES - 1 {
         assert_eq!(
             scheduler.advance_startup_sequence(),
-            Some(StartupSequenceStep::SelectedGameLoad(
-                SelectedGameLoadStep::Waiting
-            ))
+            Some(StartupSequenceStep::SelectedGameLoadWaiting)
         );
     }
     assert_eq!(
         scheduler.advance_startup_sequence(),
-        Some(StartupSequenceStep::SelectedGameLoad(
-            SelectedGameLoadStep::CompleteLoad
-        ))
+        Some(StartupSequenceStep::CompleteSelectedGameLoad)
     );
     assert!(scheduler.is_idle());
 }
