@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT = Path(__file__).with_name("snes9x_route_recorder.py")
@@ -14,7 +15,18 @@ SPEC.loader.exec_module(MODULE)
 
 class Snes9xRouteRecorderTests(unittest.TestCase):
     def test_no_arguments_default_to_tui(self):
-        self.assertEqual(MODULE.parse_cli_args([]).action, "tui")
+        args = MODULE.parse_cli_args([])
+
+        self.assertEqual(args.action, "tui")
+        self.assertEqual(args.rom, MODULE.ROOT / "saves/zelda3.sfc")
+
+    def test_default_rom_honors_environment_override(self):
+        override = Path("/tmp/legally-obtained-zelda3.sfc")
+
+        with mock.patch.dict(MODULE.os.environ, {"ZELDA3_ROM": str(override)}):
+            args = MODULE.parse_cli_args([])
+
+        self.assertEqual(args.rom, override)
 
     def project(self, root: Path) -> Path:
         project = root / "route"

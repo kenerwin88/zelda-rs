@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BINARY = ROOT / "target/release/zelda3"
 DEFAULT_CORE = ROOT / "external/snes9x-libretro/local/snes9x_libretro.dylib"
-DEFAULT_ROM = ROOT / "target/parity/audio-oracle-fixture/zelda3.sfc"
+DEFAULT_ROM = ROOT / "saves/zelda3.sfc"
 DEFAULT_PROJECT_ROOT = ROOT / "routes"
 DEFAULT_PROJECT = DEFAULT_PROJECT_ROOT / "default"
 DEFAULT_SRAM = ROOT / "saves/sram.dat"
@@ -34,6 +34,10 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def default_rom_path() -> Path:
+    return Path(os.environ.get("ZELDA3_ROM", str(DEFAULT_ROM)))
 
 
 def portable_source_path(path: Path) -> dict[str, str]:
@@ -1051,7 +1055,7 @@ def parser() -> argparse.ArgumentParser:
     common.add_argument("--project", type=Path, default=DEFAULT_PROJECT)
     common.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
     common.add_argument("--core", type=Path, default=DEFAULT_CORE)
-    common.add_argument("--rom", type=Path, default=DEFAULT_ROM)
+    common.add_argument("--rom", type=Path, default=default_rom_path())
     common.add_argument("--no-build", action="store_true")
 
     result = argparse.ArgumentParser(description=__doc__)
