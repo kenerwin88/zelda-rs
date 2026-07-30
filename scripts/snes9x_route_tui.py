@@ -181,6 +181,7 @@ def build_resume_command(config: TuiConfig, project: Path, boundary: int) -> lis
         str(config.core),
         "--rom",
         str(config.rom),
+        "--allow-core-rollover",
     ]
     if config.no_build:
         command.append("--no-build")

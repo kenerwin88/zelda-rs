@@ -28,6 +28,135 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
 
         self.assertEqual(args.rom, override)
 
+    def test_preserved_cores_are_content_addressed_and_reused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            core_store = root / "cores"
+            first = root / "first.dylib"
+            second = root / "second.dylib"
+            first.write_bytes(b"first-core")
+            second.write_bytes(b"second-core")
+            project = self.project(root)
+            manifest = MODULE.load_manifest(project)
+            manifest["identity"]["core_sha256"] = MODULE.sha256(first)
+            (project / "manifest.json").write_text(json.dumps(manifest))
+
+            with mock.patch.object(MODULE, "CORE_STORE", core_store):
+                preserved_first = MODULE.preserve_core(first)
+                selected = MODULE.recording_core(project, second)
+
+            self.assertEqual(preserved_first.read_bytes(), b"first-core")
+            self.assertEqual(selected, preserved_first)
+            self.assertEqual(
+                selected.parent.name,
+                MODULE.sha256(first),
+            )
+            self.assertTrue(
+                (core_store / MODULE.sha256(second) / "snes9x_libretro.dylib").is_file()
+            )
+
+    def test_take_identity_uses_its_recorded_oracle_generation(self):
+        manifest = {
+            "identity": {"core_sha256": "old", "rom_sha256": "rom"},
+            "oracle_generations": [
+                {
+                    "id": 0,
+                    "first_take": 0,
+                    "identity": {"core_sha256": "old", "rom_sha256": "rom"},
+                },
+                {
+                    "id": 1,
+                    "first_take": 4,
+                    "resumed_from_boundary": 3,
+                    "identity": {"core_sha256": "new", "rom_sha256": "rom"},
+                },
+            ],
+        }
+
+        self.assertEqual(
+            MODULE.oracle_identity_for_take(
+                manifest, {"id": 4, "oracle_generation": 1}
+            )["core_sha256"],
+            "new",
+        )
+
+    def test_continuous_replay_uses_latest_generation_from_reset(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = self.project(root)
+            latest_core = root / "latest.dylib"
+            latest_core.write_bytes(b"latest-core")
+            manifest = MODULE.load_manifest(project)
+            manifest["boundaries"][0]["reset_start"] = True
+            manifest["boundaries"].append(
+                {
+                    "id": 2,
+                    "reset_start": False,
+                    "state_path": "boundaries/0001/oracle.state",
+                    "sram_path": "boundaries/0001/sram.bin",
+                    "telemetry": {},
+                }
+            )
+            manifest["takes"] = [
+                {
+                    "id": 0,
+                    "oracle_generation": 0,
+                    "start_boundary": 0,
+                    "end_boundary": 1,
+                    "frames": 1,
+                    "input_path": "takes/0000/input.txt",
+                    "status": "complete",
+                },
+                {
+                    "id": 1,
+                    "oracle_generation": 1,
+                    "start_boundary": 1,
+                    "end_boundary": 2,
+                    "frames": 1,
+                    "input_path": "takes/0001/input.txt",
+                    "status": "complete",
+                },
+            ]
+            (project / "takes/0001").mkdir()
+            (project / "takes/0001/input.txt").write_text("0 0x0080\n")
+            manifest["oracle_generations"] = [
+                {
+                    "id": 0,
+                    "first_take": 0,
+                    "identity": manifest["identity"],
+                },
+                {
+                    "id": 1,
+                    "first_take": 1,
+                    "resumed_from_boundary": 1,
+                    "identity": {
+                        **manifest["identity"],
+                        "core_sha256": MODULE.sha256(latest_core),
+                    },
+                },
+            ]
+            (project / "manifest.json").write_text(json.dumps(manifest))
+
+            with (
+                mock.patch.object(MODULE, "CORE_STORE", root / "cores"),
+                mock.patch.object(
+                    MODULE.subprocess, "run", return_value=mock.Mock(returncode=1)
+                ) as run,
+            ):
+                summary, _ = MODULE.compare_continuous(
+                    binary=Path("zelda3"),
+                    core=latest_core,
+                    rom=Path("zelda3.sfc"),
+                    project=project,
+                )
+
+            command = run.call_args.args[0]
+            self.assertEqual(summary["oracle_generation"], 1)
+            self.assertEqual(
+                command[command.index("--expected-core-sha256") + 1],
+                MODULE.sha256(latest_core),
+            )
+
     def project(self, root: Path) -> Path:
         project = root / "route"
         (project / "boundaries/0000").mkdir(parents=True)

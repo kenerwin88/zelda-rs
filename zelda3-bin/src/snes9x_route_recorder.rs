@@ -66,6 +66,8 @@ impl OracleFrameReceipt {
 struct BoundaryEntry {
     id: usize,
     #[serde(default)]
+    oracle_generation: usize,
+    #[serde(default)]
     reset_start: bool,
     state_path: String,
     state_sha256: String,
@@ -88,10 +90,14 @@ struct BoundaryEntry {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct TakeEntry {
     id: usize,
+    #[serde(default)]
+    oracle_generation: usize,
     start_boundary: usize,
     end_boundary: Option<usize>,
     frames: usize,
     input_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rom_random_path: Option<String>,
     #[serde(default)]
     receipts_path: String,
     status: String,
@@ -102,11 +108,22 @@ struct TakeEntry {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+struct OracleGeneration {
+    id: usize,
+    first_take: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resumed_from_boundary: Option<usize>,
+    identity: RecorderIdentity,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ProjectManifest {
     kind: String,
     oracle_only: bool,
     converted_from_rust: bool,
     identity: RecorderIdentity,
+    #[serde(default)]
+    oracle_generations: Vec<OracleGeneration>,
     boundaries: Vec<BoundaryEntry>,
     takes: Vec<TakeEntry>,
 }
@@ -114,6 +131,7 @@ struct ProjectManifest {
 #[derive(Debug)]
 struct ActiveTake {
     id: usize,
+    oracle_generation: usize,
     start_boundary: usize,
     dir: PathBuf,
     receipts: BufWriter<File>,
@@ -124,16 +142,59 @@ struct ActiveTake {
 pub(crate) struct RecorderProject {
     root: PathBuf,
     manifest: ProjectManifest,
+    active_oracle_generation: usize,
+    pending_rollover_identity: Option<RecorderIdentity>,
     active_take: Option<ActiveTake>,
 }
 
+fn validate_oracle_generations(manifest: &ProjectManifest) -> Result<(), String> {
+    for (expected_id, generation) in manifest.oracle_generations.iter().enumerate() {
+        if generation.id != expected_id {
+            return Err(format!(
+                "recorder oracle generation {} is out of sequence; expected {expected_id}",
+                generation.id
+            ));
+        }
+        if generation.identity.rom_sha256 != manifest.identity.rom_sha256 {
+            return Err(format!(
+                "recorder oracle generation {} ROM SHA-256 does not match the project",
+                generation.id
+            ));
+        }
+        if generation.id == 0 {
+            if generation.identity != manifest.identity
+                || generation.first_take != 0
+                || generation.resumed_from_boundary.is_some()
+            {
+                return Err(
+                    "recorder oracle generation 0 does not match the original project identity"
+                        .to_string(),
+                );
+            }
+        } else if generation
+            .resumed_from_boundary
+            .is_none_or(|boundary| boundary >= manifest.boundaries.len())
+        {
+            return Err(format!(
+                "recorder oracle generation {} has no valid resume boundary",
+                generation.id
+            ));
+        }
+    }
+    Ok(())
+}
+
 impl RecorderProject {
-    pub(crate) fn open(root: &Path, identity: RecorderIdentity) -> Result<Self, String> {
+    pub(crate) fn open(
+        root: &Path,
+        identity: RecorderIdentity,
+        allow_core_rollover: bool,
+    ) -> Result<Self, String> {
         fs::create_dir_all(root)
             .map_err(|error| format!("create recorder project {}: {error}", root.display()))?;
         let manifest_path = root.join("manifest.json");
-        let manifest = if manifest_path.exists() {
-            let manifest: ProjectManifest = serde_json::from_slice(
+        let (manifest, pending_rollover_identity) = if manifest_path.exists() {
+            let mut manifest: ProjectManifest = serde_json::from_slice(
                 &fs::read(&manifest_path)
                     .map_err(|error| format!("read {}: {error}", manifest_path.display()))?,
             )
@@ -144,31 +205,108 @@ impl RecorderProject {
                     manifest_path.display()
                 ));
             }
-            if manifest.identity.core_sha256 != identity.core_sha256 {
-                return Err("recorder project Snes9x core SHA-256 does not match".to_string());
-            }
             if manifest.identity.rom_sha256 != identity.rom_sha256 {
                 return Err("recorder project ROM SHA-256 does not match".to_string());
             }
-            manifest
-        } else {
-            ProjectManifest {
-                kind: RECORDING_KIND.to_string(),
-                oracle_only: true,
-                converted_from_rust: false,
-                identity,
-                boundaries: Vec::new(),
-                takes: Vec::new(),
+            if manifest.oracle_generations.is_empty() {
+                manifest.oracle_generations.push(OracleGeneration {
+                    id: 0,
+                    first_take: 0,
+                    resumed_from_boundary: None,
+                    identity: manifest.identity.clone(),
+                });
             }
+            validate_oracle_generations(&manifest)?;
+            let active_identity = &manifest
+                .oracle_generations
+                .last()
+                .expect("oracle generation was initialized")
+                .identity;
+            if active_identity.core_sha256 == identity.core_sha256 {
+                if active_identity.rom_sha256 != identity.rom_sha256 {
+                    return Err(
+                        "recorder project oracle generation ROM SHA-256 does not match".to_string(),
+                    );
+                }
+                (manifest, None)
+            } else if allow_core_rollover {
+                (manifest, Some(identity))
+            } else {
+                return Err(
+                    "recorder project Snes9x core SHA-256 does not match; an explicit oracle generation rollover is required"
+                        .to_string(),
+                );
+            }
+        } else {
+            let generation = OracleGeneration {
+                id: 0,
+                first_take: 0,
+                resumed_from_boundary: None,
+                identity: identity.clone(),
+            };
+            (
+                ProjectManifest {
+                    kind: RECORDING_KIND.to_string(),
+                    oracle_only: true,
+                    converted_from_rust: false,
+                    identity,
+                    oracle_generations: vec![generation],
+                    boundaries: Vec::new(),
+                    takes: Vec::new(),
+                },
+                None,
+            )
         };
+        let active_oracle_generation = manifest
+            .oracle_generations
+            .last()
+            .expect("oracle generation was initialized")
+            .id;
         let mut project = Self {
             root: root.to_path_buf(),
             manifest,
+            active_oracle_generation,
+            pending_rollover_identity,
             active_take: None,
         };
         project.recover_interrupted_takes()?;
         project.write_manifest()?;
         Ok(project)
+    }
+
+    pub(crate) fn has_pending_oracle_rollover(&self) -> bool {
+        self.pending_rollover_identity.is_some()
+    }
+
+    pub(crate) fn commit_oracle_rollover(
+        &mut self,
+        resumed_from_boundary: usize,
+    ) -> Result<(), String> {
+        let Some(identity) = self.pending_rollover_identity.take() else {
+            return Ok(());
+        };
+        if resumed_from_boundary >= self.boundary_count() {
+            self.pending_rollover_identity = Some(identity);
+            return Err(format!(
+                "unknown recorder rollover boundary {resumed_from_boundary}"
+            ));
+        }
+        let id = self.manifest.oracle_generations.len();
+        let first_take = self
+            .manifest
+            .takes
+            .iter()
+            .map(|take| take.id)
+            .max()
+            .map_or(0, |take| take + 1);
+        self.manifest.oracle_generations.push(OracleGeneration {
+            id,
+            first_take,
+            resumed_from_boundary: Some(resumed_from_boundary),
+            identity,
+        });
+        self.active_oracle_generation = id;
+        self.write_manifest()
     }
 
     pub(crate) fn boundary_count(&self) -> usize {
@@ -226,6 +364,7 @@ impl RecorderProject {
         .map_err(|error| format!("write {}: {error}", screenshot_path.display()))?;
         let entry = BoundaryEntry {
             id,
+            oracle_generation: self.active_oracle_generation,
             reset_start: id == 0,
             state_path: format!("{relative_dir}/oracle.state"),
             state_sha256: hash_file(&state_path)?,
@@ -272,6 +411,7 @@ impl RecorderProject {
             serde_json::to_vec_pretty(&serde_json::json!({
                 "status": "recording",
                 "id": id,
+                "oracle_generation": self.active_oracle_generation,
                 "start_boundary": start_boundary,
             }))
             .unwrap(),
@@ -279,6 +419,7 @@ impl RecorderProject {
         .map_err(|error| format!("write take recovery status: {error}"))?;
         self.active_take = Some(ActiveTake {
             id,
+            oracle_generation: self.active_oracle_generation,
             start_boundary,
             dir,
             receipts,
@@ -343,10 +484,12 @@ impl RecorderProject {
         .map_err(|error| format!("write take input script: {error}"))?;
         let entry = TakeEntry {
             id: active.id,
+            oracle_generation: active.oracle_generation,
             start_boundary: active.start_boundary,
             end_boundary,
             frames: active.input_history.len(),
             input_path: format!("takes/{:04}/input.txt", active.id),
+            rom_random_path: None,
             receipts_path: format!("takes/{:04}/frame_receipts.jsonl", active.id),
             status: "complete".to_string(),
             merged_from_takes: None,
@@ -358,6 +501,7 @@ impl RecorderProject {
             serde_json::to_vec_pretty(&serde_json::json!({
                 "status": "complete",
                 "id": active.id,
+                "oracle_generation": active.oracle_generation,
                 "start_boundary": active.start_boundary,
                 "end_boundary": end_boundary,
                 "frames": active.input_history.len(),
@@ -450,6 +594,17 @@ impl RecorderProject {
                 .as_u64()
                 .ok_or_else(|| format!("{} has no start_boundary", status_path.display()))?
                 as usize;
+            let oracle_generation = status["oracle_generation"]
+                .as_u64()
+                .map_or(self.active_oracle_generation, |generation| {
+                    generation as usize
+                });
+            if oracle_generation >= self.manifest.oracle_generations.len() {
+                return Err(format!(
+                    "{} references unknown oracle generation {oracle_generation}",
+                    status_path.display()
+                ));
+            }
             let receipts_path = dir.join("frame_receipts.jsonl");
             let text = fs::read_to_string(&receipts_path)
                 .map_err(|error| format!("read {}: {error}", receipts_path.display()))?;
@@ -479,10 +634,12 @@ impl RecorderProject {
                 .map_err(|error| format!("recover take {id} input script: {error}"))?;
             self.manifest.takes.push(TakeEntry {
                 id,
+                oracle_generation,
                 start_boundary,
                 end_boundary: None,
                 frames: history.len(),
                 input_path: format!("takes/{id:04}/input.txt"),
+                rom_random_path: None,
                 receipts_path: format!("takes/{id:04}/frame_receipts.jsonl"),
                 status: "recovered_after_interruption".to_string(),
                 merged_from_takes: None,
@@ -493,6 +650,7 @@ impl RecorderProject {
                 serde_json::to_vec_pretty(&serde_json::json!({
                     "status": "recovered_after_interruption",
                     "id": id,
+                    "oracle_generation": oracle_generation,
                     "start_boundary": start_boundary,
                     "frames": history.len(),
                 }))
@@ -559,7 +717,7 @@ mod tests {
     fn boundaries_and_takes_are_restartable_and_branchable() {
         let dir = temp_dir("branch");
         let _ = std::fs::remove_dir_all(&dir);
-        let mut project = RecorderProject::open(&dir, identity()).unwrap();
+        let mut project = RecorderProject::open(&dir, identity(), false).unwrap();
         let start = project
             .capture_boundary(BoundaryCapture {
                 state: b"native-state-zero",
@@ -655,6 +813,8 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .remove("receipts_path");
+        legacy_manifest["takes"][0]["rom_random_path"] =
+            serde_json::json!("takes/0000/rom-random.txt");
         legacy_manifest["takes"][0]["merged_from_takes"] = serde_json::json!([7, 8]);
         legacy_manifest["takes"][0]["merged_across_boundary"] = serde_json::json!(3);
         std::fs::write(
@@ -662,10 +822,14 @@ mod tests {
             serde_json::to_vec_pretty(&legacy_manifest).unwrap(),
         )
         .unwrap();
-        drop(RecorderProject::open(&dir, identity()).unwrap());
+        drop(RecorderProject::open(&dir, identity(), false).unwrap());
         let rewritten: serde_json::Value =
             serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
         assert_eq!(rewritten["takes"][0]["receipts_path"], "");
+        assert_eq!(
+            rewritten["takes"][0]["rom_random_path"],
+            "takes/0000/rom-random.txt"
+        );
         assert_eq!(
             rewritten["takes"][0]["merged_from_takes"],
             serde_json::json!([7, 8])
@@ -678,12 +842,62 @@ mod tests {
     fn reopening_rejects_a_different_core_or_rom_identity() {
         let dir = temp_dir("identity");
         let _ = std::fs::remove_dir_all(&dir);
-        drop(RecorderProject::open(&dir, identity()).unwrap());
+        drop(RecorderProject::open(&dir, identity(), false).unwrap());
 
         let mut different = identity();
         different.rom_sha256 = "33".repeat(32);
-        let error = RecorderProject::open(&dir, different).unwrap_err();
+        let error = RecorderProject::open(&dir, different, false).unwrap_err();
         assert!(error.contains("ROM SHA-256"));
+
+        let mut different = identity();
+        different.core_sha256 = "44".repeat(32);
+        let error = RecorderProject::open(&dir, different, false).unwrap_err();
+        assert!(error.contains("explicit oracle generation rollover"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn core_rollover_is_recorded_only_after_the_boundary_is_restored() {
+        let dir = temp_dir("core-rollover");
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut project = RecorderProject::open(&dir, identity(), false).unwrap();
+        let boundary = project
+            .capture_boundary(BoundaryCapture {
+                state: b"native-state-zero",
+                wram: b"wram-zero",
+                vram: b"vram-zero",
+                sram: b"sram-zero",
+                screenshot_rgba: &[0, 1, 2, 0xff],
+                screenshot_width: 1,
+                screenshot_height: 1,
+                telemetry: serde_json::json!({"main": 0}),
+            })
+            .unwrap();
+        drop(project);
+
+        let mut next_identity = identity();
+        next_identity.core_sha256 = "44".repeat(32);
+        let mut project = RecorderProject::open(&dir, next_identity.clone(), true).unwrap();
+        assert!(project.has_pending_oracle_rollover());
+        let before: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(before["oracle_generations"].as_array().unwrap().len(), 1);
+
+        project.commit_oracle_rollover(boundary).unwrap();
+        assert!(!project.has_pending_oracle_rollover());
+        project.begin_take(boundary).unwrap();
+        project.finish_take(None).unwrap();
+
+        let after: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(after["identity"]["core_sha256"], "11".repeat(32));
+        assert_eq!(after["oracle_generations"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            after["oracle_generations"][1]["identity"]["core_sha256"],
+            next_identity.core_sha256
+        );
+        assert_eq!(after["oracle_generations"][1]["resumed_from_boundary"], 0);
+        assert_eq!(after["takes"][0]["oracle_generation"], 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -691,7 +905,7 @@ mod tests {
     fn reopening_recovers_a_take_interrupted_before_manifest_finalization() {
         let dir = temp_dir("recover");
         let _ = std::fs::remove_dir_all(&dir);
-        let mut project = RecorderProject::open(&dir, identity()).unwrap();
+        let mut project = RecorderProject::open(&dir, identity(), false).unwrap();
         let boundary = project
             .capture_boundary(BoundaryCapture {
                 state: b"native-state-zero",
@@ -717,7 +931,7 @@ mod tests {
             .unwrap();
         drop(project);
 
-        let recovered = RecorderProject::open(&dir, identity()).unwrap();
+        let recovered = RecorderProject::open(&dir, identity(), false).unwrap();
 
         assert_eq!(recovered.take_count(), 1);
         assert_eq!(recovered.take_start_boundary(0), Some(0));

@@ -25,7 +25,7 @@ pub(crate) fn run_record_snes9x_route(args: &[String]) {
         (Some(core), Some(rom), Some(project)) => (core.as_str(), rom.as_str(), Path::new(project)),
         _ => {
             eprintln!(
-                "usage: zelda3 --record-snes9x-route <snes9x_libretro.dylib> <rom.sfc> <project-dir> [--load-sram <path>] [--start-boundary <number|latest>] [--max-frames <n>] [--expected-core-sha256 <sha>] [--expected-rom-sha256 <sha>]"
+                "usage: zelda3 --record-snes9x-route <snes9x_libretro.dylib> <rom.sfc> <project-dir> [--load-sram <path>] [--start-boundary <number|latest>] [--max-frames <n>] [--allow-core-rollover] [--expected-core-sha256 <sha>] [--expected-rom-sha256 <sha>]"
             );
             process::exit(2);
         }
@@ -35,6 +35,7 @@ pub(crate) fn run_record_snes9x_route(args: &[String]) {
     let mut max_frames = None::<u32>;
     let mut expected_core_sha256 = None::<String>;
     let mut expected_rom_sha256 = None::<String>;
+    let mut allow_core_rollover = false;
     let mut i = 3usize;
     while i < args.len() {
         match args[i].as_str() {
@@ -89,6 +90,10 @@ pub(crate) fn run_record_snes9x_route(args: &[String]) {
                 );
                 i += 2;
             }
+            "--allow-core-rollover" => {
+                allow_core_rollover = true;
+                i += 1;
+            }
             flag => {
                 eprintln!("unknown --record-snes9x-route option: {flag}");
                 process::exit(2);
@@ -130,10 +135,11 @@ pub(crate) fn run_record_snes9x_route(args: &[String]) {
         core_sha256,
         rom_sha256,
     };
-    let mut project = RecorderProject::open(project_dir, identity).unwrap_or_else(|error| {
-        eprintln!("failed to open recorder project: {error}");
-        process::exit(2);
-    });
+    let mut project = RecorderProject::open(project_dir, identity, allow_core_rollover)
+        .unwrap_or_else(|error| {
+            eprintln!("failed to open recorder project: {error}");
+            process::exit(2);
+        });
     let width = oracle.geometry.base_width.max(1);
     let height = oracle.geometry.base_height.max(1);
     let mut renderer =
@@ -174,6 +180,17 @@ pub(crate) fn run_record_snes9x_route(args: &[String]) {
                 process::exit(1);
             },
         );
+        if project.has_pending_oracle_rollover() {
+            project
+                .commit_oracle_rollover(selected_boundary)
+                .unwrap_or_else(|error| {
+                    eprintln!("failed to record Snes9x oracle generation rollover: {error}");
+                    process::exit(1);
+                });
+            eprintln!(
+                "recorded Snes9x oracle generation rollover from boundary {selected_boundary}"
+            );
+        }
     }
     let mut take = project
         .begin_take(selected_boundary)

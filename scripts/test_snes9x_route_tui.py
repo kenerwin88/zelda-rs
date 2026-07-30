@@ -109,6 +109,7 @@ class Snes9xRouteTuiTests(unittest.TestCase):
         self.assertIn("routes/clean-game", command)
         self.assertEqual(command[command.index("--start") + 1], "2")
         self.assertIn("--no-build", command)
+        self.assertIn("--allow-core-rollover", command)
 
     def test_boundary_and_take_rows_show_operator_fields(self):
         with tempfile.TemporaryDirectory() as tmp:

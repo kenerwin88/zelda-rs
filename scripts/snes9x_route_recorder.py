@@ -20,6 +20,7 @@ DEFAULT_ROM = ROOT / "saves/zelda3.sfc"
 DEFAULT_PROJECT_ROOT = ROOT / "routes"
 DEFAULT_PROJECT = DEFAULT_PROJECT_ROOT / "default"
 DEFAULT_SRAM = ROOT / "saves/sram.dat"
+CORE_STORE = DEFAULT_CORE.parent / "cores"
 
 
 # Serial-GPU enforcement lives in the zelda3 binary itself now: every
@@ -34,6 +35,93 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def oracle_generations(manifest: dict) -> list[dict]:
+    generations = manifest.get("oracle_generations")
+    if generations:
+        return generations
+    return [
+        {
+            "id": 0,
+            "first_take": 0,
+            "identity": manifest["identity"],
+        }
+    ]
+
+
+def oracle_identity_for_take(manifest: dict, take: dict) -> dict:
+    generation_id = int(take.get("oracle_generation", 0))
+    generations = oracle_generations(manifest)
+    try:
+        generation = next(
+            generation
+            for generation in generations
+            if int(generation["id"]) == generation_id
+        )
+    except StopIteration as error:
+        raise SystemExit(
+            f"take {take['id']} references unknown oracle generation {generation_id}"
+        ) from error
+    return generation["identity"]
+
+
+def cached_core_path(core_sha256: str) -> Path:
+    return CORE_STORE / core_sha256 / "snes9x_libretro.dylib"
+
+
+def existing_cached_core(core_sha256: str) -> Path | None:
+    cached = cached_core_path(core_sha256)
+    if not cached.exists():
+        return None
+    if sha256(cached) != core_sha256:
+        raise SystemExit(f"content-addressed Snes9x core is corrupt: {cached}")
+    return cached
+
+
+def preserve_core(core: Path) -> Path:
+    core = core.resolve()
+    if not core.is_file():
+        raise SystemExit(f"Snes9x core does not exist: {core}")
+    core_sha256 = sha256(core)
+    destination = cached_core_path(core_sha256)
+    if cached := existing_cached_core(core_sha256):
+        return cached
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
+    try:
+        shutil.copyfile(core, temporary)
+        if sha256(temporary) != core_sha256:
+            raise SystemExit(f"failed to preserve Snes9x core exactly: {core}")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return destination
+
+
+def recording_core(project: Path, requested_core: Path) -> Path:
+    requested = preserve_core(requested_core)
+    manifest_path = project / "manifest.json"
+    if not manifest_path.exists():
+        return requested
+    active_identity = oracle_generations(load_manifest(project))[-1]["identity"]
+    active_sha256 = active_identity["core_sha256"]
+    if sha256(requested) == active_sha256:
+        return requested
+    return existing_cached_core(active_sha256) or requested
+
+
+def required_core(requested_core: Path, identity: dict) -> Path:
+    expected = identity["core_sha256"]
+    requested = preserve_core(requested_core)
+    if sha256(requested) == expected:
+        return requested
+    if cached := existing_cached_core(expected):
+        return cached
+    raise SystemExit(
+        "the exact Snes9x core required by this oracle generation is unavailable: "
+        f"{expected}"
+    )
 
 
 def default_rom_path() -> Path:
@@ -219,6 +307,7 @@ def _write_take_status(project: Path, take: dict) -> None:
                 {
                     "status": take["status"],
                     "id": take_id,
+                    "oracle_generation": int(take.get("oracle_generation", 0)),
                     "start_boundary": take["start_boundary"],
                     "end_boundary": take.get("end_boundary"),
                     "frames": take.get("frames", 0),
@@ -423,7 +512,7 @@ def promote_passed_take(project: Path, take_id: int, session_dir: Path) -> dict:
     if not rust_final_path.is_file():
         raise SystemExit(f"comparison did not produce Rust endpoint: {rust_final_path}")
 
-    identity = manifest["identity"]
+    identity = oracle_identity_for_take(manifest, take)
     core_sha256 = session_manifest.get("core", {}).get("sha256")
     rom_sha256 = session_manifest.get("rom", {}).get("sha256")
     if core_sha256 != identity["core_sha256"] or rom_sha256 != identity["rom_sha256"]:
@@ -510,6 +599,7 @@ def compare_command(
     if take_id < 0 or take_id >= len(takes):
         raise SystemExit(f"unknown take {take_id}; project has {len(takes)}")
     take = takes[take_id]
+    identity = oracle_identity_for_take(manifest, take)
     boundary_id = int(take["start_boundary"])
     return compare_input_command(
         binary=binary,
@@ -521,6 +611,7 @@ def compare_command(
         input_path=project / take["input_path"],
         rom_random_path=take_rom_random_path(project, take),
         session_dir=session_dir,
+        identity=identity,
     )
 
 
@@ -535,8 +626,10 @@ def compare_input_command(
     input_path: Path,
     rom_random_path: Path | None = None,
     session_dir: Path,
+    identity: dict | None = None,
 ) -> list[str]:
     manifest = load_manifest(project)
+    identity = manifest["identity"] if identity is None else identity
     boundaries = manifest.get("boundaries", [])
     boundary = boundaries[boundary_id]
     command = [
@@ -546,9 +639,9 @@ def compare_input_command(
         str(rom),
         str(frames),
         "--expected-core-sha256",
-        manifest["identity"]["core_sha256"],
+        identity["core_sha256"],
         "--expected-rom-sha256",
-        manifest["identity"]["rom_sha256"],
+        identity["rom_sha256"],
         "--input-script",
         str(input_path),
     ]
@@ -873,11 +966,13 @@ def compare_all(
     takes_by_id = {int(take["id"]): take for take in manifest.get("takes", [])}
     for take_id in take_ids:
         take = takes_by_id[take_id]
+        identity = oracle_identity_for_take(manifest, take)
+        take_core = required_core(core, identity)
         requested_frames += int(take["frames"])
         session_dir = project / "comparisons" / f"take-{take_id:04}"
         command = compare_command(
             binary=binary,
-            core=core,
+            core=take_core,
             rom=rom,
             project=project,
             take_id=take_id,
@@ -947,6 +1042,13 @@ def compare_continuous(
     frames = write_continuous_input(project, take_ids, input_path)
     manifest = load_manifest(project)
     takes = {int(take["id"]): take for take in manifest.get("takes", [])}
+    # Continuous replay starts from reset and never consumes an intermediate
+    # serialized boundary, so the newest preserved oracle can authoritatively
+    # replay the entire input chain even when individual takes were captured by
+    # earlier generations.
+    replay_generation = oracle_generations(manifest)[-1]
+    identity = replay_generation["identity"]
+    core = required_core(core, identity)
     rom_random_path = session_dir / "continuous-rom-random.txt"
     rom_random_samples = write_continuous_rom_random(
         project, take_ids, rom_random_path, takes_by_id=takes
@@ -962,6 +1064,7 @@ def compare_continuous(
         input_path=input_path,
         rom_random_path=rom_random_path if rom_random_samples else None,
         session_dir=session_dir,
+        identity=identity,
     )
     completed = subprocess.run(command, cwd=ROOT)
     result_path = session_dir / "result.json"
@@ -978,6 +1081,8 @@ def compare_continuous(
         "coverage_label": "continuous human-recorded coverage",
         "continuous_playthrough": True,
         "oracle": "Snes9x 1.63 libretro only",
+        "oracle_generation": int(replay_generation["id"]),
+        "core_sha256": identity["core_sha256"],
         "production_renderer": "modern Rust",
         "production_audio_backend": "modern",
         "production_audio_sequencer": "native",
@@ -1065,6 +1170,11 @@ def parser() -> argparse.ArgumentParser:
     record.add_argument("--sram", type=Path, default=DEFAULT_SRAM)
     record.add_argument("--blank-sram", action="store_true")
     record.add_argument("--max-frames", type=int)
+    record.add_argument(
+        "--allow-core-rollover",
+        action="store_true",
+        help="after a successful boundary restore, start a new recorded oracle generation",
+    )
     sub.add_parser("list", parents=[common])
     pair = sub.add_parser("pair", parents=[common])
     pair.add_argument("boundary", type=int)
@@ -1123,6 +1233,7 @@ def main() -> None:
     if not args.no_build:
         build(args.binary)
     if args.action == "record":
+        core = recording_core(args.project, args.core)
         resolved_start = resolve_start_boundary(args.project, args.start)
         seed_sram = prepare_recording_sram(
             args.project, resolved_start, args.sram, args.blank_sram
@@ -1130,13 +1241,13 @@ def main() -> None:
         command = [
             str(args.binary),
             "--record-snes9x-route",
-            str(args.core),
+            str(core),
             str(args.rom),
             str(args.project),
             "--start-boundary",
             resolved_start,
             "--expected-core-sha256",
-            sha256(args.core),
+            sha256(core),
             "--expected-rom-sha256",
             sha256(args.rom),
         ]
@@ -1144,14 +1255,25 @@ def main() -> None:
             command.extend(["--load-sram", str(seed_sram)])
         if args.max_frames is not None:
             command.extend(["--max-frames", str(args.max_frames)])
+        if args.allow_core_rollover:
+            command.append("--allow-core-rollover")
         raise SystemExit(subprocess.run(command, cwd=ROOT).returncode)
     if args.action == "compare":
+        manifest = load_manifest(args.project)
+        takes = manifest.get("takes", [])
+        if args.take < 0 or args.take >= len(takes):
+            raise SystemExit(
+                f"unknown take {args.take}; project has {len(takes)}"
+            )
+        core = required_core(
+            args.core, oracle_identity_for_take(manifest, takes[args.take])
+        )
         session_dir = args.session_dir or (
             args.project / "comparisons" / f"take-{args.take:04}"
         )
         command = compare_command(
             binary=args.binary,
-            core=args.core,
+            core=core,
             rom=args.rom,
             project=args.project,
             take_id=args.take,
