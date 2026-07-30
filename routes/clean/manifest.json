@@ -8,9 +8,33 @@
     "core_sha256": "1143f14ceac6be6e94f78ab16270590bc415532f200db1f7fece66994b4ce3d5",
     "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"
   },
+  "oracle_generations": [
+    {
+      "id": 0,
+      "first_take": 0,
+      "identity": {
+        "core_name": "Snes9x",
+        "core_version": "1.63 185488c",
+        "core_sha256": "1143f14ceac6be6e94f78ab16270590bc415532f200db1f7fece66994b4ce3d5",
+        "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"
+      }
+    },
+    {
+      "id": 1,
+      "first_take": 12,
+      "resumed_from_boundary": 10,
+      "identity": {
+        "core_name": "Snes9x",
+        "core_version": "1.63 185488c",
+        "core_sha256": "28f08b417301c0e1925151ce548ba7e900b7b32a7f0f96beefddb95b67eae170",
+        "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"
+      }
+    }
+  ],
   "boundaries": [
     {
       "id": 0,
+      "oracle_generation": 0,
       "reset_start": true,
       "state_path": "boundaries/0000/oracle.state",
       "state_sha256": "d774e18fafcadc090490c27d39c2560a17afe021dedd64816ffa5001228cac64",
@@ -58,6 +82,7 @@
     },
     {
       "id": 1,
+      "oracle_generation": 0,
       "reset_start": false,
       "state_path": "boundaries/0001/oracle.state",
       "state_sha256": "df8564207f5332baba55e24aaf5cf039fecc1cf32472635d671f01fecfb2cd7b",
@@ -105,6 +130,7 @@
     },
     {
       "id": 2,
+      "oracle_generation": 0,
       "reset_start": false,
       "state_path": "boundaries/0002/oracle.state",
       "state_sha256": "853b7d193ffbffc95f1614e521a479c251fdaca95cab23a1737f41add94a3e90",
@@ -152,6 +178,7 @@
     },
     {
       "id": 3,
+      "oracle_generation": 0,
       "reset_start": false,
       "state_path": "boundaries/0003/oracle.state",
       "state_sha256": "c2b34bae96713e862109ec60162bca716446c4a5b9b38bfd044e22137ef1158a",
@@ -199,6 +226,7 @@
     },
     {
       "id": 4,
+      "oracle_generation": 0,
       "reset_start": false,
       "state_path": "boundaries/0004/oracle.state",
       "state_sha256": "cbe04c05203df3a99eb4b508903bc00348bc65728f3a4bb33a17d59c0fb91d2f",
@@ -246,6 +274,7 @@
     },
     {
       "id": 5,
+      "oracle_generation": 0,
       "reset_start": false,
       "state_path": "boundaries/0005/oracle.state",
       "state_sha256": "20698ac6679c7c7bc2c856172b848865500e0d4e6e17873fa6de3f1fffd9e3e2",
@@ -297,6 +326,7 @@
     },
     {
       "id": 6,
+      "oracle_generation": 0,
       "reset_start": false,
       "state_path": "boundaries/0006/oracle.state",
       "state_sha256": "cdf5a492af14ef6fcf6f1af115af4c4ca87a6a679fd8cff0ad4d3b63faf281d3",
@@ -348,6 +378,7 @@
     },
     {
       "id": 7,
+      "oracle_generation": 0,
       "reset_start": false,
       "state_path": "boundaries/0007/oracle.state",
       "state_sha256": "adbcafb8f29e3e5cd4f43e7d552789baa8c5521c36a91fabf150613587bca4d9",
@@ -399,6 +430,7 @@
     },
     {
       "id": 8,
+      "oracle_generation": 0,
       "reset_start": false,
       "state_path": "boundaries/0008/oracle.state",
       "state_sha256": "5ace086fd7f2d014ab8f0a9adcea96f1201260ad0d42aa487d284a0ec1182dde",
@@ -450,6 +482,7 @@
     },
     {
       "id": 9,
+      "oracle_generation": 0,
       "reset_start": false,
       "state_path": "boundaries/0009/oracle.state",
       "state_sha256": "335f64da188e1f7edb10b42686636bdcd94e77ad90a48508ccf561d3ba2e6c67",
@@ -501,6 +534,7 @@
     },
     {
       "id": 10,
+      "oracle_generation": 0,
       "reset_start": false,
       "state_path": "boundaries/0010/oracle.state",
       "state_sha256": "d4d1048117161282cac680416596e7fca3d816c8ddb806a233e469f748da2d6b",
@@ -549,11 +583,64 @@
         "y": 3144,
         "z": 65535
       }
+    },
+    {
+      "id": 11,
+      "oracle_generation": 1,
+      "reset_start": false,
+      "state_path": "boundaries/0011/oracle.state",
+      "state_sha256": "632fe3e3edbde9ef2664d426800e3490f54a3d02aea7f2beeec560b409875a06",
+      "wram_path": "boundaries/0011/wram.bin",
+      "wram_sha256": "3724a95e40cd00b6fc77721cbd9af136711e60ab1712ed137cd3bc725c2f246b",
+      "vram_path": "boundaries/0011/vram.bin",
+      "vram_sha256": "09de12f6dc94b24eb9fb3363e7e54b39d19286600a2e1862c5779df0b24d9ab6",
+      "sram_path": "boundaries/0011/sram.bin",
+      "sram_sha256": "22ac03114c7d8247a3bd0fb628d771bb7f74a2ecad35d12e8febf859d3798b4d",
+      "screenshot_path": "boundaries/0011/frame.png",
+      "screenshot_sha256": "700a28f8f2474cb3a4438f8db46f7f89e19f10325c41bd0aa19fe307cfd46363",
+      "created_by": "Snes9x libretro retro_serialize",
+      "converted_from_rust": false,
+      "telemetry": {
+        "bg_tile_animation_countdown": 6,
+        "direction": 0,
+        "ending": false,
+        "equipped_item": 1,
+        "facing": 4,
+        "final_credits": false,
+        "follower": 0,
+        "frame_counter": 43,
+        "health": 20,
+        "indoors": 0,
+        "item_in_hand": 0,
+        "link_dma_countdown": 1,
+        "link_dma_source_offset": 2048,
+        "link_dma_tile_offset": 10,
+        "magic": 128,
+        "main": 9,
+        "max_health": 56,
+        "music": 2,
+        "overworld": 53,
+        "player_state": 0,
+        "progression_flags": 28672,
+        "queued_music": 2,
+        "room": 276,
+        "saved_module": 9,
+        "sfx_1": 0,
+        "sfx_2": 0,
+        "sfx_ambient": 0,
+        "small_keys": 255,
+        "sub": 0,
+        "subsub": 0,
+        "x": 3255,
+        "y": 3560,
+        "z": 65535
+      }
     }
   ],
   "takes": [
     {
       "id": 0,
+      "oracle_generation": 0,
       "start_boundary": 0,
       "end_boundary": 1,
       "frames": 6277,
@@ -563,6 +650,7 @@
     },
     {
       "id": 1,
+      "oracle_generation": 0,
       "start_boundary": 1,
       "end_boundary": 2,
       "frames": 161,
@@ -572,6 +660,7 @@
     },
     {
       "id": 2,
+      "oracle_generation": 0,
       "start_boundary": 2,
       "end_boundary": 3,
       "frames": 5297,
@@ -581,6 +670,7 @@
     },
     {
       "id": 3,
+      "oracle_generation": 0,
       "start_boundary": 0,
       "end_boundary": 2,
       "frames": 6438,
@@ -590,6 +680,7 @@
     },
     {
       "id": 4,
+      "oracle_generation": 0,
       "start_boundary": 0,
       "end_boundary": 3,
       "frames": 11735,
@@ -600,6 +691,7 @@
     },
     {
       "id": 5,
+      "oracle_generation": 0,
       "start_boundary": 3,
       "end_boundary": 4,
       "frames": 26108,
@@ -609,6 +701,7 @@
     },
     {
       "id": 6,
+      "oracle_generation": 0,
       "start_boundary": 4,
       "end_boundary": 5,
       "frames": 29528,
@@ -618,6 +711,7 @@
     },
     {
       "id": 7,
+      "oracle_generation": 0,
       "start_boundary": 5,
       "end_boundary": 6,
       "frames": 9470,
@@ -627,6 +721,7 @@
     },
     {
       "id": 8,
+      "oracle_generation": 0,
       "start_boundary": 6,
       "end_boundary": 7,
       "frames": 91,
@@ -636,6 +731,7 @@
     },
     {
       "id": 9,
+      "oracle_generation": 0,
       "start_boundary": 7,
       "end_boundary": 8,
       "frames": 158,
@@ -645,6 +741,7 @@
     },
     {
       "id": 10,
+      "oracle_generation": 0,
       "start_boundary": 6,
       "end_boundary": 9,
       "frames": 29890,
@@ -654,11 +751,22 @@
     },
     {
       "id": 11,
+      "oracle_generation": 0,
       "start_boundary": 9,
       "end_boundary": 10,
       "frames": 48653,
       "input_path": "takes/0011/input.txt",
       "receipts_path": "takes/0011/frame_receipts.jsonl",
+      "status": "complete"
+    },
+    {
+      "id": 12,
+      "oracle_generation": 1,
+      "start_boundary": 10,
+      "end_boundary": 11,
+      "frames": 28572,
+      "input_path": "takes/0012/input.txt",
+      "receipts_path": "takes/0012/frame_receipts.jsonl",
       "status": "complete"
     }
   ]

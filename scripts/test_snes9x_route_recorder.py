@@ -610,6 +610,49 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
 
             self.assertEqual(MODULE.continuous_take_ids(project), [0, 1])
 
+    def test_continuous_chain_ignores_archived_detours(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(Path(tmp))
+            manifest = MODULE.load_manifest(project)
+            manifest["takes"] = [
+                {
+                    "id": 0,
+                    "start_boundary": 0,
+                    "end_boundary": 1,
+                    "frames": 12,
+                    "input_path": "takes/0000/input.txt",
+                    "status": "complete",
+                },
+                {
+                    "id": 1,
+                    "start_boundary": 1,
+                    "end_boundary": 2,
+                    "frames": 3,
+                    "input_path": "takes/0001/input.txt",
+                    "status": "complete",
+                },
+                {
+                    "id": 2,
+                    "start_boundary": 1,
+                    "end_boundary": 3,
+                    "frames": 20,
+                    "input_path": "takes/0002/input.txt",
+                    "status": "complete",
+                },
+            ]
+            manifest["boundaries"].extend(
+                [
+                    {"id": 2, "reset_start": False},
+                    {"id": 3, "reset_start": False},
+                ]
+            )
+            (project / "manifest.json").write_text(json.dumps(manifest))
+            labels = MODULE.load_labels(project)
+            labels["archived_boundaries"] = [2]
+            (project / "labels.json").write_text(json.dumps(labels))
+
+            self.assertEqual(MODULE.continuous_take_ids(project), [0, 2])
+
     def test_combined_input_offsets_each_take_frame_range(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

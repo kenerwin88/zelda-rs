@@ -729,10 +729,14 @@ def excluded_nonempty_takes(project: Path) -> list[dict]:
 def continuous_take_ids(project: Path) -> list[int]:
     manifest = load_manifest(project)
     boundaries = manifest.get("boundaries", [])
+    archived_boundaries = {
+        int(boundary) for boundary in load_labels(project)["archived_boundaries"]
+    }
     reset_boundaries = [
         int(boundary["id"])
         for boundary in boundaries
         if boundary.get("reset_start", False)
+        and int(boundary["id"]) not in archived_boundaries
     ]
     if len(reset_boundaries) != 1:
         raise SystemExit(
@@ -742,6 +746,11 @@ def continuous_take_ids(project: Path) -> list[int]:
         take
         for take in manifest.get("takes", [])
         if int(take.get("frames", 0)) > 0 and take_is_active(take)
+        and int(take["start_boundary"]) not in archived_boundaries
+        and (
+            take.get("end_boundary") is None
+            or int(take["end_boundary"]) not in archived_boundaries
+        )
     ]
     chain: list[int] = []
     current_boundary = reset_boundaries[0]
