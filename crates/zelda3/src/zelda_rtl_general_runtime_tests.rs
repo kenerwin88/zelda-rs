@@ -4831,6 +4831,17 @@ fn dialogue_scroll_machine_has_closed_hardware_boundary_sequences() {
         after_return.dialogue_scroll_phase(),
         DialogueScrollPhase::CompletedScroll
     );
+    let mut adjacent_scroll = after_return.clone();
+    adjacent_scroll.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
+    assert_eq!(
+        adjacent_scroll.dialogue_scroll_phase(),
+        DialogueScrollPhase::CopyingRemainingPixels {
+            completion_timing: DialogueScrollCompletionTiming::AfterReturnBoundary,
+        }
+    );
     after_return.advance_dialogue_scroll_display_boundary();
     assert_eq!(
         after_return.dialogue_scroll_phase(),

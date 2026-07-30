@@ -95,7 +95,7 @@ fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
 }
 
 #[test]
-fn dialogue_return_only_boundary_keeps_current_bg_scroll_scanout() {
+fn dialogue_return_only_boundary_publishes_nmi_scroll_scanout() {
     let mut state = ZeldaState::new();
     state.initialized = true;
     state.restore_live_rom_timing_after_checkpoint();
@@ -149,7 +149,7 @@ fn dialogue_return_only_boundary_keeps_current_bg_scroll_scanout() {
             .bg_layer
             .map(|layer| [layer.h_scroll, layer.v_scroll])
     });
-    assert_eq!(displayed, current_scanout);
+    assert_eq!(displayed, next_scanout);
 }
 
 #[test]

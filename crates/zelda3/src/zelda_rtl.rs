@@ -3509,7 +3509,14 @@ impl DialogueScrollMachineMut<'_> {
         frozen_scanout: DialogueTextScanout,
         completion_timing: DialogueScrollCompletionTiming,
     ) {
-        debug_assert_eq!(self.phase(), DialogueScrollPhase::Idle);
+        let entry_phase = self.phase();
+        assert!(
+            matches!(
+                entry_phase,
+                DialogueScrollPhase::Idle | DialogueScrollPhase::CompletedScroll
+            ),
+            "dialogue scroll began from invalid phase {entry_phase:?}",
+        );
         *self.continuation = DialogueScrollContinuation::begin(completion_timing);
         *self.frozen_scanout = Some(frozen_scanout);
         *self.publication = DialogueScanoutOwnership::FROZEN_SCROLL_COPY;
@@ -9919,12 +9926,15 @@ impl ZeldaState {
         }
         if diagnostics.frame_boundary {
             eprintln!(
-                "frame_boundary_before host={} main={:02x} sub={:02x} frame_counter={:02x} work={:?} next_obj={:?} bg1=({:04x},{:04x}) link_dma_countdown={:04x} latch={} pending={} target={:04x} disable={:02x} dialogue_runs=authored:{}/published:{}/display:{}",
+                "frame_boundary_before host={} main={:02x} sub={:02x} frame_counter={:02x} work={:?} caller={:?} dialogue_init={} dialogue_scroll={:?} next_obj={:?} bg1=({:04x},{:04x}) link_dma_countdown={:04x} latch={} pending={} target={:04x} disable={:02x} dialogue_runs=authored:{}/published:{}/display:{}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
                 frame.frame_counter,
                 self.game_execution_scheduler.current_work(),
+                self.game_execution_scheduler.pre_main_caller_continuation(),
+                self.normal_dialogue_initialization_phase,
+                self.dialogue_scroll_phase(),
                 self.next_display_obj_scanout_generation,
                 self.ppu.bg_layer[0].h_scroll,
                 self.ppu.bg_layer[0].v_scroll,
@@ -11215,6 +11225,23 @@ impl ZeldaState {
         self.assert_native_display_state_matches_ram();
         self.replay_trace_col("run-frame-entry");
         self.replay_trace_ram_watch("run-frame-entry");
+        if CaptureDisplayDiagnostics::from_env().frame_boundary {
+            eprintln!(
+                "frame_boundary_entry host={} main={:02x} sub={:02x} frame_counter={:02x} work={:?} caller={:?} dialogue_init={} dialogue_scroll={:?} bg1=({:04x},{:04x}) scroll_copy=({:04x},{:04x})",
+                self.frame_ctr_dbg,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                self.game_state.frame.frame_counter,
+                self.game_execution_scheduler.current_work(),
+                self.game_execution_scheduler.pre_main_caller_continuation(),
+                self.normal_dialogue_initialization_phase,
+                self.dialogue_scroll_phase(),
+                self.ppu.bg_layer[0].h_scroll,
+                self.ppu.bg_layer[0].v_scroll,
+                self.game_state.display.ppu_scroll_copy.bg1_h_copy(),
+                self.game_state.display.ppu_scroll_copy.bg1_v_copy(),
+            );
+        }
         if !self.initialized {
             self.zelda_initialize();
         }
@@ -11326,7 +11353,6 @@ impl ZeldaState {
             return;
         }
         if self.rom_startup_timing() && self.dialogue_scroll_is_return_only() {
-            let current_scanout_scroll = BgScrollRegisterScanout::capture(&self.ppu);
             // The scroll copy and RenderText handler returned after the prior
             // frame's NMI. On this boundary the next NMI sees $12 still
             // latched, so it leaves $17/$0710 pending; only afterward does the
@@ -11340,14 +11366,10 @@ impl ZeldaState {
             // NMI so the scanout combines those updates with the still-pending
             // dialogue buffer, exactly as the hardware does.
             // BG scroll is a separate register generation: writes performed by
-            // this NMI configure the next active frame, while retro_run returns
-            // the scanout that just ended. Preserve that pre-NMI register
-            // generation without deferring the newly published memory domains.
+            // this NMI configure the active frame that follows vblank, even
+            // though the pending dialogue-memory upload remains deferred.
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             self.capture_display_snapshot();
-            if let Some(snapshot) = self.display_snapshot.as_mut() {
-                current_scanout_scroll.publish_to(&mut snapshot.ppu);
-            }
             self.nmi_prepare_sprites();
             self.clear_nmi_update_latch();
             // The completed text becomes visible at the next display
