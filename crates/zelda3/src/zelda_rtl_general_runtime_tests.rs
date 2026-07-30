@@ -4462,6 +4462,45 @@ fn dungeon_landing_wipe_uses_typed_snapshot_generation_without_menu_retention() 
 }
 
 #[test]
+fn link_chr_scanout_generation_is_independent_of_general_vram_cadence() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4000] = 0x1111;
+    state.ppu.vram[0x4400] = 0x3333;
+    state.ppu.oam[0] = 0x2222;
+    // A pending stripe retains general VRAM, while Link's independently
+    // completed OBJ-CHR DMA and the preceding OAM DMA own different
+    // generations of the same scanout.
+    state.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
+    state.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+        oam: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        link_obj: GraphicsDmaGeneration::LiveAfterMain,
+    });
+    state.capture_display_snapshot();
+
+    let snapshot = state.display_snapshot.as_ref().expect("display snapshot");
+    assert_eq!(
+        snapshot.link_obj_scanout_generation,
+        GraphicsDmaGeneration::LiveAfterMain
+    );
+    assert_eq!(
+        snapshot.oam_scanout_source,
+        OamScanoutSource::RetainCapturedBeforeNmi
+    );
+
+    state.ppu.vram[0x4000] = 0xaaaa;
+    state.ppu.vram[0x4400] = 0xcccc;
+    state.ppu.oam[0] = 0xbbbb;
+    let displayed = state.with_display_snapshot(|display| {
+        (
+            display.ppu.vram[0x4000],
+            display.ppu.vram[0x4400],
+            display.ppu.oam[0],
+        )
+    });
+    assert_eq!(displayed, (0xaaaa, 0x3333, 0x2222));
+}
+
+#[test]
 fn dialogue_character_tiles_publish_at_the_following_nmi() {
     assert!(rom_display_memory_publication_is_deferred(14, 2, 3, false));
     assert!(rom_display_memory_publication_is_deferred(4, 3, 0, true));

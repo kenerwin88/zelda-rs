@@ -200,6 +200,25 @@ struct DisplayPpuProbe {
     presented_clip: Option<Vec<i32>>,
     /// Final Snes9x draw operands for `ZELDA3_SNES9X_TRACE_PIXEL=x,y`.
     presented_pixel: Option<Vec<i32>>,
+    /// Snes9x's completed per-scanline OBJ evaluation. Raw OAM can be exact
+    /// while the evaluated sprite rows still belong to an earlier PPU
+    /// boundary, so preserve the derived list separately.
+    presented_obj: Option<PresentedObjEvaluation>,
+}
+
+#[derive(Debug, Serialize)]
+struct PresentedObjEvaluation {
+    lines: Vec<PresentedObjLine>,
+    visible_tiles: Vec<i32>,
+    widths: Vec<i32>,
+}
+
+#[derive(Debug, Serialize)]
+struct PresentedObjLine {
+    sprites: Vec<i32>,
+    rows: Vec<i32>,
+    tiles_remaining: i32,
+    range_time_over: i32,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -336,6 +355,35 @@ fn display_oracle_differences(receipt: &DisplayOracleReceipt) -> DisplayOracleDi
 
 fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
     oracle.debug_ppu_value(0, 0)?;
+    let presented_obj = PresentedObjEvaluation {
+        lines: (0..224)
+            .map(|line| {
+                let sprites = (0..128)
+                    .map(|slot| oracle.debug_ppu_value(21, line * 128 + slot).unwrap_or(-1))
+                    .take_while(|sprite| *sprite >= 0)
+                    .collect::<Vec<_>>();
+                let rows = (0..sprites.len())
+                    .map(|slot| {
+                        oracle
+                            .debug_ppu_value(26, line * 128 + slot as i32)
+                            .unwrap_or(-1)
+                    })
+                    .collect();
+                PresentedObjLine {
+                    sprites,
+                    rows,
+                    tiles_remaining: oracle.debug_ppu_value(22, line).unwrap_or(-1),
+                    range_time_over: oracle.debug_ppu_value(23, line).unwrap_or(-1),
+                }
+            })
+            .collect(),
+        visible_tiles: (0..128)
+            .map(|sprite| oracle.debug_ppu_value(24, sprite).unwrap_or(-1))
+            .collect(),
+        widths: (0..128)
+            .map(|sprite| oracle.debug_ppu_value(25, sprite).unwrap_or(-1))
+            .collect(),
+    };
     Some(DisplayPpuProbe {
         mode: oracle.debug_ppu_value(0, 0)?,
         brightness: oracle.debug_ppu_value(1, 0)?,
@@ -385,6 +433,7 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
                 .map(|i| oracle.debug_ppu_value(28, i).unwrap_or(-1))
                 .collect(),
         ),
+        presented_obj: Some(presented_obj),
     })
 }
 
@@ -455,6 +504,7 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
                 .collect(),
             presented_clip: None,
             presented_pixel: None,
+            presented_obj: None,
         }
     })
 }

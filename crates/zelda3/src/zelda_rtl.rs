@@ -10152,11 +10152,17 @@ impl ZeldaState {
         // of the frame. Preserve that completed pre-NMI buffer rather than a
         // job that may have finished later in the current CPU slice.
         let presented_poly = self.selected_intro_poly_display_buffer();
-        let entry_link_obj_vram = matches!(
-            plan.link_obj_scanout_generation,
-            GraphicsDmaGeneration::HostBoundaryBeforeMain
-        )
-        .then(|| self.ppu.vram[0x4000..0x4400].to_vec());
+        // Link's OBJ-CHR DMA has its own hardware generation. Select that
+        // transaction independently from the general VRAM cadence so a
+        // deferred stripe packet cannot hide a Link upload that already ran.
+        let presented_link_obj_vram = match plan.link_obj_scanout_generation {
+            GraphicsDmaGeneration::HostBoundaryBeforeMain => {
+                self.ppu.vram[0x4000..0x4400].to_vec()
+            }
+            GraphicsDmaGeneration::LiveAfterMain => {
+                following.ppu.vram[0x4000..0x4400].to_vec()
+            }
+        };
         let retained_hud_vram = matches!(
             following.hud_vram_generation,
             DisplayVramGeneration::RetainCapturedBeforeNmi
@@ -10202,9 +10208,6 @@ impl ZeldaState {
                 self.ppu.vram[destination..destination + animated_bg_vram.len()]
                     .copy_from_slice(&animated_bg_vram);
             }
-            if let Some(entry_link_obj_vram) = entry_link_obj_vram {
-                self.ppu.vram[0x4000..0x4400].copy_from_slice(&entry_link_obj_vram);
-            }
             if let Some(retained_hud_vram) = retained_hud_vram.as_ref() {
                 retained_hud_vram.publish_to(&mut self.ppu.vram);
             }
@@ -10213,6 +10216,7 @@ impl ZeldaState {
             }
             self.ppu.vram[0x5800..0x5c00].copy_from_slice(&presented_poly);
         }
+        self.ppu.vram[0x4000..0x4400].copy_from_slice(&presented_link_obj_vram);
         if let Some(retained_full_tilemap_vram) = retained_full_tilemap_vram {
             retained_full_tilemap_vram.publish_to(&mut self.ppu.vram);
         }
@@ -10606,9 +10610,13 @@ impl ZeldaState {
         );
         if diagnostics.capture.frame_boundary {
             eprintln!(
-                "frame_boundary_present host={} vram={:?} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
+                "frame_boundary_present host={} vram={:?} obj=oam:{:?}/link:{:?}/animated:{:?}/retained:{} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
                 self.frame_ctr_dbg,
                 publication_plan.vram_generation,
+                publication_plan.oam_scanout_source,
+                publication_plan.link_obj_scanout_generation,
+                publication_plan.animated_bg_scanout_generation,
+                pristine_snapshot.obj_generation.retained_memory().is_some(),
                 self.published_bg3_vwf_glyph_runs.len(),
                 pristine_snapshot.published_bg3_vwf_glyph_runs.len(),
                 presented_dialogue.glyph_runs.len(),
