@@ -1,6 +1,8 @@
 {
   "status": "merged",
   "id": 3,
+  "name": "Uncle intro merged segment",
+  "oracle_generation": 0,
   "start_boundary": 0,
   "end_boundary": 2,
   "frames": 6438

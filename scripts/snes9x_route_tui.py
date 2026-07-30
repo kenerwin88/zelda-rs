@@ -252,7 +252,8 @@ def boundary_line(project: ProjectView, boundary: dict) -> str:
 
 def take_line(take: dict) -> str:
     return (
-        f"#{int(take['id']):<3} boundary={take.get('start_boundary', '?'):<3} "
+        f"#{int(take['id']):<3} {recorder.take_name(take):<28.28} "
+        f"boundary={take.get('start_boundary', '?'):<3} "
         f"frames={take.get('frames', 0):<8} status={take.get('status', '?')}"
     )
 
@@ -611,6 +612,21 @@ def _handle_action(stdscr, state: BrowserState, config: TuiConfig, key: int) -> 
                 recorder.name_boundary(project.path, int(item["id"]), label)
                 _refresh(state, config)
                 state.message = f"Named save #{item['id']}: {label}"
+            except SystemExit as error:
+                state.message = str(error)
+    elif (
+        key == ord("n")
+        and state.focus == "items"
+        and project
+        and item
+        and state.item_mode == "takes"
+    ):
+        name = _prompt(stdscr, "New take name", recorder.take_name(item))
+        if name:
+            try:
+                recorder.name_take(project.path, int(item["id"]), name)
+                _refresh(state, config)
+                state.message = f"Named take #{item['id']}: {name}"
             except SystemExit as error:
                 state.message = str(error)
     elif (

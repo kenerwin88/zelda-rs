@@ -214,6 +214,27 @@ def name_boundary(project: Path, boundary: int, label: str) -> None:
     (project / "labels.json").write_text(json.dumps(labels, indent=2) + "\n")
 
 
+def take_name(take: dict) -> str:
+    name = str(take.get("name", "")).strip()
+    return name or f"Take #{int(take['id'])}"
+
+
+def name_take(project: Path, take_id: int, name: str) -> None:
+    manifest = load_manifest(project)
+    take = next(
+        (take for take in manifest.get("takes", []) if int(take["id"]) == take_id),
+        None,
+    )
+    if take is None:
+        raise SystemExit(f"unknown take {take_id}")
+    name = name.strip()
+    if not name:
+        raise SystemExit("take name cannot be empty")
+    take["name"] = name
+    (project / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    _write_take_status(project, take)
+
+
 def set_boundary_archived(project: Path, boundary: int, archived: bool) -> None:
     manifest = load_manifest(project)
     boundaries = manifest.get("boundaries", [])
@@ -316,8 +337,9 @@ def _write_take_status(project: Path, take: dict) -> None:
         status_path.write_text(
             json.dumps(
                 {
-                    "status": take["status"],
+                    "status": take.get("status", "complete"),
                     "id": take_id,
+                    "name": take_name(take),
                     "oracle_generation": int(take.get("oracle_generation", 0)),
                     "start_boundary": take["start_boundary"],
                     "end_boundary": take.get("end_boundary"),
@@ -380,6 +402,7 @@ def merge_takes_across_boundary(project: Path, boundary_id: int) -> dict:
     )
     merged = {
         "id": new_id,
+        "name": f"{take_name(before)} + {take_name(after)}",
         "start_boundary": int(before["start_boundary"]),
         "end_boundary": (
             None if after.get("end_boundary") is None else int(after["end_boundary"])
@@ -795,6 +818,45 @@ def continuous_take_ids(project: Path) -> list[int]:
     return chain
 
 
+def continuous_take_ranges(project: Path, take_ids: list[int]) -> list[dict]:
+    manifest = load_manifest(project)
+    takes_by_id = {int(take["id"]): take for take in manifest.get("takes", [])}
+    ranges = []
+    start_frame = 0
+    for take_id in take_ids:
+        take = takes_by_id[take_id]
+        frames = int(take["frames"])
+        ranges.append(
+            {
+                "take": take_id,
+                "name": take_name(take),
+                "start_frame": start_frame,
+                "end_frame_exclusive": start_frame + frames,
+                "frames": frames,
+            }
+        )
+        start_frame += frames
+    return ranges
+
+
+def route_frame_location(
+    project: Path, route_frame: int, take_ids: list[int] | None = None
+) -> dict | None:
+    if route_frame < 0:
+        return None
+    if take_ids is None:
+        take_ids = continuous_take_ids(project)
+    for take_range in continuous_take_ranges(project, take_ids):
+        if route_frame < take_range["end_frame_exclusive"]:
+            return {
+                "take": take_range["take"],
+                "name": take_range["name"],
+                "route_frame": route_frame,
+                "take_frame": route_frame - take_range["start_frame"],
+            }
+    return None
+
+
 def _offset_input_selector(selector: str, offset: int) -> str:
     if ".." in selector:
         start, end = selector.split("..", 1)
@@ -1018,6 +1080,7 @@ def compare_all(
         summaries.append(
             {
                 "take": take_id,
+                "name": take_name(take),
                 "start_boundary": take["start_boundary"],
                 "frames_requested": take["frames"],
                 "frames_completed": result.get("frames_completed", 0),
@@ -1141,6 +1204,7 @@ def compare_continuous(
         "production_audio_backend": "modern",
         "production_audio_sequencer": "native",
         "takes": take_ids,
+        "take_ranges": continuous_take_ranges(project, take_ids),
         "recorded_route": {
             "source_takes": take_ids,
             "frames": frames,
@@ -1212,7 +1276,7 @@ def print_project(project: Path) -> None:
     print("takes:")
     for take in manifest.get("takes", []):
         print(
-            f"  {take['id']:4} start={take['start_boundary']} "
+            f"  {take['id']:4} name={take_name(take)!r} start={take['start_boundary']} "
             f"end={take.get('end_boundary')} frames={take['frames']} "
             f"status={take.get('status', '?')}"
         )

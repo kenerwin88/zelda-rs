@@ -1,7 +1,9 @@
 {
-  "end_boundary": 5,
-  "frames": 29528,
+  "status": "complete",
   "id": 6,
+  "name": "Sanctuary to Kakariko",
+  "oracle_generation": 0,
   "start_boundary": 4,
-  "status": "complete"
+  "end_boundary": 5,
+  "frames": 29528
 }

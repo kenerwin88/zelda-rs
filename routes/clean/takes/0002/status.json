@@ -1,6 +1,8 @@
 {
   "status": "merged",
   "id": 2,
+  "name": "Uncle rescue to castle entrance",
+  "oracle_generation": 0,
   "start_boundary": 2,
   "end_boundary": 3,
   "frames": 5297

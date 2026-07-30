@@ -52,6 +52,7 @@ class Snes9xRouteTuiTests(unittest.TestCase):
                     "takes": [
                         {
                             "id": 0,
+                            "name": "Uncle rescue to castle",
                             "start_boundary": 0,
                             "frames": 120,
                             "status": "complete",
@@ -122,6 +123,9 @@ class Snes9xRouteTuiTests(unittest.TestCase):
             self.assertIn("hp=24", TUI.boundary_line(project, project.boundaries[0]))
             self.assertIn(
                 "parity=reset-ready", TUI.boundary_line(project, project.boundaries[0])
+            )
+            self.assertIn(
+                "Uncle rescue to castle", TUI.take_line(project.takes[0])
             )
             self.assertIn("frames=120", TUI.take_line(project.takes[0]))
             self.assertIn("1 saves / 1 takes", TUI.project_line(project))

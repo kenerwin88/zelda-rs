@@ -91,6 +91,8 @@ struct BoundaryEntry {
 struct TakeEntry {
     id: usize,
     #[serde(default)]
+    name: String,
+    #[serde(default)]
     oracle_generation: usize,
     start_boundary: usize,
     end_boundary: Option<usize>,
@@ -215,6 +217,11 @@ impl RecorderProject {
                     resumed_from_boundary: None,
                     identity: manifest.identity.clone(),
                 });
+            }
+            for take in &mut manifest.takes {
+                if take.name.trim().is_empty() {
+                    take.name = format!("Take #{}", take.id);
+                }
             }
             validate_oracle_generations(&manifest)?;
             let active_identity = &manifest
@@ -482,8 +489,13 @@ impl RecorderProject {
             format_input_history(&active.input_history),
         )
         .map_err(|error| format!("write take input script: {error}"))?;
+        let name = end_boundary.map_or_else(
+            || format!("Route from save #{}", active.start_boundary),
+            |end| format!("Save #{} to save #{end}", active.start_boundary),
+        );
         let entry = TakeEntry {
             id: active.id,
+            name: name.clone(),
             oracle_generation: active.oracle_generation,
             start_boundary: active.start_boundary,
             end_boundary,
@@ -501,6 +513,7 @@ impl RecorderProject {
             serde_json::to_vec_pretty(&serde_json::json!({
                 "status": "complete",
                 "id": active.id,
+                "name": name,
                 "oracle_generation": active.oracle_generation,
                 "start_boundary": active.start_boundary,
                 "end_boundary": end_boundary,
@@ -632,8 +645,13 @@ impl RecorderProject {
             }
             fs::write(dir.join("input.txt"), format_input_history(&history))
                 .map_err(|error| format!("recover take {id} input script: {error}"))?;
+            let name = status["name"].as_str().map_or_else(
+                || format!("Recovered route from save #{start_boundary}"),
+                str::to_string,
+            );
             self.manifest.takes.push(TakeEntry {
                 id,
+                name: name.clone(),
                 oracle_generation,
                 start_boundary,
                 end_boundary: None,
@@ -650,6 +668,7 @@ impl RecorderProject {
                 serde_json::to_vec_pretty(&serde_json::json!({
                     "status": "recovered_after_interruption",
                     "id": id,
+                    "name": name,
                     "oracle_generation": oracle_generation,
                     "start_boundary": start_boundary,
                     "frames": history.len(),
@@ -807,8 +826,14 @@ mod tests {
         assert_eq!(manifest["boundaries"][0]["reset_start"], true);
         assert_eq!(manifest["boundaries"][1]["reset_start"], false);
         assert_eq!(manifest["takes"].as_array().unwrap().len(), 2);
+        assert_eq!(manifest["takes"][0]["name"], "Save #0 to save #1");
+        assert_eq!(manifest["takes"][1]["name"], "Route from save #0");
         drop(project);
         let mut legacy_manifest = manifest;
+        legacy_manifest["takes"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("name");
         legacy_manifest["takes"][0]
             .as_object_mut()
             .unwrap()
@@ -825,6 +850,7 @@ mod tests {
         drop(RecorderProject::open(&dir, identity(), false).unwrap());
         let rewritten: serde_json::Value =
             serde_json::from_slice(&std::fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(rewritten["takes"][0]["name"], "Take #0");
         assert_eq!(rewritten["takes"][0]["receipts_path"], "");
         assert_eq!(
             rewritten["takes"][0]["rom_random_path"],

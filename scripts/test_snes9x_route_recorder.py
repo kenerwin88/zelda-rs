@@ -573,6 +573,57 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             labels = json.loads((project / "labels.json").read_text())
             self.assertEqual(labels["boundaries"]["1"], "Eastern Palace entrance")
 
+    def test_takes_have_persisted_names_and_route_frame_locations(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(Path(tmp))
+            manifest = MODULE.load_manifest(project)
+            manifest["takes"][0]["name"] = "Castle entrance to sanctuary"
+            manifest["takes"].append(
+                {
+                    "id": 1,
+                    "name": "Sanctuary to Kakariko",
+                    "start_boundary": 0,
+                    "end_boundary": 1,
+                    "frames": 8,
+                    "input_path": "takes/0000/input.txt",
+                    "status": "complete",
+                }
+            )
+            (project / "manifest.json").write_text(json.dumps(manifest))
+
+            MODULE.name_take(project, 0, "Castle escape to sanctuary")
+
+            renamed = MODULE.load_manifest(project)["takes"][0]
+            self.assertEqual(renamed["name"], "Castle escape to sanctuary")
+            self.assertEqual(
+                MODULE.continuous_take_ranges(project, [0, 1]),
+                [
+                    {
+                        "take": 0,
+                        "name": "Castle escape to sanctuary",
+                        "start_frame": 0,
+                        "end_frame_exclusive": 12,
+                        "frames": 12,
+                    },
+                    {
+                        "take": 1,
+                        "name": "Sanctuary to Kakariko",
+                        "start_frame": 12,
+                        "end_frame_exclusive": 20,
+                        "frames": 8,
+                    },
+                ],
+            )
+            self.assertEqual(
+                MODULE.route_frame_location(project, 12, [0, 1]),
+                {
+                    "take": 1,
+                    "name": "Sanctuary to Kakariko",
+                    "route_frame": 12,
+                    "take_frame": 0,
+                },
+            )
+
     def test_boundary_archive_is_reversible_and_preserves_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             project = self.project(Path(tmp))

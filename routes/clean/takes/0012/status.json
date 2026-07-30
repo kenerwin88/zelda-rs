@@ -1,8 +1,9 @@
 {
-  "end_boundary": 11,
-  "frames": 28572,
+  "status": "complete",
   "id": 12,
+  "name": "Second pendant to flippers",
   "oracle_generation": 1,
   "start_boundary": 10,
-  "status": "complete"
+  "end_boundary": 11,
+  "frames": 28572
 }

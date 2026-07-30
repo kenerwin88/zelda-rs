@@ -657,7 +657,8 @@
       "frames": 6277,
       "input_path": "takes/0000/input.txt",
       "receipts_path": "takes/0000/frame_receipts.jsonl",
-      "status": "merged"
+      "status": "merged",
+      "name": "Uncle intro segment 1"
     },
     {
       "id": 1,
@@ -667,7 +668,8 @@
       "frames": 161,
       "input_path": "takes/0001/input.txt",
       "receipts_path": "takes/0001/frame_receipts.jsonl",
-      "status": "merged"
+      "status": "merged",
+      "name": "Uncle intro segment 2"
     },
     {
       "id": 2,
@@ -677,7 +679,8 @@
       "frames": 5297,
       "input_path": "takes/0002/input.txt",
       "receipts_path": "takes/0002/frame_receipts.jsonl",
-      "status": "merged"
+      "status": "merged",
+      "name": "Uncle rescue to castle entrance"
     },
     {
       "id": 3,
@@ -687,7 +690,8 @@
       "frames": 6438,
       "input_path": "takes/0003/input.txt",
       "receipts_path": "",
-      "status": "merged"
+      "status": "merged",
+      "name": "Uncle intro merged segment"
     },
     {
       "id": 4,
@@ -698,7 +702,8 @@
       "input_path": "takes/0004/input.txt",
       "rom_random_path": "takes/0004/rom-random.txt",
       "receipts_path": "",
-      "status": "complete"
+      "status": "complete",
+      "name": "Uncle intro to castle entrance"
     },
     {
       "id": 5,
@@ -708,7 +713,8 @@
       "frames": 26108,
       "input_path": "takes/0005/input.txt",
       "receipts_path": "takes/0005/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "name": "Castle entrance to sanctuary"
     },
     {
       "id": 6,
@@ -718,7 +724,8 @@
       "frames": 29528,
       "input_path": "takes/0006/input.txt",
       "receipts_path": "takes/0006/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "name": "Sanctuary to Kakariko"
     },
     {
       "id": 7,
@@ -728,7 +735,8 @@
       "frames": 9470,
       "input_path": "takes/0007/input.txt",
       "receipts_path": "takes/0007/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "name": "Kakariko to Sahasrahla"
     },
     {
       "id": 8,
@@ -738,7 +746,8 @@
       "frames": 91,
       "input_path": "takes/0008/input.txt",
       "receipts_path": "takes/0008/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "name": "Eastern Palace approach segment 1"
     },
     {
       "id": 9,
@@ -748,7 +757,8 @@
       "frames": 158,
       "input_path": "takes/0009/input.txt",
       "receipts_path": "takes/0009/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "name": "Eastern Palace approach segment 2"
     },
     {
       "id": 10,
@@ -758,7 +768,8 @@
       "frames": 29890,
       "input_path": "takes/0010/input.txt",
       "receipts_path": "takes/0010/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "name": "Sahasrahla to first pendant"
     },
     {
       "id": 11,
@@ -768,7 +779,8 @@
       "frames": 48653,
       "input_path": "takes/0011/input.txt",
       "receipts_path": "takes/0011/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "name": "First pendant to second pendant"
     },
     {
       "id": 12,
@@ -778,7 +790,8 @@
       "frames": 28572,
       "input_path": "takes/0012/input.txt",
       "receipts_path": "takes/0012/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "name": "Second pendant to flippers"
     }
   ]
 }

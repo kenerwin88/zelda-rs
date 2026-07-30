@@ -1,6 +1,8 @@
 {
   "status": "complete",
   "id": 4,
+  "name": "Uncle intro to castle entrance",
+  "oracle_generation": 0,
   "start_boundary": 0,
   "end_boundary": 3,
   "frames": 11735

@@ -1,7 +1,9 @@
 {
-  "end_boundary": 8,
-  "frames": 158,
+  "status": "complete",
   "id": 9,
+  "name": "Eastern Palace approach segment 2",
+  "oracle_generation": 0,
   "start_boundary": 7,
-  "status": "complete"
+  "end_boundary": 8,
+  "frames": 158
 }

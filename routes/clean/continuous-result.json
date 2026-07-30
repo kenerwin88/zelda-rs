@@ -18,6 +18,22 @@
     4,
     5
   ],
+  "take_ranges": [
+    {
+      "take": 4,
+      "name": "Uncle intro to castle entrance",
+      "start_frame": 0,
+      "end_frame_exclusive": 11735,
+      "frames": 11735
+    },
+    {
+      "take": 5,
+      "name": "Castle entrance to sanctuary",
+      "start_frame": 11735,
+      "end_frame_exclusive": 37843,
+      "frames": 26108
+    }
+  ],
   "recorded_route": {
     "source_takes": [
       4,

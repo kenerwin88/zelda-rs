@@ -1,7 +1,9 @@
 {
-  "end_boundary": 10,
-  "frames": 48653,
+  "status": "complete",
   "id": 11,
+  "name": "First pendant to second pendant",
+  "oracle_generation": 0,
   "start_boundary": 9,
-  "status": "complete"
+  "end_boundary": 10,
+  "frames": 48653
 }
