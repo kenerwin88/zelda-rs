@@ -1,18 +1,25 @@
 # Canonical Snes9x route parity
 
 The canonical route is a continuous 155,384-frame playthrough compared against
-Snes9x 1.63 Libretro. Video uses the production modern Rust renderer. Audio uses
-the production modern backend and native sequencer.
+the official Snes9x 1.63 Libretro release. The exact upstream source tag and
+revision are pinned in
+[`external/snes9x-libretro/oracle-lock.json`](../../external/snes9x-libretro/oracle-lock.json).
+Video uses the production modern Rust renderer. Audio uses the production modern
+backend and native sequencer.
 
 The checked-in proof receipt is
 [`routes/clean/continuous-result.json`](../../routes/clean/continuous-result.json).
 It records the ROM, input, ROM-random, core, and state handoff hashes needed to
-distinguish a real continuous proof from a stale or segmented receipt.
+distinguish a real continuous proof from a stale or segmented receipt. The
+canonical input is retained separately from the actively extended recorder route
+at
+[`comparisons/canonical-155384/continuous-input.txt`](../../routes/clean/comparisons/canonical-155384/continuous-input.txt).
 
 ## Proof chain
 
-The checked-in receipt records a cold-derived checkpoint at frame 16,384. The
-canonical proof then uses two exact A/V comparisons with a one-frame overlap:
+The checked-in receipt records a compatible cold-derived checkpoint at frame
+16,384, including the core hash that created it. The stable-release verification
+then uses two exact A/V comparisons with a one-frame overlap:
 
 - the tracing core verifies frames 16,384 through 27,649;
 - the non-tracing core verifies frames 27,648 through 155,384.
@@ -29,9 +36,9 @@ build `zelda3-bin` in release mode, and run the two comparisons:
 target/release/zelda3 --compare-snes9x-oracle \
   external/snes9x-libretro/local/snes9x_libretro_trace.dylib \
   saves/zelda3.sfc 27649 \
-  --expected-core-sha256 c348bf0db8188b6ba9804f3d872c28e73b6a3849f1879c6d81f495bb11715d85 \
+  --expected-core-sha256 1b978832991521de2b0e1e25d40c4e9ed57eb8c458f9aa9cf21fc8621e128328 \
   --expected-rom-sha256 66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb \
-  --input-script routes/clean/comparisons/continuous/continuous-input.txt \
+  --input-script routes/clean/comparisons/canonical-155384/continuous-input.txt \
   --rom-random-script routes/clean/takes/0004/rom-random.txt \
   --resume-paired target/parity-checkpoints/canonical-main-window-reset/frame-00016384 \
   --audio-comparison exact \
@@ -40,18 +47,18 @@ target/release/zelda3 --compare-snes9x-oracle \
 target/release/zelda3 --compare-snes9x-oracle \
   external/snes9x-libretro/local/snes9x_libretro.dylib \
   saves/zelda3.sfc 155384 \
-  --expected-core-sha256 28f08b417301c0e1925151ce548ba7e900b7b32a7f0f96beefddb95b67eae170 \
+  --expected-core-sha256 f82658246a0c1fed7d53c485f3de79fcc671a45d9ed0a0ac6bf6eace9d46ff9a \
   --expected-rom-sha256 66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb \
-  --input-script routes/clean/comparisons/continuous/continuous-input.txt \
+  --input-script routes/clean/comparisons/canonical-155384/continuous-input.txt \
   --rom-random-script routes/clean/takes/0004/rom-random.txt \
   --resume-paired target/parity-checkpoints/canonical-main-7653d6a2/frame-00027648 \
   --audio-comparison exact \
   --scan-all
 ```
 
-Both commands fail on any enabled video or audio divergence. The receipt keeps
-the original proof commit and separately records later commits whose relevant
-route suffixes were reverified.
+Both commands fail on any enabled video or audio divergence. The receipt records
+the restored runtime commit and the exact stable stock and trace core hashes used
+to reverify both legs.
 
 Do not infer whole-route parity from an individual take's `frames` field in
 `manifest.json`. For example, take 0004 contains 11,735 frames; it is one source

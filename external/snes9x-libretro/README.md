@@ -1,8 +1,9 @@
 # Snes9x trace oracle
 
-The exact Snes9x instrumentation used for parity work is stored in
-`patches/zelda3-trace.patch`. The source checkout and compiled core are local
-build products and are intentionally ignored.
+The oracle is pinned by `oracle-lock.json` to the official Snes9x 1.63 release
+tag and its exact source commit. The exact instrumentation used for parity work
+is stored in `patches/zelda3-trace.patch`. The source checkout and compiled
+cores are local build products and are intentionally ignored.
 
 Build the pinned core from any checkout:
 
@@ -10,9 +11,11 @@ Build the pinned core from any checkout:
 python3 scripts/prepare_snes9x_trace_oracle.py
 ```
 
-The builder clones `libretro/snes9x` at the pinned revision, applies the tracked
-patch, compiles the libretro core, and writes both the core and a SHA-256 receipt
-under `external/snes9x-libretro/local/`.
+The builder clones the pinned upstream release, builds a pristine stock
+libretro core, applies the tracked patch, and builds the instrumented core.
+Both cores receive SHA-256 receipts under `external/snes9x-libretro/local/`.
+The receipts are reproducible for the same source, patch, and toolchain; on
+macOS the linker retains its content-derived UUID so the cores remain loadable.
 
 Tracing is off unless `ZELDA3_SNES9X_TRACE` names an output file. Output is
 JSON Lines so it can be filtered with `jq` or compared mechanically.

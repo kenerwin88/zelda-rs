@@ -50,6 +50,10 @@ def oracle_generations(manifest: dict) -> list[dict]:
     ]
 
 
+def active_oracle_identity(manifest: dict) -> dict:
+    return oracle_generations(manifest)[-1]["identity"]
+
+
 def oracle_identity_for_take(manifest: dict, take: dict) -> dict:
     generation_id = int(take.get("oracle_generation", 0))
     generations = oracle_generations(manifest)
@@ -99,14 +103,21 @@ def preserve_core(core: Path) -> Path:
     return destination
 
 
-def recording_core(project: Path, requested_core: Path) -> Path:
+def recording_core(
+    project: Path,
+    requested_core: Path,
+    *,
+    allow_core_rollover: bool = False,
+) -> Path:
     requested = preserve_core(requested_core)
     manifest_path = project / "manifest.json"
     if not manifest_path.exists():
         return requested
-    active_identity = oracle_generations(load_manifest(project))[-1]["identity"]
+    active_identity = active_oracle_identity(load_manifest(project))
     active_sha256 = active_identity["core_sha256"]
     if sha256(requested) == active_sha256:
+        return requested
+    if allow_core_rollover:
         return requested
     return existing_cached_core(active_sha256) or requested
 
@@ -1121,14 +1132,15 @@ def build(binary: Path) -> None:
 
 def print_project(project: Path) -> None:
     manifest = load_manifest(project)
+    active_identity = active_oracle_identity(manifest)
     pairings = load_pairings(project)["boundaries"]
     label_data = load_labels(project)
     labels = label_data["boundaries"]
     archived = {int(value) for value in label_data["archived_boundaries"]}
     print(f"project: {project}")
     print(
-        f"oracle: {manifest['identity'].get('core_name')} "
-        f"{manifest['identity'].get('core_version')}"
+        f"oracle: {active_identity.get('core_name')} "
+        f"{active_identity.get('core_version')}"
     )
     print("boundaries:")
     for boundary in manifest.get("boundaries", []):
@@ -1178,7 +1190,11 @@ def parser() -> argparse.ArgumentParser:
     record.add_argument("--start", default="latest", help="boundary number or latest")
     record.add_argument("--sram", type=Path, default=DEFAULT_SRAM)
     record.add_argument("--blank-sram", action="store_true")
-    record.add_argument("--max-frames", type=int)
+    record.add_argument(
+        "--max-frames",
+        type=int,
+        help="stop after this many frames; 0 validates the selected boundary without a take",
+    )
     record.add_argument(
         "--allow-core-rollover",
         action="store_true",
@@ -1242,7 +1258,11 @@ def main() -> None:
     if not args.no_build:
         build(args.binary)
     if args.action == "record":
-        core = recording_core(args.project, args.core)
+        core = recording_core(
+            args.project,
+            args.core,
+            allow_core_rollover=args.allow_core_rollover,
+        )
         resolved_start = resolve_start_boundary(args.project, args.start)
         seed_sram = prepare_recording_sram(
             args.project, resolved_start, args.sram, args.blank_sram

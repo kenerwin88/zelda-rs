@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,21 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PrepareSnes9xTraceOracleTests(unittest.TestCase):
+    def test_lock_pins_the_official_snes9x_1_63_release(self) -> None:
+        lock = json.loads(MODULE.LOCK_PATH.read_text())
+
+        self.assertEqual(lock["core_name"], "Snes9x")
+        self.assertEqual(lock["core_version"], "1.63")
+        self.assertEqual(lock["source_tag"], "1.63")
+        self.assertEqual(lock["source_url"], "https://github.com/snes9xgit/snes9x.git")
+        self.assertEqual(
+            lock["source_revision"],
+            "921f9f7b83660eb44ad263022a57a4a029057c37",
+        )
+        self.assertEqual(MODULE.VERSION, lock["core_version"])
+        self.assertEqual(MODULE.REVISION, lock["source_revision"])
+        self.assertEqual(MODULE.SOURCE_URL, lock["source_url"])
+
     def test_patch_scope_is_small_and_explicit(self) -> None:
         self.assertEqual(
             MODULE.EXPECTED_PATCH_PATHS,
@@ -57,6 +73,38 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
             (checkout / "new.txt").write_text("new\n")
 
             self.assertEqual(MODULE.changed_paths(checkout), {"tracked.txt", "new.txt"})
+
+    def test_receipts_distinguish_stock_and_trace_builds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stock_core = root / "snes9x_libretro.dylib"
+            trace_core = root / "snes9x_libretro_trace.dylib"
+            patch = root / "trace.patch"
+            stock_core.write_bytes(b"stable-core")
+            trace_core.write_bytes(b"traced-stable-core")
+            patch.write_bytes(b"trace-patch")
+
+            stock_receipt = MODULE.write_receipt(
+                stock_core,
+                variant="stock",
+                patch=None,
+            )
+            trace_receipt = MODULE.write_receipt(
+                trace_core,
+                variant="trace",
+                patch=patch,
+            )
+
+            stock = json.loads(stock_receipt.read_text())
+            trace = json.loads(trace_receipt.read_text())
+            self.assertEqual(stock["core_version"], "1.63")
+            self.assertEqual(stock["source_tag"], "1.63")
+            self.assertEqual(stock["variant"], "stock")
+            self.assertIsNone(stock["patch"])
+            self.assertIsNone(stock["patch_sha256"])
+            self.assertEqual(trace["variant"], "trace")
+            self.assertEqual(trace["patch"], str(patch))
+            self.assertEqual(trace["patch_sha256"], MODULE.sha256(patch))
 
 
 if __name__ == "__main__":

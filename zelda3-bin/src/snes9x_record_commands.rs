@@ -192,6 +192,10 @@ pub(crate) fn run_record_snes9x_route(args: &[String]) {
             );
         }
     }
+    if max_frames == Some(0) {
+        eprintln!("validated Snes9x recorder boundary {selected_boundary}; no take was created");
+        return;
+    }
     let mut take = project
         .begin_take(selected_boundary)
         .unwrap_or_else(|error| {

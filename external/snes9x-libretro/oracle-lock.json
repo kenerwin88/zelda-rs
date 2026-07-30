@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "core_name": "Snes9x",
+  "core_version": "1.63",
+  "source_tag": "1.63",
+  "source_url": "https://github.com/snes9xgit/snes9x.git",
+  "source_revision": "921f9f7b83660eb44ad263022a57a4a029057c37"
+}

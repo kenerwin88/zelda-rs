@@ -1,5 +1,5 @@
 diff --git a/apu/bapu/dsp/SPC_DSP.cpp b/apu/bapu/dsp/SPC_DSP.cpp
-index f74a173..f4b001e 100644
+index e3a70d76..bd4576cc 100644
 --- a/apu/bapu/dsp/SPC_DSP.cpp
 +++ b/apu/bapu/dsp/SPC_DSP.cpp
 @@ -20,6 +20,14 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA */
@@ -108,16 +108,15 @@ index f74a173..f4b001e 100644
  
      switch (Settings.InterpolationMethod)
      {
-@@ -871,6 +951,8 @@ inline void SPC_DSP::voice_output( voice_t const* v, int ch )
- 	    amp = amp * Settings.ChannelsVolumePercent[v->voice_number] / 100;
- 	}
- 	#endif
-+
+@@ -863,6 +943,7 @@ inline void SPC_DSP::voice_output( voice_t const* v, int ch )
+ 	// Apply left/right volume
+ 	int amp = (m.t_output * (int8_t) VREG(v->regs,voll + ch)) >> 7;
+ 	amp *= ((stereo_switch & (1 << (v->voice_number + ch * voice_count))) ? 1 : 0);
 +	Zelda3TraceCaptureDspVoiceOutput(v->voice_number, ch, amp, m.t_output);
- 	
+ 
  	// Add to output total
  	m.t_main_out [ch] += amp;
-@@ -1050,6 +1132,8 @@ inline int SPC_DSP::echo_output( int ch )
+@@ -1042,6 +1123,8 @@ inline int SPC_DSP::echo_output( int ch )
  }
  ECHO_CLOCK( 26 )
  {
@@ -127,7 +126,7 @@ index f74a173..f4b001e 100644
  	// (save sample for next clock so we can output both together)
  	m.t_main_out [0] = echo_output( 0 );
 diff --git a/apu/bapu/dsp/SPC_DSP.h b/apu/bapu/dsp/SPC_DSP.h
-index 953b13b..c3da89f 100644
+index 953b13bf..c3da89f4 100644
 --- a/apu/bapu/dsp/SPC_DSP.h
 +++ b/apu/bapu/dsp/SPC_DSP.h
 @@ -78,6 +78,8 @@ public:
@@ -148,7 +147,7 @@ index 953b13b..c3da89f 100644
  	m.external_regs [addr] = (uint8_t) data;
  	switch ( addr & 0x0F )
 diff --git a/apu/bapu/smp/core.cpp b/apu/bapu/smp/core.cpp
-index f5c2e6e..f690c09 100644
+index f5c2e6e6..f690c095 100644
 --- a/apu/bapu/smp/core.cpp
 +++ b/apu/bapu/smp/core.cpp
 @@ -58,6 +58,9 @@ void SMP::op_step() {
@@ -162,7 +161,7 @@ index f5c2e6e..f690c09 100644
      if (Settings.TraceSMP)
      {
 diff --git a/apu/bapu/smp/smp.cpp b/apu/bapu/smp/smp.cpp
-index 2cf58af..9433173 100644
+index 2cf58afd..94331731 100644
 --- a/apu/bapu/smp/smp.cpp
 +++ b/apu/bapu/smp/smp.cpp
 @@ -5,6 +5,7 @@ char tmp[1024];
@@ -174,7 +173,7 @@ index 2cf58af..9433173 100644
  #define SMP_CPP
  namespace SNES {
 diff --git a/cpuexec.cpp b/cpuexec.cpp
-index aa43b2f..a5440ab 100644
+index aa43b2ff..a5440ab9 100644
 --- a/cpuexec.cpp
 +++ b/cpuexec.cpp
 @@ -12,6 +12,7 @@
@@ -215,7 +214,7 @@ index aa43b2f..a5440ab 100644
  		{
  			Op = CPU.PCBase[Registers.PCw];
 diff --git a/dma.cpp b/dma.cpp
-index e1ad324..5fb2ad4 100644
+index e1ad324c..2d6a2221 100644
 --- a/dma.cpp
 +++ b/dma.cpp
 @@ -10,6 +10,7 @@
@@ -256,7 +255,7 @@ index e1ad324..5fb2ad4 100644
  }
  
 diff --git a/getset.h b/getset.h
-index ec55ea9..287741c 100644
+index ec55ea91..287741c7 100644
 --- a/getset.h
 +++ b/getset.h
 @@ -16,6 +16,7 @@
@@ -277,7 +276,7 @@ index ec55ea9..287741c 100644
  	uint8	*SetAddress = Memory.WriteMap[block];
  	int32	speed = memory_speed(Address);
 diff --git a/gfx.cpp b/gfx.cpp
-index 98f9941..1a437f8 100644
+index 98f99411..84abf0cd 100644
 --- a/gfx.cpp
 +++ b/gfx.cpp
 @@ -13,6 +13,7 @@
@@ -296,7 +295,7 @@ index 98f9941..1a437f8 100644
  
  		if (GFX.DoInterlace && S9xInterlaceField() == 0)
  		{
-@@ -267,6 +269,7 @@ void RenderLine (uint8 C)
+@@ -268,6 +270,7 @@ void RenderLine (uint8 C)
  {
  	if (IPPU.RenderThisFrame)
  	{
@@ -304,16 +303,16 @@ index 98f9941..1a437f8 100644
  		LineData[C].BG[0].VOffset = PPU.BG[0].VOffset + 1;
  		LineData[C].BG[0].HOffset = PPU.BG[0].HOffset;
  		LineData[C].BG[1].VOffset = PPU.BG[1].VOffset + 1;
-@@ -2184,4 +2186,3 @@ void S9xDrawCrosshair (const char *crosshair, uint8 fgcolor, uint8 bgcolor, int1
+@@ -2184,4 +2187,3 @@ void S9xDrawCrosshair (const char *crosshair, uint8 fgcolor, uint8 bgcolor, int1
  		}
  	}
  }
 -
 diff --git a/libretro/Makefile.common b/libretro/Makefile.common
-index 6ed99a5..ba8a4c8 100644
+index ccb29c3f..930d23e7 100644
 --- a/libretro/Makefile.common
 +++ b/libretro/Makefile.common
-@@ -58,6 +58,7 @@ SOURCES_CXX := $(CORE_DIR)/apu/apu.cpp \
+@@ -57,6 +57,7 @@ SOURCES_CXX := $(CORE_DIR)/apu/apu.cpp \
  				 $(CORE_DIR)/tileimpl-n1x1.cpp \
  				 $(CORE_DIR)/tileimpl-n2x1.cpp \
  				 $(CORE_DIR)/tileimpl-h2x1.cpp \
@@ -321,15 +320,8 @@ index 6ed99a5..ba8a4c8 100644
  				 $(CORE_DIR)/sha256.cpp \
  				 $(CORE_DIR)/bml.cpp \
  				 $(CORE_DIR)/movie.cpp \
-@@ -73,4 +74,4 @@ ifneq (,$(findstring win,$(platform)))
-    INCFLAGS += -I$(CORE_DIR)/unzip
-    SOURCES_C += $(CORE_DIR)/unzip/unzip.c \
-                 $(CORE_DIR)/unzip/ioapi.c
--endif
-\ No newline at end of file
-+endif
 diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
-index d381c61..bc121a3 100644
+index a8ffcb12..ea26bc9d 100644
 --- a/libretro/libretro.cpp
 +++ b/libretro/libretro.cpp
 @@ -14,6 +14,7 @@
@@ -340,7 +332,7 @@ index d381c61..bc121a3 100644
  #include <stdio.h>
  #include <vector>
  #include <string>
-@@ -891,6 +892,111 @@ unsigned retro_api_version()
+@@ -845,6 +846,111 @@ unsigned retro_api_version()
      return RETRO_API_VERSION;
  }
  
@@ -452,7 +444,7 @@ index d381c61..bc121a3 100644
  
  void retro_reset()
  {
-@@ -2006,7 +2112,9 @@ void retro_run()
+@@ -1845,7 +1951,9 @@ void retro_run()
  
      poll_cb();
      report_buttons();
@@ -463,7 +455,7 @@ index d381c61..bc121a3 100644
  
  void retro_deinit()
 diff --git a/ppu.cpp b/ppu.cpp
-index 4611540..d8fa414 100644
+index 4611540e..d8fa414a 100644
 --- a/ppu.cpp
 +++ b/ppu.cpp
 @@ -14,6 +14,7 @@
@@ -528,7 +520,7 @@ index 4611540..d8fa414 100644
  			#ifdef DEBUGGER
  				missing.h_counter_read = 1;
 diff --git a/tileimpl-n1x1.cpp b/tileimpl-n1x1.cpp
-index 1c37c60..85d58cc 100644
+index 1c37c600..85d58cc4 100644
 --- a/tileimpl-n1x1.cpp
 +++ b/tileimpl-n1x1.cpp
 @@ -6,6 +6,7 @@
@@ -556,7 +548,7 @@ index 1c37c60..85d58cc 100644
  		}
  	}
 diff --git a/tileimpl-n2x1.cpp b/tileimpl-n2x1.cpp
-index 4025c69..e27bc42 100644
+index 4025c694..e27bc426 100644
 --- a/tileimpl-n2x1.cpp
 +++ b/tileimpl-n2x1.cpp
 @@ -6,6 +6,7 @@
@@ -589,7 +581,7 @@ index 4025c69..e27bc42 100644
  	}
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 0000000..4dc9956
+index 00000000..06a376d4
 --- /dev/null
 +++ b/zelda3_trace.cpp
 @@ -0,0 +1,680 @@
@@ -1275,7 +1267,7 @@ index 0000000..4dc9956
 +}
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 new file mode 100644
-index 0000000..d64b1b5
+index 00000000..f5bb193a
 --- /dev/null
 +++ b/zelda3_trace.h
 @@ -0,0 +1,61 @@

@@ -29,6 +29,17 @@
         "core_sha256": "28f08b417301c0e1925151ce548ba7e900b7b32a7f0f96beefddb95b67eae170",
         "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"
       }
+    },
+    {
+      "id": 2,
+      "first_take": 13,
+      "resumed_from_boundary": 11,
+      "identity": {
+        "core_name": "Snes9x",
+        "core_version": "1.63 921f9f7b",
+        "core_sha256": "f82658246a0c1fed7d53c485f3de79fcc671a45d9ed0a0ac6bf6eace9d46ff9a",
+        "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"
+      }
     }
   ],
   "boundaries": [

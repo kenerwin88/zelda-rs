@@ -55,6 +55,29 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                 (core_store / MODULE.sha256(second) / "snes9x_libretro.dylib").is_file()
             )
 
+    def test_explicit_rollover_uses_requested_new_core(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            core_store = root / "cores"
+            first = root / "first.dylib"
+            second = root / "second.dylib"
+            first.write_bytes(b"first-core")
+            second.write_bytes(b"second-core")
+            project = self.project(root)
+            manifest = MODULE.load_manifest(project)
+            manifest["identity"]["core_sha256"] = MODULE.sha256(first)
+            (project / "manifest.json").write_text(json.dumps(manifest))
+
+            with mock.patch.object(MODULE, "CORE_STORE", core_store):
+                selected = MODULE.recording_core(
+                    project,
+                    second,
+                    allow_core_rollover=True,
+                )
+
+            self.assertEqual(selected.read_bytes(), b"second-core")
+            self.assertEqual(selected.parent.name, MODULE.sha256(second))
+
     def test_take_identity_uses_its_recorded_oracle_generation(self):
         manifest = {
             "identity": {"core_sha256": "old", "rom_sha256": "rom"},
@@ -77,6 +100,10 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             MODULE.oracle_identity_for_take(
                 manifest, {"id": 4, "oracle_generation": 1}
             )["core_sha256"],
+            "new",
+        )
+        self.assertEqual(
+            MODULE.active_oracle_identity(manifest)["core_sha256"],
             "new",
         )
 
