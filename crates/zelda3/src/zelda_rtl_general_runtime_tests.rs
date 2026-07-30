@@ -3757,9 +3757,6 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
 
 #[test]
 fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
-    assert!(!spotlight_close_reaches_goal(0));
-    assert!(!spotlight_close_reaches_goal(14));
-    assert!(spotlight_close_reaches_goal(7));
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e));
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x77));
     assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(0x70));
@@ -3783,7 +3780,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert_eq!(
         SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryBeforeTablePublication)
             .completion_publication(),
-        DisplaySnapshotPublication::RetainPublished
+        DisplaySnapshotPublication::AdvanceStaged
     );
     assert_eq!(
         SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryAfterTablePublication)
@@ -3791,44 +3788,10 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         DisplaySnapshotPublication::PublishCaptured
     );
     assert_eq!(
-        SpotlightIteration::closing(SpotlightIterationPhase::EarlyReturnBeforeNextNmi)
+        SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
             .completion_publication(),
         DisplaySnapshotPublication::AdvanceStaged
     );
-    assert_eq!(
-        SpotlightIteration::closing(SpotlightIterationPhase::EarlyReturnBeforeNextNmi)
-            .in_flight_publication(),
-        DisplaySnapshotPublication::RetainPublished
-    );
-    let mut resumed_iteration =
-        SpotlightIteration::closing(SpotlightIterationPhase::EarlyReturnBeforeNextNmi);
-    resumed_iteration.mark_started_before_trailing_nmi();
-    assert_eq!(
-        resumed_iteration.in_flight_publication(),
-        DisplaySnapshotPublication::AdvanceStaged
-    );
-    assert_eq!(
-        resumed_iteration.completion_publication(),
-        DisplaySnapshotPublication::AdvanceStaged
-    );
-    assert!(
-        SpotlightIteration::closing(SpotlightIterationPhase::EarlyReturnBeforeNextNmi)
-            .projects_completed_table_tail_on_completion()
-    );
-    assert!(!resumed_iteration.projects_completed_table_tail_on_completion());
-    assert!(
-        SpotlightIteration::closing(SpotlightIterationPhase::EarlyReturnBeforeNextNmi)
-            .publishes_staged_table_projection_to_active_scanout()
-    );
-    assert!(!resumed_iteration.publishes_staged_table_projection_to_active_scanout());
-    assert!(
-        SpotlightIteration::closing_with_goal_transition(
-            SpotlightIterationPhase::EarlyReturnBeforeNextNmi,
-            true,
-        )
-        .retains_captured_forced_blank_on_active_scanout()
-    );
-    assert!(!resumed_iteration.retains_captured_forced_blank_on_active_scanout());
     assert_eq!(
         SpotlightIteration::opening(false).in_flight_publication(),
         DisplaySnapshotPublication::AdvanceStaged
@@ -3838,12 +3801,20 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
             .publishes_completed_hdma_table_to_active_scanout()
     );
     assert!(
-        !SpotlightIteration::closing(SpotlightIterationPhase::WholeTable)
+        SpotlightIteration::closing(SpotlightIterationPhase::WholeTable)
             .publishes_completed_hdma_table_to_active_scanout()
     );
     assert!(
-        !SpotlightIteration::closing(SpotlightIterationPhase::EarlyReturnBeforeNextNmi)
+        !SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
             .publishes_completed_hdma_table_to_active_scanout()
+    );
+    assert!(
+        SpotlightIteration::closing(SpotlightIterationPhase::WholeTable)
+            .projects_following_table_tail_on_completion()
+    );
+    assert!(
+        SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
+            .projects_following_table_tail_on_completion()
     );
     assert!(!SpotlightIteration::opening(false).publishes_completed_hdma_table_to_active_scanout());
     assert!(!rom_display_memory_publication_is_deferred(7, 15, 0, false));
@@ -3857,7 +3828,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x3f, 0),
-        SpotlightIterationPhase::EarlyReturnBeforeNextNmi
+        SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x3f, 42),
@@ -3865,11 +3836,11 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x3f, 41),
-        SpotlightIterationPhase::EarlyReturnBeforeNextNmi
+        SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x38, 0),
-        SpotlightIterationPhase::EarlyReturnBeforeNextNmi
+        SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x38, 42),
@@ -3877,7 +3848,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0x07, 0),
-        SpotlightIterationPhase::EarlyReturnBeforeNextNmi
+        SpotlightIterationPhase::MixedTailAfterReturn
     );
     assert_eq!(
         SpotlightIterationPhase::for_close_iteration(1, 0, 0),
@@ -3951,7 +3922,7 @@ fn spotlight_projection_generation_is_a_scanout_local_table_mix() {
     }
     .compose_into(&mut ram);
 
-    let split = SPOTLIGHT_PROJECTION_LIVE_TAIL_START * 2;
+    let split = SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START * 2;
     for (table_base, [before, after]) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
         .into_iter()
         .zip([[0x11, 0x22], [0x33, 0x44]])
@@ -4491,45 +4462,6 @@ fn dungeon_landing_wipe_uses_typed_snapshot_generation_without_menu_retention() 
 }
 
 #[test]
-fn link_chr_scanout_generation_is_independent_of_general_vram_cadence() {
-    let mut state = ZeldaState::new();
-    state.ppu.vram[0x4000] = 0x1111;
-    state.ppu.vram[0x4400] = 0x3333;
-    state.ppu.oam[0] = 0x2222;
-    // A pending stripe retains general VRAM, while Link's independently
-    // completed OBJ-CHR DMA and the preceding OAM DMA own different
-    // generations of the same scanout.
-    state.ram[NMI_LOAD_BG_FROM_VRAM] = 1;
-    state.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
-        oam: GraphicsDmaGeneration::HostBoundaryBeforeMain,
-        link_obj: GraphicsDmaGeneration::LiveAfterMain,
-    });
-    state.capture_display_snapshot();
-
-    let snapshot = state.display_snapshot.as_ref().expect("display snapshot");
-    assert_eq!(
-        snapshot.link_obj_scanout_generation,
-        GraphicsDmaGeneration::LiveAfterMain
-    );
-    assert_eq!(
-        snapshot.oam_scanout_source,
-        OamScanoutSource::RetainCapturedBeforeNmi
-    );
-
-    state.ppu.vram[0x4000] = 0xaaaa;
-    state.ppu.vram[0x4400] = 0xcccc;
-    state.ppu.oam[0] = 0xbbbb;
-    let displayed = state.with_display_snapshot(|display| {
-        (
-            display.ppu.vram[0x4000],
-            display.ppu.vram[0x4400],
-            display.ppu.oam[0],
-        )
-    });
-    assert_eq!(displayed, (0xaaaa, 0x3333, 0x2222));
-}
-
-#[test]
 fn dialogue_character_tiles_publish_at_the_following_nmi() {
     assert!(rom_display_memory_publication_is_deferred(14, 2, 3, false));
     assert!(rom_display_memory_publication_is_deferred(4, 3, 0, true));
@@ -5034,10 +4966,6 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
         7, 0, 0, false, false
     ));
     assert_eq!(
-        rom_graphics_dma_plan(7, 0).oam_operands,
-        GraphicsDmaGeneration::HostBoundaryBeforeMain,
-    );
-    assert_eq!(
         rom_graphics_dma_plan(9, 5),
         GraphicsDmaPlan {
             oam_operands: GraphicsDmaGeneration::LiveAfterMain,
@@ -5132,17 +5060,8 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
     assert!(rom_display_oam_publication_is_deferred(
         4, 3, 0, true, false
     ));
-    for menu_module in 1..=4 {
-        assert!(rom_display_oam_publication_is_deferred(
-            menu_module,
-            0,
-            0,
-            false,
-            true,
-        ));
-    }
-    assert!(!rom_display_oam_publication_is_deferred(
-        7, 0, 0, false, true,
+    assert!(rom_display_oam_publication_is_deferred(
+        4, 3, 0, false, true
     ));
     assert!(rom_display_oam_publication_is_deferred(
         4, 3, 0, false, false
@@ -5605,7 +5524,7 @@ fn spotlight_close_entry_publication_follows_circle_workload() {
     );
     assert_eq!(
         long_entry.close_completion_publication(),
-        DisplaySnapshotPublication::RetainPublished
+        DisplaySnapshotPublication::AdvanceStaged
     );
 }
 

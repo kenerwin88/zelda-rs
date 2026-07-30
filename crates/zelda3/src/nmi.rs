@@ -124,11 +124,10 @@ impl ZeldaState {
         if trace_nmi {
             let frame = self.game_state.frame;
             eprintln!(
-                "nmi_before host={} main={:02x} sub={:02x} work={:?} latch={} pending={} target={:04x} disable={:02x} bgload={} forced_blank={} blank_lines_pending={} blank_from_pending={:?} blank_from_candidate={:?} link_tile_src={:04x} ram0000={:02x}{:02x}{:02x} vram40b0={:04x}",
+                "nmi_before host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x} bgload={} forced_blank={} blank_lines_pending={} blank_from_pending={:?} blank_from_candidate={:?} link_tile_src={:04x} ram0000={:02x}{:02x}{:02x} vram40b0={:04x}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
-                self.game_execution_scheduler.current_work(),
                 self.game_state.display.nmi_update_is_latched(),
                 self.game_state.display.pending_nmi_subroutine,
                 self.game_state.display.nmi_load_target_address,
@@ -294,11 +293,10 @@ impl ZeldaState {
         if trace_nmi {
             let frame = self.game_state.frame;
             eprintln!(
-                "nmi_after host={} main={:02x} sub={:02x} work={:?} latch={} pending={} target={:04x} disable={:02x} bgload={} forced_blank={} blank_lines_pending={} blank_from_live={:?} blank_from_pending={:?} blank_from_candidate={:?} link_tile_src={:04x} vram40b0={:04x}",
+                "nmi_after host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x} bgload={} forced_blank={} blank_lines_pending={} blank_from_live={:?} blank_from_pending={:?} blank_from_candidate={:?} link_tile_src={:04x} vram40b0={:04x}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
-                self.game_execution_scheduler.current_work(),
                 self.game_state.display.nmi_update_is_latched(),
                 self.game_state.display.pending_nmi_subroutine,
                 self.game_state.display.nmi_load_target_address,
@@ -1491,7 +1489,12 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_read_joypads(&mut self, joypad_input: u16) {
-        let reversed = joypad_input.reverse_bits();
+        let mut both = joypad_input;
+        let mut reversed = 0u16;
+        for _ in 0..16 {
+            reversed = reversed.wrapping_mul(2).wrapping_add(both & 1);
+            both >>= 1;
+        }
         let r0 = reversed as u8;
         let r1 = (reversed >> 8) as u8;
 
@@ -1509,7 +1512,6 @@ impl ZeldaState {
             .set_filtered_joypad_h(filtered_joypad_h);
         self.follower_link_state_mut().set_joypad1h_last2(r1);
     }
-
 }
 
 #[cfg(test)]

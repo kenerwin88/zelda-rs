@@ -129,27 +129,6 @@ impl VramChrSourceTable {
         self.entries.get(slot).copied().unwrap_or_default()
     }
 
-    /// Copy the source ownership for every CHR tile touched by a VRAM word
-    /// range. VRAM publication uses this alongside the corresponding word copy
-    /// so render and preview metadata cannot advance to a different generation
-    /// than the tile bytes they describe.
-    pub(crate) fn copy_word_range_from(
-        &mut self,
-        source: &Self,
-        start_word: usize,
-        num_words: usize,
-    ) {
-        let Some(end_word) = start_word.checked_add(num_words) else {
-            return;
-        };
-        let start_slot = start_word / 16;
-        let end_slot = end_word.div_ceil(16).min(self.entries.len());
-        if start_slot >= end_slot || end_slot > source.entries.len() {
-            return;
-        }
-        self.entries[start_slot..end_slot].copy_from_slice(&source.entries[start_slot..end_slot]);
-    }
-
     /// Record the logical source for `num_tiles` consecutive CHR tile slots
     /// starting at VRAM word address `start_word`.
     ///

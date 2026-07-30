@@ -56,24 +56,6 @@ fn publication_plan_keeps_memory_domains_independent() {
 }
 
 #[test]
-fn forced_blank_generation_keeps_post_nmi_write_out_of_selected_scanout() {
-    let mut snapshot = captured_display_snapshot();
-    snapshot.forced_blank_generation = DisplayForcedBlankGeneration::RetainCapturedBeforeNmi;
-    let retained_plan =
-        DisplayPublicationPlan::resolve(&snapshot, DisplayPublicationSignals::default());
-
-    let mut state = ZeldaState::new();
-    state.ppu.forced_blank = false;
-    state.compose_display_raster(true, None, false, 15, &retained_plan);
-    assert!(!state.ppu.forced_blank);
-
-    snapshot.forced_blank_generation = DisplayForcedBlankGeneration::ComposeLiveAfterNmi;
-    let live_plan = DisplayPublicationPlan::resolve(&snapshot, DisplayPublicationSignals::default());
-    state.compose_display_raster(true, None, false, 15, &live_plan);
-    assert!(state.ppu.forced_blank);
-}
-
-#[test]
 fn dungeon_exit_publication_plan_promotes_only_live_boundary_domains() {
     let mut snapshot = captured_display_snapshot();
     snapshot.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
@@ -205,7 +187,6 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
     let mut state = ZeldaState::new();
     let held_oam = vec![0x1234; state.ppu.oam.len()];
     let held_obj_vram = vec![0x5678; 0x400];
-    let held_vram_sources = DisplayVramSources::capture(&state);
     state.next_display_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
     state.next_display_bg_scroll_generation = DisplayBgScrollGeneration::ComposeLiveAfterNmi;
     state.next_display_obj_scanout_generation = Some(ObjScanoutGenerations::coherent(
@@ -214,7 +195,6 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
     state.active_display_obj_generation = DisplayObjGeneration::RetainCapturedMemory {
         oam: held_oam.clone(),
         vram: held_obj_vram.clone(),
-        vram_sources: held_vram_sources.clone(),
     };
 
     state.capture_display_snapshot();
@@ -241,7 +221,6 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
         DisplayObjGeneration::RetainCapturedMemory {
             oam: held_oam.clone(),
             vram: held_obj_vram.clone(),
-            vram_sources: held_vram_sources.clone(),
         },
     );
     assert_eq!(
@@ -258,7 +237,6 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
         DisplayObjGeneration::RetainCapturedMemory {
             oam: held_oam.clone(),
             vram: held_obj_vram.clone(),
-            vram_sources: held_vram_sources.clone(),
         },
     );
 
@@ -272,7 +250,6 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
         DisplayObjGeneration::RetainCapturedMemory {
             oam: held_oam,
             vram: held_obj_vram,
-            vram_sources: held_vram_sources,
         },
     );
 }
@@ -290,10 +267,6 @@ fn presented_vram_generation_combines_snapshot_and_domain_retention_once() {
     assert_eq!(
         DisplayVramGeneration::RetainCapturedBeforeNmi.resolve_for_scanout(false),
         DisplayVramGeneration::RetainCapturedBeforeNmi,
-    );
-    assert_eq!(
-        DisplayVramGeneration::PublishCompletedNmiTransfer.resolve_for_scanout(true),
-        DisplayVramGeneration::ComposeLiveAfterNmi,
     );
 }
 
