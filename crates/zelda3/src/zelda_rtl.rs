@@ -736,6 +736,18 @@ const fn rom_dungeon_falling_entry_retains_published_obj_generation(
         && current_submodule == 0
 }
 
+const fn interface_exit_bg_upload_misses_current_scanout(
+    entry_main_module: u8,
+    current_main_module: u8,
+    bg_vram_upload_is_pending: bool,
+) -> bool {
+    // Interface modules author their exit stripe after the active frame has
+    // started. The next vblank consumes it: for example, the save-menu erase
+    // is armed at V=42 while Snes9x is already scanning out the final menu
+    // frame, then reaches NMI at V=225.
+    entry_main_module == 0x0e && current_main_module != 0x0e && bg_vram_upload_is_pending
+}
+
 const fn rom_overworld_bad_weather_scroll_is_live(
     snapshot_main_module: u8,
     snapshot_submodule: u8,
@@ -12103,14 +12115,15 @@ impl ZeldaState {
         }
         self.replay_trace_col("before-nmi");
         self.replay_trace_ram_watch("before-nmi");
-        let defer_dialogue_exit_bg_upload = frame.main_module == 14
-            && frame.submodule == 2
-            && self.game_state.frame.main_module != 14
-            && self.game_state.display.has_bg_vram_load();
+        let defer_interface_exit_bg_upload = interface_exit_bg_upload_misses_current_scanout(
+            frame.main_module,
+            self.game_state.frame.main_module,
+            self.game_state.display.has_bg_vram_load(),
+        );
         self.interrupt_nmi(
             input,
             oam_dma_source.as_deref(),
-            defer_dialogue_exit_bg_upload,
+            defer_interface_exit_bg_upload,
         );
         if dialogue_scroll_finished_copy {
             // The final copy slice reaches vblank before the RenderText caller

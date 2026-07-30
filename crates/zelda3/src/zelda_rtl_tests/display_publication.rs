@@ -271,6 +271,25 @@ fn presented_vram_generation_combines_snapshot_and_domain_retention_once() {
 }
 
 #[test]
+fn interface_exit_stripe_upload_belongs_to_the_following_scanout() {
+    // Ordinary dialogue and the save menu share this interface-exit boundary;
+    // the destination module does not own the stripe until the next scanout.
+    assert!(interface_exit_bg_upload_misses_current_scanout(
+        0x0e, 9, true,
+    ));
+    assert!(interface_exit_bg_upload_misses_current_scanout(
+        0x0e, 23, true,
+    ));
+    assert!(!interface_exit_bg_upload_misses_current_scanout(
+        0x0e, 0x0e, true,
+    ));
+    assert!(!interface_exit_bg_upload_misses_current_scanout(9, 9, true));
+    assert!(!interface_exit_bg_upload_misses_current_scanout(
+        0x0e, 9, false,
+    ));
+}
+
+#[test]
 fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
     let dialogue_upload = PreMainNmiResume::DialogueVwfUpload;
     assert!(dialogue_upload.defers_current_trailing_nmi());
