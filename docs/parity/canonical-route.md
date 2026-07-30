@@ -1,8 +1,11 @@
-# Canonical Snes9x route parity
+# Canonical Snes9x A/V window
 
-The canonical route is a continuous 155,384-frame playthrough compared against
-the official Snes9x 1.63 Libretro release. The exact upstream source tag and
-revision are pinned in
+The retained canonical proof is a continuous 155,384-frame emulation window
+compared against the official Snes9x 1.63 Libretro release. It contains 37,843
+frames assembled from recorded takes 4 and 5, followed by 117,541 frames of
+neutral controller input. It proves exact A/V behavior for that execution
+window; it does **not** prove the complete recorded route through frame 155,384.
+The exact upstream source tag and revision are pinned in
 [`external/snes9x-libretro/oracle-lock.json`](../../external/snes9x-libretro/oracle-lock.json).
 Video uses the production modern Rust renderer. Audio uses the production modern
 backend and native sequencer.
@@ -10,9 +13,10 @@ backend and native sequencer.
 The checked-in proof receipt is
 [`routes/clean/continuous-result.json`](../../routes/clean/continuous-result.json).
 It records the ROM, input, ROM-random, core, and state handoff hashes needed to
-distinguish a real continuous proof from a stale or segmented receipt. The
-canonical input is retained separately from the actively extended recorder route
-at
+distinguish a real continuous proof from a stale or segmented receipt. Its
+`recorded_route` and `full_recorded_route_coverage` fields make the neutral tail
+explicit. The canonical input is retained separately from the actively extended
+recorder route at
 [`comparisons/canonical-155384/continuous-input.txt`](../../routes/clean/comparisons/canonical-155384/continuous-input.txt).
 
 ## Proof chain

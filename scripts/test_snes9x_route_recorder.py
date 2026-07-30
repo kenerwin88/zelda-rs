@@ -184,6 +184,41 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
                 MODULE.sha256(latest_core),
             )
 
+    def test_full_route_receipt_rejects_a_neutral_input_tail(self):
+        receipt = {
+            "continuous_playthrough": True,
+            "frames_requested": 155_384,
+            "frames_completed": 155_384,
+            "passed": True,
+            "takes": [4, 5],
+            "recorded_route": {
+                "source_takes": [4, 5],
+                "frames": 37_843,
+                "neutral_tail_frames": 117_541,
+            },
+            "full_recorded_route_coverage": True,
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "full recorded-route coverage requires 155384 recorded frames",
+        ):
+            MODULE.validate_continuous_result(receipt)
+
+    def test_checked_in_canonical_receipt_discloses_its_neutral_tail(self):
+        receipt = json.loads(
+            (
+                MODULE.ROOT / "routes/clean/continuous-result.json"
+            ).read_text()
+        )
+
+        MODULE.validate_continuous_result(receipt)
+
+        self.assertFalse(receipt["full_recorded_route_coverage"])
+        self.assertEqual(receipt["recorded_route"]["source_takes"], [4, 5])
+        self.assertEqual(receipt["recorded_route"]["frames"], 37_843)
+        self.assertEqual(receipt["recorded_route"]["neutral_tail_frames"], 117_541)
+
     def project(self, root: Path) -> Path:
         project = root / "route"
         (project / "boundaries/0000").mkdir(parents=True)

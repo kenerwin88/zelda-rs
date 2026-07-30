@@ -1,7 +1,8 @@
 {
   "kind": "zelda3_snes9x_continuous_route_result_v1",
-  "coverage_label": "canonical continuous route",
-  "continuous_playthrough": true,
+  "coverage_label": "canonical exact A/V window with neutral-input tail",
+  "continuous_playthrough": false,
+  "continuous_emulation_session": true,
   "oracle": "official Snes9x 1.63 libretro",
   "production_renderer": "modern Rust",
   "production_audio_backend": "modern",
@@ -11,7 +12,21 @@
   "frames_completed": 155384,
   "video_matched": true,
   "audio_matched": true,
+  "full_recorded_route_coverage": false,
   "passed": true,
+  "takes": [
+    4,
+    5
+  ],
+  "recorded_route": {
+    "source_takes": [
+      4,
+      5
+    ],
+    "frames": 37843,
+    "neutral_tail_frames": 117541,
+    "input_script_sha256": "92c29148e73a84b315843fedf42388b7ddcf1889197c1e252769d1ff4a5d0c86"
+  },
   "identity": {
     "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb",
     "input_script": "comparisons/canonical-155384/continuous-input.txt",

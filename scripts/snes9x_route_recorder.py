@@ -1051,6 +1051,40 @@ def compare_all(
     return matrix, exit_code
 
 
+def validate_continuous_result(summary: dict) -> None:
+    route = summary.get("recorded_route")
+    if not isinstance(route, dict):
+        raise ValueError("continuous result has no recorded_route provenance")
+    source_takes = route.get("source_takes")
+    if not isinstance(source_takes, list) or not source_takes:
+        raise ValueError("continuous result has no recorded source takes")
+    if summary.get("takes") != source_takes:
+        raise ValueError("continuous result source takes do not match its route")
+
+    recorded_frames = int(route.get("frames", -1))
+    requested_frames = int(summary.get("frames_requested", -1))
+    completed_frames = int(summary.get("frames_completed", -1))
+    neutral_tail_frames = max(0, requested_frames - recorded_frames)
+    if int(route.get("neutral_tail_frames", -1)) != neutral_tail_frames:
+        raise ValueError("continuous result neutral-input tail is inconsistent")
+
+    if summary.get("full_recorded_route_coverage") is True:
+        if recorded_frames != requested_frames:
+            raise ValueError(
+                "full recorded-route coverage requires "
+                f"{requested_frames} recorded frames, got {recorded_frames}"
+            )
+        if (
+            completed_frames != requested_frames
+            or summary.get("passed") is not True
+            or summary.get("video_matched") is not True
+            or summary.get("audio_matched") is not True
+        ):
+            raise ValueError(
+                "full recorded-route coverage requires a complete exact A/V pass"
+            )
+
+
 def compare_continuous(
     *, binary: Path, core: Path, rom: Path, project: Path
 ) -> tuple[dict, int]:
@@ -1107,13 +1141,21 @@ def compare_continuous(
         "production_audio_backend": "modern",
         "production_audio_sequencer": "native",
         "takes": take_ids,
+        "recorded_route": {
+            "source_takes": take_ids,
+            "frames": frames,
+            "neutral_tail_frames": 0,
+            "input_script_sha256": sha256(input_path),
+        },
         "frames_requested": frames,
         "frames_completed": int(result.get("frames_completed", 0)),
         "video_matched": result.get("video", {}).get("matched") is True,
         "audio_matched": result.get("audio", {}).get("matched") is True,
+        "full_recorded_route_coverage": passed,
         "passed": passed,
         "result": str(result_path.relative_to(project)),
     }
+    validate_continuous_result(summary)
     (project / "continuous-result.json").write_text(
         json.dumps(summary, indent=2) + "\n"
     )
