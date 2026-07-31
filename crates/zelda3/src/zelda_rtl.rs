@@ -1025,7 +1025,6 @@ enum OverworldSpriteReloadEntryPhase {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PreMainNmiResume {
-    DialogueVwfUpload,
     OverworldAuxGraphicsReturn,
     OverworldSpriteReloadReturn {
         scanout: OverworldSpriteReloadResumeScanout,
@@ -1072,13 +1071,6 @@ struct PreMainNmiScanoutGenerations {
 impl PreMainNmiResume {
     const fn scanout_generations(self) -> PreMainNmiScanoutGenerations {
         match self {
-            Self::DialogueVwfUpload => PreMainNmiScanoutGenerations {
-                publication: DisplaySnapshotPublication::PublishCaptured,
-                vram: DisplayVramGeneration::ComposeLiveAfterNmi,
-                animated_bg: None,
-                bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
-                obj: None,
-            },
             Self::OverworldAuxGraphicsReturn => PreMainNmiScanoutGenerations {
                 publication: DisplaySnapshotPublication::PublishCaptured,
                 vram: DisplayVramGeneration::ComposeLiveAfterNmi,
@@ -1114,9 +1106,6 @@ impl PreMainNmiResume {
             && matches!(frame.subsubmodule, 5..=15)
     }
 
-    const fn defers_current_trailing_nmi(self) -> bool {
-        matches!(self, Self::DialogueVwfUpload)
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -9744,11 +9733,6 @@ impl ZeldaState {
             .schedule_pre_main_caller_continuation(continuation);
     }
 
-    pub(super) fn schedule_dialogue_vwf_upload_at_next_leading_nmi(&mut self) {
-        self.game_execution_scheduler
-            .schedule_pre_main_nmi_resume(PreMainNmiResume::DialogueVwfUpload);
-    }
-
     fn pre_main_caller_continuation_is(&self, continuation: PreMainCallerContinuation) -> bool {
         self.game_execution_scheduler
             .pre_main_caller_continuation_is(continuation)
@@ -12237,28 +12221,6 @@ impl ZeldaState {
             // boundary so the next capture promotes it exactly once.
             let completed_scanout = self.dialogue_text_scanout_from_render_buffer();
             self.stage_early_dialogue_scroll_completion(completed_scanout);
-        }
-        if self
-            .game_execution_scheduler
-            .pre_main_nmi_resume()
-            .is_some_and(PreMainNmiResume::defers_current_trailing_nmi)
-        {
-            // This main-thread slice resumed after the preceding NMI and
-            // reached the next display boundary with a VWF upload armed.
-            // Snes9x returns before entering the display/DMA portion of that
-            // NMI; the scheduled leading boundary consumes it on the
-            // following host call.
-            //
-            // Audio preprocessing belongs to the NMI that opened this host
-            // slice, not to the deferred display boundary. Let the following
-            // host slice preprocess its own NMI so one-shot APUI02/APUI03
-            // latches authored by this main-thread work are sampled there.
-            self.audio_nmi_processed_before_main = false;
-            self.assert_native_frame_state_matches_ram();
-            self.assert_native_world_location_state_matches_ram();
-            self.assert_native_display_state_matches_ram();
-            self.sync_overworld_map16_state_from_ram();
-            return;
         }
         self.replay_trace_col("before-nmi");
         self.replay_trace_ram_watch("before-nmi");
