@@ -818,7 +818,8 @@
       "frames": 26108,
       "input_path": "takes/0005/input.txt",
       "receipts_path": "takes/0005/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "rom_random_path": "takes/0005/rom-random.txt"
     },
     {
       "id": 6,
@@ -829,7 +830,8 @@
       "frames": 29528,
       "input_path": "takes/0006/input.txt",
       "receipts_path": "takes/0006/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "rom_random_path": "takes/0006/rom-random.txt"
     },
     {
       "id": 7,
@@ -840,7 +842,8 @@
       "frames": 9470,
       "input_path": "takes/0007/input.txt",
       "receipts_path": "takes/0007/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "rom_random_path": "takes/0007/rom-random.txt"
     },
     {
       "id": 8,
@@ -873,7 +876,8 @@
       "frames": 29890,
       "input_path": "takes/0010/input.txt",
       "receipts_path": "takes/0010/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "rom_random_path": "takes/0010/rom-random.txt"
     },
     {
       "id": 11,
@@ -884,7 +888,8 @@
       "frames": 48653,
       "input_path": "takes/0011/input.txt",
       "receipts_path": "takes/0011/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "rom_random_path": "takes/0011/rom-random.txt"
     },
     {
       "id": 12,
@@ -895,7 +900,8 @@
       "frames": 28572,
       "input_path": "takes/0012/input.txt",
       "receipts_path": "takes/0012/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "rom_random_path": "takes/0012/rom-random.txt"
     },
     {
       "id": 13,
@@ -906,7 +912,8 @@
       "frames": 28436,
       "input_path": "takes/0013/input.txt",
       "receipts_path": "takes/0013/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "rom_random_path": "takes/0013/rom-random.txt"
     },
     {
       "id": 14,
@@ -917,7 +924,8 @@
       "frames": 37544,
       "input_path": "takes/0014/input.txt",
       "receipts_path": "takes/0014/frame_receipts.jsonl",
-      "status": "complete"
+      "status": "complete",
+      "rom_random_path": "takes/0014/rom-random.txt"
     }
   ]
 }
