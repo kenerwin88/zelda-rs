@@ -3757,9 +3757,23 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
 
 #[test]
 fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
-    assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e));
-    assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x77));
-    assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(0x70));
+    // 189-row calibration center (dungeon landing): $70 publishes in-slice.
+    assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x7e, 36));
+    assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(0x77, 36));
+    assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(
+        0x70, 36
+    ));
+    // Maximal 239-row table (Link's-house exit, vertical center 238): the
+    // $70 build still crosses vblank, and the module-15 entry build spans
+    // an extra host frame.
+    assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(
+        0x70, 238
+    ));
+    assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(
+        0x69, 238
+    ));
+    assert!(rom_dungeon_exit_spotlight_entry_build_crosses_vblank(238));
+    assert!(!rom_dungeon_exit_spotlight_entry_build_crosses_vblank(36));
     assert!(!rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(0x46));
     assert!(rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
         0x3f

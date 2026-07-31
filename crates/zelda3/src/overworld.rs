@@ -2519,11 +2519,21 @@ impl ZeldaState {
         );
         self.sprite_main();
         if self.game_state.frame.submodule == 0 {
-            self.Dungeon_PrepExitWithSpotlight();
+            self.Dungeon_PrepExitWithSpotlight_before_table();
+            if self.begin_dungeon_exit_spotlight_entry(vertical_center) {
+                // vblank interrupts the first IrisSpotlight_ConfigureTable
+                // build; the table copy, radius write, submodule advance, and
+                // Link/OAM suffix complete on the next host frame.
+                return;
+            }
+            self.Dungeon_PrepExitWithSpotlight_table_and_advance();
         } else {
             self.Spotlight_ConfigureTableAndControl();
         }
+        self.module0f_spotlight_close_link_suffix(phase);
+    }
 
+    pub(super) fn module0f_spotlight_close_link_suffix(&mut self, phase: SpotlightIterationPhase) {
         if self.game_state.world.location.is_outdoors() {
             if self.game_state.world.location.overworld_screen_index() == 0x0f {
                 self.follower_link_state_mut()
@@ -2551,7 +2561,31 @@ impl ZeldaState {
         self.schedule_spotlight_iteration_return(SpotlightIteration::closing(phase));
     }
 
+    pub(super) fn complete_dungeon_exit_spotlight_entry(&mut self) {
+        let vertical_center = spotlight_vertical_center(
+            self.game_state.player.follower_link.y(),
+            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+        );
+        let phase = SpotlightIterationPhase::for_close_iteration(
+            self.game_state.frame.submodule,
+            self.game_state.display.spotlight_hdma.window_radius(),
+            vertical_center,
+        );
+        self.Dungeon_PrepExitWithSpotlight_table_and_advance();
+        self.module0f_spotlight_close_link_suffix(phase);
+    }
+
     pub(super) fn Dungeon_PrepExitWithSpotlight(&mut self) {
+        self.Dungeon_PrepExitWithSpotlight_before_table();
+        self.Dungeon_PrepExitWithSpotlight_table_and_advance();
+    }
+
+    pub(super) fn Dungeon_PrepExitWithSpotlight_table_and_advance(&mut self) {
+        self.IrisSpotlight_close();
+        self.increment_submodule();
+    }
+
+    pub(super) fn Dungeon_PrepExitWithSpotlight_before_table(&mut self) {
         self.deactivate_nmi_thread();
         self.clear_pending_polyhedral_update();
         if self.game_state.world.location.is_outdoors() {
@@ -2577,8 +2611,6 @@ impl ZeldaState {
         self.clear_hud_floor_changed_timer();
         self.hud_floor_indicator();
         self.increment_hud_update_flag();
-        self.IrisSpotlight_close();
-        self.increment_submodule();
     }
 
     pub(super) fn SetTargetOverworldWarpToPyramid(&mut self) {

@@ -1294,11 +1294,35 @@ const DUNGEON_SUPERTILE_AUX_SPRITE_GFX_NMI_SLICES: u8 = 7;
 const DUNGEON_SUPERTILE_SPRITE_CONVERSION_NMI_SLICES: u8 = 3;
 const DUNGEON_SUPERTILE_CALLER_RESUME_NMI_SLICES: u8 = 1;
 
-const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(radius: u16) -> bool {
+// IrisSpotlight_ConfigureTable's cost grows with the generated row-pair count.
+// The 239-row table is the maximum `spotlight_table_row_pairs` can produce
+// (vertical center at the bottom door line, e.g. leaving Link's house); with
+// it, Snes9x traces show the module-15 ENTRY build and the $70 circle build
+// also crossing vblank, one radius step beyond the 189-row calibration below.
+const SPOTLIGHT_MAX_TABLE_ROW_PAIRS: u16 = 239;
+
+const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(
+    radius: u16,
+    vertical_center: u16,
+) -> bool {
     // Snes9x PC traces show the $7e and $77 circle builds crossing vblank
     // inside IrisSpotlight_ConfigureTable. From $70 downward the next table is
-    // far enough along at the first boundary to publish in that same slice.
+    // far enough along at the first boundary to publish in that same slice —
+    // except with the maximal 239-row table, where the $70 build still
+    // crosses (measured on the Link's-house exit, vertical center 238).
     radius >= 0x77
+        || (radius >= 0x70
+            && spotlight_table_row_pairs(vertical_center) >= SPOTLIGHT_MAX_TABLE_ROW_PAIRS)
+}
+
+const fn rom_dungeon_exit_spotlight_entry_build_crosses_vblank(vertical_center: u16) -> bool {
+    // With the maximal 239-row table, the module-15 sub-0 call's first
+    // IrisSpotlight_ConfigureTable build is interrupted by vblank: the ROM
+    // ticks the frame counter and clears OAM, then finishes the build and
+    // writes the submodule on the following frame (Snes9x wram trace:
+    // module written run N, submodule=1 written run N+2 on the Link's-house
+    // exit). Smaller tables complete inside the entry frame.
+    spotlight_table_row_pairs(vertical_center) >= SPOTLIGHT_MAX_TABLE_ROW_PAIRS
 }
 
 // IrisSpotlight_ConfigureTable waits for V=192, copies its 448-byte table, and
@@ -1427,6 +1451,7 @@ enum GameWorkContinuation {
         continuation: ItemReceiptGraphicsContinuation,
     },
     FinishDungeonSubtilePaletteFilter,
+    FinishDungeonExitSpotlightEntry,
     FinishSpotlightIteration {
         iteration: SpotlightIteration,
     },
@@ -9365,6 +9390,22 @@ impl ZeldaState {
         self.next_display_spotlight_scanout = Some(LiveSpotlightScanout::capture(self));
     }
 
+    /// With the maximal spotlight table, the module-15 sub-0 call's first
+    /// IrisSpotlight_ConfigureTable build is interrupted by vblank. The entry
+    /// frame runs only the PrepExit prefix; the table copy, first radius
+    /// write, submodule advance, and Link/OAM suffix complete on the next
+    /// host frame through the scheduled continuation.
+    pub(super) fn begin_dungeon_exit_spotlight_entry(&mut self, vertical_center: u16) -> bool {
+        if !self.rom_startup_timing()
+            || !rom_dungeon_exit_spotlight_entry_build_crosses_vblank(vertical_center)
+        {
+            return false;
+        }
+        self.game_execution_scheduler
+            .schedule_work(GameWorkContinuation::FinishDungeonExitSpotlightEntry, 1);
+        true
+    }
+
     pub(super) fn schedule_dungeon_landing_wipe_return(&mut self, nmi_slices: u8) {
         if !self.rom_startup_timing() {
             return;
@@ -11718,6 +11759,11 @@ impl ZeldaState {
                 GameWorkStep::Complete(GameWorkContinuation::FinishSpotlightIteration {
                     iteration,
                 }) => Some(iteration.completion_publication()),
+                // The interrupted entry build finishes mid-frame; its first
+                // table generation belongs to the scanout already staged.
+                GameWorkStep::Complete(
+                    GameWorkContinuation::FinishDungeonExitSpotlightEntry,
+                ) => Some(DisplaySnapshotPublication::AdvanceStaged),
                 _ => self
                     .game_execution_scheduler
                     .in_flight_display_publication(),
@@ -11893,6 +11939,21 @@ impl ZeldaState {
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
+                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightEntry) => {
+                    // The vblank-interrupted first IrisSpotlight_ConfigureTable
+                    // build finishes here: table copy, first radius write,
+                    // submodule advance, and the Link/OAM suffix all return
+                    // before this frame's trailing NMI. The frame counter was
+                    // ticked by the entry frame's main prefix; this resumed
+                    // slice must not tick it again.
+                    self.complete_dungeon_exit_spotlight_entry();
+                    self.next_display_obj_scanout_generation =
+                        Some(ObjScanoutGenerations::coherent(
+                            GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                        ));
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                }
                 GameWorkStep::Complete(GameWorkContinuation::FinishSpotlightIteration {
                     ..
                 }) => {
@@ -11925,6 +11986,10 @@ impl ZeldaState {
                     if self.game_state.frame.main_module == 15
                         && rom_dungeon_exit_spotlight_table_needs_entry_slice(
                             self.game_state.display.spotlight_hdma.window_radius(),
+                            spotlight_vertical_center(
+                                self.game_state.player.follower_link.y(),
+                                self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+                            ),
                         )
                     {
                         self.dungeon_exit_spotlight_table_delay =
