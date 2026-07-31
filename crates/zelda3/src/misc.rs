@@ -1406,6 +1406,24 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_prepare_sprites(&mut self) {
+        if std::env::var_os("ZELDA3_DEBUG_PREP").is_some() {
+            eprintln!(
+                "[PREP] replay_frame={} fc_dbg={} fc={} cd={:04x} mod={:02x}/{:02x}",
+                self.state_recorder.replay_frame_counter,
+                self.frame_ctr_dbg,
+                self.game_state.frame.frame_counter,
+                self.game_state.display.bg_tile_animation_countdown,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            );
+            if std::env::var("ZELDA3_DEBUG_PREP_BT")
+                .ok()
+                .and_then(|v| v.parse::<u32>().ok())
+                .is_some_and(|target| target == self.frame_ctr_dbg)
+            {
+                eprintln!("{}", std::backtrace::Backtrace::force_capture());
+            }
+        }
         fn link_dma_table_value(table: &[u16], index: usize, table_name: &str) -> u16 {
             // C indexes these static DMA tables directly; this keeps an invalid
             // translated index from becoming a silent wrong DMA source.

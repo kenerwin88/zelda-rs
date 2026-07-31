@@ -195,6 +195,12 @@ See memory [[checkpoint-resume-debugging]].
   writes a value).
 - `ZELDA3_REPLAY_RAM_DUMP_PAGE=0x<addr>` — dump nonzero bytes of a 0x400 page.
 - `ZELDA3_REPLAY_RAM_PAGE_DUMP=1` — 128 per-1KB page checksums.
+- `ZELDA3_DEBUG_PREP=1` — log every `nmi_prepare_sprites` call (`[PREP]
+  fc_dbg=<host frame> fc=<0x1a> cd=<0xc00d> mod=<module/sub>`); add
+  `ZELDA3_DEBUG_PREP_BT=<fc_dbg>` for a backtrace of the call on that frame.
+  The core-update/prep cadence drives BG_TILE_ANIMATION_COUNTDOWN and
+  link-DMA phase; use this to compare rust's prep schedule against the
+  oracle's countdown trajectory when an animation phase drifts by one.
 
 ## The debugging loop that works
 
