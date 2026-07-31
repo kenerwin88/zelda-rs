@@ -4559,6 +4559,9 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
             post_return_hold_nmi_slices: 1,
             return_phase: NmiPhase::BeforeNmi,
             epilogue_phase: NmiPhase::AfterNmi,
+            resume_scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(
+                NmiPhase::BeforeNmi,
+            ),
         }
     );
     assert_eq!(
@@ -4574,6 +4577,9 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
             post_return_hold_nmi_slices: 0,
             return_phase: NmiPhase::AfterNmi,
             epilogue_phase: NmiPhase::BeforeNmi,
+            resume_scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(
+                NmiPhase::AfterNmi,
+            ),
         }
     );
     assert_eq!(
@@ -4589,6 +4595,7 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
             post_return_hold_nmi_slices: 0,
             return_phase: NmiPhase::AfterNmi,
             epilogue_phase: NmiPhase::BeforeNmi,
+            resume_scanout: OverworldSpriteReloadResumeScanout::FollowingNmi,
         }
     );
     assert_eq!(
@@ -4604,6 +4611,7 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
             post_return_hold_nmi_slices: 0,
             return_phase: NmiPhase::BeforeNmi,
             epilogue_phase: NmiPhase::BeforeNmi,
+            resume_scanout: OverworldSpriteReloadResumeScanout::FollowingNmi,
         }
     );
 }
@@ -4913,7 +4921,7 @@ fn dungeon_falling_entry_retains_the_pre_transition_obj_generation() {
 }
 
 #[test]
-fn completed_rom_work_selects_scroll_generation_by_measured_nmi_side() {
+fn completed_overworld_reload_uses_its_measured_return_phase() {
     let cpu_slice_entry = BgScrollRegisterScanout {
         offsets: [[0x1111, 0x2222]; 4],
     };
@@ -4923,7 +4931,8 @@ fn completed_rom_work_selects_scroll_generation_by_measured_nmi_side() {
             .bg_scroll,
         Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
     );
-    // Return phase selects publication independently from any host hold.
+    // The completion boundary still owns the scroll generation measured at
+    // the CPU return. Entry geometry belongs to the following resume boundary.
     for post_return_hold_nmi_slices in [0, 1] {
         for (return_phase, generation) in [
             (
@@ -4941,6 +4950,7 @@ fn completed_rom_work_selects_scroll_generation_by_measured_nmi_side() {
                 post_return_hold_nmi_slices,
                 return_phase,
                 epilogue_phase: NmiPhase::BeforeNmi,
+                resume_scanout: OverworldSpriteReloadResumeScanout::FollowingNmi,
             }
             .completion_publication(cpu_slice_entry);
             assert_eq!(publication.bg_scroll, generation);
@@ -4964,6 +4974,65 @@ fn completed_rom_work_selects_scroll_generation_by_measured_nmi_side() {
             .bg_scroll,
         None,
     );
+}
+
+#[test]
+fn overworld_reload_timing_keeps_resume_geometry_separate_from_return_phase() {
+    let light = OverworldSpriteReloadWorkload {
+        sprite_records: 2,
+        in_bounds_proximity_checks: 18,
+    };
+    let heavy = OverworldSpriteReloadWorkload {
+        sprite_records: 4,
+        in_bounds_proximity_checks: 90,
+    };
+
+    assert_eq!(
+        overworld_sprite_reload_timing(
+            heavy,
+            OverworldSpriteReloadEntryPhase::VblankEdgeAfterGraphicsTail,
+        )
+        .resume_scanout,
+        OverworldSpriteReloadResumeScanout::FollowingNmi,
+    );
+    assert_eq!(
+        overworld_sprite_reload_timing(
+            heavy,
+            OverworldSpriteReloadEntryPhase::OrdinaryModuleIteration,
+        )
+        .resume_scanout,
+        OverworldSpriteReloadResumeScanout::ByReturnPhase(NmiPhase::AfterNmi),
+    );
+    assert_eq!(
+        overworld_sprite_reload_timing(
+            light,
+            OverworldSpriteReloadEntryPhase::OrdinaryModuleIteration,
+        )
+        .resume_scanout,
+        OverworldSpriteReloadResumeScanout::ByReturnPhase(NmiPhase::BeforeNmi),
+    );
+}
+
+#[test]
+fn overworld_submodule6_entry_owns_the_live_animated_bg_upload() {
+    let frame = |submodule| crate::game_state::FrameState {
+        main_module: 9,
+        submodule,
+        ..Default::default()
+    };
+
+    assert!(rom_overworld_entry_to_submodule6_publishes_live_animated_bg(
+        frame(5),
+        frame(6),
+    ));
+    assert!(!rom_overworld_entry_to_submodule6_publishes_live_animated_bg(
+        frame(4),
+        frame(6),
+    ));
+    assert!(!rom_overworld_entry_to_submodule6_publishes_live_animated_bg(
+        frame(5),
+        frame(5),
+    ));
 }
 
 #[test]
@@ -5887,6 +5956,38 @@ fn hdma_setup_and_simple_hdma_line_write_ppu() {
     assert!(state.ppu.forced_blank);
     assert_eq!(state.ppu.brightness, 0x0f);
     assert_eq!(hdma.rep_count, 0x1f);
+}
+
+#[test]
+fn retiring_window_hdma_scanout_commits_its_final_ppu_latches() {
+    let mut state = ZeldaState::new();
+    state.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + 4].copy_from_slice(&[1, 0, 255, 0]);
+    state.hdma_setup(0, 0x001b00, 1, 0, 0x26, 0);
+    state.set_hdma_enable_mask(1 << 7);
+    state.ppu.window1_left = 1;
+    state.ppu.window1_right = 0;
+
+    state.capture_display_snapshot();
+    state.set_hdma_enable_mask(0);
+    state.capture_display_snapshot();
+
+    assert_eq!((state.ppu.window1_left, state.ppu.window1_right), (0, 255));
+}
+
+#[test]
+fn retained_window_hdma_scanout_does_not_retire_twice() {
+    let mut state = ZeldaState::new();
+    state.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + 4].copy_from_slice(&[1, 0, 255, 0]);
+    state.hdma_setup(0, 0x001b00, 1, 0, 0x26, 0);
+    state.set_hdma_enable_mask(1 << 7);
+    state.capture_display_snapshot();
+
+    state.set_hdma_enable_mask(0);
+    state.ppu.window1_left = 7;
+    state.ppu.window1_right = 8;
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::RetainPublished);
+
+    assert_eq!((state.ppu.window1_left, state.ppu.window1_right), (7, 8));
 }
 
 #[test]

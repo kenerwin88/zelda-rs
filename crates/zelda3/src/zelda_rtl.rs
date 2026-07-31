@@ -775,6 +775,21 @@ const fn rom_overworld_bad_weather_scroll_is_live(
         && snapshot_bg2_v == live_bg2_v
 }
 
+const fn rom_overworld_entry_to_submodule6_publishes_live_animated_bg(
+    published: crate::game_state::FrameState,
+    captured: crate::game_state::FrameState,
+) -> bool {
+    // Module09 submodule 5 completes the overlay load, and the following NMI
+    // uploads the animated background used by the first submodule-6 scanout.
+    // Identify that CPU transition directly instead of inferring it from a
+    // BG1-only rain-scroll delta; once scroll publication is coherent, that
+    // delta legitimately disappears while the animated DMA boundary remains.
+    published.main_module == 9
+        && published.submodule == 5
+        && captured.main_module == 9
+        && captured.submodule == 6
+}
+
 const fn rom_overworld_transition_half_color_is_live(
     snapshot_main_module: u8,
     snapshot_submodule: u8,
@@ -1012,7 +1027,9 @@ enum OverworldSpriteReloadEntryPhase {
 enum PreMainNmiResume {
     DialogueVwfUpload,
     OverworldAuxGraphicsReturn,
-    OverworldSpriteReloadReturn { return_phase: NmiPhase },
+    OverworldSpriteReloadReturn {
+        scanout: OverworldSpriteReloadResumeScanout,
+    },
     DungeonSupertileQuadrantUploads,
 }
 
@@ -1069,16 +1086,7 @@ impl PreMainNmiResume {
                 bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
                 obj: None,
             },
-            Self::OverworldSpriteReloadReturn { return_phase } => PreMainNmiScanoutGenerations {
-                publication: match return_phase {
-                    NmiPhase::BeforeNmi => DisplaySnapshotPublication::PublishCaptured,
-                    NmiPhase::AfterNmi => DisplaySnapshotPublication::RetainPublished,
-                },
-                vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
-                animated_bg: None,
-                bg_scroll: return_phase.return_bg_scroll_generation(),
-                obj: None,
-            },
+            Self::OverworldSpriteReloadReturn { scanout } => scanout.generations(),
             Self::DungeonSupertileQuadrantUploads => PreMainNmiScanoutGenerations {
                 publication: DisplaySnapshotPublication::PublishCaptured,
                 vram: DisplayVramGeneration::ComposeLiveAfterNmi,
@@ -1112,11 +1120,42 @@ impl PreMainNmiResume {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OverworldSpriteReloadResumeScanout {
+    ByReturnPhase(NmiPhase),
+    FollowingNmi,
+}
+
+impl OverworldSpriteReloadResumeScanout {
+    const fn generations(self) -> PreMainNmiScanoutGenerations {
+        match self {
+            Self::ByReturnPhase(return_phase) => PreMainNmiScanoutGenerations {
+                publication: match return_phase {
+                    NmiPhase::BeforeNmi => DisplaySnapshotPublication::PublishCaptured,
+                    NmiPhase::AfterNmi => DisplaySnapshotPublication::RetainPublished,
+                },
+                vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
+                animated_bg: None,
+                bg_scroll: return_phase.return_bg_scroll_generation(),
+                obj: None,
+            },
+            Self::FollowingNmi => PreMainNmiScanoutGenerations {
+                publication: DisplaySnapshotPublication::PublishCaptured,
+                vram: DisplayVramGeneration::ComposeLiveAfterNmi,
+                animated_bg: Some(AnimatedBgScanoutGeneration::LiveAfterNmi),
+                bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+                obj: None,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OverworldSpriteReloadTiming {
     load_nmi_slices: u8,
     post_return_hold_nmi_slices: u8,
     return_phase: NmiPhase,
     epilogue_phase: NmiPhase,
+    resume_scanout: OverworldSpriteReloadResumeScanout,
 }
 
 const fn overworld_sprite_reload_timing(
@@ -1144,13 +1183,15 @@ const fn overworld_sprite_reload_timing(
         OverworldSpriteReloadEntryPhase::VblankEdgeAfterGraphicsTail
     ) {
         // The graphics tail enters Module09_LoadNewSprites at the vblank edge.
-        // That phase makes the reload span two host NMI boundaries, while the
-        // workload independently decides which scroll generation is visible.
+        // The reload spans two host NMI boundaries, so the following NMI's
+        // camera writes own the returned scanout even when a heavy workload
+        // returns just after that boundary.
         OverworldSpriteReloadTiming {
             load_nmi_slices: 2,
             post_return_hold_nmi_slices: 0,
             return_phase,
             epilogue_phase: NmiPhase::BeforeNmi,
+            resume_scanout: OverworldSpriteReloadResumeScanout::FollowingNmi,
         }
     } else if returns_before_nmi {
         OverworldSpriteReloadTiming {
@@ -1161,6 +1202,7 @@ const fn overworld_sprite_reload_timing(
             post_return_hold_nmi_slices: 1,
             return_phase,
             epilogue_phase: NmiPhase::AfterNmi,
+            resume_scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(return_phase),
         }
     } else {
         OverworldSpriteReloadTiming {
@@ -1168,6 +1210,7 @@ const fn overworld_sprite_reload_timing(
             post_return_hold_nmi_slices: 0,
             return_phase,
             epilogue_phase: NmiPhase::BeforeNmi,
+            resume_scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(return_phase),
         }
     }
 }
@@ -1359,6 +1402,7 @@ enum GameWorkContinuation {
         post_return_hold_nmi_slices: u8,
         return_phase: NmiPhase,
         epilogue_phase: NmiPhase,
+        resume_scanout: OverworldSpriteReloadResumeScanout,
     },
     HoldOverworldSpriteReloadReturn,
 }
@@ -3186,9 +3230,7 @@ impl LiveSpotlightScanout {
         }
     }
 
-    fn compose_into(&self, ram: &mut [u8], ppu: &mut PpuState, dma: &mut DmaState) {
-        ppu.windowsel = self.windowsel;
-        ppu.screen_windowed = self.screen_windowed;
+    fn compose_hdma_into(&self, ram: &mut [u8], dma: &mut DmaState) {
         ram[crate::game_state::constants::HDMAEN_COPY] = self.hdma_enable_mask;
         dma.channel[6..8].copy_from_slice(&self.dma_channels);
         for (table_base, table) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
@@ -3199,6 +3241,12 @@ impl LiveSpotlightScanout {
             ram[table_base..table_base + byte_count].copy_from_slice(&table[..byte_count]);
         }
     }
+
+    fn compose_into(&self, ram: &mut [u8], ppu: &mut PpuState, dma: &mut DmaState) {
+        ppu.windowsel = self.windowsel;
+        ppu.screen_windowed = self.screen_windowed;
+        self.compose_hdma_into(ram, dma);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -3208,6 +3256,12 @@ enum SpotlightScanoutGeneration {
 }
 
 impl SpotlightScanoutGeneration {
+    fn compose_hdma_into(&self, ram: &mut [u8], dma: &mut DmaState) {
+        if let Self::ComposeLiveAfterNmi(live) = self {
+            live.compose_hdma_into(ram, dma);
+        }
+    }
+
     fn compose_into(&self, ram: &mut [u8], ppu: &mut PpuState, dma: &mut DmaState) {
         if let Self::ComposeLiveAfterNmi(live) = self {
             live.compose_into(ram, ppu, dma);
@@ -9918,6 +9972,9 @@ impl ZeldaState {
         &mut self,
         publication: DisplaySnapshotPublication,
     ) {
+        if publication != DisplaySnapshotPublication::RetainPublished {
+            self.commit_retiring_display_window_latches();
+        }
         let diagnostics = CaptureDisplayDiagnostics::from_env();
         self.ppu.refresh_brightness_cache();
         // The upcoming NMI may latch a fresh pre-upload CGRAM image; the one
@@ -9985,6 +10042,13 @@ impl ZeldaState {
             .display_snapshot
             .as_ref()
             .map(|published| crate::game_state::FrameState::load_from_ram(&published.ram));
+        let publish_live_animated_bg_on_submodule6_entry =
+            published_frame.is_some_and(|published| {
+                rom_overworld_entry_to_submodule6_publishes_live_animated_bg(
+                    published,
+                    captured_frame,
+                )
+            });
         let transition_entry_obj = self.display_snapshot.as_ref().and_then(|published| {
             let published_frame = published_frame?;
             rom_dungeon_falling_entry_retains_published_obj_generation(
@@ -10110,10 +10174,15 @@ impl ZeldaState {
                 .next_display_animated_bg_scanout_generation
                 .take()
                 .unwrap_or_else(|| {
-                    animated_bg_scanout_across_main(
+                    let generation = animated_bg_scanout_across_main(
                         entry_graphics_dma_plan,
                         rom_graphics_dma_plan(captured_frame.main_module, captured_frame.submodule),
-                    )
+                    );
+                    if publish_live_animated_bg_on_submodule6_entry {
+                        AnimatedBgScanoutGeneration::LiveAfterNmi
+                    } else {
+                        generation
+                    }
                 }),
             bg_scroll_generation: std::mem::take(&mut self.next_display_bg_scroll_generation),
             spotlight_scanout_generation: self
@@ -11938,8 +12007,9 @@ impl ZeldaState {
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishOverworldSpriteReloadTail {
                     post_return_hold_nmi_slices,
-                    return_phase,
+                    return_phase: _,
                     epilogue_phase,
+                    resume_scanout,
                 }) => {
                     // The long sprite reset/load loop is interrupted in the
                     // ROM. Workload-derived return phase owns publication and
@@ -11967,7 +12037,9 @@ impl ZeldaState {
                         );
                     } else {
                         self.game_execution_scheduler.schedule_pre_main_nmi_resume(
-                            PreMainNmiResume::OverworldSpriteReloadReturn { return_phase },
+                            PreMainNmiResume::OverworldSpriteReloadReturn {
+                                scanout: resume_scanout,
+                            },
                         );
                     }
                     return;
@@ -11981,7 +12053,9 @@ impl ZeldaState {
                     // main-loop iteration while still running the frame NMI.
                     self.game_execution_scheduler.schedule_pre_main_nmi_resume(
                         PreMainNmiResume::OverworldSpriteReloadReturn {
-                            return_phase: NmiPhase::BeforeNmi,
+                            scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(
+                                NmiPhase::BeforeNmi,
+                            ),
                         },
                     );
                 }
@@ -12198,6 +12272,10 @@ impl ZeldaState {
     }
 
     fn simple_hdma_get_ptr(&self, p: u32) -> Option<Vec<u8>> {
+        Self::simple_hdma_get_ptr_from_ram(&self.ram, p)
+    }
+
+    fn simple_hdma_get_ptr_from_ram(ram: &[u8], p: u32) -> Option<Vec<u8>> {
         match p {
             0x0cfa87 => Some(ATTRACT_BG_DMA_SETUP.to_vec()),
             0x0cfa94 => Some(ATTRACT_TILEMAP_DMA_SETUP.to_vec()),
@@ -12207,9 +12285,17 @@ impl ZeldaState {
             0x0abdd6 => Some(MAP_MODE_HDMA_SETUP_FAR.to_vec()),
             0x0abddd => Some(ATTRACT_INDIRECT_HDMA_SETUP.to_vec()),
             0x02c80c => Some(PRAYING_SCENE_HDMA_SETUP.to_vec()),
-            0x001b00 => Some(self.ram_bytes(HDMA_TABLE_DYNAMIC, 0x1e0)),
-            0x001be0 => Some(self.ram_bytes(HDMA_TABLE_DYNAMIC + 0xe0, 0x100)),
-            0x001bf0 => Some(self.ram_bytes(HDMA_TABLE_DYNAMIC + 0xf0, 0xf0)),
+            0x001b00 => Some(Self::ram_bytes_from(ram, HDMA_TABLE_DYNAMIC, 0x1e0)),
+            0x001be0 => Some(Self::ram_bytes_from(
+                ram,
+                HDMA_TABLE_DYNAMIC + 0xe0,
+                0x100,
+            )),
+            0x001bf0 => Some(Self::ram_bytes_from(
+                ram,
+                HDMA_TABLE_DYNAMIC + 0xf0,
+                0xf0,
+            )),
             0x0add27 => Some(Self::u16_table_bytes(&MAP_MODE_PERSPECTIVE_ZOOMS_NEAR, 0)),
             0x0ade07 => Some(Self::u16_table_bytes(
                 &MAP_MODE_PERSPECTIVE_ZOOMS_NEAR,
@@ -12217,17 +12303,25 @@ impl ZeldaState {
             )),
             0x0adee7 => Some(Self::u16_table_bytes(&MAP_MODE_PERSPECTIVE_ZOOMS_FAR, 0)),
             0x0adfc7 => Some(Self::u16_table_bytes(&MAP_MODE_PERSPECTIVE_ZOOMS_FAR, 0xe0)),
-            0x000600 => Some(self.ram_bytes(DEBUG_ROOM_BOUNDS_TOP, 2)),
-            0x000602 => Some(self.ram_bytes(OVERWORLD_SCROLL_Y_END, 2)),
-            0x000604 => Some(self.ram_bytes(OVERWORLD_SCROLL_X_START, 2)),
-            0x000606 => Some(self.ram_bytes(OVERWORLD_SCROLL_X_END, 2)),
-            0x0000e2 => Some(self.ram_bytes(PpuScrollCopyState::bg2_h_copy2_offset(), 2)),
+            0x000600 => Some(Self::ram_bytes_from(ram, DEBUG_ROOM_BOUNDS_TOP, 2)),
+            0x000602 => Some(Self::ram_bytes_from(ram, OVERWORLD_SCROLL_Y_END, 2)),
+            0x000604 => Some(Self::ram_bytes_from(ram, OVERWORLD_SCROLL_X_START, 2)),
+            0x000606 => Some(Self::ram_bytes_from(ram, OVERWORLD_SCROLL_X_END, 2)),
+            0x0000e2 => Some(Self::ram_bytes_from(
+                ram,
+                PpuScrollCopyState::bg2_h_copy2_offset(),
+                2,
+            )),
             _ => None,
         }
     }
 
     fn ram_bytes(&self, offset: usize, len: usize) -> Vec<u8> {
-        self.ram
+        Self::ram_bytes_from(&self.ram, offset, len)
+    }
+
+    fn ram_bytes_from(ram: &[u8], offset: usize, len: usize) -> Vec<u8> {
+        ram
             .get(offset..offset + len)
             .map_or_else(Vec::new, |bytes| bytes.to_vec())
     }
@@ -12243,11 +12337,16 @@ impl ZeldaState {
     }
 
     fn simple_hdma_init(&self, c: &mut SimpleHdma, dc: &DmaChannel) {
+        Self::simple_hdma_init_from_ram(&self.ram, c, dc);
+    }
+
+    fn simple_hdma_init_from_ram(ram: &[u8], c: &mut SimpleHdma, dc: &DmaChannel) {
         if !dc.hdma_active {
             c.table = None;
             return;
         }
-        c.table = self.simple_hdma_get_ptr(dc.a_adr as u32 | ((dc.a_bank as u32) << 16));
+        c.table =
+            Self::simple_hdma_get_ptr_from_ram(ram, dc.a_adr as u32 | ((dc.a_bank as u32) << 16));
         c.table_pos = 0;
         c.indir.clear();
         c.indir_pos = 0;
@@ -12264,41 +12363,46 @@ impl ZeldaState {
         Some(value)
     }
 
-    fn simple_hdma_do_line(&mut self, c: &mut SimpleHdma) {
+    fn simple_hdma_line_writes(
+        ram: &[u8],
+        c: &mut SimpleHdma,
+    ) -> ([(u32, u8); 4], usize) {
+        let mut writes = [(0, 0); 4];
         if c.table.is_none() {
-            return;
+            return (writes, 0);
         }
 
         let mut do_transfer = false;
         if c.rep_count & 0x7f == 0 {
             let Some(rep_count) = Self::simple_hdma_table_byte(c) else {
                 c.table = None;
-                return;
+                return (writes, 0);
             };
             c.rep_count = rep_count;
             if c.rep_count == 0 {
                 c.table = None;
-                return;
+                return (writes, 0);
             }
             if c.mode & 0x40 != 0 {
                 let Some(lo) = Self::simple_hdma_table_byte(c) else {
                     c.table = None;
-                    return;
+                    return (writes, 0);
                 };
                 let Some(hi) = Self::simple_hdma_table_byte(c) else {
                     c.table = None;
-                    return;
+                    return (writes, 0);
                 };
-                c.indir = self
-                    .simple_hdma_get_ptr(
-                        ((c.indir_bank as u32) << 16) | lo as u32 | ((hi as u32) << 8),
-                    )
-                    .unwrap_or_default();
+                c.indir = Self::simple_hdma_get_ptr_from_ram(
+                    ram,
+                    ((c.indir_bank as u32) << 16) | lo as u32 | ((hi as u32) << 8),
+                )
+                .unwrap_or_default();
                 c.indir_pos = 0;
             }
             do_transfer = true;
         }
 
+        let mut write_count = 0;
         if do_transfer || c.rep_count & 0x80 != 0 {
             for j in 0..SIMPLE_HDMA_TRANSFER_LENGTH[(c.mode & 7) as usize] {
                 let value = if c.mode & 0x40 != 0 {
@@ -12310,10 +12414,116 @@ impl ZeldaState {
                 };
                 let offset = SIMPLE_HDMA_B_ADR_OFFSETS[(c.mode & 7) as usize][j];
                 let adr = 0x2100 + c.ppu_addr.wrapping_add(offset) as u32;
-                self.zelda_ppu_write(adr, value);
+                writes[write_count] = (adr, value);
+                write_count += 1;
             }
         }
         c.rep_count = c.rep_count.wrapping_sub(1);
+        (writes, write_count)
+    }
+
+    fn simple_hdma_do_line(&mut self, c: &mut SimpleHdma) {
+        let (writes, write_count) = Self::simple_hdma_line_writes(&self.ram, c);
+        for (address, value) in writes.into_iter().take(write_count) {
+            self.zelda_ppu_write(address, value);
+        }
+    }
+
+    fn hdma_channel_targets_window_latches(channel: &DmaChannel) -> bool {
+        let mode = usize::from(channel.mode & 7);
+        SIMPLE_HDMA_B_ADR_OFFSETS[mode][..SIMPLE_HDMA_TRANSFER_LENGTH[mode]]
+            .iter()
+            .any(|offset| matches!(channel.b_adr.wrapping_add(*offset), 0x26..=0x29))
+    }
+
+    fn hdma_state_targets_window_latches(enable_mask: u8, dma: &DmaState) -> bool {
+        dma.channel.iter().enumerate().any(|(index, channel)| {
+            enable_mask & (1 << index) != 0
+                && Self::hdma_channel_targets_window_latches(channel)
+        })
+    }
+
+    fn final_window_latches_after_scanout(snapshot: &DisplaySnapshot) -> Option<[u8; 4]> {
+        let captured_targets_window = Self::hdma_state_targets_window_latches(
+            snapshot.ram[crate::game_state::constants::HDMAEN_COPY],
+            &snapshot.dma,
+        );
+        let spotlight_targets_window = match &snapshot.spotlight_scanout_generation {
+            SpotlightScanoutGeneration::ComposeLiveAfterNmi(live) => {
+                let mut dma = snapshot.dma.clone();
+                dma.channel[6..8].copy_from_slice(&live.dma_channels);
+                Self::hdma_state_targets_window_latches(live.hdma_enable_mask, &dma)
+            }
+            SpotlightScanoutGeneration::CapturedBeforeNmi => false,
+        };
+        if !captured_targets_window && !spotlight_targets_window {
+            return None;
+        }
+
+        let mut ram = snapshot.ram.clone();
+        let mut dma = snapshot.dma.clone();
+        snapshot
+            .spotlight_scanout_generation
+            .compose_hdma_into(&mut ram, &mut dma);
+        snapshot.hdma_table_generation.compose_into(&mut ram);
+
+        let enable_mask = ram[crate::game_state::constants::HDMAEN_COPY];
+        let mut channels = dma.channel;
+        let mut hdma: [SimpleHdma; 8] = std::array::from_fn(|_| SimpleHdma::default());
+        let mut active = [false; 8];
+        for index in 0..8 {
+            channels[index].hdma_active = enable_mask & (1 << index) != 0;
+            active[index] = channels[index].hdma_active
+                && Self::hdma_channel_targets_window_latches(&channels[index]);
+            if active[index] {
+                Self::simple_hdma_init_from_ram(&ram, &mut hdma[index], &channels[index]);
+            }
+        }
+        if !active.iter().any(|enabled| *enabled) {
+            return None;
+        }
+
+        let mut latches = [
+            snapshot.ppu.window1_left,
+            snapshot.ppu.window1_right,
+            snapshot.ppu.window2_left,
+            snapshot.ppu.window2_right,
+        ];
+        // The scanline renderer performs the line-zero transfer before the
+        // first visible row and leaves the transfer after row 223 in the PPU.
+        for _ in 0..=224 {
+            for index in 0..8 {
+                if !active[index] {
+                    continue;
+                }
+                let (writes, write_count) =
+                    Self::simple_hdma_line_writes(&ram, &mut hdma[index]);
+                for (address, value) in writes.into_iter().take(write_count) {
+                    if let 0x2126..=0x2129 = address {
+                        latches[(address - 0x2126) as usize] = value;
+                    }
+                }
+            }
+        }
+        Some(latches)
+    }
+
+    /// Retiring HDMA leaves its final register values in the physical PPU.
+    ///
+    /// The immutable display snapshot owns the table generation hardware just
+    /// consumed. Replaying the live WRAM table here would be wrong because the
+    /// CPU may already be authoring the following scanout.
+    fn commit_retiring_display_window_latches(&mut self) {
+        let latches = self
+            .display_snapshot
+            .as_ref()
+            .and_then(|snapshot| Self::final_window_latches_after_scanout(snapshot));
+        let Some(latches) = latches else {
+            return;
+        };
+        for (offset, value) in latches.into_iter().enumerate() {
+            self.zelda_ppu_write(0x2126 + offset as u32, value);
+        }
     }
 
     /// Capture CGRAM after running all active HDMA channels for the first scanline.

@@ -3947,6 +3947,7 @@ impl ZeldaState {
                     post_return_hold_nmi_slices: reload_timing.post_return_hold_nmi_slices,
                     return_phase: reload_timing.return_phase,
                     epilogue_phase: reload_timing.epilogue_phase,
+                    resume_scanout: reload_timing.resume_scanout,
                 },
                 reload_timing.load_nmi_slices,
             );

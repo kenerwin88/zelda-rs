@@ -326,8 +326,10 @@ fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
         ),
     ] {
         assert_eq!(
-            PreMainNmiResume::OverworldSpriteReloadReturn { return_phase }
-                .scanout_generations(),
+            PreMainNmiResume::OverworldSpriteReloadReturn {
+                scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(return_phase),
+            }
+            .scanout_generations(),
             PreMainNmiScanoutGenerations {
                 publication,
                 vram: DisplayVramGeneration::RetainCapturedBeforeNmi,
@@ -337,6 +339,19 @@ fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
             },
         );
     }
+    assert_eq!(
+        PreMainNmiResume::OverworldSpriteReloadReturn {
+            scanout: OverworldSpriteReloadResumeScanout::FollowingNmi,
+        }
+        .scanout_generations(),
+        PreMainNmiScanoutGenerations {
+            publication: DisplaySnapshotPublication::PublishCaptured,
+            vram: DisplayVramGeneration::ComposeLiveAfterNmi,
+            animated_bg: Some(AnimatedBgScanoutGeneration::LiveAfterNmi),
+            bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+            obj: None,
+        },
+    );
     assert_eq!(
         PreMainNmiResume::DungeonSupertileQuadrantUploads.scanout_generations(),
         PreMainNmiScanoutGenerations {
