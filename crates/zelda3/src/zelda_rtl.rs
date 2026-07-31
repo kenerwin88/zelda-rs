@@ -1120,9 +1120,18 @@ impl PreMainNmiResume {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OverworldSpriteReloadBg1Generation {
+    RetainBeforePrepublishedRain,
+    ComposeAtTransitionReturn,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OverworldSpriteReloadResumeScanout {
     ByReturnPhase(NmiPhase),
-    FollowingNmi,
+    CpuSliceEntry {
+        scroll: BgScrollRegisterScanout,
+        bg1_generation: OverworldSpriteReloadBg1Generation,
+    },
 }
 
 impl OverworldSpriteReloadResumeScanout {
@@ -1138,13 +1147,60 @@ impl OverworldSpriteReloadResumeScanout {
                 bg_scroll: return_phase.return_bg_scroll_generation(),
                 obj: None,
             },
-            Self::FollowingNmi => PreMainNmiScanoutGenerations {
+            Self::CpuSliceEntry { scroll, .. } => PreMainNmiScanoutGenerations {
                 publication: DisplaySnapshotPublication::PublishCaptured,
                 vram: DisplayVramGeneration::ComposeLiveAfterNmi,
-                animated_bg: Some(AnimatedBgScanoutGeneration::LiveAfterNmi),
-                bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+                // Animated-BG DMA is still owned by its ordinary NMI cadence.
+                // The later 09/05 -> 09/06 boundary publishes the uploaded
+                // tiles explicitly when that generation reaches scanout.
+                animated_bg: None,
+                bg_scroll: DisplayBgScrollGeneration::RetainCpuSliceEntry(scroll),
                 obj: None,
             },
+        }
+    }
+
+    fn complete_transition_return(self, returned: BgScrollRegisterScanout) -> Self {
+        let Self::CpuSliceEntry {
+            mut scroll,
+            bg1_generation,
+        } = self
+        else {
+            return self;
+        };
+        if bg1_generation == OverworldSpriteReloadBg1Generation::ComposeAtTransitionReturn {
+            scroll.offsets[0] = returned.offsets[0];
+        }
+        scroll.offsets[1] = returned.offsets[1];
+        Self::CpuSliceEntry {
+            scroll,
+            bg1_generation,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OverworldSpriteReloadResumeBoundary {
+    ByReturnPhase(NmiPhase),
+    CpuSliceEntryNmiRegisters,
+}
+
+impl OverworldSpriteReloadResumeBoundary {
+    fn capture_scanout(
+        self,
+        state: &ZeldaState,
+        bg1_generation: OverworldSpriteReloadBg1Generation,
+    ) -> OverworldSpriteReloadResumeScanout {
+        match self {
+            Self::ByReturnPhase(return_phase) => {
+                OverworldSpriteReloadResumeScanout::ByReturnPhase(return_phase)
+            }
+            Self::CpuSliceEntryNmiRegisters => {
+                OverworldSpriteReloadResumeScanout::CpuSliceEntry {
+                    scroll: state.bg_scroll_scanout_from_nmi_register_mirrors(),
+                    bg1_generation,
+                }
+            }
         }
     }
 }
@@ -1155,7 +1211,7 @@ struct OverworldSpriteReloadTiming {
     post_return_hold_nmi_slices: u8,
     return_phase: NmiPhase,
     epilogue_phase: NmiPhase,
-    resume_scanout: OverworldSpriteReloadResumeScanout,
+    resume_boundary: OverworldSpriteReloadResumeBoundary,
 }
 
 const fn overworld_sprite_reload_timing(
@@ -1183,15 +1239,16 @@ const fn overworld_sprite_reload_timing(
         OverworldSpriteReloadEntryPhase::VblankEdgeAfterGraphicsTail
     ) {
         // The graphics tail enters Module09_LoadNewSprites at the vblank edge.
-        // The reload spans two host NMI boundaries, so the following NMI's
-        // camera writes own the returned scanout even when a heavy workload
-        // returns just after that boundary.
+        // The reload spans two host NMI boundaries. The returned scanout owns
+        // the register generation at this CPU-slice entry: the transition's
+        // direct BG2 adjustment has happened, while the provisional rain
+        // suffix has not yet authored the following BG1 mirror generation.
         OverworldSpriteReloadTiming {
             load_nmi_slices: 2,
             post_return_hold_nmi_slices: 0,
             return_phase,
             epilogue_phase: NmiPhase::BeforeNmi,
-            resume_scanout: OverworldSpriteReloadResumeScanout::FollowingNmi,
+            resume_boundary: OverworldSpriteReloadResumeBoundary::CpuSliceEntryNmiRegisters,
         }
     } else if returns_before_nmi {
         OverworldSpriteReloadTiming {
@@ -1202,7 +1259,7 @@ const fn overworld_sprite_reload_timing(
             post_return_hold_nmi_slices: 1,
             return_phase,
             epilogue_phase: NmiPhase::AfterNmi,
-            resume_scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(return_phase),
+            resume_boundary: OverworldSpriteReloadResumeBoundary::ByReturnPhase(return_phase),
         }
     } else {
         OverworldSpriteReloadTiming {
@@ -1210,7 +1267,7 @@ const fn overworld_sprite_reload_timing(
             post_return_hold_nmi_slices: 0,
             return_phase,
             epilogue_phase: NmiPhase::BeforeNmi,
-            resume_scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(return_phase),
+            resume_boundary: OverworldSpriteReloadResumeBoundary::ByReturnPhase(return_phase),
         }
     }
 }
@@ -10797,9 +10854,10 @@ impl ZeldaState {
         );
         if diagnostics.capture.frame_boundary {
             eprintln!(
-                "frame_boundary_present host={} vram={:?} link_obj={:?} oam={:?} bg_scroll={:?} bg1=({:04x},{:04x}) retained_obj={} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
+                "frame_boundary_present host={} vram={:?} animated_bg={:?} link_obj={:?} oam={:?} bg_scroll={:?} bg1=({:04x},{:04x}) retained_obj={} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
                 self.frame_ctr_dbg,
                 publication_plan.vram_generation,
+                publication_plan.animated_bg_scanout_generation,
                 publication_plan.link_obj_scanout_generation,
                 publication_plan.oam_scanout_source,
                 publication_plan.bg_scroll_source,
@@ -12009,13 +12067,21 @@ impl ZeldaState {
                     post_return_hold_nmi_slices,
                     return_phase: _,
                     epilogue_phase,
-                    resume_scanout,
+                    mut resume_scanout,
                 }) => {
                     // The long sprite reset/load loop is interrupted in the
                     // ROM. Workload-derived return phase owns publication and
                     // epilogue order independently from the host hold count.
                     self.complete_module09_load_new_sprites_after_reload();
                     self.complete_module09_overworld_after_prepublished_rain();
+                    // The provisional sprite generation may have advanced
+                    // rain before the suspended ROM call stack reached it.
+                    // Complete the typed scanout with the real transition
+                    // return while preserving whichever BG1 generation the
+                    // provisional phase recorded.
+                    let returned_scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
+                    resume_scanout =
+                        resume_scanout.complete_transition_return(returned_scroll);
                     if epilogue_phase == NmiPhase::BeforeNmi {
                         self.nmi_prepare_sprites();
                         self.clear_nmi_update_latch();

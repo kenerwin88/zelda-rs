@@ -3940,14 +3940,49 @@ impl ZeldaState {
             // sprite set must replace the stale OAM publication on this frame,
             // but the transition-control tail does not return until four more
             // NMI boundaries have passed.
-            self.publish_module09_transition_sprites_without_scroll();
             let reload_timing = overworld_sprite_reload_timing(sprite_reload_workload, entry_phase);
+            let bg1_before_provisional_rain = (
+                self.game_state
+                    .display
+                    .ppu_scroll_copy
+                    .bg1_h_copy2(),
+                self.game_state
+                    .display
+                    .ppu_scroll_copy
+                    .bg1_v_copy2(),
+            );
+            self.publish_module09_transition_sprites_without_scroll();
+            let bg1_after_provisional_rain = (
+                self.game_state
+                    .display
+                    .ppu_scroll_copy
+                    .bg1_h_copy2(),
+                self.game_state
+                    .display
+                    .ppu_scroll_copy
+                    .bg1_v_copy2(),
+            );
+            // The provisional caller suffix stages the transition-adjusted
+            // BG2 value in the NMI register mirror. Its rain tick advances
+            // only BG1's copy2 value for a later caller suffix. Record whether
+            // that tick actually ran so the return boundary can retain the
+            // prepublished BG1 generation without delaying an older rain tick.
+            let bg1_generation = if bg1_before_provisional_rain
+                != bg1_after_provisional_rain
+            {
+                OverworldSpriteReloadBg1Generation::RetainBeforePrepublishedRain
+            } else {
+                OverworldSpriteReloadBg1Generation::ComposeAtTransitionReturn
+            };
+            let resume_scanout = reload_timing
+                .resume_boundary
+                .capture_scanout(self, bg1_generation);
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishOverworldSpriteReloadTail {
                     post_return_hold_nmi_slices: reload_timing.post_return_hold_nmi_slices,
                     return_phase: reload_timing.return_phase,
                     epilogue_phase: reload_timing.epilogue_phase,
-                    resume_scanout: reload_timing.resume_scanout,
+                    resume_scanout,
                 },
                 reload_timing.load_nmi_slices,
             );

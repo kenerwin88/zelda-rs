@@ -341,14 +341,21 @@ fn pre_main_nmi_resume_selects_display_domains_by_hardware_generation() {
     }
     assert_eq!(
         PreMainNmiResume::OverworldSpriteReloadReturn {
-            scanout: OverworldSpriteReloadResumeScanout::FollowingNmi,
+            scanout: OverworldSpriteReloadResumeScanout::CpuSliceEntry {
+                scroll: BgScrollRegisterScanout {
+                    offsets: [[0x1111, 0x2222]; 4],
+                },
+                bg1_generation: OverworldSpriteReloadBg1Generation::ComposeAtTransitionReturn,
+            },
         }
         .scanout_generations(),
         PreMainNmiScanoutGenerations {
             publication: DisplaySnapshotPublication::PublishCaptured,
             vram: DisplayVramGeneration::ComposeLiveAfterNmi,
-            animated_bg: Some(AnimatedBgScanoutGeneration::LiveAfterNmi),
-            bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
+            animated_bg: None,
+            bg_scroll: DisplayBgScrollGeneration::RetainCpuSliceEntry(BgScrollRegisterScanout {
+                offsets: [[0x1111, 0x2222]; 4],
+            }),
             obj: None,
         },
     );

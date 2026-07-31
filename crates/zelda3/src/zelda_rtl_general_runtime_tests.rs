@@ -4559,7 +4559,7 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
             post_return_hold_nmi_slices: 1,
             return_phase: NmiPhase::BeforeNmi,
             epilogue_phase: NmiPhase::AfterNmi,
-            resume_scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(
+            resume_boundary: OverworldSpriteReloadResumeBoundary::ByReturnPhase(
                 NmiPhase::BeforeNmi,
             ),
         }
@@ -4577,7 +4577,7 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
             post_return_hold_nmi_slices: 0,
             return_phase: NmiPhase::AfterNmi,
             epilogue_phase: NmiPhase::BeforeNmi,
-            resume_scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(
+            resume_boundary: OverworldSpriteReloadResumeBoundary::ByReturnPhase(
                 NmiPhase::AfterNmi,
             ),
         }
@@ -4595,7 +4595,7 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
             post_return_hold_nmi_slices: 0,
             return_phase: NmiPhase::AfterNmi,
             epilogue_phase: NmiPhase::BeforeNmi,
-            resume_scanout: OverworldSpriteReloadResumeScanout::FollowingNmi,
+            resume_boundary: OverworldSpriteReloadResumeBoundary::CpuSliceEntryNmiRegisters,
         }
     );
     assert_eq!(
@@ -4611,7 +4611,7 @@ fn overworld_sprite_reload_timing_tracks_the_measured_rom_workload() {
             post_return_hold_nmi_slices: 0,
             return_phase: NmiPhase::BeforeNmi,
             epilogue_phase: NmiPhase::BeforeNmi,
-            resume_scanout: OverworldSpriteReloadResumeScanout::FollowingNmi,
+            resume_boundary: OverworldSpriteReloadResumeBoundary::CpuSliceEntryNmiRegisters,
         }
     );
 }
@@ -4950,7 +4950,11 @@ fn completed_overworld_reload_uses_its_measured_return_phase() {
                 post_return_hold_nmi_slices,
                 return_phase,
                 epilogue_phase: NmiPhase::BeforeNmi,
-                resume_scanout: OverworldSpriteReloadResumeScanout::FollowingNmi,
+                resume_scanout: OverworldSpriteReloadResumeScanout::CpuSliceEntry {
+                    scroll: cpu_slice_entry,
+                    bg1_generation:
+                        OverworldSpriteReloadBg1Generation::ComposeAtTransitionReturn,
+                },
             }
             .completion_publication(cpu_slice_entry);
             assert_eq!(publication.bg_scroll, generation);
@@ -4992,25 +4996,57 @@ fn overworld_reload_timing_keeps_resume_geometry_separate_from_return_phase() {
             heavy,
             OverworldSpriteReloadEntryPhase::VblankEdgeAfterGraphicsTail,
         )
-        .resume_scanout,
-        OverworldSpriteReloadResumeScanout::FollowingNmi,
+        .resume_boundary,
+        OverworldSpriteReloadResumeBoundary::CpuSliceEntryNmiRegisters,
     );
     assert_eq!(
         overworld_sprite_reload_timing(
             heavy,
             OverworldSpriteReloadEntryPhase::OrdinaryModuleIteration,
         )
-        .resume_scanout,
-        OverworldSpriteReloadResumeScanout::ByReturnPhase(NmiPhase::AfterNmi),
+        .resume_boundary,
+        OverworldSpriteReloadResumeBoundary::ByReturnPhase(NmiPhase::AfterNmi),
     );
     assert_eq!(
         overworld_sprite_reload_timing(
             light,
             OverworldSpriteReloadEntryPhase::OrdinaryModuleIteration,
         )
-        .resume_scanout,
-        OverworldSpriteReloadResumeScanout::ByReturnPhase(NmiPhase::BeforeNmi),
+        .resume_boundary,
+        OverworldSpriteReloadResumeBoundary::ByReturnPhase(NmiPhase::BeforeNmi),
     );
+}
+
+#[test]
+fn overworld_reload_scanout_keeps_prepublished_rain_out_of_its_bg1_generation() {
+    let entry = BgScrollRegisterScanout {
+        offsets: [[0x1111, 0x2222], [0x3333, 0x4444], [0, 0], [0, 0]],
+    };
+    let returned = BgScrollRegisterScanout {
+        offsets: [[0xaaaa, 0xbbbb], [0xcccc, 0xdddd], [0, 0], [0, 0]],
+    };
+
+    for (bg1_generation, expected_bg1) in [
+        (
+            OverworldSpriteReloadBg1Generation::RetainBeforePrepublishedRain,
+            entry.offsets[0],
+        ),
+        (
+            OverworldSpriteReloadBg1Generation::ComposeAtTransitionReturn,
+            returned.offsets[0],
+        ),
+    ] {
+        let completed = OverworldSpriteReloadResumeScanout::CpuSliceEntry {
+            scroll: entry,
+            bg1_generation,
+        }
+        .complete_transition_return(returned);
+        let OverworldSpriteReloadResumeScanout::CpuSliceEntry { scroll, .. } = completed else {
+            panic!("CPU-slice scanout changed variant");
+        };
+        assert_eq!(scroll.offsets[0], expected_bg1);
+        assert_eq!(scroll.offsets[1], returned.offsets[1]);
+    }
 }
 
 #[test]
