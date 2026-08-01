@@ -255,7 +255,7 @@ index e1ad324c..2d6a2221 100644
  }
  
 diff --git a/getset.h b/getset.h
-index ec55ea91..287741c7 100644
+index ec55ea91..fdb36321 100644
 --- a/getset.h
 +++ b/getset.h
 @@ -16,6 +16,7 @@
@@ -275,6 +275,24 @@ index ec55ea91..287741c7 100644
  	int		block = (Address & 0xffffff) >> MEMMAP_SHIFT;
  	uint8	*SetAddress = Memory.WriteMap[block];
  	int32	speed = memory_speed(Address);
+@@ -425,7 +428,16 @@ inline void S9xSetByte (uint8 Byte, uint32 Address)
+ 
+ inline void S9xSetWord (uint16 Word, uint32 Address, enum s9xwrap_t w = WRAP_NONE, enum s9xwriteorder_t o = WRITE_01)
+ {
+-	uint32	mask = MEMMAP_MASK & (w == WRAP_PAGE ? 0xff : (w == WRAP_BANK ? 0xffff : 0xffffff));
++	uint32	mask_trace = MEMMAP_MASK & (w == WRAP_PAGE ? 0xff : (w == WRAP_BANK ? 0xffff : 0xffffff));
++	// The block-edge fallback below routes through S9xSetByte, which traces
++	// on its own; trace only the direct WRITE_WORD fast path here so 16-bit
++	// stores (e.g. the $0c00d animation countdown DEC) are not invisible.
++	if (Zelda3TraceWramEnabled && (Address & mask_trace) != mask_trace)
++	{
++		Zelda3TraceWramWrite(Address, (uint8) Word);
++		Zelda3TraceWramWrite(Address + 1, Word >> 8);
++	}
++	uint32	mask = mask_trace;
+ 	if ((Address & mask) == mask)
+ 	{
+ 		PC_t	a;
 diff --git a/gfx.cpp b/gfx.cpp
 index 98f99411..84abf0cd 100644
 --- a/gfx.cpp
