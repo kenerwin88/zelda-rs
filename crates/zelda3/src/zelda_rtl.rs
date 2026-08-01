@@ -1341,6 +1341,26 @@ const fn rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(radius: u16
         && spotlight_close_next_radius(radius) <= SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
 }
 
+const fn rom_long_close_iteration_prep_returns_with_main(
+    radius_after_shrink: u16,
+    vertical_center: u16,
+) -> bool {
+    // Oracle $0c00d/$067c write traces on the maximal-table close (vertical
+    // center 238, Link's-house exit): once the interrupted large-radius
+    // builds are behind it, each mid-close iteration finishes its table and
+    // reaches Main_PrepSpritesForNmi in the SAME host frame as its radius
+    // write (radius values 105 down to 63 pair rad+prep on one run), until
+    // the $3f->$38 crossing restores the split return. The interrupted
+    // builds themselves ($7e/$77, and $70 at the maximal table) still prep
+    // on their following return frame.
+    spotlight_table_has_long_nmi_workload(vertical_center)
+        && radius_after_shrink > SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
+        && !rom_dungeon_exit_spotlight_table_needs_entry_slice(
+            radius_after_shrink,
+            vertical_center,
+        )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum DungeonSupertileTransitionWork {
     RoomLoad,
@@ -1562,6 +1582,10 @@ impl SpotlightIteration {
             direction: SpotlightDirection::Closing,
             phase,
         }
+    }
+
+    pub(super) const fn is_closing(self) -> bool {
+        matches!(self.direction, SpotlightDirection::Closing)
     }
 
     const fn in_flight_publication(self) -> DisplaySnapshotPublication {
@@ -11942,17 +11966,17 @@ impl ZeldaState {
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightEntry) => {
                     // The vblank-interrupted first IrisSpotlight_ConfigureTable
                     // build finishes here: table copy, first radius write,
-                    // submodule advance, and the Link/OAM suffix all return
-                    // before this frame's trailing NMI. The frame counter was
-                    // ticked by the entry frame's main prefix; this resumed
-                    // slice must not tick it again.
+                    // submodule advance, and the Link/OAM suffix run, then the
+                    // scheduled iteration return owns the boundary that reaches
+                    // Main_PrepSpritesForNmi (oracle $0c00d trace: no prep on
+                    // the resumed-build frame, one at the following return).
+                    // The frame counter was ticked by the entry frame's main
+                    // prefix; this resumed slice must not tick it again.
                     self.complete_dungeon_exit_spotlight_entry();
                     self.next_display_obj_scanout_generation =
                         Some(ObjScanoutGenerations::coherent(
                             GraphicsDmaGeneration::HostBoundaryBeforeMain,
                         ));
-                    self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishSpotlightIteration {
                     ..
@@ -11977,12 +12001,30 @@ impl ZeldaState {
                         // same deferred return boundary as the goal transition.
                         self.OpenSpotlight_Next2();
                     }
-                    self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
                     resume_main_after_spotlight_return = self.game_state.frame.main_module == 15
                         && rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
                             self.game_state.display.spotlight_hdma.window_radius(),
                         );
+                    // The $3f->$38 crossing return resumes the next main slice
+                    // before this frame's trailing NMI; that resumed slice
+                    // reaches Main_PrepSpritesForNmi through the ordinary
+                    // game-loop suffix. Prepping here as well double-advanced
+                    // the animation countdowns (oracle $0c00d trace shows one
+                    // write on the crossing frame, not two). Mid-close
+                    // long-table iterations already prepped in their own main
+                    // slice; their return boundary must not prep again.
+                    let iteration_prepped_with_main = self.game_state.frame.main_module == 15
+                        && rom_long_close_iteration_prep_returns_with_main(
+                            self.game_state.display.spotlight_hdma.window_radius(),
+                            spotlight_vertical_center(
+                                self.game_state.player.follower_link.y(),
+                                self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+                            ),
+                        );
+                    if !resume_main_after_spotlight_return && !iteration_prepped_with_main {
+                        self.nmi_prepare_sprites();
+                        self.clear_nmi_update_latch();
+                    }
                     if self.game_state.frame.main_module == 15
                         && rom_dungeon_exit_spotlight_table_needs_entry_slice(
                             self.game_state.display.spotlight_hdma.window_radius(),
@@ -14077,6 +14119,27 @@ impl ZeldaState {
                 || self.dungeon_landing_wipe_return_slices_remaining != 0
                 || self.normal_dialogue_initialization_phase != 0)
         {
+            // A mid-close long-table iteration finishes its circle build and
+            // reaches Main_PrepSpritesForNmi in this same main slice; only
+            // the display-boundary bookkeeping waits for the scheduled
+            // return (oracle traces pair the radius write and the $0c00d
+            // decrement on one run for radii 105..63 on the maximal table).
+            if self.game_state.frame.main_module == 15
+                && self
+                    .game_execution_scheduler
+                    .spotlight_iteration()
+                    .is_some_and(SpotlightIteration::is_closing)
+                && rom_long_close_iteration_prep_returns_with_main(
+                    self.game_state.display.spotlight_hdma.window_radius(),
+                    spotlight_vertical_center(
+                        self.game_state.player.follower_link.y(),
+                        self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+                    ),
+                )
+            {
+                self.nmi_prepare_sprites();
+                self.clear_nmi_update_latch();
+            }
             return;
         }
         // In the ROM this call is after Module_MainRouting. When vblank interrupts
