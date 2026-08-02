@@ -10,6 +10,9 @@ const FIRST_BOOT_NMI_DMA_SOURCE: [u8; 0x40] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
+const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0: usize = 0x0000;
+const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1: usize = 0x0001;
+const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_2: usize = 0x0002;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum NmiVramCopyDirection {
@@ -144,9 +147,9 @@ impl ZeldaState {
                 self.nmi_forced_blank_from_scanline_pending,
                 self.nmi_active_display_blanking_candidate.suffix_start_scanline,
                 self.live_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper),
-                self.ram[0x0000],
-                self.ram[0x0001],
-                self.ram[0x0002],
+                self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0],
+                self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1],
+                self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_2],
                 self.ppu.vram.get(0x40b0).copied().unwrap_or(0),
             );
         }

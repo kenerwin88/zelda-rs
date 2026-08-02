@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import snes9x_route_recorder as recorder
@@ -84,6 +85,7 @@ def _resolve_project(path: str) -> Path:
     project = Path(path)
     if not project.is_absolute():
         project = ROOT / project
+    project = project.resolve()
     if not project.exists():
         raise SystemExit(f"pre-commit gate: parity project does not exist: {project}")
     return project
@@ -214,49 +216,51 @@ def run_snes9x_gate() -> int:
         )
         return 1
 
-    session_dir = project / "comparisons" / "precommit" / f"run-{requested}"
-    input_path = session_dir / "input.txt"
-    input_frames = recorder.write_continuous_input(
-        project,
-        take_ids,
-        input_path,
-        takes_by_id=takes_by_id,
-    )
-    if input_frames < requested:
-        requested = input_frames
+    session_dir = (project / "comparisons" / "precommit" / f"run-{requested}").resolve()
+    with tempfile.TemporaryDirectory(prefix="zelda3-precommit-") as temp_dir:
+        temp_dir = Path(temp_dir)
+        input_path = temp_dir / "input.txt"
+        input_frames = recorder.write_continuous_input(
+            project,
+            take_ids,
+            input_path,
+            takes_by_id=takes_by_id,
+        )
+        if input_frames < requested:
+            requested = input_frames
 
-    rom_random_path = session_dir / "rom-random.txt"
-    rom_random_count = recorder.write_continuous_rom_random(
-        project,
-        take_ids,
-        rom_random_path,
-        takes_by_id=takes_by_id,
-    )
-    if rom_random_count == 0 and rom_random_path.exists():
-        rom_random_path.unlink()
+        rom_random_path = temp_dir / "rom-random.txt"
+        rom_random_count = recorder.write_continuous_rom_random(
+            project,
+            take_ids,
+            rom_random_path,
+            takes_by_id=takes_by_id,
+        )
+        if rom_random_count == 0 and rom_random_path.exists():
+            rom_random_path.unlink()
 
-    first_take = takes_by_id[take_ids[0]]
-    start_boundary = int(first_take["start_boundary"])
+        first_take = takes_by_id[take_ids[0]]
+        start_boundary = int(first_take["start_boundary"])
 
-    command = _build_check_command(
-        binary=binary,
-        core=required_core,
-        rom=rom,
-        project=project,
-        session_dir=session_dir,
-        take_ids=take_ids,
-        start_boundary=start_boundary,
-        requested_frames=requested,
-        input_path=input_path,
-        rom_random_path=rom_random_path if rom_random_count else None,
-    )
+        command = _build_check_command(
+            binary=binary,
+            core=required_core,
+            rom=rom,
+            project=project,
+            session_dir=session_dir,
+            take_ids=take_ids,
+            start_boundary=start_boundary,
+            requested_frames=requested,
+            input_path=input_path,
+            rom_random_path=rom_random_path if rom_random_count else None,
+        )
 
-    process = subprocess.run(
-        [str(item) for item in command],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-    )
+        process = subprocess.run(
+            [str(item) for item in command],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+        )
     if process.stdout:
         print(process.stdout)
     if process.stderr:

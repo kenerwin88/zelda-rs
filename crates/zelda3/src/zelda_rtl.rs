@@ -16330,13 +16330,17 @@ impl ZeldaState {
     }
 
     fn startup_initialize_memory(&mut self) {
+        const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0: usize = 0x0000;
+        const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1: usize = 0x0001;
+        const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_2: usize = 0x0002;
+
         SystemWorkArea::clear_startup_low_memory(&mut self.ram);
         // The reset code at ROM $008900 initially writes `00 80 19`, but the
         // Snes9x DMA trace proves that the first visible NMI reads `00 80 00`.
         // This port reaches this setup after reset execution, so retain only
         // the bytes that remain live at that NMI boundary.
-        self.ram[0x0000] = 0x00;
-        self.ram[0x0001] = 0x80;
+        self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0] = 0x00;
+        self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1] = 0x80;
         // WRAM palette buffers are zero at power-on: seed the provenance mirror
         // so words the game never explicitly writes (transparent color-0 slots)
         // read as a known constant 0 rather than Unknown.
