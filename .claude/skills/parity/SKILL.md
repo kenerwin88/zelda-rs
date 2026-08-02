@@ -34,7 +34,9 @@ half-fix.
    ratchet target (`pre-commit: Snes9x parity gate target=...`) so you start
    investigation from the current front, not frame 0. If this run improves the
    frontier, immediately rerun pre-commit again with no extra args before
-   touching any fix artifacts.
+   touching any fix artifacts. Even when an explicit target is set for a focused
+   repro, any pass that increases `last_checked_frame` must still be treated as a
+   ratchet milestone and committed immediately.
    Do not run any C-oracle scripts or C-checkpoint bisectors in this lane.
 2. Use checkpoint resume (`--save-state-at` / `--load-state`) for any probe
    beyond a few thousand frames — never re-replay from frame 0 repeatedly.
@@ -89,9 +91,12 @@ NEXT divergence cheaper to find and fix. While working, actively watch for:
 - **Blind spots in the static finders.** If `find_dual_ownership.py` or the
   coherence checker MISSED the bug you just fixed, ask why — extending the
   finder to catch that shape is often worth more than the fix itself.
- - **Slow probe loops.** If an investigation step took minutes when it should
+- **Slow probe loops.** If an investigation step took minutes when it should
    take seconds (missing checkpoint, re-replaying from 0, serial steps that
    could be one instrumented run), fix the loop before grinding through it.
+
+- The parity lane checks only **rust-vs-snes9x libretro** behavior. Remove or ignore
+  any non-snes9x oracle/checker references while working in this lane.
 
 ## Ratchet discipline
 

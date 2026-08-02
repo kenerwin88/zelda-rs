@@ -1630,10 +1630,10 @@ Expected: all commands pass.
 Run:
 
 ```bash
-python3 scripts/test_standard_replay_parity.py
+python3 scripts/full_parity.py --with-snes9x
 ```
 
-Expected: all standard route checks pass. If the existing textual dump-format mismatch appears, record it separately and confirm state/hash parity still passes; do not change dump comparison in this task unless the menu implementation caused the failure.
+Expected: all standard route checks pass.
 
 - [ ] **Step 4: Commit**
 
@@ -1657,7 +1657,7 @@ Verified:
 - cargo check -p zelda3-bin
 - cargo run -p zelda3-bin -- --frontend-smoke 2
 - git diff --check
-- python3 scripts/test_standard_replay_parity.py
+- python3 scripts/full_parity.py --with-snes9x
 ```
 
 If any verification cannot be run, state the exact command and blocker.

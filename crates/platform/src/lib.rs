@@ -490,8 +490,7 @@ impl NativeFrontend {
     }
 
     fn sleep_after_present(&mut self) {
-        // Frame pacing — function name and increment text must match exactly;
-        // scripts/test_standard_replay_parity.py greps for both literals.
+        // Frame pacing — function name and increment text must match exactly.
         self.next_frame_tick += frame_delay(self.presented_frames);
         self.presented_frames = self.presented_frames.wrapping_add(1);
         if !self.frame_pacing {
