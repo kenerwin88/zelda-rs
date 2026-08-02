@@ -431,6 +431,33 @@ pub(crate) struct DungeonMapDisplayState {
 }
 
 impl DungeonMapDisplayState {
+    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {
+        let fresh = Self::load_from_ram(ram);
+        let mut out = Vec::new();
+        macro_rules! check {
+            ($field:ident) => {
+                if self.$field != fresh.$field {
+                    out.push(concat!("dungeon_map_display.", stringify!($field)));
+                }
+            };
+        }
+        check!(scroll_draw_offset);
+        check!(scroll_input);
+        if ram_byte(ram, MAIN_MODULE) != 7 {
+            check!(marker_x_offset);
+            check!(marker_y_offset);
+        }
+        check!(location_marker_base_y);
+        check!(init_state);
+        check!(current_floor);
+        check!(floor_scroll_step);
+        check!(idx);
+        check!(scroll_target_y);
+        check!(player_marker_x);
+        check!(player_marker_y);
+        out
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         Self {
             scroll_draw_offset: read_le_u16(ram, DUNGEON_MAP_SCROLL_DRAW_OFFSET),
@@ -670,6 +697,11 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
     }
 
     fn sync_marker_offsets(&mut self) {
+        // 0x0fa8/0x0faa are dungeon-map marker offsets outside module 7, but
+        // dungeon hitbox work bytes while the dungeon module is active.
+        if ram_byte(self.ram, MAIN_MODULE) == 7 {
+            return;
+        }
         self.display.write_marker_offsets_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }

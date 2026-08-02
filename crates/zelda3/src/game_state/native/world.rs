@@ -2407,6 +2407,56 @@ impl Default for WorldTransientState {
 }
 
 impl WorldTransientState {
+    pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {
+        let fresh = Self::load_from_ram(ram);
+        let mut out = Vec::new();
+        macro_rules! check {
+            ($field:ident) => {
+                if self.$field != fresh.$field {
+                    out.push(concat!("world.transient.", stringify!($field)));
+                }
+            };
+        }
+        check!(custom_spell_animation_flag);
+        check!(allow_scroll_z);
+        check!(milestone_item_graphics_countdown);
+        check!(big_key_door_message_triggered);
+        check!(savegame_master_sword_flags);
+        check!(super_bomb_indicator_timer);
+        check!(standing_in_doorway_cached);
+        check!(cached_room_bounds_y_start);
+        check!(cached_room_bounds_y_end);
+        check!(cached_room_bounds_x_start);
+        check!(cached_room_bounds_x_end);
+        check!(overworld_peg_puzzle_progress);
+        check!(overworld_hole_tilemap_position);
+        check!(overworld_bomb_tile_sweep_x);
+        check!(overworld_bomb_tile_sweep_y_end);
+        check!(hud_current_item_x);
+        check!(door_animation_step);
+        check!(room_transitioning_flags);
+        check!(travel_bird_flag);
+        check!(tile_interaction_shared_flag);
+        check!(hud_floor_changed_timer);
+        check!(quadrant_fullsize_x);
+        check!(quadrant_fullsize_y);
+        check!(cached_quadrant_fullsize_x);
+        check!(cached_quadrant_fullsize_y);
+        check!(tilemap_layer_copy);
+        check!(special_exit_tilemap_layer_copy);
+        check!(exit_tilemap_layer_copy);
+        check!(map_backup_main_layer);
+        check!(map_backup_subscreen_layer);
+        check!(move_overlay_counter);
+        check!(overworld_hole_scan_step);
+        if ram_byte(ram, MAIN_MODULE) != 7
+            && self.dungeon_replacement_tiles != fresh.dungeon_replacement_tiles
+        {
+            out.push("world.transient.dungeon_replacement_tiles");
+        }
+        out
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         let mut dungeon_replacement_tiles = vec![0; DUNGEON_REPLACEMENT_TILE_WORDS];
         for (index, tile) in dungeon_replacement_tiles.iter_mut().enumerate() {
@@ -2456,8 +2506,14 @@ impl WorldTransientState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        for (index, tile) in self.dungeon_replacement_tiles.iter().enumerate() {
-            write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
+        // 0x0500 is the dungeon object's replacement-tile table in module 7 and
+        // the overworld map16 scratch table elsewhere. DungeonObjectTrackingState
+        // is the sole owner while the dungeon module is active; projecting the
+        // stale overworld copy here clobbers the dungeon table on every frame.
+        if ram_byte(ram, MAIN_MODULE) != 7 {
+            for (index, tile) in self.dungeon_replacement_tiles.iter().enumerate() {
+                write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
+            }
         }
         self.write_scalar_fields_to_ram(ram);
     }
@@ -2994,7 +3050,9 @@ impl WorldState {
         check!(camera_boundaries);
         check!(palette_theme);
         check!(region);
-        check!(transient);
+        if self.transient != fresh.transient {
+            out.extend(self.transient.report_incoherent_with_ram(ram));
+        }
         check!(overworld);
         check!(room_bounds);
         out

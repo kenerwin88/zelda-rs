@@ -219,7 +219,9 @@ impl GameState {
         check!(memorized_tiles);
         check!(dungeon_secret);
         check!(save_load_transfer);
-        check!(dungeon_map_display);
+        if self.dungeon_map_display != fresh.dungeon_map_display {
+            out.extend(self.dungeon_map_display.report_incoherent_with_ram(ram));
+        }
         // sprites/dungeon/world are the most composite/bug-prone states — drill to the leaf so a
         // faithful leaf (e.g. sprite_slots, world.location) flagging stands out from intentionally
         // noisy gated/mode-reuse composites.
@@ -233,6 +235,9 @@ impl GameState {
         check!(inventory);
         if self.world != fresh.world {
             out.extend(self.world.report_incoherent_with_ram(ram));
+            if self.world.transient != fresh.world.transient {
+                out.extend(self.world.transient.report_incoherent_with_ram(ram));
+            }
         }
         check!(poly);
         check!(display);
