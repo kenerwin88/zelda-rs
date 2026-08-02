@@ -8,5 +8,4 @@ git config core.hooksPath .githooks
 chmod +x .githooks/pre-commit
 
 echo "Configured git hooks from .githooks/"
-echo "Pre-commit expects the local C checkout and ROM/parity fixtures documented in README.md."
-
+echo "Pre-commit expects parity fixtures and ROM setup documented in README.md."

@@ -167,6 +167,7 @@ mod tests {
         GpuFrame {
             hardware_startup_transient: None,
             vram,
+            obj_vram: None,
             cgram,
             oam,
             mode: 1,

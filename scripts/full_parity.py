@@ -18,8 +18,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_C_REPO = Path(os.environ.get("ZELDA3_C_REPO", str(REPO_ROOT.parent / "zelda3")))
-DEFAULT_ROM = Path(os.environ.get("ZELDA3_ROM", str(DEFAULT_C_REPO / "zelda3.sfc")))
+DEFAULT_ROM = Path(os.environ.get("ZELDA3_ROM", str(REPO_ROOT / "saves" / "zelda3.sfc")))
 DEFAULT_MESEN_RUNNER = REPO_ROOT / "external" / "mesen2-oracle" / "run_trace.sh"
 DEFAULT_SNES9X_LOCAL = (
     REPO_ROOT / "external" / "snes9x-libretro" / "local" / "snes9x_libretro.dylib"

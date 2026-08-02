@@ -5,7 +5,7 @@
 0xADDR;` (1200+ of them), so a scan of this repo yields a clean address->name map
 plus the read/write sites for each variable. This is the authoritative
 "what is this WRAM address / who touches it" reference now that parity is driven
-by `zparity` against the C oracle (no external clone required).
+by `zparity` against Snes9x-native routes (no external clone required).
 
 Used by whoowns.py and find_dual_ownership.py. Run directly to dump the map:
     python3 scripts/ram_ref.py 0x45c

@@ -1,10 +1,10 @@
-# zparity — per-frame C-oracle parity checker for zelda3-rs
+# zparity — per-frame replay-route parity checker for zelda3-rs
 
 `zparity` is a C-free parity checker that surfaces per-frame WRAM/VRAM/SRAM/render
-divergences between the Rust port and the C oracle. The workflow is:
+divergences between the Rust port and the committed route golden. The workflow is:
 
 ```
-capture (C oracle, once)  →  golden committed to parity-golden/
+capture (route replay, once)  →  golden committed to parity-golden/
 check   (C-free, sharded) →  DIVERGE at frame N  or  MATCH
 drill   (C-free)          →  per-page/layer localization for frame N
 coverage (Rust route)     →  route surface hit/miss report
@@ -14,7 +14,7 @@ coverage (Rust route)     →  route surface hit/miss report
 
 ### `zparity capture [--full] [--detail]`
 
-Runs the C oracle over the full replay route and writes the two-tier golden:
+Runs the canonical route replay once and writes the two-tier golden:
 
 - **Tier A** (`parity-golden/rollup.bin`, `merkle.bin`, `manifest.json`) — per-block
   rollup fingerprints committed to the repo. Small (~4.3 MB for the full route).
@@ -25,8 +25,8 @@ Runs the C oracle over the full replay route and writes the two-tier golden:
 `--full` runs the full ~1,073,092-frame route (default: 30,000 frames).
 `--detail` also writes Tier B to `.cache/parity-golden/detail/` (gitignored).
 
-Re-capture when: the replay route changes, a C-oracle hook is updated, or the
-fingerprint mask changes.
+Re-capture when: the replay route changes, fixture/harness behavior changes, or
+the fingerprint mask changes.
 
 ### `zparity check [--full] [--frames N] [--frame N]`
 
@@ -43,8 +43,8 @@ Output:
   per-frame divergence found.
 - `MATCH  K frames, S shards, Ts  root=0x...` — all frames match the golden.
 
-**`check` is a STRICT per-frame-vs-C route parity gate.** A green full-route
-check means the Rust port matches the C oracle for every fingerprinted frame in
+**`check` is a STRICT per-frame route parity gate.** A green full-route check
+means the Rust port matches the committed golden for every fingerprinted frame in
 the current replay route. A failure remains the worklist loop: run `check` to
 find the earliest divergence, run `drill <frame>` to localize it, fix the Rust
 side, repeat.
@@ -209,7 +209,7 @@ assert paths, `NULL`/assert-only sprite slots, and empty/unused ancilla slots.
 
 ```
 parity-golden/
-  manifest.json      # schema, frames, ROM sha256, save sha256, C-oracle rev, timing-hacks, mask, block_size
+  manifest.json      # schema, frames, ROM sha256, save sha256, timing-hacks, mask, block_size
   rollup.bin         # Tier A: per-block rollup fingerprints (~4.3 MB full route)
   merkle.bin         # Tier A: merkle root over rollup blocks (28 bytes)
   .gitignore         # excludes detail/ and *.fp (Tier B)
@@ -227,7 +227,6 @@ Tier A is committed. Tier B is local-only (`.cache/parity-golden/` is gitignored
 
 | Variable | Default | Description |
 |---|---|---|
-| `ZELDA3_C_REPO` | `../zelda3` | Path to the C oracle repo (used by `capture`) |
 | `ZELDA3_NEW_BIN` | `target/parity/zelda3` | Rust binary (used by `check` for checkpoint seeding) |
 | `ZELDA3_ROM` | `saves/zelda3.sfc` | ROM file |
 | `ZELDA3_REPLAY_SAVE` | `saves/zelda3-combined-route.sav` | Replay save |
@@ -237,7 +236,7 @@ Tier A is committed. Tier B is local-only (`.cache/parity-golden/` is gitignored
 ### Finding and fixing a divergence
 
 ```bash
-# 1. Find the earliest diverging frame (fast, C-free):
+# 1. Find the earliest diverging frame:
 ./target/debug/zparity check --frames 50000
 
 # 2. Localize per page/layer (needs Tier B; capture once with --detail):
@@ -250,10 +249,9 @@ Tier A is committed. Tier B is local-only (`.cache/parity-golden/` is gitignored
 ./target/debug/zparity check --frames 50000
 ```
 
-### Re-capturing after a route or C-oracle change
+### Re-capturing after a route or fixture-harness change
 
 ```bash
-make -C ../zelda3 zelda3
 cargo build --profile parity -p zelda3-bin
 cargo build -p parity
 ./target/debug/zparity capture --full          # Tier A only; commit parity-golden/

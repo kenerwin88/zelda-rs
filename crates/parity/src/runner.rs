@@ -65,7 +65,7 @@ impl Paths {
             rom: std::env::var_os("ZELDA3_ROM")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| repo.join("saves/zelda3.sfc")),
-            // The old combined-route replay save was removed with C parity;
+            // The old combined-route replay save was removed with legacy parity;
             // coverage runs must supply a save via ZELDA3_REPLAY_SAVE.
             save: std::env::var_os("ZELDA3_REPLAY_SAVE")
                 .map(PathBuf::from)

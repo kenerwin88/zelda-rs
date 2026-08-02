@@ -796,7 +796,7 @@ fn sprite_kill_self_matches_indoor_guard_and_loaded_bit_clear() {
     assert_eq!(outdoor.ram[OVERWORLD_SPRITE_WAS_LOADED + 2], 0xdf);
     assert_eq!(outdoor.sprite_slot_view(k).n_word(), 0xffff);
 
-    // C parity: the SNES address `0xEF80 + (blk>>3)` is computed in 16-bit
+    // Legacy parity check: the SNES address `0xEF80 + (blk>>3)` is computed in 16-bit
     // (wraps mod 0x10000) BEFORE the 0x10000 bank is added, so blk=0xff00
     // (blk>>3 = 0x1fe0) yields addr16 = (0xEF80+0x1FE0)&0xFFFF = 0x0F60 and a
     // final byte at 0x0F60 + 0x10000 = 0x10F60 (inside the BG char buffer).

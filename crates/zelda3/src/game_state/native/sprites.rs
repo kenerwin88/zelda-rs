@@ -4740,7 +4740,7 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
 
     pub(crate) fn clear_where_in_room(&mut self) {
         self.state.clear_where_in_room();
-        // The C oracle's sprite reset (sprite_reset_all_no_disable) memsets the full
+        // The legacy sprite reset path (sprite_reset_all_no_disable) memsets the full
         // 0x1000 region in RAM unconditionally. Our mirror's projection is gated on
         // indoors (see write_to_ram), so an OUTDOORS reset would otherwise leave RAM
         // untouched and the overworld presence table (sprite_where_in_overworld, the

@@ -421,7 +421,6 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=ZELDA3_ASSETS_DIR");
     println!("cargo:rerun-if-env-changed=ZELDA3_ROM");
-    println!("cargo:rerun-if-env-changed=ZELDA3_C_SOURCE");
     println!("cargo:rerun-if-env-changed=ZELDA3_DIALOGUE_MESSAGES");
     println!("cargo:rerun-if-env-changed=ZELDA3_CHR_SHEETS");
     println!("cargo:rerun-if-env-changed=ZELDA3_CHR_SHA_LOCK");

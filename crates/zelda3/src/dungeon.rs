@@ -407,6 +407,19 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_DoubleApplyAndIncrementGrayscale(&mut self) {
         self.ApplyPaletteFilter_bounce();
+        if self.rom_startup_timing() {
+            self.schedule_pre_main_caller_continuation(
+                PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter,
+            );
+            return;
+        }
+        self.complete_spiral_stairs_second_grayscale_palette_filter();
+    }
+
+    pub(super) fn complete_spiral_stairs_second_grayscale_palette_filter(&mut self) {
+        debug_assert_eq!(self.game_state.frame.main_module, 7);
+        debug_assert_eq!(self.game_state.frame.submodule, 0x0e);
+        debug_assert_eq!(self.game_state.frame.subsubmodule, 15);
         self.ApplyPaletteFilter_bounce();
         self.ApplyGrayscaleFixed_Incremental();
     }
@@ -664,9 +677,31 @@ impl ZeldaState {
         {
             self.ApplyPaletteFilter_bounce();
             if self.game_state.display.palette_filter.countdown() != 0 {
+                if self.rom_startup_timing() {
+                    // The two full palette walks straddle vblank on hardware.
+                    // Preserve the translated call stack here: the following
+                    // host frame resumes at the second pass instead of running
+                    // a fresh game-loop iteration.
+                    self.schedule_pre_main_caller_continuation(
+                        PreMainCallerContinuation::SpiralStairsSecondPaletteFilter,
+                    );
+                    return;
+                }
                 self.ApplyPaletteFilter_bounce();
             }
         }
+        self.complete_spiral_stairs_palette_filter_tail();
+    }
+
+    pub(super) fn complete_spiral_stairs_second_palette_filter(&mut self) {
+        debug_assert_eq!(self.game_state.frame.main_module, 7);
+        debug_assert_eq!(self.game_state.frame.submodule, 0x0e);
+        debug_assert_eq!(self.game_state.frame.subsubmodule, 2);
+        self.ApplyPaletteFilter_bounce();
+        self.complete_spiral_stairs_palette_filter_tail();
+    }
+
+    fn complete_spiral_stairs_palette_filter_tail(&mut self) {
         if self
             .game_state
             .dungeon
@@ -10085,6 +10120,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State13(&mut self) {
+        self.stage_room_72_supertile_landing_obj_scanout();
         if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
             self.ApplyPaletteFilter_bounce();
         }
@@ -10127,13 +10163,19 @@ impl ZeldaState {
             5 => self.Dungeon_InterRoomTrans_notDarkRoom(),
             6 => self.Dungeon_InterRoomTrans_State4(),
             7 => self.Dungeon_InterRoomTrans_State7(),
-            8 => self.DungeonTransition_ScrollRoom(),
+            8 => {
+                self.stage_room_72_supertile_scroll_obj_scanout();
+                self.DungeonTransition_ScrollRoom();
+            }
             9 => self.Dungeon_InterRoomTrans_State9(),
             10 => self.Dungeon_InterRoomTrans_State10(),
             11 => self.Dungeon_InterRoomTrans_State9(),
             12 => self.Dungeon_InterRoomTrans_State12(),
             13 => self.Dungeon_InterRoomTrans_State13(),
-            14 => self.Module07_02_FadedFilter(),
+            14 => {
+                self.stage_room_72_supertile_landing_obj_scanout();
+                self.Module07_02_FadedFilter();
+            }
             15 => self.Dungeon_InterRoomTrans_State15(),
             _ => panic!("invalid dungeon supertile transition index"),
         }
@@ -10444,6 +10486,16 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State10(&mut self) {
+        if self.rom_startup_timing()
+            && self.game_state.world.location.dungeon_room_index() == 0x72
+        {
+            // The second quadrant build is interrupted after the main-loop
+            // prefix has latched updates but before the state-10 caller can
+            // publish Link's next OAM coordinates.
+            self.stage_dungeon_supertile_quadrant_upload_obj_scanout();
+            self.latch_nmi_update();
+            self.set_core_update_disable_flag(1);
+        }
         if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
             self.ApplyPaletteFilter_bounce();
         }
@@ -10452,16 +10504,53 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_SpiralStaircase11(&mut self) {
         self.ApplyPaletteFilter_bounce();
-        self.WaterFlood_BuildOneQuadrantForVRAM();
+        if self.suspend_spiral_staircase_palette_filter(
+            SpiralStaircasePaletteTail::BuildQuadrantForVram,
+        ) {
+            return;
+        }
+        self.complete_dungeon_spiral_staircase_palette_filter(
+            SpiralStaircasePaletteTail::BuildQuadrantForVram,
+        );
+    }
+
+    pub(super) fn complete_dungeon_spiral_staircase_palette_filter(
+        &mut self,
+        tail: SpiralStaircasePaletteTail,
+    ) {
+        match tail {
+            SpiralStaircasePaletteTail::BuildQuadrantForVram => {
+                self.WaterFlood_BuildOneQuadrantForVRAM();
+            }
+            SpiralStaircasePaletteTail::PrepareNextQuadrant => {
+                self.Dungeon_PrepareNextRoomQuadrantUpload();
+            }
+        }
         self.increment_subsubmodule();
     }
 
     pub(super) fn Dungeon_InterRoomTrans_notDarkRoom(&mut self) {
+        if self.begin_dungeon_supertile_transition_work(
+            DungeonSupertileTransitionWork::QuadrantTilemapBuild,
+        ) {
+            return;
+        }
+        self.complete_dungeon_inter_room_transition_not_dark_room();
+    }
+
+    pub(super) fn complete_dungeon_inter_room_transition_not_dark_room(&mut self) {
         self.WaterFlood_BuildOneQuadrantForVRAM();
         self.increment_subsubmodule();
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State9(&mut self) {
+        if self.rom_startup_timing()
+            && self.game_state.world.location.dungeon_room_index() == 0x72
+        {
+            self.stage_dungeon_supertile_quadrant_upload_obj_scanout();
+            self.latch_nmi_update();
+            self.set_core_update_disable_flag(1);
+        }
         if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
             self.ApplyPaletteFilter_bounce();
         }
@@ -10470,16 +10559,26 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_SpiralStaircase12(&mut self) {
         self.ApplyPaletteFilter_bounce();
-        self.Dungeon_PrepareNextRoomQuadrantUpload();
-        self.increment_subsubmodule();
+        if self.suspend_spiral_staircase_palette_filter(
+            SpiralStaircasePaletteTail::PrepareNextQuadrant,
+        ) {
+            return;
+        }
+        self.complete_dungeon_spiral_staircase_palette_filter(
+            SpiralStaircasePaletteTail::PrepareNextQuadrant,
+        );
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State4(&mut self) {
+        if self.game_state.frame.subsubmodule == 6 {
+            self.stage_dungeon_supertile_quadrant_upload_obj_scanout();
+        }
         self.Dungeon_PrepareNextRoomQuadrantUpload();
         self.increment_subsubmodule();
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State12(&mut self) {
+        self.stage_room_72_supertile_landing_obj_scanout();
         if self.game_state.frame.submodule == 2 {
             if self.overworld_map_state() != 5 {
                 return;
@@ -10653,6 +10752,9 @@ impl ZeldaState {
             self.clear_mosaic_target_level();
         }
         self.Dungeon_HandleTranslucencyAndPalette();
+        if self.game_state.frame.subsubmodule == 8 {
+            self.begin_dungeon_supertile_filtering_return();
+        }
     }
 
     pub(super) fn Module07_02_FadedFilter(&mut self) {
@@ -10684,6 +10786,18 @@ impl ZeldaState {
 
     pub(super) fn DungeonTransition_LoadSpriteGFX(&mut self) {
         self.LoadNewSpriteGFXSet();
+        if self.game_state.frame.main_module == 7
+            && self.game_state.frame.submodule == 0x0e
+            && self.begin_dungeon_supertile_transition_work(
+                DungeonSupertileTransitionWork::SpiralSpriteGraphics,
+            )
+        {
+            return;
+        }
+        self.complete_dungeon_transition_load_sprite_gfx();
+    }
+
+    pub(super) fn complete_dungeon_transition_load_sprite_gfx(&mut self) {
         self.dungeon_reset_sprites();
         self.DungeonTransition_RunFiltering();
     }
@@ -10814,6 +10928,14 @@ impl ZeldaState {
         self.dungeon_room_tracking_mut()
             .set_room_index2(dungeon_room_index);
         self.follower_initialize();
+        if self.game_state.frame.main_module == 7
+            && self.game_state.frame.submodule == 0x0e
+            && self.begin_dungeon_supertile_transition_work(
+                DungeonSupertileTransitionWork::SpiralRoomInitialization,
+            )
+        {
+            return;
+        }
         self.increment_subsubmodule();
     }
 
@@ -11088,6 +11210,14 @@ impl ZeldaState {
         self.PrepTransAuxGfx();
         self.set_pending_nmi_subroutine(9);
         self.set_core_update_disable_flag(9);
+        if self.game_state.frame.main_module == 7
+            && self.game_state.frame.submodule == 0x0e
+            && self.begin_dungeon_supertile_transition_work(
+                DungeonSupertileTransitionWork::SpiralBgCharacters34,
+            )
+        {
+            return;
+        }
         self.increment_subsubmodule();
     }
 

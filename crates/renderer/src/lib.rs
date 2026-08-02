@@ -3727,6 +3727,7 @@ mod tests {
         let frame = GpuFrame {
             hardware_startup_transient: None,
             vram: &vram,
+            obj_vram: None,
             cgram: &cgram,
             oam: &oam,
             mode: 1,
@@ -3793,6 +3794,7 @@ mod tests {
         let frame = GpuFrame {
             hardware_startup_transient: None,
             vram: &vram,
+            obj_vram: None,
             cgram: &cgram,
             oam: &oam,
             mode: 1,

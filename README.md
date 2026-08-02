@@ -4,8 +4,8 @@ Rust port of [zelda3](https://github.com/snesrev/zelda3) -- a
 reverse-engineered re-implementation of *The Legend of Zelda: A Link to the
 Past* in C.
 
-The original C project is expected next to this checkout as `../zelda3` by
-default. Parity scripts compare Rust against that checkout.
+Parity checks are Rust-first and Snes9x-anchored.
+The repo does not require a live external oracle checkout for parity.
 
 This repository does not include a ROM, generated game assets, or packaged
 binaries. Builders must provide their own legally obtained USA ROM when running
@@ -46,8 +46,8 @@ ZELDA3_ROM=/path/to/zelda3.sfc cargo build -p zelda3-bin --release
 
 CI runs ROM-free package checks and builds `zelda3-bin` against generated
 placeholder assets. Those placeholder assets only prove the binary build and
-smoke path; playable asset generation and oracle parity still need a local ROM
-and the C checkout.
+smoke path; playable asset generation and parity checks still need a local ROM
+and saved route artifacts.
 
 ## Generated Assets
 
@@ -106,9 +106,9 @@ assets and should stay under `target/`.
 
 The extractor writes a manifest with the source ROM SHA-1, per-asset sizes, and
 per-asset SHA-1 values, plus the generated preview image list. It delegates
-extraction to the original C checkout's `assets/restool.py`; set
-`ZELDA3_C_SOURCE=/path/to/zelda3` if that checkout is not at
-`../zelda3`.
+extraction to an external extractor compatible with `assets/restool.py`; pass
+`--asset-source /path/to/extractor-root` if your source tree is in a
+non-default location.
 
 ## Automatic Parity
 
@@ -122,10 +122,8 @@ For the complete 155,384-frame Snes9x route, its proof contract, and local
 checkpoint retention policy, see
 [docs/parity/canonical-route.md](docs/parity/canonical-route.md).
 
-The default driver runs the Rust lockstep behavior/render comparison and the
-translated C engine audio oracle under `../zelda3`.
-Override the C checkout with `ZELDA3_C_REPO=/path/to/zelda3`, `--c-repo`, or
-`--c-bin`.
+The default driver runs the Rust lockstep behavior/render and waveform checks against
+the provided ROM path.
 
 For the live external-emulator check, pass `--with-snes9x`. On macOS arm64,
 this downloads the Snes9x Libretro core into `external/snes9x-libretro/local/`
@@ -159,15 +157,9 @@ no longer matches the capture. It never performs moving or per-frame alignment.
 The optional Mesen2 runner expects the local app under
 `external/mesen2-oracle/local/` unless `--mesen-runner` is supplied.
 
-The C audio oracle can also run directly:
-
-```bash
-python3 scripts/compare_c_audio.py --frames 120
-```
-
-The no-argument binary path uses embedded generated assets and does not read a
-ROM at runtime. Explicit ROM, replay, and oracle commands still load the ROM and
-look for `zelda3_assets.dat` next to the ROM or in the current working directory
+The no-argument binary path uses embedded generated assets and does not read a ROM
+at runtime. Explicit ROM, replay, and compare commands still load the ROM and look
+for `zelda3_assets.dat` next to the ROM or in the current working directory.
 so parity work can keep comparing against original-ROM behavior.
 
 ## Steam Deck Packaging
@@ -322,10 +314,13 @@ scripts/install_hooks.sh
 ```
 
 The pre-commit hook runs RAM readability guardrails, builds the parity replay
-binary, runs a standalone smoke, and checks Rust output against the committed
-`parity-golden` Merkle/rollup fingerprints. It does not run the live C oracle;
-`ZELDA3_PRECOMMIT_MODE=full git commit` uses the same golden checker for the
-full replay route.
+binary, runs a standalone smoke, checks Rust output against the committed
+`parity-golden` Merkle/rollup fingerprints, and runs a self-ratcheting
+Snes9x parity gate against `routes/clean` by default.
+
+Set `ZELDA3_PRECOMMIT_SKIP_SNES9X=1` to skip the Snes9x gate (for quick
+local commits). Tune the ratchet with `ZELDA3_PRECOMMIT_STEP`,
+`ZELDA3_PRECOMMIT_INITIAL_CHECK`, and `ZELDA3_PRECOMMIT_MAX_FRAMES`.
 
 ## Fixtures
 

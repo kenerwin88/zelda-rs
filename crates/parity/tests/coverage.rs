@@ -272,7 +272,6 @@ fn coverage_cli_writes_merged_json_log_from_repeated_from_json_logs() {
         .arg(&second_log)
         .arg("--json")
         .arg(&merged_log)
-        .env("ZELDA3_C_REPO", &root)
         .output()
         .unwrap();
     assert!(
@@ -328,7 +327,6 @@ fn coverage_cli_reports_new_surfaces_covered_against_a_base_log() {
         .arg(&candidate_log)
         .arg("--delta-report-json")
         .arg(&delta_report_path)
-        .env("ZELDA3_C_REPO", &root)
         .output()
         .unwrap();
     assert!(
@@ -389,7 +387,6 @@ fn coverage_cli_passes_input_script_and_load_state_to_runner() {
         .arg("--load-state")
         .arg(&load_state)
         .env("ZELDA3_REPO", &root)
-        .env("ZELDA3_C_REPO", &root)
         .env("ZELDA3_NEW_BIN", &fake_runner)
         .env("FAKE_ZELDA3_ARGS_LOG", &args_log)
         .output()
@@ -445,7 +442,6 @@ fn coverage_cli_passes_input_script_overlay_to_runner() {
         .arg("--load-state")
         .arg(&load_state)
         .env("ZELDA3_REPO", &root)
-        .env("ZELDA3_C_REPO", &root)
         .env("ZELDA3_NEW_BIN", &fake_runner)
         .env("FAKE_ZELDA3_ARGS_LOG", &args_log)
         .output()
@@ -541,7 +537,6 @@ fn coverage_cli_runs_direct_entrance_probes_from_route_worklist() {
         .arg("--json")
         .arg(&coverage_log)
         .env("ZELDA3_REPO", &root)
-        .env("ZELDA3_C_REPO", &root)
         .env("ZELDA3_NEW_BIN", &fake_runner)
         .env("FAKE_ZELDA3_ARGS_LOG", &args_log)
         .output()
@@ -599,7 +594,6 @@ fn coverage_cli_passes_load_sram_to_runner() {
         .arg("--load-sram")
         .arg(&load_sram)
         .env("ZELDA3_REPO", &root)
-        .env("ZELDA3_C_REPO", &root)
         .env("ZELDA3_NEW_BIN", &fake_runner)
         .env("FAKE_ZELDA3_ARGS_LOG", &args_log)
         .output()

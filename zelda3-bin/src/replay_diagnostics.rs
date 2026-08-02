@@ -19,8 +19,8 @@ pub(crate) fn replay_checksum_bytes(bytes: &[u8]) -> u32 {
 }
 
 pub(crate) fn replay_checksum_ram_range(ram: &[u8], start: usize, size: usize) -> u32 {
-    // The C-oracle fingerprint mask is retired; these hashes only compare runs
-    // of the same binary now, so raw bytes are hashed directly.
+    // Legacy external fingerprint masks are retired; these hashes only compare
+    // runs of the same binary now, so raw bytes are hashed directly.
     replay_checksum_bytes(&ram[start..start + size])
 }
 

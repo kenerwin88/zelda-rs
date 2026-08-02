@@ -15,6 +15,7 @@ pub(super) enum GameWorkStep {
 pub(super) struct ScheduledGameWork {
     pub(super) continuation: GameWorkContinuation,
     nmi_slices_remaining: u8,
+    entry_display_boundary_pending: bool,
 }
 
 impl ScheduledGameWork {
@@ -23,6 +24,7 @@ impl ScheduledGameWork {
         Self {
             continuation,
             nmi_slices_remaining: nmi_slices,
+            entry_display_boundary_pending: true,
         }
     }
 
@@ -43,6 +45,9 @@ impl ScheduledGameWork {
             GameWorkContinuation::FinishItemReceiptGraphics {
                 continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
+                | GameWorkContinuation::FinishDungeonSupertileFilteringReturn
+                | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
+                | GameWorkContinuation::FinishBigKeyDropGraphics { .. }
         )
     }
 
@@ -60,6 +65,11 @@ impl ScheduledGameWork {
             GameWorkContinuation::FinishAttractWorldMapExit => {
                 Some(DisplaySnapshotPublication::RetainPublished)
             }
+            GameWorkContinuation::FinishItemReceiptGraphics { .. }
+                if !self.entry_display_boundary_pending =>
+            {
+                Some(DisplaySnapshotPublication::RetainPublished)
+            }
             _ => None,
         }
     }
@@ -72,6 +82,7 @@ impl ScheduledGameWork {
     }
 
     pub(super) fn advance_one_nmi_slice(&mut self) -> GameWorkStep {
+        self.entry_display_boundary_pending = false;
         self.nmi_slices_remaining = self.nmi_slices_remaining.saturating_sub(1);
         if self.nmi_slices_remaining == 0 {
             GameWorkStep::Complete(self.continuation)
@@ -293,6 +304,13 @@ impl GameExecutionScheduler {
     pub(super) fn work_suspends_translated_call_stack(self) -> bool {
         self.scheduled_work()
             .is_some_and(ScheduledGameWork::suspends_translated_call_stack)
+            || matches!(
+                self.continuation,
+                Some(GameExecutionContinuation::PreMainCaller(
+                    PreMainCallerContinuation::SpiralStairsSecondPaletteFilter
+                        | PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter
+                ))
+            )
     }
 
     pub(super) fn current_work(self) -> Option<GameWorkContinuation> {

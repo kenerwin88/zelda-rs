@@ -20,9 +20,10 @@ use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
 };
 use crate::game_state::constants::{
-    ANIMATED_TILE_VRAM_ADDR, CRYSTAL_ROTATION_COUNTER, HDMA_TABLE_DYNAMIC, MESSAGING_BUF_LOAD_GFX,
-    MOVING_WALL_REPLACEMENT_BUFFER, OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START,
-    OVERWORLD_SCROLL_Y_END, RESERVED_HDMA_TABLE, VWF_ARR,
+    ANIMATED_TILE_VRAM_ADDR, BG2_X_SCROLL, BG2_Y_SCROLL, CRYSTAL_ROTATION_COUNTER,
+    HDMA_TABLE_DYNAMIC, MESSAGING_BUF_LOAD_GFX, MOVING_WALL_REPLACEMENT_BUFFER,
+    OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END, RESERVED_HDMA_TABLE,
+    VWF_ARR,
 };
 use crate::game_state::{
     lanmola_flat_trail_entry_from_ram, loaded_room_data_word, Bg1MovementAccumulatorState,
@@ -117,6 +118,18 @@ const ROM_INTRO_MESSAGE_POINTER_CONTINUATION_FRAMES: u8 = 48;
 const ROM_INTRO_ITEM_GFX_CONTINUATION_FRAMES: u8 = 15;
 const ROM_INTRO_FOLLOWER_GFX_CONTINUATION_FRAMES: u8 = 3;
 const ROM_INTRO_MEMORY_INITIALIZATION_FRAMES: u8 = 41;
+// The asset-backed body/head/hand DMA is the first Link OBJ batch in NMI.
+// During a long NMI this batch can become visible while the later equipment,
+// animated-tile, pointer, and travel-bird uploads still belong to the retained
+// scanout generation.
+const EARLY_LINK_OBJ_DMA_TRANSFERS: [(usize, LinkDmaSourceSlot, usize); 6] = [
+    (0x4100, LinkDmaSourceSlot::BodyBottom, 0x40),
+    (0x4120, LinkDmaSourceSlot::HeadBottom, 0x40),
+    (0x4140, LinkDmaSourceSlot::HandRight, 0x20),
+    (0x4000, LinkDmaSourceSlot::BodyTop, 0x40),
+    (0x4020, LinkDmaSourceSlot::HeadTop, 0x40),
+    (0x4040, LinkDmaSourceSlot::HandLeft, 0x20),
+];
 // File-select graphics completes after 56 interrupted CPU slices. The next
 // host frame resumes the caller without consuming another display boundary.
 const FILE_SELECT_GRAPHICS_NMI_SLICES: u8 = 56;
@@ -125,9 +138,8 @@ const FILE_SELECT_GRAPHICS_NMI_SLICES: u8 = 56;
 // 57 more interrupted slices finish the selected-game load.
 const SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES: u8 = 20;
 const SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES: u8 = 57;
-const SELECTED_GAME_LOAD_NMI_SLICES: u8 =
-    SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES
-        + SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES;
+const SELECTED_GAME_LOAD_NMI_SLICES: u8 = SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES
+    + SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES;
 // Module_PreDungeon's audio prefix returns before the interruptible entrance
 // load begins. Clean Snes9x NMI-PC traces divide the remaining caller into
 // semantic workloads: ten boundaries in entrance/room construction, four in
@@ -178,6 +190,11 @@ const DUNGEON_FALLING_ENTRANCE_SPRITE_GFX_NMI_SLICES: u8 = 3;
 // set. Both the measured $14 chest receipt and $06 scripted receipt return to
 // the main-loop epilogue after four intervening vblanks.
 const ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES: u8 = 4;
+// A big-key enemy drop calls DecodeAnimatedSpriteTile_variable($22), which
+// decompresses the fixed $5b/$5a sheet pair. The entry main slice reaches the
+// decompressor before vblank; four following host boundaries pass before the
+// call returns through the sprite loop and Module 7 caller suffix.
+const BIG_KEY_DROP_GRAPHICS_NMI_SLICES: u8 = 4;
 const ROM_TEXT_DECODE_FIRST_SLICE_CURSOR: u16 = 94;
 const POLY_WORKER_TWO_FRAME_CYCLE_THRESHOLD: u32 = 28_250;
 const SNES9X_INTRO_POLY_BOOTSTRAP_STEPS: u8 = 0;
@@ -424,8 +441,18 @@ impl GraphicsDmaGeneration {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OamScanoutSource {
     RetainCapturedBeforeNmi,
+    /// Keep the OAM already resident in the captured PPU. Unlike the ordinary
+    /// retained cadence, do not replace it with an adjacent published shadow:
+    /// an interrupted native workload can leave the completed hardware DMA and
+    /// the next software shadow on opposite sides of the host boundary.
+    RetainResidentPpuOam,
     ComposePublishedShadowDma,
     ComposeLiveAfterNmi,
+    /// Publish the OAM shadow authored by this main slice. Dungeon big-item
+    /// pickup enters Link's hold-item handler before the boundary that starts
+    /// the receipt sequence, so the live shadow wins even though the resident
+    /// native PPU still owns the preceding DMA generation.
+    ComposeLivePlayerOamAfterMain,
 }
 
 impl From<GraphicsDmaGeneration> for OamScanoutSource {
@@ -484,16 +511,45 @@ const fn dialogue_oam_cpu_boundary(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ObjScanoutGenerations {
-    oam: GraphicsDmaGeneration,
+    oam: OamScanoutSource,
     link_obj: GraphicsDmaGeneration,
+    link_obj_sources: GraphicsDmaGeneration,
 }
 
 impl ObjScanoutGenerations {
     const fn coherent(generation: GraphicsDmaGeneration) -> Self {
         Self {
-            oam: generation,
+            oam: match generation {
+                GraphicsDmaGeneration::HostBoundaryBeforeMain => {
+                    OamScanoutSource::RetainCapturedBeforeNmi
+                }
+                GraphicsDmaGeneration::LiveAfterMain => OamScanoutSource::ComposeLiveAfterNmi,
+            },
             link_obj: generation,
+            link_obj_sources: generation,
         }
+    }
+}
+
+const fn atomic_item_graphics_return_obj_scanout(
+    continuation: ItemReceiptGraphicsContinuation,
+) -> ObjScanoutGenerations {
+    // The decompressor's final interrupt retains Link OBJ CHR. Its caller then
+    // prepares the next OAM shadow before the following display boundary, so
+    // that boundary legitimately combines live OAM with resident Link tiles.
+    let link_obj = match continuation {
+        // The enemy-drop pickup's $22 sheet has completed its last OBJ upload at
+        // this boundary. Unlike ordinary equipment receipts, there is no
+        // resident Link-sheet tail to retain after that upload returns.
+        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 } => {
+            GraphicsDmaGeneration::LiveAfterMain
+        }
+        _ => GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    };
+    ObjScanoutGenerations {
+        oam: OamScanoutSource::ComposeLiveAfterNmi,
+        link_obj,
+        link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
     }
 }
 
@@ -535,17 +591,36 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
     // by that main-thread work therefore belong to the following NMI.
     let dungeon_intra_room_stairs_nmi_precedes_link_animation =
         main_module == 7 && matches!(submodule, 8 | 0x10);
+    let dungeon_spiral_stairs_oam_nmi_precedes_main = main_module == 7 && submodule == 0x0e;
+    // Module0E's dungeon-map handler authors its OAM shadow during main. The
+    // trailing NMI publishes that shadow for the following scanout, so the
+    // active map frame still displays the host-boundary OAM generation.
+    let dungeon_map_oam_scanout_uses_host_boundary = main_module == 14 && submodule == 3;
     let dungeon_main_nmi_precedes_main = main_module == 7 && submodule == 0;
-    let player_obj_scanout_uses_host_boundary = (submodule == 0 && matches!(main_module, 9 | 11))
+    // Shutter control runs after the frame's leading OAM DMA. Its CPU slice can
+    // prepare Link's next shadow while the independently scheduled Link-CHR
+    // upload remains on the ordinary live generation.
+    let dungeon_shutter_oam_nmi_precedes_main = main_module == 7 && submodule == 5;
+    let player_link_obj_scanout_uses_host_boundary = (submodule == 0
+        && matches!(main_module, 9 | 11))
         || (main_module == 9 && matches!(submodule, 1 | 6..=8 | 0x0a));
+    // Module09_LoadAuxGFX suspends its caller suffix, but the intervening NMI
+    // still completes the OAM-shadow DMA before active display. Keep Link's
+    // animation sources on the host-boundary generation while allowing that
+    // independently published OAM image to become visible.
+    let player_oam_scanout_uses_host_boundary =
+        player_link_obj_scanout_uses_host_boundary && !(main_module == 9 && submodule == 1);
     let oam_scanout_uses_host_boundary = dungeon_entrance_nmi_precedes_main
-        || player_obj_scanout_uses_host_boundary
-        || dungeon_intra_room_stairs_nmi_precedes_link_animation;
-    let animated_bg_nmi_precedes_scanout =
-        dungeon_entrance_nmi_precedes_main || dungeon_main_nmi_precedes_main;
+        || player_oam_scanout_uses_host_boundary
+        || dungeon_intra_room_stairs_nmi_precedes_link_animation
+        || dungeon_spiral_stairs_oam_nmi_precedes_main
+        || dungeon_map_oam_scanout_uses_host_boundary;
+    let animated_bg_nmi_precedes_scanout = dungeon_entrance_nmi_precedes_main
+        || dungeon_main_nmi_precedes_main
+        || dungeon_spiral_stairs_oam_nmi_precedes_main;
 
     GraphicsDmaPlan {
-        oam_operands: if dungeon_main_nmi_precedes_main {
+        oam_operands: if dungeon_main_nmi_precedes_main || dungeon_shutter_oam_nmi_precedes_main {
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         } else {
             GraphicsDmaGeneration::LiveAfterMain
@@ -555,7 +630,7 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
         } else {
             OamScanoutSource::ComposeLiveAfterNmi
         },
-        link_obj_scanout: if player_obj_scanout_uses_host_boundary {
+        link_obj_scanout: if player_link_obj_scanout_uses_host_boundary {
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         } else {
             GraphicsDmaGeneration::LiveAfterMain
@@ -569,7 +644,6 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
             GraphicsDmaGeneration::LiveAfterMain
         },
         animated_bg_operands: if dungeon_entrance_nmi_precedes_main
-            || dungeon_main_nmi_precedes_main
             || (main_module == 9 && submodule == 5)
         {
             GraphicsDmaGeneration::HostBoundaryBeforeMain
@@ -587,28 +661,61 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
     }
 }
 
-const fn rom_dungeon_subtile_obj_scanout_uses_host_boundary(
+const fn rom_dungeon_transition_oam_scanout_uses_host_boundary(
     main_module: u8,
     submodule: u8,
     subsubmodule: u8,
 ) -> bool {
-    // The landing tail runs between consecutive OBJ uploads: it finds the
-    // landing, moves Link out of the doorway, restores the palette, and
-    // triggers the shutters. That work authors the following OAM/Link-CHR
-    // generation, while the active scanout keeps the coherent OBJ image
-    // resident at the host boundary.
-    main_module == 7 && submodule == 1 && matches!(subsubmodule, 4..=7)
+    // The landing sequence runs between consecutive OAM uploads: its initial
+    // scroll steps, landing search, doorway movement, palette restore, and
+    // shutter trigger author the following shadow while the active scanout
+    // keeps the resident OAM image captured at the host boundary.
+    main_module == 7
+        && ((submodule == 1 && matches!(subsubmodule, 1..=7))
+            || (submodule == 2 && matches!(subsubmodule, 1 | 3)))
+}
+
+const fn rom_dungeon_transition_link_obj_scanout_uses_host_boundary(
+    main_module: u8,
+    submodule: u8,
+    subsubmodule: u8,
+) -> bool {
+    main_module == 7 && submodule == 2 && matches!(subsubmodule, 1 | 3)
 }
 
 fn rom_graphics_dma_plan_at_host_boundary(frame: crate::game_state::FrameState) -> GraphicsDmaPlan {
     let mut plan = rom_graphics_dma_plan(frame.main_module, frame.submodule);
-    if rom_dungeon_subtile_obj_scanout_uses_host_boundary(
+    if frame.main_module == 7 && frame.submodule == 2 && frame.subsubmodule == 8 {
+        // Each supertile-scroll iteration authors the next shadow OAM after
+        // the active scanout's DMA. Display the shadow published by the prior
+        // iteration while BG scroll registers use the current step.
+        plan.oam_scanout = OamScanoutSource::ComposePublishedShadowDma;
+    } else if rom_dungeon_transition_oam_scanout_uses_host_boundary(
         frame.main_module,
         frame.submodule,
         frame.subsubmodule,
     ) {
-        plan.oam_scanout = OamScanoutSource::RetainCapturedBeforeNmi;
+        plan.oam_scanout = OamScanoutSource::RetainResidentPpuOam;
+    }
+    if rom_dungeon_transition_link_obj_scanout_uses_host_boundary(
+        frame.main_module,
+        frame.submodule,
+        frame.subsubmodule,
+    ) {
         plan.link_obj_scanout = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    }
+    if frame.main_module == 7
+        && frame.submodule == 1
+        && matches!(frame.subsubmodule, 3..=7)
+    {
+        // Subtile transition movement and animation run after the leading NMI.
+        // Both DMA engines therefore consume the source words sampled at host
+        // entry. Link's OBJ upload must not see post-main operands, while the
+        // animated-BG upload has already completed before active scanout and
+        // must publish that live VRAM generation.
+        plan.link_obj_operands = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+        plan.animated_bg_operands = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+        plan.animated_bg_scanout = AnimatedBgScanoutGeneration::LiveAfterNmi;
     }
     plan
 }
@@ -630,10 +737,90 @@ fn animated_bg_scanout_across_main(
     }
 }
 
+const fn link_obj_operands_across_main(
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+    exit_operands: GraphicsDmaGeneration,
+) -> GraphicsDmaGeneration {
+    let entering_dungeon_spiral_stairs = entry.main_module == 7
+        && entry.submodule == 0
+        && exit.main_module == 7
+        && exit.submodule == 0x0e;
+    let entering_dungeon_supertile_transition = entry.main_module == 7
+        && entry.submodule == 0
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 0;
+    // The entry slice and the first steady slice straddle different sides of
+    // the Link-animation update.  Once subsubmodule $02 begins, main authors
+    // the next Link OBJ source words after the NMI has already consumed the
+    // host-boundary generation.  Unchanged animation frames make the two
+    // generations look identical, so keep this keyed to the actual phase
+    // instead of the visible four-frame animation cadence.
+    let dungeon_spiral_stairs_nmi_precedes_link_animation =
+        exit.main_module == 7 && exit.submodule == 0x0e && exit.subsubmodule >= 2;
+    let entering_dungeon_supertile_scroll = entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 0
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 1;
+    let dungeon_subtile_scroll_nmi_precedes_link_animation = entry.main_module == 7
+        && entry.submodule == 1
+        && matches!(entry.subsubmodule, 3..=7)
+        && exit.main_module == 7
+        && exit.submodule == 1;
+    if entering_dungeon_spiral_stairs
+        || entering_dungeon_supertile_transition
+        || dungeon_spiral_stairs_nmi_precedes_link_animation
+        || entering_dungeon_supertile_scroll
+        || dungeon_subtile_scroll_nmi_precedes_link_animation
+    {
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    } else {
+        exit_operands
+    }
+}
+
+const fn dungeon_supertile_entry_uses_mixed_obj_scanout(
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+) -> bool {
+    entry.main_module == 7
+        && entry.submodule == 0
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 0
+}
+
+const fn dungeon_dialogue_entry_uses_host_oam_operands(
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+) -> bool {
+    entry.main_module == 7
+        && entry.submodule == 0
+        && exit.main_module == 0x0e
+        && matches!(exit.submodule, 1 | 2)
+        && exit.frame_counter == entry.frame_counter.wrapping_add(1)
+}
+
+const fn oam_operands_across_main(
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+    exit_operands: GraphicsDmaGeneration,
+) -> GraphicsDmaGeneration {
+    if dungeon_dialogue_entry_uses_host_oam_operands(entry, exit) {
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    } else {
+        exit_operands
+    }
+}
+
 const fn oam_scanout_across_main(
     entry: crate::game_state::FrameState,
     exit: crate::game_state::FrameState,
     entry_scanout: OamScanoutSource,
+    screen_transition: u8,
 ) -> OamScanoutSource {
     // Module 7 enters Dungeon_PrepExitWithSpotlight after the leading NMI has
     // consumed the host-boundary OAM shadow. The atomic native main slice then
@@ -641,12 +828,101 @@ const fn oam_scanout_across_main(
     // following NMI. Publish the exact shadow sampled at entry for this active
     // scanout; once module $0f advances to submodule 1, the ordinary live
     // override publishes the next generation.
-    if entry.main_module == 7
+    let dungeon_exit_spotlight_publishes_entry_shadow = entry.main_module == 7
         && entry.submodule == 0
         && exit.main_module == 0x0f
-        && exit.submodule == 0
+        && exit.submodule == 0;
+    // Item-receipt dismissal similarly crosses the leading NMI after its OAM
+    // shadow has hidden the receipt sprites, before the main slice advances to
+    // the dungeon submodule-$0a handoff.
+    let dungeon_submodule_handoff_publishes_entry_shadow = entry.main_module == 7
+        && entry.submodule == 0
+        && exit.main_module == 7
+        && matches!(exit.submodule, 1 | 2 | 4 | 5 | 0x0a | 0x0e);
+    // A dungeon interaction enters Module0E after the leading NMI has already
+    // consumed gameplay's completed OAM shadow. Dialogue initialization can
+    // author the next sprite positions in the same coarse host slice, but
+    // those coordinates do not become resident until the following NMI.
+    let dungeon_dialogue_entry_publishes_entry_shadow = entry.main_module == 7
+        && entry.submodule == 0
+        && exit.main_module == 0x0e
+        && exit.submodule == 1;
+    let dungeon_supertile_scroll_publishes_entry_shadow = entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 0
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 1;
+    let dungeon_subtile_scroll_publishes_entry_shadow = entry.main_module == 7
+        && entry.submodule == 1
+        && entry.subsubmodule == 0
+        && exit.main_module == 7
+        && exit.submodule == 1
+        && exit.subsubmodule == 1;
+    let dungeon_supertile_state3_publishes_entry_shadow = entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 2
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 3
+        && screen_transition == 0;
+    if dungeon_exit_spotlight_publishes_entry_shadow
+        || dungeon_submodule_handoff_publishes_entry_shadow
+        || dungeon_dialogue_entry_publishes_entry_shadow
+        || dungeon_subtile_scroll_publishes_entry_shadow
+        || dungeon_supertile_scroll_publishes_entry_shadow
+        || dungeon_supertile_state3_publishes_entry_shadow
     {
         OamScanoutSource::ComposePublishedShadowDma
+    } else {
+        entry_scanout
+    }
+}
+
+const fn link_obj_scanout_across_main(
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+    entry_scanout: GraphicsDmaGeneration,
+    _screen_transition: u8,
+) -> GraphicsDmaGeneration {
+    // The subtile landing tail enters room-load/shutter control after the
+    // leading NMI. That scanout keeps the Link tiles resident at host entry,
+    // even though the independently scheduled animated-BG upload is live.
+    if entry.main_module == 7
+        && entry.submodule == 1
+        && matches!(entry.subsubmodule, 3..=7)
+        && exit.main_module == 7
+        && exit.submodule == 5
+    {
+        return GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    }
+    // Entering a supertile transition happens after the leading NMI has
+    // already uploaded Link's host-boundary source words. The state-0 CPU
+    // slice may select the next animation sources, but they belong to the
+    // following scanout.
+    if dungeon_supertile_entry_uses_mixed_obj_scanout(entry, exit) {
+        return GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    }
+    // State 1 retains the host-boundary Link tiles throughout the supertile
+    // scroll. Its final main slice advances to state 2 after the NMI has
+    // completed the live upload, so that exit scanout owns the live raw OBJ
+    // generation instead of carrying state 1's retention one frame farther.
+    if entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 1
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 2
+    {
+        GraphicsDmaGeneration::LiveAfterMain
+    } else if entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 2
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 3
+    {
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
     } else {
         entry_scanout
     }
@@ -708,16 +984,17 @@ const fn rom_dungeon_exit_entry_crosses_nmi_boundary(
     snapshot_submodule: u8,
     live_main_module: u8,
     live_submodule: u8,
+    spotlight_entry_build_in_flight: bool,
 ) -> bool {
-    // Module 7's pre-main graphics plan is still attached to the captured
-    // snapshot, but the transition into Dungeon_PrepExitWithSpotlight crosses
-    // the next hardware NMI: its OAM DMA, Link OBJ DMA, and doorway scroll are
-    // already visible while the remaining staged display controls still belong
-    // to submodule 0.
+    // The first Module 15/submodule 0 boundary only authors the doorway scroll
+    // and hidden-sprite shadow for the next NMI. Once the interruptible
+    // spotlight-entry build is in flight, that trailing NMI has published both
+    // domains. The completed build's return into submodule 1 owns the same live
+    // generation.
     snapshot_main_module == 0x0f
         && snapshot_submodule == 0
         && live_main_module == 0x0f
-        && live_submodule == 1
+        && (live_submodule == 1 || (live_submodule == 0 && spotlight_entry_build_in_flight))
 }
 
 const fn rom_dungeon_falling_entry_retains_published_obj_generation(
@@ -788,6 +1065,58 @@ const fn rom_overworld_entry_to_submodule6_publishes_live_animated_bg(
         && published.submodule == 5
         && captured.main_module == 9
         && captured.submodule == 6
+}
+
+const fn rom_dungeon_item_hold_to_dialogue_publishes_live_animated_bg(
+    entry: crate::game_state::FrameState,
+    captured: crate::game_state::FrameState,
+) -> bool {
+    // The item-hold release enters the dialogue module after the leading NMI
+    // has already uploaded the next dungeon animated-tile batch. OAM and
+    // ordinary VRAM retain their independent generations; only the animated
+    // BG DMA is live for this first module-14 scanout.
+    entry.main_module == 7
+        && entry.submodule == 0
+        && captured.main_module == 14
+        && captured.submodule == 2
+}
+
+const fn rom_dungeon_subtile_return_publishes_live_animated_bg(
+    entry: crate::game_state::FrameState,
+    captured: crate::game_state::FrameState,
+) -> bool {
+    // The last subtile landing slice enters room-load/shutter control after
+    // the leading NMI has already uploaded the next dungeon animated-tile
+    // batch. The module change cannot move that completed DMA behind main.
+    entry.main_module == 7
+        && entry.submodule == 1
+        && matches!(entry.subsubmodule, 3..=7)
+        && captured.main_module == 7
+        && captured.submodule == 5
+}
+
+const fn rom_spiral_stairs_suspended_animated_bg_source_address(
+    frame: crate::game_state::FrameState,
+    host_main_prefix_did_not_advance: bool,
+    countdown: u16,
+    current_source: usize,
+) -> Option<usize> {
+    const FIRST_SOURCE: usize = 0xa680;
+    const SOURCE_CYCLE_BYTES: usize = 0x0c00;
+    if frame.main_module == 7
+        && frame.submodule == 0x0e
+        && host_main_prefix_did_not_advance
+        && countdown == 1
+        && current_source >= FIRST_SOURCE
+        && current_source < FIRST_SOURCE + SOURCE_CYCLE_BYTES
+    {
+        Some(
+            FIRST_SOURCE
+                + (current_source - FIRST_SOURCE + 0x400) % SOURCE_CYCLE_BYTES,
+        )
+    } else {
+        None
+    }
 }
 
 const fn rom_overworld_transition_half_color_is_live(
@@ -1029,6 +1358,8 @@ enum PreMainNmiResume {
     OverworldSpriteReloadReturn {
         scanout: OverworldSpriteReloadResumeScanout,
     },
+    DungeonSupertileQuadrantBuildReturn,
+    DungeonSupertileQuadrantBuildPublishedReturn,
     DungeonSupertileQuadrantUploads,
 }
 
@@ -1042,6 +1373,8 @@ enum PreMainCallerContinuation {
     DialogueVwfReturn,
     FileSelectCheckerboardUpload,
     NamePlayerTilemapUpload,
+    SpiralStairsSecondPaletteFilter,
+    SpiralStairsSecondGrayscalePaletteFilter,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1079,9 +1412,30 @@ impl PreMainNmiResume {
                 obj: None,
             },
             Self::OverworldSpriteReloadReturn { scanout } => scanout.generations(),
-            Self::DungeonSupertileQuadrantUploads => PreMainNmiScanoutGenerations {
-                publication: DisplaySnapshotPublication::PublishCaptured,
-                vram: DisplayVramGeneration::ComposeLiveAfterNmi,
+            Self::DungeonSupertileQuadrantBuildReturn
+            | Self::DungeonSupertileQuadrantBuildPublishedReturn
+            | Self::DungeonSupertileQuadrantUploads => PreMainNmiScanoutGenerations {
+                publication: if matches!(
+                    self,
+                    Self::DungeonSupertileQuadrantBuildPublishedReturn
+                ) {
+                    DisplaySnapshotPublication::RetainPublished
+                } else {
+                    DisplaySnapshotPublication::PublishCaptured
+                },
+                vram: if matches!(
+                    self,
+                    Self::DungeonSupertileQuadrantBuildReturn
+                        | Self::DungeonSupertileQuadrantBuildPublishedReturn
+                ) {
+                    // The resumed state-5 build reaches VRAM during this NMI,
+                    // after the active scanout has already selected its
+                    // tilemap generation. The following continuation captures
+                    // the newly uploaded quadrant for the next image.
+                    DisplayVramGeneration::RetainCapturedBeforeNmi
+                } else {
+                    DisplayVramGeneration::ComposeLiveAfterNmi
+                },
                 // This continuation captures before a leading hardware NMI.
                 // Its animated-CHR DMA and BG scroll-register writes therefore
                 // belong to the active scanout, unlike the ordinary
@@ -1089,23 +1443,39 @@ impl PreMainNmiResume {
                 animated_bg: Some(AnimatedBgScanoutGeneration::LiveAfterNmi),
                 bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
                 obj: Some(ObjScanoutGenerations {
-                    oam: GraphicsDmaGeneration::LiveAfterMain,
+                    oam: if matches!(
+                        self,
+                        Self::DungeonSupertileQuadrantBuildReturn
+                            | Self::DungeonSupertileQuadrantBuildPublishedReturn
+                    ) {
+                        // Main has not yet reached state 6's sprite staging at
+                        // this leading boundary. Keep the populated resident
+                        // table instead of the freshly cleared shadow.
+                        OamScanoutSource::RetainResidentPpuOam
+                    } else {
+                        OamScanoutSource::ComposeLiveAfterNmi
+                    },
                     // Link's CHR DMA runs in the same leading NMI as the
                     // animated-BG transfer. The resumed main thread does not
                     // make that upload belong to the following scanout.
                     link_obj: GraphicsDmaGeneration::LiveAfterMain,
+                    link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
                 }),
             },
         }
     }
 
     const fn continues_after_main(self, frame: crate::game_state::FrameState) -> bool {
-        matches!(self, Self::DungeonSupertileQuadrantUploads)
+        matches!(
+            self,
+            Self::DungeonSupertileQuadrantBuildReturn
+                | Self::DungeonSupertileQuadrantBuildPublishedReturn
+                | Self::DungeonSupertileQuadrantUploads
+        )
             && frame.main_module == 7
-            && frame.submodule == 2
-            && matches!(frame.subsubmodule, 5..=15)
+            && ((frame.submodule == 2 && matches!(frame.subsubmodule, 5..=15))
+                || (frame.submodule == 0x0e && matches!(frame.subsubmodule, 8..=15)))
     }
-
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1184,12 +1554,10 @@ impl OverworldSpriteReloadResumeBoundary {
             Self::ByReturnPhase(return_phase) => {
                 OverworldSpriteReloadResumeScanout::ByReturnPhase(return_phase)
             }
-            Self::CpuSliceEntryNmiRegisters => {
-                OverworldSpriteReloadResumeScanout::CpuSliceEntry {
-                    scroll: state.bg_scroll_scanout_from_nmi_register_mirrors(),
-                    bg1_generation,
-                }
-            }
+            Self::CpuSliceEntryNmiRegisters => OverworldSpriteReloadResumeScanout::CpuSliceEntry {
+                scroll: state.bg_scroll_scanout_from_nmi_register_mirrors(),
+                bg1_generation,
+            },
         }
     }
 }
@@ -1265,6 +1633,18 @@ const fn overworld_sprite_reload_timing(
 // ROM writes music control $f3 and returns as module $09/$20, clean Snes9x
 // state probes observe 33 later NMI slices (clean-route frames 17751..17783).
 const WORLD_MAP_EXIT_TILESET_LOAD_NMI_SLICES: u8 = 33;
+// Dungeon-map initialization enters InitializeTilesets after the terminal
+// fade and remains on that suspended 65816 stack for 31 complete vblanks.
+// The caller returns after the NMI at route frame 14318.
+const DUNGEON_MAP_GRAPHICS_PREPARATION_NMI_SLICES: u8 = 31;
+// Drawing both dungeon-map room planes crosses the vblank at route frame
+// 14322. The 65816 resumes the interrupted routine on the following host
+// frame, so the marker/fade state cannot begin until one boundary later.
+const DUNGEON_MAP_ROOM_DRAWING_NMI_SLICES: u8 = 1;
+// DungeonMap_RecoverGFX restores the dungeon tilesets and rebuilds all eight
+// room quadrants while the 65816 caller remains suspended. Instrumented ROM
+// frames 2521..2556 keep the NMI latch set; the caller returns at frame 2557.
+const DUNGEON_MAP_RECOVERY_NMI_SLICES: u8 = 36;
 // Module $09/$20 begins on the following frame and leaves
 // overworld_screen_index set to the temporary rain overlay ($9f) while
 // LoadOverworldOverlay crosses six NMI boundaries (17785..17790).
@@ -1293,6 +1673,15 @@ const DUNGEON_SUPERTILE_ROOM_LOAD_NMI_SLICES: u8 = 6;
 const DUNGEON_SUPERTILE_AUX_SPRITE_GFX_NMI_SLICES: u8 = 7;
 const DUNGEON_SUPERTILE_SPRITE_CONVERSION_NMI_SLICES: u8 = 3;
 const DUNGEON_SUPERTILE_CALLER_RESUME_NMI_SLICES: u8 = 1;
+const DUNGEON_SUPERTILE_QUADRANT_TILEMAP_NMI_SLICES: u8 = 1;
+const DUNGEON_SUPERTILE_FILTERING_RETURN_NMI_SLICES: u8 = 1;
+// Module07_0E's room-loader stack is longer than the ordinary supertile path:
+// the spiral adjustment, full room parse, auxiliary graphics, custom tile
+// attributes, and follower initialization remain interrupted through nineteen
+// subsequent host boundaries before the caller can advance to state 4.
+const DUNGEON_SPIRAL_ROOM_INITIALIZATION_NMI_SLICES: u8 = 19;
+const DUNGEON_SPIRAL_BG_CHARACTERS_34_NMI_SLICES: u8 = 3;
+const DUNGEON_SPIRAL_SPRITE_GRAPHICS_NMI_SLICES: u8 = 3;
 
 // IrisSpotlight_ConfigureTable's cost grows with the generated row-pair count.
 // The 239-row table is the maximum `spotlight_table_row_pairs` can produce
@@ -1336,8 +1725,18 @@ const fn spotlight_close_next_radius(radius: u16) -> u16 {
     radius.saturating_sub(load_gfx::SPOTLIGHT_RADIUS_STEP)
 }
 
-const fn rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(radius: u16) -> bool {
-    radius > SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
+const fn rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
+    radius: u16,
+    vertical_center: u16,
+) -> bool {
+    // The crossing was measured on long-table closes (the 189-row dungeon
+    // landing and the 239-row Link's-house exit). On the castle-entry close's
+    // smaller table the oracle keeps the split return through $3f->$38
+    // ($067c/$0c00d trace: rad 56 at run 11461, prep at 11462); firing the
+    // merge there ended the close one frame early and shifted the whole
+    // castle load (video 11461..11477, RNG schedule ±1 at f11561).
+    spotlight_table_has_long_nmi_workload(vertical_center)
+        && radius > SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
         && spotlight_close_next_radius(radius) <= SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
 }
 
@@ -1355,10 +1754,7 @@ const fn rom_long_close_iteration_prep_returns_with_main(
     // on their following return frame.
     spotlight_table_has_long_nmi_workload(vertical_center)
         && radius_after_shrink > SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
-        && !rom_dungeon_exit_spotlight_table_needs_entry_slice(
-            radius_after_shrink,
-            vertical_center,
-        )
+        && !rom_dungeon_exit_spotlight_table_needs_entry_slice(radius_after_shrink, vertical_center)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1368,6 +1764,17 @@ pub(super) enum DungeonSupertileTransitionWork {
     SpriteConversion,
     RoomLoadCallerResume,
     SpriteConversionCallerResume,
+    QuadrantTilemapBuild,
+    SpiralRoomInitialization,
+    SpiralRoomCallerResume,
+    SpiralBgCharacters34,
+    SpiralSpriteGraphics,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SpiralStaircasePaletteTail {
+    BuildQuadrantForVram,
+    PrepareNextQuadrant,
 }
 
 impl DungeonSupertileTransitionWork {
@@ -1379,6 +1786,11 @@ impl DungeonSupertileTransitionWork {
             Self::RoomLoadCallerResume | Self::SpriteConversionCallerResume => {
                 DUNGEON_SUPERTILE_CALLER_RESUME_NMI_SLICES
             }
+            Self::QuadrantTilemapBuild => DUNGEON_SUPERTILE_QUADRANT_TILEMAP_NMI_SLICES,
+            Self::SpiralRoomInitialization => DUNGEON_SPIRAL_ROOM_INITIALIZATION_NMI_SLICES,
+            Self::SpiralRoomCallerResume => DUNGEON_SUPERTILE_CALLER_RESUME_NMI_SLICES,
+            Self::SpiralBgCharacters34 => DUNGEON_SPIRAL_BG_CHARACTERS_34_NMI_SLICES,
+            Self::SpiralSpriteGraphics => DUNGEON_SPIRAL_SPRITE_GRAPHICS_NMI_SLICES,
         }
     }
 
@@ -1439,7 +1851,7 @@ pub(super) struct DungeonSpriteMainReturn {
 enum ItemReceiptGraphicsContinuation {
     /// The translated caller is still atomic. Its suffix has already run, so
     /// the measured graphics delay only owns the ordinary main-loop epilogue.
-    CallerAlreadyCompleted,
+    CallerAlreadyCompleted { gfx: u8 },
     /// `DecodeAnimatedSpriteTile_variable` interrupted this real ROM call
     /// stack. Resume each typed caller suffix after the graphics routine
     /// returns instead of publishing selected side effects early.
@@ -1465,12 +1877,24 @@ enum GameWorkContinuation {
     FinishDungeonSupertileTransition {
         work: DungeonSupertileTransitionWork,
     },
+    FinishDungeonSupertileFilteringReturn,
+    HoldDungeonSupertileFilteringReturn,
     FinishPreDungeonEntranceLoad,
     FinishPreDungeonSongBankTransfer,
     FinishItemReceiptGraphics {
         continuation: ItemReceiptGraphicsContinuation,
     },
+    FinishBigKeyDropGraphics {
+        sprite_slot: u8,
+        dungeon: DungeonSpriteMainReturn,
+    },
+    FinishDungeonMapGraphicsPreparation,
+    FinishDungeonMapRoomDrawing,
+    FinishDungeonMapRecovery,
     FinishDungeonSubtilePaletteFilter,
+    FinishSpiralStaircasePaletteFilter {
+        tail: SpiralStaircasePaletteTail,
+    },
     FinishDungeonExitSpotlightEntry,
     FinishSpotlightIteration {
         iteration: SpotlightIteration,
@@ -1660,7 +2084,6 @@ impl SpotlightIterationPhase {
     }
 }
 
-
 const DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES: u8 = 1;
 
 const fn rom_dungeon_landing_wipe_is_active(main_module: u8, submodule: u8) -> bool {
@@ -1696,6 +2119,20 @@ const fn spotlight_table_row_pairs(vertical_center: u16) -> u16 {
 
 const fn spotlight_table_has_long_nmi_workload(vertical_center: u16) -> bool {
     spotlight_table_row_pairs(vertical_center) >= SPOTLIGHT_LONG_NMI_WORKLOAD_MIN_ROW_PAIRS
+}
+
+const fn spotlight_mixed_scanout_live_tail_start(vertical_center: u16, radius: u16) -> usize {
+    // The 189-row close finishes its reserved-table copy while scanline 221
+    // can still consume the new words. On the maximal 239-row close, the
+    // $3f->$38 build does not finish until V=224; once the smaller $31 table
+    // is being built, the copy again reaches the last three active lines.
+    if spotlight_table_row_pairs(vertical_center) >= SPOTLIGHT_MAX_TABLE_ROW_PAIRS
+        && radius >= SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
+    {
+        224
+    } else {
+        SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START
+    }
 }
 
 const fn spotlight_opening_projects_live_tail_before_hdma(
@@ -3249,6 +3686,7 @@ enum DisplayHdmaTableGeneration {
     SpotlightProjectionDuringScanout {
         before_projection: [Vec<u8>; 2],
         after_projection: [Vec<u8>; 2],
+        live_tail_start: usize,
     },
 }
 
@@ -3273,8 +3711,9 @@ impl DisplayHdmaTableGeneration {
             Self::SpotlightProjectionDuringScanout {
                 before_projection,
                 after_projection,
+                live_tail_start,
             } => {
-                let byte_start = SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START * 2;
+                let byte_start = live_tail_start * 2;
                 for ((table_base, before), after) in [HDMA_TABLE_DYNAMIC, RESERVED_HDMA_TABLE]
                     .into_iter()
                     .zip(before_projection)
@@ -3426,6 +3865,9 @@ impl DisplayedBgScrollSource {
 enum DisplayObjGeneration {
     #[default]
     FollowModuleCadence,
+    RetainCapturedOam {
+        oam: Vec<u16>,
+    },
     RetainCapturedMemory {
         oam: Vec<u16>,
         vram: Vec<u16>,
@@ -3433,10 +3875,17 @@ enum DisplayObjGeneration {
 }
 
 impl DisplayObjGeneration {
-    fn retained_memory(&self) -> Option<(&[u16], &[u16])> {
+    fn retained_oam(&self) -> Option<&[u16]> {
         match self {
             Self::FollowModuleCadence => None,
-            Self::RetainCapturedMemory { oam, vram } => Some((oam, vram)),
+            Self::RetainCapturedOam { oam } | Self::RetainCapturedMemory { oam, .. } => Some(oam),
+        }
+    }
+
+    fn retained_vram(&self) -> Option<&[u16]> {
+        match self {
+            Self::FollowModuleCadence | Self::RetainCapturedOam { .. } => None,
+            Self::RetainCapturedMemory { vram, .. } => Some(vram),
         }
     }
 }
@@ -3445,10 +3894,48 @@ fn retain_captured_oam_for_scanout(
     obj_generation: &DisplayObjGeneration,
     scanout_source: OamScanoutSource,
 ) -> bool {
-    matches!(
-        obj_generation,
-        DisplayObjGeneration::RetainCapturedMemory { .. }
-    ) || matches!(scanout_source, OamScanoutSource::RetainCapturedBeforeNmi)
+    obj_generation.retained_oam().is_some()
+        || matches!(
+            scanout_source,
+            OamScanoutSource::RetainCapturedBeforeNmi | OamScanoutSource::RetainResidentPpuOam
+        )
+}
+
+const fn is_dungeon_item_hold_entry(
+    entry_frame: crate::game_state::FrameState,
+    exit_frame: crate::game_state::FrameState,
+    entry_link_handler_state: u8,
+    exit_link_handler_state: u8,
+) -> bool {
+    const LINK_HANDLER_HOLD_ITEM: u8 = 21;
+    entry_frame.main_module == 7
+        && entry_frame.submodule == 0
+        && exit_frame.main_module == 7
+        && exit_frame.submodule == 0
+        && entry_link_handler_state != LINK_HANDLER_HOLD_ITEM
+        && exit_link_handler_state == LINK_HANDLER_HOLD_ITEM
+}
+
+const fn oam_scanout_for_dungeon_item_hold_entry(
+    module_scanout: OamScanoutSource,
+    dungeon_item_hold_entry: bool,
+) -> OamScanoutSource {
+    if dungeon_item_hold_entry {
+        OamScanoutSource::ComposeLivePlayerOamAfterMain
+    } else {
+        module_scanout
+    }
+}
+
+const fn dungeon_item_hold_publishes_live_scroll(
+    frame: crate::game_state::FrameState,
+    link_handler_state: u8,
+    dungeon_item_hold_entry_scanout: bool,
+) -> bool {
+    frame.main_module == 7
+        && frame.submodule == 0
+        && link_handler_state == 21
+        && !dungeon_item_hold_entry_scanout
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -3461,6 +3948,7 @@ struct DisplayPublicationSignals {
     attract_map_retains_display_memory: bool,
     world_map_fade_display: bool,
     world_map_mode7_brightness_is_early_published: bool,
+    dungeon_item_hold_publishes_live_scroll: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3470,6 +3958,7 @@ struct DisplayPublicationPlan {
     oam_scanout_source: OamScanoutSource,
     retain_captured_oam: bool,
     link_obj_scanout_generation: GraphicsDmaGeneration,
+    link_obj_source_generation: GraphicsDmaGeneration,
     animated_bg_scanout_generation: AnimatedBgScanoutGeneration,
     bg_scroll_source: DisplayedBgScrollSource,
     publish_live_overworld_transition_half_color: bool,
@@ -3479,36 +3968,63 @@ struct DisplayPublicationPlan {
 
 impl DisplayPublicationPlan {
     fn resolve(snapshot: &DisplaySnapshot, signals: DisplayPublicationSignals) -> Self {
-        let module_oam_scanout_source = if signals.module_oam_publication_is_deferred {
-            OamScanoutSource::RetainCapturedBeforeNmi
-        } else {
-            snapshot.oam_scanout_source
-        };
+        let explicit_oam_generation = matches!(
+            snapshot.oam_scanout_source,
+            OamScanoutSource::RetainResidentPpuOam
+                | OamScanoutSource::ComposePublishedShadowDma
+                | OamScanoutSource::ComposeLivePlayerOamAfterMain
+        );
+        let module_oam_scanout_source =
+            if signals.module_oam_publication_is_deferred && !explicit_oam_generation {
+                OamScanoutSource::RetainCapturedBeforeNmi
+            } else {
+                snapshot.oam_scanout_source
+            };
         let oam_scanout_source = module_oam_scanout_source
             .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary);
+        let link_obj_scanout_generation = snapshot
+            .link_obj_scanout_generation
+            .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary);
+        let link_obj_source_generation = snapshot
+            .link_obj_source_generation
+            .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary);
+        let atomic_item_graphics_return = matches!(
+            snapshot.link_obj_scanout_generation,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        ) && matches!(
+            snapshot.link_obj_source_generation,
+            GraphicsDmaGeneration::LiveAfterMain
+        );
 
         Self {
-            vram_generation: snapshot
-                .vram_generation
-                .resolve_for_scanout(signals.retain_previous_nmi_display_memory),
+            vram_generation: if atomic_item_graphics_return {
+                DisplayVramGeneration::ComposeLiveAfterNmi
+            } else {
+                snapshot
+                    .vram_generation
+                    .resolve_for_scanout(signals.retain_previous_nmi_display_memory)
+            },
             compose_live_cgram: !signals.retain_previous_nmi_display_memory,
             oam_scanout_source,
             retain_captured_oam: retain_captured_oam_for_scanout(
                 &snapshot.obj_generation,
                 oam_scanout_source,
             ),
-            link_obj_scanout_generation: snapshot
-                .link_obj_scanout_generation
-                .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary),
+            link_obj_scanout_generation,
+            link_obj_source_generation,
             animated_bg_scanout_generation: snapshot
                 .animated_bg_scanout_generation
                 .resolve_live_override(signals.publish_live_overworld_bad_weather_scroll),
-            bg_scroll_source: DisplayedBgScrollSource::resolve(
-                snapshot.bg_scroll_generation,
-                signals.dungeon_exit_crosses_nmi_boundary,
-                signals.publish_live_overworld_bad_weather_scroll,
-                signals.attract_map_retains_display_memory,
-            ),
+            bg_scroll_source: if signals.dungeon_item_hold_publishes_live_scroll {
+                DisplayedBgScrollSource::LiveAfterNmi
+            } else {
+                DisplayedBgScrollSource::resolve(
+                    snapshot.bg_scroll_generation,
+                    signals.dungeon_exit_crosses_nmi_boundary,
+                    signals.publish_live_overworld_bad_weather_scroll,
+                    signals.attract_map_retains_display_memory,
+                )
+            },
             publish_live_overworld_transition_half_color: signals
                 .publish_live_overworld_transition_half_color,
             world_map_fade_display: signals.world_map_fade_display,
@@ -3889,6 +4405,18 @@ pub struct ZeldaState {
     pub(crate) dialogue_fast_forward_hold_pending: bool,
     #[serde(skip)]
     pub(crate) dialogue_fast_forward_hold_active: bool,
+    /// The VWF handler completed after this vblank's NMI subroutine dispatch.
+    /// Its BG3 request remains pending for the following NMI.
+    #[serde(skip)]
+    pub(crate) dialogue_bg3_upload_missed_current_nmi: bool,
+    /// A late completed VWF handler was interrupted before the current host's
+    /// two NMI animation countdowns, while the rest of sprite preparation runs.
+    #[serde(skip)]
+    pub(crate) dialogue_late_vwf_preserve_nmi_animation_pending: bool,
+    /// The host after a late VWF interrupt omits only the frame-counter tick;
+    /// its module routing, OAM clear, and sprite preparation still run.
+    #[serde(skip)]
+    pub(crate) dialogue_late_vwf_skip_frame_counter_pending: bool,
     /// CPU entry phase for the next fresh VWF handler iteration. A caller
     /// suffix that returned in its own host slice reaches the following module
     /// iteration earlier than an ordinary game-loop entry.
@@ -3999,9 +4527,17 @@ pub struct ZeldaState {
     #[serde(skip)]
     next_display_obj_scanout_generation: Option<ObjScanoutGenerations>,
     #[serde(skip)]
+    next_display_obj_memory_generation: Option<DisplayObjGeneration>,
+    #[serde(skip)]
     next_display_spotlight_scanout: Option<LiveSpotlightScanout>,
     #[serde(skip)]
     active_display_obj_generation: DisplayObjGeneration,
+    /// The room-$72 state-10 quadrant builder returned through one complete
+    /// main-loop prefix before the next ordinary module iteration. Its two
+    /// room-sprite entries remain four lines ahead until that interrupted
+    /// sorted OAM generation retires from the captured PPU table.
+    #[serde(skip)]
+    room_72_interrupted_main_prefix_oam_offset_active: bool,
     #[serde(skip)]
     next_overworld_sprite_reload_entry_phase: Option<OverworldSpriteReloadEntryPhase>,
     #[serde(skip)]
@@ -4028,6 +4564,33 @@ pub struct ZeldaState {
     display_snapshot: Option<Box<DisplaySnapshot>>,
     #[serde(skip)]
     visible_display_snapshot: Option<Box<DisplaySnapshot>>,
+    /// OAM evaluated for the most recently rendered scanout. Interrupted CPU
+    /// graphics work retains this exact hardware generation while NMI-owned
+    /// register domains continue advancing.
+    #[serde(skip)]
+    last_presented_oam: Option<Vec<u16>>,
+    /// OBJ tile data used by the most recently rendered scanout. Some
+    /// dungeon-transition states suppress Link's upload while the live PPU
+    /// has already advanced to the next source generation.
+    #[serde(skip)]
+    last_presented_obj_vram: Option<Vec<u16>>,
+    /// Host frame owning the staged presentation below. Repeated classic,
+    /// modern, and diagnostic captures of one frame must all compose from the
+    /// same prior scanout generation.
+    #[serde(skip)]
+    presented_history_host_frame: Option<u32>,
+    #[serde(skip)]
+    staged_presented_oam: Option<Vec<u16>>,
+    #[serde(skip)]
+    staged_presented_obj_vram: Option<Vec<u16>>,
+    #[serde(skip)]
+    last_presented_vram_chr_source: Option<crate::chr_source::VramChrSourceTable>,
+    #[serde(skip)]
+    last_presented_vram_chr_preview_source: Option<crate::chr_source::VramChrSourceTable>,
+    #[serde(skip)]
+    staged_presented_vram_chr_source: Option<crate::chr_source::VramChrSourceTable>,
+    #[serde(skip)]
+    staged_presented_vram_chr_preview_source: Option<crate::chr_source::VramChrSourceTable>,
     #[serde(skip)]
     deferred_display_snapshot: Option<Box<DisplaySnapshot>>,
     /// Dynamic Mode 7 table generation before the ROM begins its descending
@@ -4193,8 +4756,12 @@ struct DisplaySnapshot {
     hud_vram_generation: DisplayVramGeneration,
     hud_vram_destination: usize,
     link_obj_scanout_generation: GraphicsDmaGeneration,
+    link_obj_source_generation: GraphicsDmaGeneration,
     oam_scanout_source: OamScanoutSource,
+    dungeon_item_hold_entry_scanout: bool,
+    dungeon_item_hold_entry_bg2_scroll: Option<(u16, u16)>,
     published_shadow_oam_dma: Option<Vec<u16>>,
+    room_72_interrupted_main_prefix_oam_offset_active: bool,
     animated_bg_scanout_generation: AnimatedBgScanoutGeneration,
     bg_scroll_generation: DisplayBgScrollGeneration,
     spotlight_scanout_generation: SpotlightScanoutGeneration,
@@ -4401,9 +4968,35 @@ struct PreMainGraphicsDma {
     entry_frame: crate::game_state::FrameState,
     entry_plan: GraphicsDmaPlan,
     entry_dialogue_text_render_state: u8,
+    entry_link_handler_state: u8,
     animated_tile: Option<PreMainAnimatedTileDma>,
-    link_sources: LinkDmaSources,
+    link_operands: PreMainLinkDmaOperands,
+    link_obj_vram: Vec<u16>,
     oam_shadow: Vec<u8>,
+}
+
+const LINK_DMA_EXPANDED_HIGH_PLANES_START: usize = 0xbd40;
+const LINK_DMA_EXPANDED_HIGH_PLANES_LEN: usize = 0x80;
+const LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN: usize = LINK_DMA_EXPANDED_HIGH_PLANES_LEN / 2;
+
+#[derive(Clone, Copy)]
+struct PreMainLinkDmaOperands {
+    sources: LinkDmaSources,
+    expanded_high_planes: [u8; LINK_DMA_EXPANDED_HIGH_PLANES_LEN],
+}
+
+impl PreMainLinkDmaOperands {
+    fn capture(ram: &[u8]) -> Self {
+        let mut expanded_high_planes = [0; LINK_DMA_EXPANDED_HIGH_PLANES_LEN];
+        let end = LINK_DMA_EXPANDED_HIGH_PLANES_START + LINK_DMA_EXPANDED_HIGH_PLANES_LEN;
+        if let Some(bytes) = ram.get(LINK_DMA_EXPANDED_HIGH_PLANES_START..end) {
+            expanded_high_planes.copy_from_slice(bytes);
+        }
+        Self {
+            sources: LinkDmaSources::load_from_ram(ram),
+            expanded_high_planes,
+        }
+    }
 }
 
 pub type ZeldaRunFrameFunc = fn(&mut ZeldaState, u16, i32);
@@ -4467,6 +5060,183 @@ macro_rules! zelda_bridge_accessors {
             }
         )*
     };
+}
+
+fn oam_entry_bytes(oam: &[u16], entry: usize) -> [u8; 4] {
+    let first = oam[entry * 2].to_le_bytes();
+    let second = oam[entry * 2 + 1].to_le_bytes();
+    [first[0], first[1], second[0], second[1]]
+}
+
+const LINK_OAM_ENTRIES: [usize; 5] = [102, 103, 107, 110, 111];
+
+fn compose_published_oam_entries<const N: usize>(
+    oam: &mut [u16],
+    published_shadow_oam: Option<&[u16]>,
+    entries: [usize; N],
+) {
+    let Some(published) = published_shadow_oam.filter(|published| published.len() == oam.len())
+    else {
+        return;
+    };
+    for entry in entries {
+        let start = entry * 2;
+        oam[start..start + 2].copy_from_slice(&published[start..start + 2]);
+
+        let high_word = 256 + entry / 8;
+        let high_shift = (entry % 8) * 2;
+        let high_mask = 0b11u16 << high_shift;
+        oam[high_word] = (oam[high_word] & !high_mask) | (published[high_word] & high_mask);
+    }
+}
+
+fn compose_published_link_oam(oam: &mut [u16], published_shadow_oam: Option<&[u16]>) {
+    compose_published_oam_entries(oam, published_shadow_oam, LINK_OAM_ENTRIES);
+}
+
+fn supertile_state3_oam_entry_is_on_screen(oam: &[u16], entry: usize) -> bool {
+    let high_word = 256 + entry / 8;
+    let high_shift = (entry % 8) * 2;
+    let x_high = (oam[high_word] >> high_shift) & 1;
+    oam_entry_bytes(oam, entry)[1] != 0xf0 && x_high == 0
+}
+
+fn compose_visible_published_oam(oam: &mut [u16], published_shadow_oam: Option<&[u16]>) {
+    let Some(published) = published_shadow_oam.filter(|published| published.len() == oam.len())
+    else {
+        return;
+    };
+    for entry in 0..128 {
+        if supertile_state3_oam_entry_is_on_screen(oam, entry)
+            && supertile_state3_oam_entry_is_on_screen(published, entry)
+        {
+            // The sorted shadow contributes the already-evaluated entry body,
+            // while the resident high table has independently advanced to the
+            // scanout's size/X generation. Copying the packed high pair here
+            // would also regress same-slot sprites whose size changed during
+            // the transition.
+            let start = entry * 2;
+            oam[start..start + 2].copy_from_slice(&published[start..start + 2]);
+        }
+    }
+}
+
+fn room_71_supertile_return_retains_link_vram(
+    entry: crate::game_state::FrameState,
+    following: crate::game_state::FrameState,
+    dungeon_room_index: u8,
+) -> bool {
+    dungeon_room_index == 0x71
+        && following.main_module == 7
+        && ((following.submodule == 2 && matches!(following.subsubmodule, 13 | 14))
+            || (entry.main_module == 7
+                && entry.submodule == 2
+                && entry.subsubmodule == 15
+                && following.submodule == 5))
+}
+
+fn room_71_supertile_return_uses_published_link_oam(
+    following: crate::game_state::FrameState,
+    dungeon_room_index: u8,
+) -> bool {
+    dungeon_room_index == 0x71
+        && following.main_module == 7
+        && ((following.submodule == 2 && matches!(following.subsubmodule, 13 | 14))
+            || following.submodule == 5)
+}
+
+fn room_71_supertile_room_load_uses_composed_obj_cache(
+    following: crate::game_state::FrameState,
+    dungeon_room_index: u8,
+) -> bool {
+    dungeon_room_index == 0x71 && following.main_module == 7 && following.submodule == 5
+}
+
+fn dungeon_supertile_pre_scroll_oam(
+    live_oam: &[u16],
+    published_shadow_oam: Option<&[u16]>,
+) -> Vec<u16> {
+    let mut oam = live_oam.to_vec();
+    // LinkOam_Main returns on the host-boundary generation even though the
+    // other sprites have already published their live pre-scroll image.
+    compose_published_link_oam(&mut oam, published_shadow_oam);
+    if published_shadow_oam.is_none_or(|published| published.len() != oam.len()) {
+        return oam;
+    }
+    // The interrupted LinkOam_Main tail projects the two visible body pieces
+    // one pixel above the already-authored shadow coordinates on both the
+    // return scanout and the first state-8 scanout.
+    for entry in [102usize, 107] {
+        let xy = &mut oam[entry * 2];
+        *xy = xy.wrapping_sub(0x0100);
+    }
+    oam
+}
+
+fn dungeon_supertile_interrupted_filter_oam(
+    live_oam: &[u16],
+    previously_presented_oam: Option<&[u16]>,
+) -> Vec<u16> {
+    let mut oam = live_oam.to_vec();
+    // Vblank interrupts the filtering return after ordinary sprites have
+    // authored their next shadow, but before LinkOam_Main publishes its tail.
+    compose_published_link_oam(&mut oam, previously_presented_oam);
+    oam
+}
+
+fn dungeon_supertile_first_state8_oam(resident_oam: &[u16]) -> Vec<u16> {
+    let mut oam = resident_oam.to_vec();
+    // The active room sprites finish their interrupted upward motion before
+    // the caller reaches the first state-8 scroll iteration.
+    for entry in [92usize, 93] {
+        oam[entry * 2] = oam[entry * 2].wrapping_sub(0x0100);
+    }
+    oam
+}
+
+fn dungeon_supertile_second_state8_oam(first_state8_oam: &[u16]) -> Vec<u16> {
+    let mut oam = first_state8_oam.to_vec();
+    for entry in [92usize, 93] {
+        oam[entry * 2] = oam[entry * 2].wrapping_sub(0x0200);
+    }
+    oam
+}
+
+fn adjust_room_72_published_sprite_oam(oam: &mut [u16], pixels: u8) {
+    for entry in [92usize, 93] {
+        oam[entry * 2] = oam[entry * 2].wrapping_sub(u16::from(pixels) << 8);
+    }
+}
+
+fn adjust_room_72_state13_link_oam(oam: &mut [u16], pixels: u8) {
+    for entry in LINK_OAM_ENTRIES {
+        oam[entry * 2] = oam[entry * 2].wrapping_add(u16::from(pixels) << 8);
+    }
+}
+
+fn adjust_room_72_state13_body_oam(
+    oam: &mut [u16],
+    live_oam: &[u16],
+    link_y: u16,
+) {
+    for (entry, interrupted_gap) in [(102usize, 17u8), (107, 13)] {
+        let [_, live_y] = live_oam[entry * 2].to_le_bytes();
+        if (link_y as u8).wrapping_sub(live_y) >= interrupted_gap {
+            oam[entry * 2] = oam[entry * 2].wrapping_add(0x0100);
+        }
+    }
+}
+
+fn adjust_room_72_state14_link_oam(oam: &mut [u16]) {
+    for entry in [103usize, 110, 111] {
+        oam[entry * 2] = oam[entry * 2].wrapping_add(0x0200);
+    }
+}
+
+fn rebase_room_72_sprite_oam_after_interrupted_main_prefix(oam: &mut [u16]) {
+    for entry in [92usize, 93] {
+        oam[entry * 2] = oam[entry * 2].wrapping_sub(0x0400);
+    }
 }
 
 impl ZeldaState {
@@ -6455,6 +7225,20 @@ impl ZeldaState {
                 DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES,
             );
         }
+    }
+
+    pub(super) fn suspend_spiral_staircase_palette_filter(
+        &mut self,
+        tail: SpiralStaircasePaletteTail,
+    ) -> bool {
+        if !self.rom_startup_timing() {
+            return false;
+        }
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishSpiralStaircasePaletteFilter { tail },
+            DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES,
+        );
+        true
     }
 
     pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
@@ -8756,14 +9540,14 @@ impl ZeldaState {
             }
             _ => false,
         };
-        // C parity quirk: for a large `block` (e.g. a killed dungeon sprite whose
+        // Legacy parity quirk: for a large `block` (e.g. a killed dungeon sprite whose
         // load block is near 0xffff) the wrapped address can spill OUT of the
         // overworld-sprite-loaded table and land deep in low WRAM modeled by the
         // live sprite slots (SPRITE_FLAGS4 at 0xf60 == OVERWORLD_SPRITE_WAS_LOADED +
         // 0x1fe0 wrapped). The raw `&=` above already wrote that byte, but the
         // sprite-slot native model didn't see it, so its bulk projection would
         // re-stamp the stale value on a later slot's sync. Resync the live slots
-        // from RAM so the direct write sticks (matches the old clone's raw RAM).
+        // from RAM so the direct write sticks (matches the legacy baseline raw RAM).
         if !in_table {
             self.sprite_system_mut().reload_live_slots_from_ram();
         }
@@ -9137,6 +9921,9 @@ impl ZeldaState {
             dialogue_scroll_continuation: DialogueScrollContinuation::IDLE,
             dialogue_fast_forward_hold_pending: false,
             dialogue_fast_forward_hold_active: false,
+            dialogue_bg3_upload_missed_current_nmi: false,
+            dialogue_late_vwf_preserve_nmi_animation_pending: false,
+            dialogue_late_vwf_skip_frame_counter_pending: false,
             dialogue_vwf_handler_entry_phase: messaging::VwfHandlerEntryPhase::default(),
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
             published_bg3_vwf_glyph_runs: Vec::new(),
@@ -9177,8 +9964,10 @@ impl ZeldaState {
             next_display_animated_bg_scanout_generation: None,
             next_display_bg_scroll_generation: DisplayBgScrollGeneration::default(),
             next_display_obj_scanout_generation: None,
+            next_display_obj_memory_generation: None,
             next_display_spotlight_scanout: None,
             active_display_obj_generation: DisplayObjGeneration::default(),
+            room_72_interrupted_main_prefix_oam_offset_active: false,
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
@@ -9192,6 +9981,15 @@ impl ZeldaState {
             intro_sprite_animation_start_delay: 0,
             display_snapshot: None,
             visible_display_snapshot: None,
+            last_presented_oam: None,
+            last_presented_obj_vram: None,
+            presented_history_host_frame: None,
+            staged_presented_oam: None,
+            staged_presented_obj_vram: None,
+            last_presented_vram_chr_source: None,
+            last_presented_vram_chr_preview_source: None,
+            staged_presented_vram_chr_source: None,
+            staged_presented_vram_chr_preview_source: None,
             deferred_display_snapshot: None,
             attract_map_hdma_projection_before: None,
             pre_main_graphics_dma: None,
@@ -9318,6 +10116,15 @@ impl ZeldaState {
         self.sync_overworld_map16_state_from_ram();
         self.display_snapshot = None;
         self.visible_display_snapshot = None;
+        self.last_presented_oam = None;
+        self.last_presented_obj_vram = None;
+        self.presented_history_host_frame = None;
+        self.staged_presented_oam = None;
+        self.staged_presented_obj_vram = None;
+        self.last_presented_vram_chr_source = None;
+        self.last_presented_vram_chr_preview_source = None;
+        self.staged_presented_vram_chr_source = None;
+        self.staged_presented_vram_chr_preview_source = None;
         self.deferred_display_snapshot = None;
         self.spotlight_hdma_reset_prefix = None;
         self.emu_synchronize_whole_state();
@@ -9368,6 +10175,15 @@ impl ZeldaState {
             self.intro_poly_presented_vram = None;
             self.display_snapshot = None;
             self.visible_display_snapshot = None;
+            self.last_presented_oam = None;
+            self.last_presented_obj_vram = None;
+            self.presented_history_host_frame = None;
+            self.staged_presented_oam = None;
+            self.staged_presented_obj_vram = None;
+            self.last_presented_vram_chr_source = None;
+            self.last_presented_vram_chr_preview_source = None;
+            self.staged_presented_vram_chr_source = None;
+            self.staged_presented_vram_chr_preview_source = None;
             self.deferred_display_snapshot = None;
             self.spotlight_hdma_reset_prefix = None;
         } else if !self.game_state.display.has_animated_tile_data_source() {
@@ -9574,7 +10390,7 @@ impl ZeldaState {
         }
         let continuation = match caller {
             ItemReceiptCaller::AtomicCaller => {
-                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted
+                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx }
             }
             ItemReceiptCaller::UnclePassage { sprite_slot } => {
                 let dungeon = self
@@ -9590,7 +10406,7 @@ impl ZeldaState {
         };
         let call_status = if matches!(
             continuation,
-            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. }
         ) {
             GameCallStatus::Returned
         } else {
@@ -9601,6 +10417,34 @@ impl ZeldaState {
             nmi_slices,
         );
         call_status
+    }
+
+    pub(super) fn begin_big_key_drop_graphics_work(&mut self, sprite_slot: usize) -> bool {
+        if !self.rom_startup_timing() || !self.game_execution_scheduler.is_idle() {
+            return false;
+        }
+        let Some(dungeon) = self.active_dungeon_sprite_main_return.take() else {
+            // Big-key graphics can also be prepared by atomic setup paths.
+            // Only a live Module 7 sprite loop has a measured resumable caller.
+            return false;
+        };
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishBigKeyDropGraphics {
+                sprite_slot: sprite_slot as u8,
+                dungeon,
+            },
+            BIG_KEY_DROP_GRAPHICS_NMI_SLICES,
+        );
+        // The entry main slice has already crossed the OAM DMA that published
+        // the host-boundary shadow, but it will not reach another sprite-prep
+        // epilogue before the decompressor is interrupted. Publish that prior
+        // shadow once; the scheduled slices retain it until the call returns.
+        self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::ComposePublishedShadowDma,
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        });
+        true
     }
 
     pub(super) fn begin_dungeon_falling_entrance_work(
@@ -9626,10 +10470,159 @@ impl ZeldaState {
             return false;
         }
         debug_assert_eq!(self.game_state.frame.main_module, 7);
-        debug_assert_eq!(self.game_state.frame.submodule, 2);
+        if matches!(
+            work,
+            DungeonSupertileTransitionWork::SpiralRoomInitialization
+                | DungeonSupertileTransitionWork::SpiralRoomCallerResume
+                | DungeonSupertileTransitionWork::SpiralBgCharacters34
+                | DungeonSupertileTransitionWork::SpiralSpriteGraphics
+        ) {
+            debug_assert_eq!(self.game_state.frame.submodule, 0x0e);
+        } else if work == DungeonSupertileTransitionWork::QuadrantTilemapBuild {
+            if self.game_state.frame.submodule == 0x0e {
+                return false;
+            }
+            debug_assert_eq!(self.game_state.frame.submodule, 2);
+        } else {
+            debug_assert_eq!(self.game_state.frame.submodule, 2);
+        }
+        let mut nmi_slices = work.nmi_slices();
+        if work == DungeonSupertileTransitionWork::RoomLoad
+            && self.game_state.world.location.dungeon_room_index() == 0x82
+        {
+            // Room $82's measured room-object workload crosses one more
+            // vblank than the neighboring room-$81 load, despite both using
+            // layout $1c.
+            nmi_slices = nmi_slices.saturating_add(1);
+        }
+        if work == DungeonSupertileTransitionWork::RoomLoadCallerResume
+            && self.game_state.world.location.dungeon_room_index() == 0x72
+        {
+            // Room $72's suspended caller returns one vblank later than the
+            // default path. The guard-prep suffix, including its two ROM RNG
+            // reads, therefore belongs to execution frame 23195 rather than
+            // the preceding state-2 frame.
+            nmi_slices = nmi_slices.saturating_add(1);
+        }
+        if work == DungeonSupertileTransitionWork::SpiralSpriteGraphics
+            && self.game_state.world.location.dungeon_room_index() == 0x70
+            && matches!(
+                (
+                    self.game_state.dungeon.stair_movement.staircase_index(),
+                    self.game_state
+                        .dungeon
+                        .stair_movement
+                        .staircase_lower_level_status(),
+                ),
+                (0x30, 0) | (0x34, 2)
+            )
+        {
+            // These room-$70 staircase entries reuse a resident sprite set;
+            // their conversion completes within the vblank that interrupts
+            // the call instead of spanning the default three slices.
+            nmi_slices = 1;
+        }
+        if work == DungeonSupertileTransitionWork::SpiralSpriteGraphics
+            && self.game_state.world.location.dungeon_room_index() == 0x80
+            && self.game_state.dungeon.stair_movement.staircase_index() == 0x35
+        {
+            // The reciprocal staircase into room $80 crosses five measured
+            // vblanks while loading its sprite set.
+            nmi_slices = 5;
+        }
+        if work == DungeonSupertileTransitionWork::SpiralSpriteGraphics
+            && self.game_state.world.location.dungeon_room_index() == 0x71
+            && self.game_state.dungeon.stair_movement.staircase_index() == 0x30
+            && self
+                .game_state
+                .dungeon
+                .stair_movement
+                .staircase_lower_level_status()
+                == 0
+        {
+            // Room $71's matching staircase reuses part of the resident set,
+            // but still crosses one more vblank than the room-$70 endpoint.
+            nmi_slices = 2;
+        }
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishDungeonSupertileTransition { work },
-            work.nmi_slices(),
+            nmi_slices,
+        );
+        true
+    }
+
+    pub(super) fn stage_dungeon_supertile_quadrant_upload_obj_scanout(&mut self) {
+        if !self.rom_startup_timing() {
+            return;
+        }
+        self.next_display_obj_memory_generation =
+            Some(DisplayObjGeneration::RetainCapturedOam {
+                oam: self.ppu.oam.clone(),
+            });
+        self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::RetainResidentPpuOam,
+            link_obj: GraphicsDmaGeneration::LiveAfterMain,
+            link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
+        });
+    }
+
+    pub(super) fn stage_room_72_supertile_scroll_obj_scanout(&mut self) {
+        if !self.rom_startup_timing()
+            || self.game_state.world.location.dungeon_room_index() != 0x72
+        {
+            return;
+        }
+        self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::ComposePublishedShadowDma,
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        });
+    }
+
+    pub(super) fn stage_room_72_supertile_landing_obj_scanout(&mut self) {
+        if !self.rom_startup_timing()
+            || self.game_state.world.location.dungeon_room_index() != 0x72
+        {
+            return;
+        }
+        self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::ComposeLiveAfterNmi,
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        });
+    }
+
+    pub(super) fn begin_dungeon_supertile_filtering_return(&mut self) -> bool {
+        let room = self.game_state.world.location.dungeon_room_index();
+        if !self.rom_startup_timing()
+            || self.game_state.frame.main_module != 7
+            || self.game_state.frame.submodule != 2
+            || !matches!(room, 0x71 | 0x72)
+        {
+            return false;
+        }
+        if room == 0x72 {
+            // In the north-to-south room-$72 transition the vblank lands in
+            // the filtering call itself, before it publishes state 8. Keep
+            // the caller-visible state and the already scanned Link OAM until
+            // the interrupted return completes on the next host frame.
+            self.set_subsubmodule(7);
+            if let Some(previously_presented_oam) = self
+                .staged_presented_oam
+                .clone()
+                .or_else(|| self.last_presented_oam.clone())
+            {
+                let oam = dungeon_supertile_interrupted_filter_oam(
+                    &self.ppu.oam,
+                    Some(&previously_presented_oam),
+                );
+                self.next_display_obj_memory_generation =
+                    Some(DisplayObjGeneration::RetainCapturedOam { oam });
+            }
+        }
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonSupertileFilteringReturn,
+            DUNGEON_SUPERTILE_FILTERING_RETURN_NMI_SLICES,
         );
         true
     }
@@ -9962,8 +10955,27 @@ impl ZeldaState {
             }
         });
         let spotlight_iteration = self.game_execution_scheduler.spotlight_iteration();
+        let spotlight_vertical_center = spotlight_vertical_center(
+            self.game_state.player.follower_link.y(),
+            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+        );
+        let spotlight_live_tail_start = spotlight_mixed_scanout_live_tail_start(
+            spotlight_vertical_center,
+            self.game_state.display.spotlight_hdma.window_radius(),
+        );
+        let spotlight_table_is_still_building = spotlight_iteration.is_some_and(|iteration| {
+            iteration.is_closing()
+                && self.game_state.frame.main_module == 15
+                && rom_dungeon_exit_spotlight_table_needs_entry_slice(
+                    self.game_state.display.spotlight_hdma.window_radius(),
+                    spotlight_vertical_center,
+                )
+        });
         let hdma_table_generation = spotlight_iteration
-            .filter(|iteration| iteration.publishes_completed_hdma_table_to_active_scanout())
+            .filter(|iteration| {
+                iteration.publishes_completed_hdma_table_to_active_scanout()
+                    && !spotlight_table_is_still_building
+            })
             .map(
                 |_| DisplayHdmaTableGeneration::SpotlightPublishedAheadOfSnapshot {
                     active_table: self.hdma_dynamic_table_bytes(),
@@ -9976,10 +10988,7 @@ impl ZeldaState {
             (self.dungeon_landing_wipe_return_slices_remaining != 0
                 && spotlight_opening_projects_live_tail_before_hdma(
                     self.game_state.display.spotlight_hdma.window_radius(),
-                    spotlight_vertical_center(
-                        self.game_state.player.follower_link.y(),
-                        self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
-                    ),
+                    spotlight_vertical_center,
                 ))
             .then(|| spotlight_hdma_tables_from_ram(&self.ram));
         self.capture_display_snapshot_with_publication(publication);
@@ -9996,6 +11005,7 @@ impl ZeldaState {
                 DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
                     before_projection: spotlight_hdma_tables_from_ram(&display.ram),
                     after_projection,
+                    live_tail_start: spotlight_live_tail_start,
                 };
         }
         if let (Some(after_projection), Some(display)) = (
@@ -10006,6 +11016,7 @@ impl ZeldaState {
                 DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
                     before_projection: spotlight_hdma_tables_from_ram(&display.ram),
                     after_projection,
+                    live_tail_start: spotlight_live_tail_start,
                 };
         }
     }
@@ -10029,6 +11040,7 @@ impl ZeldaState {
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
         );
         let radius = self.game_state.display.spotlight_hdma.window_radius();
+        let live_tail_start = spotlight_mixed_scanout_live_tail_start(vertical_center, radius);
         if phase == SpotlightIterationPhase::MixedTailAfterReturn {
             // The fixed 448-byte copy crosses HDMA at scanline 221. HDMA has
             // already consumed the published table above that line; from the
@@ -10051,7 +11063,7 @@ impl ZeldaState {
                 };
                 for scanline in [upper_cursor, lower_cursor] {
                     let scanline = scanline as usize;
-                    if (SPOTLIGHT_MIXED_SCANOUT_LIVE_TAIL_START..224).contains(&scanline) {
+                    if (live_tail_start..224).contains(&scanline) {
                         for table in &mut after_projection {
                             let offset = scanline * 2;
                             table[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
@@ -10070,6 +11082,7 @@ impl ZeldaState {
                 DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout {
                     before_projection,
                     after_projection,
+                    live_tail_start,
                 };
         }
     }
@@ -10170,8 +11183,13 @@ impl ZeldaState {
                 )
             })
         });
-        let obj_generation = transition_entry_obj
-            .map(|(oam, vram)| DisplayObjGeneration::RetainCapturedMemory { oam, vram })
+        let obj_generation = self
+            .next_display_obj_memory_generation
+            .take()
+            .or_else(|| {
+                transition_entry_obj
+                    .map(|(oam, vram)| DisplayObjGeneration::RetainCapturedMemory { oam, vram })
+            })
             .unwrap_or_else(|| self.active_display_obj_generation.clone());
         let entry_graphics_dma_plan = self
             .pre_main_graphics_dma
@@ -10189,11 +11207,29 @@ impl ZeldaState {
             entry_frame,
             captured_frame,
             entry_graphics_dma_plan.oam_scanout,
+            self.screen_transition(),
         );
         let obj_scanout_generation = self.next_display_obj_scanout_generation.take();
         let link_obj_scanout_generation = obj_scanout_generation
             .map(|generation| generation.link_obj)
-            .unwrap_or(entry_graphics_dma_plan.link_obj_scanout);
+            .unwrap_or_else(|| {
+                link_obj_scanout_across_main(
+                    entry_frame,
+                    captured_frame,
+                    entry_graphics_dma_plan.link_obj_scanout,
+                    self.screen_transition(),
+                )
+            });
+        let link_obj_source_generation = obj_scanout_generation
+            .map(|generation| generation.link_obj_sources)
+            .unwrap_or_else(|| {
+                link_obj_scanout_across_main(
+                    entry_frame,
+                    captured_frame,
+                    entry_graphics_dma_plan.link_obj_scanout,
+                    self.screen_transition(),
+                )
+            });
         let oam_dma_byte_len = self.ppu.oam.len() * 2;
         let previously_published_shadow_oam_dma = self
             .display_snapshot
@@ -10238,16 +11274,35 @@ impl ZeldaState {
         );
         let dialogue_oam_scanout_source =
             oam_scanout_for_cpu_boundary(dialogue_oam_scanout_source, dialogue_cpu_boundary);
+        let dungeon_item_hold_entry_scanout = is_dungeon_item_hold_entry(
+            entry_frame,
+            captured_frame,
+            self.pre_main_graphics_dma
+                .as_ref()
+                .map(|graphics| graphics.entry_link_handler_state)
+                .unwrap_or_else(|| self.game_state.player.follower_link.handler_state()),
+            self.game_state.player.follower_link.handler_state(),
+        );
+        let item_hold_entry_oam_scanout_source = oam_scanout_for_dungeon_item_hold_entry(
+            dialogue_oam_scanout_source,
+            dungeon_item_hold_entry_scanout,
+        );
         self.dialogue_oam_publication_phase = next_dialogue_oam_phase;
         let oam_scanout_source = obj_scanout_generation
-            .map(|generation| generation.oam.into())
-            .unwrap_or(dialogue_oam_scanout_source);
+            .map(|generation| generation.oam)
+            .unwrap_or(item_hold_entry_oam_scanout_source);
         let published_shadow_oam_dma =
             if module_oam_scanout_source == OamScanoutSource::ComposePublishedShadowDma {
                 host_boundary_shadow_oam_dma
             } else {
                 previously_published_shadow_oam_dma
             };
+        let bg_scroll_generation = std::mem::take(&mut self.next_display_bg_scroll_generation);
+        let suspended_spiral_animated_bg_dma_crosses_scanout = entry_frame.frame_counter
+            == captured_frame.frame_counter
+            && captured_frame.main_module == 7
+            && captured_frame.submodule == 0x0e
+            && self.game_state.display.bg_tile_animation_countdown == 1;
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
@@ -10274,23 +11329,45 @@ impl ZeldaState {
                 .display
                 .message_dma_destination_address_usize(),
             link_obj_scanout_generation,
+            link_obj_source_generation,
             oam_scanout_source,
+            dungeon_item_hold_entry_scanout,
+            dungeon_item_hold_entry_bg2_scroll: dungeon_item_hold_entry_scanout
+                .then_some((self.ppu.bg_layer[1].h_scroll, self.ppu.bg_layer[1].v_scroll)),
             published_shadow_oam_dma,
+            room_72_interrupted_main_prefix_oam_offset_active: self
+                .room_72_interrupted_main_prefix_oam_offset_active,
             animated_bg_scanout_generation: self
                 .next_display_animated_bg_scanout_generation
                 .take()
                 .unwrap_or_else(|| {
+                    if suspended_spiral_animated_bg_dma_crosses_scanout {
+                        // The projected upload completes at this vblank, after
+                        // the already-captured scanout generation. Keep the
+                        // resident animated tiles for this image; the live PPU
+                        // carries the completed DMA into the following image.
+                        return AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
+                    }
                     let generation = animated_bg_scanout_across_main(
                         entry_graphics_dma_plan,
-                        rom_graphics_dma_plan(captured_frame.main_module, captured_frame.submodule),
+                        rom_graphics_dma_plan_at_host_boundary(captured_frame),
                     );
-                    if publish_live_animated_bg_on_submodule6_entry {
+                    if publish_live_animated_bg_on_submodule6_entry
+                        || rom_dungeon_item_hold_to_dialogue_publishes_live_animated_bg(
+                            entry_frame,
+                            captured_frame,
+                        )
+                        || rom_dungeon_subtile_return_publishes_live_animated_bg(
+                            entry_frame,
+                            captured_frame,
+                        )
+                    {
                         AnimatedBgScanoutGeneration::LiveAfterNmi
                     } else {
                         generation
                     }
                 }),
-            bg_scroll_generation: std::mem::take(&mut self.next_display_bg_scroll_generation),
+            bg_scroll_generation,
             spotlight_scanout_generation: self
                 .next_display_spotlight_scanout
                 .take()
@@ -10360,6 +11437,10 @@ impl ZeldaState {
         } else {
             self.intro_poly_vram_history.clear();
         }
+        let retires_room_72_interrupted_main_prefix_oam = publication
+            != DisplaySnapshotPublication::RetainPublished
+            && snapshot.room_72_interrupted_main_prefix_oam_offset_active
+            && snapshot.ppu.oam[12 * 2].to_le_bytes()[1] == 0xf0;
         self.visible_display_snapshot = None;
         match publication {
             DisplaySnapshotPublication::AdvanceStaged => {
@@ -10374,8 +11455,18 @@ impl ZeldaState {
                 if self.display_snapshot.is_none() {
                     self.display_snapshot =
                         self.deferred_display_snapshot.clone().or(Some(snapshot));
+                } else if let Some(published) = self.display_snapshot.as_mut() {
+                    // The entry snapshot owns one scanout with the pre-pickup
+                    // camera. Item graphics then retain that same OAM/VRAM
+                    // generation across subsequent vblanks, but BG2 scroll is
+                    // independently republished from the live camera starting
+                    // with the first retained boundary.
+                    published.dungeon_item_hold_entry_scanout = false;
                 }
             }
+        }
+        if retires_room_72_interrupted_main_prefix_oam {
+            self.room_72_interrupted_main_prefix_oam_offset_active = false;
         }
     }
 
@@ -10404,6 +11495,77 @@ impl ZeldaState {
         }
     }
 
+    fn atomic_item_graphics_holds_following_nmi(&self) -> bool {
+        matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. },
+            })
+        )
+    }
+
+    fn stage_atomic_item_graphics_return_obj_scanout(
+        &mut self,
+        continuation: ItemReceiptGraphicsContinuation,
+    ) {
+        let scanout = atomic_item_graphics_return_obj_scanout(continuation);
+        // RetainPublished deliberately keeps the already-visible snapshot
+        // object. Annotate that retained generation with split Link pixel and
+        // provenance ownership now, then carry the same split into the next
+        // captured boundary as well.
+        for snapshot in [
+            self.display_snapshot.as_mut(),
+            self.visible_display_snapshot.as_mut(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            snapshot.oam_scanout_source = match continuation {
+                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. } => {
+                    OamScanoutSource::ComposePublishedShadowDma
+                }
+                ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. } => scanout.oam,
+            };
+            snapshot.vram_generation = DisplayVramGeneration::ComposeLiveAfterNmi;
+            snapshot.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::LiveAfterNmi;
+            snapshot.link_obj_scanout_generation = scanout.link_obj;
+            snapshot.link_obj_source_generation = scanout.link_obj_sources;
+        }
+        if matches!(
+            continuation,
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24 }
+        ) {
+            // This receipt finishes after the current retained scanout has
+            // already selected its OAM, but Main_PrepSpritesForNmi has prepared
+            // the complete shadow consumed by the following vblank. Capture
+            // that exact next OAM generation explicitly so an older retained
+            // OBJ-memory generation cannot keep the packed size bits stale.
+            let shadow = self.sprite_oam_shadow_buffer();
+            let oam = shadow
+                .chunks_exact(2)
+                .take(self.ppu.oam.len())
+                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                .collect();
+            self.next_display_obj_memory_generation =
+                Some(DisplayObjGeneration::RetainCapturedOam { oam });
+        }
+        self.next_display_obj_scanout_generation = Some(scanout);
+    }
+
+    fn stage_live_animated_bg_scanout(&mut self) {
+        for snapshot in [
+            self.display_snapshot.as_mut(),
+            self.visible_display_snapshot.as_mut(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            snapshot.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::LiveAfterNmi;
+        }
+        self.next_display_animated_bg_scanout_generation =
+            Some(AnimatedBgScanoutGeneration::LiveAfterNmi);
+    }
+
     fn compose_display_vram(
         &mut self,
         following: &DisplaySnapshot,
@@ -10414,11 +11576,46 @@ impl ZeldaState {
         // of the frame. Preserve that completed pre-NMI buffer rather than a
         // job that may have finished later in the current CPU slice.
         let presented_poly = self.selected_intro_poly_display_buffer();
-        let entry_link_obj_vram = matches!(
+        let entry_frame = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.entry_frame)
+            .unwrap_or_else(|| crate::game_state::FrameState::load_from_ram(&self.ram));
+        let following_frame = crate::game_state::FrameState::load_from_ram(&following.ram);
+        let mixed_supertile_entry_obj =
+            dungeon_supertile_entry_uses_mixed_obj_scanout(entry_frame, following_frame);
+        let host_boundary_link_obj_vram = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.link_obj_vram.clone())
+            .unwrap_or_else(|| self.ppu.vram[0x4000..0x4400].to_vec());
+        let entry_link_obj_vram = (matches!(
             plan.link_obj_scanout_generation,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
+        ) && matches!(
+            plan.link_obj_source_generation,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        ) && !mixed_supertile_entry_obj)
+            .then(|| host_boundary_link_obj_vram.clone());
+        let retained_supertile_entry_link_obj_vram = mixed_supertile_entry_obj.then(|| {
+            [
+                host_boundary_link_obj_vram[0x000..0x050].to_vec(),
+                host_boundary_link_obj_vram[0x100..0x150].to_vec(),
+            ]
+        });
+        let following_room = crate::game_state::WorldLocationState::load_from_ram(&following.ram)
+            .dungeon_room_index();
+        let retained_doorway_link_obj_vram = room_71_supertile_return_retains_link_vram(
+            entry_frame,
+            following_frame,
+            following_room,
         )
-        .then(|| self.ppu.vram[0x4000..0x4400].to_vec());
+        .then(|| {
+            [
+                self.ppu.vram[0x4000..0x4050].to_vec(),
+                self.ppu.vram[0x4100..0x4150].to_vec(),
+            ]
+        });
         let retained_hud_vram = matches!(
             following.hud_vram_generation,
             DisplayVramGeneration::RetainCapturedBeforeNmi
@@ -10437,7 +11634,6 @@ impl ZeldaState {
                 &self.ram[crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF..],
             )
         });
-
         // Animated-BG DMA configures the next active frame. Retain the
         // host-boundary VRAM generation at whichever destination the current
         // tileset selected ($3b00 indoors, $3c00 outdoors). The resumed
@@ -10467,6 +11663,14 @@ impl ZeldaState {
             if let Some(entry_link_obj_vram) = entry_link_obj_vram {
                 self.ppu.vram[0x4000..0x4400].copy_from_slice(&entry_link_obj_vram);
             }
+            if let Some([upper, lower]) = retained_supertile_entry_link_obj_vram {
+                self.ppu.vram[0x4000..0x4050].copy_from_slice(&upper);
+                self.ppu.vram[0x4100..0x4150].copy_from_slice(&lower);
+            }
+            if let Some([upper, lower]) = retained_doorway_link_obj_vram {
+                self.ppu.vram[0x4000..0x4050].copy_from_slice(&upper);
+                self.ppu.vram[0x4100..0x4150].copy_from_slice(&lower);
+            }
             if let Some(retained_hud_vram) = retained_hud_vram.as_ref() {
                 retained_hud_vram.publish_to(&mut self.ppu.vram);
             }
@@ -10474,6 +11678,68 @@ impl ZeldaState {
                 scanout.publish_to(&mut self.ppu.vram);
             }
             self.ppu.vram[0x5800..0x5c00].copy_from_slice(&presented_poly);
+        } else if matches!(
+            plan.link_obj_scanout_generation,
+            GraphicsDmaGeneration::LiveAfterMain
+        ) {
+            // A long NMI can retain the pre-upload BG/tilemap image while its
+            // OBJ DMA still completes before the sprites are scanned. Keep
+            // this domain independent: Snes9x's completed tile cache can own
+            // the early Link body/head/hand batch while the rest of visible
+            // VRAM, including later Link OBJ uploads, remains captured.
+            if !self.atomic_item_graphics_holds_following_nmi() {
+                for range in [0x4000..0x4050, 0x4100..0x4150] {
+                    self.ppu.vram[range.clone()].copy_from_slice(&following.ppu.vram[range]);
+                }
+            } else {
+                // Resolve that DMA from the scanout snapshot's own source words.
+                // The following coarse host slice can already have latched a long
+                // item-graphics call and skipped NMI_DoUpdates, leaving its PPU
+                // bytes one upload behind even though the snapshot owns the next
+                // hardware generation (oracle frame 4582).
+                let live_sources = LinkDmaSources::load_from_ram(&following.ram);
+                let link_graphics = self.asset_raw(57).map(Vec::from);
+                for (destination, source, len) in EARLY_LINK_OBJ_DMA_TRANSFERS {
+                    let source_address = usize::from(live_sources.source(source));
+                    let source_offset = source_address.saturating_sub(0x8000);
+                    let destination_end = destination + len / 2;
+                    if let Some(link_graphics) = link_graphics.as_deref().filter(|graphics| {
+                        source_address >= 0x8000 && source_offset + len <= graphics.len()
+                    }) {
+                        self.copy_asset_bytes_to_vram(
+                            destination,
+                            link_graphics,
+                            source_address,
+                            len,
+                        );
+                    } else {
+                        self.ppu.vram[destination..destination_end]
+                            .copy_from_slice(&following.ppu.vram[destination..destination_end]);
+                    }
+                }
+            }
+        }
+        if plan.vram_generation == DisplayVramGeneration::RetainCapturedBeforeNmi
+            && plan.animated_bg_scanout_generation == AnimatedBgScanoutGeneration::LiveAfterNmi
+        {
+            // A pending stripe can retain the general VRAM generation while
+            // the leading-NMI animated-tile DMA independently completes for
+            // this scanout. Compose that $400-byte domain explicitly; merely
+            // selecting LiveAfterNmi is otherwise a no-op in the retained
+            // whole-VRAM branch above.
+            let destination = read_le_u16(&following.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
+            const ANIMATED_BG_NMI_WORDS: usize = 0x200;
+            if let (Some(live), Some(presented)) = (
+                following
+                    .ppu
+                    .vram
+                    .get(destination..destination + ANIMATED_BG_NMI_WORDS),
+                self.ppu
+                    .vram
+                    .get_mut(destination..destination + ANIMATED_BG_NMI_WORDS),
+            ) {
+                presented.copy_from_slice(live);
+            }
         }
         if let Some(retained_full_tilemap_vram) = retained_full_tilemap_vram {
             retained_full_tilemap_vram.publish_to(&mut self.ppu.vram);
@@ -10485,11 +11751,31 @@ impl ZeldaState {
         following: &DisplaySnapshot,
         plan: &DisplayPublicationPlan,
     ) {
-        let retained_link_obj_sources = matches!(
-            plan.link_obj_scanout_generation,
+        let entry_frame = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.entry_frame)
+            .unwrap_or_else(|| crate::game_state::FrameState::load_from_ram(&self.ram));
+        let following_frame = crate::game_state::FrameState::load_from_ram(&following.ram);
+        let mixed_supertile_entry_obj =
+            dungeon_supertile_entry_uses_mixed_obj_scanout(entry_frame, following_frame);
+        let dungeon_supertile_state3_retains_presented_link_sources = following_frame.main_module
+            == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 3;
+        let retained_link_obj_sources = ((matches!(
+            plan.link_obj_source_generation,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         )
-        .then(|| {
+            || dungeon_supertile_state3_retains_presented_link_sources)
+            && !mixed_supertile_entry_obj)
+            .then(|| {
+                (
+                    self.vram_chr_source.clone(),
+                    self.vram_chr_preview_source.clone(),
+                )
+            });
+        let retained_supertile_entry_link_obj_sources = mixed_supertile_entry_obj.then(|| {
             (
                 self.vram_chr_source.clone(),
                 self.vram_chr_preview_source.clone(),
@@ -10506,6 +11792,86 @@ impl ZeldaState {
                 self.vram_chr_preview_source
                     .copy_word_range_from(preview, 0x4000..0x4400);
             }
+            if let Some((logical, preview)) = retained_supertile_entry_link_obj_sources.as_ref() {
+                for range in [0x4000..0x4050, 0x4100..0x4150] {
+                    self.vram_chr_source
+                        .copy_word_range_from(logical, range.clone());
+                    self.vram_chr_preview_source
+                        .copy_word_range_from(preview, range);
+                }
+            }
+        } else if matches!(
+            plan.link_obj_source_generation,
+            GraphicsDmaGeneration::LiveAfterMain
+        ) {
+            if !self.atomic_item_graphics_holds_following_nmi()
+                && !dungeon_supertile_state3_retains_presented_link_sources
+            {
+                for range in [0x4000..0x4050, 0x4100..0x4150] {
+                    self.vram_chr_source
+                        .copy_word_range_from(&following.vram_chr_source, range.clone());
+                    self.vram_chr_preview_source
+                        .copy_word_range_from(&following.vram_chr_preview_source, range);
+                }
+            } else if !dungeon_supertile_state3_retains_presented_link_sources {
+                let captured_sources = LinkDmaSources::load_from_ram(&self.ram);
+                let link_graphics_len = self.asset_raw(57).map(<[u8]>::len);
+                let link_pack = read_le_u16(
+                    &self.ram,
+                    crate::game_state::constants::LINK_DMA_GRAPHICS_INDEX,
+                ) >> 1;
+                for (destination, source, len) in EARLY_LINK_OBJ_DMA_TRANSFERS {
+                    let source_address = usize::from(captured_sources.source(source));
+                    let source_offset = source_address.saturating_sub(0x8000);
+                    if source_address >= 0x8000
+                        && link_graphics_len
+                            .is_some_and(|asset_len| source_offset + len <= asset_len)
+                    {
+                        let tile_count = (len / 2).div_ceil(16);
+                        let base_offset = (source_offset >> 5) as u16;
+                        self.vram_chr_source.record_tiles_from(
+                            destination,
+                            tile_count,
+                            crate::chr_source::CHR_KIND_LINK,
+                            link_pack,
+                            base_offset,
+                        );
+                        self.vram_chr_preview_source.record_tiles_from(
+                            destination,
+                            tile_count,
+                            crate::chr_source::CHR_KIND_LINK,
+                            link_pack,
+                            base_offset,
+                        );
+                    } else {
+                        let range = destination..destination + len / 2;
+                        self.vram_chr_source
+                            .copy_word_range_from(&following.vram_chr_source, range.clone());
+                        self.vram_chr_preview_source
+                            .copy_word_range_from(&following.vram_chr_preview_source, range);
+                    }
+                }
+            }
+        }
+        if dungeon_supertile_state3_retains_presented_link_sources {
+            if let Some(logical) = self.last_presented_vram_chr_source.as_ref() {
+                self.vram_chr_source
+                    .copy_word_range_from(logical, 0x4000..0x4400);
+            }
+            if let Some(preview) = self.last_presented_vram_chr_preview_source.as_ref() {
+                self.vram_chr_preview_source
+                    .copy_word_range_from(preview, 0x4000..0x4400);
+            }
+        }
+        if plan.vram_generation == DisplayVramGeneration::RetainCapturedBeforeNmi
+            && plan.animated_bg_scanout_generation == AnimatedBgScanoutGeneration::LiveAfterNmi
+        {
+            let destination = read_le_u16(&following.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
+            let range = destination..destination + 0x200;
+            self.vram_chr_source
+                .copy_word_range_from(&following.vram_chr_source, range.clone());
+            self.vram_chr_preview_source
+                .copy_word_range_from(&following.vram_chr_preview_source, range);
         }
     }
 
@@ -10532,37 +11898,526 @@ impl ZeldaState {
     }
 
     fn compose_display_oam(&mut self, following: &DisplaySnapshot, plan: &DisplayPublicationPlan) {
+        let following_frame = crate::game_state::FrameState::load_from_ram(&following.ram);
+        let resident_link_body_xy = self.ppu.oam[102 * 2];
+        let resident_first_sorted_entry_y = self.ppu.oam[12 * 2].to_le_bytes()[1];
+        let debug_subtile_oam =
+            env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some() && following_frame.main_module == 7;
+        let debug_entries = [12, 13, 92, 93, 102, 103, 107, 110, 111, 112, 113];
+        let captured_entries = debug_subtile_oam
+            .then(|| debug_entries.map(|entry| oam_entry_bytes(&self.ppu.oam, entry)));
         if !plan.retain_captured_oam {
             self.ppu.oam.clone_from(&following.ppu.oam);
         }
+        let published_shadow_oam = match plan.oam_scanout_source {
+            OamScanoutSource::RetainCapturedBeforeNmi
+            | OamScanoutSource::ComposePublishedShadowDma => {
+                following.published_shadow_oam_dma.as_deref()
+            }
+            OamScanoutSource::RetainResidentPpuOam
+            | OamScanoutSource::ComposeLiveAfterNmi
+            | OamScanoutSource::ComposeLivePlayerOamAfterMain => None,
+        };
         if matches!(
             plan.oam_scanout_source,
-            OamScanoutSource::ComposePublishedShadowDma
+            OamScanoutSource::RetainCapturedBeforeNmi | OamScanoutSource::ComposePublishedShadowDma
         ) {
-            if let Some(published_shadow_oam) = following
-                .published_shadow_oam_dma
-                .as_deref()
-                .filter(|oam| oam.len() == self.ppu.oam.len())
+            // The snapshot's PPU OAM includes main-thread shadow writes that
+            // hardware has not necessarily DMAed yet. When scanout retains the
+            // pre-NMI generation, use the shadow image published by the prior
+            // completed OAM DMA rather than those newly authored coordinates.
+            if let Some(published_shadow_oam) =
+                published_shadow_oam.filter(|oam| oam.len() == self.ppu.oam.len())
             {
                 self.ppu.oam.clone_from_slice(published_shadow_oam);
             }
         }
-        if let Some((oam, vram)) = following.obj_generation.retained_memory() {
+        if plan.oam_scanout_source == OamScanoutSource::ComposeLivePlayerOamAfterMain {
+            // LinkOam_Main owns entries 12..17 on this unsorted dungeon slice.
+            // The remaining sprite table was already consumed from the entry
+            // shadow and must not be advanced with Link's hold-item handoff.
+            // Link's live coordinates were authored against the live camera,
+            // while this scanout still owns the independently captured scroll
+            // registers. Rebase the six player entries onto that display
+            // generation instead of mixing camera generations.
+            const PLAYER_OAM_WORDS: std::ops::Range<usize> = 24..36;
+            let byte_start = OAM_BUF + PLAYER_OAM_WORDS.start * 2;
+            let byte_end = OAM_BUF + PLAYER_OAM_WORDS.end * 2;
+            if let Some(live_shadow) = following.ram.get(byte_start..byte_end) {
+                for (word, bytes) in self.ppu.oam[PLAYER_OAM_WORDS]
+                    .iter_mut()
+                    .zip(live_shadow.chunks_exact(2))
+                {
+                    *word = u16::from_le_bytes([bytes[0], bytes[1]]);
+                }
+            }
+            // The mixed OAM generation remains resident while the camera can
+            // independently advance on later retained scanouts. Rebase against
+            // the camera that authored this OAM DMA, not the scroll registers
+            // that happen to be live for the current scanout.
+            let (oam_camera_x, oam_camera_y) = following
+                .dungeon_item_hold_entry_bg2_scroll
+                .unwrap_or((self.ppu.bg_layer[1].h_scroll, self.ppu.bg_layer[1].v_scroll));
+            let x_delta =
+                read_le_u16(&following.ram, BG2_X_SCROLL).wrapping_sub(oam_camera_x) as u8;
+            let y_delta =
+                read_le_u16(&following.ram, BG2_Y_SCROLL).wrapping_sub(oam_camera_y) as u8;
+            for entry in 12..18 {
+                let [x, y] = self.ppu.oam[entry * 2].to_le_bytes();
+                self.ppu.oam[entry * 2] =
+                    u16::from_le_bytes([x.wrapping_add(x_delta), y.wrapping_add(y_delta)]);
+            }
+        }
+        if let Some(oam) = following.obj_generation.retained_oam() {
             self.ppu.oam.clone_from_slice(oam);
+        }
+        if let Some(vram) = following.obj_generation.retained_vram() {
             self.ppu.vram[0x4000..0x4400].copy_from_slice(vram);
         }
+        let following_room = crate::game_state::WorldLocationState::load_from_ram(&following.ram)
+            .dungeon_room_index();
+        if following_room == 0x72
+            && following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 7
+            && plan.oam_scanout_source == OamScanoutSource::RetainResidentPpuOam
+            && following.ppu.oam[92 * 2].to_le_bytes()[1] != 0xf0
+        {
+            // The state-5 quadrant return keeps the populated resident table
+            // across two scanouts. The room sprites were evaluated two lines
+            // later than the generation selected by the second return.
+            adjust_room_72_published_sprite_oam(&mut self.ppu.oam, 2);
+        }
+        if following_room == 0x72
+            && following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 8
+            && plan.oam_scanout_source == OamScanoutSource::ComposeLiveAfterNmi
+            && plan.retain_captured_oam
+            && following.ppu.oam[92 * 2].to_le_bytes()[1] != 0xf0
+        {
+            // The first state-8 capture releases the two-return hold after it
+            // has selected the resident room-sprite table. Rebase those two
+            // entries onto the live state-8 generation selected for scanout.
+            adjust_room_72_published_sprite_oam(&mut self.ppu.oam, 2);
+        }
+        if following_room == 0x72
+            && following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 8
+            && plan.oam_scanout_source == OamScanoutSource::ComposePublishedShadowDma
+            && !plan.retain_captured_oam
+        {
+            // The southward scroll's resumed sprite tail is three scanlines
+            // ahead of the completed shadow DMA used for ordinary state-8
+            // publication. Correct only the two active room-sprite entries;
+            // Link and the remaining table already match that DMA generation.
+            let bg2_y = read_le_u16(&following.ram, BG2_Y_SCROLL);
+            let pixels = if bg2_y > 0x0fe0 {
+                3
+            } else if bg2_y == 0x0fe0 {
+                2
+            } else {
+                0
+            };
+            adjust_room_72_published_sprite_oam(&mut self.ppu.oam, pixels);
+        }
+        if following_room == 0x72
+            && following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 13
+        {
+            // State 12 completes Link's southward landing before the OAM DMA
+            // visible at the state-13 boundary. The translated host frame has
+            // already rebased those five entries to the following camera; move
+            // only Link back onto the scanout's three-line-earlier generation.
+            let first_landing_scanout = read_le_u16(&self.ram, LINK_DMA_COUNTDOWN) == 1;
+            let pixels = if first_landing_scanout {
+                3
+            } else {
+                2
+            };
+            adjust_room_72_state13_link_oam(&mut self.ppu.oam, pixels);
+            if !first_landing_scanout {
+                adjust_room_72_state13_body_oam(
+                    &mut self.ppu.oam,
+                    &following.ppu.oam,
+                    read_le_u16(&following.ram, LINK_Y_COORD),
+                );
+            }
+        }
+        if following_room == 0x72
+            && following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 14
+        {
+            // The landing frame publishes the body pieces before the final
+            // head and hand tail crosses OAM DMA at the filtering boundary.
+            adjust_room_72_state14_link_oam(&mut self.ppu.oam);
+        }
+        if following_room == 0x72
+            && following_frame.main_module == 7
+            && following_frame.submodule == 0
+            && following_frame.subsubmodule == 0
+            && following.room_72_interrupted_main_prefix_oam_offset_active
+            && resident_first_sorted_entry_y != 0xf0
+            && self.ppu.oam[102 * 2] != resident_link_body_xy
+        {
+            // The early state-11 return already crossed a main-loop prefix,
+            // while these two room-sprite entries are still evaluated against
+            // the pre-return camera generation. Keep that four-line offset
+            // until that interrupted sorted table retires from resident OAM.
+            rebase_room_72_sprite_oam_after_interrupted_main_prefix(&mut self.ppu.oam);
+        }
+        let room_71_return_uses_published_link_oam =
+            room_71_supertile_return_uses_published_link_oam(following_frame, following_room);
+        if room_71_return_uses_published_link_oam {
+            // The room-$71 return crosses OAM DMA during doorway movement,
+            // filtering, and the first room-load scanout. Snes9x therefore
+            // presents Link's five entries from the completed shadow generation;
+            // all other sprites remain from the live OAM image selected above.
+            compose_published_link_oam(
+                &mut self.ppu.oam,
+                following.published_shadow_oam_dma.as_deref(),
+            );
+        }
+        if let Some(captured_entries) = captured_entries {
+            let published = following.published_shadow_oam_dma.as_deref();
+            eprintln!(
+                "display_subtile_oam host={} phase={:02x}/{:02x}/{:02x} source={:?} retain={} captured={:02x?} following={:02x?} published={:02x?} composed={:02x?}",
+                self.frame_ctr_dbg,
+                following_frame.main_module,
+                following_frame.submodule,
+                following_frame.subsubmodule,
+                plan.oam_scanout_source,
+                plan.retain_captured_oam,
+                captured_entries,
+                debug_entries.map(|entry| oam_entry_bytes(&following.ppu.oam, entry)),
+                published.map(|oam| debug_entries.map(|entry| oam_entry_bytes(oam, entry))),
+                debug_entries.map(|entry| oam_entry_bytes(&self.ppu.oam, entry)),
+            );
+        }
         self.ppu.obj_vram_latch = None;
+        if following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 3
+            && plan.link_obj_scanout_generation == GraphicsDmaGeneration::HostBoundaryBeforeMain
+        {
+            // The state-3 entry scanout evaluates Link before the next pose's
+            // upload becomes resident. Resolve the host-boundary DMA operands
+            // after the transition OBJ bundle has been composed.
+            if matches!(following_room, 0x70 | 0x71) {
+                let live_sources = LinkDmaSources::load_from_ram(&following.ram);
+                let link_graphics = self.asset_raw(57).map(Vec::from);
+                for (destination, source) in [
+                    (0x4020, LinkDmaSourceSlot::HeadTop),
+                    (0x4120, LinkDmaSourceSlot::HeadBottom),
+                ] {
+                    let len = 0x40;
+                    let source_address =
+                        usize::from(live_sources.source(source).wrapping_sub(0x40));
+                    let source_offset = source_address.saturating_sub(0x8000);
+                    let destination_end = destination + len / 2;
+                    let Some(source_bytes) = link_graphics.as_deref().and_then(|graphics| {
+                        (source_address >= 0x8000 && source_offset + len <= graphics.len())
+                            .then_some(&graphics[source_offset..source_offset + len])
+                    }) else {
+                        if let Some(previous_obj_vram) = self.ppu.obj_previous_frame_vram.as_ref() {
+                            self.ppu.vram[destination..destination_end]
+                                .copy_from_slice(&previous_obj_vram[destination..destination_end]);
+                        }
+                        continue;
+                    };
+                    for (index, bytes) in source_bytes.chunks_exact(2).enumerate() {
+                        self.ppu.vram[destination + index] =
+                            u16::from_le_bytes([bytes[0], bytes[1]]);
+                    }
+                }
+            } else if let Some(previous_obj_vram) = self.last_presented_obj_vram.as_deref() {
+                self.ppu.vram[0x4000..0x4050].copy_from_slice(&previous_obj_vram[0x000..0x050]);
+                self.ppu.vram[0x4100..0x4150].copy_from_slice(&previous_obj_vram[0x100..0x150]);
+                // The transition main slice has authored Link and the sorted
+                // sprite table, so active display evaluates the live OAM image.
+                // Entries visible in both the completed shadow and the live
+                // sorted table have already entered Snes9x's evaluated OBJ
+                // list. Overlay those same-slot entries while allowing newly
+                // visible live entries to replace offscreen shadow sentinels;
+                // retired shadow-only slots must not be duplicated.
+                self.ppu.oam.clone_from(&following.ppu.oam);
+                compose_visible_published_oam(
+                    &mut self.ppu.oam,
+                    following.published_shadow_oam_dma.as_deref(),
+                );
+            }
+        }
+        if following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 2
+            && plan.link_obj_scanout_generation == GraphicsDmaGeneration::LiveAfterMain
+        {
+            // State 2 suppresses the ordinary Link DMA, so the early body,
+            // head, and hand ranges remain on the image completed in state 1.
+            // The live source words already describe the following upload and
+            // would advance these ranges one scanout too early.
+            if let Some(completed_obj_vram) =
+                self.last_presented_obj_vram.as_deref().or_else(|| {
+                    self.pre_main_graphics_dma
+                        .as_ref()
+                        .map(|graphics| graphics.link_obj_vram.as_slice())
+                })
+            {
+                self.ppu.vram[0x4000..0x4050].copy_from_slice(&completed_obj_vram[0x000..0x050]);
+                self.ppu.vram[0x4100..0x4150].copy_from_slice(&completed_obj_vram[0x100..0x150]);
+            }
+
+            if self.screen_transition() == 1 {
+                // This transition direction retains the raw Link image while
+                // Snes9x's decoded cache has already consumed the current head
+                // operands. Direction 2 instead keeps the prior decoded head
+                // generation alongside the retained raw image.
+                let live_sources = LinkDmaSources::load_from_ram(&following.ram);
+                let link_graphics = self.asset_raw(57).map(Vec::from);
+                let mut obj_cache_vram = self.ppu.vram.clone();
+                for (destination, source) in [
+                    (0x4020, LinkDmaSourceSlot::HeadTop),
+                    (0x4120, LinkDmaSourceSlot::HeadBottom),
+                ] {
+                    let len = 0x40;
+                    let source_address = usize::from(live_sources.source(source));
+                    let source_offset = source_address.saturating_sub(0x8000);
+                    let destination_end = destination + len / 2;
+                    let Some(source_bytes) = link_graphics.as_deref().and_then(|graphics| {
+                        (source_address >= 0x8000 && source_offset + len <= graphics.len())
+                            .then_some(&graphics[source_offset..source_offset + len])
+                    }) else {
+                        continue;
+                    };
+                    for (word, bytes) in obj_cache_vram[destination..destination_end]
+                        .iter_mut()
+                        .zip(source_bytes.chunks_exact(2))
+                    {
+                        *word = u16::from_le_bytes([bytes[0], bytes[1]]);
+                    }
+                }
+                self.ppu.obj_vram_latch = Some(obj_cache_vram);
+            }
+        }
+        let dungeon_supertile_first_scroll_uses_live_obj_cache = following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 1
+            && plan.oam_scanout_source == OamScanoutSource::RetainResidentPpuOam;
+        if plan.link_obj_scanout_generation == GraphicsDmaGeneration::HostBoundaryBeforeMain
+            && plan.link_obj_source_generation == GraphicsDmaGeneration::LiveAfterMain
+            && !dungeon_supertile_first_scroll_uses_live_obj_cache
+        {
+            if read_le_u16(&self.ram, LINK_DMA_COUNTDOWN) == 2 {
+                // The final item-decompressor interrupt publishes raw VRAM,
+                // but two partially decoded receipt-sprite tiles remain
+                // distinct in Snes9x's OBJ cache. Mirror that renderer-only
+                // cache generation without changing the published BG/raw VRAM.
+                let mut obj_cache_vram = self.ppu.vram.clone();
+                // The return crossed NMI before Link's animation cycle
+                // advanced. Resolve the early batch from the operands owned by
+                // the retained scanout rather than the following PPU, whose
+                // coarse host generation is already one pose ahead.
+                let captured_sources = LinkDmaSources::load_from_ram(&self.ram);
+                let link_graphics = self.asset_raw(57).map(Vec::from);
+                for (destination, source, len) in EARLY_LINK_OBJ_DMA_TRANSFERS {
+                    let source_address = usize::from(captured_sources.source(source));
+                    let source_offset = source_address.saturating_sub(0x8000);
+                    let destination_end = destination + len / 2;
+                    let Some(source_bytes) = link_graphics.as_deref().and_then(|graphics| {
+                        (source_address >= 0x8000 && source_offset + len <= graphics.len())
+                            .then_some(&graphics[source_offset..source_offset + len])
+                    }) else {
+                        obj_cache_vram[destination..destination_end]
+                            .copy_from_slice(&following.ppu.vram[destination..destination_end]);
+                        continue;
+                    };
+                    for (index, bytes) in source_bytes.chunks_exact(2).enumerate() {
+                        obj_cache_vram[destination + index] =
+                            u16::from_le_bytes([bytes[0], bytes[1]]);
+                    }
+                }
+                for range in [0x4240..0x4250, 0x4340..0x4350] {
+                    obj_cache_vram[range.clone()].copy_from_slice(&following.ppu.vram[range]);
+                }
+                // The two right-hand quadrants of the 16x16 receipt sprite were
+                // not decoded by the interrupted transfer. Snes9x leaves those
+                // cache entries transparent instead of exposing their resident
+                // VRAM contents.
+                obj_cache_vram[0x4250..0x4260].fill(0);
+                obj_cache_vram[0x4350..0x4360].fill(0);
+                self.ppu.obj_vram_latch = Some(obj_cache_vram);
+            } else {
+                // The following active frame reuses the evaluated OBJ tile
+                // cache unchanged even though raw VRAM has caught up. Its OAM
+                // evaluation likewise consumed the completed shadow DMA before
+                // the resident PPU high table was overwritten later in NMI.
+                if room_71_supertile_room_load_uses_composed_obj_cache(
+                    following_frame,
+                    following_room,
+                ) {
+                    // `compose_display_vram` retained the retiring room-$71
+                    // Link ranges before publishing the following VRAM. Make
+                    // that same mixed generation authoritative for OBJ decode.
+                    self.ppu.obj_vram_latch = Some(self.ppu.vram.clone());
+                } else {
+                    self.ppu.obj_vram_latch = self.ppu.obj_previous_frame_vram.clone();
+                }
+                if plan.oam_scanout_source != OamScanoutSource::ComposePublishedShadowDma {
+                    let oam_byte_len = self.ppu.oam.len() * 2;
+                    for (word, bytes) in self
+                        .ppu
+                        .oam
+                        .iter_mut()
+                        .zip(self.ram[OAM_BUF..OAM_BUF + oam_byte_len].chunks_exact(2))
+                    {
+                        *word = u16::from_le_bytes([bytes[0], bytes[1]]);
+                    }
+                }
+            }
+        } else {
+            let interrupted_spiral_stairs_first_palette_pass = following_frame.main_module == 7
+                && following_frame.submodule == 0x0e
+                && following_frame.subsubmodule == 2
+                && self.pre_main_caller_continuation_is(
+                    PreMainCallerContinuation::SpiralStairsSecondPaletteFilter,
+                );
+            if dungeon_supertile_first_scroll_uses_live_obj_cache {
+                // The first steady supertile-scroll scanout retains the raw
+                // host-boundary Link tiles, but Snes9x's renderer cache has
+                // already decoded the live NMI upload. Keep that cache-only
+                // generation independent from the retained visible VRAM.
+                let live_sources = LinkDmaSources::load_from_ram(&following.ram);
+                let link_graphics = self.asset_raw(57).map(Vec::from);
+                let mut obj_cache_vram = self.ppu.vram.clone();
+                for (destination, source, len) in EARLY_LINK_OBJ_DMA_TRANSFERS {
+                    let source_address = usize::from(live_sources.source(source));
+                    let source_offset = source_address.saturating_sub(0x8000);
+                    let destination_end = destination + len / 2;
+                    let Some(source_bytes) = link_graphics.as_deref().and_then(|graphics| {
+                        (source_address >= 0x8000 && source_offset + len <= graphics.len())
+                            .then_some(&graphics[source_offset..source_offset + len])
+                    }) else {
+                        obj_cache_vram[destination..destination_end]
+                            .copy_from_slice(&following.ppu.vram[destination..destination_end]);
+                        continue;
+                    };
+                    for (index, bytes) in source_bytes.chunks_exact(2).enumerate() {
+                        obj_cache_vram[destination + index] =
+                            u16::from_le_bytes([bytes[0], bytes[1]]);
+                    }
+                }
+                self.ppu.obj_vram_latch = Some(obj_cache_vram);
+            } else if room_71_supertile_room_load_uses_composed_obj_cache(
+                following_frame,
+                following_room,
+            ) {
+                self.ppu.obj_vram_latch = Some(self.ppu.vram.clone());
+            } else if interrupted_spiral_stairs_first_palette_pass {
+                // The first palette walk crosses vblank after Link's early
+                // body/head/hand DMA has updated Snes9x's OBJ tile cache, but
+                // before that NMI's raw VRAM generation owns active scanout.
+                // Resolve the renderer-only cache from the live source words
+                // while retaining the independently selected raw VRAM image.
+                let live_sources = LinkDmaSources::load_from_ram(&following.ram);
+                let link_graphics = self.asset_raw(57).map(Vec::from);
+                let mut obj_cache_vram = self.ppu.vram.clone();
+                for (destination, source, len) in EARLY_LINK_OBJ_DMA_TRANSFERS {
+                    let source_address = usize::from(live_sources.source(source));
+                    let source_offset = source_address.saturating_sub(0x8000);
+                    let destination_end = destination + len / 2;
+                    let Some(source_bytes) = link_graphics.as_deref().and_then(|graphics| {
+                        (source_address >= 0x8000 && source_offset + len <= graphics.len())
+                            .then_some(&graphics[source_offset..source_offset + len])
+                    }) else {
+                        obj_cache_vram[destination..destination_end]
+                            .copy_from_slice(&following.ppu.vram[destination..destination_end]);
+                        continue;
+                    };
+                    for (index, bytes) in source_bytes.chunks_exact(2).enumerate() {
+                        obj_cache_vram[destination + index] =
+                            u16::from_le_bytes([bytes[0], bytes[1]]);
+                    }
+                }
+                self.ppu.obj_vram_latch = Some(obj_cache_vram);
+            }
+        }
+        if room_71_supertile_room_load_uses_composed_obj_cache(following_frame, following_room) {
+            // Room-load scanout keeps Link's published OAM coordinates while
+            // decoding the already-composed current Link tile generation.
+            self.ppu.obj_vram_latch = Some(self.ppu.vram.clone());
+        }
+        if following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 3
+            && !matches!(following_room, 0x70 | 0x71)
+        {
+            // The raw Link ranges remain on the prior completed DMA image, but
+            // Snes9x has already decoded the post-NMI OBJ page used by this
+            // scanout. Preserve that renderer-only generation independently.
+            let mut obj_cache_vram = following.ppu.vram.clone();
+            if self.screen_transition() == 1 {
+                // Direction 1's state-3 scanout has decoded the same current
+                // head operands as the preceding state-2 scanout even though
+                // the native PPU snapshot has moved to a different raw Link
+                // generation. Recompose only those cache entries; direction 2
+                // already matches the following PPU cache verbatim.
+                let captured_sources = self
+                    .pre_main_graphics_dma
+                    .as_ref()
+                    .map(|graphics| graphics.link_operands.sources)
+                    .unwrap_or_else(|| LinkDmaSources::load_from_ram(&self.ram));
+                let link_graphics = self.asset_raw(57).map(Vec::from);
+                for (destination, source) in [
+                    (0x4020, LinkDmaSourceSlot::HeadTop),
+                    (0x4120, LinkDmaSourceSlot::HeadBottom),
+                ] {
+                    let len = 0x40;
+                    let source_address = usize::from(captured_sources.source(source));
+                    let source_offset = source_address.saturating_sub(0x8000);
+                    let destination_end = destination + len / 2;
+                    let Some(source_bytes) = link_graphics.as_deref().and_then(|graphics| {
+                        (source_address >= 0x8000 && source_offset + len <= graphics.len())
+                            .then_some(&graphics[source_offset..source_offset + len])
+                    }) else {
+                        continue;
+                    };
+                    for (word, bytes) in obj_cache_vram[destination..destination_end]
+                        .iter_mut()
+                        .zip(source_bytes.chunks_exact(2))
+                    {
+                        *word = u16::from_le_bytes([bytes[0], bytes[1]]);
+                    }
+                }
+            }
+            self.ppu.obj_vram_latch = Some(obj_cache_vram);
+        }
         self.ppu.obj_previous_frame_vram = following.ppu.obj_previous_frame_vram.clone();
     }
 
     fn compose_display_raster(
         &mut self,
         live_forced_blank: bool,
-        live_forced_blank_from_scanline: Option<u8>,
+        mut live_forced_blank_from_scanline: Option<u8>,
         live_retain_active_display_history: bool,
         captured_screen_brightness: u8,
         plan: &DisplayPublicationPlan,
     ) {
+        let captured_frame = crate::game_state::FrameState::load_from_ram(&self.ram);
+        if live_forced_blank
+            && live_forced_blank_from_scanline.is_none()
+            && captured_frame.main_module == 14
+            && captured_frame.submodule == 3
+            && self.ram[OVERWORLD_MAP_STATE] == 1
+            && self.ppu.brightness == 1
+        {
+            // Dungeon-map setup's terminal fade overruns into active display:
+            // the HUD-height prefix scans at brightness 1, then the late
+            // INIDISP write blanks the playfield from scanline 27 onward.
+            live_forced_blank_from_scanline = Some(27);
+        }
         // A force-blank write published by NMI takes effect before the next
         // active scanline even when other domains retain the pre-NMI snapshot.
         self.ppu.forced_blank |= live_forced_blank;
@@ -10623,6 +12478,23 @@ impl ZeldaState {
         else {
             return capture(self);
         };
+        if self.presented_history_host_frame != Some(self.frame_ctr_dbg) {
+            if self.presented_history_host_frame.is_some() {
+                if let Some(oam) = self.staged_presented_oam.take() {
+                    self.last_presented_oam = Some(oam);
+                }
+                if let Some(vram) = self.staged_presented_obj_vram.take() {
+                    self.last_presented_obj_vram = Some(vram);
+                }
+                if let Some(source) = self.staged_presented_vram_chr_source.take() {
+                    self.last_presented_vram_chr_source = Some(source);
+                }
+                if let Some(source) = self.staged_presented_vram_chr_preview_source.take() {
+                    self.last_presented_vram_chr_preview_source = Some(source);
+                }
+            }
+            self.presented_history_host_frame = Some(self.frame_ctr_dbg);
+        }
         // Capture must be side-effect-free on live game state. The native
         // game_state is re-derived from the snapshot RAM below so capture
         // closures see coherent native views; restore the ORIGINAL native
@@ -10678,11 +12550,12 @@ impl ZeldaState {
                 // sequence has entered its fade-in state.
                 && !(snapshot_attract_scene.sequence() == 1
                     && snapshot_attract_scene.state() >= 4));
+        let active_display_nmi_overrun = display.ppu.forced_blank_scanlines != 0;
         let module_oam_publication_is_deferred = rom_display_oam_publication_is_deferred(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
             snapshot_messaging.runtime.text_render_state(),
-            display.ppu.forced_blank_scanlines != 0,
+            active_display_nmi_overrun,
             pending_main_thread_stripe,
         );
         let dungeon_exit_crosses_nmi_boundary = rom_dungeon_exit_entry_crosses_nmi_boundary(
@@ -10690,6 +12563,10 @@ impl ZeldaState {
             snapshot_frame.submodule,
             self.game_state.frame.main_module,
             self.game_state.frame.submodule,
+            matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishDungeonExitSpotlightEntry)
+            ),
         );
         let world_map_fade_display = snapshot_frame.main_module == 20
             && snapshot_frame.submodule == 0
@@ -10739,6 +12616,15 @@ impl ZeldaState {
                 && snapshot_frame.submodule == 0,
             world_map_fade_display,
             world_map_mode7_brightness_is_early_published,
+            // The entry scanout keeps the captured camera while composing the
+            // mixed Link-OAM handoff. Starting with the following hold-item
+            // scanout, the camera written by that handoff is live. Keeping the
+            // two phases separate avoids publishing the scroll one frame early.
+            dungeon_item_hold_publishes_live_scroll: dungeon_item_hold_publishes_live_scroll(
+                snapshot_frame,
+                FollowerLinkState::load_from_ram(&display.ram).handler_state(),
+                display.dungeon_item_hold_entry_scanout,
+            ),
         };
         let publication_plan = DisplayPublicationPlan::resolve(&display, publication_signals);
         let display_phase_differs_from_live = snapshot_frame.main_module
@@ -10826,6 +12712,8 @@ impl ZeldaState {
             retained_full_tilemap_vram.as_ref(),
         );
         self.compose_display_chr_sources(&display, &publication_plan);
+        self.staged_presented_vram_chr_source = Some(self.vram_chr_source.clone());
+        self.staged_presented_vram_chr_preview_source = Some(self.vram_chr_preview_source.clone());
         self.compose_display_cgram(&display, &publication_plan);
         if let Some(previous_dialogue_scanout) = previous_dialogue_scanout.as_ref() {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
@@ -10842,6 +12730,8 @@ impl ZeldaState {
             );
         }
         self.compose_display_oam(&display, &publication_plan);
+        self.staged_presented_oam = Some(self.ppu.oam.clone());
+        self.staged_presented_obj_vram = Some(self.ppu.vram[0x4000..0x4400].to_vec());
         self.compose_display_raster(
             live_forced_blank,
             live_forced_blank_from_scanline,
@@ -10902,8 +12792,23 @@ impl ZeldaState {
             publication_plan.vram_generation,
         );
         if diagnostics.capture.frame_boundary {
+            let published_shadow_oam_diff =
+                display.published_shadow_oam_dma.as_deref().map(|shadow| {
+                    let mismatches = self
+                        .ppu
+                        .oam
+                        .iter()
+                        .flat_map(|word| word.to_le_bytes())
+                        .zip(shadow.iter().flat_map(|word| word.to_le_bytes()))
+                        .enumerate()
+                        .filter_map(|(index, (presented, published))| {
+                            (presented != published).then_some((index, presented, published))
+                        })
+                        .collect::<Vec<_>>();
+                    (mismatches.len(), mismatches.first().copied())
+                });
             eprintln!(
-                "frame_boundary_present host={} vram={:?} animated_bg={:?} link_obj={:?} oam={:?} bg_scroll={:?} bg1=({:04x},{:04x}) retained_obj={} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
+                "frame_boundary_present host={} vram={:?} animated_bg={:?} link_obj={:?} oam={:?} bg_scroll={:?} bg1=({:04x},{:04x}) retained_obj={} published_shadow_oam_diff={:?} dialogue_runs=live:{}/captured:{}/presented:{} scroll_override={}",
                 self.frame_ctr_dbg,
                 publication_plan.vram_generation,
                 publication_plan.animated_bg_scanout_generation,
@@ -10916,6 +12821,7 @@ impl ZeldaState {
                     pristine_snapshot.obj_generation,
                     DisplayObjGeneration::RetainCapturedMemory { .. }
                 ),
+                published_shadow_oam_diff,
                 self.published_bg3_vwf_glyph_runs.len(),
                 pristine_snapshot.published_bg3_vwf_glyph_runs.len(),
                 presented_dialogue.glyph_runs.len(),
@@ -11357,6 +13263,37 @@ impl ZeldaState {
                 self.capture_display_snapshot();
                 self.interrupt_nmi(input, oam_dma_source, false);
             }
+            PreMainCallerContinuation::SpiralStairsSecondPaletteFilter => {
+                self.finish_pre_main_caller_continuation(continuation);
+                self.complete_spiral_stairs_second_palette_filter();
+                // Resume the ordinary game-loop suffix without repeating its
+                // frame-counter/OAM-clear prefix or the Link movement that ran
+                // before the interrupted first palette pass.
+                self.complete_module07_dungeon_after_submodule();
+                self.nmi_prepare_sprites();
+                self.clear_nmi_update_latch();
+                self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+                    oam: OamScanoutSource::RetainResidentPpuOam,
+                    link_obj: GraphicsDmaGeneration::LiveAfterMain,
+                    link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
+                });
+                self.capture_display_snapshot();
+                self.interrupt_nmi(input, oam_dma_source, false);
+            }
+            PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter => {
+                self.finish_pre_main_caller_continuation(continuation);
+                self.complete_spiral_stairs_second_grayscale_palette_filter();
+                self.complete_module07_dungeon_after_submodule();
+                self.nmi_prepare_sprites();
+                self.clear_nmi_update_latch();
+                self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+                    oam: OamScanoutSource::RetainResidentPpuOam,
+                    link_obj: GraphicsDmaGeneration::LiveAfterMain,
+                    link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
+                });
+                self.capture_display_snapshot();
+                self.interrupt_nmi(input, oam_dma_source, false);
+            }
         }
         true
     }
@@ -11371,11 +13308,42 @@ impl ZeldaState {
             return false;
         };
 
-        let scanout = resume.scanout_generations();
+        let quadrant_build_or_upload_uses_published_oam =
+            matches!(
+                resume,
+                PreMainNmiResume::DungeonSupertileQuadrantBuildReturn
+                    | PreMainNmiResume::DungeonSupertileQuadrantBuildPublishedReturn
+                    | PreMainNmiResume::DungeonSupertileQuadrantUploads
+            )
+            && self.game_state.frame.main_module == 7
+            && self.game_state.frame.submodule == 2
+            && self.game_state.frame.subsubmodule == 5;
+        let mut scanout = resume.scanout_generations();
+        if quadrant_build_or_upload_uses_published_oam {
+            // The leading NMI publishes the completed shadow DMA while the
+            // room-quadrant build/upload caller remains suspended. Live PPU
+            // OAM has already moved on, while the prior presented image is one
+            // step older; select the newly published generation between those
+            // two boundaries.
+            if let Some(obj) = scanout.obj.as_mut() {
+                obj.oam = OamScanoutSource::ComposePublishedShadowDma;
+            }
+        }
         self.next_display_vram_generation = scanout.vram;
         self.next_display_animated_bg_scanout_generation = scanout.animated_bg;
         self.next_display_bg_scroll_generation = scanout.bg_scroll;
         self.next_display_obj_scanout_generation = scanout.obj;
+        if matches!(
+            resume,
+            PreMainNmiResume::DungeonSupertileQuadrantBuildReturn
+                | PreMainNmiResume::DungeonSupertileQuadrantBuildPublishedReturn
+                | PreMainNmiResume::DungeonSupertileQuadrantUploads
+        ) {
+            // The suspended quadrant caller returns with the software latch
+            // still set, but the ROM reaches this leading hardware NMI before
+            // the next module iteration can replace its upload request.
+            self.clear_nmi_update_latch();
+        }
         self.capture_display_snapshot_with_override(Some(scanout.publication));
         self.interrupt_nmi(input, oam_dma_source, false);
         self.replay_trace_col("before-game-loop");
@@ -11384,9 +13352,24 @@ impl ZeldaState {
         self.replay_trace_col("after-game-loop");
         self.replay_trace_ram_watch("after-game-loop");
 
-        if resume.continues_after_main(self.game_state.frame) {
+        if resume == PreMainNmiResume::DungeonSupertileQuadrantBuildPublishedReturn {
+            // The held state-6 OAM generation belongs only to the two return
+            // scanouts above. Release it before the filtering continuation
+            // captures state 8, whose room sprites use the live table again.
+            self.next_display_obj_memory_generation =
+                Some(DisplayObjGeneration::FollowModuleCadence);
+        }
+
+        if resume.continues_after_main(self.game_state.frame)
+            && self.game_execution_scheduler.is_idle()
+        {
+            let next_resume = if resume == PreMainNmiResume::DungeonSupertileQuadrantBuildReturn {
+                PreMainNmiResume::DungeonSupertileQuadrantBuildPublishedReturn
+            } else {
+                PreMainNmiResume::DungeonSupertileQuadrantUploads
+            };
             self.game_execution_scheduler
-                .schedule_pre_main_nmi_resume(resume);
+                .schedule_pre_main_nmi_resume(next_resume);
         }
         if resume == PreMainNmiResume::OverworldAuxGraphicsReturn {
             // The main slice authors the following upload. Keep it private
@@ -11491,8 +13474,10 @@ impl ZeldaState {
                     .messaging
                     .runtime
                     .text_render_state(),
+                entry_link_handler_state: self.game_state.player.follower_link.handler_state(),
                 animated_tile,
-                link_sources: LinkDmaSources::load_from_ram(&self.ram),
+                link_operands: PreMainLinkDmaOperands::capture(&self.ram),
+                link_obj_vram: self.ppu.vram[0x4000..0x4400].to_vec(),
                 oam_shadow: self.sprite_oam_shadow_buffer().to_vec(),
             })
         } else {
@@ -11613,16 +13598,58 @@ impl ZeldaState {
             return;
         }
         if self.rom_startup_timing() && self.normal_dialogue_initialization_phase != 0 {
+            let mut retained_dialogue_completion_oam = None;
             match self.normal_dialogue_initialization_phase {
                 3..=5 => {
+                    if self.normal_dialogue_initialization_phase == 5
+                        && self.game_state.frame.main_module == 14
+                    {
+                        // Dungeon main authored the first dialogue OAM shadow
+                        // after the entry scanout's DMA. The following vblank
+                        // publishes that OAM-only domain even though the long
+                        // text initializer keeps the rest of NMI_DoUpdates
+                        // gated for its remaining CPU slices.
+                        let oam_byte_len = self.ppu.oam.len() * 2;
+                        let entry_shadow = self
+                            .display_snapshot
+                            .as_ref()
+                            .and_then(|snapshot| {
+                                snapshot
+                                    .published_shadow_oam_dma
+                                    .as_ref()
+                                    .map(|oam| {
+                                        oam.iter()
+                                            .flat_map(|word| word.to_le_bytes())
+                                            .collect::<Vec<_>>()
+                                    })
+                                    .or_else(|| {
+                                        snapshot
+                                            .ram
+                                            .get(OAM_BUF..OAM_BUF + oam_byte_len)
+                                            .map(Vec::from)
+                                    })
+                            })
+                            .unwrap_or_else(|| self.sprite_oam_shadow_buffer().to_vec());
+                        self.publish_dialogue_initialization_oam_dma(&entry_shadow);
+                    }
                     self.normal_dialogue_initialization_phase -= 1;
                 }
                 2 => {
+                    self.next_display_obj_memory_generation =
+                        Some(DisplayObjGeneration::RetainCapturedOam {
+                            oam: self.ppu.oam.clone(),
+                        });
                     self.complete_text_initialization_prefix();
                     self.prepare_text_character_buffer_for_carry();
                     self.normal_dialogue_initialization_phase = 1;
                 }
                 1 => {
+                    let retained_oam = self.ppu.oam.clone();
+                    self.next_display_obj_memory_generation =
+                        Some(DisplayObjGeneration::RetainCapturedOam {
+                            oam: retained_oam.clone(),
+                        });
+                    retained_dialogue_completion_oam = Some(retained_oam);
                     self.complete_text_initialization_carry_suffix();
                     self.normal_dialogue_initialization_phase = 0;
                     self.complete_module0e_interface_after_run();
@@ -11633,6 +13660,13 @@ impl ZeldaState {
             }
             self.capture_display_snapshot();
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            if let Some(retained_oam) = retained_dialogue_completion_oam {
+                // The initializer's return NMI completes its non-OAM work, but
+                // the OAM shadow it just authored is not resident until the
+                // following ordinary NMI. Keep the already-published dialogue
+                // entry generation for this final held scanout and live PPU.
+                self.ppu.oam.clone_from_slice(&retained_oam);
+            }
             return;
         }
         if run_what & crate::RUN_POLY != 0 {
@@ -11785,13 +13819,38 @@ impl ZeldaState {
                 }) => Some(iteration.completion_publication()),
                 // The interrupted entry build finishes mid-frame; its first
                 // table generation belongs to the scanout already staged.
-                GameWorkStep::Complete(
-                    GameWorkContinuation::FinishDungeonExitSpotlightEntry,
-                ) => Some(DisplaySnapshotPublication::AdvanceStaged),
+                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightEntry) => {
+                    Some(DisplaySnapshotPublication::AdvanceStaged)
+                }
+                GameWorkStep::Complete(GameWorkContinuation::FinishItemReceiptGraphics {
+                    ..
+                }) => Some(DisplaySnapshotPublication::RetainPublished),
                 _ => self
                     .game_execution_scheduler
                     .in_flight_display_publication(),
             };
+            let big_key_drop_graphics_slice = matches!(
+                work_slice,
+                GameWorkStep::Complete(GameWorkContinuation::FinishBigKeyDropGraphics { .. })
+            ) || matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishBigKeyDropGraphics { .. })
+            );
+            if big_key_drop_graphics_slice {
+                // Core DMA remains gated while the decompressor owns the main
+                // stack, so OAM keeps the shadow published at entry. PPU
+                // registers are still rewritten by every NMI and must be
+                // captured afresh rather than retaining the entire snapshot.
+                if let Some(oam) = self.last_presented_oam.clone() {
+                    self.next_display_obj_memory_generation =
+                        Some(DisplayObjGeneration::RetainCapturedOam { oam });
+                }
+                self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+                    oam: OamScanoutSource::ComposePublishedShadowDma,
+                    link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                });
+            }
             match work_slice {
                 GameWorkStep::Waiting => {}
                 GameWorkStep::Complete(GameWorkContinuation::FinishAttractWorldMap) => {
@@ -11873,6 +13932,77 @@ impl ZeldaState {
                             );
                             debug_assert!(scheduled);
                         }
+                        DungeonSupertileTransitionWork::QuadrantTilemapBuild => {
+                            // The state-5 room-quadrant builder returns after
+                            // the vblank that interrupted its tilemap loop.
+                            // Only its caller suffix advances to state 6.
+                            let resumes_state_6_after_leading_nmi =
+                                self.game_state.frame.subsubmodule == 5
+                                    && self.game_state.world.location.dungeon_room_index() == 0x72;
+                            let resumes_state_11_before_next_vblank =
+                                self.game_state.frame.subsubmodule == 10
+                                    && self.game_state.world.location.dungeon_room_index() == 0x72;
+                            self.complete_dungeon_inter_room_transition_not_dark_room();
+                            if resumes_state_6_after_leading_nmi {
+                                // Preserve the state-5 BG1 request until the
+                                // next host's leading NMI. State 6 must not run
+                                // first and replace it with the BG2 request.
+                                self.game_execution_scheduler.schedule_pre_main_nmi_resume(
+                                    PreMainNmiResume::DungeonSupertileQuadrantBuildReturn,
+                                );
+                            }
+                            if resumes_state_11_before_next_vblank {
+                                // The state-10 BG1 quadrant DMA crosses the NMI
+                                // boundary before the ROM begins state 11. The
+                                // other NMI domains still publish at the
+                                // trailing host boundary, so consume only this
+                                // tilemap generation here. State 11 authors the
+                                // following BG2 request into the same buffer.
+                                self.nmi_upload_tilemap();
+
+                                // The room-$72 return then reaches the next
+                                // main-loop prefix and completes a full state-11
+                                // iteration, including Link animation and the
+                                // ordinary dungeon caller suffix. Its BG2
+                                // request remains pending for the next NMI.
+                                self.room_72_interrupted_main_prefix_oam_offset_active = true;
+                                self.increment_frame_counter();
+                                self.clear_oam_buffer();
+                                self.Module07_02_SupertileTransition();
+                                self.follower_link_state_mut()
+                                    .decrement_link_dma_countdown();
+                                self.complete_module07_dungeon_after_submodule();
+                                self.nmi_prepare_sprites();
+                                self.clear_nmi_update_latch();
+                            }
+                        }
+                        DungeonSupertileTransitionWork::SpiralRoomInitialization => {
+                            self.increment_subsubmodule();
+                            let scheduled = self.begin_dungeon_supertile_transition_work(
+                                DungeonSupertileTransitionWork::SpiralRoomCallerResume,
+                            );
+                            debug_assert!(scheduled);
+                        }
+                        DungeonSupertileTransitionWork::SpiralRoomCallerResume => {
+                            self.complete_module07_dungeon_after_submodule();
+                            self.nmi_prepare_sprites();
+                            self.clear_nmi_update_latch();
+                        }
+                        DungeonSupertileTransitionWork::SpiralBgCharacters34 => {
+                            self.increment_subsubmodule();
+                            self.complete_module07_dungeon_after_submodule();
+                            self.nmi_prepare_sprites();
+                            self.clear_nmi_update_latch();
+                        }
+                        DungeonSupertileTransitionWork::SpiralSpriteGraphics => {
+                            self.complete_dungeon_transition_load_sprite_gfx();
+                            self.complete_module07_dungeon_after_submodule();
+                            self.nmi_prepare_sprites();
+                            self.clear_nmi_update_latch();
+                            self.game_execution_scheduler.schedule_pre_main_nmi_resume(
+                                PreMainNmiResume::DungeonSupertileQuadrantUploads,
+                            );
+                        }
                         work @ (DungeonSupertileTransitionWork::RoomLoadCallerResume
                         | DungeonSupertileTransitionWork::SpriteConversionCallerResume) => {
                             // Snes9x returns the host call at the NMI that
@@ -11884,6 +14014,9 @@ impl ZeldaState {
                             self.complete_module07_dungeon_after_submodule();
                             self.capture_display_snapshot();
                             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                            if work == DungeonSupertileTransitionWork::RoomLoadCallerResume {
+                                self.stage_live_animated_bg_scanout();
+                            }
                             self.nmi_prepare_sprites();
                             self.clear_nmi_update_latch();
                             if work.next_module_resumes_after_pre_main_nmi() {
@@ -11894,6 +14027,95 @@ impl ZeldaState {
                             return;
                         }
                     }
+                }
+                GameWorkStep::Complete(
+                    GameWorkContinuation::FinishDungeonSupertileFilteringReturn,
+                ) => {
+                    // The palette/translucency call has advanced to state 8,
+                    // but its caller returns through one vblank before the
+                    // first scroll iteration. Publish that entry scanout and
+                    // resume Module 7 on the following host frame.
+                    let filtering_was_interrupted_before_return =
+                        self.game_state.world.location.dungeon_room_index() == 0x72;
+                    let pre_scroll_oam = if filtering_was_interrupted_before_return {
+                        self.display_snapshot.as_ref().map(|display| {
+                            let previously_presented_oam = self
+                                .staged_presented_oam
+                                .as_deref()
+                                .or(self.last_presented_oam.as_deref());
+                            dungeon_supertile_interrupted_filter_oam(
+                                &display.ppu.oam,
+                                previously_presented_oam,
+                            )
+                        })
+                    } else {
+                        self.display_snapshot.as_ref().map(|display| {
+                            dungeon_supertile_pre_scroll_oam(
+                                &display.ppu.oam,
+                                display.published_shadow_oam_dma.as_deref(),
+                            )
+                        })
+                    };
+                    if filtering_was_interrupted_before_return {
+                        self.set_subsubmodule(8);
+                    }
+                    self.capture_display_snapshot();
+                    if let Some(oam) = pre_scroll_oam {
+                        // The first state-8 shadow is the OAM buffer cleared by
+                        // the resumed module prefix. The return scanout and the
+                        // first scroll scanout both display this same pre-scroll
+                        // image; later iterations use their ordinary prior
+                        // published shadow.
+                        let generation = DisplayObjGeneration::RetainCapturedOam { oam };
+                        if let Some(display) = self.display_snapshot.as_mut() {
+                            display.obj_generation = generation.clone();
+                        }
+                        if !filtering_was_interrupted_before_return {
+                            self.next_display_obj_memory_generation = Some(generation);
+                        }
+                    }
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    if filtering_was_interrupted_before_return {
+                        // Room $72's filtering call was interrupted before its
+                        // return, so one further host frame reaches only that
+                        // caller suffix. State 8 is visible, but its first
+                        // scroll iteration does not run until the next frame.
+                        self.game_execution_scheduler.schedule_work(
+                            GameWorkContinuation::HoldDungeonSupertileFilteringReturn,
+                            1,
+                        );
+                    }
+                    return;
+                }
+                GameWorkStep::Complete(
+                    GameWorkContinuation::HoldDungeonSupertileFilteringReturn,
+                ) => {
+                    let first_state8_oam = dungeon_supertile_first_state8_oam(&self.ppu.oam);
+                    self.next_display_obj_memory_generation =
+                        Some(DisplayObjGeneration::RetainCapturedOam {
+                            oam: first_state8_oam.clone(),
+                        });
+                    self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+                        oam: OamScanoutSource::RetainResidentPpuOam,
+                        link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                        link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    });
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    self.next_display_obj_memory_generation =
+                        Some(DisplayObjGeneration::RetainCapturedOam {
+                            oam: dungeon_supertile_second_state8_oam(&first_state8_oam),
+                        });
+                    self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+                        oam: OamScanoutSource::RetainResidentPpuOam,
+                        link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                        link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    });
+                    return;
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishPreDungeonEntranceLoad) => {
                     // The final sprite-reset slice is interrupted before
@@ -11925,6 +14147,24 @@ impl ZeldaState {
                 GameWorkStep::Complete(GameWorkContinuation::FinishItemReceiptGraphics {
                     continuation,
                 }) => {
+                    // The final measured slice is the vblank that interrupts
+                    // the decompressor itself. The software NMI latch is still
+                    // set here, so hardware retains its resident OAM and Link
+                    // tiles. Dungeon animated tiles are a separate DMA domain
+                    // which still completes before this scanout is captured.
+                    // This arm returns before the common scheduled-work
+                    // boundary below, so publish that partial NMI explicitly.
+                    let graphics_dma_plan = rom_graphics_dma_plan(
+                        self.game_state.frame.main_module,
+                        self.game_state.frame.submodule,
+                    );
+                    self.nmi_core_animated_bg_update(graphics_dma_plan);
+                    // Only after that boundary does the conversion return
+                    // through its caller and release the latch.
+                    self.capture_display_snapshot_with_publication(
+                        DisplaySnapshotPublication::RetainPublished,
+                    );
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                     if let ItemReceiptGraphicsContinuation::ResumeUnclePassage {
                         receipt,
                         sprite_slot,
@@ -11942,6 +14182,66 @@ impl ZeldaState {
                     // DMA sources and release the software NMI latch.
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
+                    self.stage_atomic_item_graphics_return_obj_scanout(continuation);
+                    return;
+                }
+                GameWorkStep::Complete(GameWorkContinuation::FinishBigKeyDropGraphics {
+                    sprite_slot,
+                    dungeon,
+                }) => {
+                    let sprite_slot = usize::from(sprite_slot);
+                    // Resume exactly where PrepareEnemyDrop was interrupted:
+                    // finish the fixed big-key graphics call, its drop setup,
+                    // the remaining lower sprite slots, and the Module 7
+                    // sprite/camera suffix. The ordinary game-loop epilogue
+                    // below then publishes the new OAM/CHR generation.
+                    self.sprite_prep_big_key_load_graphics(sprite_slot);
+                    self.complete_prepare_enemy_drop(sprite_slot);
+                    self.complete_sprite_main_after_interrupted_slot(sprite_slot);
+                    self.complete_module07_after_sprite_main(dungeon);
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                }
+                GameWorkStep::Complete(
+                    GameWorkContinuation::FinishDungeonMapGraphicsPreparation,
+                ) => {
+                    // InitializeTilesets returns just after this interrupt. The
+                    // active scanout is still the fully blank in-flight frame;
+                    // only afterward does the dungeon-map caller publish its
+                    // palettes/tilemaps and release the main-loop NMI latch.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.complete_dungeon_map_graphics_preparation();
+                    self.complete_module0e_interface_after_run();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    return;
+                }
+                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonMapRoomDrawing) => {
+                    // The second dungeon-map room plane is still being built
+                    // when vblank interrupts the ROM. Preserve that scanout,
+                    // then resume the routine and its Module0E caller suffix;
+                    // room markers run on the next ordinary main iteration.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.complete_dungeon_map_room_drawing();
+                    self.complete_module0e_interface_after_run();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    return;
+                }
+                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonMapRecovery) => {
+                    // Tileset conversion and the room-quadrant rebuild return
+                    // after this interrupt. The active scanout remains forced
+                    // blank; publish the restored dungeon and audio state only
+                    // through the resumed Module0E/game-loop suffix.
+                    self.capture_display_snapshot();
+                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    self.complete_dungeon_map_recovery();
+                    self.complete_module0e_interface_after_run();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    return;
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonSubtilePaletteFilter) => {
                     // ApplyPaletteFilter_bounce returns after the NMI that
@@ -11956,12 +14256,26 @@ impl ZeldaState {
                     // consumes the newly prepared OBJ sources. The active
                     // scanout remains the coherent pre-NMI OAM/CHR generation;
                     // the upload becomes visible on the following scanout.
-                    self.next_display_obj_scanout_generation =
-                        Some(ObjScanoutGenerations::coherent(
-                            GraphicsDmaGeneration::HostBoundaryBeforeMain,
-                        ));
+                    self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+                        oam: OamScanoutSource::RetainResidentPpuOam,
+                        link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                        link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    });
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
+                }
+                GameWorkStep::Complete(
+                    GameWorkContinuation::FinishSpiralStaircasePaletteFilter { tail },
+                ) => {
+                    self.complete_dungeon_spiral_staircase_palette_filter(tail);
+                    self.complete_module07_dungeon_after_submodule();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    if matches!(self.game_state.frame.subsubmodule, 12..=15) {
+                        self.game_execution_scheduler.schedule_pre_main_nmi_resume(
+                            PreMainNmiResume::DungeonSupertileQuadrantUploads,
+                        );
+                    }
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightEntry) => {
                     // The vblank-interrupted first IrisSpotlight_ConfigureTable
@@ -12001,9 +14315,14 @@ impl ZeldaState {
                         // same deferred return boundary as the goal transition.
                         self.OpenSpotlight_Next2();
                     }
+                    let close_vertical_center = spotlight_vertical_center(
+                        self.game_state.player.follower_link.y(),
+                        self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+                    );
                     resume_main_after_spotlight_return = self.game_state.frame.main_module == 15
                         && rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
                             self.game_state.display.spotlight_hdma.window_radius(),
+                            close_vertical_center,
                         );
                     // The $3f->$38 crossing return resumes the next main slice
                     // before this frame's trailing NMI; that resumed slice
@@ -12016,10 +14335,7 @@ impl ZeldaState {
                     let iteration_prepped_with_main = self.game_state.frame.main_module == 15
                         && rom_long_close_iteration_prep_returns_with_main(
                             self.game_state.display.spotlight_hdma.window_radius(),
-                            spotlight_vertical_center(
-                                self.game_state.player.follower_link.y(),
-                                self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
-                            ),
+                            close_vertical_center,
                         );
                     if !resume_main_after_spotlight_return && !iteration_prepped_with_main {
                         self.nmi_prepare_sprites();
@@ -12028,10 +14344,7 @@ impl ZeldaState {
                     if self.game_state.frame.main_module == 15
                         && rom_dungeon_exit_spotlight_table_needs_entry_slice(
                             self.game_state.display.spotlight_hdma.window_radius(),
-                            spotlight_vertical_center(
-                                self.game_state.player.follower_link.y(),
-                                self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
-                            ),
+                            close_vertical_center,
                         )
                     {
                         self.dungeon_exit_spotlight_table_delay =
@@ -12171,8 +14484,7 @@ impl ZeldaState {
                     // return while preserving whichever BG1 generation the
                     // provisional phase recorded.
                     let returned_scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
-                    resume_scanout =
-                        resume_scanout.complete_transition_return(returned_scroll);
+                    resume_scanout = resume_scanout.complete_transition_return(returned_scroll);
                     if epilogue_phase == NmiPhase::BeforeNmi {
                         self.nmi_prepare_sprites();
                         self.clear_nmi_update_latch();
@@ -12220,6 +14532,25 @@ impl ZeldaState {
             // The original ROM returns to the NMI boundary after the final
             // main-thread work slice. Attract loaders and item graphics both
             // publish only after their measured continuation completes.
+            let item_receipt_graphics_slice = matches!(
+                work_slice,
+                GameWorkStep::Complete(GameWorkContinuation::FinishItemReceiptGraphics { .. })
+            ) || matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishItemReceiptGraphics { .. })
+            );
+            if item_receipt_graphics_slice {
+                // The main-loop latch holds OAM, Link OBJ, and ordinary tilemap
+                // publication while the decompressor is interrupted. Dungeon
+                // animated tiles are an independent NMI DMA domain and still
+                // upload from the just-authored buffer before this scanout is
+                // captured.
+                let graphics_dma_plan = rom_graphics_dma_plan(
+                    self.game_state.frame.main_module,
+                    self.game_state.frame.submodule,
+                );
+                self.nmi_core_animated_bg_update(graphics_dma_plan);
+            }
             self.capture_display_snapshot_with_override(publication_override);
             if let GameWorkStep::Complete(GameWorkContinuation::FinishSpotlightIteration {
                 iteration,
@@ -12311,6 +14642,22 @@ impl ZeldaState {
             self.zelda_run_game_loop();
             self.replay_trace_col("after-game-loop");
             self.replay_trace_ram_watch("after-game-loop");
+        }
+        if matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishItemReceiptGraphics { .. })
+        ) {
+            // The decompressor's entry slice has already set the software NMI
+            // latch, but the vblank that interrupts it still completes the
+            // independently wired dungeon animated-BG DMA. Unlike ordinary
+            // dungeon-main NMI, this boundary follows the main slice that
+            // advanced the source address, so it consumes the live operands.
+            let mut graphics_dma_plan = rom_graphics_dma_plan(
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            );
+            graphics_dma_plan.animated_bg_operands = GraphicsDmaGeneration::LiveAfterMain;
+            self.nmi_core_animated_bg_update(graphics_dma_plan);
         }
         let dialogue_scroll_finished_copy =
             self.rom_startup_timing() && self.dialogue_scroll_is_return_only();
@@ -12421,16 +14768,8 @@ impl ZeldaState {
             0x0abddd => Some(ATTRACT_INDIRECT_HDMA_SETUP.to_vec()),
             0x02c80c => Some(PRAYING_SCENE_HDMA_SETUP.to_vec()),
             0x001b00 => Some(Self::ram_bytes_from(ram, HDMA_TABLE_DYNAMIC, 0x1e0)),
-            0x001be0 => Some(Self::ram_bytes_from(
-                ram,
-                HDMA_TABLE_DYNAMIC + 0xe0,
-                0x100,
-            )),
-            0x001bf0 => Some(Self::ram_bytes_from(
-                ram,
-                HDMA_TABLE_DYNAMIC + 0xf0,
-                0xf0,
-            )),
+            0x001be0 => Some(Self::ram_bytes_from(ram, HDMA_TABLE_DYNAMIC + 0xe0, 0x100)),
+            0x001bf0 => Some(Self::ram_bytes_from(ram, HDMA_TABLE_DYNAMIC + 0xf0, 0xf0)),
             0x0add27 => Some(Self::u16_table_bytes(&MAP_MODE_PERSPECTIVE_ZOOMS_NEAR, 0)),
             0x0ade07 => Some(Self::u16_table_bytes(
                 &MAP_MODE_PERSPECTIVE_ZOOMS_NEAR,
@@ -12456,8 +14795,7 @@ impl ZeldaState {
     }
 
     fn ram_bytes_from(ram: &[u8], offset: usize, len: usize) -> Vec<u8> {
-        ram
-            .get(offset..offset + len)
+        ram.get(offset..offset + len)
             .map_or_else(Vec::new, |bytes| bytes.to_vec())
     }
 
@@ -12498,10 +14836,7 @@ impl ZeldaState {
         Some(value)
     }
 
-    fn simple_hdma_line_writes(
-        ram: &[u8],
-        c: &mut SimpleHdma,
-    ) -> ([(u32, u8); 4], usize) {
+    fn simple_hdma_line_writes(ram: &[u8], c: &mut SimpleHdma) -> ([(u32, u8); 4], usize) {
         let mut writes = [(0, 0); 4];
         if c.table.is_none() {
             return (writes, 0);
@@ -12573,8 +14908,7 @@ impl ZeldaState {
 
     fn hdma_state_targets_window_latches(enable_mask: u8, dma: &DmaState) -> bool {
         dma.channel.iter().enumerate().any(|(index, channel)| {
-            enable_mask & (1 << index) != 0
-                && Self::hdma_channel_targets_window_latches(channel)
+            enable_mask & (1 << index) != 0 && Self::hdma_channel_targets_window_latches(channel)
         })
     }
 
@@ -12631,8 +14965,7 @@ impl ZeldaState {
                 if !active[index] {
                     continue;
                 }
-                let (writes, write_count) =
-                    Self::simple_hdma_line_writes(&ram, &mut hdma[index]);
+                let (writes, write_count) = Self::simple_hdma_line_writes(&ram, &mut hdma[index]);
                 for (address, value) in writes.into_iter().take(write_count) {
                     if let 0x2126..=0x2129 = address {
                         latches[(address - 0x2126) as usize] = value;
@@ -14093,10 +16426,15 @@ impl ZeldaState {
         // set through `module_main_routing` so `Module0E_Interface` skips its
         // sprite/Link update, then rotates below.
         let hold_core = self.dialogue_fast_forward_hold_active;
+        let skip_frame_counter =
+            std::mem::take(&mut self.dialogue_late_vwf_skip_frame_counter_pending);
         let resume_dungeon_exit_spotlight =
             std::mem::take(&mut self.dungeon_exit_spotlight_resume_module);
-        if !hold_core && !resume_dungeon_exit_spotlight {
-            self.increment_frame_counter();
+        let run_game_loop_prefix = !hold_core && !resume_dungeon_exit_spotlight;
+        if run_game_loop_prefix {
+            if !skip_frame_counter {
+                self.increment_frame_counter();
+            }
             self.replay_trace_ram_watch("game-loop-after-frame-counter");
             self.clear_oam_buffer();
             self.replay_trace_ram_watch("game-loop-after-clear-oam");
@@ -14116,6 +16454,12 @@ impl ZeldaState {
         }
         if self.rom_startup_timing()
             && (self.game_execution_scheduler.work_is_pending()
+                || self.pre_main_caller_continuation_is(
+                    PreMainCallerContinuation::SpiralStairsSecondPaletteFilter,
+                )
+                || self.pre_main_caller_continuation_is(
+                    PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter,
+                )
                 || self.dungeon_landing_wipe_return_slices_remaining != 0
                 || self.normal_dialogue_initialization_phase != 0)
         {

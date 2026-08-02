@@ -624,6 +624,7 @@ pub fn extract_modern_sprites_from_vram(
 
     let oam = frame.oam;
     let obj = &frame.obj;
+    let obj_vram = frame.obj_vram();
     let drawn = compute_obj_drawn_tiles(frame);
     let mut cells: Vec<ModernIndexTile> = Vec::new();
     let mut pattern_ids: HashMap<[u8; 64], u32> = HashMap::new();
@@ -683,7 +684,7 @@ pub fn extract_modern_sprites_from_vram(
                 // Decode the UNFLIPPED 8×8 pattern (no flip bits): the renderer
                 // applies hflip/vflip per instance when sampling the cell.
                 let indices =
-                    decode_snes_4bpp_tile_indices(frame.vram, bank_base as usize, used_tile);
+                    decode_snes_4bpp_tile_indices(obj_vram, bank_base as usize, used_tile);
 
                 // Skip fully transparent tiles to avoid cluttering the cell set.
                 if indices.iter().all(|&i| i == 0) {
@@ -2124,6 +2125,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
 
     let oam = frame.oam;
     let obj = &frame.obj;
+    let obj_vram = frame.obj_vram();
     let drawn = compute_obj_drawn_tiles(frame);
     let mut cells: Vec<ModernIndexTile> = Vec::new();
     // atlas cell id -> local dense cell id
@@ -2193,7 +2195,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                     // from the FRAME-END pixels so it matches the assets dump (the tag the
                     // game wrote at rehash time can desync from the drawn pixels because
                     // sprite CHR uploads incrementally). See `content_hash32_slot`.
-                    let h = content_hash32_slot(frame.vram, slot);
+                    let h = content_hash32_slot(obj_vram, slot);
                     pack = (h >> 16) as u16;
                     tile_off = (h & 0xffff) as u16;
                 }
@@ -2201,14 +2203,14 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                 // pose DMA offsets are reused across poses, but the frame-end tile pixels
                 // are injective enough to select the exact PNG/source cell.
                 let content_key = if kind == CHR_KIND_LINK {
-                    let h = content_hash32_slot(frame.vram, slot);
+                    let h = content_hash32_slot(obj_vram, slot);
                     Some((CHR_KIND_LINK_CONTENT, (h >> 16) as u16, (h & 0xffff) as u16))
                 } else if kind == 0 {
                     // Reset-time OBJ has no logical upload record yet. Its
                     // pattern still has a deterministic PNG asset identity;
                     // use a content-addressed sprite key so the renderer
                     // selects canonical art instead of rendering VRAM bytes.
-                    let h = content_hash32_slot(frame.vram, slot);
+                    let h = content_hash32_slot(obj_vram, slot);
                     Some((2, (h >> 16) as u16, (h & 0xffff) as u16))
                 } else {
                     None
@@ -2246,7 +2248,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                     // considering it unresolved. This is asset selection, not
                     // a VRAM render fallback: the emitted cell and source key
                     // both come from the source atlas.
-                    let indices = decode_snes_4bpp_tile_indices(frame.vram, slot * 16, 0);
+                    let indices = decode_snes_4bpp_tile_indices(obj_vram, slot * 16, 0);
                     if indices.iter().all(|index| *index == 0) {
                         continue;
                     }
@@ -2270,7 +2272,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                         if std::env::var_os("ZELDA3_DEBUG_ASSET_COVERAGE").is_some() {
                             eprintln!(
                                 "unresolved_sprite_source slot={slot:04x} source=({kind},{pack:04x},{tile_off:04x}) content_key={:08x} indices={}",
-                                content_hash32_slot(frame.vram, slot),
+                                content_hash32_slot(obj_vram, slot),
                                 indices
                                     .iter()
                                     .map(|index| format!("{index:x}"))
@@ -3783,6 +3785,31 @@ mod tests {
         assert!(cell.indices[24..32].iter().all(|&i| i == 3));
     }
 
+    #[test]
+    fn extract_modern_sprites_uses_obj_generation_without_changing_bg_vram() {
+        const B: usize = 0x1000;
+        const TILE: u16 = 3;
+        let visible_vram = vec![0u16; 0x8000];
+        let mut obj_vram = visible_vram.clone();
+        obj_vram[B + TILE as usize * 16] = 0x00ff;
+        let cgram = vec![0u16; 0x100];
+        let mut oam = vec![0u16; 0x110];
+        oam[0] = (50u16 << 8) | 40;
+        oam[1] = TILE;
+
+        let mut frame = test_gpu_frame(&visible_vram, &cgram, &oam, 15, false);
+        frame.obj_vram = Some(&obj_vram);
+        frame.obj.tile_adr1 = B as u16;
+
+        let (cells, sprites) = extract_modern_sprites_from_vram(&frame);
+
+        assert_eq!(frame.vram[B + TILE as usize * 16], 0);
+        assert_eq!(sprites.len(), 1);
+        assert!(cells[sprites[0].cell_id as usize].indices[0..8]
+            .iter()
+            .all(|index| *index == 1));
+    }
+
     /// hflip propagates as a flag; the decoded cell stays UNFLIPPED (so a second
     /// hflipped sprite using the same tile dedups to the same cell).
     #[test]
@@ -4499,6 +4526,7 @@ mod tests {
         GpuFrame {
             hardware_startup_transient: None,
             vram,
+            obj_vram: None,
             cgram,
             oam,
             mode: 1,

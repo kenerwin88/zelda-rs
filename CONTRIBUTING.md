@@ -1,7 +1,7 @@
 # Contributing
 
 This repository is a Rust port of `snesrev/zelda3`. The main development rule is
-to keep behavior verifiable against the original C project before refactoring
+to keep behavior verifiable against the reference implementation before refactoring
 toward more idiomatic Rust.
 
 ## Setup
@@ -19,9 +19,10 @@ Install the local hooks when you have the parity dependencies available:
 scripts/install_hooks.sh
 ```
 
-The pre-commit hook runs the standard replay parity gate. By default it expects
-the C checkout at `../zelda3` and a USA ROM at `../zelda3/zelda3.sfc`. This is
-heavier than CI because GitHub runners do not have the ROM or local C checkout.
+The pre-commit hook runs the standard smoke and Snes9x parity gate. By default it
+expects the local parity fixtures and a ROM at the repo's standard location. This
+is heavier than CI because GitHub runners do not have the ROM or parity route
+artifacts.
 
 ## Checks
 
@@ -51,5 +52,5 @@ local parity gate:
 - Keep parity fixtures in their documented locations.
 - Do not commit ROMs, generated asset packs, emulator installs, packaged
   binaries, or local trace captures.
-- Keep the C checkout as the oracle for behavior until a subsystem is explicitly
-  verified and refactored.
+- Keep the current Snes9x route baseline as the behavior reference until a subsystem
+  is explicitly verified and refactored.

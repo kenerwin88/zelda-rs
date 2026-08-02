@@ -750,6 +750,110 @@
         "y": 154,
         "z": 65535
       }
+    },
+    {
+      "id": 14,
+      "oracle_generation": 2,
+      "reset_start": false,
+      "state_path": "boundaries/0014/oracle.state",
+      "state_sha256": "551a96f8479c0a1d7fa27d4126d21e63b3cdf7e47f5044058f5e0189cfc5fa69",
+      "wram_path": "boundaries/0014/wram.bin",
+      "wram_sha256": "fde319d6dc8e8d55339646a0d56f44ef08fa77e5cd767d374f18cd1213f879b4",
+      "vram_path": "boundaries/0014/vram.bin",
+      "vram_sha256": "b74c31b7823630010585af0ceae34e10147864832c897b1db9945f1c61c57147",
+      "sram_path": "boundaries/0014/sram.bin",
+      "sram_sha256": "22ac03114c7d8247a3bd0fb628d771bb7f74a2ecad35d12e8febf859d3798b4d",
+      "screenshot_path": "boundaries/0014/frame.png",
+      "screenshot_sha256": "dd5a2e1fa3e6f8a422a5ed562095b5ddac5b71b2d8bc9960e4b333f1db95e4fe",
+      "created_by": "Snes9x libretro retro_serialize",
+      "converted_from_rust": false,
+      "telemetry": {
+        "bg_tile_animation_countdown": 6,
+        "direction": 0,
+        "ending": false,
+        "equipped_item": 14,
+        "facing": 2,
+        "final_credits": false,
+        "follower": 0,
+        "frame_counter": 29,
+        "health": 64,
+        "indoors": 1,
+        "item_in_hand": 0,
+        "link_dma_countdown": 5,
+        "link_dma_source_offset": 0,
+        "link_dma_tile_offset": 6,
+        "magic": 128,
+        "main": 7,
+        "max_health": 64,
+        "music": 0,
+        "overworld": 0,
+        "player_state": 0,
+        "progression_flags": 28704,
+        "queued_music": 27,
+        "room": 294,
+        "saved_module": 7,
+        "sfx_1": 0,
+        "sfx_2": 0,
+        "sfx_ambient": 0,
+        "small_keys": 255,
+        "sub": 0,
+        "subsub": 0,
+        "x": 3193,
+        "y": 9590,
+        "z": 65535
+      }
+    },
+    {
+      "id": 15,
+      "oracle_generation": 2,
+      "reset_start": false,
+      "state_path": "boundaries/0015/oracle.state",
+      "state_sha256": "749422898a2513cf210a86b6710436ab07fad328e9596ca0b2e6fccb12138814",
+      "wram_path": "boundaries/0015/wram.bin",
+      "wram_sha256": "1a1b540b3063bfe4c3d1fc49fe23b9337ce8b698b8ee672d8c9a3975fc819d09",
+      "vram_path": "boundaries/0015/vram.bin",
+      "vram_sha256": "12d6087507355807fef14888f1fb3f926075dc84b91675e82b544dc10e8e6809",
+      "sram_path": "boundaries/0015/sram.bin",
+      "sram_sha256": "22ac03114c7d8247a3bd0fb628d771bb7f74a2ecad35d12e8febf859d3798b4d",
+      "screenshot_path": "boundaries/0015/frame.png",
+      "screenshot_sha256": "57c5acdff993a1c8897f021821b1f672da2cca1c2986ff219aa4e8bda436de61",
+      "created_by": "Snes9x libretro retro_serialize",
+      "converted_from_rust": false,
+      "telemetry": {
+        "bg_tile_animation_countdown": 5,
+        "direction": 0,
+        "ending": false,
+        "equipped_item": 2,
+        "facing": 2,
+        "final_credits": false,
+        "follower": 0,
+        "frame_counter": 53,
+        "health": 64,
+        "indoors": 0,
+        "item_in_hand": 0,
+        "link_dma_countdown": 5,
+        "link_dma_source_offset": 0,
+        "link_dma_tile_offset": 0,
+        "magic": 128,
+        "main": 9,
+        "max_health": 64,
+        "music": 0,
+        "overworld": 91,
+        "player_state": 0,
+        "progression_flags": 28704,
+        "queued_music": 16,
+        "room": 32,
+        "saved_module": 9,
+        "sfx_1": 0,
+        "sfx_2": 0,
+        "sfx_ambient": 0,
+        "small_keys": 255,
+        "sub": 0,
+        "subsub": 0,
+        "x": 2032,
+        "y": 1653,
+        "z": 65535
+      }
     }
   ],
   "takes": [
@@ -817,9 +921,9 @@
       "end_boundary": 4,
       "frames": 26108,
       "input_path": "takes/0005/input.txt",
+      "rom_random_path": "takes/0005/rom-random.txt",
       "receipts_path": "takes/0005/frame_receipts.jsonl",
-      "status": "complete",
-      "rom_random_path": "takes/0005/rom-random.txt"
+      "status": "complete"
     },
     {
       "id": 6,
@@ -829,9 +933,9 @@
       "end_boundary": 5,
       "frames": 29528,
       "input_path": "takes/0006/input.txt",
+      "rom_random_path": "takes/0006/rom-random.txt",
       "receipts_path": "takes/0006/frame_receipts.jsonl",
-      "status": "complete",
-      "rom_random_path": "takes/0006/rom-random.txt"
+      "status": "complete"
     },
     {
       "id": 7,
@@ -841,9 +945,9 @@
       "end_boundary": 6,
       "frames": 9470,
       "input_path": "takes/0007/input.txt",
+      "rom_random_path": "takes/0007/rom-random.txt",
       "receipts_path": "takes/0007/frame_receipts.jsonl",
-      "status": "complete",
-      "rom_random_path": "takes/0007/rom-random.txt"
+      "status": "complete"
     },
     {
       "id": 8,
@@ -875,9 +979,9 @@
       "end_boundary": 9,
       "frames": 29890,
       "input_path": "takes/0010/input.txt",
+      "rom_random_path": "takes/0010/rom-random.txt",
       "receipts_path": "takes/0010/frame_receipts.jsonl",
-      "status": "complete",
-      "rom_random_path": "takes/0010/rom-random.txt"
+      "status": "complete"
     },
     {
       "id": 11,
@@ -887,9 +991,9 @@
       "end_boundary": 10,
       "frames": 48653,
       "input_path": "takes/0011/input.txt",
+      "rom_random_path": "takes/0011/rom-random.txt",
       "receipts_path": "takes/0011/frame_receipts.jsonl",
-      "status": "complete",
-      "rom_random_path": "takes/0011/rom-random.txt"
+      "status": "complete"
     },
     {
       "id": 12,
@@ -899,9 +1003,9 @@
       "end_boundary": 11,
       "frames": 28572,
       "input_path": "takes/0012/input.txt",
+      "rom_random_path": "takes/0012/rom-random.txt",
       "receipts_path": "takes/0012/frame_receipts.jsonl",
-      "status": "complete",
-      "rom_random_path": "takes/0012/rom-random.txt"
+      "status": "complete"
     },
     {
       "id": 13,
@@ -911,9 +1015,9 @@
       "end_boundary": 12,
       "frames": 28436,
       "input_path": "takes/0013/input.txt",
+      "rom_random_path": "takes/0013/rom-random.txt",
       "receipts_path": "takes/0013/frame_receipts.jsonl",
-      "status": "complete",
-      "rom_random_path": "takes/0013/rom-random.txt"
+      "status": "complete"
     },
     {
       "id": 14,
@@ -923,9 +1027,31 @@
       "end_boundary": 13,
       "frames": 37544,
       "input_path": "takes/0014/input.txt",
+      "rom_random_path": "takes/0014/rom-random.txt",
       "receipts_path": "takes/0014/frame_receipts.jsonl",
-      "status": "complete",
-      "rom_random_path": "takes/0014/rom-random.txt"
+      "status": "complete"
+    },
+    {
+      "id": 15,
+      "name": "Save #13 to save #14",
+      "oracle_generation": 2,
+      "start_boundary": 13,
+      "end_boundary": 14,
+      "frames": 28107,
+      "input_path": "takes/0015/input.txt",
+      "receipts_path": "takes/0015/frame_receipts.jsonl",
+      "status": "complete"
+    },
+    {
+      "id": 16,
+      "name": "Save #14 to save #15",
+      "oracle_generation": 2,
+      "start_boundary": 14,
+      "end_boundary": 15,
+      "frames": 40981,
+      "input_path": "takes/0016/input.txt",
+      "receipts_path": "takes/0016/frame_receipts.jsonl",
+      "status": "complete"
     }
   ]
 }

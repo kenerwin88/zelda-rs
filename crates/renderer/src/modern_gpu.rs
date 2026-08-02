@@ -12546,6 +12546,7 @@ mod tests {
         crate::gpu_frame::GpuFrame {
             hardware_startup_transient: None,
             vram,
+            obj_vram: None,
             cgram,
             oam,
             mode: 1,

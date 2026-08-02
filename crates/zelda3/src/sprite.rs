@@ -3896,11 +3896,18 @@ impl ZeldaState {
         let value = item;
         self.sprite_slot_view_mut(k).set_sprite_type(value);
         if item == 0xe5 {
+            if self.begin_big_key_drop_graphics_work(k) {
+                return;
+            }
             self.sprite_prep_big_key_load_graphics(k);
         } else if item == 0xe4 {
             self.sprite_prep_key_set_item_drop(k);
         }
 
+        self.complete_prepare_enemy_drop(k);
+    }
+
+    pub(super) fn complete_prepare_enemy_drop(&mut self, k: usize) {
         let value = 9;
         self.sprite_slot_view_mut(k).set_state(value);
         let zbak = self.sprite_slot_view(k).z();

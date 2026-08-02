@@ -6,14 +6,14 @@ Hard constraint: SNES WRAM reuses the same bytes for different systems by game
 mode, so a semantic write must touch only the byte/word it owns — never
 bulk-project a range it shares with another system.
 
-## Parity target: fully-modern runtime vs Snes9x (the C oracle is RETIRED)
+## Parity target: fully-modern runtime vs Snes9x
 
-The C-oracle parity apparatus (zparity capture/check/drill, parity-golden/,
+The legacy parity apparatus (zparity capture/check/drill, parity-golden/,
 `--fingerprint-log`, validate_all_parity.py, the classic CPU/wgpu renderers, the
 legacy SPC/DSP audio oracle, AND the old 1,073,092-frame
-`<replay.sav>` replay route) has been **fully removed**. The
-route was recorded against the port/C timing hacks and does not progress in
-Snes9x — do not resurrect it for parity.
+`<replay.sav>` replay route) has been **fully removed**. The route was recorded
+against timing hacks that do not progress in Snes9x — do not resurrect it for
+parity.
 
 **Parity lives in `routes/` now**: human routes recorded directly in the pinned
 Snes9x 1.63 libretro core (`routes/clean` is the good lineage). Each project
@@ -35,7 +35,8 @@ Internal regression tools that remain:
 `ZELDA3_ASSERT_NATIVE_COHERENT`, `find_dual_ownership.py`, `whoowns.py`,
 RAM write-watchpoints, and Rust-vs-Rust WRAM dumps
 (`ZELDA3_REPLAY_WRAM_DUMP` across two builds of this repo).
-Do NOT consult or reference the old C sources; this repo's own code plus the
+Do NOT consult or reference the old parity baseline tooling; this repo's own code
+plus the
 Snes9x oracle are the only references.
 `zparity` now exists solely for the `coverage` subcommand (route coverage).
 
@@ -88,7 +89,8 @@ bridge `sync()` calls re-run a state's `write_to_ram` mid-frame on every setter.
 
 ## Reference builds & ROM
 
-**The C oracle is retired** — do not reference the old C sources at all. The external
+**The legacy oracle is retired** — do not reference the old parity source
+references at all. The external
 parity reference is the **Snes9x libretro core** (`--compare-snes9x-oracle`,
 `scripts/full_parity.py --with-snes9x`), and this repo's own code is the behavioral
 source of truth.
@@ -97,7 +99,7 @@ source of truth.
   accept `ZELDA3_ROM`.
 - This repo: `cargo build --profile parity -p zelda3-bin` (deterministic like release,
   faster). Binary: `target/parity/zelda3 --replay-save saves/zelda3.sfc <save> <frames>`.
-- The old combined-route replay save was removed with C parity. `--replay-save` still
+- The old combined-route replay save was removed with legacy parity cleanup. `--replay-save` still
   works for ad-hoc `.sav` replays (legacy `ZELDA3_SMV_*_TIMING_HACKS=1` env applies to
   such saves), but recorded parity routes live in `routes/` as Snes9x-native
   boundary states + input takes.
@@ -184,7 +186,8 @@ See memory [[checkpoint-resume-debugging]].
    is a graphics-load *timing* divergence, not a byte-ownership bug.
 
 4. **`zparity coverage` (`crates/parity`)** — route-coverage reports/worklists for replay
-   probes. (The former capture/check/drill C-golden subcommands were retired with C parity.)
+  probes. (The former capture/check/drill parity subcommands were retired with the
+  legacy parity pipeline.)
 
 ### Tracing env vars
 

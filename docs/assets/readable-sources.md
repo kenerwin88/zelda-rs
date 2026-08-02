@@ -16,7 +16,7 @@ deduplicates palette and flip variants into a cleaner editable sheet. The
 lower-level source formats below remain useful for extraction, packing, and
 parity implementation work.
 
-The runtime continues to consume byte-exact packed assets so C parity stays
+The runtime continues to consume byte-exact packed assets so parity stays
 unchanged. The build script packs generated readable sources into the embedded
 asset table when the manifest provides `source_file` and `source_format`;
 unsupported assets continue through the binary fallback path.
@@ -190,8 +190,9 @@ sidecar included. The root `zelda3_assets.dat` is gitignored (a local artifact).
 
 ### Dialogue parity under source authority
 
-The uncompressed source-authored `kDialogue` is **behaviorally byte-exact** with
-the C oracle. `Text_GenerateMessagePointers` stages a 3-byte-per-message pointer
+The uncompressed source-authored `kDialogue` is **behaviorally byte-exact** with the
+legacy timing-equivalent route fixture baseline. `Text_GenerateMessagePointers` stages a
+3-byte-per-message pointer
 table at WRAM `TEXT_DIALOGUE_POINTERS` (`0x171c0`); because source messages are
 uncompressed, those pointers (byte offsets) differ from the ROM-compressed
 oracle. This divergence is transient and confined to that scratch region:
@@ -204,8 +205,8 @@ cascades into game logic.
 Because the divergence is byte-exact-behavioral-equivalent scratch, the pointer
 table span `[0x171c0, 0x1766a)` is masked out of the parity fingerprint on both
 sides — `FINGERPRINT_MASK_RANGES` in `crates/parity/src/fingerprint.rs` and
-`IsFingerprintMaskedWramOffset` in the C oracle's `src/main.c` — and the golden
-was recaptured with the wider mask (`manifest.mask` length 450 → 1644). With that,
+the historical mask predicate used by prior parity captures — and the golden was
+recaptured with the wider mask (`manifest.mask` length 450 → 1644). With that,
 `zparity check` no longer flags the transient dialogue pointers and can see past
 boot to any genuine divergence.
 

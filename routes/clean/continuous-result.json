@@ -1,22 +1,25 @@
 {
   "kind": "zelda3_snes9x_continuous_route_result_v1",
-  "coverage_label": "canonical exact A/V window with neutral-input tail",
-  "continuous_playthrough": false,
-  "continuous_emulation_session": true,
-  "oracle": "official Snes9x 1.63 libretro",
+  "coverage_label": "continuous human-recorded coverage",
+  "continuous_playthrough": true,
+  "oracle": "Snes9x 1.63 libretro only",
+  "oracle_generation": 2,
+  "core_sha256": "f82658246a0c1fed7d53c485f3de79fcc671a45d9ed0a0ac6bf6eace9d46ff9a",
   "production_renderer": "modern Rust",
   "production_audio_backend": "modern",
   "production_audio_sequencer": "native",
-  "commit": "edea8bab17459d36ecc1b05ea523586ac0f75c0a",
-  "frames_requested": 155384,
-  "frames_completed": 155384,
-  "video_matched": true,
-  "audio_matched": true,
-  "full_recorded_route_coverage": false,
-  "passed": true,
   "takes": [
     4,
-    5
+    5,
+    6,
+    7,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16
   ],
   "take_ranges": [
     {
@@ -32,49 +35,94 @@
       "start_frame": 11735,
       "end_frame_exclusive": 37843,
       "frames": 26108
+    },
+    {
+      "take": 6,
+      "name": "Sanctuary to Kakariko",
+      "start_frame": 37843,
+      "end_frame_exclusive": 67371,
+      "frames": 29528
+    },
+    {
+      "take": 7,
+      "name": "Kakariko to Sahasrahla",
+      "start_frame": 67371,
+      "end_frame_exclusive": 76841,
+      "frames": 9470
+    },
+    {
+      "take": 10,
+      "name": "Sahasrahla to first pendant",
+      "start_frame": 76841,
+      "end_frame_exclusive": 106731,
+      "frames": 29890
+    },
+    {
+      "take": 11,
+      "name": "First pendant to second pendant",
+      "start_frame": 106731,
+      "end_frame_exclusive": 155384,
+      "frames": 48653
+    },
+    {
+      "take": 12,
+      "name": "Second pendant to flippers",
+      "start_frame": 155384,
+      "end_frame_exclusive": 183956,
+      "frames": 28572
+    },
+    {
+      "take": 13,
+      "name": "Save #11 to save #12",
+      "start_frame": 183956,
+      "end_frame_exclusive": 212392,
+      "frames": 28436
+    },
+    {
+      "take": 14,
+      "name": "Save #12 to save #13",
+      "start_frame": 212392,
+      "end_frame_exclusive": 249936,
+      "frames": 37544
+    },
+    {
+      "take": 15,
+      "name": "Save #13 to save #14",
+      "start_frame": 249936,
+      "end_frame_exclusive": 278043,
+      "frames": 28107
+    },
+    {
+      "take": 16,
+      "name": "Save #14 to save #15",
+      "start_frame": 278043,
+      "end_frame_exclusive": 319024,
+      "frames": 40981
     }
   ],
   "recorded_route": {
     "source_takes": [
       4,
-      5
+      5,
+      6,
+      7,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16
     ],
-    "frames": 37843,
-    "neutral_tail_frames": 117541,
-    "input_script_sha256": "92c29148e73a84b315843fedf42388b7ddcf1889197c1e252769d1ff4a5d0c86"
+    "frames": 319024,
+    "neutral_tail_frames": 0,
+    "input_script_sha256": "293b6c9d6e6b13e7a4305e6f576770ef8de531faa3aa754414c21364f77f5c57"
   },
-  "identity": {
-    "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb",
-    "input_script": "comparisons/canonical-155384/continuous-input.txt",
-    "input_script_sha256": "92c29148e73a84b315843fedf42388b7ddcf1889197c1e252769d1ff4a5d0c86",
-    "rom_random_script": "takes/0004/rom-random.txt",
-    "rom_random_script_sha256": "bf1ab44cb7410f3845f2f65ffc6c6485774e3779231e1232627347af0b0c5bb7"
-  },
-  "proof": {
-    "snes9x_source_tag": "1.63",
-    "snes9x_source_revision": "921f9f7b83660eb44ad263022a57a4a029057c37",
-    "cold_derived_checkpoint_frame": 16384,
-    "cold_checkpoint_core_sha256": "c348bf0db8188b6ba9804f3d872c28e73b6a3849f1879c6d81f495bb11715d85",
-    "prefix_core_sha256": "1b978832991521de2b0e1e25d40c4e9ed57eb8c458f9aa9cf21fc8621e128328",
-    "prefix_exact_through_frame": 27649,
-    "suffix_start_frame": 27648,
-    "suffix_core_sha256": "f82658246a0c1fed7d53c485f3de79fcc671a45d9ed0a0ac6bf6eace9d46ff9a",
-    "suffix_exact_through_frame": 155384,
-    "handoff_oracle_state_sha256": "bc6a57e371e5e11cb583b11235a8fe190edc10bf58a3f458526005753b68d502",
-    "handoff_rust_state_sha256": "1fdc37713d08e6607c7290a22de81bd9b0db2d21c3fd57d6c574cfc2d0ca703",
-    "boundary_overlap_frames": 1
-  },
-  "stable_release_verification": {
-    "commit": "edea8bab17459d36ecc1b05ea523586ac0f75c0a",
-    "snes9x_source_revision": "921f9f7b83660eb44ad263022a57a4a029057c37",
-    "prefix_core_sha256": "1b978832991521de2b0e1e25d40c4e9ed57eb8c458f9aa9cf21fc8621e128328",
-    "suffix_core_sha256": "f82658246a0c1fed7d53c485f3de79fcc671a45d9ed0a0ac6bf6eace9d46ff9a",
-    "prefix_resume_frame": 16384,
-    "prefix_exact_through_frame": 27649,
-    "suffix_resume_frame": 27648,
-    "suffix_exact_through_frame": 155384,
-    "boundary_overlap_frames": 1,
-    "video_matched": true,
-    "audio_matched": true
-  }
+  "frames_requested": 319024,
+  "frames_completed": 0,
+  "video_matched": false,
+  "audio_matched": false,
+  "full_recorded_route_coverage": false,
+  "passed": false,
+  "result": "comparisons/continuous/result.json"
 }

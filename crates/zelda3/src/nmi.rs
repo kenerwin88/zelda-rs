@@ -106,8 +106,14 @@ impl ZeldaState {
         )
     }
 
-    fn parity_runtime_defer_pending_nmi_this_frame(&self) -> bool {
-        self.parity_runtime_nmi_rule_matches("defer_pending_nmi")
+    fn defer_pending_nmi_this_frame(&mut self) -> bool {
+        let dialogue_request_missed_dispatch = self.dialogue_bg3_upload_missed_current_nmi
+            && self.game_state.display.pending_nmi_subroutine == 2;
+        if dialogue_request_missed_dispatch {
+            self.dialogue_bg3_upload_missed_current_nmi = false;
+        }
+        dialogue_request_missed_dispatch
+            || self.parity_runtime_nmi_rule_matches("defer_pending_nmi")
     }
 
     pub(super) fn interrupt_nmi(
@@ -361,6 +367,142 @@ impl ZeldaState {
         self.nmi_do_updates_from(None, false);
     }
 
+    pub(super) fn publish_dialogue_initialization_oam_dma(&mut self, shadow: &[u8]) {
+        for (destination, bytes) in self.ppu.oam.iter_mut().zip(shadow.chunks_exact(2)) {
+            *destination = u16::from_le_bytes([bytes[0], bytes[1]]);
+        }
+    }
+
+    pub(super) fn nmi_core_animated_bg_update(&mut self, graphics_dma_plan: GraphicsDmaPlan) {
+        let host_main_prefix_did_not_advance = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .is_some_and(|graphics| {
+                graphics.entry_frame.frame_counter == self.game_state.frame.frame_counter
+            });
+        let pre_main_dma = if matches!(
+            graphics_dma_plan.animated_bg_operands,
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        ) {
+            self.pre_main_graphics_dma
+                .as_mut()
+                .and_then(|graphics| graphics.animated_tile.take())
+        } else {
+            None
+        };
+        let (mut src_addr, dst, mut data) = pre_main_dma.map_or_else(
+            || {
+                (
+                    self.game_state.display.animated_tile_data_source_usize(),
+                    self.game_state
+                        .display
+                        .animated_tile_vram_destination_usize(),
+                    self.animated_tile_dma_source_bytes().to_vec(),
+                )
+            },
+            |dma| (dma.source_address, dma.destination_address, dma.data),
+        );
+        if matches!(
+            graphics_dma_plan.animated_bg_operands,
+            GraphicsDmaGeneration::LiveAfterMain
+        ) {
+            if let Some(projected_source) =
+                rom_spiral_stairs_suspended_animated_bg_source_address(
+                    self.game_state.frame,
+                    host_main_prefix_did_not_advance,
+                    self.game_state.display.bg_tile_animation_countdown,
+                    src_addr,
+                )
+            {
+                // The translated spiral-filter continuation exposes the
+                // pre-decrement software countdown here. Snes9x has already
+                // completed the preceding caller's animation-source advance,
+                // so project that hardware-facing DMA operand without
+                // mutating the still-suspended CPU state.
+                if let Some(projected_data) =
+                    self.ram.get(projected_source..projected_source + 0x400)
+                {
+                    src_addr = projected_source;
+                    data = projected_data.to_vec();
+                }
+            }
+        }
+        if std::env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
+            let live_source = self
+                .ram
+                .get(src_addr..src_addr.saturating_add(0x400))
+                .unwrap_or_default();
+            let first_live_mismatch = data
+                .iter()
+                .zip(live_source)
+                .position(|(captured, live)| captured != live);
+            eprintln!(
+                "animated_bg_dma host={} source={src_addr:04x} destination={dst:04x} captured={} first_live_mismatch={first_live_mismatch:?} source_prefix={:02x?} live_prefix={:02x?} vram_prefix_before={:04x?}",
+                self.frame_ctr_dbg,
+                matches!(
+                    graphics_dma_plan.animated_bg_operands,
+                    GraphicsDmaGeneration::HostBoundaryBeforeMain
+                ),
+                &data[..data.len().min(8)],
+                &live_source[..live_source.len().min(8)],
+                &self.ppu.vram[dst.min(self.ppu.vram.len())..(dst + 4).min(self.ppu.vram.len())],
+            );
+        }
+        if dst + 0x200 > self.ppu.vram.len() || data.len() < 0x400 {
+            return;
+        }
+        if std::env::var_os("ZELDA3_DEBUG_BOOT_DMA_SOURCE").is_some()
+            && self.rom_startup_timing()
+            && self.game_state.frame.main_module == 0
+            && self.game_state.frame.submodule == 0
+        {
+            eprintln!(
+                "boot_dma_source host={} src={src_addr:04x} dst={dst:04x} bytes={:02x?}",
+                self.frame_ctr_dbg,
+                &data[..data.len().min(16)],
+            );
+        }
+        for i in 0..0x200 {
+            self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
+        }
+        if std::env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
+            eprintln!(
+                "animated_bg_dma_after host={} destination={dst:04x} vram_prefix={:04x?}",
+                self.frame_ctr_dbg,
+                &self.ppu.vram[dst..dst + 4],
+            );
+        }
+        // Tag the per-frame animated BG tiles (VRAM 0x3c00 overworld water /
+        // flowers). These are tagged CHR_KIND_BG_ANIM, but the off-VRAM
+        // extractor decodes them from live VRAM, not from the static atlas.
+        const ANIMATED_TILE_BUFFER_BASE: usize = 0xa680;
+        if dst == 0x3c00 && src_addr >= ANIMATED_TILE_BUFFER_BASE {
+            let base_off = ((src_addr - ANIMATED_TILE_BUFFER_BASE) / 32) as u16;
+            self.vram_chr_source.record_tiles_from(
+                dst,
+                0x20,
+                crate::chr_source::CHR_KIND_BG_ANIM,
+                self.animated_tile_pack,
+                base_off,
+            );
+        } else if dst != 0x3c00 {
+            // Dungeon animated tiles overwrite statically tagged BG slots.
+            // Content hashes retain the exact live streamed generation.
+            for t in 0..0x20usize {
+                let word0 = dst + t * 16;
+                if word0 + 16 <= self.ppu.vram.len() {
+                    let hash =
+                        crate::chr_source::chr_content_hash32(&self.ppu.vram[word0..word0 + 16]);
+                    self.vram_chr_source.record_tile_content_hash(
+                        dst / 16 + t,
+                        crate::chr_source::CHR_KIND_BG_STREAM,
+                        hash,
+                    );
+                }
+            }
+        }
+    }
+
     fn nmi_do_updates_from(&mut self, oam_dma_source: Option<&[u8]>, defer_bg_vram_upload: bool) {
         if !self.game_state.display.core_updates_are_disabled() {
             let graphics_dma_plan = rom_graphics_dma_plan(
@@ -371,97 +513,54 @@ impl ZeldaState {
             // main-thread slice. If that slice switched modules, its exit
             // phase owns the operands; ordinary leading-NMI phases still
             // select the captured host-boundary sources through this plan.
-            let link_obj_operands_generation = graphics_dma_plan.link_obj_operands;
-            let captured_link_sources = matches!(
+            let entry_frame = self
+                .pre_main_graphics_dma
+                .as_ref()
+                .map(|graphics| graphics.entry_frame)
+                .unwrap_or(self.game_state.frame);
+            let link_obj_operands_generation = link_obj_operands_across_main(
+                entry_frame,
+                self.game_state.frame,
+                graphics_dma_plan.link_obj_operands,
+            );
+            let captured_link_operands = matches!(
                 link_obj_operands_generation,
                 GraphicsDmaGeneration::HostBoundaryBeforeMain
             )
             .then(|| {
                 self.pre_main_graphics_dma
                     .as_ref()
-                    .map(|graphics| graphics.link_sources)
+                    .map(|graphics| graphics.link_operands)
             })
             .flatten();
-            self.nmi_core_link_graphics_update(captured_link_sources);
-
-            let pre_main_dma = if matches!(
-                graphics_dma_plan.animated_bg_operands,
-                GraphicsDmaGeneration::HostBoundaryBeforeMain
-            ) {
-                self.pre_main_graphics_dma
-                    .as_mut()
-                    .and_then(|graphics| graphics.animated_tile.take())
-            } else {
-                None
-            };
-            let (src_addr, dst, data) = pre_main_dma.map_or_else(
-                || {
-                    (
-                        self.game_state.display.animated_tile_data_source_usize(),
-                        self.game_state
-                            .display
-                            .animated_tile_vram_destination_usize(),
-                        self.animated_tile_dma_source_bytes().to_vec(),
-                    )
-                },
-                |dma| (dma.source_address, dma.destination_address, dma.data),
-            );
-            if dst + 0x200 <= self.ppu.vram.len() && data.len() >= 0x400 {
-                if std::env::var_os("ZELDA3_DEBUG_BOOT_DMA_SOURCE").is_some()
-                    && self.rom_startup_timing()
-                    && self.game_state.frame.main_module == 0
-                    && self.game_state.frame.submodule == 0
-                {
-                    eprintln!(
-                        "boot_dma_source host={} src={src_addr:04x} dst={dst:04x} bytes={:02x?}",
-                        self.frame_ctr_dbg,
-                        &data[..data.len().min(16)],
-                    );
-                }
-                for i in 0..0x200 {
-                    self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
-                }
-                // Tag the per-frame animated BG tiles (VRAM 0x3c00 overworld water /
-                // flowers). These are tagged CHR_KIND_BG_ANIM, but the off-VRAM
-                // extractor decodes them from LIVE VRAM (see `extract_modern_frame_from_
-                // sources`), NOT from the assets atlas: the assets dump captures these
-                // slots' pixels at frame-end while several overworld animations rewrite
-                // the same 0xa680 buffer position in-place per phase, so no static
-                // `(pack, position)` key OR content hash the dump records matches the
-                // pixels the live frame streams (frame 250000 waterfall: atlas cell
-                // wrong for BOTH key schemes; only live-VRAM decode is byte-exact).
-                // The `(pack, base_off)` tag is kept as metadata / debug provenance.
-                const ANIMATED_TILE_BUFFER_BASE: usize = 0xa680;
-                if dst == 0x3c00 && src_addr >= ANIMATED_TILE_BUFFER_BASE {
-                    let base_off = ((src_addr - ANIMATED_TILE_BUFFER_BASE) / 32) as u16;
-                    self.vram_chr_source.record_tiles_from(
-                        dst,
-                        0x20,
-                        crate::chr_source::CHR_KIND_BG_ANIM,
-                        self.animated_tile_pack,
-                        base_off,
-                    );
-                } else if dst != 0x3c00 {
-                    // DUNGEON animated tiles (dst 0x3b00): re-DMA'd over slots tagged
-                    // static kind=1 BG by initialize_tilesets. Content-hash (32-bit) so
-                    // the off-VRAM path resolves the live animated cell. Unlike the OW
-                    // path above, the dungeon dump binding is stable (verified byte-exact
-                    // at frame 435000), so the atlas cell is correct here.
-                    for t in 0..0x20usize {
-                        let word0 = dst + t * 16;
-                        if word0 + 16 <= self.ppu.vram.len() {
-                            let hash = crate::chr_source::chr_content_hash32(
-                                &self.ppu.vram[word0..word0 + 16],
-                            );
-                            self.vram_chr_source.record_tile_content_hash(
-                                dst / 16 + t,
-                                crate::chr_source::CHR_KIND_BG_STREAM,
-                                hash,
-                            );
-                        }
-                    }
-                }
+            if std::env::var_os("ZELDA3_DEBUG_LINK_DMA").is_some() {
+                let captured_head_top = captured_link_operands
+                    .map(|operands| operands.sources.source(LinkDmaSourceSlot::HeadTop));
+                let live_head_top = self.live_link_dma_source(LinkDmaSourceSlot::HeadTop);
+                eprintln!(
+                    "link_dma host={} main={:02x}/{:02x} operands={link_obj_operands_generation:?} captured_head_top={captured_head_top:?} captured_high={:02x?} live_head_top={live_head_top:04x} live_high={:02x?} vram_head_top_before={:04x} vram_high_before={:04x}",
+                    self.frame_ctr_dbg,
+                    self.game_state.frame.main_module,
+                    self.game_state.frame.submodule,
+                    captured_link_operands.map(|operands| {
+                        <[u8; 4]>::try_from(&operands.expanded_high_planes[..4])
+                            .expect("four-byte Link staging prefix")
+                    }),
+                    &self.ram[LINK_DMA_EXPANDED_HIGH_PLANES_START
+                        ..LINK_DMA_EXPANDED_HIGH_PLANES_START + 4],
+                    self.ppu.vram[0x4020],
+                    self.ppu.vram[0x4240],
+                );
             }
+            self.nmi_core_link_graphics_update(captured_link_operands);
+            if std::env::var_os("ZELDA3_DEBUG_LINK_DMA").is_some() {
+                eprintln!(
+                    "link_dma host={} vram_head_top_after={:04x} vram_high_after={:04x}",
+                    self.frame_ctr_dbg, self.ppu.vram[0x4020], self.ppu.vram[0x4240],
+                );
+            }
+
+            self.nmi_core_animated_bg_update(graphics_dma_plan);
         }
 
         let frame = self.game_state.frame;
@@ -513,10 +612,31 @@ impl ZeldaState {
         }
         let frame = self.game_state.frame;
         let graphics_dma_plan = rom_graphics_dma_plan(frame.main_module, frame.submodule);
+        let entry_frame = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.entry_frame)
+            .unwrap_or(frame);
         let oam_operands_generation = oam_operands_for_nmi(
-            graphics_dma_plan.oam_operands,
+            oam_operands_across_main(entry_frame, frame, graphics_dma_plan.oam_operands),
             self.dialogue_oam_publication_phase,
         );
+        if std::env::var_os("ZELDA3_DEBUG_OAM_DMA").is_some() {
+            let captured = oam_dma_source.unwrap_or_default();
+            let live = self.sprite_oam_shadow_buffer();
+            eprintln!(
+                "oam_dma host={} entry={:02x}/{:02x}/{:02x} exit={:02x}/{:02x}/{:02x} generation={oam_operands_generation:?} captured={:02x?} live={:02x?}",
+                self.frame_ctr_dbg,
+                entry_frame.main_module,
+                entry_frame.submodule,
+                entry_frame.frame_counter,
+                frame.main_module,
+                frame.submodule,
+                frame.frame_counter,
+                [captured.get(465).copied(), captured.get(469).copied()],
+                [live.get(465).copied(), live.get(469).copied()],
+            );
+        }
         let mut oam_buf = if matches!(
             oam_operands_generation,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
@@ -632,7 +752,7 @@ impl ZeldaState {
         // distinct from holding the whole NMI: it leaves the pending byte
         // intact exactly as hardware does when main-loop publication misses a
         // vblank boundary.
-        let nmi_subroutine_index = if self.parity_runtime_defer_pending_nmi_this_frame() {
+        let nmi_subroutine_index = if self.defer_pending_nmi_this_frame() {
             0
         } else {
             self.take_pending_nmi_subroutine()
@@ -1006,7 +1126,7 @@ impl ZeldaState {
 
     pub(super) fn nmi_core_link_graphics_update(
         &mut self,
-        captured_sources: Option<LinkDmaSources>,
+        captured_operands: Option<PreMainLinkDmaOperands>,
     ) {
         // Animation-modeled asset renderer M1: tag the Link CHR VRAM slots with
         // the active Link DMA graphics index as the logical source. Write-only
@@ -1031,8 +1151,8 @@ impl ZeldaState {
                 // Link sprite asset, 32 bytes / 4bpp tile) so distinct pose pieces
                 // that share `(pack, relative-tile)` no longer collide. Asset
                 // offsets use the `0x8000`-relative source address; buffer flag 0.
-                let src_addr = captured_sources
-                    .map(|sources| usize::from(sources.source(source)))
+                let src_addr = captured_operands
+                    .map(|operands| usize::from(operands.sources.source(source)))
                     .unwrap_or_else(|| self.live_link_dma_source(source));
                 let base_off = (src_addr.saturating_sub(0x8000) >> 5) as u16;
                 self.copy_asset_bytes_to_vram(dst, &link_graphics, src_addr, len);
@@ -1063,8 +1183,8 @@ impl ZeldaState {
             // WRAM-sourced Link tiles: key by the WRAM source tile offset, tagged
             // with the buffer flag so they never collide with asset-sourced tiles
             // (the raw address spaces overlap). See `CHR_LINK_SRC_RAM_FLAG`.
-            let src_addr = captured_sources
-                .map(|sources| usize::from(sources.source(source)))
+            let src_addr = captured_operands
+                .map(|operands| usize::from(operands.sources.source(source)))
                 .unwrap_or_else(|| self.live_link_dma_source(source));
             let base_off = crate::chr_source::CHR_LINK_SRC_RAM_FLAG | ((src_addr >> 5) as u16);
             self.copy_ram_bytes_to_vram(dst, src_addr, len);
@@ -1076,25 +1196,49 @@ impl ZeldaState {
                 base_off,
             );
         }
-        self.copy_ram_bytes_to_vram_absolute(0x4240, 0xbd40, 0x40);
+        if let Some(operands) = captured_operands {
+            self.copy_to_vram_slice(
+                0x4240,
+                &operands.expanded_high_planes[..LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN],
+                LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
+            );
+        } else {
+            self.copy_ram_bytes_to_vram_absolute(
+                0x4240,
+                LINK_DMA_EXPANDED_HIGH_PLANES_START,
+                LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
+            );
+        }
         for (dst, source) in [
             (0x4300, LinkDmaSourceSlot::HeadPointerLower),
             (0x4320, LinkDmaSourceSlot::BodyPointerLower),
         ] {
-            let src_addr = captured_sources
-                .map(|sources| usize::from(sources.source(source)))
+            let src_addr = captured_operands
+                .map(|operands| usize::from(operands.sources.source(source)))
                 .unwrap_or_else(|| self.live_link_dma_source(source));
             self.copy_ram_bytes_to_vram(dst, src_addr, 0x40);
         }
-        self.copy_ram_bytes_to_vram_absolute(0x4340, 0xbd80, 0x40);
+        if let Some(operands) = captured_operands {
+            self.copy_to_vram_slice(
+                0x4340,
+                &operands.expanded_high_planes[LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN..],
+                LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
+            );
+        } else {
+            self.copy_ram_bytes_to_vram_absolute(
+                0x4340,
+                LINK_DMA_EXPANDED_HIGH_PLANES_START + LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
+                LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN,
+            );
+        }
 
         if self.game_state.display.has_travel_bird_tile_upload() {
             for (dst, source) in [
                 (0x40e0, LinkDmaSourceSlot::TravelBirdUpper),
                 (0x41e0, LinkDmaSourceSlot::TravelBirdLower),
             ] {
-                let src_addr = captured_sources
-                    .map(|sources| usize::from(sources.source(source)))
+                let src_addr = captured_operands
+                    .map(|operands| usize::from(operands.sources.source(source)))
                     .unwrap_or_else(|| self.live_link_dma_source(source));
                 self.copy_ram_bytes_to_vram(dst, src_addr, 0x40);
             }

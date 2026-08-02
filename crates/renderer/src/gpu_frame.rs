@@ -40,6 +40,10 @@ pub struct GpuFrame<'a> {
     pub hardware_startup_transient: Option<HardwareStartupTransient>,
     /// VRAM: 0x8000 u16 words (64 KB). Tile CHR data and tilemap entries.
     pub vram: &'a [u16],
+    /// Optional OBJ-only decoded generation. Hardware/emulator tile caches can
+    /// advance for sprite fetches while BG and raw VRAM scanout remain on the
+    /// published generation.
+    pub obj_vram: Option<&'a [u16]>,
     /// CGRAM: 0x100 u16 words (256 palette entries), 15-bit BGR each.
     pub cgram: &'a [u16],
     /// OAM: 0x110 u16 words (sprite table, 128 sprites × 4 bytes + 16-byte high table).
@@ -182,6 +186,7 @@ pub struct GpuFrameRegisterSnapshot<'a> {
 pub struct GpuFrameCaptureInput<'a> {
     pub hardware_startup_transient: Option<HardwareStartupTransient>,
     pub registers: GpuFrameRegisterSnapshot<'a>,
+    pub obj_vram: Option<&'a [u16]>,
     pub cgram: &'a [u16],
     pub raw_scanlines: &'a RawScanlineFrame,
     pub bg3_source_tiles: &'a [GpuBg3SourceTile],
@@ -251,6 +256,7 @@ impl<'a> GpuFrame<'a> {
         Self {
             hardware_startup_transient: input.hardware_startup_transient,
             vram: registers.vram,
+            obj_vram: input.obj_vram,
             cgram: input.cgram,
             oam: registers.oam,
             mode: registers.mode,
@@ -323,6 +329,7 @@ impl<'a> GpuFrame<'a> {
         Self {
             hardware_startup_transient: None,
             vram: source.vram(),
+            obj_vram: None,
             cgram,
             oam: source.oam(),
             mode: source.mode(),
@@ -377,6 +384,10 @@ impl<'a> GpuFrame<'a> {
             dialogue_layout_origin_tile_number: source.dialogue_layout_origin_tile_number(),
             cgram_provenance: None,
         }
+    }
+
+    pub fn obj_vram(&self) -> &'a [u16] {
+        self.obj_vram.unwrap_or(self.vram)
     }
 }
 
@@ -786,6 +797,7 @@ mod tests {
         let frame = GpuFrame::from_capture_input(GpuFrameCaptureInput {
             hardware_startup_transient: None,
             registers,
+            obj_vram: None,
             cgram: &cgram,
             raw_scanlines: &raw,
             bg3_source_tiles: &[],

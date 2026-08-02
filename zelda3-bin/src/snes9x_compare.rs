@@ -204,6 +204,11 @@ struct DisplayPpuProbe {
     /// while the evaluated sprite rows still belong to an earlier PPU
     /// boundary, so preserve the derived list separately.
     presented_obj: Option<PresentedObjEvaluation>,
+    /// Decoded 4bpp OBJ tile cache retained from the completed scanout. The
+    /// raw VRAM image can advance before libretro returns, while this cache
+    /// still contains the pixels Snes9x actually drew.
+    presented_obj_tile_cache: Option<Vec<i32>>,
+    presented_obj_tile_cache_valid: Option<Vec<i32>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -434,6 +439,16 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
                 .collect(),
         ),
         presented_obj: Some(presented_obj),
+        presented_obj_tile_cache: Some(
+            (0..64 * 64)
+                .map(|index| oracle.debug_ppu_value(29, index).unwrap_or(-1))
+                .collect(),
+        ),
+        presented_obj_tile_cache_valid: Some(
+            (0..64)
+                .map(|index| oracle.debug_ppu_value(30, index).unwrap_or(-1))
+                .collect(),
+        ),
     })
 }
 
@@ -505,6 +520,8 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
             presented_clip: None,
             presented_pixel: None,
             presented_obj: None,
+            presented_obj_tile_cache: None,
+            presented_obj_tile_cache_valid: None,
         }
     })
 }
@@ -2287,6 +2304,24 @@ pub(crate) fn run_compare_libretro_oracle(
             )
             .unwrap_or_else(|error| {
                 eprintln!("failed to write Rust snapshot VRAM capture: {error}");
+                process::exit(1);
+            });
+            let obj_vram = game.with_display_snapshot(|display| {
+                display
+                    .ppu
+                    .obj_vram_latch
+                    .as_deref()
+                    .unwrap_or(&display.ppu.vram)
+                    .iter()
+                    .flat_map(|word| word.to_le_bytes())
+                    .collect::<Vec<_>>()
+            });
+            fs::write(
+                dir.join(format!("rust_objvram_frame_{frame_index}.bin")),
+                &obj_vram,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write Rust OBJ VRAM capture: {error}");
                 process::exit(1);
             });
             let oracle_vram = oracle

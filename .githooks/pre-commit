@@ -42,8 +42,11 @@ cargo build --profile parity -p zelda3-bin
 
 echo "pre-commit: running standalone smoke"
 target/parity/zelda3 --standalone-smoke "${ZELDA3_STANDALONE_SMOKE_FRAMES:-500}"
+
+if [ "${ZELDA3_PRECOMMIT_SKIP_SNES9X:-0}" != "1" ]; then
+  echo "pre-commit: running self-ratcheting Snes9x parity gate"
+  python3 scripts/precommit_snes9x_parity_gate.py
+fi
+
 restore_sram
 trap - EXIT HUP INT TERM
-
-# The C-oracle parity gate was retired; the remaining parity target is the
-# Snes9x comparison harness (scripts/full_parity.py --with-snes9x).

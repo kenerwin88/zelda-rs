@@ -1505,6 +1505,10 @@ fn gpu_frame_capture_from_ppu<'a>(
     renderer::GpuFrameCaptureInput {
         hardware_startup_transient,
         registers: gpu_frame_register_snapshot_from_ppu(ppu),
+        obj_vram: ppu
+            .obj_vram_latch
+            .as_deref()
+            .filter(|vram| vram.len() == ppu.vram.len()),
         cgram,
         raw_scanlines,
         bg3_source_tiles,

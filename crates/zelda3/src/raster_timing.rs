@@ -16,6 +16,7 @@ const ATTRACT_MAP_PROJECTION_WORD_CYCLES: u32 = 504;
 pub(crate) const ATTRACT_MAP_PROJECTION_WORDS: usize = 224;
 
 const SPRITE_TUTORIAL_GUARD_OR_BARRIER: u8 = 0x3f;
+const SPRITE_BLUE_GUARD: u8 = 0x41;
 const SPRITE_MIRROR_PORTAL: u8 = 0x6c;
 
 // Snes9x PC/raster traces around Sprite_Main ($06:8328) and the eventual
@@ -33,6 +34,7 @@ const TUTORIAL_GUARD_OR_BARRIER_MASTER_CYCLES: u32 = 12_608;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SpriteMainTimingWorkload {
     tutorial_guard_or_barrier_count: u8,
+    blue_guard_count: u8,
     mirror_portal_count: u8,
     other_active_sprite_count: u8,
     scans_all_garnish_slots: bool,
@@ -45,6 +47,7 @@ impl SpriteMainTimingWorkload {
             SPRITE_TUTORIAL_GUARD_OR_BARRIER => {
                 self.tutorial_guard_or_barrier_count += 1;
             }
+            SPRITE_BLUE_GUARD => self.blue_guard_count += 1,
             SPRITE_MIRROR_PORTAL => self.mirror_portal_count += 1,
             _ => self.other_active_sprite_count += 1,
         }
@@ -62,8 +65,9 @@ impl SpriteMainTimingWorkload {
     /// empty garnish scan. Both use the same ROM call path. Unknown active
     /// sprite/garnish routines return `None` rather than borrowing either
     /// measured timing.
-    pub(crate) fn world_map_fade_force_blank_scanline(self) -> Option<u8> {
+    pub(crate) fn world_map_fade_force_blank_output_scanline(self) -> Option<u8> {
         if self.mirror_portal_count != 1
+            || self.blue_guard_count != 0
             || self.other_active_sprite_count != 0
             || self.active_garnish_count != 0
         {
@@ -76,7 +80,24 @@ impl SpriteMainTimingWorkload {
         if self.scans_all_garnish_slots {
             clock += EMPTY_GARNISH_TABLE_SCAN_MASTER_CYCLES;
         }
-        Some((clock / MASTER_CYCLES_PER_SCANLINE) as u8)
+        // The S-PPU V counter is one-based relative to the renderer's output
+        // row index (a write observed at V=49 blanks output row 48).
+        Some(((clock / MASTER_CYCLES_PER_SCANLINE) as u8).saturating_sub(1))
+    }
+
+    /// Raster boundary of the force-blank write in `DungMap_Backup` for
+    /// measured dungeon sprite workloads.
+    pub(crate) fn dungeon_map_backup_force_blank_output_scanline(self) -> Option<u8> {
+        // The sanctuary map transition runs one active blue-guard routine and
+        // no garnish work. Patched-core raster tracing places its INIDISP write
+        // at the boundary which blanks output row 35.
+        (self.blue_guard_count == 1
+            && self.tutorial_guard_or_barrier_count == 0
+            && self.mirror_portal_count == 0
+            && self.other_active_sprite_count == 0
+            && !self.scans_all_garnish_slots
+            && self.active_garnish_count == 0)
+            .then_some(35)
     }
 }
 
@@ -162,12 +183,12 @@ mod tests {
     #[test]
     fn world_map_force_blank_follows_measured_sprite_main_work() {
         assert_eq!(
-            world_map_workload(2, false).world_map_fade_force_blank_scanline(),
-            Some(43)
+            world_map_workload(2, false).world_map_fade_force_blank_output_scanline(),
+            Some(42)
         );
         assert_eq!(
-            world_map_workload(0, true).world_map_fade_force_blank_scanline(),
-            Some(30)
+            world_map_workload(0, true).world_map_fade_force_blank_output_scanline(),
+            Some(29)
         );
     }
 
@@ -175,10 +196,23 @@ mod tests {
     fn world_map_force_blank_rejects_unmeasured_active_routines() {
         let mut workload = world_map_workload(0, true);
         workload.record_active_sprite(0x01);
-        assert_eq!(workload.world_map_fade_force_blank_scanline(), None);
+        assert_eq!(workload.world_map_fade_force_blank_output_scanline(), None);
 
         let mut workload = world_map_workload(0, true);
         workload.record_garnish_table(true, 1);
-        assert_eq!(workload.world_map_fade_force_blank_scanline(), None);
+        assert_eq!(workload.world_map_fade_force_blank_output_scanline(), None);
+    }
+
+    #[test]
+    fn sanctuary_blue_guard_dungeon_map_blanks_after_the_hud_prefix() {
+        let mut workload = SpriteMainTimingWorkload::default();
+        workload.record_active_sprite(SPRITE_BLUE_GUARD);
+        workload.record_garnish_table(false, 0);
+
+        assert_eq!(
+            workload.dungeon_map_backup_force_blank_output_scanline(),
+            Some(35)
+        );
+        assert_eq!(workload.world_map_fade_force_blank_output_scanline(), None);
     }
 }

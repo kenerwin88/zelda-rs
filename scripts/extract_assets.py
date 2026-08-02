@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Generate ignored Zelda 3 runtime assets from a user-provided ROM.
 
-This wrapper keeps generated output in this repo while delegating the asset pack
-format to the original C project's restool.py, which remains the source of
-truth for resource extraction. The generated repo-local output is a folder of
-individual asset files, not the monolithic restool pack.
+This wrapper keeps generated output in this repo while delegating the pack
+assembly step to an external `assets/restool.py`-style extractor. The generated
+repo-local output is a folder of individual asset files, not the monolithic
+source-pack format.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -26,7 +25,7 @@ import dialogue_catalog
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ASSET_COUNT = 165
-DEFAULT_C_SOURCE = REPO_ROOT.parent / "zelda3"
+DEFAULT_ASSET_SOURCE = REPO_ROOT
 DEFAULT_OUT_DIR = Path("generated/zelda3_assets")
 ASSET_SIGNATURE_PREFIX = b"Zelda3_v0     \n\0"
 SPC_DRIVER_UPLOAD_ADDRESS = 0x998000
@@ -192,10 +191,10 @@ def parse_args() -> argparse.Namespace:
         help="Directory for generated ignored assets",
     )
     parser.add_argument(
-        "--c-source",
-        default=os.environ.get("ZELDA3_C_SOURCE", str(DEFAULT_C_SOURCE)),
+        "--asset-source",
+        default=DEFAULT_ASSET_SOURCE,
         type=Path,
-        help="Path to the original zelda3 C checkout containing assets/restool.py",
+        help="Path containing assets/restool.py and writable zelda3_assets.dat",
     )
     parser.add_argument(
         "--write-diagnostic-variants",
@@ -801,10 +800,10 @@ def unpack_packed_arrays(data: bytes) -> list[bytes]:
 def main() -> int:
     args = parse_args()
     rom = args.rom.expanduser().resolve()
-    c_source = args.c_source.expanduser().resolve()
+    asset_source = args.asset_source.expanduser().resolve()
     out_dir = args.out_dir.resolve()
-    restool = c_source / "assets" / "restool.py"
-    source_pack = c_source / "zelda3_assets.dat"
+    restool = asset_source / "assets" / "restool.py"
+    source_pack = asset_source / "zelda3_assets.dat"
     assets_dir = out_dir / "assets"
     manifest = out_dir / "manifest.json"
     signature_path = out_dir / "asset_signature.bin"
@@ -815,7 +814,10 @@ def main() -> int:
         return 2
     if not restool.is_file():
         print(f"restool.py not found: {restool}", file=sys.stderr)
-        print("Set ZELDA3_C_SOURCE or pass --c-source /path/to/zelda3.", file=sys.stderr)
+        print(
+            "Set --asset-source /path/to/extractor-root that contains assets/restool.py.",
+            file=sys.stderr,
+        )
         return 2
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -827,7 +829,7 @@ def main() -> int:
 
     subprocess.run(
         [sys.executable, str(restool), "--rom", str(rom)],
-        cwd=c_source,
+        cwd=asset_source,
         check=True,
     )
     if not source_pack.is_file():

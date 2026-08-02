@@ -98,7 +98,8 @@ impl MemorizedTileState {
         // (it would clobber the dungeon movable-block records — see write_to_ram), but
         // we still LOAD it every frame so the movable-block leftover carries through a
         // dungeon→overworld transition until the overworld redraw repopulates it
-        // (matches the C oracle, which leaves those bytes untouched on exit).
+        // (matches the legacy baseline behavior, which leaves those bytes untouched
+        // on exit).
         // (memorized_tile_addr 0xf800..0xf83f and count 0x4ac sit below
         // movable_block_datas@0xf940 and never overlap, so they are always owned here.)
         let mut addresses = vec![0; MEMORIZED_TILE_ENTRY_SLOTS];
@@ -450,8 +451,6 @@ impl DungeonMapDisplayState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         write_le_u16(ram, DUNGEON_MAP_SCROLL_DRAW_OFFSET, self.scroll_draw_offset);
         write_le_u16(ram, DUNGEON_MAP_SCROLL_INPUT, self.scroll_input);
-        write_le_u16(ram, DUNGEON_MAP_MARKER_X_OFFSET, self.marker_x_offset);
-        write_le_u16(ram, DUNGEON_MAP_MARKER_Y_OFFSET, self.marker_y_offset);
         write_le_u16(
             ram,
             DUNGEON_MAP_LOCATION_MARKER_BASE_Y,
@@ -464,6 +463,11 @@ impl DungeonMapDisplayState {
         write_le_u16(ram, DUNGMAP_SCROLL_TARGET_Y, self.scroll_target_y);
         write_le_u16(ram, DUNGMAP_PLAYER_MARKER_X, self.player_marker_x);
         write_le_u16(ram, DUNGMAP_PLAYER_MARKER_Y, self.player_marker_y);
+    }
+
+    pub(crate) fn write_marker_offsets_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DUNGEON_MAP_MARKER_X_OFFSET, self.marker_x_offset);
+        write_le_u16(ram, DUNGEON_MAP_MARKER_Y_OFFSET, self.marker_y_offset);
     }
 
     pub(crate) fn scroll_draw_offset(&self) -> u16 {
@@ -665,6 +669,11 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    fn sync_marker_offsets(&mut self) {
+        self.display.write_marker_offsets_to_ram(self.ram);
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn clear_scroll_state(&mut self) {
         self.display.clear_scroll_state();
         self.sync();
@@ -682,17 +691,17 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
 
     pub(crate) fn reset_marker_offsets(&mut self) {
         self.display.reset_marker_offsets();
-        self.sync();
+        self.sync_marker_offsets();
     }
 
     pub(crate) fn set_marker_x_offset(&mut self, value: u16) {
         self.display.set_marker_x_offset(value);
-        self.sync();
+        self.sync_marker_offsets();
     }
 
     pub(crate) fn set_marker_y_offset(&mut self, value: u16) {
         self.display.set_marker_y_offset(value);
-        self.sync();
+        self.sync_marker_offsets();
     }
 
     pub(crate) fn set_location_marker_base_y(&mut self, value: u8) {
@@ -702,29 +711,29 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
 
     pub(crate) fn shift_marker_x_left(&mut self) -> u16 {
         let value = self.display.shift_marker_x_left();
-        self.sync();
+        self.sync_marker_offsets();
         value
     }
 
     pub(crate) fn reset_marker_x_offset(&mut self) {
         self.display.reset_marker_x_offset();
-        self.sync();
+        self.sync_marker_offsets();
     }
 
     pub(crate) fn shift_marker_y_low_up(&mut self) {
         self.display.shift_marker_y_low_up();
-        self.sync();
+        self.sync_marker_offsets();
     }
 
     pub(crate) fn reset_marker_x_and_shift_marker_y_low_up(&mut self) {
         self.display.reset_marker_x_offset();
         self.display.shift_marker_y_low_up();
-        self.sync();
+        self.sync_marker_offsets();
     }
 
     pub(crate) fn add_marker_y_offset_signed(&mut self, value: i16) -> u16 {
         let value = self.display.add_marker_y_offset_signed(value);
-        self.sync();
+        self.sync_marker_offsets();
         value
     }
 

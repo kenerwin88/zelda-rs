@@ -23,6 +23,11 @@ const VWF_GLYPH_TRANSITION_MASTER_CYCLES: u32 = 510;
 // side of the expensive $0E:CBF2/$0E:CC90 pixel loops. Keeping this phase
 // separate is observable when vblank lands between function entry and drawing.
 const VWF_GLYPH_ENTRY_MASTER_CYCLES: u32 = 18_000;
+// NMI reads $17 before the end of vblank. The clean-route big-key dialogue
+// completes its VWF handler with 27,442 master cycles left, after that read;
+// 22 scanlines is the smallest whole-scanline deadline above the observation.
+const VWF_NMI_SUBROUTINE_DISPATCH_DEADLINE_MASTER_CYCLES: u32 =
+    22 * SNES_MASTER_CYCLES_PER_SCANLINE;
 // From the RenderText handler epilogue through Module0E's scroll-register
 // copies and NMI_PrepareSprites. Oracle PC traces measure about 16,300 master
 // cycles for this caller suffix; a completion with less headroom is resumed
@@ -211,6 +216,16 @@ impl VwfCpuSliceOutcome {
             } if master_cycles_before_vblank < VWF_CALLER_SUFFIX_MASTER_CYCLES
         )
     }
+
+    const fn bg3_request_misses_current_nmi(self) -> bool {
+        matches!(
+            self,
+            Self::HandlerComplete {
+                master_cycles_before_vblank
+            } if master_cycles_before_vblank
+                < VWF_NMI_SUBROUTINE_DISPATCH_DEADLINE_MASTER_CYCLES
+        )
+    }
 }
 
 #[cfg(test)]
@@ -221,7 +236,8 @@ mod fast_forward_cycle_tests {
         VwfGlyphCpuPhase, VwfHandlerEntryPhase, VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES,
         VWF_CALLER_SUFFIX_MASTER_CYCLES, VWF_FIRST_LINE_ENTRY_MASTER_CYCLES,
         VWF_GLYPH_ENTRY_MASTER_CYCLES, VWF_LATER_LINE_ENTRY_MASTER_CYCLES,
-        VWF_RENDER_CHARACTER_LINE_POSITIONS, VWF_RESUMED_FRAME_MASTER_CYCLES,
+        VWF_NMI_SUBROUTINE_DISPATCH_DEADLINE_MASTER_CYCLES, VWF_RENDER_CHARACTER_LINE_POSITIONS,
+        VWF_RESUMED_FRAME_MASTER_CYCLES,
     };
 
     #[test]
@@ -296,6 +312,19 @@ mod fast_forward_cycle_tests {
         }
         .caller_suffix_crosses_vblank());
         assert!(!VwfCpuSliceOutcome::InterruptedMidGlyph.caller_suffix_crosses_vblank());
+    }
+
+    #[test]
+    fn late_bg3_requests_wait_for_the_following_nmi_dispatch() {
+        assert!(VwfCpuSliceOutcome::HandlerComplete {
+            master_cycles_before_vblank: VWF_NMI_SUBROUTINE_DISPATCH_DEADLINE_MASTER_CYCLES - 1,
+        }
+        .bg3_request_misses_current_nmi());
+        assert!(!VwfCpuSliceOutcome::HandlerComplete {
+            master_cycles_before_vblank: VWF_NMI_SUBROUTINE_DISPATCH_DEADLINE_MASTER_CYCLES,
+        }
+        .bg3_request_misses_current_nmi());
+        assert!(!VwfCpuSliceOutcome::InterruptedMidGlyph.bg3_request_misses_current_nmi());
     }
 }
 
@@ -1518,7 +1547,7 @@ impl ZeldaState {
         // decides how much of the active field has already scanned out.
         if let Some(scanline) = self
             .last_sprite_main_timing_workload
-            .and_then(SpriteMainTimingWorkload::world_map_fade_force_blank_scanline)
+            .and_then(SpriteMainTimingWorkload::world_map_fade_force_blank_output_scanline)
         {
             self.enable_force_blank_during_active_scanout(scanline);
         } else {
@@ -2066,6 +2095,17 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0E_03_01_00_PrepMapGraphics(&mut self) {
+        if self.rom_startup_timing() {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonMapGraphicsPreparation,
+                DUNGEON_MAP_GRAPHICS_PREPARATION_NMI_SLICES,
+            );
+            return;
+        }
+        self.complete_dungeon_map_graphics_preparation();
+    }
+
+    pub(super) fn complete_dungeon_map_graphics_preparation(&mut self) {
         self.replay_trace_ram_watch("dungmap-prep-entry");
         let hdmaen_bak = self.game_state.display.hdma_enable_mask;
         self.clear_hdma_enable_mask();
@@ -2210,6 +2250,17 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0E_03_01_03_DrawRooms(&mut self) {
+        if self.rom_startup_timing() {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonMapRoomDrawing,
+                DUNGEON_MAP_ROOM_DRAWING_NMI_SLICES,
+            );
+            return;
+        }
+        self.complete_dungeon_map_room_drawing();
+    }
+
+    pub(super) fn complete_dungeon_map_room_drawing(&mut self) {
         self.clear_dungeon_map_floor_scroll_step();
         self.clear_dungeon_map_idx();
         let dung = usize::from(self.game_state.inventory.save_progress.palace_index_x2() >> 1)
@@ -2890,6 +2941,17 @@ impl ZeldaState {
     }
 
     pub(super) fn DungeonMap_RecoverGFX(&mut self) {
+        if self.rom_startup_timing() {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonMapRecovery,
+                DUNGEON_MAP_RECOVERY_NMI_SLICES,
+            );
+            return;
+        }
+        self.complete_dungeon_map_recovery();
+    }
+
+    pub(super) fn complete_dungeon_map_recovery(&mut self) {
         let hdmaen_bak = self.game_state.display.hdma_enable_mask;
         self.clear_hdma_enable_mask();
         self.EraseTileMaps_normal();
@@ -3007,7 +3069,14 @@ impl ZeldaState {
         self.set_mosaic_copy(3);
         let hdmaen = self.game_state.display.hdma_enable_mask;
         self.set_mapbak_hdmaen(hdmaen);
-        self.EnableForceBlank();
+        if let Some(scanline) = self
+            .last_sprite_main_timing_workload
+            .and_then(SpriteMainTimingWorkload::dungeon_map_backup_force_blank_output_scanline)
+        {
+            self.enable_force_blank_during_active_scanout(scanline);
+        } else {
+            self.EnableForceBlank();
+        }
         self.increment_overworld_map_state();
         self.clear_dungeon_map_init_state();
         self.set_fixed_color_red(0x20);
@@ -3514,6 +3583,9 @@ impl ZeldaState {
         let caller_suffix_crosses_vblank = !yielded_midline
             && self.dialogue_scroll_cpu_is_idle()
             && outcome.caller_suffix_crosses_vblank();
+        let bg3_request_misses_current_nmi = !yielded_midline
+            && self.dialogue_scroll_cpu_is_idle()
+            && outcome.bg3_request_misses_current_nmi();
         // A mid-line yield models Snes9x returning at vblank while the 65816 PC
         // is still inside VWF_RenderCharacter. The ROM has not reached the
         // handler epilogue yet, so $17/$0710 remain zero: NMI performs normal
@@ -3525,6 +3597,9 @@ impl ZeldaState {
         // eventual handler epilogue. Ordinary commands still finish here.
         if !yielded_midline && self.dialogue_scroll_cpu_is_idle() {
             self.finish_dialogue_character_render_call();
+            self.dialogue_bg3_upload_missed_current_nmi |= bg3_request_misses_current_nmi;
+            self.dialogue_late_vwf_preserve_nmi_animation_pending |= bg3_request_misses_current_nmi;
+            self.dialogue_late_vwf_skip_frame_counter_pending |= bg3_request_misses_current_nmi;
             if caller_suffix_crosses_vblank {
                 self.schedule_pre_main_caller_continuation(
                     PreMainCallerContinuation::DialogueVwfReturn,

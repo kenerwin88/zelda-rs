@@ -455,9 +455,9 @@ impl PpuState {
                 // OBSEL's name-select field adds a further configurable offset.
                 // Convert both byte-addressed hardware fields to VRAM words.
                 self.obj_tile_adr1 = u16::from(val & 3) << 13;
-                self.obj_tile_adr2 =
-                    self.obj_tile_adr1
-                        .wrapping_add(u16::from(((val >> 3) & 3) + 1) << 12);
+                self.obj_tile_adr2 = self
+                    .obj_tile_adr1
+                    .wrapping_add(u16::from(((val >> 3) & 3) + 1) << 12);
                 self.obj_size = (val >> 5) & 7;
             }
             0x02 => {
@@ -722,8 +722,11 @@ impl PpuState {
     }
 
     pub fn finish_drawing(&mut self) {
-        self.obj_previous_frame_vram = Some(self.vram.clone());
-        self.obj_vram_latch = None;
+        self.obj_previous_frame_vram = Some(
+            self.obj_vram_latch
+                .take()
+                .unwrap_or_else(|| self.vram.clone()),
+        );
     }
 
     fn refresh_mosaic_modulo(&mut self) {

@@ -19,7 +19,7 @@ fn main() {
         Some("coverage") => parity_coverage::run(&args[1..]),
         _ => {
             eprintln!("usage: zparity <coverage> [options]");
-            eprintln!("(the C-oracle capture/check/drill subcommands were retired with C parity)");
+            eprintln!("(capture/check/drill parity subcommands were retired with legacy parity)");
             exit(2);
         }
     }
