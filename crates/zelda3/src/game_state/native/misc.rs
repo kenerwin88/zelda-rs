@@ -370,7 +370,13 @@ impl SaveLoadTransferState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        write_le_u16(ram, SAVE_LOAD_SOURCE_OFFSET, self.source_offset);
+        // 0x0000 is the save-transfer source offset in file-select code, but
+        // module 7 reuses it for sprite/OAM scratch. The save-transfer model is
+        // inactive there; projecting its stale offset would overwrite the live
+        // dungeon scratch value after the sprite owner has published it.
+        if ram_byte(ram, MAIN_MODULE) != 7 {
+            write_le_u16(ram, SAVE_LOAD_SOURCE_OFFSET, self.source_offset);
+        }
     }
 
     pub(crate) fn source_offset(&self) -> u16 {

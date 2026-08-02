@@ -19,6 +19,8 @@ mod sprites;
 mod system;
 mod world;
 
+use crate::game_state::constants::MAIN_MODULE;
+
 pub(crate) use display::{
     palette_provenance_check_mode, DisplayState, GraphicsDecompressionScratch, HudStateRead,
     HudTilemapState, LinkDmaSourceSlot, LinkDmaSources, NativeAttractVramDestinationBridgeMut,
@@ -218,7 +220,9 @@ impl GameState {
         check!(sprite_battle);
         check!(memorized_tiles);
         check!(dungeon_secret);
-        check!(save_load_transfer);
+        if ram_byte(ram, MAIN_MODULE) != 7 {
+            check!(save_load_transfer);
+        }
         if self.dungeon_map_display != fresh.dungeon_map_display {
             out.extend(self.dungeon_map_display.report_incoherent_with_ram(ram));
         }
