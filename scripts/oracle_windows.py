@@ -15,7 +15,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WINDOWS = REPO_ROOT / "docs" / "porting" / "oracle_windows.tsv"
 DEFAULT_CHECKPOINTS = REPO_ROOT / "docs" / "porting" / "oracle_checkpoints.tsv"
-DEFAULT_ROM = Path(os.environ.get("ZELDA3_ROM", str(REPO_ROOT.parent / "zelda3" / "zelda3.sfc")))
+DEFAULT_ROM = Path(os.environ.get("ZELDA3_ROM", str(REPO_ROOT / "saves" / "zelda3.sfc")))
 ALLOWED_STATUSES = {"pass", "fail", "stale"}
 DIGEST_RE = re.compile(r"WRAM fnv1a64 = ([0-9a-fA-F]{16})")
 

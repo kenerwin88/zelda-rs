@@ -18,9 +18,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from input_script_tools import numeric_input_history, parse_buttons
 
 
-DEFAULT_ROM = Path(
-    os.environ.get("ZELDA3_ROM", str(REPO_ROOT.parent / "zelda3" / "zelda3.sfc"))
-)
+DEFAULT_ROM = Path(os.environ.get("ZELDA3_ROM", str(REPO_ROOT / "saves" / "zelda3.sfc")))
 
 
 def session_frame_count(session_dir: Path) -> int:

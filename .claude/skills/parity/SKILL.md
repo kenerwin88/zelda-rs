@@ -100,6 +100,10 @@ there: rerun the self-ratcheting pre-commit gate immediately once more so the
 front advances again. If you skip this second run, the next commit/checkpoint can
 revisit the same divergence window.
 
+- Every frontier bump is a commit boundary candidate: once a second run confirms
+  the same-or-higher `last_checked_frame`, commit that milestone immediately
+  before proceeding into the next bughunt window.
+
 - If the second run fails, you must treat the previous frontier as the known
   baseline until the session lands a passing run that reproduces it.
 
