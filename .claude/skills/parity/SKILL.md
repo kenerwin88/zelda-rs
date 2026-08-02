@@ -32,7 +32,9 @@ half-fix.
    a compare; the binary's flock enforces this.
    For this session, always run the pre-commit gate first and confirm the next
    ratchet target (`pre-commit: Snes9x parity gate target=...`) so you start
-   investigation from the current front, not frame 0.
+   investigation from the current front, not frame 0. If this run improves the
+   frontier, immediately rerun pre-commit again with no extra args before
+   touching any fix artifacts.
    Do not run any C-oracle scripts or C-checkpoint bisectors in this lane.
 2. Use checkpoint resume (`--save-state-at` / `--load-state`) for any probe
    beyond a few thousand frames — never re-replay from frame 0 repeatedly.
@@ -97,6 +99,9 @@ After any passing parity run that moves the known-good frontier, do not stop
 there: rerun the self-ratcheting pre-commit gate immediately once more so the
 front advances again. If you skip this second run, the next commit/checkpoint can
 revisit the same divergence window.
+
+- If the second run fails, you must treat the previous frontier as the known
+  baseline until the session lands a passing run that reproduces it.
 
 - Treat every successful pass that improves frame frontier as a **ratchet
   milestone**: run pre-commit again with no new args as a post-fix proof before
