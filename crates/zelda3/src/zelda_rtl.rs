@@ -11971,6 +11971,27 @@ impl ZeldaState {
         if let Some(oam) = following.obj_generation.retained_oam() {
             self.ppu.oam.clone_from_slice(oam);
         }
+        if following_frame.main_module == 7
+            && following_frame.submodule == 0x0f
+            && following_frame.subsubmodule == 1
+        {
+            // During the landing transition the completed OAM DMA is staged
+            // one host boundary ahead of the display snapshot selected by
+            // this scanout. Preserve its four landing entries after the
+            // following snapshot's OAM has otherwise been composed.
+            if let Some(staged_oam) = self
+                .deferred_display_snapshot
+                .as_ref()
+                .filter(|staged| staged.ppu.oam[116 * 2].to_le_bytes()[1] != 0xf0)
+                .map(|staged| staged.ppu.oam.clone())
+            {
+                compose_published_oam_entries(
+                    &mut self.ppu.oam,
+                    Some(&staged_oam),
+                    [116, 117, 118, 119],
+                );
+            }
+        }
         if let Some(vram) = following.obj_generation.retained_vram() {
             self.ppu.vram[0x4000..0x4400].copy_from_slice(vram);
         }
