@@ -226,6 +226,10 @@ impl VwfCpuSliceOutcome {
                 < VWF_NMI_SUBROUTINE_DISPATCH_DEADLINE_MASTER_CYCLES
         )
     }
+
+    const fn late_bg3_request_returns_before_vblank(self) -> bool {
+        self.bg3_request_misses_current_nmi() && !self.caller_suffix_crosses_vblank()
+    }
 }
 
 #[cfg(test)]
@@ -325,6 +329,18 @@ mod fast_forward_cycle_tests {
         }
         .bg3_request_misses_current_nmi());
         assert!(!VwfCpuSliceOutcome::InterruptedMidGlyph.bg3_request_misses_current_nmi());
+    }
+
+    #[test]
+    fn suspended_caller_suffix_owns_the_following_nmi_without_an_extra_animation_hold() {
+        assert!(!VwfCpuSliceOutcome::HandlerComplete {
+            master_cycles_before_vblank: VWF_CALLER_SUFFIX_MASTER_CYCLES - 1,
+        }
+        .late_bg3_request_returns_before_vblank());
+        assert!(VwfCpuSliceOutcome::HandlerComplete {
+            master_cycles_before_vblank: VWF_CALLER_SUFFIX_MASTER_CYCLES,
+        }
+        .late_bg3_request_returns_before_vblank());
     }
 }
 
@@ -3583,9 +3599,9 @@ impl ZeldaState {
         let caller_suffix_crosses_vblank = !yielded_midline
             && self.dialogue_scroll_cpu_is_idle()
             && outcome.caller_suffix_crosses_vblank();
-        let bg3_request_misses_current_nmi = !yielded_midline
+        let late_bg3_request_returns_before_vblank = !yielded_midline
             && self.dialogue_scroll_cpu_is_idle()
-            && outcome.bg3_request_misses_current_nmi();
+            && outcome.late_bg3_request_returns_before_vblank();
         // A mid-line yield models Snes9x returning at vblank while the 65816 PC
         // is still inside VWF_RenderCharacter. The ROM has not reached the
         // handler epilogue yet, so $17/$0710 remain zero: NMI performs normal
@@ -3597,9 +3613,11 @@ impl ZeldaState {
         // eventual handler epilogue. Ordinary commands still finish here.
         if !yielded_midline && self.dialogue_scroll_cpu_is_idle() {
             self.finish_dialogue_character_render_call();
-            self.dialogue_bg3_upload_missed_current_nmi |= bg3_request_misses_current_nmi;
-            self.dialogue_late_vwf_preserve_nmi_animation_pending |= bg3_request_misses_current_nmi;
-            self.dialogue_late_vwf_skip_frame_counter_pending |= bg3_request_misses_current_nmi;
+            self.dialogue_bg3_upload_missed_current_nmi |= late_bg3_request_returns_before_vblank;
+            self.dialogue_late_vwf_preserve_nmi_animation_pending |=
+                late_bg3_request_returns_before_vblank;
+            self.dialogue_late_vwf_skip_frame_counter_pending |=
+                late_bg3_request_returns_before_vblank;
             if caller_suffix_crosses_vblank {
                 self.schedule_pre_main_caller_continuation(
                     PreMainCallerContinuation::DialogueVwfReturn,

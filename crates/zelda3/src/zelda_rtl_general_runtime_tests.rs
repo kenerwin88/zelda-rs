@@ -3815,8 +3815,7 @@ fn room_71_and_72_filtering_returns_hold_the_first_scroll_iteration() {
     assert_eq!(&composed[214..216], &[0x2122, 0x2222]);
     assert_eq!(&composed[224..226], &[0x1111, 0x1111]);
 
-    let composed =
-        dungeon_supertile_interrupted_filter_oam(&live_oam, Some(&published_oam));
+    let composed = dungeon_supertile_interrupted_filter_oam(&live_oam, Some(&published_oam));
     assert_eq!(&composed[204..206], &[0x2222, 0x2222]);
     assert_eq!(&composed[202..204], &[0x1111, 0x1111]);
     assert_eq!(&composed[206..208], &[0x2222, 0x2222]);
@@ -4366,7 +4365,7 @@ fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
     );
     assert_eq!(
         gameplay.animated_bg_operands,
-        GraphicsDmaGeneration::LiveAfterMain
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
     );
     assert_eq!(
         animated_bg_scanout_across_main(gameplay, gameplay),
@@ -4394,39 +4393,19 @@ fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
         ..Default::default()
     };
     assert_eq!(
-        rom_spiral_stairs_suspended_animated_bg_source_address(
-            spiral_frame,
-            true,
-            1,
-            0xaa80,
-        ),
+        rom_spiral_stairs_suspended_animated_bg_source_address(spiral_frame, true, 1, 0xaa80,),
         Some(0xae80)
     );
     assert_eq!(
-        rom_spiral_stairs_suspended_animated_bg_source_address(
-            spiral_frame,
-            true,
-            2,
-            0xaa80,
-        ),
+        rom_spiral_stairs_suspended_animated_bg_source_address(spiral_frame, true, 2, 0xaa80,),
         None
     );
     assert_eq!(
-        rom_spiral_stairs_suspended_animated_bg_source_address(
-            spiral_frame,
-            false,
-            1,
-            0xaa80,
-        ),
+        rom_spiral_stairs_suspended_animated_bg_source_address(spiral_frame, false, 1, 0xaa80,),
         None
     );
     assert_eq!(
-        rom_spiral_stairs_suspended_animated_bg_source_address(
-            spiral_frame,
-            true,
-            1,
-            0xae80,
-        ),
+        rom_spiral_stairs_suspended_animated_bg_source_address(spiral_frame, true, 1, 0xae80,),
         Some(0xa680)
     );
 }
@@ -6262,6 +6241,17 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
         subtile_plan.animated_bg_scanout,
         AnimatedBgScanoutGeneration::LiveAfterNmi
     );
+    let mut subtile_filter = subtile;
+    subtile_filter.subsubmodule = 6;
+    assert_eq!(
+        link_obj_operands_across_main(
+            subtile,
+            subtile_filter,
+            GraphicsDmaGeneration::LiveAfterMain,
+        ),
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        "the aligned scheduler keeps the leading-NMI Link DMA operands at the host boundary"
+    );
     let mut room_load = subtile;
     room_load.submodule = 5;
     room_load.subsubmodule = 0;
@@ -6269,12 +6259,7 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
         subtile, room_load
     ));
     assert_eq!(
-        link_obj_scanout_across_main(
-            subtile,
-            room_load,
-            subtile_plan.link_obj_scanout,
-            0,
-        ),
+        link_obj_scanout_across_main(subtile, room_load, subtile_plan.link_obj_scanout, 0,),
         GraphicsDmaGeneration::HostBoundaryBeforeMain
     );
 
@@ -6469,6 +6454,12 @@ fn subtile_palette_filter_schedules_only_measured_return_slices() {
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishDungeonSubtilePaletteFilter)
     );
+    assert!(
+        state
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack(),
+        "the interrupted palette loop must retain Module07's caller suffix until its return"
+    );
 
     state.game_execution_scheduler.finish_work();
     state.set_countdown(0);
@@ -6481,6 +6472,16 @@ fn subtile_palette_filter_schedules_only_measured_return_slices() {
     assert_eq!(
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishDungeonSubtilePaletteFilter)
+    );
+
+    assert_eq!(
+        dungeon_subtile_palette_filter_return_obj_scanout(),
+        ObjScanoutGenerations {
+            oam: OamScanoutSource::RetainResidentPpuOam,
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
+        },
+        "the return keeps resident OAM/raw CHR while its NMI publishes a newer decoded Link cache"
     );
 }
 

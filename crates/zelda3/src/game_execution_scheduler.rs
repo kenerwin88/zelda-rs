@@ -46,6 +46,7 @@ impl ScheduledGameWork {
                 continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
                 | GameWorkContinuation::FinishDungeonSupertileFilteringReturn
+                | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
                 | GameWorkContinuation::FinishBigKeyDropGraphics { .. }
         )

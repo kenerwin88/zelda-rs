@@ -1802,6 +1802,15 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                 if sy >= 224 {
                     sy -= bg_h;
                 }
+                if std::env::var_os("ZELDA3_TRACE_BG_TILE").is_some()
+                    && layer_index == 1
+                    && sx == 192
+                    && sy == 159
+                {
+                    eprintln!(
+                        "TRACE_BG_TILE layer={layer_index} tx={tx} ty={ty} addr=0x{addr:04x} word=0x{entry_word:04x} cell={cell_id} cell_flip=({hflip},{vflip}) source=0x{source_key:016x}"
+                    );
+                }
                 if layer_index == 2 {
                     bg3_tile_screen_xy
                         .entry(tile_number as u16)

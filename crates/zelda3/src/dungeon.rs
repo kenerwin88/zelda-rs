@@ -10486,8 +10486,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State10(&mut self) {
-        if self.rom_startup_timing()
-            && self.game_state.world.location.dungeon_room_index() == 0x72
+        if self.rom_startup_timing() && self.game_state.world.location.dungeon_room_index() == 0x72
         {
             // The second quadrant build is interrupted after the main-loop
             // prefix has latched updates but before the state-10 caller can
@@ -10544,8 +10543,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State9(&mut self) {
-        if self.rom_startup_timing()
-            && self.game_state.world.location.dungeon_room_index() == 0x72
+        if self.rom_startup_timing() && self.game_state.world.location.dungeon_room_index() == 0x72
         {
             self.stage_dungeon_supertile_quadrant_upload_obj_scanout();
             self.latch_nmi_update();

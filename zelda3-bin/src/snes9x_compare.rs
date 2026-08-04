@@ -520,7 +520,23 @@ fn capture_rust_ppu_probe(game: &mut ZeldaState) -> DisplayPpuProbe {
             presented_clip: None,
             presented_pixel: None,
             presented_obj: None,
-            presented_obj_tile_cache: None,
+            presented_obj_tile_cache: Some(
+                (0..64u16)
+                    .flat_map(|tile| {
+                        let presented_obj_vram = snapshot
+                            .ppu
+                            .obj_vram_latch
+                            .as_deref()
+                            .unwrap_or(&snapshot.ppu.vram);
+                        renderer::modern_extract::decode_snes_4bpp_tile_indices(
+                            presented_obj_vram,
+                            0x4000,
+                            tile,
+                        )
+                        .map(i32::from)
+                    })
+                    .collect(),
+            ),
             presented_obj_tile_cache_valid: None,
         }
     })

@@ -78,6 +78,51 @@ fn dungeon_item_hold_dialogue_entry_publishes_live_animated_tiles() {
 }
 
 #[test]
+fn dungeon_supertile_filter_entry_publishes_live_animated_tiles() {
+    let filter_return = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 2,
+        subsubmodule: 7,
+        ..Default::default()
+    };
+    let first_scroll = crate::game_state::FrameState {
+        subsubmodule: 8,
+        ..filter_return
+    };
+
+    assert!(rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(
+        filter_return,
+        first_scroll,
+    ));
+    assert!(!rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(
+        first_scroll,
+        first_scroll,
+    ));
+    assert!(
+        rom_dungeon_supertile_filter_return_resumes_first_scroll_after_nmi(
+            filter_return,
+            first_scroll,
+            0x60,
+        )
+    );
+    assert!(
+        !rom_dungeon_supertile_filter_return_resumes_first_scroll_after_nmi(
+            filter_return,
+            first_scroll,
+            0x71,
+        )
+    );
+    assert!(rom_dungeon_supertile_scroll_runs_after_leading_nmi(
+        first_scroll,
+        0x60,
+    ));
+    assert!(!rom_dungeon_supertile_scroll_runs_after_leading_nmi(
+        first_scroll,
+        0x72,
+    ));
+}
+
+#[test]
 fn dungeon_submodule_two_handoff_publishes_the_entry_oam_shadow() {
     let entry = crate::game_state::FrameState {
         main_module: 7,
@@ -319,6 +364,80 @@ fn resident_ppu_oam_scanout_ignores_the_following_published_shadow() {
 }
 
 #[test]
+fn dialogue_text_holds_published_oam_until_the_rom_frame_counter_advances() {
+    let published = crate::game_state::FrameState {
+        main_module: 14,
+        submodule: 2,
+        frame_counter: 5,
+        ..Default::default()
+    };
+    let same_rom_tick = crate::game_state::FrameState {
+        main_module: 14,
+        submodule: 2,
+        frame_counter: 5,
+        ..Default::default()
+    };
+    let next_rom_tick = crate::game_state::FrameState {
+        frame_counter: 6,
+        ..same_rom_tick
+    };
+
+    assert!(dialogue_text_frame_holds_published_oam(
+        published,
+        same_rom_tick,
+        3
+    ));
+    assert!(!dialogue_text_frame_holds_published_oam(
+        published,
+        next_rom_tick,
+        3
+    ));
+    assert!(!dialogue_text_frame_holds_published_oam(
+        published,
+        same_rom_tick,
+        4
+    ));
+}
+
+#[test]
+fn dungeon_landing_scanout_keeps_the_resident_oam_tail() {
+    let mut state = ZeldaState::new();
+    let landing_entries = [102, 116, 117, 118, 119];
+    for (offset, entry) in landing_entries.into_iter().enumerate() {
+        state.ppu.oam[entry * 2] = u16::from_le_bytes([0x30 + offset as u8, 0x50]);
+        state.ppu.oam[entry * 2 + 1] = u16::from_le_bytes([0x0a, 0x2d]);
+        let high_word = 256 + entry / 8;
+        let high_shift = (entry % 8) * 2;
+        state.ppu.oam[high_word] |= 0b10 << high_shift;
+    }
+    let resident_oam = state.ppu.oam.clone();
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 0x0f;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 1;
+    following.ppu.oam[40] = u16::from_le_bytes([0x66, 0x77]);
+    following.oam_scanout_source = OamScanoutSource::ComposeLiveAfterNmi;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x66, 0x77]);
+    for entry in landing_entries {
+        assert_eq!(
+            state.ppu.oam[entry * 2..entry * 2 + 2],
+            resident_oam[entry * 2..entry * 2 + 2]
+        );
+        let high_word = 256 + entry / 8;
+        let high_shift = (entry % 8) * 2;
+        assert_eq!(
+            state.ppu.oam[high_word] & (0b11 << high_shift),
+            resident_oam[high_word] & (0b11 << high_shift),
+        );
+    }
+}
+
+#[test]
 fn live_shadow_scanout_reads_the_oam_authored_by_main() {
     let mut state = ZeldaState::new();
     state.ppu.bg_layer[1].h_scroll = 1;
@@ -357,25 +476,39 @@ fn atomic_item_return_marks_the_retained_and_following_link_generations() {
     );
     assert_eq!(
         retained.vram_generation,
-        DisplayVramGeneration::ComposeLiveAfterNmi
+        DisplayVramGeneration::RetainCapturedBeforeNmi
+    );
+    assert_eq!(
+        retained.hud_vram_generation,
+        DisplayVramGeneration::RetainCapturedBeforeNmi
     );
     assert_eq!(
         retained.animated_bg_scanout_generation,
-        AnimatedBgScanoutGeneration::LiveAfterNmi
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
     );
     assert_eq!(
         retained.link_obj_scanout_generation,
-        GraphicsDmaGeneration::HostBoundaryBeforeMain
+        GraphicsDmaGeneration::LiveAfterMain
     );
     assert_eq!(
         retained.link_obj_source_generation,
         GraphicsDmaGeneration::LiveAfterMain
     );
+    assert!(!state.next_display_interrupted_item_receipt_obj_cache);
     assert_eq!(
         state.next_display_obj_scanout_generation,
         Some(atomic_item_graphics_return_obj_scanout(
             ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 },
         ))
+    );
+    assert!(state.publish_live_hud_vram_on_next_capture);
+    assert_eq!(
+        state.next_display_vram_generation,
+        DisplayVramGeneration::RetainCapturedBeforeNmi
+    );
+    assert_eq!(
+        state.next_display_animated_bg_scanout_generation,
+        Some(AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi)
     );
 
     let plan = DisplayPublicationPlan::resolve(
@@ -387,7 +520,7 @@ fn atomic_item_return_marks_the_retained_and_following_link_generations() {
     );
     assert_eq!(
         plan.vram_generation,
-        DisplayVramGeneration::ComposeLiveAfterNmi
+        DisplayVramGeneration::RetainCapturedBeforeNmi
     );
 }
 
@@ -419,9 +552,73 @@ fn uncle_sword_item_return_stages_the_prepared_oam_for_the_next_boundary() {
 }
 
 #[test]
+fn completed_gfx_24_return_publishes_live_animated_tiles() {
+    let mut state = ZeldaState::new();
+    state.capture_display_snapshot();
+    let continuation = ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24 };
+
+    state.stage_atomic_item_graphics_return_obj_scanout(continuation);
+
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .animated_bg_scanout_generation,
+        AnimatedBgScanoutGeneration::LiveAfterNmi
+    );
+    assert_eq!(
+        state.next_display_animated_bg_scanout_generation,
+        Some(AnimatedBgScanoutGeneration::LiveAfterNmi)
+    );
+    assert!(state.next_display_interrupted_item_receipt_obj_cache);
+}
+
+#[test]
+fn uncle_item_return_stages_the_interrupted_receipt_cache_and_live_oam() {
+    let mut state = ZeldaState::new();
+    state.capture_display_snapshot();
+    let continuation = ItemReceiptGraphicsContinuation::ResumeUnclePassage {
+        receipt: ItemReceiptReturn {
+            ancilla_slot: 4,
+            item: 0,
+            chest_position: 0,
+        },
+        sprite_slot: 0,
+        dungeon: DungeonSpriteMainReturn {
+            bg2_x: 1,
+            bg2_y: 2,
+            bg1_x: 3,
+            bg1_y: 4,
+        },
+    };
+
+    state.stage_atomic_item_graphics_return_obj_scanout(continuation);
+
+    assert_eq!(
+        state.display_snapshot.as_ref().unwrap().oam_scanout_source,
+        OamScanoutSource::ComposeLiveAfterNmi
+    );
+    assert!(state.next_display_interrupted_item_receipt_obj_cache);
+    assert_eq!(
+        state.next_display_obj_scanout_generation,
+        Some(atomic_item_graphics_return_obj_scanout(continuation))
+    );
+    assert_eq!(
+        state.next_display_obj_scanout_generation.unwrap().oam,
+        OamScanoutSource::ComposeLiveAfterNmi
+    );
+}
+
+#[test]
 fn atomic_item_return_builds_the_measured_mixed_obj_tile_cache() {
     let mut state = ZeldaState::new();
-    write_le_u16(&mut state.ram, LINK_DMA_COUNTDOWN, 2);
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishItemReceiptGraphics {
+            continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 },
+        },
+        ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
+    );
     state.ppu.vram[0x4020] = 0x1111;
     state.ppu.vram[0x4240] = 0x2222;
     state.ppu.vram[0x4250] = 0x3333;
@@ -441,6 +638,137 @@ fn atomic_item_return_builds_the_measured_mixed_obj_tile_cache() {
     let cache = state.ppu.obj_vram_latch.as_ref().unwrap();
     assert_eq!(state.ppu.vram[0x4020], 0x1111);
     assert_eq!(cache[0x4020], 0xaaaa);
+    assert_eq!(cache[0x4240], 0xbbbb);
+    assert_eq!(cache[0x4250], 0);
+    assert_eq!(cache[0x4350], 0);
+}
+
+#[test]
+fn ordinary_dungeon_link_split_does_not_reuse_an_item_receipt_cache() {
+    let mut state = ZeldaState::new();
+    write_le_u16(&mut state.ram, LINK_DMA_COUNTDOWN, 2);
+    state.ppu.obj_previous_frame_vram = Some(vec![0xaaaa; state.ppu.vram.len()]);
+    state.ppu.oam[0] = 0x1111;
+    state.ram[OAM_BUF..OAM_BUF + 2].copy_from_slice(&0x2222u16.to_le_bytes());
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 1;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 5;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::LiveAfterMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::LiveAfterMain;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert!(state.ppu.obj_vram_latch.is_none());
+    assert_ne!(state.ppu.oam[0], 0x2222);
+}
+
+#[test]
+fn subtile_palette_filter_decodes_captured_link_sources_without_mutating_raw_obj_vram() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4000] = 0x3333;
+    state.ppu.vram[0x4020] = 0x2222;
+    state.link_obj_dma_completed_this_frame = true;
+    write_le_u16(
+        &mut state.ram,
+        LinkDmaSourceSlot::HeadTop.ram_address(),
+        0x8080,
+    );
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 1;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 7;
+    write_le_u16(
+        &mut following.ram,
+        LinkDmaSourceSlot::HeadTop.ram_address(),
+        0x8100,
+    );
+    let mut link_graphics = vec![0; 0x200];
+    for bytes in link_graphics[0x80..0xc0].chunks_exact_mut(2) {
+        bytes.copy_from_slice(&0xaaaau16.to_le_bytes());
+    }
+    for bytes in link_graphics[0x100..0x140].chunks_exact_mut(2) {
+        bytes.copy_from_slice(&0xbbbbu16.to_le_bytes());
+    }
+    let mut ranges = vec![(0, 0); 58];
+    ranges[57] = (0, link_graphics.len());
+    state.assets = Some(AssetPack::from_data_ranges(link_graphics, ranges));
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::LiveAfterMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::LiveAfterMain;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.vram[0x4000], 0x3333);
+    assert_eq!(state.ppu.vram[0x4020], 0x2222);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4020], 0xaaaa);
+}
+
+#[test]
+fn held_subtile_nmi_reuses_the_last_presented_link_obj_cache() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4020] = 0x2222;
+    state.last_presented_obj_vram = Some(vec![0x7777; 0x400]);
+    state.last_presented_obj_vram.as_mut().unwrap()[0x20] = 0xaaaa;
+    state.link_obj_dma_completed_this_frame = false;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 1;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 6;
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.vram[0x4020], 0x2222);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4020], 0xaaaa);
+}
+
+#[test]
+fn uncle_item_return_builds_the_same_mixed_cache_at_the_next_boundary() {
+    let mut state = ZeldaState::new();
+    write_le_u16(&mut state.ram, LINK_DMA_COUNTDOWN, 11);
+    write_le_u16(
+        &mut state.ram,
+        LinkDmaSourceSlot::ShieldUpper.ram_address(),
+        0x1000,
+    );
+    write_le_u16(
+        &mut state.ram,
+        LinkDmaSourceSlot::ShieldLower.ram_address(),
+        0x1040,
+    );
+    for bytes in state.ram[0x1000..0x1040].chunks_exact_mut(2) {
+        bytes.copy_from_slice(&0xaaaau16.to_le_bytes());
+    }
+    for bytes in state.ram[0x1040..0x1080].chunks_exact_mut(2) {
+        bytes.copy_from_slice(&0xbbbbu16.to_le_bytes());
+    }
+    state.ppu.vram[0x4240] = 0x2222;
+    state.ppu.vram[0x4250] = 0x3333;
+    state.ppu.vram[0x4350] = 0x4444;
+
+    let mut following = captured_display_snapshot();
+    following.ppu.vram[0x4240] = 0xbbbb;
+    following.ppu.vram[0x4250] = 0xcccc;
+    following.ppu.vram[0x4350] = 0xdddd;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::LiveAfterMain;
+    following.interrupted_item_receipt_obj_cache = true;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    let cache = state.ppu.obj_vram_latch.as_ref().unwrap();
+    assert_eq!(cache[0x4070], 0xaaaa);
+    assert_eq!(cache[0x4170], 0xbbbb);
     assert_eq!(cache[0x4240], 0xbbbb);
     assert_eq!(cache[0x4250], 0);
     assert_eq!(cache[0x4350], 0);

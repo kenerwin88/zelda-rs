@@ -377,10 +377,8 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_core_animated_bg_update(&mut self, graphics_dma_plan: GraphicsDmaPlan) {
-        let host_main_prefix_did_not_advance = self
-            .pre_main_graphics_dma
-            .as_ref()
-            .is_some_and(|graphics| {
+        let host_main_prefix_did_not_advance =
+            self.pre_main_graphics_dma.as_ref().is_some_and(|graphics| {
                 graphics.entry_frame.frame_counter == self.game_state.frame.frame_counter
             });
         let pre_main_dma = if matches!(
@@ -409,14 +407,12 @@ impl ZeldaState {
             graphics_dma_plan.animated_bg_operands,
             GraphicsDmaGeneration::LiveAfterMain
         ) {
-            if let Some(projected_source) =
-                rom_spiral_stairs_suspended_animated_bg_source_address(
-                    self.game_state.frame,
-                    host_main_prefix_did_not_advance,
-                    self.game_state.display.bg_tile_animation_countdown,
-                    src_addr,
-                )
-            {
+            if let Some(projected_source) = rom_spiral_stairs_suspended_animated_bg_source_address(
+                self.game_state.frame,
+                host_main_prefix_did_not_advance,
+                self.game_state.display.bg_tile_animation_countdown,
+                src_addr,
+            ) {
                 // The translated spiral-filter continuation exposes the
                 // pre-decrement software countdown here. Snes9x has already
                 // completed the preceding caller's animation-source advance,
@@ -556,6 +552,7 @@ impl ZeldaState {
                 );
             }
             self.nmi_core_link_graphics_update(captured_link_operands);
+            self.link_obj_dma_completed_this_frame = true;
             if std::env::var_os("ZELDA3_DEBUG_LINK_DMA").is_some() {
                 eprintln!(
                     "link_dma host={} vram_head_top_after={:04x} vram_high_after={:04x}",
