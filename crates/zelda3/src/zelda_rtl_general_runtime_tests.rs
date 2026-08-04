@@ -6400,6 +6400,35 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
         supertile_scrolling_plan.link_obj_scanout,
         GraphicsDmaGeneration::LiveAfterMain
     );
+    assert_eq!(
+        link_obj_operands_across_main(
+            supertile_scrolling,
+            supertile_scrolling,
+            GraphicsDmaGeneration::LiveAfterMain,
+        ),
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        "the held state-8 NMI consumes Link sources from before the resumed main slice"
+    );
+    assert_eq!(
+        link_obj_scanout_across_main(
+            supertile_scrolling,
+            supertile_scrolling,
+            GraphicsDmaGeneration::LiveAfterMain,
+            0,
+        ),
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        "the ordinary state-8 capture presents the completed host-boundary Link image"
+    );
+    assert_eq!(
+        oam_scanout_across_main(
+            supertile_scrolling,
+            supertile_scrolling,
+            OamScanoutSource::ComposeLiveAfterNmi,
+            0,
+        ),
+        OamScanoutSource::ComposePublishedShadowDma,
+        "the held state-8 NMI publishes the entry OAM shadow before main moves the sprites"
+    );
     let mut supertile_filter_return = supertile_scrolling;
     supertile_filter_return.subsubmodule = 7;
     let mut resumed_gameplay = supertile_scrolling;

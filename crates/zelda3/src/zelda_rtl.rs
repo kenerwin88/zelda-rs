@@ -808,11 +808,18 @@ const fn link_obj_operands_across_main(
         && matches!(entry.subsubmodule, 3..=7)
         && exit.main_module == 7
         && exit.submodule == 1;
+    let dungeon_supertile_scroll_nmi_precedes_link_animation = entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 8
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 8;
     if entering_dungeon_spiral_stairs
         || entering_dungeon_supertile_transition
         || dungeon_spiral_stairs_nmi_precedes_link_animation
         || entering_dungeon_supertile_scroll
         || dungeon_subtile_scroll_nmi_precedes_link_animation
+        || dungeon_supertile_scroll_nmi_precedes_link_animation
     {
         GraphicsDmaGeneration::HostBoundaryBeforeMain
     } else {
@@ -893,12 +900,19 @@ const fn oam_scanout_across_main(
         && exit.submodule == 2
         && exit.subsubmodule == 3
         && screen_transition == 0;
+    let dungeon_supertile_state8_publishes_entry_shadow = entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 8
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 8;
     if dungeon_exit_spotlight_publishes_entry_shadow
         || dungeon_submodule_handoff_publishes_entry_shadow
         || dungeon_dialogue_entry_publishes_entry_shadow
         || dungeon_subtile_scroll_publishes_entry_shadow
         || dungeon_supertile_scroll_publishes_entry_shadow
         || dungeon_supertile_state3_publishes_entry_shadow
+        || dungeon_supertile_state8_publishes_entry_shadow
     {
         OamScanoutSource::ComposePublishedShadowDma
     } else {
@@ -923,6 +937,18 @@ const fn link_obj_scanout_across_main(
     entry_scanout: GraphicsDmaGeneration,
     _screen_transition: u8,
 ) -> GraphicsDmaGeneration {
+    // State 8 resumes its held NMI before the translated main slice advances
+    // Link's animation. The next coarse display capture has already run that
+    // later slice, so active scanout keeps the completed host-boundary image.
+    if entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 8
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 8
+    {
+        return GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    }
     // The subtile landing tail enters room-load/shutter control after the
     // leading NMI. That scanout keeps the Link tiles resident at host entry,
     // even though the independently scheduled animated-BG upload is live.
@@ -5095,6 +5121,7 @@ const LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN: usize = LINK_DMA_EXPANDED_HIGH_PLA
 #[derive(Clone, Copy)]
 struct PreMainLinkDmaOperands {
     sources: LinkDmaSources,
+    link_pack: u16,
     expanded_high_planes: [u8; LINK_DMA_EXPANDED_HIGH_PLANES_LEN],
 }
 
@@ -5107,6 +5134,7 @@ impl PreMainLinkDmaOperands {
         }
         Self {
             sources: LinkDmaSources::load_from_ram(ram),
+            link_pack: read_le_u16(ram, LINK_DMA_GRAPHICS_INDEX) >> 1,
             expanded_high_planes,
         }
     }
@@ -12032,16 +12060,31 @@ impl ZeldaState {
             == 7
             && following_frame.submodule == 2
             && following_frame.subsubmodule == 3;
+        let dungeon_supertile_state8_publishes_completed_link_sources =
+            following_frame.main_module == 7
+                && following_frame.submodule == 2
+                && following_frame.subsubmodule == 8;
         let retained_link_obj_sources = (matches!(
             plan.link_obj_source_generation,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         )
             || dungeon_supertile_state3_retains_presented_link_sources)
         .then(|| {
-            (
-                self.vram_chr_source.clone(),
-                self.vram_chr_preview_source.clone(),
-            )
+            if dungeon_supertile_state8_publishes_completed_link_sources {
+                // The held state-8 NMI writes the host-boundary Link bytes
+                // before main advances the animation. Keep those visible
+                // bytes, but publish the logical identity recorded by that
+                // completed NMI rather than the older snapshot metadata.
+                (
+                    following.vram_chr_source.clone(),
+                    following.vram_chr_preview_source.clone(),
+                )
+            } else {
+                (
+                    self.vram_chr_source.clone(),
+                    self.vram_chr_preview_source.clone(),
+                )
+            }
         });
         if plan.vram_generation == DisplayVramGeneration::ComposeLiveAfterNmi {
             self.vram_chr_source.clone_from(&following.vram_chr_source);

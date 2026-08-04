@@ -1152,12 +1152,17 @@ impl ZeldaState {
         // Animation-modeled asset renderer M1: tag the Link CHR VRAM slots with
         // the active Link DMA graphics index as the logical source. Write-only
         // bookkeeping; does not affect the VRAM bytes written below.
-        let link_pack = (self
-            .game_state
-            .player
-            .follower_link
-            .link_dma_graphics_index_word()
-            >> 1) as u16;
+        let link_pack = captured_operands.map_or_else(
+            || {
+                (self
+                    .game_state
+                    .player
+                    .follower_link
+                    .link_dma_graphics_index_word()
+                    >> 1) as u16
+            },
+            |operands| operands.link_pack,
+        );
 
         if let Some(link_graphics) = self.asset_raw(57).map(Vec::from) {
             for (dst, source, len) in [
