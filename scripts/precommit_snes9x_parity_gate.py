@@ -8,6 +8,7 @@ route/hash changes) so regressions are blocked before they land.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -19,8 +20,17 @@ import snes9x_route_recorder as recorder
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE_PATH = ROOT / ".git" / "precommit-snes9x-parity-state.json"
+CHECKPOINT_PATH = ROOT / ".git" / "precommit-snes9x-parity-checkpoint"
 DEFAULT_PROJECT = ROOT / "routes" / "clean"
 STATE_SCHEMA = 1
+# Paired-resume flags the checkpoint supersedes; the binary rejects them next to
+# --resume-paired because a resumed pair already carries its own SRAM/boundary.
+RESUME_CONFLICTING_OPTIONS = (
+    "--load-sram",
+    "--resume-rust-state",
+    "--resume-oracle-state",
+    "--resume-oracle-sram",
+)
 
 
 def env_int(name: str, default: int | None = None) -> int | None:
@@ -81,6 +91,97 @@ def _route_signature(
     }
 
 
+def _resume_enabled() -> bool:
+    return os.environ.get("ZELDA3_PRECOMMIT_RESUME", "").strip() not in ("", "0")
+
+
+def _binary_identity(binary: Path) -> dict[str, object]:
+    digest = hashlib.sha256()
+    with binary.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    stat = binary.stat()
+    return {"path": str(binary), "size": stat.st_size, "sha256": digest.hexdigest()}
+
+
+def _latest_checkpoint(root: Path) -> tuple[int, Path] | None:
+    latest = _load_json(root / "latest.json")
+    if not isinstance(latest, dict) or latest.get("schema") != 1:
+        return None
+    frame = latest.get("frame")
+    name = latest.get("checkpoint")
+    if not isinstance(frame, int) or not isinstance(name, str):
+        return None
+    checkpoint = root / name
+    return (frame, checkpoint) if (checkpoint / "manifest.json").is_file() else None
+
+
+def _resume_checkpoint(
+    state: dict,
+    *,
+    signature: dict,
+    binary_identity: dict[str, object],
+    requested: int,
+) -> Path | None:
+    """The recorded paired checkpoint this run may resume from, if any.
+
+    The checkpoint's Rust half is only valid for the exact binary that wrote it,
+    so any rebuild (or route change) falls back to a full replay from frame 0.
+    The recorded generation is resumed by path rather than through the rolling
+    `latest.json`, so a later failing run cannot move the gate's resume point.
+    """
+    frame = state.get("checkpoint_frame")
+    directory = state.get("checkpoint_dir")
+    if not isinstance(frame, int) or not isinstance(directory, str):
+        return None
+    if frame <= 0 or frame >= requested:
+        return None
+    if state.get("route_signature") != signature:
+        return None
+    if state.get("checkpoint_binary") != binary_identity:
+        print(
+            "pre-commit gate: parity binary changed since the resume checkpoint; replaying from frame 0",
+            file=sys.stderr,
+        )
+        return None
+    checkpoint = Path(directory)
+    if not (checkpoint / "manifest.json").is_file():
+        print(
+            f"pre-commit gate: resume checkpoint {checkpoint} is gone; replaying from frame 0",
+            file=sys.stderr,
+        )
+        return None
+    return checkpoint
+
+
+def _apply_resume_options(
+    command: list[str],
+    *,
+    resume_dir: Path | None,
+    rolling: tuple[int, Path] | None,
+) -> list[str]:
+    if resume_dir is None and rolling is None:
+        return command
+    result: list[str] = []
+    index = 0
+    while index < len(command):
+        token = command[index]
+        if resume_dir is not None and token in RESUME_CONFLICTING_OPTIONS:
+            index += 2
+            continue
+        result.append(token)
+        index += 1
+    if resume_dir is not None:
+        result.extend(["--resume-paired", str(resume_dir)])
+    if rolling is not None:
+        interval, root = rolling
+        # Rolling rather than --save-paired-resume-at: a fixed frame can land
+        # inside an unserialized ROM-call continuation, which aborts the run,
+        # while the rolling saver waits for the next quiescent boundary.
+        result.extend(["--save-rolling-paired-resume", str(interval), str(root)])
+    return result
+
+
 def _resolve_project(path: str) -> Path:
     project = Path(path)
     if not project.is_absolute():
@@ -103,6 +204,8 @@ def _build_check_command(
     requested_frames: int,
     input_path: Path,
     rom_random_path: Path | None,
+    resume_dir: Path | None = None,
+    rolling: tuple[int, Path] | None = None,
 ) -> list[str]:
     manifest = recorder.load_manifest(project)
     identity = recorder.oracle_generations(manifest)[-1]["identity"]
@@ -119,7 +222,7 @@ def _build_check_command(
         session_dir=session_dir,
         identity=identity,
     )
-    return command
+    return _apply_resume_options(command, resume_dir=resume_dir, rolling=rolling)
 
 
 def _extract_identity(manifest: dict) -> tuple[Path, dict]:
@@ -216,6 +319,9 @@ def run_snes9x_gate() -> int:
         )
         return 1
 
+    resume_enabled = _resume_enabled()
+    binary_identity = _binary_identity(binary) if resume_enabled else None
+
     session_dir = (project / "comparisons" / "precommit" / f"run-{requested}").resolve()
     with tempfile.TemporaryDirectory(prefix="zelda3-precommit-") as temp_dir:
         temp_dir = Path(temp_dir)
@@ -242,6 +348,20 @@ def run_snes9x_gate() -> int:
         first_take = takes_by_id[take_ids[0]]
         start_boundary = int(first_take["start_boundary"])
 
+        resume_dir = None
+        rolling = None
+        if resume_enabled:
+            resume_dir = _resume_checkpoint(
+                state,
+                signature=signature,
+                binary_identity=binary_identity or {},
+                requested=requested,
+            )
+            interval = env_int("ZELDA3_PRECOMMIT_RESUME_INTERVAL", max(1, step)) or max(1, step)
+            rolling = (interval, CHECKPOINT_PATH)
+            if resume_dir is not None:
+                print(f"pre-commit: resuming from paired checkpoint {resume_dir}")
+
         command = _build_check_command(
             binary=binary,
             core=required_core,
@@ -253,6 +373,8 @@ def run_snes9x_gate() -> int:
             requested_frames=requested,
             input_path=input_path,
             rom_random_path=rom_random_path if rom_random_count else None,
+            resume_dir=resume_dir,
+            rolling=rolling,
         )
 
         process = subprocess.run(
@@ -309,6 +431,21 @@ def run_snes9x_gate() -> int:
             "route_project": str(project),
         }
     )
+    if resume_enabled:
+        # Only a passing run may advance the resume point: the binary refuses to
+        # write a checkpoint once a mismatch is seen, and a failing run returns
+        # before this state is persisted.
+        latest = _latest_checkpoint(CHECKPOINT_PATH)
+        if latest is not None:
+            checkpoint_frame, checkpoint_dir = latest
+            state.update(
+                {
+                    "checkpoint_frame": checkpoint_frame,
+                    "checkpoint_dir": str(checkpoint_dir),
+                    "checkpoint_binary": binary_identity,
+                }
+            )
+            print(f"pre-commit: paired resume checkpoint at frame {checkpoint_frame}")
     _write_json(STATE_PATH, state)
 
     checked = state["last_checked_frame"]

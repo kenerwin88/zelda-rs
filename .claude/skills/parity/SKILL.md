@@ -127,6 +127,23 @@ it in memory as a candidate improvement. Process improvements follow the same
 cleanliness bar as fixes: committed only when finished, documented, and off by
 default.
 
+## Fast repro tools
+
+- `python3 scripts/parity_probe.py --around <frame> [--window 40] [--capture]`
+  re-runs one divergence window from the newest pre-commit `run-*/` inputs,
+  resuming from a paired Rust+oracle checkpoint at `around-60` (saved on the
+  first run; reused only while the parity binary is byte-identical). It prints
+  the exact command, refuses a binary older than the Rust sources
+  (`--allow-stale` overrides), and `--dry-run` stops there. `--capture` selects
+  the instrumented core and summarizes `display_oracle.jsonl` for `around±3`:
+  which domain diverges (registers/cgram/live+presented OAM/windows/mode7) plus
+  decoded OAM slots. Never run two probes at once.
+- `ZELDA3_PRECOMMIT_RESUME=1` makes the pre-commit gate keep a rolling paired
+  checkpoint in `.git/precommit-snes9x-parity-checkpoint/` so each run replays
+  only the new window instead of the whole frontier. Any rebuild (or route
+  change) invalidates it and falls back to a full replay from frame 0; a failing
+  run never advances the checkpoint. Unset, the gate behaves exactly as before.
+
 ## If you can't land a clean fix this session
 
 Commit nothing half-done. Instead write up the diagnosis (divergence frame,

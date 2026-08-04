@@ -189,6 +189,12 @@ See memory [[checkpoint-resume-debugging]].
   probes. (The former capture/check/drill parity subcommands were retired with the
   legacy parity pipeline.)
 
+5. **`parity_probe.py --around <frame>`** — one-command repro of a Snes9x divergence
+  window. Reuses the newest pre-commit `run-*/` inputs, resumes from a paired
+  Rust+oracle checkpoint saved ~60 frames earlier (re-saved automatically when the
+  binary changed), and with `--capture` writes/summarizes `display_oracle.jsonl`
+  (which display domain diverges, decoded OAM slots) using the instrumented core.
+
 ### Tracing env vars
 
 - `ZELDA3_REPLAY_WRAM_DUMP=<path>` — dump full 128KB WRAM at the final frame (the
