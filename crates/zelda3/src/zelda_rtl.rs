@@ -7345,12 +7345,19 @@ impl ZeldaState {
 
     fn stage_spiral_stairs_second_grayscale_nmi(&mut self) -> GraphicsDmaGeneration {
         // The final quadrant-upload NMI has returned, so the atomic ROM path
-        // exposes $0710 = 0 to this caller. Its core DMA is allowed to run,
-        // but belongs to the following scanout.
+        // exposes $0710 = 0 to this caller. Its core DMA is allowed to run.
+        // The resident animated batch remains visible for this image. When
+        // this suffix consumes countdown 1 it advances $0adc before NMI, so
+        // the DMA must use the live operand even though its result belongs to
+        // the following scanout.
         self.clear_core_update_disable_flag();
         self.next_display_animated_bg_scanout_generation =
             Some(AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi);
-        GraphicsDmaGeneration::HostBoundaryBeforeMain
+        if self.game_state.display.bg_tile_animation_countdown == 1 {
+            GraphicsDmaGeneration::LiveAfterMain
+        } else {
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        }
     }
 
     pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
@@ -13783,7 +13790,7 @@ impl ZeldaState {
         self.replay_trace_ram_watch("run-frame-entry");
         if CaptureDisplayDiagnostics::from_env().frame_boundary {
             eprintln!(
-                "frame_boundary_entry host={} main={:02x} sub={:02x} frame_counter={:02x} work={:?} caller={:?} dialogue_init={} dialogue_scroll={:?} bg1=({:04x},{:04x}) scroll_copy=({:04x},{:04x})",
+                "frame_boundary_entry host={} main={:02x} sub={:02x} frame_counter={:02x} work={:?} caller={:?} dialogue_init={} dialogue_scroll={:?} bg1=({:04x},{:04x}) scroll_copy=({:04x},{:04x}) animated_bg=(source={:04x},countdown={:04x})",
                 self.frame_ctr_dbg,
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
@@ -13796,6 +13803,8 @@ impl ZeldaState {
                 self.ppu.bg_layer[0].v_scroll,
                 self.game_state.display.ppu_scroll_copy.bg1_h_copy(),
                 self.game_state.display.ppu_scroll_copy.bg1_v_copy(),
+                self.game_state.display.animated_tile_data_source_usize(),
+                self.game_state.display.bg_tile_animation_countdown,
             );
         }
         if !self.initialized {
