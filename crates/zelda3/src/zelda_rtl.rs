@@ -5301,6 +5301,20 @@ fn room_71_supertile_room_load_uses_live_obj_cache(
         && oam_scanout_source == OamScanoutSource::RetainResidentPpuOam
 }
 
+fn room_71_item_graphics_return_crosses_completed_nmi(
+    following: crate::game_state::FrameState,
+    dungeon_room_index: u8,
+    link_obj_scanout_generation: GraphicsDmaGeneration,
+    oam_scanout_source: OamScanoutSource,
+) -> bool {
+    dungeon_room_index == 0x71
+        && following.main_module == 7
+        && following.submodule == 0
+        && following.subsubmodule == 0
+        && link_obj_scanout_generation == GraphicsDmaGeneration::HostBoundaryBeforeMain
+        && oam_scanout_source == OamScanoutSource::ComposePublishedShadowDma
+}
+
 fn dungeon_supertile_pre_scroll_oam(
     live_oam: &[u16],
     published_shadow_oam: Option<&[u16]>,
@@ -12428,6 +12442,32 @@ impl ZeldaState {
                 following.published_shadow_oam_dma.as_deref(),
             );
         }
+        let room_71_item_graphics_return_live_boundary =
+            room_71_item_graphics_return_crosses_completed_nmi(
+                following_frame,
+                following_room,
+                plan.link_obj_scanout_generation,
+                plan.oam_scanout_source,
+            ) && self.ppu.oam[..256] == following.ppu.oam[..256];
+        if room_71_item_graphics_return_live_boundary {
+            // The final $10 item-graphics return crosses the packed OAM
+            // size/X-bit DMA after the ordinary shadow generation was
+            // selected. Snes9x's completed scanout confirms the hardware DMA
+            // carried the late size/X rewrite; its only observable advance
+            // over the published shadow is the 32-byte extended table, so the
+            // low-table equality above is what distinguishes this completed
+            // boundary from the preceding frames, where the live table is a
+            // whole sprite generation ahead and the published shadow must
+            // keep the scanout.
+            self.ppu.oam[256..].copy_from_slice(&following.ppu.oam[256..]);
+            // The same completed vblank consumed the queued BG1 stripe
+            // upload (the receipt flash rewrites the painting tilemap), so
+            // active scanout also owns the live BG1 tilemap image.
+            let bg1_tilemap = usize::from(self.ppu.bg_layer[0].tilemap_adr);
+            let bg1_tilemap_end = (bg1_tilemap + 0x1000).min(self.ppu.vram.len());
+            self.ppu.vram[bg1_tilemap..bg1_tilemap_end]
+                .copy_from_slice(&following.ppu.vram[bg1_tilemap..bg1_tilemap_end]);
+        }
         if let Some(captured_entries) = captured_entries {
             let published = following.published_shadow_oam_dma.as_deref();
             eprintln!(
@@ -12732,6 +12772,13 @@ impl ZeldaState {
                 // v1.0.0 rendered this handoff from live state. Preserve that
                 // decoded OBJ generation while raw VRAM remains on the
                 // independently selected host-boundary image.
+                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
+            } else if room_71_item_graphics_return_live_boundary {
+                // The same completed vblank that advanced the packed OAM
+                // size/X table also carried the 16x16 held-item CHR upload.
+                // Snes9x's completed scanout decoded those receipt tiles, so
+                // resolve the OBJ cache from live VRAM while raw scanout
+                // retains the host-boundary image.
                 self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
             } else if interrupted_spiral_stairs_first_palette_pass {
                 // The first palette walk crosses vblank after Link's early

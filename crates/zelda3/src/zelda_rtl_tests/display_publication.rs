@@ -551,6 +551,29 @@ fn atomic_item_return_marks_the_retained_and_following_link_generations() {
 }
 
 #[test]
+fn room_71_item_graphics_return_crosses_completed_nmi_boundary() {
+    let return_frame = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 0,
+        subsubmodule: 0,
+        ..Default::default()
+    };
+
+    assert!(room_71_item_graphics_return_crosses_completed_nmi(
+        return_frame,
+        0x71,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        OamScanoutSource::ComposePublishedShadowDma,
+    ));
+    assert!(!room_71_item_graphics_return_crosses_completed_nmi(
+        return_frame,
+        0x71,
+        GraphicsDmaGeneration::LiveAfterMain,
+        OamScanoutSource::ComposePublishedShadowDma,
+    ));
+}
+
+#[test]
 fn gfx_21_item_return_uses_the_v1_ordinary_module_epilogue() {
     let mut state = ZeldaState::new();
     let gfx_21 = ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x21 };
