@@ -6566,8 +6566,19 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
     assert!(room_71_supertile_return_uses_published_link_oam(
         room_load, 0x71,
     ));
-    assert!(room_71_supertile_room_load_uses_composed_obj_cache(
-        room_load, 0x71,
+    assert!(room_71_supertile_room_load_uses_live_obj_cache(
+        room_load,
+        0x71,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        OamScanoutSource::RetainResidentPpuOam,
+    ));
+    assert!(!room_71_supertile_room_load_uses_live_obj_cache(
+        room_load,
+        0x71,
+        GraphicsDmaGeneration::LiveAfterMain,
+        GraphicsDmaGeneration::LiveAfterMain,
+        OamScanoutSource::ComposeLiveAfterNmi,
     ));
     let mut live_oam = vec![0x1111; 0x110];
     let published_oam = vec![0x2222; 0x110];

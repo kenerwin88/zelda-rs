@@ -713,6 +713,27 @@ fn subtile_shutter_handoff_decodes_live_obj_page_without_advancing_raw_vram() {
 }
 
 #[test]
+fn room_71_supertile_room_load_decodes_the_live_obj_page() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4032] = 0x1111;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 5;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x71;
+    following.ppu.vram[0x4032] = 0xbbbb;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.vram[0x4032], 0x1111);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4032], 0xbbbb);
+}
+
+#[test]
 fn ordinary_dungeon_link_split_does_not_reuse_an_item_receipt_cache() {
     let mut state = ZeldaState::new();
     write_le_u16(&mut state.ram, LINK_DMA_COUNTDOWN, 2);

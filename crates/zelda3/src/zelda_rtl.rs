@@ -5286,11 +5286,19 @@ fn room_71_supertile_return_uses_published_link_oam(
             || following.submodule == 5)
 }
 
-fn room_71_supertile_room_load_uses_composed_obj_cache(
+fn room_71_supertile_room_load_uses_live_obj_cache(
     following: crate::game_state::FrameState,
     dungeon_room_index: u8,
+    link_obj_scanout_generation: GraphicsDmaGeneration,
+    link_obj_source_generation: GraphicsDmaGeneration,
+    oam_scanout_source: OamScanoutSource,
 ) -> bool {
-    dungeon_room_index == 0x71 && following.main_module == 7 && following.submodule == 5
+    dungeon_room_index == 0x71
+        && following.main_module == 7
+        && following.submodule == 5
+        && link_obj_scanout_generation == GraphicsDmaGeneration::HostBoundaryBeforeMain
+        && link_obj_source_generation == GraphicsDmaGeneration::HostBoundaryBeforeMain
+        && oam_scanout_source == OamScanoutSource::RetainResidentPpuOam
 }
 
 fn dungeon_supertile_pre_scroll_oam(
@@ -12714,11 +12722,17 @@ impl ZeldaState {
                     }
                 }
                 self.ppu.obj_vram_latch = Some(obj_cache_vram);
-            } else if room_71_supertile_room_load_uses_composed_obj_cache(
+            } else if room_71_supertile_room_load_uses_live_obj_cache(
                 following_frame,
                 following_room,
+                plan.link_obj_scanout_generation,
+                plan.link_obj_source_generation,
+                plan.oam_scanout_source,
             ) {
-                self.ppu.obj_vram_latch = Some(self.ppu.vram.clone());
+                // v1.0.0 rendered this handoff from live state. Preserve that
+                // decoded OBJ generation while raw VRAM remains on the
+                // independently selected host-boundary image.
+                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
             } else if interrupted_spiral_stairs_first_palette_pass {
                 // The first palette walk crosses vblank after Link's early
                 // body/head/hand DMA has updated Snes9x's OBJ tile cache, but
@@ -12747,11 +12761,6 @@ impl ZeldaState {
                 }
                 self.ppu.obj_vram_latch = Some(obj_cache_vram);
             }
-        }
-        if room_71_supertile_room_load_uses_composed_obj_cache(following_frame, following_room) {
-            // Room-load scanout keeps Link's published OAM coordinates while
-            // decoding the already-composed current Link tile generation.
-            self.ppu.obj_vram_latch = Some(self.ppu.vram.clone());
         }
         if following_frame.main_module == 7
             && following_frame.submodule == 2
