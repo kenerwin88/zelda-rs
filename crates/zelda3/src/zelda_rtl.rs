@@ -900,19 +900,19 @@ const fn oam_scanout_across_main(
         && exit.submodule == 2
         && exit.subsubmodule == 3
         && screen_transition == 0;
-    let dungeon_supertile_state8_publishes_entry_shadow = entry.main_module == 7
+    let dungeon_supertile_scroll_tail_publishes_entry_shadow = entry.main_module == 7
         && entry.submodule == 2
         && entry.subsubmodule == 8
         && exit.main_module == 7
         && exit.submodule == 2
-        && exit.subsubmodule == 8;
+        && matches!(exit.subsubmodule, 8 | 9);
     if dungeon_exit_spotlight_publishes_entry_shadow
         || dungeon_submodule_handoff_publishes_entry_shadow
         || dungeon_dialogue_entry_publishes_entry_shadow
         || dungeon_subtile_scroll_publishes_entry_shadow
         || dungeon_supertile_scroll_publishes_entry_shadow
         || dungeon_supertile_state3_publishes_entry_shadow
-        || dungeon_supertile_state8_publishes_entry_shadow
+        || dungeon_supertile_scroll_tail_publishes_entry_shadow
     {
         OamScanoutSource::ComposePublishedShadowDma
     } else {

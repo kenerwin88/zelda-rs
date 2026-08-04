@@ -6429,6 +6429,18 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
         OamScanoutSource::ComposePublishedShadowDma,
         "the held state-8 NMI publishes the entry OAM shadow before main moves the sprites"
     );
+    let mut supertile_scroll_tail = supertile_scrolling;
+    supertile_scroll_tail.subsubmodule = 9;
+    assert_eq!(
+        oam_scanout_across_main(
+            supertile_scrolling,
+            supertile_scroll_tail,
+            OamScanoutSource::ComposeLiveAfterNmi,
+            0,
+        ),
+        OamScanoutSource::ComposePublishedShadowDma,
+        "the state-8 to state-9 handoff keeps publishing the entry OAM shadow"
+    );
     let mut supertile_filter_return = supertile_scrolling;
     supertile_filter_return.subsubmodule = 7;
     let mut resumed_gameplay = supertile_scrolling;
