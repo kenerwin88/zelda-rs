@@ -664,9 +664,8 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
         || dungeon_intra_room_stairs_nmi_precedes_link_animation
         || dungeon_spiral_stairs_oam_nmi_precedes_main
         || dungeon_map_oam_scanout_uses_host_boundary;
-    let animated_bg_nmi_precedes_scanout = dungeon_entrance_nmi_precedes_main
-        || dungeon_main_nmi_precedes_main
-        || dungeon_spiral_stairs_oam_nmi_precedes_main;
+    let animated_bg_nmi_precedes_scanout =
+        dungeon_entrance_nmi_precedes_main || dungeon_main_nmi_precedes_main;
 
     GraphicsDmaPlan {
         oam_operands: if dungeon_main_nmi_precedes_main || dungeon_shutter_oam_nmi_precedes_main {

@@ -4401,7 +4401,7 @@ fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
     );
     assert_eq!(
         spiral_stairs.animated_bg_scanout,
-        AnimatedBgScanoutGeneration::LiveAfterNmi
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
     );
     let spiral_frame = crate::game_state::FrameState {
         main_module: 7,
