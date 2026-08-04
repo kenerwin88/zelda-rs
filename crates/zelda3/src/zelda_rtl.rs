@@ -922,6 +922,17 @@ const fn oam_scanout_across_main(
     }
 }
 
+const fn dungeon_subtile_landing_enters_shutter(
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+) -> bool {
+    entry.main_module == 7
+        && entry.submodule == 1
+        && matches!(entry.subsubmodule, 3..=7)
+        && exit.main_module == 7
+        && exit.submodule == 5
+}
+
 const fn link_obj_scanout_across_main(
     entry: crate::game_state::FrameState,
     exit: crate::game_state::FrameState,
@@ -931,12 +942,7 @@ const fn link_obj_scanout_across_main(
     // The subtile landing tail enters room-load/shutter control after the
     // leading NMI. That scanout keeps the Link tiles resident at host entry,
     // even though the independently scheduled animated-BG upload is live.
-    if entry.main_module == 7
-        && entry.submodule == 1
-        && matches!(entry.subsubmodule, 3..=7)
-        && exit.main_module == 7
-        && exit.submodule == 5
-    {
+    if dungeon_subtile_landing_enters_shutter(entry, exit) {
         return GraphicsDmaGeneration::HostBoundaryBeforeMain;
     }
     // Entering a supertile transition happens after the leading NMI has
@@ -1144,11 +1150,7 @@ const fn rom_dungeon_subtile_return_publishes_live_animated_bg(
     // The last subtile landing slice enters room-load/shutter control after
     // the leading NMI has already uploaded the next dungeon animated-tile
     // batch. The module change cannot move that completed DMA behind main.
-    entry.main_module == 7
-        && entry.submodule == 1
-        && matches!(entry.subsubmodule, 3..=7)
-        && captured.main_module == 7
-        && captured.submodule == 5
+    dungeon_subtile_landing_enters_shutter(entry, captured)
 }
 
 const fn rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(
@@ -12510,6 +12512,14 @@ impl ZeldaState {
             && following_frame.submodule == 2
             && following_frame.subsubmodule == 1
             && plan.oam_scanout_source == OamScanoutSource::RetainResidentPpuOam;
+        let dungeon_subtile_shutter_handoff_uses_live_obj_cache =
+            following_room == 0x72
+                && following_frame.main_module == 7
+                && following_frame.submodule == 5
+                && plan.link_obj_scanout_generation
+                    == GraphicsDmaGeneration::HostBoundaryBeforeMain
+                && plan.link_obj_source_generation
+                    == GraphicsDmaGeneration::HostBoundaryBeforeMain;
         if plan.link_obj_source_generation == GraphicsDmaGeneration::LiveAfterMain
             && !dungeon_supertile_first_scroll_uses_live_obj_cache
             && (self.atomic_item_graphics_holds_following_nmi()
@@ -12637,6 +12647,12 @@ impl ZeldaState {
                     obj_cache_vram[0x4000..0x4400].copy_from_slice(previous);
                     self.ppu.obj_vram_latch = Some(obj_cache_vram);
                 }
+            } else if dungeon_subtile_shutter_handoff_uses_live_obj_cache {
+                // Room $72's landing-to-shutter main slice retains the raw Link
+                // page selected at host entry. Snes9x has nevertheless decoded
+                // the post-main page for the active OBJ list, matching v1.0.0's
+                // coherent live-VRAM render without advancing raw scanout.
+                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
             } else if dungeon_supertile_first_scroll_uses_live_obj_cache {
                 // The first steady supertile-scroll scanout retains the raw
                 // host-boundary Link tiles, but Snes9x's renderer cache has

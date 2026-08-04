@@ -33,6 +33,32 @@ fn item_receipt_dismissal_publishes_the_entry_oam_shadow() {
 }
 
 #[test]
+fn subtile_shutter_handoff_keeps_the_host_boundary_link_scanout() {
+    let landing = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 1,
+        subsubmodule: 7,
+        ..Default::default()
+    };
+    let shutter = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 5,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        link_obj_scanout_across_main(
+            landing,
+            shutter,
+            GraphicsDmaGeneration::LiveAfterMain,
+            0,
+        ),
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    );
+    assert!(dungeon_subtile_landing_enters_shutter(landing, shutter));
+}
+
+#[test]
 fn dungeon_item_hold_entry_selects_the_live_authored_oam_shadow() {
     let gameplay = crate::game_state::FrameState {
         main_module: 7,
@@ -659,6 +685,31 @@ fn atomic_item_return_builds_the_measured_mixed_obj_tile_cache() {
     assert_eq!(cache[0x4240], 0xbbbb);
     assert_eq!(cache[0x4250], 0);
     assert_eq!(cache[0x4350], 0);
+}
+
+#[test]
+fn subtile_shutter_handoff_decodes_live_obj_page_without_advancing_raw_vram() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4032] = 0x1111;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 5;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x72;
+    following.ppu.vram[0x4032] = 0xaaaa;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.vram[0x4032], 0x1111);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4032], 0xaaaa);
+
+    let mut other_room = ZeldaState::new();
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x55;
+    other_room.compose_display_oam(&following, &plan);
+    assert!(other_room.ppu.obj_vram_latch.is_none());
 }
 
 #[test]
