@@ -1547,9 +1547,7 @@ impl ZeldaState {
             [(self.game_state.player.pushed_block.animation_mode() & 3) as usize];
         self.set_link_push_dma_sources(source10, source10.wrapping_add(0x100));
 
-        let preserve_nmi_animation =
-            std::mem::take(&mut self.dialogue_late_vwf_preserve_nmi_animation_pending);
-        if !preserve_nmi_animation && self.decrement_bg_tile_animation_countdown() == 0 {
+        if self.decrement_bg_tile_animation_countdown() == 0 {
             let overlay = self.game_state.world.region.overlay_index() as u16;
             let countdown = if overlay == 0xb5 || overlay == 0xbc {
                 0x17
@@ -1565,7 +1563,7 @@ impl ZeldaState {
             let source_offset = self.player_state_mut().advance_link_dma_source_offset();
             self.set_animated_tile_data_source_address(0xa680u16.wrapping_add(source_offset));
         }
-        if !preserve_nmi_animation && self.player_state_mut().decrement_link_dma_countdown() == 0 {
+        if self.player_state_mut().decrement_link_dma_countdown() == 0 {
             let t = self.player_state_mut().advance_link_dma_tile_offset();
 
             let index = (t >> 1) as usize;

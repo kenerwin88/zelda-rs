@@ -4498,18 +4498,6 @@ pub struct ZeldaState {
     pub(crate) dialogue_fast_forward_hold_pending: bool,
     #[serde(skip)]
     pub(crate) dialogue_fast_forward_hold_active: bool,
-    /// The VWF handler completed after this vblank's NMI subroutine dispatch.
-    /// Its BG3 request remains pending for the following NMI.
-    #[serde(skip)]
-    pub(crate) dialogue_bg3_upload_missed_current_nmi: bool,
-    /// A late completed VWF handler was interrupted before the current host's
-    /// two NMI animation countdowns, while the rest of sprite preparation runs.
-    #[serde(skip)]
-    pub(crate) dialogue_late_vwf_preserve_nmi_animation_pending: bool,
-    /// The host after a late VWF interrupt omits only the frame-counter tick;
-    /// its module routing, OAM clear, and sprite preparation still run.
-    #[serde(skip)]
-    pub(crate) dialogue_late_vwf_skip_frame_counter_pending: bool,
     /// CPU entry phase for the next fresh VWF handler iteration. A caller
     /// suffix that returned in its own host slice reaches the following module
     /// iteration earlier than an ordinary game-loop entry.
@@ -10039,9 +10027,6 @@ impl ZeldaState {
             dialogue_scroll_continuation: DialogueScrollContinuation::IDLE,
             dialogue_fast_forward_hold_pending: false,
             dialogue_fast_forward_hold_active: false,
-            dialogue_bg3_upload_missed_current_nmi: false,
-            dialogue_late_vwf_preserve_nmi_animation_pending: false,
-            dialogue_late_vwf_skip_frame_counter_pending: false,
             dialogue_vwf_handler_entry_phase: messaging::VwfHandlerEntryPhase::default(),
             dialogue_vwf_glyph_cpu_phase: messaging::VwfGlyphCpuPhase::Ready,
             published_bg3_vwf_glyph_runs: Vec::new(),
@@ -13605,21 +13590,9 @@ impl ZeldaState {
                 self.finish_pre_main_caller_continuation(continuation);
                 self.dialogue_fast_forward_hold_active = false;
                 self.complete_module0e_interface_after_run();
-                // Any late-handler animation hold belongs to the vblank that
-                // suspended this caller. The resumed suffix is after that
-                // boundary, so its ordinary sprite preparation must advance
-                // both NMI animation countdowns.
-                self.dialogue_late_vwf_preserve_nmi_animation_pending = false;
-                self.dialogue_late_vwf_skip_frame_counter_pending = false;
                 self.nmi_prepare_sprites();
                 self.clear_nmi_update_latch();
                 self.capture_display_snapshot();
-                // The late VWF request already missed the vblank which
-                // suspended this caller. Its resumed suffix now reaches the
-                // following vblank, where subroutine 2 is dispatchable. Do
-                // not carry the old missed-dispatch marker into that NMI and
-                // defer the completed text for a second scanout.
-                self.dialogue_bg3_upload_missed_current_nmi = false;
                 // The interrupted caller has now reached the ordinary
                 // game-loop boundary. Run its trailing NMI exactly once:
                 // it consumes the preprocessed-audio marker and publishes
@@ -16907,15 +16880,11 @@ impl ZeldaState {
         // set through `module_main_routing` so `Module0E_Interface` skips its
         // sprite/Link update, then rotates below.
         let hold_core = self.dialogue_fast_forward_hold_active;
-        let skip_frame_counter =
-            std::mem::take(&mut self.dialogue_late_vwf_skip_frame_counter_pending);
         let resume_dungeon_exit_spotlight =
             std::mem::take(&mut self.dungeon_exit_spotlight_resume_module);
         let run_game_loop_prefix = !hold_core && !resume_dungeon_exit_spotlight;
         if run_game_loop_prefix {
-            if !skip_frame_counter {
-                self.increment_frame_counter();
-            }
+            self.increment_frame_counter();
             self.replay_trace_ram_watch("game-loop-after-frame-counter");
             self.clear_oam_buffer();
             self.replay_trace_ram_watch("game-loop-after-clear-oam");

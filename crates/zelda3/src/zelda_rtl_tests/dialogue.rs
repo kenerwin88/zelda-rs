@@ -166,9 +166,6 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     state.set_sound_effect_2(12);
     state.set_pending_nmi_subroutine(2);
     state.set_core_update_disable_flag(2);
-    state.dialogue_bg3_upload_missed_current_nmi = true;
-    state.dialogue_late_vwf_preserve_nmi_animation_pending = true;
-    state.dialogue_late_vwf_skip_frame_counter_pending = true;
     state.set_bg_tile_animation_countdown(5);
     state.set_messaging_render_buffer_word(0, 0x1234);
 
@@ -179,9 +176,6 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
         .pre_main_caller_continuation()
         .is_none());
     assert!(!state.dialogue_fast_forward_hold_active);
-    assert!(!state.dialogue_bg3_upload_missed_current_nmi);
-    assert!(!state.dialogue_late_vwf_preserve_nmi_animation_pending);
-    assert!(!state.dialogue_late_vwf_skip_frame_counter_pending);
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 4);
     assert!(!state.audio_nmi_processed_before_main);
     assert_eq!(state.game_state.system_signals.sound_effect_2(), 12);

@@ -109,14 +109,8 @@ impl ZeldaState {
         )
     }
 
-    fn defer_pending_nmi_this_frame(&mut self) -> bool {
-        let dialogue_request_missed_dispatch = self.dialogue_bg3_upload_missed_current_nmi
-            && self.game_state.display.pending_nmi_subroutine == 2;
-        if dialogue_request_missed_dispatch {
-            self.dialogue_bg3_upload_missed_current_nmi = false;
-        }
-        dialogue_request_missed_dispatch
-            || self.parity_runtime_nmi_rule_matches("defer_pending_nmi")
+    fn parity_runtime_defer_pending_nmi_this_frame(&self) -> bool {
+        self.parity_runtime_nmi_rule_matches("defer_pending_nmi")
     }
 
     pub(super) fn interrupt_nmi(
@@ -779,7 +773,7 @@ impl ZeldaState {
         // distinct from holding the whole NMI: it leaves the pending byte
         // intact exactly as hardware does when main-loop publication misses a
         // vblank boundary.
-        let nmi_subroutine_index = if self.defer_pending_nmi_this_frame() {
+        let nmi_subroutine_index = if self.parity_runtime_defer_pending_nmi_this_frame() {
             0
         } else {
             self.take_pending_nmi_subroutine()
