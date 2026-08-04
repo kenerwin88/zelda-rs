@@ -6394,12 +6394,26 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
     let supertile_scrolling_plan = rom_graphics_dma_plan_at_host_boundary(supertile_scrolling);
     assert_eq!(
         supertile_scrolling_plan.oam_scanout,
-        OamScanoutSource::ComposePublishedShadowDma
+        OamScanoutSource::ComposeLiveAfterNmi
     );
     assert_eq!(
         supertile_scrolling_plan.link_obj_scanout,
         GraphicsDmaGeneration::LiveAfterMain
     );
+    let mut supertile_filter_return = supertile_scrolling;
+    supertile_filter_return.subsubmodule = 7;
+    let mut resumed_gameplay = supertile_scrolling;
+    resumed_gameplay.subsubmodule = 8;
+    assert!(rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
+        supertile_filter_return,
+        resumed_gameplay,
+        0x81,
+    ));
+    assert!(!rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
+        supertile_filter_return,
+        resumed_gameplay,
+        0x71,
+    ));
 
     let mut supertile_sprite_conversion = supertile_finished;
     supertile_sprite_conversion.subsubmodule = 3;

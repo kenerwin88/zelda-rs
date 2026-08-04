@@ -734,12 +734,7 @@ const fn rom_dungeon_transition_link_obj_scanout_uses_host_boundary(
 
 fn rom_graphics_dma_plan_at_host_boundary(frame: crate::game_state::FrameState) -> GraphicsDmaPlan {
     let mut plan = rom_graphics_dma_plan(frame.main_module, frame.submodule);
-    if frame.main_module == 7 && frame.submodule == 2 && frame.subsubmodule == 8 {
-        // Each supertile-scroll iteration authors the next shadow OAM after
-        // the active scanout's DMA. Display the shadow published by the prior
-        // iteration while BG scroll registers use the current step.
-        plan.oam_scanout = OamScanoutSource::ComposePublishedShadowDma;
-    } else if rom_dungeon_transition_oam_scanout_uses_host_boundary(
+    if rom_dungeon_transition_oam_scanout_uses_host_boundary(
         frame.main_module,
         frame.submodule,
         frame.subsubmodule,
@@ -1210,6 +1205,18 @@ const fn rom_dungeon_supertile_scroll_runs_after_leading_nmi(
     frame.main_module == 7
         && frame.submodule == 2
         && frame.subsubmodule == 8
+        && !matches!(room, 0x71 | 0x72)
+}
+
+const fn rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+    room: u8,
+) -> bool {
+    // State 7 has prepared the shadow consumed by the NMI that enters the
+    // first state-8 scanout. v1.0.0 published that completed OAM DMA instead
+    // of retaining the preceding PPU table across the translated boundary.
+    rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(entry, exit)
         && !matches!(room, 0x71 | 0x72)
 }
 
@@ -12943,6 +12950,22 @@ impl ZeldaState {
                 snapshot_attract_scene.sequence(),
                 snapshot_attract_scene.state(),
             );
+        let live_frame = crate::game_state::FrameState::load_from_ram(&self.ram);
+        let live_world_location = crate::game_state::WorldLocationState::load_from_ram(&self.ram);
+        let dungeon_supertile_filter_return_publishes_live_shadow_oam =
+            rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
+                snapshot_frame,
+                live_frame,
+                live_world_location.dungeon_room_index(),
+            );
+        let live_dungeon_supertile_filter_return_shadow_oam =
+            dungeon_supertile_filter_return_publishes_live_shadow_oam.then(|| {
+                let byte_len = self.ppu.oam.len() * 2;
+                self.ram[OAM_BUF..OAM_BUF + byte_len]
+                    .chunks_exact(2)
+                    .map(|word| u16::from_le_bytes([word[0], word[1]]))
+                    .collect::<Vec<_>>()
+            });
         // At the same split boundary, OAM above, Link OBJ VRAM below, and the
         // doorway scroll publish from live state while the remaining staged
         // display controls retain their independently measured generation.
@@ -13094,6 +13117,9 @@ impl ZeldaState {
             );
         }
         self.compose_display_oam(&display, &publication_plan);
+        if let Some(shadow_oam) = live_dungeon_supertile_filter_return_shadow_oam.as_deref() {
+            self.ppu.oam.clone_from_slice(shadow_oam);
+        }
         self.staged_presented_oam = Some(self.ppu.oam.clone());
         let presented_obj_vram = self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram);
         self.staged_presented_obj_vram = Some(presented_obj_vram[0x4000..0x4400].to_vec());
