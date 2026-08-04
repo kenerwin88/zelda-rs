@@ -5756,8 +5756,8 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
         GraphicsDmaPlan {
             oam_operands: GraphicsDmaGeneration::LiveAfterMain,
             oam_scanout: OamScanoutSource::RetainResidentPpuOam,
-            link_obj_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
-            link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
+            link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
+            link_obj_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_scanout: AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi,
         },
@@ -6296,11 +6296,11 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
     );
     assert_eq!(
         subtile_plan.animated_bg_operands,
-        GraphicsDmaGeneration::HostBoundaryBeforeMain
+        GraphicsDmaGeneration::LiveAfterMain
     );
     assert_eq!(
         subtile_plan.animated_bg_scanout,
-        AnimatedBgScanoutGeneration::LiveAfterNmi
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
     );
     let mut subtile_filter = subtile;
     subtile_filter.subsubmodule = 6;

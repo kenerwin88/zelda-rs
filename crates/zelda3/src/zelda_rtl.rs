@@ -754,14 +754,11 @@ fn rom_graphics_dma_plan_at_host_boundary(frame: crate::game_state::FrameState) 
         plan.link_obj_scanout = GraphicsDmaGeneration::HostBoundaryBeforeMain;
     }
     if frame.main_module == 7 && frame.submodule == 1 && matches!(frame.subsubmodule, 3..=7) {
-        // Subtile transition movement and animation run after the leading NMI.
-        // Both DMA engines therefore consume the source words sampled at host
-        // entry. Link's OBJ upload must not see post-main operands, while the
-        // animated-BG upload has already completed before active scanout and
-        // must publish that live VRAM generation.
+        // Subtile transition movement runs after the leading NMI, so Link's
+        // OBJ upload must not see the post-main operands. Animated BG DMA
+        // retains the ordinary plan: v1.0.0 kept its independently captured
+        // operand and scanout generations here.
         plan.link_obj_operands = GraphicsDmaGeneration::HostBoundaryBeforeMain;
-        plan.animated_bg_operands = GraphicsDmaGeneration::HostBoundaryBeforeMain;
-        plan.animated_bg_scanout = AnimatedBgScanoutGeneration::LiveAfterNmi;
     }
     plan
 }
