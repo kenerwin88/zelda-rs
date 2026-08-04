@@ -11653,6 +11653,19 @@ impl ZeldaState {
         )
     }
 
+    fn item_receipt_graphics_return_uses_ordinary_module_epilogue(
+        &self,
+        continuation: ItemReceiptGraphicsContinuation,
+    ) -> bool {
+        if !matches!(
+            continuation,
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x21 }
+        ) {
+            return false;
+        }
+        self.game_state.player.follower_link.handler_state() != 21
+    }
+
     fn stage_atomic_item_graphics_return_obj_scanout(
         &mut self,
         continuation: ItemReceiptGraphicsContinuation,
@@ -14554,24 +14567,31 @@ impl ZeldaState {
                 GameWorkStep::Complete(GameWorkContinuation::FinishItemReceiptGraphics {
                     continuation,
                 }) => {
-                    // The final measured slice is the vblank that interrupts
-                    // the decompressor itself. The software NMI latch is still
-                    // set here, so hardware retains its resident OAM and Link
-                    // tiles. Dungeon animated tiles are a separate DMA domain
-                    // which still completes before this scanout is captured.
-                    // This arm returns before the common scheduled-work
-                    // boundary below, so publish that partial NMI explicitly.
-                    let graphics_dma_plan = rom_graphics_dma_plan(
-                        self.game_state.frame.main_module,
-                        self.game_state.frame.submodule,
-                    );
-                    self.nmi_core_animated_bg_update(graphics_dma_plan);
-                    // Only after that boundary does the conversion return
-                    // through its caller and release the latch.
-                    self.capture_display_snapshot_with_publication(
-                        DisplaySnapshotPublication::RetainPublished,
-                    );
-                    self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    // The $21 item sheet returns through the ordinary module
+                    // epilogue in v1.0.0: sprite preparation releases the NMI
+                    // latch, then the common boundary below publishes the
+                    // complete OAM image. Keep the measured retained path while
+                    // Link is still in handler 21, but once that receipt has
+                    // ended it would retain an older packed OAM size bit after
+                    // the lower sprite entry has already advanced.
+                    let ordinary_gfx_21_return = self
+                        .item_receipt_graphics_return_uses_ordinary_module_epilogue(continuation);
+                    if !ordinary_gfx_21_return {
+                        // The final measured slice is the vblank that interrupts
+                        // the decompressor itself. The software NMI latch is still
+                        // set here, so hardware retains its resident OAM and Link
+                        // tiles. Dungeon animated tiles are a separate DMA domain
+                        // which still completes before this scanout is captured.
+                        let graphics_dma_plan = rom_graphics_dma_plan(
+                            self.game_state.frame.main_module,
+                            self.game_state.frame.submodule,
+                        );
+                        self.nmi_core_animated_bg_update(graphics_dma_plan);
+                        self.capture_display_snapshot_with_publication(
+                            DisplaySnapshotPublication::RetainPublished,
+                        );
+                        self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    }
                     if let ItemReceiptGraphicsContinuation::ResumeUnclePassage {
                         receipt,
                         sprite_slot,
@@ -14589,8 +14609,10 @@ impl ZeldaState {
                     // DMA sources and release the software NMI latch.
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
-                    self.stage_atomic_item_graphics_return_obj_scanout(continuation);
-                    return;
+                    if !ordinary_gfx_21_return {
+                        self.stage_atomic_item_graphics_return_obj_scanout(continuation);
+                        return;
+                    }
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishBigKeyDropGraphics {
                     sprite_slot,

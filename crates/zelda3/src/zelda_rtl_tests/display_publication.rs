@@ -525,6 +525,24 @@ fn atomic_item_return_marks_the_retained_and_following_link_generations() {
 }
 
 #[test]
+fn gfx_21_item_return_uses_the_v1_ordinary_module_epilogue() {
+    let mut state = ZeldaState::new();
+    let gfx_21 = ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x21 };
+
+    assert!(state.item_receipt_graphics_return_uses_ordinary_module_epilogue(gfx_21));
+    state.follower_link_state_mut().set_handler_state(21);
+    assert!(!state.item_receipt_graphics_return_uses_ordinary_module_epilogue(gfx_21));
+    state.follower_link_state_mut().set_handler_state(0);
+    assert!(state.item_receipt_graphics_return_uses_ordinary_module_epilogue(gfx_21));
+
+    for gfx in [0x14, 0x22, 0x24] {
+        assert!(!state.item_receipt_graphics_return_uses_ordinary_module_epilogue(
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx },
+        ));
+    }
+}
+
+#[test]
 fn uncle_sword_item_return_stages_the_prepared_oam_for_the_next_boundary() {
     let mut state = ZeldaState::new();
     state.capture_display_snapshot();
