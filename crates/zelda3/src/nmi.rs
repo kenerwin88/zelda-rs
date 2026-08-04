@@ -125,6 +125,21 @@ impl ZeldaState {
         oam_dma_source: Option<&[u8]>,
         defer_bg_vram_upload: bool,
     ) {
+        self.interrupt_nmi_with_animated_bg_operands(
+            input,
+            oam_dma_source,
+            defer_bg_vram_upload,
+            None,
+        );
+    }
+
+    pub(super) fn interrupt_nmi_with_animated_bg_operands(
+        &mut self,
+        input: u16,
+        oam_dma_source: Option<&[u8]>,
+        defer_bg_vram_upload: bool,
+        animated_bg_operands: Option<GraphicsDmaGeneration>,
+    ) {
         let trace_nmi = std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some();
         self.ppu.forced_blank_from_scanline = None;
         self.ppu.retain_active_display_history = false;
@@ -224,7 +239,11 @@ impl ZeldaState {
                 .nmi_forced_blank_scanlines_pending
                 .max(blanking.prefix_scanlines);
             self.latch_nmi_update();
-            self.nmi_do_updates_from(oam_dma_source, defer_bg_vram_upload);
+            self.nmi_do_updates_from(
+                oam_dma_source,
+                defer_bg_vram_upload,
+                animated_bg_operands,
+            );
             if !joypad_already_sampled {
                 self.nmi_read_joypads(input);
             }
@@ -367,7 +386,7 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_do_updates(&mut self) {
-        self.nmi_do_updates_from(None, false);
+        self.nmi_do_updates_from(None, false, None);
     }
 
     pub(super) fn publish_dialogue_initialization_oam_dma(&mut self, shadow: &[u8]) {
@@ -502,12 +521,20 @@ impl ZeldaState {
         }
     }
 
-    fn nmi_do_updates_from(&mut self, oam_dma_source: Option<&[u8]>, defer_bg_vram_upload: bool) {
+    fn nmi_do_updates_from(
+        &mut self,
+        oam_dma_source: Option<&[u8]>,
+        defer_bg_vram_upload: bool,
+        animated_bg_operands: Option<GraphicsDmaGeneration>,
+    ) {
         if !self.game_state.display.core_updates_are_disabled() {
-            let graphics_dma_plan = rom_graphics_dma_plan(
+            let mut graphics_dma_plan = rom_graphics_dma_plan(
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
             );
+            if let Some(generation) = animated_bg_operands {
+                graphics_dma_plan.animated_bg_operands = generation;
+            }
             // Link's source words are sampled by the NMI after the current
             // main-thread slice. If that slice switched modules, its exit
             // phase owns the operands; ordinary leading-NMI phases still

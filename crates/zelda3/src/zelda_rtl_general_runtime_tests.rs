@@ -4931,9 +4931,13 @@ fn spiral_stair_grayscale_return_releases_core_dma_after_retaining_its_scanout()
     let mut state = ZeldaState::new();
     state.set_core_update_disable_flag(1);
 
-    state.stage_spiral_stairs_second_grayscale_nmi();
+    let animated_bg_operands = state.stage_spiral_stairs_second_grayscale_nmi();
 
     assert!(!state.game_state.display.core_updates_are_disabled());
+    assert_eq!(
+        animated_bg_operands,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    );
     assert_eq!(
         state.next_display_animated_bg_scanout_generation,
         Some(AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi)
