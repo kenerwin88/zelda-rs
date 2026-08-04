@@ -825,17 +825,6 @@ const fn link_obj_operands_across_main(
     }
 }
 
-const fn dungeon_supertile_entry_uses_mixed_obj_scanout(
-    entry: crate::game_state::FrameState,
-    exit: crate::game_state::FrameState,
-) -> bool {
-    entry.main_module == 7
-        && entry.submodule == 0
-        && exit.main_module == 7
-        && exit.submodule == 2
-        && exit.subsubmodule == 0
-}
-
 const fn dungeon_dialogue_entry_uses_host_oam_operands(
     entry: crate::game_state::FrameState,
     exit: crate::game_state::FrameState,
@@ -943,13 +932,6 @@ const fn link_obj_scanout_across_main(
     // leading NMI. That scanout keeps the Link tiles resident at host entry,
     // even though the independently scheduled animated-BG upload is live.
     if dungeon_subtile_landing_enters_shutter(entry, exit) {
-        return GraphicsDmaGeneration::HostBoundaryBeforeMain;
-    }
-    // Entering a supertile transition happens after the leading NMI has
-    // already uploaded Link's host-boundary source words. The state-0 CPU
-    // slice may select the next animation sources, but they belong to the
-    // following scanout.
-    if dungeon_supertile_entry_uses_mixed_obj_scanout(entry, exit) {
         return GraphicsDmaGeneration::HostBoundaryBeforeMain;
     }
     // State 1 retains the host-boundary Link tiles throughout the supertile
@@ -11818,8 +11800,6 @@ impl ZeldaState {
             .map(|graphics| graphics.entry_frame)
             .unwrap_or_else(|| crate::game_state::FrameState::load_from_ram(&self.ram));
         let following_frame = crate::game_state::FrameState::load_from_ram(&following.ram);
-        let mixed_supertile_entry_obj =
-            dungeon_supertile_entry_uses_mixed_obj_scanout(entry_frame, following_frame);
         let host_boundary_link_obj_vram = self
             .pre_main_graphics_dma
             .as_ref()
@@ -11831,14 +11811,8 @@ impl ZeldaState {
         ) && matches!(
             plan.link_obj_source_generation,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
-        ) && !mixed_supertile_entry_obj)
+        ))
             .then(|| host_boundary_link_obj_vram.clone());
-        let retained_supertile_entry_link_obj_vram = mixed_supertile_entry_obj.then(|| {
-            [
-                host_boundary_link_obj_vram[0x000..0x050].to_vec(),
-                host_boundary_link_obj_vram[0x100..0x150].to_vec(),
-            ]
-        });
         let following_room = crate::game_state::WorldLocationState::load_from_ram(&following.ram)
             .dungeon_room_index();
         let retained_doorway_link_obj_vram = room_71_supertile_return_retains_link_vram(
@@ -11917,10 +11891,6 @@ impl ZeldaState {
             }
             if let Some(entry_link_obj_vram) = entry_link_obj_vram {
                 self.ppu.vram[0x4000..0x4400].copy_from_slice(&entry_link_obj_vram);
-            }
-            if let Some([upper, lower]) = retained_supertile_entry_link_obj_vram {
-                self.ppu.vram[0x4000..0x4050].copy_from_slice(&upper);
-                self.ppu.vram[0x4100..0x4150].copy_from_slice(&lower);
             }
             if let Some([upper, lower]) = retained_doorway_link_obj_vram {
                 self.ppu.vram[0x4000..0x4050].copy_from_slice(&upper);
@@ -12050,37 +12020,22 @@ impl ZeldaState {
         following: &DisplaySnapshot,
         plan: &DisplayPublicationPlan,
     ) {
-        let entry_frame = self
-            .pre_main_graphics_dma
-            .as_ref()
-            .map(|graphics| graphics.entry_frame)
-            .unwrap_or_else(|| crate::game_state::FrameState::load_from_ram(&self.ram));
         let following_frame = crate::game_state::FrameState::load_from_ram(&following.ram);
-        let mixed_supertile_entry_obj =
-            dungeon_supertile_entry_uses_mixed_obj_scanout(entry_frame, following_frame);
         let dungeon_supertile_state3_retains_presented_link_sources = following_frame.main_module
             == 7
             && following_frame.submodule == 2
             && following_frame.subsubmodule == 3;
-        let retained_link_obj_sources = ((matches!(
+        let retained_link_obj_sources = (matches!(
             plan.link_obj_source_generation,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         )
             || dungeon_supertile_state3_retains_presented_link_sources)
-            && !mixed_supertile_entry_obj)
-            .then(|| {
-                (
-                    self.vram_chr_source.clone(),
-                    self.vram_chr_preview_source.clone(),
-                )
-            });
-        let retained_supertile_entry_link_obj_sources = mixed_supertile_entry_obj.then(|| {
+        .then(|| {
             (
                 self.vram_chr_source.clone(),
                 self.vram_chr_preview_source.clone(),
             )
         });
-
         if plan.vram_generation == DisplayVramGeneration::ComposeLiveAfterNmi {
             self.vram_chr_source.clone_from(&following.vram_chr_source);
             self.vram_chr_preview_source
@@ -12090,14 +12045,6 @@ impl ZeldaState {
                     .copy_word_range_from(logical, 0x4000..0x4400);
                 self.vram_chr_preview_source
                     .copy_word_range_from(preview, 0x4000..0x4400);
-            }
-            if let Some((logical, preview)) = retained_supertile_entry_link_obj_sources.as_ref() {
-                for range in [0x4000..0x4050, 0x4100..0x4150] {
-                    self.vram_chr_source
-                        .copy_word_range_from(logical, range.clone());
-                    self.vram_chr_preview_source
-                        .copy_word_range_from(preview, range);
-                }
             }
         } else if matches!(
             plan.link_obj_source_generation,

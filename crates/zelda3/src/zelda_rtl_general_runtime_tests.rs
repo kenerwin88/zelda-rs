@@ -6346,7 +6346,7 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
             GraphicsDmaGeneration::LiveAfterMain,
             0,
         ),
-        GraphicsDmaGeneration::HostBoundaryBeforeMain
+        GraphicsDmaGeneration::LiveAfterMain
     );
     let mut supertile_exit = supertile_entry;
     supertile_exit.subsubmodule = 1;
