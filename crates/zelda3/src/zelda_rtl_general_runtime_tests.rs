@@ -3562,12 +3562,28 @@ fn room_72_supertile_room_load_caller_resume_crosses_one_additional_nmi() {
 }
 
 #[test]
-fn ordinary_room_supertile_quadrant_tilemap_build_crosses_one_nmi_before_advancing() {
+fn ordinary_room_supertile_quadrant_tilemap_build_does_not_suspend() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
     state.set_main_module(7);
     state.set_submodule(2);
     state.set_subsubmodule(5);
+    state.set_dungeon_room_index(0x60);
+
+    assert!(!state.begin_dungeon_supertile_transition_work(
+        DungeonSupertileTransitionWork::QuadrantTilemapBuild,
+    ));
+    assert!(state.paired_resume_cpu_boundary_is_quiescent());
+}
+
+#[test]
+fn room_72_supertile_quadrant_tilemap_build_crosses_one_nmi_before_advancing() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(5);
+    state.set_dungeon_room_index(0x72);
 
     assert!(state.begin_dungeon_supertile_transition_work(
         DungeonSupertileTransitionWork::QuadrantTilemapBuild,

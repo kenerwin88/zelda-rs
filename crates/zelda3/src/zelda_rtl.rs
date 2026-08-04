@@ -10583,6 +10583,14 @@ impl ZeldaState {
                 return false;
             }
             debug_assert_eq!(self.game_state.frame.submodule, 2);
+            if self.game_state.world.location.dungeon_room_index() != 0x72 {
+                // The ordinary supertile quadrant builder returns within the
+                // current host frame. Only room $72 has the measured
+                // interrupted state-5/state-10 returns handled by the
+                // continuation below; suspending every room delayed state 6
+                // and its NMI-owned Link animation by one frame.
+                return false;
+            }
         } else {
             debug_assert_eq!(self.game_state.frame.submodule, 2);
         }
