@@ -1182,6 +1182,42 @@ const fn rom_dungeon_supertile_filter_return_resumes_first_scroll_after_nmi(
         && !matches!(room, 0x71 | 0x72)
 }
 
+const fn rom_room_82_sprite_conversion_defers_trailing_nmi(
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+    room: u8,
+) -> bool {
+    // Room $82's state-$02 filter returns after the current host scanout but
+    // before the following vblank. Snes9x therefore keeps $12 clear and the
+    // resident Link OBJ page visible on this boundary; the deferred NMI runs
+    // during the first state-$03 host slice and uploads the newly authored
+    // Link operands.
+    room == 0x82
+        && entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 2
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 3
+}
+
+const fn rom_room_82_deferred_nmi_retains_resident_oam(
+    entry: crate::game_state::FrameState,
+    room: u8,
+    nmi_update_is_latched: bool,
+) -> bool {
+    // The first state-$03 slice owns the vblank deferred by state $02, but its
+    // active OBJ list remains on the resident state-$02 OAM generation.  The
+    // translated state-$03 shadow has already offscreened five Link entries,
+    // so feeding either adjacent shadow generation to this DMA advances OAM
+    // too early. Later state-$03 slices enter with $12 set and need no override.
+    room == 0x82
+        && entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 3
+        && !nmi_update_is_latched
+}
+
 const fn rom_dungeon_supertile_scroll_runs_after_leading_nmi(
     frame: crate::game_state::FrameState,
     room: u8,
@@ -4863,6 +4899,7 @@ struct DisplaySnapshot {
     intro_memory_darken_frame_delay: u8,
     nmi_poly_upload_deferred: u8,
     obj_vram_latch_generation: u64,
+    room_82_sprite_conversion_deferred_nmi: bool,
     snes9x_poly_scheduler_counter: u8,
 }
 
@@ -11519,6 +11556,7 @@ impl ZeldaState {
             intro_memory_darken_frame_delay: self.intro_memory_darken_frame_delay,
             nmi_poly_upload_deferred: self.nmi_poly_upload_deferred,
             obj_vram_latch_generation: self.obj_vram_latch_generation,
+            room_82_sprite_conversion_deferred_nmi: false,
             snes9x_poly_scheduler_counter: self.snes9x_poly_scheduler_counter,
         });
         let nmi_forced_blank_scanlines =
@@ -12726,7 +12764,17 @@ impl ZeldaState {
             // The raw Link ranges remain on the prior completed DMA image, but
             // Snes9x has already decoded the post-NMI OBJ page used by this
             // scanout. Preserve that renderer-only generation independently.
-            let mut obj_cache_vram = following.ppu.vram.clone();
+            let mut obj_cache_vram = if following_room == 0x82
+                && following.room_82_sprite_conversion_deferred_nmi
+            {
+                // Room $82 enters state $03 before its deferred vblank.  The
+                // snapshot's resident page is therefore also the page Snes9x
+                // decoded for this scanout; the following live state can
+                // already contain the upload owned by the next image.
+                self.ppu.vram.clone()
+            } else {
+                following.ppu.vram.clone()
+            };
             if self.screen_transition() == 1 {
                 // Direction 1's state-3 scanout has decoded the same current
                 // head operands as the preceding state-2 scanout even though
@@ -15146,11 +15194,47 @@ impl ZeldaState {
             self.game_state.frame.main_module,
             self.game_state.display.has_bg_vram_load(),
         );
-        self.interrupt_nmi(
-            input,
-            oam_dma_source.as_deref(),
-            defer_interface_exit_bg_upload,
-        );
+        let defer_room_82_sprite_conversion_nmi = self.rom_startup_timing()
+            && run_what & crate::RUN_MAIN != 0
+            && rom_room_82_sprite_conversion_defers_trailing_nmi(
+                frame,
+                self.game_state.frame,
+                self.game_state.world.location.dungeon_room_index(),
+            );
+        if defer_room_82_sprite_conversion_nmi {
+            if let Some(snapshot) = self.display_snapshot.as_mut() {
+                snapshot.room_82_sprite_conversion_deferred_nmi = true;
+            } else if let Some(snapshot) = self.visible_display_snapshot.as_mut() {
+                snapshot.room_82_sprite_conversion_deferred_nmi = true;
+            }
+        }
+        if !defer_room_82_sprite_conversion_nmi {
+            let room_82_deferred_nmi_retains_resident_oam = self.rom_startup_timing()
+                && rom_room_82_deferred_nmi_retains_resident_oam(
+                    frame,
+                    self.game_state.world.location.dungeon_room_index(),
+                    self.game_state.display.nmi_update_is_latched(),
+                );
+            let resident_oam = room_82_deferred_nmi_retains_resident_oam.then(|| {
+                self.display_snapshot
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.published_shadow_oam_dma.clone())
+                    .or_else(|| self.last_presented_oam.clone())
+                    .unwrap_or_else(|| self.ppu.oam.clone())
+            });
+            self.interrupt_nmi(
+                input,
+                oam_dma_source.as_deref(),
+                defer_interface_exit_bg_upload,
+            );
+            if let Some(resident_oam) = resident_oam {
+                // This deferred vblank still publishes Link/BG/CGRAM work, but
+                // its completed OBJ list remains the resident state-$02 list.
+                // Restore only that independently measured PPU domain after
+                // the shared NMI path has completed its other transfers.
+                self.ppu.oam = resident_oam;
+            }
+        }
         if dialogue_scroll_finished_copy {
             // The final copy slice reaches vblank before the RenderText caller
             // suffix. The ROM NMI always publishes $2123..$2132 even while

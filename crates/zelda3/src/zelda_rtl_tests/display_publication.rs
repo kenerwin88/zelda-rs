@@ -865,6 +865,35 @@ fn first_supertile_scroll_retains_raw_obj_vram_but_decodes_the_live_cache() {
 }
 
 #[test]
+fn room_82_deferred_sprite_conversion_decodes_the_resident_obj_page() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4020] = 0x1111;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 2;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 3;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x82;
+    following.ppu.vram[0x4020] = 0xaaaa;
+    following.room_82_sprite_conversion_deferred_nmi = true;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.vram[0x4020], 0x1111);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4020], 0x1111);
+
+    let mut ordinary_state_3 = ZeldaState::new();
+    ordinary_state_3.ppu.vram[0x4020] = 0x1111;
+    following.room_82_sprite_conversion_deferred_nmi = false;
+    ordinary_state_3.compose_display_oam(&following, &plan);
+    assert_eq!(
+        ordinary_state_3.ppu.obj_vram_latch.as_ref().unwrap()[0x4020],
+        0xaaaa
+    );
+}
+
+#[test]
 fn completed_room_load_can_publish_live_animated_bg_independently() {
     let mut state = ZeldaState::new();
     state.capture_display_snapshot();

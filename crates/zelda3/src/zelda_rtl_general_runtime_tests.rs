@@ -6403,6 +6403,26 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
 
     let mut supertile_sprite_conversion = supertile_finished;
     supertile_sprite_conversion.subsubmodule = 3;
+    assert!(rom_room_82_sprite_conversion_defers_trailing_nmi(
+        supertile_finished,
+        supertile_sprite_conversion,
+        0x82,
+    ));
+    assert!(!rom_room_82_sprite_conversion_defers_trailing_nmi(
+        supertile_finished,
+        supertile_sprite_conversion,
+        0x81,
+    ));
+    assert!(rom_room_82_deferred_nmi_retains_resident_oam(
+        supertile_sprite_conversion,
+        0x82,
+        false,
+    ));
+    assert!(!rom_room_82_deferred_nmi_retains_resident_oam(
+        supertile_sprite_conversion,
+        0x82,
+        true,
+    ));
     assert_eq!(
         rom_graphics_dma_plan_at_host_boundary(supertile_sprite_conversion).link_obj_scanout,
         GraphicsDmaGeneration::HostBoundaryBeforeMain
