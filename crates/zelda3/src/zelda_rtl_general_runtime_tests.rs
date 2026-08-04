@@ -5520,6 +5520,17 @@ fn completed_overworld_reload_uses_its_measured_return_phase() {
 }
 
 #[test]
+fn suspended_spiral_palette_filter_holds_core_nmi_updates() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+
+    assert!(state.suspend_spiral_staircase_palette_filter(
+        SpiralStaircasePaletteTail::PrepareNextQuadrant,
+    ));
+    assert!(state.game_state.display.core_updates_are_disabled());
+}
+
+#[test]
 fn overworld_reload_timing_keeps_resume_geometry_separate_from_return_phase() {
     let light = OverworldSpriteReloadWorkload {
         sprite_records: 2,

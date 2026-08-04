@@ -7331,6 +7331,11 @@ impl ZeldaState {
         if !self.rom_startup_timing() {
             return false;
         }
+        // The interrupted palette walk keeps NMI_DoUpdates gated until the
+        // translated caller returns. In particular, the animated-BG DMA must
+        // not consume the source advanced by the suspended spiral-staircase
+        // main slice.
+        self.set_core_update_disable_flag(1);
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishSpiralStaircasePaletteFilter { tail },
             DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES,
@@ -14153,6 +14158,31 @@ impl ZeldaState {
         } else {
             None
         };
+        if let Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishSpiralStaircasePaletteFilter { tail },
+        )) = scheduled_work_step
+        {
+            // The palette walk and caller tail return before this vblank, so
+            // palette/tilemap publication is live. Core graphics DMA remains
+            // gated across the return, however: its newly advanced animated
+            // source does not reach VRAM until the next completed boundary.
+            self.complete_dungeon_spiral_staircase_palette_filter(tail);
+            self.complete_module07_dungeon_after_submodule();
+            self.nmi_prepare_sprites();
+            self.clear_nmi_update_latch();
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            self.set_core_update_disable_flag(1);
+            if matches!(self.game_state.frame.subsubmodule, 12..=15) {
+                self.game_execution_scheduler.schedule_pre_main_nmi_resume(
+                    PreMainNmiResume::DungeonSupertileQuadrantUploads,
+                );
+            }
+            self.assert_native_frame_state_matches_ram();
+            self.assert_native_world_location_state_matches_ram();
+            self.assert_native_display_state_matches_ram();
+            return;
+        }
         if let Some(work_slice) = scheduled_work_step {
             if let GameWorkStep::Complete(continuation) = work_slice {
                 let publication = continuation.completion_publication(scheduled_work_entry_scroll);
@@ -14626,17 +14656,9 @@ impl ZeldaState {
                     self.clear_nmi_update_latch();
                 }
                 GameWorkStep::Complete(
-                    GameWorkContinuation::FinishSpiralStaircasePaletteFilter { tail },
+                    GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. },
                 ) => {
-                    self.complete_dungeon_spiral_staircase_palette_filter(tail);
-                    self.complete_module07_dungeon_after_submodule();
-                    self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
-                    if matches!(self.game_state.frame.subsubmodule, 12..=15) {
-                        self.game_execution_scheduler.schedule_pre_main_nmi_resume(
-                            PreMainNmiResume::DungeonSupertileQuadrantUploads,
-                        );
-                    }
+                    unreachable!("spiral palette completion handled before generic publication")
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightEntry) => {
                     // The vblank-interrupted first IrisSpotlight_ConfigureTable
