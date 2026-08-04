@@ -7343,6 +7343,15 @@ impl ZeldaState {
         true
     }
 
+    pub(super) fn stage_spiral_stairs_second_grayscale_nmi(&mut self) {
+        // The final quadrant-upload NMI has returned, so the atomic ROM path
+        // exposes $0710 = 0 to this caller. Its core DMA is allowed to run,
+        // but belongs to the following scanout.
+        self.clear_core_update_disable_flag();
+        self.next_display_animated_bg_scanout_generation =
+            Some(AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi);
+    }
+
     pub(crate) fn set_core_update_disable_flag(&mut self, value: u8) {
         self.display_core_mut().set_core_update_disable_flag(value);
     }
@@ -13637,6 +13646,7 @@ impl ZeldaState {
             }
             PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter => {
                 self.finish_pre_main_caller_continuation(continuation);
+                self.stage_spiral_stairs_second_grayscale_nmi();
                 self.complete_spiral_stairs_second_grayscale_palette_filter();
                 self.complete_module07_dungeon_after_submodule();
                 self.nmi_prepare_sprites();

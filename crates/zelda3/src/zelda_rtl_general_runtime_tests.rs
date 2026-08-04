@@ -4927,6 +4927,20 @@ fn spiral_stair_grayscale_pass_resumes_on_its_second_palette_walk() {
 }
 
 #[test]
+fn spiral_stair_grayscale_return_releases_core_dma_after_retaining_its_scanout() {
+    let mut state = ZeldaState::new();
+    state.set_core_update_disable_flag(1);
+
+    state.stage_spiral_stairs_second_grayscale_nmi();
+
+    assert!(!state.game_state.display.core_updates_are_disabled());
+    assert_eq!(
+        state.next_display_animated_bg_scanout_generation,
+        Some(AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi)
+    );
+}
+
+#[test]
 fn file_select_main_publishes_display_memory_at_the_following_nmi() {
     assert!(rom_display_memory_publication_is_deferred(1, 5, 0, true));
     assert!(!rom_display_memory_publication_is_deferred(1, 4, 0, false));
