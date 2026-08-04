@@ -89,15 +89,15 @@ impl SpriteMainTimingWorkload {
     /// measured dungeon sprite workloads.
     pub(crate) fn dungeon_map_backup_force_blank_output_scanline(self) -> Option<u8> {
         // The sanctuary map transition runs one active blue-guard routine and
-        // no garnish work. Patched-core raster tracing places its INIDISP write
-        // at the boundary which blanks output row 35.
+        // no garnish work. The exact Snes9x scanout keeps rows 0..26 visible;
+        // the INIDISP write blanks output starting at row 27.
         (self.blue_guard_count == 1
             && self.tutorial_guard_or_barrier_count == 0
             && self.mirror_portal_count == 0
             && self.other_active_sprite_count == 0
             && !self.scans_all_garnish_slots
             && self.active_garnish_count == 0)
-            .then_some(35)
+            .then_some(27)
     }
 }
 
@@ -211,7 +211,7 @@ mod tests {
 
         assert_eq!(
             workload.dungeon_map_backup_force_blank_output_scanline(),
-            Some(35)
+            Some(27)
         );
         assert_eq!(workload.world_map_fade_force_blank_output_scanline(), None);
     }
