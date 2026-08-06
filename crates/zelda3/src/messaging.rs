@@ -19,10 +19,14 @@ const VWF_RESUMED_FRAME_MASTER_CYCLES: u32 = SNES_NTSC_MASTER_CYCLES_PER_FRAME;
 // oracle trace. Use their midpoint as the fixed handler-loop overhead.
 const VWF_GLYPH_TRANSITION_MASTER_CYCLES: u32 = 510;
 // Fixed work from the message-loop dispatch through VWF_RenderSingle's entry
-// effects. Snes9x PC traces place the $0E:CACC dialogue-click store on this
-// side of the expensive $0E:CBF2/$0E:CC90 pixel loops. Keeping this phase
-// separate is observable when vblank lands between function entry and drawing.
+// effects and drawing setup. The dialogue-click store is much earlier within
+// that work: Snes9x PC traces place $0E:CACC 1,952-2,036 master cycles after
+// the $0E:C984 message-loop restart. Keeping the post-click setup separate is
+// observable when vblank lands after the click but before drawing begins.
 const VWF_GLYPH_ENTRY_MASTER_CYCLES: u32 = 18_000;
+const VWF_GLYPH_CLICK_MASTER_CYCLES: u32 = 2_000;
+const VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES: u32 =
+    VWF_GLYPH_ENTRY_MASTER_CYCLES - VWF_GLYPH_CLICK_MASTER_CYCLES;
 // From the RenderText handler epilogue through Module0E's scroll-register
 // copies and NMI_PrepareSprites. Oracle PC traces measure about 16,300 master
 // cycles for this caller suffix; a completion with less headroom is resumed
@@ -99,6 +103,11 @@ pub(crate) enum VwfGlyphCpuPhase {
     Ready,
     Entering {
         remaining_master_cycles: u32,
+        post_click_master_cycles: u32,
+        drawing_master_cycles: u32,
+    },
+    PreparingDrawing {
+        remaining_master_cycles: u32,
         drawing_master_cycles: u32,
     },
     Drawing {
@@ -117,15 +126,28 @@ struct VwfGlyphCpuAdvance {
 impl VwfGlyphCpuPhase {
     fn advance(self, available: u32, drawing_master_cycles: u32) -> VwfGlyphCpuAdvance {
         match self {
-            Self::Ready => Self::advance_entry(
-                VWF_GLYPH_ENTRY_MASTER_CYCLES,
+            Self::Ready => Self::advance_click(
+                VWF_GLYPH_CLICK_MASTER_CYCLES,
+                VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES,
                 drawing_master_cycles,
                 available,
             ),
             Self::Entering {
                 remaining_master_cycles,
+                post_click_master_cycles,
                 drawing_master_cycles,
-            } => Self::advance_entry(remaining_master_cycles, drawing_master_cycles, available),
+            } => Self::advance_click(
+                remaining_master_cycles,
+                post_click_master_cycles,
+                drawing_master_cycles,
+                available,
+            ),
+            Self::PreparingDrawing {
+                remaining_master_cycles,
+                drawing_master_cycles,
+            } => {
+                Self::advance_post_click(remaining_master_cycles, drawing_master_cycles, available)
+            }
             Self::Drawing {
                 remaining_master_cycles,
             } if remaining_master_cycles > available => VwfGlyphCpuAdvance {
@@ -147,15 +169,17 @@ impl VwfGlyphCpuPhase {
         }
     }
 
-    fn advance_entry(
-        entry_master_cycles: u32,
+    fn advance_click(
+        click_master_cycles: u32,
+        post_click_master_cycles: u32,
         drawing_master_cycles: u32,
         available: u32,
     ) -> VwfGlyphCpuAdvance {
-        if entry_master_cycles > available {
+        if click_master_cycles > available {
             return VwfGlyphCpuAdvance {
                 next_phase: Self::Entering {
-                    remaining_master_cycles: entry_master_cycles - available,
+                    remaining_master_cycles: click_master_cycles - available,
+                    post_click_master_cycles,
                     drawing_master_cycles,
                 },
                 consumed_master_cycles: available,
@@ -163,21 +187,50 @@ impl VwfGlyphCpuPhase {
                 completed: false,
             };
         }
-        let after_entry = available - entry_master_cycles;
+        let after_click = Self::advance_post_click(
+            post_click_master_cycles,
+            drawing_master_cycles,
+            available - click_master_cycles,
+        );
+        VwfGlyphCpuAdvance {
+            next_phase: after_click.next_phase,
+            consumed_master_cycles: click_master_cycles + after_click.consumed_master_cycles,
+            entered_function: true,
+            completed: after_click.completed,
+        }
+    }
+
+    fn advance_post_click(
+        post_click_master_cycles: u32,
+        drawing_master_cycles: u32,
+        available: u32,
+    ) -> VwfGlyphCpuAdvance {
+        if post_click_master_cycles > available {
+            return VwfGlyphCpuAdvance {
+                next_phase: Self::PreparingDrawing {
+                    remaining_master_cycles: post_click_master_cycles - available,
+                    drawing_master_cycles,
+                },
+                consumed_master_cycles: available,
+                entered_function: false,
+                completed: false,
+            };
+        }
+        let after_entry = available - post_click_master_cycles;
         if drawing_master_cycles > after_entry {
             return VwfGlyphCpuAdvance {
                 next_phase: Self::Drawing {
                     remaining_master_cycles: drawing_master_cycles - after_entry,
                 },
                 consumed_master_cycles: available,
-                entered_function: true,
+                entered_function: false,
                 completed: false,
             };
         }
         VwfGlyphCpuAdvance {
             next_phase: Self::Ready,
-            consumed_master_cycles: entry_master_cycles + drawing_master_cycles,
-            entered_function: true,
+            consumed_master_cycles: post_click_master_cycles + drawing_master_cycles,
+            entered_function: false,
             completed: true,
         }
     }
@@ -186,6 +239,11 @@ impl VwfGlyphCpuPhase {
         match self {
             Self::Ready => 0,
             Self::Entering {
+                remaining_master_cycles,
+                post_click_master_cycles,
+                drawing_master_cycles,
+            } => remaining_master_cycles + post_click_master_cycles + drawing_master_cycles,
+            Self::PreparingDrawing {
                 remaining_master_cycles,
                 drawing_master_cycles,
             } => remaining_master_cycles + drawing_master_cycles,
@@ -220,7 +278,8 @@ mod fast_forward_cycle_tests {
         vwf_render_glyph_master_cycles, vwf_render_loop_cycle_budget, VwfCpuSliceOutcome,
         VwfGlyphCpuPhase, VwfHandlerEntryPhase, VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES,
         VWF_CALLER_SUFFIX_MASTER_CYCLES, VWF_FIRST_LINE_ENTRY_MASTER_CYCLES,
-        VWF_GLYPH_ENTRY_MASTER_CYCLES, VWF_LATER_LINE_ENTRY_MASTER_CYCLES,
+        VWF_GLYPH_CLICK_MASTER_CYCLES, VWF_GLYPH_ENTRY_MASTER_CYCLES,
+        VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES, VWF_LATER_LINE_ENTRY_MASTER_CYCLES,
         VWF_RENDER_CHARACTER_LINE_POSITIONS, VWF_RESUMED_FRAME_MASTER_CYCLES,
     };
 
@@ -252,25 +311,40 @@ mod fast_forward_cycle_tests {
     }
 
     #[test]
-    fn glyph_entry_and_drawing_cross_vblank_as_distinct_phases() {
+    fn glyph_click_precedes_remaining_entry_work_at_vblank() {
         let drawing = vwf_render_glyph_drawing_master_cycles(6, 1);
-        let before_entry =
-            VwfGlyphCpuPhase::Ready.advance(VWF_GLYPH_ENTRY_MASTER_CYCLES - 1, drawing);
-        assert!(!before_entry.entered_function);
-        assert!(!before_entry.completed);
+        let before_click =
+            VwfGlyphCpuPhase::Ready.advance(VWF_GLYPH_CLICK_MASTER_CYCLES - 1, drawing);
+        assert!(!before_click.entered_function);
+        assert!(!before_click.completed);
         assert!(matches!(
-            before_entry.next_phase,
+            before_click.next_phase,
             VwfGlyphCpuPhase::Entering { .. }
         ));
 
-        let after_entry =
-            VwfGlyphCpuPhase::Ready.advance(VWF_GLYPH_ENTRY_MASTER_CYCLES + 1, drawing);
-        assert!(after_entry.entered_function);
+        let at_click = before_click.next_phase.advance(1, drawing);
+        assert!(at_click.entered_function);
+        assert!(!at_click.completed);
+        assert!(matches!(
+            at_click.next_phase,
+            VwfGlyphCpuPhase::PreparingDrawing { .. }
+        ));
+
+        let after_entry = at_click
+            .next_phase
+            .advance(VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES, drawing);
+        assert!(!after_entry.entered_function, "the click must not repeat");
         assert!(!after_entry.completed);
         assert!(matches!(
             after_entry.next_phase,
             VwfGlyphCpuPhase::Drawing { .. }
         ));
+        assert_eq!(
+            before_click.consumed_master_cycles
+                + at_click.consumed_master_cycles
+                + after_entry.consumed_master_cycles,
+            VWF_GLYPH_ENTRY_MASTER_CYCLES
+        );
     }
 
     #[test]
