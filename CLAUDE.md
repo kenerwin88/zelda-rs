@@ -221,10 +221,10 @@ See memory [[checkpoint-resume-debugging]].
   legacy parity pipeline.)
 
 5. **`parity_probe.py --around <frame>`** — one-command repro of a Snes9x divergence
-  window. Reuses the newest pre-commit `run-*/` inputs, resumes from a paired
-  Rust+oracle checkpoint saved ~60 frames earlier (re-saved automatically when the
-  binary changed), and with `--capture` writes/summarizes `display_oracle.jsonl`
-  (which display domain diverges, decoded OAM slots) using the instrumented core.
+  window. Reuses a coverage-sufficient cold pre-commit `run-*/` input by default;
+  `--use-checkpoint` opts into a faster, explicitly diagnostic-only paired resume.
+  With `--capture`, it writes/summarizes `display_oracle.jsonl` (which display
+  domain diverges, decoded OAM slots) using the receipt-verified instrumented core.
 
 ### Tracing env vars
 

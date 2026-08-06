@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Replay one Snes9x parity divergence window from a nearby paired checkpoint.
+"""Replay one Snes9x parity divergence window with a cold start by default.
 
 The pre-commit gate leaves a full set of route inputs behind in
 routes/<project>/comparisons/precommit/run-<target>/ (input.txt, rom-random.txt,
 initial.srm, replay.sh). This tool reuses those inputs to re-run a short window
-around a suspect frame, resuming from a paired Rust+oracle checkpoint saved just
-before the window so the probe costs the window instead of the whole frontier.
+around a suspect frame. The default path starts cold because checkpoint resumes
+can mask timing divergences. Pass --use-checkpoint for a faster diagnostic-only
+resume from a paired Rust+oracle checkpoint saved just before the window.
 
     python3 scripts/parity_probe.py --around 17213 --capture
 
-The first run for a given checkpoint frame replays from 0 and saves the
-checkpoint; later runs resume from it. A checkpoint is only reused when the
-zelda3 binary that produced it is byte-identical to the current one, because a
-rebuilt binary invalidates the Rust half of the pair.
+In checkpoint mode, the first run for a given checkpoint frame replays from 0
+and saves the checkpoint; later runs resume from it. A checkpoint is only reused
+when the zelda3 binary that produced it is byte-identical to the current one,
+because a rebuilt binary invalidates the Rust half of the pair.
 """
 
 from __future__ import annotations
@@ -145,8 +146,18 @@ def source_start_problem(run_dir: Path, binary: Path) -> str | None:
     return None
 
 
+def source_start_is_cold(run_dir: Path) -> bool:
+    _, replay_argv = parse_replay_script(run_dir / "replay.sh")
+    return option_value(replay_argv, "--resume-rust-state") is None
+
+
 def resolve_run_dir(
-    project: Path, override: Path | None, required_frame: int, binary: Path
+    project: Path,
+    override: Path | None,
+    required_frame: int,
+    binary: Path,
+    *,
+    require_cold: bool = False,
 ) -> Path:
     if override is not None:
         run_dir = override if override.is_absolute() else ROOT / override
@@ -160,6 +171,12 @@ def resolve_run_dir(
             )
         if problem := source_start_problem(run_dir, binary):
             raise SystemExit(f"parity-probe: cannot use {run_dir}: {problem}")
+        if require_cold and not source_start_is_cold(run_dir):
+            raise SystemExit(
+                f"parity-probe: cannot use {run_dir} for authoritative proof: "
+                "its replay starts from paired states; select a cold run or pass "
+                "--use-checkpoint for diagnostic-only probing"
+            )
         return run_dir.resolve()
     precommit = project / "comparisons" / "precommit"
     candidates = [
@@ -183,10 +200,11 @@ def resolve_run_dir(
         (frame, path)
         for frame, path in sufficient
         if source_start_problem(path, binary) is None
+        and (not require_cold or source_start_is_cold(path))
     ]
     if not usable:
         raise SystemExit(
-            "parity-probe: all sufficiently long runs have stale or incomplete paired starts; "
+            "parity-probe: no sufficiently long run has an eligible start; "
             "run the pre-commit gate with this binary or keep a cold run with --load-sram"
         )
     closest_frame = min(frame for frame, _ in usable)
@@ -580,9 +598,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="core lane (default pinned, or instrumented with --capture)",
     )
     parser.add_argument("--core-path", type=Path, help="explicit core dylib (overrides --core)")
-    parser.add_argument("--checkpoint-frame", type=int, help="paired checkpoint frame (default around-60)")
-    parser.add_argument("--checkpoint-dir", type=Path, help="explicit paired checkpoint dir")
-    parser.add_argument("--no-checkpoint", action="store_true", help="always replay from frame 0")
+    parser.add_argument(
+        "--use-checkpoint",
+        action="store_true",
+        help="use a paired checkpoint for diagnostic-only probing",
+    )
+    parser.add_argument(
+        "--checkpoint-frame",
+        type=int,
+        help="paired checkpoint frame (implies --use-checkpoint; default around-60)",
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=Path,
+        help="explicit paired checkpoint dir (implies --use-checkpoint)",
+    )
+    parser.add_argument("--no-checkpoint", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--session-dir", type=Path, help="explicit session dir for this probe")
     parser.add_argument(
         "--allow-stale",
@@ -616,7 +647,23 @@ def main(argv: list[str] | None = None) -> int:
     project = Path(args.project)
     project = project if project.is_absolute() else ROOT / project
     target_frame = args.around + max(0, args.window)
-    run_dir = resolve_run_dir(project, args.run_dir, target_frame, binary)
+    use_checkpoint = (
+        args.use_checkpoint
+        or args.checkpoint_frame is not None
+        or args.checkpoint_dir is not None
+    )
+    if args.no_checkpoint and use_checkpoint:
+        raise SystemExit(
+            "parity-probe: --no-checkpoint cannot be combined with checkpoint options"
+        )
+    use_checkpoint = use_checkpoint and not args.no_checkpoint
+    run_dir = resolve_run_dir(
+        project,
+        args.run_dir,
+        target_frame,
+        binary,
+        require_cold=not use_checkpoint,
+    )
     script_env, replay_argv = parse_replay_script(run_dir / "replay.sh")
 
     if len(replay_argv) < 4 or replay_argv[0] != "--compare-snes9x-oracle":
@@ -650,7 +697,11 @@ def main(argv: list[str] | None = None) -> int:
         checkpoint_frame = max(0, args.around - 60)
     checkpoint_dir: Path | None = None
     resume_dir: Path | None = None
-    if not args.no_checkpoint and checkpoint_frame > 0:
+    if use_checkpoint and checkpoint_frame > 0:
+        print(
+            "parity-probe: CHECKPOINT MODE IS DIAGNOSTIC ONLY; a clean result "
+            "does not establish parity"
+        )
         if 2 * checkpoint_frame <= target_frame:
             print(
                 f"parity-probe: checkpoint frame {checkpoint_frame} is too close to the target "

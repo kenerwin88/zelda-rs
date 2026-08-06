@@ -88,6 +88,53 @@ class ParityProbeTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "covers only 10000"):
                 parity_probe.resolve_run_dir(project, run_dir, 11_753, binary)
 
+    def test_authoritative_probe_skips_resumed_gate_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            precommit = project / "comparisons" / "precommit"
+            binary = self.write_binary(project, 100)
+            rust_state = project / "rust.z3state"
+            oracle_state = project / "oracle.state"
+            for path in (rust_state, oracle_state):
+                path.write_bytes(b"state")
+                os.utime(path, (200, 200))
+            resumed = self.write_run(precommit, 12_000, 200)
+            (resumed / "replay.sh").write_text(
+                "cargo run -q -p zelda3-bin -- --compare-snes9x-oracle core rom 12000 "
+                f"--resume-rust-state {rust_state} --resume-oracle-state {oracle_state} "
+                "--compare-from-frame 10000\n",
+                encoding="utf-8",
+            )
+            cold = self.write_run(precommit, 13_000, 100)
+
+            selected = parity_probe.resolve_run_dir(
+                project, None, 11_753, binary, require_cold=True
+            )
+
+            self.assertEqual(selected, cold.resolve())
+
+    def test_authoritative_probe_rejects_explicit_resumed_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            binary = self.write_binary(project, 100)
+            rust_state = project / "rust.z3state"
+            oracle_state = project / "oracle.state"
+            for path in (rust_state, oracle_state):
+                path.write_bytes(b"state")
+                os.utime(path, (200, 200))
+            resumed = self.write_run(project, 12_000, 200)
+            (resumed / "replay.sh").write_text(
+                "cargo run -q -p zelda3-bin -- --compare-snes9x-oracle core rom 12000 "
+                f"--resume-rust-state {rust_state} --resume-oracle-state {oracle_state} "
+                "--compare-from-frame 10000\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(SystemExit, "authoritative proof"):
+                parity_probe.resolve_run_dir(
+                    project, resumed, 11_753, binary, require_cold=True
+                )
+
     def test_stale_binary_override_is_dry_run_only(self) -> None:
         parity_probe.validate_stale_override(True, True)
         with self.assertRaisesRegex(SystemExit, "restricted to --dry-run"):

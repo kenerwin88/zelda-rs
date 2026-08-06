@@ -1,6 +1,6 @@
 use super::ram_byte;
 use crate::game_state::constants::*;
-use crate::types::{read_le_u16, write_le_u16};
+use crate::types::{read_le_u16, write_le_u16, ww_check};
 
 const OAM_SHADOW_BYTES: usize = EXTENDED_OAM - OAM_BUF;
 const PACKED_EXTENDED_OAM_BYTES: usize = BYTEWISE_EXTENDED_OAM - EXTENDED_OAM;
@@ -443,10 +443,17 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         self.set_entry_y(OAM_BUF + oam_index * 4, 0xf0);
     }
 
+    #[track_caller]
     pub(crate) fn write_entry(&mut self, addr: usize, x: u8, y: u8, charnum: u8, flags: u8) {
         if shadow_oam_offset(addr + 3).is_none() {
             return;
         }
+        ww_check(
+            addr,
+            4,
+            "OamState::write_entry",
+            u32::from_le_bytes([x, y, charnum, flags]),
+        );
         self.state.set_shadow_byte(addr, x);
         self.state.set_shadow_byte(addr + 1, y);
         self.state.set_shadow_byte(addr + 2, charnum);
@@ -523,14 +530,18 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         self.set_extended_byte_at(self.state.current_extended_pointer_usize(), extended);
     }
 
+    #[track_caller]
     pub(crate) fn set_entry_x(&mut self, addr: usize, x: u8) {
         if self.state.set_shadow_byte(addr, x) {
+            ww_check(addr, 1, "OamState::set_entry_x", u32::from(x));
             self.sync();
         }
     }
 
+    #[track_caller]
     pub(crate) fn set_entry_y(&mut self, addr: usize, y: u8) {
         if self.state.set_shadow_byte(addr + 1, y) {
+            ww_check(addr + 1, 1, "OamState::set_entry_y", u32::from(y));
             self.sync();
         }
     }
@@ -540,10 +551,17 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         self.set_entry_y(addr, y);
     }
 
+    #[track_caller]
     pub(crate) fn set_entry_char_flags(&mut self, addr: usize, value: u16) {
         if shadow_oam_offset(addr + 3).is_none() {
             return;
         }
+        ww_check(
+            addr + 2,
+            2,
+            "OamState::set_entry_char_flags",
+            u32::from(value),
+        );
         self.state.set_shadow_byte(addr + 2, value as u8);
         self.state.set_shadow_byte(addr + 3, (value >> 8) as u8);
         self.sync();
@@ -553,14 +571,28 @@ impl<'a> NativeOamStateBridgeMut<'a> {
         self.set_entry_y(addr, 0xf0);
     }
 
+    #[track_caller]
     pub(crate) fn set_entry_char(&mut self, addr: usize, charnum: u8) {
         if self.state.set_shadow_byte(addr + 2, charnum) {
+            ww_check(
+                addr + 2,
+                1,
+                "OamState::set_entry_char",
+                u32::from(charnum),
+            );
             self.sync();
         }
     }
 
+    #[track_caller]
     pub(crate) fn set_entry_flags(&mut self, addr: usize, flags: u8) {
         if self.state.set_shadow_byte(addr + 3, flags) {
+            ww_check(
+                addr + 3,
+                1,
+                "OamState::set_entry_flags",
+                u32::from(flags),
+            );
             self.sync();
         }
     }
