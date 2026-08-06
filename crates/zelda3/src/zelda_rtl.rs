@@ -12853,7 +12853,7 @@ impl ZeldaState {
                     == GraphicsDmaGeneration::HostBoundaryBeforeMain;
         if plan.link_obj_source_generation == GraphicsDmaGeneration::LiveAfterMain
             && !dungeon_supertile_first_scroll_uses_live_obj_cache
-            && (self.atomic_item_graphics_holds_following_nmi()
+            && (self.atomic_item_graphics_uses_partial_receipt_obj_cache()
                 || following.interrupted_item_receipt_obj_cache)
         {
             // Only typed interrupted returns own this decoded-cache split. A
