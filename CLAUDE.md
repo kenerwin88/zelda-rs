@@ -75,6 +75,31 @@ bridge `sync()` calls re-run a state's `write_to_ram` mid-frame on every setter.
    performs, or a native-state-driven branch diverged. Fix: trace the divergent WRAM
    write with the RAM watchpoints and add the missing write. (Special-switch set both
    0x410 AND 0x416, f241475.)
+5. **Collapsed timed side-effect phase** — a long CPU operation has the right total cost,
+   so video publication matches, but an observable entry/midpoint side effect is assigned
+   to the operation's completion boundary. Audio commands and register writes can then
+   cross NMI one frame late without an immediate video mismatch. Fix: use the Snes9x
+   `pc,wram` trace domains to measure the side-effect PC independently, split the timing
+   state at that point, and test that resuming the post-effect phase does not emit it
+   twice. (VWF `$0E:CACC` dialogue click vs remaining glyph setup, f20623.)
+   When two resumed slices appear to require contradictory caller-return thresholds, do
+   not classify them only as "resumed": preserve the suspended CPU phase (`Entering`,
+   `PreparingDrawing`, or `Drawing`) and calibrate the return from that phase. Use
+   `ZELDA3_DEBUG_VWF_BUDGET_FRAME=<host-frame>` for one frame of per-glyph phase/cycle
+   receipts, then pair it with Snes9x `pc,nmi` events at `$0E:C9F9` and `$00:F861`.
+   The unfiltered `ZELDA3_DEBUG_VWF_BUDGET=1` remains available for short windows only.
+6. **Aliased hardware phase lanes** — a compact modulo formula appears to describe a wrapped
+   pipeline but aliases consumers that remain in the unwrapped part of the callback's
+   phase schedule. The error stays latent until a register write lands between the real and
+   aliased latch phases, then creates a tiny persistent cursor drift. Fix: compare the oracle
+   register receipt and interpolation cursor, bracket the event-clock phase with writes on
+   both sides **and at equality**, name/table-test that mapping, and retain each threshold
+   event as a behavioral regression. When identical event-clock coordinates disagree across
+   a song-bank upload, compare the raw S-DSP phase and preserve the upload epoch explicitly;
+   do not force one scalar threshold across both epochs. Recheck the route from cold boot after
+   changing a phase lane; a checkpoint can begin after the first bad latch. Expand the mapping only
+   for oracle-proven lanes so an attractive global rewrite cannot regress earlier exact audio.
+   (S-DSP voice-0/1/3/4 V2 pitch reads, f20782-f20792.)
 
 **Symptom → class cheat-sheet:**
 - A byte is set CORRECTLY then reverts to its frame-start value later in the same frame →
@@ -86,6 +111,12 @@ bridge `sync()` calls re-run a state's `write_to_ram` mid-frame on every setter.
   system/const → **class 2** (oversized array; check the count vs the real stride).
 - "Every persisted input matches at the frame boundary but the action diverges" → coherence
   gap (class 1/3). Run `ZELDA3_ASSERT_NATIVE_COHERENT` and trace the native read vs `ram[ADDR]`.
+- Video remains exact while a command/register edge moves by one NMI → **class 5**. Trace
+  the producer PC and target WRAM write in the same oracle run before changing the consumer.
+- Audio is exact until a pitch/register write, then differs only when interpolation crosses
+  a fractional bucket → **class 6**. Compare oracle DSP phase/register receipts against the
+  Rust cursor; test before, equality, and after for the affected lane plus the complete
+  hardware phase table, then cold-start the route rather than relying only on a checkpoint.
 
 ## Reference builds & ROM
 
