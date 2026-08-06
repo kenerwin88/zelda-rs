@@ -32,6 +32,14 @@ const VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES: u32 =
 // cycles for this caller suffix; a completion with less headroom is resumed
 // after the intervening vblank instead of being folded into the same callback.
 const VWF_CALLER_SUFFIX_MASTER_CYCLES: u32 = 16_500;
+// A big-key receipt slice resumed while VWF_RenderSingle was still preparing
+// its drawing loops, completed its final handler stores at V=223, reached
+// Module0E's scroll-register suffix at V=224, and was interrupted by NMI at
+// V=225. The semantic loop model reported 27,442 cycles of headroom for that
+// trace. A map-receipt slice that resumed from the Drawing phase instead
+// returned before NMI, so this calibration belongs to the suspended PC phase,
+// not to every resumed glyph slice.
+const VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES: u32 = 28_000;
 // A 262,662-cycle entry still returns after vblank in the Snes9x PC trace,
 // while the 283,400-cycle entry returns before it. Six scanlines is the
 // smallest whole-scanline return cost consistent with both measurements.
@@ -83,6 +91,16 @@ fn vwf_render_glyph_master_cycles(width: u8, x: u8) -> u32 {
 
 fn vwf_render_glyph_drawing_master_cycles(width: u8, x: u8) -> u32 {
     vwf_render_glyph_master_cycles(width, x) - VWF_GLYPH_ENTRY_MASTER_CYCLES
+}
+
+fn debug_vwf_budget_for_frame(host_frame: u32) -> bool {
+    if std::env::var_os("ZELDA3_DEBUG_VWF_BUDGET").is_some() {
+        return true;
+    }
+    std::env::var("ZELDA3_DEBUG_VWF_BUDGET_FRAME")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        == Some(host_frame)
 }
 
 fn vwf_glyph_cursor_after_pending_line_transition(
@@ -257,7 +275,10 @@ impl VwfGlyphCpuPhase {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum VwfCpuSliceOutcome {
     InterruptedMidGlyph,
-    HandlerComplete { master_cycles_before_vblank: u32 },
+    HandlerComplete {
+        master_cycles_before_vblank: u32,
+        caller_suffix_master_cycles: u32,
+    },
 }
 
 impl VwfCpuSliceOutcome {
@@ -265,8 +286,9 @@ impl VwfCpuSliceOutcome {
         matches!(
             self,
             Self::HandlerComplete {
-                master_cycles_before_vblank
-            } if master_cycles_before_vblank < VWF_CALLER_SUFFIX_MASTER_CYCLES
+                master_cycles_before_vblank,
+                caller_suffix_master_cycles,
+            } if master_cycles_before_vblank < caller_suffix_master_cycles
         )
     }
 }
@@ -363,10 +385,26 @@ mod fast_forward_cycle_tests {
     fn caller_suffix_continues_only_when_vblank_owns_the_boundary() {
         assert!(VwfCpuSliceOutcome::HandlerComplete {
             master_cycles_before_vblank: VWF_CALLER_SUFFIX_MASTER_CYCLES - 1,
+            caller_suffix_master_cycles: VWF_CALLER_SUFFIX_MASTER_CYCLES,
         }
         .caller_suffix_crosses_vblank());
         assert!(!VwfCpuSliceOutcome::HandlerComplete {
             master_cycles_before_vblank: VWF_CALLER_SUFFIX_MASTER_CYCLES,
+            caller_suffix_master_cycles: VWF_CALLER_SUFFIX_MASTER_CYCLES,
+        }
+        .caller_suffix_crosses_vblank());
+        assert!(VwfCpuSliceOutcome::HandlerComplete {
+            master_cycles_before_vblank:
+                super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES - 1,
+            caller_suffix_master_cycles:
+                super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES,
+        }
+        .caller_suffix_crosses_vblank());
+        assert!(!VwfCpuSliceOutcome::HandlerComplete {
+            master_cycles_before_vblank:
+                super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES,
+            caller_suffix_master_cycles:
+                super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES,
         }
         .caller_suffix_crosses_vblank());
         assert!(!VwfCpuSliceOutcome::InterruptedMidGlyph.caller_suffix_crosses_vblank());
@@ -3655,7 +3693,17 @@ impl ZeldaState {
     /// Runs the interruptible 65816 message loop up to this display boundary
     /// and reports whether vblank owns the glyph loop or its caller suffix.
     fn render_text_draw_message_characters(&mut self) -> VwfCpuSliceOutcome {
+        let debug_vwf_budget = debug_vwf_budget_for_frame(self.frame_ctr_dbg);
         let resuming = self.dialogue_fast_forward_hold_active;
+        let caller_suffix_master_cycles = if resuming
+            && matches!(
+                self.dialogue_vwf_glyph_cpu_phase,
+                VwfGlyphCpuPhase::PreparingDrawing { .. }
+            ) {
+            VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES
+        } else {
+            VWF_CALLER_SUFFIX_MASTER_CYCLES
+        };
         let current_line = self.game_state.messaging.vwf_render.current_line();
         let entry_phase = if resuming {
             VwfHandlerEntryPhase::OrdinaryModuleIteration
@@ -3692,10 +3740,25 @@ impl ZeldaState {
                                 self.game_state.messaging.vwf_render.next_line_requested() != 0,
                             );
                             let x = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
-                            let advance = self.dialogue_vwf_glyph_cpu_phase.advance(
-                                cycles_left,
-                                vwf_render_glyph_drawing_master_cycles(width, x),
-                            );
+                            let drawing_master_cycles =
+                                vwf_render_glyph_drawing_master_cycles(width, x);
+                            if debug_vwf_budget {
+                                eprintln!(
+                                    "vwf_glyph host={} read_pos={:#x} code={:#x} width={} cursor={} line_x={} cycles_left={} phase={:?} drawing_cycles={}",
+                                    self.frame_ctr_dbg,
+                                    read_pos,
+                                    param,
+                                    width,
+                                    glyph_cursor,
+                                    x,
+                                    cycles_left,
+                                    self.dialogue_vwf_glyph_cpu_phase,
+                                    drawing_master_cycles,
+                                );
+                            }
+                            let advance = self
+                                .dialogue_vwf_glyph_cpu_phase
+                                .advance(cycles_left, drawing_master_cycles);
                             self.dialogue_vwf_glyph_cpu_phase = advance.next_phase;
                             cycles_left -= advance.consumed_master_cycles;
                             if advance.entered_function {
@@ -3804,11 +3867,11 @@ impl ZeldaState {
         if !midline_yield {
             self.dialogue_vwf_glyph_cpu_phase = VwfGlyphCpuPhase::Ready;
         }
-        if std::env::var_os("ZELDA3_DEBUG_VWF_BUDGET").is_some() {
+        if debug_vwf_budget {
             let cursor = self.game_state.messaging.vwf_render.glyph_cursor_usize();
             let arrval = self.vwf_glyph_advance_prefix_sum(cursor);
             eprintln!(
-                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} cycles_left={} cycle_debt={} midline_yield={}",
+                "vwf_cycles host={} read_pos={:#x} frame_advance={} glyph_cursor={} line_x={} cycles_left={} cycle_debt={} glyph_phase={:?} midline_yield={} resumed={} entry_phase={entry_phase:?} suffix_threshold={} suffix_crosses_vblank={}",
                 self.frame_ctr_dbg,
                 self.game_state.messaging.runtime.dialogue_msg_read_pos(),
                 frame_advance,
@@ -3817,7 +3880,11 @@ impl ZeldaState {
                 cycles_left,
                 self.dialogue_vwf_glyph_cpu_phase
                     .remaining_master_cycles(),
+                self.dialogue_vwf_glyph_cpu_phase,
                 midline_yield,
+                resuming,
+                caller_suffix_master_cycles,
+                !midline_yield && cycles_left < caller_suffix_master_cycles,
             );
         }
         if midline_yield {
@@ -3825,6 +3892,7 @@ impl ZeldaState {
         } else {
             VwfCpuSliceOutcome::HandlerComplete {
                 master_cycles_before_vblank: cycles_left,
+                caller_suffix_master_cycles,
             }
         }
     }
