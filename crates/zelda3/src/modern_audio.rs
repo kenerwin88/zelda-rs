@@ -3460,8 +3460,11 @@ fn dsp_global_application_sample_offset(
 /// wrapped event-clock mapping. Oracle receipts bracket voice zero's mapped
 /// V2 phase at raw S-DSP phase 21 for voice zero, phase 0 for voice one,
 /// phase 6 for voice three, and phase 9 for voice four after their upload-epoch
-/// conversion. The other lanes remain event-clock coordinates until raw-phase
-/// receipts establish their epochs.
+/// conversion. Voice one remains in raw S-DSP coordinates across the first
+/// upload: the frame-11713 receipt writes pitch low at phase 2, after V2's
+/// phase-0 read, and Snes9x does not expose that value until the next sample.
+/// The other lanes remain event-clock coordinates until raw-phase receipts
+/// establish their epochs.
 fn dsp_voice_pitch_low_read_phase(voice: u8) -> u8 {
     match voice {
         0 => 21,
@@ -3476,14 +3479,16 @@ fn dsp_voice_pitch_low_read_phase(voice: u8) -> u8 {
 /// while the modern renderer starts each uploaded bank at a new DSP event
 /// epoch. Snes9x receipts show the first uploaded epoch four phases earlier
 /// than the bootstrap epoch. Keep this conversion scoped to the proven voice-0,
-/// voice-1, voice-3, and voice-4 pitch lanes until equivalent receipts establish the
+/// voice-3, and voice-4 pitch lanes until equivalent receipts establish the
 /// others. Crossing phase zero also moves the write into the prior DSP sample.
+/// Voice one is deliberately excluded: unlike voices zero, three, and four,
+/// its first-bank receipt retains the raw S-DSP phase after upload.
 fn dsp_voice_pitch_event_clock(
     event: &crate::game_output::AudioEvent,
     voice: u8,
     sample_bank_generation: u32,
 ) -> (u8, i32) {
-    if matches!(voice, 0 | 1 | 3 | 4) {
+    if matches!(voice, 0 | 3 | 4) {
         let phase_bias = (sample_bank_generation as u8).wrapping_mul(4) & 31;
         let shifted_phase = i16::from(event.timer_cycles) - i16::from(phase_bias);
         (
@@ -4008,20 +4013,20 @@ mod tests {
     }
 
     #[test]
-    fn voice_one_timer_phase_one_wraps_to_the_prior_uploaded_bank_sample() {
+    fn voice_one_timer_phase_two_stays_after_the_uploaded_bank_latch() {
         let event = timed_event(
-            518,
-            1,
+            207,
+            2,
             AudioEventKind::VoiceParameter {
                 voice: 1,
                 parameter: VoiceParameterKind::PitchLow,
-                value: 226,
+                value: 85,
             },
         );
 
         assert_eq!(
             deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
-            517
+            207
         );
     }
 
