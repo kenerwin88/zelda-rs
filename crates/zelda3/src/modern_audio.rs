@@ -3457,10 +3457,10 @@ fn dsp_global_application_sample_offset(
 /// Event-clock phase at which V2 reads a voice's low pitch byte.
 ///
 /// Lanes that have not crossed the parity frontier retain the historical
-/// wrapped event-clock mapping. Oracle receipts bracket voice zero's mapped
-/// V2 phase at raw S-DSP phase 21 for voice zero, phase 0 for voice one,
-/// phase 6 for voice three, and phase 9 for voice four after their upload-epoch
-/// conversion. Voice one remains in raw S-DSP coordinates across the first
+/// wrapped event-clock mapping. Current-core oracle receipts bracket V2 at raw
+/// S-DSP phase 21 for voice zero, phase 0 for voice one, phase 6 for voice
+/// three, and phase 9 for voice four. Voice one remains in raw S-DSP
+/// coordinates across the first
 /// upload: the frame-11713 receipt writes pitch low at phase 2, after V2's
 /// phase-0 read, and Snes9x does not expose that value until the next sample.
 /// The other lanes remain event-clock coordinates until raw-phase receipts
@@ -3475,37 +3475,14 @@ fn dsp_voice_pitch_low_read_phase(voice: u8) -> u8 {
     }
 }
 
-/// The translated SPC driver clock keeps running across song-bank uploads,
-/// while the modern renderer starts each uploaded bank at a new DSP event
-/// epoch. Snes9x receipts show the first uploaded epoch four phases earlier
-/// than the bootstrap epoch. Keep this conversion scoped to the proven voice-0,
-/// voice-3, and voice-4 pitch lanes until equivalent receipts establish the
-/// others. Crossing phase zero also moves the write into the prior DSP sample.
-/// Voice one is deliberately excluded: unlike voices zero, three, and four,
-/// its first-bank receipt retains the raw S-DSP phase after upload.
-fn dsp_voice_pitch_event_clock(
-    event: &crate::game_output::AudioEvent,
-    voice: u8,
-    sample_bank_generation: u32,
-) -> (u8, i32) {
-    if matches!(voice, 0 | 3 | 4) {
-        let phase_bias = (sample_bank_generation as u8).wrapping_mul(4) & 31;
-        let shifted_phase = i16::from(event.timer_cycles) - i16::from(phase_bias);
-        (
-            shifted_phase.rem_euclid(32) as u8,
-            i32::from(shifted_phase.div_euclid(32)),
-        )
-    } else {
-        (event.timer_cycles, 0)
-    }
-}
-
 fn deferred_voice_sample_offset_with_bank_generation(
     event: &crate::game_output::AudioEvent,
     retrigger_shift: i32,
     retriggered_note_off: bool,
     frame_start_counter: u16,
-    sample_bank_generation: u32,
+    // Bank uploads do not reset the SPC driver's raw DSP phase. Keep the
+    // generation in this boundary API so tests cover that invariant directly.
+    _sample_bank_generation: u32,
 ) -> i32 {
     if let AudioEventKind::VoiceParameter {
         voice, parameter, ..
@@ -3541,9 +3518,7 @@ fn deferred_voice_sample_offset_with_bank_generation(
             } else {
                 event.sample_offset.saturating_sub(1)
             };
-            let (event_phase, epoch_sample_adjustment) =
-                dsp_voice_pitch_event_clock(event, voice, sample_bank_generation);
-            return pipeline_sample + epoch_sample_adjustment + i32::from(event_phase > read_phase);
+            return pipeline_sample + i32::from(event.timer_cycles > read_phase);
         }
         event.sample_offset
     } else if let AudioEventKind::NoteOff { voice } = event.kind {
@@ -3770,7 +3745,7 @@ mod tests {
     }
 
     #[test]
-    fn voice_three_timer_phase_eight_uses_the_uploaded_bank_dsp_epoch() {
+    fn voice_three_timer_phase_eight_stays_after_the_raw_latch() {
         let event = timed_event(
             507,
             8,
@@ -3783,12 +3758,12 @@ mod tests {
 
         assert_eq!(
             deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
-            506
+            507
         );
     }
 
     #[test]
-    fn voice_three_timer_phase_ten_maps_to_the_uploaded_bank_latch() {
+    fn voice_three_timer_phase_ten_stays_after_the_raw_latch() {
         let event = timed_event(
             249,
             10,
@@ -3801,7 +3776,7 @@ mod tests {
 
         assert_eq!(
             deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
-            248
+            249
         );
     }
 
@@ -3821,7 +3796,7 @@ mod tests {
     }
 
     #[test]
-    fn voice_three_timer_phase_eleven_maps_after_the_uploaded_bank_latch() {
+    fn voice_three_timer_phase_eleven_stays_after_the_raw_latch() {
         let event = timed_event(
             244,
             11,
@@ -3884,7 +3859,7 @@ mod tests {
     }
 
     #[test]
-    fn voice_four_timer_phase_eleven_uses_the_uploaded_bank_dsp_epoch() {
+    fn voice_four_timer_phase_eleven_stays_after_the_raw_latch() {
         let event = timed_event(
             260,
             11,
@@ -3897,12 +3872,12 @@ mod tests {
 
         assert_eq!(
             deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
-            259
+            260
         );
     }
 
     #[test]
-    fn voice_four_timer_phase_fourteen_maps_after_the_uploaded_bank_latch() {
+    fn voice_four_timer_phase_fourteen_stays_after_the_raw_latch() {
         let event = timed_event(
             288,
             14,
@@ -3980,20 +3955,20 @@ mod tests {
     }
 
     #[test]
-    fn voice_zero_timer_phase_twenty_three_maps_before_the_uploaded_bank_latch() {
+    fn voice_zero_timer_phase_twenty_four_stays_after_the_raw_latch() {
         let event = timed_event(
-            450,
-            23,
+            461,
+            24,
             AudioEventKind::VoiceParameter {
                 voice: 0,
                 parameter: VoiceParameterKind::PitchLow,
-                value: 229,
+                value: 114,
             },
         );
 
         assert_eq!(
             deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
-            450
+            462
         );
     }
 
@@ -4013,7 +3988,7 @@ mod tests {
     }
 
     #[test]
-    fn voice_one_timer_phase_two_stays_after_the_uploaded_bank_latch() {
+    fn voice_one_timer_phase_two_stays_after_the_raw_latch() {
         let event = timed_event(
             207,
             2,
