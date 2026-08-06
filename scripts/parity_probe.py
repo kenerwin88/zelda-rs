@@ -105,11 +105,39 @@ def newest_source_mtime() -> tuple[float, Path | None]:
     return newest, newest_path
 
 
-def resolve_run_dir(project: Path, override: Path | None) -> Path:
+def validate_stale_override(allow_stale: bool, dry_run: bool) -> None:
+    if allow_stale and not dry_run:
+        raise SystemExit(
+            "parity-probe: --allow-stale is restricted to --dry-run; "
+            "rebuild the parity binary before collecting evidence"
+        )
+
+
+def replay_target_frame(run_dir: Path) -> int:
+    _, replay_argv = parse_replay_script(run_dir / "replay.sh")
+    if len(replay_argv) < 4:
+        raise SystemExit(
+            f"parity-probe: unexpected compare invocation in {run_dir / 'replay.sh'}"
+        )
+    try:
+        return int(replay_argv[3])
+    except ValueError as error:
+        raise SystemExit(
+            f"parity-probe: invalid target frame {replay_argv[3]!r} in {run_dir / 'replay.sh'}"
+        ) from error
+
+
+def resolve_run_dir(project: Path, override: Path | None, required_frame: int) -> Path:
     if override is not None:
         run_dir = override if override.is_absolute() else ROOT / override
         if not (run_dir / "replay.sh").is_file():
             raise SystemExit(f"parity-probe: {run_dir} has no replay.sh")
+        covered_frame = replay_target_frame(run_dir)
+        if covered_frame < required_frame:
+            raise SystemExit(
+                f"parity-probe: {run_dir} covers only {covered_frame} frame(s), "
+                f"but this probe needs {required_frame}"
+            )
         return run_dir.resolve()
     precommit = project / "comparisons" / "precommit"
     candidates = [
@@ -121,7 +149,17 @@ def resolve_run_dir(project: Path, override: Path | None) -> Path:
         raise SystemExit(
             f"parity-probe: no usable run dir under {precommit}; run the pre-commit gate once first"
         )
-    return max(candidates, key=lambda path: path.stat().st_mtime).resolve()
+    covered = [(replay_target_frame(path), path) for path in candidates]
+    sufficient = [(frame, path) for frame, path in covered if frame >= required_frame]
+    if not sufficient:
+        available = max(frame for frame, _ in covered)
+        raise SystemExit(
+            f"parity-probe: newest precommit inputs cover only {available} frame(s), "
+            f"but this probe needs {required_frame}; run the pre-commit gate farther first"
+        )
+    closest_frame = min(frame for frame, _ in sufficient)
+    closest = [path for frame, path in sufficient if frame == closest_frame]
+    return max(closest, key=lambda path: path.stat().st_mtime).resolve()
 
 
 def parse_replay_script(path: Path) -> tuple[dict[str, str], list[str]]:
@@ -424,13 +462,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--checkpoint-dir", type=Path, help="explicit paired checkpoint dir")
     parser.add_argument("--no-checkpoint", action="store_true", help="always replay from frame 0")
     parser.add_argument("--session-dir", type=Path, help="explicit session dir for this probe")
-    parser.add_argument("--allow-stale", action="store_true", help="skip the binary-vs-sources staleness guard")
+    parser.add_argument(
+        "--allow-stale",
+        action="store_true",
+        help="skip the binary-vs-sources staleness guard for --dry-run only",
+    )
     parser.add_argument("--dry-run", action="store_true", help="print the command without running it")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    validate_stale_override(args.allow_stale, args.dry_run)
     binary = args.binary if args.binary.is_absolute() else ROOT / args.binary
     if not binary.is_file():
         print(
@@ -443,15 +486,15 @@ def main(argv: list[str] | None = None) -> int:
         newest, newest_path = newest_source_mtime()
         if newest > binary.stat().st_mtime:
             print(
-                f"parity-probe: {binary} is older than {newest_path}; rebuild the parity binary "
-                "or pass --allow-stale",
+                f"parity-probe: {binary} is older than {newest_path}; rebuild the parity binary",
                 file=sys.stderr,
             )
             return 1
 
     project = Path(args.project)
     project = project if project.is_absolute() else ROOT / project
-    run_dir = resolve_run_dir(project, args.run_dir)
+    target_frame = args.around + max(0, args.window)
+    run_dir = resolve_run_dir(project, args.run_dir, target_frame)
     script_env, replay_argv = parse_replay_script(run_dir / "replay.sh")
 
     if len(replay_argv) < 4 or replay_argv[0] != "--compare-snes9x-oracle":
@@ -475,7 +518,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    target_frame = args.around + max(0, args.window)
     input_path = Path(option_value(replay_argv, "--input-script") or run_dir / "input.txt")
     rom_random_path = option_value(replay_argv, "--rom-random-script")
     rom_random = Path(rom_random_path) if rom_random_path else None
