@@ -4044,6 +4044,14 @@ enum DisplayObjGeneration {
 }
 
 impl DisplayObjGeneration {
+    const fn name(&self) -> &'static str {
+        match self {
+            Self::FollowModuleCadence => "follow-module-cadence",
+            Self::RetainCapturedOam { .. } => "retain-captured-oam",
+            Self::RetainCapturedMemory { .. } => "retain-captured-memory",
+        }
+    }
+
     fn retained_oam(&self) -> Option<&[u16]> {
         match self {
             Self::FollowModuleCadence => None,
@@ -4689,6 +4697,14 @@ pub struct ZeldaState {
     #[serde(skip)]
     next_display_interrupted_item_receipt_obj_cache: bool,
     #[serde(skip)]
+    enemy_drop_item_graphics_live_extended_oam_pending: bool,
+    /// The enemy-drop item decompressor reaches its final `$0f` receipt sound
+    /// store only after the measured multi-NMI call returns. The translated
+    /// atomic caller may publish its other state early for scanout parity, but
+    /// this order-sensitive audio command must retire at the real return edge.
+    #[serde(skip)]
+    enemy_drop_item_graphics_deferred_sound_effect_2: Option<u8>,
+    #[serde(skip)]
     link_obj_dma_completed_this_frame: bool,
     #[serde(skip)]
     next_display_spotlight_scanout: Option<LiveSpotlightScanout>,
@@ -4929,6 +4945,7 @@ struct DisplaySnapshot {
     spotlight_scanout_generation: SpotlightScanoutGeneration,
     obj_generation: DisplayObjGeneration,
     interrupted_item_receipt_obj_cache: bool,
+    enemy_drop_item_graphics_live_extended_oam: bool,
     published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
     published_bg3_vwf_glyph_run_dialogue_offsets: Vec<u16>,
     published_dialogue_msg_read_pos: u16,
@@ -6148,7 +6165,23 @@ impl ZeldaState {
         self.system_signals_mut().set_sound_effect_1(value);
     }
 
+    #[track_caller]
     pub(crate) fn set_sound_effect_2(&mut self, value: u8) {
+        if env::var("ZELDA3_DEBUG_AUDIO_COMMAND_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == self.frame_ctr_dbg)
+        {
+            let caller = std::panic::Location::caller();
+            eprintln!(
+                "audio_command host={} latch=sfx2 old={:02x} new={value:02x} sprite_slot={} caller={}:{}",
+                self.frame_ctr_dbg,
+                self.game_state.system_signals.sound_effect_2(),
+                self.game_state.sprites.system.cur_object_index(),
+                caller.file(),
+                caller.line(),
+            );
+        }
         self.system_signals_mut().set_sound_effect_2(value);
     }
 
@@ -10182,6 +10215,8 @@ impl ZeldaState {
             next_display_obj_scanout_generation: None,
             next_display_obj_memory_generation: None,
             next_display_interrupted_item_receipt_obj_cache: false,
+            enemy_drop_item_graphics_live_extended_oam_pending: false,
+            enemy_drop_item_graphics_deferred_sound_effect_2: None,
             link_obj_dma_completed_this_frame: false,
             next_display_spotlight_scanout: None,
             active_display_obj_generation: DisplayObjGeneration::default(),
@@ -11406,16 +11441,42 @@ impl ZeldaState {
                 )
             })
         });
-        let obj_generation = self
-            .next_display_obj_memory_generation
-            .take()
+        let queued_obj_generation = self.next_display_obj_memory_generation.take();
+        let obj_generation_source = if queued_obj_generation.is_some() {
+            "queued"
+        } else if transition_entry_obj.is_some() {
+            "transition-entry"
+        } else {
+            "active"
+        };
+        let obj_generation = queued_obj_generation
             .or_else(|| {
                 transition_entry_obj
                     .map(|(oam, vram)| DisplayObjGeneration::RetainCapturedMemory { oam, vram })
             })
             .unwrap_or_else(|| self.active_display_obj_generation.clone());
+        if env::var("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == self.frame_ctr_dbg)
+        {
+            eprintln!(
+                "display_obj_generation host={} phase={:02x}/{:02x}/{:02x} source={} selected={} active={} work={:?} caller={:?}",
+                self.frame_ctr_dbg,
+                captured_frame.main_module,
+                captured_frame.submodule,
+                captured_frame.subsubmodule,
+                obj_generation_source,
+                obj_generation.name(),
+                self.active_display_obj_generation.name(),
+                self.game_execution_scheduler.current_work(),
+                self.game_execution_scheduler.pre_main_caller_continuation(),
+            );
+        }
         let interrupted_item_receipt_obj_cache =
             std::mem::take(&mut self.next_display_interrupted_item_receipt_obj_cache);
+        let enemy_drop_item_graphics_live_extended_oam =
+            self.enemy_drop_item_graphics_live_extended_oam_pending;
         let entry_graphics_dma_plan = self
             .pre_main_graphics_dma
             .as_ref()
@@ -11620,6 +11681,7 @@ impl ZeldaState {
                 .unwrap_or(SpotlightScanoutGeneration::CapturedBeforeNmi),
             obj_generation,
             interrupted_item_receipt_obj_cache,
+            enemy_drop_item_graphics_live_extended_oam,
             published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
             published_bg3_vwf_glyph_run_dialogue_offsets: self
                 .published_bg3_vwf_glyph_run_dialogue_offsets
@@ -11751,6 +11813,40 @@ impl ZeldaState {
         )
     }
 
+    fn atomic_item_graphics_uses_partial_receipt_obj_cache(&self) -> bool {
+        matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx },
+            }) if gfx != 0x22
+        )
+    }
+
+    pub(super) fn publish_or_defer_item_receipt_sound_effect_2(&mut self, value: u8) {
+        let enemy_drop_graphics_are_pending = matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 },
+            })
+        );
+        if enemy_drop_graphics_are_pending {
+            debug_assert!(
+                self.enemy_drop_item_graphics_deferred_sound_effect_2
+                    .is_none(),
+                "enemy-drop item graphics may defer only one receipt sound command"
+            );
+            self.enemy_drop_item_graphics_deferred_sound_effect_2 = Some(value);
+            return;
+        }
+        self.set_sound_effect_2(value);
+    }
+
+    fn retire_enemy_drop_item_graphics_sound_effect_2(&mut self) {
+        if let Some(sound_effect) = self.enemy_drop_item_graphics_deferred_sound_effect_2.take() {
+            self.set_sound_effect_2(sound_effect);
+        }
+    }
+
     fn item_receipt_graphics_return_uses_ordinary_module_epilogue(
         &self,
         continuation: ItemReceiptGraphicsContinuation,
@@ -11778,6 +11874,12 @@ impl ZeldaState {
                 continuation,
                 ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24 }
             );
+        if matches!(
+            continuation,
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 }
+        ) {
+            self.enemy_drop_item_graphics_live_extended_oam_pending = true;
+        }
         if (matches!(
             continuation,
             ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. }
@@ -11800,6 +11902,10 @@ impl ZeldaState {
         .into_iter()
         .flatten()
         {
+            snapshot.enemy_drop_item_graphics_live_extended_oam = matches!(
+                continuation,
+                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 }
+            );
             snapshot.oam_scanout_source = match continuation {
                 ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. } => {
                     OamScanoutSource::ComposePublishedShadowDma
@@ -12171,10 +12277,8 @@ impl ZeldaState {
             ) {
                 self.vram_chr_source
                     .copy_word_range_from(&following.vram_chr_source, 0x4000..0x4400);
-                self.vram_chr_preview_source.copy_word_range_from(
-                    &following.vram_chr_preview_source,
-                    0x4000..0x4400,
-                );
+                self.vram_chr_preview_source
+                    .copy_word_range_from(&following.vram_chr_preview_source, 0x4000..0x4400);
             } else if !self.atomic_item_graphics_holds_following_nmi()
                 && !dungeon_supertile_state3_retains_presented_link_sources
             {
@@ -12287,6 +12391,33 @@ impl ZeldaState {
     }
 
     fn compose_display_oam(&mut self, following: &DisplaySnapshot, plan: &DisplayPublicationPlan) {
+        let live_extended_oam = following
+            .enemy_drop_item_graphics_live_extended_oam
+            .then(|| following.ppu.oam[256..].to_vec());
+        let debug_oam_frame = env::var("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == self.frame_ctr_dbg);
+        let debug_captured_oam = debug_oam_frame.then(|| self.ppu.oam.clone());
+        let debug_host_boundary_oam = debug_oam_frame
+            .then(|| {
+                self.pre_main_graphics_dma.as_ref().map(|graphics| {
+                    graphics
+                        .oam_shadow
+                        .chunks_exact(2)
+                        .map(|word| u16::from_le_bytes([word[0], word[1]]))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .flatten();
+        let debug_last_presented_oam = debug_oam_frame
+            .then(|| self.last_presented_oam.clone())
+            .flatten();
+        let entry_frame = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.entry_frame)
+            .unwrap_or_else(|| crate::game_state::FrameState::load_from_ram(&self.ram));
         let following_frame = crate::game_state::FrameState::load_from_ram(&following.ram);
         let resident_dungeon_landing_oam = (following_frame.main_module == 7
             && following_frame.submodule == 0x0f
@@ -12510,6 +12641,13 @@ impl ZeldaState {
             self.ppu.vram[bg1_tilemap..bg1_tilemap_end]
                 .copy_from_slice(&following.ppu.vram[bg1_tilemap..bg1_tilemap_end]);
         }
+        if let Some(live_extended_oam) = live_extended_oam.as_deref() {
+            // The enemy-drop $22 sheet returns through the NMI that publishes
+            // the held-item size bit. Its retained low OAM table is already
+            // correct, but the packed X/size table belongs to the completed
+            // live DMA generation.
+            self.ppu.oam[256..].copy_from_slice(live_extended_oam);
+        }
         if let Some(captured_entries) = captured_entries {
             let published = following.published_shadow_oam_dma.as_deref();
             eprintln!(
@@ -12526,6 +12664,64 @@ impl ZeldaState {
                 debug_entries.map(|entry| oam_entry_bytes(&following.ppu.oam, entry)),
                 published.map(|oam| debug_entries.map(|entry| oam_entry_bytes(oam, entry))),
                 debug_entries.map(|entry| oam_entry_bytes(&self.ppu.oam, entry)),
+            );
+        }
+        if let Some(captured) = debug_captured_oam.as_deref() {
+            let host_boundary = debug_host_boundary_oam.as_deref();
+            let published = following.published_shadow_oam_dma.as_deref();
+            let last_presented = debug_last_presented_oam.as_deref();
+            let entries = (0..128)
+                .filter(|&entry| {
+                    let composed = oam_entry_bytes(&self.ppu.oam, entry);
+                    [host_boundary, published, last_presented]
+                        .into_iter()
+                        .flatten()
+                        .any(|oam| oam_entry_bytes(oam, entry) != composed)
+                        || oam_entry_bytes(captured, entry) != composed
+                        || oam_entry_bytes(&following.ppu.oam, entry) != composed
+                })
+                .take(32)
+                .map(|entry| {
+                    (
+                        entry,
+                        oam_entry_bytes(captured, entry),
+                        host_boundary.map(|oam| oam_entry_bytes(oam, entry)),
+                        published.map(|oam| oam_entry_bytes(oam, entry)),
+                        last_presented.map(|oam| oam_entry_bytes(oam, entry)),
+                        oam_entry_bytes(&following.ppu.oam, entry),
+                        oam_entry_bytes(&self.ppu.oam, entry),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let extended = (256..self.ppu.oam.len())
+                .filter_map(|word| {
+                    let composed = self.ppu.oam[word];
+                    let values = (
+                        captured[word],
+                        host_boundary.map(|oam| oam[word]),
+                        published.map(|oam| oam[word]),
+                        last_presented.map(|oam| oam[word]),
+                        following.ppu.oam[word],
+                        composed,
+                    );
+                    (values.0 != composed
+                        || values.1.is_some_and(|value| value != composed)
+                        || values.2.is_some_and(|value| value != composed)
+                        || values.3.is_some_and(|value| value != composed)
+                        || values.4 != composed)
+                        .then_some((word, values))
+                })
+                .collect::<Vec<_>>();
+            eprintln!(
+                "display_oam_frame host={} room={:04x} phase={:02x}/{:02x}/{:02x} source={:?} retain={} obj={} entries=(entry,captured,host,published,last,following,composed){entries:02x?} extended=(word,captured,host,published,last,following,composed){extended:02x?}",
+                self.frame_ctr_dbg,
+                following_room,
+                following_frame.main_module,
+                following_frame.submodule,
+                following_frame.subsubmodule,
+                plan.oam_scanout_source,
+                plan.retain_captured_oam,
+                following.obj_generation.name(),
             );
         }
         self.ppu.obj_vram_latch = None;
@@ -13257,7 +13453,16 @@ impl ZeldaState {
                 self.frame_ctr_dbg,
             );
         }
+        let enemy_drop_extended_oam_crossed_publication_boundary = display
+            .enemy_drop_item_graphics_live_extended_oam
+            && display
+                .published_shadow_oam_dma
+                .as_ref()
+                .is_some_and(|published| published[256..] != display.ppu.oam[256..]);
         self.compose_display_oam(&display, &publication_plan);
+        if enemy_drop_extended_oam_crossed_publication_boundary {
+            self.enemy_drop_item_graphics_live_extended_oam_pending = false;
+        }
         if let Some(shadow_oam) = live_dungeon_supertile_filter_return_shadow_oam.as_deref() {
             self.ppu.oam.clone_from_slice(shadow_oam);
         }
@@ -14773,6 +14978,12 @@ impl ZeldaState {
                             DisplaySnapshotPublication::RetainPublished,
                         );
                         self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    }
+                    if matches!(
+                        continuation,
+                        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 }
+                    ) {
+                        self.retire_enemy_drop_item_graphics_sound_effect_2();
                     }
                     if let ItemReceiptGraphicsContinuation::ResumeUnclePassage {
                         receipt,

@@ -1176,7 +1176,7 @@ impl ZeldaState {
                 self.set_music_control(music);
             } else if item != 0x3e && item != 0x17 {
                 let sfx = self.link_calculate_sfx_pan() | 0x0f;
-                self.set_sound_effect_2(sfx);
+                self.publish_or_defer_item_receipt_sound_effect_2(sfx);
             }
             let method = if self.game_state.player.follower_link.item_receipt_method() == 3 {
                 0
@@ -1388,6 +1388,7 @@ impl ZeldaState {
         }
     }
 
+    #[track_caller]
     pub(super) fn sprite_sfx_queue_sfx3_with_pan(&mut self, k: usize, a: u8) {
         if !self.game_state.system_signals.has_sound_effect_2() {
             let sfx = a | self.sprite_calculate_sfx_pan(k);

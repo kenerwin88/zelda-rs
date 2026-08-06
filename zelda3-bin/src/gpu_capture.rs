@@ -157,6 +157,21 @@ impl LiveGpuFrameCapture {
         }
         let raw_scanlines = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
+        if std::env::var("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == game.frame_ctr_dbg)
+        {
+            let entries = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 32, 33].map(|entry| {
+                let first = ppu.oam[entry * 2].to_le_bytes();
+                let second = ppu.oam[entry * 2 + 1].to_le_bytes();
+                (entry, [first[0], first[1], second[0], second[1]])
+            });
+            eprintln!(
+                "renderer_oam_frame host={} entries={entries:02x?}",
+                game.frame_ctr_dbg
+            );
+        }
         if std::env::var_os("ZELDA3_DEBUG_BG3_PUBLICATION").is_some()
             && game.ram[MAIN_MODULE_INDEX] == 14
             && game.ram[0x11] == 1

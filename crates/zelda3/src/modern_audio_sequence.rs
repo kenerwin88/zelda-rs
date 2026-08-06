@@ -1074,6 +1074,17 @@ impl ModernAudioSequencer {
         (self.dsp_timer_cycles, self.sfx_timer_accum)
     }
 
+    pub(crate) fn music_window_checkpoint(&self) -> (u8, u16, u64, u32, u32, bool) {
+        (
+            self.last_music_track,
+            self.music_frame_position,
+            self.music_sample_position,
+            self.previous_music_window_samples,
+            self.music_window_samples,
+            self.engine_receipt_mode,
+        )
+    }
+
     fn initialize_timer(&mut self, route: AudioRouteState) {
         if self.timer_initialized {
             return;

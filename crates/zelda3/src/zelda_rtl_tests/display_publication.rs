@@ -1221,6 +1221,105 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
 }
 
 #[test]
+fn enemy_drop_item_graphics_keep_the_resident_full_obj_cache() {
+    let continuation = |gfx| GameWorkContinuation::FinishItemReceiptGraphics {
+        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx },
+    };
+
+    let mut ordinary_receipt = ZeldaState::new();
+    ordinary_receipt
+        .game_execution_scheduler
+        .schedule_work(continuation(0x14), 1);
+    assert!(ordinary_receipt.atomic_item_graphics_uses_partial_receipt_obj_cache());
+
+    let mut enemy_drop = ZeldaState::new();
+    enemy_drop
+        .game_execution_scheduler
+        .schedule_work(continuation(0x22), 1);
+    assert!(!enemy_drop.atomic_item_graphics_uses_partial_receipt_obj_cache());
+    assert!(enemy_drop.atomic_item_graphics_holds_following_nmi());
+}
+
+#[test]
+fn enemy_drop_return_publishes_only_the_live_extended_oam_generation() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[0] = 0x1111;
+
+    let mut following = captured_display_snapshot();
+    following.ppu.oam[0] = 0x2222;
+    following.ppu.oam[256] = 0x00a2;
+    let mut published_shadow = following.ppu.oam.clone();
+    published_shadow[256] = 0x00a0;
+    following.published_shadow_oam_dma = Some(published_shadow);
+    following.enemy_drop_item_graphics_live_extended_oam = true;
+    following.oam_scanout_source = OamScanoutSource::ComposePublishedShadowDma;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[0], 0x2222);
+    assert_eq!(state.ppu.oam[256], 0x00a2);
+
+    let mut ordinary = ZeldaState::new();
+    following.enemy_drop_item_graphics_live_extended_oam = false;
+    ordinary.compose_display_oam(&following, &plan);
+    assert_eq!(ordinary.ppu.oam[256], 0x00a0);
+}
+
+#[test]
+fn enemy_drop_extended_oam_marker_survives_captures_until_presentation() {
+    let mut state = ZeldaState::new();
+    state.capture_display_snapshot();
+    let continuation = ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 };
+
+    state.stage_atomic_item_graphics_return_obj_scanout(continuation);
+    assert!(
+        state
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .enemy_drop_item_graphics_live_extended_oam
+    );
+
+    state.capture_display_snapshot();
+    assert!(
+        state
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .enemy_drop_item_graphics_live_extended_oam
+    );
+
+    state.capture_display_snapshot();
+    assert!(
+        state
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .enemy_drop_item_graphics_live_extended_oam
+    );
+
+    {
+        let display = state.display_snapshot.as_mut().unwrap();
+        display.ppu.oam[256] = 0x00a2;
+        let mut published_shadow = display.ppu.oam.clone();
+        published_shadow[256] = 0x00a0;
+        display.published_shadow_oam_dma = Some(published_shadow);
+    }
+    state.with_display_snapshot(|_| ());
+    assert!(!state.enemy_drop_item_graphics_live_extended_oam_pending);
+
+    state.capture_display_snapshot();
+    assert!(
+        !state
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .enemy_drop_item_graphics_live_extended_oam
+    );
+}
+
+#[test]
 fn presented_vram_generation_combines_snapshot_and_domain_retention_once() {
     assert_eq!(
         DisplayVramGeneration::ComposeLiveAfterNmi.resolve_for_scanout(false),

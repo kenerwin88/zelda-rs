@@ -4069,6 +4069,43 @@ fn world_map_exit_overlay_conversions_resume_at_measured_boundaries() {
 }
 
 #[test]
+fn enemy_drop_receipt_sound_retires_at_the_measured_graphics_return() {
+    let continuation = GameWorkContinuation::FinishItemReceiptGraphics {
+        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 },
+    };
+    let mut state = ZeldaState::new();
+    state.set_sound_effect_2(0x2f);
+    state
+        .game_execution_scheduler
+        .schedule_work(continuation, ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES);
+
+    state.publish_or_defer_item_receipt_sound_effect_2(0x0f);
+
+    assert_eq!(state.game_state.system_signals.sound_effect_2(), 0x2f);
+    assert_eq!(
+        state.enemy_drop_item_graphics_deferred_sound_effect_2,
+        Some(0x0f)
+    );
+
+    state.game_execution_scheduler.finish_work();
+    state.retire_enemy_drop_item_graphics_sound_effect_2();
+
+    assert_eq!(state.game_state.system_signals.sound_effect_2(), 0x0f);
+    assert_eq!(state.enemy_drop_item_graphics_deferred_sound_effect_2, None);
+}
+
+#[test]
+fn ordinary_item_receipt_sound_publishes_without_enemy_drop_work() {
+    let mut state = ZeldaState::new();
+    state.set_sound_effect_2(0x2f);
+
+    state.publish_or_defer_item_receipt_sound_effect_2(0x0f);
+
+    assert_eq!(state.game_state.system_signals.sound_effect_2(), 0x0f);
+    assert_eq!(state.enemy_drop_item_graphics_deferred_sound_effect_2, None);
+}
+
+#[test]
 fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     assert_eq!(
         rom_item_receipt_graphics_nmi_slices(0x14),

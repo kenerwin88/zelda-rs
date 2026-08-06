@@ -682,6 +682,7 @@ impl ZeldaState {
             }
         };
         let mut route = self.zelda_modern_audio_route_state();
+        let music_window_before = self.audio.modern.sequencer.music_window_checkpoint();
         let frame = if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
             let window = clock.advance(self.audio.modern.queue.input_commands, native_samples);
             let acknowledgements = clock.host_acknowledgements();
@@ -714,6 +715,19 @@ impl ZeldaState {
                     native_samples,
                 )
         };
+        if std::env::var("ZELDA3_DEBUG_MUSIC_WINDOW_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == self.frame_ctr_dbg)
+        {
+            let music_window_after = self.audio.modern.sequencer.music_window_checkpoint();
+            eprintln!(
+                "music_window host={} native_samples={} before={music_window_before:?} after={music_window_after:?} ports={:?}",
+                self.frame_ctr_dbg,
+                native_samples,
+                self.audio.modern.queue.input_commands.legacy_ports(),
+            );
+        }
         self.audio
             .modern
             .renderer

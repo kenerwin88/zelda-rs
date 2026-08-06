@@ -512,6 +512,25 @@ impl AbsoluteDspEventClock {
                 .frame_writes(commands, self.apu.out_ports)
         };
         let host_port_targets = host_port_target_cycles(self.host_frame_index, host_writes);
+        if std::env::var("ZELDA3_DEBUG_SPC_TRANSPORT_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u64>().ok())
+            == Some(self.host_frame_index)
+        {
+            eprintln!(
+                "spc_transport host={} window=[{}, {}) targets={:?} relative={:?} writes={:?} execution={} origin={} local={} port_latches={:02x?}",
+                self.host_frame_index,
+                frame_start_cycle,
+                frame_end_cycle,
+                host_port_targets,
+                host_port_targets.map(|target| target.saturating_sub(frame_start_cycle)),
+                host_writes.writes,
+                self.apu_cycle_origin + u64::from(self.apu.cycles),
+                self.apu_cycle_origin,
+                self.apu.cycles,
+                &self.apu.ram[0x08..0x0c],
+            );
+        }
         let mut host_port_events: Vec<(u64, u8, u8)> = host_writes
             .writes
             .into_iter()
