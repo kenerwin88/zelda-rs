@@ -32,7 +32,9 @@ DEFAULT_PROJECT = "routes/clean"
 DEFAULT_BINARY = ROOT / "target" / "parity" / "zelda3"
 PROBE_ROOT = ROOT / "target" / "parity-probes"
 CHECKPOINT_ROOT = PROBE_ROOT / "checkpoints"
-CORES_DIR = ROOT / "external" / "snes9x-libretro" / "local" / "cores"
+TRACE_CORE = ROOT / "external" / "snes9x-libretro" / "local" / "snes9x_libretro_trace.dylib"
+TRACE_PATCH = ROOT / "external" / "snes9x-libretro" / "patches" / "zelda3-trace.patch"
+ORACLE_LOCK = ROOT / "external" / "snes9x-libretro" / "oracle-lock.json"
 IDENTITY_NAME = "probe-identity.json"
 INSTRUMENTED_SYMBOL = b"zelda3_snes9x_debug_ppu_value"
 SOURCE_DIRS = ("crates", "zelda3-bin")
@@ -270,24 +272,66 @@ def source_start_description(arguments: list[str]) -> str:
     return "cold replay from the emulator default state"
 
 
-def instrumented_core(pinned_sha: str | None) -> Path:
-    candidates = sorted(CORES_DIR.glob("*/snes9x_libretro.dylib"))
-    exports = [
-        path
-        for path in candidates
-        if path.parent.name != pinned_sha and INSTRUMENTED_SYMBOL in path.read_bytes()
-    ]
-    if not exports:
+def validate_trace_core(
+    core: Path,
+    *,
+    lock_path: Path = ORACLE_LOCK,
+    patch_path: Path = TRACE_PATCH,
+) -> str:
+    """Return the verified core hash or reject non-reproducible trace evidence."""
+    receipt_path = core.with_suffix(core.suffix + ".json")
+    if not core.is_file():
+        raise SystemExit(f"parity-probe: instrumented core is missing: {core}")
+    if not receipt_path.is_file():
         raise SystemExit(
-            "parity-probe: --capture needs a Snes9x core exporting "
-            f"{INSTRUMENTED_SYMBOL.decode()}; none found under {CORES_DIR}"
+            f"parity-probe: instrumented core has no build receipt: {receipt_path}; "
+            "rebuild it with scripts/prepare_snes9x_trace_oracle.py"
         )
-    if len(exports) > 1:
-        listing = "\n  ".join(str(path) for path in exports)
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"parity-probe: cannot verify instrumented core receipt: {error}") from error
+
+    if receipt.get("schema") != 1 or receipt.get("variant") != "trace":
         raise SystemExit(
-            f"parity-probe: several instrumented cores found; pass --core-path\n  {listing}"
+            f"parity-probe: {receipt_path} is not a schema-1 trace-core receipt"
         )
-    return exports[0]
+    for field in (
+        "core_name",
+        "core_version",
+        "source_tag",
+        "source_url",
+        "source_revision",
+    ):
+        if receipt.get(field) != lock.get(field):
+            raise SystemExit(
+                f"parity-probe: instrumented core {field} does not match oracle-lock.json; "
+                "rebuild the trace core"
+            )
+
+    actual_patch_sha = sha256_file(patch_path)
+    if receipt.get("patch_sha256") != actual_patch_sha:
+        raise SystemExit(
+            "parity-probe: instrumented core predates the current trace patch; "
+            "rebuild it with scripts/prepare_snes9x_trace_oracle.py"
+        )
+    actual_core_sha = sha256_file(core)
+    if receipt.get("core_sha256") != actual_core_sha:
+        raise SystemExit(
+            f"parity-probe: instrumented core hash does not match {receipt_path}"
+        )
+    if INSTRUMENTED_SYMBOL not in core.read_bytes():
+        raise SystemExit(
+            "parity-probe: receipt claims a trace core, but the core does not export "
+            f"{INSTRUMENTED_SYMBOL.decode()}"
+        )
+    return actual_core_sha
+
+
+def instrumented_core() -> Path:
+    validate_trace_core(TRACE_CORE)
+    return TRACE_CORE
 
 
 def checkpoint_identity(
@@ -584,17 +628,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.core_path is not None:
         core = (args.core_path if args.core_path.is_absolute() else ROOT / args.core_path).resolve()
     elif (args.core or ("instrumented" if args.capture else "pinned")) == "instrumented":
-        core = instrumented_core(pinned_core_sha)
+        core = instrumented_core()
     else:
         core = Path(pinned_core)
-    core_sha = pinned_core_sha if str(core) == pinned_core else sha256_file(core)
-    if args.capture and INSTRUMENTED_SYMBOL not in core.read_bytes():
-        print(
-            f"parity-probe: --capture requires an instrumented core; {core} does not export "
-            f"{INSTRUMENTED_SYMBOL.decode()}",
-            file=sys.stderr,
-        )
-        return 1
+    if args.capture or args.core == "instrumented":
+        core_sha = validate_trace_core(core)
+    else:
+        core_sha = pinned_core_sha if str(core) == pinned_core else sha256_file(core)
 
     input_path = Path(option_value(replay_argv, "--input-script") or run_dir / "input.txt")
     rom_random_path = option_value(replay_argv, "--rom-random-script")

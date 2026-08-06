@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import json
 import os
 import tempfile
 import unittest
@@ -18,6 +20,35 @@ SPEC.loader.exec_module(parity_probe)
 
 
 class ParityProbeTest(unittest.TestCase):
+    def write_trace_fixture(
+        self, root: Path, *, source_revision: str = "revision", patch_sha: str | None = None
+    ) -> tuple[Path, Path, Path]:
+        core = root / "trace.dylib"
+        patch = root / "trace.patch"
+        lock = root / "oracle-lock.json"
+        core.write_bytes(b"binary-zelda3_snes9x_debug_ppu_value")
+        patch.write_bytes(b"patch")
+        lock_payload = {
+            "core_name": "Snes9x",
+            "core_version": "1.63",
+            "source_tag": "1.63",
+            "source_url": "https://example.test/snes9x.git",
+            "source_revision": "revision",
+        }
+        lock.write_text(json.dumps(lock_payload), encoding="utf-8")
+        receipt = {
+            "schema": 1,
+            "variant": "trace",
+            **lock_payload,
+            "source_revision": source_revision,
+            "patch_sha256": patch_sha or hashlib.sha256(patch.read_bytes()).hexdigest(),
+            "core_sha256": hashlib.sha256(core.read_bytes()).hexdigest(),
+        }
+        core.with_suffix(core.suffix + ".json").write_text(
+            json.dumps(receipt), encoding="utf-8"
+        )
+        return core, patch, lock
+
     def write_binary(self, directory: Path, mtime: int) -> Path:
         binary = directory / "zelda3"
         binary.write_bytes(b"binary")
@@ -145,6 +176,33 @@ class ParityProbeTest(unittest.TestCase):
                 parity_probe.resolve_run_dir(project, None, 11_789, binary),
                 cold.resolve(),
             )
+
+    def test_trace_core_receipt_pins_core_source_and_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            core, patch, lock = self.write_trace_fixture(Path(directory))
+
+            self.assertEqual(
+                parity_probe.validate_trace_core(core, lock_path=lock, patch_path=patch),
+                hashlib.sha256(core.read_bytes()).hexdigest(),
+            )
+
+    def test_trace_core_rejects_stale_patch_receipt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            core, patch, lock = self.write_trace_fixture(
+                Path(directory), patch_sha="0" * 64
+            )
+
+            with self.assertRaisesRegex(SystemExit, "predates the current trace patch"):
+                parity_probe.validate_trace_core(core, lock_path=lock, patch_path=patch)
+
+    def test_trace_core_rejects_wrong_source_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            core, patch, lock = self.write_trace_fixture(
+                Path(directory), source_revision="obsolete"
+            )
+
+            with self.assertRaisesRegex(SystemExit, "source_revision does not match"):
+                parity_probe.validate_trace_core(core, lock_path=lock, patch_path=patch)
 
 
 if __name__ == "__main__":

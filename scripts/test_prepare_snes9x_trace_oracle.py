@@ -74,6 +74,16 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
 
             self.assertEqual(MODULE.changed_paths(checkout), {"tracked.txt", "new.txt"})
 
+    def test_changed_paths_ignores_local_parity_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkout = Path(directory)
+            MODULE.run("git", "init", "-q", cwd=checkout)
+            artifact = checkout / "target/parity-failures/example/diff.json"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text("{}\n")
+
+            self.assertEqual(MODULE.changed_paths(checkout), set())
+
     def test_receipts_distinguish_stock_and_trace_builds(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

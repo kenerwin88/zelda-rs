@@ -39,6 +39,7 @@ EXPECTED_PATCH_PATHS = frozenset(
         "zelda3_trace.h",
     }
 )
+IGNORED_LOCAL_PATH_PREFIXES = ("target/",)
 
 
 def run(*args: str, cwd: Path | None = None, capture: bool = False) -> str:
@@ -107,7 +108,8 @@ def changed_paths(source: Path) -> set[str]:
         path = line[3:]
         if " -> " in path:
             path = path.split(" -> ", 1)[1]
-        paths.add(path)
+        if not any(path.startswith(prefix) for prefix in IGNORED_LOCAL_PATH_PREFIXES):
+            paths.add(path)
     return paths
 
 
