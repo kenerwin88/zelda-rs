@@ -127,7 +127,25 @@ def replay_target_frame(run_dir: Path) -> int:
         ) from error
 
 
-def resolve_run_dir(project: Path, override: Path | None, required_frame: int) -> Path:
+def source_start_problem(run_dir: Path, binary: Path) -> str | None:
+    _, replay_argv = parse_replay_script(run_dir / "replay.sh")
+    rust_state = option_value(replay_argv, "--resume-rust-state")
+    oracle_state = option_value(replay_argv, "--resume-oracle-state")
+    if (rust_state is None) != (oracle_state is None):
+        return "source replay has only one half of its paired resume state"
+    if rust_state is None or oracle_state is None:
+        return None
+    paths = (Path(rust_state), Path(oracle_state))
+    if not all(path.is_file() for path in paths):
+        return "source replay's paired start states are missing"
+    if min(path.stat().st_mtime for path in paths) < binary.stat().st_mtime:
+        return "source replay's paired start predates the parity binary"
+    return None
+
+
+def resolve_run_dir(
+    project: Path, override: Path | None, required_frame: int, binary: Path
+) -> Path:
     if override is not None:
         run_dir = override if override.is_absolute() else ROOT / override
         if not (run_dir / "replay.sh").is_file():
@@ -138,6 +156,8 @@ def resolve_run_dir(project: Path, override: Path | None, required_frame: int) -
                 f"parity-probe: {run_dir} covers only {covered_frame} frame(s), "
                 f"but this probe needs {required_frame}"
             )
+        if problem := source_start_problem(run_dir, binary):
+            raise SystemExit(f"parity-probe: cannot use {run_dir}: {problem}")
         return run_dir.resolve()
     precommit = project / "comparisons" / "precommit"
     candidates = [
@@ -157,8 +177,18 @@ def resolve_run_dir(project: Path, override: Path | None, required_frame: int) -
             f"parity-probe: newest precommit inputs cover only {available} frame(s), "
             f"but this probe needs {required_frame}; run the pre-commit gate farther first"
         )
-    closest_frame = min(frame for frame, _ in sufficient)
-    closest = [path for frame, path in sufficient if frame == closest_frame]
+    usable = [
+        (frame, path)
+        for frame, path in sufficient
+        if source_start_problem(path, binary) is None
+    ]
+    if not usable:
+        raise SystemExit(
+            "parity-probe: all sufficiently long runs have stale or incomplete paired starts; "
+            "run the pre-commit gate with this binary or keep a cold run with --load-sram"
+        )
+    closest_frame = min(frame for frame, _ in usable)
+    closest = [path for frame, path in usable if frame == closest_frame]
     return max(closest, key=lambda path: path.stat().st_mtime).resolve()
 
 
@@ -190,6 +220,54 @@ def option_value(argv: list[str], name: str) -> str | None:
         if token == name and index + 1 < len(argv):
             return argv[index + 1]
     return None
+
+
+def source_start_arguments(replay_argv: list[str], binary: Path) -> list[str]:
+    load_sram = option_value(replay_argv, "--load-sram")
+    rust_state = option_value(replay_argv, "--resume-rust-state")
+    oracle_state = option_value(replay_argv, "--resume-oracle-state")
+    if (rust_state is None) != (oracle_state is None):
+        raise SystemExit(
+            "parity-probe: source replay has only one half of its paired resume state"
+        )
+    if rust_state is not None and oracle_state is not None:
+        if load_sram is not None:
+            raise SystemExit(
+                "parity-probe: source replay combines paired resume states with --load-sram"
+            )
+        compare_from = option_value(replay_argv, "--compare-from-frame")
+        if compare_from is None:
+            raise SystemExit(
+                "parity-probe: resumed source replay has no --compare-from-frame boundary"
+            )
+        rust_state_path = Path(rust_state)
+        oracle_state_path = Path(oracle_state)
+        if not rust_state_path.is_file() or not oracle_state_path.is_file():
+            raise SystemExit("parity-probe: source replay's paired start states are missing")
+        if min(rust_state_path.stat().st_mtime, oracle_state_path.stat().st_mtime) < binary.stat().st_mtime:
+            raise SystemExit(
+                "parity-probe: source replay's paired start predates the parity binary"
+            )
+        arguments = [
+            "--resume-rust-state",
+            rust_state,
+            "--resume-oracle-state",
+            oracle_state,
+        ]
+        oracle_sram = option_value(replay_argv, "--resume-oracle-sram")
+        if oracle_sram is not None:
+            arguments += ["--resume-oracle-sram", oracle_sram]
+        arguments += ["--compare-from-frame", compare_from]
+        return arguments
+    return ["--load-sram", load_sram] if load_sram is not None else []
+
+
+def source_start_description(arguments: list[str]) -> str:
+    if "--resume-rust-state" in arguments:
+        return "binary-matched paired states from the selected gate run"
+    if "--load-sram" in arguments:
+        return "cold replay from the selected gate run's SRAM"
+    return "cold replay from the emulator default state"
 
 
 def instrumented_core(pinned_sha: str | None) -> Path:
@@ -494,7 +572,7 @@ def main(argv: list[str] | None = None) -> int:
     project = Path(args.project)
     project = project if project.is_absolute() else ROOT / project
     target_frame = args.around + max(0, args.window)
-    run_dir = resolve_run_dir(project, args.run_dir, target_frame)
+    run_dir = resolve_run_dir(project, args.run_dir, target_frame, binary)
     script_env, replay_argv = parse_replay_script(run_dir / "replay.sh")
 
     if len(replay_argv) < 4 or replay_argv[0] != "--compare-snes9x-oracle":
@@ -521,7 +599,7 @@ def main(argv: list[str] | None = None) -> int:
     input_path = Path(option_value(replay_argv, "--input-script") or run_dir / "input.txt")
     rom_random_path = option_value(replay_argv, "--rom-random-script")
     rom_random = Path(rom_random_path) if rom_random_path else None
-    sram_path = option_value(replay_argv, "--load-sram")
+    source_start = source_start_arguments(replay_argv, binary)
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     session_dir = args.session_dir or PROBE_ROOT / f"probe-{args.around}-{stamp}"
@@ -585,8 +663,7 @@ def main(argv: list[str] | None = None) -> int:
         # states already carry the SRAM as it stood at the checkpoint frame.
         command += ["--resume-paired", str(resume_dir)]
     else:
-        if sram_path:
-            command += ["--load-sram", sram_path]
+        command += source_start
         if checkpoint_dir is not None:
             # Rolling capture rather than --save-paired-resume-at: a fixed frame
             # can land inside an unserialized ROM-call continuation, which aborts
@@ -618,6 +695,12 @@ def main(argv: list[str] | None = None) -> int:
     prefix = " ".join(f"{name}={shlex.quote(value)}" for name, value in sorted(capture_env.items()))
     printable = f"{prefix} {shlex.join(command)}".strip()
     print(f"parity-probe: run dir {run_dir}")
+    start_description = (
+        f"binary-hash-matched probe checkpoint {resume_dir}"
+        if resume_dir is not None
+        else source_start_description(source_start)
+    )
+    print(f"parity-probe: start mode {start_description}")
     print(f"parity-probe: session dir {session_dir}")
     print(f"parity-probe: command\n  {printable}")
     if args.dry_run:
