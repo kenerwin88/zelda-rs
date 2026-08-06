@@ -4927,6 +4927,39 @@ fn spiral_stair_grayscale_pass_resumes_on_its_second_palette_walk() {
 }
 
 #[test]
+fn spiral_stair_second_palette_return_defers_advanced_animated_bg_until_following_nmi() {
+    let mut state = ZeldaState::new();
+    let destination = 0x3b00;
+    let source = ANIMATED_TILE_BUFFER_FIRST_SOURCE;
+    state.set_main_module(7);
+    state.set_submodule(0x0e);
+    state.set_animated_tile_data_source_address(source as u16);
+    state.set_animated_tile_vram_destination_address(destination as u16);
+    state.set_bg_tile_animation_countdown(1);
+    for offset in (0..0x400).step_by(2) {
+        write_le_u16(&mut state.ram, source + offset, 0x2222);
+    }
+    state.ppu.vram[destination..destination + 0x200].fill(0x1111);
+
+    assert!(state.spiral_stairs_second_palette_filter_nmi_defers_core_dma(true));
+    assert!(!rom_spiral_stairs_second_palette_return_defers_core_dma(
+        state.game_state.frame,
+        true,
+        1,
+        0xaa80,
+    ));
+    state.set_core_update_disable_flag(1);
+    state.nmi_do_updates();
+
+    assert_eq!(state.ppu.vram[destination], 0x1111);
+
+    state.clear_core_update_disable_flag();
+    state.nmi_do_updates();
+
+    assert_eq!(state.ppu.vram[destination], 0x2222);
+}
+
+#[test]
 fn spiral_stair_grayscale_return_releases_core_dma_after_retaining_its_scanout() {
     let mut state = ZeldaState::new();
     state.set_core_update_disable_flag(1);

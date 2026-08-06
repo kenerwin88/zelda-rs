@@ -1246,25 +1246,50 @@ const fn rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
         && !matches!(room, 0x71 | 0x72)
 }
 
+const ANIMATED_TILE_BUFFER_FIRST_SOURCE: usize = 0xa680;
+const ANIMATED_TILE_SOURCE_CYCLE_BYTES: usize = 0x0c00;
+
 const fn rom_spiral_stairs_suspended_animated_bg_source_address(
     frame: crate::game_state::FrameState,
     host_main_prefix_did_not_advance: bool,
     countdown: u16,
     current_source: usize,
 ) -> Option<usize> {
-    const FIRST_SOURCE: usize = 0xa680;
-    const SOURCE_CYCLE_BYTES: usize = 0x0c00;
     if frame.main_module == 7
         && frame.submodule == 0x0e
         && host_main_prefix_did_not_advance
         && countdown == 1
-        && current_source >= FIRST_SOURCE
-        && current_source < FIRST_SOURCE + SOURCE_CYCLE_BYTES
+        && current_source >= ANIMATED_TILE_BUFFER_FIRST_SOURCE
+        && current_source < ANIMATED_TILE_BUFFER_FIRST_SOURCE + ANIMATED_TILE_SOURCE_CYCLE_BYTES
     {
-        Some(FIRST_SOURCE + (current_source - FIRST_SOURCE + 0x400) % SOURCE_CYCLE_BYTES)
+        Some(
+            ANIMATED_TILE_BUFFER_FIRST_SOURCE
+                + (current_source - ANIMATED_TILE_BUFFER_FIRST_SOURCE + 0x400)
+                    % ANIMATED_TILE_SOURCE_CYCLE_BYTES,
+        )
     } else {
         None
     }
+}
+
+const fn rom_spiral_stairs_second_palette_return_defers_core_dma(
+    frame: crate::game_state::FrameState,
+    host_main_prefix_did_not_advance: bool,
+    countdown: u16,
+    current_source: usize,
+) -> bool {
+    // Only the first streamed phase retains both VRAM bytes and logical CHR
+    // ownership through this return NMI. The later $aa80/$ae80 phases still
+    // execute NMI so their semantic source handoff advances even when scanout
+    // retains the same resident words (oracle frames 18852 and 19232).
+    current_source == ANIMATED_TILE_BUFFER_FIRST_SOURCE
+        && rom_spiral_stairs_suspended_animated_bg_source_address(
+            frame,
+            host_main_prefix_did_not_advance,
+            countdown,
+            current_source,
+        )
+        .is_some()
 }
 
 const fn rom_overworld_transition_half_color_is_live(
@@ -7405,6 +7430,18 @@ impl ZeldaState {
         true
     }
 
+    fn spiral_stairs_second_palette_filter_nmi_defers_core_dma(
+        &self,
+        host_main_prefix_did_not_advance: bool,
+    ) -> bool {
+        rom_spiral_stairs_second_palette_return_defers_core_dma(
+            self.game_state.frame,
+            host_main_prefix_did_not_advance,
+            self.game_state.display.bg_tile_animation_countdown,
+            self.game_state.display.animated_tile_data_source_usize(),
+        )
+    }
+
     fn stage_spiral_stairs_second_grayscale_nmi(&mut self) -> GraphicsDmaGeneration {
         // The final quadrant-upload NMI has returned, so the atomic ROM path
         // exposes $0710 = 0 to this caller. Its core DMA is allowed to run.
@@ -11908,12 +11945,17 @@ impl ZeldaState {
         // post-NMI generation.
         let animated_bg_destination = read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
         if std::env::var_os("ZELDA3_TRACE_DISPLAY_VRAM").is_some()
-            && following_frame.main_module == 7
-            && following_frame.submodule == 2
-            && following_frame.subsubmodule == 8
+            && plan.animated_bg_scanout_generation
+                == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
         {
+            let retained_word = self
+                .pre_nmi_animated_bg_scanout
+                .as_ref()
+                .and_then(|scanout| scanout.vram.first())
+                .copied();
             eprintln!(
-                "TRACE_DISPLAY_VRAM entry={:02x}/{:02x}/{:02x} following={:02x}/{:02x}/{:02x} vram={:?} animated={:?} destination=0x{animated_bg_destination:04x} captured_3c20=0x{:04x} following_3c20=0x{:04x}",
+                "TRACE_DISPLAY_VRAM host={} entry={:02x}/{:02x}/{:02x} following={:02x}/{:02x}/{:02x} vram={:?} animated={:?} destination=0x{animated_bg_destination:04x} captured_first=0x{:04x} following_first=0x{:04x} retained_first={retained_word:?}",
+                self.frame_ctr_dbg,
                 entry_frame.main_module,
                 entry_frame.submodule,
                 entry_frame.subsubmodule,
@@ -11922,8 +11964,8 @@ impl ZeldaState {
                 following_frame.subsubmodule,
                 plan.vram_generation,
                 plan.animated_bg_scanout_generation,
-                self.ppu.vram[0x3c20],
-                following.ppu.vram[0x3c20],
+                self.ppu.vram[animated_bg_destination],
+                following.ppu.vram[animated_bg_destination],
             );
         }
         let previous_animated_bg_vram = (plan.animated_bg_scanout_generation
@@ -13754,6 +13796,10 @@ impl ZeldaState {
                 self.interrupt_nmi(input, oam_dma_source, false);
             }
             PreMainCallerContinuation::SpiralStairsSecondPaletteFilter => {
+                let host_main_prefix_did_not_advance =
+                    self.pre_main_graphics_dma.as_ref().is_some_and(|graphics| {
+                        graphics.entry_frame.frame_counter == self.game_state.frame.frame_counter
+                    });
                 self.finish_pre_main_caller_continuation(continuation);
                 self.complete_spiral_stairs_second_palette_filter();
                 // Resume the ordinary game-loop suffix without repeating its
@@ -13762,13 +13808,36 @@ impl ZeldaState {
                 self.complete_module07_dungeon_after_submodule();
                 self.nmi_prepare_sprites();
                 self.clear_nmi_update_latch();
+                let release_core_dma_after_nmi = self
+                    .spiral_stairs_second_palette_filter_nmi_defers_core_dma(
+                        host_main_prefix_did_not_advance,
+                    );
                 self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
                     oam: OamScanoutSource::RetainResidentPpuOam,
                     link_obj: GraphicsDmaGeneration::LiveAfterMain,
                     link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
                 });
+                if release_core_dma_after_nmi {
+                    // The ordinary suffix clears $0710. Reassert the suspended
+                    // gate at the actual hardware boundary so this NMI cannot
+                    // publish the source which the resumed palette walk just
+                    // advanced; the following NMI owns that upload.
+                    self.set_core_update_disable_flag(1);
+                }
+                if std::env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
+                    eprintln!(
+                        "animated_bg_second_palette_return host={} countdown={:04x} source={:04x} prefix_held={} defer_core_dma={release_core_dma_after_nmi}",
+                        self.frame_ctr_dbg,
+                        self.game_state.display.bg_tile_animation_countdown,
+                        self.game_state.display.animated_tile_data_source_usize(),
+                        host_main_prefix_did_not_advance,
+                    );
+                }
                 self.capture_display_snapshot();
                 self.interrupt_nmi(input, oam_dma_source, false);
+                if release_core_dma_after_nmi {
+                    self.clear_core_update_disable_flag();
+                }
             }
             PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter => {
                 self.finish_pre_main_caller_continuation(continuation);
