@@ -1129,6 +1129,26 @@ fn post_nmi_bg_scroll_writes_target_the_following_scanout() {
 }
 
 #[test]
+fn in_flight_obj_hold_prefers_the_retiring_scanout_then_falls_back_to_history() {
+    let mut state = ZeldaState::new();
+    let last_presented = vec![0x1111; state.ppu.oam.len()];
+    let retiring = vec![0x2222; state.ppu.oam.len()];
+    state.last_presented_oam = Some(last_presented.clone());
+    state.staged_presented_oam = Some(retiring.clone());
+
+    assert_eq!(
+        state.retiring_or_last_presented_oam(),
+        Some(retiring.as_slice()),
+    );
+
+    state.staged_presented_oam = None;
+    assert_eq!(
+        state.retiring_or_last_presented_oam(),
+        Some(last_presented.as_slice()),
+    );
+}
+
+#[test]
 fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
     let mut state = ZeldaState::new();
     let held_oam = vec![0x1234; state.ppu.oam.len()];

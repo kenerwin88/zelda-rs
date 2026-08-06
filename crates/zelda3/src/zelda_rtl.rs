@@ -13382,6 +13382,16 @@ impl ZeldaState {
         captured
     }
 
+    fn retiring_or_last_presented_oam(&self) -> Option<&[u16]> {
+        // Main-thread continuations can queue a retained generation before the
+        // renderer promotes this host frame's composed scanout into history.
+        // In that window, staged OAM is the generation currently retiring on
+        // hardware; last-presented is the correct fallback before staging.
+        self.staged_presented_oam
+            .as_deref()
+            .or(self.last_presented_oam.as_deref())
+    }
+
     pub fn vram(&self) -> &[u16] {
         &self.ppu.vram
     }
@@ -14433,7 +14443,7 @@ impl ZeldaState {
                 // stack, so OAM keeps the shadow published at entry. PPU
                 // registers are still rewritten by every NMI and must be
                 // captured afresh rather than retaining the entire snapshot.
-                if let Some(oam) = self.last_presented_oam.clone() {
+                if let Some(oam) = self.retiring_or_last_presented_oam().map(<[u16]>::to_vec) {
                     self.next_display_obj_memory_generation =
                         Some(DisplayObjGeneration::RetainCapturedOam { oam });
                 }
@@ -14631,10 +14641,7 @@ impl ZeldaState {
                         self.game_state.world.location.dungeon_room_index() == 0x72;
                     let pre_scroll_oam = if filtering_was_interrupted_before_return {
                         self.display_snapshot.as_ref().map(|display| {
-                            let previously_presented_oam = self
-                                .staged_presented_oam
-                                .as_deref()
-                                .or(self.last_presented_oam.as_deref());
+                            let previously_presented_oam = self.retiring_or_last_presented_oam();
                             dungeon_supertile_interrupted_filter_oam(
                                 &display.ppu.oam,
                                 previously_presented_oam,
