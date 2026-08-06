@@ -539,11 +539,12 @@ impl ModernAudioEngine {
                             .get(voice)
                             .is_some_and(|voice| voice.key_on_count > 1)
                     });
-                deferred.sample_offset = deferred_voice_sample_offset(
+                deferred.sample_offset = deferred_voice_sample_offset_with_bank_generation(
                     event,
                     retrigger_shift,
                     retriggered_note_off,
                     self.dsp_global_counter,
+                    self.sample_bank_generation,
                 );
                 deferred_voice_events.push(deferred);
                 stats.understood_events += 1;
@@ -833,8 +834,13 @@ impl ModernAudioEngine {
                     value,
                 } => {
                     stats.understood_events += 1;
-                    let application_offset =
-                        deferred_voice_sample_offset(event, 0, false, self.dsp_global_counter);
+                    let application_offset = deferred_voice_sample_offset_with_bank_generation(
+                        event,
+                        0,
+                        false,
+                        self.dsp_global_counter,
+                        self.sample_bank_generation,
+                    );
                     if application_offset < 0 {
                         self.handle_backdated_voice_parameter(*voice, *parameter, *value);
                     } else if application_offset > 0 {
@@ -3448,11 +3454,53 @@ fn dsp_global_application_sample_offset(
     }
 }
 
-fn deferred_voice_sample_offset(
+/// Event-clock phase at which V2 reads a voice's low pitch byte.
+///
+/// Lanes that have not crossed the parity frontier retain the historical
+/// wrapped event-clock mapping. Oracle receipts bracket voice zero's mapped
+/// V2 phase at raw S-DSP phase 21 for voice zero, phase 0 for voice one,
+/// phase 6 for voice three, and phase 9 for voice four after their upload-epoch
+/// conversion. The other lanes remain event-clock coordinates until raw-phase
+/// receipts establish their epochs.
+fn dsp_voice_pitch_low_read_phase(voice: u8) -> u8 {
+    match voice {
+        0 => 21,
+        1 => 0,
+        3 => 6,
+        4 => 9,
+        _ => voice.wrapping_mul(3).wrapping_add(21) % 24,
+    }
+}
+
+/// The translated SPC driver clock keeps running across song-bank uploads,
+/// while the modern renderer starts each uploaded bank at a new DSP event
+/// epoch. Snes9x receipts show the first uploaded epoch four phases earlier
+/// than the bootstrap epoch. Keep this conversion scoped to the proven voice-0,
+/// voice-1, voice-3, and voice-4 pitch lanes until equivalent receipts establish the
+/// others. Crossing phase zero also moves the write into the prior DSP sample.
+fn dsp_voice_pitch_event_clock(
+    event: &crate::game_output::AudioEvent,
+    voice: u8,
+    sample_bank_generation: u32,
+) -> (u8, i32) {
+    if matches!(voice, 0 | 1 | 3 | 4) {
+        let phase_bias = (sample_bank_generation as u8).wrapping_mul(4) & 31;
+        let shifted_phase = i16::from(event.timer_cycles) - i16::from(phase_bias);
+        (
+            shifted_phase.rem_euclid(32) as u8,
+            i32::from(shifted_phase.div_euclid(32)),
+        )
+    } else {
+        (event.timer_cycles, 0)
+    }
+}
+
+fn deferred_voice_sample_offset_with_bank_generation(
     event: &crate::game_output::AudioEvent,
     retrigger_shift: i32,
     retriggered_note_off: bool,
     frame_start_counter: u16,
+    sample_bank_generation: u32,
 ) -> i32 {
     if let AudioEventKind::VoiceParameter {
         voice, parameter, ..
@@ -3475,10 +3523,10 @@ fn deferred_voice_sample_offset(
             }
             VoiceParameterKind::VolumeRight => Some(voice.wrapping_mul(3) & 31),
             // V2/V3a read each voice's low/high pitch bytes in a three-phase
-            // pipeline that wraps voice 0 to phases 21/22.
-            VoiceParameterKind::PitchLow => Some(voice.wrapping_mul(3).wrapping_add(21) % 24),
+            // pipeline, with voice zero wrapping to phases 21/22.
+            VoiceParameterKind::PitchLow => Some(dsp_voice_pitch_low_read_phase(voice)),
             VoiceParameterKind::PitchHigh => {
-                Some((voice.wrapping_mul(3).wrapping_add(21) % 24) + 1)
+                Some(dsp_voice_pitch_low_read_phase(voice).wrapping_add(1))
             }
             _ => None,
         };
@@ -3488,7 +3536,9 @@ fn deferred_voice_sample_offset(
             } else {
                 event.sample_offset.saturating_sub(1)
             };
-            return pipeline_sample + i32::from(event.timer_cycles > read_phase);
+            let (event_phase, epoch_sample_adjustment) =
+                dsp_voice_pitch_event_clock(event, voice, sample_bank_generation);
+            return pipeline_sample + epoch_sample_adjustment + i32::from(event_phase > read_phase);
         }
         event.sample_offset
     } else if let AudioEventKind::NoteOff { voice } = event.kind {
@@ -3510,6 +3560,22 @@ fn deferred_voice_sample_offset(
     } else {
         event.sample_offset
     }
+}
+
+#[cfg(test)]
+fn deferred_voice_sample_offset(
+    event: &crate::game_output::AudioEvent,
+    retrigger_shift: i32,
+    retriggered_note_off: bool,
+    frame_start_counter: u16,
+) -> i32 {
+    deferred_voice_sample_offset_with_bank_generation(
+        event,
+        retrigger_shift,
+        retriggered_note_off,
+        frame_start_counter,
+        0,
+    )
 }
 
 fn envelope_counter_for_voice(global_counter: u16, use_previous_mix_sample: bool) -> u16 {
@@ -3691,6 +3757,194 @@ mod tests {
     }
 
     #[test]
+    fn pitch_register_read_phases_preserve_the_event_clock_mapping() {
+        assert_eq!(
+            std::array::from_fn::<_, 8, _>(|voice| { dsp_voice_pitch_low_read_phase(voice as u8) }),
+            [21, 0, 3, 6, 9, 12, 15, 18]
+        );
+    }
+
+    #[test]
+    fn voice_three_timer_phase_eight_uses_the_uploaded_bank_dsp_epoch() {
+        let event = timed_event(
+            507,
+            8,
+            AudioEventKind::VoiceParameter {
+                voice: 3,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 143,
+            },
+        );
+
+        assert_eq!(
+            deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
+            506
+        );
+    }
+
+    #[test]
+    fn voice_three_timer_phase_ten_maps_to_the_uploaded_bank_latch() {
+        let event = timed_event(
+            249,
+            10,
+            AudioEventKind::VoiceParameter {
+                voice: 3,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 145,
+            },
+        );
+
+        assert_eq!(
+            deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
+            248
+        );
+    }
+
+    #[test]
+    fn voice_three_pitch_write_after_raw_phase_six_waits_for_the_next_pipeline_sample() {
+        let event = timed_event(
+            390,
+            23,
+            AudioEventKind::VoiceParameter {
+                voice: 3,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 145,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 390);
+    }
+
+    #[test]
+    fn voice_three_timer_phase_eleven_maps_after_the_uploaded_bank_latch() {
+        let event = timed_event(
+            244,
+            11,
+            AudioEventKind::VoiceParameter {
+                voice: 3,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 143,
+            },
+        );
+
+        assert_eq!(
+            deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
+            244
+        );
+    }
+
+    #[test]
+    fn voice_three_raw_phase_nine_waits_for_the_next_pipeline_sample() {
+        let event = timed_event(
+            378,
+            9,
+            AudioEventKind::VoiceParameter {
+                voice: 3,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 124,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 378);
+    }
+
+    #[test]
+    fn voice_four_pitch_write_on_raw_phase_nine_updates_the_prior_pipeline_sample() {
+        let event = timed_event(
+            260,
+            9,
+            AudioEventKind::VoiceParameter {
+                voice: 4,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 213,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 259);
+    }
+
+    #[test]
+    fn voice_four_pitch_write_after_raw_phase_nine_waits_for_the_next_pipeline_sample() {
+        let event = timed_event(
+            260,
+            11,
+            AudioEventKind::VoiceParameter {
+                voice: 4,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 192,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 260);
+    }
+
+    #[test]
+    fn voice_four_timer_phase_eleven_uses_the_uploaded_bank_dsp_epoch() {
+        let event = timed_event(
+            260,
+            11,
+            AudioEventKind::VoiceParameter {
+                voice: 4,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 213,
+            },
+        );
+
+        assert_eq!(
+            deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
+            259
+        );
+    }
+
+    #[test]
+    fn voice_four_timer_phase_fourteen_maps_after_the_uploaded_bank_latch() {
+        let event = timed_event(
+            288,
+            14,
+            AudioEventKind::VoiceParameter {
+                voice: 4,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 209,
+            },
+        );
+
+        assert_eq!(
+            deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
+            288
+        );
+    }
+
+    #[test]
+    fn voice_four_pitch_write_on_phase_twelve_waits_for_the_next_pipeline_sample() {
+        let event = timed_event(
+            260,
+            12,
+            AudioEventKind::VoiceParameter {
+                voice: 4,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 192,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 260);
+    }
+
+    #[test]
+    fn voice_four_pitch_write_after_phase_twelve_waits_for_the_next_pipeline_sample() {
+        let event = timed_event(
+            288,
+            14,
+            AudioEventKind::VoiceParameter {
+                voice: 4,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 209,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 288);
+    }
+
+    #[test]
     fn voice_zero_pitch_write_uses_the_wrapped_pipeline_sample() {
         let event = timed_event(
             100,
@@ -3718,6 +3972,87 @@ mod tests {
         );
 
         assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 402);
+    }
+
+    #[test]
+    fn voice_zero_timer_phase_twenty_three_maps_before_the_uploaded_bank_latch() {
+        let event = timed_event(
+            450,
+            23,
+            AudioEventKind::VoiceParameter {
+                voice: 0,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 229,
+            },
+        );
+
+        assert_eq!(
+            deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
+            450
+        );
+    }
+
+    #[test]
+    fn voice_zero_raw_phase_twenty_two_waits_for_the_next_pipeline_sample() {
+        let event = timed_event(
+            214,
+            22,
+            AudioEventKind::VoiceParameter {
+                voice: 0,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 80,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 215);
+    }
+
+    #[test]
+    fn voice_one_timer_phase_one_wraps_to_the_prior_uploaded_bank_sample() {
+        let event = timed_event(
+            518,
+            1,
+            AudioEventKind::VoiceParameter {
+                voice: 1,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 226,
+            },
+        );
+
+        assert_eq!(
+            deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
+            517
+        );
+    }
+
+    #[test]
+    fn voice_one_raw_phase_one_waits_for_the_next_pipeline_sample() {
+        let event = timed_event(
+            91,
+            1,
+            AudioEventKind::VoiceParameter {
+                voice: 1,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 94,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 91);
+    }
+
+    #[test]
+    fn voice_one_pitch_write_after_phase_three_waits_for_the_next_pipeline_sample() {
+        let event = timed_event(
+            197,
+            9,
+            AudioEventKind::VoiceParameter {
+                voice: 1,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 222,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 197);
     }
 
     #[test]
