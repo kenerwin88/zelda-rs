@@ -1017,6 +1017,7 @@ fn live_animated_bg_composes_over_retained_general_vram() {
     following.ppu.vram[0] = 0xaaaa;
     following.ppu.vram[destination] = 0xbbbb;
     following.vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+    following.hud_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
     following.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::LiveAfterNmi;
     let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
 
