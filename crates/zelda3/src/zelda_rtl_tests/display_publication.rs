@@ -739,6 +739,9 @@ fn subtile_shutter_handoff_decodes_live_obj_page_without_advancing_raw_vram() {
 fn room_71_supertile_room_load_decodes_the_live_obj_page() {
     let mut state = ZeldaState::new();
     state.ppu.vram[0x4032] = 0x1111;
+    state.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    state.ram[crate::game_state::constants::SUBMODULE] = 2;
+    state.ram[crate::game_state::constants::SUBSUBMODULE] = 15;
 
     let mut following = captured_display_snapshot();
     following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
@@ -750,6 +753,40 @@ fn room_71_supertile_room_load_decodes_the_live_obj_page() {
     following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
     let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
 
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.vram[0x4032], 0x1111);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4032], 0xbbbb);
+}
+
+#[test]
+fn room_71_subtile_room_load_uses_live_obj_only_after_the_visible_guard_boundary() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4032] = 0x1111;
+    state.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    state.ram[crate::game_state::constants::SUBMODULE] = 1;
+    state.ram[crate::game_state::constants::SUBSUBMODULE] = 7;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 5;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x71;
+    following.ppu.vram[0x4032] = 0xbbbb;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.vram[0x4032], 0x1111);
+    assert!(state.ppu.obj_vram_latch.is_none());
+
+    let mut workload = SpriteMainTimingWorkload::default();
+    workload.record_active_sprite(0x41, 0);
+    workload.record_blue_guard_full_animation();
+    workload.record_garnish_table(false, 0);
+    state.last_sprite_main_timing_workload = Some(workload);
     state.compose_display_oam(&following, &plan);
 
     assert_eq!(state.ppu.vram[0x4032], 0x1111);

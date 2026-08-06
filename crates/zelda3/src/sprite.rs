@@ -1880,7 +1880,7 @@ impl ZeldaState {
         for slot in 0..16 {
             let sprite = self.sprite_slot_view(slot);
             if sprite.state() != 0 {
-                timing_workload.record_active_sprite(sprite.sprite_type());
+                timing_workload.record_active_sprite(sprite.sprite_type(), sprite.c());
             }
         }
         let active_garnish_count = (0..30)

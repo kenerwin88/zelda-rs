@@ -5175,9 +5175,9 @@ fn world_map_fade_out_uses_the_preceding_sprite_main_workload() {
     state.set_screen_brightness(1);
     state.set_overworld_map_state(0);
     let mut workload = SpriteMainTimingWorkload::default();
-    workload.record_active_sprite(0x6c);
-    workload.record_active_sprite(0x3f);
-    workload.record_active_sprite(0x3f);
+    workload.record_active_sprite(0x6c, 0);
+    workload.record_active_sprite(0x3f, 0);
+    workload.record_active_sprite(0x3f, 0);
     workload.record_garnish_table(false, 0);
     state.last_sprite_main_timing_workload = Some(workload);
 
@@ -5186,7 +5186,7 @@ fn world_map_fade_out_uses_the_preceding_sprite_main_workload() {
     assert_eq!(state.game_state.display.screen_brightness, 0x80);
     assert_eq!(state.overworld_map_state(), 1);
     assert!(state.ppu.forced_blank);
-    assert_eq!(state.active_display_force_blank_event, Some(43));
+    assert_eq!(state.active_display_force_blank_event, Some(42));
     assert_eq!(state.ppu.forced_blank_from_scanline, None);
 }
 
@@ -6636,19 +6636,44 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
     assert!(room_71_supertile_return_uses_published_link_oam(
         room_load, 0x71,
     ));
-    assert!(room_71_supertile_room_load_uses_live_obj_cache(
+    assert!(room_71_room_load_uses_live_obj_cache(
+        filtering_done,
         room_load,
         0x71,
         GraphicsDmaGeneration::HostBoundaryBeforeMain,
         GraphicsDmaGeneration::HostBoundaryBeforeMain,
         OamScanoutSource::RetainResidentPpuOam,
+        false,
     ));
-    assert!(!room_71_supertile_room_load_uses_live_obj_cache(
+    assert!(!room_71_room_load_uses_live_obj_cache(
+        filtering_done,
         room_load,
         0x71,
         GraphicsDmaGeneration::LiveAfterMain,
         GraphicsDmaGeneration::LiveAfterMain,
         OamScanoutSource::ComposeLiveAfterNmi,
+        false,
+    ));
+    let mut subtile_filtering_done = filtering_done;
+    subtile_filtering_done.submodule = 1;
+    subtile_filtering_done.subsubmodule = 7;
+    assert!(!room_71_room_load_uses_live_obj_cache(
+        subtile_filtering_done,
+        room_load,
+        0x71,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        OamScanoutSource::RetainResidentPpuOam,
+        false,
+    ));
+    assert!(room_71_room_load_uses_live_obj_cache(
+        subtile_filtering_done,
+        room_load,
+        0x71,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        OamScanoutSource::RetainResidentPpuOam,
+        true,
     ));
     let mut live_oam = vec![0x1111; 0x110];
     let published_oam = vec![0x2222; 0x110];

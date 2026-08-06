@@ -5328,14 +5328,24 @@ fn room_71_supertile_return_uses_published_link_oam(
             || following.submodule == 5)
 }
 
-fn room_71_supertile_room_load_uses_live_obj_cache(
+fn room_71_room_load_uses_live_obj_cache(
+    entry: crate::game_state::FrameState,
     following: crate::game_state::FrameState,
     dungeon_room_index: u8,
     link_obj_scanout_generation: GraphicsDmaGeneration,
     link_obj_source_generation: GraphicsDmaGeneration,
     oam_scanout_source: OamScanoutSource,
+    visible_blue_guard_workload: bool,
 ) -> bool {
     dungeon_room_index == 0x71
+        && ((entry.main_module == 7
+            && entry.submodule == 2
+            && entry.subsubmodule == 15)
+            // The measured visible-guard Sprite_Main workload reaches the
+            // equivalent force-blank boundary at row 35. Snes9x has decoded
+            // the live Link page by that later boundary even though raw OBJ
+            // VRAM remains captured.
+            || visible_blue_guard_workload)
         && following.main_module == 7
         && following.submodule == 5
         && link_obj_scanout_generation == GraphicsDmaGeneration::HostBoundaryBeforeMain
@@ -12926,6 +12936,37 @@ impl ZeldaState {
                 && self.pre_main_caller_continuation_is(
                     PreMainCallerContinuation::SpiralStairsSecondPaletteFilter,
                 );
+            let blue_guard_workload_scanline = self
+                .last_sprite_main_timing_workload
+                .and_then(SpriteMainTimingWorkload::dungeon_map_backup_force_blank_output_scanline);
+            let room_71_live_obj_cache = room_71_room_load_uses_live_obj_cache(
+                entry_frame,
+                following_frame,
+                following_room,
+                plan.link_obj_scanout_generation,
+                plan.link_obj_source_generation,
+                plan.oam_scanout_source,
+                blue_guard_workload_scanline == Some(35),
+            );
+            if env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
+                && following_room == 0x71
+                && following_frame.main_module == 7
+                && following_frame.submodule == 5
+            {
+                eprintln!(
+                    "display_room71_obj_cache host={} entry={:02x}/{:02x}/{:02x} guard_scanline={blue_guard_workload_scanline:?} blank_from={:?} link={:?}/{:?} oam={:?} dma_source={:04x} dma_countdown={:04x} use_live={room_71_live_obj_cache}",
+                    self.frame_ctr_dbg,
+                    entry_frame.main_module,
+                    entry_frame.submodule,
+                    entry_frame.subsubmodule,
+                    self.active_display_force_blank_event,
+                    plan.link_obj_scanout_generation,
+                    plan.link_obj_source_generation,
+                    plan.oam_scanout_source,
+                    read_le_u16(&following.ram, LINK_DMA_SOURCE_OFFSET),
+                    read_le_u16(&following.ram, LINK_DMA_COUNTDOWN),
+                );
+            }
             if dungeon_subtile_palette_filter_uses_live_obj_cache {
                 // The palette loop can hold NMI_DoUpdates for a host frame.
                 // Its captured source words still identify the decoded cache
@@ -13000,13 +13041,7 @@ impl ZeldaState {
                     }
                 }
                 self.ppu.obj_vram_latch = Some(obj_cache_vram);
-            } else if room_71_supertile_room_load_uses_live_obj_cache(
-                following_frame,
-                following_room,
-                plan.link_obj_scanout_generation,
-                plan.link_obj_source_generation,
-                plan.oam_scanout_source,
-            ) {
+            } else if room_71_live_obj_cache {
                 // v1.0.0 rendered this handoff from live state. Preserve that
                 // decoded OBJ generation while raw VRAM remains on the
                 // independently selected host-boundary image.

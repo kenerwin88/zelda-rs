@@ -14,6 +14,11 @@ impl ZeldaState {
         let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
             return;
         };
+        if self.sprite_slot_view(k).sprite_type() == 0x41 {
+            if let Some(workload) = self.last_sprite_main_timing_workload.as_mut() {
+                workload.record_blue_guard_full_animation();
+            }
+        }
         let poc = PrepOamCoordsRet { x, y, r4: 0, flags };
         self.guard_animate_head(k, 0, &poc);
         let sprite = self.sprite_slot_view(k);
