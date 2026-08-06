@@ -4985,6 +4985,12 @@ fn spiral_stair_second_palette_return_defers_advanced_animated_bg_until_followin
         1,
         0xaa80,
     ));
+    assert!(rom_spiral_stairs_second_palette_return_defers_core_dma(
+        state.game_state.frame,
+        true,
+        1,
+        0xae80,
+    ));
     state.set_core_update_disable_flag(1);
     state.nmi_do_updates();
 

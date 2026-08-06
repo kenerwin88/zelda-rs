@@ -1278,11 +1278,12 @@ const fn rom_spiral_stairs_second_palette_return_defers_core_dma(
     countdown: u16,
     current_source: usize,
 ) -> bool {
-    // Only the first streamed phase retains both VRAM bytes and logical CHR
-    // ownership through this return NMI. The later $aa80/$ae80 phases still
-    // execute NMI so their semantic source handoff advances even when scanout
-    // retains the same resident words (oracle frames 18852 and 19232).
-    current_source == ANIMATED_TILE_BUFFER_FIRST_SOURCE
+    // The first streamed phase and the cycle-wrap return retain both VRAM
+    // bytes and logical CHR ownership through this NMI. The middle $aa80
+    // phase still executes NMI so its semantic source handoff advances even
+    // when scanout retains the same resident words (oracle frames 19232 and
+    // 21501).
+    current_source != ANIMATED_TILE_BUFFER_FIRST_SOURCE + 0x400
         && rom_spiral_stairs_suspended_animated_bg_source_address(
             frame,
             host_main_prefix_did_not_advance,
