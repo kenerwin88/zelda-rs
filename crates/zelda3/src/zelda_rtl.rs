@@ -1329,6 +1329,27 @@ const fn room_82_horizontal_sprite_conversion_return_retains_last_oam(
         )
 }
 
+const fn room_82_horizontal_quadrant_filter_entry_publishes_host_boundary_oam(
+    entry: crate::game_state::FrameState,
+    following: crate::game_state::FrameState,
+    room: u8,
+    screen_transition: u8,
+    oam_scanout_source: OamScanoutSource,
+) -> bool {
+    room == 0x82
+        && entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 5
+        && following.main_module == 7
+        && following.submodule == 2
+        && following.subsubmodule == 6
+        && screen_transition == 2
+        && matches!(
+            oam_scanout_source,
+            OamScanoutSource::ComposePublishedShadowDma
+        )
+}
+
 const fn rom_dungeon_supertile_scroll_runs_after_leading_nmi(
     frame: crate::game_state::FrameState,
     room: u8,
@@ -12958,11 +12979,26 @@ impl ZeldaState {
                 self.screen_transition(),
                 plan.oam_scanout_source,
             );
+        let room_82_horizontal_quadrant_filter_entry_publishes_host_boundary =
+            room_82_horizontal_quadrant_filter_entry_publishes_host_boundary_oam(
+                entry_frame,
+                following_frame,
+                following_room,
+                self.screen_transition(),
+                plan.oam_scanout_source,
+            );
         let entry_shadow = self
             .pre_main_graphics_dma
             .as_ref()
             .map(|graphics| graphics.oam_shadow.as_slice());
-        if room_82_horizontal_deferred_nmi_publishes_entry_shadow {
+        if room_82_horizontal_quadrant_filter_entry_publishes_host_boundary {
+            // The quadrant build completes its OAM work at the host boundary
+            // before state 6 starts filtering. The generic published shadow
+            // still describes Link's preceding horizontal position.
+            if let Some(entry_shadow) = entry_shadow {
+                publish_oam_shadow(&mut self.ppu.oam, entry_shadow);
+            }
+        } else if room_82_horizontal_deferred_nmi_publishes_entry_shadow {
             // Direction $02 reaches the deferred NMI with the complete sorted
             // table staged at host entry.
             if let Some(entry_shadow) = entry_shadow {
