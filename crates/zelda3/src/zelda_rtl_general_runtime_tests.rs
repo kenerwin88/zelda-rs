@@ -6590,6 +6590,14 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
         supertile_sprite_conversion,
         supertile_sprite_conversion,
         0x82,
+        2,
+        false,
+        OamScanoutSource::ComposeLiveAfterNmi,
+    ));
+    assert!(!room_82_horizontal_state3_followup_publishes_entry_shadow_oam(
+        supertile_sprite_conversion,
+        supertile_sprite_conversion,
+        0x82,
         0,
         false,
         OamScanoutSource::RetainResidentPpuOam,
@@ -6602,6 +6610,13 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
         0x82,
         2,
         OamScanoutSource::RetainResidentPpuOam,
+    ));
+    assert!(room_82_horizontal_sprite_conversion_return_retains_last_oam(
+        supertile_sprite_conversion,
+        supertile_sprite_conversion_return,
+        0x82,
+        2,
+        OamScanoutSource::ComposeLiveAfterNmi,
     ));
     assert!(!room_82_horizontal_sprite_conversion_return_retains_last_oam(
         supertile_sprite_conversion,

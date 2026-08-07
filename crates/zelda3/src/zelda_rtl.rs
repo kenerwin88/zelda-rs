@@ -1323,7 +1323,10 @@ const fn room_82_horizontal_sprite_conversion_return_retains_last_oam(
         && following.submodule == 2
         && following.subsubmodule == 4
         && screen_transition == 2
-        && matches!(oam_scanout_source, OamScanoutSource::RetainResidentPpuOam)
+        && matches!(
+            oam_scanout_source,
+            OamScanoutSource::RetainResidentPpuOam | OamScanoutSource::ComposeLiveAfterNmi
+        )
 }
 
 const fn rom_dungeon_supertile_scroll_runs_after_leading_nmi(

@@ -1125,6 +1125,7 @@ fn room_82_horizontal_state3_boundaries_publish_entry_oam_after_cache_compositio
     assert_eq!(state.ppu.oam[LINK_BODY_WORD], 0x6666);
 
     following.ram[crate::game_state::constants::SUBSUBMODULE] = 4;
+    following.oam_scanout_source = OamScanoutSource::ComposeLiveAfterNmi;
     state.last_presented_oam = Some(vec![0x8888; state.ppu.oam.len()]);
     state.ppu.oam.fill(0x5555);
     let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
