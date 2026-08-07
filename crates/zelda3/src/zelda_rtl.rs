@@ -931,6 +931,50 @@ const fn dungeon_subtile_landing_enters_shutter(
         && exit.submodule == 5
 }
 
+fn room_71_subtile_shutter_publishes_live_link_head_obj_cache(
+    entry: crate::game_state::FrameState,
+    following: crate::game_state::FrameState,
+    dungeon_room: u8,
+    link_dma_countdown: u16,
+) -> bool {
+    dungeon_room == 0x71
+        && entry.main_module == 7
+        && entry.submodule == 1
+        && entry.subsubmodule == 7
+        && following.main_module == 7
+        && following.submodule == 5
+        && following.subsubmodule == 0
+        && link_dma_countdown == 5
+}
+
+fn publish_live_link_head_obj_cache(captured: &mut [u16], resident: &[u16]) {
+    if captured.len() < 0x4140 || resident.len() < 0x4140 {
+        return;
+    }
+    for range in [0x4020..0x4040, 0x4120..0x4140] {
+        captured[range.clone()].copy_from_slice(&resident[range]);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Room71ObjCachePublication {
+    RetainCurrent,
+    UseLive,
+    UseCapturedWithLiveLinkHead,
+}
+
+impl Room71ObjCachePublication {
+    const fn resolve(use_live: bool, publish_live_link_head: bool) -> Self {
+        if publish_live_link_head {
+            Self::UseCapturedWithLiveLinkHead
+        } else if use_live {
+            Self::UseLive
+        } else {
+            Self::RetainCurrent
+        }
+    }
+}
+
 const fn link_obj_scanout_across_main(
     entry: crate::game_state::FrameState,
     exit: crate::game_state::FrameState,
@@ -12949,13 +12993,24 @@ impl ZeldaState {
                 plan.oam_scanout_source,
                 blue_guard_workload_scanline == Some(35),
             );
+            let room_71_live_link_head_obj_cache =
+                room_71_subtile_shutter_publishes_live_link_head_obj_cache(
+                    entry_frame,
+                    following_frame,
+                    following_room,
+                    read_le_u16(&following.ram, LINK_DMA_COUNTDOWN),
+                );
+            let room_71_obj_cache_publication = Room71ObjCachePublication::resolve(
+                room_71_live_obj_cache,
+                room_71_live_link_head_obj_cache,
+            );
             if env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
                 && following_room == 0x71
                 && following_frame.main_module == 7
                 && following_frame.submodule == 5
             {
                 eprintln!(
-                    "display_room71_obj_cache host={} entry={:02x}/{:02x}/{:02x} guard_scanline={blue_guard_workload_scanline:?} blank_from={:?} link={:?}/{:?} oam={:?} dma_source={:04x} dma_countdown={:04x} use_live={room_71_live_obj_cache}",
+                    "display_room71_obj_cache host={} entry={:02x}/{:02x}/{:02x} guard_scanline={blue_guard_workload_scanline:?} blank_from={:?} link={:?}/{:?} oam={:?} dma_source={:04x} dma_countdown={:04x} publication={room_71_obj_cache_publication:?}",
                     self.frame_ctr_dbg,
                     entry_frame.main_module,
                     entry_frame.submodule,
@@ -13042,11 +13097,28 @@ impl ZeldaState {
                     }
                 }
                 self.ppu.obj_vram_latch = Some(obj_cache_vram);
-            } else if room_71_live_obj_cache {
+            } else if room_71_obj_cache_publication != Room71ObjCachePublication::RetainCurrent {
                 // v1.0.0 rendered this handoff from live state. Preserve that
                 // decoded OBJ generation while raw VRAM remains on the
                 // independently selected host-boundary image.
-                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
+                let mut obj_cache_vram = if room_71_obj_cache_publication
+                    == Room71ObjCachePublication::UseCapturedWithLiveLinkHead
+                {
+                    self.ppu.vram.clone()
+                } else {
+                    following.ppu.vram.clone()
+                };
+                if room_71_obj_cache_publication
+                    == Room71ObjCachePublication::UseCapturedWithLiveLinkHead
+                {
+                    // The captured display page already contains the live Link
+                    // body and hand, but retains the preceding head pair. OBJ
+                    // evaluation decodes the resident post-NMI head ranges
+                    // (tiles $02/$03 and $12/$13) at this boundary.
+                    let resident_obj_vram = &following.ppu.vram;
+                    publish_live_link_head_obj_cache(&mut obj_cache_vram, resident_obj_vram);
+                }
+                self.ppu.obj_vram_latch = Some(obj_cache_vram);
             } else if room_71_item_graphics_return_live_boundary {
                 // The same completed vblank that advanced the packed OAM
                 // size/X table also carried the 16x16 held-item CHR upload.

@@ -390,6 +390,87 @@ fn resident_ppu_oam_scanout_ignores_the_following_published_shadow() {
 }
 
 #[test]
+fn room_71_subtile_shutter_publishes_only_the_live_link_head_cache() {
+    let entry = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 1,
+        subsubmodule: 7,
+        ..Default::default()
+    };
+    let shutter = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 5,
+        subsubmodule: 0,
+        ..Default::default()
+    };
+
+    assert!(room_71_subtile_shutter_publishes_live_link_head_obj_cache(
+        entry, shutter, 0x71, 5,
+    ));
+    assert!(!room_71_subtile_shutter_publishes_live_link_head_obj_cache(
+        entry, shutter, 0x72, 5,
+    ));
+    assert!(!room_71_subtile_shutter_publishes_live_link_head_obj_cache(
+        entry, shutter, 0x71, 6,
+    ));
+    assert_eq!(
+        Room71ObjCachePublication::resolve(false, true),
+        Room71ObjCachePublication::UseCapturedWithLiveLinkHead,
+    );
+    assert_eq!(
+        Room71ObjCachePublication::resolve(true, false),
+        Room71ObjCachePublication::UseLive,
+    );
+    assert_eq!(
+        Room71ObjCachePublication::resolve(false, false),
+        Room71ObjCachePublication::RetainCurrent,
+    );
+
+    let mut display = vec![0xaaaa; 0x8000];
+    let mut resident = vec![0xbbbb; 0x8000];
+    resident[0x4000..0x4020].fill(0x1000);
+    resident[0x4020..0x4040].fill(0x2000);
+    resident[0x4100..0x4120].fill(0x3000);
+    resident[0x4120..0x4140].fill(0x4000);
+
+    publish_live_link_head_obj_cache(&mut display, &resident);
+
+    assert!(display[0x4000..0x4020].iter().all(|word| *word == 0xaaaa));
+    assert!(display[0x4020..0x4040].iter().all(|word| *word == 0x2000));
+    assert!(display[0x4100..0x4120].iter().all(|word| *word == 0xaaaa));
+    assert!(display[0x4120..0x4140].iter().all(|word| *word == 0x4000));
+
+    // Exercise the actual captured/resident roles after the display-state
+    // swap. Distinct body and head markers make a reversed call direction
+    // observable without a full-route replay.
+    let mut state = ZeldaState::new();
+    state.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    state.ram[crate::game_state::constants::SUBMODULE] = 1;
+    state.ram[crate::game_state::constants::SUBSUBMODULE] = 7;
+    state.ppu.vram[0x4000] = 0x1111;
+    state.ppu.vram[0x4020] = 0x2222;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 5;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 0;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x71;
+    write_le_u16(&mut following.ram, LINK_DMA_COUNTDOWN, 5);
+    following.ppu.vram[0x4000] = 0xaaaa;
+    following.ppu.vram[0x4020] = 0xbbbb;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    let cache = state.ppu.obj_vram_latch.as_ref().unwrap();
+    assert_eq!(cache[0x4000], 0x1111, "captured Link body stays retained");
+    assert_eq!(cache[0x4020], 0xbbbb, "resident Link head is decoded");
+}
+
+#[test]
 fn dialogue_text_holds_published_oam_until_the_rom_frame_counter_advances() {
     let published = crate::game_state::FrameState {
         main_module: 14,
