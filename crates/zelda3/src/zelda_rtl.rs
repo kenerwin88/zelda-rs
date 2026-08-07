@@ -12911,7 +12911,7 @@ impl ZeldaState {
                 );
             }
         }
-        let room_82_horizontal_publishes_entry_shadow =
+        let room_82_horizontal_deferred_nmi_publishes_entry_shadow =
             room_82_horizontal_deferred_nmi_publishes_entry_shadow_oam(
                 entry_frame,
                 following_frame,
@@ -12919,7 +12919,9 @@ impl ZeldaState {
                 self.screen_transition(),
                 following.room_82_sprite_conversion_deferred_nmi,
                 plan.oam_scanout_source,
-            ) || room_82_horizontal_state3_followup_publishes_entry_shadow_oam(
+            );
+        let room_82_horizontal_state3_followup =
+            room_82_horizontal_state3_followup_publishes_entry_shadow_oam(
                 entry_frame,
                 following_frame,
                 following_room,
@@ -12927,17 +12929,31 @@ impl ZeldaState {
                 following.room_82_sprite_conversion_deferred_nmi,
                 plan.oam_scanout_source,
             );
-        if room_82_horizontal_publishes_entry_shadow {
-            // Direction $02 keeps the sorted table staged at host entry across
-            // both the deferred NMI and its state-$03 follow-up. Publish it
-            // after generic cache composition, which otherwise restores an
-            // adjacent OAM generation.
-            if let Some(entry_shadow) = self
-                .pre_main_graphics_dma
-                .as_ref()
-                .map(|graphics| graphics.oam_shadow.as_slice())
-            {
+        let entry_shadow = self
+            .pre_main_graphics_dma
+            .as_ref()
+            .map(|graphics| graphics.oam_shadow.as_slice());
+        if room_82_horizontal_deferred_nmi_publishes_entry_shadow {
+            // Direction $02 reaches the deferred NMI with the complete sorted
+            // table staged at host entry.
+            if let Some(entry_shadow) = entry_shadow {
                 publish_oam_shadow(&mut self.ppu.oam, entry_shadow);
+            }
+        } else if room_82_horizontal_state3_followup {
+            // The first follow-up still has Link active in the entry shadow.
+            // Once main offscreens that shadow, hardware retains the preceding
+            // sorted table instead of publishing the retired copy.
+            let entry_shadow_keeps_link = entry_shadow
+                .and_then(|shadow| shadow.get(102 * 4 + 1))
+                .is_some_and(|&y| y != 0xf0);
+            if entry_shadow_keeps_link {
+                publish_oam_shadow(&mut self.ppu.oam, entry_shadow.unwrap());
+            } else if let Some(last_presented) = self
+                .last_presented_oam
+                .as_deref()
+                .filter(|oam| oam.len() == self.ppu.oam.len())
+            {
+                self.ppu.oam.clone_from_slice(last_presented);
             }
         }
         if following_frame.main_module == 7

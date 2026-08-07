@@ -1113,6 +1113,16 @@ fn room_82_horizontal_state3_boundaries_publish_entry_oam_after_cache_compositio
     state.compose_display_oam(&following, &plan);
 
     assert_eq!(state.ppu.oam[LINK_BODY_WORD], 0x4444);
+
+    let graphics = state.pre_main_graphics_dma.as_mut().unwrap();
+    graphics.oam_shadow[LINK_BODY_BYTE..LINK_BODY_BYTE + 2]
+        .copy_from_slice(&0xf077u16.to_le_bytes());
+    state.last_presented_oam = Some(vec![0x6666; state.ppu.oam.len()]);
+    state.ppu.oam.fill(0x5555);
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[LINK_BODY_WORD], 0x6666);
 }
 
 #[test]
