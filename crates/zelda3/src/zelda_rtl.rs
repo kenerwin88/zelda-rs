@@ -1200,6 +1200,24 @@ const fn rom_dungeon_subtile_return_publishes_live_animated_bg(
     dungeon_subtile_landing_enters_shutter(entry, captured)
 }
 
+const fn rom_dungeon_subtile_direction_one_publishes_live_animated_bg(
+    entry: crate::game_state::FrameState,
+    captured: crate::game_state::FrameState,
+    screen_transition: u8,
+) -> bool {
+    // Direction $01's subtile movement runs after the leading NMI has
+    // uploaded the next dungeon animation page. Direction $00 reaches the
+    // same coarse state before that upload owns scanout, so the direction is
+    // part of the hardware publication boundary rather than incidental input.
+    screen_transition == 1
+        && entry.main_module == 7
+        && entry.submodule == 1
+        && matches!(entry.subsubmodule, 1..=7)
+        && captured.main_module == 7
+        && captured.submodule == 1
+        && matches!(captured.subsubmodule, 1..=7)
+}
+
 const fn rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(
     entry: crate::game_state::FrameState,
     captured: crate::game_state::FrameState,
@@ -11836,6 +11854,11 @@ impl ZeldaState {
                             entry_frame,
                             captured_frame,
                         )
+                        || rom_dungeon_subtile_direction_one_publishes_live_animated_bg(
+                            entry_frame,
+                            captured_frame,
+                            self.screen_transition(),
+                        )
                         || rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(
                             entry_frame,
                             captured_frame,
@@ -13526,6 +13549,8 @@ impl ZeldaState {
             .and_then(|frame| frame.parse::<u32>().ok())
             .is_some_and(|frame| frame == self.frame_ctr_dbg)
         {
+            const LINK_TILE_02_WORDS: std::ops::Range<usize> = 0x4020..0x4030;
+            const PRESENTED_LINK_TILE_02_WORDS: std::ops::Range<usize> = 0x0020..0x0030;
             const LINK_TILE_03_WORDS: std::ops::Range<usize> = 0x4030..0x4040;
             const PRESENTED_LINK_TILE_03_WORDS: std::ops::Range<usize> = 0x0030..0x0040;
             const TILE_20_WORDS: std::ops::Range<usize> = 0x4200..0x4210;
@@ -13540,6 +13565,25 @@ impl ZeldaState {
                 .obj_previous_frame_vram
                 .as_deref()
                 .map(|vram| &vram[TILE_20_WORDS.clone()]);
+            eprintln!(
+                "display_obj_vram_link_tile host={} tile=02 visible={:04x?} following={:04x?} last_presented={:04x?} previous_frame={:04x?} selected={:04x?} source={:?} following_source={:?} last_source={:?}",
+                self.frame_ctr_dbg,
+                &self.ppu.vram[LINK_TILE_02_WORDS.clone()],
+                &following.ppu.vram[LINK_TILE_02_WORDS.clone()],
+                self.last_presented_obj_vram
+                    .as_deref()
+                    .map(|vram| &vram[PRESENTED_LINK_TILE_02_WORDS]),
+                self.ppu
+                    .obj_previous_frame_vram
+                    .as_deref()
+                    .map(|vram| &vram[LINK_TILE_02_WORDS.clone()]),
+                &selected[LINK_TILE_02_WORDS],
+                self.vram_chr_source.get(0x402),
+                following.vram_chr_source.get(0x402),
+                self.last_presented_vram_chr_source
+                    .as_ref()
+                    .map(|source| source.get(0x402)),
+            );
             eprintln!(
                 "display_obj_vram_link_tile host={} tile=03 visible={:04x?} following={:04x?} last_presented={:04x?} previous_frame={:04x?} selected={:04x?}",
                 self.frame_ctr_dbg,

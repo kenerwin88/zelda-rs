@@ -271,6 +271,41 @@ fn spiral_stair_entry_uses_host_link_operands_and_entry_oam_shadow() {
 }
 
 #[test]
+fn dungeon_subtile_scanout_publishes_leading_nmi_animated_chr_independently() {
+    let frame = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 1,
+        subsubmodule: 3,
+        ..Default::default()
+    };
+
+    let plan = rom_graphics_dma_plan_at_host_boundary(frame);
+
+    assert_eq!(
+        plan.animated_bg_scanout,
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
+    );
+    assert!(rom_dungeon_subtile_direction_one_publishes_live_animated_bg(
+        frame, frame, 1,
+    ));
+    assert!(!rom_dungeon_subtile_direction_one_publishes_live_animated_bg(
+        frame, frame, 0,
+    ));
+    assert_eq!(
+        plan.oam_scanout,
+        OamScanoutSource::RetainResidentPpuOam
+    );
+    assert_eq!(
+        plan.link_obj_operands,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    );
+    assert_eq!(
+        plan.link_obj_scanout,
+        GraphicsDmaGeneration::LiveAfterMain
+    );
+}
+
+#[test]
 fn publication_plan_keeps_memory_domains_independent() {
     let mut snapshot = captured_display_snapshot();
     snapshot.vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
