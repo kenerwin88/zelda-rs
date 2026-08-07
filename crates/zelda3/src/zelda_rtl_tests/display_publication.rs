@@ -1056,7 +1056,7 @@ fn room_82_deferred_sprite_conversion_decodes_the_resident_obj_page() {
 }
 
 #[test]
-fn room_82_horizontal_deferred_nmi_publishes_entry_oam_after_cache_composition() {
+fn room_82_horizontal_state3_boundaries_publish_entry_oam_after_cache_composition() {
     const LINK_BODY_WORD: usize = 102 * 2;
     const LINK_BODY_BYTE: usize = LINK_BODY_WORD * 2;
 
@@ -1098,6 +1098,21 @@ fn room_82_horizontal_deferred_nmi_publishes_entry_oam_after_cache_composition()
     state.compose_display_oam(&following, &plan);
 
     assert_eq!(state.ppu.oam[LINK_BODY_WORD], 0x1111);
+
+    state.set_subsubmodule(3);
+    let followup_entry = state.game_state.frame;
+    let graphics = state.pre_main_graphics_dma.as_mut().unwrap();
+    graphics.entry_frame = followup_entry;
+    graphics.oam_shadow[LINK_BODY_BYTE..LINK_BODY_BYTE + 2]
+        .copy_from_slice(&0x4444u16.to_le_bytes());
+    state.ppu.oam.fill(0x5555);
+    following.room_82_sprite_conversion_deferred_nmi = false;
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[LINK_BODY_WORD], 0x4444);
 }
 
 #[test]

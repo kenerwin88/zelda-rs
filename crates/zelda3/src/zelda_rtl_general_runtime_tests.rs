@@ -6578,6 +6578,22 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
         true,
         OamScanoutSource::ComposeLiveAfterNmi,
     ));
+    assert!(room_82_horizontal_state3_followup_publishes_entry_shadow_oam(
+        supertile_sprite_conversion,
+        supertile_sprite_conversion,
+        0x82,
+        2,
+        false,
+        OamScanoutSource::RetainResidentPpuOam,
+    ));
+    assert!(!room_82_horizontal_state3_followup_publishes_entry_shadow_oam(
+        supertile_sprite_conversion,
+        supertile_sprite_conversion,
+        0x82,
+        0,
+        false,
+        OamScanoutSource::RetainResidentPpuOam,
+    ));
     let mut published_oam = vec![0; 3];
     assert!(publish_oam_shadow(
         &mut published_oam,

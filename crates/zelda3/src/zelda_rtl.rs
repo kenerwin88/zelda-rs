@@ -1288,6 +1288,26 @@ const fn room_82_horizontal_deferred_nmi_publishes_entry_shadow_oam(
         && matches!(oam_scanout_source, OamScanoutSource::ComposeLiveAfterNmi)
 }
 
+const fn room_82_horizontal_state3_followup_publishes_entry_shadow_oam(
+    entry: crate::game_state::FrameState,
+    following: crate::game_state::FrameState,
+    room: u8,
+    screen_transition: u8,
+    deferred_nmi: bool,
+    oam_scanout_source: OamScanoutSource,
+) -> bool {
+    room == 0x82
+        && entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 3
+        && following.main_module == 7
+        && following.submodule == 2
+        && following.subsubmodule == 3
+        && screen_transition == 2
+        && !deferred_nmi
+        && matches!(oam_scanout_source, OamScanoutSource::RetainResidentPpuOam)
+}
+
 const fn rom_dungeon_supertile_scroll_runs_after_leading_nmi(
     frame: crate::game_state::FrameState,
     room: u8,
@@ -12891,18 +12911,27 @@ impl ZeldaState {
                 );
             }
         }
-        if room_82_horizontal_deferred_nmi_publishes_entry_shadow_oam(
-            entry_frame,
-            following_frame,
-            following_room,
-            self.screen_transition(),
-            following.room_82_sprite_conversion_deferred_nmi,
-            plan.oam_scanout_source,
-        ) {
-            // Direction $02 reaches the deferred NMI with the complete sorted
-            // table already staged at host entry. Publish it after the generic
-            // state-$03 cache composition, which otherwise restores the older
-            // sorted table while selecting the correct decoded OBJ generation.
+        let room_82_horizontal_publishes_entry_shadow =
+            room_82_horizontal_deferred_nmi_publishes_entry_shadow_oam(
+                entry_frame,
+                following_frame,
+                following_room,
+                self.screen_transition(),
+                following.room_82_sprite_conversion_deferred_nmi,
+                plan.oam_scanout_source,
+            ) || room_82_horizontal_state3_followup_publishes_entry_shadow_oam(
+                entry_frame,
+                following_frame,
+                following_room,
+                self.screen_transition(),
+                following.room_82_sprite_conversion_deferred_nmi,
+                plan.oam_scanout_source,
+            );
+        if room_82_horizontal_publishes_entry_shadow {
+            // Direction $02 keeps the sorted table staged at host entry across
+            // both the deferred NMI and its state-$03 follow-up. Publish it
+            // after generic cache composition, which otherwise restores an
+            // adjacent OAM generation.
             if let Some(entry_shadow) = self
                 .pre_main_graphics_dma
                 .as_ref()
