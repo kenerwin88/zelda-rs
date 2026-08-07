@@ -13176,12 +13176,11 @@ impl ZeldaState {
             && following_frame.submodule == 2
             && following_frame.subsubmodule == 1
             && plan.oam_scanout_source == OamScanoutSource::RetainResidentPpuOam;
-        let room_72_second_state8_scroll_uses_live_obj_cache = following_room == 0x72
+        let room_72_state8_scroll_after_first_tick_uses_live_obj_cache = following_room == 0x72
             && following_frame.main_module == 7
             && following_frame.submodule == 2
             && following_frame.subsubmodule == 8
-            && following_frame.frame_counter == 1
-            && read_le_u16(&following.ram, LINK_DMA_COUNTDOWN) == 4
+            && following_frame.frame_counter != 0
             && self.screen_transition() == 1
             && plan.oam_scanout_source == OamScanoutSource::ComposePublishedShadowDma
             && plan.link_obj_scanout_generation == GraphicsDmaGeneration::HostBoundaryBeforeMain
@@ -13321,11 +13320,10 @@ impl ZeldaState {
                     read_le_u16(&following.ram, LINK_DMA_COUNTDOWN),
                 );
             }
-            if room_72_second_state8_scroll_uses_live_obj_cache {
-                // The second resumed scroll publishes the completed OAM shadow
-                // while Snes9x has already decoded Link's following early-DMA
-                // page. Raw OBJ VRAM remains on the independently selected
-                // host-boundary image, so carry only the renderer cache live.
+            if room_72_state8_scroll_after_first_tick_uses_live_obj_cache {
+                // After the first resumed scroll tick, Snes9x decodes every
+                // following Link DMA page before raw OBJ VRAM advances at the
+                // display boundary. Carry only that renderer cache live.
                 self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
             } else if dungeon_subtile_palette_filter_uses_live_obj_cache {
                 // The palette loop can hold NMI_DoUpdates for a host frame.
