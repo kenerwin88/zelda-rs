@@ -1308,6 +1308,24 @@ const fn room_82_horizontal_state3_followup_publishes_entry_shadow_oam(
         && matches!(oam_scanout_source, OamScanoutSource::RetainResidentPpuOam)
 }
 
+const fn room_82_horizontal_sprite_conversion_return_retains_last_oam(
+    entry: crate::game_state::FrameState,
+    following: crate::game_state::FrameState,
+    room: u8,
+    screen_transition: u8,
+    oam_scanout_source: OamScanoutSource,
+) -> bool {
+    room == 0x82
+        && entry.main_module == 7
+        && entry.submodule == 2
+        && matches!(entry.subsubmodule, 3 | 4)
+        && following.main_module == 7
+        && following.submodule == 2
+        && following.subsubmodule == 4
+        && screen_transition == 2
+        && matches!(oam_scanout_source, OamScanoutSource::RetainResidentPpuOam)
+}
+
 const fn rom_dungeon_supertile_scroll_runs_after_leading_nmi(
     frame: crate::game_state::FrameState,
     room: u8,
@@ -12929,6 +12947,14 @@ impl ZeldaState {
                 following.room_82_sprite_conversion_deferred_nmi,
                 plan.oam_scanout_source,
             );
+        let retain_room_82_horizontal_sprite_conversion_return_oam =
+            room_82_horizontal_sprite_conversion_return_retains_last_oam(
+                entry_frame,
+                following_frame,
+                following_room,
+                self.screen_transition(),
+                plan.oam_scanout_source,
+            );
         let entry_shadow = self
             .pre_main_graphics_dma
             .as_ref()
@@ -12949,6 +12975,17 @@ impl ZeldaState {
             if entry_shadow_keeps_link {
                 publish_oam_shadow(&mut self.ppu.oam, entry_shadow.unwrap());
             } else if let Some(last_presented) = self
+                .last_presented_oam
+                .as_deref()
+                .filter(|oam| oam.len() == self.ppu.oam.len())
+            {
+                self.ppu.oam.clone_from_slice(last_presented);
+            }
+        } else if retain_room_82_horizontal_sprite_conversion_return_oam {
+            // The caller-resume state has already retired Link from every
+            // software shadow, while the PPU continues scanning the sorted
+            // table published by the deferred conversion workload.
+            if let Some(last_presented) = self
                 .last_presented_oam
                 .as_deref()
                 .filter(|oam| oam.len() == self.ppu.oam.len())
