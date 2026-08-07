@@ -12163,6 +12163,10 @@ impl ZeldaState {
         plan: &DisplayPublicationPlan,
         retained_full_tilemap_vram: Option<&RetainedVramRegion>,
     ) {
+        let debug_vram_frame = env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == self.frame_ctr_dbg);
         // The polygon worker publishes through its NMI handshake at the start
         // of the frame. Preserve that completed pre-NMI buffer rather than a
         // job that may have finished later in the current CPU slice.
@@ -12188,6 +12192,25 @@ impl ZeldaState {
             .then(|| host_boundary_link_obj_vram.clone());
         let following_room = crate::game_state::WorldLocationState::load_from_ram(&following.ram)
             .dungeon_room_index();
+        if debug_vram_frame {
+            eprintln!(
+                "display_vram_candidates host={} room={:04x} entry={:02x}/{:02x}/{:02x} following={:02x}/{:02x}/{:02x} vram={:?} animated={:?} captured_0c00={:04x} following_0c00={:04x} captured_3b00={:04x} following_3b00={:04x}",
+                self.frame_ctr_dbg,
+                following_room,
+                entry_frame.main_module,
+                entry_frame.submodule,
+                entry_frame.subsubmodule,
+                following_frame.main_module,
+                following_frame.submodule,
+                following_frame.subsubmodule,
+                plan.vram_generation,
+                plan.animated_bg_scanout_generation,
+                self.ppu.vram[0x0c00],
+                following.ppu.vram[0x0c00],
+                self.ppu.vram[0x3b00],
+                following.ppu.vram[0x3b00],
+            );
+        }
         let retained_doorway_link_obj_vram = room_71_supertile_return_retains_link_vram(
             entry_frame,
             following_frame,
@@ -12390,6 +12413,12 @@ impl ZeldaState {
         }
         if let Some(retained_full_tilemap_vram) = retained_full_tilemap_vram {
             retained_full_tilemap_vram.publish_to(&mut self.ppu.vram);
+        }
+        if debug_vram_frame {
+            eprintln!(
+                "display_vram_selected host={} selected_0c00={:04x} selected_3b00={:04x}",
+                self.frame_ctr_dbg, self.ppu.vram[0x0c00], self.ppu.vram[0x3b00],
+            );
         }
     }
 
@@ -15279,6 +15308,16 @@ impl ZeldaState {
                 GameWorkStep::Complete(
                     GameWorkContinuation::HoldDungeonSupertileFilteringReturn,
                 ) => {
+                    if env::var_os("ZELDA3_DEBUG_DISPLAY_SCHEDULER").is_some() {
+                        eprintln!(
+                            "display_scheduler host={} continuation=HoldDungeonSupertileFilteringReturn room={:04x} phase={:02x}/{:02x}/{:02x}",
+                            self.frame_ctr_dbg,
+                            self.game_state.world.location.dungeon_room_index(),
+                            self.game_state.frame.main_module,
+                            self.game_state.frame.submodule,
+                            self.game_state.frame.subsubmodule,
+                        );
+                    }
                     let first_state8_oam = dungeon_supertile_first_state8_oam(&self.ppu.oam);
                     self.next_display_obj_memory_generation =
                         Some(DisplayObjGeneration::RetainCapturedOam {
@@ -15286,6 +15325,13 @@ impl ZeldaState {
                         });
                     self.next_display_obj_scanout_generation =
                         Some(dungeon_subtile_palette_filter_return_obj_scanout());
+                    // The held return's NMI prepares the following frame. This
+                    // scanout still uses the complete pre-NMI VRAM generation,
+                    // including the independently uploaded animated BG tiles.
+                    self.next_display_animated_bg_scanout_generation =
+                        Some(AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi);
+                    self.next_display_vram_generation =
+                        DisplayVramGeneration::RetainCapturedBeforeNmi;
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                     self.nmi_prepare_sprites();

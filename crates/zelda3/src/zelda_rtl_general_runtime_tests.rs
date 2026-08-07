@@ -3862,6 +3862,37 @@ fn room_71_and_72_filtering_returns_hold_the_first_scroll_iteration() {
 }
 
 #[test]
+fn room_72_held_filter_return_retains_the_pre_nmi_vram_scanout() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.initialized = true;
+    state.rom_reset_frame_delay = 0;
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(8);
+    state.set_dungeon_room_index(0x72);
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::HoldDungeonSupertileFilteringReturn,
+        1,
+    );
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    let display = state
+        .display_snapshot
+        .as_ref()
+        .expect("held return publishes a display snapshot");
+    assert_eq!(
+        display.vram_generation,
+        DisplayVramGeneration::RetainCapturedBeforeNmi,
+    );
+    assert_eq!(
+        display.animated_bg_scanout_generation,
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi,
+    );
+}
+
+#[test]
 fn pre_dungeon_work_resumes_at_room_and_song_bank_transfer_boundaries() {
     assert_eq!(PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES, 58);
     let stages = [
