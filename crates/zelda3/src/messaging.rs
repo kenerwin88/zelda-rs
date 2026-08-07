@@ -142,6 +142,14 @@ struct VwfGlyphCpuAdvance {
 }
 
 impl VwfGlyphCpuPhase {
+    pub(crate) fn is_ready(self) -> bool {
+        matches!(self, Self::Ready)
+    }
+
+    pub(crate) fn vblank_follows_click_before_drawing(self) -> bool {
+        matches!(self, Self::PreparingDrawing { .. })
+    }
+
     fn advance(self, available: u32, drawing_master_cycles: u32) -> VwfGlyphCpuAdvance {
         match self {
             Self::Ready => Self::advance_click(
@@ -343,6 +351,10 @@ mod fast_forward_cycle_tests {
             before_click.next_phase,
             VwfGlyphCpuPhase::Entering { .. }
         ));
+        assert!(!before_click
+            .next_phase
+            .vblank_follows_click_before_drawing());
+        assert!(!before_click.next_phase.is_ready());
 
         let at_click = before_click.next_phase.advance(1, drawing);
         assert!(at_click.entered_function);
@@ -351,6 +363,7 @@ mod fast_forward_cycle_tests {
             at_click.next_phase,
             VwfGlyphCpuPhase::PreparingDrawing { .. }
         ));
+        assert!(at_click.next_phase.vblank_follows_click_before_drawing());
 
         let after_entry = at_click
             .next_phase
@@ -361,6 +374,8 @@ mod fast_forward_cycle_tests {
             after_entry.next_phase,
             VwfGlyphCpuPhase::Drawing { .. }
         ));
+        assert!(!after_entry.next_phase.vblank_follows_click_before_drawing());
+        assert!(!after_entry.next_phase.is_ready());
         assert_eq!(
             before_click.consumed_master_cycles
                 + at_click.consumed_master_cycles
@@ -3666,6 +3681,13 @@ impl ZeldaState {
         let caller_suffix_crosses_vblank = !yielded_midline
             && self.dialogue_scroll_cpu_is_idle()
             && outcome.caller_suffix_crosses_vblank();
+        if yielded_midline
+            && self
+                .dialogue_vwf_glyph_cpu_phase
+                .vblank_follows_click_before_drawing()
+        {
+            self.zelda_mark_vwf_glyph_tone_crossed_vblank();
+        }
         // A mid-line yield models Snes9x returning at vblank while the 65816 PC
         // is still inside VWF_RenderCharacter. The ROM has not reached the
         // handler epilogue yet, so $17/$0710 remain zero: NMI performs normal

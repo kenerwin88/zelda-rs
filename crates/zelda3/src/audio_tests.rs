@@ -1,5 +1,54 @@
 use super::*;
 
+#[test]
+fn vwf_click_boundary_marker_stays_aligned_two_batches_after_the_glyph() {
+    let mut queue = ModernAudioCommandQueue::default();
+    queue.vwf_glyph_tone_crossed_vblank_deferred[2] = true;
+
+    let mut observed = Vec::new();
+    for completed in [false, false, true, true] {
+        queue.push(completed);
+        queue.pop();
+        observed.push(queue.vwf_glyph_tone_crossed_vblank_input);
+    }
+
+    assert_eq!(observed, [false, false, true, false]);
+}
+
+#[test]
+fn vwf_click_boundary_marker_expires_if_the_glyph_call_is_still_interrupted() {
+    let mut queue = ModernAudioCommandQueue::default();
+    queue.vwf_glyph_tone_crossed_vblank_deferred[2] = true;
+
+    let mut observed = Vec::new();
+    for completed in [false, false, false, true] {
+        queue.push(completed);
+        queue.pop();
+        observed.push(queue.vwf_glyph_tone_crossed_vblank_input);
+    }
+
+    assert_eq!(observed, [false; 4]);
+}
+
+#[test]
+fn vwf_click_boundary_marker_survives_audio_snapshot_restore() {
+    let mut state = ZeldaState::new();
+    state.zelda_mark_vwf_glyph_tone_crossed_vblank();
+    let snapshot = state.zelda_audio_snapshot_bytes();
+
+    let mut restored = ZeldaState::new();
+    restored.zelda_audio_restore_from_bytes(&snapshot).unwrap();
+
+    assert_eq!(
+        restored
+            .audio
+            .modern
+            .queue
+            .vwf_glyph_tone_crossed_vblank_deferred,
+        [false, false, true]
+    );
+}
+
 fn distinctive_brr_bank(nibble: u8) -> Vec<u8> {
     let mut ram = vec![0u8; 0x10000];
     for source in 0..=u8::MAX {
@@ -692,6 +741,24 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
 
     let mut restored = ZeldaState::new();
     restored.zelda_audio_restore_from_bytes(&snapshot).unwrap();
+    assert_eq!(
+        restored.zelda_modern_audio_state(),
+        state.zelda_modern_audio_state()
+    );
+
+    let (v7_payload, v7_has_sidecar) = snapshot_state::encode_v7(&state.audio).unwrap();
+    let v7 = with_header(
+        7,
+        if v7_has_sidecar {
+            AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR
+        } else {
+            0
+        },
+        &v7_payload,
+    );
+    restored
+        .zelda_audio_restore_from_bytes(&v7)
+        .expect("version-7 typed snapshot migrates");
     assert_eq!(
         restored.zelda_modern_audio_state(),
         state.zelda_modern_audio_state()

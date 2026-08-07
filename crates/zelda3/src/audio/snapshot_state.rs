@@ -181,10 +181,128 @@ impl CompactModernAudioStateSnapshotV5 {
     }
 }
 
-/// Version-6 payload: typed runtime state with legacy compatibility fields
-/// isolated from production command transport.
+/// Frozen command queue layout shared by snapshot versions 6 and 7.
 #[derive(serde::Serialize, serde::Deserialize)]
-struct CompactModernAudioStateSnapshotV6 {
+struct ModernAudioCommandQueueV7 {
+    write_history: [EngineAudioCommandBatch; 16],
+    pending_write: EngineAudioCommandBatch,
+    write_position: u8,
+    write_count: u8,
+    total_writes: u8,
+    input_commands: EngineAudioCommandBatch,
+    acknowledged_commands: EngineAudioCommandBatch,
+}
+
+impl ModernAudioCommandQueueV7 {
+    fn capture(queue: &ModernAudioCommandQueue) -> Self {
+        Self {
+            write_history: queue.write_history,
+            pending_write: queue.pending_write,
+            write_position: queue.write_position,
+            write_count: queue.write_count,
+            total_writes: queue.total_writes,
+            input_commands: queue.input_commands,
+            acknowledged_commands: queue.acknowledged_commands,
+        }
+    }
+
+    fn into_current(self) -> ModernAudioCommandQueue {
+        ModernAudioCommandQueue {
+            write_history: self.write_history,
+            vwf_glyph_tone_crossed_vblank_history: [false; 16],
+            pending_write: self.pending_write,
+            vwf_glyph_tone_crossed_vblank_deferred: [false; 3],
+            write_position: self.write_position,
+            write_count: self.write_count,
+            total_writes: self.total_writes,
+            input_commands: self.input_commands,
+            vwf_glyph_tone_crossed_vblank_input: false,
+            acknowledged_commands: self.acknowledged_commands,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ModernAudioRuntimeV7 {
+    queue: ModernAudioCommandQueueV7,
+    renderer: ModernAudioEngine,
+    sequencer: ModernAudioSequencer,
+    driver_clock: Option<crate::spc_driver_clock::AbsoluteDspEventClock>,
+    sample_bank_id: u8,
+    sample_bank_generation: u32,
+}
+
+impl ModernAudioRuntimeV7 {
+    fn capture(runtime: &ModernAudioRuntime) -> Self {
+        Self {
+            queue: ModernAudioCommandQueueV7::capture(&runtime.queue),
+            renderer: runtime.renderer.clone(),
+            sequencer: runtime.sequencer.clone(),
+            driver_clock: runtime.driver_clock.clone(),
+            sample_bank_id: runtime.sample_bank_id,
+            sample_bank_generation: runtime.sample_bank_generation,
+        }
+    }
+
+    fn into_current(self) -> ModernAudioRuntime {
+        ModernAudioRuntime {
+            queue: self.queue.into_current(),
+            renderer: self.renderer,
+            sequencer: self.sequencer,
+            driver_clock: self.driver_clock,
+            sample_bank_id: self.sample_bank_id,
+            sample_bank_generation: self.sample_bank_generation,
+        }
+    }
+}
+
+/// Version-6/7 payload: frozen typed runtime state with legacy compatibility
+/// fields isolated from production command transport.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CompactModernAudioStateSnapshotV7 {
+    modern: ModernAudioRuntimeV7,
+    legacy_compatibility: LegacyAudioCompatibilityState,
+    volume_transition_step_float: [f32; 4],
+    volume_transition_target_float: [f32; 4],
+    config_audio_freq: u32,
+    config_msuvolume: u8,
+    config_resume_msu: bool,
+    config_msu_path: Option<String>,
+}
+
+impl CompactModernAudioStateSnapshotV7 {
+    fn capture(state: &AudioState) -> Self {
+        Self {
+            modern: ModernAudioRuntimeV7::capture(&state.modern),
+            legacy_compatibility: state.legacy_compatibility,
+            volume_transition_step_float: state.volume_transition_step_float,
+            volume_transition_target_float: state.volume_transition_target_float,
+            config_audio_freq: state.config_audio_freq,
+            config_msuvolume: state.config_msuvolume,
+            config_resume_msu: state.config_resume_msu,
+            config_msu_path: state.config_msu_path.clone(),
+        }
+    }
+
+    fn into_audio_state(self) -> AudioState {
+        let mut state = AudioState::default();
+        state.modern = self.modern.into_current();
+        state.legacy_compatibility = self.legacy_compatibility;
+        state.volume_transition_step_float = self.volume_transition_step_float;
+        state.volume_transition_target_float = self.volume_transition_target_float;
+        state.config_audio_freq = self.config_audio_freq;
+        state.config_msuvolume = self.config_msuvolume;
+        state.config_resume_msu = self.config_resume_msu;
+        state.config_msu_path = self.config_msu_path;
+        state
+    }
+}
+
+/// Version-8 payload persists VWF command-publication metadata alongside the
+/// audio queue so checkpoint continuation cannot separate the marker from its
+/// command batch.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CompactModernAudioStateSnapshotV8 {
     modern: ModernAudioRuntime,
     legacy_compatibility: LegacyAudioCompatibilityState,
     volume_transition_step_float: [f32; 4],
@@ -195,7 +313,7 @@ struct CompactModernAudioStateSnapshotV6 {
     config_msu_path: Option<String>,
 }
 
-impl CompactModernAudioStateSnapshotV6 {
+impl CompactModernAudioStateSnapshotV8 {
     fn capture(state: &AudioState) -> Self {
         Self {
             modern: state.modern.clone(),
@@ -232,14 +350,22 @@ struct AudioSnapshotV5 {
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct AudioSnapshotV6 {
-    modern: CompactModernAudioStateSnapshotV6,
+    modern: CompactModernAudioStateSnapshotV7,
     oracle_sidecar: Option<Vec<u8>>,
     sample_bank_id: u8,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct AudioSnapshotV7 {
-    modern: CompactModernAudioStateSnapshotV6,
+    modern: CompactModernAudioStateSnapshotV7,
+    oracle_sidecar: Option<Vec<u8>>,
+    sequencer_backend: SnapshotSequencerBackend,
+    sample_bank_id: u8,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AudioSnapshotV8 {
+    modern: CompactModernAudioStateSnapshotV8,
     oracle_sidecar: Option<Vec<u8>>,
     sequencer_backend: SnapshotSequencerBackend,
     sample_bank_id: u8,
@@ -334,7 +460,7 @@ pub(super) fn encode_v6(state: &AudioState) -> Result<(Vec<u8>, bool), String> {
     let oracle_sidecar = capture_oracle_sidecar(state)?;
     let has_oracle_sidecar = oracle_sidecar.is_some();
     let payload = bincode::serialize(&AudioSnapshotV6 {
-        modern: CompactModernAudioStateSnapshotV6::capture(state),
+        modern: CompactModernAudioStateSnapshotV7::capture(state),
         oracle_sidecar,
         sample_bank_id: state.modern.renderer.sample_bank_id(),
     })
@@ -367,7 +493,7 @@ pub(super) fn encode_v7(state: &AudioState) -> Result<(Vec<u8>, bool), String> {
     let oracle_sidecar = capture_oracle_sidecar(state)?;
     let has_oracle_sidecar = oracle_sidecar.is_some();
     let payload = bincode::serialize(&AudioSnapshotV7 {
-        modern: CompactModernAudioStateSnapshotV6::capture(state),
+        modern: CompactModernAudioStateSnapshotV7::capture(state),
         oracle_sidecar,
         sample_bank_id: state.modern.renderer.sample_bank_id(),
         sequencer_backend: SnapshotSequencerBackend::Native,
@@ -382,6 +508,43 @@ pub(super) fn decode_v7(payload: &[u8]) -> Result<(AudioState, bool), String> {
     if !crate::modern_sample_bank::is_valid_bank(snapshot.sample_bank_id) {
         return Err(format!(
             "audio snapshot v7 has unknown sample bank {}",
+            snapshot.sample_bank_id
+        ));
+    }
+    if snapshot.sequencer_backend == SnapshotSequencerBackend::ExactSpcDriver {
+        return Err("audio snapshot recorded the removed exact SPC-driver sequencer".to_string());
+    }
+    let mut state = snapshot.modern.into_audio_state();
+    state
+        .modern
+        .renderer
+        .select_sample_bank(snapshot.sample_bank_id);
+    restore_oracle_sidecar(
+        state,
+        snapshot.oracle_sidecar,
+        OracleShadowRestore::FromSidecar,
+    )
+}
+
+pub(super) fn encode_v8(state: &AudioState) -> Result<(Vec<u8>, bool), String> {
+    let oracle_sidecar = capture_oracle_sidecar(state)?;
+    let has_oracle_sidecar = oracle_sidecar.is_some();
+    let payload = bincode::serialize(&AudioSnapshotV8 {
+        modern: CompactModernAudioStateSnapshotV8::capture(state),
+        oracle_sidecar,
+        sample_bank_id: state.modern.renderer.sample_bank_id(),
+        sequencer_backend: SnapshotSequencerBackend::Native,
+    })
+    .map_err(|error| format!("audio snapshot v8 encode: {error}"))?;
+    Ok((payload, has_oracle_sidecar))
+}
+
+pub(super) fn decode_v8(payload: &[u8]) -> Result<(AudioState, bool), String> {
+    let snapshot: AudioSnapshotV8 = bincode::deserialize(payload)
+        .map_err(|error| format!("audio snapshot v8 decode: {error}"))?;
+    if !crate::modern_sample_bank::is_valid_bank(snapshot.sample_bank_id) {
+        return Err(format!(
+            "audio snapshot v8 has unknown sample bank {}",
             snapshot.sample_bank_id
         ));
     }
@@ -419,8 +582,8 @@ pub(super) fn decode_v4(payload: &[u8]) -> Result<(AudioState, bool), String> {
 
 impl serde::Serialize for AudioState {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        AudioSnapshotV7 {
-            modern: CompactModernAudioStateSnapshotV6::capture(self),
+        AudioSnapshotV8 {
+            modern: CompactModernAudioStateSnapshotV8::capture(self),
             oracle_sidecar: capture_oracle_sidecar(self).map_err(serde::ser::Error::custom)?,
             sample_bank_id: self.modern.renderer.sample_bank_id(),
             sequencer_backend: SnapshotSequencerBackend::Native,
@@ -431,7 +594,7 @@ impl serde::Serialize for AudioState {
 
 impl<'de> serde::Deserialize<'de> for AudioState {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let snapshot = AudioSnapshotV7::deserialize(deserializer)?;
+        let snapshot = AudioSnapshotV8::deserialize(deserializer)?;
         let sample_bank_id = snapshot.sample_bank_id;
         if !crate::modern_sample_bank::is_valid_bank(sample_bank_id) {
             return Err(serde::de::Error::custom(format!(

@@ -23,7 +23,7 @@ const MSU_STATE_FINISHED_PLAYING: u8 = 1;
 const MSU_STATE_RESUMING: u8 = 2;
 const MSU_STATE_PLAYING: u8 = 3;
 const AUDIO_SNAPSHOT_MAGIC: [u8; 4] = *b"Z3AU";
-const AUDIO_SNAPSHOT_VERSION: u16 = 7;
+const AUDIO_SNAPSHOT_VERSION: u16 = 8;
 const AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR: u16 = 1;
 const AUDIO_SNAPSHOT_HEADER_BYTES: usize = 12;
 
@@ -170,11 +170,14 @@ impl ApuWriteEnt {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct ModernAudioCommandQueue {
     write_history: [EngineAudioCommandBatch; 16],
+    vwf_glyph_tone_crossed_vblank_history: [bool; 16],
     pending_write: EngineAudioCommandBatch,
+    vwf_glyph_tone_crossed_vblank_deferred: [bool; 3],
     write_position: u8,
     write_count: u8,
     total_writes: u8,
     input_commands: EngineAudioCommandBatch,
+    vwf_glyph_tone_crossed_vblank_input: bool,
     acknowledged_commands: EngineAudioCommandBatch,
 }
 
@@ -190,11 +193,14 @@ impl ModernAudioCommandQueue {
     ) -> Self {
         Self {
             write_history: write_history.map(ApuWriteEnt::decoded_commands),
+            vwf_glyph_tone_crossed_vblank_history: [false; 16],
             pending_write: pending_write.decoded_commands(),
+            vwf_glyph_tone_crossed_vblank_deferred: [false; 3],
             write_position,
             write_count,
             total_writes,
             input_commands: EngineAudioCommandBatch::from_legacy_ports(input_ports),
+            vwf_glyph_tone_crossed_vblank_input: false,
             acknowledged_commands: EngineAudioCommandBatch::from_legacy_ports(output_ports),
         }
     }
@@ -207,9 +213,15 @@ impl ModernAudioCommandQueue {
         self.pending_write.apply(command);
     }
 
-    fn push(&mut self) {
+    fn push(&mut self, vwf_glyph_call_completed: bool) {
         let pos = (self.write_position & 0xf) as usize;
         self.write_history[pos] = self.pending_write;
+        self.vwf_glyph_tone_crossed_vblank_history[pos] =
+            self.vwf_glyph_tone_crossed_vblank_deferred[0] && vwf_glyph_call_completed;
+        self.vwf_glyph_tone_crossed_vblank_deferred[0] =
+            self.vwf_glyph_tone_crossed_vblank_deferred[1];
+        self.vwf_glyph_tone_crossed_vblank_deferred[1] =
+            std::mem::take(&mut self.vwf_glyph_tone_crossed_vblank_deferred[2]);
         self.write_position = self.write_position.wrapping_add(1);
         if self.write_count < 16 {
             self.write_count += 1;
@@ -221,6 +233,8 @@ impl ModernAudioCommandQueue {
         if self.write_count != 0 {
             let pos = self.write_position.wrapping_sub(self.write_count) & 0xf;
             self.input_commands = self.write_history[pos as usize];
+            self.vwf_glyph_tone_crossed_vblank_input =
+                self.vwf_glyph_tone_crossed_vblank_history[pos as usize];
             self.write_count -= 1;
         }
     }
@@ -237,6 +251,9 @@ impl ModernAudioCommandQueue {
         self.write_position = 0;
         self.total_writes = 0;
         self.write_count = 0;
+        self.vwf_glyph_tone_crossed_vblank_history.fill(false);
+        self.vwf_glyph_tone_crossed_vblank_deferred = [false; 3];
+        self.vwf_glyph_tone_crossed_vblank_input = false;
     }
 
     fn discard_unused_frames(&mut self) {
@@ -371,6 +388,13 @@ impl ZeldaState {
         self.audio.modern.queue.emit(command);
     }
 
+    pub(crate) fn zelda_mark_vwf_glyph_tone_crossed_vblank(&mut self) {
+        self.audio
+            .modern
+            .queue
+            .vwf_glyph_tone_crossed_vblank_deferred[2] = true;
+    }
+
     pub fn zelda_debug_apu_write_ports(&self) -> [u8; 4] {
         self.audio.modern.queue.pending_write.legacy_ports()
     }
@@ -497,7 +521,7 @@ impl ZeldaState {
     /// runtime state instead.
     pub fn zelda_audio_snapshot_bytes(&self) -> Vec<u8> {
         let (payload, has_oracle_sidecar) =
-            snapshot_state::encode_v7(&self.audio).expect("audio snapshot serialize failed");
+            snapshot_state::encode_v8(&self.audio).expect("audio snapshot serialize failed");
         let flags = if has_oracle_sidecar {
             AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR
         } else {
@@ -543,7 +567,7 @@ impl ZeldaState {
                 return Err("audio snapshot header is truncated".to_string());
             }
             let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-            if !matches!(version, 1 | 2 | 3 | 4 | 5 | 6 | AUDIO_SNAPSHOT_VERSION) {
+            if !matches!(version, 1 | 2 | 3 | 4 | 5 | 6 | 7 | AUDIO_SNAPSHOT_VERSION) {
                 return Err(format!("unsupported audio snapshot version {version}"));
             }
             let flags = u16::from_le_bytes([bytes[6], bytes[7]]);
@@ -571,6 +595,14 @@ impl ZeldaState {
         };
         let restored = match version {
             AUDIO_SNAPSHOT_VERSION => {
+                let (state, has_oracle_sidecar) = snapshot_state::decode_v8(payload)?;
+                let flag_has_sidecar = flags & AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR != 0;
+                if flag_has_sidecar != has_oracle_sidecar {
+                    return Err("audio snapshot oracle sidecar flag mismatch".to_string());
+                }
+                state
+            }
+            7 => {
                 let (state, has_oracle_sidecar) = snapshot_state::decode_v7(payload)?;
                 let flag_has_sidecar = flags & AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR != 0;
                 if flag_has_sidecar != has_oracle_sidecar {
@@ -622,7 +654,8 @@ impl ZeldaState {
     }
 
     pub fn zelda_push_apu_state(&mut self) {
-        self.audio.modern.queue.push();
+        let vwf_glyph_call_completed = self.dialogue_vwf_glyph_cpu_phase.is_ready();
+        self.audio.modern.queue.push(vwf_glyph_call_completed);
     }
 
     fn zelda_pop_apu_state(&mut self) {
@@ -683,8 +716,14 @@ impl ZeldaState {
         };
         let mut route = self.zelda_modern_audio_route_state();
         let music_window_before = self.audio.modern.sequencer.music_window_checkpoint();
+        let vwf_glyph_tone_crossed_vblank =
+            self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_input;
         let frame = if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
-            let window = clock.advance(self.audio.modern.queue.input_commands, native_samples);
+            let window = clock.advance(
+                self.audio.modern.queue.input_commands,
+                native_samples,
+                vwf_glyph_tone_crossed_vblank,
+            );
             let acknowledgements = clock.host_acknowledgements();
             let completed_song_bank_id = clock.take_completed_song_bank_id();
             if let Some(bank_id) = completed_song_bank_id {
