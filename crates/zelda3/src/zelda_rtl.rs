@@ -1252,17 +1252,40 @@ const fn rom_room_82_deferred_nmi_retains_resident_oam(
     entry: crate::game_state::FrameState,
     room: u8,
     nmi_update_is_latched: bool,
+    screen_transition: u8,
 ) -> bool {
-    // The first state-$03 slice owns the vblank deferred by state $02, but its
-    // active OBJ list remains on the resident state-$02 OAM generation.  The
-    // translated state-$03 shadow has already offscreened five Link entries,
-    // so feeding either adjacent shadow generation to this DMA advances OAM
-    // too early. Later state-$03 slices enter with $12 set and need no override.
+    // The first state-$03 slice of the direction-$00 transition owns the
+    // vblank deferred by state $02, but its active OBJ list remains on the
+    // resident state-$02 OAM generation. The horizontal direction-$02 path
+    // completes OAM DMA during that deferred vblank and must publish the new
+    // sorted table. Later state-$03 slices enter with $12 set and need no
+    // override.
     room == 0x82
         && entry.main_module == 7
         && entry.submodule == 2
         && entry.subsubmodule == 3
         && !nmi_update_is_latched
+        && screen_transition == 0
+}
+
+const fn room_82_horizontal_deferred_nmi_publishes_entry_shadow_oam(
+    entry: crate::game_state::FrameState,
+    following: crate::game_state::FrameState,
+    room: u8,
+    screen_transition: u8,
+    deferred_nmi: bool,
+    oam_scanout_source: OamScanoutSource,
+) -> bool {
+    room == 0x82
+        && entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 2
+        && following.main_module == 7
+        && following.submodule == 2
+        && following.subsubmodule == 3
+        && screen_transition == 2
+        && deferred_nmi
+        && matches!(oam_scanout_source, OamScanoutSource::ComposeLiveAfterNmi)
 }
 
 const fn rom_dungeon_supertile_scroll_runs_after_leading_nmi(
@@ -5320,6 +5343,17 @@ fn compose_published_oam_entries<const N: usize>(
 
 fn compose_published_link_oam(oam: &mut [u16], published_shadow_oam: Option<&[u16]>) {
     compose_published_oam_entries(oam, published_shadow_oam, LINK_OAM_ENTRIES);
+}
+
+fn publish_oam_shadow(oam: &mut [u16], shadow: &[u8]) -> bool {
+    let byte_len = oam.len().saturating_mul(2);
+    let Some(shadow) = shadow.get(..byte_len) else {
+        return false;
+    };
+    for (word, bytes) in oam.iter_mut().zip(shadow.chunks_exact(2)) {
+        *word = u16::from_le_bytes([bytes[0], bytes[1]]);
+    }
+    true
 }
 
 fn supertile_state3_oam_entry_is_on_screen(oam: &[u16], entry: usize) -> bool {
@@ -12779,6 +12813,31 @@ impl ZeldaState {
                 following.obj_generation.name(),
             );
         }
+        if env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
+            && following_room == 0x82
+            && following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 3
+        {
+            const ROOM_82_TRANSITION_ENTRIES: [usize; 16] = [
+                58, 59, 63, 66, 67, 68, 69, 102, 103, 104, 105, 107, 110, 111, 112, 113,
+            ];
+            let composed_entries = ROOM_82_TRANSITION_ENTRIES
+                .map(|entry| oam_entry_bytes(&self.ppu.oam, entry));
+            let following_entries = ROOM_82_TRANSITION_ENTRIES
+                .map(|entry| oam_entry_bytes(&following.ppu.oam, entry));
+            eprintln!(
+                "display_room82_oam host={} entry={:02x}/{:02x}/{:02x} transition={} deferred={} source={:?} retain={} entries={ROOM_82_TRANSITION_ENTRIES:?} composed={composed_entries:02x?} following={following_entries:02x?}",
+                self.frame_ctr_dbg,
+                entry_frame.main_module,
+                entry_frame.submodule,
+                entry_frame.subsubmodule,
+                self.screen_transition(),
+                following.room_82_sprite_conversion_deferred_nmi,
+                plan.oam_scanout_source,
+                plan.retain_captured_oam,
+            );
+        }
         self.ppu.obj_vram_latch = None;
         if following_frame.main_module == 7
             && following_frame.submodule == 2
@@ -12830,6 +12889,26 @@ impl ZeldaState {
                     &mut self.ppu.oam,
                     following.published_shadow_oam_dma.as_deref(),
                 );
+            }
+        }
+        if room_82_horizontal_deferred_nmi_publishes_entry_shadow_oam(
+            entry_frame,
+            following_frame,
+            following_room,
+            self.screen_transition(),
+            following.room_82_sprite_conversion_deferred_nmi,
+            plan.oam_scanout_source,
+        ) {
+            // Direction $02 reaches the deferred NMI with the complete sorted
+            // table already staged at host entry. Publish it after the generic
+            // state-$03 cache composition, which otherwise restores the older
+            // sorted table while selecting the correct decoded OBJ generation.
+            if let Some(entry_shadow) = self
+                .pre_main_graphics_dma
+                .as_ref()
+                .map(|graphics| graphics.oam_shadow.as_slice())
+            {
+                publish_oam_shadow(&mut self.ppu.oam, entry_shadow);
             }
         }
         if following_frame.main_module == 7
@@ -13166,45 +13245,54 @@ impl ZeldaState {
             let mut obj_cache_vram = if following_room == 0x82
                 && following.room_82_sprite_conversion_deferred_nmi
             {
-                // Room $82 enters state $03 before its deferred vblank.  The
-                // snapshot's resident page is therefore also the page Snes9x
-                // decoded for this scanout; the following live state can
-                // already contain the upload owned by the next image.
+                // Room $82 enters state $03 before its deferred vblank. The
+                // resident page is the decoded base for this scanout; only the
+                // completed early Link DMA batch advances independently below.
                 self.ppu.vram.clone()
             } else {
                 following.ppu.vram.clone()
             };
-            if self.screen_transition() == 1 {
-                // Direction 1's state-3 scanout has decoded the same current
-                // head operands as the preceding state-2 scanout even though
-                // the native PPU snapshot has moved to a different raw Link
-                // generation. Recompose only those cache entries; direction 2
-                // already matches the following PPU cache verbatim.
+            let screen_transition = self.screen_transition();
+            if matches!(screen_transition, 1 | 2) {
                 let captured_sources = self
                     .pre_main_graphics_dma
                     .as_ref()
                     .map(|graphics| graphics.link_operands.sources)
                     .unwrap_or_else(|| LinkDmaSources::load_from_ram(&self.ram));
                 let link_graphics = self.asset_raw(57).map(Vec::from);
-                for (destination, source) in [
-                    (0x4020, LinkDmaSourceSlot::HeadTop),
-                    (0x4120, LinkDmaSourceSlot::HeadBottom),
-                ] {
-                    let len = 0x40;
-                    let source_address = usize::from(captured_sources.source(source));
-                    let source_offset = source_address.saturating_sub(0x8000);
-                    let destination_end = destination + len / 2;
-                    let Some(source_bytes) = link_graphics.as_deref().and_then(|graphics| {
-                        (source_address >= 0x8000 && source_offset + len <= graphics.len())
-                            .then_some(&graphics[source_offset..source_offset + len])
-                    }) else {
-                        continue;
-                    };
-                    for (word, bytes) in obj_cache_vram[destination..destination_end]
-                        .iter_mut()
-                        .zip(source_bytes.chunks_exact(2))
-                    {
-                        *word = u16::from_le_bytes([bytes[0], bytes[1]]);
+                if screen_transition == 2 {
+                    // Direction $02 reaches the deferred vblank after the
+                    // complete early Link batch (body, head, and hands) has
+                    // been decoded, while raw VRAM remains on the preceding
+                    // image. Keep that cache generation renderer-only.
+                    obj_cache_vram = compose_early_link_obj_cache(
+                        &obj_cache_vram,
+                        captured_sources,
+                        link_graphics.as_deref(),
+                    );
+                } else {
+                    // Direction $01 crosses only the two head transfers at
+                    // this boundary.
+                    for (destination, source) in [
+                        (0x4020, LinkDmaSourceSlot::HeadTop),
+                        (0x4120, LinkDmaSourceSlot::HeadBottom),
+                    ] {
+                        let len = 0x40;
+                        let source_address = usize::from(captured_sources.source(source));
+                        let source_offset = source_address.saturating_sub(0x8000);
+                        let destination_end = destination + len / 2;
+                        let Some(source_bytes) = link_graphics.as_deref().and_then(|graphics| {
+                            (source_address >= 0x8000 && source_offset + len <= graphics.len())
+                                .then_some(&graphics[source_offset..source_offset + len])
+                        }) else {
+                            continue;
+                        };
+                        for (word, bytes) in obj_cache_vram[destination..destination_end]
+                            .iter_mut()
+                            .zip(source_bytes.chunks_exact(2))
+                        {
+                            *word = u16::from_le_bytes([bytes[0], bytes[1]]);
+                        }
                     }
                 }
             }
@@ -15681,6 +15769,7 @@ impl ZeldaState {
                     frame,
                     self.game_state.world.location.dungeon_room_index(),
                     self.game_state.display.nmi_update_is_latched(),
+                    self.screen_transition(),
                 );
             let resident_oam = room_82_deferred_nmi_retains_resident_oam.then(|| {
                 self.display_snapshot

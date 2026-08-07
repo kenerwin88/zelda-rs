@@ -1056,6 +1056,88 @@ fn room_82_deferred_sprite_conversion_decodes_the_resident_obj_page() {
 }
 
 #[test]
+fn room_82_horizontal_deferred_nmi_publishes_entry_oam_after_cache_composition() {
+    const LINK_BODY_WORD: usize = 102 * 2;
+    const LINK_BODY_BYTE: usize = LINK_BODY_WORD * 2;
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(2);
+    state.set_screen_transition(2);
+    let entry_frame = state.game_state.frame;
+    let mut entry_oam_shadow = vec![0; state.ppu.oam.len() * 2];
+    entry_oam_shadow[LINK_BODY_BYTE..LINK_BODY_BYTE + 2]
+        .copy_from_slice(&0x1111u16.to_le_bytes());
+    state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
+        entry_frame,
+        entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
+        entry_dialogue_text_render_state: 0,
+        entry_link_handler_state: 0,
+        animated_tile: None,
+        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_obj_vram: state.ppu.vram[0x4000..0x4400].to_vec(),
+        oam_shadow: entry_oam_shadow,
+    });
+    // Exercise the generic state-$03 cache branch that previously overwrote a
+    // room-specific publication placed earlier in compose_display_oam.
+    state.last_presented_obj_vram = Some(state.ppu.vram[0x4000..0x4400].to_vec());
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 2;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 3;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x82;
+    following.ppu.oam.fill(0x2222);
+    following.published_shadow_oam_dma = Some(vec![0x3333; following.ppu.oam.len()]);
+    following.oam_scanout_source = OamScanoutSource::ComposeLiveAfterNmi;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.room_82_sprite_conversion_deferred_nmi = true;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[LINK_BODY_WORD], 0x1111);
+}
+
+#[test]
+fn early_link_obj_cache_composes_body_head_and_hand_transfers_as_one_batch() {
+    let mut ram = vec![0; 0x20000];
+    let mut graphics = vec![0; EARLY_LINK_OBJ_DMA_TRANSFERS.len() * 0x80];
+    let base_vram = vec![0x7777; 0x4400];
+
+    for (index, (_, slot, len)) in EARLY_LINK_OBJ_DMA_TRANSFERS.iter().copied().enumerate() {
+        let source_offset = index * 0x80;
+        write_le_u16(
+            &mut ram,
+            slot.ram_address(),
+            0x8000 + source_offset as u16,
+        );
+        let marker = 0x1100 + index as u16;
+        for bytes in graphics[source_offset..source_offset + len].chunks_exact_mut(2) {
+            bytes.copy_from_slice(&marker.to_le_bytes());
+        }
+    }
+
+    let composed = compose_early_link_obj_cache(
+        &base_vram,
+        LinkDmaSources::load_from_ram(&ram),
+        Some(&graphics),
+    );
+
+    for (index, (destination, _, len)) in EARLY_LINK_OBJ_DMA_TRANSFERS
+        .iter()
+        .copied()
+        .enumerate()
+    {
+        assert!(composed[destination..destination + len / 2]
+            .iter()
+            .all(|&word| word == 0x1100 + index as u16));
+    }
+    assert_eq!(composed[0x4060], 0x7777);
+}
+
+#[test]
 fn completed_room_load_can_publish_live_animated_bg_independently() {
     let mut state = ZeldaState::new();
     state.capture_display_snapshot();

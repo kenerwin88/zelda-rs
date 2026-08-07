@@ -6548,12 +6548,43 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
         supertile_sprite_conversion,
         0x82,
         false,
+        0,
     ));
     assert!(!rom_room_82_deferred_nmi_retains_resident_oam(
         supertile_sprite_conversion,
         0x82,
         true,
+        0,
     ));
+    assert!(!rom_room_82_deferred_nmi_retains_resident_oam(
+        supertile_sprite_conversion,
+        0x82,
+        false,
+        2,
+    ));
+    assert!(room_82_horizontal_deferred_nmi_publishes_entry_shadow_oam(
+        supertile_finished,
+        supertile_sprite_conversion,
+        0x82,
+        2,
+        true,
+        OamScanoutSource::ComposeLiveAfterNmi,
+    ));
+    assert!(!room_82_horizontal_deferred_nmi_publishes_entry_shadow_oam(
+        supertile_finished,
+        supertile_sprite_conversion,
+        0x82,
+        0,
+        true,
+        OamScanoutSource::ComposeLiveAfterNmi,
+    ));
+    let mut published_oam = vec![0; 3];
+    assert!(publish_oam_shadow(
+        &mut published_oam,
+        &[0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
+    ));
+    assert_eq!(published_oam, [0x2211, 0x4433, 0x6655]);
+    assert!(!publish_oam_shadow(&mut published_oam, &[0; 5]));
     assert_eq!(
         rom_graphics_dma_plan_at_host_boundary(supertile_sprite_conversion).link_obj_scanout,
         GraphicsDmaGeneration::HostBoundaryBeforeMain
