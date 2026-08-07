@@ -13176,6 +13176,16 @@ impl ZeldaState {
             && following_frame.submodule == 2
             && following_frame.subsubmodule == 1
             && plan.oam_scanout_source == OamScanoutSource::RetainResidentPpuOam;
+        let room_72_second_state8_scroll_uses_live_obj_cache = following_room == 0x72
+            && following_frame.main_module == 7
+            && following_frame.submodule == 2
+            && following_frame.subsubmodule == 8
+            && following_frame.frame_counter == 1
+            && read_le_u16(&following.ram, LINK_DMA_COUNTDOWN) == 4
+            && self.screen_transition() == 1
+            && plan.oam_scanout_source == OamScanoutSource::ComposePublishedShadowDma
+            && plan.link_obj_scanout_generation == GraphicsDmaGeneration::HostBoundaryBeforeMain
+            && plan.link_obj_source_generation == GraphicsDmaGeneration::HostBoundaryBeforeMain;
         let dungeon_subtile_shutter_handoff_uses_live_obj_cache =
             following_room == 0x72
                 && following_frame.main_module == 7
@@ -13311,7 +13321,13 @@ impl ZeldaState {
                     read_le_u16(&following.ram, LINK_DMA_COUNTDOWN),
                 );
             }
-            if dungeon_subtile_palette_filter_uses_live_obj_cache {
+            if room_72_second_state8_scroll_uses_live_obj_cache {
+                // The second resumed scroll publishes the completed OAM shadow
+                // while Snes9x has already decoded Link's following early-DMA
+                // page. Raw OBJ VRAM remains on the independently selected
+                // host-boundary image, so carry only the renderer cache live.
+                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
+            } else if dungeon_subtile_palette_filter_uses_live_obj_cache {
                 // The palette loop can hold NMI_DoUpdates for a host frame.
                 // Its captured source words still identify the decoded cache
                 // generation already owned by this scanout, including the
@@ -13506,6 +13522,58 @@ impl ZeldaState {
                 }
             }
             self.ppu.obj_vram_latch = Some(obj_cache_vram);
+        }
+        if env::var("ZELDA3_DEBUG_DISPLAY_OBJ_VRAM_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == self.frame_ctr_dbg)
+        {
+            const LINK_TILE_03_WORDS: std::ops::Range<usize> = 0x4030..0x4040;
+            const PRESENTED_LINK_TILE_03_WORDS: std::ops::Range<usize> = 0x0030..0x0040;
+            const TILE_20_WORDS: std::ops::Range<usize> = 0x4200..0x4210;
+            const PRESENTED_TILE_20_WORDS: std::ops::Range<usize> = 0x0200..0x0210;
+            let selected = self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram);
+            let last_presented = self
+                .last_presented_obj_vram
+                .as_deref()
+                .map(|vram| &vram[PRESENTED_TILE_20_WORDS]);
+            let previous_frame = self
+                .ppu
+                .obj_previous_frame_vram
+                .as_deref()
+                .map(|vram| &vram[TILE_20_WORDS.clone()]);
+            eprintln!(
+                "display_obj_vram_link_tile host={} tile=03 visible={:04x?} following={:04x?} last_presented={:04x?} previous_frame={:04x?} selected={:04x?}",
+                self.frame_ctr_dbg,
+                &self.ppu.vram[LINK_TILE_03_WORDS.clone()],
+                &following.ppu.vram[LINK_TILE_03_WORDS.clone()],
+                self.last_presented_obj_vram
+                    .as_deref()
+                    .map(|vram| &vram[PRESENTED_LINK_TILE_03_WORDS]),
+                self.ppu
+                    .obj_previous_frame_vram
+                    .as_deref()
+                    .map(|vram| &vram[LINK_TILE_03_WORDS.clone()]),
+                &selected[LINK_TILE_03_WORDS],
+            );
+            eprintln!(
+                "display_obj_vram_frame host={} room={:04x} phase={:02x}/{:02x}/{:02x} source={:?} retain={} link={:?}/{:?} latch={} visible={:04x?} following={:04x?} last_presented={:04x?} previous_frame={:04x?} selected={:04x?}",
+                self.frame_ctr_dbg,
+                following_room,
+                following_frame.main_module,
+                following_frame.submodule,
+                following_frame.subsubmodule,
+                plan.oam_scanout_source,
+                plan.retain_captured_oam,
+                plan.link_obj_scanout_generation,
+                plan.link_obj_source_generation,
+                self.ppu.obj_vram_latch.is_some(),
+                &self.ppu.vram[TILE_20_WORDS.clone()],
+                &following.ppu.vram[TILE_20_WORDS.clone()],
+                last_presented,
+                previous_frame,
+                &selected[TILE_20_WORDS],
+            );
         }
         self.ppu.obj_previous_frame_vram = following.ppu.obj_previous_frame_vram.clone();
     }

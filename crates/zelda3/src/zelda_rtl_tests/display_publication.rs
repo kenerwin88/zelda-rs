@@ -1027,6 +1027,39 @@ fn first_supertile_scroll_retains_raw_obj_vram_but_decodes_the_live_cache() {
 }
 
 #[test]
+fn room_72_second_state8_scroll_decodes_live_link_obj_without_advancing_raw_vram() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4030] = 0x1111;
+    state.set_screen_transition(1);
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 2;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 8;
+    following.ram[crate::game_state::constants::FRAME_COUNTER] = 1;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x72;
+    write_le_u16(&mut following.ram, LINK_DMA_COUNTDOWN, 4);
+    following.ppu.vram[0x4030] = 0xaaaa;
+    following.oam_scanout_source = OamScanoutSource::ComposePublishedShadowDma;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.vram[0x4030], 0x1111);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4030], 0xaaaa);
+
+    let mut first_scroll = ZeldaState::new();
+    first_scroll.ppu.vram[0x4030] = 0x1111;
+    first_scroll.set_screen_transition(1);
+    following.ram[crate::game_state::constants::FRAME_COUNTER] = 0;
+    write_le_u16(&mut following.ram, LINK_DMA_COUNTDOWN, 5);
+    first_scroll.compose_display_oam(&following, &plan);
+    assert!(first_scroll.ppu.obj_vram_latch.is_none());
+}
+
+#[test]
 fn room_82_deferred_sprite_conversion_decodes_the_resident_obj_page() {
     let mut state = ZeldaState::new();
     state.ppu.vram[0x4020] = 0x1111;
