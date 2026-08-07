@@ -1350,6 +1350,26 @@ const fn room_82_horizontal_quadrant_filter_entry_publishes_host_boundary_oam(
         )
 }
 
+const fn room_82_horizontal_first_scroll_publishes_host_boundary_oam(
+    entry: crate::game_state::FrameState,
+    following: crate::game_state::FrameState,
+    room: u8,
+    screen_transition: u8,
+    oam_scanout_source: OamScanoutSource,
+    retain_captured_oam: bool,
+) -> bool {
+    room == 0x82
+        && entry.main_module == 7
+        && entry.submodule == 2
+        && entry.subsubmodule == 7
+        && following.main_module == 7
+        && following.submodule == 2
+        && following.subsubmodule == 8
+        && screen_transition == 2
+        && matches!(oam_scanout_source, OamScanoutSource::ComposeLiveAfterNmi)
+        && retain_captured_oam
+}
+
 const fn rom_dungeon_supertile_scroll_runs_after_leading_nmi(
     frame: crate::game_state::FrameState,
     room: u8,
@@ -1367,12 +1387,14 @@ const fn rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
     entry: crate::game_state::FrameState,
     exit: crate::game_state::FrameState,
     room: u8,
+    screen_transition: u8,
 ) -> bool {
     // State 7 has prepared the shadow consumed by the NMI that enters the
     // first state-8 scanout. v1.0.0 published that completed OAM DMA instead
     // of retaining the preceding PPU table across the translated boundary.
     rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(entry, exit)
         && !matches!(room, 0x71 | 0x72)
+        && !(room == 0x82 && screen_transition == 2)
 }
 
 const ANIMATED_TILE_BUFFER_FIRST_SOURCE: usize = 0xa680;
@@ -12987,11 +13009,48 @@ impl ZeldaState {
                 self.screen_transition(),
                 plan.oam_scanout_source,
             );
+        let room_82_horizontal_first_scroll_publishes_host_boundary =
+            room_82_horizontal_first_scroll_publishes_host_boundary_oam(
+                entry_frame,
+                following_frame,
+                following_room,
+                self.screen_transition(),
+                plan.oam_scanout_source,
+                plan.retain_captured_oam,
+            );
         let entry_shadow = self
             .pre_main_graphics_dma
             .as_ref()
             .map(|graphics| graphics.oam_shadow.as_slice());
-        if room_82_horizontal_quadrant_filter_entry_publishes_host_boundary {
+        if debug_oam_frame && following_room == 0x82 {
+            eprintln!(
+                "display_room82_selection host={} entry={:02x}/{:02x}/{:02x} following={:02x}/{:02x}/{:02x} transition={} source={:?} retain={} deferred={} state3={} conversion_return={} filter_entry={} first_scroll={} host_shadow={}",
+                self.frame_ctr_dbg,
+                entry_frame.main_module,
+                entry_frame.submodule,
+                entry_frame.subsubmodule,
+                following_frame.main_module,
+                following_frame.submodule,
+                following_frame.subsubmodule,
+                self.screen_transition(),
+                plan.oam_scanout_source,
+                plan.retain_captured_oam,
+                room_82_horizontal_deferred_nmi_publishes_entry_shadow,
+                room_82_horizontal_state3_followup,
+                retain_room_82_horizontal_sprite_conversion_return_oam,
+                room_82_horizontal_quadrant_filter_entry_publishes_host_boundary,
+                room_82_horizontal_first_scroll_publishes_host_boundary,
+                entry_shadow.is_some(),
+            );
+        }
+        if room_82_horizontal_first_scroll_publishes_host_boundary {
+            // State 8 starts after the held filtering return has completed its
+            // host-boundary OAM work. The queued capture still describes the
+            // earlier filtering slice, before Link's diagonal movement.
+            if let Some(entry_shadow) = entry_shadow {
+                publish_oam_shadow(&mut self.ppu.oam, entry_shadow);
+            }
+        } else if room_82_horizontal_quadrant_filter_entry_publishes_host_boundary {
             // The quadrant build completes its OAM work at the host boundary
             // before state 6 starts filtering. The generic published shadow
             // still describes Link's preceding horizontal position.
@@ -13611,6 +13670,7 @@ impl ZeldaState {
                 snapshot_frame,
                 live_frame,
                 live_world_location.dungeon_room_index(),
+                self.screen_transition(),
             );
         let live_dungeon_supertile_filter_return_shadow_oam =
             dungeon_supertile_filter_return_publishes_live_shadow_oam.then(|| {

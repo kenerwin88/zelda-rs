@@ -1180,6 +1180,98 @@ fn room_82_horizontal_quadrant_filter_entry_publishes_host_boundary_oam() {
 }
 
 #[test]
+fn room_82_horizontal_first_scroll_releases_stale_capture_to_host_boundary_oam() {
+    const LINK_LOWER_BODY_WORD: usize = 112 * 2;
+    const LINK_LOWER_BODY_BYTE: usize = LINK_LOWER_BODY_WORD * 2;
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(7);
+    state.set_screen_transition(2);
+    let entry_frame = state.game_state.frame;
+    let mut host_boundary_oam = vec![0; state.ppu.oam.len() * 2];
+    host_boundary_oam[LINK_LOWER_BODY_BYTE..LINK_LOWER_BODY_BYTE + 2]
+        .copy_from_slice(&0x5fdfu16.to_le_bytes());
+    state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
+        entry_frame,
+        entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
+        entry_dialogue_text_render_state: 0,
+        entry_link_handler_state: 0,
+        animated_tile: None,
+        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_obj_vram: state.ppu.vram[0x4000..0x4400].to_vec(),
+        oam_shadow: host_boundary_oam,
+    });
+    state.ppu.oam[LINK_LOWER_BODY_WORD] = 0x5edd;
+    state.last_presented_oam = Some(vec![0x5edc; state.ppu.oam.len()]);
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 2;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 8;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x82;
+    following.ppu.oam[LINK_LOWER_BODY_WORD] = 0x5fdf;
+    let mut queued_capture = vec![0; following.ppu.oam.len()];
+    queued_capture[LINK_LOWER_BODY_WORD] = 0x5edd;
+    following.obj_generation = DisplayObjGeneration::RetainCapturedOam {
+        oam: queued_capture,
+    };
+    let mut published_shadow = vec![0; following.ppu.oam.len()];
+    published_shadow[LINK_LOWER_BODY_WORD] = 0x5eda;
+    following.published_shadow_oam_dma = Some(published_shadow);
+    following.oam_scanout_source = OamScanoutSource::ComposeLiveAfterNmi;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+    assert!(plan.retain_captured_oam);
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[LINK_LOWER_BODY_WORD], 0x5fdf);
+}
+
+#[test]
+fn room_82_horizontal_first_scroll_host_boundary_survives_final_publication() {
+    const LINK_LOWER_BODY_WORD: usize = 112 * 2;
+    const LINK_LOWER_BODY_BYTE: usize = LINK_LOWER_BODY_WORD * 2;
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(7);
+    state.set_dungeon_room_index(0x82);
+    state.set_screen_transition(2);
+    let entry_frame = state.game_state.frame;
+    let mut host_boundary_oam = vec![0; state.ppu.oam.len() * 2];
+    host_boundary_oam[LINK_LOWER_BODY_BYTE..LINK_LOWER_BODY_BYTE + 2]
+        .copy_from_slice(&0x5fdfu16.to_le_bytes());
+    state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
+        entry_frame,
+        entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
+        entry_dialogue_text_render_state: 0,
+        entry_link_handler_state: 0,
+        animated_tile: None,
+        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_obj_vram: state.ppu.vram[0x4000..0x4400].to_vec(),
+        oam_shadow: host_boundary_oam,
+    });
+    state.capture_display_snapshot();
+    let snapshot = state.display_snapshot.as_mut().unwrap();
+    snapshot.obj_generation = DisplayObjGeneration::RetainCapturedOam {
+        oam: vec![0x5edd; snapshot.ppu.oam.len()],
+    };
+    snapshot.oam_scanout_source = OamScanoutSource::ComposeLiveAfterNmi;
+
+    state.set_subsubmodule(8);
+    state.ppu.oam[LINK_LOWER_BODY_WORD] = 0x5fdf;
+    state.ram[OAM_BUF + LINK_LOWER_BODY_BYTE..OAM_BUF + LINK_LOWER_BODY_BYTE + 2]
+        .copy_from_slice(&0x5fe0u16.to_le_bytes());
+
+    let displayed = state.with_display_snapshot(|display| display.ppu.oam[LINK_LOWER_BODY_WORD]);
+
+    assert_eq!(displayed, 0x5fdf);
+}
+
+#[test]
 fn early_link_obj_cache_composes_body_head_and_hand_transfers_as_one_batch() {
     let mut ram = vec![0; 0x20000];
     let mut graphics = vec![0; EARLY_LINK_OBJ_DMA_TRANSFERS.len() * 0x80];

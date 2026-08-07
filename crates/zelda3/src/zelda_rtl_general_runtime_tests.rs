@@ -6525,11 +6525,25 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
         supertile_filter_return,
         resumed_gameplay,
         0x81,
+        2,
     ));
     assert!(!rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
         supertile_filter_return,
         resumed_gameplay,
         0x71,
+        2,
+    ));
+    assert!(!rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
+        supertile_filter_return,
+        resumed_gameplay,
+        0x82,
+        2,
+    ));
+    assert!(rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
+        supertile_filter_return,
+        resumed_gameplay,
+        0x82,
+        1,
     ));
 
     let mut supertile_sprite_conversion = supertile_finished;
@@ -6647,6 +6661,26 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
             OamScanoutSource::ComposeLiveAfterNmi,
         )
     );
+    let mut supertile_filter_return = supertile_filter_entry;
+    supertile_filter_return.subsubmodule = 7;
+    let mut supertile_first_scroll = supertile_filter_return;
+    supertile_first_scroll.subsubmodule = 8;
+    assert!(room_82_horizontal_first_scroll_publishes_host_boundary_oam(
+        supertile_filter_return,
+        supertile_first_scroll,
+        0x82,
+        2,
+        OamScanoutSource::ComposeLiveAfterNmi,
+        true,
+    ));
+    assert!(!room_82_horizontal_first_scroll_publishes_host_boundary_oam(
+        supertile_filter_return,
+        supertile_first_scroll,
+        0x82,
+        2,
+        OamScanoutSource::ComposeLiveAfterNmi,
+        false,
+    ));
     let mut published_oam = vec![0; 3];
     assert!(publish_oam_shadow(
         &mut published_oam,
