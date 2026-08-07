@@ -947,6 +947,30 @@ fn room_71_subtile_shutter_publishes_live_link_head_obj_cache(
         && link_dma_countdown == 5
 }
 
+const fn room_72_northward_subtile_palette_tail_uses_live_obj_cache(
+    following: crate::game_state::FrameState,
+    dungeon_room: u8,
+    link_last_direction: u8,
+) -> bool {
+    dungeon_room == 0x72
+        && following.main_module == 7
+        && following.submodule == 1
+        && following.subsubmodule == 7
+        && link_last_direction & 0x0f == 8
+}
+
+const fn room_72_northward_subtile_shutter_retains_presented_obj_cache(
+    following: crate::game_state::FrameState,
+    dungeon_room: u8,
+    link_last_direction: u8,
+) -> bool {
+    dungeon_room == 0x72
+        && following.main_module == 7
+        && following.submodule == 5
+        && following.subsubmodule == 0
+        && link_last_direction & 0x0f == 8
+}
+
 fn publish_live_link_head_obj_cache(captured: &mut [u16], resident: &[u16]) {
     if captured.len() < 0x4140 || resident.len() < 0x4140 {
         return;
@@ -13216,6 +13240,13 @@ impl ZeldaState {
                     == GraphicsDmaGeneration::HostBoundaryBeforeMain
                 && plan.link_obj_source_generation
                     == GraphicsDmaGeneration::HostBoundaryBeforeMain;
+        let room_72_northward_subtile_shutter_retains_presented_obj_cache =
+            dungeon_subtile_shutter_handoff_uses_live_obj_cache
+                && room_72_northward_subtile_shutter_retains_presented_obj_cache(
+                    following_frame,
+                    following_room,
+                    FollowerLinkState::load_from_ram(&following.ram).last_direction(),
+                );
         if plan.link_obj_source_generation == GraphicsDmaGeneration::LiveAfterMain
             && !dungeon_supertile_first_scroll_uses_live_obj_cache
             && (self.atomic_item_graphics_uses_partial_receipt_obj_cache()
@@ -13289,6 +13320,13 @@ impl ZeldaState {
                 dungeon_subtile_palette_filter_scanout
                     && plan.link_obj_scanout_generation == GraphicsDmaGeneration::LiveAfterMain
                     && plan.link_obj_source_generation == GraphicsDmaGeneration::LiveAfterMain;
+            let room_72_northward_palette_tail_uses_live_obj_cache =
+                dungeon_subtile_palette_filter_uses_live_obj_cache
+                    && room_72_northward_subtile_palette_tail_uses_live_obj_cache(
+                        following_frame,
+                        following_room,
+                        FollowerLinkState::load_from_ram(&following.ram).last_direction(),
+                    );
             let dungeon_subtile_palette_filter_holds_decoded_obj_cache =
                 dungeon_subtile_palette_filter_scanout
                     && plan.link_obj_scanout_generation
@@ -13343,7 +13381,14 @@ impl ZeldaState {
                     read_le_u16(&following.ram, LINK_DMA_COUNTDOWN),
                 );
             }
-            if room_72_state8_scroll_after_first_tick_uses_live_obj_cache {
+            if room_72_northward_palette_tail_uses_live_obj_cache {
+                // By the state-7 palette tail, the northward transition has
+                // crossed the Link DMA that Snes9x decodes for the active OBJ
+                // list. The captured pre-main operands still name the prior
+                // pose, while the following raw page is the decoded cache
+                // generation that owns this scanout.
+                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
+            } else if room_72_state8_scroll_after_first_tick_uses_live_obj_cache {
                 // After the first resumed scroll tick, Snes9x decodes every
                 // following Link DMA page before raw OBJ VRAM advances at the
                 // display boundary. Carry only that renderer cache live.
@@ -13389,6 +13434,19 @@ impl ZeldaState {
                     let mut obj_cache_vram = self.ppu.vram.clone();
                     obj_cache_vram[0x4000..0x4400].copy_from_slice(previous);
                     self.ppu.obj_vram_latch = Some(obj_cache_vram);
+                }
+            } else if room_72_northward_subtile_shutter_retains_presented_obj_cache {
+                // The northward palette tail already published the decoded Link
+                // pose used by the active OBJ list. The following shutter slice
+                // advances the raw/live DMA operands to the next pose, but
+                // Snes9x keeps scanning the preceding decoded OBJ cache for one
+                // more frame.
+                if let Some(previous) = self.last_presented_obj_vram.as_deref() {
+                    let mut obj_cache_vram = self.ppu.vram.clone();
+                    obj_cache_vram[0x4000..0x4400].copy_from_slice(previous);
+                    self.ppu.obj_vram_latch = Some(obj_cache_vram);
+                } else {
+                    self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
                 }
             } else if dungeon_subtile_shutter_handoff_uses_live_obj_cache {
                 // Room $72's landing-to-shutter main slice retains the raw Link

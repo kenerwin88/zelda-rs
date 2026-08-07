@@ -975,6 +975,68 @@ fn subtile_palette_filter_decodes_captured_link_sources_without_mutating_raw_obj
 }
 
 #[test]
+fn room_72_northward_palette_tail_decodes_the_following_link_cache() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4020] = 0x2222;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 1;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 7;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x72;
+    following.ram[crate::game_state::constants::LINK_LAST_DIRECTION] = 8;
+    following.ppu.vram[0x4020] = 0xbbbb;
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::LiveAfterMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::LiveAfterMain;
+    let frame = crate::game_state::FrameState::load_from_ram(&following.ram);
+    assert!(room_72_northward_subtile_palette_tail_uses_live_obj_cache(
+        frame, 0x72, 8,
+    ));
+    assert!(!room_72_northward_subtile_palette_tail_uses_live_obj_cache(
+        frame, 0x72, 4,
+    ));
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.vram[0x4020], 0x2222);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4020], 0xbbbb);
+}
+
+#[test]
+fn room_72_northward_shutter_retains_the_presented_link_cache() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4020] = 0x2222;
+    state.last_presented_obj_vram = Some(vec![0x7777; 0x400]);
+    state.last_presented_obj_vram.as_mut().unwrap()[0x20] = 0xaaaa;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 5;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 0;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x72;
+    following.ram[crate::game_state::constants::LINK_LAST_DIRECTION] = 8;
+    following.ppu.vram[0x4020] = 0xbbbb;
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    following.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    let frame = crate::game_state::FrameState::load_from_ram(&following.ram);
+    assert!(room_72_northward_subtile_shutter_retains_presented_obj_cache(
+        frame, 0x72, 8,
+    ));
+    assert!(!room_72_northward_subtile_shutter_retains_presented_obj_cache(
+        frame, 0x72, 4,
+    ));
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.vram[0x4020], 0x2222);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4020], 0xaaaa);
+}
+
+#[test]
 fn held_subtile_nmi_reuses_the_last_presented_link_obj_cache() {
     let mut state = ZeldaState::new();
     state.ppu.vram[0x4020] = 0x2222;
