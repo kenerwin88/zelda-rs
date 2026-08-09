@@ -271,6 +271,538 @@ fn spiral_stair_entry_uses_host_link_operands_and_entry_oam_shadow() {
 }
 
 #[test]
+fn completed_pre_main_palette_filter_publishes_only_cgram_after_nmi() {
+    let in_progress = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 0x0e,
+        subsubmodule: 2,
+        ..Default::default()
+    };
+    let completed = crate::game_state::FrameState {
+        subsubmodule: 0x0f,
+        ..in_progress
+    };
+    assert!(!rom_spiral_second_palette_return_publishes_live_cgram(
+        in_progress, 1, 0x30,
+    ));
+    assert!(rom_spiral_second_palette_return_publishes_live_cgram(
+        completed, 1, 0x30,
+    ));
+    assert!(!rom_spiral_second_palette_return_publishes_live_cgram(
+        completed, 0x72, 0x34,
+    ));
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0x0e);
+    state.set_subsubmodule(0x0f);
+    state.ppu.cgram[35] = 0x0022;
+    state.ppu.oam[107 * 2] = u16::from_le_bytes([137, 46]);
+    state.capture_display_snapshot();
+
+    let captured_oam_source = state
+        .display_snapshot
+        .as_ref()
+        .unwrap()
+        .oam_scanout_source;
+    state.publish_completed_palette_filter_cgram_scanout();
+    let snapshot = state.display_snapshot.as_ref().unwrap();
+    assert_eq!(
+        snapshot.cgram_scanout_generation,
+        CgramScanoutGeneration::LiveAfterNmi
+    );
+    assert_eq!(snapshot.oam_scanout_source, captured_oam_source);
+
+    state.cgram_upload_latch = Some(state.ppu.cgram.to_vec());
+    state.ppu.cgram[35] = 0x0443;
+    state.ppu.oam[107 * 2] = u16::from_le_bytes([138, 44]);
+    let presented =
+        state.with_display_snapshot(|display| (display.ppu.cgram[35], display.ppu.oam[107 * 2]));
+
+    assert_eq!(presented.0, 0x0443);
+    assert_eq!(presented.1, u16::from_le_bytes([137, 46]));
+}
+
+#[test]
+fn noncanonical_pre_main_palette_filter_retains_previous_cgram_without_upload() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0x0e);
+    state.set_subsubmodule(0x0f);
+    state.ppu.cgram[35] = 0x0421;
+    state.capture_display_snapshot();
+    state.retain_completed_palette_filter_cgram_scanout();
+
+    state.ppu.cgram[35] = 0x0842;
+    let presented = state.with_display_snapshot(|display| display.ppu.cgram[35]);
+
+    assert_eq!(presented, 0x0421);
+    assert_eq!(state.ppu.cgram[35], 0x0842);
+}
+
+#[test]
+fn retained_spiral_palette_uses_the_previous_presented_cgram_not_the_capture() {
+    let mut state = ZeldaState::new();
+    let mut previous = state.ppu.cgram.clone();
+    previous[35] = 0x0210;
+    state.last_presented_cgram = Some(previous);
+    state.ppu.cgram[35] = 0x0421;
+    state.capture_display_snapshot();
+    state.retain_completed_palette_filter_cgram_scanout();
+
+    state.ppu.cgram[35] = 0x0842;
+    let presented = state.with_display_snapshot(|display| display.ppu.cgram[35]);
+
+    assert_eq!(presented, 0x0210);
+    assert_eq!(state.ppu.cgram[35], 0x0842);
+}
+
+#[test]
+fn entry_scoped_spiral_cgram_retention_survives_canonical_completion_state() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0x0e);
+    state.ppu.cgram[35] = 0x0421;
+    state.capture_display_snapshot();
+    state.retain_completed_palette_filter_cgram_scanout();
+
+    state.set_dungeon_room_index(1);
+    state.dungeon_stair_movement_mut().set_staircase_index(0x30);
+    state.publish_completed_palette_filter_cgram_scanout();
+    state.publish_completed_spiral_palette_filter_scanout();
+
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .cgram_scanout_generation,
+        CgramScanoutGeneration::RetainPreviousPresented
+    );
+}
+
+#[test]
+fn noncanonical_spiral_palette_slice_retention_follows_the_rom_frame_boundary() {
+    let entry = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 0x0e,
+        subsubmodule: 0x0f,
+        frame_counter: 0x69,
+        ..Default::default()
+    };
+    let held = entry;
+    let terminal = crate::game_state::FrameState {
+        subsubmodule: 0x10,
+        ..entry
+    };
+
+    assert!(!rom_spiral_palette_slice_retains_previous_cgram(
+        entry, held, 0x72, 0x34, 0x1b,
+    ));
+    assert!(rom_spiral_palette_slice_retains_previous_cgram(
+        entry, terminal, 0x72, 0x34, 0,
+    ));
+    assert!(!rom_spiral_palette_slice_retains_previous_cgram(
+        entry,
+        crate::game_state::FrameState {
+            frame_counter: 0x6a,
+            ..held
+        },
+        0x72,
+        0x34,
+        0x1b,
+    ));
+    assert!(!rom_spiral_palette_slice_retains_previous_cgram(
+        entry, held, 1, 0x30, 0x18,
+    ));
+    assert!(!rom_spiral_palette_slice_retains_previous_cgram(
+        entry,
+        crate::game_state::FrameState {
+            frame_counter: 0x6a,
+            ..held
+        },
+        0x72,
+        0x34,
+        0x18,
+    ));
+    assert!(rom_spiral_palette_slice_retains_previous_cgram(
+        entry, held, 0x72, 0x34, 0x17,
+    ));
+    assert!(!rom_spiral_palette_slice_retains_previous_cgram(
+        entry, held, 0x72, 0x34, 0x18,
+    ));
+}
+
+#[test]
+fn completed_spiral_palette_filter_publishes_its_cgram_and_oam_after_nmi() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0x0e);
+    state.set_dungeon_room_index(1);
+    state
+        .dungeon_stair_movement_mut()
+        .set_staircase_index(0x30);
+    state.ppu.cgram[35] = 0x0000;
+    state.ppu.oam[107 * 2] = u16::from_le_bytes([137, 46]);
+    state.capture_display_snapshot();
+
+    let retained_domains = {
+        let snapshot = state.display_snapshot.as_ref().unwrap();
+        (
+            snapshot.vram_generation,
+            snapshot.animated_bg_scanout_generation,
+            snapshot.link_obj_scanout_generation,
+        )
+    };
+    state.publish_completed_spiral_palette_filter_scanout();
+    let snapshot = state.display_snapshot.as_ref().unwrap();
+    assert_eq!(
+        snapshot.cgram_scanout_generation,
+        CgramScanoutGeneration::LiveAfterNmi
+    );
+    assert_eq!(
+        snapshot.oam_scanout_source,
+        OamScanoutSource::ComposeCompletedWorkAfterNmi
+    );
+    assert_eq!(
+        (
+            snapshot.vram_generation,
+            snapshot.animated_bg_scanout_generation,
+            snapshot.link_obj_scanout_generation,
+        ),
+        retained_domains,
+        "the boundary override must not advance unrelated graphics domains"
+    );
+
+    state.cgram_upload_latch = Some(state.ppu.cgram.to_vec());
+    state.ppu.cgram[35] = 0x0421;
+    state.ppu.oam[107 * 2] = u16::from_le_bytes([138, 44]);
+    let presented = state.with_display_snapshot(|display| {
+        (display.ppu.cgram[35], display.ppu.oam[107 * 2])
+    });
+
+    assert_eq!(presented, (0x0421, u16::from_le_bytes([138, 44])));
+    assert_eq!(state.ppu.cgram[35], 0x0421);
+    assert_eq!(state.ppu.oam[107 * 2], u16::from_le_bytes([138, 44]));
+}
+
+#[test]
+fn noncanonical_spiral_completion_retains_captured_cgram_and_oam() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0x0e);
+    state.set_dungeon_room_index(0x72);
+    state
+        .dungeon_stair_movement_mut()
+        .set_staircase_index(0x34);
+    state.ppu.cgram[35] = 0x0421;
+    state.ppu.oam[107 * 2] = u16::from_le_bytes([99, 79]);
+    state.capture_display_snapshot();
+    state.publish_completed_spiral_palette_filter_scanout();
+
+    state.ppu.cgram[35] = 0x0842;
+    state.ppu.oam[107 * 2] = u16::from_le_bytes([99, 80]);
+    let presented = state.with_display_snapshot(|display| {
+        (display.ppu.cgram[35], display.ppu.oam[107 * 2])
+    });
+
+    assert_eq!(presented, (0x0421, u16::from_le_bytes([99, 79])));
+}
+
+#[test]
+fn spiral_stair_landing_publishes_live_screen_layers_and_oam() {
+    let landing = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 0x0e,
+        subsubmodule: 0x11,
+        ..Default::default()
+    };
+    assert!(!rom_spiral_stair_landing_publishes_live_display(
+        landing, 1, 0x30, 0
+    ));
+    assert!(rom_spiral_stair_landing_publishes_live_display(
+        landing, 1, 0x30, 1
+    ));
+    assert!(!rom_spiral_stair_landing_publishes_live_display(
+        landing, 0x72, 0x34, 1
+    ));
+    assert!(!rom_spiral_stair_landing_publishes_live_display(
+        crate::game_state::FrameState {
+            subsubmodule: 0x12,
+            ..landing
+        },
+        1,
+        0x30,
+        1,
+    ));
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(landing.main_module);
+    state.set_submodule(landing.submodule);
+    state.set_subsubmodule(landing.subsubmodule);
+    state.set_dungeon_room_index(1);
+    state.dungeon_stair_movement_mut().set_staircase_index(0x30);
+    state.follower_link_state_mut().set_y_button_action_step(1);
+    state.set_main_screen_layers(0x06);
+    state.set_sub_screen_layers(0x11);
+    state.ppu.screen_enabled = [0x16, 0x01];
+    state.ppu.oam[107 * 2] = u16::from_le_bytes([140, 240]);
+    state.capture_display_snapshot();
+
+    state.ppu.screen_enabled = [0x06, 0x11];
+    state.ppu.oam[107 * 2] = u16::from_le_bytes([116, 81]);
+    let presented = state.with_display_snapshot(|display| {
+        (display.ppu.screen_enabled, display.ppu.oam[107 * 2])
+    });
+
+    assert_eq!(presented.0, [0x06, 0x11]);
+    assert_eq!(presented.1, u16::from_le_bytes([116, 81]));
+}
+
+#[test]
+fn spiral_stair_motion_publishes_only_live_oam() {
+    let motion = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 0x0e,
+        subsubmodule: 0x12,
+        ..Default::default()
+    };
+    assert!(rom_spiral_stair_motion_publishes_live_oam(
+        motion, 1, 0x30
+    ));
+    assert!(rom_spiral_stair_motion_publishes_live_oam(
+        crate::game_state::FrameState {
+            subsubmodule: 0x13,
+            ..motion
+        },
+        1,
+        0x30,
+    ));
+    assert!(!rom_spiral_stair_motion_publishes_live_oam(
+        motion, 0x72, 0x34
+    ));
+    assert!(!rom_spiral_stair_motion_publishes_live_oam(
+        crate::game_state::FrameState {
+            subsubmodule: 0x14,
+            ..motion
+        },
+        1,
+        0x30,
+    ));
+    let plan = DisplayPublicationPlan::resolve(
+        &captured_display_snapshot(),
+        DisplayPublicationSignals {
+            spiral_stair_motion_publishes_live_oam: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+    assert_eq!(
+        plan.oam_scanout_source,
+        OamScanoutSource::ComposeCompletedWorkAfterNmi
+    );
+    assert!(plan.publish_live_spiral_stair_obj_cache);
+    assert!(!plan.publish_live_spiral_stair_return_obj_vram);
+    assert!(!plan.publish_spiral_stair_return_equipment_handoff);
+    assert!(!plan.publish_live_spiral_stair_registers);
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(motion.main_module);
+    state.set_submodule(motion.submodule);
+    state.set_subsubmodule(motion.subsubmodule);
+    state.set_dungeon_room_index(1);
+    state.dungeon_stair_movement_mut().set_staircase_index(0x30);
+    state.follower_link_state_mut().set_y_button_action_step(1);
+    state.ppu.screen_enabled = [0x16, 0x01];
+    state.ppu.oam[102 * 2] = u16::from_le_bytes([119, 78]);
+    state.capture_display_snapshot();
+
+    state.ppu.screen_enabled = [0x06, 0x11];
+    state.ppu.oam[102 * 2] = u16::from_le_bytes([119, 76]);
+    let presented = state.with_display_snapshot(|display| {
+        (display.ppu.screen_enabled, display.ppu.oam[102 * 2])
+    });
+
+    assert_eq!(presented.0, [0x16, 0x01]);
+    assert_eq!(presented.1, u16::from_le_bytes([119, 76]));
+}
+
+#[test]
+fn spiral_stair_return_publishes_split_oam_and_live_obj_across_repeated_captures() {
+    let plan = DisplayPublicationPlan::resolve(
+        &captured_display_snapshot(),
+        DisplayPublicationSignals {
+            spiral_stair_return_publishes_live_shadow_oam: true,
+            spiral_stair_return_publishes_live_registers: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+    assert_eq!(
+        plan.oam_scanout_source,
+        OamScanoutSource::ComposeSpiralReturnPlayerShadowAfterMain
+    );
+    assert!(plan.publish_live_spiral_stair_registers);
+    assert!(!plan.publish_live_spiral_stair_obj_cache);
+    assert!(!plan.publish_live_spiral_stair_return_obj_vram);
+    assert!(!plan.publish_spiral_stair_return_equipment_handoff);
+    assert_eq!(plan.bg_scroll_source, DisplayedBgScrollSource::CapturedBeforeNmi);
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0x0e);
+    state.set_subsubmodule(0x13);
+    state.set_dungeon_room_index(1);
+    state
+        .dungeon_stair_movement_mut()
+        .set_staircase_index(0x30);
+    state.follower_link_state_mut().set_y_button_action_step(2);
+    state.ppu.screen_enabled = [0x06, 0x11];
+    state.ppu.bg_layer[0].h_scroll = 640;
+    state.ppu.bg_layer[1].h_scroll = 640;
+    state.ppu.oam[102 * 2] = u16::from_le_bytes([116, 108]);
+    state.capture_display_snapshot();
+
+    state.ppu.screen_enabled = [0x16, 0x01];
+    state.ppu.bg_layer[0].h_scroll = 641;
+    state.ppu.bg_layer[1].h_scroll = 641;
+    state.ppu.oam[102 * 2] = u16::from_le_bytes([116, 107]);
+    let live_shadow = [116, 106, 0x07, 0x1a];
+    let byte_start = OAM_BUF + 102 * 4;
+    state.ram[byte_start..byte_start + 4].copy_from_slice(&live_shadow);
+    state.spiral_stair_return_oam_publication_host_frame = Some(state.frame_ctr_dbg);
+    let mut player_oam = [0; 24];
+    player_oam[0] = u16::from_le_bytes([live_shadow[0], live_shadow[1]]);
+    player_oam[1] = u16::from_le_bytes([live_shadow[2], live_shadow[3]]);
+    state.spiral_stair_return_player_oam_scanout = Some(player_oam);
+    let presented = state.with_display_snapshot(|display| {
+        (
+            display.ppu.screen_enabled,
+            display.ppu.bg_layer[0].h_scroll,
+            display.ppu.bg_layer[1].h_scroll,
+            oam_entry_bytes(&display.ppu.oam, 102),
+        )
+    });
+
+    assert_eq!(presented.0, [0x16, 0x01]);
+    assert_eq!((presented.1, presented.2), (640, 640));
+    assert_eq!(presented.3, live_shadow);
+    let presented_again =
+        state.with_display_snapshot(|display| oam_entry_bytes(&display.ppu.oam, 102));
+    assert_eq!(presented_again, live_shadow);
+
+    let return_obj = DisplayPublicationPlan::resolve(
+        &captured_display_snapshot(),
+        DisplayPublicationSignals {
+            spiral_stair_return_publishes_live_obj_cache: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+    assert_eq!(
+        return_obj.link_obj_scanout_generation,
+        GraphicsDmaGeneration::LiveAfterMain
+    );
+    assert_eq!(
+        return_obj.link_obj_source_generation,
+        GraphicsDmaGeneration::LiveAfterMain
+    );
+    assert_eq!(
+        return_obj.oam_scanout_source,
+        OamScanoutSource::ComposePublishedShadowDma
+    );
+    assert!(return_obj.publish_live_spiral_stair_obj_cache);
+    assert!(return_obj.publish_live_spiral_stair_return_obj_vram);
+    assert!(return_obj.publish_spiral_stair_return_equipment_handoff);
+
+    state.ppu.vram[0x4020] = 0xbeef;
+    let mut returning_player_oam = state
+        .spiral_stair_return_player_oam_scanout
+        .expect("returning player OAM was installed above");
+    returning_player_oam[20] = u16::from_le_bytes([120, 84]);
+    returning_player_oam[21] = u16::from_le_bytes([0x20, 0x28]);
+    returning_player_oam[22] = u16::from_le_bytes([120, 94]);
+    returning_player_oam[23] = u16::from_le_bytes([0x22, 0x28]);
+    state.spiral_stair_return_player_oam_scanout = Some(returning_player_oam);
+    let mut retained_oam = state.ppu.oam.clone();
+    retained_oam[112 * 2] = u16::from_le_bytes([120, 240]);
+    let mut published_oam = retained_oam.clone();
+    published_oam[102 * 2] = u16::from_le_bytes([119, 86]);
+    let snapshot = state.display_snapshot.as_mut().unwrap();
+    snapshot.obj_generation = DisplayObjGeneration::RetainCapturedOam { oam: retained_oam };
+    snapshot.published_shadow_oam_dma = Some(published_oam);
+    state.frame_ctr_dbg = state.frame_ctr_dbg.wrapping_add(1);
+    let (presented_return_obj, presented_body_xy, presented_sword, presented_shield) =
+        state.with_display_snapshot(|display| {
+            (
+                display.ppu.obj_vram_latch.as_ref().unwrap()[0x4020],
+                display.ppu.oam[102 * 2],
+                oam_entry_bytes(&display.ppu.oam, 112),
+                oam_entry_bytes(&display.ppu.oam, 113),
+            )
+        });
+    assert_eq!(presented_return_obj, 0xbeef);
+    assert_eq!(presented_body_xy, u16::from_le_bytes([116, 107]));
+    assert_eq!(presented_sword, [120, 85, 0x20, 0x28]);
+    assert_eq!(presented_shield, [120, 95, 0x22, 0x68]);
+}
+
+#[test]
+fn spiral_stair_landing_decodes_live_link_obj_cache_without_advancing_raw_vram() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram[0x4000] = 0x1111;
+    state.ppu.vram[0x4020] = 0x2222;
+    state.ppu.vram[0x4100] = 0x3333;
+    state.ppu.vram[0x4120] = 0x4444;
+    state.ppu.vram[0x4320] = 0x5555;
+    let mut link_graphics = vec![0; 0x640];
+    for (offset, value) in [
+        (0x000, 0xaaaau16),
+        (0x200, 0xbbbbu16),
+        (0x400, 0xccccu16),
+        (0x600, 0xddddu16),
+    ] {
+        for bytes in link_graphics[offset..offset + 0x40].chunks_exact_mut(2) {
+            bytes.copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    let mut ranges = vec![(0, 0); 58];
+    ranges[57] = (0, link_graphics.len());
+    state.assets = Some(AssetPack::from_data_ranges(link_graphics, ranges));
+
+    let mut following = captured_display_snapshot();
+    for (slot, source) in [
+        (LinkDmaSourceSlot::BodyTop, 0x8000),
+        (LinkDmaSourceSlot::BodyBottom, 0x8200),
+        (LinkDmaSourceSlot::HeadTop, 0x8400),
+        (LinkDmaSourceSlot::HeadBottom, 0x8600),
+        (LinkDmaSourceSlot::BodyPointerLower, 0x0100),
+    ] {
+        write_le_u16(&mut following.ram, slot.ram_address(), source);
+    }
+    for bytes in following.ram[0x0100..0x0140].chunks_exact_mut(2) {
+        bytes.copy_from_slice(&0xeeeeu16.to_le_bytes());
+    }
+    let plan = DisplayPublicationPlan::resolve(
+        &following,
+        DisplayPublicationSignals {
+            spiral_stair_landing_publishes_live_display: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+    state.compose_display_oam(&following, &plan);
+    let cache = state.ppu.obj_vram_latch.as_ref().unwrap();
+
+    assert_eq!(state.ppu.vram[0x4000], 0x1111);
+    assert_eq!(state.ppu.vram[0x4020], 0x2222);
+    assert_eq!(state.ppu.vram[0x4100], 0x3333);
+    assert_eq!(state.ppu.vram[0x4120], 0x4444);
+    assert_eq!(state.ppu.vram[0x4320], 0x5555);
+    assert_eq!(cache[0x4000], 0xaaaa);
+    assert_eq!(cache[0x4020], 0xcccc);
+    assert_eq!(cache[0x4100], 0xbbbb);
+    assert_eq!(cache[0x4120], 0xdddd);
+    assert_eq!(cache[0x4320], 0xeeee);
+}
+
+#[test]
 fn dungeon_subtile_scanout_publishes_leading_nmi_animated_chr_independently() {
     let frame = crate::game_state::FrameState {
         main_module: 7,
@@ -1493,6 +2025,101 @@ fn live_animated_bg_composes_over_retained_general_vram() {
 
     assert_eq!(state.ppu.vram[0], 0x1111);
     assert_eq!(state.ppu.vram[destination], 0xbbbb);
+}
+
+#[test]
+fn pending_floor_indicator_clear_only_publishes_at_the_measured_spiral_return() {
+    const DESTINATION: usize = 0x6040;
+
+    let mut clearing = ZeldaState::new();
+    clearing.set_main_module(7);
+    clearing.set_dungeon_room_index(0x01);
+    clearing
+        .dungeon_stair_movement_mut()
+        .set_staircase_index(0x30);
+    clearing.set_message_dma_destination_address(DESTINATION as u16);
+    clearing.set_hud_floor_changed_timer(0);
+    for word in DUNGEON_FLOOR_INDICATOR_HUD_WORDS {
+        clearing.set_hud_tile_word(word, 0x007f);
+        clearing.ppu.vram[DESTINATION + word] = 0x2508;
+    }
+    clearing.increment_hud_update_flag();
+    clearing.capture_display_snapshot();
+
+    assert_eq!(
+        clearing
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .hud_vram_generation,
+        DisplayVramGeneration::ComposeLiveAfterNmi
+    );
+
+    let mut other_room_clear = ZeldaState::new();
+    other_room_clear.set_main_module(7);
+    other_room_clear.set_dungeon_room_index(0x48);
+    other_room_clear
+        .dungeon_stair_movement_mut()
+        .set_staircase_index(0x34);
+    other_room_clear.set_message_dma_destination_address(DESTINATION as u16);
+    other_room_clear.set_hud_floor_changed_timer(0);
+    for word in DUNGEON_FLOOR_INDICATOR_HUD_WORDS {
+        other_room_clear.set_hud_tile_word(word, 0x007f);
+        other_room_clear.ppu.vram[DESTINATION + word] = 0x2508;
+    }
+    other_room_clear.increment_hud_update_flag();
+    other_room_clear.capture_display_snapshot();
+
+    assert_eq!(
+        other_room_clear
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .hud_vram_generation,
+        DisplayVramGeneration::RetainCapturedBeforeNmi
+    );
+
+    let mut ordinary_update = ZeldaState::new();
+    ordinary_update.set_main_module(7);
+    ordinary_update.set_message_dma_destination_address(DESTINATION as u16);
+    ordinary_update.set_hud_floor_changed_timer(0);
+    for word in DUNGEON_FLOOR_INDICATOR_HUD_WORDS {
+        ordinary_update.set_hud_tile_word(word, 0x2508);
+        ordinary_update.ppu.vram[DESTINATION + word] = 0x007f;
+    }
+    ordinary_update.increment_hud_update_flag();
+    ordinary_update.capture_display_snapshot();
+
+    assert_eq!(
+        ordinary_update
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .hud_vram_generation,
+        DisplayVramGeneration::RetainCapturedBeforeNmi
+    );
+}
+
+#[test]
+fn spiral_state_8_hud_dma_composes_over_retained_general_vram() {
+    let mut state = ZeldaState::new();
+    let destination = 0x6040;
+    let floor_label_word = 0x60b9;
+    state.ppu.vram[0] = 0x1111;
+    state.ppu.vram[floor_label_word] = 0x207f;
+
+    let mut following = captured_display_snapshot();
+    following.ppu.vram[0] = 0xaaaa;
+    following.ppu.vram[floor_label_word] = 0x2508;
+    following.vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+    following.hud_vram_generation = DisplayVramGeneration::ComposeLiveAfterNmi;
+    following.hud_vram_destination = destination;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_vram(&following, &plan, None);
+
+    assert_eq!(state.ppu.vram[0], 0x1111);
+    assert_eq!(state.ppu.vram[floor_label_word], 0x2508);
 }
 
 #[test]

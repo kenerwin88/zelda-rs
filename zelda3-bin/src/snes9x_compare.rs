@@ -1983,12 +1983,14 @@ pub(crate) fn run_compare_libretro_oracle(
                 game.ram[0x1e62],
             );
         }
-        oracle
-            .serialize_state_into(&mut oracle_before_state)
-            .unwrap_or_else(|e| {
-                eprintln!("failed to serialize {oracle_name} before frame {frame_index}: {e}");
-                process::exit(1);
-            });
+        if oracle_preframe_snapshot_required(frame_index, frames, compare_this_frame) {
+            oracle
+                .serialize_state_into(&mut oracle_before_state)
+                .unwrap_or_else(|e| {
+                    eprintln!("failed to serialize {oracle_name} before frame {frame_index}: {e}");
+                    process::exit(1);
+                });
+        }
         let mut capture = oracle.run_frame_with_input(input);
         if let Some(writer) = display_oracle_receipts.as_mut().filter(|_| {
             capture_all_display_oracle || display_oracle_after_frames.contains(&frame_index)
@@ -3226,6 +3228,15 @@ pub(crate) fn format_u32_ranges(ranges: &[(u32, u32)]) -> String {
         .join(", ")
 }
 
+fn oracle_preframe_snapshot_required(frame: u32, frames: u32, compare_this_frame: bool) -> bool {
+    // Failure artifacts only consume the pre-frame state inside the comparison
+    // window. The final session receipt also retains the last pre-frame state.
+    // Avoid serializing the ~800 KiB oracle state on every warm-up frame: long
+    // checkpoint-based probes otherwise spend most of their time copying data
+    // that can never be observed.
+    compare_this_frame || frame.saturating_add(1) == frames
+}
+
 fn write_paired_resume_capture(
     capture: &PairedResumeCapture,
     core_path: &str,
@@ -3731,6 +3742,13 @@ pub(crate) fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
     let object = receipt
         .as_object_mut()
         .expect("engine receipt is an object");
+    object.insert(
+        "player_equipment_oam_shadow".into(),
+        (0x0800 + 112 * 4..0x0800 + 114 * 4)
+            .map(byte)
+            .collect::<Vec<_>>()
+            .into(),
+    );
     for (name, value) in [
         ("intro_sword_y", u64::from(word(0x00c8))),
         ("intro_sword_sparkle_y_offset", u64::from(byte(0x00cd))),
@@ -3749,14 +3767,37 @@ pub(crate) fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
         ("queued_music_control", u64::from(byte(0x0132))),
         ("spotlight_window_radius", u64::from(word(0x067c))),
         ("spotlight_window_state", u64::from(word(0x067e))),
+        ("dungeon_room_index", u64::from(word(0x00a0))),
+        ("dungeon_staircase_index", u64::from(byte(0x0462))),
+        ("dungeon_staircase_counter", u64::from(byte(0x0464))),
         ("joypad_high", u64::from(byte(0x00f0))),
         ("joypad_low", u64::from(byte(0x00f2))),
         ("joypad_high_filtered", u64::from(byte(0x00f4))),
         ("joypad_low_filtered", u64::from(byte(0x00f6))),
         ("link_x", u64::from(word(0x0022))),
         ("link_y", u64::from(word(0x0020))),
+        ("link_last_direction", u64::from(byte(0x0026))),
+        ("link_actual_y_velocity", u64::from(byte(0x0027))),
+        ("link_actual_x_velocity", u64::from(byte(0x0028))),
+        ("link_y_subpixel", u64::from(byte(0x002a))),
+        ("link_x_subpixel", u64::from(byte(0x002b))),
+        ("link_animation_counter", u64::from(byte(0x002d))),
+        ("link_animation_step", u64::from(byte(0x002e))),
         ("link_direction", u64::from(byte(0x0067))),
         ("link_facing_direction", u64::from(byte(0x002f))),
+        ("link_auxiliary_state", u64::from(byte(0x004d))),
+        ("link_direction_lock", u64::from(byte(0x0050))),
+        ("link_handler_state", u64::from(byte(0x005d))),
+        ("link_speed_setting", u64::from(byte(0x005e))),
+        ("link_orthogonal_direction_count", u64::from(byte(0x006a))),
+        ("link_animation_timer_step", u64::from(byte(0x030a))),
+        ("link_somaria_platform_state", u64::from(byte(0x02f5))),
+        ("link_facing_direction_mirror", u64::from(byte(0x0323))),
+        ("link_movement_direction_bits", u64::from(byte(0x0340))),
+        ("link_moving_flag", u64::from(byte(0x034a))),
+        ("link_water_ripple_or_grass", u64::from(byte(0x0351))),
+        ("link_sort_sprites_offset", u64::from(word(0x0352))),
+        ("link_player_oam_value", u64::from(byte(0x0354))),
         ("link_sprite_oam_state_timer", u64::from(byte(0x005c))),
         ("link_item_in_hand", u64::from(byte(0x0301))),
         ("link_state_bits", u64::from(byte(0x0308))),
@@ -4525,7 +4566,8 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
 #[cfg(test)]
 mod tests {
     use super::{
-        checkpoint_member, paired_resume_paths, parse_debug_frame_selection,
+        checkpoint_member, oracle_preframe_snapshot_required, paired_resume_paths,
+        parse_debug_frame_selection,
         parse_paired_resume_capture, parse_rolling_paired_resume_capture,
         prune_rolling_paired_resume_captures, rolling_capture_frame_after, summarize_value_domain,
         BootBoundaryState, PairedResumeCapture, RollingPairedResumeCapture, ValueDomainDiff,
@@ -4540,6 +4582,13 @@ mod tests {
             parse_debug_frame_selection("81,79-81,84..=85,invalid,8-3"),
             vec![79, 80, 81, 84, 85]
         );
+    }
+
+    #[test]
+    fn oracle_preframe_snapshots_skip_unobservable_warmup_frames() {
+        assert!(!oracle_preframe_snapshot_required(10_000, 23_005, false));
+        assert!(oracle_preframe_snapshot_required(23_000, 23_005, true));
+        assert!(oracle_preframe_snapshot_required(23_004, 23_005, false));
     }
 
     #[test]

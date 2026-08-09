@@ -857,3 +857,41 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
         Err("audio snapshot oracle sidecar flag mismatch".to_string())
     );
 }
+#[test]
+fn acknowledged_ambient_clear_uses_the_live_nmi_latch_without_hiding_a_new_command() {
+    assert_eq!(super::resolved_driver_ambient_latch(3, 0, 3), 0);
+    assert_eq!(super::resolved_driver_ambient_latch(3, 0, 0), 3);
+    assert_eq!(super::resolved_driver_ambient_latch(0, 3, 3), 3);
+}
+
+#[test]
+fn spiral_return_ambient_override_covers_landing_without_leaking_to_other_rooms() {
+    assert!(super::spiral_return_audio_uses_live_ambient_latch(
+        7, 0x0e, 0x0b, 1, 0x30
+    ));
+    assert!(super::spiral_return_audio_uses_live_ambient_latch(
+        7, 0, 0, 1, 0x30
+    ));
+    assert!(!super::spiral_return_audio_uses_live_ambient_latch(
+        7, 0, 0, 2, 0x30
+    ));
+    assert!(!super::spiral_return_audio_uses_live_ambient_latch(
+        7, 0x0e, 0x0a, 1, 0x30
+    ));
+}
+
+#[test]
+fn spiral_return_audio_selects_live_one_shot_sfx_only_at_the_measured_cpu_boundary() {
+    assert!(super::spiral_return_audio_uses_live_one_shot_sfx_latches(
+        7, 0x0e, 0x0b, 1, 0x30
+    ));
+    assert!(super::spiral_return_audio_uses_live_one_shot_sfx_latches(
+        7, 0x0e, 0x0f, 1, 0x30
+    ));
+    assert!(!super::spiral_return_audio_uses_live_one_shot_sfx_latches(
+        7, 0x0e, 0x0a, 1, 0x30
+    ));
+    assert!(!super::spiral_return_audio_uses_live_one_shot_sfx_latches(
+        7, 0x0e, 0x0b, 2, 0x30
+    ));
+}

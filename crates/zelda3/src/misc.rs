@@ -1548,22 +1548,7 @@ impl ZeldaState {
             [(self.game_state.player.pushed_block.animation_mode() & 3) as usize];
         self.set_link_push_dma_sources(source10, source10.wrapping_add(0x100));
 
-        if self.decrement_bg_tile_animation_countdown() == 0 {
-            let overlay = self.game_state.world.region.overlay_index() as u16;
-            let countdown = if overlay == 0xb5 || overlay == 0xbc {
-                0x17
-            } else {
-                9
-            };
-            self.reset_bg_tile_animation_countdown(countdown);
-
-            // These DMA animation fields live in WRAM and are deliberately
-            // reused by other systems during the attract/text sequence. The
-            // decomp's `Graphics_IncrementalVRAMUpload` reads them directly;
-            // do the same rather than advancing the cached Link projection.
-            let source_offset = self.player_state_mut().advance_link_dma_source_offset();
-            self.set_animated_tile_data_source_address(0xa680u16.wrapping_add(source_offset));
-        }
+        self.nmi_prepare_animated_bg();
         if self.player_state_mut().decrement_link_dma_countdown() == 0 {
             let t = self.player_state_mut().advance_link_dma_tile_offset();
 
@@ -1588,6 +1573,25 @@ impl ZeldaState {
         let source20 = 0xb540u16
             .wrapping_add((self.game_state.display.travel_bird_tile_offset as u16).wrapping_mul(2));
         self.set_travel_bird_dma_sources(source20, source20.wrapping_add(0x200));
+    }
+
+    pub(super) fn nmi_prepare_animated_bg(&mut self) {
+        if self.decrement_bg_tile_animation_countdown() == 0 {
+            let overlay = self.game_state.world.region.overlay_index() as u16;
+            let countdown = if overlay == 0xb5 || overlay == 0xbc {
+                0x17
+            } else {
+                9
+            };
+            self.reset_bg_tile_animation_countdown(countdown);
+
+            // These DMA animation fields live in WRAM and are deliberately
+            // reused by other systems during the attract/text sequence. The
+            // decomp's `Graphics_IncrementalVRAMUpload` reads them directly;
+            // do the same rather than advancing the cached Link projection.
+            let source_offset = self.player_state_mut().advance_link_dma_source_offset();
+            self.set_animated_tile_data_source_address(0xa680u16.wrapping_add(source_offset));
+        }
     }
 
     pub(super) fn module_main_routing(&mut self) {

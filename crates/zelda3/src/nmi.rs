@@ -336,6 +336,22 @@ impl ZeldaState {
     }
 
     pub(super) fn interrupt_nmi_audio_parts(&mut self) {
+        if std::env::var("ZELDA3_DEBUG_AUDIO_NMI_FRAME")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            == Some(self.frame_ctr_dbg)
+        {
+            eprintln!(
+                "audio_nmi_sample host={} phase={:02x}/{:02x}/{:02x} ambient={:02x} effect1={:02x} effect2={:02x}",
+                self.frame_ctr_dbg,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                self.game_state.frame.subsubmodule,
+                self.game_state.system_signals.ambient_sound_effect(),
+                self.game_state.system_signals.sound_effect_1(),
+                self.game_state.system_signals.sound_effect_2(),
+            );
+        }
         let music_control = self.game_state.system_signals.music_control();
         if music_control != 0 && !self.zelda_is_playing_music_track_with_bug(music_control) {
             self.set_last_music_control(music_control);
@@ -390,12 +406,18 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_core_animated_bg_update(&mut self, graphics_dma_plan: GraphicsDmaPlan) {
+        let animated_bg_operands = animated_bg_operands_for_dungeon_landing(
+            self.game_state.frame,
+            self.game_state.world.location.dungeon_room_index(),
+            self.game_state.player.follower_link.last_direction(),
+            graphics_dma_plan.animated_bg_operands,
+        );
         let host_main_prefix_did_not_advance =
             self.pre_main_graphics_dma.as_ref().is_some_and(|graphics| {
                 graphics.entry_frame.frame_counter == self.game_state.frame.frame_counter
             });
         let pre_main_dma = if matches!(
-            graphics_dma_plan.animated_bg_operands,
+            animated_bg_operands,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         ) {
             self.pre_main_graphics_dma
@@ -417,7 +439,7 @@ impl ZeldaState {
             |dma| (dma.source_address, dma.destination_address, dma.data),
         );
         if matches!(
-            graphics_dma_plan.animated_bg_operands,
+            animated_bg_operands,
             GraphicsDmaGeneration::LiveAfterMain
         ) {
             if let Some(projected_source) = rom_spiral_stairs_suspended_animated_bg_source_address(

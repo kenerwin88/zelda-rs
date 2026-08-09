@@ -114,6 +114,10 @@ fn main() {
     if dispatch_rom_first_oracle_flags(&args) {
         return;
     }
+    if let Some(error) = rom_first_oracle_flag_error(&args) {
+        eprintln!("{error}");
+        process::exit(2);
+    }
     if args.get(1).map(String::as_str) == Some("--headless") {
         run_headless(&args[2..]);
         return;
@@ -295,6 +299,20 @@ fn main() {
     } else {
         run_standalone_play();
     }
+}
+
+fn rom_first_oracle_flag_error(args: &[String]) -> Option<&'static str> {
+    let rom_path = args.get(1)?;
+    if rom_path.starts_with("--") {
+        return None;
+    }
+    args[2..]
+        .iter()
+        .any(|arg| arg == "--snes9x-core")
+        .then_some(
+            "--snes9x-core is not a supported parity flag; use \
+             --compare-snes9x-oracle <path-to-core> so the command cannot silently launch play mode",
+        )
 }
 
 /// Write the embedded, source-authoritative asset pack to disk. This is the
@@ -2500,6 +2518,25 @@ fn find_asset_pack_with_override(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mistyped_rom_first_oracle_flag_cannot_fall_through_to_play_mode() {
+        let args = vec![
+            "zelda3".to_string(),
+            "saves/zelda3.sfc".to_string(),
+            "--snes9x-core".to_string(),
+            "oracle.dylib".to_string(),
+        ];
+        assert!(rom_first_oracle_flag_error(&args).is_some());
+
+        let valid = vec![
+            "zelda3".to_string(),
+            "saves/zelda3.sfc".to_string(),
+            "--compare-snes9x-oracle".to_string(),
+            "oracle.dylib".to_string(),
+        ];
+        assert!(rom_first_oracle_flag_error(&valid).is_none());
+    }
 
     #[test]
     fn recorder_telemetry_captures_progress_and_ending_markers() {

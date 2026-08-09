@@ -13,6 +13,7 @@ use crate::game_state::constants::{
     DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, DUNG_BG2, TM_COPY, TS_COPY,
 };
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
+use crate::game_state::FrameState;
 
 #[test]
 fn attract_map_mode7_brightness_override_ends_with_fade_in() {
@@ -3599,6 +3600,22 @@ fn room_72_supertile_quadrant_tilemap_build_crosses_one_nmi_before_advancing() {
 }
 
 #[test]
+fn room_72_state_10_suspended_quadrant_build_prepares_animated_bg_on_entry() {
+    let work = Some(GameWorkContinuation::FinishDungeonSupertileTransition {
+        work: DungeonSupertileTransitionWork::QuadrantTilemapBuild,
+    });
+    assert!(scheduled_work_entry_prepares_animated_bg_before_suspension(
+        7, 2, 10, 0x72, work,
+    ));
+    assert!(!scheduled_work_entry_prepares_animated_bg_before_suspension(
+        7, 2, 5, 0x72, work,
+    ));
+    assert!(!scheduled_work_entry_prepares_animated_bg_before_suspension(
+        7, 2, 10, 0x71, work,
+    ));
+}
+
+#[test]
 fn spiral_supertile_quadrant_tilemap_build_does_not_suspend() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -3610,6 +3627,48 @@ fn spiral_supertile_quadrant_tilemap_build_does_not_suspend() {
         DungeonSupertileTransitionWork::QuadrantTilemapBuild,
     ));
     assert!(state.paired_resume_cpu_boundary_is_quiescent());
+}
+
+#[test]
+fn room_1_staircase_30_spiral_return_reenters_next_main_loop_before_nmi() {
+    let return_frame = FrameState {
+        main_module: 7,
+        submodule: 0x0e,
+        subsubmodule: 0x13,
+        ..FrameState::default()
+    };
+
+    assert!(rom_spiral_stair_return_reenters_player_control(
+        return_frame,
+        1,
+        0x30,
+    ));
+    assert!(!rom_spiral_stair_return_reenters_player_control(
+        return_frame,
+        0x72,
+        0x30,
+    ));
+    assert!(!rom_spiral_stair_return_reenters_player_control(
+        return_frame,
+        1,
+        0x31,
+    ));
+    assert!(!rom_spiral_stair_return_reenters_player_control(
+        FrameState {
+            subsubmodule: 0x12,
+            ..return_frame
+        },
+        1,
+        0x30,
+    ));
+
+    let mut state = ZeldaState::new();
+    state.set_frame_counter(0x12);
+    state.oam_state_mut().set_entry_y(OAM_BUF, 0x44);
+    state.begin_spiral_stair_return_main_loop_reentry();
+
+    assert_eq!(FrameState::load_from_ram(&state.ram).frame_counter, 0x13);
+    assert_eq!(state.ram[OAM_BUF + 1], 0xf0);
 }
 
 #[test]
@@ -4155,13 +4214,16 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
         ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES
     );
     assert_eq!(rom_item_receipt_graphics_nmi_slices(0x23), 0);
+    // The fourth slice completes gfx $14's OBJ upload and the caller prepares
+    // player OAM before scanout; keep this receipt aligned with the observed
+    // live/live boundary instead of an older retained-CHR assumption.
     assert_eq!(
         atomic_item_graphics_return_obj_scanout(
             ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 },
         ),
         ObjScanoutGenerations {
-            oam: OamScanoutSource::ComposeLiveAfterNmi,
-            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            oam: OamScanoutSource::ComposeLivePlayerOamAfterMain,
+            link_obj: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
         }
     );
@@ -4170,7 +4232,7 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
             ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 },
         ),
         ObjScanoutGenerations {
-            oam: OamScanoutSource::ComposeLiveAfterNmi,
+            oam: OamScanoutSource::ComposePublishedShadowDma,
             link_obj: GraphicsDmaGeneration::LiveAfterMain,
             link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
         }
@@ -4451,6 +4513,38 @@ fn animated_bg_phase_change_retains_the_completed_scanout_generation() {
         gameplay.animated_bg_operands,
         GraphicsDmaGeneration::HostBoundaryBeforeMain
     );
+    let landing = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 1,
+        ..Default::default()
+    };
+    assert_eq!(
+        animated_bg_operands_for_dungeon_landing(
+            landing,
+            0x72,
+            8,
+            GraphicsDmaGeneration::LiveAfterMain,
+        ),
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    );
+    assert_eq!(
+        animated_bg_operands_for_dungeon_landing(
+            landing,
+            0x71,
+            8,
+            GraphicsDmaGeneration::LiveAfterMain,
+        ),
+        GraphicsDmaGeneration::LiveAfterMain
+    );
+    assert_eq!(
+        animated_bg_operands_for_dungeon_landing(
+            landing,
+            0x72,
+            4,
+            GraphicsDmaGeneration::LiveAfterMain,
+        ),
+        GraphicsDmaGeneration::LiveAfterMain
+    );
     assert_eq!(
         animated_bg_scanout_across_main(gameplay, gameplay),
         AnimatedBgScanoutGeneration::LiveAfterNmi
@@ -4557,6 +4651,92 @@ fn dungeon_map_oam_shadow_reaches_the_following_scanout() {
     assert_eq!(map.oam_operands, GraphicsDmaGeneration::LiveAfterMain);
     assert_eq!(map.oam_scanout, OamScanoutSource::RetainCapturedBeforeNmi);
     assert_eq!(map.link_obj_scanout, GraphicsDmaGeneration::LiveAfterMain);
+}
+
+#[test]
+fn room_01_spiral_state_8_marks_the_pending_hud_dma_live() {
+    let frame = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 0x0e,
+        subsubmodule: 8,
+        ..Default::default()
+    };
+    assert!(rom_dungeon_spiral_state_8_publishes_live_hud_tilemap(
+        frame, 0x01, true,
+    ));
+    assert!(!rom_dungeon_spiral_state_8_publishes_live_hud_tilemap(
+        frame, 0x02, true,
+    ));
+    assert!(!rom_dungeon_spiral_state_8_publishes_live_hud_tilemap(
+        frame, 0x01, false,
+    ));
+}
+
+#[test]
+fn resumed_spiral_state_7_publishes_only_its_new_audio_ports_after_main() {
+    let state_7 = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 0x0e,
+        subsubmodule: 7,
+        ..Default::default()
+    };
+    let state_8 = crate::game_state::FrameState {
+        subsubmodule: 8,
+        ..state_7
+    };
+    assert!(resumed_dungeon_spiral_state_7_publishes_audio_after_main(
+        PreMainNmiResume::DungeonSupertileQuadrantUploads,
+        1,
+        state_7,
+        state_8,
+    ));
+    assert!(!resumed_dungeon_spiral_state_7_publishes_audio_after_main(
+        PreMainNmiResume::DungeonSupertileQuadrantBuildReturn,
+        1,
+        state_7,
+        state_8,
+    ));
+    assert!(!resumed_dungeon_spiral_state_7_publishes_audio_after_main(
+        PreMainNmiResume::DungeonSupertileQuadrantUploads,
+        2,
+        state_7,
+        state_8,
+    ));
+    assert!(!resumed_dungeon_spiral_state_7_publishes_audio_after_main(
+        PreMainNmiResume::DungeonSupertileQuadrantUploads,
+        1,
+        crate::game_state::FrameState {
+            subsubmodule: 6,
+            ..state_7
+        },
+        state_8,
+    ));
+    assert!(!resumed_dungeon_spiral_state_7_publishes_audio_after_main(
+        PreMainNmiResume::DungeonSupertileQuadrantUploads,
+        1,
+        state_7,
+        crate::game_state::FrameState {
+            subsubmodule: 9,
+            ..state_7
+        },
+    ));
+    assert!(!resumed_dungeon_spiral_state_7_publishes_audio_after_main(
+        PreMainNmiResume::DungeonSupertileQuadrantUploads,
+        1,
+        state_7,
+        crate::game_state::FrameState {
+            submodule: 0x02,
+            ..state_8
+        },
+    ));
+
+    let mut runtime = ZeldaState::new();
+    runtime.set_ambient_sound_effect(3);
+    runtime.set_sound_effect_2(36);
+    runtime.publish_resumed_spiral_audio_after_main();
+    assert_eq!(runtime.zelda_audio_route_state().queue.write, [0, 3, 0, 36]);
+    assert_eq!(runtime.game_state.system_signals.ambient_sound_effect(), 3);
+    assert_eq!(runtime.game_state.system_signals.sound_effect_2(), 0);
 }
 
 #[test]

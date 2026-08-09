@@ -6,10 +6,9 @@ description: Drive the next Snes9x route-parity divergence to a clean, committed
 # Parity front: routes → 100% Snes9x parity, clean code only
 
 We are driving zelda3-rs toward 100% parity with the pinned Snes9x 1.63 oracle,
-verified through the human routes in `routes/` (the `routes/clean` lineage) via
-`scripts/snes9x_route_recorder.py compare-route --project routes/clean` (the
-`--project` value is the directory path `routes/clean`, not the bare name
-`clean`) and the
+verified through the authoritative human route in `routes/crystal4_II` via
+`scripts/snes9x_route_recorder.py compare-route --project routes/crystal4_II`
+(the `--project` value is the directory path, not the bare name) and the
 `scripts/full_parity.py --with-snes9x` cold-boot gate.
 The pre-commit parity gate is also self-ratcheting (`scripts/precommit_snes9x_parity_gate.py`) and keeps a persistent checkpoint in
 `.git/precommit-snes9x-parity-state.json`; each clean run should move that
@@ -23,9 +22,9 @@ half-fix.
 ## Workflow
 
 1. Run the route comparison to find the earliest current divergence
-   (`compare-route --project routes/clean`; add `--no-build` if the release
+   (`compare-route --project routes/crystal4_II`; add `--no-build` if the release
    binary is already current). It writes a full `replay.sh` into
-   `routes/clean/comparisons/continuous/` — copy it and shrink the frame count
+   `routes/crystal4_II/comparisons/continuous/` — copy it and shrink the frame count
    for a fast repro of an early divergence (note the input script it references
    is named `continuous-input.txt`).
    GPU comparisons run strictly serially — never run cargo GPU tests alongside

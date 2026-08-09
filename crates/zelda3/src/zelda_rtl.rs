@@ -157,6 +157,62 @@ fn compose_early_link_obj_cache(
     obj_cache_vram
 }
 
+fn copy_bytes_into_obj_cache(vram: &mut [u16], destination: usize, source: &[u8]) {
+    for (word, bytes) in vram[destination..destination + source.len() / 2]
+        .iter_mut()
+        .zip(source.chunks_exact(2))
+    {
+        *word = u16::from_le_bytes([bytes[0], bytes[1]]);
+    }
+}
+
+fn compose_complete_link_obj_cache(
+    base_vram: &[u16],
+    sources: LinkDmaSources,
+    link_graphics: Option<&[u8]>,
+    ram: &[u8],
+) -> Vec<u16> {
+    let mut obj_cache_vram = compose_early_link_obj_cache(base_vram, sources, link_graphics);
+    for (destination, source, len) in [
+        (0x4050, LinkDmaSourceSlot::SwordUpper, 0x40),
+        (0x4070, LinkDmaSourceSlot::ShieldUpper, 0x40),
+        (0x4090, LinkDmaSourceSlot::AuxUpper, 0x40),
+        (0x40b0, LinkDmaSourceSlot::AnimatedTileUpper, 0x20),
+        (0x40c0, LinkDmaSourceSlot::PushUpper, 0x40),
+        (0x4150, LinkDmaSourceSlot::SwordLower, 0x40),
+        (0x4170, LinkDmaSourceSlot::ShieldLower, 0x40),
+        (0x4190, LinkDmaSourceSlot::AuxLower, 0x40),
+        (0x41b0, LinkDmaSourceSlot::AnimatedTileLower, 0x20),
+        (0x41c0, LinkDmaSourceSlot::PushLower, 0x40),
+        (0x4200, LinkDmaSourceSlot::HeadPointerUpper, 0x40),
+        (0x4220, LinkDmaSourceSlot::BodyPointerUpper, 0x40),
+        (0x4300, LinkDmaSourceSlot::HeadPointerLower, 0x40),
+        (0x4320, LinkDmaSourceSlot::BodyPointerLower, 0x40),
+    ] {
+        let source_address = usize::from(sources.source(source));
+        let Some(source_bytes) = ram.get(source_address..source_address + len) else {
+            continue;
+        };
+        copy_bytes_into_obj_cache(&mut obj_cache_vram, destination, source_bytes);
+    }
+    if let Some(high_planes) = ram.get(
+        LINK_DMA_EXPANDED_HIGH_PLANES_START
+            ..LINK_DMA_EXPANDED_HIGH_PLANES_START + LINK_DMA_EXPANDED_HIGH_PLANES_LEN,
+    ) {
+        copy_bytes_into_obj_cache(
+            &mut obj_cache_vram,
+            0x4240,
+            &high_planes[..LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN],
+        );
+        copy_bytes_into_obj_cache(
+            &mut obj_cache_vram,
+            0x4340,
+            &high_planes[LINK_DMA_EXPANDED_HIGH_PLANES_HALF_LEN..],
+        );
+    }
+    obj_cache_vram
+}
+
 // File-select graphics completes after 56 interrupted CPU slices. The next
 // host frame resumes the caller without consuming another display boundary.
 const FILE_SELECT_GRAPHICS_NMI_SLICES: u8 = 56;
@@ -475,11 +531,39 @@ enum OamScanoutSource {
     RetainResidentPpuOam,
     ComposePublishedShadowDma,
     ComposeLiveAfterNmi,
+    /// Publish the complete OAM DMA performed after a suspended CPU workload
+    /// returned before vblank. This is intentionally explicit: ordinary
+    /// module-level OAM deferral must not replace this measured generation.
+    ComposeCompletedWorkAfterNmi,
+    /// Publish the complete software OAM shadow authored after main. A
+    /// translated caller can finish its OAM suffix before the display image is
+    /// materialized, so neither the resident nor live PPU table represents the
+    /// generation scanned by hardware.
+    ComposeLiveShadowAfterMain,
+    /// Publish only Link's sorted OAM range from the live software shadow.
+    /// The spiral-stair return completes that player range before scanout,
+    /// while the rest of the resident sprite table remains authoritative.
+    ComposeSpiralReturnPlayerShadowAfterMain,
     /// Publish the OAM shadow authored by this main slice. Dungeon big-item
     /// pickup enters Link's hold-item handler before the boundary that starts
     /// the receipt sequence, so the live shadow wins even though the resident
     /// native PPU still owns the preceding DMA generation.
     ComposeLivePlayerOamAfterMain,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum CgramScanoutGeneration {
+    /// Prefer the pre-upload CGRAM latch when this boundary's NMI uploaded the
+    /// main palette buffer. This is the ordinary main-loop cadence.
+    #[default]
+    BeforeNmiUpload,
+    /// Keep the CGRAM used by the preceding scanout. A resumed palette-filter
+    /// slice can author the captured PPU palette before the current field has
+    /// consumed it, so even the captured boundary can be one generation ahead.
+    RetainPreviousPresented,
+    /// The suspended CPU workload completed its palette walk before vblank,
+    /// so the ensuing NMI upload belongs to the scanout being published now.
+    LiveAfterNmi,
 }
 
 impl From<GraphicsDmaGeneration> for OamScanoutSource {
@@ -710,6 +794,23 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
     }
 }
 
+const fn animated_bg_operands_for_dungeon_landing(
+    frame: crate::game_state::FrameState,
+    dungeon_room: u8,
+    link_last_direction: u8,
+    default: GraphicsDmaGeneration,
+) -> GraphicsDmaGeneration {
+    if dungeon_room == 0x72
+        && link_last_direction & 0x0f == 8
+        && frame.main_module == 7
+        && frame.submodule == 1
+    {
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    } else {
+        default
+    }
+}
+
 const fn rom_dungeon_transition_oam_scanout_uses_host_boundary(
     main_module: u8,
     submodule: u8,
@@ -918,6 +1019,74 @@ const fn oam_scanout_across_main(
     } else {
         entry_scanout
     }
+}
+
+const fn rom_dungeon_spiral_state_8_publishes_live_hud_tilemap(
+    frame: crate::game_state::FrameState,
+    dungeon_room: u8,
+    hud_upload_pending: bool,
+) -> bool {
+    // Room $01's short spiral state-8 slice completes the queued HUD DMA
+    // before active scanout. The new floor label is therefore visible while
+    // the remaining VRAM domains still retain their pre-NMI generation.
+    hud_upload_pending
+        && dungeon_room == 0x01
+        && frame.main_module == 7
+        && frame.submodule == 0x0e
+        && frame.subsubmodule == 8
+}
+
+const DUNGEON_FLOOR_INDICATOR_HUD_WORDS: [usize; 4] =
+    [0xf2 / 2, 0xf4 / 2, 0x132 / 2, 0x134 / 2];
+
+fn pending_dungeon_floor_indicator_clear_publishes_live_hud_tilemap(
+    frame: crate::game_state::FrameState,
+    dungeon_room: u8,
+    staircase_index: u8,
+    hud_upload_pending: bool,
+    floor_changed_timer_low: u8,
+    hud_vram_destination: usize,
+    ram: &[u8],
+    resident_vram: &[u16],
+) -> bool {
+    if !hud_upload_pending
+        || floor_changed_timer_low != 0
+        || hud_vram_destination == 0
+        || frame.main_module != 7
+        || dungeon_room != 0x01
+        || staircase_index != 0x30
+    {
+        return false;
+    }
+
+    let clear_is_queued = DUNGEON_FLOOR_INDICATOR_HUD_WORDS.iter().all(|&word| {
+        read_le_u16(ram, HUD_TILE_INDICES_BUFFER + word * 2) == 0x007f
+    });
+    let resident_indicator_is_stale = DUNGEON_FLOOR_INDICATOR_HUD_WORDS.iter().any(|&word| {
+        resident_vram.get(hud_vram_destination + word) != Some(&0x007f)
+    });
+    clear_is_queued && resident_indicator_is_stale
+}
+
+fn resumed_dungeon_spiral_state_7_publishes_audio_after_main(
+    resume: PreMainNmiResume,
+    dungeon_room: u8,
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+) -> bool {
+    // The suspended spiral-graphics caller returns into state 7 behind a
+    // leading display NMI. That resumed slice changes floors and authors the
+    // stair blip before the same host boundary samples the audio ports. Keep
+    // this exception tied to the measured continuation and phase transition;
+    // ordinary state-7 iterations still use the pre-main audio boundary.
+    resume == PreMainNmiResume::DungeonSupertileQuadrantUploads
+        && dungeon_room == 1
+        && entry.main_module == 7
+        && entry.submodule == 0x0e
+        && entry.subsubmodule == 7
+        && exit.main_module == 7
+        && exit.submodule == 0x0e
+        && exit.subsubmodule == 8
 }
 
 const fn dungeon_subtile_landing_enters_shutter(
@@ -2285,6 +2454,25 @@ enum GameWorkContinuation {
     HoldOverworldSpriteReloadReturn,
 }
 
+fn scheduled_work_entry_prepares_animated_bg_before_suspension(
+    main_module: u8,
+    submodule: u8,
+    subsubmodule: u8,
+    dungeon_room: u8,
+    work: Option<GameWorkContinuation>,
+) -> bool {
+    main_module == 7
+        && submodule == 2
+        && subsubmodule == 10
+        && dungeon_room == 0x72
+        && matches!(
+            work,
+            Some(GameWorkContinuation::FinishDungeonSupertileTransition {
+                work: DungeonSupertileTransitionWork::QuadrantTilemapBuild,
+            })
+        )
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct GameWorkCompletionPublication {
     bg_scroll: Option<DisplayBgScrollGeneration>,
@@ -2451,6 +2639,88 @@ const DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES: u8 = 1;
 
 const fn rom_dungeon_landing_wipe_is_active(main_module: u8, submodule: u8) -> bool {
     main_module == 7 && submodule == 15
+}
+
+const fn rom_spiral_palette_completion_publishes_live_cgram_and_oam(
+    frame: crate::game_state::FrameState,
+    dungeon_room: u8,
+    staircase_index: u8,
+) -> bool {
+    frame.main_module == 7
+        && frame.submodule == 0x0e
+        && dungeon_room == 1
+        && staircase_index == 0x30
+}
+
+const fn rom_spiral_second_palette_return_publishes_live_cgram(
+    frame: crate::game_state::FrameState,
+    dungeon_room: u8,
+    staircase_index: u8,
+) -> bool {
+    rom_spiral_palette_completion_publishes_live_cgram_and_oam(
+        frame,
+        dungeon_room,
+        staircase_index,
+    ) && frame.subsubmodule == 0x0f
+}
+
+const fn rom_spiral_palette_slice_retains_previous_cgram(
+    entry: crate::game_state::FrameState,
+    captured: crate::game_state::FrameState,
+    dungeon_room: u8,
+    staircase_index: u8,
+    palette_filter_countdown: u16,
+) -> bool {
+    entry.main_module == 7
+        && entry.submodule == 0x0e
+        && entry.subsubmodule == 0x0f
+        && matches!(captured.subsubmodule, 0x0f | 0x10)
+        && entry.frame_counter == captured.frame_counter
+        && ((palette_filter_countdown < 0x1b && palette_filter_countdown & 1 == 1)
+            || (palette_filter_countdown == 0 && captured.subsubmodule == 0x10))
+        && !rom_spiral_palette_completion_publishes_live_cgram_and_oam(
+            captured,
+            dungeon_room,
+            staircase_index,
+        )
+}
+
+const fn rom_spiral_stair_landing_publishes_live_display(
+    frame: crate::game_state::FrameState,
+    dungeon_room: u8,
+    staircase_index: u8,
+    y_button_action_step: u8,
+) -> bool {
+    frame.main_module == 7
+        && frame.submodule == 0x0e
+        && frame.subsubmodule == 0x11
+        && dungeon_room == 1
+        && staircase_index == 0x30
+        && y_button_action_step != 0
+}
+
+const fn rom_spiral_stair_motion_publishes_live_oam(
+    frame: crate::game_state::FrameState,
+    dungeon_room: u8,
+    staircase_index: u8,
+) -> bool {
+    frame.main_module == 7
+        && frame.submodule == 0x0e
+        && matches!(frame.subsubmodule, 0x12 | 0x13)
+        && dungeon_room == 1
+        && staircase_index == 0x30
+}
+
+const fn rom_spiral_stair_return_reenters_player_control(
+    frame: crate::game_state::FrameState,
+    dungeon_room_index: u8,
+    staircase_index: u8,
+) -> bool {
+    frame.main_module == 7
+        && frame.submodule == 0x0e
+        && frame.subsubmodule == 0x13
+        && dungeon_room_index == 1
+        && staircase_index == 0x30
 }
 
 // Cartridge-state sweeps and Snes9x PC/V-counter traces place the exact
@@ -2806,6 +3076,7 @@ const LINK_SUBPIXEL_X: usize = 0x2b;
 const LINK_SUBPIXEL_Z: usize = 0x2c;
 // NES_Ver2: PYFLCH, player frame-change counter.
 const LINK_FRAME_CHANGE_COUNTER: usize = 0x2d;
+const LINK_ANIMATION_STEPS: usize = 0x2e;
 const LINK_Y_VEL: usize = 0x30;
 const LINK_X_VEL: usize = 0x31;
 const LINK_Y_COORD_ORIGINAL: usize = 0x32;
@@ -4320,6 +4591,11 @@ struct DisplayPublicationSignals {
     world_map_fade_display: bool,
     world_map_mode7_brightness_is_early_published: bool,
     dungeon_item_hold_publishes_live_scroll: bool,
+    spiral_stair_landing_publishes_live_display: bool,
+    spiral_stair_motion_publishes_live_oam: bool,
+    spiral_stair_return_publishes_live_shadow_oam: bool,
+    spiral_stair_return_publishes_live_registers: bool,
+    spiral_stair_return_publishes_live_obj_cache: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -4335,6 +4611,10 @@ struct DisplayPublicationPlan {
     publish_live_overworld_transition_half_color: bool,
     world_map_fade_display: bool,
     world_map_mode7_brightness_is_early_published: bool,
+    publish_live_spiral_stair_registers: bool,
+    publish_live_spiral_stair_obj_cache: bool,
+    publish_live_spiral_stair_return_obj_vram: bool,
+    publish_spiral_stair_return_equipment_handoff: bool,
 }
 
 impl DisplayPublicationPlan {
@@ -4343,6 +4623,9 @@ impl DisplayPublicationPlan {
             snapshot.oam_scanout_source,
             OamScanoutSource::RetainResidentPpuOam
                 | OamScanoutSource::ComposePublishedShadowDma
+                | OamScanoutSource::ComposeCompletedWorkAfterNmi
+                | OamScanoutSource::ComposeLiveShadowAfterMain
+                | OamScanoutSource::ComposeSpiralReturnPlayerShadowAfterMain
                 | OamScanoutSource::ComposeLivePlayerOamAfterMain
         );
         let module_oam_scanout_source =
@@ -4351,14 +4634,32 @@ impl DisplayPublicationPlan {
             } else {
                 snapshot.oam_scanout_source
             };
-        let oam_scanout_source = module_oam_scanout_source
-            .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary);
-        let link_obj_scanout_generation = snapshot
-            .link_obj_scanout_generation
-            .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary);
-        let link_obj_source_generation = snapshot
-            .link_obj_source_generation
-            .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary);
+        let oam_scanout_source = if signals.spiral_stair_return_publishes_live_shadow_oam {
+            OamScanoutSource::ComposeSpiralReturnPlayerShadowAfterMain
+        } else if signals.spiral_stair_return_publishes_live_obj_cache {
+            OamScanoutSource::ComposePublishedShadowDma
+        } else if signals.spiral_stair_landing_publishes_live_display
+            || signals.spiral_stair_motion_publishes_live_oam
+        {
+            OamScanoutSource::ComposeCompletedWorkAfterNmi
+        } else {
+            module_oam_scanout_source
+                .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary)
+        };
+        let link_obj_scanout_generation = if signals.spiral_stair_return_publishes_live_obj_cache {
+            GraphicsDmaGeneration::LiveAfterMain
+        } else {
+            snapshot
+                .link_obj_scanout_generation
+                .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary)
+        };
+        let link_obj_source_generation = if signals.spiral_stair_return_publishes_live_obj_cache {
+            GraphicsDmaGeneration::LiveAfterMain
+        } else {
+            snapshot
+                .link_obj_source_generation
+                .resolve_live_override(signals.dungeon_exit_crosses_nmi_boundary)
+        };
         let atomic_item_graphics_return_publishes_live_vram = matches!(
             snapshot.link_obj_scanout_generation,
             GraphicsDmaGeneration::HostBoundaryBeforeMain
@@ -4400,6 +4701,17 @@ impl DisplayPublicationPlan {
             world_map_fade_display: signals.world_map_fade_display,
             world_map_mode7_brightness_is_early_published: signals
                 .world_map_mode7_brightness_is_early_published,
+            publish_live_spiral_stair_registers: signals
+                .spiral_stair_landing_publishes_live_display
+                || signals.spiral_stair_return_publishes_live_registers,
+            publish_live_spiral_stair_obj_cache: signals
+                .spiral_stair_landing_publishes_live_display
+                || signals.spiral_stair_motion_publishes_live_oam
+                || signals.spiral_stair_return_publishes_live_obj_cache,
+            publish_live_spiral_stair_return_obj_vram: signals
+                .spiral_stair_return_publishes_live_obj_cache,
+            publish_spiral_stair_return_equipment_handoff: signals
+                .spiral_stair_return_publishes_live_obj_cache,
         }
     }
 }
@@ -4876,6 +5188,20 @@ pub struct ZeldaState {
     /// call stack resumes at the same semantic boundary.
     #[serde(skip)]
     active_dungeon_sprite_main_return: Option<DungeonSpriteMainReturn>,
+    /// The room-$01 spiral return reaches the following player-control call
+    /// after Module 7's current sprite/Link OAM suffix but before vblank.
+    /// Keeping this as a one-shot continuation preserves that CPU ordering.
+    #[serde(skip)]
+    spiral_stair_return_player_control_pending: bool,
+    /// All render/capture consumers in this host frame must observe the same
+    /// completed spiral-return OAM shadow. A consumable boolean is incorrect:
+    /// diagnostics may render before the actual frontend does.
+    #[serde(skip)]
+    spiral_stair_return_oam_publication_host_frame: Option<u32>,
+    /// Player OAM authored by the returning Module 7 suffix before the ROM
+    /// re-enters player control and performs the following Link OAM pass.
+    #[serde(skip)]
+    spiral_stair_return_player_oam_scanout: Option<[u16; 24]>,
     #[serde(skip)]
     next_display_vram_generation: DisplayVramGeneration,
     #[serde(skip)]
@@ -4941,6 +5267,11 @@ pub struct ZeldaState {
     /// register domains continue advancing.
     #[serde(skip)]
     last_presented_oam: Option<Vec<u16>>,
+    /// CGRAM evaluated for the most recently rendered scanout. Long palette
+    /// walks can author the next PPU palette before the current field consumes
+    /// it, independently of the other display domains.
+    #[serde(skip)]
+    last_presented_cgram: Option<Vec<u16>>,
     /// OBJ tile data used by the most recently rendered scanout. Some
     /// dungeon-transition states suppress Link's upload while the live PPU
     /// has already advanced to the next source generation.
@@ -4953,6 +5284,8 @@ pub struct ZeldaState {
     presented_history_host_frame: Option<u32>,
     #[serde(skip)]
     staged_presented_oam: Option<Vec<u16>>,
+    #[serde(skip)]
+    staged_presented_cgram: Option<Vec<u16>>,
     #[serde(skip)]
     staged_presented_obj_vram: Option<Vec<u16>>,
     #[serde(skip)]
@@ -5127,6 +5460,7 @@ struct DisplaySnapshot {
     vram_generation: DisplayVramGeneration,
     hud_vram_generation: DisplayVramGeneration,
     hud_vram_destination: usize,
+    cgram_scanout_generation: CgramScanoutGeneration,
     link_obj_scanout_generation: GraphicsDmaGeneration,
     link_obj_source_generation: GraphicsDmaGeneration,
     oam_scanout_source: OamScanoutSource,
@@ -10423,6 +10757,9 @@ impl ZeldaState {
             attract_first_story_render_delay: 0,
             game_execution_scheduler: GameExecutionScheduler::default(),
             active_dungeon_sprite_main_return: None,
+            spiral_stair_return_player_control_pending: false,
+            spiral_stair_return_oam_publication_host_frame: None,
+            spiral_stair_return_player_oam_scanout: None,
             next_display_vram_generation: DisplayVramGeneration::default(),
             publish_live_hud_vram_on_next_capture: false,
             next_display_animated_bg_scanout_generation: None,
@@ -10450,9 +10787,11 @@ impl ZeldaState {
             display_snapshot: None,
             visible_display_snapshot: None,
             last_presented_oam: None,
+            last_presented_cgram: None,
             last_presented_obj_vram: None,
             presented_history_host_frame: None,
             staged_presented_oam: None,
+            staged_presented_cgram: None,
             staged_presented_obj_vram: None,
             last_presented_vram_chr_source: None,
             last_presented_vram_chr_preview_source: None,
@@ -10585,9 +10924,11 @@ impl ZeldaState {
         self.display_snapshot = None;
         self.visible_display_snapshot = None;
         self.last_presented_oam = None;
+        self.last_presented_cgram = None;
         self.last_presented_obj_vram = None;
         self.presented_history_host_frame = None;
         self.staged_presented_oam = None;
+        self.staged_presented_cgram = None;
         self.staged_presented_obj_vram = None;
         self.last_presented_vram_chr_source = None;
         self.last_presented_vram_chr_preview_source = None;
@@ -10644,9 +10985,11 @@ impl ZeldaState {
             self.display_snapshot = None;
             self.visible_display_snapshot = None;
             self.last_presented_oam = None;
+            self.last_presented_cgram = None;
             self.last_presented_obj_vram = None;
             self.presented_history_host_frame = None;
             self.staged_presented_oam = None;
+            self.staged_presented_cgram = None;
             self.staged_presented_obj_vram = None;
             self.last_presented_vram_chr_source = None;
             self.last_presented_vram_chr_preview_source = None;
@@ -11818,6 +12161,56 @@ impl ZeldaState {
             && captured_frame.main_module == 7
             && captured_frame.submodule == 0x0e
             && self.game_state.display.bg_tile_animation_countdown == 1;
+        let spiral_retains_previous_cgram = rom_spiral_palette_slice_retains_previous_cgram(
+            entry_frame,
+            captured_frame,
+            self.game_state.world.location.dungeon_room_index(),
+            self.game_state.dungeon.stair_movement.staircase_index(),
+            self.game_state.display.palette_filter.countdown_word(),
+        );
+        if std::env::var_os("ZELDA3_DEBUG_SPIRAL_CGRAM").is_some()
+            && captured_frame.main_module == 7
+            && captured_frame.submodule == 0x0e
+        {
+            eprintln!(
+                "spiral_cgram host={} entry={:02x}/{:02x}/{:02x}/fc{:02x} captured={:02x}/{:02x}/{:02x}/fc{:02x} room={:04x} stair={:02x} palette={:02x} retain={}",
+                self.frame_ctr_dbg,
+                entry_frame.main_module,
+                entry_frame.submodule,
+                entry_frame.subsubmodule,
+                entry_frame.frame_counter,
+                captured_frame.main_module,
+                captured_frame.submodule,
+                captured_frame.subsubmodule,
+                captured_frame.frame_counter,
+                self.game_state.world.location.dungeon_room_index(),
+                self.game_state.dungeon.stair_movement.staircase_index(),
+                self.game_state.display.palette_filter.countdown_word(),
+                spiral_retains_previous_cgram,
+            );
+        }
+        let hud_upload_pending = self.game_state.system_signals.should_update_hud();
+        let spiral_state_8_publishes_live_hud_tilemap =
+            rom_dungeon_spiral_state_8_publishes_live_hud_tilemap(
+                captured_frame,
+                self.game_state.world.location.dungeon_room_index(),
+                hud_upload_pending,
+            );
+        let hud_vram_destination = self
+            .game_state
+            .display
+            .message_dma_destination_address_usize();
+        let dungeon_floor_indicator_clear_publishes_live_hud_tilemap =
+            pending_dungeon_floor_indicator_clear_publishes_live_hud_tilemap(
+                captured_frame,
+                self.game_state.world.location.dungeon_room_index(),
+                self.game_state.dungeon.stair_movement.staircase_index(),
+                hud_upload_pending,
+                self.hud_state().floor_changed_timer_low(),
+                hud_vram_destination,
+                &self.ram,
+                &self.ppu.vram,
+            );
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
@@ -11835,16 +12228,20 @@ impl ZeldaState {
                 .unwrap_or_default(),
             vram_generation: std::mem::take(&mut self.next_display_vram_generation),
             hud_vram_generation: if std::mem::take(&mut self.publish_live_hud_vram_on_next_capture)
-                || !self.game_state.system_signals.should_update_hud()
+                || !hud_upload_pending
+                || spiral_state_8_publishes_live_hud_tilemap
+                || dungeon_floor_indicator_clear_publishes_live_hud_tilemap
             {
                 DisplayVramGeneration::ComposeLiveAfterNmi
             } else {
                 DisplayVramGeneration::RetainCapturedBeforeNmi
             },
-            hud_vram_destination: self
-                .game_state
-                .display
-                .message_dma_destination_address_usize(),
+            hud_vram_destination,
+            cgram_scanout_generation: if spiral_retains_previous_cgram {
+                CgramScanoutGeneration::RetainPreviousPresented
+            } else {
+                CgramScanoutGeneration::default()
+            },
             link_obj_scanout_generation,
             link_obj_source_generation,
             oam_scanout_source,
@@ -12019,6 +12416,9 @@ impl ZeldaState {
         following.hdma_table_generation.compose_into(&mut self.ram);
         plan.bg_scroll_source
             .compose_into(&mut self.ppu, &following.ppu);
+        if plan.publish_live_spiral_stair_registers {
+            self.ppu.screen_enabled = following.ppu.screen_enabled;
+        }
         if plan.publish_live_overworld_transition_half_color {
             self.ppu.half_color = following.ppu.half_color;
         }
@@ -12204,6 +12604,43 @@ impl ZeldaState {
             Some(AnimatedBgScanoutGeneration::LiveAfterNmi);
     }
 
+    fn publish_completed_palette_filter_cgram_scanout(&mut self) {
+        let snapshot = self
+            .display_snapshot
+            .as_mut()
+            .expect("completed palette filter captures its display boundary first");
+        if snapshot.cgram_scanout_generation
+            == CgramScanoutGeneration::RetainPreviousPresented
+        {
+            // Entry-scoped scanout ownership is more precise than the caller's
+            // post-completion room/stair identity.
+            return;
+        }
+        snapshot.cgram_scanout_generation = CgramScanoutGeneration::LiveAfterNmi;
+    }
+
+    fn retain_completed_palette_filter_cgram_scanout(&mut self) {
+        let snapshot = self
+            .display_snapshot
+            .as_mut()
+            .expect("completed palette filter captures its display boundary first");
+        snapshot.cgram_scanout_generation = CgramScanoutGeneration::RetainPreviousPresented;
+    }
+
+    fn publish_completed_spiral_palette_filter_scanout(&mut self) {
+        if !rom_spiral_palette_completion_publishes_live_cgram_and_oam(
+            self.game_state.frame,
+            self.game_state.world.location.dungeon_room_index(),
+            self.game_state.dungeon.stair_movement.staircase_index(),
+        ) {
+            self.retain_completed_palette_filter_cgram_scanout();
+            return;
+        }
+        self.publish_completed_palette_filter_cgram_scanout();
+        let snapshot = self.display_snapshot.as_mut().unwrap();
+        snapshot.oam_scanout_source = OamScanoutSource::ComposeCompletedWorkAfterNmi;
+    }
+
     fn compose_display_vram(
         &mut self,
         following: &DisplaySnapshot,
@@ -12377,10 +12814,10 @@ impl ZeldaState {
                 // item-graphics call and skipped NMI_DoUpdates, leaving its PPU
                 // bytes one upload behind even though the snapshot owns the next
                 // hardware generation (oracle frame 4582).
-                let live_sources = LinkDmaSources::load_from_ram(&following.ram);
+                let captured_sources = LinkDmaSources::load_from_ram(&self.ram);
                 let link_graphics = self.asset_raw(57).map(Vec::from);
                 for (destination, source, len) in EARLY_LINK_OBJ_DMA_TRANSFERS {
-                    let source_address = usize::from(live_sources.source(source));
+                    let source_address = usize::from(captured_sources.source(source));
                     let source_offset = source_address.saturating_sub(0x8000);
                     let destination_end = destination + len / 2;
                     if let Some(link_graphics) = link_graphics.as_deref().filter(|graphics| {
@@ -12409,20 +12846,23 @@ impl ZeldaState {
             // whole-VRAM branch above.
             let destination = read_le_u16(&following.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
             const ANIMATED_BG_NMI_WORDS: usize = 0x200;
-            if let (Some(live), Some(presented)) = (
-                following
-                    .ppu
-                    .vram
-                    .get(destination..destination + ANIMATED_BG_NMI_WORDS),
-                self.ppu
-                    .vram
-                    .get_mut(destination..destination + ANIMATED_BG_NMI_WORDS),
-            ) {
-                presented.copy_from_slice(live);
+            if destination != 0 {
+                if let (Some(live), Some(presented)) = (
+                    following
+                        .ppu
+                        .vram
+                        .get(destination..destination + ANIMATED_BG_NMI_WORDS),
+                    self.ppu
+                        .vram
+                        .get_mut(destination..destination + ANIMATED_BG_NMI_WORDS),
+                ) {
+                    presented.copy_from_slice(live);
+                }
             }
         }
         if plan.vram_generation == DisplayVramGeneration::RetainCapturedBeforeNmi
             && following.hud_vram_generation == DisplayVramGeneration::ComposeLiveAfterNmi
+            && following.hud_vram_destination != 0
         {
             // Item-receipt return retains the room/tile animation generation,
             // but the HUD packet has completed and is independently visible.
@@ -12591,14 +13031,17 @@ impl ZeldaState {
             && plan.animated_bg_scanout_generation == AnimatedBgScanoutGeneration::LiveAfterNmi
         {
             let destination = read_le_u16(&following.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
-            let range = destination..destination + 0x200;
-            self.vram_chr_source
-                .copy_word_range_from(&following.vram_chr_source, range.clone());
-            self.vram_chr_preview_source
-                .copy_word_range_from(&following.vram_chr_preview_source, range);
+            if destination != 0 {
+                let range = destination..destination + 0x200;
+                self.vram_chr_source
+                    .copy_word_range_from(&following.vram_chr_source, range.clone());
+                self.vram_chr_preview_source
+                    .copy_word_range_from(&following.vram_chr_preview_source, range);
+            }
         }
         if plan.vram_generation == DisplayVramGeneration::RetainCapturedBeforeNmi
             && following.hud_vram_generation == DisplayVramGeneration::ComposeLiveAfterNmi
+            && following.hud_vram_destination != 0
         {
             // HUD tile bytes can already match the resident PPU image while
             // their modern CHR ownership was authored by the just-completed
@@ -12622,6 +13065,21 @@ impl ZeldaState {
         following: &DisplaySnapshot,
         plan: &DisplayPublicationPlan,
     ) {
+        if std::env::var_os("ZELDA3_DEBUG_SPIRAL_CGRAM").is_some() {
+            let frame = crate::game_state::FrameState::load_from_ram(&following.ram);
+            if frame.main_module == 7 && frame.submodule == 0x0e {
+                eprintln!(
+                    "spiral_cgram_compose host={} frame={:02x}/{:02x}/{:02x}/fc{:02x} generation={:?} compose_live={}",
+                    self.frame_ctr_dbg,
+                    frame.main_module,
+                    frame.submodule,
+                    frame.subsubmodule,
+                    frame.frame_counter,
+                    following.cgram_scanout_generation,
+                    plan.compose_live_cgram,
+                );
+            }
+        }
         if !plan.compose_live_cgram {
             return;
         }
@@ -12632,10 +13090,42 @@ impl ZeldaState {
         if plan.world_map_fade_display {
             // The world-map fade publishes Mode 7 memory and INIDISP now, but
             // CGRAM remains on the generation consumed by the preceding NMI.
-        } else if let Some(latch) = self.cgram_upload_latch.as_ref() {
-            self.ppu.cgram.copy_from_slice(latch);
         } else {
-            self.ppu.cgram.clone_from(&following.ppu.cgram);
+            match following.cgram_scanout_generation {
+                CgramScanoutGeneration::RetainPreviousPresented => {
+                    if std::env::var_os("ZELDA3_DEBUG_SPIRAL_CGRAM").is_some() {
+                        eprintln!(
+                            "spiral_cgram_source host={} composed={:04x}/{:04x}/{:04x} captured={:04x}/{:04x}/{:04x} last={:?} latch={:?}",
+                            self.frame_ctr_dbg,
+                            self.ppu.cgram[34],
+                            self.ppu.cgram[35],
+                            self.ppu.cgram[36],
+                            following.ppu.cgram[34],
+                            following.ppu.cgram[35],
+                            following.ppu.cgram[36],
+                            self.last_presented_cgram
+                                .as_ref()
+                                .map(|cgram| [cgram[34], cgram[35], cgram[36]]),
+                            self.cgram_upload_latch
+                                .as_ref()
+                                .map(|cgram| [cgram[34], cgram[35], cgram[36]]),
+                        );
+                    }
+                    if let Some(cgram) = self.last_presented_cgram.as_ref() {
+                        self.ppu.cgram.copy_from_slice(cgram);
+                    }
+                }
+                CgramScanoutGeneration::LiveAfterNmi => {
+                    self.ppu.cgram.clone_from(&following.ppu.cgram);
+                }
+                CgramScanoutGeneration::BeforeNmiUpload => {
+                    if let Some(latch) = self.cgram_upload_latch.as_ref() {
+                        self.ppu.cgram.copy_from_slice(latch);
+                    } else {
+                        self.ppu.cgram.clone_from(&following.ppu.cgram);
+                    }
+                }
+            }
         }
     }
 
@@ -12662,6 +13152,13 @@ impl ZeldaState {
         let debug_last_presented_oam = debug_oam_frame
             .then(|| self.last_presented_oam.clone())
             .flatten();
+        let debug_following_shadow_oam = debug_oam_frame.then(|| {
+            let byte_len = following.ppu.oam.len() * 2;
+            following.ram[OAM_BUF..OAM_BUF + byte_len]
+                .chunks_exact(2)
+                .map(|word| u16::from_le_bytes([word[0], word[1]]))
+                .collect::<Vec<_>>()
+        });
         let entry_frame = self
             .pre_main_graphics_dma
             .as_ref()
@@ -12692,6 +13189,9 @@ impl ZeldaState {
             }
             OamScanoutSource::RetainResidentPpuOam
             | OamScanoutSource::ComposeLiveAfterNmi
+            | OamScanoutSource::ComposeCompletedWorkAfterNmi
+            | OamScanoutSource::ComposeLiveShadowAfterMain
+            | OamScanoutSource::ComposeSpiralReturnPlayerShadowAfterMain
             | OamScanoutSource::ComposeLivePlayerOamAfterMain => None,
         };
         if matches!(
@@ -12744,8 +13244,62 @@ impl ZeldaState {
                     u16::from_le_bytes([x.wrapping_add(x_delta), y.wrapping_add(y_delta)]);
             }
         }
+        if plan.oam_scanout_source == OamScanoutSource::ComposeLiveShadowAfterMain {
+            let byte_len = following.ppu.oam.len() * 2;
+            for (word, bytes) in self
+                .ppu
+                .oam
+                .iter_mut()
+                .zip(following.ram[OAM_BUF..OAM_BUF + byte_len].chunks_exact(2))
+            {
+                *word = u16::from_le_bytes([bytes[0], bytes[1]]);
+            }
+        }
+        if plan.oam_scanout_source
+            == OamScanoutSource::ComposeSpiralReturnPlayerShadowAfterMain
+        {
+            // Link owns the contiguous sorted range observed at this return.
+            // Copying the whole shadow would incorrectly advance unrelated
+            // dungeon sprites that hardware has not DMAed yet.
+            let player_oam = self
+                .spiral_stair_return_player_oam_scanout
+                .expect("spiral-return publication requires its captured player OAM");
+            self.ppu.oam[102 * 2..112 * 2].copy_from_slice(&player_oam[..20]);
+            for entry in 112..114 {
+                // Sword/shield horizontal placement has already reached the
+                // resident OAM generation; only the remaining bytes belong to
+                // the completed player shadow at this split boundary.
+                let source = (entry - 102) * 2;
+                let [_, y] = player_oam[source].to_le_bytes();
+                let [tile, attributes] = player_oam[source + 1].to_le_bytes();
+                let x = self.ppu.oam[entry * 2].to_le_bytes()[0];
+                self.ppu.oam[entry * 2] = u16::from_le_bytes([x, y]);
+                self.ppu.oam[entry * 2 + 1] = u16::from_le_bytes([tile, attributes]);
+            }
+        }
         if let Some(oam) = following.obj_generation.retained_oam() {
             self.ppu.oam.clone_from_slice(oam);
+        }
+        if plan.publish_spiral_stair_return_equipment_handoff {
+            // The return crosses the next main-loop prefix while sword/shield
+            // graphics are changing. The completed OAM DMA owns the table,
+            // except for the two equipment slots still retiring from Link's
+            // return pass. Advance that retained equipment animation to the
+            // scanout boundary without reviving the rest of the old player
+            // generation.
+            let returning_player_oam = self
+                .spiral_stair_return_player_oam_scanout
+                .expect("spiral-return publication requires its captured player OAM");
+            for entry in 112..114 {
+                let source = (entry - 102) * 2;
+                let [x, y] = returning_player_oam[source].to_le_bytes();
+                let [tile, mut attributes] = returning_player_oam[source + 1].to_le_bytes();
+                if entry == 113 {
+                    attributes ^= 0x40;
+                }
+                self.ppu.oam[entry * 2] = u16::from_le_bytes([x, y.wrapping_add(1)]);
+                self.ppu.oam[entry * 2 + 1] = u16::from_le_bytes([tile, attributes]);
+            }
         }
         if let Some(resident_oam) = resident_dungeon_landing_oam.as_deref() {
             // The landing main slice authors the following OAM shadow after
@@ -12919,10 +13473,11 @@ impl ZeldaState {
             let host_boundary = debug_host_boundary_oam.as_deref();
             let published = following.published_shadow_oam_dma.as_deref();
             let last_presented = debug_last_presented_oam.as_deref();
+            let following_shadow = debug_following_shadow_oam.as_deref();
             let entries = (0..128)
                 .filter(|&entry| {
                     let composed = oam_entry_bytes(&self.ppu.oam, entry);
-                    [host_boundary, published, last_presented]
+                    [host_boundary, published, last_presented, following_shadow]
                         .into_iter()
                         .flatten()
                         .any(|oam| oam_entry_bytes(oam, entry) != composed)
@@ -12938,6 +13493,7 @@ impl ZeldaState {
                         published.map(|oam| oam_entry_bytes(oam, entry)),
                         last_presented.map(|oam| oam_entry_bytes(oam, entry)),
                         oam_entry_bytes(&following.ppu.oam, entry),
+                        following_shadow.map(|oam| oam_entry_bytes(oam, entry)),
                         oam_entry_bytes(&self.ppu.oam, entry),
                     )
                 })
@@ -12962,7 +13518,7 @@ impl ZeldaState {
                 })
                 .collect::<Vec<_>>();
             eprintln!(
-                "display_oam_frame host={} room={:04x} phase={:02x}/{:02x}/{:02x} source={:?} retain={} obj={} entries=(entry,captured,host,published,last,following,composed){entries:02x?} extended=(word,captured,host,published,last,following,composed){extended:02x?}",
+                "display_oam_frame host={} room={:04x} phase={:02x}/{:02x}/{:02x} source={:?} retain={} obj={} entries=(entry,captured,host,published,last,following_ppu,following_shadow,composed){entries:02x?} extended=(word,captured,host,published,last,following,composed){extended:02x?}",
                 self.frame_ctr_dbg,
                 following_room,
                 following_frame.main_module,
@@ -13602,6 +14158,26 @@ impl ZeldaState {
             }
             self.ppu.obj_vram_latch = Some(obj_cache_vram);
         }
+        if plan.publish_live_spiral_stair_obj_cache {
+            if plan.publish_live_spiral_stair_return_obj_vram {
+                // The main-loop re-entry after the return boundary completes
+                // the pending Link DMA before the next scanout. Unlike the
+                // landing and motion boundaries, both the decoded cache and
+                // the raw OBJ generation are visible here.
+                self.ppu.vram[0x4000..0x4400]
+                    .copy_from_slice(&following.ppu.vram[0x4000..0x4400]);
+            }
+            // The landing scanout publishes the completed OAM list while raw
+            // OBJ VRAM still belongs to the preceding display generation.
+            // Snes9x has already decoded the live early Link DMA operands for
+            // that OAM list, so keep the cache generation independent.
+            self.ppu.obj_vram_latch = Some(compose_complete_link_obj_cache(
+                &self.ppu.vram,
+                LinkDmaSources::load_from_ram(&following.ram),
+                self.asset_raw(57),
+                &following.ram,
+            ));
+        }
         if env::var("ZELDA3_DEBUG_DISPLAY_OBJ_VRAM_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
@@ -13657,12 +14233,15 @@ impl ZeldaState {
                 &selected[LINK_TILE_03_WORDS],
             );
             eprintln!(
-                "display_obj_vram_frame host={} room={:04x} phase={:02x}/{:02x}/{:02x} source={:?} retain={} link={:?}/{:?} latch={} visible={:04x?} following={:04x?} last_presented={:04x?} previous_frame={:04x?} selected={:04x?}",
+                "display_obj_vram_frame host={} room={:04x} phase={:02x}/{:02x}/{:02x} frame_counter={:02x} y_step={:02x} sources={:?} source={:?} retain={} link={:?}/{:?} latch={} visible={:04x?} following={:04x?} last_presented={:04x?} previous_frame={:04x?} selected={:04x?}",
                 self.frame_ctr_dbg,
                 following_room,
                 following_frame.main_module,
                 following_frame.submodule,
                 following_frame.subsubmodule,
+                following_frame.frame_counter,
+                FollowerLinkState::load_from_ram(&following.ram).y_button_action_step(),
+                LinkDmaSources::load_from_ram(&following.ram),
                 plan.oam_scanout_source,
                 plan.retain_captured_oam,
                 plan.link_obj_scanout_generation,
@@ -13764,6 +14343,9 @@ impl ZeldaState {
                 if let Some(oam) = self.staged_presented_oam.take() {
                     self.last_presented_oam = Some(oam);
                 }
+                if let Some(cgram) = self.staged_presented_cgram.take() {
+                    self.last_presented_cgram = Some(cgram);
+                }
                 if let Some(vram) = self.staged_presented_obj_vram.take() {
                     self.last_presented_obj_vram = Some(vram);
                 }
@@ -13794,6 +14376,9 @@ impl ZeldaState {
         let snapshot_attract_scene =
             crate::game_state::AttractSceneState::load_from_ram(&display.ram);
         let snapshot_messaging = crate::game_state::MessagingState::load_from_ram(&display.ram);
+        let snapshot_world_location =
+            crate::game_state::WorldLocationState::load_from_ram(&display.ram);
+        let snapshot_dungeon = crate::game_state::DungeonState::load_from_ram(&display.ram);
         let pending_main_thread_stripe = display.ram[NMI_LOAD_BG_FROM_VRAM] == 1;
         let pending_full_tilemap_upload =
             display.ram[crate::game_state::constants::NMI_SUBROUTINE_INDEX] == 1;
@@ -13903,6 +14488,12 @@ impl ZeldaState {
                 display.ppu.half_color,
                 self.ppu.half_color,
             );
+        let spiral_stair_return_publication_is_active = self
+            .spiral_stair_return_oam_publication_host_frame
+            == Some(self.frame_ctr_dbg)
+            && self.game_state.world.location.dungeon_room_index() == 1
+            && self.game_state.dungeon.stair_movement.staircase_index() == 0x30
+            && self.game_state.player.follower_link.y_button_action_step() == 2;
         let publication_signals = DisplayPublicationSignals {
             retain_previous_nmi_display_memory,
             module_oam_publication_is_deferred,
@@ -13923,8 +14514,43 @@ impl ZeldaState {
                 FollowerLinkState::load_from_ram(&display.ram).handler_state(),
                 display.dungeon_item_hold_entry_scanout,
             ),
+            spiral_stair_landing_publishes_live_display:
+                rom_spiral_stair_landing_publishes_live_display(
+                    snapshot_frame,
+                    snapshot_world_location.dungeon_room_index(),
+                    snapshot_dungeon.stair_movement.staircase_index(),
+                    FollowerLinkState::load_from_ram(&display.ram).y_button_action_step(),
+                ),
+            spiral_stair_motion_publishes_live_oam:
+                rom_spiral_stair_motion_publishes_live_oam(
+                    snapshot_frame,
+                    snapshot_world_location.dungeon_room_index(),
+                    snapshot_dungeon.stair_movement.staircase_index(),
+                ),
+            spiral_stair_return_publishes_live_shadow_oam:
+                spiral_stair_return_publication_is_active,
+            spiral_stair_return_publishes_live_registers: self
+                .spiral_stair_return_oam_publication_host_frame
+                == Some(self.frame_ctr_dbg),
+            spiral_stair_return_publishes_live_obj_cache: self
+                .spiral_stair_return_oam_publication_host_frame
+                .is_some_and(|start| self.frame_ctr_dbg.wrapping_sub(start) == 1),
         };
         let publication_plan = DisplayPublicationPlan::resolve(&display, publication_signals);
+        if env::var_os("ZELDA3_DEBUG_SPIRAL_RETURN").is_some()
+            && self.spiral_stair_return_oam_publication_host_frame.is_some()
+        {
+            eprintln!(
+                "spiral_return_publication host={} start={:?} player_oam={} registers={} obj_cache={} captured_link={:04x} live_link={:04x}",
+                self.frame_ctr_dbg,
+                self.spiral_stair_return_oam_publication_host_frame,
+                publication_signals.spiral_stair_return_publishes_live_shadow_oam,
+                publication_signals.spiral_stair_return_publishes_live_registers,
+                publication_signals.spiral_stair_return_publishes_live_obj_cache,
+                read_le_u16(&display.ram, LINK_DMA_GRAPHICS_INDEX),
+                read_le_u16(&self.ram, LINK_DMA_GRAPHICS_INDEX),
+            );
+        }
         let display_phase_differs_from_live = snapshot_frame.main_module
             != self.game_state.frame.main_module
             || snapshot_frame.submodule != self.game_state.frame.submodule;
@@ -14013,6 +14639,7 @@ impl ZeldaState {
         self.staged_presented_vram_chr_source = Some(self.vram_chr_source.clone());
         self.staged_presented_vram_chr_preview_source = Some(self.vram_chr_preview_source.clone());
         self.compose_display_cgram(&display, &publication_plan);
+        self.staged_presented_cgram = Some(self.ppu.cgram.clone());
         if let Some(previous_dialogue_scanout) = previous_dialogue_scanout.as_ref() {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
         }
@@ -14623,6 +15250,15 @@ impl ZeldaState {
                     );
                 }
                 self.capture_display_snapshot();
+                if rom_spiral_second_palette_return_publishes_live_cgram(
+                    self.game_state.frame,
+                    self.game_state.world.location.dungeon_room_index(),
+                    self.game_state.dungeon.stair_movement.staircase_index(),
+                ) {
+                    self.publish_completed_palette_filter_cgram_scanout();
+                } else {
+                    self.retain_completed_palette_filter_cgram_scanout();
+                }
                 self.interrupt_nmi(input, oam_dma_source, false);
                 if release_core_dma_after_nmi {
                     self.clear_core_update_disable_flag();
@@ -14641,6 +15277,7 @@ impl ZeldaState {
                     link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
                 });
                 self.capture_display_snapshot();
+                self.publish_completed_palette_filter_cgram_scanout();
                 self.interrupt_nmi_with_animated_bg_operands(
                     input,
                     oam_dma_source,
@@ -14701,9 +15338,22 @@ impl ZeldaState {
         self.interrupt_nmi(input, oam_dma_source, false);
         self.replay_trace_col("before-game-loop");
         self.replay_trace_ram_watch("before-game-loop");
+        let resumed_main_entry = self.game_state.frame;
         self.zelda_run_game_loop();
         self.replay_trace_col("after-game-loop");
         self.replay_trace_ram_watch("after-game-loop");
+        if resumed_dungeon_spiral_state_7_publishes_audio_after_main(
+            resume,
+            self.game_state.world.location.dungeon_room_index(),
+            resumed_main_entry,
+            self.game_state.frame,
+        ) {
+            // The leading NMI above owns display publication, but the original
+            // CPU reaches the audio-port sampling site after this resumed
+            // caller suffix. Publish only the audio domain here: a second full
+            // NMI would incorrectly advance OAM, VRAM, and register generations.
+            self.publish_resumed_spiral_audio_after_main();
+        }
 
         if resume == PreMainNmiResume::DungeonSupertileQuadrantBuildPublishedReturn {
             // The held state-6 OAM generation belongs only to the two return
@@ -14749,6 +15399,52 @@ impl ZeldaState {
         true
     }
 
+    fn publish_resumed_spiral_audio_after_main(&mut self) {
+        let ambient = self.game_state.system_signals.ambient_sound_effect();
+        self.interrupt_nmi_audio_parts();
+        if ambient != 0 {
+            // The suspended ROM caller republishes the room ambience before the
+            // following NMI. Its one-shot effect does not repeat, but letting
+            // the coarse continuation consume the ambient latch here creates a
+            // spurious 3 -> 0 -> 3 host-port edge and retriggers the SPC channel.
+            self.set_ambient_sound_effect(ambient);
+        }
+    }
+
+    fn prepare_audio_nmi_for_main_boundary(&mut self, frame: crate::game_state::FrameState) {
+        if !self.rom_startup_timing() {
+            return;
+        }
+        let debug_audio_nmi = std::env::var("ZELDA3_DEBUG_AUDIO_NMI_FRAME")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            == Some(self.frame_ctr_dbg);
+        if debug_audio_nmi {
+            eprintln!(
+                "audio_nmi_prepare host={} phase={:02x}/{:02x}/{:02x} prior={} work={:?} ambient={:02x} effect1={:02x} effect2={:02x}",
+                self.frame_ctr_dbg,
+                frame.main_module,
+                frame.submodule,
+                frame.subsubmodule,
+                self.audio_nmi_processed_before_main,
+                self.game_execution_scheduler.current_work(),
+                self.game_state.system_signals.ambient_sound_effect(),
+                self.game_state.system_signals.sound_effect_1(),
+                self.game_state.system_signals.sound_effect_2(),
+            );
+        }
+        if !self.audio_nmi_processed_before_main {
+            self.interrupt_nmi_audio_parts();
+            self.audio_nmi_processed_before_main = true;
+        }
+        if debug_audio_nmi {
+            eprintln!(
+                "audio_nmi_prepared host={} processed={}",
+                self.frame_ctr_dbg, self.audio_nmi_processed_before_main,
+            );
+        }
+    }
+
     /// `zelda_run_frame_internal`.
     ///
     /// The actual module routing, poly loop, and NMI handler are intentionally
@@ -14756,6 +15452,13 @@ impl ZeldaState {
     /// lockstep oracle starts validating them immediately.
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
         self.sync_native_game_state_from_ram();
+        if self
+            .spiral_stair_return_oam_publication_host_frame
+            .is_some_and(|start| self.frame_ctr_dbg.wrapping_sub(start) > 1)
+        {
+            self.spiral_stair_return_oam_publication_host_frame = None;
+            self.spiral_stair_return_player_oam_scanout = None;
+        }
         self.link_obj_dma_completed_this_frame = false;
         self.active_display_force_blank_event = None;
         self.last_sprite_main_timing_workload = None;
@@ -14881,14 +15584,10 @@ impl ZeldaState {
         }
         let initialized_audio_bank_this_frame =
             !self.game_state.display.has_animated_tile_data_source();
-        if self.rom_startup_timing() && !self.audio_nmi_processed_before_main {
-            // Live NMI samples/publishes the previous audio commands before the
-            // main CPU performs this frame's game work. This is also true on the
-            // first initialized frame: the intro chime written by `intro_init`
-            // must wait for the following NMI rather than leaking out early.
-            self.interrupt_nmi_audio_parts();
-            self.audio_nmi_processed_before_main = true;
-        }
+        // Ordinary live NMI samples the preceding audio commands before main;
+        // measured interrupted callers can instead assign that ownership to
+        // the trailing boundary.
+        self.prepare_audio_nmi_for_main_boundary(frame);
         if initialized_audio_bank_this_frame {
             self.zelda_initialization_code();
         }
@@ -15172,6 +15871,7 @@ impl ZeldaState {
             self.nmi_prepare_sprites();
             self.clear_nmi_update_latch();
             self.capture_display_snapshot();
+            self.publish_completed_spiral_palette_filter_scanout();
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             self.set_core_update_disable_flag(1);
             if matches!(self.game_state.frame.subsubmodule, 12..=15) {
@@ -17961,6 +18661,18 @@ impl ZeldaState {
                 || self.dungeon_landing_wipe_return_slices_remaining != 0
                 || self.normal_dialogue_initialization_phase != 0)
         {
+            if scheduled_work_entry_prepares_animated_bg_before_suspension(
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                self.game_state.frame.subsubmodule,
+                self.game_state.world.location.dungeon_room_index(),
+                self.game_execution_scheduler.current_work(),
+            ) {
+                // The state-10 quadrant upload still owns $12 and its OAM,
+                // while the independent animated-BG preparation has reached
+                // the CPU boundary exposed by Snes9x.
+                self.nmi_prepare_animated_bg();
+            }
             // A mid-close long-table iteration finishes its circle build and
             // reaches Main_PrepSpritesForNmi in this same main slice; only
             // the display-boundary bookkeeping waits for the scheduled

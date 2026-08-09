@@ -709,7 +709,7 @@ impl<'a> NativeDungeonMapDisplayBridgeMut<'a> {
             return;
         }
         self.display.write_marker_offsets_to_ram(self.ram);
-        self.debug_assert_matches_ram();
+        self.sync();
     }
 
     pub(crate) fn clear_scroll_state(&mut self) {

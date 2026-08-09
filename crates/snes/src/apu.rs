@@ -1110,6 +1110,10 @@ pub struct SpcInstructionTrace {
     pub x: u8,
     pub y: u8,
     pub sp: u8,
+    pub p: bool,
+    pub direct_page_0_3: [u8; 4],
+    pub direct_page_8_11: [u8; 4],
+    pub input_ports: [u8; 4],
     pub timer0_cycles: u8,
     pub timer0_divider: u8,
     pub timer0_counter: u8,
@@ -1344,6 +1348,13 @@ impl ApuState {
     /// individual bus or internal cycle. Unlike `cycle_without_dsp`, opcode
     /// effects occur at their hardware-visible cycle within the instruction.
     pub fn run_cycle_sequenced_instruction_without_dsp(&mut self) -> u8 {
+        let direct_page_base = if self.spc.p { 0x100 } else { 0 };
+        let direct_page_0_3 = self.ram[direct_page_base..direct_page_base + 4]
+            .try_into()
+            .expect("SPC direct page prefix is always four bytes");
+        let direct_page_8_11 = self.ram[direct_page_base + 8..direct_page_base + 12]
+            .try_into()
+            .expect("SPC direct page command latches are always four bytes");
         if let Some(trace) = self.debug_spc_instruction_trace.as_mut() {
             trace.push(SpcInstructionTrace {
                 cycle: self.cycles,
@@ -1357,6 +1368,12 @@ impl ApuState {
                 x: self.spc.x,
                 y: self.spc.y,
                 sp: self.spc.sp,
+                p: self.spc.p,
+                direct_page_0_3,
+                direct_page_8_11,
+                input_ports: self.in_ports[..4]
+                    .try_into()
+                    .expect("SPC input port prefix is always four bytes"),
                 timer0_cycles: self.timer[0].cycles,
                 timer0_divider: self.timer[0].divider,
                 timer0_counter: self.timer[0].counter,

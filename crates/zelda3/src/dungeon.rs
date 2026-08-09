@@ -893,6 +893,12 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_0E_13_SetRoomAndLayerAndCache(&mut self) {
+        let reenter_player_control = self.rom_startup_timing()
+            && rom_spiral_stair_return_reenters_player_control(
+                self.game_state.frame,
+                self.game_state.world.location.dungeon_room_index(),
+                self.game_state.dungeon.stair_movement.staircase_index(),
+            );
         let plane = self
             .game_state
             .dungeon
@@ -911,6 +917,9 @@ impl ZeldaState {
         self.dungeon_room_tracking_mut()
             .set_room_index2(dungeon_room_index);
         self.ResetThenCacheRoomEntryProperties();
+        if reenter_player_control {
+            self.spiral_stair_return_player_control_pending = true;
+        }
     }
 
     pub(super) fn RepositionLinkAfterSpiralStairs(&mut self) {
@@ -12586,6 +12595,41 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module07-after-refill");
         self.hud_floor_indicator();
         self.replay_trace_ram_watch("module07-after-floor-indicator");
+        if std::mem::take(&mut self.spiral_stair_return_player_control_pending) {
+            // The original main loop reaches its epilogue, then re-enters the
+            // next game-loop OAM generation and player-control path before the
+            // next NMI. Clear the shadow buffer exactly where that re-entry
+            // would: otherwise equipment slots not authored by the second
+            // Link draw leak the preceding generation into scanout.
+            self.spiral_stair_return_oam_publication_host_frame = Some(self.frame_ctr_dbg);
+            self.spiral_stair_return_player_oam_scanout = Some(std::array::from_fn(|word| {
+                read_le_u16(&self.ram, OAM_BUF + 102 * 4 + word * 2)
+            }));
+            self.nmi_prepare_sprites();
+            self.clear_nmi_update_latch();
+            self.begin_spiral_stair_return_main_loop_reentry();
+            self.module07_00_player_control();
+            self.link_oam_main();
+            if std::env::var_os("ZELDA3_DEBUG_SPIRAL_RETURN").is_some() {
+                let reentered_equipment: [u16; 4] = std::array::from_fn(|word| {
+                    read_le_u16(&self.ram, OAM_BUF + 112 * 4 + word * 2)
+                });
+                eprintln!(
+                    "spiral_return_equipment host={} returning={:04x?} reentered={:04x?}",
+                    self.frame_ctr_dbg,
+                    &self
+                        .spiral_stair_return_player_oam_scanout
+                        .expect("spiral-return debug requires returning player OAM")[20..24],
+                    reentered_equipment,
+                );
+            }
+            self.replay_trace_ram_watch("module07-after-spiral-return-player-control");
+        }
+    }
+
+    pub(super) fn begin_spiral_stair_return_main_loop_reentry(&mut self) {
+        self.increment_frame_counter();
+        self.clear_oam_buffer();
     }
 
     pub(super) fn module07_00_player_control(&mut self) {

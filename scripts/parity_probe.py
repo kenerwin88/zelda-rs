@@ -10,6 +10,12 @@ resume from a paired Rust+oracle checkpoint saved just before the window.
 
     python3 scripts/parity_probe.py --around 17213 --capture
 
+For the fastest edit/diagnose loop, point directly at the newest failure. This
+derives the frame and first bad pixel, compares only the frontier window, and
+labels post-frame-only differences that cannot explain the completed scanout:
+
+    python3 scripts/parity_probe.py --from-failure --use-checkpoint
+
 In checkpoint mode, the first run for a given checkpoint frame replays from 0
 and saves the checkpoint; later runs resume from it. A checkpoint is only reused
 when the zelda3 binary that produced it is byte-identical to the current one,
@@ -22,14 +28,17 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PROJECT = "routes/clean"
+DEFAULT_PROJECT = "routes/crystal4_II"
 DEFAULT_BINARY = ROOT / "target" / "parity" / "zelda3"
 PROBE_ROOT = ROOT / "target" / "parity-probes"
 CHECKPOINT_ROOT = PROBE_ROOT / "checkpoints"
@@ -52,6 +61,76 @@ REGISTER_LABELS = (
 OAM_LOW_VALUES = 512
 MAX_DETAIL_LINES = 4
 MAX_DETAIL_RECEIPTS = 3
+POST_FRAME_ONLY_DISPLAY_DOMAINS = frozenset({"live_oam"})
+FIRST_MISMATCH_RE = re.compile(r"first_mismatch=\((\d+),\s*(\d+)\)")
+FRAME_RANGE_RE = re.compile(r"(\d+)-(\d+)")
+
+
+class FailureFocus(NamedTuple):
+    directory: Path
+    frame: int
+    pixel: tuple[int, int] | None
+
+
+def parse_frame_range(value: str) -> tuple[int, int]:
+    match = FRAME_RANGE_RE.fullmatch(value)
+    if match is None:
+        raise argparse.ArgumentTypeError("expected START-END")
+    start, end = map(int, match.groups())
+    if start > end:
+        raise argparse.ArgumentTypeError("START must not exceed END")
+    return start, end
+
+
+def resolve_failure_dir(value: Path) -> Path:
+    if str(value) != "latest":
+        directory = value if value.is_absolute() else ROOT / value
+        if directory.name == "diff.json":
+            directory = directory.parent
+        if not (directory / "diff.json").is_file():
+            raise SystemExit(f"parity-probe: {directory} has no diff.json")
+        return directory.resolve()
+    root = ROOT / "target" / "parity-failures"
+    candidates = (
+        [path for path in root.iterdir() if (path / "diff.json").is_file()]
+        if root.is_dir()
+        else []
+    )
+    if not candidates:
+        raise SystemExit(f"parity-probe: no failure receipts under {root}")
+    return max(candidates, key=lambda path: path.stat().st_mtime).resolve()
+
+
+def prune_probe_sessions(probe_root: Path, keep: int) -> list[Path]:
+    """Remove only reproducible probe-* scratch sessions beyond `keep` newest."""
+    if keep < 1 or not probe_root.is_dir():
+        return []
+    candidates = sorted(
+        (
+            path
+            for path in probe_root.iterdir()
+            if path.is_dir() and path.name.startswith("probe-")
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    removed = candidates[keep:]
+    for path in removed:
+        shutil.rmtree(path)
+    return removed
+
+
+def load_failure_focus(value: Path) -> FailureFocus:
+    directory = resolve_failure_dir(value)
+    try:
+        receipt = json.loads((directory / "diff.json").read_text(encoding="utf-8"))
+        frame = int(receipt["frame"])
+        message = str(receipt.get("message") or "")
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+        raise SystemExit(f"parity-probe: invalid failure receipt in {directory}: {error}") from error
+    match = FIRST_MISMATCH_RE.search(message)
+    pixel = (int(match.group(1)), int(match.group(2))) if match else None
+    return FailureFocus(directory=directory, frame=frame, pixel=pixel)
 
 
 def sha256_file(path: Path) -> str:
@@ -95,12 +174,21 @@ def binary_identity(binary: Path) -> dict[str, object]:
     }
 
 
+def rust_source_affects_runtime_binary(path: Path) -> bool:
+    """Exclude Rust sources that Cargo only compiles into test artifacts."""
+    return not (
+        path.name.endswith("_tests.rs")
+        or "tests" in path.parts
+        or any(part.endswith("_tests") for part in path.parts)
+    )
+
+
 def newest_source_mtime() -> tuple[float, Path | None]:
     newest = 0.0
     newest_path: Path | None = None
     for name in SOURCE_DIRS:
         for path in (ROOT / name).rglob("*.rs"):
-            if "/target/" in str(path):
+            if "/target/" in str(path) or not rust_source_affects_runtime_binary(path):
                 continue
             mtime = path.stat().st_mtime
             if mtime > newest:
@@ -375,9 +463,27 @@ def checkpoint_identity(
 
 
 def checkpoint_reuse_problem(
-    checkpoint_dir: Path, wanted: dict[str, object]
+    checkpoint_dir: Path,
+    wanted: dict[str, object],
+    *,
+    trust_cross_build: bool = False,
 ) -> str | None:
     """Return why `checkpoint_dir` cannot be resumed, or None when it can."""
+    if trust_cross_build:
+        saved = checkpoint_generation(checkpoint_dir)
+        if saved is None:
+            return "no saved checkpoint generation"
+        _, generation = saved
+        try:
+            manifest = json.loads((generation / "manifest.json").read_text(encoding="utf-8"))
+            members = [str(manifest[name]) for name in ("rust_state", "oracle_state")]
+        except (OSError, json.JSONDecodeError, KeyError, TypeError):
+            return "invalid paired checkpoint manifest"
+        if any(Path(member).name != member for member in members):
+            return "paired checkpoint manifest contains an unsafe state path"
+        if not all((generation / member).is_file() for member in members):
+            return "paired checkpoint is missing a state file"
+        return None
     identity_path = checkpoint_dir / IDENTITY_NAME
     if not identity_path.is_file():
         return "no probe identity recorded"
@@ -411,9 +517,22 @@ def latest_generation(checkpoint_dir: Path) -> tuple[int, Path] | None:
     return (frame, generation) if (generation / "manifest.json").is_file() else None
 
 
+def checkpoint_generation(checkpoint_dir: Path) -> tuple[int, Path] | None:
+    """Resolve either an exact paired checkpoint or a rolling checkpoint root."""
+    manifest_path = checkpoint_dir / "manifest.json"
+    if manifest_path.is_file():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            frame = int(manifest["frame"])
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            return None
+        return frame, checkpoint_dir
+    return latest_generation(checkpoint_dir)
+
+
 def saved_checkpoint_frame(checkpoint_dir: Path) -> int | None:
-    latest = latest_generation(checkpoint_dir)
-    return None if latest is None else latest[0]
+    saved = checkpoint_generation(checkpoint_dir)
+    return None if saved is None else saved[0]
 
 
 def registers(probe: dict) -> list[int]:
@@ -497,6 +616,34 @@ def flatten_mode7_scanlines(probe: dict) -> list[int]:
     return [int(value) for scanline in probe.get("mode7_scanlines", []) for value in scanline]
 
 
+def valid_obj_tile_cache_differences(
+    rust: dict, oracle: dict
+) -> tuple[list[int], int] | None:
+    """Compare only OBJ tiles the enhanced oracle says completed scanout decoded.
+
+    The stock instrumented core predates this receipt and returns ``-1`` for
+    every validity entry. Treat that as unavailable instead of manufacturing a
+    permanent cache mismatch from unsupported fields.
+    """
+    left = rust.get("presented_obj_tile_cache")
+    right = oracle.get("presented_obj_tile_cache")
+    valid = oracle.get("presented_obj_tile_cache_valid")
+    if not isinstance(left, list) or not isinstance(right, list) or not isinstance(valid, list):
+        return None
+    if not valid or any(value not in (0, 1) for value in valid):
+        return None
+    differing: list[int] = []
+    compared = 0
+    for tile, is_valid in enumerate(valid):
+        if not is_valid:
+            continue
+        start, end = tile * 64, (tile + 1) * 64
+        left_tile, right_tile = left[start:end], right[start:end]
+        compared += max(len(left_tile), len(right_tile))
+        differing.extend(start + index for index in differing_indices(left_tile, right_tile))
+    return differing, compared
+
+
 def summarize_receipt(receipt: dict) -> tuple[list[str], list[str]]:
     rust, oracle = receipt["rust"], receipt["oracle"]
     domains: list[tuple[str, list[int], list[int]]] = [
@@ -539,7 +686,69 @@ def summarize_receipt(receipt: dict) -> tuple[list[str], list[str]]:
             shown = ", ".join(str(index) for index in indices[:MAX_DETAIL_LINES])
             more = f" (+{len(indices) - MAX_DETAIL_LINES} more)" if len(indices) > MAX_DETAIL_LINES else ""
             detail.append(f"    {name} first differing indices: {shown}{more}")
+    obj_cache = valid_obj_tile_cache_differences(rust, oracle)
+    if obj_cache is not None:
+        indices, compared = obj_cache
+        if indices:
+            headline.append(f"presented_obj_tile_cache {len(indices)}/{compared}")
+            tiles = sorted({index // 64 for index in indices})
+            shown = ", ".join(f"0x{tile:02x}" for tile in tiles[:MAX_DETAIL_LINES])
+            more = f" (+{len(tiles) - MAX_DETAIL_LINES} more)" if len(tiles) > MAX_DETAIL_LINES else ""
+            detail.append(f"    presented_obj_tile_cache differing tiles: {shown}{more}")
     return headline, detail
+
+
+def split_display_domains(domain_names: list[str]) -> tuple[list[str], list[str]]:
+    causal = [name for name in domain_names if name not in POST_FRAME_ONLY_DISPLAY_DOMAINS]
+    post_frame_only = [name for name in domain_names if name in POST_FRAME_ONLY_DISPLAY_DOMAINS]
+    return causal, post_frame_only
+
+
+def mismatch_count(domain: object) -> int:
+    return int(domain.get("mismatched_values", 0)) if isinstance(domain, dict) else 0
+
+
+def report_failure_focus(focus: FailureFocus) -> None:
+    print(f"parity-probe: failure receipt {focus.directory} (frame {focus.frame})")
+    if focus.pixel is not None:
+        print(f"parity-probe: first bad pixel {focus.pixel[0]},{focus.pixel[1]}")
+
+    display_path = focus.directory / "display_oracle.json"
+    if display_path.is_file():
+        try:
+            differences = json.loads(display_path.read_text(encoding="utf-8"))["differences"]
+            divergent = [str(name) for name in differences.get("divergent_domains", [])]
+        except (OSError, json.JSONDecodeError, KeyError, TypeError):
+            differences, divergent = {}, []
+        causal, post_frame_only = split_display_domains(divergent)
+        if causal:
+            print(f"parity-probe: scanout-causal display candidates: {', '.join(causal)}")
+        if post_frame_only:
+            print(
+                "parity-probe: post-frame-only differences: "
+                f"{', '.join(post_frame_only)} (do not use these to explain completed pixels)"
+            )
+        if not causal and mismatch_count(differences.get("presented_oam")) == 0:
+            print("parity-probe: presented OAM is exact; skip OAM generation hypotheses")
+
+    generations_path = focus.directory / "vram_generations.json"
+    if generations_path.is_file():
+        try:
+            generations = json.loads(generations_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            generations = {}
+        visible = mismatch_count(generations.get("visible_scanout"))
+        live = mismatch_count(generations.get("live_after_frame"))
+        if visible:
+            print(
+                f"parity-probe: visible VRAM differs in {visible} byte(s); "
+                "trace the first bad pixel's tile/source generation"
+            )
+        elif live:
+            print(
+                f"parity-probe: only live post-frame VRAM differs ({live} byte(s)); "
+                "do not attribute the completed scanout to it"
+            )
 
 
 def report_display_oracle(session_dir: Path) -> None:
@@ -551,19 +760,32 @@ def report_display_oracle(session_dir: Path) -> None:
         print(f"display-oracle: {path} is empty (no capture frames were reached)")
         return
     print(f"\ndisplay-oracle receipts ({len(receipts)}) from {path}:")
-    detailed = 0
+    causal_detailed = 0
+    post_frame_detailed = 0
     for receipt in receipts:
         headline, detail = summarize_receipt(receipt)
         stage, frame = receipt["stage"], receipt["frame"]
         if not headline:
             print(f"  frame {frame} [{stage}]: all display domains exact")
             continue
-        print(f"  frame {frame} [{stage}]: {', '.join(headline)}")
-        if detailed < MAX_DETAIL_RECEIPTS:
+        names = [domain.split(" ", 1)[0] for domain in headline]
+        causal, post_frame_only = split_display_domains(names)
+        classification = []
+        if causal:
+            classification.append(f"scanout-causal={','.join(causal)}")
+        if post_frame_only:
+            classification.append(f"post-frame-only={','.join(post_frame_only)}")
+        suffix = f" ({'; '.join(classification)})" if classification else ""
+        print(f"  frame {frame} [{stage}]: {', '.join(headline)}{suffix}")
+        if causal and causal_detailed < MAX_DETAIL_RECEIPTS:
             print("\n".join(detail))
-        elif detailed == MAX_DETAIL_RECEIPTS:
+            causal_detailed += 1
+        elif causal and causal_detailed == MAX_DETAIL_RECEIPTS:
             print("    (per-domain detail shown for the first diverging receipts only)")
-        detailed += 1
+            causal_detailed += 1
+        elif post_frame_only and post_frame_detailed == 0:
+            print("\n".join(detail))
+            post_frame_detailed += 1
 
 
 def report_result(session_dir: Path) -> None:
@@ -586,12 +808,37 @@ def report_result(session_dir: Path) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--around", type=int, required=True, help="suspect frame to probe")
-    parser.add_argument("--window", type=int, default=40, help="frames to run past --around (default 40)")
-    parser.add_argument("--project", default=DEFAULT_PROJECT, help="route project (default routes/clean)")
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--around", type=int, help="suspect frame to probe")
+    target.add_argument(
+        "--from-failure",
+        type=Path,
+        nargs="?",
+        const=Path("latest"),
+        help=(
+            "derive the frame, first bad pixel, and causal domains from a failure dir "
+            "(default latest)"
+        ),
+    )
+    parser.add_argument(
+        "--window",
+        type=int,
+        help="frames to run past the suspect frame (default 40, or 2 with --from-failure)",
+    )
+    parser.add_argument(
+        "--project",
+        default=DEFAULT_PROJECT,
+        help=f"route project (default {DEFAULT_PROJECT})",
+    )
     parser.add_argument("--run-dir", type=Path, help="reuse this precommit run dir instead of the newest")
     parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
     parser.add_argument("--capture", action="store_true", help="write display_oracle.jsonl around --around")
+    parser.add_argument(
+        "--capture-range",
+        type=parse_frame_range,
+        metavar="START-END",
+        help="capture an explicit inclusive receipt range instead of only around --around",
+    )
     parser.add_argument(
         "--core",
         choices=("pinned", "instrumented"),
@@ -613,8 +860,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="explicit paired checkpoint dir (implies --use-checkpoint)",
     )
+    parser.add_argument(
+        "--trust-cross-build-checkpoint",
+        action="store_true",
+        help="reuse a paired checkpoint after code changes for diagnostics only; cold proof is still required",
+    )
     parser.add_argument("--no-checkpoint", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--session-dir", type=Path, help="explicit session dir for this probe")
+    parser.add_argument(
+        "--keep-probe-sessions",
+        type=int,
+        default=12,
+        help="retain this many newest generated probe-* sessions (default 12; 0 disables pruning)",
+    )
     parser.add_argument(
         "--allow-stale",
         action="store_true",
@@ -626,7 +884,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.keep_probe_sessions < 0:
+        raise SystemExit("parity-probe: --keep-probe-sessions must be non-negative")
     validate_stale_override(args.allow_stale, args.dry_run)
+    failure_focus = load_failure_focus(args.from_failure) if args.from_failure else None
+    if failure_focus is not None:
+        args.around = failure_focus.frame
+        args.capture = True
+        report_failure_focus(failure_focus)
+    if args.capture_range is not None:
+        args.capture = True
+    assert args.around is not None
+    if args.window is None:
+        args.window = 2 if failure_focus is not None else 40
     binary = args.binary if args.binary.is_absolute() else ROOT / args.binary
     if not binary.is_file():
         print(
@@ -646,11 +916,15 @@ def main(argv: list[str] | None = None) -> int:
 
     project = Path(args.project)
     project = project if project.is_absolute() else ROOT / project
-    target_frame = args.around + max(0, args.window)
+    target_frame = max(
+        args.around + max(0, args.window),
+        args.capture_range[1] if args.capture_range is not None else 0,
+    )
     use_checkpoint = (
         args.use_checkpoint
         or args.checkpoint_frame is not None
         or args.checkpoint_dir is not None
+        or args.trust_cross_build_checkpoint
     )
     if args.no_checkpoint and use_checkpoint:
         raise SystemExit(
@@ -719,8 +993,17 @@ def main(argv: list[str] | None = None) -> int:
                 input_path=input_path,
                 rom_random_path=rom_random,
             )
-            problem = checkpoint_reuse_problem(checkpoint_dir, wanted)
+            problem = checkpoint_reuse_problem(
+                checkpoint_dir,
+                wanted,
+                trust_cross_build=args.trust_cross_build_checkpoint,
+            )
             if problem is None:
+                if args.trust_cross_build_checkpoint:
+                    print(
+                        "parity-probe: TRUSTED CROSS-BUILD CHECKPOINT; this can mask earlier "
+                        "state changes and is never authoritative proof"
+                    )
                 saved = saved_checkpoint_frame(checkpoint_dir)
                 if saved is not None and saved >= args.around:
                     print(
@@ -772,13 +1055,28 @@ def main(argv: list[str] | None = None) -> int:
         if value is not None:
             command += [option, value]
     command += ["--session-dir", str(session_dir), "--scan-all"]
+    if failure_focus is not None:
+        # A failure-focused replay is diagnostic: skip thousands of already-known
+        # exact comparisons and ask both renderers about only the bad pixel at the
+        # frontier. The normal cold gate remains the authoritative proof lane.
+        command += ["--compare-from-frame", str(max(0, args.around - 1))]
+        if failure_focus.pixel is not None:
+            command += [
+                "--trace-video-pixel",
+                str(failure_focus.pixel[0]),
+                str(failure_focus.pixel[1]),
+            ]
 
     env = dict(os.environ)
     for name, value in script_env.items():
         env.setdefault(name, value)
     capture_env: dict[str, str] = {}
     if args.capture:
-        frames = f"{max(0, args.around - 3)}-{args.around + 3}"
+        frames = (
+            f"{args.capture_range[0]}-{args.capture_range[1]}"
+            if args.capture_range is not None
+            else f"{max(0, args.around - 3)}-{args.around + 3}"
+        )
         capture_env["ZELDA3_CAPTURE_DISPLAY_ORACLE_FRAMES"] = frames
         capture_env["ZELDA3_CAPTURE_DISPLAY_ORACLE_BEFORE_FRAMES"] = frames
         env.update(capture_env)
@@ -787,7 +1085,11 @@ def main(argv: list[str] | None = None) -> int:
     printable = f"{prefix} {shlex.join(command)}".strip()
     print(f"parity-probe: run dir {run_dir}")
     start_description = (
-        f"binary-hash-matched probe checkpoint {resume_dir}"
+        (
+            f"trusted cross-build diagnostic checkpoint {resume_dir}"
+            if args.trust_cross_build_checkpoint
+            else f"binary-hash-matched probe checkpoint {resume_dir}"
+        )
         if resume_dir is not None
         else source_start_description(source_start)
     )
@@ -797,6 +1099,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         return 0
 
+    removed_sessions = prune_probe_sessions(PROBE_ROOT, args.keep_probe_sessions)
+    if removed_sessions:
+        print(
+            f"parity-probe: pruned {len(removed_sessions)} old generated probe session(s); "
+            f"retaining the newest {args.keep_probe_sessions}"
+        )
     session_dir.mkdir(parents=True, exist_ok=True)
     process = subprocess.run(command, cwd=ROOT, env=env, check=False)
     if checkpoint_dir is not None and resume_dir is None and (checkpoint_dir / "latest.json").is_file():

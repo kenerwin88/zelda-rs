@@ -157,6 +157,22 @@ impl LiveGpuFrameCapture {
         }
         let raw_scanlines = game.ppu_scanline_windows();
         let ppu = game.ppu.clone();
+        if std::env::var("ZELDA3_DEBUG_DISPLAY_OBJ_VRAM_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == game.frame_ctr_dbg)
+        {
+            let selected = ppu.obj_vram_latch.as_deref().unwrap_or(&ppu.vram);
+            eprintln!(
+                "renderer_obj_vram_frame host={} latch={} retain_history={} blank_lines={} blank_from={:?} tile02={:04x?}",
+                game.frame_ctr_dbg,
+                ppu.obj_vram_latch.is_some(),
+                ppu.retain_active_display_history,
+                ppu.forced_blank_scanlines,
+                ppu.forced_blank_from_scanline,
+                &selected[0x4020..0x4030],
+            );
+        }
         if std::env::var("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
@@ -649,8 +665,6 @@ fn trace_modern_asset_capture_pixel(
 ) -> Result<Vec<String>, String> {
     let source_atlas =
         source_atlas.ok_or_else(|| "pixel trace requires the source atlas".to_string())?;
-    let variant_atlas =
-        variant_atlas.ok_or_else(|| "pixel trace requires the variant atlas".to_string())?;
     let frame = capture.gpu_frame();
     let source_table = renderer::source_table_from_entries(capture.source_entries());
     let assets = renderer::modern_extract::extract_asset_resolved_modern_frame_from_sources(
@@ -658,29 +672,146 @@ fn trace_modern_asset_capture_pixel(
         &source_table,
         source_atlas,
     );
-    let scene = renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
-    let plan = renderer::modern_variant_draw::compile_variant_draws(
-        &assets.frame,
-        &assets.bg_cells,
-        &assets.sprite_cells,
-        variant_atlas,
-        scene.bg_palette_name(),
-        scene.sprite_palette_name(),
-    );
-    let traces = renderer::modern_variant_draw::trace_variant_plan_pixel(
-        &assets.frame,
-        variant_atlas,
-        &plan,
-        x,
-        y,
-    );
-    if traces.is_empty() {
+    let mut output = trace_raw_obj_pixel_candidates(&frame, x, y);
+    for (packet, instance) in assets.frame.index_sprites.iter().enumerate() {
+        let local_x = i32::from(x) - i32::from(instance.screen_x);
+        let local_y = i32::from(y) - i32::from(instance.screen_y);
+        if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+            continue;
+        }
+        let source_x = if instance.hflip { 7 - local_x } else { local_x };
+        let source_y = if instance.vflip { 7 - local_y } else { local_y };
+        let row_visible = instance.row_mask & (1 << local_y) != 0;
+        let Some(cell) = assets.sprite_cells.get(instance.cell_id as usize) else {
+            continue;
+        };
+        let index = cell.indices[source_y as usize * 8 + source_x as usize];
+        output.push(format!(
+            "surface=sprite_base packet={packet} cell={} screen=({}, {}) local=({local_x}, {local_y}) source=({source_x}, {source_y}) palette_row={} priority={} row_mask={:02x} row_visible={row_visible} index={index} source_key={:016x}",
+            instance.cell_id,
+            instance.screen_x,
+            instance.screen_y,
+            instance.palette,
+            instance.priority,
+            instance.row_mask,
+            cell.source_key,
+        ));
+    }
+    if let Some(variant_atlas) = variant_atlas {
+        let scene =
+            renderer::ModernAssetFrameScene::from_player_indoors_flag(capture.player_indoors());
+        let plan = renderer::modern_variant_draw::compile_variant_draws(
+            &assets.frame,
+            &assets.bg_cells,
+            &assets.sprite_cells,
+            variant_atlas,
+            scene.bg_palette_name(),
+            scene.sprite_palette_name(),
+        );
+        let traces = renderer::modern_variant_draw::trace_variant_plan_pixel(
+            &assets.frame,
+            variant_atlas,
+            &plan,
+            x,
+            y,
+        );
+        output.extend(
+            traces
+                .iter()
+                .map(renderer::modern_variant_draw::VariantPixelTrace::describe),
+        );
+    }
+    if output.is_empty() {
         return Ok(vec!["semantic pixel hits=0".to_string()]);
     }
-    Ok(traces
-        .iter()
-        .map(renderer::modern_variant_draw::VariantPixelTrace::describe)
-        .collect())
+    Ok(output)
+}
+
+fn trace_raw_obj_pixel_candidates(frame: &GpuFrame<'_>, x: i16, y: i16) -> Vec<String> {
+    const SPRITE_SIZES: [[i32; 2]; 8] = [
+        [8, 16],
+        [8, 32],
+        [8, 64],
+        [16, 32],
+        [16, 64],
+        [32, 64],
+        [16, 32],
+        [16, 32],
+    ];
+    let mut output = Vec::new();
+    for sprite in 0..128usize {
+        let idx = sprite * 2;
+        let oam0 = frame.oam.get(idx).copied().unwrap_or(0);
+        let y_byte = i32::from((oam0 >> 8) as u8);
+        if y_byte == 0xf0 {
+            continue;
+        }
+        let hi_word = frame.oam.get(0x100 + idx / 16).copied().unwrap_or(0);
+        let hi_bits = i32::from(hi_word >> (idx % 16));
+        let size = SPRITE_SIZES[usize::from(frame.obj.obj_size & 7)]
+            [usize::from(((hi_bits >> 1) & 1) as u8)];
+        let mut sprite_x = i32::from((oam0 & 0xff) as u8) + (hi_bits & 1) * 256;
+        if sprite_x >= 256 {
+            sprite_x -= 512;
+        }
+        let top_y = ((y_byte + 1) & 0xff) - 1;
+        let oam1 = frame.oam.get(idx + 1).copied().unwrap_or(0);
+        let hflip = oam1 & 0x4000 != 0;
+        let vflip = oam1 & 0x8000 != 0;
+        let tiles_per_side = size / 8;
+        for sty in 0..tiles_per_side {
+            for stx in 0..tiles_per_side {
+                let screen_x = sprite_x + stx * 8;
+                let unwrapped_y = top_y + sty * 8;
+                let screen_y = if unwrapped_y >= 224 {
+                    unwrapped_y - 256
+                } else {
+                    unwrapped_y
+                };
+                let local_x = i32::from(x) - screen_x;
+                let local_y = i32::from(y) - screen_y;
+                if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+                    continue;
+                }
+                let src_col = if hflip { tiles_per_side - 1 - stx } else { stx };
+                let src_row = if vflip { tiles_per_side - 1 - sty } else { sty };
+                let used_tile = (((i32::from((oam1 & 0xff) as u8) >> 4) + src_row) << 4)
+                    | ((i32::from((oam1 & 0x0f) as u8) + src_col) & 0x0f);
+                let bank_base = if oam1 & 0x0100 != 0 {
+                    frame.obj.tile_adr2
+                } else {
+                    frame.obj.tile_adr1
+                };
+                let slot = usize::from(bank_base) / 16 + used_tile as usize;
+                let indices = renderer::modern_extract::decode_snes_4bpp_tile_indices(
+                    frame.obj_vram(),
+                    slot * 16,
+                    0,
+                );
+                let source_x = if hflip { 7 - local_x } else { local_x };
+                let source_y = if vflip { 7 - local_y } else { local_y };
+                let tile_base = slot * 16;
+                let w01 = frame
+                    .obj_vram()
+                    .get(tile_base + source_y as usize)
+                    .copied()
+                    .unwrap_or(0);
+                let w23 = frame
+                    .obj_vram()
+                    .get(tile_base + 8 + source_y as usize)
+                    .copied()
+                    .unwrap_or(0);
+                let palette = (oam1 >> 9) & 7;
+                let priority = (oam1 >> 12) & 3;
+                output.push(format!(
+                    "surface=sprite_raw sprite={sprite} tile={used_tile:03x} slot={slot:04x} screen=({screen_x}, {screen_y}) local=({local_x}, {local_y}) source=({source_x}, {source_y}) words={w01:04x}/{w23:04x} palette_row={palette} priority={priority} index={} latch={}",
+                    indices[source_y as usize * 8 + source_x as usize],
+                    frame.obj_vram.is_some(),
+                ));
+            }
+        }
+    }
+    output
 }
 
 fn repo_root() -> PathBuf {
@@ -1384,6 +1515,10 @@ fn validation_cache_key(capture: &LiveGpuFrameCapture) -> u64 {
     let registers = input.registers;
 
     registers.vram.hash(&mut hasher);
+    // OBJ decoding can own a newer generation than raw VRAM. Treat that
+    // renderer-only latch as part of the frame identity; otherwise a cache-only
+    // publication can incorrectly reuse the preceding rendered image.
+    input.obj_vram.hash(&mut hasher);
     input.cgram.hash(&mut hasher);
     registers.oam.hash(&mut hasher);
     registers.mode.hash(&mut hasher);
@@ -1544,6 +1679,22 @@ mod tests {
     const SUBMODULE_INDEX: usize = 0x11;
     const SAVED_MODULE_FOR_MENU: usize = 0x010c;
     const MESSAGING_MODULE: usize = 0x1cd8;
+
+    #[test]
+    fn validation_cache_key_distinguishes_obj_latch_only_publication() {
+        let mut game = ZeldaState::new();
+        let without_latch = LiveGpuFrameCapture::from_current_game(&mut game);
+        let without_latch_key = validation_cache_key(&without_latch);
+
+        let mut decoded_obj = game.ppu.vram.clone();
+        decoded_obj[0x4020] ^= 1;
+        game.ppu.obj_vram_latch = Some(decoded_obj);
+        let with_latch = LiveGpuFrameCapture::from_current_game(&mut game);
+
+        assert_ne!(without_latch_key, validation_cache_key(&with_latch));
+        assert_eq!(without_latch.ppu.vram, with_latch.ppu.vram);
+    }
+
     #[test]
     fn dialogue_glyph_source_matcher_loads_generated_png_tiles() {
         let matcher = DialogueGlyphSourceMatcher::load(&repo_root())

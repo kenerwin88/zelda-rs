@@ -205,19 +205,18 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
         ):
             MODULE.validate_continuous_result(receipt)
 
-    def test_checked_in_canonical_receipt_discloses_its_neutral_tail(self):
-        receipt = json.loads(
-            (
-                MODULE.ROOT / "routes/clean/continuous-result.json"
-            ).read_text()
-        )
+    def test_checked_in_authoritative_receipt_uses_only_recorded_frames(self):
+        receipt = json.loads((MODULE.DEFAULT_PROJECT / "continuous-result.json").read_text())
 
         MODULE.validate_continuous_result(receipt)
 
         self.assertFalse(receipt["full_recorded_route_coverage"])
-        self.assertEqual(receipt["recorded_route"]["source_takes"], [4, 5])
-        self.assertEqual(receipt["recorded_route"]["frames"], 37_843)
-        self.assertEqual(receipt["recorded_route"]["neutral_tail_frames"], 117_541)
+        self.assertEqual(
+            receipt["recorded_route"]["source_takes"],
+            [4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16],
+        )
+        self.assertEqual(receipt["recorded_route"]["frames"], 319_024)
+        self.assertEqual(receipt["recorded_route"]["neutral_tail_frames"], 0)
 
     def project(self, root: Path) -> Path:
         project = root / "route"
@@ -763,6 +762,48 @@ class Snes9xRouteRecorderTests(unittest.TestCase):
             labels = MODULE.load_labels(project)
             labels["archived_boundaries"] = [2]
             (project / "labels.json").write_text(json.dumps(labels))
+
+            self.assertEqual(MODULE.continuous_take_ids(project), [0, 2])
+
+    def test_continuous_chain_prefers_completed_retry_over_interrupted_leaf(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            project = self.project(Path(tmp))
+            manifest = MODULE.load_manifest(project)
+            manifest["takes"] = [
+                {
+                    "id": 0,
+                    "start_boundary": 0,
+                    "end_boundary": 1,
+                    "frames": 12,
+                    "input_path": "takes/0000/input.txt",
+                    "status": "complete",
+                },
+                {
+                    "id": 1,
+                    "start_boundary": 1,
+                    "end_boundary": None,
+                    "frames": 4,
+                    "input_path": "takes/0001/input.txt",
+                    "status": "recovered_after_interruption",
+                },
+                {
+                    "id": 2,
+                    "start_boundary": 1,
+                    "end_boundary": 2,
+                    "frames": 7,
+                    "input_path": "takes/0002/input.txt",
+                    "status": "complete",
+                },
+            ]
+            manifest["boundaries"].append(
+                {
+                    "id": 2,
+                    "reset_start": False,
+                    "state_path": "boundaries/0002/oracle.state",
+                    "sram_path": "boundaries/0002/sram.bin",
+                }
+            )
+            (project / "manifest.json").write_text(json.dumps(manifest))
 
             self.assertEqual(MODULE.continuous_take_ids(project), [0, 2])
 

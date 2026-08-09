@@ -27,6 +27,41 @@ const AUDIO_SNAPSHOT_VERSION: u16 = 8;
 const AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR: u16 = 1;
 const AUDIO_SNAPSHOT_HEADER_BYTES: usize = 12;
 
+const fn resolved_driver_ambient_latch(queued: u8, live: u8, acknowledgement: u8) -> u8 {
+    if live != 0 || queued != 0 && acknowledgement == queued {
+        live
+    } else {
+        queued
+    }
+}
+
+const fn spiral_return_audio_uses_live_one_shot_sfx_latches(
+    main_module: u8,
+    submodule: u8,
+    subsubmodule: u8,
+    dungeon_room: u8,
+    staircase_index: u8,
+) -> bool {
+    main_module == 7
+        && submodule == 0x0e
+        && subsubmodule >= 0x0b
+        && dungeon_room == 1
+        && staircase_index == 0x30
+}
+
+const fn spiral_return_audio_uses_live_ambient_latch(
+    main_module: u8,
+    submodule: u8,
+    subsubmodule: u8,
+    dungeon_room: u8,
+    staircase_index: u8,
+) -> bool {
+    main_module == 7
+        && dungeon_room == 1
+        && staircase_index == 0x30
+        && (submodule == 0 || submodule == 0x0e && subsubmodule >= 0x0b)
+}
+
 const MSU_TRACK_REPEATS: [u8; 48] = [
     1, 0, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
     1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -718,9 +753,57 @@ impl ZeldaState {
         let music_window_before = self.audio.modern.sequencer.music_window_checkpoint();
         let vwf_glyph_tone_crossed_vblank =
             self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_input;
+        let mut driver_commands = self.audio.modern.queue.input_commands;
+        let game_frame = self.game_state.frame;
+        let dungeon_room = self.game_state.world.location.dungeon_room_index();
+        let staircase_index = self.game_state.dungeon.stair_movement.staircase_index();
+        if spiral_return_audio_uses_live_ambient_latch(
+            game_frame.main_module,
+            game_frame.submodule,
+            game_frame.subsubmodule,
+            dungeon_room,
+            staircase_index,
+        ) {
+            if let Some(clock) = self.audio.modern.driver_clock.as_ref() {
+                let queued_ambient = driver_commands.legacy_ports()[1];
+                let live_ambient = self.game_state.system_signals.ambient_sound_effect();
+                let ambient = resolved_driver_ambient_latch(
+                    queued_ambient,
+                    live_ambient,
+                    clock.host_acknowledgements()[1],
+                );
+                driver_commands.apply(EngineAudioCommand::from_sfx_port_value(
+                    crate::game_output::AudioSfxBank::Ambient,
+                    ambient,
+                ));
+            }
+        }
+        if spiral_return_audio_uses_live_one_shot_sfx_latches(
+            game_frame.main_module,
+            game_frame.submodule,
+            game_frame.subsubmodule,
+            dungeon_room,
+            staircase_index,
+        ) {
+            // This suspended caller reaches the NMI audio-port site after its
+            // resumed main suffix. The ordinary queue is the preceding NMI's
+            // sample here; the live semantic latches are the values the CPU sees.
+            for (bank, value) in [
+                (
+                    crate::game_output::AudioSfxBank::Effect1,
+                    self.game_state.system_signals.sound_effect_1(),
+                ),
+                (
+                    crate::game_output::AudioSfxBank::Effect2,
+                    self.game_state.system_signals.sound_effect_2(),
+                ),
+            ] {
+                driver_commands.apply(EngineAudioCommand::from_sfx_port_value(bank, value));
+            }
+        }
         let frame = if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
             let window = clock.advance(
-                self.audio.modern.queue.input_commands,
+                driver_commands,
                 native_samples,
                 vwf_glyph_tone_crossed_vblank,
             );

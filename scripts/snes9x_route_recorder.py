@@ -12,13 +12,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BINARY = ROOT / "target/release/zelda3"
 DEFAULT_CORE = ROOT / "external/snes9x-libretro/local/snes9x_libretro.dylib"
 DEFAULT_ROM = ROOT / "saves/zelda3.sfc"
 DEFAULT_PROJECT_ROOT = ROOT / "routes"
-DEFAULT_PROJECT = DEFAULT_PROJECT_ROOT / "default"
+DEFAULT_PROJECT = DEFAULT_PROJECT_ROOT / "crystal4_II"
 DEFAULT_SRAM = ROOT / "saves/sram.dat"
 CORE_STORE = DEFAULT_CORE.parent / "cores"
 
@@ -798,10 +797,26 @@ def continuous_take_ids(project: Path) -> list[int]:
         if not candidates:
             break
         if len(candidates) != 1:
-            ids = sorted(int(take["id"]) for take in candidates)
-            raise SystemExit(
-                f"continuous route branches at boundary {current_boundary}: takes {ids}"
-            )
+            complete = [take for take in candidates if take.get("status") == "complete"]
+            interrupted_leaves = [
+                take
+                for take in candidates
+                if take.get("status") == "recovered_after_interruption"
+                and take.get("end_boundary") is None
+            ]
+            if len(complete) == 1 and len(interrupted_leaves) == len(candidates) - 1:
+                # A recorder crash can leave a playable recovered take behind. If
+                # recording later resumes from the same save and reaches a new
+                # boundary, that completed continuation is the route spine and the
+                # interrupted leaf is diagnostic history, not a second route.
+                for interrupted in interrupted_leaves:
+                    del remaining[int(interrupted["id"])]
+                candidates = complete
+            else:
+                ids = sorted(int(take["id"]) for take in candidates)
+                raise SystemExit(
+                    f"continuous route branches at boundary {current_boundary}: takes {ids}"
+                )
         take = candidates[0]
         take_id = int(take["id"])
         chain.append(take_id)

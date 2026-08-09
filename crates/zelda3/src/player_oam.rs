@@ -10,6 +10,21 @@ struct LinkSpriteBody {
     tile: u8,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::VisibleSwordOamSlotCursor;
+
+    #[test]
+    fn visible_sword_oam_slot_cursor_advances_only_for_emitted_tiles() {
+        let mut slots = VisibleSwordOamSlotCursor::new(102);
+
+        assert_eq!(slots.claim(0x1234), Some(102));
+        assert_eq!(slots.claim(0xffff), None);
+        assert_eq!(slots.claim(0x5678), Some(103));
+        assert_eq!(slots.claim(0x9abc), Some(104));
+    }
+}
+
 const kPlayerOam_StairsOffsY: [i8; 24] = [
     0, -2, -3, 0, -2, -3, 0, 0, 0, 0, 0, 0, 0, -2, -3, 0, -2, -3, 0, 0, 0, 0, 0, 0,
 ];
@@ -2021,6 +2036,26 @@ fn oam_addr(oam_pos: usize) -> usize {
     OAM_BUF + oam_pos * 4
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct VisibleSwordOamSlotCursor {
+    next: usize,
+}
+
+impl VisibleSwordOamSlotCursor {
+    fn new(next: usize) -> Self {
+        Self { next }
+    }
+
+    fn claim(&mut self, tiledata: u16) -> Option<usize> {
+        if tiledata == 0xffff {
+            return None;
+        }
+        let claimed = self.next;
+        self.next += 1;
+        Some(claimed)
+    }
+}
+
 fn read_u16_from_u8_table(table: &[u8], idx: usize) -> u16 {
     table[idx] as u16 | ((table[idx + 1] as u16) << 8)
 }
@@ -2527,18 +2562,20 @@ impl ZeldaState {
             {
                 oam_pal = 0x400;
             }
-            let mut oam_pos = ((if scratch_0_var {
+            let oam_pos = ((if scratch_0_var {
                 kSwordStuff_oam_index_ptrs_1[r4loc]
             } else {
                 kSwordStuff_oam_index_ptrs_0[r4loc]
             } as u16
                 + sort_sprites_offset_into_oam_buffer)
                 >> 2) as usize;
-            oam_pos = self.link_oam_calculate_sword_sparkle_position(oam_pos, xcoord, ycoord);
+            let oam_pos =
+                self.link_oam_calculate_sword_sparkle_position(oam_pos, xcoord, ycoord);
+            let mut oam_slots = VisibleSwordOamSlotCursor::new(oam_pos);
             let mut j = sr.r6 * 3;
             for i in 0..3 {
                 let mut td = kSwordTiledata[j];
-                if td != 0xffff {
+                if let Some(oam_pos) = oam_slots.claim(td) {
                     td = (td & !0x3000) | oam_priority_value;
                     if (td & 0x0e00) != 0x0200 && link_palette_bits_of_oam == 0 {
                         td = (td & !0x0e00) | 0x0600;
@@ -2552,7 +2589,6 @@ impl ZeldaState {
                     let xt = (xcoord as i16 - oam_x as i16).unsigned_abs();
                     let value = sr.r12 | u8::from(xt >= 0x80);
                     self.oam_state_mut().set_extended_byte(oam_pos, value);
-                    oam_pos += 1;
                 }
                 oam_x = oam_x.wrapping_add(8);
                 if i == 1 {

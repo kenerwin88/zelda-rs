@@ -21,7 +21,7 @@ import snes9x_route_recorder as recorder
 ROOT = Path(__file__).resolve().parents[1]
 STATE_PATH = ROOT / ".git" / "precommit-snes9x-parity-state.json"
 CHECKPOINT_PATH = ROOT / ".git" / "precommit-snes9x-parity-checkpoint"
-DEFAULT_PROJECT = ROOT / "routes" / "clean"
+DEFAULT_PROJECT = ROOT / "routes" / "crystal4_II"
 STATE_SCHEMA = 1
 # Paired-resume flags the checkpoint supersedes; the binary rejects them next to
 # --resume-paired because a resumed pair already carries its own SRAM/boundary.
