@@ -270,6 +270,7 @@ def _build_check_command(
     ignore_video: bool = False,
     authoritative: bool = False,
     live_oracle_rng: bool = False,
+    engine_state_from_frame: int | None = None,
     expected_core_sha256: str | None = None,
 ) -> list[str]:
     manifest = recorder.load_manifest(project)
@@ -303,6 +304,12 @@ def _build_check_command(
         if rom_random_path is not None:
             raise ValueError("live oracle RNG cannot consume a recorded RNG script")
         command.append("--live-oracle-rng")
+    if engine_state_from_frame is not None:
+        if not live_oracle_rng:
+            raise ValueError("engine-state comparison requires live oracle RNG")
+        command.extend(
+            ["--compare-engine-state-from-frame", str(engine_state_from_frame)]
+        )
     # Paired checkpoints are an optimization aid, not parity authority: they
     # intentionally do not yet serialize every presentation/scheduler
     # transient, and writing the legacy save can perturb fields not covered by
@@ -562,6 +569,7 @@ def run_snes9x_gate() -> int:
                     ignore_audio=True,
                     ignore_video=True,
                     live_oracle_rng=True,
+                    engine_state_from_frame=prior_frame,
                     expected_core_sha256=trace_core_sha256,
                 )
                 print(

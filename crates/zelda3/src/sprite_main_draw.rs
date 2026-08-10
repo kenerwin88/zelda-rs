@@ -53,6 +53,10 @@ const fn rat_random_run_delay(random: RomRandomResult) -> u8 {
     random.masked_adc(0x7f, 0x40)
 }
 
+const fn rope_random_run_delay(random: RomRandomResult) -> u8 {
+    random.masked_adc(0x7f, 0x40)
+}
+
 impl ZeldaState {
     // -----------------------------------------------------------------------
     // void SpriteDraw_LightFountain(int k) {  // 858a94 — sprite_main.c:2169
@@ -13477,11 +13481,12 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_g(value);
-                    let a = self.get_random_number();
+                    let random = self.get_random_number_with_carry();
+                    let a = random.value();
                     let value = a & 3;
                     self.sprite_slot_view_mut(k).set_direction(value);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
-                    let value = (a & 0x7f).wrapping_add(0x40);
+                    let value = rope_random_run_delay(random);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
 
                     let mut pt = PointU8 { x: 0, y: 0 };

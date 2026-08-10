@@ -3983,6 +3983,37 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
         self.sync_slot_from_ram();
     }
 
+    pub(crate) fn load_cached_fields_into_live_before_nmi(
+        &mut self,
+        backup: &mut [u8; 24],
+        copied_fields: usize,
+    ) {
+        // Room $21 interrupts this copy at two measured semantic boundaries:
+        // after the seven-field header in state 5, and after A/head-direction
+        // in states 6-7. Reject unmeasured partial-copy positions.
+        debug_assert!(matches!(copied_fields, 7 | 9));
+        for i in 0..copied_fields {
+            backup[i] = self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot];
+            self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] =
+                self.ram[CACHED_SPRITE_ALT_FIELDS[i] + self.slot];
+        }
+        self.sync_slot_from_ram();
+    }
+
+    pub(crate) fn complete_cached_dynamic_fields_into_live_after_nmi(
+        &mut self,
+        backup: &mut [u8; 24],
+        copied_fields: usize,
+    ) {
+        debug_assert!(matches!(copied_fields, 7 | 9));
+        for i in copied_fields..CACHED_SPRITE_LIVE_FIELDS.len() {
+            backup[i] = self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot];
+            self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] =
+                self.ram[CACHED_SPRITE_ALT_FIELDS[i] + self.slot];
+        }
+        self.sync_slot_from_ram();
+    }
+
     pub(crate) fn restore_live_from_backup(&mut self, backup: &[u8; 24]) {
         for i in (0..CACHED_SPRITE_LIVE_FIELDS.len()).rev() {
             self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] = backup[i];

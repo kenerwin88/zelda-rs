@@ -12,6 +12,16 @@ fn rat_random_run_delay_preserves_rng_carry_through_and_adc() {
 }
 
 #[test]
+fn rope_random_run_delay_preserves_rng_carry_through_and_adc() {
+    assert_eq!(rope_random_run_delay(RomRandomResult::new(4, false)), 0x44);
+    assert_eq!(rope_random_run_delay(RomRandomResult::new(4, true)), 0x45);
+    assert_eq!(
+        rope_random_run_delay(RomRandomResult::new(0x98, true)),
+        0x59
+    );
+}
+
+#[test]
 fn altar_zelda_warp_clamps_subdmd_index_via_delay_main_shift() {
     // sprite_delay_main[k] >> 2 picks which 2-entry slice; the call
     // should land without panicking even when shift would otherwise

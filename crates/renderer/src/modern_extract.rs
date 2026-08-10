@@ -2132,6 +2132,12 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
 ) -> (Vec<ModernIndexTile>, Vec<ModernIndexSpriteInstance>) {
     use std::collections::HashMap;
 
+    let debug_pixel = std::env::var("ZELDA3_DEBUG_MODERN_OBJ_PIXEL")
+        .ok()
+        .and_then(|value| {
+            let (x, y) = value.split_once(',')?;
+            Some((x.parse::<i16>().ok()?, y.parse::<i16>().ok()?))
+        });
     let oam = frame.oam;
     let obj = &frame.obj;
     let obj_vram = frame.obj_vram();
@@ -2192,12 +2198,32 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
 
                 let screen_x = (x + stx * 8) as i16;
                 let screen_y = obj_tile_screen_y(top_y, sty);
+                let slot = chr_slot_base + used_tile;
                 let row_mask = obj_row_mask(&drawn, sprite_num, screen_x, screen_y);
+                if debug_pixel.is_some_and(|(debug_x, debug_y)| {
+                    debug_x >= screen_x
+                        && debug_x < screen_x + 8
+                        && debug_y >= screen_y
+                        && debug_y < screen_y + 8
+                }) {
+                    eprintln!(
+                        "modern_obj_candidate target={:?} sprite={} tile_origin=({}, {}) size={} oam={:04x}/{:04x} used_tile={:02x} slot={:04x} row_mask={:02x}",
+                        debug_pixel,
+                        sprite_num,
+                        screen_x,
+                        screen_y,
+                        size,
+                        oam0,
+                        oam1,
+                        used_tile,
+                        slot,
+                        row_mask,
+                    );
+                }
                 if row_mask == 0 {
                     continue; // fully dropped by the per-scanline OBJ budget
                 }
 
-                let slot = chr_slot_base + used_tile;
                 let (kind, mut pack, mut tile_off) = src_table.get(slot);
                 if kind == CHR_KIND_BG_STREAM {
                     // Sprite CHR is content-hashed (kind BG_STREAM). Re-derive the key
@@ -2303,6 +2329,46 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                             })
                     }
                 };
+
+                if debug_pixel.is_some_and(|(debug_x, debug_y)| {
+                    debug_x >= screen_x
+                        && debug_x < screen_x + 8
+                        && debug_y >= screen_y
+                        && debug_y < screen_y + 8
+                }) {
+                    let raw_indices = decode_snes_4bpp_tile_indices(obj_vram, slot * 16, 0);
+                    let resolved_cell = &cells[cell_id as usize];
+                    let palette_start = 0x80 + usize::from(palette) * 16;
+                    eprintln!(
+                        "modern_obj_pixel target={:?} sprite={} tile_origin=({}, {}) size={} oam={:04x}/{:04x} used_tile={:02x} slot={:04x} source=({},{:04x},{:04x}) content_key={:?} cell_id={} cell_source={:016x} palette={} palette_words={:04x?} raw_indices={} resolved_indices={}",
+                        debug_pixel,
+                        sprite_num,
+                        screen_x,
+                        screen_y,
+                        size,
+                        oam0,
+                        oam1,
+                        used_tile,
+                        slot,
+                        kind,
+                        pack,
+                        tile_off,
+                        content_key,
+                        cell_id,
+                        resolved_cell.source_key,
+                        palette,
+                        &frame.cgram[palette_start..palette_start + 16],
+                        raw_indices
+                            .iter()
+                            .map(|index| format!("{index:x}"))
+                            .collect::<String>(),
+                        resolved_cell
+                            .indices
+                            .iter()
+                            .map(|index| format!("{index:x}"))
+                            .collect::<String>(),
+                    );
+                }
 
                 out.push(ModernIndexSpriteInstance {
                     cell_id,

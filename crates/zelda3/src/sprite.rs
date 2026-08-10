@@ -1667,6 +1667,11 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_reset_sprites(&mut self) {
+        self.dungeon_reset_sprites_before_room_load();
+        self.dungeon_load_sprites();
+    }
+
+    pub(super) fn dungeon_reset_sprites_before_room_load(&mut self) {
         if self.game_state.world.location.is_indoors() {
             self.dungeon_cache_trans_sprites();
         }
@@ -1697,7 +1702,6 @@ impl ZeldaState {
                 self.set_sprite_where_in_room_mask(dropped, 0);
             }
         }
-        self.dungeon_load_sprites();
     }
 
     pub(super) fn dungeon_load_sprites(&mut self) {
@@ -1938,6 +1942,15 @@ impl ZeldaState {
                 self.replay_trace_ram_watch(&format!("sprite-before-execute-single slot={k}"));
             }
             self.sprite_execute_single(k);
+            if self.dungeon_room_load_sprite_main_nmi_after_slot == Some(k as u8) {
+                self.dungeon_room_load_sprite_main_nmi_after_slot = None;
+                self.game_execution_scheduler.schedule_work(
+                    GameWorkContinuation::FinishDungeonRoomLoadSpriteMain {
+                        interrupted_slot: k as u8,
+                    },
+                    1,
+                );
+            }
             if self
                 .game_execution_scheduler
                 .work_suspends_translated_call_stack()
@@ -2015,8 +2028,79 @@ impl ZeldaState {
         for i in (0..16usize).rev() {
             self.sprite_system_mut().set_cur_object_index(i as u8);
             if self.cached_sprite_slot(i).is_active() {
+                if self.room_21_cached_sprite_execution_crosses_nmi(i) {
+                    let mut live_slot_backup = [0; 24];
+                    let copied_fields = if self.game_state.frame.subsubmodule == 5 {
+                        7
+                    } else {
+                        9
+                    };
+                    self.cached_sprite_slot_mut(i)
+                        .load_cached_fields_into_live_before_nmi(
+                            &mut live_slot_backup,
+                            copied_fields,
+                        );
+                    self.sprite_system_mut().reload_live_slots_from_ram();
+                    let dungeon = self
+                        .active_dungeon_sprite_main_return
+                        .take()
+                        .expect("cached-sprite interruption must suspend a Module 7 sprite loop");
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishDungeonCachedSpriteMain {
+                            interrupted_slot: i as u8,
+                            copied_fields: copied_fields as u8,
+                            live_slot_backup,
+                            dungeon,
+                        },
+                        1,
+                    );
+                    return;
+                }
                 self.uncache_and_execute_sprite(i);
             }
+        }
+    }
+
+    fn room_21_cached_sprite_execution_crosses_nmi(&self, slot: usize) -> bool {
+        self.rom_startup_timing()
+            && self.game_state.frame.main_module == 7
+            && self.game_state.frame.submodule == 2
+            && matches!(self.game_state.frame.subsubmodule, 5 | 6 | 7)
+            && self.game_state.world.location.dungeon_room_index() == 0x21
+            && slot == 2
+    }
+
+    pub(super) fn complete_cached_sprite_main_after_interrupted_slot(
+        &mut self,
+        interrupted_slot: usize,
+        copied_fields: usize,
+        live_slot_backup: &[u8; 24],
+    ) {
+        debug_assert_eq!(interrupted_slot, 2);
+        let mut live_slot_backup = *live_slot_backup;
+        self.cached_sprite_slot_mut(interrupted_slot)
+            .complete_cached_dynamic_fields_into_live_after_nmi(
+                &mut live_slot_backup,
+                copied_fields,
+            );
+        self.sprite_execute_single(interrupted_slot);
+        if self.sprite_slot_view(interrupted_slot).pause() != 0 {
+            self.cached_sprite_slot_mut(interrupted_slot).clear_state();
+        }
+        self.cached_sprite_slot_mut(interrupted_slot)
+            .restore_live_from_backup(&live_slot_backup);
+        self.sprite_system_mut().reload_live_slots_from_ram();
+
+        for i in (0..interrupted_slot).rev() {
+            self.sprite_system_mut().set_cur_object_index(i as u8);
+            if self.cached_sprite_slot(i).is_active() {
+                self.uncache_and_execute_sprite(i);
+            }
+        }
+        if self.game_state.display.has_chr_halfslot_request() {
+            let chr_halfslot_request = self.game_state.display.chr_halfslot_request;
+            self.sprite_system_mut()
+                .set_chr_halfslot_state(chr_halfslot_request);
         }
     }
 

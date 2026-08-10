@@ -25,7 +25,7 @@ diff --git a/gfx.cpp b/gfx.cpp
 diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
 --- a/libretro/libretro.cpp
 +++ b/libretro/libretro.cpp
-@@ -897,6 +897,13 @@ extern "C" int zelda3_snes9x_debug_ppu_value(int field, int index)
+@@ -897,6 +897,21 @@ extern "C" int zelda3_snes9x_debug_ppu_value(int field, int index)
          // offset, palette index, main, sub, sub depth, result, Z1, Z2,
          // clip-colors, layer-math-enable.
          case 28: return Zelda3TracePresentedPixelValue(index);
@@ -36,6 +36,18 @@ diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
 +            return Zelda3TracePresentedObjTileCacheValue(0, index);
 +        case 30:
 +            return Zelda3TracePresentedObjTileCacheValue(1, index);
++        // Full decoded 4bpp BG/OBJ cache at the completed-screen boundary.
++        // This distinguishes raw-VRAM parity from tile-cache invalidation lag.
++        case 31:
++            return Zelda3TracePresentedBgTileCacheValue(0, index);
++        case 32:
++            return Zelda3TracePresentedBgTileCacheValue(1, index);
++        case 33:
++            return Zelda3TracePresentedBgScrollValue(0, index);
++        case 34:
++            return Zelda3TracePresentedBgScrollValue(1, index);
++        case 35:
++            return Zelda3TracePresentedBgProvenanceValue(index);
          default: return -1;
      }
  }
@@ -83,6 +95,14 @@ diff --git a/tileimpl.h b/tileimpl.h
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 --- a/zelda3_trace.cpp
 +++ b/zelda3_trace.cpp
+@@ -11,6 +11,7 @@
+ #include <cstring>
+ 
+ extern struct SLineMatrixData LineMatrixData[240];
++extern struct SLineData LineData[240];
+ 
+ bool Zelda3TraceDmaEnabled = false;
+ bool Zelda3TraceHdmaEnabled = false;
 @@ -60,11 +60,18 @@ TraceConfig config;
  uint64 retro_run_index = 0;
  uint8 presented_oam[544] = {};
@@ -95,6 +115,20 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
  uint8 presented_obj_widths[128] = {};
 +uint8 presented_obj_tile_cache[64 * 64] = {};
 +uint8 presented_obj_tile_cache_valid[64] = {};
++uint8 presented_bg_tile_cache[1024 * 64] = {};
++uint8 presented_bg_tile_cache_valid[1024] = {};
++uint16 presented_bg_h_scroll[SNES_HEIGHT_EXTENDED][4] = {};
++uint16 presented_bg_v_scroll[SNES_HEIGHT_EXTENDED][4] = {};
++int current_bg_tilemap_word = -1;
++int presented_bg_tilemap_word = -1;
++int current_bg_layer = -1;
++int presented_bg_layer = -1;
++int current_bg_tilemap_entry = -1;
++int presented_bg_tilemap_entry = -1;
++int current_bg_tile_size_h = -1;
++int presented_bg_tile_size_h = -1;
++int current_bg_tile_size_v = -1;
++int presented_bg_tile_size_v = -1;
 +int presented_tile = 0;
 +int presented_tile_number = 0;
 +int presented_tile_address = 0;
@@ -135,6 +169,16 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 +	std::memcpy(presented_obj_tile_cache_valid,
 +		IPPU.TileCached[TILE_4BIT] + 0x400,
 +		sizeof(presented_obj_tile_cache_valid));
++	std::memcpy(presented_bg_tile_cache,
++		IPPU.TileCache[TILE_4BIT], sizeof(presented_bg_tile_cache));
++	std::memcpy(presented_bg_tile_cache_valid,
++		IPPU.TileCached[TILE_4BIT], sizeof(presented_bg_tile_cache_valid));
++	for (int line = 0; line < SNES_HEIGHT_EXTENDED; line++)
++		for (int bg = 0; bg < 4; bg++)
++		{
++			presented_bg_h_scroll[line][bg] = LineData[line].BG[bg].HOffset;
++			presented_bg_v_scroll[line][bg] = LineData[line].BG[bg].VOffset;
++		}
  	std::memcpy(presented_mode7, LineMatrixData, sizeof(presented_mode7));
  	std::memcpy(presented_windows, scanline_windows, sizeof(presented_windows));
  	std::memcpy(presented_clip, IPPU.Clip, sizeof(presented_clip));
@@ -142,6 +186,11 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
  	presented_pixel[5] = result;
  	presented_pixel[6] = z1;
  	presented_pixel[7] = z2;
++	presented_bg_tilemap_word = current_bg_tilemap_word;
++	presented_bg_layer = current_bg_layer;
++	presented_bg_tilemap_entry = current_bg_tilemap_entry;
++	presented_bg_tile_size_h = current_bg_tile_size_h;
++	presented_bg_tile_size_v = current_bg_tile_size_v;
 -	presented_pixel[8] = GFX.ClipColors;
 -	presented_pixel[9] = BG.EnableMath;
 +	presented_pixel[8] = presented_obj_tile | (presented_obj_tile_line << 16);
@@ -182,6 +231,33 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 +			(presented_tile_cache_hash ^ cache[index]) * 16777619u;
 +}
 +
++void Zelda3TraceSetPresentedBgTilemapWord(int bg, int word_address,
++	int tilemap_entry, int tile_size_h, int tile_size_v)
++{
++	current_bg_layer = bg;
++	current_bg_tilemap_word = word_address;
++	current_bg_tilemap_entry = tilemap_entry;
++	current_bg_tile_size_h = tile_size_h;
++	current_bg_tile_size_v = tile_size_v;
++}
++
++int Zelda3TracePresentedBgProvenanceValue(int field)
++{
++	switch (field)
++	{
++		case 0: return presented_bg_tilemap_word;
++		case 1: return presented_bg_tilemap_entry;
++		case 2: return presented_bg_layer;
++		case 3: return presented_bg_tile_size_h;
++		case 4: return presented_bg_tile_size_v;
++		case 5: return presented_tile;
++		case 6: return presented_tile_number;
++		case 7: return presented_tile_address;
++		case 8: return presented_tile_cache_valid;
++		default: return -1;
++	}
++}
++
 +void Zelda3TraceSetPresentedObjTile(int tile, int tile_line, int x, int y)
 +{
 +	presented_obj_tile = tile;
@@ -210,6 +286,30 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 +			? presented_obj_tile_cache_valid[index] : -1;
 +	return -1;
 +}
++
++int Zelda3TracePresentedBgTileCacheValue(int field, int index)
++{
++	if (field == 0)
++		return index >= 0 && index < (int) sizeof(presented_bg_tile_cache)
++			? presented_bg_tile_cache[index] : -1;
++	if (field == 1)
++		return index >= 0 && index < (int) sizeof(presented_bg_tile_cache_valid)
++			? presented_bg_tile_cache_valid[index] : -1;
++	return -1;
++}
++
++int Zelda3TracePresentedBgScrollValue(int field, int index)
++{
++	if (index < 0 || index >= SNES_HEIGHT_EXTENDED * 4)
++		return -1;
++	const int line = index / 4;
++	const int bg = index % 4;
++	if (field == 0)
++		return presented_bg_h_scroll[line][bg];
++	if (field == 1)
++		return presented_bg_v_scroll[line][bg];
++	return -1;
++}
  
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 --- a/zelda3_trace.h
@@ -219,6 +319,8 @@ diff --git a/zelda3_trace.h b/zelda3_trace.h
  int Zelda3TracePresentedOamValue(int index);
  int Zelda3TracePresentedObjValue(int field, int index);
 +int Zelda3TracePresentedObjTileCacheValue(int field, int index);
++int Zelda3TracePresentedBgTileCacheValue(int field, int index);
++int Zelda3TracePresentedBgScrollValue(int field, int index);
  int Zelda3TracePresentedMode7Value(int line, int field);
  int Zelda3TracePresentedClipValue(int index);
  void Zelda3TraceCapturePresentedPixel(int offset, int palette_index, int main_color,
@@ -226,6 +328,42 @@ diff --git a/zelda3_trace.h b/zelda3_trace.h
 +void Zelda3TraceSetPresentedObjTile(int tile, int tile_line, int x, int y);
 +void Zelda3TraceSetPresentedTile(int tile, int tile_number, int tile_address,
 +	const uint8 *cache, int cache_valid);
++void Zelda3TraceSetPresentedBgTilemapWord(int bg, int word_address,
++	int tilemap_entry, int tile_size_h, int tile_size_v);
++int Zelda3TracePresentedBgProvenanceValue(int field);
  int Zelda3TracePresentedPixelValue(int index);
  int Zelda3TraceDspSampleCount();
  int Zelda3TraceDspFieldCount();
+diff --git a/gfx.cpp b/gfx.cpp
+--- a/gfx.cpp
++++ b/gfx.cpp
+@@ -979,6 +979,7 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+ 
+ 				Offset -= l * PixWidth;
+ 				Tile = READ_WORD(t);
++				Zelda3TraceSetPresentedBgTilemapWord(bg,
++					((uint8 *) t - Memory.VRAM) >> 1, Tile,
++					BG.TileSizeH, BG.TileSizeV);
+ 				GFX.Z1 = GFX.Z2 = (Tile & 0x2000) ? Zh : Zl;
+ 
+ 				if (BG.TileSizeV == 16)
+@@ -1016,6 +1017,7 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+ 			while (Width >= 8)
+ 			{
+ 				Tile = READ_WORD(t);
++				Zelda3TraceSetPresentedBgTilemapWord(bg,
++					((uint8 *) t - Memory.VRAM) >> 1, Tile,
++					BG.TileSizeH, BG.TileSizeV);
+ 				GFX.Z1 = GFX.Z2 = (Tile & 0x2000) ? Zh : Zl;
+ 
+ 				if (BG.TileSizeV == 16)
+@@ -1053,6 +1055,7 @@ static void DrawBackground (int bg, uint8 Zh, uint8 Zl)
+ 			if (Width)
+ 			{
+ 				Tile = READ_WORD(t);
++				Zelda3TraceSetPresentedBgTilemapWord(bg,
++					((uint8 *) t - Memory.VRAM) >> 1, Tile,
++					BG.TileSizeH, BG.TileSizeV);
+ 				GFX.Z1 = GFX.Z2 = (Tile & 0x2000) ? Zh : Zl;
+ 
+ 				if (BG.TileSizeV == 16)

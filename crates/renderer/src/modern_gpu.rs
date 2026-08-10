@@ -28,10 +28,10 @@ use crate::modern_screen_builder::ModernGpuScreenBuilder;
 #[cfg(test)]
 use crate::modern_sprite_renderer::ModernGpuSpriteRenderer;
 #[cfg(test)]
-use crate::modern_variant_render_plan::{headless_variant_render_path, live_variant_render_path};
+use crate::modern_variant_render_plan::headless_variant_render_path;
 use crate::modern_variant_render_plan::{
-    ModernVariantRenderPath, PreparedModernVariantOutput, PreparedModernVariantRender,
-    PreparedModernVariantStats,
+    live_variant_render_path, ModernVariantRenderPath, PreparedModernVariantOutput,
+    PreparedModernVariantRender, PreparedModernVariantStats,
 };
 use std::time::Instant;
 
@@ -1682,6 +1682,36 @@ fn bg_effect_material_for_packet(
         return EffectMaterial::LiveCgram;
     }
     EffectMaterial::StaticEffect
+}
+
+/// Diagnostic name for the material the live GPU path will actually bind for a BG packet.
+///
+/// A packet's atlas classification (`palette_effect` / `dynamic_palette`) is not necessarily
+/// the runtime material: dynamic palette state can make the renderer switch it to live CGRAM.
+/// Keeping this accessor on the production selector prevents pixel traces from reimplementing
+/// and drifting away from the real decision.
+pub fn bg_effect_runtime_material_name(
+    frame: &ModernFrame,
+    packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
+) -> &'static str {
+    match bg_effect_material_for_packet(frame, packet) {
+        EffectMaterial::StaticEffect => "static_effect",
+        EffectMaterial::LiveCgram => "live_cgram",
+    }
+}
+
+/// Diagnostic name for the live renderer path selected from variant-plan statistics.
+pub fn live_variant_render_path_name(
+    stats: &crate::modern_software::VariantAtlasRenderStats,
+) -> &'static str {
+    match live_variant_render_path(stats) {
+        ModernVariantRenderPath::EffectMaterialMode1Order => "effect_material_mode1_order",
+        ModernVariantRenderPath::LiveIndexBaseWithOverlay => "live_index_base_with_overlay",
+        ModernVariantRenderPath::EffectMaterialWithStableOverlay => {
+            "effect_material_with_stable_overlay"
+        }
+        ModernVariantRenderPath::StableVariantFrame => "stable_variant_frame",
+    }
 }
 
 #[cfg(test)]
@@ -9054,6 +9084,10 @@ mod tests {
 
         assert_eq!(selection.effects.static_bg_len(), 0);
         assert_eq!(selection.effects.live_cgram_bg_len(), 1);
+        assert_eq!(
+            bg_effect_runtime_material_name(&frame, &plan.bg[0]),
+            "live_cgram"
+        );
         assert_eq!(selection.candidates, 1);
         assert_eq!(selection.reject_complex_frame, 0);
         assert_eq!(selection.reject_cgram_mismatch, 0);

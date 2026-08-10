@@ -2249,6 +2249,122 @@ fn first_supertile_scroll_retains_raw_obj_vram_but_decodes_the_live_cache() {
 }
 
 #[test]
+fn brightness_entry_authors_retained_link_pages_from_captured_dma_operands() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.set_subsubmodule(0);
+    write_le_u16(
+        &mut state.ram,
+        crate::game_state::constants::LINK_DMA_GRAPHICS_INDEX,
+        10,
+    );
+    for (slot, source) in [
+        (LinkDmaSourceSlot::BodyTop, 0x8040),
+        (LinkDmaSourceSlot::BodyBottom, 0x8140),
+        (LinkDmaSourceSlot::HeadTop, 0x8240),
+        (LinkDmaSourceSlot::HeadBottom, 0x8340),
+        (LinkDmaSourceSlot::HandLeft, 0x8440),
+        (LinkDmaSourceSlot::HandRight, 0x8540),
+    ] {
+        write_le_u16(&mut state.ram, slot.ram_address(), source);
+    }
+    let mut ranges = vec![(0, 0); 58];
+    ranges[57] = (0, 0x600);
+    state.assets = Some(AssetPack::from_data_ranges(vec![0; 0x600], ranges));
+    let entry_frame = state.game_state.frame;
+    state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
+        entry_frame,
+        entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
+        entry_dialogue_text_render_state: 0,
+        entry_link_handler_state: 0,
+        animated_tile: None,
+        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_obj_vram: state.ppu.vram[0x4000..0x4400].to_vec(),
+        oam_shadow: vec![0; state.ppu.oam.len() * 2],
+    });
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 0x0a;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 0;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x41;
+    following
+        .vram_chr_source
+        .record_tiles_from(0x4020, 1, crate::chr_source::CHR_KIND_LINK, 5, 6);
+    following
+        .vram_chr_source
+        .record_tiles_from(0x4120, 1, crate::chr_source::CHR_KIND_LINK, 7, 8);
+    following.vram_chr_source.record_tiles_from(
+        0x4200,
+        1,
+        crate::chr_source::CHR_KIND_SPRITE,
+        9,
+        10,
+    );
+    let live_other = following.vram_chr_source.get(0x420);
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_chr_sources(&following, &plan);
+
+    assert_eq!(
+        state.vram_chr_source.get(0x400),
+        crate::chr_source::LogicalChrSrc {
+            kind: crate::chr_source::CHR_KIND_LINK,
+            pack: 5,
+            tile_off: 2,
+        }
+    );
+    assert_eq!(
+        state.vram_chr_source.get(0x402),
+        crate::chr_source::LogicalChrSrc {
+            kind: crate::chr_source::CHR_KIND_LINK,
+            pack: 5,
+            tile_off: 18,
+        }
+    );
+    assert_eq!(
+        state.vram_chr_source.get(0x410),
+        crate::chr_source::LogicalChrSrc {
+            kind: crate::chr_source::CHR_KIND_LINK,
+            pack: 5,
+            tile_off: 10,
+        }
+    );
+    assert_eq!(
+        state.vram_chr_preview_source.get(0x412),
+        crate::chr_source::LogicalChrSrc {
+            kind: crate::chr_source::CHR_KIND_LINK,
+            pack: 5,
+            tile_off: 26,
+        }
+    );
+    assert_eq!(state.vram_chr_source.get(0x420), live_other);
+}
+
+#[test]
+fn brightness_entry_retains_the_player_palette_until_the_next_nmi() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.set_subsubmodule(0);
+    state.ppu.cgram[0x91] = 0x1234;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 0x0a;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 0;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x41;
+    following.ppu.cgram[0x91] = 0x5678;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+    assert!(plan.compose_live_cgram);
+
+    state.compose_display_cgram(&following, &plan);
+
+    assert_eq!(state.ppu.cgram[0x91], 0x1234);
+}
+
+#[test]
 fn room_72_state8_scroll_decodes_live_link_pages_after_first_rom_tick() {
     let mut following = captured_display_snapshot();
     following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
@@ -2609,6 +2725,75 @@ fn live_animated_bg_composes_over_retained_general_vram() {
 
     assert_eq!(state.ppu.vram[0], 0x1111);
     assert_eq!(state.ppu.vram[destination], 0xbbbb);
+}
+
+#[test]
+fn dungeon_brightness_boundary_publishes_completed_nmi_copy_packets() {
+    const DESTINATION: usize = 0x0798;
+    let packet_base = crate::game_state::constants::nmi::VRAM_UPLOAD_TILE_BUF;
+    let mut state = ZeldaState::new();
+    state.ppu.vram[DESTINATION] = 0x0de0;
+    write_le_u16(&mut state.ram, packet_base, DESTINATION as u16);
+    state.ram[packet_base + 2] = 0x80;
+    state.ram[packet_base + 3] = 2;
+    write_le_u16(&mut state.ram, packet_base + 4, 0x0dc0);
+    write_le_u16(&mut state.ram, packet_base + 6, 0xffff);
+    state.ram[NMI_COPY_PACKETS_FLAG] = 1;
+
+    let mut following = captured_display_snapshot();
+    following.ppu.vram[DESTINATION] = 0x0dc0;
+    let plan = DisplayPublicationPlan::resolve(
+        &following,
+        DisplayPublicationSignals {
+            dungeon_brightness_publishes_live_display: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+
+    state.compose_display_vram(&following, &plan, None);
+
+    assert!(plan.publish_live_nmi_copy_packets);
+    assert_eq!(state.ppu.vram[DESTINATION], 0x0dc0);
+}
+
+#[test]
+fn dungeon_brightness_boundary_publishes_live_animated_bg() {
+    const DESTINATION: usize = 0x3b00;
+    const TILE_WORD: usize = 0x3c00;
+    let mut state = ZeldaState::new();
+    state.set_animated_tile_vram_destination_address(DESTINATION as u16);
+    state.ppu.vram[TILE_WORD] = 0x1111;
+    let mut retained = vec![0; 0x200];
+    retained[TILE_WORD - DESTINATION] = 0x2222;
+    state.pre_nmi_animated_bg_scanout = Some(PreNmiAnimatedBgScanout {
+        destination_address: DESTINATION,
+        vram: retained,
+    });
+
+    let mut following = captured_display_snapshot();
+    write_le_u16(
+        &mut following.ram,
+        ANIMATED_TILE_VRAM_ADDR,
+        DESTINATION as u16,
+    );
+    following.ppu.vram[TILE_WORD] = 0x3333;
+    following.animated_bg_scanout_generation =
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
+    let plan = DisplayPublicationPlan::resolve(
+        &following,
+        DisplayPublicationSignals {
+            dungeon_brightness_publishes_live_display: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+
+    state.compose_display_vram(&following, &plan, None);
+
+    assert_eq!(
+        plan.animated_bg_scanout_generation,
+        AnimatedBgScanoutGeneration::LiveAfterNmi
+    );
+    assert_eq!(state.ppu.vram[TILE_WORD], 0x3333);
 }
 
 #[test]

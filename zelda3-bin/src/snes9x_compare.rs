@@ -26,7 +26,7 @@ use zelda3::{game_output::DspWriteEvent, RomRandomSample, ZeldaState, RUN_MAIN};
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
 pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
-const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path> | --live-oracle-rng] [--load-sram <path>] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all] (pass both --ignore-video and --ignore-audio for trace-only replay)";
+const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path> | --live-oracle-rng] [--load-sram <path>] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--compare-engine-state-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all] (pass both --ignore-video and --ignore-audio for trace-only replay)";
 
 // The cartridge RNG routine stores its return byte at mapped PC $0d:ba7f.
 // Other game code also writes $0fa1, so the address alone is not sufficient
@@ -1324,6 +1324,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut compare_video = true;
     let mut compare_audio = true;
     let mut compare_from_frame = 0u32;
+    let mut compare_engine_state_from_frame = None::<u32>;
     let mut skip_oracle_frames = 0u32;
     let mut auto_align_video = false;
     let mut lead_rust_audio_blocks = 0u32;
@@ -1488,6 +1489,17 @@ pub(crate) fn run_compare_libretro_oracle(
                         process::exit(2);
                     }
                 };
+                i += 2;
+            }
+            "--compare-engine-state-from-frame" => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--compare-engine-state-from-frame requires a frame number");
+                    process::exit(2);
+                };
+                compare_engine_state_from_frame = Some(value.parse().unwrap_or_else(|e| {
+                    eprintln!("invalid --compare-engine-state-from-frame `{value}`: {e}");
+                    process::exit(2);
+                }));
                 i += 2;
             }
             "--skip-snes9x-frames" | "--skip-oracle-frames" => {
@@ -1710,6 +1722,10 @@ pub(crate) fn run_compare_libretro_oracle(
     }
     if live_oracle_rng && replay_save.is_some() {
         eprintln!("--live-oracle-rng requires a direct input script, not --replay-save");
+        process::exit(2);
+    }
+    if compare_engine_state_from_frame.is_some() && !live_oracle_rng {
+        eprintln!("--compare-engine-state-from-frame requires --live-oracle-rng");
         process::exit(2);
     }
     if live_oracle_rng && resume_rust_state.is_some() {
@@ -2010,6 +2026,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut compared_audio_sample_frames = 0u64;
     let mut wrote_first_audio_mismatch = false;
     let mut completed_frames = start_frame;
+    let mut first_engine_state_mismatch: Option<(u32, Vec<String>)> = None;
     let mut oracle_before_state = initial_oracle_state.clone();
     let mut video_mismatch_ranges = Vec::<(u32, u32)>::new();
     let mut first_video_mismatch = None::<String>;
@@ -2291,6 +2308,22 @@ pub(crate) fn run_compare_libretro_oracle(
         } else {
             requested_input
         };
+        if compare_engine_state_from_frame.is_some_and(|start| frame_index >= start) {
+            let oracle_ram = oracle
+                .memory_bytes(RETRO_MEMORY_SYSTEM_RAM)
+                .unwrap_or_default();
+            let mismatches = compact_engine_state_mismatches(&game.ram, oracle_ram);
+            if !mismatches.is_empty() {
+                eprintln!(
+                    "engine-state divergence at frame {frame_index}: {}",
+                    mismatches.join(", ")
+                );
+                input_history.push((frame_index, input));
+                completed_frames = frame_index.saturating_add(1);
+                first_engine_state_mismatch = Some((frame_index, mismatches));
+                break;
+            }
+        }
         if live_oracle_rng {
             game.finish_rom_random_replay_through(frame_index.saturating_add(1))
                 .unwrap_or_else(|error| {
@@ -3248,10 +3281,14 @@ pub(crate) fn run_compare_libretro_oracle(
             );
         }
         if let Some((x, y)) = trace_video_pixel.filter(|_| compare_this_frame) {
-            let (displayed_ppu, rust_bg_pal4, rust_obj_pal) =
-                game.with_display_snapshot(|snapshot| {
+            let (displayed_ppu, rust_bg_pal3, rust_bg_pal4, rust_obj_pal) = game
+                .with_display_snapshot(|snapshot| {
                     (
                         crate::render_diagnostics::format_render_ppu_summary(snapshot),
+                        (0x30..=0x3f)
+                            .map(|i| format!("{:04x}", snapshot.ppu.cgram[i]))
+                            .collect::<Vec<_>>()
+                            .join(","),
                         (0x40..=0x4f)
                             .map(|i| format!("{:04x}", snapshot.ppu.cgram[i]))
                             .collect::<Vec<_>>()
@@ -3262,7 +3299,23 @@ pub(crate) fn run_compare_libretro_oracle(
                             .join(","),
                     )
                 });
+            let oracle_bg_pal3 = (0x30..=0x3f)
+                .map(|i| {
+                    oracle
+                        .debug_ppu_value(2, i)
+                        .map_or_else(|| "none".to_string(), |value| format!("{value:04x}"))
+                })
+                .collect::<Vec<_>>()
+                .join(",");
             let oracle_bg_pal4 = (0x40..=0x4f)
+                .map(|i| {
+                    oracle
+                        .debug_ppu_value(2, i)
+                        .map_or_else(|| "none".to_string(), |value| format!("{value:04x}"))
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let oracle_obj_pal = (0x90..=0x9f)
                 .map(|i| {
                     oracle
                         .debug_ppu_value(2, i)
@@ -3280,7 +3333,7 @@ pub(crate) fn run_compare_libretro_oracle(
                 .unwrap_or([0; 4]);
             let oracle_pixel = snes9x_rgba_pixel_at(&capture, snes9x_offset).unwrap_or([0; 4]);
             println!(
-                "pixel frame={frame_index} xy=({x},{y}) rust={rust_pixel:02x?} {oracle_name}={oracle_pixel:02x?} main={:02x} sub={:02x} subsub={:02x} inidisp={:02x} rust_bg_pal4=[{rust_bg_pal4}] oracle_bg_pal4=[{oracle_bg_pal4}] rust_obj_pal90=[{rust_obj_pal}]",
+                "pixel frame={frame_index} xy=({x},{y}) rust={rust_pixel:02x?} {oracle_name}={oracle_pixel:02x?} main={:02x} sub={:02x} subsub={:02x} inidisp={:02x} rust_bg_pal3=[{rust_bg_pal3}] oracle_bg_pal3=[{oracle_bg_pal3}] rust_bg_pal4=[{rust_bg_pal4}] oracle_bg_pal4=[{oracle_bg_pal4}] rust_obj_pal90=[{rust_obj_pal}] oracle_obj_pal90=[{oracle_obj_pal}]",
                 game.ram[0x10], game.ram[0x11], game.ram[0xb0], game.ram[0x13],
             );
             println!("pixel displayed_ppu frame={frame_index} {displayed_ppu}");
@@ -3290,9 +3343,13 @@ pub(crate) fn run_compare_libretro_oracle(
             let oracle_obj_config = (0..3)
                 .map(|index| oracle.debug_ppu_value(17, index).unwrap_or(-1))
                 .collect::<Vec<_>>();
+            let oracle_scanline = snes9x_presented_scanline_for_video_y(
+                capture.video_height as usize,
+                y,
+            );
             let oracle_obj_line = (0..128)
                 .map(|slot| {
-                    let index = (y * 128 + slot) as i32;
+                    let index = (oracle_scanline * 128 + slot) as i32;
                     (
                         oracle.debug_ppu_value(21, index).unwrap_or(-1),
                         oracle.debug_ppu_value(26, index).unwrap_or(-1),
@@ -3300,14 +3357,148 @@ pub(crate) fn run_compare_libretro_oracle(
                 })
                 .take_while(|&(sprite, _)| sprite >= 0)
                 .collect::<Vec<_>>();
+            let mut oracle_obj_entries = oracle_obj_line
+                .iter()
+                .map(|&(sprite, _)| sprite)
+                .collect::<Vec<_>>();
+            oracle_obj_entries.sort_unstable();
+            oracle_obj_entries.dedup();
+            let oracle_obj_entries = oracle_obj_entries
+                .into_iter()
+                .map(|sprite| {
+                    let bytes: [i32; 4] = std::array::from_fn(|byte| {
+                        oracle
+                            .debug_ppu_value(20, sprite * 4 + byte as i32)
+                            .unwrap_or(-1)
+                    });
+                    (sprite, bytes)
+                })
+                .collect::<Vec<_>>();
             let oracle_pixel_operands = (0..10)
                 .map(|index| oracle.debug_ppu_value(28, index).unwrap_or(-1))
                 .collect::<Vec<_>>();
+            let oracle_bg_provenance = (0..9)
+                .map(|index| oracle.debug_ppu_value(35, index).unwrap_or(-1))
+                .collect::<Vec<_>>();
+            let rust_scanline_scroll = game.with_display_snapshot(|snapshot| {
+                let scanlines = snapshot.ppu_scanline_windows();
+                scanlines
+                    .get(y)
+                    .map(|line| (line.5, line.6))
+                    .unwrap_or(([0; 4], [0; 4]))
+            });
+            let oracle_scroll = |line: usize| {
+                (
+                    std::array::from_fn::<_, 4, _>(|layer| {
+                        oracle
+                            .debug_ppu_value(33, (line * 4 + layer) as i32)
+                            .unwrap_or(-1)
+                    }),
+                    std::array::from_fn::<_, 4, _>(|layer| {
+                        oracle
+                            .debug_ppu_value(34, (line * 4 + layer) as i32)
+                            .unwrap_or(-1)
+                    }),
+                )
+            };
             println!(
-                "pixel oracle_obj frame={frame_index} line={y} config={oracle_obj_config:?} control={oracle_obj_control:?} tiles={} flags={} evaluated={oracle_obj_line:?} operands={oracle_pixel_operands:?}",
-                oracle.debug_ppu_value(22, y as i32).unwrap_or(-1),
-                oracle.debug_ppu_value(23, y as i32).unwrap_or(-1),
+                "pixel oracle_obj frame={frame_index} video_line={y} presented_line={oracle_scanline} config={oracle_obj_config:?} control={oracle_obj_control:?} tiles={} flags={} evaluated={oracle_obj_line:?} entries={oracle_obj_entries:02x?} operands={oracle_pixel_operands:?} bg_provenance={oracle_bg_provenance:04x?}",
+                oracle.debug_ppu_value(22, oracle_scanline as i32).unwrap_or(-1),
+                oracle.debug_ppu_value(23, oracle_scanline as i32).unwrap_or(-1),
             );
+            println!(
+                "pixel bg_scroll frame={frame_index} rust_video={rust_scanline_scroll:04x?} oracle_video={:04x?} oracle_presented={:04x?}",
+                oracle_scroll(y),
+                oracle_scroll(oracle_scanline),
+            );
+            let bg_cache_candidates = game.with_display_snapshot(|snapshot| {
+                (0..2usize)
+                    .filter_map(|layer_index| {
+                        let layer = &snapshot.ppu.bg_layer[layer_index];
+                        let cols = if layer.tilemap_wider { 64usize } else { 32 };
+                        let rows = if layer.tilemap_higher { 64usize } else { 32 };
+                        let source_x = (x + usize::from(layer.h_scroll)).rem_euclid(cols * 8);
+                        let source_y = (y + usize::from(layer.v_scroll) + 1).rem_euclid(rows * 8);
+                        let tx = source_x / 8;
+                        let ty = source_y / 8;
+                        let quadrant = usize::from(layer.tilemap_wider && tx >= 32)
+                            + if layer.tilemap_higher && ty >= 32 {
+                                if layer.tilemap_wider { 2 } else { 1 }
+                            } else {
+                                0
+                            };
+                        let tilemap_word = usize::from(layer.tilemap_adr)
+                            + quadrant * 0x400
+                            + (ty % 32) * 32
+                            + tx % 32;
+                        let entry = *snapshot.ppu.vram.get(tilemap_word)?;
+                        let tile_number = usize::from(entry & 0x03ff);
+                        let chr_word = usize::from(layer.tile_adr) + tile_number * 16;
+                        let cache_tile = chr_word / 16;
+                        let local_x = if entry & 0x4000 != 0 {
+                            7 - source_x % 8
+                        } else {
+                            source_x % 8
+                        };
+                        let local_y = if entry & 0x8000 != 0 {
+                            7 - source_y % 8
+                        } else {
+                            source_y % 8
+                        };
+                        let rust_indices =
+                            renderer::modern_extract::decode_snes_4bpp_tile_indices(
+                                &snapshot.ppu.vram,
+                                usize::from(layer.tile_adr),
+                                entry & 0xc3ff,
+                            );
+                        Some((
+                            layer_index,
+                            tilemap_word,
+                            entry,
+                            tile_number,
+                            chr_word,
+                            cache_tile,
+                            local_x,
+                            local_y,
+                            rust_indices,
+                        ))
+                    })
+                    .collect::<Vec<_>>()
+            });
+            for (
+                layer_index,
+                tilemap_word,
+                entry,
+                tile_number,
+                chr_word,
+                cache_tile,
+                local_x,
+                local_y,
+                rust_indices,
+            ) in bg_cache_candidates
+            {
+                let live_indices = renderer::modern_extract::decode_snes_4bpp_tile_indices(
+                    &game.ppu.vram,
+                    usize::from(game.ppu.bg_layer[layer_index].tile_adr),
+                    entry & 0xc3ff,
+                );
+                let oracle_indices = (0..64usize)
+                    .map(|pixel| {
+                        oracle
+                            .debug_ppu_value(31, (cache_tile * 64 + pixel) as i32)
+                            .unwrap_or(-1)
+                    })
+                    .collect::<Vec<_>>();
+                let pixel_offset = local_y * 8 + local_x;
+                println!(
+                    "pixel bg_cache frame={frame_index} layer={} tilemap_word={tilemap_word:04x} entry={entry:04x} tile={tile_number:03x} chr_word={chr_word:04x} cache_tile={cache_tile:03x} valid={} local=({local_x},{local_y}) rust_presented_index={} rust_live_index={} oracle_index={} rust_presented_indices={rust_indices:02x?} rust_live_indices={live_indices:02x?} oracle_indices={oracle_indices:02x?}",
+                    layer_index + 1,
+                    oracle.debug_ppu_value(32, cache_tile as i32).unwrap_or(-1),
+                    rust_indices[pixel_offset],
+                    live_indices[pixel_offset],
+                    oracle_indices[pixel_offset],
+                );
+            }
             println!(
                 "modern_pixel_trace frame={frame_index} xy=({x},{y}) via=native-window-source-gpu"
             );
@@ -3507,7 +3698,14 @@ pub(crate) fn run_compare_libretro_oracle(
         completed_frames,
         &video_mismatch_ranges,
         first_video_mismatch.as_deref(),
+        first_engine_state_mismatch.as_ref(),
     );
+    if first_engine_state_mismatch.is_some() {
+        if let Some(dir) = session_dir.as_deref() {
+            eprintln!("replayable Snes9x session: {}", dir.display());
+        }
+        process::exit(1);
+    }
     if let Some(report) = audio_report.as_ref().filter(|report| !report.matched) {
         let failing_frame = report
             .first_mismatch_sample_frame
@@ -3579,6 +3777,71 @@ const fn should_stop_after_first_mismatch(
     video_mismatch: bool,
 ) -> bool {
     !scan_all && (exact_audio_mismatch || video_mismatch)
+}
+
+fn compact_engine_state_mismatches(rust: &[u8], oracle: &[u8]) -> Vec<String> {
+    let byte = |ram: &[u8], address: usize| ram.get(address).copied().unwrap_or_default();
+    let word = |ram: &[u8], address: usize| {
+        u16::from_le_bytes([byte(ram, address), byte(ram, address.saturating_add(1))])
+    };
+    let mut mismatches = Vec::new();
+    for (name, address) in [
+        ("main_module", 0x0010),
+        ("submodule", 0x0011),
+        ("subsubmodule", 0x00b0),
+        ("frame_counter", 0x001a),
+    ] {
+        let rust_value = byte(rust, address);
+        let oracle_value = byte(oracle, address);
+        if rust_value != oracle_value {
+            mismatches.push(format!(
+                "{name} rust=0x{rust_value:02x} oracle=0x{oracle_value:02x}"
+            ));
+        }
+    }
+    for (name, address) in [
+        ("dungeon_room", 0x00a0),
+        ("link_x", 0x0022),
+        ("link_y", 0x0020),
+    ] {
+        let rust_value = word(rust, address);
+        let oracle_value = word(oracle, address);
+        if rust_value != oracle_value {
+            mismatches.push(format!(
+                "{name} rust=0x{rust_value:04x} oracle=0x{oracle_value:04x}"
+            ));
+        }
+    }
+    for slot in 0..16 {
+        for (name, base) in [
+            ("state", 0x0dd0),
+            ("type", 0x0e20),
+            ("x_low", 0x0d10),
+            ("x_high", 0x0d30),
+            ("x_subpixel", 0x0d70),
+            ("x_velocity", 0x0d50),
+            ("y_low", 0x0d00),
+            ("y_high", 0x0d20),
+            ("y_subpixel", 0x0d60),
+            ("y_velocity", 0x0d40),
+            ("direction", 0x0de0),
+            ("ai_state", 0x0d80),
+            ("wall_collision", 0x0e70),
+            ("subtype", 0x0e30),
+            ("subtype2", 0x0e80),
+            ("delay_main", 0x0df0),
+            ("delay_aux1", 0x0e00),
+        ] {
+            let rust_value = byte(rust, base + slot);
+            let oracle_value = byte(oracle, base + slot);
+            if rust_value != oracle_value {
+                mismatches.push(format!(
+                    "sprite[{slot}].{name} rust=0x{rust_value:02x} oracle=0x{oracle_value:02x}"
+                ));
+            }
+        }
+    }
+    mismatches
 }
 
 fn first_dsp_write_timing_mismatch(
@@ -4377,6 +4640,16 @@ pub(crate) fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
         serde_json::Value::from(byte(0x0136)),
     );
     if let Some(map) = receipt.as_object_mut() {
+        map.insert("sprite_graphics_index".into(), byte(0x0aa3).into());
+        map.insert(
+            "sprite_graphics_subsets".into(),
+            serde_json::json!([
+                byte(0xc2fc),
+                byte(0xc2fd),
+                byte(0xc2fe),
+                byte(0xc2ff),
+            ]),
+        );
         map.insert("bg_tile_animation_countdown".into(), word(0xc00d).into());
         map.insert("link_dma_source_offset".into(), word(0xc00f).into());
         map.insert("link_dma_countdown".into(), word(0xc013).into());
@@ -4591,6 +4864,7 @@ pub(crate) fn finalize_libretro_session(
     frames: u32,
     video_mismatch_ranges: &[(u32, u32)],
     first_video_mismatch: Option<&str>,
+    first_engine_state_mismatch: Option<&(u32, Vec<String>)>,
 ) {
     let Some(dir) = session_dir else {
         return;
@@ -4653,7 +4927,8 @@ pub(crate) fn finalize_libretro_session(
         process::exit(1);
     });
     let matched = audio_report.map(|report| report.matched).unwrap_or(true)
-        && video_mismatch_ranges.is_empty();
+        && video_mismatch_ranges.is_empty()
+        && first_engine_state_mismatch.is_none();
     let parity_eligible = audio_report
         .map(|report| report.mode == AudioComparisonMode::Exact.as_str())
         .unwrap_or(true);
@@ -4678,6 +4953,13 @@ pub(crate) fn finalize_libretro_session(
             "matched": video_mismatch_ranges.is_empty(),
             "mismatch_ranges": video_mismatch_ranges,
             "first_mismatch": first_video_mismatch,
+        },
+        "engine_state": {
+            "matched": first_engine_state_mismatch.is_none(),
+            "first_mismatch": first_engine_state_mismatch.map(|(frame, mismatches)| serde_json::json!({
+                "frame": frame,
+                "mismatches": mismatches,
+            })),
         },
         "dynamic_alignment": false,
         "rust_endpoint": "rust_final.z3state",
@@ -4840,6 +5122,18 @@ pub(crate) fn snes9x_pixel_stride(pixel_format: u32) -> Option<usize> {
         1 => Some(4),
         _ => None,
     }
+}
+
+fn snes9x_presented_scanline_for_video_y(video_height: usize, video_y: usize) -> usize {
+    // The trace core exposes Snes9x's uncropped scanline caches, while the libretro video
+    // callback can crop the top overscan rows. Keep the translation next to the consumer so
+    // pixel-owner diagnostics cannot silently inspect a different scanline than the RGBA pixel.
+    let top_crop = match video_height {
+        224 => 7,
+        448 => 14,
+        _ => 0,
+    };
+    video_y + top_crop
 }
 
 pub(crate) fn snes9x_rgba_pixel_at(frame: &LibretroFrame, offset: usize) -> Option<[u8; 4]> {
@@ -5309,12 +5603,13 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
 #[cfg(test)]
 mod tests {
     use super::{
-        checkpoint_member, first_dsp_write_timing_mismatch, last_spc_clock_witness,
-        libretro_engine_state_receipt, oracle_preframe_snapshot_required,
+        checkpoint_member, compact_engine_state_mismatches, first_dsp_write_timing_mismatch,
+        last_spc_clock_witness, libretro_engine_state_receipt, oracle_preframe_snapshot_required,
         oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
         parse_paired_resume_capture, parse_rolling_paired_resume_capture,
         prune_rolling_paired_resume_captures, rolling_capture_frame_after, scan_all_policy,
-        should_render_video_frame, should_stop_after_first_mismatch, should_write_frame_receipt,
+        should_render_video_frame, should_stop_after_first_mismatch,
+        should_write_frame_receipt, snes9x_presented_scanline_for_video_y,
         summarize_value_domain, vram_domain_receipt, BootBoundaryState, PairedResumeCapture,
         RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt,
     };
@@ -5323,6 +5618,38 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
     use zelda3::{game_output::DspWriteEvent, RomRandomSample};
+
+    #[test]
+    fn maps_cropped_libretro_video_rows_back_to_snes9x_presented_scanlines() {
+        assert_eq!(snes9x_presented_scanline_for_video_y(224, 133), 140);
+        assert_eq!(snes9x_presented_scanline_for_video_y(448, 266), 280);
+        assert_eq!(snes9x_presented_scanline_for_video_y(239, 133), 133);
+    }
+
+    #[test]
+    fn compact_engine_state_reports_the_first_semantic_scheduler_drift() {
+        let mut rust = vec![0; 0x1000];
+        let mut oracle = rust.clone();
+        rust[0x10] = 7;
+        oracle[0x10] = 7;
+        rust[0x11] = 0x0e;
+        oracle[0x11] = 0x0e;
+        rust[0xb0] = 3;
+        oracle[0xb0] = 4;
+        rust[0x22..0x24].copy_from_slice(&0x05a9u16.to_le_bytes());
+        oracle[0x22..0x24].copy_from_slice(&0x05a8u16.to_le_bytes());
+        rust[0x0df1] = 0x58;
+        oracle[0x0df1] = 0x59;
+
+        assert_eq!(
+            compact_engine_state_mismatches(&rust, &oracle),
+            [
+                "subsubmodule rust=0x03 oracle=0x04",
+                "link_x rust=0x05a9 oracle=0x05a8",
+                "sprite[1].delay_main rust=0x58 oracle=0x59",
+            ]
+        );
+    }
 
     #[test]
     fn live_oracle_rng_accepts_only_the_cartridge_store_site() {
@@ -5403,6 +5730,8 @@ mod tests {
     #[test]
     fn engine_receipts_retain_full_sprite_motion_witnesses() {
         let mut ram = vec![0; 0x20_000];
+        ram[0x0aa3] = 0x2a;
+        ram[0xc2fc..0xc300].copy_from_slice(&[0x10, 0x20, 0x30, 0x40]);
         ram[0x0d10] = 0x68;
         ram[0x0d30] = 0x04;
         ram[0x0d70] = 0x80;
@@ -5410,6 +5739,8 @@ mod tests {
         ram[0x0e70] = 0x02;
 
         let receipt = libretro_engine_state_receipt(&ram);
+        assert_eq!(receipt["sprite_graphics_index"], 0x2a);
+        assert_eq!(receipt["sprite_graphics_subsets"], serde_json::json!([0x10, 0x20, 0x30, 0x40]));
         let slot = &receipt["sprite_slots"][0];
         assert_eq!(slot["x"], 0x0468);
         assert_eq!(slot["x_subpixel"], 0x80);

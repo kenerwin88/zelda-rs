@@ -177,6 +177,7 @@ class ParityRouteTests(unittest.TestCase):
                 ignore_audio=True,
                 ignore_video=True,
                 live_oracle_rng=True,
+                engine_state_from_frame=42,
                 expected_core_sha256="trace",
             )
 
@@ -184,6 +185,9 @@ class ParityRouteTests(unittest.TestCase):
             command[command.index("--expected-core-sha256") + 1], "trace"
         )
         self.assertIn("--live-oracle-rng", command)
+        self.assertEqual(
+            command[command.index("--compare-engine-state-from-frame") + 1], "42"
+        )
         self.assertIn("--ignore-audio", command)
         self.assertIn("--ignore-video", command)
         self.assertNotIn("--rom-random-script", command)

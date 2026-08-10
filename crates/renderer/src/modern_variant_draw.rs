@@ -346,6 +346,8 @@ pub struct VariantPixelTrace {
     pub entry_vflip: bool,
     pub palette_row: u8,
     pub palette_index: u8,
+    pub priority: u8,
+    pub mode1_rank: Option<u8>,
     pub output_rgba: Option<[u8; 4]>,
     pub live_cgram_rgba: Option<[u8; 4]>,
     pub main_screen_enabled: bool,
@@ -382,7 +384,7 @@ impl VariantPixelTrace {
             },
         );
         format!(
-            "surface={} packet={} layer={} material={} cell={} screen=({}, {}) local=({}, {}) source=({}, {}) cell_flip=({}, {}) entry_flip=({}, {}) palette_row={} index={} rgba={} live_cgram_rgba={} main_screen_enabled={} main_scanline_enabled={} main_window_masked={} key={} entry={} effect={}",
+            "surface={} packet={} layer={} material={} cell={} screen=({}, {}) local=({}, {}) source=({}, {}) cell_flip=({}, {}) entry_flip=({}, {}) palette_row={} index={} priority={} mode1_rank={} rgba={} live_cgram_rgba={} main_screen_enabled={} main_scanline_enabled={} main_window_masked={} key={} entry={} effect={}",
             self.surface.name(),
             self.packet_index,
             self.layer_index
@@ -402,6 +404,10 @@ impl VariantPixelTrace {
             self.entry_vflip,
             self.palette_row,
             self.palette_index,
+            self.priority,
+            self.mode1_rank
+                .map(|rank| rank.to_string())
+                .unwrap_or_else(|| "none".to_string()),
             rgba,
             live_rgba,
             self.main_screen_enabled,
@@ -685,6 +691,8 @@ fn trace_bg_packet_pixel(
         entry_vflip: source_vflip,
         palette_row: packet.inst.palette,
         palette_index,
+        priority: u8::from(packet.inst.priority),
+        mode1_rank: packet.mode1_rank(),
         output_rgba,
         live_cgram_rgba: bg_live_cgram_rgba(frame, packet, palette_index),
         main_screen_enabled,
@@ -745,6 +753,8 @@ fn trace_sprite_packet_pixel(
         entry_vflip: source_vflip,
         palette_row: packet.inst.palette,
         palette_index,
+        priority: packet.inst.priority,
+        mode1_rank: packet.mode1_rank(),
         output_rgba: sprite_output_rgba(frame, atlas, packet, source_x, source_y, palette_index),
         live_cgram_rgba: sprite_live_cgram_rgba(frame, packet, palette_index),
         main_screen_enabled,
@@ -1851,8 +1861,11 @@ mod tests {
         assert_eq!(trace.local_x, 3);
         assert_eq!(trace.local_y, 2);
         assert_eq!(trace.palette_index, 4);
+        assert_eq!(trace.priority, 0);
+        assert_eq!(trace.mode1_rank, Some(4));
         assert_eq!(trace.output_rgba, Some([40, 50, 60, 0xff]));
-        assert!(trace.describe().contains("material=palette_effect"));
+        assert!(trace.describe().contains("material=palette_effect cell=0"));
+        assert!(trace.describe().contains("priority=0 mode1_rank=4"));
     }
 
     #[test]

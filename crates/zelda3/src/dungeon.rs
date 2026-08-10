@@ -10625,12 +10625,15 @@ impl ZeldaState {
         if self.rom_startup_timing()
             && self.game_state.frame.submodule == 2
             && self.game_state.frame.subsubmodule == 11
-            && self.game_state.world.location.dungeon_room_index() == 0x41
+            && matches!(
+                self.game_state.world.location.dungeon_room_index(),
+                0x22 | 0x41
+            )
         {
-            // The second room-$41 upload is prepared before vblank, but the
-            // state-11 caller does not return until the following host CPU
-            // slice. Keep the translated call stack suspended at that exact
-            // semantic boundary.
+            // These measured second quadrant uploads are prepared before
+            // vblank, but their state-11 callers do not return until the
+            // following host CPU slice. Keep the translated call stack
+            // suspended at that exact semantic boundary.
             let scheduled = self.begin_dungeon_supertile_transition_work(
                 DungeonSupertileTransitionWork::QuadrantUploadCallerReturn,
             );
@@ -10861,7 +10864,10 @@ impl ZeldaState {
                     self.dungeon_faded_filter_palette_completion_host_frame =
                         Some(self.frame_ctr_dbg);
                     if self.game_state.frame.subsubmodule != entry_subsubmodule
-                        && self.game_state.world.location.dungeon_room_index() == 0x41
+                        && matches!(
+                            self.game_state.world.location.dungeon_room_index(),
+                            0x22 | 0x41
+                        )
                     {
                         let scheduled = self.begin_dungeon_supertile_transition_work(
                             DungeonSupertileTransitionWork::FadedFilterCallerReturn,
@@ -10874,11 +10880,14 @@ impl ZeldaState {
             self.increment_subsubmodule();
             if self.rom_startup_timing()
                 && entry_subsubmodule == 14
-                && self.game_state.world.location.dungeon_room_index() == 0x41
+                && matches!(
+                    self.game_state.world.location.dungeon_room_index(),
+                    0x22 | 0x41
+                )
             {
-                // The landing fade's terminal no-request branch reaches state
-                // 15 just before vblank. Suspend only its common Module 7
-                // caller return so state 15 cannot start one host frame early.
+                // These measured landing fades reach state 15 just before
+                // vblank. Suspend only their common Module 7 caller return so
+                // state 15 cannot start one host frame early.
                 self.stage_dungeon_faded_filter_first_palette_scanout();
                 self.dungeon_faded_filter_palette_completion_host_frame = Some(self.frame_ctr_dbg);
                 let scheduled = self.begin_dungeon_supertile_transition_work(
@@ -11949,6 +11958,13 @@ impl ZeldaState {
     pub(super) fn Module07_11_04_FilterDoBGAndResetSprites(&mut self) {
         self.ApplyPaletteFilter_bounce();
         self.DungeonTransition_TriggerBGC56UpdateAndAdvance();
+        if self.suspend_straight_interroom_sprite_reset_before_room_load() {
+            return;
+        }
+        self.complete_straight_interroom_sprite_reset();
+    }
+
+    pub(super) fn complete_straight_interroom_sprite_reset(&mut self) {
         let dungeon_room_index = self.game_state.world.location.dungeon_room_index();
         self.dungeon_room_tracking_mut()
             .set_room_index2(dungeon_room_index);

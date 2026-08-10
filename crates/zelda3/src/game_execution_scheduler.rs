@@ -49,6 +49,9 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonSupertileFilteringReturn
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
+                | GameWorkContinuation::FinishStraightInterroomSpriteReset
+                | GameWorkContinuation::FinishDungeonRoomLoadSpriteMain { .. }
+                | GameWorkContinuation::FinishDungeonCachedSpriteMain { .. }
                 | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
                 | GameWorkContinuation::FinishBigKeyDropGraphics { .. }
         )

@@ -164,13 +164,18 @@ impl LiveGpuFrameCapture {
         {
             let selected = ppu.obj_vram_latch.as_deref().unwrap_or(&ppu.vram);
             eprintln!(
-                "renderer_obj_vram_frame host={} latch={} retain_history={} blank_lines={} blank_from={:?} tile02={:04x?}",
+                "renderer_obj_vram_frame host={} latch={} retain_history={} blank_lines={} blank_from={:?} brightness={} tile02={:04x?} source={:?} preview_source={:?} ppu_obj_cgram={:04x?} rendered_obj_cgram={:04x?}",
                 game.frame_ctr_dbg,
                 ppu.obj_vram_latch.is_some(),
                 ppu.retain_active_display_history,
                 ppu.forced_blank_scanlines,
                 ppu.forced_blank_from_scanline,
+                ppu.brightness,
                 &selected[0x4020..0x4030],
+                game.vram_chr_source().get(0x402),
+                game.vram_chr_preview_source().get(0x402),
+                &ppu.cgram[0x80..0x100],
+                &cgram[0x80..0x100],
             );
         }
         if std::env::var("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
@@ -713,6 +718,7 @@ fn trace_modern_asset_capture_pixel(
         source_atlas,
     );
     let mut output = trace_raw_obj_pixel_candidates(&frame, x, y);
+    output.extend(trace_raw_vram_bg_pixel_candidates(&frame, x, y));
     for (packet, instance) in assets.frame.index_sprites.iter().enumerate() {
         let local_x = i32::from(x) - i32::from(instance.screen_x);
         let local_y = i32::from(y) - i32::from(instance.screen_y);
@@ -755,16 +761,63 @@ fn trace_modern_asset_capture_pixel(
             x,
             y,
         );
-        output.extend(
-            traces
-                .iter()
-                .map(renderer::modern_variant_draw::VariantPixelTrace::describe),
-        );
+        output.push(format!(
+            "variant_render_plan live_path={} retain_history={} blank_lines={} blank_from={:?} forced_blank={} stats={:?}",
+            renderer::modern_gpu::live_variant_render_path_name(&plan.stats),
+            assets.frame.retain_active_display_history,
+            assets.frame.forced_blank_scanlines,
+            assets.frame.forced_blank_from_scanline,
+            assets.frame.forced_blank,
+            plan.stats,
+        ));
+        output.extend(traces.iter().map(|trace| {
+            let mut description = trace.describe();
+            if trace.surface == renderer::modern_variant_draw::VariantDrawSurface::Bg {
+                let runtime_material = plan
+                    .bg
+                    .get(trace.packet_index)
+                    .map(|packet| {
+                        renderer::modern_gpu::bg_effect_runtime_material_name(&assets.frame, packet)
+                    })
+                    .unwrap_or("missing_packet");
+                description.push_str(" runtime_material=");
+                description.push_str(runtime_material);
+            }
+            description
+        }));
     }
     if output.is_empty() {
         return Ok(vec!["semantic pixel hits=0".to_string()]);
     }
     Ok(output)
+}
+
+fn trace_raw_vram_bg_pixel_candidates(frame: &GpuFrame<'_>, x: i16, y: i16) -> Vec<String> {
+    let (raw_frame, raw_cells) = renderer::modern_extract::extract_modern_frame_from_vram(frame);
+    let mut output = Vec::new();
+    for (layer_index, layer) in raw_frame.bg_layers.iter().enumerate().take(3) {
+        for (packet, instance) in layer.index_tiles.iter().enumerate() {
+            let local_x = i32::from(x) - i32::from(instance.screen_x);
+            let local_y = i32::from(y) - i32::from(instance.screen_y);
+            if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+                continue;
+            }
+            let Some(cell) = raw_cells.get(instance.cell_id as usize) else {
+                continue;
+            };
+            let index = cell.indices[local_y as usize * 8 + local_x as usize];
+            output.push(format!(
+                "surface=raw_vram_bg packet={packet} layer={layer_index} cell={} screen=({}, {}) local=({local_x}, {local_y}) palette_row={} priority={} index={index} source_key={:016x}",
+                instance.cell_id,
+                instance.screen_x,
+                instance.screen_y,
+                instance.palette,
+                u8::from(instance.priority),
+                cell.source_key,
+            ));
+        }
+    }
+    output
 }
 
 fn trace_raw_obj_pixel_candidates(frame: &GpuFrame<'_>, x: i16, y: i16) -> Vec<String> {

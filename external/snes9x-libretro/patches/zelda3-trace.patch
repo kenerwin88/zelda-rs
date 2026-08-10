@@ -767,6 +767,9 @@ index 00000000..06a376d4
 +	config.initialized = true;
 +	config.first_frame = 0;
 +	config.last_frame = 0xffffffff;
++	const char *pixel = std::getenv("ZELDA3_SNES9X_TRACE_PIXEL");
++	Zelda3TracePixelEnabled =
++		pixel && std::sscanf(pixel, "%d,%d", &trace_pixel_x, &trace_pixel_y) == 2;
 +
 +	const char *path = std::getenv("ZELDA3_SNES9X_TRACE");
 +	if (!path || !*path)
@@ -807,9 +810,6 @@ index 00000000..06a376d4
 +	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_PCS"), config.pc, 64, &config.pc_count);
 +	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_PPU"), config.ppu, 32, &config.ppu_count);
 +	parse_ranges(std::getenv("ZELDA3_SNES9X_TRACE_WRAM"), config.wram, 32, &config.wram_count);
-+	const char *pixel = std::getenv("ZELDA3_SNES9X_TRACE_PIXEL");
-+	Zelda3TracePixelEnabled =
-+		pixel && std::sscanf(pixel, "%d,%d", &trace_pixel_x, &trace_pixel_y) == 2;
 +}
 +
 +bool active(uint32 event)

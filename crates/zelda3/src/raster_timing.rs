@@ -34,9 +34,16 @@ pub(crate) const fn straight_interroom_fadeout_suffix_crosses_vblank(
     main_module == 7
         && submodule == 0x12
         && subsubmodule == 1
-        && dungeon_room == 0x51
-        && staircase_index == 0x30
-        && matches!(palette_countdown, 1 | 3 | 5 | 6 | 7 | 9 | 11 | 13 | 17 | 20)
+        && match (dungeon_room, staircase_index) {
+            (0x51, 0x30) => {
+                matches!(palette_countdown, 1 | 3 | 5 | 6 | 7 | 9 | 11 | 13 | 17 | 20)
+            }
+            // The crystal-4 II route reaches vblank while returning from the
+            // first fadeout step on this staircase. Keep the new observation
+            // local until the remaining palette phases are measured.
+            (0x32, 0x35) => palette_countdown == 1,
+            _ => false,
+        }
 }
 
 /// Whether the room-$41 state-13 caller suffix crosses vblank.
@@ -327,6 +334,14 @@ mod tests {
                 straight_interroom_fadeout_suffix_crosses_vblank(7, 0x12, 1, 0x51, 0x30, countdown,),
                 matches!(countdown, 1 | 3 | 5 | 6 | 7 | 9 | 11 | 13 | 17 | 20),
                 "unexpected caller-return timing for palette step {countdown}",
+            );
+        }
+
+        for countdown in 1..=23 {
+            assert_eq!(
+                straight_interroom_fadeout_suffix_crosses_vblank(7, 0x12, 1, 0x32, 0x35, countdown,),
+                countdown == 1,
+                "unexpected room-$32 staircase-$35 caller-return timing for palette step {countdown}",
             );
         }
 

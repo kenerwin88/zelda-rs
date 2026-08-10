@@ -88,6 +88,12 @@ bridge `sync()` calls re-run a state's `write_to_ram` mid-frame on every setter.
    `ZELDA3_DEBUG_VWF_BUDGET_FRAME=<host-frame>` for one frame of per-glyph phase/cycle
    receipts, then pair it with Snes9x `pc,nmi` events at `$0E:C9F9` and `$00:F861`.
    The unfiltered `ZELDA3_DEBUG_VWF_BUDGET=1` remains available for short windows only.
+   Identical long calls can also cross different totals when the preceding call returns at a
+   different raster phase. Compare the entry and return PCs with their V-counters before
+   attributing the difference to data size; keep both a shorter control case and the longer
+   case in tests. (`LoadTransAuxGFX_sprite`: room `$22` enters after V=27 and returns after
+   seven slices at V=158; room `$21` enters after V=124 and returns on the eighth boundary at
+   V=257, f31243.)
 6. **Aliased hardware phase lanes** — a compact modulo formula appears to describe a wrapped
    pipeline but aliases consumers that remain in the unwrapped part of the callback's
    phase schedule. The error stays latent until a register write lands between the real and

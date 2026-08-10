@@ -145,6 +145,7 @@ impl RomRandomReplay {
         self.next_execution_frame = self.next_execution_frame.wrapping_add(1);
     }
 
+    #[track_caller]
     pub(crate) fn take_next(&mut self) -> Option<RomRandomResult> {
         if !self.enabled {
             return None;
@@ -152,16 +153,29 @@ impl RomRandomReplay {
         let execution_frame = self
             .current_execution_frame
             .expect("ROM random replay consumed outside a host frame");
-        let sample = self.samples.pop_front().unwrap_or_else(|| {
+        let caller = std::panic::Location::caller();
+        let Some(sample) = self.samples.pop_front() else {
+            if std::env::var_os("ZELDA3_DEBUG_ALLOW_UNEXPECTED_ROM_RANDOM").is_some() {
+                eprintln!(
+                    "unexpected_rom_random frame={execution_frame} callsite={}:{} fallback=00 carry=0",
+                    caller.file(),
+                    caller.line(),
+                );
+                return Some(RomRandomResult::new(0, false));
+            }
             panic!(
-                "unexpected ROM random call during execution frame {execution_frame}: replay is exhausted"
+                "unexpected ROM random call during execution frame {execution_frame}: replay is exhausted; callsite={}:{}; set ZELDA3_DEBUG_ALLOW_UNEXPECTED_ROM_RANDOM=1 to continue with a zero-valued diagnostic sample",
+                caller.file(),
+                caller.line(),
             )
-        });
+        };
         if sample.execution_frame != execution_frame {
             if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_FRAME_DRIFT").is_none() {
                 panic!(
-                    "ROM random call order diverged: replay expected execution frame {}, Rust called during {execution_frame}",
-                    sample.execution_frame
+                    "ROM random call order diverged: replay expected execution frame {}, Rust called during {execution_frame}; callsite={}:{}",
+                    sample.execution_frame,
+                    caller.file(),
+                    caller.line(),
                 );
             }
             if self.first_frame_drift.is_none() {

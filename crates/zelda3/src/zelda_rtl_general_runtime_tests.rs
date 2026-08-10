@@ -3730,6 +3730,43 @@ fn dungeon_supertile_transition_resumes_at_rom_call_boundaries() {
 }
 
 #[test]
+fn room_42_staircase_34_spiral_initializer_uses_measured_short_workload() {
+    assert_eq!(spiral_room_initialization_nmi_slices(0x42, 0x34), 18);
+    assert!(spiral_room_initializer_returns_before_next_nmi(0x42, 0x34));
+    assert_eq!(
+        spiral_room_initialization_nmi_slices(0x42, 0x30),
+        DUNGEON_SPIRAL_ROOM_INITIALIZATION_NMI_SLICES,
+    );
+    assert!(!spiral_room_initializer_returns_before_next_nmi(0x42, 0x30));
+    assert_eq!(
+        spiral_room_initialization_nmi_slices(0x41, 0x34),
+        DUNGEON_SPIRAL_ROOM_INITIALIZATION_NMI_SLICES,
+    );
+    assert!(!spiral_room_initializer_returns_before_next_nmi(0x41, 0x34));
+}
+
+#[test]
+fn room_21_late_aux_graphics_entry_crosses_an_eighth_nmi() {
+    assert_eq!(dungeon_aux_sprite_graphics_nmi_slices(0x21), 8);
+    assert_eq!(
+        dungeon_aux_sprite_graphics_nmi_slices(0x22),
+        DUNGEON_SUPERTILE_AUX_SPRITE_GFX_NMI_SLICES,
+    );
+
+    let continuation = GameWorkContinuation::FinishDungeonSupertileTransition {
+        work: DungeonSupertileTransitionWork::AuxiliarySpriteGraphics,
+    };
+    let mut work = ScheduledGameWork::schedule(continuation, 8);
+    for _ in 0..7 {
+        assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
+    }
+    assert_eq!(
+        work.advance_one_nmi_slice(),
+        GameWorkStep::Complete(continuation),
+    );
+}
+
+#[test]
 fn straight_interroom_room_initialization_crosses_nineteen_nmi_slices() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -3832,6 +3869,38 @@ fn straight_interroom_state5_waits_for_its_leading_nmi() {
         state.game_execution_scheduler.take_pre_main_nmi_resume(),
         Some(PreMainNmiResume::StraightInterroomState5LeadingNmi),
     );
+}
+
+#[test]
+fn room_32_staircase_35_sprite_reset_exposes_disabled_slots_for_one_nmi() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(7);
+    state.set_submodule(0x12);
+    state.set_subsubmodule(5);
+    state.set_dungeon_room_index(0x32);
+    state.dungeon_stair_movement_mut().set_staircase_index(0x35);
+    state.sprite_slot_view_mut(0).set_state(9);
+    state.sprite_slot_view_mut(0).set_sprite_type(0x6e);
+
+    assert!(state.suspend_straight_interroom_sprite_reset_before_room_load());
+    assert_eq!(state.sprite_slot_view(0).state(), 0);
+    assert_eq!(state.sprite_slot_view(0).sprite_type(), 0x6e);
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishStraightInterroomSpriteReset),
+    );
+
+    let mut unmeasured = ZeldaState::new();
+    unmeasured.restore_live_rom_timing_after_checkpoint();
+    unmeasured.set_main_module(7);
+    unmeasured.set_submodule(0x12);
+    unmeasured.set_subsubmodule(5);
+    unmeasured.set_dungeon_room_index(0x51);
+    unmeasured
+        .dungeon_stair_movement_mut()
+        .set_staircase_index(0x30);
+    assert!(!unmeasured.suspend_straight_interroom_sprite_reset_before_room_load());
 }
 
 #[test]
@@ -3972,6 +4041,36 @@ fn room_61_room_load_caller_waits_for_its_leading_nmi_before_fresh_main() {
         },
         0x61,
     ));
+    assert!(dungeon_supertile_quadrant_upload_holds_main_for_nmi(
+        PreMainNmiResume::DungeonSupertileQuadrantUploads,
+        FrameState {
+            main_module: 7,
+            submodule: 2,
+            subsubmodule: 10,
+            ..FrameState::default()
+        },
+        0x22,
+    ));
+    assert!(dungeon_supertile_quadrant_upload_holds_main_for_nmi(
+        PreMainNmiResume::DungeonSupertileQuadrantUploads,
+        FrameState {
+            main_module: 7,
+            submodule: 2,
+            subsubmodule: 14,
+            ..FrameState::default()
+        },
+        0x22,
+    ));
+    assert!(!dungeon_supertile_quadrant_upload_holds_main_for_nmi(
+        PreMainNmiResume::DungeonSupertileQuadrantUploads,
+        FrameState {
+            main_module: 7,
+            submodule: 2,
+            subsubmodule: 11,
+            ..FrameState::default()
+        },
+        0x22,
+    ));
 
     assert!(room_61_sprite_conversion_retains_resident_oam(
         DungeonSupertileTransitionWork::SpriteConversion,
@@ -4003,11 +4102,27 @@ fn four_rat_room_load_caller_returns_without_an_extra_nmi_slice() {
         rat_pack.sprite_slot_view_mut(slot).set_sprite_type(0x6d);
     }
 
-    assert!(rat_pack_room_load_caller_returns_before_next_nmi(&rat_pack));
+    assert!(room_load_caller_returns_before_next_nmi(&rat_pack));
     assert!(!rat_pack.begin_dungeon_supertile_transition_work(
         DungeonSupertileTransitionWork::RoomLoadCallerResume,
     ));
     assert!(rat_pack.game_execution_scheduler.is_idle());
+
+    let mut room_21 = ZeldaState::new();
+    room_21.restore_live_rom_timing_after_checkpoint();
+    room_21.set_main_module(7);
+    room_21.set_submodule(2);
+    room_21.set_subsubmodule(2);
+    room_21.set_dungeon_room_index(0x21);
+    for slot in 0..11 {
+        room_21.sprite_slot_view_mut(slot).set_state(8);
+        room_21.sprite_slot_view_mut(slot).set_sprite_type(0x6f);
+    }
+    assert!(room_load_caller_returns_before_next_nmi(&room_21));
+    assert!(!room_21.begin_dungeon_supertile_transition_work(
+        DungeonSupertileTransitionWork::RoomLoadCallerResume,
+    ));
+    assert!(room_21.game_execution_scheduler.is_idle());
 
     let mut guard_pack = ZeldaState::new();
     guard_pack.restore_live_rom_timing_after_checkpoint();
@@ -4018,12 +4133,72 @@ fn four_rat_room_load_caller_returns_without_an_extra_nmi_slice() {
         guard_pack.sprite_slot_view_mut(slot).set_state(8);
         guard_pack.sprite_slot_view_mut(slot).set_sprite_type(0x41);
     }
-    assert!(!rat_pack_room_load_caller_returns_before_next_nmi(
-        &guard_pack
-    ));
+    assert!(!room_load_caller_returns_before_next_nmi(&guard_pack));
     assert!(guard_pack.begin_dungeon_supertile_transition_work(
         DungeonSupertileTransitionWork::RoomLoadCallerResume,
     ));
+}
+
+#[test]
+fn room_22_sprite_pack_does_not_skip_partial_sprite_main_return() {
+    let mut measured = ZeldaState::new();
+    measured.restore_live_rom_timing_after_checkpoint();
+    measured.set_main_module(7);
+    measured.set_submodule(2);
+    measured.set_subsubmodule(2);
+    measured.set_dungeon_room_index(0x22);
+    measured.sprite_slot_view_mut(5).set_state(8);
+    measured.sprite_slot_view_mut(5).set_sprite_type(0x6e);
+    measured.sprite_slot_view_mut(6).set_state(8);
+    measured.sprite_slot_view_mut(6).set_sprite_type(0x41);
+
+    assert!(!room_load_caller_returns_before_next_nmi(&measured));
+
+    measured.set_dungeon_room_index(0x23);
+    assert!(!room_load_caller_returns_before_next_nmi(&measured));
+}
+
+#[test]
+fn room_22_state_10_quadrant_builder_crosses_nmi() {
+    assert!(dungeon_supertile_quadrant_build_crosses_nmi(0x22, 10));
+    assert!(!dungeon_supertile_quadrant_build_crosses_nmi(0x22, 9));
+    assert!(!dungeon_supertile_quadrant_build_crosses_nmi(0x23, 10));
+}
+
+#[test]
+fn room_22_state_10_builder_returns_before_state_11_leading_nmi() {
+    assert!(dungeon_state_10_caller_returns_before_state_11(0x22, 10));
+    assert!(!dungeon_state_10_caller_returns_before_state_11(0x22, 9));
+    assert!(!dungeon_state_10_caller_returns_before_state_11(0x23, 10));
+}
+
+#[test]
+fn room_22_room_load_sprite_main_suspends_after_slot_5() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(2);
+    state.set_dungeon_room_index(0x22);
+    for slot in 0..=6 {
+        state.sprite_slot_view_mut(slot).set_state(8);
+        state.sprite_slot_view_mut(slot).set_sprite_type(0x6d);
+    }
+    state.dungeon_room_load_sprite_main_nmi_after_slot = Some(5);
+
+    state.sprite_main();
+
+    assert_eq!(state.sprite_slot_view(6).state(), 9);
+    assert_eq!(state.sprite_slot_view(5).state(), 9);
+    for slot in 0..5 {
+        assert_eq!(state.sprite_slot_view(slot).state(), 8);
+    }
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonRoomLoadSpriteMain {
+            interrupted_slot: 5,
+        }),
+    );
 }
 
 #[test]
@@ -4127,6 +4302,26 @@ fn room_41_state_11_quadrant_upload_suspends_before_caller_return() {
     assert!(state
         .game_execution_scheduler
         .work_suspends_translated_call_stack());
+}
+
+#[test]
+fn room_22_state_11_quadrant_upload_suspends_before_caller_return() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(11);
+    state.set_dungeon_room_index(0x22);
+
+    state.Dungeon_InterRoomTrans_State4();
+
+    assert_eq!(state.game_state.frame.subsubmodule, 11);
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonSupertileTransition {
+            work: DungeonSupertileTransitionWork::QuadrantUploadCallerReturn,
+        })
+    );
 }
 
 #[test]
@@ -5822,6 +6017,55 @@ fn dungeon_faded_filter_second_pass_resumes_without_a_new_main_iteration() {
 }
 
 #[test]
+fn resumed_dungeon_fade_waits_for_its_leading_nmi() {
+    assert!(dungeon_faded_filter_second_pass_has_leading_nmi(
+        0x21, 2
+    ));
+    assert!(dungeon_faded_filter_second_pass_has_leading_nmi(
+        0x21, 18
+    ));
+    assert!(dungeon_faded_filter_second_pass_has_leading_nmi(
+        0x21, 26
+    ));
+    assert!(!dungeon_faded_filter_second_pass_has_leading_nmi(
+        0x21, 4
+    ));
+    assert!(!dungeon_faded_filter_second_pass_has_leading_nmi(
+        0x22, 2
+    ));
+
+    let mut state = ZeldaState::new();
+    state.rom_startup_timing = true;
+    state.set_dungeon_room_index(0x21);
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(2);
+    // The first walk advances to 1 and is interrupted; the resumed second walk
+    // advances to 2 and returns at V=18, still well before fade completion.
+    state.set_countdown_word(0);
+    state.set_mosaic_target_level(31);
+    state.dungeon_torch_mut().set_lights_out_request(1);
+
+    state.Module07_02_FadedFilter();
+
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .pre_main_caller_continuation(),
+        Some(PreMainCallerContinuation::DungeonFadedFilterSecondPalettePass)
+    );
+
+    assert!(state.resume_pre_main_caller_continuation(0, None));
+
+    assert_eq!(state.game_state.frame.subsubmodule, 2);
+    assert_eq!(state.game_state.display.palette_filter.countdown(), 2);
+    assert_eq!(
+        state.game_execution_scheduler.pre_main_nmi_resume(),
+        Some(PreMainNmiResume::DungeonFadedFilterCompletionNmi)
+    );
+}
+
+#[test]
 fn completed_dungeon_fade_waits_for_leading_nmi_before_state_three() {
     let mut state = ZeldaState::new();
     state.rom_startup_timing = true;
@@ -5858,42 +6102,49 @@ fn completed_dungeon_fade_waits_for_leading_nmi_before_state_three() {
 }
 
 #[test]
-fn completed_landing_fade_suspends_its_caller_return_before_state_fifteen_main() {
-    let mut state = ZeldaState::new();
-    state.rom_startup_timing = true;
-    state.set_main_module(7);
-    state.set_submodule(2);
-    state.set_subsubmodule(14);
-    state.set_dungeon_room_index(0x41);
-    state.set_countdown_word(30);
-    state.set_mosaic_target_level(31);
-    state.dungeon_torch_mut().set_lights_out_request(1);
+fn measured_landing_fades_suspend_their_caller_return_before_state_fifteen_main() {
+    for room in [0x22, 0x41] {
+        let mut state = ZeldaState::new();
+        state.rom_startup_timing = true;
+        state.set_main_module(7);
+        state.set_submodule(2);
+        state.set_subsubmodule(14);
+        state.set_dungeon_room_index(room);
+        state.set_countdown_word(30);
+        state.set_mosaic_target_level(31);
+        state.dungeon_torch_mut().set_lights_out_request(1);
 
-    state.Module07_02_FadedFilter();
+        state.Module07_02_FadedFilter();
 
-    assert_eq!(state.game_state.frame.subsubmodule, 15);
-    assert_eq!(state.game_state.display.palette_filter.countdown(), 0);
-    assert_eq!(
-        state.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishDungeonSupertileTransition {
-            work: DungeonSupertileTransitionWork::FadedFilterCallerReturn,
-        })
-    );
-    assert!(state
-        .game_execution_scheduler
-        .work_suspends_translated_call_stack());
-    assert_eq!(
-        state.dungeon_faded_filter_palette_completion_host_frame,
-        Some(state.frame_ctr_dbg)
-    );
-    assert_eq!(
-        state.next_display_obj_scanout_generation,
-        Some(ObjScanoutGenerations {
-            oam: OamScanoutSource::RetainCapturedBeforeNmi,
-            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
-            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
-        })
-    );
+        assert_eq!(state.game_state.frame.subsubmodule, 15, "room={room:#04x}");
+        assert_eq!(
+            state.game_state.display.palette_filter.countdown(),
+            0,
+            "room={room:#04x}"
+        );
+        assert_eq!(
+            state.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDungeonSupertileTransition {
+                work: DungeonSupertileTransitionWork::FadedFilterCallerReturn,
+            }),
+            "room={room:#04x}"
+        );
+        assert!(state
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack());
+        assert_eq!(
+            state.dungeon_faded_filter_palette_completion_host_frame,
+            Some(state.frame_ctr_dbg)
+        );
+        assert_eq!(
+            state.next_display_obj_scanout_generation,
+            Some(ObjScanoutGenerations {
+                oam: OamScanoutSource::RetainCapturedBeforeNmi,
+                link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            })
+        );
+    }
 }
 
 #[test]
@@ -7828,7 +8079,7 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
             GraphicsDmaGeneration::LiveAfterMain,
             0,
         ),
-        GraphicsDmaGeneration::LiveAfterMain
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
     );
     let mut supertile_exit = supertile_entry;
     supertile_exit.subsubmodule = 1;
@@ -8163,7 +8414,7 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
 
     let mut doorway_movement = supertile_finished;
     doorway_movement.subsubmodule = 13;
-    assert!(room_71_supertile_return_retains_link_vram(
+    assert!(dungeon_transition_retains_presented_link_vram(
         supertile_finished,
         doorway_movement,
         0x71,
@@ -8172,18 +8423,18 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
         doorway_movement,
         0x71,
     ));
-    assert!(!room_71_supertile_return_retains_link_vram(
+    assert!(!dungeon_transition_retains_presented_link_vram(
         supertile_finished,
         supertile_scrolling,
         0x71,
     ));
-    assert!(!room_71_supertile_return_retains_link_vram(
+    assert!(!dungeon_transition_retains_presented_link_vram(
         supertile_finished,
         doorway_movement,
         0x50,
     ));
     doorway_movement.subsubmodule = 14;
-    assert!(room_71_supertile_return_retains_link_vram(
+    assert!(dungeon_transition_retains_presented_link_vram(
         supertile_finished,
         doorway_movement,
         0x71,
@@ -8193,13 +8444,41 @@ fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_gene
     let mut room_load = filtering_done;
     room_load.submodule = 5;
     room_load.subsubmodule = 0;
-    assert!(room_71_supertile_return_retains_link_vram(
+    assert!(dungeon_transition_retains_presented_link_vram(
         filtering_done,
         room_load,
         0x71,
     ));
-    assert!(!room_71_supertile_return_retains_link_vram(
+    assert!(!dungeon_transition_retains_presented_link_vram(
         room_load, room_load, 0x71,
+    ));
+    let normal_gameplay = FrameState {
+        main_module: 7,
+        submodule: 0,
+        subsubmodule: 0,
+        ..FrameState::default()
+    };
+    let brightness_change = FrameState {
+        submodule: 0x0a,
+        ..normal_gameplay
+    };
+    assert!(dungeon_transition_retains_presented_link_vram(
+        normal_gameplay,
+        brightness_change,
+        0x41,
+    ));
+    assert!(!dungeon_transition_retains_presented_link_vram(
+        normal_gameplay,
+        brightness_change,
+        0x40,
+    ));
+    assert!(!dungeon_transition_retains_presented_link_vram(
+        FrameState {
+            submodule: 2,
+            ..normal_gameplay
+        },
+        brightness_change,
+        0x41,
     ));
     assert!(room_71_supertile_return_uses_published_link_oam(
         room_load, 0x71,
