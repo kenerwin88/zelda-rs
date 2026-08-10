@@ -3518,7 +3518,8 @@ fn deferred_voice_sample_offset_with_bank_generation(
             } else {
                 event.sample_offset.saturating_sub(1)
             };
-            return pipeline_sample + i32::from(event.timer_cycles > read_phase);
+            let write_missed_read = event.timer_cycles > read_phase;
+            return pipeline_sample + i32::from(write_missed_read);
         }
         event.sample_offset
     } else if let AudioEventKind::NoteOff { voice } = event.kind {
@@ -3937,6 +3938,25 @@ mod tests {
         );
 
         assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 100);
+    }
+
+    #[test]
+    fn bank_upload_generation_does_not_shift_voice_zero_v2_equality() {
+        let event = timed_event(
+            222,
+            21,
+            AudioEventKind::VoiceParameter {
+                voice: 0,
+                parameter: VoiceParameterKind::PitchLow,
+                value: 225,
+            },
+        );
+
+        assert_eq!(deferred_voice_sample_offset(&event, 0, false, 0), 222);
+        assert_eq!(
+            deferred_voice_sample_offset_with_bank_generation(&event, 0, false, 0, 1),
+            222
+        );
     }
 
     #[test]

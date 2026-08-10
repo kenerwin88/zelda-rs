@@ -122,6 +122,7 @@ pub(crate) struct RomRandomReplay {
     current_execution_frame: Option<u32>,
     next_execution_frame: u32,
     samples: VecDeque<RomRandomSample>,
+    first_frame_drift: Option<(u32, u32)>,
 }
 
 impl RomRandomReplay {
@@ -129,6 +130,7 @@ impl RomRandomReplay {
         self.enabled = true;
         self.current_execution_frame = None;
         self.next_execution_frame = start_execution_frame;
+        self.first_frame_drift = None;
         self.samples = samples
             .into_iter()
             .skip_while(|sample| sample.execution_frame < start_execution_frame)
@@ -155,11 +157,25 @@ impl RomRandomReplay {
                 "unexpected ROM random call during execution frame {execution_frame}: replay is exhausted"
             )
         });
-        assert_eq!(
-            sample.execution_frame, execution_frame,
-            "ROM random call order diverged: replay expected execution frame {}, Rust called during {execution_frame}",
-            sample.execution_frame
-        );
+        if sample.execution_frame != execution_frame {
+            if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_FRAME_DRIFT").is_none() {
+                panic!(
+                    "ROM random call order diverged: replay expected execution frame {}, Rust called during {execution_frame}",
+                    sample.execution_frame
+                );
+            }
+            if self.first_frame_drift.is_none() {
+                self.first_frame_drift = Some((sample.execution_frame, execution_frame));
+                eprintln!(
+                    "rom_random_frame_drift expected={} actual={} delta={} value={:02x} carry={}",
+                    sample.execution_frame,
+                    execution_frame,
+                    i64::from(execution_frame) - i64::from(sample.execution_frame),
+                    sample.value,
+                    u8::from(sample.carry),
+                );
+            }
+        }
         Some(RomRandomResult::new(sample.value, sample.carry))
     }
 

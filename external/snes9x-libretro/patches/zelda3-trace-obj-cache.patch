@@ -1,0 +1,231 @@
+diff --git a/gfx.cpp b/gfx.cpp
+--- a/gfx.cpp
++++ b/gfx.cpp
+@@ -830,14 +830,20 @@ static void DrawOBJS (int D)
+ 					if (x == X && x + 8 < next_clip)
+ 					{
+ 						if (DrawMode)
++						{
++							Zelda3TraceSetPresentedObjTile(BaseTile | TileX, TileLine, X, Y);
+ 							DrawTile(BaseTile | TileX, O, TileLine, 1);
++						}
+ 						x += 8;
+ 					}
+ 					else
+ 					{
+ 						int	w = (next_clip <= X + 8) ? next_clip - x : X + 8 - x;
+ 						if (DrawMode)
++						{
++							Zelda3TraceSetPresentedObjTile(BaseTile | TileX, TileLine, X, Y);
+ 							DrawClippedTile(BaseTile | TileX, O, x - X, w, TileLine, 1);
++						}
+ 						x += w;
+ 					}
+ 				}
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -897,6 +897,13 @@ extern "C" int zelda3_snes9x_debug_ppu_value(int field, int index)
+         // offset, palette index, main, sub, sub depth, result, Z1, Z2,
+         // clip-colors, layer-math-enable.
+         case 28: return Zelda3TracePresentedPixelValue(index);
++        // Decoded 4bpp cache rows retained after the completed scanout. VRAM
++        // DMA can invalidate these entries before retro_run returns while the
++        // bytes still describe the OBJ pixels that were actually presented.
++        case 29:
++            return Zelda3TracePresentedObjTileCacheValue(0, index);
++        case 30:
++            return Zelda3TracePresentedObjTileCacheValue(1, index);
+         default: return -1;
+     }
+ }
+diff --git a/tileimpl.h b/tileimpl.h
+--- a/tileimpl.h
++++ b/tileimpl.h
+@@ -12,6 +12,9 @@
+ #include "tile.h"
+ 
+ extern struct SLineMatrixData	LineMatrixData[240];
++void Zelda3TraceSetPresentedObjTile(int tile, int tile_line, int x, int y);
++void Zelda3TraceSetPresentedTile(int tile, int tile_number, int tile_address,
++	const uint8 *cache, int cache_valid);
+ 
+ 
+ namespace TileImpl {
+@@ -108,6 +111,9 @@ namespace TileImpl {
+ 				if (!BG.Buffered[TileNumber])
+ 					BG.Buffered[TileNumber] = BG.ConvertTile(pCache, TileAddr, Tile & 0x3ff);
+ 			}
++			if (Zelda3TracePixelEnabled)
++				Zelda3TraceSetPresentedTile(Tile, TileNumber, TileAddr, pCache,
++					(Tile & H_FLIP) ? BG.BufferedFlip[TileNumber] : BG.Buffered[TileNumber]);
+ 		}
+ 
+ 		alwaysinline bool IsBlankTile() const
+@@ -241,6 +247,8 @@ namespace TileImpl {
+ 
+ 		static void Draw(uint32 Tile, uint32 Offset, uint32 StartLine, uint32 LineCount)
+ 		{
++			Zelda3TraceSetPresentedObjTile(
++				Tile, StartLine, Offset % GFX.PPL, Offset / GFX.PPL);
+ 			CachedTile cache(Tile);
+ 			int32	l;
+ 			uint8	*bp, Pix;
+@@ -317,6 +325,8 @@ namespace TileImpl {
+ 
+ 		static void Draw(uint32 Tile, uint32 Offset, uint32 StartPixel, uint32 Width, uint32 StartLine, uint32 LineCount)
+ 		{
++			Zelda3TraceSetPresentedObjTile(
++				Tile, StartLine, Offset % GFX.PPL, Offset / GFX.PPL);
+ 			CachedTile cache(Tile);
+ 			int32	l;
+ 			uint8	*bp, Pix, w;
+diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
+--- a/zelda3_trace.cpp
++++ b/zelda3_trace.cpp
+@@ -60,11 +60,18 @@ TraceConfig config;
+ uint64 retro_run_index = 0;
+ uint8 presented_oam[544] = {};
+ int8 presented_obj_sprites[SNES_HEIGHT_EXTENDED][128] = {};
+-uint8 presented_obj_rows[SNES_HEIGHT_EXTENDED][128] = {};
++uint16 presented_obj_rows[SNES_HEIGHT_EXTENDED][128] = {};
+ int16 presented_obj_tiles[SNES_HEIGHT_EXTENDED] = {};
+ uint8 presented_obj_flags[SNES_HEIGHT_EXTENDED] = {};
+ uint8 presented_obj_visible_tiles[128] = {};
+ uint8 presented_obj_widths[128] = {};
++uint8 presented_obj_tile_cache[64 * 64] = {};
++uint8 presented_obj_tile_cache_valid[64] = {};
++int presented_tile = 0;
++int presented_tile_number = 0;
++int presented_tile_address = 0;
++int presented_tile_cache_valid = 0;
++uint32 presented_tile_cache_hash = 0;
+ SLineMatrixData presented_mode7[240] = {};
+ int scanline_windows[240][4] = {};
+ int presented_windows[240][4] = {};
+@@ -73,6 +80,10 @@ int trace_pixel_x = -1;
+ int trace_pixel_y = -1;
+ constexpr int presented_pixel_field_count = 10;
+ int presented_pixel[presented_pixel_field_count] = {};
++int presented_obj_tile = -1;
++int presented_obj_tile_line = -1;
++int presented_obj_tile_x = -1;
++int presented_obj_tile_y = -1;
+ constexpr int dsp_sample_capacity = 600;
+ constexpr int dsp_field_count = 217;
+ int dsp_sample_count = 0;
+@@ -268,13 +279,21 @@ void Zelda3TraceCapturePresentedPpuState()
+ 		presented_obj_flags[line] = GFX.OBJLines[line].RTOFlags;
+ 		for (int slot = 0; slot < 128; slot++)
+ 		{
+-			presented_obj_sprites[line][slot] = GFX.OBJLines[line].OBJ[slot].Sprite;
+-			presented_obj_rows[line][slot] = GFX.OBJLines[line].OBJ[slot].Line;
++			const int sprite = GFX.OBJLines[line].OBJ[slot].Sprite;
++			presented_obj_sprites[line][slot] = sprite;
++			presented_obj_rows[line][slot] = GFX.OBJLines[line].OBJ[slot].Line |
++				(sprite >= 0 ? PPU.OBJ[sprite].Name << 8 : 0);
+ 		}
+ 	}
+ 	std::memcpy(presented_obj_visible_tiles, GFX.OBJVisibleTiles,
+ 		sizeof(presented_obj_visible_tiles));
+ 	std::memcpy(presented_obj_widths, GFX.OBJWidths, sizeof(presented_obj_widths));
++	std::memcpy(presented_obj_tile_cache,
++		IPPU.TileCache[TILE_4BIT] + (0x400 << 6),
++		sizeof(presented_obj_tile_cache));
++	std::memcpy(presented_obj_tile_cache_valid,
++		IPPU.TileCached[TILE_4BIT] + 0x400,
++		sizeof(presented_obj_tile_cache_valid));
+ 	std::memcpy(presented_mode7, LineMatrixData, sizeof(presented_mode7));
+ 	std::memcpy(presented_windows, scanline_windows, sizeof(presented_windows));
+ 	std::memcpy(presented_clip, IPPU.Clip, sizeof(presented_clip));
+@@ -330,10 +349,52 @@ void Zelda3TraceCapturePresentedPixel(int offset, int palette_index,
+ 	presented_pixel[5] = result;
+ 	presented_pixel[6] = z1;
+ 	presented_pixel[7] = z2;
+-	presented_pixel[8] = GFX.ClipColors;
+-	presented_pixel[9] = BG.EnableMath;
++	presented_pixel[8] = presented_obj_tile | (presented_obj_tile_line << 16);
++	uint32 tile_address = PPU.OBJNameBase +
++		((presented_obj_tile & 0x3ff) << 5);
++	if (presented_obj_tile & 0x100)
++		tile_address += PPU.OBJNameSelect;
++	tile_address &= 0xffff;
++	const uint32 tile_number = tile_address >> 5;
++	const uint8 *tile_cache = IPPU.TileCache[TILE_4BIT] + (tile_number << 6);
++	uint32 tile_cache_hash = 2166136261u;
++	for (int index = 0; index < 64; index++)
++		tile_cache_hash = (tile_cache_hash ^ tile_cache[index]) * 16777619u;
++	presented_pixel[9] = tile_cache
++		[presented_obj_tile_line + trace_pixel_x - presented_obj_tile_x];
++	if (config.output)
++		std::fprintf(config.output,
++			"{\"event\":\"pixel-write\",\"run\":%llu,\"frame\":%u,\"pix\":%d,\"z1\":%d,\"z2\":%d,\"tile\":%d,\"tile_number\":%d,\"tile_address\":%d,\"tile_cache_valid\":%d,\"tile_cache_hash\":%u,\"obj_tile\":%d,\"obj_line\":%d,\"obj_x\":%d,\"obj_y\":%d,\"obj_cache\":%d,\"obj_tile_number\":%u,\"obj_cache_valid\":%d,\"obj_cache_hash\":%u}\n",
++			(unsigned long long) retro_run_index, IPPU.TotalEmulatedFrames,
++			palette_index, z1, z2, presented_tile, presented_tile_number,
++			presented_tile_address, presented_tile_cache_valid,
++			presented_tile_cache_hash, presented_obj_tile,
++			presented_obj_tile_line, presented_obj_tile_x, presented_obj_tile_y,
++			presented_pixel[9], tile_number,
++			IPPU.TileCached[TILE_4BIT][tile_number], tile_cache_hash);
+ }
+ 
++void Zelda3TraceSetPresentedTile(int tile, int tile_number, int tile_address,
++	const uint8 *cache, int cache_valid)
++{
++	presented_tile = tile;
++	presented_tile_number = tile_number;
++	presented_tile_address = tile_address;
++	presented_tile_cache_valid = cache_valid;
++	presented_tile_cache_hash = 2166136261u;
++	for (int index = 0; index < 64; index++)
++		presented_tile_cache_hash =
++			(presented_tile_cache_hash ^ cache[index]) * 16777619u;
++}
++
++void Zelda3TraceSetPresentedObjTile(int tile, int tile_line, int x, int y)
++{
++	presented_obj_tile = tile;
++	presented_obj_tile_line = tile_line;
++	presented_obj_tile_x = x;
++	presented_obj_tile_y = y;
++}
++
+ int Zelda3TracePresentedPixelValue(int index)
+ {
+ 	return index >= 0 && index < presented_pixel_field_count
+@@ -358,6 +419,17 @@ int Zelda3TracePresentedObjValue(int field, int index)
+ 			return index < SNES_HEIGHT_EXTENDED * 128
+ 				? presented_obj_rows[index / 128][index % 128] : -1;
+ 		default: return -1;
+ 	}
+ }
++
++int Zelda3TracePresentedObjTileCacheValue(int field, int index)
++{
++	if (field == 0)
++		return index >= 0 && index < (int) sizeof(presented_obj_tile_cache)
++			? presented_obj_tile_cache[index] : -1;
++	if (field == 1)
++		return index >= 0 && index < (int) sizeof(presented_obj_tile_cache_valid)
++			? presented_obj_tile_cache_valid[index] : -1;
++	return -1;
++}
+ 
+diff --git a/zelda3_trace.h b/zelda3_trace.h
+--- a/zelda3_trace.h
++++ b/zelda3_trace.h
+@@ -28,10 +28,14 @@ void Zelda3TraceCaptureScanlinePpuState(uint8 line);
+ void Zelda3TraceCapturePresentedPpuState();
+ int Zelda3TracePresentedOamValue(int index);
+ int Zelda3TracePresentedObjValue(int field, int index);
++int Zelda3TracePresentedObjTileCacheValue(int field, int index);
+ int Zelda3TracePresentedMode7Value(int line, int field);
+ int Zelda3TracePresentedClipValue(int index);
+ void Zelda3TraceCapturePresentedPixel(int offset, int palette_index, int main_color,
+ 	int sub_color, int sub_depth, int result, int z1, int z2);
++void Zelda3TraceSetPresentedObjTile(int tile, int tile_line, int x, int y);
++void Zelda3TraceSetPresentedTile(int tile, int tile_number, int tile_address,
++	const uint8 *cache, int cache_valid);
+ int Zelda3TracePresentedPixelValue(int index);
+ int Zelda3TraceDspSampleCount();
+ int Zelda3TraceDspFieldCount();

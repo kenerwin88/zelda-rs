@@ -5,6 +5,18 @@ fn fresh_state() -> ZeldaState {
 }
 
 #[test]
+fn guard_random_patrol_delay_preserves_rng_carry_through_masked_adc() {
+    assert_eq!(
+        soldier_random_patrol_delay(crate::rom_random::RomRandomResult::new(0x7b, false)),
+        99,
+    );
+    assert_eq!(
+        soldier_random_patrol_delay(crate::rom_random::RomRandomResult::new(0x7b, true)),
+        100,
+    );
+}
+
+#[test]
 fn guard_tick_and_update_body_advances_subtype_and_writes_gfx() {
     // sprite_subtype2 ++; t = sprite_D * 4 + (sprite_subtype2 >> 3 & 3);
     // sprite_graphics = kSoldier_Gfx2[t].

@@ -11,6 +11,7 @@ from typing import TextIO
 
 
 RNG_SEED_ADDRESS = 0x0FA1
+CARTRIDGE_RNG_STORE_PC_LOW16 = 0xBA7F
 
 
 def extract_samples(lines: TextIO) -> list[tuple[int, int, bool]]:
@@ -23,6 +24,9 @@ def extract_samples(lines: TextIO) -> list[tuple[int, int, bool]]:
         except json.JSONDecodeError as error:
             raise ValueError(f"line {line_number}: invalid JSON: {error}") from error
         if event.get("event") != "rng-write" or event.get("address") != RNG_SEED_ADDRESS:
+            continue
+        pc = event.get("pc")
+        if not isinstance(pc, int) or pc & 0xFFFF != CARTRIDGE_RNG_STORE_PC_LOW16:
             continue
         run = event.get("run")
         value = event.get("value")
@@ -50,6 +54,8 @@ def extract_samples(lines: TextIO) -> list[tuple[int, int, bool]]:
 def write_script(samples: list[tuple[int, int, bool]], output: TextIO) -> None:
     output.write(
         "# Cartridge $8dba71 beam-counter RNG outputs, keyed by zero-based retro_run.\n"
+        "# Only the routine's $0fa1 store at mapped PC *:ba7f is authoritative;\n"
+        "# unrelated game-state writes to the same byte are excluded.\n"
         "# Generated from the trace event's explicit run index; Snes9x's completed-frame\n"
         "# counter can advance inside one retro_run and must not be used as this coordinate.\n"
     )

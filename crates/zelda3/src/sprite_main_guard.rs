@@ -66,6 +66,12 @@ const SOLDIER_HEAD_DIRECTIONS_BY_ANIM: [u8; 32] = [
 ];
 const SOLDIER_REACQUIRE_ANIM_CLOCK_BY_DIRECTION: [u8; 4] = [13, 13, 12, 12];
 const SOLDIER_CHASE_VELOCITY_COMPONENTS: [i8; 6] = [14, -14, 0, 0, 14, -14];
+
+fn soldier_random_patrol_delay(random: crate::rom_random::RomRandomResult) -> u8 {
+    // ROM $05:c30a returns from RNG, then executes `AND #$3f; ADC #$28` without
+    // clearing the carry produced by RNG's final ADC.
+    random.masked_adc(0x3f, 0x28)
+}
 const GUARD_PROBE_STAGGER_BY_DIRECTION: [u8; 4] = [0x10, 0x30, 0, 0x20];
 const GUARD_SIMPLIFIED_TILE_SOLIDITY_ATTRS: [u8; 256] = [
     0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1, 0, 3, 3, 3,
@@ -707,9 +713,8 @@ impl ZeldaState {
                     sprite.xor_direction(1);
                     sprite.set_subtype2(0);
                 } else {
-                    let r = self.get_random_number() & 0x3f;
-                    self.sprite_slot_view_mut(k)
-                        .set_delay_main(r.wrapping_add(0x28));
+                    let r = soldier_random_patrol_delay(self.get_random_number_with_carry());
+                    self.sprite_slot_view_mut(k).set_delay_main(r);
                     let t = self.sprite_slot_view(k).direction();
                     let u = self.get_random_number() & 3;
                     self.sprite_slot_view_mut(k).set_direction(u);

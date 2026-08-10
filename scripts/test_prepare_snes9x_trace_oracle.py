@@ -45,6 +45,7 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
                 "libretro/Makefile.common",
                 "libretro/libretro.cpp",
                 "ppu.cpp",
+                "tileimpl.h",
                 "tileimpl-n1x1.cpp",
                 "tileimpl-n2x1.cpp",
                 "zelda3_trace.cpp",
@@ -97,12 +98,12 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
             stock_receipt = MODULE.write_receipt(
                 stock_core,
                 variant="stock",
-                patch=None,
+                patches=(),
             )
             trace_receipt = MODULE.write_receipt(
                 trace_core,
                 variant="trace",
-                patch=patch,
+                patches=(patch,),
             )
 
             stock = json.loads(stock_receipt.read_text())
@@ -112,9 +113,17 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
             self.assertEqual(stock["variant"], "stock")
             self.assertIsNone(stock["patch"])
             self.assertIsNone(stock["patch_sha256"])
+            self.assertEqual(stock["patches"], [])
             self.assertEqual(trace["variant"], "trace")
             self.assertEqual(trace["patch"], str(patch))
+            self.assertEqual(trace["patches"], [str(patch)])
             self.assertEqual(trace["patch_sha256"], MODULE.sha256(patch))
+
+    def test_trace_patch_has_cartridge_only_rng_event(self) -> None:
+        trace_patch = MODULE.TRACE_PATCHES[0].read_text()
+        self.assertIn('has_token(events, "rom-rng")', trace_patch)
+        self.assertIn("TRACE_ROM_RNG", trace_patch)
+        self.assertIn("(Registers.PBPC & 0xffff) == 0xba7f", trace_patch)
 
 
 if __name__ == "__main__":

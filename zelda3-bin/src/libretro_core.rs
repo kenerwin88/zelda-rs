@@ -668,6 +668,9 @@ impl LibretroCore {
                     output_sample: unsafe { value(instruction, 10) },
                     dsp_phase: unsafe { value(instruction, 11) },
                     smp_clock: unsafe { value(instruction, 12) },
+                    direct_page_0_11: std::array::from_fn(|offset| unsafe {
+                        value(instruction, 13 + offset as i32)
+                    }),
                 })
                 .collect(),
         )
@@ -755,7 +758,7 @@ pub(crate) struct LibretroDspVoice {
     pub(crate) gain: i32,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct LibretroDspRegisterWrite {
     pub(crate) register: i32,
     pub(crate) value: i32,
@@ -797,6 +800,7 @@ pub(crate) struct LibretroSmpInstruction {
     pub(crate) output_sample: i32,
     pub(crate) dsp_phase: i32,
     pub(crate) smp_clock: i32,
+    pub(crate) direct_page_0_11: [i32; 12],
 }
 
 impl Drop for LibretroCore {

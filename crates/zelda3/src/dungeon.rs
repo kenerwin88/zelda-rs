@@ -418,8 +418,14 @@ impl ZeldaState {
 
     pub(super) fn complete_spiral_stairs_second_grayscale_palette_filter(&mut self) {
         debug_assert_eq!(self.game_state.frame.main_module, 7);
-        debug_assert_eq!(self.game_state.frame.submodule, 0x0e);
-        debug_assert_eq!(self.game_state.frame.subsubmodule, 15);
+        // This translated helper is shared by all three dungeon stair
+        // transitions. Its caller may have advanced the state byte before the
+        // pre-main return is observed, so the stable invariant is the caller
+        // family rather than one historical subsubmodule value.
+        debug_assert!(matches!(
+            self.game_state.frame.submodule,
+            0x0e | 0x11 | 0x12
+        ));
         self.ApplyPaletteFilter_bounce();
         self.ApplyGrayscaleFixed_Incremental();
     }
@@ -10129,11 +10135,45 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State13(&mut self) {
+        let entry_main_module = self.game_state.frame.main_module;
+        let entry_submodule = self.game_state.frame.submodule;
+        let entry_subsubmodule = self.game_state.frame.subsubmodule;
+        let entry_dungeon_room = self.game_state.world.location.dungeon_room_index();
         self.stage_room_72_supertile_landing_obj_scanout();
         if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
             self.ApplyPaletteFilter_bounce();
         }
         self.Dungeon_IntraRoomTrans_State5();
+        let palette_countdown = self.game_state.display.palette_filter.countdown();
+        if self.rom_startup_timing()
+            && crate::raster_timing::room_41_state_13_suffix_crosses_vblank(
+                entry_main_module,
+                entry_submodule,
+                entry_subsubmodule,
+                entry_dungeon_room,
+                palette_countdown,
+            )
+        {
+            // Preserve the measured landing phases whose caller suffix is
+            // preempted by NMI. The complementary measured phases finish that
+            // suffix atomically in the current host frame.
+            let scheduled = self.begin_dungeon_supertile_transition_work(
+                DungeonSupertileTransitionWork::State13CallerReturn,
+            );
+            debug_assert!(scheduled);
+            self.dungeon_state_13_recurring_main_publication_host_frame = Some(self.frame_ctr_dbg);
+        } else if self.rom_startup_timing()
+            && crate::raster_timing::room_41_state_13_suffix_completes_before_vblank(
+                entry_main_module,
+                entry_submodule,
+                entry_subsubmodule,
+                entry_dungeon_room,
+                palette_countdown,
+            )
+        {
+            self.dungeon_state_13_atomic_caller_return_publication_host_frame =
+                Some(self.frame_ctr_dbg);
+        }
     }
 
     pub(super) fn Module07_01_SubtileTransition(&mut self) {
@@ -10191,6 +10231,7 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_02_00_InitializeTransition(&mut self) {
+        self.dungeon_post_landing_leading_nmi_room = None;
         let bak = self
             .game_state
             .dungeon
@@ -10581,6 +10622,21 @@ impl ZeldaState {
             self.stage_dungeon_supertile_quadrant_upload_obj_scanout();
         }
         self.Dungeon_PrepareNextRoomQuadrantUpload();
+        if self.rom_startup_timing()
+            && self.game_state.frame.submodule == 2
+            && self.game_state.frame.subsubmodule == 11
+            && self.game_state.world.location.dungeon_room_index() == 0x41
+        {
+            // The second room-$41 upload is prepared before vblank, but the
+            // state-11 caller does not return until the following host CPU
+            // slice. Keep the translated call stack suspended at that exact
+            // semantic boundary.
+            let scheduled = self.begin_dungeon_supertile_transition_work(
+                DungeonSupertileTransitionWork::QuadrantUploadCallerReturn,
+            );
+            debug_assert!(scheduled);
+            return;
+        }
         self.increment_subsubmodule();
     }
 
@@ -10765,14 +10821,79 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_02_FadedFilter(&mut self) {
+        let entry_subsubmodule = self.game_state.frame.subsubmodule;
         if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
+            if self.rom_startup_timing() {
+                // The interrupt uploads the palette generation that entered
+                // this walk. Preserve it explicitly before the translated
+                // filter advances the main palette buffer atomically.
+                self.retain_palette_filter_input_cgram_on_next_display_capture();
+            }
             self.ApplyPaletteFilter_bounce();
             if self.game_state.display.palette_filter.countdown() != 0 {
-                self.ApplyPaletteFilter_bounce();
+                if self.rom_startup_timing() {
+                    // The room-load fade performs two full palette walks. The
+                    // four-rat workload reaches this call close enough to
+                    // vblank that the second walk resumes on the next host
+                    // frame; do not collapse both passes into one Rust call.
+                    self.stage_dungeon_faded_filter_first_palette_scanout();
+                    self.schedule_pre_main_caller_continuation(
+                        PreMainCallerContinuation::DungeonFadedFilterSecondPalettePass,
+                    );
+                    return;
+                }
+                self.complete_dungeon_faded_filter_second_palette_pass();
+            } else if self.rom_startup_timing() {
+                if entry_subsubmodule == 2 {
+                    // The room-load walk returns immediately before a leading
+                    // hardware NMI. Preserve that host boundary explicitly:
+                    // the next fresh module iteration does not begin until the
+                    // following host frame.
+                    self.schedule_dungeon_faded_filter_completion_nmi();
+                } else if entry_subsubmodule == 14 {
+                    // Both terminal landing passes retain the host-entry OBJ
+                    // cache. Only the direction-toggle pass actually advances
+                    // to state 15; its common Module 7 caller return crosses
+                    // the next vblank. Countdown zero alone is insufficient:
+                    // the penultimate pass also lands on zero without changing
+                    // state.
+                    self.stage_dungeon_faded_filter_first_palette_scanout();
+                    self.dungeon_faded_filter_palette_completion_host_frame =
+                        Some(self.frame_ctr_dbg);
+                    if self.game_state.frame.subsubmodule != entry_subsubmodule
+                        && self.game_state.world.location.dungeon_room_index() == 0x41
+                    {
+                        let scheduled = self.begin_dungeon_supertile_transition_work(
+                            DungeonSupertileTransitionWork::FadedFilterCallerReturn,
+                        );
+                        debug_assert!(scheduled);
+                    }
+                }
             }
         } else {
             self.increment_subsubmodule();
+            if self.rom_startup_timing()
+                && entry_subsubmodule == 14
+                && self.game_state.world.location.dungeon_room_index() == 0x41
+            {
+                // The landing fade's terminal no-request branch reaches state
+                // 15 just before vblank. Suspend only its common Module 7
+                // caller return so state 15 cannot start one host frame early.
+                self.stage_dungeon_faded_filter_first_palette_scanout();
+                self.dungeon_faded_filter_palette_completion_host_frame = Some(self.frame_ctr_dbg);
+                let scheduled = self.begin_dungeon_supertile_transition_work(
+                    DungeonSupertileTransitionWork::FadedFilterCallerReturn,
+                );
+                debug_assert!(scheduled);
+            }
         }
+    }
+
+    pub(super) fn complete_dungeon_faded_filter_second_palette_pass(&mut self) {
+        debug_assert_eq!(self.game_state.frame.main_module, 7);
+        debug_assert_eq!(self.game_state.frame.submodule, 2);
+        debug_assert!(matches!(self.game_state.frame.subsubmodule, 2 | 14));
+        self.ApplyPaletteFilter_bounce();
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State15(&mut self) {
@@ -11782,8 +11903,15 @@ impl ZeldaState {
             .staircase_move_counter()
             < 9
         {
+            // Capture the complete input palette before the atomic translation
+            // advances it. On hardware the filter can span vblank: NMI uploads
+            // this generation, then the 65816 resumes and finishes the next.
+            self.retain_palette_filter_input_cgram_on_next_display_capture();
             self.ApplyPaletteFilter_bounce();
-            if self.game_state.display.palette_filter.countdown() == 23 {
+            self.stage_straight_interroom_fadeout_obj_source();
+            let palette_countdown = self.game_state.display.palette_filter.countdown() as u8;
+            self.suspend_straight_interroom_fadeout_suffix_if_crosses_nmi(palette_countdown);
+            if palette_countdown == 23 {
                 self.increment_subsubmodule();
             }
         }
@@ -11797,12 +11925,25 @@ impl ZeldaState {
         self.Dungeon_LoadCustomTileAttr();
         self.Dungeon_AdjustForRoomLayout();
         self.follower_initialize();
+        if self.begin_dungeon_supertile_transition_work(
+            DungeonSupertileTransitionWork::StraightInterroomRoomInitialization,
+        ) {
+            return;
+        }
         self.increment_subsubmodule();
     }
 
     pub(super) fn Module07_11_03_FilterAndLoadBGChars(&mut self) {
         self.ApplyPaletteFilter_bounce();
-        self.DungeonTransition_TriggerBGC34UpdateAndAdvance();
+        self.PrepTransAuxGfx();
+        self.set_pending_nmi_subroutine(9);
+        self.set_core_update_disable_flag(9);
+        if self.begin_dungeon_supertile_transition_work(
+            DungeonSupertileTransitionWork::StraightInterroomBgCharacters34,
+        ) {
+            return;
+        }
+        self.increment_subsubmodule();
     }
 
     pub(super) fn Module07_11_04_FilterDoBGAndResetSprites(&mut self) {
@@ -11812,12 +11953,18 @@ impl ZeldaState {
         self.dungeon_room_tracking_mut()
             .set_room_index2(dungeon_room_index);
         self.dungeon_reset_sprites();
+        self.schedule_straight_interroom_state5_after_leading_nmi();
     }
 
     pub(super) fn Module07_11_09_LoadSpriteGraphics(&mut self) {
         self.ApplyPaletteFilter_bounce();
         self.decrement_subsubmodule();
         self.LoadNewSpriteGFXSet();
+        if self.begin_dungeon_supertile_transition_work(
+            DungeonSupertileTransitionWork::StraightInterroomSpriteGraphics,
+        ) {
+            return;
+        }
         self.Dungeon_HandleTranslucencyAndPalette();
     }
 
@@ -12451,6 +12598,16 @@ impl ZeldaState {
             return;
         }
         self.complete_module07_dungeon_after_submodule();
+        if self.dungeon_state_13_atomic_caller_return_publication_host_frame
+            == Some(self.frame_ctr_dbg)
+        {
+            debug_assert!(self.game_execution_scheduler.is_idle());
+            if self.game_execution_scheduler.is_idle() {
+                // This measured body and its common suffix retire within one
+                // CPU slice, after the NMI request they consumed.
+                self.clear_nmi_update_latch();
+            }
+        }
     }
 
     pub(super) fn complete_module07_dungeon_after_submodule(&mut self) {
@@ -12619,7 +12776,8 @@ impl ZeldaState {
                     self.frame_ctr_dbg,
                     &self
                         .spiral_stair_return_player_oam_scanout
-                        .expect("spiral-return debug requires returning player OAM")[20..24],
+                        .expect("spiral-return debug requires returning player OAM")
+                        [20..24],
                     reentered_equipment,
                 );
             }

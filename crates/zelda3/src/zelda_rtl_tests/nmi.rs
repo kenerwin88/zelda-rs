@@ -1,6 +1,16 @@
 use super::*;
 
 #[test]
+fn dungeon_map_terminal_fade_blanks_after_the_measured_active_prefix() {
+    assert_eq!(
+        dungeon_map_terminal_fade_blank_scanline(14, 3, 1, 1),
+        Some(48)
+    );
+    assert_eq!(dungeon_map_terminal_fade_blank_scanline(14, 3, 1, 2), None);
+    assert_eq!(dungeon_map_terminal_fade_blank_scanline(14, 2, 1, 1), None);
+}
+
+#[test]
 fn published_one_shot_vcounter_irq_is_repeatable_and_advances_live_state() {
     let mut state = ZeldaState::new();
     state.set_irq_control_flag(0x80);

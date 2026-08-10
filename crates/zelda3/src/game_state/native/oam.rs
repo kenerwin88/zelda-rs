@@ -574,12 +574,7 @@ impl<'a> NativeOamStateBridgeMut<'a> {
     #[track_caller]
     pub(crate) fn set_entry_char(&mut self, addr: usize, charnum: u8) {
         if self.state.set_shadow_byte(addr + 2, charnum) {
-            ww_check(
-                addr + 2,
-                1,
-                "OamState::set_entry_char",
-                u32::from(charnum),
-            );
+            ww_check(addr + 2, 1, "OamState::set_entry_char", u32::from(charnum));
             self.sync();
         }
     }
@@ -587,12 +582,7 @@ impl<'a> NativeOamStateBridgeMut<'a> {
     #[track_caller]
     pub(crate) fn set_entry_flags(&mut self, addr: usize, flags: u8) {
         if self.state.set_shadow_byte(addr + 3, flags) {
-            ww_check(
-                addr + 3,
-                1,
-                "OamState::set_entry_flags",
-                u32::from(flags),
-            );
+            ww_check(addr + 3, 1, "OamState::set_entry_flags", u32::from(flags));
             self.sync();
         }
     }

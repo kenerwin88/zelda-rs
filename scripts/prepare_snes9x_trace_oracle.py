@@ -15,6 +15,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOCK_PATH = REPO_ROOT / "external" / "snes9x-libretro" / "oracle-lock.json"
+PATCH_DIR = REPO_ROOT / "external" / "snes9x-libretro" / "patches"
+TRACE_PATCHES = (
+    PATCH_DIR / "zelda3-trace.patch",
+    PATCH_DIR / "zelda3-trace-obj-cache.patch",
+)
 LOCK = json.loads(LOCK_PATH.read_text())
 VERSION = LOCK["core_version"]
 SOURCE_TAG = LOCK["source_tag"]
@@ -33,6 +38,7 @@ EXPECTED_PATCH_PATHS = frozenset(
         "libretro/Makefile.common",
         "libretro/libretro.cpp",
         "ppu.cpp",
+        "tileimpl.h",
         "tileimpl-n1x1.cpp",
         "tileimpl-n2x1.cpp",
         "zelda3_trace.cpp",
@@ -58,6 +64,20 @@ def sha256(path: Path) -> str:
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
+    return digest.hexdigest()
+
+
+def patch_set_sha256(patches: tuple[Path, ...]) -> str | None:
+    if not patches:
+        return None
+    if len(patches) == 1:
+        return sha256(patches[0])
+    digest = hashlib.sha256()
+    for patch in patches:
+        digest.update(patch.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(patch.read_bytes())
+        digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -113,12 +133,14 @@ def changed_paths(source: Path) -> set[str]:
     return paths
 
 
-def apply_trace_patch(source: Path, patch: Path) -> None:
+def apply_trace_patches(source: Path, patches: tuple[Path, ...]) -> None:
     changes = changed_paths(source)
-    if not changes:
-        run("git", "apply", "--check", str(patch), cwd=source)
-        run("git", "apply", str(patch), cwd=source)
-        changes = changed_paths(source)
+    if changes:
+        raise RuntimeError("Snes9x trace patches require a pristine source checkout")
+    for patch in patches:
+        run("git", "apply", "--recount", "--check", str(patch), cwd=source)
+        run("git", "apply", "--recount", str(patch), cwd=source)
+    changes = changed_paths(source)
 
     unexpected = changes - EXPECTED_PATCH_PATHS
     missing = EXPECTED_PATCH_PATHS - changes
@@ -130,10 +152,7 @@ def apply_trace_patch(source: Path, patch: Path) -> None:
             details.append(f"missing trace changes: {', '.join(sorted(missing))}")
         raise RuntimeError("Snes9x trace checkout is not canonical: " + "; ".join(details))
 
-    run("git", "apply", "--reverse", "--check", str(patch), cwd=source)
-
-
-def restore_stock_source(source: Path, patch: Path) -> None:
+def restore_stock_source(source: Path, patches: tuple[Path, ...]) -> None:
     changes = changed_paths(source)
     if not changes:
         return
@@ -143,8 +162,9 @@ def restore_stock_source(source: Path, patch: Path) -> None:
             "Snes9x source has changes outside the trace patch"
             + (f": {unexpected}" if unexpected else "")
         )
-    run("git", "apply", "--reverse", "--check", str(patch), cwd=source)
-    run("git", "apply", "--reverse", str(patch), cwd=source)
+    for patch in reversed(patches):
+        run("git", "apply", "--recount", "--reverse", "--check", str(patch), cwd=source)
+        run("git", "apply", "--recount", "--reverse", str(patch), cwd=source)
     remaining = changed_paths(source)
     if remaining:
         raise RuntimeError(
@@ -165,7 +185,7 @@ def write_receipt(
     output: Path,
     *,
     variant: str,
-    patch: Path | None,
+    patches: tuple[Path, ...],
 ) -> Path:
     receipt = output.with_suffix(output.suffix + ".json")
     payload = {
@@ -176,8 +196,9 @@ def write_receipt(
         "source_url": SOURCE_URL,
         "source_revision": REVISION,
         "variant": variant,
-        "patch": str(patch) if patch is not None else None,
-        "patch_sha256": sha256(patch) if patch is not None else None,
+        "patch": str(patches[0]) if patches else None,
+        "patches": [str(patch) for patch in patches],
+        "patch_sha256": patch_set_sha256(patches),
         "core": str(output),
         "core_sha256": sha256(output),
     }
@@ -189,7 +210,7 @@ def main() -> int:
     repo_root = REPO_ROOT
     default_source = repo_root / "external" / "snes9x-libretro" / "source"
     default_output_dir = repo_root / "external" / "snes9x-libretro" / "local"
-    patch = repo_root / "external" / "snes9x-libretro" / "patches" / "zelda3-trace.patch"
+    patches = tuple(patch.resolve() for patch in TRACE_PATCHES)
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, default=default_source)
@@ -204,12 +225,12 @@ def main() -> int:
 
     source = args.source.resolve()
     checkout_source(source)
-    patch = patch.resolve()
-    restore_stock_source(source, patch)
+    restore_stock_source(source, patches)
     print(f"prepared stock Snes9x {VERSION} ({SOURCE_TAG}, {REVISION})")
     if args.prepare_only:
-        apply_trace_patch(source, patch)
-        print(f"applied {patch.relative_to(repo_root)}")
+        apply_trace_patches(source, patches)
+        for patch in patches:
+            print(f"applied {patch.relative_to(repo_root)}")
         return 0
 
     platform, artifact_name = build_settings()
@@ -222,7 +243,7 @@ def main() -> int:
         "LTO=",
     ]
 
-    def build(output: Path, *, variant: str, receipt_patch: Path | None) -> None:
+    def build(output: Path, *, variant: str, receipt_patches: tuple[Path, ...]) -> None:
         run(*build_arguments, "clean", cwd=source)
         run(*build_arguments, f"-j{jobs}", artifact_name, cwd=source)
         artifact = source / "libretro" / artifact_name
@@ -231,7 +252,7 @@ def main() -> int:
         receipt = write_receipt(
             output,
             variant=variant,
-            patch=receipt_patch,
+            patches=receipt_patches,
         )
         print(f"{variant} core: {output}")
         print(f"{variant} build receipt: {receipt}")
@@ -239,12 +260,12 @@ def main() -> int:
     stock_output = (
         args.stock_output or (default_output_dir / artifact_name)
     ).resolve()
-    build(stock_output, variant="stock", receipt_patch=None)
+    build(stock_output, variant="stock", receipt_patches=())
 
-    apply_trace_patch(source, patch)
+    apply_trace_patches(source, patches)
     traced_artifact_name = artifact_name.replace("_libretro.", "_libretro_trace.")
     output = (args.output or (default_output_dir / traced_artifact_name)).resolve()
-    build(output, variant="trace", receipt_patch=patch)
+    build(output, variant="trace", receipt_patches=patches)
     return 0
 
 

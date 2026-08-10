@@ -1,7 +1,14 @@
 use super::*;
+use crate::rom_random::RomRandomResult;
 
 fn fresh_state() -> ZeldaState {
     ZeldaState::new()
+}
+
+#[test]
+fn rat_random_run_delay_preserves_rng_carry_through_and_adc() {
+    assert_eq!(rat_random_run_delay(RomRandomResult::new(1, false)), 0x41);
+    assert_eq!(rat_random_run_delay(RomRandomResult::new(1, true)), 0x42);
 }
 
 #[test]

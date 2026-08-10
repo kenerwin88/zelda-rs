@@ -137,14 +137,14 @@ const TAGALONG_INDOOR_INFOS: [TagalongMessageInfo; 12] = [
         x: 0x39d,
         bit: 2,
         msg: 0x21,
-        tagalong: 2,
+        tagalong: 1,
     },
     TagalongMessageInfo {
         y: 0x0c78,
         x: 0x238,
         bit: 4,
         msg: 0x21,
-        tagalong: 4,
+        tagalong: 1,
     },
     TagalongMessageInfo {
         y: 0x0a30,
@@ -1311,6 +1311,7 @@ impl ZeldaState {
                 }
                 self.follower_state_mut().or_event_flags(info.bit);
                 self.dialogue_message_index_mut().set_value(info.msg);
+                self.stage_rescue_follower_message_obj_scanout(info.bit, info.msg);
                 if info.msg == 0xffff {
                     if info.bit & 3 == 0 {
                         self.kiki_revert_to_sprite(st as usize);

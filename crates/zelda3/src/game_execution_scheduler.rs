@@ -45,8 +45,10 @@ impl ScheduledGameWork {
             GameWorkContinuation::FinishItemReceiptGraphics {
                 continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
+                | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
                 | GameWorkContinuation::FinishDungeonSupertileFilteringReturn
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
+                | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
                 | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
                 | GameWorkContinuation::FinishBigKeyDropGraphics { .. }
         )
@@ -60,7 +62,8 @@ impl ScheduledGameWork {
         self,
     ) -> Option<DisplaySnapshotPublication> {
         match self.continuation {
-            GameWorkContinuation::FinishSpotlightIteration { iteration } => {
+            GameWorkContinuation::FinishSpotlightIteration { iteration }
+            | GameWorkContinuation::FinishGameOverSpotlightBuild { iteration } => {
                 Some(iteration.in_flight_publication())
             }
             GameWorkContinuation::FinishAttractWorldMapExit => {
@@ -77,7 +80,8 @@ impl ScheduledGameWork {
 
     fn spotlight_iteration(self) -> Option<SpotlightIteration> {
         match self.continuation {
-            GameWorkContinuation::FinishSpotlightIteration { iteration } => Some(iteration),
+            GameWorkContinuation::FinishSpotlightIteration { iteration }
+            | GameWorkContinuation::FinishGameOverSpotlightBuild { iteration } => Some(iteration),
             _ => None,
         }
     }
@@ -205,6 +209,11 @@ pub(super) enum StartupSequenceStep {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GameExecutionContinuation {
     ScheduledWork(ScheduledGameWork),
+    /// A translated call that crosses the current host frame's trailing NMI,
+    /// then returns before `retro_run` reaches the following video boundary.
+    /// Keeping this phase distinct prevents one-NMI calls from being resumed
+    /// a whole host frame late by `advance_work_one_nmi_slice`.
+    PostTrailingNmi(GameWorkContinuation),
     FileSelectGraphics(FileSelectGraphicsContinuation),
     SelectedGameLoad(SelectedGameLoadContinuation),
     PreMainNmiResume(PreMainNmiResume),
@@ -248,6 +257,10 @@ impl GameExecutionScheduler {
         self.schedule_continuation(GameExecutionContinuation::ScheduledWork(
             ScheduledGameWork::schedule_before_trailing_nmi(continuation, total_nmi_slices),
         ));
+    }
+
+    pub(super) fn schedule_post_trailing_nmi(&mut self, continuation: GameWorkContinuation) {
+        self.schedule_continuation(GameExecutionContinuation::PostTrailingNmi(continuation));
     }
 
     pub(super) fn schedule_file_select_graphics(&mut self) {
@@ -300,6 +313,10 @@ impl GameExecutionScheduler {
 
     pub(super) fn work_is_pending(self) -> bool {
         self.scheduled_work().is_some()
+            || matches!(
+                self.continuation,
+                Some(GameExecutionContinuation::PostTrailingNmi(_))
+            )
     }
 
     pub(super) fn work_suspends_translated_call_stack(self) -> bool {
@@ -307,15 +324,34 @@ impl GameExecutionScheduler {
             .is_some_and(ScheduledGameWork::suspends_translated_call_stack)
             || matches!(
                 self.continuation,
-                Some(GameExecutionContinuation::PreMainCaller(
-                    PreMainCallerContinuation::SpiralStairsSecondPaletteFilter
-                        | PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter
-                ))
+                Some(GameExecutionContinuation::PostTrailingNmi(_))
+                    | Some(GameExecutionContinuation::PreMainCaller(
+                        PreMainCallerContinuation::DungeonFadedFilterSecondPalettePass
+                            | PreMainCallerContinuation::SpiralStairsSecondPaletteFilter
+                            | PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter
+                    ))
             )
     }
 
     pub(super) fn current_work(self) -> Option<GameWorkContinuation> {
-        self.scheduled_work().map(|work| work.continuation)
+        self.scheduled_work()
+            .map(|work| work.continuation)
+            .or_else(|| match self.continuation {
+                Some(GameExecutionContinuation::PostTrailingNmi(continuation)) => {
+                    Some(continuation)
+                }
+                _ => None,
+            })
+    }
+
+    pub(super) fn take_post_trailing_nmi(&mut self) -> Option<GameWorkContinuation> {
+        match self.continuation {
+            Some(GameExecutionContinuation::PostTrailingNmi(continuation)) => {
+                self.continuation = None;
+                Some(continuation)
+            }
+            _ => None,
+        }
     }
 
     pub(super) fn advance_work_one_nmi_slice(&mut self) -> Option<GameWorkStep> {
@@ -333,7 +369,10 @@ impl GameExecutionScheduler {
     pub(super) fn finish_work(&mut self) {
         if matches!(
             self.continuation,
-            Some(GameExecutionContinuation::ScheduledWork(_))
+            Some(
+                GameExecutionContinuation::ScheduledWork(_)
+                    | GameExecutionContinuation::PostTrailingNmi(_)
+            )
         ) {
             self.continuation = None;
         }
@@ -359,6 +398,13 @@ impl GameExecutionScheduler {
                 self.continuation = None;
                 Some(continuation)
             }
+            _ => None,
+        }
+    }
+
+    pub(super) fn pre_main_nmi_resume(self) -> Option<PreMainNmiResume> {
+        match self.continuation {
+            Some(GameExecutionContinuation::PreMainNmiResume(continuation)) => Some(continuation),
             _ => None,
         }
     }

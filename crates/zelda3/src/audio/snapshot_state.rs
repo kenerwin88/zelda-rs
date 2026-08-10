@@ -209,14 +209,14 @@ impl ModernAudioCommandQueueV7 {
     fn into_current(self) -> ModernAudioCommandQueue {
         ModernAudioCommandQueue {
             write_history: self.write_history,
-            vwf_glyph_tone_crossed_vblank_history: [false; 16],
+            vwf_glyph_tone_crossed_vblank_history: [0; 16],
             pending_write: self.pending_write,
-            vwf_glyph_tone_crossed_vblank_deferred: [false; 3],
+            vwf_glyph_tone_crossed_vblank_deferred: [0; 3],
             write_position: self.write_position,
             write_count: self.write_count,
             total_writes: self.total_writes,
             input_commands: self.input_commands,
-            vwf_glyph_tone_crossed_vblank_input: false,
+            vwf_glyph_tone_crossed_vblank_input: 0,
             acknowledged_commands: self.acknowledged_commands,
         }
     }
@@ -339,6 +339,18 @@ impl CompactModernAudioStateSnapshotV8 {
         state.config_msu_path = self.config_msu_path;
         state
     }
+}
+
+fn restore_v8_renderer_sample_bank_identity(state: &mut AudioState, sample_bank_id: u8) {
+    // `ModernAudioEngine::sample_bank_id` is deliberately omitted from its
+    // generic serde payload and restored by the enclosing versioned snapshot.
+    // This is identity restoration, not a live bank switch: `select_sample_bank`
+    // invalidates the serialized echo RAM and makes the first resumed sample
+    // diverge even though the full renderer state was captured exactly.
+    state
+        .modern
+        .renderer
+        .complete_sample_bank_upload(sample_bank_id, state.modern.sample_bank_generation);
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -552,10 +564,7 @@ pub(super) fn decode_v8(payload: &[u8]) -> Result<(AudioState, bool), String> {
         return Err("audio snapshot recorded the removed exact SPC-driver sequencer".to_string());
     }
     let mut state = snapshot.modern.into_audio_state();
-    state
-        .modern
-        .renderer
-        .select_sample_bank(snapshot.sample_bank_id);
+    restore_v8_renderer_sample_bank_identity(&mut state, snapshot.sample_bank_id);
     restore_oracle_sidecar(
         state,
         snapshot.oracle_sidecar,
@@ -606,16 +615,14 @@ impl<'de> serde::Deserialize<'de> for AudioState {
                 "audio state recorded the removed exact SPC-driver sequencer",
             ));
         }
-        let state = snapshot.modern.into_audio_state();
+        let mut state = snapshot.modern.into_audio_state();
+        restore_v8_renderer_sample_bank_identity(&mut state, sample_bank_id);
         restore_oracle_sidecar(
             state,
             snapshot.oracle_sidecar,
             OracleShadowRestore::FromSidecar,
         )
-        .map(|(mut state, _)| {
-            state.modern.renderer.select_sample_bank(sample_bank_id);
-            state
-        })
+        .map(|(state, _)| state)
         .map_err(serde::de::Error::custom)
     }
 }
@@ -668,4 +675,38 @@ pub(super) fn encode_v3_with_opaque_sidecar_for_test(
         oracle_sidecar: Some(sidecar),
     })
     .unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn v8_restore_preserves_live_renderer_state_when_rebinding_the_sample_bank() {
+        let mut state = AudioState::default();
+        state.modern.sample_bank_id = 1;
+        state.modern.sample_bank_generation = 7;
+        state
+            .modern
+            .renderer
+            .complete_sample_bank_upload(1, state.modern.sample_bank_generation);
+        let frame = AudioEventFrame {
+            music: MusicControlState::default(),
+            queue: AudioQueueState::default(),
+            events: Vec::new(),
+            unresolved_dsp_writes: 0,
+            sequenced: true,
+        };
+        let mut output = [0i16; 2];
+        state
+            .modern
+            .renderer
+            .render_frame(&frame, &mut output, 1, 2);
+        let expected = state.modern.renderer.clone();
+
+        let (payload, _) = encode_v8(&state).unwrap();
+        let (restored, _) = decode_v8(&payload).unwrap();
+
+        assert_eq!(restored.modern.renderer, expected);
+    }
 }

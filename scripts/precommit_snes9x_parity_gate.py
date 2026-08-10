@@ -11,16 +11,21 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import snes9x_route_recorder as recorder
+from extract_snes9x_rom_random import extract_samples, write_script
+from parity_probe import TRACE_CORE, newest_source_mtime, validate_trace_core
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE_PATH = ROOT / ".git" / "precommit-snes9x-parity-state.json"
 CHECKPOINT_PATH = ROOT / ".git" / "precommit-snes9x-parity-checkpoint"
+RNG_CACHE_PATH = ROOT / ".git" / "precommit-snes9x-rom-random-cache"
 DEFAULT_PROJECT = ROOT / "routes" / "crystal4_II"
 STATE_SCHEMA = 1
 # Paired-resume flags the checkpoint supersedes; the binary rejects them next to
@@ -72,6 +77,11 @@ def _write_json(path: Path, data: dict[str, object]) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _stale_binary_source(binary: Path) -> Path | None:
+    newest_mtime, newest_path = newest_source_mtime()
+    return newest_path if newest_path is not None and newest_mtime > binary.stat().st_mtime else None
+
+
 def _route_signature(
     project: Path,
     manifest: dict,
@@ -80,6 +90,9 @@ def _route_signature(
 ) -> dict[str, object]:
     generation = recorder.oracle_generations(manifest)[-1]
     identity = generation["identity"]
+    takes_by_id = {int(take["id"]): take for take in manifest.get("takes", [])}
+    start_boundary = int(takes_by_id[take_ids[0]]["start_boundary"])
+    boundary = manifest["boundaries"][start_boundary]
     return {
         "project": str(project.relative_to(ROOT)),
         "generation_id": int(generation["id"]),
@@ -87,12 +100,59 @@ def _route_signature(
         "rom_sha256": identity["rom_sha256"],
         "take_count": len(take_ids),
         "total_frames": total_frames,
+        "input_sha256": _take_file_chain_sha256(
+            project, takes_by_id, take_ids, "input_path"
+        ),
+        "recorded_rng_sha256": _take_file_chain_sha256(
+            project, takes_by_id, take_ids, "rom_random_path"
+        ),
+        "initial_sram_sha256": recorder.sha256(
+            recorder.resolve_project_path(project, boundary["sram_path"])
+        ),
         "schema": STATE_SCHEMA,
     }
 
 
+def _take_file_chain_sha256(
+    project: Path,
+    takes_by_id: dict[int, dict],
+    take_ids: list[int],
+    field: str,
+) -> str:
+    """Hash ordered route sources, including missing optional artifacts."""
+    digest = hashlib.sha256()
+    for take_id in take_ids:
+        take = takes_by_id[take_id]
+        relative_path = take.get(field)
+        digest.update(f"{take_id}:{int(take['frames'])}:{relative_path or '-'}\0".encode())
+        if relative_path:
+            path = recorder.resolve_project_path(project, relative_path)
+            digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
 def _resume_enabled() -> bool:
-    return os.environ.get("ZELDA3_PRECOMMIT_RESUME", "").strip() not in ("", "0")
+    return os.environ.get("ZELDA3_PRECOMMIT_RESUME", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
+
+def _video_preflight_enabled() -> bool:
+    return os.environ.get("ZELDA3_PRECOMMIT_VIDEO_PREFLIGHT", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
+
+def _default_resume_interval(step: int) -> int:
+    # A failed cold run should leave a diagnostic start no more than 1,000
+    # frames behind its frontier. This costs only sparse checkpoint writes and
+    # turns the usual trace rerun from minutes into seconds.
+    return min(max(1, step), 1_000)
 
 
 def _binary_identity(binary: Path) -> dict[str, object]:
@@ -206,6 +266,11 @@ def _build_check_command(
     rom_random_path: Path | None,
     resume_dir: Path | None = None,
     rolling: tuple[int, Path] | None = None,
+    ignore_audio: bool = False,
+    ignore_video: bool = False,
+    authoritative: bool = False,
+    live_oracle_rng: bool = False,
+    expected_core_sha256: str | None = None,
 ) -> list[str]:
     manifest = recorder.load_manifest(project)
     identity = recorder.oracle_generations(manifest)[-1]["identity"]
@@ -222,7 +287,103 @@ def _build_check_command(
         session_dir=session_dir,
         identity=identity,
     )
-    return _apply_resume_options(command, resume_dir=resume_dir, rolling=rolling)
+    # The authoritative ratchet needs the earliest failing boundary and its
+    # finalized session, not every later symptom. The route recorder defaults
+    # to --scan-all for broad reports, so explicitly narrow the pre-commit
+    # command before adding checkpoint options.
+    command = [item for item in command if item != "--scan-all"]
+    if expected_core_sha256 is not None:
+        hash_index = command.index("--expected-core-sha256") + 1
+        command[hash_index] = expected_core_sha256
+    if ignore_audio and "--ignore-audio" not in command:
+        command.append("--ignore-audio")
+    if ignore_video and "--ignore-video" not in command:
+        command.append("--ignore-video")
+    if live_oracle_rng:
+        if rom_random_path is not None:
+            raise ValueError("live oracle RNG cannot consume a recorded RNG script")
+        command.append("--live-oracle-rng")
+    # Paired checkpoints are an optimization aid, not parity authority: they
+    # intentionally do not yet serialize every presentation/scheduler
+    # transient, and writing the legacy save can perturb fields not covered by
+    # its restoration trailer. A ratchet-advancing exact A/V pass must both
+    # start cold and avoid checkpoint writes while it is running.
+    return _apply_resume_options(
+        command,
+        resume_dir=None if authoritative or live_oracle_rng else resume_dir,
+        rolling=None if authoritative or live_oracle_rng else rolling,
+    )
+
+
+def _write_live_oracle_rng_script(trace_path: Path, output_path: Path) -> int:
+    """Materialize the cartridge-only RNG script from a live trace receipt."""
+    if not trace_path.is_file():
+        raise FileNotFoundError(f"live oracle RNG trace was not produced: {trace_path}")
+    with trace_path.open(encoding="utf-8") as trace:
+        samples = extract_samples(trace)
+    with output_path.open("w", encoding="utf-8") as output:
+        write_script(samples, output)
+    return len(samples)
+
+
+def _rng_cache_key(
+    signature: dict[str, object], requested_frames: int, trace_core_sha256: str
+) -> str:
+    identity = {
+        "schema": 1,
+        "requested_frames": requested_frames,
+        "input_sha256": signature["input_sha256"],
+        "initial_sram_sha256": signature["initial_sram_sha256"],
+        "rom_sha256": signature["rom_sha256"],
+        "trace_core_sha256": trace_core_sha256,
+    }
+    return hashlib.sha256(
+        json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _restore_rng_cache(
+    signature: dict[str, object],
+    requested_frames: int,
+    trace_core_sha256: str,
+    output_path: Path,
+) -> int | None:
+    key = _rng_cache_key(signature, requested_frames, trace_core_sha256)
+    cache_dir = RNG_CACHE_PATH / key
+    metadata = _load_json(cache_dir / "metadata.json")
+    script = cache_dir / "rom-random.txt"
+    if not isinstance(metadata, dict) or not script.is_file():
+        return None
+    if metadata.get("script_sha256") != recorder.sha256(script):
+        return None
+    sample_count = metadata.get("sample_count")
+    if not isinstance(sample_count, int) or sample_count < 0:
+        return None
+    shutil.copyfile(script, output_path)
+    return sample_count
+
+
+def _store_rng_cache(
+    signature: dict[str, object],
+    requested_frames: int,
+    trace_core_sha256: str,
+    script_path: Path,
+    sample_count: int,
+) -> None:
+    key = _rng_cache_key(signature, requested_frames, trace_core_sha256)
+    cache_dir = RNG_CACHE_PATH / key
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cached_script = cache_dir / "rom-random.txt"
+    shutil.copyfile(script_path, cached_script)
+    _write_json(
+        cache_dir / "metadata.json",
+        {
+            "schema": 1,
+            "requested_frames": requested_frames,
+            "sample_count": sample_count,
+            "script_sha256": recorder.sha256(cached_script),
+        },
+    )
 
 
 def _extract_identity(manifest: dict) -> tuple[Path, dict]:
@@ -239,6 +400,13 @@ def run_snes9x_gate() -> int:
     if not binary.is_file():
         print(
             f"pre-commit gate: parity binary missing ({binary}); run the parity build first",
+            file=sys.stderr,
+        )
+        return 1
+    if stale_source := _stale_binary_source(binary):
+        print(
+            f"pre-commit gate: {binary} is older than {stale_source}; "
+            "run `cargo build --profile parity -p zelda3-bin` first",
             file=sys.stderr,
         )
         return 1
@@ -336,14 +504,7 @@ def run_snes9x_gate() -> int:
             requested = input_frames
 
         rom_random_path = temp_dir / "rom-random.txt"
-        rom_random_count = recorder.write_continuous_rom_random(
-            project,
-            take_ids,
-            rom_random_path,
-            takes_by_id=takes_by_id,
-        )
-        if rom_random_count == 0 and rom_random_path.exists():
-            rom_random_path.unlink()
+        rom_random_count = 0
 
         first_take = takes_by_id[take_ids[0]]
         start_boundary = int(first_take["start_boundary"])
@@ -357,10 +518,204 @@ def run_snes9x_gate() -> int:
                 binary_identity=binary_identity or {},
                 requested=requested,
             )
-            interval = env_int("ZELDA3_PRECOMMIT_RESUME_INTERVAL", max(1, step)) or max(1, step)
+            default_interval = _default_resume_interval(step)
+            interval = (
+                env_int("ZELDA3_PRECOMMIT_RESUME_INTERVAL", default_interval)
+                or default_interval
+            )
             rolling = (interval, CHECKPOINT_PATH)
             if resume_dir is not None:
                 print(f"pre-commit: resuming from paired checkpoint {resume_dir}")
+
+        if _video_preflight_enabled():
+            trace_core = _abs_path(
+                os.environ.get("ZELDA3_PRECOMMIT_TRACE_CORE", str(TRACE_CORE))
+            )
+            trace_core_sha256 = validate_trace_core(trace_core)
+            cached_rng_count = _restore_rng_cache(
+                signature,
+                requested,
+                trace_core_sha256,
+                rom_random_path,
+            )
+            using_live_rng = cached_rng_count is None
+            if cached_rng_count is not None:
+                rom_random_count = cached_rng_count
+            if using_live_rng:
+                rng_session_dir = (
+                    project
+                    / "comparisons"
+                    / "precommit"
+                    / f"run-{requested}-rng-calibration"
+                ).resolve()
+                rng_command = _build_check_command(
+                    binary=binary,
+                    core=trace_core,
+                    rom=rom,
+                    project=project,
+                    session_dir=rng_session_dir,
+                    take_ids=take_ids,
+                    start_boundary=start_boundary,
+                    requested_frames=requested,
+                    input_path=input_path,
+                    rom_random_path=None,
+                    ignore_audio=True,
+                    ignore_video=True,
+                    live_oracle_rng=True,
+                    expected_core_sha256=trace_core_sha256,
+                )
+                print(
+                    "pre-commit: RNG cache miss; running renderless live-oracle "
+                    "calibration"
+                )
+                rng_started = time.monotonic()
+                rng_process = subprocess.run(
+                    [str(item) for item in rng_command],
+                    cwd=ROOT,
+                    text=True,
+                    capture_output=True,
+                )
+                print(
+                    "pre-commit: RNG calibration elapsed "
+                    f"{time.monotonic() - rng_started:.1f}s"
+                )
+                if rng_process.stdout:
+                    print(rng_process.stdout)
+                if rng_process.stderr:
+                    print(rng_process.stderr, file=sys.stderr)
+                rng_result_path = rng_session_dir / "result.json"
+                if not rng_result_path.exists():
+                    print(
+                        "pre-commit gate: RNG calibration did not produce a session result",
+                        file=sys.stderr,
+                    )
+                    return 1
+                rng_result = json.loads(rng_result_path.read_text(encoding="utf-8"))
+                if not (
+                    rng_process.returncode == 0
+                    and rng_result.get("status") == "passed"
+                ):
+                    print(
+                        "pre-commit gate: live-oracle RNG calibration failed",
+                        file=sys.stderr,
+                    )
+                    print(
+                        f"pre-commit: replay artifacts: {rng_session_dir}",
+                        file=sys.stderr,
+                    )
+                    return 1
+                try:
+                    rom_random_count = _write_live_oracle_rng_script(
+                        rng_session_dir / "oracle-rom-random.jsonl",
+                        rom_random_path,
+                    )
+                    _store_rng_cache(
+                        signature,
+                        requested,
+                        trace_core_sha256,
+                        rom_random_path,
+                        rom_random_count,
+                    )
+                except (OSError, ValueError) as error:
+                    print(
+                        f"pre-commit gate: could not materialize live oracle RNG: {error}",
+                        file=sys.stderr,
+                    )
+                    return 1
+                print(
+                    "pre-commit: RNG calibration passed "
+                    f"({rom_random_count} cartridge sample(s))"
+                )
+            else:
+                print(
+                    "pre-commit: RNG cache hit "
+                    f"({rom_random_count} cartridge sample(s))"
+                )
+            preflight_session_dir = (
+                project
+                / "comparisons"
+                / "precommit"
+                / f"run-{requested}-video-preflight"
+            ).resolve()
+            preflight_command = _build_check_command(
+                binary=binary,
+                core=required_core,
+                rom=rom,
+                project=project,
+                session_dir=preflight_session_dir,
+                take_ids=take_ids,
+                start_boundary=start_boundary,
+                requested_frames=requested,
+                input_path=input_path,
+                rom_random_path=rom_random_path if rom_random_count else None,
+                resume_dir=resume_dir,
+                rolling=(interval, CHECKPOINT_PATH) if resume_enabled else None,
+                ignore_audio=True,
+            )
+            print(
+                "pre-commit: running checkpointable stock-core video preflight "
+                "before exact A/V certification"
+            )
+            preflight_started = time.monotonic()
+            preflight_process = subprocess.run(
+                [str(item) for item in preflight_command],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+            )
+            print(
+                "pre-commit: video preflight elapsed "
+                f"{time.monotonic() - preflight_started:.1f}s"
+            )
+            if preflight_process.stdout:
+                print(preflight_process.stdout)
+            if preflight_process.stderr:
+                print(preflight_process.stderr, file=sys.stderr)
+            preflight_result_path = preflight_session_dir / "result.json"
+            if not preflight_result_path.exists():
+                print(
+                    "pre-commit gate: video preflight did not produce a session result",
+                    file=sys.stderr,
+                )
+                return 1
+            preflight_result = json.loads(
+                preflight_result_path.read_text(encoding="utf-8")
+            )
+            preflight_video = preflight_result.get("video", {})
+            if not (
+                preflight_process.returncode == 0
+                and preflight_result.get("status") == "passed"
+                and preflight_video.get("matched") is True
+            ):
+                first_video = (preflight_video or {}).get("first_mismatch")
+                print(
+                    "pre-commit: video preflight failed; skipping expensive exact audio pass",
+                    file=sys.stderr,
+                )
+                if first_video:
+                    print(
+                        f"pre-commit: first video mismatch: {first_video}",
+                        file=sys.stderr,
+                    )
+                print(
+                    f"pre-commit: replay artifacts: {preflight_session_dir}",
+                    file=sys.stderr,
+                )
+                return 1
+            print(
+                "pre-commit: RNG-verified video preflight passed "
+                f"({rom_random_count} cartridge sample(s)); "
+                "running cold stock-core exact A/V certification"
+            )
+        else:
+            rom_random_count = recorder.write_continuous_rom_random(
+                project,
+                take_ids,
+                rom_random_path,
+                takes_by_id=takes_by_id,
+            )
+            if rom_random_count == 0 and rom_random_path.exists():
+                rom_random_path.unlink()
 
         command = _build_check_command(
             binary=binary,
@@ -375,13 +730,19 @@ def run_snes9x_gate() -> int:
             rom_random_path=rom_random_path if rom_random_count else None,
             resume_dir=resume_dir,
             rolling=rolling,
+            authoritative=True,
         )
 
+        exact_started = time.monotonic()
         process = subprocess.run(
             [str(item) for item in command],
             cwd=ROOT,
             text=True,
             capture_output=True,
+        )
+        print(
+            "pre-commit: cold exact A/V elapsed "
+            f"{time.monotonic() - exact_started:.1f}s"
         )
     if process.stdout:
         print(process.stdout)

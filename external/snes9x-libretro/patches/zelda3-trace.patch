@@ -156,7 +156,7 @@ index f5c2e6e6..f690c095 100644
    {
 +    Zelda3TraceCaptureSmpInstruction(regs.pc, apuram[regs.pc], regs.B.a, regs.x,
 +      regs.B.y, regs.sp, regs.p, timer0.stage1_ticks, timer0.stage2_ticks,
-+      timer0.stage3_ticks);
++      timer0.stage3_ticks, apuram);
  #ifdef DEBUGGER
      if (Settings.TraceSMP)
      {
@@ -638,6 +638,7 @@ index 00000000..06a376d4
 +	TRACE_PPU = 1 << 5,
 +	TRACE_WRAM = 1 << 6,
 +	TRACE_HDMA = 1 << 7,
++	TRACE_ROM_RNG = 1 << 8,
 +};
 +
 +struct AddressRange
@@ -695,7 +696,7 @@ index 00000000..06a376d4
 +int apu_port_write_count = 0;
 +int apu_port_writes[apu_port_write_capacity][apu_port_write_field_count] = {};
 +constexpr int smp_instruction_capacity = 8192;
-+constexpr int smp_instruction_field_count = 13;
++constexpr int smp_instruction_field_count = 25;
 +int smp_instruction_count = 0;
 +int smp_instructions[smp_instruction_capacity][smp_instruction_field_count] = {};
 +
@@ -780,6 +781,7 @@ index 00000000..06a376d4
 +	if (has_token(events, "frame")) config.events |= TRACE_FRAME;
 +	if (has_token(events, "nmi")) config.events |= TRACE_NMI;
 +	if (has_token(events, "rng")) config.events |= TRACE_RNG;
++	if (has_token(events, "rom-rng")) config.events |= TRACE_ROM_RNG;
 +	if (has_token(events, "pc")) config.events |= TRACE_PC;
 +	if (has_token(events, "dma")) config.events |= TRACE_DMA;
 +	if (has_token(events, "hdma")) config.events |= TRACE_HDMA;
@@ -789,7 +791,8 @@ index 00000000..06a376d4
 +	Zelda3TraceHdmaEnabled = (config.events & TRACE_HDMA) != 0;
 +	Zelda3TracePcEnabled = (config.events & TRACE_PC) != 0;
 +	Zelda3TracePpuEnabled = (config.events & TRACE_PPU) != 0;
-+	Zelda3TraceWramEnabled = (config.events & (TRACE_RNG | TRACE_WRAM)) != 0;
++	Zelda3TraceWramEnabled =
++		(config.events & (TRACE_RNG | TRACE_ROM_RNG | TRACE_WRAM)) != 0;
 +
 +	const char *frames = std::getenv("ZELDA3_SNES9X_TRACE_FRAMES");
 +	if (frames && *frames)
@@ -1146,7 +1149,8 @@ index 00000000..06a376d4
 +}
 +
 +void Zelda3TraceCaptureSmpInstruction(int pc, int opcode, int a, int x, int y, int sp,
-+	int psw, int timer0_stage1, int timer0_stage2, int timer0_stage3)
++	int psw, int timer0_stage1, int timer0_stage2, int timer0_stage3,
++	const uint8 *direct_page)
 +{
 +	if (smp_instruction_count >= smp_instruction_capacity)
 +		return;
@@ -1164,6 +1168,8 @@ index 00000000..06a376d4
 +	instruction[10] = dsp_sample_count;
 +	instruction[11] = SNES::dsp.spc_dsp.zelda3_debug_value(7);
 +	instruction[12] = SNES::smp.clock;
++	for (int index = 0; index < 12; index++)
++		instruction[13 + index] = direct_page[index];
 +}
 +
 +int Zelda3TraceSmpInstructionCount()
@@ -1276,10 +1282,15 @@ index 00000000..06a376d4
 +	if (!wram_bank)
 +		return;
 +	const bool rng = offset == 0x0fa1;
-+	if ((!rng || !active(TRACE_RNG)) &&
-+		(!active(TRACE_WRAM) || !includes(config.wram, config.wram_count, offset)))
++	const bool cartridge_rng =
++		rng && (Registers.PBPC & 0xffff) == 0xba7f;
++	const bool trace_rng = rng && active(TRACE_RNG);
++	const bool trace_rom_rng = cartridge_rng && active(TRACE_ROM_RNG);
++	const bool trace_wram =
++		active(TRACE_WRAM) && includes(config.wram, config.wram_count, offset);
++	if (!trace_rng && !trace_rom_rng && !trace_wram)
 +		return;
-+	write_machine_state(rng ? "rng-write" : "wram-write");
++	write_machine_state(trace_rng || trace_rom_rng ? "rng-write" : "wram-write");
 +	std::fprintf(config.output, ",\"address\":%u,\"value\":%u", offset, value);
 +	finish_event();
 +}
@@ -1336,7 +1347,8 @@ index 00000000..f5bb193a
 +int Zelda3TraceApuPortWriteCount();
 +int Zelda3TraceApuPortWriteValue(int write, int field);
 +void Zelda3TraceCaptureSmpInstruction(int pc, int opcode, int a, int x, int y, int sp,
-+	int psw, int timer0_stage1, int timer0_stage2, int timer0_stage3);
++	int psw, int timer0_stage1, int timer0_stage2, int timer0_stage3,
++	const uint8 *direct_page);
 +int Zelda3TraceSmpInstructionCount();
 +int Zelda3TraceSmpInstructionValue(int instruction, int field);
 +void Zelda3TraceRetroRunBegin();

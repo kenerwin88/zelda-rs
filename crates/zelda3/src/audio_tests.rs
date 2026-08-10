@@ -3,36 +3,65 @@ use super::*;
 #[test]
 fn vwf_click_boundary_marker_stays_aligned_two_batches_after_the_glyph() {
     let mut queue = ModernAudioCommandQueue::default();
-    queue.vwf_glyph_tone_crossed_vblank_deferred[2] = true;
+    queue.vwf_glyph_tone_crossed_vblank_deferred[2] = 1;
 
     let mut observed = Vec::new();
-    for completed in [false, false, true, true] {
-        queue.push(completed);
+    for index in 0..4 {
+        if index == 2 {
+            queue.complete_vwf_glyph();
+        }
+        queue.push(index == 2);
         queue.pop();
         observed.push(queue.vwf_glyph_tone_crossed_vblank_input);
     }
 
-    assert_eq!(observed, [false, false, true, false]);
+    assert_eq!(observed, [0, 0, 2, 0]);
 }
 
 #[test]
-fn vwf_click_boundary_marker_expires_if_the_glyph_call_is_still_interrupted() {
+fn vwf_click_boundary_marker_remembers_its_own_completed_glyph() {
     let mut queue = ModernAudioCommandQueue::default();
-    queue.vwf_glyph_tone_crossed_vblank_deferred[2] = true;
+    queue.vwf_glyph_tone_crossed_vblank_deferred[2] = 1;
 
     let mut observed = Vec::new();
-    for completed in [false, false, false, true] {
-        queue.push(completed);
+    for index in 0..4 {
+        if index == 1 {
+            queue.complete_vwf_glyph();
+        }
+        queue.push(false);
         queue.pop();
         observed.push(queue.vwf_glyph_tone_crossed_vblank_input);
     }
 
-    assert_eq!(observed, [false; 4]);
+    assert_eq!(observed, [0, 0, 1, 0]);
+}
+
+#[test]
+fn vwf_click_boundary_marker_expires_if_its_glyph_never_completes() {
+    let mut queue = ModernAudioCommandQueue::default();
+    queue.vwf_glyph_tone_crossed_vblank_deferred[2] = 1;
+
+    let mut observed = Vec::new();
+    for _ in 0..4 {
+        queue.push(false);
+        queue.pop();
+        observed.push(queue.vwf_glyph_tone_crossed_vblank_input);
+    }
+
+    assert_eq!(observed, [0; 4]);
 }
 
 #[test]
 fn vwf_click_boundary_marker_survives_audio_snapshot_restore() {
     let mut state = ZeldaState::new();
+    state
+        .audio
+        .modern
+        .queue
+        .emit(EngineAudioCommand::from_sfx_port_value(
+            crate::game_output::AudioSfxBank::Effect2,
+            12,
+        ));
     state.zelda_mark_vwf_glyph_tone_crossed_vblank();
     let snapshot = state.zelda_audio_snapshot_bytes();
 
@@ -45,8 +74,127 @@ fn vwf_click_boundary_marker_survives_audio_snapshot_restore() {
             .modern
             .queue
             .vwf_glyph_tone_crossed_vblank_deferred,
-        [false, false, true]
+        [0, 0, 0x40 | 12]
     );
+}
+
+#[test]
+fn vwf_click_boundary_marker_carries_the_owned_port_value() {
+    let mut queue = ModernAudioCommandQueue::default();
+    queue.prepare_vwf_glyph_tone_boundary(12);
+    queue.emit(EngineAudioCommand::from_sfx_port_value(
+        crate::game_output::AudioSfxBank::Effect2,
+        0,
+    ));
+    queue.mark_vwf_glyph_tone_crossed_vblank();
+    queue.complete_vwf_glyph();
+
+    let mut observed = Vec::new();
+    for index in 0..3 {
+        queue.push(index == 2);
+        queue.pop();
+        observed.push(queue.vwf_glyph_tone_crossed_vblank_input);
+    }
+
+    assert_eq!(observed, [0, 0, 0x80 | 12]);
+}
+
+#[test]
+fn late_vwf_click_retains_its_port_value_before_the_glyph_completes() {
+    let mut queue = ModernAudioCommandQueue::default();
+    queue.prepare_vwf_glyph_tone_boundary(12);
+    queue.mark_vwf_glyph_tone_crossed_vblank_with_retention(true);
+
+    for index in 0..3 {
+        queue.push(false);
+        queue.pop();
+        if index < 2 {
+            assert_eq!(queue.vwf_glyph_tone_crossed_vblank_input, 0);
+        }
+    }
+
+    assert_eq!(queue.vwf_glyph_tone_crossed_vblank_input, 3);
+}
+
+#[test]
+fn unmarked_vwf_click_candidate_expires_when_the_glyph_completes() {
+    let mut queue = ModernAudioCommandQueue::default();
+    queue.prepare_vwf_glyph_tone_boundary(12);
+
+    queue.complete_vwf_glyph();
+
+    assert_eq!(queue.vwf_glyph_tone_crossed_vblank_deferred, [0; 3]);
+}
+
+#[test]
+fn vwf_click_candidate_samples_the_gameplay_latch_before_the_audio_queue() {
+    let mut state = ZeldaState::new();
+    state.set_sound_effect_2(12);
+
+    state.zelda_prepare_vwf_glyph_tone_boundary_marker();
+
+    assert_eq!(
+        state
+            .audio
+            .modern
+            .queue
+            .vwf_glyph_tone_crossed_vblank_deferred,
+        [0, 0, 0xc0 | 12]
+    );
+}
+
+#[test]
+fn vwf_click_candidate_retains_the_suspended_input_batch_after_gameplay_clear() {
+    let mut state = ZeldaState::new();
+    state.audio.modern.queue.input_commands =
+        EngineAudioCommandBatch::from_legacy_ports([0, 0, 0, 12]);
+
+    state.zelda_prepare_vwf_glyph_tone_boundary_marker();
+
+    assert_eq!(
+        state
+            .audio
+            .modern
+            .queue
+            .vwf_glyph_tone_crossed_vblank_deferred,
+        [0, 0, 0xc0 | 12]
+    );
+}
+
+#[test]
+fn zero_vwf_click_candidate_refreshes_from_the_boundary_command_latch() {
+    let mut queue = ModernAudioCommandQueue::default();
+    queue.prepare_vwf_glyph_tone_boundary(0);
+    queue.emit(EngineAudioCommand::from_sfx_port_value(
+        crate::game_output::AudioSfxBank::Effect2,
+        12,
+    ));
+
+    queue.mark_vwf_glyph_tone_crossed_vblank();
+
+    assert_eq!(
+        queue.vwf_glyph_tone_crossed_vblank_deferred,
+        [0, 0, 0x40 | 12]
+    );
+}
+
+#[test]
+fn completed_zero_vwf_marker_resolves_at_queued_nmi_publication() {
+    let mut queue = ModernAudioCommandQueue::default();
+    queue.prepare_vwf_glyph_tone_boundary(0);
+    queue.mark_vwf_glyph_tone_crossed_vblank();
+    queue.complete_vwf_glyph();
+    queue.emit(EngineAudioCommand::from_sfx_port_value(
+        crate::game_output::AudioSfxBank::Effect2,
+        12,
+    ));
+
+    for _ in 0..3 {
+        queue.push(true);
+        queue.pop();
+    }
+
+    assert_eq!(queue.vwf_glyph_tone_crossed_vblank_input, 0x80 | 12);
 }
 
 fn distinctive_brr_bank(nibble: u8) -> Vec<u8> {

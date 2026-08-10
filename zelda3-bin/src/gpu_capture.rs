@@ -200,6 +200,46 @@ impl LiveGpuFrameCapture {
         }
         let source_entries = game.vram_chr_source().as_slice().to_vec();
         let dialogue_active = game.is_dialogue_display_active();
+        if std::env::var("ZELDA3_DEBUG_BG3_SEMANTIC_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == game.frame_ctr_dbg)
+        {
+            let origin = game
+                .published_bg3_vwf_glyph_runs()
+                .first()
+                .map(|run| run.origin_tile_number);
+            let matches = origin.map_or_else(Vec::new, |origin| {
+                let layer = &ppu.bg_layer[2];
+                let base = usize::from(layer.tilemap_adr);
+                let quadrants = 1
+                    + usize::from(layer.tilemap_wider)
+                    + usize::from(layer.tilemap_higher) * (1 + usize::from(layer.tilemap_wider));
+                (0..quadrants)
+                    .flat_map(|quadrant| {
+                        let start = base + quadrant * 0x400;
+                        ppu.vram
+                            .get(start..start + 0x400)
+                            .into_iter()
+                            .flatten()
+                            .enumerate()
+                            .filter_map(move |(within, entry)| {
+                                (*entry & 0x03ff == origin).then_some((quadrant, within, *entry))
+                            })
+                    })
+                    .collect::<Vec<_>>()
+            });
+            eprintln!(
+                "bg3_semantic_frame host={} dialogue_active={} runs={} origin={origin:04x?} tilemap_matches={matches:04x?} first_runs={:04x?}",
+                game.frame_ctr_dbg,
+                dialogue_active,
+                game.published_bg3_vwf_glyph_runs().len(),
+                game.published_bg3_vwf_glyph_runs()
+                    .iter()
+                    .take(4)
+                    .collect::<Vec<_>>(),
+            );
+        }
         // Published glyph metadata can lead the hardware by several CPU/NMI
         // slices while a box opens. It becomes a displayed generation only
         // when the coherent display snapshot's BG3 tilemap maps its origin.

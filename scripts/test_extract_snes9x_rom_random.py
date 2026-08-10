@@ -18,8 +18,9 @@ class ExtractSnes9xRomRandomTests(unittest.TestCase):
                 [
                     '{"event":"frame","run":9,"frame":10}',
                     '{"event":"rng-ppu-read","run":9,"address":8508,"value":12}',
-                    '{"event":"rng-write","run":9,"frame":10,"address":4001,"value":5,"carry":0}',
-                    '{"event":"rng-write","run":9,"frame":10,"address":4001,"value":255,"carry":1}',
+                    '{"event":"rng-write","run":9,"frame":10,"pc":899711,"address":4001,"value":5,"carry":0}',
+                    '{"event":"rng-write","run":9,"frame":10,"pc":899711,"address":4001,"value":255,"carry":1}',
+                    '{"event":"rng-write","run":9,"frame":10,"pc":57291,"address":4001,"value":36,"carry":0}',
                     '{"event":"wram-write","run":10,"address":32,"value":1}',
                 ]
             )
@@ -38,7 +39,7 @@ class ExtractSnes9xRomRandomTests(unittest.TestCase):
 
     def test_rejects_rng_write_without_host_run(self) -> None:
         trace = io.StringIO(
-            '{"event":"rng-write","frame":10,"address":4001,"value":5,"carry":0}\n'
+            '{"event":"rng-write","frame":10,"pc":899711,"address":4001,"value":5,"carry":0}\n'
         )
 
         with self.assertRaisesRegex(ValueError, "missing.*run"):
@@ -46,7 +47,7 @@ class ExtractSnes9xRomRandomTests(unittest.TestCase):
 
     def test_rejects_rng_write_without_carry(self) -> None:
         trace = io.StringIO(
-            '{"event":"rng-write","run":9,"address":4001,"value":5}\n'
+            '{"event":"rng-write","run":9,"pc":899711,"address":4001,"value":5}\n'
         )
 
         with self.assertRaisesRegex(ValueError, "invalid carry"):

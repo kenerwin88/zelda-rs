@@ -233,11 +233,7 @@ impl ZeldaState {
                 .nmi_forced_blank_scanlines_pending
                 .max(blanking.prefix_scanlines);
             self.latch_nmi_update();
-            self.nmi_do_updates_from(
-                oam_dma_source,
-                defer_bg_vram_upload,
-                animated_bg_operands,
-            );
+            self.nmi_do_updates_from(oam_dma_source, defer_bg_vram_upload, animated_bg_operands);
             if !joypad_already_sampled {
                 self.nmi_read_joypads(input);
             }
@@ -438,10 +434,7 @@ impl ZeldaState {
             },
             |dma| (dma.source_address, dma.destination_address, dma.data),
         );
-        if matches!(
-            animated_bg_operands,
-            GraphicsDmaGeneration::LiveAfterMain
-        ) {
+        if matches!(animated_bg_operands, GraphicsDmaGeneration::LiveAfterMain) {
             if let Some(projected_source) = rom_spiral_stairs_suspended_animated_bg_source_address(
                 self.game_state.frame,
                 host_main_prefix_did_not_advance,
@@ -636,6 +629,24 @@ impl ZeldaState {
             self.commit_palette_provenance_cgram();
         }
 
+        let debug_display_vram = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == self.frame_ctr_dbg);
+        if debug_display_vram {
+            let dst = self
+                .game_state
+                .display
+                .message_dma_destination_address_usize();
+            eprintln!(
+                "nmi_hud_candidate host={} enabled={} destination={dst:04x} vram_60c3={:04x} native_buffer_131={:04x} ram_buffer_131={:04x}",
+                self.frame_ctr_dbg,
+                self.game_state.system_signals.should_update_hud(),
+                self.ppu.vram[0x60c3],
+                self.game_state.display.hud_tilemap.tile_word(131),
+                read_word_from_slice(self.message_dma_tile_indices(), 131 * 2),
+            );
+        }
         if self.game_state.system_signals.should_update_hud() {
             let dst = self
                 .game_state
@@ -647,6 +658,12 @@ impl ZeldaState {
                     self.ppu.vram[dst + i] = read_word_from_slice(&hud_buf, i * 2);
                 }
             }
+        }
+        if debug_display_vram {
+            eprintln!(
+                "nmi_hud_selected host={} vram_60c3={:04x}",
+                self.frame_ctr_dbg, self.ppu.vram[0x60c3],
+            );
         }
 
         self.clear_hud_update_flag();

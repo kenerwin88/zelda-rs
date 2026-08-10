@@ -12,6 +12,7 @@
 
 use super::sprite::{PrepOamCoordsRet as SpritePrepOamCoordsRet, SpriteSpawnInfo};
 use super::*;
+use crate::rom_random::RomRandomResult;
 use crate::types::{sign8, PointU8, ProjectSpeedRet, SpriteHitBox};
 
 // ---------------------------------------------------------------------------
@@ -44,6 +45,13 @@ impl PrepOamCoordsRet {
 mod sprite_main_draw_shared;
 use sprite_main_draw_shared::*;
 pub(super) use sprite_main_draw_shared::{arrgi_sin, trinexx_head_sin};
+
+/// ROM $05:a8f0 calls the RNG, then executes `AND #$7f; ADC #$40`.
+/// `AND` preserves the carry produced by the RNG routine, so the delay is
+/// occasionally one greater than a carry-blind source translation suggests.
+const fn rat_random_run_delay(random: RomRandomResult) -> u8 {
+    random.masked_adc(0x7f, 0x40)
+}
 
 impl ZeldaState {
     // -----------------------------------------------------------------------
@@ -13378,11 +13386,12 @@ impl ZeldaState {
         } else {
             self.sprite_zero_velocity_xy(k);
             if self.sprite_slot_view(k).delay_main() == 0 {
-                let a = self.get_random_number();
+                let random = self.get_random_number_with_carry();
+                let a = random.value();
                 let value = a & 3;
                 self.sprite_slot_view_mut(k).set_direction(value);
                 self.sprite_slot_view_mut(k).add_ai_state(1);
-                let value = (a & 0x7f).wrapping_add(0x40);
+                let value = rat_random_run_delay(random);
                 self.sprite_slot_view_mut(k).set_delay_main(value);
             }
             let value = RAT_IDLE_ANIM_STATES[usize::from(

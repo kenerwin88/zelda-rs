@@ -27,6 +27,15 @@ const VWF_GLYPH_ENTRY_MASTER_CYCLES: u32 = 18_000;
 const VWF_GLYPH_CLICK_MASTER_CYCLES: u32 = 2_000;
 const VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES: u32 =
     VWF_GLYPH_ENTRY_MASTER_CYCLES - VWF_GLYPH_CLICK_MASTER_CYCLES;
+// Two oracle traces bracket the click-store boundary for an ordinary resumed
+// glyph: 13,844 remaining master cycles publishes APUI03 before vblank, while
+// 3,798 publishes it after. Six scanlines plus the traced click prefix is the
+// smallest whole-scanline separator between those observations. A resume from
+// PreparingDrawing has the longer measured caller suffix below; that shifts
+// the same publication boundary by the suffix delta. Frame 26,512 is the
+// regression witness: 19,334 cycles retains the click with the 28,000-cycle
+// suffix, while the ordinary 13,844-cycle case still clears it.
+const VWF_GLYPH_CLICK_VBLANK_MARGIN_MASTER_CYCLES: u32 = 6 * SNES_MASTER_CYCLES_PER_SCANLINE;
 // From the RenderText handler epilogue through Module0E's scroll-register
 // copies and NMI_PrepareSprites. Oracle PC traces measure about 16,300 master
 // cycles for this caller suffix; a completion with less headroom is resumed
@@ -91,6 +100,34 @@ fn vwf_render_glyph_master_cycles(width: u8, x: u8) -> u32 {
 
 fn vwf_render_glyph_drawing_master_cycles(width: u8, x: u8) -> u32 {
     vwf_render_glyph_master_cycles(width, x) - VWF_GLYPH_ENTRY_MASTER_CYCLES
+}
+
+const fn vwf_new_glyph_click_requires_boundary_retention(
+    cycles_left: u32,
+    handler_entry_glyph_phase: VwfGlyphCpuPhase,
+) -> bool {
+    // The suspended entry work shifts which side of Snes9x's next NMI the
+    // final click lands on. Entering still owes the complete post-click setup;
+    // PreparingDrawing uses the independently measured longer caller-return
+    // boundary. A Drawing resume has no entry-phase shift.
+    let resume_phase_shift = match handler_entry_glyph_phase {
+        VwfGlyphCpuPhase::Entering { .. } => VWF_GLYPH_POST_CLICK_ENTRY_MASTER_CYCLES,
+        VwfGlyphCpuPhase::PreparingDrawing { .. } => {
+            VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES - VWF_CALLER_SUFFIX_MASTER_CYCLES
+        }
+        VwfGlyphCpuPhase::Ready | VwfGlyphCpuPhase::Drawing { .. } => 0,
+    };
+    cycles_left
+        < VWF_GLYPH_CLICK_MASTER_CYCLES
+            + VWF_GLYPH_CLICK_VBLANK_MARGIN_MASTER_CYCLES
+            + resume_phase_shift
+}
+
+fn vwf_interrupted_click_marks_boundary(
+    phase: VwfGlyphCpuPhase,
+    retain_incomplete_click: bool,
+) -> bool {
+    retain_incomplete_click || phase.vblank_follows_click_before_drawing()
 }
 
 fn debug_vwf_budget_for_frame(host_frame: u32) -> bool {
@@ -282,7 +319,9 @@ impl VwfGlyphCpuPhase {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum VwfCpuSliceOutcome {
-    InterruptedMidGlyph,
+    InterruptedMidGlyph {
+        retain_incomplete_click: bool,
+    },
     HandlerComplete {
         master_cycles_before_vblank: u32,
         caller_suffix_master_cycles: u32,
@@ -304,7 +343,8 @@ impl VwfCpuSliceOutcome {
 #[cfg(test)]
 mod fast_forward_cycle_tests {
     use super::{
-        vwf_glyph_cursor_after_pending_line_transition, vwf_render_glyph_drawing_master_cycles,
+        vwf_glyph_cursor_after_pending_line_transition, vwf_interrupted_click_marks_boundary,
+        vwf_new_glyph_click_requires_boundary_retention, vwf_render_glyph_drawing_master_cycles,
         vwf_render_glyph_master_cycles, vwf_render_loop_cycle_budget, VwfCpuSliceOutcome,
         VwfGlyphCpuPhase, VwfHandlerEntryPhase, VWF_AFTER_CALLER_SUFFIX_ENTRY_MASTER_CYCLES,
         VWF_CALLER_SUFFIX_MASTER_CYCLES, VWF_FIRST_LINE_ENTRY_MASTER_CYCLES,
@@ -385,6 +425,47 @@ mod fast_forward_cycle_tests {
     }
 
     #[test]
+    fn glyph_click_boundary_uses_the_oracle_bracket_not_the_semantic_phase_alone() {
+        assert!(vwf_new_glyph_click_requires_boundary_retention(
+            3_798,
+            VwfGlyphCpuPhase::Ready,
+        ));
+        assert!(!vwf_new_glyph_click_requires_boundary_retention(
+            13_844,
+            VwfGlyphCpuPhase::Drawing {
+                remaining_master_cycles: 5_444,
+            },
+        ));
+        assert!(vwf_new_glyph_click_requires_boundary_retention(
+            19_334,
+            VwfGlyphCpuPhase::PreparingDrawing {
+                remaining_master_cycles: 7_954,
+                drawing_master_cycles: 24_000,
+            },
+        ));
+        assert!(vwf_new_glyph_click_requires_boundary_retention(
+            19_798,
+            VwfGlyphCpuPhase::Entering {
+                remaining_master_cycles: 2_000,
+                post_click_master_cycles: 16_000,
+                drawing_master_cycles: 48_000,
+            },
+        ));
+        assert!(vwf_interrupted_click_marks_boundary(
+            VwfGlyphCpuPhase::Drawing {
+                remaining_master_cycles: 30_666,
+            },
+            true,
+        ));
+        assert!(!vwf_interrupted_click_marks_boundary(
+            VwfGlyphCpuPhase::Drawing {
+                remaining_master_cycles: 28_156,
+            },
+            false,
+        ));
+    }
+
+    #[test]
     fn pending_line_transition_selects_the_rom_render_cursor() {
         assert_eq!(
             vwf_glyph_cursor_after_pending_line_transition(24, 2, true),
@@ -409,20 +490,20 @@ mod fast_forward_cycle_tests {
         }
         .caller_suffix_crosses_vblank());
         assert!(VwfCpuSliceOutcome::HandlerComplete {
-            master_cycles_before_vblank:
-                super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES - 1,
-            caller_suffix_master_cycles:
-                super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES,
+            master_cycles_before_vblank: super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES
+                - 1,
+            caller_suffix_master_cycles: super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES,
         }
         .caller_suffix_crosses_vblank());
         assert!(!VwfCpuSliceOutcome::HandlerComplete {
-            master_cycles_before_vblank:
-                super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES,
-            caller_suffix_master_cycles:
-                super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES,
+            master_cycles_before_vblank: super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES,
+            caller_suffix_master_cycles: super::VWF_PREPARING_DRAWING_CALLER_SUFFIX_MASTER_CYCLES,
         }
         .caller_suffix_crosses_vblank());
-        assert!(!VwfCpuSliceOutcome::InterruptedMidGlyph.caller_suffix_crosses_vblank());
+        assert!(!VwfCpuSliceOutcome::InterruptedMidGlyph {
+            retain_incomplete_click: false,
+        }
+        .caller_suffix_crosses_vblank());
     }
 }
 
@@ -996,15 +1077,25 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOverText_Draw(&mut self) {
-        self.set_pending_nmi_subroutine(0x12);
+        // ROM $08:F5C4 is the OAM author for the animated GAME OVER letters.
+        // The similarly numbered NMI request uploads OBJ character data; it is
+        // not this routine. Keeping the two operations separate matters once
+        // the initial character upload has completed and the letters move on
+        // every subsequent main-thread iteration.
+        self.game_over_text_draw();
     }
 
     pub(super) fn Module12_GameOver(&mut self) {
-        match self.game_state.frame.submodule {
+        let entry_submodule = self.game_state.frame.submodule;
+        let spotlight_radius = self.game_state.display.spotlight_hdma.window_radius();
+        let game_over_spotlight_build_suspended =
+            entry_submodule == 3 && self.begin_game_over_spotlight_build(spotlight_radius);
+        match entry_submodule {
             0 => self.GameOver_AdvanceImmediately(),
             1 => self.Death_Func1(),
             2 => self.GameOver_DelayBeforeIris(),
-            3 => self.GameOver_IrisWipe(),
+            3 if !game_over_spotlight_build_suspended => self.GameOver_IrisWipe(),
+            3 => {}
             4 => self.Death_Func4(),
             5 => self.GameOver_SplatAndFade(),
             6 => self.Death_Func6(),
@@ -1019,8 +1110,50 @@ impl ZeldaState {
             15 => self.GameOver_ResituateLink(),
             _ => {}
         }
-        if self.game_state.frame.submodule != 9 {
+        if self.game_state.frame.submodule != 9 && !game_over_spotlight_build_suspended {
             self.link_oam_main();
+        }
+        let entered_iris = entry_submodule == 2 && self.game_state.frame.submodule == 3;
+        if entered_iris {
+            // IrisSpotlight_ConfigureTable is long enough for vblank to split
+            // each circle build from its caller return. The initial build owns
+            // the pre-iris scanout; subsequent builds use the same staged
+            // publication cadence already measured for dungeon-exit irises.
+            let phase = SpotlightIterationPhase::CloseEntryBeforeTablePublication;
+            self.schedule_spotlight_iteration_return(SpotlightIteration::game_over_closing(
+                phase,
+                entered_iris,
+            ));
+        }
+    }
+
+    fn begin_game_over_spotlight_build(&mut self, spotlight_radius: u16) -> bool {
+        if !self.rom_startup_timing() {
+            return false;
+        }
+        self.game_over_iris_wipe_before_table();
+        let phase = SpotlightIterationPhase::for_game_over_close_iteration(spotlight_radius);
+        self.schedule_game_over_spotlight_build(SpotlightIteration::game_over_closing(
+            phase, false,
+        ));
+        true
+    }
+
+    pub(super) fn complete_game_over_spotlight_build(&mut self, iteration: SpotlightIteration) {
+        self.game_over_iris_wipe_after_table();
+        self.link_oam_main();
+        if iteration.game_over_build_needs_deferred_caller_return() {
+            self.schedule_spotlight_iteration_return(iteration.after_game_over_build());
+        } else {
+            // Once the shrinking table finishes before vblank, its caller and
+            // normal game-loop suffix also return in this host slice. Folding
+            // that suffix here lets the next host begin a fresh main iteration
+            // instead of spending a synthetic third frame returning again.
+            self.nmi_prepare_sprites();
+            self.clear_nmi_update_latch();
+            self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations::coherent(
+                GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            ));
         }
     }
 
@@ -1090,11 +1223,19 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOver_IrisWipe(&mut self) {
+        self.game_over_iris_wipe_before_table();
+        self.game_over_iris_wipe_after_table();
+    }
+
+    fn game_over_iris_wipe_before_table(&mut self) {
         self.PaletteFilter_RestoreBGSubstractiveStrict();
         self.copy_color(
             (zelda3_palette::Bank::Main, 32),
             (zelda3_palette::Bank::Main, 0),
         );
+    }
+
+    fn game_over_iris_wipe_after_table(&mut self) {
         let bak = self.game_state.frame.main_module;
         self.IrisSpotlight_ConfigureTable();
         self.set_main_module(bak);
@@ -1116,6 +1257,10 @@ impl ZeldaState {
         self.set_bg34_window_selection(0);
         self.set_object_color_window_selection(0);
         self.set_submodule(4);
+        // The table reached radius zero after active scanout began. Preserve
+        // that fully closed (brightness-zero) image while the live submodule-4
+        // initializer prepares the following visible generation.
+        self.game_over_iris_goal_scanout_closed_pending = true;
         self.increment_cgram_update_flag();
         self.set_screen_brightness(15);
         self.set_main_screen_layers(20);
@@ -1193,6 +1338,21 @@ impl ZeldaState {
     }
 
     pub(super) fn GameOver_Finalize_GAMEOVR(&mut self) {
+        if self.rom_startup_timing() {
+            self.prepare_game_over_text_oam();
+            if self.game_over_text_render_calls_remaining == 0
+                && !self.game_over_text_render_call_in_flight
+            {
+                self.messaging_state_mut().set_module(2);
+                self.dialogue_message_index_mut().set_value(3);
+                self.Text_Initialize_initModuleStateLoop();
+                self.messaging_state_mut().set_text_msgbox_topleft(0x61e8);
+                self.messaging_state_mut().set_text_render_state(2);
+                self.game_over_text_render_calls_remaining = 5;
+            }
+            self.resume_game_over_text_render_loop();
+            return;
+        }
         self.Animate_GAMEOVER_Letters();
         let bak1 = self.game_state.frame.main_module;
         let bak2 = self.game_state.frame.submodule;
@@ -1202,6 +1362,60 @@ impl ZeldaState {
         self.set_main_module(bak1);
         self.messaging_state_mut().set_menu_animation_timer(2);
         self.set_music_control(11);
+    }
+
+    pub(crate) fn prepare_game_over_text_oam(&mut self) {
+        // The ordinary main-loop prefix hides the prior gameplay table before
+        // the post-death dialogue call begins. The translated VWF hold can
+        // enter with its generic core-hold flag already set, so make this
+        // program-counter boundary explicit and preserve it on every resumed
+        // CPU slice. Then author only the sixteen GAME OVER letter sprites,
+        // exactly as the suspended ROM stack has done by its first vblank.
+        self.clear_oam_buffer();
+        self.Animate_GAMEOVER_Letters();
+    }
+
+    pub(crate) fn game_over_text_render_loop_active(&self) -> bool {
+        self.game_over_text_render_calls_remaining != 0 || self.game_over_text_render_call_in_flight
+    }
+
+    /// Resume the exact five-call loop in `RenderText_PostDeathSaveOptions`.
+    /// A call is retired only after its VWF handler and caller suffix return;
+    /// a vblank-interrupted call remains the same outer-loop iteration.
+    pub(crate) fn resume_game_over_text_render_loop(&mut self) {
+        while self.game_over_text_render_calls_remaining != 0 {
+            let resumed_interrupted_call = self.game_over_text_render_call_in_flight;
+            self.game_over_text_render_call_in_flight = true;
+            self.Text_Render();
+            if self.dialogue_fast_forward_hold_pending
+                || !self.dialogue_scroll_cpu_is_idle()
+                || self
+                    .pre_main_caller_continuation_is(PreMainCallerContinuation::DialogueVwfReturn)
+            {
+                return;
+            }
+            self.finish_game_over_text_render_call();
+            if resumed_interrupted_call && self.game_over_text_render_calls_remaining != 0 {
+                // The VWF handler returned near the end of the CPU slice that
+                // resumed it. Until dialogue CPU accounting becomes a shared
+                // call-stack budget, do not grant the next outer invocation a
+                // fresh full-frame budget on this same host call.
+                self.dialogue_fast_forward_hold_pending = true;
+                return;
+            }
+        }
+    }
+
+    pub(crate) fn finish_game_over_text_render_call(&mut self) {
+        debug_assert!(self.game_over_text_render_call_in_flight);
+        debug_assert_ne!(self.game_over_text_render_calls_remaining, 0);
+        self.game_over_text_render_call_in_flight = false;
+        self.game_over_text_render_calls_remaining -= 1;
+        if self.game_over_text_render_calls_remaining == 0 {
+            self.increment_submodule();
+            self.messaging_state_mut().set_menu_animation_timer(2);
+            self.set_music_control(11);
+        }
     }
 
     pub(super) fn GameOver_SaveAndOrContinue(&mut self) {
@@ -2349,10 +2563,19 @@ impl ZeldaState {
 
     pub(super) fn Module0E_03_01_03_DrawRooms(&mut self) {
         if self.rom_startup_timing() {
-            self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishDungeonMapRoomDrawing,
-                DUNGEON_MAP_ROOM_DRAWING_NMI_SLICES,
-            );
+            if self.game_state.world.location.dungeon_room_index() == 0x41 {
+                // The crystal-4 room-$41 map returns after this host frame's
+                // trailing NMI. Other measured map openings, including room
+                // $72, remain suspended through the next host boundary.
+                debug_assert_eq!(DUNGEON_MAP_ROOM_DRAWING_NMI_SLICES, 1);
+                self.game_execution_scheduler
+                    .schedule_post_trailing_nmi(GameWorkContinuation::FinishDungeonMapRoomDrawing);
+            } else {
+                self.game_execution_scheduler.schedule_work(
+                    GameWorkContinuation::FinishDungeonMapRoomDrawing,
+                    DUNGEON_MAP_ROOM_DRAWING_NMI_SLICES,
+                );
+            }
             return;
         }
         self.complete_dungeon_map_room_drawing();
@@ -3677,16 +3900,23 @@ impl ZeldaState {
         // Keeping that artificial budget delayed the first story glyph by one
         // display boundary, leaving the Triforce caption partially absent.
         let outcome = self.render_text_draw_message_characters();
-        let yielded_midline = outcome == VwfCpuSliceOutcome::InterruptedMidGlyph;
+        let retain_incomplete_click = match outcome {
+            VwfCpuSliceOutcome::InterruptedMidGlyph {
+                retain_incomplete_click,
+            } => retain_incomplete_click,
+            VwfCpuSliceOutcome::HandlerComplete { .. } => false,
+        };
+        let yielded_midline = matches!(outcome, VwfCpuSliceOutcome::InterruptedMidGlyph { .. });
         let caller_suffix_crosses_vblank = !yielded_midline
             && self.dialogue_scroll_cpu_is_idle()
             && outcome.caller_suffix_crosses_vblank();
         if yielded_midline
-            && self
-                .dialogue_vwf_glyph_cpu_phase
-                .vblank_follows_click_before_drawing()
+            && vwf_interrupted_click_marks_boundary(
+                self.dialogue_vwf_glyph_cpu_phase,
+                retain_incomplete_click,
+            )
         {
-            self.zelda_mark_vwf_glyph_tone_crossed_vblank();
+            self.zelda_mark_vwf_glyph_tone_crossed_vblank_with_retention(retain_incomplete_click);
         }
         // A mid-line yield models Snes9x returning at vblank while the 65816 PC
         // is still inside VWF_RenderCharacter. The ROM has not reached the
@@ -3717,6 +3947,7 @@ impl ZeldaState {
     fn render_text_draw_message_characters(&mut self) -> VwfCpuSliceOutcome {
         let debug_vwf_budget = debug_vwf_budget_for_frame(self.frame_ctr_dbg);
         let resuming = self.dialogue_fast_forward_hold_active;
+        let handler_entry_glyph_phase = self.dialogue_vwf_glyph_cpu_phase;
         let caller_suffix_master_cycles = if resuming
             && matches!(
                 self.dialogue_vwf_glyph_cpu_phase,
@@ -3735,6 +3966,7 @@ impl ZeldaState {
         let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line, entry_phase);
         let mut frame_advance: u16 = 0;
         let mut midline_yield = false;
+        let mut retain_incomplete_click = false;
         loop {
             let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos() as usize;
             let c = self.game_state.messaging.decoded_text.byte(read_pos);
@@ -3778,12 +4010,24 @@ impl ZeldaState {
                                     drawing_master_cycles,
                                 );
                             }
+                            let cycles_before_advance = cycles_left;
                             let advance = self
                                 .dialogue_vwf_glyph_cpu_phase
                                 .advance(cycles_left, drawing_master_cycles);
                             self.dialogue_vwf_glyph_cpu_phase = advance.next_phase;
                             cycles_left -= advance.consumed_master_cycles;
                             if advance.entered_function {
+                                // A near-boundary semantic entry can land on
+                                // the far side of vblank in the measured ROM
+                                // trace even though the coarse loop budget has
+                                // just enough room for the click prefix. This
+                                // flag belongs to the newest click candidate;
+                                // begin_vwf_glyph replaces that candidate too.
+                                retain_incomplete_click =
+                                    vwf_new_glyph_click_requires_boundary_retention(
+                                        cycles_before_advance,
+                                        handler_entry_glyph_phase,
+                                    );
                                 self.begin_vwf_glyph(param);
                             }
                             if !advance.completed {
@@ -3910,7 +4154,9 @@ impl ZeldaState {
             );
         }
         if midline_yield {
-            VwfCpuSliceOutcome::InterruptedMidGlyph
+            VwfCpuSliceOutcome::InterruptedMidGlyph {
+                retain_incomplete_click,
+            }
         } else {
             VwfCpuSliceOutcome::HandlerComplete {
                 master_cycles_before_vblank: cycles_left,
@@ -3951,6 +4197,11 @@ impl ZeldaState {
         if c != 0x59 {
             self.set_sound_effect_2(12);
         }
+        // Capture at the click itself. By the later vblank marker, gameplay
+        // may already have cleared $012f even though the interrupted ROM call
+        // still owns the earlier APUI03 value. Glyph $59 performs no new
+        // write, so it intentionally captures the retained latch too.
+        self.zelda_prepare_vwf_glyph_tone_boundary_marker();
         let speed = self.game_state.messaging.runtime.vwf_line_speed();
         self.messaging_state_mut().set_vwf_line_speed_cur(speed);
         // ROM VWF_RenderSingle applies the pending line transition before it
@@ -3972,6 +4223,7 @@ impl ZeldaState {
         };
         let font_data = find_index_in_memblk(dialogue_font, 0).ptr.to_vec();
         let widths = find_index_in_memblk(dialogue_font, 1).ptr.to_vec();
+        self.zelda_complete_vwf_glyph_boundary_marker();
         let width = widths.get(c as usize).copied().unwrap_or(0);
         assert!(width <= 8);
         let i = self.game_state.messaging.vwf_render.glyph_cursor_usize();

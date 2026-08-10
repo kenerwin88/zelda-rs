@@ -271,6 +271,10 @@ impl StreamingAudioComparator {
         self.oracle_sample_frames += oracle.len() / 2;
     }
 
+    pub(crate) fn exact_mismatch_seen(&self) -> bool {
+        self.mode == AudioComparisonMode::Exact && self.first_mismatch_interleaved.is_some()
+    }
+
     pub(crate) fn finish(mut self) -> AudioComparisonReport {
         if self.window_count != 0 {
             self.finish_window();
@@ -732,6 +736,20 @@ mod tests {
         assert!(!report.matched);
         assert_eq!(report.first_mismatch_interleaved, Some(6));
         assert_eq!(report.first_mismatch_sample_frame, Some(3));
+    }
+
+    #[test]
+    fn streaming_exact_comparison_exposes_a_stop_first_signal() {
+        let timing = AudioTimingOptions::from_sample_rate(32_000.0, 1.0, 64, 2.0, 0.25);
+        let mut exact = StreamingAudioComparator::new(AudioComparisonMode::Exact, timing);
+        exact.push_stereo_frame(&[1, 2], &[1, 2]);
+        assert!(!exact.exact_mismatch_seen());
+        exact.push_stereo_frame(&[3, 4], &[3, 9]);
+        assert!(exact.exact_mismatch_seen());
+
+        let mut timing_only = StreamingAudioComparator::new(AudioComparisonMode::Timing, timing);
+        timing_only.push_stereo_frame(&[1, 2], &[1, 9]);
+        assert!(!timing_only.exact_mismatch_seen());
     }
 
     #[test]

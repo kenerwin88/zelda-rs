@@ -2569,8 +2569,7 @@ impl ZeldaState {
             } as u16
                 + sort_sprites_offset_into_oam_buffer)
                 >> 2) as usize;
-            let oam_pos =
-                self.link_oam_calculate_sword_sparkle_position(oam_pos, xcoord, ycoord);
+            let oam_pos = self.link_oam_calculate_sword_sparkle_position(oam_pos, xcoord, ycoord);
             let mut oam_slots = VisibleSwordOamSlotCursor::new(oam_pos);
             let mut j = sr.r6 * 3;
             for i in 0..3 {

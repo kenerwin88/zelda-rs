@@ -205,18 +205,33 @@ impl ApuWriteEnt {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct ModernAudioCommandQueue {
     write_history: [EngineAudioCommandBatch; 16],
-    vwf_glyph_tone_crossed_vblank_history: [bool; 16],
+    // The VWF boundary marker is packed into one byte so version-8 audio
+    // snapshots retain their wire layout: 0 = absent, 1/2 = legacy
+    // incomplete/complete markers, 3 = a traced late click retained while its
+    // glyph is incomplete, 0x40|value = owned but incomplete,
+    // 0x80|value = owned and complete, and 0xc0|value = the current glyph's
+    // unmarked click candidate. Carrying the exact APUI03 value avoids
+    // guessing from a later gameplay or physical latch after a clear.
+    vwf_glyph_tone_crossed_vblank_history: [u8; 16],
     pending_write: EngineAudioCommandBatch,
-    vwf_glyph_tone_crossed_vblank_deferred: [bool; 3],
+    // 0 = absent, 1 = originating glyph still interrupted, 2 = that glyph
+    // completed. u8 preserves the version-8 bincode field width used by the
+    // previous bool array while retaining ownership through later glyphs.
+    vwf_glyph_tone_crossed_vblank_deferred: [u8; 3],
     write_position: u8,
     write_count: u8,
     total_writes: u8,
     input_commands: EngineAudioCommandBatch,
-    vwf_glyph_tone_crossed_vblank_input: bool,
+    vwf_glyph_tone_crossed_vblank_input: u8,
     acknowledged_commands: EngineAudioCommandBatch,
 }
 
 impl ModernAudioCommandQueue {
+    const VWF_BOUNDARY_VALUE_MASK: u8 = 0x3f;
+    const VWF_BOUNDARY_OWNED: u8 = 0x40;
+    const VWF_BOUNDARY_COMPLETE: u8 = 0x80;
+    const VWF_BOUNDARY_CANDIDATE: u8 = 0xc0;
+
     fn from_legacy_transport(
         write_history: [ApuWriteEnt; 16],
         pending_write: ApuWriteEnt,
@@ -228,14 +243,14 @@ impl ModernAudioCommandQueue {
     ) -> Self {
         Self {
             write_history: write_history.map(ApuWriteEnt::decoded_commands),
-            vwf_glyph_tone_crossed_vblank_history: [false; 16],
+            vwf_glyph_tone_crossed_vblank_history: [0; 16],
             pending_write: pending_write.decoded_commands(),
-            vwf_glyph_tone_crossed_vblank_deferred: [false; 3],
+            vwf_glyph_tone_crossed_vblank_deferred: [0; 3],
             write_position,
             write_count,
             total_writes,
             input_commands: EngineAudioCommandBatch::from_legacy_ports(input_ports),
-            vwf_glyph_tone_crossed_vblank_input: false,
+            vwf_glyph_tone_crossed_vblank_input: 0,
             acknowledged_commands: EngineAudioCommandBatch::from_legacy_ports(output_ports),
         }
     }
@@ -248,11 +263,87 @@ impl ModernAudioCommandQueue {
         self.pending_write.apply(command);
     }
 
-    fn push(&mut self, vwf_glyph_call_completed: bool) {
+    fn prepare_vwf_glyph_tone_boundary(&mut self, effect2: u8) {
+        debug_assert_eq!(effect2 & !Self::VWF_BOUNDARY_VALUE_MASK, 0);
+        self.vwf_glyph_tone_crossed_vblank_deferred[2] =
+            Self::VWF_BOUNDARY_CANDIDATE | (effect2 & Self::VWF_BOUNDARY_VALUE_MASK);
+    }
+
+    fn mark_vwf_glyph_tone_crossed_vblank(&mut self) {
+        self.mark_vwf_glyph_tone_crossed_vblank_with_retention(false);
+    }
+
+    fn mark_vwf_glyph_tone_crossed_vblank_with_retention(&mut self, retain_incomplete_click: bool) {
+        let state = self.vwf_glyph_tone_crossed_vblank_deferred[2];
+        let captured_effect2 = if state & 0xc0 == Self::VWF_BOUNDARY_CANDIDATE {
+            state & Self::VWF_BOUNDARY_VALUE_MASK
+        } else {
+            0
+        };
+        let effect2 = [
+            captured_effect2,
+            self.pending_write.legacy_ports()[3],
+            self.input_commands.legacy_ports()[3],
+        ]
+        .into_iter()
+        .find(|value| *value != 0)
+        .unwrap_or(0)
+            & Self::VWF_BOUNDARY_VALUE_MASK;
+        self.vwf_glyph_tone_crossed_vblank_deferred[2] = if retain_incomplete_click {
+            // State 3 is the layout-compatible retained-click marker. Its
+            // value is resolved from the physical/input latch at publication;
+            // unlike an ordinary completed glyph, it must not be downgraded
+            // merely because drawing is still in flight then.
+            3
+        } else {
+            Self::VWF_BOUNDARY_OWNED | effect2
+        };
+    }
+
+    fn vwf_boundary_is_complete(state: u8) -> bool {
+        matches!(state, 2 | 3) || state & 0xc0 == Self::VWF_BOUNDARY_COMPLETE
+    }
+
+    fn vwf_boundary_with_completion(state: u8) -> u8 {
+        match state {
+            1 => 2,
+            3 => 3,
+            state if state & 0xc0 == Self::VWF_BOUNDARY_OWNED => {
+                Self::VWF_BOUNDARY_COMPLETE | (state & Self::VWF_BOUNDARY_VALUE_MASK)
+            }
+            state if state & 0xc0 == Self::VWF_BOUNDARY_CANDIDATE => 0,
+            state => state,
+        }
+    }
+
+    fn push(&mut self, current_vwf_glyph_completed: bool) -> (bool, bool, u8, u8) {
         let pos = (self.write_position & 0xf) as usize;
         self.write_history[pos] = self.pending_write;
-        self.vwf_glyph_tone_crossed_vblank_history[pos] =
-            self.vwf_glyph_tone_crossed_vblank_deferred[0] && vwf_glyph_call_completed;
+        let mut deferred_marker = self.vwf_glyph_tone_crossed_vblank_deferred[0];
+        if deferred_marker == Self::VWF_BOUNDARY_COMPLETE {
+            // A zero-valued click candidate means the glyph performed no new
+            // $012f store. Resolve the value at the queued NMI publication,
+            // when the suspended command batch it retains is finally known.
+            let retained_effect2 = [
+                self.pending_write.legacy_ports()[3],
+                self.input_commands.legacy_ports()[3],
+            ]
+            .into_iter()
+            .find(|value| *value != 0)
+            .unwrap_or(0);
+            deferred_marker |= retained_effect2 & Self::VWF_BOUNDARY_VALUE_MASK;
+        }
+        let owned_marker = Self::vwf_boundary_is_complete(deferred_marker);
+        let legacy_marker = deferred_marker != 0 && current_vwf_glyph_completed;
+        self.vwf_glyph_tone_crossed_vblank_history[pos] = match (owned_marker, legacy_marker) {
+            (false, _) => 0,
+            (true, false) => match deferred_marker {
+                2 => 1,
+                3 => 3,
+                state => Self::VWF_BOUNDARY_OWNED | (state & Self::VWF_BOUNDARY_VALUE_MASK),
+            },
+            (true, true) => deferred_marker,
+        };
         self.vwf_glyph_tone_crossed_vblank_deferred[0] =
             self.vwf_glyph_tone_crossed_vblank_deferred[1];
         self.vwf_glyph_tone_crossed_vblank_deferred[1] =
@@ -262,6 +353,21 @@ impl ModernAudioCommandQueue {
             self.write_count += 1;
         }
         self.total_writes = self.total_writes.wrapping_add(1);
+        (
+            owned_marker,
+            legacy_marker,
+            self.pending_write.legacy_ports()[3],
+            self.input_commands.legacy_ports()[3],
+        )
+    }
+
+    fn complete_vwf_glyph(&mut self) {
+        // Glyphs complete serially. Any pending click boundary therefore
+        // belongs to this completion, even if a later glyph is interrupted
+        // before the marker reaches the audio transport.
+        for state in &mut self.vwf_glyph_tone_crossed_vblank_deferred {
+            *state = Self::vwf_boundary_with_completion(*state);
+        }
     }
 
     fn pop(&mut self) {
@@ -286,9 +392,9 @@ impl ModernAudioCommandQueue {
         self.write_position = 0;
         self.total_writes = 0;
         self.write_count = 0;
-        self.vwf_glyph_tone_crossed_vblank_history.fill(false);
-        self.vwf_glyph_tone_crossed_vblank_deferred = [false; 3];
-        self.vwf_glyph_tone_crossed_vblank_input = false;
+        self.vwf_glyph_tone_crossed_vblank_history.fill(0);
+        self.vwf_glyph_tone_crossed_vblank_deferred = [0; 3];
+        self.vwf_glyph_tone_crossed_vblank_input = 0;
     }
 
     fn discard_unused_frames(&mut self) {
@@ -424,10 +530,37 @@ impl ZeldaState {
     }
 
     pub(crate) fn zelda_mark_vwf_glyph_tone_crossed_vblank(&mut self) {
+        self.audio.modern.queue.mark_vwf_glyph_tone_crossed_vblank();
+    }
+
+    pub(crate) fn zelda_mark_vwf_glyph_tone_crossed_vblank_with_retention(
+        &mut self,
+        retain_incomplete_click: bool,
+    ) {
         self.audio
             .modern
             .queue
-            .vwf_glyph_tone_crossed_vblank_deferred[2] = true;
+            .mark_vwf_glyph_tone_crossed_vblank_with_retention(retain_incomplete_click);
+    }
+
+    pub(crate) fn zelda_prepare_vwf_glyph_tone_boundary_marker(&mut self) {
+        // This is the original CPU source byte ($012f), sampled immediately
+        // after VWF_RenderSingle's optional click write. The translated audio
+        // queue can lag that gameplay latch by an NMI boundary.
+        let queue = &mut self.audio.modern.queue;
+        let effect2 = [
+            self.game_state.system_signals.sound_effect_2(),
+            queue.pending_write.legacy_ports()[3],
+            queue.input_commands.legacy_ports()[3],
+        ]
+        .into_iter()
+        .find(|value| *value != 0)
+        .unwrap_or(0);
+        queue.prepare_vwf_glyph_tone_boundary(effect2);
+    }
+
+    pub(crate) fn zelda_complete_vwf_glyph_boundary_marker(&mut self) {
+        self.audio.modern.queue.complete_vwf_glyph();
     }
 
     pub fn zelda_debug_apu_write_ports(&self) -> [u8; 4] {
@@ -689,8 +822,30 @@ impl ZeldaState {
     }
 
     pub fn zelda_push_apu_state(&mut self) {
-        let vwf_glyph_call_completed = self.dialogue_vwf_glyph_cpu_phase.is_ready();
-        self.audio.modern.queue.push(vwf_glyph_call_completed);
+        let current_vwf_glyph_completed = self.dialogue_vwf_glyph_cpu_phase.is_ready();
+        let (owned_marker, legacy_marker, pending_effect2, input_effect2) =
+            self.audio.modern.queue.push(current_vwf_glyph_completed);
+        let marker_debug = std::env::var("ZELDA3_DEBUG_VWF_MARKER_POLICY").ok();
+        if marker_debug.is_some()
+            && (owned_marker != legacy_marker
+                || marker_debug.as_deref() == Some("all") && (owned_marker || legacy_marker))
+        {
+            eprintln!(
+                "vwf_marker_policy host={} owned={} legacy={} pending_effect2={} input_effect2={} deferred={:?} position={} count={} module={} submodule={} read_pos={:#x} phase={:?}",
+                self.frame_ctr_dbg,
+                owned_marker,
+                legacy_marker,
+                pending_effect2,
+                input_effect2,
+                self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_deferred,
+                self.audio.modern.queue.write_position,
+                self.audio.modern.queue.write_count,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                self.game_state.messaging.runtime.dialogue_msg_read_pos(),
+                self.dialogue_vwf_glyph_cpu_phase,
+            );
+        }
     }
 
     fn zelda_pop_apu_state(&mut self) {

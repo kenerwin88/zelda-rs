@@ -82,7 +82,8 @@ impl HostPortTransport {
         &mut self,
         commands: EngineAudioCommandBatch,
         acknowledgements: [u8; 4],
-        vwf_glyph_tone_crossed_vblank: bool,
+        effect2_input: u8,
+        vwf_glyph_tone_boundary_policy: u8,
     ) -> HostPortWrites {
         let ports = commands.legacy_ports();
         let mut writes = [None; 4];
@@ -110,14 +111,20 @@ impl HostPortTransport {
             writes[1] = Some(0);
         }
 
-        // The original NMI always latches the two one-shot effect ports. The
-        // dialogue glyph tone is special: interruptible VWF drawing can finish
-        // after this NMI sampled `$0c`, so its clear belongs to the next frame.
+        // The original NMI always latches the two one-shot effect ports. A VWF
+        // glyph which was already complete at the queued NMI boundary retains
+        // its captured APUI03 value once. A merely owned marker is not enough:
+        // frame 20620's still-drawing glyph has a real clear at this boundary,
+        // while frames 20764 and 20857 retain a completed click even if an
+        // intervening NMI has already cleared the physical port latch.
         writes[2] = Some(ports[2]);
-        writes[3] = Some(if ports[3] == 0 && vwf_glyph_tone_crossed_vblank {
-            12
-        } else {
-            ports[3]
+        writes[3] = Some(match vwf_glyph_tone_boundary_policy {
+            // Version-8 snapshots created before value-carrying markers only
+            // recorded "complete". Prefer the physical latch, with the ROM's
+            // dialogue click as the only reconstructable fallback.
+            2 | 3 => effect2_input.max(12),
+            marker if marker & 0xc0 == 0x80 => marker & 0x3f,
+            _ => ports[3],
         });
         HostPortWrites { writes }
     }
@@ -499,7 +506,7 @@ impl AbsoluteDspEventClock {
         &mut self,
         commands: EngineAudioCommandBatch,
         samples_per_channel: u32,
-        vwf_glyph_tone_crossed_vblank: bool,
+        vwf_glyph_tone_boundary_policy: u8,
     ) -> DspClockWindow {
         let frame_start_cycle = self.absolute_apu_cycle;
         let apu_cycles = u64::from(samples_per_channel) * APU_CYCLES_PER_DSP_SAMPLE;
@@ -519,24 +526,25 @@ impl AbsoluteDspEventClock {
             self.host_transport.frame_writes(
                 commands,
                 self.apu.out_ports,
-                vwf_glyph_tone_crossed_vblank,
+                self.apu.in_ports[3],
+                vwf_glyph_tone_boundary_policy,
             )
         };
         let host_port_targets = host_port_target_cycles(self.host_frame_index, host_writes);
-        if std::env::var("ZELDA3_DEBUG_SPC_TRANSPORT_FRAME")
+        let debug_transport = std::env::var("ZELDA3_DEBUG_SPC_TRANSPORT_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u64>().ok())
-            == Some(self.host_frame_index)
-        {
+            == Some(self.host_frame_index);
+        if debug_transport {
             eprintln!(
-                "spc_transport host={} window=[{}, {}) targets={:?} relative={:?} writes={:?} vwf_click_crossed_vblank={} execution={} origin={} local={} port_latches={:02x?}",
+                "spc_transport host={} window=[{}, {}) targets={:?} relative={:?} writes={:?} vwf_boundary_policy={} execution={} origin={} local={} port_latches={:02x?}",
                 self.host_frame_index,
                 frame_start_cycle,
                 frame_end_cycle,
                 host_port_targets,
                 host_port_targets.map(|target| target.saturating_sub(frame_start_cycle)),
                 host_writes.writes,
-                vwf_glyph_tone_crossed_vblank,
+                vwf_glyph_tone_boundary_policy,
                 self.apu_cycle_origin + u64::from(self.apu.cycles),
                 self.apu_cycle_origin,
                 self.apu.cycles,
@@ -601,6 +609,18 @@ impl AbsoluteDspEventClock {
                         port,
                         value,
                     );
+                    if debug_transport {
+                        eprintln!(
+                            "spc_transport_event host={} port={} value={:02x} target={} instruction=[{}, {}] boundary={}",
+                            self.host_frame_index,
+                            port,
+                            value,
+                            event_target,
+                            instruction_start,
+                            instruction_end,
+                            boundary,
+                        );
+                    }
                     last_host_boundary = boundary;
                     next_host_port += 1;
                 }
@@ -1097,27 +1117,23 @@ mod tests {
         let clear = EngineAudioCommandBatch::from_legacy_ports([0, 2, 3, 4]);
 
         assert_eq!(
-            transport.frame_writes(track_one, [0; 4], false).writes,
+            transport.frame_writes(track_one, [0; 4], 0, 0).writes,
             [Some(1), Some(2), Some(3), Some(4)]
         );
         assert_eq!(
-            transport.frame_writes(track_one, [0; 4], false).writes,
+            transport.frame_writes(track_one, [0; 4], 0, 0).writes,
             [None, None, Some(3), Some(4)]
         );
         assert_eq!(
-            transport
-                .frame_writes(track_one, [1, 0, 3, 0], false)
-                .writes,
+            transport.frame_writes(track_one, [1, 0, 3, 0], 0, 0).writes,
             [Some(0), None, Some(3), Some(4)]
         );
         assert_eq!(
-            transport.frame_writes(clear, [1, 2, 3, 4], false).writes,
+            transport.frame_writes(clear, [1, 2, 3, 4], 0, 0).writes,
             [Some(0), None, Some(3), Some(4)]
         );
         assert_eq!(
-            transport
-                .frame_writes(track_two, [1, 2, 3, 4], false)
-                .writes,
+            transport.frame_writes(track_two, [1, 2, 3, 4], 0, 0).writes,
             [Some(2), None, Some(3), Some(4)]
         );
     }
@@ -1129,62 +1145,43 @@ mod tests {
         let clear = EngineAudioCommandBatch::from_legacy_ports([0, 0, 0, 0]);
 
         assert_eq!(
-            transport.frame_writes(effect, [1, 0, 0, 0], false).writes[1],
+            transport.frame_writes(effect, [1, 0, 0, 0], 0, 0).writes[1],
             Some(3)
         );
         assert_eq!(
-            transport.frame_writes(clear, [1, 3, 0, 0], false).writes[1],
+            transport.frame_writes(clear, [1, 3, 0, 0], 0, 0).writes[1],
             Some(0)
         );
         assert_eq!(
-            transport.frame_writes(effect, [1, 3, 0, 0], false).writes[1],
+            transport.frame_writes(effect, [1, 3, 0, 0], 0, 0).writes[1],
             Some(3)
         );
     }
 
     #[test]
-    fn delayed_vwf_glyph_tone_replaces_exactly_one_clear() {
-        let mut transport = HostPortTransport::default();
-        let clear = EngineAudioCommandBatch::from_legacy_ports([0, 0, 0, 0]);
-
-        assert_eq!(
-            transport.frame_writes(clear, [0; 4], true).writes[3],
-            Some(12)
-        );
-        assert_eq!(
-            transport.frame_writes(clear, [0; 4], false).writes[3],
-            Some(0)
-        );
-    }
-
-    #[test]
-    fn ordinary_vwf_tone_clear_is_not_deferred_without_a_vblank_crossing() {
+    fn host_transport_distinguishes_owned_and_completed_vwf_boundaries() {
         let mut transport = HostPortTransport::default();
         let effect = EngineAudioCommandBatch::from_legacy_ports([0, 0, 0, 12]);
         let clear = EngineAudioCommandBatch::from_legacy_ports([0, 0, 0, 0]);
 
         assert_eq!(
-            transport.frame_writes(effect, [0; 4], false).writes[3],
+            transport.frame_writes(effect, [0; 4], 0, 1).writes[3],
             Some(12)
         );
         assert_eq!(
-            transport.frame_writes(clear, [0; 4], false).writes[3],
+            transport.frame_writes(clear, [0; 4], 12, 1).writes[3],
             Some(0)
         );
-    }
-
-    #[test]
-    fn an_old_vwf_crossing_cannot_retain_a_later_clear() {
-        let mut transport = HostPortTransport::default();
-        let effect = EngineAudioCommandBatch::from_legacy_ports([0, 0, 0, 12]);
-        let clear = EngineAudioCommandBatch::from_legacy_ports([0, 0, 0, 0]);
-
         assert_eq!(
-            transport.frame_writes(effect, [0; 4], true).writes[3],
+            transport.frame_writes(clear, [0; 4], 12, 2).writes[3],
             Some(12)
         );
         assert_eq!(
-            transport.frame_writes(clear, [0; 4], false).writes[3],
+            transport.frame_writes(clear, [0; 4], 0, 0x80 | 12).writes[3],
+            Some(12)
+        );
+        assert_eq!(
+            transport.frame_writes(clear, [0; 4], 12, 0x80).writes[3],
             Some(0)
         );
     }

@@ -9,6 +9,8 @@ import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 
@@ -20,6 +22,30 @@ SPEC.loader.exec_module(parity_probe)
 
 
 class ParityProbeTest(unittest.TestCase):
+    def test_display_capture_is_automatically_classified(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = Path(directory)
+            (session / "display_oracle.jsonl").write_text(
+                json.dumps(
+                    {
+                        "frame": 123,
+                        "stage": "after",
+                        "oracle": {"cgram": [1, 2]},
+                        "rust": {"cgram": [1, 9]},
+                        "rust_candidates": [
+                            {"name": "before_nmi_upload", "cgram": [1, 2]}
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            output = StringIO()
+            with redirect_stdout(output):
+                parity_probe.report_display_classification(session)
+
+        self.assertIn("classification=cgram-generation", output.getvalue())
+        self.assertIn("exact_candidate cgram=before_nmi_upload", output.getvalue())
+
     def test_explicit_capture_range_is_inclusive_and_ordered(self) -> None:
         self.assertEqual(parity_probe.parse_frame_range("24068-24220"), (24068, 24220))
         with self.assertRaisesRegex(Exception, "START must not exceed END"):
@@ -196,6 +222,161 @@ class ParityProbeTest(unittest.TestCase):
             self.assertEqual(parity_probe.prune_probe_sessions(root, 0), [])
             self.assertTrue(session.is_dir())
 
+    def test_frontier_defaults_to_a_project_scoped_cross_build_diagnostic_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "crystal4 II"
+            project.mkdir()
+
+            use, trust, checkpoint = parity_probe.checkpoint_policy(
+                frontier_mode=True,
+                no_checkpoint=False,
+                explicit_use=False,
+                checkpoint_frame=None,
+                checkpoint_dir=None,
+                trust_cross_build=False,
+                project=project,
+            )
+
+            self.assertTrue(use)
+            self.assertTrue(trust)
+            self.assertIsNotNone(checkpoint)
+            self.assertRegex(checkpoint.name, r"^frontier-crystal4-II-[0-9a-f]{8}$")
+
+    def test_no_checkpoint_keeps_the_authoritative_frontier_cold(self) -> None:
+        use, trust, checkpoint = parity_probe.checkpoint_policy(
+            frontier_mode=True,
+            no_checkpoint=True,
+            explicit_use=False,
+            checkpoint_frame=None,
+            checkpoint_dir=None,
+            trust_cross_build=False,
+            project=Path("routes/crystal4_II"),
+        )
+
+        self.assertFalse(use)
+        self.assertFalse(trust)
+        self.assertIsNone(checkpoint)
+
+    def test_checkpoint_promotion_requires_successful_parity_eligible_exact_av(self) -> None:
+        passing = {
+            "status": "passed",
+            "parity_eligible": True,
+            "video": {"matched": True},
+            "audio": {"matched": True},
+        }
+        self.assertTrue(parity_probe.checkpoint_result_is_promotable(0, passing))
+        for mutation in (
+            {"status": "failed"},
+            {"parity_eligible": False},
+            {"video": {"matched": False}},
+            {"audio": {"matched": False}},
+        ):
+            result = dict(passing)
+            result.update(mutation)
+            self.assertFalse(parity_probe.checkpoint_result_is_promotable(0, result))
+        self.assertFalse(parity_probe.checkpoint_result_is_promotable(1, passing))
+
+    def test_only_complete_pre_failure_candidates_accelerate_trace_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory)
+            generation = candidate / "frame-00014400"
+            generation.mkdir()
+            (generation / "manifest.json").write_text(
+                json.dumps({"frame": 14400}), encoding="utf-8"
+            )
+            (candidate / "latest.json").write_text(
+                json.dumps({"frame": 14400, "checkpoint": generation.name}),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                parity_probe.diagnostic_checkpoint_before_failure(candidate, 14609),
+                candidate,
+            )
+            self.assertIsNone(
+                parity_probe.diagnostic_checkpoint_before_failure(candidate, 14400)
+            )
+            self.assertIsNone(
+                parity_probe.diagnostic_checkpoint_before_failure(candidate, None)
+            )
+
+    def test_periodic_frontier_capture_is_not_rejected_as_an_early_fixed_checkpoint(self) -> None:
+        self.assertFalse(
+            parity_probe.checkpoint_is_impractically_early(
+                automatic_rolling=True, checkpoint_frame=600, target_frame=14612
+            )
+        )
+        self.assertTrue(
+            parity_probe.checkpoint_is_impractically_early(
+                automatic_rolling=False, checkpoint_frame=600, target_frame=14612
+            )
+        )
+
+    def test_resumed_frontier_keeps_rolling_a_session_local_checkpoint(self) -> None:
+        checkpoint = Path("checkpoint")
+        resume = Path("resume")
+        self.assertEqual(parity_probe.checkpoint_interval(True, 27320, None), 600)
+        self.assertEqual(parity_probe.checkpoint_interval(False, 27320, None), 27260)
+        self.assertEqual(parity_probe.checkpoint_interval(True, 27320, 256), 256)
+        self.assertTrue(
+            parity_probe.should_stage_rolling_checkpoint(checkpoint, resume, True)
+        )
+        self.assertFalse(
+            parity_probe.should_stage_rolling_checkpoint(checkpoint, resume, False)
+        )
+
+    def test_frontier_provenance_skips_an_interrupted_trailing_jsonl_record(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = Path(directory)
+            complete = {
+                "frame": 10,
+                "rust_engine": {"main_module": 7},
+                "oracle_engine": {"main_module": 7},
+            }
+            (session / "frame_receipts.jsonl").write_text(
+                json.dumps(complete) + "\n" + '{"frame": 11, "rust_engine":',
+                encoding="utf-8",
+            )
+
+            parity_probe.report_frontier_provenance(session, 11)
+
+    def test_promoting_checkpoint_quarantines_replaced_cache_and_records_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            candidate = root / "candidate"
+            generation = candidate / "frame-00000120"
+            generation.mkdir(parents=True)
+            (generation / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "frame": 120,
+                        "rust_state": "rust.z3state",
+                        "oracle_state": "oracle.state",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (candidate / "latest.json").write_text(
+                json.dumps({"frame": 120, "checkpoint": generation.name}),
+                encoding="utf-8",
+            )
+            checkpoint = root / "frontier"
+            checkpoint.mkdir()
+            (checkpoint / "untrusted.txt").write_text("old", encoding="utf-8")
+
+            saved, quarantined = parity_probe.promote_checkpoint_candidate(
+                candidate, checkpoint, {"schema": 1}, "stamp"
+            )
+
+            self.assertEqual(saved, 120)
+            self.assertEqual(quarantined, root / "rejected-frontier-stamp")
+            self.assertFalse(candidate.exists())
+            self.assertTrue((quarantined / "untrusted.txt").is_file())
+            self.assertEqual(
+                json.loads((checkpoint / parity_probe.IDENTITY_NAME).read_text()),
+                {"saved_frame": 120, "schema": 1},
+            )
+
     def test_failure_focus_extracts_frontier_frame_and_first_bad_pixel(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             failure = Path(directory)
@@ -214,6 +395,63 @@ class ParityProbeTest(unittest.TestCase):
             self.assertEqual(focus.frame, 23934)
             self.assertEqual(focus.pixel, (203, 40))
             self.assertEqual(focus.directory, failure.resolve())
+
+    def test_frontier_finds_first_video_mismatch_range(self) -> None:
+        self.assertEqual(
+            parity_probe.first_video_mismatch_frame(
+                {"video": {"mismatch_ranges": [[26499, 26499], [26510, 26512]]}}
+            ),
+            26499,
+        )
+        self.assertIsNone(
+            parity_probe.first_video_mismatch_frame(
+                {"video": {"matched": True, "mismatch_ranges": []}}
+            )
+        )
+
+    def test_frontier_provenance_ignores_checkpoint_baseline_and_reports_new_onsets(self) -> None:
+        receipts = [
+            {
+                "frame": 24000,
+                "rust_engine": {
+                    "main_module": 7,
+                    "pending_tilemap_destination_page": 81,
+                    "link_dma_countdown": 3,
+                },
+                "oracle_engine": {
+                    "main_module": 7,
+                    "pending_tilemap_destination_page": 81,
+                    "link_dma_countdown": 4,
+                },
+                "vram": {"mismatched_words": 0},
+            },
+            {
+                "frame": 26000,
+                "rust_engine": {
+                    "main_module": 7,
+                    "pending_tilemap_destination_page": 0,
+                    "link_dma_countdown": 4,
+                },
+                "oracle_engine": {
+                    "main_module": 7,
+                    "pending_tilemap_destination_page": 82,
+                    "link_dma_countdown": 4,
+                },
+                "vram": {
+                    "mismatched_words": 4,
+                    "first_rust_word": 0x1111,
+                    "first_oracle_word": 0x2222,
+                },
+            },
+        ]
+
+        self.assertEqual(
+            parity_probe.frontier_provenance_onsets(receipts),
+            [
+                (26000, "pending_tilemap_destination_page", 0, 82),
+                (26000, "vram", 0x1111, 0x2222),
+            ],
+        )
 
     def test_live_oam_is_not_classified_as_a_completed_scanout_cause(self) -> None:
         causal, post_frame_only = parity_probe.split_display_domains(
@@ -244,6 +482,112 @@ class ParityProbeTest(unittest.TestCase):
         }
 
         self.assertIsNone(parity_probe.valid_obj_tile_cache_differences(rust, oracle))
+
+    def test_candidate_matrix_finds_exact_oam_and_obj_generations(self) -> None:
+        oracle_oam = [0, 1, 2, 3]
+        oracle_cache = [0] * 64
+        oracle_cache[7] = 5
+        receipt = {
+            "rust": {
+                "presented_oam": [0, 2, 2, 3],
+                "presented_obj_tile_cache": [0] * 64,
+            },
+            "oracle": {
+                "presented_oam": oracle_oam,
+                "presented_obj_tile_cache": oracle_cache,
+                "presented_obj_tile_cache_valid": [1],
+            },
+            "rust_candidates": [
+                {
+                    "name": "host_boundary_before_main",
+                    "presented_oam": oracle_oam,
+                    "presented_obj_tile_cache": oracle_cache,
+                },
+                {
+                    "name": "live_after_main",
+                    "presented_oam": [9, 9, 9, 9],
+                    "presented_obj_tile_cache": [9] * 64,
+                },
+            ],
+        }
+
+        self.assertEqual(
+            parity_probe.candidate_publication_matches(receipt),
+            [
+                "presented_oam=>host_boundary_before_main (exact)",
+                "presented_obj_tile_cache=>host_boundary_before_main (exact)",
+            ],
+        )
+
+    def test_candidate_matrix_finds_exact_cgram_generation(self) -> None:
+        receipt = {
+            "rust": {"cgram": [1, 2]},
+            "oracle": {"cgram": [1, 3]},
+            "rust_candidates": [
+                {"name": "captured_before_nmi", "cgram": [1, 2]},
+                {"name": "before_nmi_upload", "cgram": [1, 3]},
+            ],
+        }
+
+        self.assertEqual(
+            parity_probe.candidate_publication_matches(receipt),
+            ["cgram=>before_nmi_upload (exact)"],
+        )
+
+    def test_temporal_oracle_hold_exposes_a_contaminated_last_presented_chain(self) -> None:
+        previous_oracle = {
+            "mode": 1,
+            "brightness": 15,
+            "forced_blank": False,
+            "fixed_color": [0, 0, 0],
+            "display_control": [0] * 8,
+            "bg_scroll": [0] * 4,
+            "cgram": [1, 3],
+            "presented_oam": [4, 5],
+        }
+        receipt = {
+            "rust": {
+                **previous_oracle,
+                "cgram": [1, 2],
+                "presented_oam": [4, 6],
+            },
+            "oracle": dict(previous_oracle),
+        }
+
+        self.assertEqual(
+            parity_probe.oracle_previous_frame_holds(receipt, previous_oracle),
+            [
+                "cgram=>oracle_previous_frame_chain (exact)",
+                "presented_oam=>oracle_previous_frame_chain (exact)",
+            ],
+        )
+
+    def test_candidate_cluster_frames_are_compacted(self) -> None:
+        self.assertEqual(
+            parity_probe.format_frame_ranges([8, 3, 4, 4, 6, 9]),
+            "3..4, 6, 8..9",
+        )
+
+    def test_publication_context_formats_semantic_timing_fields(self) -> None:
+        receipt = {
+            "rust_context": {
+                "entry_frame": [7, 0x12, 1, 0x44],
+                "following_frame": [7, 0x12, 1, 0x45],
+                "dungeon_room": 0x51,
+                "staircase_index": 0x30,
+                "palette_filter_countdown": 0x17,
+                "nmi_update_latch": 1,
+                "oam_scanout_source": "RetainResidentPpuOam",
+                "retain_captured_oam": True,
+                "link_obj_scanout_generation": "LiveAfterMain",
+                "link_obj_source_generation": "HostBoundaryBeforeMain",
+                "captured_to_host_oam_mismatches": 7,
+            }
+        }
+
+        formatted = parity_probe.format_publication_context(receipt)
+        self.assertIn("palette=0017", formatted)
+        self.assertIn("captured_host_diff=7", formatted)
 
     def test_cross_build_checkpoint_trust_still_requires_a_complete_generation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

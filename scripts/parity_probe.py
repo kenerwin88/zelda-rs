@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay one Snes9x parity divergence window with a cold start by default.
+"""Replay one Snes9x parity divergence window against the pinned oracle.
 
 The pre-commit gate leaves a full set of route inputs behind in
 routes/<project>/comparisons/precommit/run-<target>/ (input.txt, rom-random.txt,
@@ -16,10 +16,10 @@ labels post-frame-only differences that cannot explain the completed scanout:
 
     python3 scripts/parity_probe.py --from-failure --use-checkpoint
 
-In checkpoint mode, the first run for a given checkpoint frame replays from 0
-and saves the checkpoint; later runs resume from it. A checkpoint is only reused
-when the zelda3 binary that produced it is byte-identical to the current one,
-because a rebuilt binary invalidates the Rust half of the pair.
+Focused probes start cold by default. ``--frontier`` instead maintains a
+project-scoped rolling paired checkpoint and deliberately reuses it across Rust
+builds for the fast diagnostic loop. Every such result is labeled diagnostic
+only; the cold exact-A/V gate remains the sole parity proof and commit ratchet.
 """
 
 from __future__ import annotations
@@ -42,8 +42,12 @@ DEFAULT_PROJECT = "routes/crystal4_II"
 DEFAULT_BINARY = ROOT / "target" / "parity" / "zelda3"
 PROBE_ROOT = ROOT / "target" / "parity-probes"
 CHECKPOINT_ROOT = PROBE_ROOT / "checkpoints"
+AUTOMATIC_ROLLING_CHECKPOINT_INTERVAL = 600
 TRACE_CORE = ROOT / "external" / "snes9x-libretro" / "local" / "snes9x_libretro_trace.dylib"
-TRACE_PATCH = ROOT / "external" / "snes9x-libretro" / "patches" / "zelda3-trace.patch"
+TRACE_PATCHES = (
+    ROOT / "external" / "snes9x-libretro" / "patches" / "zelda3-trace.patch",
+    ROOT / "external" / "snes9x-libretro" / "patches" / "zelda3-trace-obj-cache.patch",
+)
 ORACLE_LOCK = ROOT / "external" / "snes9x-libretro" / "oracle-lock.json"
 IDENTITY_NAME = "probe-identity.json"
 INSTRUMENTED_SYMBOL = b"zelda3_snes9x_debug_ppu_value"
@@ -62,6 +66,25 @@ OAM_LOW_VALUES = 512
 MAX_DETAIL_LINES = 4
 MAX_DETAIL_RECEIPTS = 3
 POST_FRAME_ONLY_DISPLAY_DOMAINS = frozenset({"live_oam"})
+FRONTIER_PROVENANCE_FIELDS = (
+    "main_module",
+    "submodule",
+    "subsubmodule",
+    "frame_counter",
+    "nmi_update_latch",
+    "nmi_bg_vram_load_mode",
+    "nmi_subroutine_index",
+    "pending_tilemap_destination_page",
+    "pending_tilemap_source_offset",
+    "pending_tilemap_source_hash",
+    "incremental_vram_upload_counter",
+    "palette_filter_countdown",
+    "screen_brightness",
+    "link_dma_countdown",
+    "link_dma_source_offset",
+    "link_dma_tile_offset",
+    "ppu_oam_dma_shadow_hash",
+)
 FIRST_MISMATCH_RE = re.compile(r"first_mismatch=\((\d+),\s*(\d+)\)")
 FRAME_RANGE_RE = re.compile(r"(\d+)-(\d+)")
 
@@ -382,7 +405,7 @@ def validate_trace_core(
     core: Path,
     *,
     lock_path: Path = ORACLE_LOCK,
-    patch_path: Path = TRACE_PATCH,
+    patch_path: Path | None = None,
 ) -> str:
     """Return the verified core hash or reject non-reproducible trace evidence."""
     receipt_path = core.with_suffix(core.suffix + ".json")
@@ -416,7 +439,17 @@ def validate_trace_core(
                 "rebuild the trace core"
             )
 
-    actual_patch_sha = sha256_file(patch_path)
+    patches = (patch_path,) if patch_path is not None else TRACE_PATCHES
+    if len(patches) == 1:
+        actual_patch_sha = sha256_file(patches[0])
+    else:
+        digest = hashlib.sha256()
+        for patch in patches:
+            digest.update(patch.name.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(patch.read_bytes())
+            digest.update(b"\0")
+        actual_patch_sha = digest.hexdigest()
     if receipt.get("patch_sha256") != actual_patch_sha:
         raise SystemExit(
             "parity-probe: instrumented core predates the current trace patch; "
@@ -535,6 +568,111 @@ def saved_checkpoint_frame(checkpoint_dir: Path) -> int | None:
     return None if saved is None else saved[0]
 
 
+def default_frontier_checkpoint_dir(project: Path) -> Path:
+    """Stable project-scoped cache path for repeated frontier investigations."""
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "-", project.name).strip("-") or "project"
+    identity = hashlib.sha256(str(project.resolve()).encode("utf-8")).hexdigest()[:8]
+    return CHECKPOINT_ROOT / f"frontier-{slug}-{identity}"
+
+
+def checkpoint_policy(
+    *,
+    frontier_mode: bool,
+    no_checkpoint: bool,
+    explicit_use: bool,
+    checkpoint_frame: int | None,
+    checkpoint_dir: Path | None,
+    trust_cross_build: bool,
+    project: Path,
+) -> tuple[bool, bool, Path | None]:
+    """Resolve fast diagnostic defaults without weakening focused/cold probes."""
+    explicitly_requested = (
+        explicit_use
+        or checkpoint_frame is not None
+        or checkpoint_dir is not None
+        or trust_cross_build
+    )
+    if no_checkpoint:
+        return False, False, checkpoint_dir
+    if frontier_mode and not explicitly_requested:
+        return True, True, default_frontier_checkpoint_dir(project)
+    return explicitly_requested, trust_cross_build, checkpoint_dir
+
+
+def checkpoint_result_is_promotable(returncode: int, result: dict) -> bool:
+    """Only a successful cold exact-A/V comparison may become reusable state."""
+    video = result.get("video") or {}
+    audio = result.get("audio") or {}
+    return (
+        returncode == 0
+        and result.get("status") == "passed"
+        and result.get("parity_eligible") is True
+        and video.get("matched") is True
+        and audio.get("matched") is True
+    )
+
+
+def diagnostic_checkpoint_before_failure(
+    candidate_dir: Path | None, mismatch_frame: int | None
+) -> Path | None:
+    """Return an isolated pre-failure candidate suitable only for trace replay."""
+    if candidate_dir is None or mismatch_frame is None:
+        return None
+    saved = saved_checkpoint_frame(candidate_dir)
+    return candidate_dir if saved is not None and saved < mismatch_frame else None
+
+
+def checkpoint_is_impractically_early(
+    *, automatic_rolling: bool, checkpoint_frame: int, target_frame: int
+) -> bool:
+    """The legacy fixed-frame heuristic does not apply to periodic captures."""
+    return not automatic_rolling and 2 * checkpoint_frame <= target_frame
+
+
+def checkpoint_interval(frontier_mode: bool, around: int, requested: int | None) -> int:
+    if requested is not None:
+        return requested
+    if frontier_mode:
+        return max(1, min(AUTOMATIC_ROLLING_CHECKPOINT_INTERVAL, around - 60))
+    return max(0, around - 60)
+
+
+def should_stage_rolling_checkpoint(
+    checkpoint_dir: Path | None, resume_dir: Path | None, frontier_mode: bool
+) -> bool:
+    return checkpoint_dir is not None and (resume_dir is None or frontier_mode)
+
+
+def promote_checkpoint_candidate(
+    candidate_dir: Path,
+    checkpoint_dir: Path,
+    wanted: dict,
+    stamp: str,
+) -> tuple[int, Path | None]:
+    """Atomically trust a verified candidate, preserving any replaced cache."""
+    saved_frame = saved_checkpoint_frame(candidate_dir)
+    if saved_frame is None:
+        raise ValueError(f"checkpoint candidate has no complete generation: {candidate_dir}")
+    quarantined: Path | None = None
+    if checkpoint_dir.exists():
+        quarantined = checkpoint_dir.with_name(f"rejected-{checkpoint_dir.name}-{stamp}")
+        suffix = 1
+        while quarantined.exists():
+            quarantined = checkpoint_dir.with_name(
+                f"rejected-{checkpoint_dir.name}-{stamp}-{suffix}"
+            )
+            suffix += 1
+        shutil.move(str(checkpoint_dir), str(quarantined))
+    checkpoint_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(candidate_dir), str(checkpoint_dir))
+    identity = dict(wanted)
+    identity["saved_frame"] = saved_frame
+    (checkpoint_dir / IDENTITY_NAME).write_text(
+        json.dumps(identity, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return saved_frame, quarantined
+
+
 def registers(probe: dict) -> list[int]:
     return [
         int(probe["mode"]),
@@ -642,6 +780,149 @@ def valid_obj_tile_cache_differences(
         compared += max(len(left_tile), len(right_tile))
         differing.extend(start + index for index in differing_indices(left_tile, right_tile))
     return differing, compared
+
+
+def candidate_publication_matches(receipt: dict) -> list[str]:
+    """Rank existing Rust publication generations against the oracle.
+
+    The candidate matrix is diagnostic-only. Exact matches identify an already
+    captured generation that the resolver selected incorrectly; nearest matches
+    keep the next investigation bounded when the required generation is mixed.
+    """
+    rust, oracle = receipt["rust"], receipt["oracle"]
+    candidates = receipt.get("rust_candidates", [])
+    if not isinstance(candidates, list):
+        return []
+    recommendations: list[str] = []
+
+    selected_cgram = list(rust.get("cgram", []))
+    oracle_cgram = list(oracle.get("cgram", []))
+    if differing_indices(selected_cgram, oracle_cgram):
+        scores: list[tuple[int, str]] = []
+        for candidate in candidates:
+            values = candidate.get("cgram") if isinstance(candidate, dict) else None
+            if isinstance(values, list):
+                scores.append((len(differing_indices(values, oracle_cgram)), str(candidate["name"])))
+        if scores:
+            scores.sort()
+            count, name = scores[0]
+            qualifier = "exact" if count == 0 else f"nearest, {count} color(s) differ"
+            recommendations.append(f"cgram=>{name} ({qualifier})")
+
+    selected_oam = list(rust.get("presented_oam", []))
+    oracle_oam = list(oracle.get("presented_oam", []))
+    if differing_indices(selected_oam, oracle_oam):
+        scores: list[tuple[int, str]] = []
+        for candidate in candidates:
+            values = candidate.get("presented_oam") if isinstance(candidate, dict) else None
+            if isinstance(values, list):
+                scores.append((len(differing_indices(values, oracle_oam)), str(candidate["name"])))
+        if scores:
+            scores.sort()
+            count, name = scores[0]
+            qualifier = "exact" if count == 0 else f"nearest, {count} byte(s) differ"
+            recommendations.append(f"presented_oam=>{name} ({qualifier})")
+
+    selected_cache = valid_obj_tile_cache_differences(rust, oracle)
+    if selected_cache is not None and selected_cache[0]:
+        valid = oracle.get("presented_obj_tile_cache_valid", [])
+        oracle_cache = oracle.get("presented_obj_tile_cache", [])
+        scores = []
+        for candidate in candidates:
+            values = (
+                candidate.get("presented_obj_tile_cache")
+                if isinstance(candidate, dict)
+                else None
+            )
+            if not isinstance(values, list):
+                continue
+            mismatches = 0
+            for tile, is_valid in enumerate(valid):
+                if is_valid != 1:
+                    continue
+                start, end = tile * 64, (tile + 1) * 64
+                mismatches += len(
+                    differing_indices(values[start:end], oracle_cache[start:end])
+                )
+            scores.append((mismatches, str(candidate["name"])))
+        if scores:
+            scores.sort()
+            count, name = scores[0]
+            qualifier = "exact" if count == 0 else f"nearest, {count} pixel index(es) differ"
+            recommendations.append(f"presented_obj_tile_cache=>{name} ({qualifier})")
+    return recommendations
+
+
+def oracle_previous_frame_holds(receipt: dict, previous_oracle: dict | None) -> list[str]:
+    """Identify cascades caused by failing to retain an oracle generation.
+
+    Rust's ``last_presented`` candidate becomes contaminated after the first
+    wrong selection, so per-frame candidate ranking cannot recognize a long
+    hold chain. The oracle's own preceding receipt remains authoritative and
+    exposes that chain directly.
+    """
+    if not isinstance(previous_oracle, dict):
+        return []
+    rust, oracle = receipt["rust"], receipt["oracle"]
+    domains = [
+        ("registers", registers(rust), registers(oracle), registers(previous_oracle)),
+        (
+            "cgram",
+            list(rust.get("cgram", [])),
+            list(oracle.get("cgram", [])),
+            list(previous_oracle.get("cgram", [])),
+        ),
+        (
+            "presented_oam",
+            list(rust.get("presented_oam", [])),
+            list(oracle.get("presented_oam", [])),
+            list(previous_oracle.get("presented_oam", [])),
+        ),
+    ]
+    return [
+        f"{name}=>oracle_previous_frame_chain (exact)"
+        for name, selected, current, previous in domains
+        if differing_indices(selected, current) and current == previous
+    ]
+
+
+def format_frame_ranges(frames: list[int]) -> str:
+    ordered = sorted(set(frames))
+    if not ordered:
+        return ""
+    ranges: list[tuple[int, int]] = []
+    for frame in ordered:
+        if ranges and frame == ranges[-1][1] + 1:
+            ranges[-1] = (ranges[-1][0], frame)
+        else:
+            ranges.append((frame, frame))
+    return ", ".join(
+        str(start) if start == end else f"{start}..{end}"
+        for start, end in ranges
+    )
+
+
+def format_publication_context(receipt: dict) -> str | None:
+    context = receipt.get("rust_context")
+    if not isinstance(context, dict):
+        return None
+    entry = context.get("entry_frame", [])
+    following = context.get("following_frame", [])
+    if len(entry) != 4 or len(following) != 4:
+        return None
+    phase = lambda values: f"{values[0]:02x}/{values[1]:02x}/{values[2]:02x}/fc{values[3]:02x}"
+    return (
+        f"entry={phase(entry)} following={phase(following)} "
+        f"room={int(context.get('dungeon_room', 0)):02x} "
+        f"stair={int(context.get('staircase_index', 0)):02x} "
+        f"palette={int(context.get('palette_filter_countdown', 0)):04x} "
+        f"nmi={int(context.get('nmi_update_latch', 0)):02x} "
+        f"oam={context.get('oam_scanout_source')} "
+        f"retain={context.get('retain_captured_oam')} "
+        f"link={context.get('link_obj_scanout_generation')}/"
+        f"{context.get('link_obj_source_generation')} "
+        f"captured_host_diff={int(context.get('captured_to_host_oam_mismatches', 0))}"
+    )
 
 
 def summarize_receipt(receipt: dict) -> tuple[list[str], list[str]]:
@@ -762,9 +1043,21 @@ def report_display_oracle(session_dir: Path) -> None:
     print(f"\ndisplay-oracle receipts ({len(receipts)}) from {path}:")
     causal_detailed = 0
     post_frame_detailed = 0
+    candidate_clusters: dict[tuple[str, ...], list[int]] = {}
+    candidate_contexts: list[tuple[int, str, tuple[str, ...]]] = []
+    after_oracles = {
+        int(receipt["frame"]): receipt["oracle"]
+        for receipt in receipts
+        if receipt.get("stage") == "after" and isinstance(receipt.get("oracle"), dict)
+    }
     for receipt in receipts:
         headline, detail = summarize_receipt(receipt)
+        candidate_matches = candidate_publication_matches(receipt)
         stage, frame = receipt["stage"], receipt["frame"]
+        if stage == "after":
+            candidate_matches.extend(
+                oracle_previous_frame_holds(receipt, after_oracles.get(int(frame) - 1))
+            )
         if not headline:
             print(f"  frame {frame} [{stage}]: all display domains exact")
             continue
@@ -777,6 +1070,13 @@ def report_display_oracle(session_dir: Path) -> None:
             classification.append(f"post-frame-only={','.join(post_frame_only)}")
         suffix = f" ({'; '.join(classification)})" if classification else ""
         print(f"  frame {frame} [{stage}]: {', '.join(headline)}{suffix}")
+        if candidate_matches:
+            print(f"    candidate match: {'; '.join(candidate_matches)}")
+            if stage == "after":
+                candidate_clusters.setdefault(tuple(candidate_matches), []).append(int(frame))
+                context = format_publication_context(receipt)
+                if context is not None and any("(exact)" in match for match in candidate_matches):
+                    candidate_contexts.append((int(frame), context, tuple(candidate_matches)))
         if causal and causal_detailed < MAX_DETAIL_RECEIPTS:
             print("\n".join(detail))
             causal_detailed += 1
@@ -786,6 +1086,36 @@ def report_display_oracle(session_dir: Path) -> None:
         elif post_frame_only and post_frame_detailed == 0:
             print("\n".join(detail))
             post_frame_detailed += 1
+    if candidate_clusters:
+        print("\npublication-candidate clusters:")
+        for signature, frames in candidate_clusters.items():
+            print(f"  {format_frame_ranges(frames)}: {'; '.join(signature)}")
+    if candidate_contexts:
+        print("\nexact-candidate timing contexts:")
+        for frame, context, signature in candidate_contexts:
+            print(f"  {frame}: {'; '.join(signature)} | {context}")
+
+
+def report_display_classification(session_dir: Path) -> None:
+    capture = session_dir / "display_oracle.jsonl"
+    classifier = ROOT / "scripts" / "classify_display_oracle.py"
+    if not capture.is_file() or not classifier.is_file():
+        return
+    completed = subprocess.run(
+        [sys.executable, str(classifier), str(capture)],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode == 0:
+        print("\nautomatic display root-cause classification:")
+        print(completed.stdout.rstrip())
+    elif completed.stderr:
+        print(
+            f"parity-probe: display classifier failed: {completed.stderr.strip()}",
+            file=sys.stderr,
+        )
 
 
 def report_result(session_dir: Path) -> None:
@@ -806,6 +1136,108 @@ def report_result(session_dir: Path) -> None:
         print(f"  first audio mismatch: {audio['first_mismatch']}")
 
 
+def first_video_mismatch_frame(result: dict) -> int | None:
+    video = result.get("video") or {}
+    ranges = video.get("mismatch_ranges") or []
+    try:
+        return int(ranges[0][0]) if ranges else None
+    except (IndexError, TypeError, ValueError):
+        return None
+
+
+def frontier_provenance_onsets(receipts: list[dict]) -> list[tuple[int, str, object, object]]:
+    """Return the onset of divergence chains still active at the frontier.
+
+    Checkpoint state can contain known diagnostic-only differences, so a
+    frontier report deliberately ignores domains that never became exact and
+    transient mismatches that recovered before the visible failure.
+    """
+    if not receipts:
+        return []
+    found: list[tuple[int, str, object, object]] = []
+    final = receipts[-1]
+    final_rust = final.get("rust_engine") or {}
+    final_oracle = final.get("oracle_engine") or {}
+    for field in FRONTIER_PROVENANCE_FIELDS:
+        if final_rust.get(field) == final_oracle.get(field):
+            continue
+        onset_index = len(receipts) - 1
+        while onset_index > 0:
+            previous = receipts[onset_index - 1]
+            previous_rust = previous.get("rust_engine") or {}
+            previous_oracle = previous.get("oracle_engine") or {}
+            if previous_rust.get(field) == previous_oracle.get(field):
+                break
+            onset_index -= 1
+        if onset_index == 0:
+            continue
+        onset = receipts[onset_index]
+        rust = onset.get("rust_engine") or {}
+        oracle = onset.get("oracle_engine") or {}
+        found.append((int(onset.get("frame", 0)), field, rust.get(field), oracle.get(field)))
+
+    final_vram = final.get("vram") or {}
+    if int(final_vram.get("mismatched_words", 0)):
+        onset_index = len(receipts) - 1
+        while onset_index > 0 and int(
+            (receipts[onset_index - 1].get("vram") or {}).get("mismatched_words", 0)
+        ):
+            onset_index -= 1
+        if onset_index > 0:
+            onset_vram = receipts[onset_index].get("vram") or {}
+            found.append(
+                (
+                    int(receipts[onset_index].get("frame", 0)),
+                    "vram",
+                    onset_vram.get("first_rust_word"),
+                    onset_vram.get("first_oracle_word"),
+                )
+            )
+    return sorted(found, key=lambda item: (item[0], item[1]))
+
+
+def newest_failure_since(started_ns: int) -> FailureFocus | None:
+    root = ROOT / "target" / "parity-failures"
+    candidates = (
+        [
+            path
+            for path in root.iterdir()
+            if (path / "diff.json").is_file() and path.stat().st_mtime_ns >= started_ns
+        ]
+        if root.is_dir()
+        else []
+    )
+    if not candidates:
+        return None
+    return load_failure_focus(max(candidates, key=lambda path: path.stat().st_mtime_ns))
+
+
+def report_frontier_provenance(session_dir: Path, through_frame: int | None) -> None:
+    path = session_dir / "frame_receipts.jsonl"
+    if not path.is_file():
+        return
+    receipts = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            receipt = json.loads(line)
+        except json.JSONDecodeError:
+            # A comparator interrupted at the frontier can leave one partial
+            # trailing JSONL record. Preserve every complete receipt and let
+            # the failure artifact remain authoritative for the bad frame.
+            continue
+        if through_frame is None or int(receipt.get("frame", 0)) <= through_frame:
+            receipts.append(receipt)
+    onsets = frontier_provenance_onsets(receipts)
+    if not onsets:
+        print("frontier provenance: no newly divergent tracked state before the video frontier")
+        return
+    print("\nfrontier provenance (new divergence after an exact receipt baseline):")
+    for frame, field, rust, oracle in onsets:
+        print(f"  frame {frame}: {field} rust={rust!r} oracle={oracle!r}")
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     target = parser.add_mutually_exclusive_group(required=True)
@@ -820,6 +1252,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "(default latest)"
         ),
     )
+    target.add_argument(
+        "--frontier",
+        type=int,
+        help=(
+            "scan through this frame, report newly divergent state provenance, and "
+            "automatically capture the first video mismatch with the trace core; "
+            "uses a rolling diagnostic checkpoint unless --no-checkpoint is passed"
+        ),
+    )
     parser.add_argument(
         "--window",
         type=int,
@@ -831,6 +1272,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"route project (default {DEFAULT_PROJECT})",
     )
     parser.add_argument("--run-dir", type=Path, help="reuse this precommit run dir instead of the newest")
+    parser.add_argument(
+        "--input-script",
+        type=Path,
+        help="override the selected gate run's input.txt with an explicitly preserved input stream",
+    )
     parser.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
     parser.add_argument("--capture", action="store_true", help="write display_oracle.jsonl around --around")
     parser.add_argument(
@@ -865,7 +1311,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="reuse a paired checkpoint after code changes for diagnostics only; cold proof is still required",
     )
-    parser.add_argument("--no-checkpoint", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--no-checkpoint",
+        action="store_true",
+        help="force a cold frontier replay (required for authoritative proof)",
+    )
     parser.add_argument("--session-dir", type=Path, help="explicit session dir for this probe")
     parser.add_argument(
         "--keep-probe-sessions",
@@ -879,6 +1329,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="skip the binary-vs-sources staleness guard for --dry-run only",
     )
     parser.add_argument("--dry-run", action="store_true", help="print the command without running it")
+    parser.add_argument(
+        "--no-frontier-capture",
+        action="store_true",
+        help="with --frontier, report the first mismatch without launching the trace-core rerun",
+    )
+    parser.add_argument(
+        "--video-only",
+        action="store_true",
+        help="disable audio comparison for diagnostic checkpoint/trace replays",
+    )
     return parser.parse_args(argv)
 
 
@@ -894,6 +1354,12 @@ def main(argv: list[str] | None = None) -> int:
         report_failure_focus(failure_focus)
     if args.capture_range is not None:
         args.capture = True
+    frontier_mode = args.frontier is not None
+    if frontier_mode:
+        args.around = args.frontier
+        args.window = 0
+        if args.core is None and args.core_path is None:
+            args.core = "pinned"
     assert args.around is not None
     if args.window is None:
         args.window = 2 if failure_focus is not None else 40
@@ -920,17 +1386,28 @@ def main(argv: list[str] | None = None) -> int:
         args.around + max(0, args.window),
         args.capture_range[1] if args.capture_range is not None else 0,
     )
-    use_checkpoint = (
+    use_checkpoint, trust_cross_build, automatic_checkpoint_dir = checkpoint_policy(
+        frontier_mode=frontier_mode,
+        no_checkpoint=args.no_checkpoint,
+        explicit_use=args.use_checkpoint,
+        checkpoint_frame=args.checkpoint_frame,
+        checkpoint_dir=args.checkpoint_dir,
+        trust_cross_build=args.trust_cross_build_checkpoint,
+        project=project,
+    )
+    explicitly_requested_checkpoint = (
         args.use_checkpoint
         or args.checkpoint_frame is not None
         or args.checkpoint_dir is not None
         or args.trust_cross_build_checkpoint
     )
-    if args.no_checkpoint and use_checkpoint:
+    if args.no_checkpoint and explicitly_requested_checkpoint:
         raise SystemExit(
             "parity-probe: --no-checkpoint cannot be combined with checkpoint options"
         )
-    use_checkpoint = use_checkpoint and not args.no_checkpoint
+    args.trust_cross_build_checkpoint = trust_cross_build
+    if args.checkpoint_dir is None:
+        args.checkpoint_dir = automatic_checkpoint_dir
     run_dir = resolve_run_dir(
         project,
         args.run_dir,
@@ -952,31 +1429,45 @@ def main(argv: list[str] | None = None) -> int:
         core = instrumented_core()
     else:
         core = Path(pinned_core)
-    if args.capture or args.core == "instrumented":
+    core_is_instrumented = core.is_file() and INSTRUMENTED_SYMBOL in core.read_bytes()
+    if core_is_instrumented:
         core_sha = validate_trace_core(core)
     else:
         core_sha = pinned_core_sha if str(core) == pinned_core else sha256_file(core)
 
-    input_path = Path(option_value(replay_argv, "--input-script") or run_dir / "input.txt")
+    input_path = args.input_script or Path(
+        option_value(replay_argv, "--input-script") or run_dir / "input.txt"
+    )
+    input_path = input_path if input_path.is_absolute() else ROOT / input_path
+    if not input_path.is_file():
+        raise SystemExit(
+            f"parity-probe: input stream is missing: {input_path}; "
+            "pass --input-script with the preserved authoritative stream"
+        )
     rom_random_path = option_value(replay_argv, "--rom-random-script")
     rom_random = Path(rom_random_path) if rom_random_path else None
+    if rom_random is not None and not rom_random.is_file():
+        raise SystemExit(f"parity-probe: ROM-random stream is missing: {rom_random}")
     source_start = source_start_arguments(replay_argv, binary)
 
     stamp = time.strftime("%Y%m%d-%H%M%S")
     session_dir = args.session_dir or PROBE_ROOT / f"probe-{args.around}-{stamp}"
     session_dir = session_dir if session_dir.is_absolute() else ROOT / session_dir
 
-    checkpoint_frame = args.checkpoint_frame
-    if checkpoint_frame is None:
-        checkpoint_frame = max(0, args.around - 60)
+    checkpoint_frame = checkpoint_interval(frontier_mode, args.around, args.checkpoint_frame)
     checkpoint_dir: Path | None = None
     resume_dir: Path | None = None
+    wanted: dict | None = None
     if use_checkpoint and checkpoint_frame > 0:
         print(
             "parity-probe: CHECKPOINT MODE IS DIAGNOSTIC ONLY; a clean result "
             "does not establish parity"
         )
-        if 2 * checkpoint_frame <= target_frame:
+        if checkpoint_is_impractically_early(
+            automatic_rolling=frontier_mode and args.checkpoint_frame is None,
+            checkpoint_frame=checkpoint_frame,
+            target_frame=target_frame,
+        ):
             print(
                 f"parity-probe: checkpoint frame {checkpoint_frame} is too close to the target "
                 f"{target_frame} to save safely; replaying from frame 0",
@@ -1017,6 +1508,11 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"parity-probe: not resuming ({problem}); replaying from 0 and re-saving the checkpoint")
 
+    checkpoint_candidate_dir = (
+        session_dir / "checkpoint-candidate"
+        if should_stage_rolling_checkpoint(checkpoint_dir, resume_dir, frontier_mode)
+        else None
+    )
     command: list[str] = [
         str(binary),
         "--compare-snes9x-oracle",
@@ -1038,29 +1534,39 @@ def main(argv: list[str] | None = None) -> int:
         command += ["--resume-paired", str(resume_dir)]
     else:
         command += source_start
-        if checkpoint_dir is not None:
-            # Rolling capture rather than --save-paired-resume-at: a fixed frame
-            # can land inside an unserialized ROM-call continuation, which aborts
-            # the whole run, while the rolling saver waits for the next quiescent
-            # boundary at or after the interval.
-            command += ["--save-rolling-paired-resume", str(checkpoint_frame), str(checkpoint_dir)]
-    for option in (
-        "--audio-comparison",
-        "--audio-window-ms",
-        "--audio-silence-threshold",
-        "--audio-timing-tolerance-ms",
-        "--audio-envelope-tolerance",
-    ):
-        value = option_value(replay_argv, option)
-        if value is not None:
-            command += [option, value]
-    command += ["--session-dir", str(session_dir), "--scan-all"]
+    if checkpoint_candidate_dir is not None:
+        # Rolling capture rather than --save-paired-resume-at: a fixed frame can
+        # land inside an unserialized ROM-call continuation. Resumed frontier
+        # scans continue rolling into a session-local candidate so the next
+        # trace starts near the failure instead of at the original resume point.
+        command += [
+            "--save-rolling-paired-resume",
+            str(checkpoint_frame),
+            str(checkpoint_candidate_dir),
+        ]
+    diagnostic_video_only = args.video_only or (frontier_mode and resume_dir is not None)
+    if diagnostic_video_only:
+        command.append("--ignore-audio")
+    else:
+        for option in (
+            "--audio-comparison",
+            "--audio-window-ms",
+            "--audio-silence-threshold",
+            "--audio-timing-tolerance-ms",
+            "--audio-envelope-tolerance",
+        ):
+            value = option_value(replay_argv, option)
+            if value is not None:
+                command += [option, value]
+    command += ["--session-dir", str(session_dir)]
+    if not frontier_mode:
+        command.append("--scan-all")
     if failure_focus is not None:
         # A failure-focused replay is diagnostic: skip thousands of already-known
         # exact comparisons and ask both renderers about only the bad pixel at the
         # frontier. The normal cold gate remains the authoritative proof lane.
         command += ["--compare-from-frame", str(max(0, args.around - 1))]
-        if failure_focus.pixel is not None:
+        if failure_focus.pixel is not None and core_is_instrumented:
             command += [
                 "--trace-video-pixel",
                 str(failure_focus.pixel[0]),
@@ -1071,7 +1577,7 @@ def main(argv: list[str] | None = None) -> int:
     for name, value in script_env.items():
         env.setdefault(name, value)
     capture_env: dict[str, str] = {}
-    if args.capture:
+    if args.capture and core_is_instrumented:
         frames = (
             f"{args.capture_range[0]}-{args.capture_range[1]}"
             if args.capture_range is not None
@@ -1079,7 +1585,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         capture_env["ZELDA3_CAPTURE_DISPLAY_ORACLE_FRAMES"] = frames
         capture_env["ZELDA3_CAPTURE_DISPLAY_ORACLE_BEFORE_FRAMES"] = frames
-        env.update(capture_env)
+        capture_env["ZELDA3_CAPTURE_DISPLAY_CANDIDATES"] = "1"
+    if failure_focus is not None and failure_focus.pixel is not None and core_is_instrumented:
+        capture_env["ZELDA3_SNES9X_TRACE"] = str(session_dir / "snes9x-trace.jsonl")
+        capture_env["ZELDA3_SNES9X_TRACE_EVENTS"] = "frame"
+        capture_env["ZELDA3_SNES9X_TRACE_PIXEL"] = ",".join(
+            str(value) for value in failure_focus.pixel
+        )
+    env.update(capture_env)
 
     prefix = " ".join(f"{name}={shlex.quote(value)}" for name, value in sorted(capture_env.items()))
     printable = f"{prefix} {shlex.join(command)}".strip()
@@ -1106,16 +1619,106 @@ def main(argv: list[str] | None = None) -> int:
             f"retaining the newest {args.keep_probe_sessions}"
         )
     session_dir.mkdir(parents=True, exist_ok=True)
+    process_started_ns = time.time_ns()
     process = subprocess.run(command, cwd=ROOT, env=env, check=False)
-    if checkpoint_dir is not None and resume_dir is None and (checkpoint_dir / "latest.json").is_file():
-        wanted["saved_frame"] = saved_checkpoint_frame(checkpoint_dir)
-        (checkpoint_dir / IDENTITY_NAME).write_text(
-            json.dumps(wanted, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-        print(f"parity-probe: saved paired checkpoint {checkpoint_dir} (frame {wanted['saved_frame']})")
+    result_path = session_dir / "result.json"
+    result = (
+        json.loads(result_path.read_text(encoding="utf-8"))
+        if result_path.is_file()
+        else {}
+    )
+    checkpoint_promoted = False
+    if checkpoint_candidate_dir is not None and checkpoint_candidate_dir.exists():
+        if (
+            checkpoint_dir is not None
+            and wanted is not None
+            and resume_dir is None
+            and checkpoint_result_is_promotable(process.returncode, result)
+        ):
+            saved_frame, quarantined = promote_checkpoint_candidate(
+                checkpoint_candidate_dir, checkpoint_dir, wanted, stamp
+            )
+            checkpoint_promoted = True
+            print(f"parity-probe: promoted verified paired checkpoint {checkpoint_dir} (frame {saved_frame})")
+            if quarantined is not None:
+                print(f"parity-probe: preserved replaced checkpoint at {quarantined}")
+        else:
+            print(
+                "parity-probe: checkpoint candidate was not promoted because the cold "
+                f"exact-A/V comparison did not pass; evidence remains in {checkpoint_candidate_dir}"
+            )
 
     report_result(session_dir)
     report_display_oracle(session_dir)
+    report_display_classification(session_dir)
+    if frontier_mode:
+        mismatch_frame = first_video_mismatch_frame(result)
+        generated_failure = newest_failure_since(process_started_ns)
+        if (
+            generated_failure is not None
+            and mismatch_frame is not None
+            and generated_failure.frame != mismatch_frame
+        ):
+            generated_failure = None
+        if generated_failure is not None and mismatch_frame is None:
+            mismatch_frame = generated_failure.frame
+            print(
+                f"frontier: recovered first mismatch from {generated_failure.directory} "
+                "after the comparison exited without result.json"
+            )
+        report_frontier_provenance(session_dir, mismatch_frame)
+        if (
+            mismatch_frame is not None
+            and not args.no_frontier_capture
+            and not core_is_instrumented
+        ):
+            capture_dir = session_dir.with_name(f"{session_dir.name}-capture-{mismatch_frame}")
+            capture_command = [
+                sys.executable,
+                str(Path(__file__).resolve()),
+            ]
+            if generated_failure is not None:
+                capture_command += ["--from-failure", str(generated_failure.directory)]
+            else:
+                capture_command += [
+                    "--around",
+                    str(mismatch_frame),
+                    "--window",
+                    "3",
+                    "--capture-range",
+                    f"{max(0, mismatch_frame - 3)}-{mismatch_frame + 3}",
+                ]
+            capture_command += [
+                "--core",
+                "instrumented",
+                "--video-only",
+                "--binary",
+                str(binary),
+                "--run-dir",
+                str(run_dir),
+                "--input-script",
+                str(input_path),
+                "--session-dir",
+                str(capture_dir),
+            ]
+            capture_checkpoint_dir = diagnostic_checkpoint_before_failure(
+                checkpoint_candidate_dir, mismatch_frame
+            )
+            if capture_checkpoint_dir is None and checkpoint_dir is not None and (
+                resume_dir is not None or checkpoint_promoted
+            ):
+                capture_checkpoint_dir = checkpoint_dir
+            if capture_checkpoint_dir is not None:
+                capture_command += ["--checkpoint-dir", str(capture_checkpoint_dir)]
+            if args.trust_cross_build_checkpoint or capture_checkpoint_dir == checkpoint_candidate_dir:
+                capture_command.append("--trust-cross-build-checkpoint")
+            print(
+                f"\nfrontier: launching trace-core candidate capture at frame {mismatch_frame}\n"
+                f"  {shlex.join(capture_command)}"
+            )
+            capture_process = subprocess.run(capture_command, cwd=ROOT, check=False)
+            if capture_process.returncode not in (0, 1):
+                return capture_process.returncode
     return process.returncode
 
 
