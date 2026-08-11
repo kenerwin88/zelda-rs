@@ -572,11 +572,23 @@ impl ZeldaState {
                 let captured_head_top = captured_link_operands
                     .map(|operands| operands.sources.source(LinkDmaSourceSlot::HeadTop));
                 let live_head_top = self.live_link_dma_source(LinkDmaSourceSlot::HeadTop);
+                // Entry and exit module phases are both printed: the plan keys on
+                // the exit frame while divergence reports name the entry frame,
+                // and the subsubmodule is the field the operand rules turn on.
+                let captured_body_upper = captured_link_operands
+                    .map(|operands| operands.sources.source(LinkDmaSourceSlot::BodyPointerUpper));
+                let live_body_upper =
+                    self.live_link_dma_source(LinkDmaSourceSlot::BodyPointerUpper);
                 eprintln!(
-                    "link_dma host={} main={:02x}/{:02x} operands={link_obj_operands_generation:?} captured_head_top={captured_head_top:?} captured_high={:02x?} live_head_top={live_head_top:04x} live_high={:02x?} vram_head_top_before={:04x} vram_high_before={:04x}",
+                    "link_dma host={} entry={:02x}/{:02x}/{:02x} exit={:02x}/{:02x}/{:02x} operands={link_obj_operands_generation:?} captured={} captured_body_upper={captured_body_upper:?} live_body_upper={live_body_upper:04x} captured_head_top={captured_head_top:?} captured_high={:02x?} live_head_top={live_head_top:04x} live_high={:02x?} vram_head_top_before={:04x} vram_high_before={:04x}",
                     self.frame_ctr_dbg,
+                    entry_frame.main_module,
+                    entry_frame.submodule,
+                    entry_frame.subsubmodule,
                     self.game_state.frame.main_module,
                     self.game_state.frame.submodule,
+                    self.game_state.frame.subsubmodule,
+                    captured_link_operands.is_some(),
                     captured_link_operands.map(|operands| {
                         <[u8; 4]>::try_from(&operands.expanded_high_planes[..4])
                             .expect("four-byte Link staging prefix")

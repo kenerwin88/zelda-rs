@@ -231,6 +231,46 @@ See memory [[checkpoint-resume-debugging]].
   `--use-checkpoint` opts into a faster, explicitly diagnostic-only paired resume.
   With `--capture`, it writes/summarizes `display_oracle.jsonl` (which display
   domain diverges, decoded OAM slots) using the receipt-verified instrumented core.
+  **Verify the replayed position before trusting a capture:** at f28837 the default
+  run-dir/input selection replayed a route that was in module `09` room `$55` at
+  the target frame while the gate's authoritative route was module `07` room `$42`,
+  making the whole capture (cgram 112/256, presented_oam 383/544) meaningless. Check
+  the reported `entry=`/`room=` context against the failing gate run's
+  `main=/sub=/room=`, and pass `--run-dir routes/<project>/comparisons/precommit/
+  run-<frontier>-video-preflight` explicitly to pin the same inputs.
+
+6. **`vram_write_attribution.py <failure-dir>` (or `--latest`) — RUN THIS FIRST on
+  any video divergence.** Reads only the artifacts a failing run already wrote
+  (no replay) and answers the question a byte diff cannot: *which side ran a
+  transfer the other did not, and with which operand generation?* It compares
+  three write sets — `O` = words the ORACLE changed this frame
+  (`oracle_before_vram` vs `oracle_after_vram`), `L` = rust live vs oracle,
+  `P` = rust presented vs oracle — and classifies:
+  `L` ⊆ `O` → both wrote the same words with different data (operand *values* or
+  source buffer differ); `L` ∩ `O` = ∅ → **every word the oracle wrote matches**,
+  so the engine is fine and this is a DMA scheduling/operand-generation bug;
+  live-only words → an early upload held back in the presented generation, not
+  the visible bug. For the Link OBJ block (`$4000-$43ff`) it then resolves each
+  divergent destination against the `LinkDmaSourceSlot` table (scraped from the
+  Rust sources so it cannot drift) and checks both sides' VRAM against
+  `ram[pointer..+len]` at the frame's **entry** and **exit** pointer, printing
+  which generation each emulator used — the direct input to
+  `rom_graphics_dma_plan`'s `link_obj_operands`. It then diffs **OAM** — locating
+  Snes9x's OAM inside `oracle_after.state`'s PPU chunk by best-window match
+  against `rust_visible_oam.bin` (it warns when the winner is not clearly clear
+  of the runner-up) and printing per-slot `x/y/tile/attr` deltas; small position
+  deltas across several slots mean an `oam_operands`/`oam_scanout` generation bug
+  rather than wrong sprite data. **This is the only way to diff the oracle's OAM
+  without the instrumented core.** Finally it prints the newly-divergent WRAM set
+  (after-set minus before-set), which separates "this frame's bug" from standing
+  benign noise. Named the f28837 mechanism
+  (spiral-stair `link_obj_operands`) end-to-end in one run.
+  **Do NOT trust `diff.json`'s `trace_mine`/`trace_theirs` `sub=`/`subsub=` for
+  the module a display bug belongs to** — it is a different readout from the
+  console divergence line and disagreed with the operand decision at f28837
+  (`trace_mine` said `7/$14/1`, the actual decision frames were entry `7/$0e/$00`
+  → exit `7/$0e/$01`). Get the phase from `ZELDA3_DEBUG_LINK_DMA` (below), which
+  prints the entry AND exit module/submodule/subsubmodule the plan keys on.
 
 ### Tracing env vars
 
@@ -247,6 +287,14 @@ See memory [[checkpoint-resume-debugging]].
   The core-update/prep cadence drives BG_TILE_ANIMATION_COUNTDOWN and
   link-DMA phase; use this to compare rust's prep schedule against the
   oracle's countdown trajectory when an animation phase drifts by one.
+- `ZELDA3_DEBUG_LINK_DMA=1` — one line per NMI Link OBJ DMA with the **entry and
+  exit** `main/sub/subsub` the operand rules key on, the resolved
+  `operands=HostBoundaryBeforeMain|LiveAfterMain`, `captured=<bool>` (false means
+  the DMA silently fell back to live sources), and both the captured and live
+  `BodyPointerUpper`/`HeadTop` source words. This is the authoritative readout of
+  `link_obj_operands_across_main`'s decision; renderless replays reproduce it
+  faithfully, so pair it with `--ignore-video --ignore-audio` for a ~50s probe.
+  Remember `host = comparator frame + 1`.
 
 ## The debugging loop that works
 

@@ -942,14 +942,15 @@ const fn link_obj_operands_across_main(
         && exit.main_module == 7
         && exit.submodule == 2
         && exit.subsubmodule == 0;
-    // The entry slice and the first steady slice straddle different sides of
-    // the Link-animation update.  Once subsubmodule $02 begins, main authors
-    // the next Link OBJ source words after the NMI has already consumed the
-    // host-boundary generation.  Unchanged animation frames make the two
-    // generations look identical, so keep this keyed to the actual phase
-    // instead of the visible four-frame animation cadence.
+    // From subsubmodule $01 onward, main authors the next Link OBJ source words
+    // after the NMI has already consumed the host-boundary generation. Measured
+    // at route frame 28837 (entry $0e/$00, exit $0e/$01): the slice advances the
+    // body-pointer words $0af0/$0af2 by 0x40, and Snes9x's OBJ CHR at VRAM
+    // $4220/$4320 still holds the pre-advance data. Unchanged animation frames
+    // make the two generations look identical, so keep this keyed to the actual
+    // phase instead of the visible four-frame animation cadence.
     let dungeon_spiral_stairs_nmi_precedes_link_animation =
-        exit.main_module == 7 && exit.submodule == 0x0e && exit.subsubmodule >= 2;
+        exit.main_module == 7 && exit.submodule == 0x0e && exit.subsubmodule >= 1;
     let entering_dungeon_supertile_scroll = entry.main_module == 7
         && entry.submodule == 2
         && entry.subsubmodule == 0

@@ -7997,6 +7997,47 @@ fn straight_interroom_stairs_keep_the_host_boundary_display_generation() {
 }
 
 #[test]
+fn spiral_stairs_first_steady_slice_consumes_the_host_boundary_link_operands() {
+    // Measured at route frame 28837 (host 28838, entry $0e/$00 -> exit $0e/$01):
+    // that slice advances Link's body-pointer source words $0af0/$0af2 by 0x40
+    // while Snes9x's OBJ CHR at VRAM $4220/$4320 still holds the pre-advance
+    // data, so the NMI must consume the host-boundary operands. The phase begins
+    // at subsubmodule $01, not $02.
+    let mut exit = crate::game_state::FrameState::default();
+    exit.main_module = 7;
+    exit.submodule = 0x0e;
+    let mut entry = exit;
+    let live = rom_graphics_dma_plan(7, 0x0e).link_obj_operands;
+    assert_eq!(live, GraphicsDmaGeneration::LiveAfterMain);
+
+    for subsubmodule in 1..=3 {
+        entry.subsubmodule = subsubmodule - 1;
+        exit.subsubmodule = subsubmodule;
+        assert_eq!(
+            link_obj_operands_across_main(entry, exit, live),
+            GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            "spiral-stair subsubmodule {subsubmodule:#x} must use host-boundary operands",
+        );
+    }
+
+    // Subsubmodule $00 is still authored before its own NMI, so an already
+    // resident $0e/$00 slice keeps the live operands; only the module entry
+    // from submodule $00 overrides it.
+    entry.subsubmodule = 0;
+    exit.subsubmodule = 0;
+    assert_eq!(
+        link_obj_operands_across_main(entry, exit, live),
+        GraphicsDmaGeneration::LiveAfterMain
+    );
+    let mut module_entry = entry;
+    module_entry.submodule = 0;
+    assert_eq!(
+        link_obj_operands_across_main(module_entry, exit, live),
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    );
+}
+
+#[test]
 fn dungeon_transition_scroll_steps_keep_independent_dma_operand_and_scanout_generations() {
     let mut subtile = crate::game_state::FrameState::default();
     subtile.main_module = 7;
