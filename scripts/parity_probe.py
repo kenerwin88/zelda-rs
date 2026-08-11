@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PROJECT = "routes/crystal4_II"
+DEFAULT_PROJECT = "routes/full_run"
 DEFAULT_BINARY = ROOT / "target" / "parity" / "zelda3"
 PROBE_ROOT = ROOT / "target" / "parity-probes"
 CHECKPOINT_ROOT = PROBE_ROOT / "checkpoints"

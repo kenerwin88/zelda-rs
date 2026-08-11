@@ -17,7 +17,7 @@ DEFAULT_BINARY = ROOT / "target/release/zelda3"
 DEFAULT_CORE = ROOT / "external/snes9x-libretro/local/snes9x_libretro.dylib"
 DEFAULT_ROM = ROOT / "saves/zelda3.sfc"
 DEFAULT_PROJECT_ROOT = ROOT / "routes"
-DEFAULT_PROJECT = DEFAULT_PROJECT_ROOT / "crystal4_II"
+DEFAULT_PROJECT = DEFAULT_PROJECT_ROOT / "full_run"
 DEFAULT_SRAM = ROOT / "saves/sram.dat"
 CORE_STORE = DEFAULT_CORE.parent / "cores"
 

@@ -6795,8 +6795,41 @@ fn oam_entry_bytes(oam: &[u16], entry: usize) -> [u8; 4] {
 
 const LINK_OAM_ENTRIES: [usize; 5] = [102, 103, 107, 110, 111];
 const HOST_BOUNDARY_LINK_OAM_ENTRIES: [usize; 7] = [102, 103, 107, 110, 111, 112, 113];
-/// The falling sprite the straight inter-room fadeout return advances one animation
-/// frame too far; only these two entries belong to the pre-main host boundary.
+/// Sorted OAM entries owned by the one moving sprite that straddles the vblank OAM
+/// DMA during the straight inter-room fadeout return.
+///
+/// MEASURED (route frame 29502, room `$32`/staircase `$35`): the presented OAM is a
+/// mixed generation. Link's body (slots 102-111) and every static sprite match the
+/// post-NMI live table, but ONE sprite -- a moving Rope (sprite `$6e`, sprite slot 5
+/// of four; the others at sprite slots 0/2/4 are static) -- matches the *pre-main*
+/// host-boundary shadow instead: its sorted entries 92/93 read `$24`/`$2e` attr
+/// `$28` there versus `$25`/`$2f` attr `$68` live (one animation frame newer). Only
+/// this sprite moves, so it is the only slot whose pre- vs post-advance OAM differs.
+/// Overlaying its two entries from the host-boundary shadow reproduces the hardware
+/// image exactly; a whole-OAM host-boundary source instead regresses the frame to
+/// 288px by dragging the other sprites back a generation.
+///
+/// MECHANISM (confirmed by a Snes9x instrumented OAM-DMA trace of WRAM 0x971, the
+/// Rope's OAM y-byte, frames 29498-29504): the fadeout suffix frame (29501) holds
+/// $12 and so its NMI **skips the OAM DMA** (nmi_latch=1). Because the SNES scans
+/// frame N's sprites from the OAM DMA at the *end of frame N-1*, the return frame
+/// (29502) is scanned from 29501's skipped DMA and therefore keeps the **retained**
+/// generation last uploaded on frame 29500 -- where this Rope was drawn at y=0x24.
+/// Rust instead publishes its live post-suffix table, where the Rope has advanced to
+/// y=0x25 (one generation too new). The host-boundary shadow holds that retained
+/// pre-suffix generation, so overlaying the Rope's entries from it is exactly the
+/// hardware image. Only a sprite that *moved* across the skipped-DMA frame differs
+/// between the retained and live tables; Link is transition-static and the other
+/// three Ropes do not move, which is why the divergence -- and this overlay -- is
+/// scoped to the one moving Rope. A whole-OAM host-boundary source instead regresses
+/// to 288px because that shadow is not byte-exact for entries the live table already
+/// gets right; the surgical overlay only touches the entries that actually moved.
+///
+/// LIMITATION: the slot numbers come from the Y-sort and cover only the currently
+/// moving sprite; another sprite moving across this transition's skipped-DMA frame
+/// would need its own entries. A whole-frame source fix would require an exact
+/// "last-DMA'd OAM" buffer, which the display path does not currently expose (the
+/// host-boundary shadow approximates it but is not byte-identical -- hence the 288px).
 const HOST_BOUNDARY_FALLING_SPRITE_OAM_ENTRIES: [usize; 2] = [92, 93];
 
 fn compose_published_oam_entries<const N: usize>(

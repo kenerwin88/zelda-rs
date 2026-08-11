@@ -250,7 +250,7 @@ class ParityProbeTest(unittest.TestCase):
             checkpoint_frame=None,
             checkpoint_dir=None,
             trust_cross_build=False,
-            project=Path("routes/crystal4_II"),
+            project=Path("routes/full_run"),
         )
 
         self.assertFalse(use)

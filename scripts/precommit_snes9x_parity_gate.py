@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STATE_PATH = ROOT / ".git" / "precommit-snes9x-parity-state.json"
 CHECKPOINT_PATH = ROOT / ".git" / "precommit-snes9x-parity-checkpoint"
 RNG_CACHE_PATH = ROOT / ".git" / "precommit-snes9x-rom-random-cache"
-DEFAULT_PROJECT = ROOT / "routes" / "crystal4_II"
+DEFAULT_PROJECT = ROOT / "routes" / "full_run"
 STATE_SCHEMA = 1
 # Paired-resume flags the checkpoint supersedes; the binary rejects them next to
 # --resume-paired because a resumed pair already carries its own SRAM/boundary.

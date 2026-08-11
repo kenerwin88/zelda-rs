@@ -29,7 +29,7 @@ class ParityRouteTests(unittest.TestCase):
         precommit = load_script("precommit_snes9x_parity_gate")
         probe = load_script("parity_probe")
 
-        expected = (SCRIPT_DIR.parent / "routes" / "crystal4_II").resolve()
+        expected = (SCRIPT_DIR.parent / "routes" / "full_run").resolve()
         self.assertEqual(recorder.DEFAULT_PROJECT.resolve(), expected)
         self.assertEqual(precommit.DEFAULT_PROJECT.resolve(), expected)
         self.assertEqual((probe.ROOT / probe.DEFAULT_PROJECT).resolve(), expected)
