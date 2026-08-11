@@ -56,6 +56,25 @@ fn sprite_init_value(table: usize, ty: u8) -> u8 {
     (hex_nibble(bytes[idx]) << 4) | hex_nibble(bytes[idx + 1])
 }
 
+/// Cached-sprite fields still holding their cached value when room `$21`'s
+/// scroll transition crosses the scanout boundary mid-`UncacheAndExecuteSprite`.
+///
+/// `UncacheAndExecuteSprite` (`$9D:EA00`) loads all 24 cached fields, runs the
+/// sprite, then restores the live slot from its backup walking the fields in
+/// reverse (`$9D:EB0A`..`$9D:EB67`). The boundary lands inside that restore
+/// walk, so the low fields still read as cached while the high fields already
+/// read as restored. Snes9x `wram` receipts for slot 2 place the cut after
+/// field 9 in subsubmodule 5, field 12 in 6, and field 13 in 7 — leaving
+/// fields `0..N` cached, which is the same boundary shape as interrupting the
+/// load after `N` fields.
+fn room_21_cached_fields_live_at_nmi(subsubmodule: u8) -> usize {
+    match subsubmodule {
+        5 => 9,
+        6 => 12,
+        _ => 13,
+    }
+}
+
 fn empty_sprite_hit_box() -> SpriteHitBox {
     SpriteHitBox {
         r0_xlo: 0,
@@ -2030,11 +2049,8 @@ impl ZeldaState {
             if self.cached_sprite_slot(i).is_active() {
                 if self.room_21_cached_sprite_execution_crosses_nmi(i) {
                     let mut live_slot_backup = [0; 24];
-                    let copied_fields = if self.game_state.frame.subsubmodule == 5 {
-                        7
-                    } else {
-                        9
-                    };
+                    let copied_fields =
+                        room_21_cached_fields_live_at_nmi(self.game_state.frame.subsubmodule);
                     self.cached_sprite_slot_mut(i)
                         .load_cached_fields_into_live_before_nmi(
                             &mut live_slot_backup,

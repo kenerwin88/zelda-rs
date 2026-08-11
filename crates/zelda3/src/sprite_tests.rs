@@ -1371,3 +1371,25 @@ fn sprite_bounce_from_tile_collision_returns_zero_without_collision() {
     assert_eq!(s.sprite_slot_view(k).y_velocity(), 0xf0);
     assert_eq!(s.sprite_slot_view(k).g(), 7);
 }
+
+#[test]
+fn room_21_cached_sprite_nmi_cut_keeps_direction_cached_in_subsubmodules_6_and_7() {
+    use crate::game_state::constants::{CACHED_SPRITE_LIVE_FIELDS, SPRITE_D};
+
+    // Snes9x `wram` receipts for room $21 slot 2 place the boundary inside
+    // UncacheAndExecuteSprite's reverse restore walk ($9D:EB0A..$9D:EB67),
+    // after cached field 9 in subsubmodule 5, 12 in 6, and 13 in 7.
+    assert_eq!(room_21_cached_fields_live_at_nmi(5), 9);
+    assert_eq!(room_21_cached_fields_live_at_nmi(6), 12);
+    assert_eq!(room_21_cached_fields_live_at_nmi(7), 13);
+
+    let direction = CACHED_SPRITE_LIVE_FIELDS
+        .iter()
+        .position(|&field| field == SPRITE_D)
+        .expect("SPRITE_D is a cached-sprite field");
+    // f31287 divergence: the boundary has already restored SPRITE_D in
+    // subsubmodule 5, but still reads the cached value in 6 and 7.
+    assert!(direction >= room_21_cached_fields_live_at_nmi(5));
+    assert!(direction < room_21_cached_fields_live_at_nmi(6));
+    assert!(direction < room_21_cached_fields_live_at_nmi(7));
+}

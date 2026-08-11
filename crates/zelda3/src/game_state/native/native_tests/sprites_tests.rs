@@ -1132,3 +1132,58 @@ fn native_follower_runtime_bridge_preserves_overlapping_timer_tail_byte() {
     assert_eq!(read_le_u16(&ram, FOLLOWER_SAVED_X), 0x1314);
     assert_eq!(ram[FOLLOWER_PALETTE_SWAP_FLAG], 0x80);
 }
+
+#[test]
+fn cached_sprite_nmi_split_copy_matches_the_measured_restore_cut() {
+    // Room $21's scroll transition crosses the scanout boundary inside
+    // UncacheAndExecuteSprite, so only the first `copied_fields` cached values
+    // are live at the boundary. Subsubmodule 6 cuts after field 12, which puts
+    // SPRITE_D (index 11) on the cached side and SPRITE_FLAGS2 (12) on the
+    // live side.
+    const COPIED_FIELDS: usize = 12;
+    let slot = 2;
+    let mut ram = vec![0; WRAM_SIZE];
+    let mut state = SpriteState::load_from_ram(&ram);
+    for (index, (live, alt)) in CACHED_SPRITE_LIVE_FIELDS
+        .iter()
+        .copied()
+        .zip(CACHED_SPRITE_ALT_FIELDS.iter().copied())
+        .enumerate()
+    {
+        ram[live + slot] = 0x80 | index as u8;
+        ram[alt + slot] = index as u8;
+    }
+
+    let mut backup = [0; 24];
+    {
+        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
+        bridge.load_cached_fields_into_live_before_nmi(&mut backup, COPIED_FIELDS);
+    }
+    for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
+        let expected = if index < COPIED_FIELDS {
+            index as u8
+        } else {
+            0x80 | index as u8
+        };
+        assert_eq!(ram[live + slot], expected, "field {index} at the boundary");
+    }
+    assert_eq!(ram[SPRITE_D + slot], 11);
+    assert_eq!(ram[SPRITE_FLAGS2 + slot], 0x80 | 12);
+
+    {
+        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
+        bridge.complete_cached_dynamic_fields_into_live_after_nmi(&mut backup, COPIED_FIELDS);
+    }
+    for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
+        assert_eq!(ram[live + slot], index as u8, "field {index} after the NMI");
+        assert_eq!(backup[index], 0x80 | index as u8, "backup {index}");
+    }
+
+    {
+        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
+        bridge.restore_live_from_backup(&backup);
+    }
+    for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
+        assert_eq!(ram[live + slot], 0x80 | index as u8, "field {index} restored");
+    }
+}

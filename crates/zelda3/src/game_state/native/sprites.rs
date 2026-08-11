@@ -3988,10 +3988,10 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
         backup: &mut [u8; 24],
         copied_fields: usize,
     ) {
-        // Room $21 interrupts this copy at two measured semantic boundaries:
-        // after the seven-field header in state 5, and after A/head-direction
-        // in states 6-7. Reject unmeasured partial-copy positions.
-        debug_assert!(matches!(copied_fields, 7 | 9));
+        // Room $21 interrupts the uncache at three measured boundaries — the
+        // Snes9x restore walk stops after field 9 in subsubmodule 5, field 12
+        // in 6, and field 13 in 7. Reject unmeasured partial-copy positions.
+        debug_assert!(matches!(copied_fields, 9 | 12 | 13));
         for i in 0..copied_fields {
             backup[i] = self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot];
             self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] =
@@ -4005,7 +4005,7 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
         backup: &mut [u8; 24],
         copied_fields: usize,
     ) {
-        debug_assert!(matches!(copied_fields, 7 | 9));
+        debug_assert!(matches!(copied_fields, 9 | 12 | 13));
         for i in copied_fields..CACHED_SPRITE_LIVE_FIELDS.len() {
             backup[i] = self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot];
             self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] =
