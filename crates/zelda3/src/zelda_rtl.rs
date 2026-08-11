@@ -5376,8 +5376,32 @@ struct DisplayPublicationSignals {
     spiral_stair_return_publishes_live_registers: bool,
     spiral_stair_return_publishes_live_obj_cache: bool,
     dungeon_brightness_publishes_live_display: bool,
+    dungeon_brightness_publishes_live_animated_bg: bool,
     dungeon_state_13_phase: DungeonState13PublicationPhase,
     dungeon_faded_filter_phase: DungeonFadedFilterPublicationPhase,
+}
+
+/// Value `BG_TILE_ANIMATION_COUNTDOWN` reloads to when the dungeon animation
+/// advances to its next page.
+const BG_TILE_ANIMATION_COUNTDOWN_RELOAD: u8 = 9;
+
+/// Whether the dungeon brightness phase scans out the live animated-BG page.
+///
+/// The animated-tile DMA runs on every frame of module 7/`$0a`, but only the
+/// frame whose countdown has just reloaded carries a freshly advanced page,
+/// and that upload lands too late for the current scanout. Snes9x therefore
+/// keeps the host-boundary generation on the reload frame (f28358, countdown
+/// `0x01` -> `0x09`) and shows the live post-NMI generation on the remaining
+/// frames of the cycle (f28602, countdown `0x09` -> `0x08`). The two frames
+/// share room `$41` and module 7/`$0a`/0, so the countdown phase is the only
+/// thing that separates them.
+const fn dungeon_brightness_animated_bg_is_live(
+    host_entry: crate::game_state::FrameState,
+    following: crate::game_state::FrameState,
+    animation_countdown: u8,
+) -> bool {
+    dungeon_brightness_screen_layers_are_live(host_entry, following)
+        && animation_countdown != BG_TILE_ANIMATION_COUNTDOWN_RELOAD
 }
 
 const fn dungeon_brightness_screen_layers_are_live(
@@ -5510,7 +5534,10 @@ impl DisplayPublicationPlan {
             link_obj_source_generation,
             animated_bg_scanout_generation: snapshot
                 .animated_bg_scanout_generation
-                .resolve_live_override(signals.publish_live_overworld_bad_weather_scroll),
+                .resolve_live_override(
+                    signals.publish_live_overworld_bad_weather_scroll
+                        || signals.dungeon_brightness_publishes_live_animated_bg,
+                ),
             bg_scroll_source: if signals.dungeon_item_hold_publishes_live_scroll {
                 DisplayedBgScrollSource::LiveAfterNmi
             } else {
@@ -16394,6 +16421,12 @@ impl ZeldaState {
                 host_entry_frame,
                 live_frame,
             ),
+            dungeon_brightness_publishes_live_animated_bg:
+                dungeon_brightness_animated_bg_is_live(
+                    host_entry_frame,
+                    live_frame,
+                    self.ram[crate::game_state::constants::BG_TILE_ANIMATION_COUNTDOWN],
+                ),
             dungeon_state_13_phase: if self
                 .dungeon_state_13_atomic_caller_return_publication_host_frame
                 == Some(self.frame_ctr_dbg)

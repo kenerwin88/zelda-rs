@@ -2757,6 +2757,37 @@ fn dungeon_brightness_boundary_publishes_completed_nmi_copy_packets() {
 }
 
 #[test]
+fn dungeon_brightness_animated_bg_follows_the_animation_countdown_phase() {
+    let brightness = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 0x0a,
+        ..Default::default()
+    };
+    // f28358: the countdown has just reloaded, so the freshly advanced page
+    // lands too late and the host-boundary generation stays on screen.
+    assert!(!dungeon_brightness_animated_bg_is_live(
+        brightness, brightness, 9
+    ));
+    // f28602: mid-cycle, the upload completes before scanout.
+    assert!(dungeon_brightness_animated_bg_is_live(
+        brightness, brightness, 8
+    ));
+    assert!(dungeon_brightness_animated_bg_is_live(
+        brightness, brightness, 1
+    ));
+    // Outside the brightness phase the countdown alone must not publish live.
+    assert!(!dungeon_brightness_animated_bg_is_live(
+        crate::game_state::FrameState {
+            main_module: 7,
+            submodule: 0,
+            ..Default::default()
+        },
+        brightness,
+        8,
+    ));
+}
+
+#[test]
 fn dungeon_brightness_retains_the_host_boundary_animated_bg() {
     // The dungeon brightness phase publishes its screen layers, HUD DMA and
     // NMI copy packets live, but the animated-BG domain stays independent: at
