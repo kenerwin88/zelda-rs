@@ -5510,10 +5510,7 @@ impl DisplayPublicationPlan {
             link_obj_source_generation,
             animated_bg_scanout_generation: snapshot
                 .animated_bg_scanout_generation
-                .resolve_live_override(
-                    signals.publish_live_overworld_bad_weather_scroll
-                        || signals.dungeon_brightness_publishes_live_display,
-                ),
+                .resolve_live_override(signals.publish_live_overworld_bad_weather_scroll),
             bg_scroll_source: if signals.dungeon_item_hold_publishes_live_scroll {
                 DisplayedBgScrollSource::LiveAfterNmi
             } else {

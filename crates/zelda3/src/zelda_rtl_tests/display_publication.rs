@@ -2757,7 +2757,14 @@ fn dungeon_brightness_boundary_publishes_completed_nmi_copy_packets() {
 }
 
 #[test]
-fn dungeon_brightness_boundary_publishes_live_animated_bg() {
+fn dungeon_brightness_retains_the_host_boundary_animated_bg() {
+    // The dungeon brightness phase publishes its screen layers, HUD DMA and
+    // NMI copy packets live, but the animated-BG domain stays independent: at
+    // f28358 (room $41, module 7/$0a, animation countdown wrapping 0x01->0x09)
+    // Snes9x scans out the host-boundary generation while the leading-NMI tile
+    // DMA is still landing. Coupling this domain to the brightness signal
+    // republished the live post-NMI tiles and diverged 442 VRAM bytes across
+    // the whole retained $200-word block at $3b00.
     const DESTINATION: usize = 0x3b00;
     const TILE_WORD: usize = 0x3c00;
     let mut state = ZeldaState::new();
@@ -2791,9 +2798,9 @@ fn dungeon_brightness_boundary_publishes_live_animated_bg() {
 
     assert_eq!(
         plan.animated_bg_scanout_generation,
-        AnimatedBgScanoutGeneration::LiveAfterNmi
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
     );
-    assert_eq!(state.ppu.vram[TILE_WORD], 0x3333);
+    assert_eq!(state.ppu.vram[TILE_WORD], 0x2222);
 }
 
 #[test]
