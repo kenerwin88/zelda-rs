@@ -1,0 +1,1 @@
+# Snes9x controller stream captured once per oracle frame.

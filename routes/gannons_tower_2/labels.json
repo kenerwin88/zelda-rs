@@ -26,13 +26,30 @@
     "25": "crystal4",
     "26": "crystal_4_ii",
     "27": "crystal_4_done",
-    "28": "sword_tempered"
+    "28": "sword_tempered",
+    "29": "crystal_5",
+    "30": "crystal_5_confused",
+    "31": "crystal5_done",
+    "32": "magic_cape",
+    "33": "crystal6",
+    "34": "crystal6_ii",
+    "35": "crystal6_ish",
+    "36": "yellow_sword",
+    "37": "crystal7",
+    "38": "bombos_ether_and",
+    "39": "crystal7_boss",
+    "40": "gannons_tower",
+    "42": "agahimin",
+    "43": "final",
+    "44": "credits"
   },
   "archived_boundaries": [
     1,
     2,
     7,
-    8
+    8,
+    33,
+    34
   ],
   "archived_project": false
 }

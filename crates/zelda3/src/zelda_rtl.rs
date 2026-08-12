@@ -681,6 +681,24 @@ const fn straight_interroom_fadeout_return_obj_scanout() -> ObjScanoutGeneration
     }
 }
 
+/// Return scanout for the straight inter-room transition that has **no** leading
+/// NMI (room `$32` / staircase `$35`, the
+/// `suspend_straight_interroom_sprite_reset_before_room_load` lane). There the
+/// suffix's trailing NMI DMAs the freshly sorted OAM before this return scanout is
+/// captured, so retaining the resident table would freeze Link's body and the
+/// falling sprite one animation step too new. `ComposeCompletedWorkAfterNmi` is in
+/// the explicit-generation set (immune to the deferred-publication rewrite),
+/// non-retaining, and has no special compose block, so it falls through to the
+/// snapshot's own post-NMI OAM image -- the host-boundary generation the oracle
+/// scanned. Measured at route frame 29502.
+const fn straight_interroom_fadeout_return_live_obj_scanout() -> ObjScanoutGenerations {
+    ObjScanoutGenerations {
+        oam: OamScanoutSource::ComposeCompletedWorkAfterNmi,
+        link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    }
+}
+
 const fn straight_interroom_fadeout_obj_scanout() -> ObjScanoutGenerations {
     ObjScanoutGenerations {
         oam: OamScanoutSource::RetainCapturedBeforeNmi,
@@ -18705,6 +18723,34 @@ impl ZeldaState {
                 GameWorkStep::Complete(
                     GameWorkContinuation::FinishStraightInterroomFadeoutSuffix,
                 ) => {
+                    // This suffix serves two distinct straight inter-room
+                    // transitions that reach it with different OAM-publication
+                    // history. Room `$32`/staircase `$35`
+                    // (`suspend_straight_interroom_sprite_reset_before_room_load`)
+                    // has NO leading NMI, so the suffix's own trailing NMI DMAs the
+                    // freshly sorted OAM before the return scanout is captured --
+                    // its return must publish that live post-NMI image. Room
+                    // `$51`/staircase `$30`
+                    // (`schedule_straight_interroom_state5_after_leading_nmi`)
+                    // already published via its leading NMI, so its resident table
+                    // is correct and must be retained. Measured at route frames
+                    // 29502 (live) and 25865 (retain).
+                    let return_publishes_live_oam = self
+                        .game_state
+                        .world
+                        .location
+                        .dungeon_room_index()
+                        == 0x32
+                        && self.game_state.dungeon.stair_movement.staircase_index() == 0x35;
+                    if std::env::var_os("ZELDA3_DEBUG_FADEOUT_SUFFIX").is_some() {
+                        eprintln!(
+                            "[FADEOUT_SUFFIX] host={} room={:02x} staircase={:02x} live={}",
+                            self.frame_ctr_dbg,
+                            self.game_state.world.location.dungeon_room_index(),
+                            self.game_state.dungeon.stair_movement.staircase_index(),
+                            return_publishes_live_oam,
+                        );
+                    }
                     // The palette walk completed in the preceding main slice,
                     // but its Module 7 caller did not return before vblank.
                     // Publish that held scanout first, then resume the ordinary
@@ -18724,15 +18770,27 @@ impl ZeldaState {
                     self.complete_module07_dungeon_after_submodule();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
-                    // The resumed suffix authored this shadow after the held
-                    // frame's vblank. Its OAM DMA is therefore eligible for
-                    // the scanout after the next one, not the immediately
-                    // following fresh palette-filter iteration.
-                    self.next_display_obj_memory_generation =
-                        Some(DisplayObjGeneration::RetainCapturedOam {
-                            oam: self.ppu.oam.clone(),
-                        });
-                    self.set_next_display_obj_scanout(Some(straight_interroom_fadeout_return_obj_scanout()));
+                    if return_publishes_live_oam {
+                        // The trailing NMI above already DMAed the sorted OAM; let
+                        // the next capture publish its own live post-NMI image.
+                        self.next_display_obj_memory_generation =
+                            Some(DisplayObjGeneration::FollowModuleCadence);
+                        self.set_next_display_obj_scanout(Some(
+                            straight_interroom_fadeout_return_live_obj_scanout(),
+                        ));
+                    } else {
+                        // The resumed suffix authored this shadow after the held
+                        // frame's vblank. Its OAM DMA is therefore eligible for
+                        // the scanout after the next one, not the immediately
+                        // following fresh palette-filter iteration.
+                        self.next_display_obj_memory_generation =
+                            Some(DisplayObjGeneration::RetainCapturedOam {
+                                oam: self.ppu.oam.clone(),
+                            });
+                        self.set_next_display_obj_scanout(Some(
+                            straight_interroom_fadeout_return_obj_scanout(),
+                        ));
+                    }
                     return;
                 }
                 GameWorkStep::Complete(
