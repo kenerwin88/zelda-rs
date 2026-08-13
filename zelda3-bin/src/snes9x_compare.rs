@@ -2027,6 +2027,18 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut wrote_first_audio_mismatch = false;
     let mut completed_frames = start_frame;
     let mut first_engine_state_mismatch: Option<(u32, Vec<String>)> = None;
+    // Enumerator mode: instead of breaking on the first engine-state mismatch,
+    // record every divergent frame and keep going, so one cold pass surfaces the
+    // whole class of WRAM divergences (transient timing lags collapse to ranges in
+    // the post-run summary). Diagnostic only; the ordinary ratchet still breaks.
+    //
+    // Pair with ZELDA3_DEBUG_ALLOW_UNEXPECTED_ROM_RANDOM=1: past the FIRST divergence
+    // that changes Rust's RNG-call count, the live-oracle RNG replay exhausts and
+    // would otherwise panic. With the allow flag it continues on zero samples, so
+    // divergences BEFORE that point are exact and later ones are degraded (Rust is
+    // on a drifted path). Read the summary up to the first sprite/AI fork.
+    let engine_state_scan_all = env::var_os("ZELDA3_ENGINE_STATE_SCAN_ALL").is_some();
+    let mut engine_state_divergences: Vec<(u32, Vec<String>)> = Vec::new();
     let mut oracle_before_state = initial_oracle_state.clone();
     let mut video_mismatch_ranges = Vec::<(u32, u32)>::new();
     let mut first_video_mismatch = None::<String>;
@@ -2314,14 +2326,18 @@ pub(crate) fn run_compare_libretro_oracle(
                 .unwrap_or_default();
             let mismatches = compact_engine_state_mismatches(&game.ram, oracle_ram);
             if !mismatches.is_empty() {
-                eprintln!(
-                    "engine-state divergence at frame {frame_index}: {}",
-                    mismatches.join(", ")
-                );
-                input_history.push((frame_index, input));
-                completed_frames = frame_index.saturating_add(1);
-                first_engine_state_mismatch = Some((frame_index, mismatches));
-                break;
+                if engine_state_scan_all {
+                    engine_state_divergences.push((frame_index, mismatches));
+                } else {
+                    eprintln!(
+                        "engine-state divergence at frame {frame_index}: {}",
+                        mismatches.join(", ")
+                    );
+                    input_history.push((frame_index, input));
+                    completed_frames = frame_index.saturating_add(1);
+                    first_engine_state_mismatch = Some((frame_index, mismatches));
+                    break;
+                }
             }
         }
         if live_oracle_rng {
@@ -3678,6 +3694,46 @@ pub(crate) fn run_compare_libretro_oracle(
             video_mismatch_this_frame,
         ) {
             break;
+        }
+    }
+
+    if engine_state_scan_all {
+        let field_names = |mismatches: &[String]| -> Vec<String> {
+            mismatches
+                .iter()
+                .map(|m| m.split(' ').next().unwrap_or(m).to_string())
+                .collect()
+        };
+        eprintln!(
+            "=== engine-state scan-all: {} divergent frame(s) ===",
+            engine_state_divergences.len()
+        );
+        let mut i = 0;
+        while i < engine_state_divergences.len() {
+            let (start_frame, first_ms) = {
+                let (f, ms) = &engine_state_divergences[i];
+                (*f, ms.clone())
+            };
+            let key = field_names(&first_ms);
+            let mut j = i;
+            let mut last_frame = start_frame;
+            while j < engine_state_divergences.len()
+                && field_names(&engine_state_divergences[j].1) == key
+            {
+                last_frame = engine_state_divergences[j].0;
+                j += 1;
+            }
+            let count = j - i;
+            if count == 1 {
+                eprintln!("  frame {start_frame}: {}", first_ms.join(", "));
+            } else {
+                eprintln!(
+                    "  frames {start_frame}..{last_frame} ({count} frames, fields {}): first {}",
+                    key.join("+"),
+                    first_ms.join(", ")
+                );
+            }
+            i = j;
         }
     }
 
