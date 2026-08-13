@@ -498,7 +498,14 @@ impl ZeldaState {
         };
         let i = self.game_state.dungeon.torch.attr_index()
             + ((self.game_state.dungeon.torch.torches_start_index() >> 1) as usize);
-        let opos = self.game_state.dungeon.torch.torch_object_data_pos(i) as usize;
+        // DUNG_OBJECT_POS_IN_OBJDATA (0x520) is owned by the dungeon object parser
+        // (DungeonObjectTrackingState); read the live value from that sole owner
+        // (matches the ROM reading $0520 directly) rather than a torch-held copy.
+        let opos = self
+            .game_state
+            .dungeon
+            .object_tracking
+            .object_pos_in_objdata(i) as usize;
         let mut tilemap_pos = self
             .game_state
             .dungeon

@@ -90,8 +90,6 @@ fn native_dungeon_torch_bridge_clears_room_load_indices() {
 
     write_le_u16(&mut ram, DUNG_INDEX_OF_TORCHES_START, 0);
     write_le_u16(&mut ram, DUNG_INDEX_OF_TORCHES, 0);
-    write_le_u16(&mut ram, DUNG_OBJECT_POS_IN_OBJDATA, 0x00e3);
-    write_le_u16(&mut ram, DUNG_OBJECT_POS_IN_OBJDATA + 2, 0x00e6);
 
     {
         let mut bridge = NativeDungeonTorchBridgeMut::new(&mut torch, &mut ram);
@@ -101,8 +99,6 @@ fn native_dungeon_torch_bridge_clears_room_load_indices() {
 
     assert_eq!(torch.torches_start_index(), 0);
     assert_eq!(torch.torch_index(), 0);
-    assert_eq!(torch.torch_object_data_pos(0), 0x00e3);
-    assert_eq!(torch.torch_object_data_pos(1), 0x00e6);
     assert_eq!(read_le_u16(&ram, DUNG_INDEX_OF_TORCHES_START), 0);
     assert_eq!(read_le_u16(&ram, DUNG_INDEX_OF_TORCHES), 0);
 }

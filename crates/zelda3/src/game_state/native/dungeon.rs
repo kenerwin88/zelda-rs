@@ -56,7 +56,6 @@ const DUNGEON_HEADER_TRAVEL_DESTINATION_COUNT: usize = 5;
 const DUNGEON_HEADER_PLANE_SCRATCH_COUNT: usize = 5;
 const DUNGEON_HEADER_TAG_COUNT: usize = 2;
 const DUNGEON_TORCH_TIMER_COUNT: usize = 16;
-const DUNGEON_TORCH_OBJECT_POS_COUNT: usize = 16;
 const DUNGEON_TORCH_DATA_SCAN_BYTES: usize = 0x0120;
 const DUNGEON_TORCH_DATA_SCAN_WORDS: usize = DUNGEON_TORCH_DATA_SCAN_BYTES / 2;
 const DUNGEON_ROOM_HISTORY_COUNT: usize = 4;
@@ -3248,7 +3247,6 @@ pub(crate) struct DungeonTorchState {
     ganon_torch_count: u8,
     torches_start_index: u16,
     torch_index: u16,
-    object_data_positions: [u16; DUNGEON_TORCH_OBJECT_POS_COUNT],
     torch_data_words: Vec<u16>,
 }
 
@@ -3257,11 +3255,6 @@ impl DungeonTorchState {
         let mut timers = [0; DUNGEON_TORCH_TIMER_COUNT];
         for (index, timer) in timers.iter_mut().enumerate() {
             *timer = ram.get(TORCH_TIMERS + index).copied().unwrap_or(0);
-        }
-
-        let mut object_data_positions = [0; DUNGEON_TORCH_OBJECT_POS_COUNT];
-        for (index, position) in object_data_positions.iter_mut().enumerate() {
-            *position = read_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2);
         }
 
         let mut torch_data_words = vec![0; DUNGEON_TORCH_DATA_SCAN_WORDS];
@@ -3279,7 +3272,6 @@ impl DungeonTorchState {
             ganon_torch_count: ram.get(GANON_TORCH_COUNT).copied().unwrap_or(0),
             torches_start_index: read_le_u16(ram, DUNG_INDEX_OF_TORCHES_START),
             torch_index: read_le_u16(ram, DUNG_INDEX_OF_TORCHES),
-            object_data_positions,
             torch_data_words,
         }
     }
@@ -3294,9 +3286,6 @@ impl DungeonTorchState {
         ram[GANON_TORCH_COUNT] = self.ganon_torch_count;
         write_le_u16(ram, DUNG_INDEX_OF_TORCHES_START, self.torches_start_index);
         write_le_u16(ram, DUNG_INDEX_OF_TORCHES, self.torch_index);
-        for (index, position) in self.object_data_positions.iter().enumerate() {
-            write_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2, *position);
-        }
         for (index, word) in self.torch_data_words.iter().enumerate() {
             write_le_u16(ram, DUNGEON_TORCH_DATA + index * 2, *word);
         }
@@ -3357,10 +3346,6 @@ impl DungeonTorchState {
             .unwrap_or(0)
     }
 
-    pub(crate) fn torch_object_data_pos(&self, index: usize) -> u16 {
-        self.object_data_positions.get(index).copied().unwrap_or(0)
-    }
-
     fn clear_timer(&mut self, index: usize) {
         if let Some(timer) = self.timers.get_mut(index) {
             *timer = 0;
@@ -3374,12 +3359,6 @@ impl DungeonTorchState {
     fn clear_torch_indices(&mut self) {
         self.torches_start_index = 0;
         self.torch_index = 0;
-    }
-
-    fn refresh_object_data_positions_from_ram(&mut self, ram: &[u8]) {
-        for (index, position) in self.object_data_positions.iter_mut().enumerate() {
-            *position = read_le_u16(ram, DUNG_OBJECT_POS_IN_OBJDATA + index * 2);
-        }
     }
 
     fn set_timer(&mut self, index: usize, value: u8) {
@@ -5594,7 +5573,6 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&mut self) {
-        self.torch.refresh_object_data_positions_from_ram(self.ram);
         debug_assert_eq!(*self.torch, DungeonTorchState::load_from_ram(self.ram));
     }
 
@@ -5722,14 +5700,12 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
     }
 
     pub(crate) fn set_torch_index_range_start(&mut self, value: u16) {
-        self.torch.refresh_object_data_positions_from_ram(self.ram);
         self.torch.set_torch_index_range_start(value);
         write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES_START, value);
         self.debug_assert_matches_ram();
     }
 
     pub(crate) fn set_torch_index(&mut self, value: u16) {
-        self.torch.refresh_object_data_positions_from_ram(self.ram);
         self.torch.set_torch_index(value);
         write_le_u16(self.ram, DUNG_INDEX_OF_TORCHES, value);
         self.debug_assert_matches_ram();
@@ -5759,7 +5735,10 @@ impl<'a> NativeDungeonTorchBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn refresh_object_data_positions(&mut self) {
+    /// Reload the torch model from RAM after the room object parser has run
+    /// (`RoomDraw_DrawAllObjectsCurrentRoom` writes torch-owned bytes directly,
+    /// outside this bridge, so the native model must be resynced).
+    pub(crate) fn resync_from_ram(&mut self) {
         *self.torch = DungeonTorchState::load_from_ram(self.ram);
     }
 }

@@ -1148,7 +1148,7 @@ impl ZeldaState {
         self.dungeon_room_tilemaps_mut()
             .copy_line_pointer_bytes(&DUNGEON_DRAW_OBJECT_OFFSETS_BG1);
         self.RoomDraw_DrawAllObjectsCurrentRoom();
-        self.dungeon_torch_mut().refresh_object_data_positions();
+        self.dungeon_torch_mut().resync_from_ram();
         let room = self.game_state.world.location.dungeon_room();
         for offset in (0..0x018c).step_by(4) {
             if self
