@@ -262,6 +262,19 @@ def source_start_is_cold(run_dir: Path) -> bool:
     return option_value(replay_argv, "--resume-rust-state") is None
 
 
+def recorded_rom_random_problem(run_dir: Path) -> str | None:
+    """Return why a gate replay cannot reproduce cartridge RNG for video parity."""
+    _, replay_argv = parse_replay_script(run_dir / "replay.sh")
+    value = option_value(replay_argv, "--rom-random-script")
+    if value is None:
+        return "replay has no recorded --rom-random-script"
+    path = Path(value)
+    path = path if path.is_absolute() else ROOT / path
+    if not path.is_file():
+        return f"recorded ROM-random stream is missing: {path}"
+    return None
+
+
 def resolve_run_dir(
     project: Path,
     override: Path | None,
@@ -269,6 +282,7 @@ def resolve_run_dir(
     binary: Path,
     *,
     require_cold: bool = False,
+    require_recorded_rom_random: bool = False,
 ) -> Path:
     if override is not None:
         run_dir = override if override.is_absolute() else ROOT / override
@@ -287,6 +301,13 @@ def resolve_run_dir(
                 f"parity-probe: cannot use {run_dir} for authoritative proof: "
                 "its replay starts from paired states; select a cold run or pass "
                 "--use-checkpoint for diagnostic-only probing"
+            )
+        if require_recorded_rom_random and (
+            problem := recorded_rom_random_problem(run_dir)
+        ):
+            raise SystemExit(
+                f"parity-probe: cannot use {run_dir} for video parity: {problem}; "
+                "select a recorded-RNG video-preflight run"
             )
         return run_dir.resolve()
     precommit = project / "comparisons" / "precommit"
@@ -312,11 +333,16 @@ def resolve_run_dir(
         for frame, path in sufficient
         if source_start_problem(path, binary) is None
         and (not require_cold or source_start_is_cold(path))
+        and (
+            not require_recorded_rom_random
+            or recorded_rom_random_problem(path) is None
+        )
     ]
     if not usable:
         raise SystemExit(
             "parity-probe: no sufficiently long run has an eligible start; "
-            "run the pre-commit gate with this binary or keep a cold run with --load-sram"
+            "run the pre-commit gate with this binary or keep a cold recorded-RNG "
+            "video-preflight run with --load-sram"
         )
     closest_frame = min(frame for frame, _ in usable)
     closest = [path for frame, path in usable if frame == closest_frame]
@@ -1414,6 +1440,7 @@ def main(argv: list[str] | None = None) -> int:
         target_frame,
         binary,
         require_cold=not use_checkpoint,
+        require_recorded_rom_random=True,
     )
     script_env, replay_argv = parse_replay_script(run_dir / "replay.sh")
 

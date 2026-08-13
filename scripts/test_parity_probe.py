@@ -105,12 +105,24 @@ class ParityProbeTest(unittest.TestCase):
         os.utime(binary, (mtime, mtime))
         return binary
 
-    def write_run(self, precommit: Path, frame: int, mtime: int) -> Path:
+    def write_run(
+        self,
+        precommit: Path,
+        frame: int,
+        mtime: int,
+        *,
+        recorded_rom_random: bool = False,
+    ) -> Path:
         run_dir = precommit / f"run-{frame}"
         run_dir.mkdir(parents=True)
+        rom_random = run_dir / "rom-random.txt"
+        rom_random_option = ""
+        if recorded_rom_random:
+            rom_random.write_text("", encoding="utf-8")
+            rom_random_option = f" --rom-random-script {rom_random}"
         (run_dir / "replay.sh").write_text(
             "cargo run -q -p zelda3-bin -- --compare-snes9x-oracle core rom "
-            f"{frame}\n",
+            f"{frame}{rom_random_option}\n",
             encoding="utf-8",
         )
         (run_dir / "input.txt").write_text("", encoding="utf-8")
@@ -128,6 +140,42 @@ class ParityProbeTest(unittest.TestCase):
             selected = parity_probe.resolve_run_dir(project, None, 11_753, binary)
 
             self.assertEqual(selected, sufficient.resolve())
+
+    def test_video_probe_skips_rng_calibration_without_recorded_stream(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            precommit = project / "comparisons" / "precommit"
+            binary = self.write_binary(project, 100)
+            calibration = self.write_run(precommit, 29_600, 200)
+            video_preflight = self.write_run(
+                precommit, 31_290, 100, recorded_rom_random=True
+            )
+
+            selected = parity_probe.resolve_run_dir(
+                project,
+                None,
+                29_590,
+                binary,
+                require_recorded_rom_random=True,
+            )
+
+            self.assertNotEqual(selected, calibration.resolve())
+            self.assertEqual(selected, video_preflight.resolve())
+
+    def test_video_probe_rejects_explicit_run_without_recorded_stream(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            binary = self.write_binary(project, 100)
+            calibration = self.write_run(project, 29_600, 100)
+
+            with self.assertRaisesRegex(SystemExit, "no recorded --rom-random-script"):
+                parity_probe.resolve_run_dir(
+                    project,
+                    calibration,
+                    29_590,
+                    binary,
+                    require_recorded_rom_random=True,
+                )
 
     def test_explicit_run_dir_must_cover_probe_window(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
