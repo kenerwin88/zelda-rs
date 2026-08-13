@@ -35,7 +35,7 @@ use crate::game_state::constants::{
     MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE, MOVING_WALL_TORCH_UPDATE_FLAG,
     MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, OVERLAY_INDEX,
     OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE,
-    OVERWORLD_SCREEN_INDEX, OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL,
+    OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL,
     REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
     RESERVED_GFX_CONFIG_WORD, RESET_XY_CHECK_FLAGS, SOMARIA_BLOCK_BG_CHECK_FLAG,
     SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR, WATER_HDMA_WINDOW_X,
@@ -3448,7 +3448,6 @@ impl DungeonTorchState {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonEntranceBackupState {
     exit_tile_themes: [u8; 4],
-    overworld_screen_high: u8,
     overlay_high: u8,
 }
 
@@ -3463,7 +3462,6 @@ impl DungeonEntranceBackupState {
         }
         Self {
             exit_tile_themes,
-            overworld_screen_high: ram.get(OVERWORLD_SCREEN_INDEX + 1).copied().unwrap_or(0),
             overlay_high: ram.get(OVERLAY_INDEX + 1).copied().unwrap_or(0),
         }
     }
@@ -3471,16 +3469,11 @@ impl DungeonEntranceBackupState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         ram[OVERWORLD_EXIT_TILE_THEME_INDEX..OVERWORLD_EXIT_TILE_THEME_INDEX + 4]
             .copy_from_slice(&self.exit_tile_themes);
-        ram[OVERWORLD_SCREEN_INDEX + 1] = self.overworld_screen_high;
         ram[OVERLAY_INDEX + 1] = self.overlay_high;
     }
 
     pub(crate) fn exit_tile_theme(&self, index: usize) -> u8 {
         self.exit_tile_themes.get(index).copied().unwrap_or(0)
-    }
-
-    pub(crate) fn overworld_screen_high(&self) -> u8 {
-        self.overworld_screen_high
     }
 
     pub(crate) fn overlay_high(&self) -> u8 {
@@ -3489,10 +3482,6 @@ impl DungeonEntranceBackupState {
 
     pub(crate) fn cache_exit_tile_themes(&mut self, overworld: u8, main: u8, aux: u8, sprite: u8) {
         self.exit_tile_themes = [overworld, main, aux, sprite];
-    }
-
-    pub(crate) fn clear_overworld_screen_high(&mut self) {
-        self.overworld_screen_high = 0;
     }
 
     pub(crate) fn clear_overlay_high(&mut self) {
@@ -3738,11 +3727,6 @@ impl<'a> NativeDungeonEntranceBackupBridgeMut<'a> {
             self.ram[AUX_TILE_THEME_INDEX],
             self.ram[SPRITE_GRAPHICS_INDEX],
         );
-        self.sync();
-    }
-
-    pub(crate) fn clear_overworld_screen_high(&mut self) {
-        self.state.clear_overworld_screen_high();
         self.sync();
     }
 

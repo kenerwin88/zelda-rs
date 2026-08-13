@@ -152,8 +152,6 @@ impl ZeldaState {
             self.copy_exit_scroll_counters();
             self.dungeon_entrance_backup_mut().cache_exit_tile_themes();
             self.set_overworld_screen(0);
-            self.dungeon_entrance_backup_mut()
-                .clear_overworld_screen_high();
             self.clear_overlay_index_word();
             self.dungeon_entrance_backup_mut().clear_overlay_high();
         }
