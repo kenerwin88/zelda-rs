@@ -551,6 +551,14 @@ enum OamScanoutSource {
     /// Publish the current sprite table except for Link's sorted body and
     /// equipment entries, which still belong to the pre-main host boundary.
     ComposeLiveAfterNmiWithHostBoundaryLink,
+    /// Publish the post-NMI live sprite table except the falling sprite at OAM
+    /// slots 92/93, which still belongs to the pre-main host boundary. The straight
+    /// inter-room fadeout return (room `$32`/staircase `$35`) advances that one
+    /// sprite's animation frame one step ahead of the oracle while every other
+    /// sprite (Link included) matches the live table; overlaying just those two
+    /// entries from `pre_main_graphics_dma.oam_shadow` fixes it without the
+    /// whole-OAM host-boundary generation regressing the rest.
+    ComposeLiveWithHostBoundaryFallingSprite,
     /// Publish the complete OAM DMA performed after a suspended CPU workload
     /// returned before vblank. This is intentionally explicit: ordinary
     /// module-level OAM deferral must not replace this measured generation.
@@ -685,15 +693,17 @@ const fn straight_interroom_fadeout_return_obj_scanout() -> ObjScanoutGeneration
 /// NMI (room `$32` / staircase `$35`, the
 /// `suspend_straight_interroom_sprite_reset_before_room_load` lane). There the
 /// suffix's trailing NMI DMAs the freshly sorted OAM before this return scanout is
-/// captured, so retaining the resident table would freeze Link's body and the
-/// falling sprite one animation step too new. `ComposeCompletedWorkAfterNmi` is in
-/// the explicit-generation set (immune to the deferred-publication rewrite),
-/// non-retaining, and has no special compose block, so it falls through to the
-/// snapshot's own post-NMI OAM image -- the host-boundary generation the oracle
-/// scanned. Measured at route frame 29502.
+/// captured. Publishing the whole post-NMI live table
+/// (`ComposeLiveWithHostBoundaryFallingSprite`, non-retaining and in the explicit
+/// generation set) matches the oracle for Link's body and every sprite except the
+/// falling sprite at slots 92/93, which the suffix advances one animation frame too
+/// far; that variant's compose block overlays those two entries from the pre-main
+/// host-boundary shadow. Measured at route frame 29502 (slots 92/93 = `$24`/`$2e`
+/// attr `$28`, the host-boundary column; a whole-OAM host-boundary source instead
+/// regressed the frame to 288px by moving the other sprites).
 const fn straight_interroom_fadeout_return_live_obj_scanout() -> ObjScanoutGenerations {
     ObjScanoutGenerations {
-        oam: OamScanoutSource::ComposeCompletedWorkAfterNmi,
+        oam: OamScanoutSource::ComposeLiveWithHostBoundaryFallingSprite,
         link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
         link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
     }
@@ -5485,6 +5495,7 @@ impl DisplayPublicationPlan {
                 | OamScanoutSource::ComposeLiveShadowAfterMain
                 | OamScanoutSource::ComposeSpiralReturnPlayerShadowAfterMain
                 | OamScanoutSource::ComposeLivePlayerOamAfterMain
+                | OamScanoutSource::ComposeLiveWithHostBoundaryFallingSprite
         );
         let module_oam_scanout_source =
             if signals.module_oam_publication_is_deferred && !explicit_oam_generation {
@@ -6784,6 +6795,9 @@ fn oam_entry_bytes(oam: &[u16], entry: usize) -> [u8; 4] {
 
 const LINK_OAM_ENTRIES: [usize; 5] = [102, 103, 107, 110, 111];
 const HOST_BOUNDARY_LINK_OAM_ENTRIES: [usize; 7] = [102, 103, 107, 110, 111, 112, 113];
+/// The falling sprite the straight inter-room fadeout return advances one animation
+/// frame too far; only these two entries belong to the pre-main host boundary.
+const HOST_BOUNDARY_FALLING_SPRITE_OAM_ENTRIES: [usize; 2] = [92, 93];
 
 fn compose_published_oam_entries<const N: usize>(
     oam: &mut [u16],
@@ -6811,6 +6825,10 @@ fn compose_published_link_oam(oam: &mut [u16], published_shadow_oam: Option<&[u1
 
 fn compose_host_boundary_link_oam(oam: &mut [u16], host_boundary_oam: Option<&[u16]>) {
     compose_published_oam_entries(oam, host_boundary_oam, HOST_BOUNDARY_LINK_OAM_ENTRIES);
+}
+
+fn compose_host_boundary_falling_sprite_oam(oam: &mut [u16], host_boundary_oam: Option<&[u16]>) {
+    compose_published_oam_entries(oam, host_boundary_oam, HOST_BOUNDARY_FALLING_SPRITE_OAM_ENTRIES);
 }
 
 fn publish_oam_shadow(oam: &mut [u16], shadow: &[u8]) -> bool {
@@ -13526,6 +13544,7 @@ impl ZeldaState {
         let published_shadow_oam_dma = if module_oam_scanout_source
             == OamScanoutSource::ComposePublishedShadowDma
             || oam_scanout_source == OamScanoutSource::ComposeLiveAfterNmiWithHostBoundaryLink
+            || oam_scanout_source == OamScanoutSource::ComposeLiveWithHostBoundaryFallingSprite
             || pre_main_caller_uses_host_boundary_shadow_oam(
                 self.game_execution_scheduler.pre_main_caller_continuation(),
                 self.game_state.display.palette_filter.countdown(),
@@ -14828,7 +14847,8 @@ impl ZeldaState {
         let published_shadow_oam = match plan.oam_scanout_source {
             OamScanoutSource::RetainCapturedBeforeNmi
             | OamScanoutSource::ComposePublishedShadowDma
-            | OamScanoutSource::ComposeLiveAfterNmiWithHostBoundaryLink => {
+            | OamScanoutSource::ComposeLiveAfterNmiWithHostBoundaryLink
+            | OamScanoutSource::ComposeLiveWithHostBoundaryFallingSprite => {
                 following.published_shadow_oam_dma.as_deref()
             }
             OamScanoutSource::RetainResidentPpuOam
@@ -14863,6 +14883,15 @@ impl ZeldaState {
             // those seven entries (including packed high bits) from the
             // pre-main host-boundary shadow.
             compose_host_boundary_link_oam(&mut self.ppu.oam, published_shadow_oam);
+        }
+        if plan.oam_scanout_source
+            == OamScanoutSource::ComposeLiveWithHostBoundaryFallingSprite
+        {
+            // The straight inter-room fadeout return advances the falling sprite at
+            // slots 92/93 one animation frame past the oracle while every other
+            // sprite matches the live post-NMI table. Start from that live table and
+            // overlay only those two entries from the pre-main host-boundary shadow.
+            compose_host_boundary_falling_sprite_oam(&mut self.ppu.oam, published_shadow_oam);
         }
         if plan.oam_scanout_source == OamScanoutSource::ComposeLivePlayerOamAfterMain {
             // LinkOam_Main owns entries 12..17 on this unsorted dungeon slice.
