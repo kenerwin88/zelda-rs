@@ -7305,7 +7305,7 @@ impl ZeldaState {
             self.game_state.player.tile_detection.normal_tiles_high(),
             self.game_state.player.follower_link.deep_water_state(),
             self.game_state.player.follower_link.palette_bits_of_oam(),
-            self.game_state.player.tile_detection.palette_bits_high(),
+            self.game_state.player.follower_link.palette_bits_of_oam_word() >> 8,
             self.game_state.player.tile_detection.deepwater(),
             self.game_state.player.tile_detection.normal_tiles(),
             self.game_state.player.follower_link.deep_water_state(),

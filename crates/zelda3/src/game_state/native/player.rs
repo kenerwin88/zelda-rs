@@ -7037,7 +7037,6 @@ pub(crate) struct TileDetectionState {
     slope_collision_bits: u16,
     collision_bits: u16,
     layer_collision_flags: u8,
-    palette_bits_high: u8,
     inroom_staircase: u16,
     fall_hole_scan_index: u8,
 }
@@ -7088,7 +7087,6 @@ impl TileDetectionState {
             slope_collision_bits: read_le_u16(ram, TILEDETECT_SLOPE_COLLISION_BITS),
             collision_bits: read_le_u16(ram, TILEDETECT_COLLISION_BITS),
             layer_collision_flags: ram_byte(ram, PLAYER_LAYER_COLLISION_FLAGS),
-            palette_bits_high: ram_byte(ram, LINK_PALETTE_BITS_OF_OAM + 1),
             inroom_staircase: read_le_u16(ram, TILEDETECT_INROOM_STAIRCASE),
             fall_hole_scan_index: ram_byte(ram, FALL_HOLE_SCAN_INDEX_LOCAL),
         }
@@ -7151,7 +7149,6 @@ impl TileDetectionState {
         );
         write_le_u16(ram, TILEDETECT_COLLISION_BITS, self.collision_bits);
         ram[PLAYER_LAYER_COLLISION_FLAGS] = self.layer_collision_flags;
-        ram[LINK_PALETTE_BITS_OF_OAM + 1] = self.palette_bits_high;
         write_le_u16(ram, TILEDETECT_INROOM_STAIRCASE, self.inroom_staircase);
         ram[FALL_HOLE_SCAN_INDEX_LOCAL] = self.fall_hole_scan_index;
     }
@@ -7384,10 +7381,6 @@ impl TileDetectionState {
 
     pub(crate) fn has_layer_collision(&self, mask: u8) -> bool {
         self.layer_collision_flags & mask == mask
-    }
-
-    pub(crate) fn palette_bits_high(&self) -> u8 {
-        self.palette_bits_high
     }
 
     pub(crate) fn inroom_staircase(&self) -> u16 {
