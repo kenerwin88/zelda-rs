@@ -6075,6 +6075,12 @@ pub struct ZeldaState {
     // 14661+ tail). Consumed (taken) in zelda_run_game_loop.
     #[serde(skip)]
     rom_load_partial_nmi_this_frame: bool,
+    // Set when the selected-game-load entry slice already ran the room-load
+    // (Dungeon_LoadEntrance) at the ROM's frame; the completion then skips its own
+    // room-load so it runs exactly once while still doing the room draw. Taken in
+    // module_pre_dungeon_after_audio_prefix_with_song_bank_timing.
+    #[serde(skip)]
+    selected_game_load_room_preloaded: bool,
     // Set on a frame whose ROM main thread runs PAST the next vblank (a lag
     // frame, Bank00 Vector_NMI `LDA $12 : BNE .skip`): the NMI then skips
     // NMI_DoUpdates entirely, so the $7E0800->$2104 OAM DMA does not happen and
@@ -11929,6 +11935,7 @@ impl ZeldaState {
             dialogue_flags: 0,
             rom_startup_timing: false,
             rom_load_partial_nmi_this_frame: false,
+            selected_game_load_room_preloaded: false,
             rom_lag_frame_skip_oam_dma: false,
             game_over_iris_goal_scanout_closed_pending: false,
             intro_initialization_work_frames_pending: 0,
@@ -17861,6 +17868,11 @@ impl ZeldaState {
                 Some(StartupSequenceStep::SelectedGameLoadWaiting) => true,
                 Some(StartupSequenceStep::BeginPreDungeonAudio) => {
                     self.begin_selected_game_load_pre_dungeon_audio();
+                    // Run the ROM's entry room-load (Dungeon_LoadEntrance, incl.
+                    // DUNGEON_ROOM) on this same frame instead of collapsing it onto
+                    // the completion boundary ~57 slices later (bug class 5). The room
+                    // DRAW stays at CompleteSelectedGameLoad.
+                    self.selected_game_load_entry_room_load();
                     true
                 }
                 Some(StartupSequenceStep::CompleteSelectedGameLoad) => {

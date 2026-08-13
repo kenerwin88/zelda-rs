@@ -12389,15 +12389,20 @@ impl ZeldaState {
         &mut self,
         defer_song_bank: bool,
     ) {
-        self.set_dungeon_room(0);
-        self.dungeon_room_tracking_mut()
-            .set_previous_room_index_word(0);
-        self.dungeon_savegame_state_mut().clear_savegame_state_low();
-        self.dungeon_savegame_state_mut()
-            .clear_savegame_state_high();
-        self.clear_agahnim_palette_settings(12);
+        // The selected-game-load entry slice may have already run this room-load at
+        // the ROM's frame (bug class 5); if so, skip it here so it runs exactly once
+        // while the room draw below still happens at the completion boundary.
+        if !std::mem::take(&mut self.selected_game_load_room_preloaded) {
+            self.set_dungeon_room(0);
+            self.dungeon_room_tracking_mut()
+                .set_previous_room_index_word(0);
+            self.dungeon_savegame_state_mut().clear_savegame_state_low();
+            self.dungeon_savegame_state_mut()
+                .clear_savegame_state_high();
+            self.clear_agahnim_palette_settings(12);
 
-        self.Dungeon_LoadEntrance();
+            self.Dungeon_LoadEntrance();
+        }
         self.load_pre_dungeon_keys();
         self.hud_rebuild();
         self.dungeon_torch_mut().clear_lit_torches();

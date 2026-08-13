@@ -627,6 +627,28 @@ impl ZeldaState {
         }
     }
 
+    /// Selected-game-load pre-dungeon-audio frame: run the ROM's entry room-load so
+    /// DUNGEON_ROOM ($A0) is set at the ROM's frame rather than the completion
+    /// boundary (bug class 5). Mirrors the pre-draw prefix of
+    /// `module_pre_dungeon_after_audio_prefix_with_song_bank_timing`; that
+    /// completion then skips its room-load (via `selected_game_load_room_preloaded`)
+    /// so it runs exactly once, while the room DRAW still happens at completion.
+    /// Only the Dungeon destination loads a room here.
+    pub(super) fn selected_game_load_entry_room_load(&mut self) {
+        if self.selected_game_load_destination() != SelectedGameLoadDestination::Dungeon {
+            return;
+        }
+        self.set_dungeon_room(0);
+        self.dungeon_room_tracking_mut()
+            .set_previous_room_index_word(0);
+        self.dungeon_savegame_state_mut().clear_savegame_state_low();
+        self.dungeon_savegame_state_mut()
+            .clear_savegame_state_high();
+        self.clear_agahnim_palette_settings(12);
+        self.Dungeon_LoadEntrance();
+        self.selected_game_load_room_preloaded = true;
+    }
+
     fn selected_game_load_destination(&self) -> SelectedGameLoadDestination {
         if self.game_state.inventory.save_progress.dark_world_state() != 0 {
             if self.game_state.world.location.is_indoors() {
