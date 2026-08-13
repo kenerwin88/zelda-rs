@@ -28,6 +28,12 @@ CHECKPOINT_PATH = ROOT / ".git" / "precommit-snes9x-parity-checkpoint"
 RNG_CACHE_PATH = ROOT / ".git" / "precommit-snes9x-rom-random-cache"
 DEFAULT_PROJECT = ROOT / "routes" / "full_run"
 STATE_SCHEMA = 1
+# The oracle boots from the ROM reset vector, so its WRAM reads 0x55 (and Rust's
+# 0x00) until the game's init code settles. Engine-state comparison at the reset
+# frame is therefore meaningless -- every field mismatches. On a cold ratchet
+# (prior_frame below this, e.g. after a route-signature reset) start the live-oracle
+# RNG calibration's engine-state comparison past boot instead of at frame 0.
+ENGINE_STATE_COLD_START_FLOOR = 200
 # Paired-resume flags the checkpoint supersedes; the binary rejects them next to
 # --resume-paired because a resumed pair already carries its own SRAM/boundary.
 RESUME_CONFLICTING_OPTIONS = (
@@ -569,7 +575,9 @@ def run_snes9x_gate() -> int:
                     ignore_audio=True,
                     ignore_video=True,
                     live_oracle_rng=True,
-                    engine_state_from_frame=prior_frame,
+                    engine_state_from_frame=max(
+                        prior_frame, ENGINE_STATE_COLD_START_FLOOR
+                    ),
                     expected_core_sha256=trace_core_sha256,
                 )
                 print(
