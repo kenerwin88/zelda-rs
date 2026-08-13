@@ -2968,7 +2968,6 @@ pub(crate) struct DisplayState {
     pub(crate) message_dma_tile_base: u16,
     pub(crate) message_dma_tile_limit: u16,
     pub(crate) message_dma_tile_sentinel: u16,
-    pub(crate) overworld_fixed_color_adjustment: u8,
     pub(crate) travel_bird_tile_offset: u8,
     pub(crate) star_tile_restore_phase: u8,
     pub(crate) animated_tile_data_source_address: u16,
@@ -3030,7 +3029,6 @@ impl DisplayState {
             message_dma_tile_base: read_le_u16(ram, MESSAGE_DMA_TILE_BASE),
             message_dma_tile_limit: read_le_u16(ram, MESSAGE_DMA_TILE_LIMIT),
             message_dma_tile_sentinel: read_le_u16(ram, MESSAGE_DMA_TILE_SENTINEL),
-            overworld_fixed_color_adjustment: ram_byte(ram, OVERWORLD_FIXED_COLOR_PLUSMINUS),
             travel_bird_tile_offset: ram_byte(ram, FLAG_TRAVEL_BIRD),
             star_tile_restore_phase: ram_byte(ram, STAR_TILE_RESTORE_PHASE),
             animated_tile_data_source_address: read_le_u16(ram, ANIMATED_TILE_DATA_SRC),
@@ -3113,11 +3111,6 @@ impl DisplayState {
             MESSAGE_DMA_TILE_SENTINEL,
             self.message_dma_tile_sentinel,
         );
-        // OVERWORLD_FIXED_COLOR_PLUSMINUS (0xc017) is owned by
-        // dungeon.room_effects.fixed_color_plusminus (the field with readers and active
-        // setters). This state kept only a passive copy; projecting it here let a stale
-        // frame-start read clobber the owner's mid-frame value, so leave the byte to the
-        // owner (now the sole projector).
         ram[FLAG_TRAVEL_BIRD] = self.travel_bird_tile_offset;
         // 0x4bc is mode-reused: STAR_TILE_RESTORE_PHASE (overworld) here vs the dungeon
         // MOVING_WALL_TORCH_BLINK_PHASE (dungeon.room_effects). Only project it in the
@@ -3151,7 +3144,6 @@ impl DisplayState {
         // Targeted bridge methods keep these exact when display owns a mutation; this
         // normalization applies only to the broad frame-entry/frame-exit core check.
         ram_state.vram_upload_cursor = self.vram_upload_cursor;
-        ram_state.overworld_fixed_color_adjustment = self.overworld_fixed_color_adjustment;
         if ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) != 0 {
             ram_state.star_tile_restore_phase = self.star_tile_restore_phase;
         }
@@ -3257,10 +3249,6 @@ impl DisplayState {
         debug_assert_eq!(
             self.message_dma_tile_sentinel,
             ram_state.message_dma_tile_sentinel
-        );
-        debug_assert_eq!(
-            self.overworld_fixed_color_adjustment,
-            ram_state.overworld_fixed_color_adjustment
         );
         debug_assert_eq!(
             self.travel_bird_tile_offset,
@@ -3976,10 +3964,6 @@ impl DisplayState {
 
     pub(crate) fn has_travel_bird_tile_upload(&self) -> bool {
         self.travel_bird_tile_offset != 0
-    }
-
-    pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
-        self.overworld_fixed_color_adjustment = value;
     }
 
     pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {
@@ -5254,13 +5238,6 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         );
     }
 
-    fn debug_assert_overworld_fixed_color_adjustment_matches_ram(&self) {
-        debug_assert_eq!(
-            self.display.overworld_fixed_color_adjustment,
-            ram_byte(self.ram, OVERWORLD_FIXED_COLOR_PLUSMINUS)
-        );
-    }
-
     fn debug_assert_travel_bird_tile_offset_matches_ram(&self) {
         debug_assert_eq!(
             self.display.travel_bird_tile_offset,
@@ -5847,12 +5824,6 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         self.display.set_message_dma_tile_sentinel(value);
         write_le_u16(self.ram, MESSAGE_DMA_TILE_SENTINEL, value);
         self.debug_assert_message_dma_tile_range_matches_ram();
-    }
-
-    pub(crate) fn set_overworld_fixed_color_adjustment(&mut self, value: u8) {
-        self.display.set_overworld_fixed_color_adjustment(value);
-        self.ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = value;
-        self.debug_assert_overworld_fixed_color_adjustment_matches_ram();
     }
 
     pub(crate) fn set_travel_bird_tile_offset(&mut self, value: u8) {

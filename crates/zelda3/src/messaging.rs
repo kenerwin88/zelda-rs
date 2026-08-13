@@ -1615,7 +1615,7 @@ impl ZeldaState {
         if !self.hud_state().is_doing_heart_animation() {
             self.set_chr_halfslot_request(1);
             self.Graphics_LoadChrHalfSlot();
-            let fixed_color = self.game_state.display.overworld_fixed_color_adjustment;
+            let fixed_color = self.game_state.dungeon.room_effects.fixed_color_plusminus();
             self.Dungeon_ApproachFixedColor_variable(fixed_color);
             self.increment_submodule();
         }
@@ -3331,7 +3331,7 @@ impl ZeldaState {
             &mapbak_palette,
             crate::game_state::PaletteSliceSource::MirrorBank(zelda3_palette::Bank::Backup),
         );
-        let fixed_color_plusminus = self.game_state.display.overworld_fixed_color_adjustment;
+        let fixed_color_plusminus = self.game_state.dungeon.room_effects.fixed_color_plusminus();
         self.or_fixed_color_red(fixed_color_plusminus);
         self.or_fixed_color_green(fixed_color_plusminus);
         self.or_fixed_color_blue(fixed_color_plusminus);

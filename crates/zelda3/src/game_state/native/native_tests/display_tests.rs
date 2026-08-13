@@ -1310,9 +1310,7 @@ fn display_state_owns_dma_and_upload_metadata_behavior() {
     assert_eq!(display.message_dma_tile_limit, 0x007f);
     assert_eq!(display.message_dma_tile_sentinel, 0xffff);
 
-    display.set_overworld_fixed_color_adjustment(0x30);
     display.set_travel_bird_tile_offset(0x08);
-    assert_eq!(display.overworld_fixed_color_adjustment, 0x30);
     assert!(display.has_travel_bird_tile_upload());
 
     display.clear_star_tile_restore_phase();
@@ -1492,16 +1490,6 @@ fn display_state_owns_mosaic_control_behavior() {
     display.set_mosaic_direction(1);
     display.clear_mosaic_direction();
     assert_eq!(display.mosaic_direction, 0);
-}
-
-#[test]
-fn display_core_coherence_ignores_room_effects_fixed_color_owner() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = 0x1f;
-    let mut display = DisplayState::load_from_ram(&ram);
-    display.overworld_fixed_color_adjustment = 0;
-
-    display.debug_assert_core_matches_ram(&ram);
 }
 
 #[test]
@@ -1726,7 +1714,6 @@ fn native_display_bridge_syncs_seeded_ram_and_dual_writes_brightness() {
         bridge.set_message_dma_tile_base(0x4841);
         bridge.set_message_dma_tile_limit(0x007f);
         bridge.set_message_dma_tile_sentinel(0xffff);
-        bridge.set_overworld_fixed_color_adjustment(0x30);
         bridge.set_travel_bird_tile_offset(0x08);
         bridge.clear_star_tile_restore_phase();
         bridge.set_animated_tile_data_source_address(0xac80);
@@ -1813,7 +1800,6 @@ fn native_display_bridge_syncs_seeded_ram_and_dual_writes_brightness() {
     assert_eq!(display.message_dma_tile_base, 0x4841);
     assert_eq!(display.message_dma_tile_limit, 0x007f);
     assert_eq!(display.message_dma_tile_sentinel, 0xffff);
-    assert_eq!(display.overworld_fixed_color_adjustment, 0x30);
     assert_eq!(display.travel_bird_tile_offset, 0x08);
     assert!(display.has_travel_bird_tile_upload());
     assert_eq!(display.star_tile_restore_phase, 0);
@@ -1894,7 +1880,6 @@ fn native_display_bridge_syncs_seeded_ram_and_dual_writes_brightness() {
         read_le_u16(&ram, messaging_constants::MESSAGE_DMA_DST_ADDR),
         0x6080
     );
-    assert_eq!(ram[OVERWORLD_FIXED_COLOR_PLUSMINUS], 0x30);
     assert_eq!(ram[FLAG_TRAVEL_BIRD], 0x08);
     assert_eq!(read_le_u16(&ram, ANIMATED_TILE_DATA_SRC), 0xac80);
     assert_eq!(read_le_u16(&ram, ANIMATED_TILE_VRAM_ADDR), 0x3c00);

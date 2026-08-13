@@ -1,7 +1,24 @@
 use super::*;
 use crate::game_state::native::dungeon::{
-    DungeonEnvironmentState, NativeDungeonEnvironmentBridgeMut,
+    DungeonEnvironmentState, DungeonRoomEffectsState, NativeDungeonEnvironmentBridgeMut,
+    NativeDungeonRoomEffectsBridgeMut,
 };
+
+#[test]
+fn fixed_color_write_through_updates_sole_owner_without_projecting_room_scratch() {
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[OVERWORLD_FIXED_COLOR_PLUSMINUS] = 0x04;
+    ram[DUNG_BLASTWALL_FLAG_X] = 0x11;
+    let mut effects = DungeonRoomEffectsState::load_from_ram(&ram);
+
+    ram[DUNG_BLASTWALL_FLAG_X] = 0x77;
+    NativeDungeonRoomEffectsBridgeMut::new(&mut effects, &mut ram)
+        .set_fixed_color_plusminus_write_through(0x1f);
+
+    assert_eq!(effects.fixed_color_plusminus(), 0x1f);
+    assert_eq!(ram[OVERWORLD_FIXED_COLOR_PLUSMINUS], 0x1f);
+    assert_eq!(ram[DUNG_BLASTWALL_FLAG_X], 0x77);
+}
 
 #[test]
 fn native_dungeon_environment_bridge_ignores_write_through_water_counter_in_coherence_check() {
