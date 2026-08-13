@@ -33,10 +33,9 @@ use crate::game_state::constants::{
     INVISIBLE_DOOR_DIR_AND_INDEX_X2, MAIN_TILE_THEME_INDEX, MESSAGING_BUF_DUNGEON,
     MOVABLE_BLOCK_DATAS, MOVING_FLOOR_BG_CHECK_FLAGS, MOVING_WALL_DOT_POINTER,
     MOVING_WALL_REPLACEMENT_BUFFER, MOVING_WALL_TORCH_BLINK_PHASE, MOVING_WALL_TORCH_UPDATE_FLAG,
-    MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, OVERLAY_INDEX,
-    OVERWORLD_EXIT_TILE_THEME_INDEX, OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE,
-    OVERWORLD_TILE_THEME_INDEX, REPLACEMENT_TILEMAP_LL,
-    REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
+    MOVING_WALL_WRITE_POINT, ORANGE_BLUE_BARRIER_STATE, OVERWORLD_EXIT_TILE_THEME_INDEX,
+    OVERWORLD_FIXED_COLOR_PLUSMINUS, OVERWORLD_MAP_STATE, OVERWORLD_TILE_THEME_INDEX,
+    REPLACEMENT_TILEMAP_LL, REPLACEMENT_TILEMAP_LR, REPLACEMENT_TILEMAP_UL, REPLACEMENT_TILEMAP_UR,
     RESERVED_GFX_CONFIG_WORD, RESET_XY_CHECK_FLAGS, SOMARIA_BLOCK_BG_CHECK_FLAG,
     SPRITE_GRAPHICS_INDEX, TORCH_TIMERS, TURN_ON_OFF_WATER_CTR, WATER_HDMA_WINDOW_X,
     WATER_HDMA_WINDOW_X_RADIUS, WATER_HDMA_WINDOW_Y, WATER_HDMA_WINDOW_Y_RADIUS,
@@ -3448,7 +3447,6 @@ impl DungeonTorchState {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct DungeonEntranceBackupState {
     exit_tile_themes: [u8; 4],
-    overlay_high: u8,
 }
 
 impl DungeonEntranceBackupState {
@@ -3460,32 +3458,20 @@ impl DungeonEntranceBackupState {
                 .copied()
                 .unwrap_or(0);
         }
-        Self {
-            exit_tile_themes,
-            overlay_high: ram.get(OVERLAY_INDEX + 1).copied().unwrap_or(0),
-        }
+        Self { exit_tile_themes }
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         ram[OVERWORLD_EXIT_TILE_THEME_INDEX..OVERWORLD_EXIT_TILE_THEME_INDEX + 4]
             .copy_from_slice(&self.exit_tile_themes);
-        ram[OVERLAY_INDEX + 1] = self.overlay_high;
     }
 
     pub(crate) fn exit_tile_theme(&self, index: usize) -> u8 {
         self.exit_tile_themes.get(index).copied().unwrap_or(0)
     }
 
-    pub(crate) fn overlay_high(&self) -> u8 {
-        self.overlay_high
-    }
-
     pub(crate) fn cache_exit_tile_themes(&mut self, overworld: u8, main: u8, aux: u8, sprite: u8) {
         self.exit_tile_themes = [overworld, main, aux, sprite];
-    }
-
-    pub(crate) fn clear_overlay_high(&mut self) {
-        self.overlay_high = 0;
     }
 }
 
@@ -3727,11 +3713,6 @@ impl<'a> NativeDungeonEntranceBackupBridgeMut<'a> {
             self.ram[AUX_TILE_THEME_INDEX],
             self.ram[SPRITE_GRAPHICS_INDEX],
         );
-        self.sync();
-    }
-
-    pub(crate) fn clear_overlay_high(&mut self) {
-        self.state.clear_overlay_high();
         self.sync();
     }
 }

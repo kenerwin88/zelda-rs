@@ -153,7 +153,6 @@ impl ZeldaState {
             self.dungeon_entrance_backup_mut().cache_exit_tile_themes();
             self.set_overworld_screen(0);
             self.clear_overlay_index_word();
-            self.dungeon_entrance_backup_mut().clear_overlay_high();
         }
         self.set_bg1_y_offset(0);
         self.set_bg1_x_offset(0);

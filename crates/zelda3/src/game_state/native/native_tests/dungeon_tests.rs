@@ -470,7 +470,7 @@ fn native_dungeon_scratch_word_bridge_is_write_through_over_live_ram() {
 }
 
 #[test]
-fn native_dungeon_entrance_backup_bridge_does_not_project_overworld_screen() {
+fn native_dungeon_entrance_backup_bridge_does_not_project_world_owned_words() {
     let mut ram = vec![0; WRAM_SIZE];
     ram[OVERWORLD_TILE_THEME_INDEX] = 0x11;
     ram[MAIN_TILE_THEME_INDEX] = 0x22;
@@ -483,18 +483,16 @@ fn native_dungeon_entrance_backup_bridge_does_not_project_overworld_screen() {
     {
         let mut bridge = NativeDungeonEntranceBackupBridgeMut::new(&mut backup, &mut ram);
         bridge.cache_exit_tile_themes();
-        bridge.clear_overlay_high();
     }
 
     assert_eq!(backup.exit_tile_theme(0), 0x11);
     assert_eq!(backup.exit_tile_theme(1), 0x22);
     assert_eq!(backup.exit_tile_theme(2), 0x33);
     assert_eq!(backup.exit_tile_theme(3), 0x44);
-    assert_eq!(backup.overlay_high(), 0);
     assert_eq!(
         &ram[OVERWORLD_EXIT_TILE_THEME_INDEX..OVERWORLD_EXIT_TILE_THEME_INDEX + 4],
         &[0x11, 0x22, 0x33, 0x44]
     );
     assert_eq!(ram[OVERWORLD_SCREEN_INDEX + 1], 0xaa);
-    assert_eq!(ram[OVERLAY_INDEX + 1], 0);
+    assert_eq!(ram[OVERLAY_INDEX + 1], 0xbb);
 }
