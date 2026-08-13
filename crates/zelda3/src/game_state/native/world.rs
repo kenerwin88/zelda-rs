@@ -889,17 +889,7 @@ pub(crate) struct WorldPaletteThemeState {
     pub(crate) last_light_vs_dark_world: u8,
     pub(crate) aux_bg_subset: [u8; AUX_BG_SUBSET_COUNT],
     pub(crate) overworld_palette_aux1_hi: u8,
-    pub(crate) overworld_palette_mode: u8,
-    pub(crate) palette_main_indoors: u8,
     pub(crate) palette_main_indoors_copy: u8,
-    pub(crate) palette_swap_flag: u8,
-    pub(crate) palette_sp0l: u8,
-    pub(crate) palette_sp5l: u8,
-    pub(crate) palette_sp6l: u8,
-    pub(crate) palette_sp6r_indoors: u8,
-    pub(crate) hud_palette: u8,
-    pub(crate) overworld_palette_aux2_hi: u8,
-    pub(crate) overworld_palette_aux3_lo: u8,
     pub(crate) misc_sprites_graphics_index: u8,
     pub(crate) overworld_tile_theme_index: u8,
     pub(crate) main_tile_theme_index: u8,
@@ -922,17 +912,7 @@ impl WorldPaletteThemeState {
             last_light_vs_dark_world: ram_byte(ram, LAST_LIGHT_VS_DARK_WORLD),
             aux_bg_subset,
             overworld_palette_aux1_hi: ram_byte(ram, OVERWORLD_PALETTE_AUX1_BP2TO4_HI),
-            overworld_palette_mode: ram_byte(ram, OVERWORLD_PALETTE_MODE),
-            palette_main_indoors: ram_byte(ram, PALETTE_MAIN_INDOORS),
             palette_main_indoors_copy: ram_byte(ram, PALETTE_MAIN_INDOORS_COPY),
-            palette_swap_flag: ram_byte(ram, PALETTE_SWAP_FLAG),
-            palette_sp0l: ram_byte(ram, PALETTE_SP0L),
-            palette_sp5l: ram_byte(ram, PALETTE_SP5L),
-            palette_sp6l: ram_byte(ram, PALETTE_SP6L),
-            palette_sp6r_indoors: ram_byte(ram, PALETTE_SP6R_INDOORS),
-            hud_palette: ram_byte(ram, HUD_PALETTE),
-            overworld_palette_aux2_hi: ram_byte(ram, OVERWORLD_PALETTE_AUX2_BP5TO7_HI),
-            overworld_palette_aux3_lo: ram_byte(ram, OVERWORLD_PALETTE_AUX3_BP7_LO),
             misc_sprites_graphics_index: ram_byte(ram, MISC_SPRITES_GRAPHICS_INDEX),
             overworld_tile_theme_index: ram_byte(ram, OVERWORLD_TILE_THEME_INDEX),
             main_tile_theme_index: ram_byte(ram, MAIN_TILE_THEME_INDEX),
@@ -955,24 +935,7 @@ impl WorldPaletteThemeState {
             ram[AUX_BG_SUBSET_0 + index] = *subset;
         }
         ram[OVERWORLD_PALETTE_AUX1_BP2TO4_HI] = self.overworld_palette_aux1_hi;
-        ram[OVERWORLD_PALETTE_MODE] = self.overworld_palette_mode;
-        ram[PALETTE_MAIN_INDOORS] = self.palette_main_indoors;
         ram[PALETTE_MAIN_INDOORS_COPY] = self.palette_main_indoors_copy;
-        // NOTE: PALETTE_SWAP_FLAG (0xabd) is the same SNES byte as
-        // FOLLOWER_PALETTE_SWAP_FLAG / PALETTE_SWAP_FLAG_TAGALONG and is owned and
-        // projected by the follower (`SpriteFollowerRuntimeState.palette_swap_flag`),
-        // which carries every setter (`set/clear_palette_swap_flag`) and reader
-        // (tagalong / player_oam / sprite draw). This struct keeps a load-only mirror
-        // (read-redirected callers go straight to RAM); projecting it here would
-        // re-stamp the stale frame-start value over the follower's mid-frame clear
-        // (e.g. the ending-sequence gfx reload at frame 1024969 clears 0xabd → 0).
-        ram[PALETTE_SP0L] = self.palette_sp0l;
-        ram[PALETTE_SP5L] = self.palette_sp5l;
-        ram[PALETTE_SP6L] = self.palette_sp6l;
-        ram[PALETTE_SP6R_INDOORS] = self.palette_sp6r_indoors;
-        ram[HUD_PALETTE] = self.hud_palette;
-        ram[OVERWORLD_PALETTE_AUX2_BP5TO7_HI] = self.overworld_palette_aux2_hi;
-        ram[OVERWORLD_PALETTE_AUX3_BP7_LO] = self.overworld_palette_aux3_lo;
         ram[MISC_SPRITES_GRAPHICS_INDEX] = self.misc_sprites_graphics_index;
         ram[OVERWORLD_TILE_THEME_INDEX] = self.overworld_tile_theme_index;
         ram[MAIN_TILE_THEME_INDEX] = self.main_tile_theme_index;
@@ -999,48 +962,8 @@ impl WorldPaletteThemeState {
         self.overworld_palette_aux1_hi
     }
 
-    pub(crate) fn overworld_palette_mode(&self) -> u8 {
-        self.overworld_palette_mode
-    }
-
-    pub(crate) fn palette_main_indoors(&self) -> u8 {
-        self.palette_main_indoors
-    }
-
     pub(crate) fn palette_main_indoors_copy(&self) -> u8 {
         self.palette_main_indoors_copy
-    }
-
-    pub(crate) fn palette_swap_flag(&self) -> u8 {
-        self.palette_swap_flag
-    }
-
-    pub(crate) fn palette_sp0l(&self) -> u8 {
-        self.palette_sp0l
-    }
-
-    pub(crate) fn palette_sp5l(&self) -> u8 {
-        self.palette_sp5l
-    }
-
-    pub(crate) fn palette_sp6l(&self) -> u8 {
-        self.palette_sp6l
-    }
-
-    pub(crate) fn palette_sp6r_indoors(&self) -> u8 {
-        self.palette_sp6r_indoors
-    }
-
-    pub(crate) fn hud_palette(&self) -> u8 {
-        self.hud_palette
-    }
-
-    pub(crate) fn overworld_palette_aux2_hi(&self) -> u8 {
-        self.overworld_palette_aux2_hi
-    }
-
-    pub(crate) fn overworld_palette_aux3_lo(&self) -> u8 {
-        self.overworld_palette_aux3_lo
     }
 
     pub(crate) fn misc_sprites_graphics_index(&self) -> u8 {
@@ -1069,10 +992,6 @@ impl WorldPaletteThemeState {
         self.overworld_palette_aux1_hi = value;
     }
 
-    pub(crate) fn set_hud_palette(&mut self, value: u8) {
-        self.hud_palette = value;
-    }
-
     pub(crate) fn set_overworld_tile_theme_index(&mut self, value: u8) {
         self.overworld_tile_theme_index = value;
     }
@@ -1087,34 +1006,6 @@ impl WorldPaletteThemeState {
 
     pub(crate) fn set_misc_sprites_graphics_index(&mut self, value: u8) {
         self.misc_sprites_graphics_index = value;
-    }
-
-    pub(crate) fn set_palette_sp6r_indoors(&mut self, value: u8) {
-        self.palette_sp6r_indoors = value;
-    }
-
-    pub(crate) fn sync_shared_palette_aliases_from_ram(
-        &mut self,
-        ram: &[u8],
-        preserve_hud_palette: bool,
-        preserve_sp6r: bool,
-    ) {
-        self.overworld_palette_mode = ram_byte(ram, OVERWORLD_PALETTE_MODE);
-        self.palette_main_indoors = ram_byte(ram, PALETTE_MAIN_INDOORS);
-        // Load-only mirror of the follower-owned PALETTE_SWAP_FLAG (see write_to_ram);
-        // re-read so the mirror tracks the follower's live value at world sync points.
-        self.palette_swap_flag = ram_byte(ram, PALETTE_SWAP_FLAG);
-        self.palette_sp0l = ram_byte(ram, PALETTE_SP0L);
-        self.palette_sp5l = ram_byte(ram, PALETTE_SP5L);
-        self.palette_sp6l = ram_byte(ram, PALETTE_SP6L);
-        self.overworld_palette_aux2_hi = ram_byte(ram, OVERWORLD_PALETTE_AUX2_BP5TO7_HI);
-        self.overworld_palette_aux3_lo = ram_byte(ram, OVERWORLD_PALETTE_AUX3_BP7_LO);
-        if preserve_hud_palette {
-            self.hud_palette = ram_byte(ram, HUD_PALETTE);
-        }
-        if preserve_sp6r {
-            self.palette_sp6r_indoors = ram_byte(ram, PALETTE_SP6R_INDOORS);
-        }
     }
 
     pub(crate) fn restore_exit_tile_themes(&mut self) {
@@ -3087,89 +2978,60 @@ impl<'a> NativeWorldPaletteThemeBridgeMut<'a> {
 
     fn debug_assert_matches_ram(&self) {
         let mut fresh = WorldPaletteThemeState::load_from_ram(self.ram);
-        // These bytes are load-only mirrors in WorldPaletteThemeState. The bridge
-        // should not require them to match after projecting palette/theme fields,
-        // because their authoritative owners may preserve different live RAM bytes.
-        fresh.palette_swap_flag = self.state.palette_swap_flag;
         fresh.exit_overworld_tile_theme_index = self.state.exit_overworld_tile_theme_index;
         fresh.exit_main_tile_theme_index = self.state.exit_main_tile_theme_index;
         fresh.exit_aux_tile_theme_index = self.state.exit_aux_tile_theme_index;
         debug_assert_eq!(*self.state, fresh);
     }
 
-    fn preserve_shared_palette_aliases(&mut self, preserve_hud_palette: bool, preserve_sp6r: bool) {
-        self.state.sync_shared_palette_aliases_from_ram(
-            self.ram,
-            preserve_hud_palette,
-            preserve_sp6r,
-        );
-    }
-
-    fn sync_preserving_shared_palette_aliases(&mut self) {
-        self.preserve_shared_palette_aliases(true, true);
-        self.sync();
-    }
-
     pub(crate) fn set_last_light_vs_dark_world(&mut self, value: u8) {
         self.state.set_last_light_vs_dark_world(value);
-        self.sync_preserving_shared_palette_aliases();
+        self.sync();
     }
 
     pub(crate) fn set_aux_bg_subset(&mut self, index: usize, value: u8) {
         self.state.set_aux_bg_subset(index, value);
-        self.sync_preserving_shared_palette_aliases();
+        self.sync();
     }
 
     pub(crate) fn set_overworld_palette_aux1_hi(&mut self, value: u8) {
         self.state.set_overworld_palette_aux1_hi(value);
-        self.sync_preserving_shared_palette_aliases();
-    }
-
-    pub(crate) fn set_hud_palette(&mut self, value: u8) {
-        self.state.set_hud_palette(value);
-        self.preserve_shared_palette_aliases(false, true);
         self.sync();
     }
 
     pub(crate) fn set_overworld_tile_theme_index(&mut self, value: u8) {
         self.state.set_overworld_tile_theme_index(value);
-        self.sync_preserving_shared_palette_aliases();
+        self.sync();
     }
 
     pub(crate) fn set_main_tile_theme_index(&mut self, value: u8) {
         self.state.set_main_tile_theme_index(value);
-        self.sync_preserving_shared_palette_aliases();
+        self.sync();
     }
 
     pub(crate) fn set_aux_tile_theme_index(&mut self, value: u8) {
         self.state.set_aux_tile_theme_index(value);
-        self.sync_preserving_shared_palette_aliases();
+        self.sync();
     }
 
     pub(crate) fn set_misc_sprites_graphics_index(&mut self, value: u8) {
         self.state.set_misc_sprites_graphics_index(value);
-        self.sync_preserving_shared_palette_aliases();
-    }
-
-    pub(crate) fn set_palette_sp6r_indoors(&mut self, value: u8) {
-        self.state.set_palette_sp6r_indoors(value);
-        self.preserve_shared_palette_aliases(true, false);
         self.sync();
     }
 
     pub(crate) fn restore_exit_tile_themes(&mut self) {
         self.state.restore_exit_tile_themes();
-        self.sync_preserving_shared_palette_aliases();
+        self.sync();
     }
 
     pub(crate) fn save_special_exit_tile_themes(&mut self) {
         self.state.save_special_exit_tile_themes();
-        self.sync_preserving_shared_palette_aliases();
+        self.sync();
     }
 
     pub(crate) fn restore_special_exit_tile_themes(&mut self) {
         self.state.restore_special_exit_tile_themes();
-        self.sync_preserving_shared_palette_aliases();
+        self.sync();
     }
 }
 

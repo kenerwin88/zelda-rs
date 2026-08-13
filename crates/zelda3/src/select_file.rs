@@ -124,7 +124,7 @@ impl ZeldaState {
         self.set_core_update_disable_flag(6);
         self.palette_load_dungeon_set();
         self.palette_load_ow_bg3();
-        self.world_palette_theme_mut().set_hud_palette(0);
+        self.set_hud_palette(0);
         self.palette_load_hud();
         self.save_progress_mut().set_hud_current_item(0);
         self.world_palette_theme_mut()

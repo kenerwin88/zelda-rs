@@ -2335,7 +2335,7 @@ impl ZeldaState {
             3 => {
                 self.set_fixed_color_blue(0x9f);
                 self.clear_overworld_aux_or_main_offset();
-                self.world_palette_theme_mut().set_hud_palette(0);
+                self.set_hud_palette(0);
                 self.FindPartnerWhirlpoolExit();
                 self.dungeon_room_load_mut().set_draw_width_indicator(0);
                 self.Overworld_LoadOverlays2();
