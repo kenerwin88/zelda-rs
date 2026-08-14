@@ -1941,15 +1941,13 @@ fn post_landing_player_control_runs_after_leading_nmi(
 
 const fn straight_interroom_upload_pipeline_runs_after_leading_nmi(
     frame: crate::game_state::FrameState,
-    room: u8,
-    staircase_index: u8,
+    leading_nmi_upload_pipeline_active: bool,
 ) -> bool {
     // Destination prep, the three quadrant-build states, and the initial idle
     // palette slice run after their host's leading NMI. Each CPU state leaves
     // its newly queued VRAM upload pending for the following boundary; the
     // active scanout still owns the display captured before that leading NMI.
-    room == 0x51
-        && staircase_index == 0x30
+    leading_nmi_upload_pipeline_active
         && frame.main_module == 7
         && frame.submodule == 0x12
         && matches!(frame.subsubmodule, 0x0b..=0x0f)
@@ -2905,6 +2903,32 @@ pub(super) enum SpiralStaircasePaletteTail {
     PrepareNextQuadrant,
 }
 
+/// CPU caller which resumes after an interrupted palette-filter walk.
+///
+/// The spiral-stair module's caller tail requeues core DMA after returning
+/// from NMI. The straight-interroom modules instead expose the gate cleared by
+/// that NMI. Carrying the caller in the continuation preserves the real return
+/// path after the shared palette helper has suspended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InterruptedPaletteFilterCaller {
+    SpiralStairs,
+    StraightInterroomStairs,
+}
+
+impl InterruptedPaletteFilterCaller {
+    fn from_dungeon_submodule(submodule: u8) -> Self {
+        match submodule {
+            0x0e => Self::SpiralStairs,
+            0x11..=0x13 => Self::StraightInterroomStairs,
+            _ => panic!("palette-filter continuation from invalid dungeon submodule {submodule}"),
+        }
+    }
+
+    const fn requeues_core_dma_after_nmi(self) -> bool {
+        matches!(self, Self::SpiralStairs)
+    }
+}
+
 impl DungeonSupertileTransitionWork {
     const fn nmi_slices(self) -> u8 {
         match self {
@@ -3045,6 +3069,7 @@ enum GameWorkContinuation {
     },
     FinishSpiralStaircasePaletteFilter {
         tail: SpiralStaircasePaletteTail,
+        caller: InterruptedPaletteFilterCaller,
     },
     FinishDungeonExitSpotlightEntry,
     FinishGameOverSpotlightBuild {
@@ -6191,6 +6216,11 @@ pub struct ZeldaState {
     display_snapshot: Option<Box<DisplaySnapshot>>,
     #[serde(skip)]
     visible_display_snapshot: Option<Box<DisplaySnapshot>>,
+    /// Display-memory transfers completed after the current active scanout was
+    /// captured. Hardware makes these writes visible at the next published
+    /// boundary, so the receipt must not be attached to the current snapshot.
+    #[serde(skip)]
+    pending_effective_presented_dma: Option<EffectivePresentedDma>,
     /// OAM evaluated for the most recently rendered scanout. Interrupted CPU
     /// graphics work retains this exact hardware generation while NMI-owned
     /// register domains continue advancing.
@@ -6206,6 +6236,10 @@ pub struct ZeldaState {
     /// has already advanced to the next source generation.
     #[serde(skip)]
     last_presented_obj_vram: Option<Vec<u16>>,
+    /// Complete VRAM image used by the most recently rendered scanout. It is
+    /// the resident baseline when a leading NMI completes no VRAM transfer.
+    #[serde(skip)]
+    last_presented_vram: Option<Vec<u16>>,
     /// Host frame owning the staged presentation below. Repeated classic,
     /// modern, and diagnostic captures of one frame must all compose from the
     /// same prior scanout generation.
@@ -6217,6 +6251,8 @@ pub struct ZeldaState {
     staged_presented_cgram: Option<Vec<u16>>,
     #[serde(skip)]
     staged_presented_obj_vram: Option<Vec<u16>>,
+    #[serde(skip)]
+    staged_presented_vram: Option<Vec<u16>>,
     #[serde(skip)]
     last_presented_vram_chr_source: Option<crate::chr_source::VramChrSourceTable>,
     #[serde(skip)]
@@ -6386,6 +6422,87 @@ impl PolyWorkMetrics {
 }
 
 #[derive(Clone)]
+pub(super) struct DisplayDmaMemory {
+    vram: Vec<u16>,
+    cgram: Vec<u16>,
+    obj_vram: Vec<u16>,
+}
+
+impl DisplayDmaMemory {
+    fn capture(ppu: &PpuState) -> Self {
+        let obj_vram = ppu.obj_vram_latch.as_deref().unwrap_or(&ppu.vram)[0x4000..0x4400].to_vec();
+        Self {
+            vram: ppu.vram.clone(),
+            cgram: ppu.cgram.clone(),
+            obj_vram,
+        }
+    }
+}
+
+/// Sparse bulk-memory effects completed by an explicit leading NMI. The active
+/// image was captured before this transfer, so the receipt becomes the resident
+/// baseline of the following publication. This is independent of rooms and
+/// modules; OAM remains solely owned by its same-boundary completed-DMA receipt.
+#[derive(Clone)]
+struct EffectivePresentedDma {
+    vram_writes: Vec<(usize, u16)>,
+    vram_chr_source: crate::chr_source::VramChrSourceTable,
+    vram_chr_preview_source: crate::chr_source::VramChrSourceTable,
+    cgram_changed: bool,
+    cgram: Vec<u16>,
+    obj_vram_writes: Vec<(usize, u16)>,
+}
+
+impl EffectivePresentedDma {
+    fn from_transition(before: &DisplayDmaMemory, state: &ZeldaState) -> Self {
+        let after = DisplayDmaMemory::capture(&state.ppu);
+        Self {
+            vram_writes: before
+                .vram
+                .iter()
+                .zip(&after.vram)
+                .enumerate()
+                .filter_map(|(index, (before, after))| (before != after).then_some((index, *after)))
+                .collect(),
+            vram_chr_source: state.vram_chr_source.clone(),
+            vram_chr_preview_source: state.vram_chr_preview_source.clone(),
+            cgram_changed: before.cgram != after.cgram,
+            cgram: after.cgram,
+            obj_vram_writes: before
+                .obj_vram
+                .iter()
+                .zip(&after.obj_vram)
+                .enumerate()
+                .filter_map(|(index, (before, after))| (before != after).then_some((index, *after)))
+                .collect(),
+        }
+    }
+
+    fn merge_after(&mut self, later: Self) {
+        fn merge_writes(current: &mut Vec<(usize, u16)>, later: Vec<(usize, u16)>) {
+            for (index, value) in later {
+                match current.binary_search_by_key(&index, |&(index, _)| index) {
+                    Ok(position) => current[position].1 = value,
+                    Err(position) => current.insert(position, (index, value)),
+                }
+            }
+        }
+
+        let later_wrote_vram = !later.vram_writes.is_empty();
+        merge_writes(&mut self.vram_writes, later.vram_writes);
+        if later_wrote_vram {
+            self.vram_chr_source = later.vram_chr_source;
+            self.vram_chr_preview_source = later.vram_chr_preview_source;
+        }
+        if later.cgram_changed {
+            self.cgram_changed = true;
+            self.cgram = later.cgram;
+        }
+        merge_writes(&mut self.obj_vram_writes, later.obj_vram_writes);
+    }
+}
+
+#[derive(Clone)]
 struct DisplaySnapshot {
     ram: Vec<u8>,
     ppu: PpuState,
@@ -6409,6 +6526,13 @@ struct DisplaySnapshot {
     /// `None` means no OAM DMA completed before the boundary was published, so
     /// the PPU-resident OAM captured in `ppu` remains authoritative.
     completed_oam_dma_after_capture: Option<Vec<u16>>,
+    /// Scroll registers written by the completed NMI after this immutable
+    /// memory capture. Register mirrors latch for the immediately following
+    /// scanout even though bulk display-memory receipts retire separately.
+    completed_nmi_bg_scroll_after_capture: Option<BgScrollRegisterScanout>,
+    /// Per-domain memory receipt completed after the preceding active scanout.
+    /// It is consumed by this newly published hardware generation.
+    effective_presented_dma: Option<EffectivePresentedDma>,
     /// Host boundary currently publishing this snapshot. Retained/staged
     /// snapshots can outlive the host frame that originally captured them, so
     /// OAM completion is associated with the publication boundary, not object age.
@@ -9062,8 +9186,10 @@ impl ZeldaState {
         // not consume the source advanced by the suspended spiral-staircase
         // main slice.
         self.set_core_update_disable_flag(1);
+        let caller =
+            InterruptedPaletteFilterCaller::from_dungeon_submodule(self.game_state.frame.submodule);
         self.game_execution_scheduler.schedule_work(
-            GameWorkContinuation::FinishSpiralStaircasePaletteFilter { tail },
+            GameWorkContinuation::FinishSpiralStaircasePaletteFilter { tail, caller },
             DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES,
         );
         true
@@ -11907,13 +12033,16 @@ impl ZeldaState {
             intro_sprite_animation_start_delay: 0,
             display_snapshot: None,
             visible_display_snapshot: None,
+            pending_effective_presented_dma: None,
             last_presented_oam: None,
             last_presented_cgram: None,
             last_presented_obj_vram: None,
+            last_presented_vram: None,
             presented_history_host_frame: None,
             staged_presented_oam: None,
             staged_presented_cgram: None,
             staged_presented_obj_vram: None,
+            staged_presented_vram: None,
             last_presented_vram_chr_source: None,
             last_presented_vram_chr_preview_source: None,
             staged_presented_vram_chr_source: None,
@@ -12051,13 +12180,16 @@ impl ZeldaState {
         self.sync_overworld_map16_state_from_ram();
         self.display_snapshot = None;
         self.visible_display_snapshot = None;
+        self.pending_effective_presented_dma = None;
         self.last_presented_oam = None;
         self.last_presented_cgram = None;
         self.last_presented_obj_vram = None;
+        self.last_presented_vram = None;
         self.presented_history_host_frame = None;
         self.staged_presented_oam = None;
         self.staged_presented_cgram = None;
         self.staged_presented_obj_vram = None;
+        self.staged_presented_vram = None;
         self.last_presented_vram_chr_source = None;
         self.last_presented_vram_chr_preview_source = None;
         self.staged_presented_vram_chr_source = None;
@@ -12113,13 +12245,16 @@ impl ZeldaState {
             self.intro_poly_presented_vram = None;
             self.display_snapshot = None;
             self.visible_display_snapshot = None;
+            self.pending_effective_presented_dma = None;
             self.last_presented_oam = None;
             self.last_presented_cgram = None;
             self.last_presented_obj_vram = None;
+            self.last_presented_vram = None;
             self.presented_history_host_frame = None;
             self.staged_presented_oam = None;
             self.staged_presented_cgram = None;
             self.staged_presented_obj_vram = None;
+            self.staged_presented_vram = None;
             self.last_presented_vram_chr_source = None;
             self.last_presented_vram_chr_preview_source = None;
             self.staged_presented_vram_chr_source = None;
@@ -13577,6 +13712,9 @@ impl ZeldaState {
                 &self.ram,
                 &self.ppu.vram,
             );
+        let effective_presented_dma = (publication != DisplaySnapshotPublication::RetainPublished)
+            .then(|| self.pending_effective_presented_dma.take())
+            .flatten();
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: self.ppu.clone(),
@@ -13614,6 +13752,8 @@ impl ZeldaState {
             link_obj_source_generation,
             oam_scanout_source,
             completed_oam_dma_after_capture: None,
+            completed_nmi_bg_scroll_after_capture: None,
+            effective_presented_dma,
             publication_host_frame: self.frame_ctr_dbg,
             dungeon_item_hold_entry_scanout,
             dungeon_item_hold_entry_bg2_scroll: dungeon_item_hold_entry_scanout
@@ -13765,6 +13905,7 @@ impl ZeldaState {
         if let Some(published) = self.display_snapshot.as_mut() {
             published.publication_host_frame = self.frame_ctr_dbg;
             published.completed_oam_dma_after_capture = None;
+            published.completed_nmi_bg_scroll_after_capture = None;
         }
         if retires_room_72_interrupted_main_prefix_oam {
             self.room_72_interrupted_main_prefix_oam_offset_active = false;
@@ -13798,6 +13939,9 @@ impl ZeldaState {
         }
         if plan.publish_live_overworld_transition_half_color {
             self.ppu.half_color = following.ppu.half_color;
+        }
+        if let Some(scroll) = following.completed_nmi_bg_scroll_after_capture {
+            scroll.publish_to(&mut self.ppu);
         }
     }
 
@@ -16324,6 +16468,9 @@ impl ZeldaState {
                 if let Some(vram) = self.staged_presented_obj_vram.take() {
                     self.last_presented_obj_vram = Some(vram);
                 }
+                if let Some(vram) = self.staged_presented_vram.take() {
+                    self.last_presented_vram = Some(vram);
+                }
                 if let Some(source) = self.staged_presented_vram_chr_source.take() {
                     self.last_presented_vram_chr_source = Some(source);
                 }
@@ -16690,13 +16837,16 @@ impl ZeldaState {
             retained_full_tilemap_vram.as_ref(),
         );
         self.compose_display_chr_sources(&display, &publication_plan);
-        self.staged_presented_vram_chr_source = Some(self.vram_chr_source.clone());
-        self.staged_presented_vram_chr_preview_source = Some(self.vram_chr_preview_source.clone());
+        self.compose_effective_presented_vram(&display);
         self.compose_display_cgram(&display, &publication_plan);
-        self.staged_presented_cgram = Some(self.ppu.cgram.clone());
+        self.compose_effective_presented_cgram(&display);
         if let Some(previous_dialogue_scanout) = previous_dialogue_scanout.as_ref() {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
         }
+        self.staged_presented_vram = Some(self.ppu.vram.clone());
+        self.staged_presented_vram_chr_source = Some(self.vram_chr_source.clone());
+        self.staged_presented_vram_chr_preview_source = Some(self.vram_chr_preview_source.clone());
+        self.staged_presented_cgram = Some(self.ppu.cgram.clone());
         if diagnostics.scroll_retain && self.dialogue_scroll_phase() != DialogueScrollPhase::Idle {
             let dialogue_scroll_phase = self.dialogue_scroll_phase();
             let presented_sum: u64 = self.ppu.vram[0x7c00..0x7ff0]
@@ -16721,6 +16871,7 @@ impl ZeldaState {
         if let Some(shadow_oam) = live_dungeon_supertile_filter_return_shadow_oam.as_deref() {
             self.ppu.oam.clone_from_slice(shadow_oam);
         }
+        self.compose_effective_presented_obj(&display);
         self.staged_presented_oam = Some(self.ppu.oam.clone());
         let presented_obj_vram = self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram);
         self.staged_presented_obj_vram = Some(presented_obj_vram[0x4000..0x4400].to_vec());
@@ -16872,6 +17023,89 @@ impl ZeldaState {
         self.staged_presented_oam
             .as_deref()
             .or(self.last_presented_oam.as_deref())
+    }
+
+    /// Publish the completed register latch now and queue bulk-memory effects
+    /// for the next scanout. OAM is deliberately absent: its exact DMA source
+    /// is already owned by `record_completed_oam_dma_for_display_boundary`.
+    ///
+    /// The active snapshot was captured before this NMI and is already being
+    /// scanned out; attaching the receipt there advances hardware memory one
+    /// field early. Multiple NMIs before a publication merge in completion
+    /// order, with the latest write winning independently in each domain.
+    pub(super) fn record_effective_presented_dma(&mut self, before: Option<DisplayDmaMemory>) {
+        let Some(before) = before else {
+            return;
+        };
+        let receipt = EffectivePresentedDma::from_transition(&before, self);
+        if let Some(display) = self
+            .display_snapshot
+            .as_mut()
+            .filter(|display| display.publication_host_frame == self.frame_ctr_dbg)
+        {
+            display.completed_nmi_bg_scroll_after_capture =
+                Some(BgScrollRegisterScanout::capture(&self.ppu));
+        }
+        if let Some(pending) = self.pending_effective_presented_dma.as_mut() {
+            pending.merge_after(receipt);
+        } else {
+            self.pending_effective_presented_dma = Some(receipt);
+        }
+    }
+
+    fn compose_effective_presented_vram(&mut self, following: &DisplaySnapshot) {
+        let Some(receipt) = following.effective_presented_dma.as_ref() else {
+            return;
+        };
+        if let Some(vram) = self.last_presented_vram.as_ref() {
+            self.ppu.vram.clone_from(vram);
+        }
+        if let Some(source) = self.last_presented_vram_chr_source.as_ref() {
+            self.vram_chr_source = source.clone();
+        }
+        if let Some(source) = self.last_presented_vram_chr_preview_source.as_ref() {
+            self.vram_chr_preview_source = source.clone();
+        }
+        for &(index, value) in &receipt.vram_writes {
+            self.ppu.vram[index] = value;
+            self.vram_chr_source
+                .copy_word_range_from(&receipt.vram_chr_source, index..index.saturating_add(1));
+            self.vram_chr_preview_source.copy_word_range_from(
+                &receipt.vram_chr_preview_source,
+                index..index.saturating_add(1),
+            );
+        }
+    }
+
+    fn compose_effective_presented_cgram(&mut self, following: &DisplaySnapshot) {
+        let Some(receipt) = following.effective_presented_dma.as_ref() else {
+            return;
+        };
+        let selected = if receipt.cgram_changed {
+            Some(&receipt.cgram)
+        } else {
+            self.last_presented_cgram.as_ref()
+        };
+        if let Some(cgram) = selected.filter(|cgram| cgram.len() == self.ppu.cgram.len()) {
+            self.ppu.cgram.clone_from(cgram);
+        }
+    }
+
+    fn compose_effective_presented_obj(&mut self, following: &DisplaySnapshot) {
+        let Some(receipt) = following.effective_presented_dma.as_ref() else {
+            return;
+        };
+        let mut obj_vram = self.last_presented_obj_vram.clone().unwrap_or_else(|| {
+            self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram)[0x4000..0x4400].to_vec()
+        });
+        for &(index, value) in &receipt.obj_vram_writes {
+            obj_vram[index] = value;
+        }
+        if obj_vram.len() == 0x400 {
+            let mut latch = self.ppu.vram.clone();
+            latch[0x4000..0x4400].copy_from_slice(&obj_vram);
+            self.ppu.obj_vram_latch = Some(latch);
+        }
     }
 
     pub(super) fn record_completed_oam_dma_for_display_boundary(
@@ -17491,6 +17725,10 @@ impl ZeldaState {
         let Some(resume) = self.game_execution_scheduler.take_pre_main_nmi_resume() else {
             return false;
         };
+        if resume == PreMainNmiResume::StraightInterroomState5LeadingNmi {
+            self.game_execution_scheduler
+                .begin_leading_nmi_upload_pipeline();
+        }
 
         let quadrant_build_or_upload_uses_published_oam = matches!(
             resume,
@@ -17705,6 +17943,16 @@ impl ZeldaState {
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
         self.sync_native_game_state_from_ram();
         self.game_execution_scheduler.begin_host_frame();
+        if self
+            .game_execution_scheduler
+            .leading_nmi_upload_pipeline_is_active()
+            && (self.game_state.frame.main_module != 7
+                || self.game_state.frame.submodule != 0x12
+                || self.game_state.frame.subsubmodule > 0x0f)
+        {
+            self.game_execution_scheduler
+                .finish_leading_nmi_upload_pipeline();
+        }
         if self
             .spiral_stair_return_oam_publication_host_frame
             .is_some_and(|start| self.frame_ctr_dbg.wrapping_sub(start) > 1)
@@ -18117,7 +18365,7 @@ impl ZeldaState {
             None
         };
         if let Some(GameWorkStep::Complete(
-            GameWorkContinuation::FinishSpiralStaircasePaletteFilter { tail },
+            GameWorkContinuation::FinishSpiralStaircasePaletteFilter { tail, caller },
         )) = scheduled_work_step
         {
             let palette_entry_frame = self.game_state.frame;
@@ -18140,9 +18388,10 @@ impl ZeldaState {
                     None
                 };
             // The palette walk and caller tail return before this vblank, so
-            // palette/tilemap publication is live. Core graphics DMA remains
-            // gated across the return, however: its newly advanced animated
-            // source does not reach VRAM until the next completed boundary.
+            // palette/tilemap publication is live. The NMI consumes the queued
+            // quadrant upload and clears $0710. The suspended continuation
+            // records whether its actual caller tail requeues core DMA after
+            // that boundary.
             self.complete_dungeon_spiral_staircase_palette_filter(tail);
             self.complete_module07_dungeon_after_submodule();
             self.nmi_prepare_sprites();
@@ -18154,7 +18403,9 @@ impl ZeldaState {
             self.capture_display_snapshot();
             self.publish_completed_spiral_palette_filter_scanout();
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-            self.set_core_update_disable_flag(1);
+            if caller.requeues_core_dma_after_nmi() {
+                self.set_core_update_disable_flag(1);
+            }
             if matches!(self.game_state.frame.subsubmodule, 12..=15) {
                 self.game_execution_scheduler.schedule_pre_main_nmi_resume(
                     PreMainNmiResume::DungeonSupertileQuadrantUploads,
@@ -18855,6 +19106,13 @@ impl ZeldaState {
                     // its disabled-slot halfway point, then return through the
                     // ordinary Module 7 suffix without starting state 5 again.
                     self.complete_straight_interroom_sprite_reset();
+                    // This caller crossed its leading display boundary inside
+                    // Dungeon_ResetSprites. Keep that execution provenance
+                    // after the one-shot continuation is consumed so the
+                    // later quadrant-upload states retain the same NMI-first
+                    // cadence.
+                    self.game_execution_scheduler
+                        .begin_leading_nmi_upload_pipeline();
                     self.complete_module07_dungeon_after_submodule();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
@@ -19300,15 +19558,15 @@ impl ZeldaState {
             if self.game_execution_scheduler.is_idle()
                 && straight_interroom_upload_pipeline_runs_after_leading_nmi(
                     frame,
-                    self.game_state.world.location.dungeon_room_index(),
-                    self.game_state.dungeon.stair_movement.staircase_index(),
+                    self.game_execution_scheduler
+                        .leading_nmi_upload_pipeline_is_active(),
                 )
             {
                 // The frame begins scanning the pre-NMI generation. Consume
                 // the previous state's queued upload, then run exactly one CPU
                 // state without synthesizing a second trailing NMI.
                 self.capture_display_snapshot();
-                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                self.interrupt_nmi_for_active_scanout(input, oam_dma_source.as_deref(), false);
                 self.zelda_run_game_loop();
                 self.assert_native_frame_state_matches_ram();
                 self.assert_native_world_location_state_matches_ram();

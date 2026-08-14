@@ -1,6 +1,20 @@
 use super::*;
 
 #[test]
+fn interrupted_palette_filter_continuation_preserves_its_cpu_caller() {
+    let spiral = InterruptedPaletteFilterCaller::from_dungeon_submodule(0x0e);
+    let straight = InterruptedPaletteFilterCaller::from_dungeon_submodule(0x12);
+
+    assert_eq!(spiral, InterruptedPaletteFilterCaller::SpiralStairs);
+    assert!(spiral.requeues_core_dma_after_nmi());
+    assert_eq!(
+        straight,
+        InterruptedPaletteFilterCaller::StraightInterroomStairs
+    );
+    assert!(!straight.requeues_core_dma_after_nmi());
+}
+
+#[test]
 fn staircase_34_gameplay_handoffs_decode_the_early_host_link_cache_batch() {
     let gameplay = crate::game_state::FrameState {
         main_module: 7,
@@ -503,8 +517,7 @@ fn dungeon_supertile_filter_entry_publishes_live_animated_tiles() {
                 subsubmodule,
                 ..straight_quadrant_pipeline
             },
-            0x51,
-            0x30,
+            true,
         ));
     }
     assert!(!straight_interroom_upload_pipeline_runs_after_leading_nmi(
@@ -512,8 +525,14 @@ fn dungeon_supertile_filter_entry_publishes_live_animated_tiles() {
             subsubmodule: 0x10,
             ..straight_quadrant_pipeline
         },
-        0x51,
-        0x30,
+        true,
+    ));
+    assert!(!straight_interroom_upload_pipeline_runs_after_leading_nmi(
+        crate::game_state::FrameState {
+            subsubmodule: 0x0b,
+            ..straight_quadrant_pipeline
+        },
+        false,
     ));
 }
 
@@ -1457,6 +1476,99 @@ fn publication_plan_keeps_memory_domains_independent() {
         DisplayedBgScrollSource::CapturedBeforeNmi
     );
     assert!(plan.publish_live_overworld_transition_half_color);
+}
+
+#[test]
+fn effective_presented_dma_advances_only_domains_written_by_the_leading_nmi() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram.fill(0x1111);
+    state.ppu.oam.fill(0x2222);
+    state.ppu.cgram.fill(0x3333);
+    state.capture_display_snapshot();
+    let before = DisplayDmaMemory::capture(&state.ppu);
+
+    // Model one NMI which writes ordinary VRAM and CGRAM but does not touch
+    // OAM or the decoded OBJ page.
+    state.ppu.vram[0x1234] = 0x4444;
+    state.ppu.cgram[7] = 0x5555;
+    state.ppu.bg_layer[0].v_scroll = 0xabcd;
+    state.vram_chr_source.record_tiles(0x1234, 1, 6, 0x55aa);
+    state
+        .vram_chr_preview_source
+        .record_tiles(0x1234, 1, 2, 0xaa55);
+    let receipt = EffectivePresentedDma::from_transition(&before, &state);
+    assert_eq!(receipt.vram_writes, vec![(0x1234, 0x4444)]);
+    assert!(receipt.cgram_changed);
+    assert!(receipt.obj_vram_writes.is_empty());
+
+    state.record_effective_presented_dma(Some(before));
+    assert!(state
+        .display_snapshot
+        .as_ref()
+        .is_some_and(|active| active.effective_presented_dma.is_none()));
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .and_then(|active| active.completed_nmi_bg_scroll_after_capture)
+            .unwrap()
+            .offsets[0][1],
+        0xabcd
+    );
+    assert!(state.pending_effective_presented_dma.is_some());
+
+    state.capture_display_snapshot();
+    assert!(state.pending_effective_presented_dma.is_none());
+    let following = state.display_snapshot.as_deref().unwrap().clone();
+    assert_eq!(
+        following
+            .effective_presented_dma
+            .as_ref()
+            .unwrap()
+            .vram_writes,
+        receipt.vram_writes
+    );
+    state.last_presented_vram = Some(vec![0xaaaa; state.ppu.vram.len()]);
+    state.last_presented_oam = Some(vec![0xbbbb; state.ppu.oam.len()]);
+    state.last_presented_cgram = Some(vec![0xcccc; state.ppu.cgram.len()]);
+    state.last_presented_obj_vram = Some(vec![0xdddd; 0x400]);
+    state.last_presented_vram_chr_source = Some(Default::default());
+    state.last_presented_vram_chr_preview_source = Some(Default::default());
+
+    state.ppu.vram.fill(0xeeee);
+    state.ppu.oam.fill(0xeeee);
+    state.ppu.cgram.fill(0xeeee);
+    state.compose_effective_presented_vram(&following);
+    state.compose_effective_presented_cgram(&following);
+    state.compose_effective_presented_obj(&following);
+
+    assert_eq!(state.ppu.vram[0x1234], 0x4444);
+    assert_eq!(state.vram_chr_source.get(0x1234 / 16).pack, 0x55aa);
+    assert_eq!(state.vram_chr_preview_source.get(0x1234 / 16).pack, 0xaa55);
+    // OAM has its own same-boundary completed-DMA receipt and is not owned by
+    // the deferred bulk-memory receipt.
+    assert_eq!(state.ppu.oam[0], 0xeeee);
+    assert_eq!(state.ppu.cgram[7], 0x5555);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4000], 0xdddd);
+}
+
+#[test]
+fn effective_presented_dma_merge_keeps_latest_write_per_address() {
+    let mut state = ZeldaState::new();
+    let before_first = DisplayDmaMemory::capture(&state.ppu);
+    state.ppu.vram[9] = 0x1111;
+    state.ppu.cgram[3] = 0x2222;
+    let mut merged = EffectivePresentedDma::from_transition(&before_first, &state);
+
+    let before_second = DisplayDmaMemory::capture(&state.ppu);
+    state.ppu.vram[9] = 0x3333;
+    state.ppu.vram[12] = 0x4444;
+    let later = EffectivePresentedDma::from_transition(&before_second, &state);
+    merged.merge_after(later);
+
+    assert_eq!(merged.vram_writes, vec![(9, 0x3333), (12, 0x4444)]);
+    assert!(merged.cgram_changed);
+    assert_eq!(merged.cgram[3], 0x2222);
 }
 
 #[test]

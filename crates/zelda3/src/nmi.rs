@@ -127,6 +127,20 @@ impl ZeldaState {
         );
     }
 
+    /// Run an NMI at an explicit scanout boundary and record its presentation
+    /// effects. OAM and scroll registers latch on this boundary; bulk-memory
+    /// writes become the resident baseline of the following publication.
+    pub(super) fn interrupt_nmi_for_active_scanout(
+        &mut self,
+        input: u16,
+        oam_dma_source: Option<&[u8]>,
+        defer_bg_vram_upload: bool,
+    ) {
+        let before = Some(DisplayDmaMemory::capture(&self.ppu));
+        self.interrupt_nmi(input, oam_dma_source, defer_bg_vram_upload);
+        self.record_effective_presented_dma(before);
+    }
+
     pub(super) fn interrupt_nmi_with_animated_bg_operands(
         &mut self,
         input: u16,

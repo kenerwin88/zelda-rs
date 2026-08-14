@@ -426,6 +426,11 @@ enum GameExecutionContinuation {
 pub(super) struct GameExecutionScheduler {
     continuation: Option<GameExecutionContinuation>,
     cpu_host_phase: CpuHostPhase,
+    /// The translated caller has returned through the leading NMI which
+    /// starts a multi-state upload pipeline. This survives the one-shot
+    /// continuation so later states can preserve that CPU/NMI ordering
+    /// without guessing from a room or from the module state alone.
+    leading_nmi_upload_pipeline_active: bool,
 }
 
 impl GameExecutionScheduler {
@@ -632,6 +637,18 @@ impl GameExecutionScheduler {
             }
             _ => None,
         }
+    }
+
+    pub(super) fn begin_leading_nmi_upload_pipeline(&mut self) {
+        self.leading_nmi_upload_pipeline_active = true;
+    }
+
+    pub(super) fn leading_nmi_upload_pipeline_is_active(self) -> bool {
+        self.leading_nmi_upload_pipeline_active
+    }
+
+    pub(super) fn finish_leading_nmi_upload_pipeline(&mut self) {
+        self.leading_nmi_upload_pipeline_active = false;
     }
 
     pub(super) fn pre_main_nmi_resume(self) -> Option<PreMainNmiResume> {
