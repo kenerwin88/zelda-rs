@@ -162,6 +162,29 @@ class ParityProbeTest(unittest.TestCase):
             self.assertNotEqual(selected, calibration.resolve())
             self.assertEqual(selected, video_preflight.resolve())
 
+    def test_resolve_run_dir_prefers_newest_eligible_rng_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            precommit = project / "comparisons" / "precommit"
+            binary = self.write_binary(project, 100)
+            stale_closer = self.write_run(
+                precommit, 31_200, 100, recorded_rom_random=True
+            )
+            current_longer = self.write_run(
+                precommit, 31_290, 200, recorded_rom_random=True
+            )
+
+            selected = parity_probe.resolve_run_dir(
+                project,
+                None,
+                29_665,
+                binary,
+                require_recorded_rom_random=True,
+            )
+
+            self.assertNotEqual(selected, stale_closer.resolve())
+            self.assertEqual(selected, current_longer.resolve())
+
     def test_video_probe_rejects_explicit_run_without_recorded_stream(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)

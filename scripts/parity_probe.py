@@ -344,9 +344,12 @@ def resolve_run_dir(
             "run the pre-commit gate with this binary or keep a cold recorded-RNG "
             "video-preflight run with --load-sram"
         )
-    closest_frame = min(frame for frame, _ in usable)
-    closest = [path for frame, path in usable if frame == closest_frame]
-    return max(closest, key=lambda path: path.stat().st_mtime).resolve()
+    # A shorter sufficient run is not necessarily compatible with the current
+    # binary's control flow: recorded cartridge RNG is call-order sensitive.
+    # Prefer the newest eligible gate receipt, which is the one most likely to
+    # have been produced by the current build, instead of silently selecting an
+    # older run merely because its target is closer to the requested window.
+    return max((path for _, path in usable), key=lambda path: path.stat().st_mtime).resolve()
 
 
 def parse_replay_script(path: Path) -> tuple[dict[str, str], list[str]]:
@@ -1439,7 +1442,11 @@ def main(argv: list[str] | None = None) -> int:
         args.run_dir,
         target_frame,
         binary,
-        require_cold=not use_checkpoint,
+        # Capture mode is diagnostic by definition. It may safely start from a
+        # paired gate receipt, and doing so keeps its input/RNG provenance tied
+        # to the newest current-build failure instead of falling back to an old
+        # cold run with a now-incompatible RNG call order.
+        require_cold=not (use_checkpoint or args.capture),
         require_recorded_rom_random=True,
     )
     script_env, replay_argv = parse_replay_script(run_dir / "replay.sh")
