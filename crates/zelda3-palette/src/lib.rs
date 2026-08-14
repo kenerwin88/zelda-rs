@@ -74,18 +74,43 @@ pub const PALETTE_FILTER_UPPER_BITMASKS: [u16; 16] = [
 /// `dt` (+1 darkening / -1 lightening encoded as 0xffff) per channel selected
 /// by the countdown schedule against the reference `aux` word. Byte-exact
 /// port of the game's loop body.
-pub fn filter_range_step_word(main: u16, aux: u16, countdown: u16, darkening: bool) -> u16 {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FilterRangeStepWork {
+    pub aux_nonzero: bool,
+    pub red_steps: bool,
+    pub green_steps: bool,
+    pub blue_steps: bool,
+}
+
+/// Branch work selected by one iteration of the ROM's palette-filter loop.
+/// Keeping this beside the color transform makes timing consumers follow the
+/// same lookup-table decisions as the byte-producing implementation.
+pub fn filter_range_step_work(aux: u16, countdown: u16) -> FilterRangeStepWork {
     let load_ptr_offset = usize::from(countdown >= 0x10);
     let mask = PALETTE_FILTER_UPPER_BITMASKS[(countdown & 0x0f) as usize];
+    FilterRangeStepWork {
+        aux_nonzero: aux != 0,
+        red_steps: PALETTE_FILTERING_BITS[load_ptr_offset + ((aux & 0x001f) as usize) * 2] & mask
+            == 0,
+        green_steps: PALETTE_FILTERING_BITS[load_ptr_offset + ((aux & 0x03e0) >> 4) as usize]
+            & mask
+            == 0,
+        blue_steps: PALETTE_FILTERING_BITS[load_ptr_offset + ((aux & 0x7c00) >> 9) as usize] & mask
+            == 0,
+    }
+}
+
+pub fn filter_range_step_word(main: u16, aux: u16, countdown: u16, darkening: bool) -> u16 {
+    let work = filter_range_step_work(aux, countdown);
     let dt: u16 = if darkening { 1 } else { 0xffff };
     let mut c = main;
-    if PALETTE_FILTERING_BITS[load_ptr_offset + ((aux & 0x001f) as usize) * 2] & mask == 0 {
+    if work.red_steps {
         c = c.wrapping_add(dt);
     }
-    if PALETTE_FILTERING_BITS[load_ptr_offset + ((aux & 0x03e0) >> 4) as usize] & mask == 0 {
+    if work.green_steps {
         c = c.wrapping_add(dt.wrapping_shl(5));
     }
-    if PALETTE_FILTERING_BITS[load_ptr_offset + ((aux & 0x7c00) >> 9) as usize] & mask == 0 {
+    if work.blue_steps {
         c = c.wrapping_add(dt.wrapping_shl(10));
     }
     c
@@ -522,6 +547,24 @@ mod tests {
         let dark = filter_range_step_word(0x0000, aux, 0, true);
         let light = filter_range_step_word(dark, aux, 0, false);
         assert_eq!(light, 0x0000);
+    }
+
+    #[test]
+    fn filter_range_work_reports_the_same_channel_decisions_as_the_transform() {
+        let countdown = 28;
+        let aux = 0x7fff;
+        let work = filter_range_step_work(aux, countdown);
+        assert!(work.aux_nonzero);
+
+        let stepped = filter_range_step_word(0, aux, countdown, true);
+        assert_eq!(stepped & 0x001f != 0, work.red_steps);
+        assert_eq!(stepped & 0x03e0 != 0, work.green_steps);
+        assert_eq!(stepped & 0x7c00 != 0, work.blue_steps);
+
+        assert_eq!(
+            filter_range_step_work(0, countdown),
+            FilterRangeStepWork::default()
+        );
     }
 
     #[test]

@@ -34,6 +34,10 @@ impl CpuRasterPosition {
     const fn unwrapped_master_cycles(self) -> u32 {
         self.scanline as u32 * MASTER_CYCLES_PER_SCANLINE + self.master_cycle as u32
     }
+
+    pub(super) const fn coordinates(self) -> (u16, u16) {
+        (self.scanline, self.master_cycle)
+    }
 }
 
 /// Bus work which can preempt the CPU before NMI.
@@ -53,7 +57,19 @@ impl CpuBusWorkload {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CpuWorkAdvance {
     Complete,
+    InterruptedAtNmi { remaining_work_master_cycles: u32 },
+}
+
+/// Result of advancing a sequence of semantic CPU phases toward NMI.
+///
+/// The phase index is stable across translated implementations: callers can
+/// distinguish an interrupted routine body from an interrupted caller suffix
+/// without recovering that distinction from a room or module-state value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CpuPhaseSequenceAdvance {
+    Complete,
     InterruptedAtNmi {
+        phase_index: usize,
         remaining_work_master_cycles: u32,
     },
 }
@@ -80,8 +96,7 @@ impl CpuCycleBudget {
         let clock_master_cycles = entry.unwrapped_master_cycles();
         let nmi_field = u32::from(entry.scanline >= NMI_SCANLINE as u16);
         let nmi_master_cycles =
-            (nmi_field * NTSC_SCANLINES_PER_FIELD + NMI_SCANLINE)
-                * MASTER_CYCLES_PER_SCANLINE;
+            (nmi_field * NTSC_SCANLINES_PER_FIELD + NMI_SCANLINE) * MASTER_CYCLES_PER_SCANLINE;
         debug_assert!(clock_master_cycles < nmi_master_cycles);
         Self {
             clock_master_cycles,
@@ -92,10 +107,7 @@ impl CpuCycleBudget {
 
     /// Advance an interruptible span, stopping exactly when NMI becomes
     /// pending and retaining the unexecuted work for a continuation.
-    pub(super) fn advance_interruptible(
-        &mut self,
-        mut work_master_cycles: u32,
-    ) -> CpuWorkAdvance {
+    pub(super) fn advance_interruptible(&mut self, mut work_master_cycles: u32) -> CpuWorkAdvance {
         debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
         while work_master_cycles != 0 {
             let (work_until_event, event_stall) = self.next_bus_event();
@@ -142,27 +154,44 @@ impl CpuCycleBudget {
         }
     }
 
+    /// Advance ordered semantic phases until they complete or NMI preempts
+    /// the current phase. The returned phase index identifies the continuation
+    /// point without coupling the scheduler to a particular game subsystem.
+    pub(super) fn advance_phases(
+        &mut self,
+        phase_work_master_cycles: &[u32],
+    ) -> CpuPhaseSequenceAdvance {
+        for (phase_index, &work_master_cycles) in phase_work_master_cycles.iter().enumerate() {
+            if let CpuWorkAdvance::InterruptedAtNmi {
+                remaining_work_master_cycles,
+            } = self.advance_interruptible(work_master_cycles)
+            {
+                return CpuPhaseSequenceAdvance::InterruptedAtNmi {
+                    phase_index,
+                    remaining_work_master_cycles,
+                };
+            }
+        }
+        CpuPhaseSequenceAdvance::Complete
+    }
+
     fn next_bus_event(self) -> (u32, u32) {
-        let field_cycle = self.clock_master_cycles
-            % (NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE);
+        let field_cycle =
+            self.clock_master_cycles % (NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE);
         let scanline = field_cycle / MASTER_CYCLES_PER_SCANLINE;
         let cycle = field_cycle % MASTER_CYCLES_PER_SCANLINE;
         let mut next_event_cycle = MASTER_CYCLES_PER_SCANLINE;
         let mut event_stall = 0;
 
         for (event_cycle, stall, enabled) in [
-            (
-                WRAM_REFRESH_CYCLE,
-                WRAM_REFRESH_STALL_MASTER_CYCLES,
-                true,
-            ),
+            (WRAM_REFRESH_CYCLE, WRAM_REFRESH_STALL_MASTER_CYCLES, true),
             (
                 HDMA_START_CYCLE,
                 u32::from(self.bus.hdma_stall_master_cycles),
                 scanline < NMI_SCANLINE && self.bus.hdma_stall_master_cycles != 0,
             ),
         ] {
-            if enabled && cycle < event_cycle && event_cycle < next_event_cycle {
+            if enabled && cycle <= event_cycle && event_cycle < next_event_cycle {
                 next_event_cycle = event_cycle;
                 event_stall = stall;
             }
@@ -183,10 +212,9 @@ impl CpuCycleBudget {
         }
     }
 
-    #[cfg(test)]
-    fn raster_position(self) -> CpuRasterPosition {
-        let field_cycle = self.clock_master_cycles
-            % (NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE);
+    pub(super) fn raster_position(self) -> CpuRasterPosition {
+        let field_cycle =
+            self.clock_master_cycles % (NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE);
         CpuRasterPosition::new(
             (field_cycle / MASTER_CYCLES_PER_SCANLINE) as u16,
             (field_cycle % MASTER_CYCLES_PER_SCANLINE) as u16,
@@ -201,6 +229,10 @@ enum CpuHostPhase {
     MainLoopReady,
     MainLoopRunning,
     SuspendedCallStack,
+    /// A caller suspended in the prior field has resumed and is executing its
+    /// suffix before the trailing NMI. DMA at that boundary consumes operands
+    /// authored by the resumed suffix, not the host-entry copy.
+    ResumedCallStackRunning,
     ReturnedToMainLoop,
 }
 
@@ -471,6 +503,10 @@ impl GameExecutionScheduler {
         self.cpu_host_phase == CpuHostPhase::MainLoopReady
     }
 
+    pub(super) fn resumed_call_stack_is_running(self) -> bool {
+        self.cpu_host_phase == CpuHostPhase::ResumedCallStackRunning
+    }
+
     fn schedule_continuation(&mut self, continuation: GameExecutionContinuation) {
         assert!(
             self.continuation.is_none(),
@@ -693,6 +729,9 @@ impl GameExecutionScheduler {
             "pre-main caller completed through the wrong game-thread return path"
         );
         self.continuation = None;
+        if self.cpu_host_phase == CpuHostPhase::SuspendedCallStack {
+            self.cpu_host_phase = CpuHostPhase::ResumedCallStackRunning;
+        }
     }
 }
 
@@ -729,9 +768,18 @@ mod cpu_timing_tests {
     #[test]
     fn cached_restore_position_follows_cpu_work_and_bus_stalls() {
         for (entry, restore) in [
-            (CpuRasterPosition::new(182, 1_266), CpuRasterPosition::new(224, 320)),
-            (CpuRasterPosition::new(183, 44), CpuRasterPosition::new(224, 462)),
-            (CpuRasterPosition::new(183, 124), CpuRasterPosition::new(224, 582)),
+            (
+                CpuRasterPosition::new(182, 1_266),
+                CpuRasterPosition::new(224, 320),
+            ),
+            (
+                CpuRasterPosition::new(183, 44),
+                CpuRasterPosition::new(224, 462),
+            ),
+            (
+                CpuRasterPosition::new(183, 124),
+                CpuRasterPosition::new(224, 582),
+            ),
         ] {
             let mut budget = CpuCycleBudget::until_next_nmi(
                 entry,
@@ -776,6 +824,45 @@ mod cpu_timing_tests {
     }
 
     #[test]
+    fn bus_stall_at_an_instruction_boundary_precedes_the_next_instruction() {
+        for (event_cycle, stall) in [
+            (WRAM_REFRESH_CYCLE, WRAM_REFRESH_STALL_MASTER_CYCLES),
+            (HDMA_START_CYCLE, u32::from(DUNGEON_HDMA_STALL)),
+        ] {
+            let mut budget = CpuCycleBudget::until_next_nmi(
+                CpuRasterPosition::new(100, (event_cycle - 6) as u16),
+                CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
+            );
+            assert_eq!(budget.advance_instruction(6), CpuWorkAdvance::Complete);
+            assert_eq!(
+                budget.raster_position(),
+                CpuRasterPosition::new(100, event_cycle as u16),
+            );
+
+            assert_eq!(budget.advance_instruction(6), CpuWorkAdvance::Complete);
+            assert_eq!(
+                budget.raster_position(),
+                CpuRasterPosition::new(100, (event_cycle + stall + 6) as u16),
+            );
+        }
+    }
+
+    #[test]
+    fn phase_sequence_reports_the_interrupted_continuation_phase() {
+        let mut budget = CpuCycleBudget::until_next_nmi(
+            CpuRasterPosition::new(224, 1_300),
+            CpuBusWorkload::default(),
+        );
+        assert_eq!(
+            budget.advance_phases(&[32, 68]),
+            CpuPhaseSequenceAdvance::InterruptedAtNmi {
+                phase_index: 1,
+                remaining_work_master_cycles: 36,
+            }
+        );
+    }
+
+    #[test]
     fn returned_main_loop_waits_for_the_next_host_frame() {
         let mut scheduler = GameExecutionScheduler::default();
         scheduler.begin_host_frame();
@@ -786,5 +873,18 @@ mod cpu_timing_tests {
 
         scheduler.begin_host_frame();
         assert!(scheduler.fresh_main_loop_iteration_is_ready());
+    }
+
+    #[test]
+    fn resumed_caller_suffix_owns_the_trailing_nmi_operands() {
+        let mut scheduler = GameExecutionScheduler::default();
+        let continuation = PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter;
+        scheduler.schedule_pre_main_caller_continuation(continuation);
+        scheduler.begin_host_frame();
+        assert!(!scheduler.resumed_call_stack_is_running());
+
+        scheduler.finish_pre_main_caller_continuation(continuation);
+
+        assert!(scheduler.resumed_call_stack_is_running());
     }
 }

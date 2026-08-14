@@ -20,7 +20,7 @@ pub mod ppu;
 pub mod snes;
 pub mod tracing;
 
-pub use cpu_step::cpu_run_opcode;
+pub use cpu_step::{cpu_run_opcode, cpu_run_opcode_timed, CpuInstructionTiming};
 
 pub use cart::{Cart, CartType};
 pub use cpu::CpuState;

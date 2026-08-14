@@ -567,11 +567,7 @@ impl ZeldaState {
                 .as_ref()
                 .map(|graphics| graphics.entry_frame)
                 .unwrap_or(self.game_state.frame);
-            let link_obj_operands_generation = link_obj_operands_across_main(
-                entry_frame,
-                self.game_state.frame,
-                graphics_dma_plan.link_obj_operands,
-            );
+            let link_obj_operands_generation = self.effective_link_obj_dma_generation();
             let captured_link_operands = matches!(
                 link_obj_operands_generation,
                 GraphicsDmaGeneration::HostBoundaryBeforeMain

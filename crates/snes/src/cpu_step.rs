@@ -9,6 +9,13 @@
 
 use crate::snes::Snes;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CpuInstructionTiming {
+    pub cpu_cycles: u8,
+    pub bus_accesses: u8,
+    pub master_cycles: u32,
+}
+
 const CYCLES_PER_OPCODE: [u8; 256] = [
     7, 6, 7, 4, 5, 3, 5, 6, 3, 2, 2, 4, 6, 4, 6, 5, //
     2, 5, 5, 7, 5, 4, 6, 6, 2, 4, 2, 2, 6, 4, 7, 5, //
@@ -229,7 +236,7 @@ impl Snes {
         let ptr_hi = self.cpu.dp.wrapping_add(adr as u16).wrapping_add(1) as u32;
         let pointer = self.cpu_read_word(ptr_lo, ptr_hi) as u32;
         let with_y = pointer.wrapping_add(self.cpu.y as u32);
-        if write && (!self.cpu.xf || ((pointer >> 8) != (with_y >> 8))) {
+        if !write && (!self.cpu.xf || ((pointer >> 8) != (with_y >> 8))) {
             self.cpu.cycles_used = self.cpu.cycles_used.wrapping_add(1);
         }
         let base = (((self.cpu.db as u32) << 16) + with_y) & 0xffffff;
@@ -283,7 +290,7 @@ impl Snes {
     fn adr_abx(&mut self, write: bool) -> (u32, u32) {
         let adr = self.cpu_read_opcode_word();
         let with_x = (adr as u32).wrapping_add(self.cpu.x as u32);
-        if write && (!self.cpu.xf || ((adr >> 8) as u32 != (with_x >> 8))) {
+        if !write && (!self.cpu.xf || ((adr >> 8) as u32 != (with_x >> 8))) {
             self.cpu.cycles_used = self.cpu.cycles_used.wrapping_add(1);
         }
         let base = (((self.cpu.db as u32) << 16) + with_x) & 0xffffff;
@@ -293,7 +300,7 @@ impl Snes {
     fn adr_aby(&mut self, write: bool) -> (u32, u32) {
         let adr = self.cpu_read_opcode_word();
         let with_y = (adr as u32).wrapping_add(self.cpu.y as u32);
-        if write && (!self.cpu.xf || ((adr >> 8) as u32 != (with_y >> 8))) {
+        if !write && (!self.cpu.xf || ((adr >> 8) as u32 != (with_y >> 8))) {
             self.cpu.cycles_used = self.cpu.cycles_used.wrapping_add(1);
         }
         let base = (((self.cpu.db as u32) << 16) + with_y) & 0xffffff;
@@ -767,6 +774,26 @@ pub fn cpu_run_opcode(snes: &mut Snes) -> u8 {
         dispatch(snes, opcode);
     }
     snes.cpu.cycles_used
+}
+
+/// Execute one instruction and report its hardware master-cycle cost.
+///
+/// `cpu_run_opcode` retains the C port's coarse CPU-cycle return value. This
+/// variant separates internal six-master-cycle work from address-dependent
+/// bus accesses, matching the 65816 memory-speed map used by Snes9x.
+pub fn cpu_run_opcode_timed(snes: &mut Snes) -> CpuInstructionTiming {
+    snes.cpu_mem_ops = 0;
+    snes.cpu_bus_master_cycles = 0;
+    let cpu_cycles = cpu_run_opcode(snes);
+    let bus_accesses = snes.cpu_mem_ops;
+    let internal_cycles = cpu_cycles
+        .checked_sub(bus_accesses)
+        .expect("65816 instruction used more bus accesses than CPU cycles");
+    CpuInstructionTiming {
+        cpu_cycles,
+        bus_accesses,
+        master_cycles: u32::from(internal_cycles) * 6 + snes.cpu_bus_master_cycles,
+    }
 }
 
 fn dispatch(snes: &mut Snes, mut opcode: u8) {
@@ -2287,5 +2314,62 @@ mod tests {
         cpu_run_opcode(&mut snes);
         assert!(!snes.cpu.mf);
         assert!(!snes.cpu.xf);
+    }
+
+    #[test]
+    fn indexed_read_page_crossing_costs_one_cycle_but_indexed_write_does_not() {
+        let mut snes = Snes::new();
+
+        load_code(&mut snes, 0x1000, &[0xbd, 0xff, 0x10]); // LDA $10ff,X
+        snes.cpu.mf = true;
+        snes.cpu.xf = true;
+        snes.cpu.x = 1;
+        assert_eq!(cpu_run_opcode(&mut snes), 5);
+
+        load_code(&mut snes, 0x1010, &[0xb9, 0xff, 0x10]); // LDA $10ff,Y
+        snes.cpu.mf = true;
+        snes.cpu.xf = true;
+        snes.cpu.y = 1;
+        assert_eq!(cpu_run_opcode(&mut snes), 5);
+
+        load_code(&mut snes, 0x1020, &[0x9d, 0xff, 0x10]); // STA $10ff,X
+        snes.cpu.mf = true;
+        snes.cpu.xf = true;
+        snes.cpu.x = 1;
+        assert_eq!(cpu_run_opcode(&mut snes), 5);
+
+        load_code(&mut snes, 0x1030, &[0xb1, 0x20]); // LDA ($20),Y
+        snes.cpu.mf = true;
+        snes.cpu.xf = true;
+        snes.cpu.y = 1;
+        snes.ram[0x20] = 0xff;
+        snes.ram[0x21] = 0x10;
+        assert_eq!(cpu_run_opcode(&mut snes), 6);
+
+        load_code(&mut snes, 0x1040, &[0x91, 0x20]); // STA ($20),Y
+        snes.cpu.mf = true;
+        snes.cpu.xf = true;
+        snes.cpu.y = 1;
+        assert_eq!(cpu_run_opcode(&mut snes), 6);
+    }
+
+    #[test]
+    fn timed_opcode_separates_internal_cycles_from_slow_bus_accesses() {
+        let mut snes = Snes::new();
+
+        load_code(&mut snes, 0x1000, &[0xea]); // NOP
+        let nop = cpu_run_opcode_timed(&mut snes);
+        assert_eq!(nop.cpu_cycles, 2);
+        assert_eq!(nop.bus_accesses, 1);
+        assert_eq!(nop.master_cycles, 14);
+
+        load_code(&mut snes, 0x1010, &[0xbd, 0xff, 0x10]); // LDA $10ff,X
+        snes.cpu.mf = true;
+        snes.cpu.xf = true;
+        snes.cpu.x = 1;
+        let page_crossing_load = cpu_run_opcode_timed(&mut snes);
+        assert_eq!(page_crossing_load.cpu_cycles, 5);
+        assert_eq!(page_crossing_load.bus_accesses, 4);
+        assert_eq!(page_crossing_load.master_cycles, 38);
     }
 }

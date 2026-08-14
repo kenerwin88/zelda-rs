@@ -430,6 +430,25 @@ def source_start_description(arguments: list[str]) -> str:
     return "cold replay from the emulator default state"
 
 
+def cold_replay_bundle_available(
+    run_dir: Path,
+    replay_argv: list[str],
+    *,
+    input_overridden: bool,
+    resuming: bool,
+) -> bool:
+    """Return whether one run directory can supply the whole cold replay."""
+    return (
+        not input_overridden
+        and not resuming
+        and option_value(replay_argv, "--load-sram") is not None
+        and all(
+            (run_dir / name).is_file()
+            for name in ("manifest.json", "input.txt", "rom-random.txt", "initial.srm")
+        )
+    )
+
+
 def validate_trace_core(
     core: Path,
     *,
@@ -545,6 +564,36 @@ def checkpoint_reuse_problem(
             return "paired checkpoint manifest contains an unsafe state path"
         if not all((generation / member).is_file() for member in members):
             return "paired checkpoint is missing a state file"
+        # Cross-build trust permits a different Rust binary, not a different
+        # replay. Input and recorded cartridge RNG are part of the savestate's
+        # causal history; mixing them can look like a parity regression many
+        # frames after the resume point. Exact precommit checkpoints record
+        # those hashes in their own manifest, while rolling probe checkpoints
+        # also have an identity sidecar.
+        identity: dict[str, object] = {}
+        identity_path = checkpoint_dir / IDENTITY_NAME
+        if identity_path.is_file():
+            try:
+                identity = json.loads(identity_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return "unreadable probe identity"
+        provenance = {
+            "rom_sha256": (manifest.get("rom") or {}).get("sha256"),
+            "input_sha256": (manifest.get("input_script") or {}).get("sha256"),
+            "rom_random_sha256": (manifest.get("rom_random_script") or {}).get("sha256"),
+        }
+        for key, label in (
+            ("rom_sha256", "rom"),
+            ("input_sha256", "input"),
+            ("rom_random_sha256", "rom_random"),
+        ):
+            if key not in wanted:
+                continue
+            recorded = provenance[key] or identity.get(key)
+            if recorded is None:
+                return f"paired checkpoint has no recorded {label} provenance"
+            if recorded != wanted[key]:
+                return f"{label} changed since the checkpoint was saved"
         return None
     identity_path = checkpoint_dir / IDENTITY_NAME
     if not identity_path.is_file():
@@ -1559,14 +1608,23 @@ def main(argv: list[str] | None = None) -> int:
     rom_sha = option_value(replay_argv, "--expected-rom-sha256")
     if rom_sha:
         command += ["--expected-rom-sha256", rom_sha]
-    command += ["--input-script", str(input_path)]
-    if rom_random:
-        command += ["--rom-random-script", str(rom_random)]
+    use_replay_bundle = cold_replay_bundle_available(
+        run_dir,
+        replay_argv,
+        input_overridden=args.input_script is not None,
+        resuming=resume_dir is not None,
+    )
+    if use_replay_bundle:
+        command += ["--replay-bundle", str(run_dir)]
+    else:
+        command += ["--input-script", str(input_path)]
+        if rom_random:
+            command += ["--rom-random-script", str(rom_random)]
     if resume_dir is not None:
         # `--load-sram` and paired resume are mutually exclusive: the resumed
         # states already carry the SRAM as it stood at the checkpoint frame.
         command += ["--resume-paired", str(resume_dir)]
-    else:
+    elif not use_replay_bundle:
         command += source_start
     if checkpoint_candidate_dir is not None:
         # Rolling capture rather than --save-paired-resume-at: a fixed frame can
@@ -1622,7 +1680,11 @@ def main(argv: list[str] | None = None) -> int:
         capture_env["ZELDA3_CAPTURE_DISPLAY_CANDIDATES"] = "1"
     if failure_focus is not None and failure_focus.pixel is not None and core_is_instrumented:
         capture_env["ZELDA3_SNES9X_TRACE"] = str(session_dir / "snes9x-trace.jsonl")
-        capture_env["ZELDA3_SNES9X_TRACE_EVENTS"] = "frame"
+        # A pixel proves what was presented; NMI and DMA events prove which
+        # hardware transfer produced it. The event volume is tiny compared
+        # with instruction tracing and can be converted directly into a
+        # scripts/snes9x_dma_receipt.py report.
+        capture_env["ZELDA3_SNES9X_TRACE_EVENTS"] = "frame,nmi,dma"
         capture_env["ZELDA3_SNES9X_TRACE_PIXEL"] = ",".join(
             str(value) for value in failure_focus.pixel
         )
@@ -1638,7 +1700,11 @@ def main(argv: list[str] | None = None) -> int:
             else f"binary-hash-matched probe checkpoint {resume_dir}"
         )
         if resume_dir is not None
-        else source_start_description(source_start)
+        else (
+            f"atomic replay bundle {run_dir}"
+            if use_replay_bundle
+            else source_start_description(source_start)
+        )
     )
     print(f"parity-probe: start mode {start_description}")
     print(f"parity-probe: session dir {session_dir}")

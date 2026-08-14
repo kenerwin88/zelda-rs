@@ -3130,8 +3130,7 @@ fn dungeon_brightness_retains_the_host_boundary_animated_bg() {
         DESTINATION as u16,
     );
     following.ppu.vram[TILE_WORD] = 0x3333;
-    following.animated_bg_scanout_generation =
-        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
+    following.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
     let plan = DisplayPublicationPlan::resolve(
         &following,
         DisplayPublicationSignals {

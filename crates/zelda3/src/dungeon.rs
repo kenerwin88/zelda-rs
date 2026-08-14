@@ -10216,7 +10216,11 @@ impl ZeldaState {
             9 => self.Dungeon_InterRoomTrans_State9(),
             10 => self.Dungeon_InterRoomTrans_State10(),
             11 => self.Dungeon_InterRoomTrans_State9(),
-            12 => self.Dungeon_InterRoomTrans_State12(),
+            12 => {
+                self.Dungeon_InterRoomTrans_State12();
+                self.dungeon_state_12_module_return_nmi_pending = self.rom_startup_timing()
+                    && dungeon_supertile_state_12_cpu_advance(self).was_interrupted();
+            }
             13 => self.Dungeon_InterRoomTrans_State13(),
             14 => {
                 self.stage_room_72_supertile_landing_obj_scanout();
@@ -10542,10 +10546,13 @@ impl ZeldaState {
             self.latch_nmi_update();
             self.set_core_update_disable_flag(1);
         }
-        if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
+        let palette_filter_active = self.game_state.dungeon.torch.any_lights_out_request() != 0;
+        let palette_filter_loop_master_cycles = palette_filter_active
+            .then(|| crate::zelda_rtl::palette_filter_bounce_loop_master_cycles(self));
+        if palette_filter_active {
             self.ApplyPaletteFilter_bounce();
         }
-        self.Dungeon_InterRoomTrans_notDarkRoom();
+        self.Dungeon_InterRoomTrans_notDarkRoom_with_cpu_timing(palette_filter_loop_master_cycles);
     }
 
     pub(super) fn Dungeon_SpiralStaircase11(&mut self) {
@@ -10576,8 +10583,24 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_notDarkRoom(&mut self) {
-        if self.begin_dungeon_supertile_transition_work(
-            DungeonSupertileTransitionWork::QuadrantTilemapBuild,
+        self.Dungeon_InterRoomTrans_notDarkRoom_with_cpu_timing(None);
+    }
+
+    fn Dungeon_InterRoomTrans_notDarkRoom_with_cpu_timing(
+        &mut self,
+        palette_filter_loop_master_cycles: Option<u32>,
+    ) {
+        let work = if palette_filter_loop_master_cycles.is_some()
+            && self.game_state.frame.submodule == 2
+            && self.game_state.frame.subsubmodule == 10
+        {
+            DungeonSupertileTransitionWork::FilteredQuadrantTilemapBuild
+        } else {
+            DungeonSupertileTransitionWork::QuadrantTilemapBuild
+        };
+        if self.begin_dungeon_supertile_transition_work_with_palette(
+            work,
+            palette_filter_loop_master_cycles,
         ) {
             return;
         }
@@ -10596,10 +10619,13 @@ impl ZeldaState {
             self.latch_nmi_update();
             self.set_core_update_disable_flag(1);
         }
-        if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
+        let palette_filter_active = self.game_state.dungeon.torch.any_lights_out_request() != 0;
+        let palette_filter_loop_master_cycles = palette_filter_active
+            .then(|| crate::zelda_rtl::palette_filter_bounce_loop_master_cycles(self));
+        if palette_filter_active {
             self.ApplyPaletteFilter_bounce();
         }
-        self.Dungeon_InterRoomTrans_State4();
+        self.Dungeon_InterRoomTrans_State4_with_cpu_timing(palette_filter_loop_master_cycles);
     }
 
     pub(super) fn Dungeon_SpiralStaircase12(&mut self) {
@@ -10615,6 +10641,13 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_InterRoomTrans_State4(&mut self) {
+        self.Dungeon_InterRoomTrans_State4_with_cpu_timing(None);
+    }
+
+    fn Dungeon_InterRoomTrans_State4_with_cpu_timing(
+        &mut self,
+        palette_filter_loop_master_cycles: Option<u32>,
+    ) {
         if self.game_state.frame.subsubmodule == 6 {
             self.stage_dungeon_supertile_quadrant_upload_obj_scanout();
         }
@@ -10622,17 +10655,14 @@ impl ZeldaState {
         if self.rom_startup_timing()
             && self.game_state.frame.submodule == 2
             && self.game_state.frame.subsubmodule == 11
-            && matches!(
-                self.game_state.world.location.dungeon_room_index(),
-                0x22 | 0x41
-            )
+            && palette_filter_loop_master_cycles.is_some()
         {
-            // These measured second quadrant uploads are prepared before
-            // vblank, but their state-11 callers do not return until the
-            // following host CPU slice. Keep the translated call stack
-            // suspended at that exact semantic boundary.
-            let scheduled = self.begin_dungeon_supertile_transition_work(
+            // The filtered quadrant work reaches vblank before state 11 can
+            // advance. Keep the translated call stack suspended at the body
+            // boundary selected by the CPU phase budget.
+            let scheduled = self.begin_dungeon_supertile_transition_work_with_palette(
                 DungeonSupertileTransitionWork::QuadrantUploadCallerReturn,
+                palette_filter_loop_master_cycles,
             );
             debug_assert!(scheduled);
             return;
@@ -12616,6 +12646,24 @@ impl ZeldaState {
             return;
         }
         self.complete_module07_dungeon_after_submodule();
+        if std::mem::take(&mut self.dungeon_state_12_module_return_nmi_pending) {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishCpuInstructionNmi {
+                    resume: PreMainNmiResume::DungeonSupertileQuadrantUploads,
+                },
+                1,
+            );
+            return;
+        }
+        if std::mem::take(&mut self.dungeon_state_13_cpu_nmi_pending) {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishCpuInstructionNmi {
+                    resume: PreMainNmiResume::DungeonSupertileQuadrantUploads,
+                },
+                1,
+            );
+            return;
+        }
         if self.dungeon_state_13_atomic_caller_return_publication_host_frame
             == Some(self.frame_ctr_dbg)
         {

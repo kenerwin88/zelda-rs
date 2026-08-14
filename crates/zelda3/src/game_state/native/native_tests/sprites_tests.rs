@@ -1156,7 +1156,8 @@ fn cached_sprite_nmi_split_copy_matches_the_measured_restore_cut() {
 
     let mut backup = [0; 24];
     {
-        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
+        let mut bridge =
+            NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
         bridge.load_cached_fields_into_live_before_nmi(&mut backup, COPIED_FIELDS);
     }
     for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
@@ -1171,7 +1172,8 @@ fn cached_sprite_nmi_split_copy_matches_the_measured_restore_cut() {
     assert_eq!(ram[SPRITE_FLAGS2 + slot], 0x80 | 12);
 
     {
-        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
+        let mut bridge =
+            NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
         bridge.complete_cached_dynamic_fields_into_live_after_nmi(&mut backup, COPIED_FIELDS);
     }
     for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
@@ -1180,10 +1182,15 @@ fn cached_sprite_nmi_split_copy_matches_the_measured_restore_cut() {
     }
 
     {
-        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
+        let mut bridge =
+            NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
         bridge.restore_live_from_backup(&backup);
     }
     for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
-        assert_eq!(ram[live + slot], 0x80 | index as u8, "field {index} restored");
+        assert_eq!(
+            ram[live + slot],
+            0x80 | index as u8,
+            "field {index} restored"
+        );
     }
 }

@@ -2119,9 +2119,8 @@ impl ZeldaState {
         {
             return None;
         }
-        let entry = dungeon_transition_cached_sprite_entry_raster(
-            self.game_state.frame.subsubmodule,
-        )?;
+        let entry =
+            dungeon_transition_cached_sprite_entry_raster(self.game_state.frame.subsubmodule)?;
         if (0..16usize).any(|slot| {
             let cached = self.cached_sprite_slot(slot);
             cached.is_active() && cached.type_byte() != CACHED_SPRITE_RAT
@@ -2158,8 +2157,7 @@ impl ZeldaState {
             }
             let restore_work = CACHED_SPRITE_FIELD_COUNT as u32
                 * (CACHED_SPRITE_PLA_MASTER_CYCLES + CACHED_SPRITE_STA_MASTER_CYCLES)
-                + (CACHED_SPRITE_LONG_STA_MASTER_CYCLES
-                    - CACHED_SPRITE_STA_MASTER_CYCLES);
+                + (CACHED_SPRITE_LONG_STA_MASTER_CYCLES - CACHED_SPRITE_STA_MASTER_CYCLES);
             debug_assert_eq!(
                 CACHED_SPRITE_CALL_TO_RESTORE_MASTER_CYCLES
                     + restore_work

@@ -59,6 +59,50 @@ evaluation, resolved clip spans, a selected pixel's palette/color-math
 operands, and the per-scanline Mode 7 matrix and Window 1/2 edges captured at
 the completed-screen publication boundary.
 
+Turn a narrow checkpointed trace into an explicit NMI/DMA receipt with:
+
+```sh
+python3 scripts/snes9x_dma_receipt.py /tmp/snes9x-trace.jsonl \
+  --host-frame 29644 --resume-frame 29010
+```
+
+The tool deliberately maps `host frame - resume frame` to `run` and rejects
+missing or ambiguous runs. Its report gives the ordered DMA source,
+destination, byte count, initiating PC, and raster position, followed by the
+decoded OBJ cache provenance for a traced pixel. This avoids the common error
+of treating the restored core's internal `frame` counter as the absolute route
+frame.
+
+For an every-frame comparison of the state leading to OBJ scanout, use the
+instrumented core with `ZELDA3_CAPTURE_OBJ_STATE_LEDGER=1` and a session
+directory. `obj_state_ledger.jsonl` records compact hashes and exact mismatch
+counts for WRAM, raw OBJ VRAM, live OAM, presented OAM, and the Snes9x-valid
+portion of the decoded OBJ tile cache. It reports modeled semantic WRAM fields
+separately; the full-WRAM hash is observational because scratch and unmodeled
+bytes are intentionally not a parity gate. On the first presented-cache mismatch,
+the harness also writes full Rust/oracle WRAM and VRAM plus a detailed display
+publication receipt. That receipt automatically includes every competing Rust
+publication generation and its valid-cache mismatch count, so an exact source
+is visible without a second run or another environment flag. Invalid Snes9x
+cache entries are deliberately excluded: their retained bytes were not
+eligible for scanout and otherwise create false early alarms.
+
+```sh
+ZELDA3_CAPTURE_OBJ_STATE_LEDGER=1 target/parity/zelda3 \
+  --compare-snes9x-oracle \
+  external/snes9x-libretro/local/snes9x_libretro_trace.dylib \
+  saves/zelda3.sfc 15000 \
+  --replay-bundle routes/full_run/comparisons/precommit/run-37900-video-preflight \
+  --ignore-audio --session-dir /tmp/obj-state-ledger
+```
+
+`--replay-bundle` is the preferred cold-route input. It selects `input.txt`,
+`rom-random.txt`, and `initial.srm` together, verifies their ROM identity and
+recorded `frames_completed` coverage, and records hashes for all three in the
+new session manifest. Legacy per-file flags are rejected when their files come
+from different directories. `--allow-mixed-replay-provenance` exists only for
+an intentional diagnostic whose mixed origin is understood and documented.
+
 For a long oracle-only survey, pass both `--ignore-video` and `--ignore-audio`
 to the comparison command. This retains deterministic input, paired-resume,
 and trace handling while skipping Rust video/audio comparison and its artifact

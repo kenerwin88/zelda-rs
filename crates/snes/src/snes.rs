@@ -37,6 +37,11 @@ pub struct Snes {
     // cpu handling
     pub cpu_cycles_left: u8,
     pub cpu_mem_ops: u8,
+    /// Hardware master cycles consumed by the current instruction's bus
+    /// accesses. Transient timing instrumentation; C savestates intentionally
+    /// serialize only the original scheduler fields.
+    #[serde(skip)]
+    pub cpu_bus_master_cycles: u32,
     pub apu_catchup_cycles: f64,
 
     // nmi / irq
@@ -87,6 +92,7 @@ impl Snes {
             frames: 0,
             cpu_cycles_left: 0,
             cpu_mem_ops: 0,
+            cpu_bus_master_cycles: 0,
             apu_catchup_cycles: 0.0,
             h_irq_enabled: false,
             v_irq_enabled: false,
@@ -134,6 +140,7 @@ impl Snes {
         self.frames = 0;
         self.cpu_cycles_left = 52; // 5 reads (8) + 2 IntOp (6), per C
         self.cpu_mem_ops = 0;
+        self.cpu_bus_master_cycles = 0;
         self.apu_catchup_cycles = 0.0;
         self.h_irq_enabled = false;
         self.v_irq_enabled = false;
@@ -220,6 +227,7 @@ impl Snes {
         pos += WRAM_SIZE;
         self.ram_adr = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
         self.disable_hpos = false;
+        self.cpu_bus_master_cycles = 0;
         Ok(())
     }
 
@@ -534,8 +542,28 @@ impl Snes {
         6
     }
 
+    fn hardware_access_time(&self, full_adr: u32) -> u8 {
+        let address = full_adr & 0x00ff_ffff;
+        if address & 0x40_8000 != 0 {
+            if address & 0x80_0000 != 0 && self.fast_mem {
+                return 6;
+            }
+            return 8;
+        }
+        if address.wrapping_add(0x6000) & 0x4000 != 0 {
+            return 8;
+        }
+        if address.wrapping_sub(0x4000) & 0x7e00 != 0 {
+            return 6;
+        }
+        12
+    }
+
     pub fn cpu_read(&mut self, full_adr: u32) -> u8 {
         self.cpu_mem_ops = self.cpu_mem_ops.wrapping_add(1);
+        self.cpu_bus_master_cycles = self
+            .cpu_bus_master_cycles
+            .wrapping_add(u32::from(self.hardware_access_time(full_adr)));
         self.cpu_cycles_left = self
             .cpu_cycles_left
             .wrapping_add(self.access_time(full_adr));
@@ -544,6 +572,9 @@ impl Snes {
 
     pub fn cpu_write(&mut self, full_adr: u32, val: u8) {
         self.cpu_mem_ops = self.cpu_mem_ops.wrapping_add(1);
+        self.cpu_bus_master_cycles = self
+            .cpu_bus_master_cycles
+            .wrapping_add(u32::from(self.hardware_access_time(full_adr)));
         self.cpu_cycles_left = self
             .cpu_cycles_left
             .wrapping_add(self.access_time(full_adr));

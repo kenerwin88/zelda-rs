@@ -26,13 +26,179 @@ use zelda3::{game_output::DspWriteEvent, RomRandomSample, ZeldaState, RUN_MAIN};
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
 pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
-const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-save <path>] [--input-script <path>] [--rom-random-script <path> | --live-oracle-rng] [--load-sram <path>] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--compare-engine-state-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all] (pass both --ignore-video and --ignore-audio for trace-only replay)";
+const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-bundle <session-dir> | --input-script <path> --rom-random-script <path> --load-sram <path>] [--allow-mixed-replay-provenance] [--replay-save <path>] [--rom-random-script <path> | --live-oracle-rng] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--compare-engine-state-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all] (pass both --ignore-video and --ignore-audio for trace-only replay)";
 
 // The cartridge RNG routine stores its return byte at mapped PC $0d:ba7f.
 // Other game code also writes $0fa1, so the address alone is not sufficient
 // provenance for a replay sample.
 const CARTRIDGE_RNG_STORE_PC_LOW16: u64 = 0xba7f;
 const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ReplayBundle {
+    dir: PathBuf,
+    input_script: PathBuf,
+    rom_random_script: PathBuf,
+    initial_sram: PathBuf,
+    frames_completed: u32,
+    manifest_sha256: String,
+    input_sha256: String,
+    rom_random_sha256: String,
+    initial_sram_sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReplayBundleManifest {
+    schema: u32,
+    frames_completed: Option<u32>,
+    rom: ReplayBundleRom,
+    #[serde(default)]
+    rom_random_replay: Option<ReplayBundleArtifact>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReplayBundleRom {
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReplayBundleArtifact {
+    #[serde(default)]
+    sha256: Option<String>,
+}
+
+fn resolve_replay_bundle(dir: &Path, frames: u32, rom_path: &Path) -> Result<ReplayBundle, String> {
+    let manifest_path = dir.join("manifest.json");
+    let manifest_bytes = fs::read(&manifest_path)
+        .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?;
+    let manifest: ReplayBundleManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| format!("failed to parse {}: {error}", manifest_path.display()))?;
+    if manifest.schema != 1 {
+        return Err(format!(
+            "{} has unsupported replay-bundle schema {}",
+            manifest_path.display(),
+            manifest.schema
+        ));
+    }
+    let frames_completed = manifest.frames_completed.ok_or_else(|| {
+        format!(
+            "{} has no frames_completed receipt; the replay bundle is incomplete or still running",
+            manifest_path.display()
+        )
+    })?;
+    if frames > frames_completed {
+        return Err(format!(
+            "replay bundle {} is proven through frame {frames_completed}, but this run requests frame {frames}; choose a bundle with sufficient coverage",
+            dir.display()
+        ));
+    }
+
+    let actual_rom_sha256 = parity::runner::sha256_file(rom_path)
+        .map_err(|error| format!("failed to hash ROM {}: {error}", rom_path.display()))?;
+    if !manifest.rom.sha256.eq_ignore_ascii_case(&actual_rom_sha256) {
+        return Err(format!(
+            "replay bundle {} belongs to ROM {}, but {} hashes to {}",
+            dir.display(),
+            manifest.rom.sha256,
+            rom_path.display(),
+            actual_rom_sha256
+        ));
+    }
+
+    let required_file = |name: &str| -> Result<PathBuf, String> {
+        let path = dir.join(name);
+        if !path.is_file() {
+            return Err(format!(
+                "replay bundle {} is missing required artifact {name}",
+                dir.display()
+            ));
+        }
+        Ok(path)
+    };
+    let input_script = required_file("input.txt")?;
+    let rom_random_script = required_file("rom-random.txt")?;
+    let initial_sram = required_file("initial.srm")?;
+    let rom_random_sha256 = parity::runner::sha256_file(&rom_random_script).map_err(|error| {
+        format!(
+            "failed to hash replay bundle artifact {}: {error}",
+            rom_random_script.display()
+        )
+    })?;
+    if let Some(expected) = manifest
+        .rom_random_replay
+        .as_ref()
+        .and_then(|artifact| artifact.sha256.as_deref())
+    {
+        if !expected.eq_ignore_ascii_case(&rom_random_sha256) {
+            return Err(format!(
+                "replay bundle {} has a modified rom-random.txt: manifest says {expected}, file hashes to {rom_random_sha256}",
+                dir.display()
+            ));
+        }
+    }
+
+    Ok(ReplayBundle {
+        dir: dir.to_path_buf(),
+        input_sha256: parity::runner::sha256_file(&input_script).map_err(|error| {
+            format!(
+                "failed to hash replay bundle artifact {}: {error}",
+                input_script.display()
+            )
+        })?,
+        initial_sram_sha256: parity::runner::sha256_file(&initial_sram).map_err(|error| {
+            format!(
+                "failed to hash replay bundle artifact {}: {error}",
+                initial_sram.display()
+            )
+        })?,
+        manifest_sha256: parity::runner::sha256_file(&manifest_path).map_err(|error| {
+            format!(
+                "failed to hash replay bundle manifest {}: {error}",
+                manifest_path.display()
+            )
+        })?,
+        rom_random_sha256,
+        input_script,
+        rom_random_script,
+        initial_sram,
+        frames_completed,
+    })
+}
+
+fn validate_replay_source_parents(
+    sources: &[(&str, Option<&Path>)],
+    allow_mixed: bool,
+) -> Result<(), String> {
+    if allow_mixed {
+        return Ok(());
+    }
+    let mut first = None::<(&str, PathBuf)>;
+    for (name, path) in sources {
+        let Some(path) = path else {
+            continue;
+        };
+        let canonical = fs::canonicalize(path)
+            .map_err(|error| format!("failed to resolve {name} {}: {error}", path.display()))?;
+        let parent = canonical.parent().ok_or_else(|| {
+            format!(
+                "cannot determine replay provenance directory for {name} {}",
+                path.display()
+            )
+        })?;
+        if let Some((first_name, first_parent)) = first.as_ref() {
+            if parent != first_parent {
+                return Err(format!(
+                    "mixed replay provenance is unsafe: {first_name} comes from {}, but {name} comes from {}; use --replay-bundle <dir>, or pass --allow-mixed-replay-provenance only for an intentional diagnostic",
+                    first_parent.display(),
+                    parent.display()
+                ));
+            }
+        } else {
+            first = Some((name, parent.to_path_buf()));
+        }
+    }
+    Ok(())
+}
 
 #[derive(Debug, Deserialize)]
 struct OracleRngTraceEvent {
@@ -278,6 +444,8 @@ struct DisplayPublicationCandidateProbe {
     presented_oam: Option<Vec<i32>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     presented_obj_tile_cache: Option<Vec<i32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    presented_obj_tile_cache_valid_difference: Option<ValueDomainDiff>,
 }
 
 #[derive(Debug, Serialize)]
@@ -472,6 +640,40 @@ fn summarize_value_domain<T: PartialEq>(rust: &[T], oracle: &[T]) -> ValueDomain
     }
 }
 
+fn summarize_presented_obj_cache(
+    rust: Option<&[i32]>,
+    oracle: Option<&[i32]>,
+    oracle_valid: Option<&[i32]>,
+) -> Option<ValueDomainDiff> {
+    let (rust, oracle, oracle_valid) = (rust?, oracle?, oracle_valid?);
+    let comparable_pixels = oracle_valid
+        .iter()
+        .take(64)
+        .filter(|&&valid| valid != 0)
+        .count()
+        * 64;
+    let mut mismatched_values = 0;
+    let mut first_mismatch = None;
+    for (tile, &valid) in oracle_valid.iter().take(64).enumerate() {
+        if valid == 0 {
+            continue;
+        }
+        for pixel in 0..64 {
+            let index = tile * 64 + pixel;
+            if rust.get(index) != oracle.get(index) {
+                mismatched_values += 1;
+                first_mismatch.get_or_insert(index);
+            }
+        }
+    }
+    Some(ValueDomainDiff {
+        rust_values: comparable_pixels,
+        oracle_values: comparable_pixels,
+        mismatched_values,
+        first_mismatch,
+    })
+}
+
 #[derive(Debug, Serialize)]
 struct DisplayOracleDifferences {
     divergent_domains: Vec<&'static str>,
@@ -479,6 +681,7 @@ struct DisplayOracleDifferences {
     cgram: ValueDomainDiff,
     live_oam: ValueDomainDiff,
     presented_oam: ValueDomainDiff,
+    presented_obj_tile_cache: Option<ValueDomainDiff>,
     window1_scanlines: ValueDomainDiff,
     window2_scanlines: ValueDomainDiff,
     mode7: Option<ValueDomainDiff>,
@@ -526,6 +729,11 @@ fn display_oracle_differences(receipt: &DisplayOracleReceipt) -> DisplayOracleDi
     let live_oam = summarize_value_domain(&receipt.rust.oam, &receipt.oracle.oam);
     let presented_oam =
         summarize_value_domain(&receipt.rust.presented_oam, &receipt.oracle.presented_oam);
+    let presented_obj_tile_cache = summarize_presented_obj_cache(
+        receipt.rust.presented_obj_tile_cache.as_deref(),
+        receipt.oracle.presented_obj_tile_cache.as_deref(),
+        receipt.oracle.presented_obj_tile_cache_valid.as_deref(),
+    );
     let window1_scanlines =
         summarize_value_domain(&rust_window1_scanlines, &oracle_window1_scanlines);
     let window2_scanlines =
@@ -558,12 +766,19 @@ fn display_oracle_differences(receipt: &DisplayOracleReceipt) -> DisplayOracleDi
     {
         divergent_domains.push("mode7_scanlines");
     }
+    if presented_obj_tile_cache
+        .as_ref()
+        .is_some_and(|difference| !difference.is_exact())
+    {
+        divergent_domains.push("presented_obj_tile_cache");
+    }
     DisplayOracleDifferences {
         divergent_domains,
         registers,
         cgram,
         live_oam,
         presented_oam,
+        presented_obj_tile_cache,
         window1_scanlines,
         window2_scanlines,
         mode7,
@@ -779,6 +994,7 @@ fn capture_rust_ppu_probe(
                         })
                         .collect()
                 }),
+                presented_obj_tile_cache_valid_difference: None,
             })
             .collect::<Vec<_>>();
         let mut candidates = candidates;
@@ -802,6 +1018,7 @@ fn capture_rust_ppu_probe(
                     cgram,
                     presented_oam: None,
                     presented_obj_tile_cache: None,
+                    presented_obj_tile_cache_valid_difference: None,
                 });
             }
         }
@@ -835,7 +1052,8 @@ fn write_display_oracle_receipt(
         eprintln!("display-oracle capture requires an instrumented Snes9x core");
         process::exit(2);
     };
-    let (rust, rust_candidates, rust_context) = capture_rust_ppu_probe(game);
+    let (rust, mut rust_candidates, rust_context) = capture_rust_ppu_probe(game);
+    annotate_display_candidate_differences(&oracle_ppu, &mut rust_candidates);
     let receipt = DisplayOracleReceipt {
         frame,
         stage,
@@ -856,6 +1074,155 @@ fn write_display_oracle_receipt(
         eprintln!("failed to flush display-oracle receipt: {error}");
         process::exit(1);
     });
+}
+
+fn annotate_display_candidate_differences(
+    oracle: &DisplayPpuProbe,
+    candidates: &mut [DisplayPublicationCandidateProbe],
+) {
+    for candidate in candidates {
+        candidate.presented_obj_tile_cache_valid_difference = summarize_presented_obj_cache(
+            candidate.presented_obj_tile_cache.as_deref(),
+            oracle.presented_obj_tile_cache.as_deref(),
+            oracle.presented_obj_tile_cache_valid.as_deref(),
+        );
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct HashedDomainDiff {
+    rust_fnv1a32: u32,
+    oracle_fnv1a32: u32,
+    difference: ValueDomainDiff,
+}
+
+#[derive(Debug, Serialize)]
+struct ObjStateLedgerReceipt {
+    frame: u32,
+    /// Semantic WRAM fields modeled by the native engine. Full WRAM remains
+    /// below as an observational hash because unmodeled/scratch bytes are not
+    /// a valid parity gate.
+    modeled_wram_mismatches: Vec<String>,
+    wram: HashedDomainDiff,
+    raw_obj_vram: HashedDomainDiff,
+    live_oam: HashedDomainDiff,
+    presented_oam: HashedDomainDiff,
+    presented_obj_tile_cache: HashedDomainDiff,
+    oracle_valid_obj_tiles: usize,
+}
+
+impl ObjStateLedgerReceipt {
+    fn presented_cache_is_exact(&self) -> bool {
+        self.presented_obj_tile_cache.difference.is_exact()
+    }
+}
+
+fn fnv1a32(values: impl IntoIterator<Item = u8>) -> u32 {
+    values.into_iter().fold(2_166_136_261u32, |hash, value| {
+        (hash ^ u32::from(value)).wrapping_mul(16_777_619)
+    })
+}
+
+fn hashed_byte_domain(rust: &[u8], oracle: &[u8]) -> HashedDomainDiff {
+    HashedDomainDiff {
+        rust_fnv1a32: fnv1a32(rust.iter().copied()),
+        oracle_fnv1a32: fnv1a32(oracle.iter().copied()),
+        difference: summarize_value_domain(rust, oracle),
+    }
+}
+
+fn hashed_i32_domain(rust: &[i32], oracle: &[i32]) -> HashedDomainDiff {
+    HashedDomainDiff {
+        rust_fnv1a32: fnv1a32(rust.iter().map(|&value| value as u8)),
+        oracle_fnv1a32: fnv1a32(oracle.iter().map(|&value| value as u8)),
+        difference: summarize_value_domain(rust, oracle),
+    }
+}
+
+fn capture_obj_state_ledger_receipt(
+    frame: u32,
+    oracle: &LibretroCore,
+    game: &mut ZeldaState,
+) -> Option<ObjStateLedgerReceipt> {
+    oracle.debug_ppu_value(29, 0)?;
+    let oracle_wram = oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM)?;
+    let oracle_vram = oracle.memory_bytes(RETRO_MEMORY_VIDEO_RAM)?;
+    let oracle_obj_vram = oracle_vram.get(0x8000..0x8800)?;
+    let rust_obj_vram = game.ppu.vram[0x4000..0x4400]
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect::<Vec<_>>();
+    let rust_live_oam = game
+        .ppu
+        .oam
+        .iter()
+        .flat_map(|word| word.to_le_bytes().map(i32::from))
+        .collect::<Vec<_>>();
+    let oracle_live_oam = (0..544)
+        .map(|index| oracle.debug_ppu_value(15, index).unwrap_or(-1))
+        .collect::<Vec<_>>();
+    let (rust_presented_oam, rust_presented_cache) = game.with_display_snapshot(|snapshot| {
+        let presented_obj_vram = snapshot
+            .ppu
+            .obj_vram_latch
+            .as_deref()
+            .unwrap_or(&snapshot.ppu.vram);
+        let cache = (0..64u16)
+            .flat_map(|tile| {
+                renderer::modern_extract::decode_snes_4bpp_tile_indices(
+                    presented_obj_vram,
+                    0x4000,
+                    tile,
+                )
+                .map(i32::from)
+            })
+            .collect::<Vec<_>>();
+        let oam = snapshot
+            .ppu
+            .oam
+            .iter()
+            .flat_map(|word| word.to_le_bytes().map(i32::from))
+            .collect::<Vec<_>>();
+        (oam, cache)
+    });
+    let oracle_presented_oam = (0..544)
+        .map(|index| oracle.debug_ppu_value(20, index).unwrap_or(-1))
+        .collect::<Vec<_>>();
+    let oracle_valid = (0..64)
+        .map(|index| oracle.debug_ppu_value(30, index).unwrap_or(-1))
+        .collect::<Vec<_>>();
+    let oracle_presented_cache = (0..64 * 64)
+        .map(|index| oracle.debug_ppu_value(29, index).unwrap_or(-1))
+        .collect::<Vec<_>>();
+    let mut rust_valid_cache = Vec::new();
+    let mut oracle_valid_cache = Vec::new();
+    for (tile, &valid) in oracle_valid.iter().enumerate() {
+        if valid == 0 {
+            continue;
+        }
+        let range = tile * 64..tile * 64 + 64;
+        rust_valid_cache.extend_from_slice(&rust_presented_cache[range.clone()]);
+        oracle_valid_cache.extend_from_slice(&oracle_presented_cache[range]);
+    }
+    let presented_cache_difference = summarize_presented_obj_cache(
+        Some(&rust_presented_cache),
+        Some(&oracle_presented_cache),
+        Some(&oracle_valid),
+    )?;
+    Some(ObjStateLedgerReceipt {
+        frame,
+        modeled_wram_mismatches: compact_engine_state_mismatches(&game.ram, oracle_wram),
+        wram: hashed_byte_domain(&game.ram, oracle_wram),
+        raw_obj_vram: hashed_byte_domain(&rust_obj_vram, oracle_obj_vram),
+        live_oam: hashed_i32_domain(&rust_live_oam, &oracle_live_oam),
+        presented_oam: hashed_i32_domain(&rust_presented_oam, &oracle_presented_oam),
+        presented_obj_tile_cache: HashedDomainDiff {
+            rust_fnv1a32: fnv1a32(rust_valid_cache.iter().map(|&value| value as u8)),
+            oracle_fnv1a32: fnv1a32(oracle_valid_cache.iter().map(|&value| value as u8)),
+            difference: presented_cache_difference,
+        },
+        oracle_valid_obj_tiles: oracle_valid.iter().filter(|&&valid| valid != 0).count(),
+    })
 }
 
 /// The ROM-visible publication flags that delimit an emulated frame.
@@ -1311,6 +1678,9 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut input_script = InputScript::default();
     let mut input_script_path = None::<PathBuf>;
     let mut rom_random_script = None::<PathBuf>;
+    let mut replay_bundle_dir = None::<PathBuf>;
+    let mut replay_bundle = None::<ReplayBundle>;
+    let mut allow_mixed_replay_provenance = false;
     let mut live_oracle_rng = false;
     let mut replay_save = None::<PathBuf>;
     let mut load_sram = None::<PathBuf>;
@@ -1358,6 +1728,18 @@ pub(crate) fn run_compare_libretro_oracle(
     }
     while i < args.len() {
         match args[i].as_str() {
+            "--replay-bundle" => {
+                let Some(path) = args.get(i + 1) else {
+                    eprintln!("--replay-bundle requires a session directory");
+                    process::exit(2);
+                };
+                replay_bundle_dir = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--allow-mixed-replay-provenance" => {
+                allow_mixed_replay_provenance = true;
+                i += 1;
+            }
             "--replay-save" => {
                 let Some(path) = args.get(i + 1) else {
                     eprintln!("--replay-save requires a path");
@@ -1680,6 +2062,53 @@ pub(crate) fn run_compare_libretro_oracle(
                 process::exit(2);
             }
         }
+    }
+    if let Some(dir) = replay_bundle_dir.as_deref() {
+        if input_script_path.is_some() || rom_random_script.is_some() || load_sram.is_some() {
+            eprintln!(
+                "--replay-bundle selects input.txt, rom-random.txt, and initial.srm atomically; do not combine it with --input-script, --rom-random-script, or --load-sram"
+            );
+            process::exit(2);
+        }
+        if replay_save.is_some()
+            || live_oracle_rng
+            || resume_paired.is_some()
+            || resume_rust_state.is_some()
+            || resume_oracle_state.is_some()
+            || resume_oracle_sram.is_some()
+        {
+            eprintln!(
+                "--replay-bundle is a cold recorded-route source and cannot be combined with replay-save, live-RNG, or resume-state modes"
+            );
+            process::exit(2);
+        }
+        let resolved =
+            resolve_replay_bundle(dir, frames, Path::new(rom_path)).unwrap_or_else(|error| {
+                eprintln!("invalid --replay-bundle: {error}");
+                process::exit(2);
+            });
+        input_script = InputScript::from_path(&resolved.input_script).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to parse replay-bundle input script {}: {error}",
+                resolved.input_script.display()
+            );
+            process::exit(2);
+        });
+        input_script_path = Some(resolved.input_script.clone());
+        rom_random_script = Some(resolved.rom_random_script.clone());
+        load_sram = Some(resolved.initial_sram.clone());
+        replay_bundle = Some(resolved);
+    }
+    if let Err(error) = validate_replay_source_parents(
+        &[
+            ("--input-script", input_script_path.as_deref()),
+            ("--rom-random-script", rom_random_script.as_deref()),
+            ("--load-sram", load_sram.as_deref()),
+        ],
+        allow_mixed_replay_provenance,
+    ) {
+        eprintln!("{error}");
+        process::exit(2);
     }
     if resume_paired.is_some()
         && (resume_rust_state.is_some()
@@ -2074,6 +2503,7 @@ pub(crate) fn run_compare_libretro_oracle(
         audio_comparison,
         timing_options,
         replay_save.as_deref(),
+        replay_bundle.as_ref(),
         &initial_input_script,
         rom_random_script.as_deref(),
         live_oracle_rng,
@@ -2133,6 +2563,23 @@ pub(crate) fn run_compare_libretro_oracle(
             }),
         )
     });
+    let mut obj_state_ledger = env::var_os("ZELDA3_CAPTURE_OBJ_STATE_LEDGER").map(|_| {
+        let dir = session_dir.as_deref().unwrap_or_else(|| {
+            eprintln!("ZELDA3_CAPTURE_OBJ_STATE_LEDGER requires --session-dir");
+            process::exit(2);
+        });
+        if oracle.debug_ppu_value(29, 0).is_none() {
+            eprintln!("OBJ state ledger requires the instrumented Snes9x core");
+            process::exit(2);
+        }
+        BufWriter::new(
+            fs::File::create(dir.join("obj_state_ledger.jsonl")).unwrap_or_else(|error| {
+                eprintln!("failed to create OBJ state ledger: {error}");
+                process::exit(1);
+            }),
+        )
+    });
+    let mut wrote_first_obj_cache_divergence = false;
     let trace_poly_sched = std::env::var_os("TRACE_POLY_SCHED").is_some();
     let trace_shield_dma = std::env::var_os("ZELDA3_DEBUG_SHIELD_DMA").is_some();
     let debug_vram_frames = debug_frame_selection_from_env("ZELDA3_DEBUG_VRAM_FRAMES", None);
@@ -2451,6 +2898,87 @@ pub(crate) fn run_compare_libretro_oracle(
             capture_all_display_oracle || display_oracle_after_frames.contains(&frame_index)
         }) {
             write_display_oracle_receipt(writer, frame_index, "after", &oracle, &mut game);
+        }
+        if let Some(writer) = obj_state_ledger.as_mut() {
+            let receipt = capture_obj_state_ledger_receipt(frame_index, &oracle, &mut game)
+                .unwrap_or_else(|| {
+                    eprintln!(
+                        "OBJ state ledger could not read instrumented PPU/WRAM/VRAM at frame {frame_index}"
+                    );
+                    process::exit(2);
+                });
+            serde_json::to_writer(&mut *writer, &receipt).unwrap_or_else(|error| {
+                eprintln!("failed to write OBJ state ledger: {error}");
+                process::exit(1);
+            });
+            writeln!(writer).unwrap_or_else(|error| {
+                eprintln!("failed to terminate OBJ state ledger receipt: {error}");
+                process::exit(1);
+            });
+            writer.flush().unwrap_or_else(|error| {
+                eprintln!("failed to flush OBJ state ledger receipt: {error}");
+                process::exit(1);
+            });
+            if !wrote_first_obj_cache_divergence && !receipt.presented_cache_is_exact() {
+                let dir = session_dir
+                    .as_deref()
+                    .expect("OBJ state ledger requires a session directory");
+                eprintln!(
+                    "OBJ state ledger first presented-cache divergence at frame {frame_index}: mismatched_valid_pixels={} first_cache_index={:?}",
+                    receipt
+                        .presented_obj_tile_cache
+                        .difference
+                        .mismatched_values,
+                    receipt.presented_obj_tile_cache.difference.first_mismatch,
+                );
+                let mut detail = BufWriter::new(
+                    fs::File::create(dir.join("obj_state_first_cache_divergence.jsonl"))
+                        .unwrap_or_else(|error| {
+                            eprintln!("failed to create first OBJ divergence detail: {error}");
+                            process::exit(1);
+                        }),
+                );
+                write_display_oracle_receipt(&mut detail, frame_index, "after", &oracle, &mut game);
+                fs::write(dir.join("obj_state_first_rust_wram.bin"), &game.ram).unwrap_or_else(
+                    |error| {
+                        eprintln!("failed to dump first OBJ-divergence Rust WRAM: {error}");
+                        process::exit(1);
+                    },
+                );
+                fs::write(
+                    dir.join("obj_state_first_oracle_wram.bin"),
+                    oracle
+                        .memory_bytes(RETRO_MEMORY_SYSTEM_RAM)
+                        .unwrap_or_default(),
+                )
+                .unwrap_or_else(|error| {
+                    eprintln!("failed to dump first OBJ-divergence oracle WRAM: {error}");
+                    process::exit(1);
+                });
+                fs::write(
+                    dir.join("obj_state_first_oracle_vram.bin"),
+                    oracle
+                        .memory_bytes(RETRO_MEMORY_VIDEO_RAM)
+                        .unwrap_or_default(),
+                )
+                .unwrap_or_else(|error| {
+                    eprintln!("failed to dump first OBJ-divergence oracle VRAM: {error}");
+                    process::exit(1);
+                });
+                let rust_vram = game
+                    .ppu
+                    .vram
+                    .iter()
+                    .flat_map(|word| word.to_le_bytes())
+                    .collect::<Vec<_>>();
+                fs::write(dir.join("obj_state_first_rust_vram.bin"), rust_vram).unwrap_or_else(
+                    |error| {
+                        eprintln!("failed to dump first OBJ-divergence Rust VRAM: {error}");
+                        process::exit(1);
+                    },
+                );
+                wrote_first_obj_cache_divergence = true;
+            }
         }
         // Libretro frame numbering starts at one; keep this artifact aligned
         // with `scripts/snes9x_boot_contract.py` rather than the CLI's
@@ -3359,10 +3887,8 @@ pub(crate) fn run_compare_libretro_oracle(
             let oracle_obj_config = (0..3)
                 .map(|index| oracle.debug_ppu_value(17, index).unwrap_or(-1))
                 .collect::<Vec<_>>();
-            let oracle_scanline = snes9x_presented_scanline_for_video_y(
-                capture.video_height as usize,
-                y,
-            );
+            let oracle_scanline =
+                snes9x_presented_scanline_for_video_y(capture.video_height as usize, y);
             let oracle_obj_line = (0..128)
                 .map(|slot| {
                     let index = (oracle_scanline * 128 + slot) as i32;
@@ -3439,7 +3965,11 @@ pub(crate) fn run_compare_libretro_oracle(
                         let ty = source_y / 8;
                         let quadrant = usize::from(layer.tilemap_wider && tx >= 32)
                             + if layer.tilemap_higher && ty >= 32 {
-                                if layer.tilemap_wider { 2 } else { 1 }
+                                if layer.tilemap_wider {
+                                    2
+                                } else {
+                                    1
+                                }
                             } else {
                                 0
                             };
@@ -3461,12 +3991,11 @@ pub(crate) fn run_compare_libretro_oracle(
                         } else {
                             source_y % 8
                         };
-                        let rust_indices =
-                            renderer::modern_extract::decode_snes_4bpp_tile_indices(
-                                &snapshot.ppu.vram,
-                                usize::from(layer.tile_adr),
-                                entry & 0xc3ff,
-                            );
+                        let rust_indices = renderer::modern_extract::decode_snes_4bpp_tile_indices(
+                            &snapshot.ppu.vram,
+                            usize::from(layer.tile_adr),
+                            entry & 0xc3ff,
+                        );
                         Some((
                             layer_index,
                             tilemap_word,
@@ -3643,8 +4172,12 @@ pub(crate) fn run_compare_libretro_oracle(
                         });
                     let display_oracle_receipt =
                         capture_oracle_ppu_probe(&oracle).map(|oracle_ppu| {
-                            let (rust, rust_candidates, rust_context) =
+                            let (rust, mut rust_candidates, rust_context) =
                                 capture_rust_ppu_probe(&mut game);
+                            annotate_display_candidate_differences(
+                                &oracle_ppu,
+                                &mut rust_candidates,
+                            );
                             DisplayOracleReceipt {
                                 frame: frame_index,
                                 stage: "after",
@@ -4310,6 +4843,7 @@ pub(crate) fn initialize_libretro_session(
     audio_comparison: AudioComparisonMode,
     timing: AudioTimingOptions,
     replay_save: Option<&Path>,
+    replay_bundle: Option<&ReplayBundle>,
     initial_input_script: &[u8],
     rom_random_script: Option<&Path>,
     live_oracle_rng: bool,
@@ -4388,6 +4922,25 @@ pub(crate) fn initialize_libretro_session(
         });
         serde_json::json!({ "path": path, "sha256": sha256 })
     });
+    let replay_bundle_manifest = replay_bundle.map(|bundle| {
+        serde_json::json!({
+            "dir": bundle.dir,
+            "frames_completed": bundle.frames_completed,
+            "manifest_sha256": bundle.manifest_sha256,
+            "input": {
+                "artifact": "input.txt",
+                "sha256": bundle.input_sha256,
+            },
+            "rom_random": {
+                "artifact": "rom-random.txt",
+                "sha256": bundle.rom_random_sha256,
+            },
+            "initial_sram": {
+                "artifact": "initial.srm",
+                "sha256": bundle.initial_sram_sha256,
+            },
+        })
+    });
     let rom_random_manifest = rom_random_script.map(|path| {
         let bytes = fs::read(path).unwrap_or_else(|e| {
             eprintln!(
@@ -4433,6 +4986,16 @@ pub(crate) fn initialize_libretro_session(
     if live_oracle_rng {
         artifacts.push(LIVE_ORACLE_RNG_TRACE_ARTIFACT);
     }
+    if env::var_os("ZELDA3_CAPTURE_OBJ_STATE_LEDGER").is_some() {
+        artifacts.extend([
+            "obj_state_ledger.jsonl",
+            "obj_state_first_cache_divergence.jsonl",
+            "obj_state_first_rust_wram.bin",
+            "obj_state_first_oracle_wram.bin",
+            "obj_state_first_rust_vram.bin",
+            "obj_state_first_oracle_vram.bin",
+        ]);
+    }
     let manifest = serde_json::json!({
         "schema": 1,
         "status": "running",
@@ -4445,6 +5008,7 @@ pub(crate) fn initialize_libretro_session(
         },
         "rom": { "path": rom_path, "sha256": rom_sha256 },
         "replay_save": replay_save_manifest,
+        "replay_bundle": replay_bundle_manifest,
         "rom_random_replay": rom_random_manifest,
         "rom_random_authority": if live_oracle_rng {
             serde_json::json!({
@@ -4699,12 +5263,7 @@ pub(crate) fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
         map.insert("sprite_graphics_index".into(), byte(0x0aa3).into());
         map.insert(
             "sprite_graphics_subsets".into(),
-            serde_json::json!([
-                byte(0xc2fc),
-                byte(0xc2fd),
-                byte(0xc2fe),
-                byte(0xc2ff),
-            ]),
+            serde_json::json!([byte(0xc2fc), byte(0xc2fd), byte(0xc2fe), byte(0xc2ff),]),
         );
         map.insert("bg_tile_animation_countdown".into(), word(0xc00d).into());
         map.insert("link_dma_source_offset".into(), word(0xc00f).into());
@@ -5660,14 +6219,16 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
 mod tests {
     use super::{
         checkpoint_member, compact_engine_state_mismatches, first_dsp_write_timing_mismatch,
-        last_spc_clock_witness, libretro_engine_state_receipt, oracle_preframe_snapshot_required,
-        oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
-        parse_paired_resume_capture, parse_rolling_paired_resume_capture,
-        prune_rolling_paired_resume_captures, rolling_capture_frame_after, scan_all_policy,
-        should_render_video_frame, should_stop_after_first_mismatch,
-        should_write_frame_receipt, snes9x_presented_scanline_for_video_y,
-        summarize_value_domain, vram_domain_receipt, BootBoundaryState, PairedResumeCapture,
-        RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt,
+        fnv1a32, last_spc_clock_witness, libretro_engine_state_receipt,
+        oracle_preframe_snapshot_required, oracle_rng_sample_from_trace_line, paired_resume_paths,
+        parse_debug_frame_selection, parse_paired_resume_capture,
+        parse_rolling_paired_resume_capture, prune_rolling_paired_resume_captures,
+        resolve_replay_bundle, rolling_capture_frame_after, scan_all_policy,
+        should_render_video_frame, should_stop_after_first_mismatch, should_write_frame_receipt,
+        snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
+        summarize_value_domain, validate_replay_source_parents, vram_domain_receipt,
+        BootBoundaryState, PairedResumeCapture, RollingPairedResumeCapture, ValueDomainDiff,
+        VramDomainReceipt,
     };
     use crate::libretro_core::LibretroDspRegisterWrite;
     use std::fs;
@@ -5680,6 +6241,33 @@ mod tests {
         assert_eq!(snes9x_presented_scanline_for_video_y(224, 133), 140);
         assert_eq!(snes9x_presented_scanline_for_video_y(448, 266), 280);
         assert_eq!(snes9x_presented_scanline_for_video_y(239, 133), 133);
+    }
+
+    #[test]
+    fn obj_cache_comparison_ignores_invalid_snes9x_tiles() {
+        let mut rust = vec![0; 64 * 64];
+        let mut oracle = rust.clone();
+        let mut valid = vec![0; 64];
+        rust[3] = 1;
+        oracle[3] = 2;
+        rust[64 + 7] = 3;
+        oracle[64 + 7] = 4;
+        valid[1] = 1;
+
+        assert_eq!(
+            summarize_presented_obj_cache(Some(&rust), Some(&oracle), Some(&valid)),
+            Some(ValueDomainDiff {
+                rust_values: 64,
+                oracle_values: 64,
+                mismatched_values: 1,
+                first_mismatch: Some(71),
+            })
+        );
+    }
+
+    #[test]
+    fn obj_state_ledger_hash_is_stable_fnv1a() {
+        assert_eq!(fnv1a32([0, 1, 2, 3]), 0xc3aa_51b1);
     }
 
     #[test]
@@ -5796,7 +6384,10 @@ mod tests {
 
         let receipt = libretro_engine_state_receipt(&ram);
         assert_eq!(receipt["sprite_graphics_index"], 0x2a);
-        assert_eq!(receipt["sprite_graphics_subsets"], serde_json::json!([0x10, 0x20, 0x30, 0x40]));
+        assert_eq!(
+            receipt["sprite_graphics_subsets"],
+            serde_json::json!([0x10, 0x20, 0x30, 0x40])
+        );
         let slot = &receipt["sprite_slots"][0];
         assert_eq!(slot["x"], 0x0468);
         assert_eq!(slot["x_subpixel"], 0x80);
@@ -5916,6 +6507,77 @@ mod tests {
         assert!(!oracle_preframe_snapshot_required(10_000, 23_005, false));
         assert!(oracle_preframe_snapshot_required(23_000, 23_005, true));
         assert!(oracle_preframe_snapshot_required(23_004, 23_005, false));
+    }
+
+    #[test]
+    fn replay_bundle_rejects_requests_past_its_recorded_coverage() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-replay-bundle-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let rom = root.join("test.sfc");
+        fs::write(&rom, b"rom").unwrap();
+        fs::write(root.join("input.txt"), b"0 0\n").unwrap();
+        fs::write(root.join("rom-random.txt"), b"").unwrap();
+        fs::write(root.join("initial.srm"), b"sram").unwrap();
+        let rom_sha256 = parity::runner::sha256_file(&rom).unwrap();
+        let rng_sha256 = parity::runner::sha256_file(&root.join("rom-random.txt")).unwrap();
+        fs::write(
+            root.join("manifest.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "schema": 1,
+                "frames_completed": 2298,
+                "rom": { "sha256": rom_sha256 },
+                "rom_random_replay": { "sha256": rng_sha256 },
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let error = resolve_replay_bundle(&root, 15_000, &rom).unwrap_err();
+        assert!(error.contains("proven through frame 2298"), "{error}");
+        assert!(resolve_replay_bundle(&root, 2_298, &rom).is_ok());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn replay_sources_from_different_directories_require_an_explicit_unsafe_opt_in() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-mixed-replay-{}-{unique}",
+            std::process::id()
+        ));
+        let first = root.join("first");
+        let second = root.join("second");
+        fs::create_dir_all(&first).unwrap();
+        fs::create_dir_all(&second).unwrap();
+        let input = first.join("input.txt");
+        let rng = second.join("rom-random.txt");
+        fs::write(&input, b"").unwrap();
+        fs::write(&rng, b"").unwrap();
+
+        let sources = [
+            ("--input-script", Some(input.as_path())),
+            ("--rom-random-script", Some(rng.as_path())),
+            ("--load-sram", None),
+        ];
+        let error = validate_replay_source_parents(&sources, false).unwrap_err();
+        assert!(
+            error.contains("mixed replay provenance is unsafe"),
+            "{error}"
+        );
+        assert!(validate_replay_source_parents(&sources, true).is_ok());
+
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -714,6 +714,66 @@ class ParityProbeTest(unittest.TestCase):
             )
             self.assertEqual(parity_probe.saved_checkpoint_frame(checkpoint), 13586)
 
+    def test_cross_build_checkpoint_trust_rejects_different_replay_streams(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory)
+            (checkpoint / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "frame": 29010,
+                        "rust_state": "rust.z3state",
+                        "oracle_state": "oracle.state",
+                        "rom": {"sha256": "rom"},
+                        "input_script": {"sha256": "checkpoint-input"},
+                        "rom_random_script": {"sha256": "checkpoint-rng"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (checkpoint / "rust.z3state").write_bytes(b"rust")
+            (checkpoint / "oracle.state").write_bytes(b"oracle")
+            wanted = {
+                "rom_sha256": "rom",
+                "input_sha256": "newer-run-input",
+                "rom_random_sha256": "checkpoint-rng",
+            }
+
+            self.assertEqual(
+                parity_probe.checkpoint_reuse_problem(
+                    checkpoint, wanted, trust_cross_build=True
+                ),
+                "input changed since the checkpoint was saved",
+            )
+
+    def test_cold_probe_uses_only_a_complete_atomic_replay_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            run_dir = Path(directory)
+            replay = ["--compare-snes9x-oracle", "core", "rom", "10", "--load-sram", "old.srm"]
+            for name in ("manifest.json", "input.txt", "rom-random.txt", "initial.srm"):
+                (run_dir / name).write_bytes(b"")
+
+            self.assertTrue(
+                parity_probe.cold_replay_bundle_available(
+                    run_dir, replay, input_overridden=False, resuming=False
+                )
+            )
+            self.assertFalse(
+                parity_probe.cold_replay_bundle_available(
+                    run_dir, replay, input_overridden=True, resuming=False
+                )
+            )
+            self.assertFalse(
+                parity_probe.cold_replay_bundle_available(
+                    run_dir, replay, input_overridden=False, resuming=True
+                )
+            )
+            (run_dir / "rom-random.txt").unlink()
+            self.assertFalse(
+                parity_probe.cold_replay_bundle_available(
+                    run_dir, replay, input_overridden=False, resuming=False
+                )
+            )
+
     def test_start_mode_description_exposes_checkpoint_or_cold_replay(self) -> None:
         self.assertIn(
             "paired states",
