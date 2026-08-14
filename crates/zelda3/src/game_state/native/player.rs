@@ -419,7 +419,6 @@ pub(crate) struct FollowerLinkState {
     safe_return_x: u16,
     safe_return_y: u16,
     bit9_of_xcoord: u16,
-    somaria_block_bg_check_flag: u8,
     player_pose_draw_counter: u8,
     player_special_draw_flag: u8,
     sleep_in_bed_state: u8,
@@ -613,7 +612,6 @@ impl FollowerLinkState {
             safe_return_y: u16::from(ram_byte(ram, LINK_Y_COORD_SAFE_RETURN_LO))
                 | (u16::from(ram_byte(ram, LINK_Y_COORD_SAFE_RETURN_HI)) << 8),
             bit9_of_xcoord: read_le_u16(ram, BIT9_OF_XCOORD),
-            somaria_block_bg_check_flag: ram_byte(ram, SOMARIA_BLOCK_BG_CHECK_FLAG),
             player_pose_draw_counter: ram_byte(ram, PLAYER_POSE_DRAW_COUNTER),
             player_special_draw_flag: ram_byte(ram, PLAYER_SPECIAL_DRAW_FLAG),
             sleep_in_bed_state: ram_byte(ram, PLAYER_SLEEP_IN_BED_STATE),
@@ -820,7 +818,6 @@ impl FollowerLinkState {
         ram[LINK_Y_COORD_SAFE_RETURN_LO] = self.safe_return_y as u8;
         ram[LINK_Y_COORD_SAFE_RETURN_HI] = (self.safe_return_y >> 8) as u8;
         write_le_u16(ram, BIT9_OF_XCOORD, self.bit9_of_xcoord);
-        ram[SOMARIA_BLOCK_BG_CHECK_FLAG] = self.somaria_block_bg_check_flag;
         ram[PLAYER_POSE_DRAW_COUNTER] = self.player_pose_draw_counter;
         ram[PLAYER_SPECIAL_DRAW_FLAG] = self.player_special_draw_flag;
         ram[PLAYER_SLEEP_IN_BED_STATE] = self.sleep_in_bed_state;
@@ -1739,10 +1736,6 @@ impl FollowerLinkState {
 
     pub(crate) fn bit9_of_xcoord(&self) -> u8 {
         self.bit9_of_xcoord as u8
-    }
-
-    pub(crate) fn somaria_block_bg_check_flag(&self) -> u8 {
-        self.somaria_block_bg_check_flag
     }
 
     pub(crate) fn player_pose_draw_counter(&self) -> u8 {
@@ -3654,10 +3647,6 @@ impl FollowerLinkState {
 
     fn clear_magic_spell_player_lock(&mut self) {
         self.magic_spell_player_lock = 0;
-    }
-
-    fn clear_somaria_block_bg_check_flag(&mut self) {
-        self.somaria_block_bg_check_flag = 0;
     }
 
     fn clear_player_pose_draw_counter(&mut self) {
@@ -6119,12 +6108,6 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
     pub(crate) fn clear_magic_spell_player_lock(&mut self) {
         self.state.clear_magic_spell_player_lock();
         self.ram[MAGIC_SPELL_PLAYER_LOCK_FLAG] = 0;
-        self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn clear_somaria_block_bg_check_flag(&mut self) {
-        self.state.clear_somaria_block_bg_check_flag();
-        self.ram[SOMARIA_BLOCK_BG_CHECK_FLAG] = 0;
         self.debug_assert_matches_ram();
     }
 

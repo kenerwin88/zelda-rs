@@ -627,6 +627,10 @@ impl DungeonEnvironmentState {
         self.somaria_block_switch_counter
     }
 
+    pub(crate) fn somaria_block_bg_check_flag(&self) -> u8 {
+        self.somaria_block_bg_check_flag
+    }
+
     pub(crate) fn orange_blue_barrier_state(&self) -> u8 {
         self.orange_blue_barrier_state
     }

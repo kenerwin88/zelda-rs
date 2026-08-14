@@ -5325,8 +5325,8 @@ impl ZeldaState {
                 {
                     if self
                         .game_state
-                        .player
-                        .follower_link
+                        .dungeon
+                        .environment
                         .somaria_block_bg_check_flag()
                         != 0
                     {
@@ -8713,8 +8713,8 @@ impl ZeldaState {
     fn somaria_block_check_for_transit_tile(&mut self, k: usize) {
         if self
             .game_state
-            .player
-            .follower_link
+            .dungeon
+            .environment
             .somaria_block_bg_check_flag()
             == 0
         {

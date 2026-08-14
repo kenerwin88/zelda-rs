@@ -684,7 +684,7 @@ impl ZeldaState {
         let destination = self.selected_game_load_destination();
         self.enable_force_blank();
         self.set_overworld_map_state(0);
-        self.follower_link_state_mut()
+        self.dungeon_environment_mut()
             .clear_somaria_block_bg_check_flag();
         self.follower_state_mut().clear_tagalong_shared_state_a();
         self.follower_state_mut().clear_draw_anim_frame();

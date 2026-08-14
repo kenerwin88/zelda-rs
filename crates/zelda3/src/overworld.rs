@@ -120,7 +120,7 @@ impl ZeldaState {
 
     pub(super) fn PreOverworld_LoadProperties(&mut self) {
         self.set_color_window_selection(0x82);
-        self.follower_link_state_mut()
+        self.dungeon_environment_mut()
             .clear_somaria_block_bg_check_flag();
         self.AdjustLinkBunnyStatus();
         if self.game_state.frame.main_module == 8 {
