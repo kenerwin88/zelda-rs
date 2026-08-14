@@ -3345,6 +3345,12 @@ impl DisplayState {
         self.pending_nmi_subroutine = value;
     }
 
+    pub(crate) fn dialogue_copy_is_pending(&self) -> bool {
+        // NMI subroutine 2 is the message-buffer copy requested by the
+        // interruptible dialogue renderer.
+        self.pending_nmi_subroutine == 2
+    }
+
     pub(crate) fn clear_pending_nmi_subroutine(&mut self) {
         self.pending_nmi_subroutine = 0;
     }

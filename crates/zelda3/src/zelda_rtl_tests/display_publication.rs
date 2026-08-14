@@ -1517,7 +1517,7 @@ fn explicit_resident_oam_overrides_the_generic_module_defer_rule() {
 }
 
 #[test]
-fn retained_oam_scanout_uses_the_previously_published_shadow_dma() {
+fn retained_oam_scanout_without_a_completed_dma_keeps_resident_ppu_oam() {
     let mut state = ZeldaState::new();
     state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
 
@@ -1526,6 +1526,223 @@ fn retained_oam_scanout_uses_the_previously_published_shadow_dma() {
     published_shadow[40] = u16::from_le_bytes([0x38, 0xf0]);
     following.published_shadow_oam_dma = Some(published_shadow);
     following.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0x34]);
+}
+
+#[test]
+fn retained_oam_scanout_without_new_work_keeps_the_last_published_oam() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+    let mut last_published = state.ppu.oam.clone();
+    last_published[40] = u16::from_le_bytes([0x38, 0xf0]);
+    state.last_presented_oam = Some(last_published);
+
+    let mut following = captured_display_snapshot();
+    following.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0xf0]);
+}
+
+#[test]
+fn retained_oam_scanout_publishes_completed_dma_when_main_iteration_finishes() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
+    following.ram[crate::game_state::constants::NMI_BOOLEAN] = 1;
+    let mut completed_dma = following.ppu.oam.clone();
+    completed_dma[40] = u16::from_le_bytes([0x38, 0xf0]);
+    following.completed_oam_dma_after_capture = Some(completed_dma);
+    let mut retained_oam = following.ppu.oam.clone();
+    retained_oam[40] = u16::from_le_bytes([0x38, 0x55]);
+    following.obj_generation = DisplayObjGeneration::RetainCapturedOam { oam: retained_oam };
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0xf0]);
+}
+
+#[test]
+fn resident_oam_scanout_does_not_advance_during_an_unchanged_continuation() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+
+    let mut following = captured_display_snapshot();
+    let mut completed_dma = following.ppu.oam.clone();
+    completed_dma[40] = u16::from_le_bytes([0x38, 0xf0]);
+    following.completed_oam_dma_after_capture = Some(completed_dma);
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0x34]);
+}
+
+#[test]
+fn resident_oam_scanout_does_not_advance_after_its_nmi_was_already_consumed() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
+    following.ram[crate::game_state::constants::NMI_BOOLEAN] = 0;
+    let mut completed_dma = following.ppu.oam.clone();
+    completed_dma[40] = u16::from_le_bytes([0x38, 0xf0]);
+    following.completed_oam_dma_after_capture = Some(completed_dma);
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0x34]);
+}
+
+#[test]
+fn resident_oam_scanout_keeps_independent_live_link_generation() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
+    following.ram[crate::game_state::constants::NMI_BOOLEAN] = 1;
+    let mut completed_dma = following.ppu.oam.clone();
+    completed_dma[40] = u16::from_le_bytes([0x38, 0xf0]);
+    following.completed_oam_dma_after_capture = Some(completed_dma);
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    following.link_obj_scanout_generation = GraphicsDmaGeneration::LiveAfterMain;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0x34]);
+}
+
+#[test]
+fn captured_oam_scanout_does_not_advance_to_a_later_completed_dma() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+
+    let mut following = captured_display_snapshot();
+    following.ppu.oam[40] = u16::from_le_bytes([0x38, 0x55]);
+    let mut completed_dma = following.ppu.oam.clone();
+    completed_dma[40] = u16::from_le_bytes([0x38, 0xf0]);
+    following.completed_oam_dma_after_capture = Some(completed_dma);
+    following.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0x34]);
+}
+
+#[test]
+fn captured_oam_scanout_publishes_completed_dma_when_main_iteration_finishes() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
+    following.ram[crate::game_state::constants::NMI_BOOLEAN] = 0;
+    let mut completed_dma = following.ppu.oam.clone();
+    completed_dma[40] = u16::from_le_bytes([0x38, 0xf0]);
+    following.completed_oam_dma_after_capture = Some(completed_dma);
+    following.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0xf0]);
+}
+
+#[test]
+fn retained_oam_scanout_publishes_the_queue_after_a_completed_main_iteration() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
+    let mut published_shadow = following.ppu.oam.clone();
+    published_shadow[40] = u16::from_le_bytes([0x38, 0xf0]);
+    following.published_shadow_oam_dma = Some(published_shadow);
+    following.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0xf0]);
+}
+
+#[test]
+fn completed_oam_dma_promotes_the_queued_shadow_generation() {
+    let mut state = ZeldaState::new();
+    state.frame_ctr_dbg = 17;
+    let mut display = captured_display_snapshot();
+    display.publication_host_frame = 17;
+    display.published_shadow_oam_dma = Some(vec![0x1234; state.ppu.oam.len()]);
+    state.display_snapshot = Some(Box::new(display));
+    let host_boundary = vec![0x78, 0x56].repeat(state.ppu.oam.len());
+    state.game_state.display.set_pending_nmi_subroutine(2);
+
+    state.record_completed_oam_dma_for_display_boundary(Some(&host_boundary), false);
+
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .and_then(|display| display.completed_oam_dma_after_capture.as_ref())
+            .map(|oam| oam[0]),
+        Some(0x1234),
+    );
+    state.record_completed_oam_dma_for_display_boundary(Some(&host_boundary), true);
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .and_then(|display| display.completed_oam_dma_after_capture.as_ref())
+            .map(|oam| oam[0]),
+        Some(0x5678),
+    );
+
+    state.game_state.display.clear_pending_nmi_subroutine();
+    state.ppu.oam.fill(0xabcd);
+    state.record_completed_oam_dma_for_display_boundary(Some(&host_boundary), false);
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .and_then(|display| display.completed_oam_dma_after_capture.as_ref())
+            .map(|oam| oam[0]),
+        Some(0xabcd),
+    );
+}
+
+#[test]
+fn explicit_published_shadow_scanout_still_uses_the_software_shadow() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+
+    let mut following = captured_display_snapshot();
+    let mut published_shadow = following.ppu.oam.clone();
+    published_shadow[40] = u16::from_le_bytes([0x38, 0xf0]);
+    following.published_shadow_oam_dma = Some(published_shadow);
+    following.oam_scanout_source = OamScanoutSource::ComposePublishedShadowDma;
     let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
 
     state.compose_display_oam(&following, &plan);

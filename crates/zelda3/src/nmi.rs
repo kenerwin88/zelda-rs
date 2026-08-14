@@ -740,6 +740,10 @@ impl ZeldaState {
             for i in 0..self.ppu.oam.len() {
                 self.ppu.oam[i] = read_word_from_slice(&oam_buf, i * 2);
             }
+            self.record_completed_oam_dma_for_display_boundary(
+                oam_dma_source,
+                entry_frame.frame_counter != frame.frame_counter,
+            );
         }
 
         if std::env::var_os("ZELDA3_DEBUG_ATTRACT_NMI_UPLOAD").is_some()
