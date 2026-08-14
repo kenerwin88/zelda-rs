@@ -56,23 +56,57 @@ fn sprite_init_value(table: usize, ty: u8) -> u8 {
     (hex_nibble(bytes[idx]) << 4) | hex_nibble(bytes[idx + 1])
 }
 
-/// Cached-sprite fields still holding their cached value when room `$21`'s
-/// scroll transition crosses the scanout boundary mid-`UncacheAndExecuteSprite`.
-///
-/// `UncacheAndExecuteSprite` (`$9D:EA00`) loads all 24 cached fields, runs the
-/// sprite, then restores the live slot from its backup walking the fields in
-/// reverse (`$9D:EB0A`..`$9D:EB67`). The boundary lands inside that restore
-/// walk, so the low fields still read as cached while the high fields already
-/// read as restored. Snes9x `wram` receipts for slot 2 place the cut after
-/// field 9 in subsubmodule 5, field 12 in 6, and field 13 in 7 — leaving
-/// fields `0..N` cached, which is the same boundary shape as interrupting the
-/// load after `N` fields.
-fn room_21_cached_fields_live_at_nmi(subsubmodule: u8) -> usize {
+const CACHED_SPRITE_FIELD_COUNT: usize = 24;
+const CACHED_SPRITE_RAT: u8 = 0x6d;
+const CACHED_SPRITE_ENTRY_TO_FIRST_CALL_MASTER_CYCLES: u32 = 1_400;
+const CACHED_SPRITE_CALL_TO_RESTORE_MASTER_CYCLES: u32 = 8_884;
+const CACHED_SPRITE_COMPLETE_CALL_MASTER_CYCLES: u32 = 10_674;
+const CACHED_SPRITE_RESTORE_SUFFIX_MASTER_CYCLES: u32 = 204;
+const CACHED_SPRITE_PLA_MASTER_CYCLES: u32 = 28;
+const CACHED_SPRITE_STA_MASTER_CYCLES: u32 = 38;
+const CACHED_SPRITE_LONG_STA_MASTER_CYCLES: u32 = 40;
+const DUNGEON_TRANSITION_HDMA_STALL_MASTER_CYCLES: u16 = 42;
+
+/// Snes9x PC/raster positions at `ExecuteCachedSprites` (`$1D:E9DA`) for the
+/// measured dungeon-transition main-loop phases. These are CPU phases, not
+/// room identities: any fully measured cached workload entering at the same
+/// phase is advanced by the cycle budget below.
+const fn dungeon_transition_cached_sprite_entry_raster(
+    subsubmodule: u8,
+) -> Option<CpuRasterPosition> {
     match subsubmodule {
-        5 => 9,
-        6 => 12,
-        _ => 13,
+        4 => Some(CpuRasterPosition::new(261, 72)),
+        5 => Some(CpuRasterPosition::new(182, 1_266)),
+        6 => Some(CpuRasterPosition::new(183, 44)),
+        7 => Some(CpuRasterPosition::new(183, 124)),
+        8 => Some(CpuRasterPosition::new(119, 1_180)),
+        _ => None,
     }
+}
+
+fn cached_sprite_fields_live_when_restore_reaches_nmi(
+    budget: &mut CpuCycleBudget,
+) -> Option<usize> {
+    let mut restored_fields = 0;
+    for field in 0..CACHED_SPRITE_FIELD_COUNT {
+        if budget
+            .advance_instruction(CACHED_SPRITE_PLA_MASTER_CYCLES)
+            .was_interrupted()
+        {
+            return Some(CACHED_SPRITE_FIELD_COUNT - restored_fields);
+        }
+        let sta_master_cycles = if field == 1 {
+            CACHED_SPRITE_LONG_STA_MASTER_CYCLES
+        } else {
+            CACHED_SPRITE_STA_MASTER_CYCLES
+        };
+        let advance = budget.advance_instruction(sta_master_cycles);
+        restored_fields += 1;
+        if advance.was_interrupted() {
+            return Some(CACHED_SPRITE_FIELD_COUNT - restored_fields);
+        }
+    }
+    None
 }
 
 fn empty_sprite_hit_box() -> SpriteHitBox {
@@ -2044,13 +2078,13 @@ impl ZeldaState {
             self.sprite_system_mut().clear_alt_sprites_flag();
             return;
         }
+        let interruption = self.cached_sprite_cpu_interruption();
         for i in (0..16usize).rev() {
             self.sprite_system_mut().set_cur_object_index(i as u8);
             if self.cached_sprite_slot(i).is_active() {
-                if self.room_21_cached_sprite_execution_crosses_nmi(i) {
+                if interruption.is_some_and(|(slot, _)| slot == i) {
                     let mut live_slot_backup = [0; 24];
-                    let copied_fields =
-                        room_21_cached_fields_live_at_nmi(self.game_state.frame.subsubmodule);
+                    let copied_fields = interruption.unwrap().1;
                     self.cached_sprite_slot_mut(i)
                         .load_cached_fields_into_live_before_nmi(
                             &mut live_slot_backup,
@@ -2077,13 +2111,69 @@ impl ZeldaState {
         }
     }
 
-    fn room_21_cached_sprite_execution_crosses_nmi(&self, slot: usize) -> bool {
-        self.rom_startup_timing()
-            && self.game_state.frame.main_module == 7
-            && self.game_state.frame.submodule == 2
-            && matches!(self.game_state.frame.subsubmodule, 5 | 6 | 7)
-            && self.game_state.world.location.dungeon_room_index() == 0x21
-            && slot == 2
+    fn cached_sprite_cpu_interruption(&self) -> Option<(usize, usize)> {
+        if !self.rom_startup_timing()
+            || self.game_state.frame.main_module != 7
+            || self.game_state.frame.submodule != 2
+            || self.active_dungeon_sprite_main_return.is_none()
+        {
+            return None;
+        }
+        let entry = dungeon_transition_cached_sprite_entry_raster(
+            self.game_state.frame.subsubmodule,
+        )?;
+        if (0..16usize).any(|slot| {
+            let cached = self.cached_sprite_slot(slot);
+            cached.is_active() && cached.type_byte() != CACHED_SPRITE_RAT
+        }) {
+            // Do not borrow the rat timing for an unmeasured sprite routine.
+            return None;
+        }
+
+        let mut budget = CpuCycleBudget::until_next_nmi(
+            entry,
+            CpuBusWorkload::with_hdma_stall(DUNGEON_TRANSITION_HDMA_STALL_MASTER_CYCLES),
+        );
+        if budget
+            .advance_interruptible(CACHED_SPRITE_ENTRY_TO_FIRST_CALL_MASTER_CYCLES)
+            .was_interrupted()
+        {
+            return None;
+        }
+
+        for slot in (0..16usize).rev() {
+            if !self.cached_sprite_slot(slot).is_active() {
+                continue;
+            }
+            if budget
+                .advance_interruptible(CACHED_SPRITE_CALL_TO_RESTORE_MASTER_CYCLES)
+                .was_interrupted()
+            {
+                return None;
+            }
+            if let Some(live_fields) =
+                cached_sprite_fields_live_when_restore_reaches_nmi(&mut budget)
+            {
+                return Some((slot, live_fields));
+            }
+            let restore_work = CACHED_SPRITE_FIELD_COUNT as u32
+                * (CACHED_SPRITE_PLA_MASTER_CYCLES + CACHED_SPRITE_STA_MASTER_CYCLES)
+                + (CACHED_SPRITE_LONG_STA_MASTER_CYCLES
+                    - CACHED_SPRITE_STA_MASTER_CYCLES);
+            debug_assert_eq!(
+                CACHED_SPRITE_CALL_TO_RESTORE_MASTER_CYCLES
+                    + restore_work
+                    + CACHED_SPRITE_RESTORE_SUFFIX_MASTER_CYCLES,
+                CACHED_SPRITE_COMPLETE_CALL_MASTER_CYCLES,
+            );
+            if budget
+                .advance_interruptible(CACHED_SPRITE_RESTORE_SUFFIX_MASTER_CYCLES)
+                .was_interrupted()
+            {
+                return None;
+            }
+        }
+        None
     }
 
     pub(super) fn complete_cached_sprite_main_after_interrupted_slot(
@@ -2092,7 +2182,6 @@ impl ZeldaState {
         copied_fields: usize,
         live_slot_backup: &[u8; 24],
     ) {
-        debug_assert_eq!(interrupted_slot, 2);
         let mut live_slot_backup = *live_slot_backup;
         self.cached_sprite_slot_mut(interrupted_slot)
             .complete_cached_dynamic_fields_into_live_after_nmi(

@@ -1373,15 +1373,28 @@ fn sprite_bounce_from_tile_collision_returns_zero_without_collision() {
 }
 
 #[test]
-fn room_21_cached_sprite_nmi_cut_keeps_direction_cached_in_subsubmodules_6_and_7() {
+fn cached_sprite_cycle_budget_keeps_direction_cached_in_later_transition_phases() {
     use crate::game_state::constants::{CACHED_SPRITE_LIVE_FIELDS, SPRITE_D};
 
-    // Snes9x `wram` receipts for room $21 slot 2 place the boundary inside
-    // UncacheAndExecuteSprite's reverse restore walk ($9D:EB0A..$9D:EB67),
-    // after cached field 9 in subsubmodule 5, 12 in 6, and 13 in 7.
-    assert_eq!(room_21_cached_fields_live_at_nmi(5), 9);
-    assert_eq!(room_21_cached_fields_live_at_nmi(6), 12);
-    assert_eq!(room_21_cached_fields_live_at_nmi(7), 13);
+    let fields_live = |subsubmodule| {
+        let entry = dungeon_transition_cached_sprite_entry_raster(subsubmodule).unwrap();
+        let mut budget = CpuCycleBudget::until_next_nmi(
+            entry,
+            CpuBusWorkload::with_hdma_stall(DUNGEON_TRANSITION_HDMA_STALL_MASTER_CYCLES),
+        );
+        let work_before_restore = CACHED_SPRITE_ENTRY_TO_FIRST_CALL_MASTER_CYCLES
+            + 4 * CACHED_SPRITE_COMPLETE_CALL_MASTER_CYCLES
+            + CACHED_SPRITE_CALL_TO_RESTORE_MASTER_CYCLES;
+        assert_eq!(
+            budget.advance_interruptible(work_before_restore),
+            CpuWorkAdvance::Complete
+        );
+        cached_sprite_fields_live_when_restore_reaches_nmi(&mut budget).unwrap()
+    };
+
+    assert_eq!(fields_live(5), 9);
+    assert_eq!(fields_live(6), 12);
+    assert_eq!(fields_live(7), 13);
 
     let direction = CACHED_SPRITE_LIVE_FIELDS
         .iter()
@@ -1389,7 +1402,7 @@ fn room_21_cached_sprite_nmi_cut_keeps_direction_cached_in_subsubmodules_6_and_7
         .expect("SPRITE_D is a cached-sprite field");
     // f31287 divergence: the boundary has already restored SPRITE_D in
     // subsubmodule 5, but still reads the cached value in 6 and 7.
-    assert!(direction >= room_21_cached_fields_live_at_nmi(5));
-    assert!(direction < room_21_cached_fields_live_at_nmi(6));
-    assert!(direction < room_21_cached_fields_live_at_nmi(7));
+    assert!(direction >= fields_live(5));
+    assert!(direction < fields_live(6));
+    assert!(direction < fields_live(7));
 }

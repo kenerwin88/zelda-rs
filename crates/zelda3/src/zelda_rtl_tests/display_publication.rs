@@ -484,20 +484,6 @@ fn dungeon_supertile_filter_entry_publishes_live_animated_tiles() {
     assert!(
         !rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(first_scroll, first_scroll,)
     );
-    assert!(
-        rom_dungeon_supertile_filter_return_resumes_first_scroll_after_nmi(
-            filter_return,
-            first_scroll,
-            0x60,
-        )
-    );
-    assert!(
-        !rom_dungeon_supertile_filter_return_resumes_first_scroll_after_nmi(
-            filter_return,
-            first_scroll,
-            0x71,
-        )
-    );
     assert!(rom_dungeon_module_iteration_runs_after_leading_nmi(
         first_scroll,
         0x60,

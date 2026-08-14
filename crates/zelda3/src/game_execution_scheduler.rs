@@ -5,6 +5,205 @@ use super::{
     SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES,
 };
 
+const MASTER_CYCLES_PER_SCANLINE: u32 = 1_364;
+const NTSC_SCANLINES_PER_FIELD: u32 = 262;
+const NMI_SCANLINE: u32 = 225;
+const WRAM_REFRESH_CYCLE: u32 = 538;
+const WRAM_REFRESH_STALL_MASTER_CYCLES: u32 = 40;
+const HDMA_START_CYCLE: u32 = 1_106;
+
+/// A 65816 position within an NTSC field, expressed in S-CPU master cycles.
+///
+/// Translated routines normally execute atomically. Work that reaches NMI is
+/// instead advanced through this clock so the continuation is selected by the
+/// remaining cycle budget, not by a room or route identifier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct CpuRasterPosition {
+    scanline: u16,
+    master_cycle: u16,
+}
+
+impl CpuRasterPosition {
+    pub(super) const fn new(scanline: u16, master_cycle: u16) -> Self {
+        Self {
+            scanline,
+            master_cycle,
+        }
+    }
+
+    const fn unwrapped_master_cycles(self) -> u32 {
+        self.scanline as u32 * MASTER_CYCLES_PER_SCANLINE + self.master_cycle as u32
+    }
+}
+
+/// Bus work which can preempt the CPU before NMI.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct CpuBusWorkload {
+    hdma_stall_master_cycles: u16,
+}
+
+impl CpuBusWorkload {
+    pub(super) const fn with_hdma_stall(hdma_stall_master_cycles: u16) -> Self {
+        Self {
+            hdma_stall_master_cycles,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CpuWorkAdvance {
+    Complete,
+    InterruptedAtNmi {
+        remaining_work_master_cycles: u32,
+    },
+}
+
+impl CpuWorkAdvance {
+    pub(super) const fn was_interrupted(self) -> bool {
+        matches!(self, Self::InterruptedAtNmi { .. })
+    }
+}
+
+/// Remaining CPU time before the next NMI, including refresh and HDMA bus
+/// steals. Instructions are advanced atomically: when NMI becomes pending in
+/// the middle of an instruction, that instruction completes before the
+/// continuation is suspended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct CpuCycleBudget {
+    clock_master_cycles: u32,
+    nmi_master_cycles: u32,
+    bus: CpuBusWorkload,
+}
+
+impl CpuCycleBudget {
+    pub(super) fn until_next_nmi(entry: CpuRasterPosition, bus: CpuBusWorkload) -> Self {
+        let clock_master_cycles = entry.unwrapped_master_cycles();
+        let nmi_field = u32::from(entry.scanline >= NMI_SCANLINE as u16);
+        let nmi_master_cycles =
+            (nmi_field * NTSC_SCANLINES_PER_FIELD + NMI_SCANLINE)
+                * MASTER_CYCLES_PER_SCANLINE;
+        debug_assert!(clock_master_cycles < nmi_master_cycles);
+        Self {
+            clock_master_cycles,
+            nmi_master_cycles,
+            bus,
+        }
+    }
+
+    /// Advance an interruptible span, stopping exactly when NMI becomes
+    /// pending and retaining the unexecuted work for a continuation.
+    pub(super) fn advance_interruptible(
+        &mut self,
+        mut work_master_cycles: u32,
+    ) -> CpuWorkAdvance {
+        debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
+        while work_master_cycles != 0 {
+            let (work_until_event, event_stall) = self.next_bus_event();
+            let master_cycles_until_nmi = self.nmi_master_cycles - self.clock_master_cycles;
+            if master_cycles_until_nmi <= work_until_event {
+                if work_master_cycles <= master_cycles_until_nmi {
+                    self.clock_master_cycles += work_master_cycles;
+                    return CpuWorkAdvance::Complete;
+                }
+                self.clock_master_cycles = self.nmi_master_cycles;
+                return CpuWorkAdvance::InterruptedAtNmi {
+                    remaining_work_master_cycles: work_master_cycles - master_cycles_until_nmi,
+                };
+            }
+            if work_master_cycles <= work_until_event {
+                self.clock_master_cycles += work_master_cycles;
+                return CpuWorkAdvance::Complete;
+            }
+
+            self.clock_master_cycles += work_until_event;
+            work_master_cycles -= work_until_event;
+            if self.clock_master_cycles + event_stall >= self.nmi_master_cycles {
+                self.clock_master_cycles = self.nmi_master_cycles;
+                return CpuWorkAdvance::InterruptedAtNmi {
+                    remaining_work_master_cycles: work_master_cycles,
+                };
+            }
+            self.clock_master_cycles += event_stall;
+        }
+        CpuWorkAdvance::Complete
+    }
+
+    /// Advance one indivisible 65816 instruction. An NMI which becomes pending
+    /// during the instruction is observed immediately after it completes.
+    pub(super) fn advance_instruction(&mut self, instruction_master_cycles: u32) -> CpuWorkAdvance {
+        debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
+        self.advance_work_unbounded(instruction_master_cycles);
+        if self.clock_master_cycles >= self.nmi_master_cycles {
+            CpuWorkAdvance::InterruptedAtNmi {
+                remaining_work_master_cycles: 0,
+            }
+        } else {
+            CpuWorkAdvance::Complete
+        }
+    }
+
+    fn next_bus_event(self) -> (u32, u32) {
+        let field_cycle = self.clock_master_cycles
+            % (NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE);
+        let scanline = field_cycle / MASTER_CYCLES_PER_SCANLINE;
+        let cycle = field_cycle % MASTER_CYCLES_PER_SCANLINE;
+        let mut next_event_cycle = MASTER_CYCLES_PER_SCANLINE;
+        let mut event_stall = 0;
+
+        for (event_cycle, stall, enabled) in [
+            (
+                WRAM_REFRESH_CYCLE,
+                WRAM_REFRESH_STALL_MASTER_CYCLES,
+                true,
+            ),
+            (
+                HDMA_START_CYCLE,
+                u32::from(self.bus.hdma_stall_master_cycles),
+                scanline < NMI_SCANLINE && self.bus.hdma_stall_master_cycles != 0,
+            ),
+        ] {
+            if enabled && cycle < event_cycle && event_cycle < next_event_cycle {
+                next_event_cycle = event_cycle;
+                event_stall = stall;
+            }
+        }
+        (next_event_cycle - cycle, event_stall)
+    }
+
+    fn advance_work_unbounded(&mut self, mut work_master_cycles: u32) {
+        while work_master_cycles != 0 {
+            let (work_until_event, event_stall) = self.next_bus_event();
+            if work_until_event < work_master_cycles {
+                self.clock_master_cycles += work_until_event + event_stall;
+                work_master_cycles -= work_until_event;
+            } else {
+                self.clock_master_cycles += work_master_cycles;
+                work_master_cycles = 0;
+            }
+        }
+    }
+
+    #[cfg(test)]
+    fn raster_position(self) -> CpuRasterPosition {
+        let field_cycle = self.clock_master_cycles
+            % (NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE);
+        CpuRasterPosition::new(
+            (field_cycle / MASTER_CYCLES_PER_SCANLINE) as u16,
+            (field_cycle % MASTER_CYCLES_PER_SCANLINE) as u16,
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum CpuHostPhase {
+    #[default]
+    AwaitingHostFrame,
+    MainLoopReady,
+    MainLoopRunning,
+    SuspendedCallStack,
+    ReturnedToMainLoop,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum GameWorkStep {
     Waiting,
@@ -226,6 +425,7 @@ enum GameExecutionContinuation {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct GameExecutionScheduler {
     continuation: Option<GameExecutionContinuation>,
+    cpu_host_phase: CpuHostPhase,
 }
 
 impl GameExecutionScheduler {
@@ -235,6 +435,35 @@ impl GameExecutionScheduler {
 
     pub(super) fn is_idle(self) -> bool {
         self.continuation.is_none()
+    }
+
+    pub(super) fn begin_host_frame(&mut self) {
+        self.cpu_host_phase = if self.work_suspends_translated_call_stack() {
+            CpuHostPhase::SuspendedCallStack
+        } else {
+            CpuHostPhase::MainLoopReady
+        };
+    }
+
+    pub(super) fn begin_main_loop_iteration(&mut self) {
+        debug_assert!(matches!(
+            self.cpu_host_phase,
+            CpuHostPhase::MainLoopReady | CpuHostPhase::SuspendedCallStack
+        ));
+        self.cpu_host_phase = CpuHostPhase::MainLoopRunning;
+    }
+
+    pub(super) fn finish_main_loop_iteration(&mut self) {
+        debug_assert_eq!(self.cpu_host_phase, CpuHostPhase::MainLoopRunning);
+        self.cpu_host_phase = if self.work_suspends_translated_call_stack() {
+            CpuHostPhase::SuspendedCallStack
+        } else {
+            CpuHostPhase::ReturnedToMainLoop
+        };
+    }
+
+    pub(super) fn fresh_main_loop_iteration_is_ready(self) -> bool {
+        self.cpu_host_phase == CpuHostPhase::MainLoopReady
     }
 
     fn schedule_continuation(&mut self, continuation: GameExecutionContinuation) {
@@ -447,5 +676,98 @@ impl GameExecutionScheduler {
             "pre-main caller completed through the wrong game-thread return path"
         );
         self.continuation = None;
+    }
+}
+
+#[cfg(test)]
+mod cpu_timing_tests {
+    use super::*;
+
+    const DUNGEON_HDMA_STALL: u16 = 42;
+    const WORK_TO_CACHED_RESTORE: u32 = 1_400 + 4 * 10_674 + 8_884;
+
+    fn restored_fields_before_nmi(entry: CpuRasterPosition) -> usize {
+        let mut budget = CpuCycleBudget::until_next_nmi(
+            entry,
+            CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
+        );
+        assert_eq!(
+            budget.advance_interruptible(WORK_TO_CACHED_RESTORE),
+            CpuWorkAdvance::Complete
+        );
+        let mut restored = 0;
+        for field in 0..24 {
+            if budget.advance_instruction(28).was_interrupted() {
+                break;
+            }
+            let advance = budget.advance_instruction(if field == 1 { 40 } else { 38 });
+            restored += 1;
+            if advance.was_interrupted() {
+                break;
+            }
+        }
+        restored
+    }
+
+    #[test]
+    fn cached_restore_position_follows_cpu_work_and_bus_stalls() {
+        for (entry, restore) in [
+            (CpuRasterPosition::new(182, 1_266), CpuRasterPosition::new(224, 320)),
+            (CpuRasterPosition::new(183, 44), CpuRasterPosition::new(224, 462)),
+            (CpuRasterPosition::new(183, 124), CpuRasterPosition::new(224, 582)),
+        ] {
+            let mut budget = CpuCycleBudget::until_next_nmi(
+                entry,
+                CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
+            );
+            assert_eq!(
+                budget.advance_interruptible(WORK_TO_CACHED_RESTORE),
+                CpuWorkAdvance::Complete
+            );
+            assert_eq!(budget.raster_position(), restore);
+        }
+    }
+
+    #[test]
+    fn cached_restore_cut_is_derived_from_remaining_cycles() {
+        assert_eq!(
+            restored_fields_before_nmi(CpuRasterPosition::new(182, 1_266)),
+            15
+        );
+        assert_eq!(
+            restored_fields_before_nmi(CpuRasterPosition::new(183, 44)),
+            12
+        );
+        assert_eq!(
+            restored_fields_before_nmi(CpuRasterPosition::new(183, 124)),
+            11
+        );
+    }
+
+    #[test]
+    fn interrupted_work_retains_its_remaining_cycle_budget() {
+        let mut budget = CpuCycleBudget::until_next_nmi(
+            CpuRasterPosition::new(224, 1_300),
+            CpuBusWorkload::default(),
+        );
+        assert_eq!(
+            budget.advance_interruptible(100),
+            CpuWorkAdvance::InterruptedAtNmi {
+                remaining_work_master_cycles: 36,
+            }
+        );
+    }
+
+    #[test]
+    fn returned_main_loop_waits_for_the_next_host_frame() {
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.begin_host_frame();
+        assert!(scheduler.fresh_main_loop_iteration_is_ready());
+        scheduler.begin_main_loop_iteration();
+        scheduler.finish_main_loop_iteration();
+        assert!(!scheduler.fresh_main_loop_iteration_is_ready());
+
+        scheduler.begin_host_frame();
+        assert!(scheduler.fresh_main_loop_iteration_is_ready());
     }
 }

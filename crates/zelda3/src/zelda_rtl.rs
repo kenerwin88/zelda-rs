@@ -1757,19 +1757,6 @@ const fn rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(
         && captured.subsubmodule == 8
 }
 
-const fn rom_dungeon_supertile_filter_return_resumes_first_scroll_after_nmi(
-    entry: crate::game_state::FrameState,
-    filtered: crate::game_state::FrameState,
-    room: u8,
-) -> bool {
-    // Most room transitions finish state 7 before vblank, emit the first
-    // state-8 image at that NMI, and then execute the first scroll iteration
-    // before the host call returns. Rooms $71/$72 have separately measured
-    // interrupted-filter continuations and must keep their scheduler path.
-    rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(entry, filtered)
-        && !matches!(room, 0x71 | 0x72)
-}
-
 const fn rom_room_82_sprite_conversion_defers_trailing_nmi(
     entry: crate::game_state::FrameState,
     exit: crate::game_state::FrameState,
@@ -17717,6 +17704,7 @@ impl ZeldaState {
     /// lockstep oracle starts validating them immediately.
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
         self.sync_native_game_state_from_ram();
+        self.game_execution_scheduler.begin_host_frame();
         if self
             .spiral_stair_return_oam_publication_host_frame
             .is_some_and(|start| self.frame_ctr_dbg.wrapping_sub(start) > 1)
@@ -19359,29 +19347,12 @@ impl ZeldaState {
             self.replay_trace_col("after-game-loop");
             self.replay_trace_ram_watch("after-game-loop");
         }
-        if self.rom_startup_timing()
-            && run_what & crate::RUN_MAIN != 0
-            && self.game_execution_scheduler.is_idle()
-            && rom_dungeon_supertile_filter_return_resumes_first_scroll_after_nmi(
-                frame,
-                self.game_state.frame,
-                self.game_state.world.location.dungeon_room_index(),
-            )
-        {
-            // State 7 returned before this vblank. Preserve the scanout it
-            // selected (including the just-completed animated-BG DMA), then
-            // resume the first state-8 main iteration without running a second
-            // NMI in this host call. This keeps displayed scroll at the filter
-            // boundary while live CPU state advances one scroll step, matching
-            // the ROM's post-frame chronology.
-            self.capture_display_snapshot();
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-            self.zelda_run_game_loop();
-            self.assert_native_frame_state_matches_ram();
-            self.assert_native_world_location_state_matches_ram();
-            self.assert_native_display_state_matches_ram();
-            return;
-        }
+        // A completed main-loop iteration is waiting on the next host frame.
+        // Only a suspended 65816 call stack may resume after this frame's
+        // trailing NMI; a fresh iteration cannot be manufactured here.
+        debug_assert!(!self
+            .game_execution_scheduler
+            .fresh_main_loop_iteration_is_ready());
         if matches!(
             self.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::FinishItemReceiptGraphics { .. })
@@ -21201,6 +21172,12 @@ impl ZeldaState {
     }
 
     fn zelda_run_game_loop(&mut self) {
+        self.game_execution_scheduler.begin_main_loop_iteration();
+        self.zelda_run_game_loop_body();
+        self.game_execution_scheduler.finish_main_loop_iteration();
+    }
+
+    fn zelda_run_game_loop_body(&mut self) {
         if !self.dialogue_scroll_cpu_is_idle() {
             // Lag frame of an in-flight message-line scroll: the ROM's main
             // loop is still inside the scroll copy, so nothing else runs —
