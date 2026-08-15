@@ -1530,6 +1530,92 @@ fn effective_presented_obj_dma_advances_only_the_written_obj_page() {
 }
 
 #[test]
+fn effective_presented_cgram_uses_the_palette_installed_by_the_leading_nmi() {
+    let mut state = ZeldaState::new();
+    state.ppu.cgram.fill(0x1111);
+    state.capture_display_snapshot();
+
+    state.begin_effective_presented_dma();
+    state.ppu.cgram.fill(0x2222);
+    state.record_completed_cgram_dma_for_display_boundary();
+    state.record_effective_presented_dma_for_active_scanout();
+
+    let active = state.display_snapshot.as_deref().unwrap().clone();
+    state.ppu.cgram.fill(0xeeee);
+    state.compose_effective_presented_cgram(&active);
+
+    assert!(state.ppu.cgram.iter().all(|&word| word == 0x2222));
+}
+
+#[test]
+fn effective_presented_oam_dma_overrides_a_pre_interrupt_retained_generation() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam.fill(0x1111);
+    state.capture_display_snapshot();
+    state.display_snapshot.as_mut().unwrap().oam_scanout_source =
+        OamScanoutSource::ComposeLiveAfterNmi;
+
+    state.begin_effective_presented_dma();
+    state.ppu.oam.fill(0x2222);
+    state.record_completed_oam_dma_for_display_boundary();
+    state.record_effective_presented_dma_for_active_scanout();
+
+    let active = state.display_snapshot.as_deref().unwrap().clone();
+    state.ppu.oam.fill(0x3333);
+    state.compose_effective_presented_obj(&active);
+
+    assert!(state.ppu.oam.iter().all(|&word| word == 0x2222));
+}
+
+#[test]
+fn effective_presented_oam_dma_does_not_override_explicit_retained_provenance() {
+    let mut state = ZeldaState::new();
+    state.capture_display_snapshot();
+    state.display_snapshot.as_mut().unwrap().oam_scanout_source =
+        OamScanoutSource::RetainCapturedBeforeNmi;
+
+    state.begin_effective_presented_dma();
+    state.ppu.oam.fill(0x2222);
+    state.record_completed_oam_dma_for_display_boundary();
+    state.record_effective_presented_dma_for_active_scanout();
+
+    let active = state.display_snapshot.as_deref().unwrap().clone();
+    state.ppu.oam.fill(0x1111);
+    state.compose_effective_presented_obj(&active);
+
+    assert!(state.ppu.oam.iter().all(|&word| word == 0x1111));
+}
+
+#[test]
+fn effective_presented_obj_dma_empty_receipt_retains_last_decoded_page() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram.fill(0x1111);
+    state.capture_display_snapshot();
+    state.last_presented_obj_vram = Some(vec![0x2222; 0x400]);
+
+    // CPU-authored source words and live VRAM may move while NMI is held. An
+    // explicit boundary receipt with no OBJ writes must not synthesize a new
+    // decoded cache from either of them.
+    state.ppu.vram[0x4000..0x4400].fill(0x3333);
+    state.active_effective_dma_writes = Some(EffectiveDmaWriteSet::new(state.ppu.vram.len()));
+    state.record_effective_presented_dma_for_active_scanout();
+
+    let active = state.display_snapshot.as_deref().unwrap().clone();
+    assert!(active
+        .effective_presented_dma
+        .as_ref()
+        .unwrap()
+        .obj_vram_writes
+        .is_empty());
+    state.compose_effective_presented_obj(&active);
+
+    assert_eq!(
+        &state.ppu.obj_vram_latch.as_ref().unwrap()[0x4000..0x4400],
+        &[0x2222; 0x400]
+    );
+}
+
+#[test]
 fn effective_presented_obj_dma_merge_keeps_latest_write_per_address() {
     let mut state = ZeldaState::new();
     state.ppu.vram[0x4009] = 0x1111;
@@ -1738,7 +1824,7 @@ fn captured_oam_scanout_does_not_advance_to_a_later_completed_dma() {
 }
 
 #[test]
-fn captured_oam_scanout_publishes_completed_dma_when_main_iteration_finishes() {
+fn captured_oam_scanout_rejects_a_later_dma_when_main_iteration_finishes() {
     let mut state = ZeldaState::new();
     state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
     state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
@@ -1754,7 +1840,58 @@ fn captured_oam_scanout_publishes_completed_dma_when_main_iteration_finishes() {
 
     state.compose_display_oam(&following, &plan);
 
-    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0xf0]);
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0x34]);
+}
+
+#[test]
+fn explicit_retained_oam_receipt_rejects_a_later_completed_dma() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
+    following.ram[crate::game_state::constants::NMI_BOOLEAN] = 0;
+    let mut published_shadow = following.ppu.oam.clone();
+    published_shadow[40] = u16::from_le_bytes([0x38, 0x55]);
+    following.published_shadow_oam_dma = Some(published_shadow);
+    let mut completed_dma = following.ppu.oam.clone();
+    completed_dma[40] = u16::from_le_bytes([0x38, 0xf0]);
+    following.completed_oam_dma_after_capture = Some(completed_dma.clone());
+    following.effective_presented_dma = Some(EffectivePresentedDma {
+        obj_vram_writes: Vec::new(),
+        completed_oam: Some(completed_dma),
+        completed_cgram: None,
+    });
+    following.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0x55]);
+}
+
+#[test]
+fn captured_oam_scanout_with_pending_nmi_publishes_the_queued_shadow() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
+    state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
+
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::FRAME_COUNTER] = 0x11;
+    following.ram[crate::game_state::constants::NMI_BOOLEAN] = 1;
+    let mut completed_dma = following.ppu.oam.clone();
+    completed_dma[40] = u16::from_le_bytes([0x38, 0xf0]);
+    following.completed_oam_dma_after_capture = Some(completed_dma);
+    let mut published_shadow = following.ppu.oam.clone();
+    published_shadow[40] = u16::from_le_bytes([0x38, 0x55]);
+    following.published_shadow_oam_dma = Some(published_shadow);
+    following.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0x55]);
 }
 
 #[test]
@@ -1777,27 +1914,17 @@ fn retained_oam_scanout_publishes_the_queue_after_a_completed_main_iteration() {
 }
 
 #[test]
-fn completed_oam_dma_promotes_the_queued_shadow_generation() {
+fn completed_oam_dma_records_the_exact_installed_generation() {
     let mut state = ZeldaState::new();
     state.frame_ctr_dbg = 17;
     let mut display = captured_display_snapshot();
     display.publication_host_frame = 17;
     display.published_shadow_oam_dma = Some(vec![0x1234; state.ppu.oam.len()]);
     state.display_snapshot = Some(Box::new(display));
-    let host_boundary = vec![0x78, 0x56].repeat(state.ppu.oam.len());
-    state.game_state.display.set_pending_nmi_subroutine(2);
+    state.ppu.oam.fill(0x5678);
 
-    state.record_completed_oam_dma_for_display_boundary(Some(&host_boundary), false);
+    state.record_completed_oam_dma_for_display_boundary();
 
-    assert_eq!(
-        state
-            .display_snapshot
-            .as_ref()
-            .and_then(|display| display.completed_oam_dma_after_capture.as_ref())
-            .map(|oam| oam[0]),
-        Some(0x1234),
-    );
-    state.record_completed_oam_dma_for_display_boundary(Some(&host_boundary), true);
     assert_eq!(
         state
             .display_snapshot
@@ -1807,9 +1934,20 @@ fn completed_oam_dma_promotes_the_queued_shadow_generation() {
         Some(0x5678),
     );
 
-    state.game_state.display.clear_pending_nmi_subroutine();
     state.ppu.oam.fill(0xabcd);
-    state.record_completed_oam_dma_for_display_boundary(Some(&host_boundary), false);
+    state.record_completed_oam_dma_for_display_boundary();
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .and_then(|display| display.completed_oam_dma_after_capture.as_ref())
+            .map(|oam| oam[0]),
+        Some(0xabcd),
+    );
+
+    state.close_display_boundary_dma_receipts();
+    state.ppu.oam.fill(0xdef0);
+    state.record_completed_oam_dma_for_display_boundary();
     assert_eq!(
         state
             .display_snapshot

@@ -202,20 +202,29 @@ fn validate_replay_source_parents(
 
 #[derive(Debug, Deserialize)]
 struct OracleRngTraceEvent {
-    event: String,
     run: u32,
     pc: u64,
     value: u8,
     carry: u8,
 }
 
+#[derive(Debug, Deserialize)]
+struct OracleTraceEventKind {
+    event: String,
+}
+
 fn oracle_rng_sample_from_trace_line(
     line: &str,
     expected_run: u32,
 ) -> Result<Option<RomRandomSample>, String> {
+    let kind: OracleTraceEventKind = serde_json::from_str(line)
+        .map_err(|error| format!("invalid live oracle trace event: {error}"))?;
+    if kind.event != "rng-write" {
+        return Ok(None);
+    }
     let event: OracleRngTraceEvent = serde_json::from_str(line)
         .map_err(|error| format!("invalid live oracle RNG trace event: {error}"))?;
-    if event.event != "rng-write" || event.pc & 0xffff != CARTRIDGE_RNG_STORE_PC_LOW16 {
+    if event.pc & 0xffff != CARTRIDGE_RNG_STORE_PC_LOW16 {
         return Ok(None);
     }
     if event.run != expected_run {
@@ -235,6 +244,20 @@ fn oracle_rng_sample_from_trace_line(
         event.value,
         event.carry != 0,
     )))
+}
+
+fn trace_events_with_rom_rng(configured: Option<&str>) -> String {
+    let mut events = configured
+        .into_iter()
+        .flat_map(|events| events.split(','))
+        .map(str::trim)
+        .filter(|event| !event.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if !events.iter().any(|event| event == "rom-rng") {
+        events.push("rom-rng".to_owned());
+    }
+    events.join(",")
 }
 
 struct LiveOracleRngTrace {
@@ -441,7 +464,11 @@ struct DisplayPublicationCandidateProbe {
     #[serde(skip_serializing_if = "Option::is_none")]
     cgram: Option<Vec<i32>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    cgram_difference: Option<ValueDomainDiff>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     presented_oam: Option<Vec<i32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    presented_oam_difference: Option<ValueDomainDiff>,
     #[serde(skip_serializing_if = "Option::is_none")]
     presented_obj_tile_cache: Option<Vec<i32>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -984,11 +1011,13 @@ fn capture_rust_ppu_probe(
             .map(|candidate| DisplayPublicationCandidateProbe {
                 name: candidate.name,
                 cgram: None,
+                cgram_difference: None,
                 presented_oam: candidate.oam.as_ref().map(|oam| {
                     oam.iter()
                         .flat_map(|word| word.to_le_bytes().map(i32::from))
                         .collect()
                 }),
+                presented_oam_difference: None,
                 presented_obj_tile_cache: candidate.obj_vram.as_ref().map(|obj_vram| {
                     (0..64u16)
                         .flat_map(|tile| {
@@ -1021,7 +1050,9 @@ fn capture_rust_ppu_probe(
                 candidates.push(DisplayPublicationCandidateProbe {
                     name: cgram_candidate.name,
                     cgram,
+                    cgram_difference: None,
                     presented_oam: None,
+                    presented_oam_difference: None,
                     presented_obj_tile_cache: None,
                     presented_obj_tile_cache_valid_difference: None,
                 });
@@ -1086,6 +1117,14 @@ fn annotate_display_candidate_differences(
     candidates: &mut [DisplayPublicationCandidateProbe],
 ) {
     for candidate in candidates {
+        candidate.cgram_difference = candidate
+            .cgram
+            .as_deref()
+            .map(|candidate| summarize_value_domain(candidate, &oracle.cgram));
+        candidate.presented_oam_difference = candidate
+            .presented_oam
+            .as_deref()
+            .map(|candidate| summarize_value_domain(candidate, &oracle.presented_oam));
         candidate.presented_obj_tile_cache_valid_difference = summarize_presented_obj_cache(
             candidate.presented_obj_tile_cache.as_deref(),
             oracle.presented_obj_tile_cache.as_deref(),
@@ -2304,8 +2343,15 @@ pub(crate) fn run_compare_libretro_oracle(
         // `rng` stream also records beam-counter reads and unrelated $0fa1
         // writes, producing tens of thousands of events for a few hundred
         // replay samples.
-        env::set_var("ZELDA3_SNES9X_TRACE_EVENTS", "rom-rng");
-        env::set_var("ZELDA3_SNES9X_TRACE_FRAMES", "0-4294967295");
+        // Live RNG authority and hardware chronology must be observable in the
+        // same cold run. Preserve explicitly requested trace domains and add
+        // the cartridge RNG store required by `LiveOracleRngTrace`.
+        let trace_events =
+            trace_events_with_rom_rng(env::var("ZELDA3_SNES9X_TRACE_EVENTS").ok().as_deref());
+        env::set_var("ZELDA3_SNES9X_TRACE_EVENTS", trace_events);
+        // The trace core exempts only the required `rom-rng` domain from its
+        // frame filter. Preserve an explicitly requested diagnostic window so
+        // PC/DMA/HDMA traces cannot silently expand to the entire route.
         path
     });
 
@@ -6270,9 +6316,9 @@ mod tests {
         resolve_replay_bundle, rolling_capture_frame_after, scan_all_policy,
         should_render_video_frame, should_stop_after_first_mismatch, should_write_frame_receipt,
         snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
-        summarize_value_domain, validate_replay_source_parents, vram_domain_receipt,
-        BootBoundaryState, PairedResumeCapture, RollingPairedResumeCapture, ValueDomainDiff,
-        VramDomainReceipt,
+        summarize_value_domain, trace_events_with_rom_rng, validate_replay_source_parents,
+        vram_domain_receipt, BootBoundaryState, PairedResumeCapture, RollingPairedResumeCapture,
+        ValueDomainDiff, VramDomainReceipt,
     };
     use crate::libretro_core::LibretroDspRegisterWrite;
     use std::fs;
@@ -6361,6 +6407,25 @@ mod tests {
         )
         .unwrap()
         .is_none());
+        assert!(oracle_rng_sample_from_trace_line(
+            r#"{"event":"dma","run":24377,"frame":24377,"v":228,"cycles":24}"#,
+            24377,
+        )
+        .unwrap()
+        .is_none());
+    }
+
+    #[test]
+    fn live_oracle_rng_preserves_requested_hardware_trace_domains() {
+        assert_eq!(trace_events_with_rom_rng(None), "rom-rng");
+        assert_eq!(
+            trace_events_with_rom_rng(Some("frame,nmi,dma")),
+            "frame,nmi,dma,rom-rng"
+        );
+        assert_eq!(
+            trace_events_with_rom_rng(Some("nmi,rom-rng,dma")),
+            "nmi,rom-rng,dma"
+        );
     }
 
     #[test]

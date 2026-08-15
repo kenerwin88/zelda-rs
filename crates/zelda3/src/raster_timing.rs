@@ -46,46 +46,6 @@ pub(crate) const fn straight_interroom_fadeout_suffix_crosses_vblank(
         }
 }
 
-/// Whether the room-$41 state-13 caller suffix crosses vblank.
-///
-/// A pinned Snes9x PC/raster trace records the complete room-$41 state-13
-/// palette sequence. These result phases reach vblank before the common
-/// sprite/Link suffix; the complementary measured phases below finish the
-/// suffix atomically. Keep this limited to the measured route rather than
-/// extrapolating its cadence to other rooms or palette workloads.
-pub(crate) const fn room_41_state_13_suffix_crosses_vblank(
-    main_module: u8,
-    submodule: u8,
-    subsubmodule: u8,
-    dungeon_room: u8,
-    palette_countdown_after_body: u8,
-) -> bool {
-    main_module == 7
-        && submodule == 2
-        && subsubmodule == 13
-        && dungeon_room == 0x41
-        && matches!(
-            palette_countdown_after_body,
-            11 | 13 | 15 | 16 | 18..=21 | 23..=26
-        )
-}
-
-/// Whether the measured room-$41 state-13 body and caller suffix both finish
-/// before vblank on this palette phase.
-pub(crate) const fn room_41_state_13_suffix_completes_before_vblank(
-    main_module: u8,
-    submodule: u8,
-    subsubmodule: u8,
-    dungeon_room: u8,
-    palette_countdown_after_body: u8,
-) -> bool {
-    main_module == 7
-        && submodule == 2
-        && subsubmodule == 13
-        && dungeon_room == 0x41
-        && matches!(palette_countdown_after_body, 12 | 14 | 17 | 22)
-}
-
 const SPRITE_TUTORIAL_GUARD_OR_BARRIER: u8 = 0x3f;
 const SPRITE_BLUE_GUARD: u8 = 0x41;
 const SPRITE_MIRROR_PORTAL: u8 = 0x6c;

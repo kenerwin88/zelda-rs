@@ -298,6 +298,7 @@ impl ScheduledGameWork {
             GameWorkContinuation::FinishItemReceiptGraphics {
                 continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
+                | GameWorkContinuation::FinishDungeonLinkOamCallerReturn
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
@@ -479,6 +480,10 @@ enum GameExecutionContinuation {
 pub(super) struct GameExecutionScheduler {
     continuation: Option<GameExecutionContinuation>,
     cpu_host_phase: CpuHostPhase,
+    /// The preceding host slice reached the ordinary main-loop return. The
+    /// next hardware interval therefore begins with an eligible leading NMI,
+    /// even when the atomic port has not yet normalized its software latch.
+    leading_nmi_follows_returned_main: bool,
     /// The translated caller has returned through the leading NMI which
     /// starts a multi-state upload pipeline. This survives the one-shot
     /// continuation so later states can preserve that CPU/NMI ordering
@@ -496,6 +501,8 @@ impl GameExecutionScheduler {
     }
 
     pub(super) fn begin_host_frame(&mut self) {
+        self.leading_nmi_follows_returned_main =
+            self.cpu_host_phase == CpuHostPhase::ReturnedToMainLoop;
         self.cpu_host_phase = if self.work_suspends_translated_call_stack() {
             CpuHostPhase::SuspendedCallStack
         } else {
@@ -522,6 +529,10 @@ impl GameExecutionScheduler {
 
     pub(super) fn fresh_main_loop_iteration_is_ready(self) -> bool {
         self.cpu_host_phase == CpuHostPhase::MainLoopReady
+    }
+
+    pub(super) fn eligible_leading_nmi_preceded_suspended_work(self) -> bool {
+        self.leading_nmi_follows_returned_main && self.work_suspends_translated_call_stack()
     }
 
     pub(super) fn resumed_call_stack_is_before_nmi(self) -> bool {
@@ -942,12 +953,31 @@ mod cpu_timing_tests {
         let mut scheduler = GameExecutionScheduler::default();
         scheduler.begin_host_frame();
         assert!(scheduler.fresh_main_loop_iteration_is_ready());
+        assert!(!scheduler.eligible_leading_nmi_preceded_suspended_work());
         scheduler.begin_main_loop_iteration();
         scheduler.finish_main_loop_iteration();
         assert!(!scheduler.fresh_main_loop_iteration_is_ready());
 
         scheduler.begin_host_frame();
         assert!(scheduler.fresh_main_loop_iteration_is_ready());
+        assert!(!scheduler.eligible_leading_nmi_preceded_suspended_work());
+    }
+
+    #[test]
+    fn returned_main_records_the_following_leading_nmi_before_suspended_work() {
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.begin_host_frame();
+        scheduler.begin_main_loop_iteration();
+        scheduler.finish_main_loop_iteration();
+
+        scheduler.begin_host_frame();
+        scheduler.begin_main_loop_iteration();
+        scheduler.schedule_pre_main_caller_continuation(
+            PreMainCallerContinuation::SpiralStairsSecondPaletteFilter,
+        );
+        scheduler.finish_main_loop_iteration();
+
+        assert!(scheduler.eligible_leading_nmi_preceded_suspended_work());
     }
 
     #[test]

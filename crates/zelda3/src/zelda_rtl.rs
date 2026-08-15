@@ -548,6 +548,10 @@ enum OamScanoutSource {
     /// the next software shadow on opposite sides of the host boundary.
     RetainResidentPpuOam,
     ComposePublishedShadowDma,
+    /// Publish the complete OAM DMA operand captured at the host boundary.
+    /// This is the source consumed by a leading NMI before the translated
+    /// main-thread slice mutates the live software shadow.
+    ComposeHostBoundaryShadowDma,
     ComposeLiveAfterNmi,
     /// Publish the current sprite table except for Link's sorted body and
     /// equipment entries, which still belong to the pre-main host boundary.
@@ -570,6 +574,15 @@ enum OamScanoutSource {
     /// the receipt sequence, so the live shadow wins even though the resident
     /// native PPU still owns the preceding DMA generation.
     ComposeLivePlayerOamAfterMain,
+}
+
+impl OamScanoutSource {
+    const fn active_nmi_dma_is_presented(self) -> bool {
+        matches!(
+            self,
+            Self::ComposeLiveAfterNmi | Self::ComposeCompletedWorkAfterNmi
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -2044,27 +2057,6 @@ const fn rom_spiral_stairs_suspended_animated_bg_source_address(
     }
 }
 
-const fn rom_spiral_stairs_second_palette_return_defers_core_dma(
-    frame: crate::game_state::FrameState,
-    host_main_prefix_did_not_advance: bool,
-    countdown: u16,
-    current_source: usize,
-) -> bool {
-    // The first streamed phase and the cycle-wrap return retain both VRAM
-    // bytes and logical CHR ownership through this NMI. The middle $aa80
-    // phase still executes NMI so its semantic source handoff advances even
-    // when scanout retains the same resident words (oracle frames 19232 and
-    // 21501).
-    current_source != ANIMATED_TILE_BUFFER_FIRST_SOURCE + 0x400
-        && rom_spiral_stairs_suspended_animated_bg_source_address(
-            frame,
-            host_main_prefix_did_not_advance,
-            countdown,
-            current_source,
-        )
-        .is_some()
-}
-
 const fn rom_overworld_transition_half_color_is_live(
     snapshot_main_module: u8,
     snapshot_submodule: u8,
@@ -2304,8 +2296,6 @@ enum PreMainNmiResume {
     OverworldSpriteReloadReturn {
         scanout: OverworldSpriteReloadResumeScanout,
     },
-    DungeonSupertileQuadrantBuildReturn,
-    DungeonSupertileQuadrantBuildPublishedReturn,
     DungeonSupertileQuadrantUploads,
     DungeonSupertileQuadrantUploadsAfterHeldNmi,
     DungeonSupertileCallerReturnNmi,
@@ -2388,13 +2378,11 @@ struct PreMainNmiScanoutGenerations {
 impl PreMainNmiResume {
     const fn nmi_latch_clear_phase(self) -> Option<NmiPhase> {
         match self {
-            Self::DungeonSupertileQuadrantBuildReturn
-            | Self::DungeonSupertileQuadrantBuildPublishedReturn
-            | Self::DungeonSupertileQuadrantUploads
+            Self::DungeonSupertileQuadrantUploads
             | Self::DungeonSupertileQuadrantUploadsAfterHeldNmi
-            | Self::DungeonSupertileCallerReturnNmi
             | Self::DungeonSupertileNextIterationAfterLeadingNmi => Some(NmiPhase::BeforeNmi),
-            Self::DungeonSupertileRoomLoadCallerReturnNmi
+            Self::DungeonSupertileCallerReturnNmi
+            | Self::DungeonSupertileRoomLoadCallerReturnNmi
             | Self::DungeonFadedFilterCompletionNmi
             | Self::StraightInterroomState5LeadingNmi => Some(NmiPhase::AfterNmi),
             Self::OverworldAuxGraphicsReturn | Self::OverworldSpriteReloadReturn { .. } => None,
@@ -2410,9 +2398,7 @@ impl PreMainNmiResume {
         }
         matches!(
             self,
-            Self::DungeonSupertileQuadrantBuildReturn
-                | Self::DungeonSupertileQuadrantBuildPublishedReturn
-                | Self::DungeonSupertileQuadrantUploads
+            Self::DungeonSupertileQuadrantUploads
                 | Self::DungeonSupertileQuadrantUploadsAfterHeldNmi
         ) && ((frame.submodule == 2 && matches!(frame.subsubmodule, 5..=15))
             || (frame.submodule == 0x0e && matches!(frame.subsubmodule, 8..=15)))
@@ -2428,33 +2414,15 @@ impl PreMainNmiResume {
                 obj: None,
             },
             Self::OverworldSpriteReloadReturn { scanout } => scanout.generations(),
-            Self::DungeonSupertileQuadrantBuildReturn
-            | Self::DungeonSupertileQuadrantBuildPublishedReturn
-            | Self::DungeonSupertileQuadrantUploads
+            Self::DungeonSupertileQuadrantUploads
             | Self::DungeonSupertileQuadrantUploadsAfterHeldNmi
             | Self::DungeonSupertileCallerReturnNmi
             | Self::DungeonSupertileRoomLoadCallerReturnNmi
             | Self::DungeonSupertileNextIterationAfterLeadingNmi
             | Self::DungeonFadedFilterCompletionNmi
             | Self::StraightInterroomState5LeadingNmi => PreMainNmiScanoutGenerations {
-                publication: if matches!(self, Self::DungeonSupertileQuadrantBuildPublishedReturn) {
-                    DisplaySnapshotPublication::RetainPublished
-                } else {
-                    DisplaySnapshotPublication::PublishCaptured
-                },
-                vram: if matches!(
-                    self,
-                    Self::DungeonSupertileQuadrantBuildReturn
-                        | Self::DungeonSupertileQuadrantBuildPublishedReturn
-                ) {
-                    // The resumed state-5 build reaches VRAM during this NMI,
-                    // after the active scanout has already selected its
-                    // tilemap generation. The following continuation captures
-                    // the newly uploaded quadrant for the next image.
-                    DisplayVramGeneration::RetainCapturedBeforeNmi
-                } else {
-                    DisplayVramGeneration::ComposeLiveAfterNmi
-                },
+                publication: DisplaySnapshotPublication::PublishCaptured,
+                vram: DisplayVramGeneration::ComposeLiveAfterNmi,
                 // This continuation captures before a leading hardware NMI.
                 // Its animated-CHR DMA and BG scroll-register writes therefore
                 // belong to the active scanout, unlike the ordinary
@@ -2462,18 +2430,7 @@ impl PreMainNmiResume {
                 animated_bg: Some(AnimatedBgScanoutGeneration::LiveAfterNmi),
                 bg_scroll: DisplayBgScrollGeneration::ComposeLiveAfterNmi,
                 obj: Some(ObjScanoutGenerations {
-                    oam: if matches!(
-                        self,
-                        Self::DungeonSupertileQuadrantBuildReturn
-                            | Self::DungeonSupertileQuadrantBuildPublishedReturn
-                    ) {
-                        // Main has not yet reached state 6's sprite staging at
-                        // this leading boundary. Keep the populated resident
-                        // table instead of the freshly cleared shadow.
-                        OamScanoutSource::RetainResidentPpuOam
-                    } else {
-                        OamScanoutSource::ComposeLiveAfterNmi
-                    },
+                    oam: OamScanoutSource::ComposeLiveAfterNmi,
                     // Link's CHR DMA runs in the same leading NMI as the
                     // animated-BG transfer. The resumed main thread does not
                     // make that upload belong to the following scanout.
@@ -2492,36 +2449,25 @@ const fn dungeon_supertile_caller_return_waits_for_leading_nmi(
     matches!(work, DungeonSupertileTransitionWork::RoomLoadCallerResume) && dungeon_room == 0x61
 }
 
-fn dungeon_supertile_quadrant_upload_holds_main_for_nmi(
+fn dungeon_supertile_quadrant_cpu_advance_for_resume(
     resume: PreMainNmiResume,
     state: &ZeldaState,
-) -> bool {
+) -> Option<DungeonQuadrantCpuAdvance> {
     let frame = state.game_state.frame;
     if !matches!(resume, PreMainNmiResume::DungeonSupertileQuadrantUploads)
         || frame.main_module != 7
         || frame.submodule != 2
     {
-        return false;
+        return None;
     }
     if matches!(frame.subsubmodule, 4..=7) {
-        return dungeon_supertile_quadrant_iteration_crosses_nmi(state);
+        return Some(dungeon_supertile_quadrant_cpu_advance(state));
     }
 
     // The filtered state-14 completion has a distinct entry phase and is not
     // part of the ordinary state-4..7 quadrant dispatcher model above.
-    state.game_state.world.location.dungeon_room_index() == 0x22 && frame.subsubmodule == 14
-}
-
-const fn dungeon_supertile_quadrant_build_crosses_nmi(dungeon_room: u8, subsubmodule: u8) -> bool {
-    let _ = subsubmodule;
-    dungeon_room == 0x72
-}
-
-const fn dungeon_faded_filter_second_pass_has_leading_nmi(
-    dungeon_room: u8,
-    countdown_after_second_pass: u8,
-) -> bool {
-    dungeon_room == 0x21 && matches!(countdown_after_second_pass, 2 | 18 | 26)
+    (state.game_state.world.location.dungeon_room_index() == 0x22 && frame.subsubmodule == 14)
+        .then_some(DungeonQuadrantCpuAdvance::InterruptedInModule)
 }
 
 // Instrumented 65816 traces put the ordinary dungeon state dispatcher at
@@ -2530,8 +2476,6 @@ const fn dungeon_faded_filter_second_pass_has_leading_nmi(
 const DUNGEON_STATE_9_CPU_ENTRY: CpuRasterPosition = CpuRasterPosition::new(248, 1_258);
 const DUNGEON_STATE_10_CPU_ENTRY: CpuRasterPosition = CpuRasterPosition::new(252, 312);
 const DUNGEON_STATE_11_CPU_ENTRY: CpuRasterPosition = CpuRasterPosition::new(252, 338);
-const DUNGEON_STATE_12_CPU_ENTRY: CpuRasterPosition = CpuRasterPosition::new(145, 650);
-const DUNGEON_STATE_13_CPU_ENTRY: CpuRasterPosition = CpuRasterPosition::new(252, 310);
 // After an interrupted subtile palette walk resumes and returns, the next
 // fresh Module 7 iteration reaches the common main-loop dispatcher here.
 // Instrumented Snes9x traces put repeated state-1 entries at V=254,
@@ -2551,21 +2495,33 @@ const PALETTE_FILTER_RED_STEP_EXTRA_MASTER_CYCLES: u32 = 90;
 const PALETTE_FILTER_GREEN_STEP_EXTRA_MASTER_CYCLES: u32 = 90;
 const PALETTE_FILTER_BLUE_STEP_EXTRA_MASTER_CYCLES: u32 = 104;
 
-const DUNGEON_STATE_12_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
-    entry_pc: 0x02_8aef,
-    // Main_PrepSpritesForNmi is an internal caller boundary, not the return
-    // to the main-loop wait. The suffix after it can be preempted by vblank.
+// Every state-12 Module07_02 dispatcher entry observed through the recorded
+// route frontier falls inside this interval. Ordinary entries are at
+// V=249/H=198..286; the active palette-filter path enters at V=252/H=728.
+// Execute both endpoints from the same pre-body state and require their
+// semantic continuation phase to agree. This lets the ROM branch and its
+// live workload decide whether vblank is crossed without selecting a room or
+// copying one path's later register/raster snapshot onto every transition.
+const DUNGEON_STATE_12_CPU_ENTRY_EARLIEST: CpuRasterPosition = CpuRasterPosition::new(249, 198);
+const DUNGEON_STATE_12_CPU_ENTRY_LATEST: CpuRasterPosition = CpuRasterPosition::new(252, 728);
+
+const DUNGEON_MODULE_7_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
+    // Module07_02_SupertileTransition, before its translated prefix or the
+    // state-12 body has mutated WRAM.
+    entry_pc: 0x02_8a26,
+    // The main-loop wait proves both the module body and its shared caller
+    // suffix completed before vblank.
     stop_pc: 0x00_8036,
-    a: 27,
-    x: 224,
-    y: 0,
+    a: 0xb704,
+    x: 4,
+    y: 7,
     sp: 0x01fa,
     dp: 0,
     db: 0,
-    carry: true,
+    carry: false,
     zero: false,
     overflow: false,
-    negative: false,
+    negative: true,
     interrupt_disable: true,
     decimal: false,
     accumulator_is_8_bit: true,
@@ -2575,12 +2531,11 @@ const DUNGEON_STATE_12_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
     stack_bytes: &[0xae, 0x87, 0x59, 0x80],
 };
 
-const DUNGEON_STATE_13_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
+const DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
+    // Subtile palette helpers enter this already-returned main-loop suffix.
+    // Supertile states 12-14 instead start at the common Module 7 dispatcher
+    // above, so their body and caller phase come from one continuous ROM run.
     entry_pc: 0x00_8053,
-    // Reaching Main_PrepSpritesForNmi is not a completed main iteration: the
-    // ROM can arrive there just before vblank, take NMI, and return through
-    // the remaining caller suffix on the following host run. Model through
-    // the actual main-loop wait so that continuation is not discarded.
     stop_pc: 0x00_8036,
     a: 0xb701,
     x: 0,
@@ -2601,13 +2556,20 @@ const DUNGEON_STATE_13_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
     stack_bytes: &[],
 };
 
-const DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
-    // Palette helpers can return long before their common Module 7 caller.
-    // The main-loop wait is the first boundary that proves the entire
-    // translated call stack completed before vblank.
-    stop_pc: 0x00_8036,
-    ..DUNGEON_STATE_13_CPU_CHECKPOINT
-};
+// State 13 and 14 are timed one level before Module07_02, at the main-loop
+// checkpoint which invokes the OAM clear and module router. The palette branch
+// itself creates two persistent CPU phases: the no-filter workload enters at
+// V=248/H=1200..1294, while the active filter workload enters at
+// V=252/H=330..376. Letting the ROM execute from here computes the later
+// dispatcher position instead of assigning its V=253/V=256 result directly.
+const DUNGEON_LANDING_UNFILTERED_CPU_ENTRY_EARLIEST: CpuRasterPosition =
+    CpuRasterPosition::new(248, 1_200);
+const DUNGEON_LANDING_UNFILTERED_CPU_ENTRY_LATEST: CpuRasterPosition =
+    CpuRasterPosition::new(248, 1_294);
+const DUNGEON_LANDING_FILTERED_CPU_ENTRY_EARLIEST: CpuRasterPosition =
+    CpuRasterPosition::new(252, 330);
+const DUNGEON_LANDING_FILTERED_CPU_ENTRY_LATEST: CpuRasterPosition =
+    CpuRasterPosition::new(252, 376);
 
 const DUNGEON_ROOM_LOAD_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
     // Module07_02_SupertileTransition, immediately before dispatching state 1.
@@ -2720,10 +2682,19 @@ fn advance_rom_cpu_through_nmi(run: &mut RomCpuTimingRun, budget: &mut CpuCycleB
     panic!("ROM NMI handler did not return to {return_pc:06x}");
 }
 
-fn dungeon_supertile_quadrant_iteration_crosses_nmi_at(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DungeonQuadrantCpuAdvance {
+    CompleteBeforeNmi,
+    InterruptedInModule,
+    InterruptedAfterModule,
+}
+
+fn dungeon_supertile_quadrant_cpu_advance_at(
     state: &ZeldaState,
     entry: CpuRasterPosition,
-) -> bool {
+) -> DungeonQuadrantCpuAdvance {
+    const NMI_PREPARE_SPRITES_ENTRY_PC: u32 = 0x00_85fc;
+
     let mut run = RomCpuTimingRun::new(
         &state.rom,
         &state.ram,
@@ -2737,15 +2708,23 @@ fn dungeon_supertile_quadrant_iteration_crosses_nmi_at(
         entry,
         CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES),
     );
+    let mut module_returned = false;
 
     for _ in 0..1_000_000 {
+        if run.pc() == NMI_PREPARE_SPRITES_ENTRY_PC {
+            module_returned = true;
+        }
         if run.is_complete() {
-            return false;
+            return DungeonQuadrantCpuAdvance::CompleteBeforeNmi;
         }
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         run.set_raster_position(scanline, master_cycle);
         if advance_rom_cpu_step(&mut run, &mut budget).was_interrupted() {
-            return true;
+            return if module_returned {
+                DungeonQuadrantCpuAdvance::InterruptedAfterModule
+            } else {
+                DungeonQuadrantCpuAdvance::InterruptedInModule
+            };
         }
     }
     panic!(
@@ -2755,18 +2734,14 @@ fn dungeon_supertile_quadrant_iteration_crosses_nmi_at(
     );
 }
 
-fn dungeon_supertile_quadrant_iteration_crosses_nmi(state: &ZeldaState) -> bool {
-    let earliest = dungeon_supertile_quadrant_iteration_crosses_nmi_at(
-        state,
-        DUNGEON_QUADRANT_CPU_ENTRY_EARLIEST,
-    );
-    let latest = dungeon_supertile_quadrant_iteration_crosses_nmi_at(
-        state,
-        DUNGEON_QUADRANT_CPU_ENTRY_LATEST,
-    );
+fn dungeon_supertile_quadrant_cpu_advance(state: &ZeldaState) -> DungeonQuadrantCpuAdvance {
+    let earliest =
+        dungeon_supertile_quadrant_cpu_advance_at(state, DUNGEON_QUADRANT_CPU_ENTRY_EARLIEST);
+    let latest =
+        dungeon_supertile_quadrant_cpu_advance_at(state, DUNGEON_QUADRANT_CPU_ENTRY_LATEST);
     assert_eq!(
         earliest, latest,
-        "dungeon quadrant CPU continuation changed across the observed dispatcher entry phase",
+        "dungeon quadrant CPU phase changed across the observed dispatcher entry phase",
     );
     earliest
 }
@@ -2918,7 +2893,16 @@ fn dungeon_room_load_cpu_schedule(state: &ZeldaState) -> DungeonRoomLoadCpuSched
 }
 
 pub(super) fn palette_filter_bounce_loop_master_cycles(state: &ZeldaState) -> u32 {
-    let countdown = state.game_state.display.palette_filter.countdown_word();
+    palette_filter_bounce_loop_master_cycles_for_countdown(
+        state,
+        state.game_state.display.palette_filter.countdown_word(),
+    )
+}
+
+fn palette_filter_bounce_loop_master_cycles_for_countdown(
+    state: &ZeldaState,
+    countdown: u16,
+) -> u32 {
     [0..1, 0x20..0xd8, 0xe0..0xf0]
         .into_iter()
         .flatten()
@@ -2992,72 +2976,373 @@ fn dungeon_supertile_state_11_cpu_advance(
     ])
 }
 
-fn dungeon_supertile_state_12_cpu_advance(state: &ZeldaState) -> CpuWorkAdvance {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DungeonModuleCpuPhase {
+    CompleteBeforeNmi,
+    InterruptedBeforeSubmodule,
+    InterruptedInSubmodule,
+    InterruptedAfterSubmodule,
+    InterruptedInLinkOam,
+    InterruptedAfterModule,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct DungeonModuleCpuAdvance {
+    pub(super) phase: DungeonModuleCpuPhase,
+    pub(super) subsubmodule: u8,
+    pub(super) palette_countdown: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DungeonLandingCpuAdvancePending {
+    Native(DungeonLandingCpuWork),
+    RomMeasured(DungeonModuleCpuAdvance),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DungeonLandingCpuWork {
+    entry_subsubmodule: u8,
+    entry_palette_countdown: u8,
+    first_palette_loop_master_cycles: u32,
+}
+
+fn dungeon_module_7_cpu_advance_at(
+    state: &ZeldaState,
+    checkpoint: RomCpuCheckpoint,
+    entry: CpuRasterPosition,
+) -> DungeonModuleCpuAdvance {
     let mut run = RomCpuTimingRun::new(
         &state.rom,
         &state.ram,
         &state.sram,
         &state.ppu,
         &state.dma,
-        DUNGEON_STATE_12_CPU_CHECKPOINT,
+        checkpoint,
     )
-    .expect("state-12 CPU timing requires the loaded Zelda ROM");
+    .expect("Module 7 CPU timing requires the loaded Zelda ROM");
     let mut budget = CpuCycleBudget::until_next_nmi(
-        DUNGEON_STATE_12_CPU_ENTRY,
+        entry,
         CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES),
     );
+    const SUBMODULE_ENTRY_PC: u32 = 0x02_8a26;
+    const LINK_OAM_ENTRY_PC: u32 = 0x0d_a18e;
+    const MODULE_7_RETURN_PC: u32 = 0x00_85fc;
+    let mut submodule_started = checkpoint.entry_pc == SUBMODULE_ENTRY_PC;
+    let mut submodule_entry_sp = submodule_started.then(|| run.stack_pointer());
+    let mut submodule_returned = false;
+    let mut link_oam_started = false;
+    let mut link_oam_entry_sp = None;
+    let mut link_oam_returned = false;
+    let mut module_returned = false;
 
     for _ in 0..200_000 {
         if run.is_complete() {
-            return CpuWorkAdvance::Complete;
+            return DungeonModuleCpuAdvance {
+                phase: DungeonModuleCpuPhase::CompleteBeforeNmi,
+                subsubmodule: run.ram_byte(SUBSUBMODULE),
+                palette_countdown: run.ram_byte(PALETTE_FILTER_COUNTDOWN),
+            };
         }
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         run.set_raster_position(scanline, master_cycle);
-        let timing = run.step();
-        let advance = budget.advance_instruction(timing.master_cycles);
+        let executing_submodule_entry = run.pc() == SUBMODULE_ENTRY_PC;
+        if executing_submodule_entry && submodule_entry_sp.is_none() {
+            submodule_entry_sp = Some(run.stack_pointer());
+        }
+        let executing_link_oam_entry = run.pc() == LINK_OAM_ENTRY_PC;
+        if executing_link_oam_entry && link_oam_entry_sp.is_none() {
+            link_oam_entry_sp = Some(run.stack_pointer());
+        }
+        let advance = advance_rom_cpu_step(&mut run, &mut budget);
+        // Reaching the dispatch target and actually executing its first
+        // instruction are distinct CPU boundaries. An NMI may become pending
+        // on the indirect-call instruction itself, in which case none of the
+        // translated submodule body is allowed to run yet.
+        submodule_started |= executing_submodule_entry;
+        submodule_returned |= submodule_started
+            && submodule_entry_sp.is_some_and(|entry_sp| run.stack_pointer() > entry_sp);
+        link_oam_started |= executing_link_oam_entry;
+        link_oam_returned |= link_oam_started
+            && link_oam_entry_sp.is_some_and(|entry_sp| run.stack_pointer() > entry_sp);
+        // The common main loop calls NMI_PrepareSprites immediately after
+        // Module_MainRouting returns. This PC is a stable semantic boundary
+        // for both checkpoints; comparing stack depth against the dispatcher
+        // checkpoint is invalid when a run starts one caller earlier at $8053.
+        module_returned |= submodule_returned && run.pc() == MODULE_7_RETURN_PC;
         if advance.was_interrupted() {
-            return advance;
+            return DungeonModuleCpuAdvance {
+                phase: if module_returned {
+                    DungeonModuleCpuPhase::InterruptedAfterModule
+                } else if link_oam_started && !link_oam_returned {
+                    DungeonModuleCpuPhase::InterruptedInLinkOam
+                } else if submodule_returned {
+                    DungeonModuleCpuPhase::InterruptedAfterSubmodule
+                } else if submodule_started {
+                    DungeonModuleCpuPhase::InterruptedInSubmodule
+                } else {
+                    DungeonModuleCpuPhase::InterruptedBeforeSubmodule
+                },
+                subsubmodule: run.ram_byte(SUBSUBMODULE),
+                palette_countdown: run.ram_byte(PALETTE_FILTER_COUNTDOWN),
+            };
         }
     }
     panic!(
-        "state-12 ROM timing did not reach stop PC from {:06x}; stopped at {:06x}",
-        DUNGEON_STATE_12_CPU_CHECKPOINT.entry_pc,
+        "Module 7 ROM timing did not reach stop PC from {:06x}; stopped at {:06x}",
+        checkpoint.entry_pc,
         run.pc(),
     );
 }
 
-fn dungeon_supertile_state_13_cpu_advance(state: &ZeldaState) -> CpuWorkAdvance {
-    let mut run = RomCpuTimingRun::new(
-        &state.rom,
-        &state.ram,
-        &state.sram,
-        &state.ppu,
-        &state.dma,
-        DUNGEON_STATE_13_CPU_CHECKPOINT,
+fn dungeon_module_7_cpu_advance_across_envelope(
+    state: &ZeldaState,
+    checkpoint: RomCpuCheckpoint,
+    earliest_entry: CpuRasterPosition,
+    latest_entry: CpuRasterPosition,
+    context: &str,
+) -> DungeonModuleCpuAdvance {
+    let earliest = dungeon_module_7_cpu_advance_at(state, checkpoint, earliest_entry);
+    let latest = dungeon_module_7_cpu_advance_at(state, checkpoint, latest_entry);
+    assert_eq!(
+        earliest.phase,
+        latest.phase,
+        "{context} CPU continuation changes inside the observed dispatcher-entry envelope: \
+         host_frame={} module={:02x}/{:02x}/{:02x} room={:04x} countdown={} scheduler={:?}",
+        state.frame_ctr_dbg,
+        state.game_state.frame.main_module,
+        state.game_state.frame.submodule,
+        state.game_state.frame.subsubmodule,
+        state.game_state.world.location.dungeon_room(),
+        state.game_state.display.palette_filter.countdown(),
+        state.game_execution_scheduler,
+    );
+    if !matches!(
+        earliest.phase,
+        DungeonModuleCpuPhase::InterruptedBeforeSubmodule
+            | DungeonModuleCpuPhase::InterruptedInSubmodule
+            | DungeonModuleCpuPhase::InterruptedAfterSubmodule
+            | DungeonModuleCpuPhase::InterruptedInLinkOam
+    ) {
+        assert_eq!(
+            (earliest.subsubmodule, earliest.palette_countdown),
+            (latest.subsubmodule, latest.palette_countdown),
+            "{context} ROM result changes inside the observed dispatcher-entry envelope"
+        );
+    }
+    earliest
+}
+
+fn dungeon_supertile_state_12_cpu_advance(state: &ZeldaState) -> DungeonModuleCpuPhase {
+    dungeon_module_7_cpu_advance_across_envelope(
+        state,
+        DUNGEON_MODULE_7_CPU_CHECKPOINT,
+        DUNGEON_STATE_12_CPU_ENTRY_EARLIEST,
+        DUNGEON_STATE_12_CPU_ENTRY_LATEST,
+        "state-12",
     )
-    .expect("state-13 CPU timing requires the loaded Zelda ROM");
+    .phase
+}
+
+fn dungeon_landing_phase_at(
+    entry: CpuRasterPosition,
+    phase_work_master_cycles: [u32; 6],
+) -> DungeonModuleCpuPhase {
     let mut budget = CpuCycleBudget::until_next_nmi(
-        DUNGEON_STATE_13_CPU_ENTRY,
+        entry,
         CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES),
     );
+    match budget.advance_phases(&phase_work_master_cycles) {
+        CpuPhaseSequenceAdvance::Complete => DungeonModuleCpuPhase::CompleteBeforeNmi,
+        CpuPhaseSequenceAdvance::InterruptedAtNmi { phase_index, .. } => match phase_index {
+            0 => DungeonModuleCpuPhase::InterruptedBeforeSubmodule,
+            1 => DungeonModuleCpuPhase::InterruptedInSubmodule,
+            2 | 4 => DungeonModuleCpuPhase::InterruptedAfterSubmodule,
+            3 => DungeonModuleCpuPhase::InterruptedInLinkOam,
+            5 => DungeonModuleCpuPhase::InterruptedAfterModule,
+            _ => unreachable!("landing CPU phase sequence has six phases"),
+        },
+    }
+}
 
-    for _ in 0..200_000 {
-        if run.is_complete() {
-            return CpuWorkAdvance::Complete;
-        }
-        let (scanline, master_cycle) = budget.raster_position().coordinates();
-        run.set_raster_position(scanline, master_cycle);
-        let timing = run.step();
-        let advance = budget.advance_instruction(timing.master_cycles);
-        if advance.was_interrupted() {
-            return advance;
+fn dungeon_landing_phase_across_envelope(
+    minimum_phase_work: [u32; 6],
+    maximum_phase_work: [u32; 6],
+) -> DungeonModuleCpuPhase {
+    let phases = [
+        dungeon_landing_phase_at(
+            DUNGEON_LANDING_FILTERED_CPU_ENTRY_EARLIEST,
+            minimum_phase_work,
+        ),
+        dungeon_landing_phase_at(
+            DUNGEON_LANDING_FILTERED_CPU_ENTRY_EARLIEST,
+            maximum_phase_work,
+        ),
+        dungeon_landing_phase_at(
+            DUNGEON_LANDING_FILTERED_CPU_ENTRY_LATEST,
+            minimum_phase_work,
+        ),
+        dungeon_landing_phase_at(
+            DUNGEON_LANDING_FILTERED_CPU_ENTRY_LATEST,
+            maximum_phase_work,
+        ),
+    ];
+    assert!(
+        phases.iter().all(|&phase| phase == phases[0]),
+        "native dungeon landing timing is ambiguous across its measured workload envelope: \
+         {phases:?}",
+    );
+    phases[0]
+}
+
+impl DungeonLandingCpuWork {
+    fn new(state: &ZeldaState) -> Self {
+        Self {
+            entry_subsubmodule: state.game_state.frame.subsubmodule,
+            entry_palette_countdown: state.game_state.display.palette_filter.countdown(),
+            first_palette_loop_master_cycles: palette_filter_bounce_loop_master_cycles(state),
         }
     }
-    panic!(
-        "state-13 ROM timing did not reach stop PC from {:06x}; stopped at {:06x}",
-        DUNGEON_STATE_13_CPU_CHECKPOINT.entry_pc,
-        run.pc(),
-    );
+
+    fn advance(self, state: &ZeldaState) -> DungeonModuleCpuAdvance {
+        const DISPATCHER_PREFIX: u32 = 5_988;
+        const LINK_TO_MODULE_RETURN: u32 = 744;
+
+        let following_subsubmodule = state.game_state.frame.subsubmodule;
+        let following_palette_countdown = state.game_state.display.palette_filter.countdown();
+        let (minimum, maximum) = match self.entry_subsubmodule {
+            13 if following_subsubmodule != self.entry_subsubmodule => {
+                // The movement-completion branch has one measured instruction
+                // path: the palette walk returns to Module 7, the translated
+                // state advances, and NMI_PrepareSprites enters Link OAM.
+                let submodule_return = self.first_palette_loop_master_cycles + 14_540;
+                let phases = [
+                    DISPATCHER_PREFIX,
+                    submodule_return - DISPATCHER_PREFIX,
+                    70_894,
+                    15_070,
+                    LINK_TO_MODULE_RETURN,
+                    12_110,
+                ];
+                (phases, phases)
+            }
+            13 => {
+                // The palette loop itself is exact and data-dependent. The
+                // remaining small variation comes from the movement handler
+                // and its Link-OAM selection. The Snes9x-extracted bounds are
+                // carried as an envelope: if either edge would select a
+                // different continuation, fail instead of guessing.
+                (
+                    [
+                        DISPATCHER_PREFIX,
+                        self.first_palette_loop_master_cycles + 14_000 - DISPATCHER_PREFIX,
+                        71_100,
+                        15_424,
+                        LINK_TO_MODULE_RETURN,
+                        11_674,
+                    ],
+                    [
+                        DISPATCHER_PREFIX,
+                        self.first_palette_loop_master_cycles + 14_220 - DISPATCHER_PREFIX,
+                        71_272,
+                        15_424,
+                        LINK_TO_MODULE_RETURN,
+                        11_674,
+                    ],
+                )
+            }
+            14 if following_palette_countdown != 0 => {
+                // FadedFilter performs a second palette walk whenever the
+                // first leaves a non-zero countdown. Aux colors are immutable
+                // across the pair, so the second loop is computed from the
+                // same native palette data at its actual next countdown.
+                let second_palette_loop = palette_filter_bounce_loop_master_cycles_for_countdown(
+                    state,
+                    u16::from(following_palette_countdown),
+                );
+                (
+                    [
+                        DISPATCHER_PREFIX,
+                        self.first_palette_loop_master_cycles + second_palette_loop + 14_672
+                            - DISPATCHER_PREFIX,
+                        70_894,
+                        15_070,
+                        LINK_TO_MODULE_RETURN,
+                        11_674,
+                    ],
+                    [
+                        DISPATCHER_PREFIX,
+                        self.first_palette_loop_master_cycles + second_palette_loop + 14_790
+                            - DISPATCHER_PREFIX,
+                        70_894,
+                        15_070,
+                        LINK_TO_MODULE_RETURN,
+                        11_674,
+                    ],
+                )
+            }
+            14 => {
+                // Countdown one and the already-zero completion call each
+                // execute one palette walk. Their distinct fixed terms are
+                // consequences of the palette direction-toggle branch, not a
+                // room or frame selection.
+                let fixed_to_submodule_return = match self.entry_palette_countdown {
+                    1 => 11_714,
+                    0 => 11_980,
+                    countdown => {
+                        panic!("unmeasured filtered landing completion from countdown {countdown}")
+                    }
+                };
+                let submodule_return =
+                    self.first_palette_loop_master_cycles + fixed_to_submodule_return;
+                let phases = [
+                    DISPATCHER_PREFIX,
+                    submodule_return - DISPATCHER_PREFIX,
+                    70_918,
+                    15_070,
+                    LINK_TO_MODULE_RETURN,
+                    11_674,
+                ];
+                (phases, phases)
+            }
+            state => panic!("native filtered landing timing does not model state {state}"),
+        };
+
+        DungeonModuleCpuAdvance {
+            phase: dungeon_landing_phase_across_envelope(minimum, maximum),
+            subsubmodule: following_subsubmodule,
+            palette_countdown: following_palette_countdown,
+        }
+    }
+}
+
+fn begin_dungeon_landing_cpu_advance(state: &ZeldaState) -> DungeonLandingCpuAdvancePending {
+    if state.game_state.dungeon.torch.any_lights_out_request() != 0 {
+        DungeonLandingCpuAdvancePending::Native(DungeonLandingCpuWork::new(state))
+    } else {
+        DungeonLandingCpuAdvancePending::RomMeasured(rom_dungeon_landing_cpu_advance(state))
+    }
+}
+
+fn rom_dungeon_landing_cpu_advance(state: &ZeldaState) -> DungeonModuleCpuAdvance {
+    let filtered = state.game_state.dungeon.torch.any_lights_out_request() != 0;
+    let (earliest, latest) = if filtered {
+        (
+            DUNGEON_LANDING_FILTERED_CPU_ENTRY_EARLIEST,
+            DUNGEON_LANDING_FILTERED_CPU_ENTRY_LATEST,
+        )
+    } else {
+        (
+            DUNGEON_LANDING_UNFILTERED_CPU_ENTRY_EARLIEST,
+            DUNGEON_LANDING_UNFILTERED_CPU_ENTRY_LATEST,
+        )
+    };
+    dungeon_module_7_cpu_advance_across_envelope(
+        state,
+        DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT,
+        earliest,
+        latest,
+        "landing state",
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3088,24 +3373,26 @@ fn dungeon_palette_caller_cpu_advance(
 
     for _ in 0..200_000 {
         if run.is_complete() {
-            return DungeonPaletteCpuAdvance {
+            let advance = DungeonPaletteCpuAdvance {
                 work: CpuWorkAdvance::Complete,
                 pc: run.pc(),
                 subsubmodule: run.ram_byte(SUBSUBMODULE),
                 palette_countdown: run.ram_byte(PALETTE_FILTER_COUNTDOWN),
             };
+            return advance;
         }
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         run.set_raster_position(scanline, master_cycle);
         let timing = run.step();
         let work = budget.advance_instruction(timing.master_cycles);
         if work.was_interrupted() {
-            return DungeonPaletteCpuAdvance {
+            let advance = DungeonPaletteCpuAdvance {
                 work,
                 pc: run.pc(),
                 subsubmodule: run.ram_byte(SUBSUBMODULE),
                 palette_countdown: run.ram_byte(PALETTE_FILTER_COUNTDOWN),
             };
+            return advance;
         }
     }
     panic!(
@@ -3465,7 +3752,6 @@ pub(super) enum DungeonSupertileTransitionWork {
     SpriteConversion,
     RoomLoadCallerResume,
     SpriteConversionCallerResume,
-    QuadrantTilemapBuild,
     FilteredQuadrantTilemapBuild,
     QuadrantUploadCallerReturn,
     State13CallerReturn,
@@ -3521,8 +3807,7 @@ impl DungeonSupertileTransitionWork {
             Self::RoomLoadCallerResume | Self::SpriteConversionCallerResume => {
                 DUNGEON_SUPERTILE_CALLER_RESUME_NMI_SLICES
             }
-            Self::QuadrantTilemapBuild
-            | Self::FilteredQuadrantTilemapBuild
+            Self::FilteredQuadrantTilemapBuild
             | Self::QuadrantUploadCallerReturn
             | Self::State13CallerReturn
             | Self::FadedFilterPreCompletionCallerReturn
@@ -3626,6 +3911,10 @@ enum GameWorkContinuation {
     FinishDungeonSupertileTransition {
         work: DungeonSupertileTransitionWork,
     },
+    /// NMI interrupted the common Module 7 suffix inside `LinkOam_Main`.
+    /// The translated prefix through `Sprite_Main` has completed; resume Link
+    /// OAM, HUD, and the main-loop suffix after that exact hardware boundary.
+    FinishDungeonLinkOamCallerReturn,
     FinishPreDungeonEntranceLoad,
     FinishPreDungeonSongBankTransfer,
     FinishItemReceiptGraphics {
@@ -3723,25 +4012,6 @@ const fn game_over_iris_goal_scanout_is_closed(
         && captured.submodule == 4
 }
 
-fn scheduled_work_entry_prepares_animated_bg_before_suspension(
-    main_module: u8,
-    submodule: u8,
-    subsubmodule: u8,
-    dungeon_room: u8,
-    work: Option<GameWorkContinuation>,
-) -> bool {
-    main_module == 7
-        && submodule == 2
-        && subsubmodule == 10
-        && dungeon_room == 0x72
-        && matches!(
-            work,
-            Some(GameWorkContinuation::FinishDungeonSupertileTransition {
-                work: DungeonSupertileTransitionWork::QuadrantTilemapBuild,
-            })
-        )
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct GameWorkCompletionPublication {
     bg_scroll: Option<DisplayBgScrollGeneration>,
@@ -3749,6 +4019,10 @@ struct GameWorkCompletionPublication {
 }
 
 impl GameWorkContinuation {
+    const fn trailing_nmi_uses_live_oam_shadow(self) -> bool {
+        matches!(self, Self::FinishDungeonLinkOamCallerReturn)
+    }
+
     const fn completion_publication(
         self,
         cpu_slice_entry: BgScrollRegisterScanout,
@@ -4042,6 +4316,26 @@ const fn rom_spiral_second_palette_return_publishes_live_cgram(
 ) -> bool {
     rom_spiral_palette_completion_publishes_live_cgram_and_oam(frame, dungeon_room, staircase_index)
         && frame.subsubmodule == 0x0f
+}
+
+const fn rom_spiral_stairs_second_palette_return_uses_host_animated_bg_operands(
+    frame: crate::game_state::FrameState,
+    host_main_prefix_did_not_advance: bool,
+    countdown: u16,
+    current_source: usize,
+) -> bool {
+    // Snes9x's NMI runs with the global core-update gate clear at these
+    // boundaries: Link OBJ DMA advances normally. Only the animated-BG source
+    // is the host-boundary generation. Keep that operand ownership local to
+    // its DMA instead of suppressing every core transfer through $0710.
+    current_source != ANIMATED_TILE_BUFFER_FIRST_SOURCE + 0x400
+        && rom_spiral_stairs_suspended_animated_bg_source_address(
+            frame,
+            host_main_prefix_did_not_advance,
+            countdown,
+            current_source,
+        )
+        .is_some()
 }
 
 const fn rom_spiral_palette_slice_retains_previous_cgram(
@@ -6688,12 +6982,15 @@ pub struct ZeldaState {
     /// suffix at the NMI edge. The next host first services that hardware NMI,
     /// then resumes the main loop at the following dungeon-state iteration.
     #[serde(skip)]
-    dungeon_state_12_module_return_nmi_pending: bool,
-    /// The state-13 main iteration crossed its trailing NMI before returning
-    /// to the game-loop wait. The completed translated mutations remain live
-    /// while the scheduler carries only the interrupted CPU call stack.
+    dungeon_state_12_caller_suffix_nmi_pending: bool,
+    /// Instruction-level result captured at the common Module07_02 dispatcher
+    /// before the translated state 13/14 prefix mutates WRAM.
     #[serde(skip)]
-    dungeon_state_13_cpu_nmi_pending: bool,
+    dungeon_landing_cpu_advance_pending: Option<DungeonLandingCpuAdvancePending>,
+    /// The instruction-timed Module 7 shadow reached NMI inside LinkOam_Main.
+    /// This is a semantic caller phase, not a room/frame publication rule.
+    #[serde(skip)]
+    dungeon_link_oam_return_pending: bool,
     /// The translated dungeon palette body has reached the same WRAM
     /// milestones as the ROM shadow, while the instruction-level result
     /// records whether its common Module 7 caller returned before NMI.
@@ -7039,12 +7336,16 @@ impl PolyWorkMetrics {
 #[derive(Clone)]
 struct EffectiveDmaWriteSet {
     vram_words: Vec<bool>,
+    completed_oam: Option<Vec<u16>>,
+    completed_cgram: Option<Vec<u16>>,
 }
 
 impl EffectiveDmaWriteSet {
     fn new(vram_words: usize) -> Self {
         Self {
             vram_words: vec![false; vram_words],
+            completed_oam: None,
+            completed_cgram: None,
         }
     }
 }
@@ -7053,10 +7354,13 @@ impl EffectiveDmaWriteSet {
 /// image is captured before the transfer so register and memory generations can
 /// remain independent, but vblank VRAM writes complete before visible scanout
 /// and therefore attach to that active image. This is independent of rooms and
-/// modules; OAM remains solely owned by its same-boundary completed-DMA receipt.
+/// modules; OAM and CGRAM join the receipt only when those same-boundary DMAs
+/// actually complete.
 #[derive(Clone)]
 struct EffectivePresentedDma {
     obj_vram_writes: Vec<(usize, u16)>,
+    completed_oam: Option<Vec<u16>>,
+    completed_cgram: Option<Vec<u16>>,
 }
 
 impl EffectivePresentedDma {
@@ -7072,6 +7376,8 @@ impl EffectivePresentedDma {
                     written.then_some((index - 0x4000, state.ppu.vram[index]))
                 })
                 .collect(),
+            completed_oam: writes.completed_oam,
+            completed_cgram: writes.completed_cgram,
         }
     }
 
@@ -7086,6 +7392,12 @@ impl EffectivePresentedDma {
         }
 
         merge_writes(&mut self.obj_vram_writes, later.obj_vram_writes);
+        if later.completed_oam.is_some() {
+            self.completed_oam = later.completed_oam;
+        }
+        if later.completed_cgram.is_some() {
+            self.completed_cgram = later.completed_cgram;
+        }
     }
 }
 
@@ -7119,6 +7431,9 @@ struct DisplaySnapshot {
     /// Per-domain memory receipt completed after the preceding active scanout.
     /// It is consumed by this newly published hardware generation.
     effective_presented_dma: Option<EffectivePresentedDma>,
+    /// A host snapshot owns exactly one following NMI boundary. Later NMIs
+    /// may advance live PPU state but cannot replace this scanout's receipts.
+    accepts_nmi_dma_receipts: bool,
     /// Host boundary currently publishing this snapshot. Retained/staged
     /// snapshots can outlive the host frame that originally captured them, so
     /// OAM completion is associated with the publication boundary, not object age.
@@ -9631,22 +9946,11 @@ impl ZeldaState {
         self.display_core_mut().clear_nmi_update_latch();
     }
 
-    pub(super) fn take_dungeon_state_14_caller_return_crosses_nmi(&mut self) -> bool {
-        let Some(advance) = self.dungeon_palette_cpu_advance_pending.take() else {
-            return false;
-        };
-        debug_assert_eq!(
-            advance.subsubmodule, self.game_state.frame.subsubmodule,
-            "state-14 ROM shadow and translated body disagree at PC {:06x}",
-            advance.pc,
-        );
-        debug_assert_eq!(
-            advance.palette_countdown,
-            self.game_state.display.palette_filter.countdown(),
-            "state-14 ROM shadow and translated palette disagree at PC {:06x}",
-            advance.pc,
-        );
-        advance.work.was_interrupted()
+    pub(super) fn take_dungeon_landing_cpu_advance(&mut self) -> Option<DungeonModuleCpuAdvance> {
+        match self.dungeon_landing_cpu_advance_pending.take()? {
+            DungeonLandingCpuAdvancePending::Native(work) => Some(work.advance(self)),
+            DungeonLandingCpuAdvancePending::RomMeasured(advance) => Some(advance),
+        }
     }
 
     pub(super) fn suspend_dungeon_subtile_palette_filter_if_cpu_interrupted(&mut self) {
@@ -9781,11 +10085,7 @@ impl ZeldaState {
         debug_assert_eq!(self.game_state.frame.submodule, 2);
         debug_assert_eq!(self.game_state.frame.subsubmodule, 3);
         debug_assert_eq!(self.game_state.display.palette_filter.countdown(), 0);
-        // The completing first walk has the same host-entry OAM/Link cache
-        // ownership as an interrupted non-final walk. Only its CPU
-        // continuation differs: the caller suffix retires now and a leading
-        // NMI occupies the next host frame.
-        self.stage_dungeon_faded_filter_first_palette_scanout();
+        self.stage_dungeon_faded_filter_completion_scanout();
         self.schedule_dungeon_faded_filter_leading_nmi_resume();
     }
 
@@ -9795,18 +10095,6 @@ impl ZeldaState {
         debug_assert_eq!(self.game_state.frame.submodule, 2);
         self.game_execution_scheduler
             .schedule_pre_main_nmi_resume(PreMainNmiResume::DungeonFadedFilterCompletionNmi);
-    }
-
-    fn spiral_stairs_second_palette_filter_nmi_defers_core_dma(
-        &self,
-        host_main_prefix_did_not_advance: bool,
-    ) -> bool {
-        rom_spiral_stairs_second_palette_return_defers_core_dma(
-            self.game_state.frame,
-            host_main_prefix_did_not_advance,
-            self.game_state.display.bg_tile_animation_countdown,
-            self.game_state.display.animated_tile_data_source_usize(),
-        )
     }
 
     fn stage_spiral_stairs_second_grayscale_nmi(&mut self) -> GraphicsDmaGeneration {
@@ -12573,8 +12861,9 @@ impl ZeldaState {
             attract_first_story_render_delay: 0,
             game_execution_scheduler: GameExecutionScheduler::default(),
             active_dungeon_sprite_main_return: None,
-            dungeon_state_12_module_return_nmi_pending: false,
-            dungeon_state_13_cpu_nmi_pending: false,
+            dungeon_state_12_caller_suffix_nmi_pending: false,
+            dungeon_landing_cpu_advance_pending: None,
+            dungeon_link_oam_return_pending: false,
             dungeon_palette_cpu_advance_pending: None,
             dungeon_room_load_cpu_schedule: None,
             dungeon_room_load_sprite_main_nmi_after_slot: None,
@@ -12727,6 +13016,7 @@ impl ZeldaState {
         self.attract_init_graphics_phase = 0;
         self.attract_first_story_render_delay = 0;
         self.game_execution_scheduler.reset();
+        self.dungeon_link_oam_return_pending = false;
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
         self.dungeon_landing_wipe_return_slices_remaining = 0;
@@ -13171,24 +13461,6 @@ impl ZeldaState {
                 | DungeonSupertileTransitionWork::StraightInterroomSpriteGraphics
         ) {
             debug_assert_eq!(self.game_state.frame.submodule, 0x12);
-        } else if work == DungeonSupertileTransitionWork::QuadrantTilemapBuild {
-            if self.game_state.frame.submodule != 2 {
-                // Dungeon_InterRoomTrans_notDarkRoom is shared by ordinary,
-                // spiral, straight-interroom, and falling transitions. The
-                // measured NMI crossing below belongs only to
-                // Module07_02_SupertileTransition; do not let matching room
-                // and state numbers widen them into another submodule.
-                return false;
-            }
-            if !dungeon_supertile_quadrant_build_crosses_nmi(
-                self.game_state.world.location.dungeon_room_index(),
-                self.game_state.frame.subsubmodule,
-            ) {
-                // The ordinary supertile quadrant builder returns within the
-                // current host frame. Room $72's independent upload pipeline
-                // has measured interrupted state-5/state-10 returns.
-                return false;
-            }
         } else if work == DungeonSupertileTransitionWork::FilteredQuadrantTilemapBuild {
             debug_assert_eq!(self.game_state.frame.submodule, 2);
             debug_assert_eq!(self.game_state.frame.subsubmodule, 10);
@@ -13216,11 +13488,10 @@ impl ZeldaState {
         } else if work == DungeonSupertileTransitionWork::State13CallerReturn {
             debug_assert_eq!(self.game_state.frame.submodule, 2);
             // Dungeon_IntraRoomTrans_State5 may advance 13 -> 14 before the
-            // measured caller suffix crosses vblank. The timing predicate is
-            // evaluated from the captured entry state, while this scheduler
-            // receives the post-call state.
+            // measured caller suffix crosses vblank. The ROM continuation is
+            // captured at dispatcher entry, while this scheduler receives the
+            // post-call state.
             debug_assert!(matches!(self.game_state.frame.subsubmodule, 13 | 14));
-            debug_assert_eq!(self.game_state.world.location.dungeon_room_index(), 0x41);
         } else if matches!(
             work,
             DungeonSupertileTransitionWork::FadedFilterPreCompletionCallerReturn
@@ -13640,6 +13911,19 @@ impl ZeldaState {
         // compose_display_oam.
         self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
             oam: dungeon_faded_filter_first_pass_oam_scanout(),
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        }));
+    }
+
+    fn stage_dungeon_faded_filter_completion_scanout(&mut self) {
+        // Completion reaches the wait loop before the next leading NMI. That
+        // NMI performs a real OAM DMA from the completed host-boundary shadow;
+        // unlike an interrupted palette walk, it must not retain the older
+        // resident/published OAM generation. Link OBJ uses operands sampled at
+        // that same host boundary.
+        self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::ComposeHostBoundaryShadowDma,
             link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
         }));
@@ -14213,6 +14497,7 @@ impl ZeldaState {
         };
         let published_shadow_oam_dma = if module_oam_scanout_source
             == OamScanoutSource::ComposePublishedShadowDma
+            || oam_scanout_source == OamScanoutSource::ComposeHostBoundaryShadowDma
             || oam_scanout_source == OamScanoutSource::ComposeLiveAfterNmiWithHostBoundaryLink
             || pre_main_caller_uses_host_boundary_shadow_oam(
                 self.game_execution_scheduler.pre_main_caller_continuation(),
@@ -14324,6 +14609,7 @@ impl ZeldaState {
             oam_scanout_source,
             completed_oam_dma_after_capture: None,
             effective_presented_dma: None,
+            accepts_nmi_dma_receipts: true,
             publication_host_frame: self.frame_ctr_dbg,
             dungeon_item_hold_entry_scanout,
             dungeon_item_hold_entry_bg2_scroll: dungeon_item_hold_entry_scanout
@@ -14475,6 +14761,7 @@ impl ZeldaState {
         if let Some(published) = self.display_snapshot.as_mut() {
             published.publication_host_frame = self.frame_ctr_dbg;
             published.completed_oam_dma_after_capture = None;
+            published.accepts_nmi_dma_receipts = true;
         }
         if retires_room_72_interrupted_main_prefix_oam {
             self.room_72_interrupted_main_prefix_oam_offset_active = false;
@@ -15527,9 +15814,16 @@ impl ZeldaState {
         if !plan.retain_captured_oam {
             self.ppu.oam.clone_from(&following.ppu.oam);
         }
+        if let Some(oam) = following.obj_generation.retained_oam() {
+            // Coarse full-memory retention supplies the baseline generation.
+            // The more specific scanout-source provenance below may replace
+            // or merge it, and an active-NMI event receipt is applied last.
+            self.ppu.oam.clone_from_slice(oam);
+        }
         let published_shadow_oam = match plan.oam_scanout_source {
             OamScanoutSource::RetainCapturedBeforeNmi
             | OamScanoutSource::ComposePublishedShadowDma
+            | OamScanoutSource::ComposeHostBoundaryShadowDma
             | OamScanoutSource::ComposeLiveAfterNmiWithHostBoundaryLink => {
                 following.published_shadow_oam_dma.as_deref()
             }
@@ -15541,6 +15835,18 @@ impl ZeldaState {
             | OamScanoutSource::ComposeLivePlayerOamAfterMain => None,
         };
         let main_iteration_completed = entry_frame.frame_counter != following_frame.frame_counter;
+        let capture_waits_for_nmi = following.ram[crate::game_state::constants::NMI_BOOLEAN] != 0;
+        let completed_dma_is_coherent = plan.oam_scanout_source
+            == OamScanoutSource::RetainResidentPpuOam
+            && capture_waits_for_nmi
+            && following.link_obj_scanout_generation
+                == GraphicsDmaGeneration::HostBoundaryBeforeMain;
+        let active_oam_dma_defers_to_prior_provenance = following
+            .effective_presented_dma
+            .as_ref()
+            .and_then(|receipt| receipt.completed_oam.as_ref())
+            .is_some()
+            && !following.oam_scanout_source.active_nmi_dma_is_presented();
         if plan.oam_scanout_source == OamScanoutSource::RetainCapturedBeforeNmi
             && !game_over_menu_retains_resident_oam(
                 entry_frame,
@@ -15552,7 +15858,9 @@ impl ZeldaState {
             // events. If no later DMA identifies the resident generation and
             // main completed, the queued shadow is the retiring transfer.
             // Otherwise retain the buffer that actually reached scanout.
-            let published_oam = if following.completed_oam_dma_after_capture.is_none()
+            let published_oam = if (following.completed_oam_dma_after_capture.is_none()
+                || !completed_dma_is_coherent
+                || active_oam_dma_defers_to_prior_provenance)
                 && main_iteration_completed
             {
                 published_shadow_oam
@@ -15563,13 +15871,15 @@ impl ZeldaState {
             {
                 self.ppu.oam.clone_from_slice(published_oam);
             }
-        } else if plan.oam_scanout_source == OamScanoutSource::ComposePublishedShadowDma
-            && !game_over_menu_retains_resident_oam(
-                entry_frame,
-                following_frame,
-                plan.oam_scanout_source,
-            )
-        {
+        } else if matches!(
+            plan.oam_scanout_source,
+            OamScanoutSource::ComposePublishedShadowDma
+                | OamScanoutSource::ComposeHostBoundaryShadowDma
+        ) && !game_over_menu_retains_resident_oam(
+            entry_frame,
+            following_frame,
+            plan.oam_scanout_source,
+        ) {
             // The snapshot's PPU OAM includes main-thread shadow writes that
             // hardware has not necessarily DMAed yet. When scanout retains the
             // pre-NMI generation, use the shadow image published by the prior
@@ -15655,23 +15965,20 @@ impl ZeldaState {
                 self.ppu.oam[entry * 2 + 1] = u16::from_le_bytes([tile, attributes]);
             }
         }
-        if let Some(oam) = following.obj_generation.retained_oam() {
-            self.ppu.oam.clone_from_slice(oam);
-        }
-        let capture_waits_for_nmi = following.ram[crate::game_state::constants::NMI_BOOLEAN] != 0;
-        let completed_dma_is_coherent = plan.oam_scanout_source
-            == OamScanoutSource::RetainCapturedBeforeNmi
-            || (plan.oam_scanout_source == OamScanoutSource::RetainResidentPpuOam
-                && capture_waits_for_nmi
-                && following.link_obj_scanout_generation
-                    == GraphicsDmaGeneration::HostBoundaryBeforeMain);
-        if main_iteration_completed && completed_dma_is_coherent {
+        if main_iteration_completed
+            && completed_dma_is_coherent
+            && !active_oam_dma_defers_to_prior_provenance
+        {
             // A completed OAM DMA is the final hardware event for this domain.
             // A retained scanout advances only when the ROM frame counter
             // proves that its main iteration completed. Resident-retain also
             // requires a pending captured NMI and Link OBJ provenance from the
-            // same host boundary; otherwise the compositor's independent
-            // Link/room generations remain necessary.
+            // same host boundary. A captured-before-NMI source never reaches
+            // this fallback: its completed transfer is later than the event
+            // named by the source. Once an explicit active-scanout receipt
+            // exists, its OAM provenance wins: a later completed transfer must
+            // not overwrite the shadow generation that actually retired for
+            // this scanout.
             if let Some(completed_oam) = following
                 .completed_oam_dma_after_capture
                 .as_deref()
@@ -16384,12 +16691,6 @@ impl ZeldaState {
                         == GraphicsDmaGeneration::HostBoundaryBeforeMain
                     && plan.link_obj_source_generation
                         == GraphicsDmaGeneration::HostBoundaryBeforeMain;
-            let interrupted_spiral_stairs_first_palette_pass = following_frame.main_module == 7
-                && following_frame.submodule == 0x0e
-                && following_frame.subsubmodule == 2
-                && self.pre_main_caller_continuation_is(
-                    PreMainCallerContinuation::SpiralStairsSecondPaletteFilter,
-                );
             let interrupted_dungeon_faded_filter_first_palette_pass =
                 interrupted_dungeon_faded_filter_uses_host_link_obj_cache(
                     following_frame,
@@ -16623,33 +16924,6 @@ impl ZeldaState {
                     captured_sources,
                     self.asset_raw(57),
                 ));
-            } else if interrupted_spiral_stairs_first_palette_pass {
-                // The first palette walk crosses vblank after Link's early
-                // body/head/hand DMA has updated Snes9x's OBJ tile cache, but
-                // before that NMI's raw VRAM generation owns active scanout.
-                // Resolve the renderer-only cache from the live source words
-                // while retaining the independently selected raw VRAM image.
-                let live_sources = LinkDmaSources::load_from_ram(&following.ram);
-                let link_graphics = self.asset_raw(57).map(Vec::from);
-                let mut obj_cache_vram = self.ppu.vram.clone();
-                for (destination, source, len) in EARLY_LINK_OBJ_DMA_TRANSFERS {
-                    let source_address = usize::from(live_sources.source(source));
-                    let source_offset = source_address.saturating_sub(0x8000);
-                    let destination_end = destination + len / 2;
-                    let Some(source_bytes) = link_graphics.as_deref().and_then(|graphics| {
-                        (source_address >= 0x8000 && source_offset + len <= graphics.len())
-                            .then_some(&graphics[source_offset..source_offset + len])
-                    }) else {
-                        obj_cache_vram[destination..destination_end]
-                            .copy_from_slice(&following.ppu.vram[destination..destination_end]);
-                        continue;
-                    };
-                    for (index, bytes) in source_bytes.chunks_exact(2).enumerate() {
-                        obj_cache_vram[destination + index] =
-                            u16::from_le_bytes([bytes[0], bytes[1]]);
-                    }
-                }
-                self.ppu.obj_vram_latch = Some(obj_cache_vram);
             }
         }
         if following_frame.main_module == 7
@@ -17280,7 +17554,7 @@ impl ZeldaState {
             .is_some_and(|frame| frame == self.frame_ctr_dbg)
         {
             eprintln!(
-                "display_publication_phase host={} snapshot={:02x}/{:02x}/{:02x} live={:02x}/{:02x}/{:02x} brightness_live={} oam_source={:?}",
+                "display_publication_phase host={} snapshot={:02x}/{:02x}/{:02x} live={:02x}/{:02x}/{:02x} brightness_live={} faded={:?} cgram={:?} cgram_override={} effective_cgram={} oam_source={:?}",
                 self.frame_ctr_dbg,
                 snapshot_frame.main_module,
                 snapshot_frame.submodule,
@@ -17289,6 +17563,13 @@ impl ZeldaState {
                 live_frame.submodule,
                 live_frame.subsubmodule,
                 publication_signals.dungeon_brightness_publishes_live_display,
+                publication_signals.dungeon_faded_filter_phase,
+                display.cgram_scanout_generation,
+                display.cgram_scanout_override.is_some(),
+                display
+                    .effective_presented_dma
+                    .as_ref()
+                    .is_some_and(|receipt| receipt.completed_cgram.is_some()),
                 publication_plan.oam_scanout_source,
             );
         }
@@ -17397,6 +17678,7 @@ impl ZeldaState {
         );
         self.compose_display_chr_sources(&display, &publication_plan);
         self.compose_display_cgram(&display, &publication_plan);
+        self.compose_effective_presented_cgram(&display);
         if let Some(previous_dialogue_scanout) = previous_dialogue_scanout.as_ref() {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
         }
@@ -17585,9 +17867,9 @@ impl ZeldaState {
     /// Record the memory destinations written by a leading NMI. The immutable
     /// active snapshot was captured before the interrupt so CPU-authored state
     /// cannot leak into it, but these vblank transfers finish before visible
-    /// scanout and must be composed into that same snapshot. OAM is deliberately
-    /// absent: its exact DMA source is owned by
-    /// `record_completed_oam_dma_for_display_boundary`.
+    /// scanout and must be composed into that same snapshot. OAM joins this
+    /// receipt only when `record_completed_oam_dma_for_display_boundary`
+    /// observes an actual transfer while the explicit boundary is active.
     pub(super) fn begin_effective_presented_dma(&mut self) {
         debug_assert!(self.active_effective_dma_writes.is_none());
         self.active_effective_dma_writes = Some(EffectiveDmaWriteSet::new(self.ppu.vram.len()));
@@ -17626,10 +17908,40 @@ impl ZeldaState {
         }
     }
 
+    fn compose_effective_presented_cgram(&mut self, following: &DisplaySnapshot) {
+        let Some(completed_cgram) = following
+            .effective_presented_dma
+            .as_ref()
+            .and_then(|receipt| receipt.completed_cgram.as_deref())
+            .filter(|cgram| cgram.len() == self.ppu.cgram.len())
+        else {
+            return;
+        };
+
+        // This is an observed transfer from the explicit leading NMI, not a
+        // prediction from the module that happens to be live when rendering.
+        // The DMA completed during vblank, so its installed palette is the
+        // one fetched by the active scanout captured immediately beforehand.
+        self.ppu.cgram.clone_from_slice(completed_cgram);
+    }
+
     fn compose_effective_presented_obj(&mut self, following: &DisplaySnapshot) {
         let Some(receipt) = following.effective_presented_dma.as_ref() else {
             return;
         };
+        if let Some(completed_oam) = following
+            .oam_scanout_source
+            .active_nmi_dma_is_presented()
+            .then_some(receipt.completed_oam.as_deref())
+            .flatten()
+            .filter(|oam| oam.len() == self.ppu.oam.len())
+        {
+            // A completed OAM DMA inside an explicit active-scanout NMI is the
+            // final hardware write when this scanout source declares live-NMI
+            // ownership. Explicit retained, published-shadow, and mixed-source
+            // generations remain owned by their earlier provenance instead.
+            self.ppu.oam.clone_from_slice(completed_oam);
+        }
         let mut obj_vram = self.last_presented_obj_vram.clone().unwrap_or_else(|| {
             self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram)[0x4000..0x4400].to_vec()
         });
@@ -17643,54 +17955,27 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn record_completed_oam_dma_for_display_boundary(
-        &mut self,
-        host_boundary_source: Option<&[u8]>,
-        main_iteration_completed: bool,
-    ) {
-        let host_boundary = host_boundary_source
-            .filter(|source| source.len() >= self.ppu.oam.len() * 2)
-            .map(|source| {
-                source
-                    .chunks_exact(2)
-                    .take(self.ppu.oam.len())
-                    .map(|word| u16::from_le_bytes([word[0], word[1]]))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_else(|| self.ppu.oam.clone());
-        let queued = self
-            .display_snapshot
-            .as_ref()
-            .filter(|display| display.publication_host_frame == self.frame_ctr_dbg)
-            .and_then(|display| display.published_shadow_oam_dma.clone());
-        let completed = if main_iteration_completed {
-            host_boundary
-        } else if self.game_state.display.dialogue_copy_is_pending() {
-            // The dialogue copy worker owns an older OAM queue while its
-            // interruptible CPU thread holds NMI. When that NMI finally runs,
-            // it consumes the queued publication rather than the shadow the
-            // coarse host slice has since authored.
-            queued.unwrap_or(host_boundary)
-        } else {
-            // An unchanged ordinary continuation did not open a new main-loop
-            // queue. Record the exact buffer nmi_do_updates_from just installed.
-            self.ppu.oam.clone()
-        };
-        let Some(display) = self
-            .display_snapshot
-            .as_mut()
-            .filter(|display| display.publication_host_frame == self.frame_ctr_dbg)
-        else {
+    pub(super) fn record_completed_oam_dma_for_display_boundary(&mut self) {
+        // This is an event receipt, not a prediction. nmi_do_updates_from has
+        // already selected the hardware operand generation and copied that
+        // exact payload into PPU OAM. Record what the DMA installed instead of
+        // reconstructing it from frame-counter or dialogue state afterward.
+        let completed = self.ppu.oam.clone();
+        if let Some(writes) = self.active_effective_dma_writes.as_mut() {
+            writes.completed_oam = Some(completed.clone());
+        }
+        let Some(display) = self.display_snapshot.as_mut().filter(|display| {
+            display.publication_host_frame == self.frame_ctr_dbg && display.accepts_nmi_dma_receipts
+        }) else {
             return;
         };
-        // A completed main iteration advances the ROM frame counter and leaves
-        // its newly authored shadow queued behind the leading NMI, so this
-        // scanout receives the host-boundary source. An unchanged-counter
-        // continuation has not opened a new main iteration; its NMI completes
-        // the source already queued on the published snapshot. Keep this
-        // scheduler distinction explicit instead of deriving it from rooms or
-        // visible sprite coordinates.
         display.completed_oam_dma_after_capture = Some(completed);
+    }
+
+    pub(super) fn close_display_boundary_dma_receipts(&mut self) {
+        if let Some(display) = self.display_snapshot.as_mut() {
+            display.accepts_nmi_dma_receipts = false;
+        }
     }
 
     pub fn zelda_debug_display_publication_candidates(
@@ -17792,6 +18077,12 @@ impl ZeldaState {
                 self.game_state.messaging.dialogue_number.packed_digits(0),
                 self.game_state.messaging.dialogue_number.packed_digits(1),
             ],
+        }
+    }
+
+    pub(super) fn record_completed_cgram_dma_for_display_boundary(&mut self) {
+        if let Some(writes) = self.active_effective_dma_writes.as_mut() {
+            writes.completed_cgram = Some(self.ppu.cgram.clone());
         }
     }
 
@@ -18158,20 +18449,15 @@ impl ZeldaState {
                 }
                 self.capture_display_snapshot();
                 self.retain_completed_palette_filter_cgram_scanout();
-                // Room $21's two-pass palette walk has data-dependent cycle
-                // counts. A complete cold oracle receipt map records leading
-                // NMI holds after countdowns 2, 18, and 26, while every other
-                // second-pass return finishes before vblank. Preserve those
-                // measured boundaries after retiring the caller suffix:
-                // the next fresh Module 7 iteration belongs to the following
-                // host frame. The suffix above already chose this frame's OBJ
-                // and CGRAM ownership, so schedule only the CPU resume.
-                if dungeon_faded_filter_second_pass_has_leading_nmi(
-                    self.game_state.world.location.dungeon_room_index(),
-                    self.game_state.display.palette_filter.countdown(),
-                ) {
-                    self.schedule_dungeon_faded_filter_leading_nmi_resume();
-                }
+                // The resumed second walk and common Module 7 suffix return to
+                // the main wait. The next host begins with a hardware NMI and
+                // then starts the following fresh module iteration in that
+                // same host. This call-stack phase is invariant across both
+                // lightening and darkening passes; room/countdown exceptions
+                // were compensating for losing the wait-loop provenance.
+                self.game_execution_scheduler.schedule_pre_main_nmi_resume(
+                    PreMainNmiResume::DungeonSupertileNextIterationAfterLeadingNmi,
+                );
             }
             PreMainCallerContinuation::SpiralStairsSecondPaletteFilter => {
                 let host_main_prefix_did_not_advance =
@@ -18186,10 +18472,14 @@ impl ZeldaState {
                 self.complete_module07_dungeon_after_submodule();
                 self.nmi_prepare_sprites();
                 self.clear_nmi_update_latch();
-                let release_core_dma_after_nmi = self
-                    .spiral_stairs_second_palette_filter_nmi_defers_core_dma(
+                let animated_bg_operands =
+                    rom_spiral_stairs_second_palette_return_uses_host_animated_bg_operands(
+                        self.game_state.frame,
                         host_main_prefix_did_not_advance,
-                    );
+                        self.game_state.display.bg_tile_animation_countdown,
+                        self.game_state.display.animated_tile_data_source_usize(),
+                    )
+                    .then_some(GraphicsDmaGeneration::HostBoundaryBeforeMain);
                 // Resuming a translated caller proves only that the CPU
                 // authored a newer Link source. It does not prove that source
                 // was the last one DMAed before the active scanout. Resolve
@@ -18202,20 +18492,12 @@ impl ZeldaState {
                     link_obj: link_obj_dma_generation,
                     link_obj_sources: link_obj_dma_generation,
                 }));
-                if release_core_dma_after_nmi {
-                    // The ordinary suffix clears $0710. Reassert the suspended
-                    // gate at the actual hardware boundary so this NMI cannot
-                    // publish the source which the resumed palette walk just
-                    // advanced; the following NMI owns that upload.
-                    self.set_core_update_disable_flag(1);
-                }
                 if std::env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
                     eprintln!(
-                        "animated_bg_second_palette_return host={} countdown={:04x} source={:04x} prefix_held={} defer_core_dma={release_core_dma_after_nmi}",
+                        "animated_bg_second_palette_return host={} countdown={:04x} source={:04x} operands={animated_bg_operands:?}",
                         self.frame_ctr_dbg,
                         self.game_state.display.bg_tile_animation_countdown,
                         self.game_state.display.animated_tile_data_source_usize(),
-                        host_main_prefix_did_not_advance,
                     );
                 }
                 self.capture_display_snapshot();
@@ -18228,10 +18510,12 @@ impl ZeldaState {
                 } else {
                     self.retain_completed_palette_filter_cgram_scanout();
                 }
-                self.interrupt_nmi(input, oam_dma_source, false);
-                if release_core_dma_after_nmi {
-                    self.clear_core_update_disable_flag();
-                }
+                self.interrupt_nmi_with_animated_bg_operands(
+                    input,
+                    oam_dma_source,
+                    false,
+                    animated_bg_operands,
+                );
             }
             PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter => {
                 self.finish_pre_main_caller_continuation(continuation);
@@ -18272,16 +18556,23 @@ impl ZeldaState {
         let Some(resume) = self.game_execution_scheduler.take_pre_main_nmi_resume() else {
             return false;
         };
+        let quadrant_cpu_advance = dungeon_supertile_quadrant_cpu_advance_for_resume(resume, self);
         if resume == PreMainNmiResume::StraightInterroomState5LeadingNmi {
             self.game_execution_scheduler
                 .begin_leading_nmi_upload_pipeline();
         }
+        if resume == PreMainNmiResume::DungeonSupertileCallerReturnNmi {
+            // This continuation resumes at the hardware boundary that
+            // interrupted NMI_PrepareSprites, before its final latch-clear
+            // store. The translated loop cannot retain that call-stack-local
+            // position between host calls, so restore the pending latch before
+            // executing Interrupt_NMI.
+            self.latch_nmi_update();
+        }
 
         let quadrant_build_or_upload_uses_published_oam = matches!(
             resume,
-            PreMainNmiResume::DungeonSupertileQuadrantBuildReturn
-                | PreMainNmiResume::DungeonSupertileQuadrantBuildPublishedReturn
-                | PreMainNmiResume::DungeonSupertileQuadrantUploads
+            PreMainNmiResume::DungeonSupertileQuadrantUploads
                 | PreMainNmiResume::DungeonSupertileQuadrantUploadsAfterHeldNmi
                 | PreMainNmiResume::DungeonSupertileRoomLoadCallerReturnNmi
         ) && self.game_state.frame.main_module
@@ -18303,11 +18594,7 @@ impl ZeldaState {
         self.next_display_animated_bg_scanout_generation = scanout.animated_bg;
         self.next_display_bg_scroll_generation = scanout.bg_scroll;
         self.set_next_display_obj_scanout(scanout.obj);
-        if matches!(
-            resume,
-            PreMainNmiResume::DungeonFadedFilterCompletionNmi
-                | PreMainNmiResume::StraightInterroomState5LeadingNmi
-        ) {
+        if resume == PreMainNmiResume::StraightInterroomState5LeadingNmi {
             if let Some(oam) = self.last_presented_oam.clone() {
                 self.next_display_obj_memory_generation =
                     Some(DisplayObjGeneration::RetainCapturedOam { oam });
@@ -18329,9 +18616,13 @@ impl ZeldaState {
         }
         self.interrupt_nmi_for_active_scanout(input, oam_dma_source, false);
         if resume == PreMainNmiResume::DungeonSupertileCallerReturnNmi {
-            // The state body completed before vblank, but its common Module 7
-            // caller suffix did not. This NMI resumes that suffix only; the
+            // The state body completed before vblank, but hardware interrupted
+            // its common Module 7 caller while NMI_PrepareSprites still owned
+            // the set NMI latch. Interrupt_NMI therefore skips NMI_DoUpdates at
+            // this boundary. The caller then returns and clears the latch; the
             // following host boundary starts the next dungeon state.
+            debug_assert_eq!(resume.nmi_latch_clear_phase(), Some(NmiPhase::AfterNmi));
+            self.clear_nmi_update_latch();
             self.game_execution_scheduler
                 .schedule_pre_main_nmi_resume(PreMainNmiResume::DungeonSupertileQuadrantUploads);
             self.assert_native_frame_state_matches_ram();
@@ -18339,7 +18630,7 @@ impl ZeldaState {
             self.assert_native_display_state_matches_ram();
             return true;
         }
-        if dungeon_supertile_quadrant_upload_holds_main_for_nmi(resume, self) {
+        if quadrant_cpu_advance == Some(DungeonQuadrantCpuAdvance::InterruptedInModule) {
             // These measured quadrant-upload boundaries consume one full
             // vblank before the module iteration resumes. Keep the caller
             // continuation explicit so the following host NMI can run main
@@ -18392,6 +18683,13 @@ impl ZeldaState {
         self.zelda_run_game_loop();
         self.replay_trace_col("after-game-loop");
         self.replay_trace_ram_watch("after-game-loop");
+        if quadrant_cpu_advance == Some(DungeonQuadrantCpuAdvance::InterruptedAfterModule) {
+            // The coarse translated loop ran NMI_PrepareSprites and its final
+            // `nmi_boolean = 0` store. The ROM CPU timing run proves hardware
+            // interrupted that caller before the store, so keep the latch set
+            // until DungeonSupertileCallerReturnNmi resumes the caller suffix.
+            self.latch_nmi_update();
+        }
         if resumed_dungeon_spiral_state_7_publishes_audio_after_main(
             resume,
             self.game_state.world.location.dungeon_room_index(),
@@ -18405,22 +18703,15 @@ impl ZeldaState {
             self.publish_resumed_spiral_audio_after_main();
         }
 
-        if resume == PreMainNmiResume::DungeonSupertileQuadrantBuildPublishedReturn {
-            // The held state-6 OAM generation belongs only to the two return
-            // scanouts above. Release it before the filtering continuation
-            // captures state 8, whose room sprites use the live table again.
-            self.next_display_obj_memory_generation =
-                Some(DisplayObjGeneration::FollowModuleCadence);
-        }
-
         if resume.continues_after_main(self.game_state.frame)
             && self.game_execution_scheduler.is_idle()
         {
-            let next_resume = match resume {
-                PreMainNmiResume::DungeonSupertileQuadrantBuildReturn => {
-                    PreMainNmiResume::DungeonSupertileQuadrantBuildPublishedReturn
-                }
-                PreMainNmiResume::DungeonSupertileRoomLoadCallerReturnNmi => {
+            let next_resume = match (quadrant_cpu_advance, resume) {
+                (
+                    Some(DungeonQuadrantCpuAdvance::InterruptedAfterModule),
+                    PreMainNmiResume::DungeonSupertileQuadrantUploads,
+                ) => PreMainNmiResume::DungeonSupertileCallerReturnNmi,
+                (_, PreMainNmiResume::DungeonSupertileRoomLoadCallerReturnNmi) => {
                     PreMainNmiResume::DungeonSupertileNextIterationAfterLeadingNmi
                 }
                 _ => PreMainNmiResume::DungeonSupertileQuadrantUploads,
@@ -18465,7 +18756,11 @@ impl ZeldaState {
         }
     }
 
-    fn complete_post_trailing_nmi_continuation(&mut self, continuation: GameWorkContinuation) {
+    fn complete_post_trailing_nmi_continuation(
+        &mut self,
+        continuation: GameWorkContinuation,
+        input: u16,
+    ) {
         match continuation {
             GameWorkContinuation::FinishDungeonMapRoomDrawing => {
                 // The room builder resumes after the NMI and returns through
@@ -18491,6 +18786,25 @@ impl ZeldaState {
                 self.game_execution_scheduler.schedule_pre_main_nmi_resume(
                     PreMainNmiResume::DungeonSupertileRoomLoadCallerReturnNmi,
                 );
+            }
+            GameWorkContinuation::FinishDungeonLinkOamCallerReturn => {
+                // The first NMI for this host interrupted LinkOam_Main and was
+                // consumed immediately before this continuation. Resume the
+                // exact remaining Module 7 suffix without replaying the
+                // submodule, Sprite_Main, or frame prefix.
+                let sprite_return = self
+                    .active_dungeon_sprite_main_return
+                    .take()
+                    .expect("Link OAM continuation must retain Sprite_Main return state");
+                self.complete_module07_after_sprite_main(sprite_return);
+                self.nmi_prepare_sprites();
+                self.clear_nmi_update_latch();
+
+                // The resumed caller reaches the main wait before the next
+                // field boundary. The libretro interval then crosses that
+                // following NMI before returning its next video surface.
+                let next_oam_dma_source = self.sprite_oam_shadow_buffer().to_vec();
+                self.interrupt_nmi(input, Some(&next_oam_dma_source), false);
             }
             continuation => {
                 panic!("unsupported post-trailing-NMI continuation {continuation:?}")
@@ -18696,7 +19010,7 @@ impl ZeldaState {
             // before any fresh main-loop iteration can run.
             self.capture_display_snapshot();
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-            self.complete_post_trailing_nmi_continuation(continuation);
+            self.complete_post_trailing_nmi_continuation(continuation, input);
             self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
@@ -18975,6 +19289,27 @@ impl ZeldaState {
             None
         };
         if let Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishDungeonLinkOamCallerReturn,
+        )) = scheduled_work_step
+        {
+            // The prior host returned when vblank interrupted LinkOam_Main.
+            // Publish that interrupting NMI first, resume only the saved
+            // Module 7 suffix, then cross the following field boundary before
+            // returning this host interval.
+            self.capture_display_snapshot_with_publication(
+                DisplaySnapshotPublication::RetainPublished,
+            );
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            self.complete_post_trailing_nmi_continuation(
+                GameWorkContinuation::FinishDungeonLinkOamCallerReturn,
+                input,
+            );
+            self.assert_native_frame_state_matches_ram();
+            self.assert_native_world_location_state_matches_ram();
+            self.assert_native_display_state_matches_ram();
+            return;
+        }
+        if let Some(GameWorkStep::Complete(
             GameWorkContinuation::FinishSpiralStaircasePaletteFilter { tail, caller },
         )) = scheduled_work_step
         {
@@ -19228,50 +19563,6 @@ impl ZeldaState {
                                 DungeonSupertileTransitionWork::SpriteConversionCallerResume,
                             );
                             debug_assert!(scheduled);
-                        }
-                        DungeonSupertileTransitionWork::QuadrantTilemapBuild => {
-                            // The state-5 room-quadrant builder returns after
-                            // the vblank that interrupted its tilemap loop.
-                            // Only its caller suffix advances to state 6.
-                            let resumes_state_6_after_leading_nmi =
-                                self.game_state.frame.subsubmodule == 5
-                                    && self.game_state.world.location.dungeon_room_index() == 0x72;
-                            let resumes_state_11_before_next_vblank =
-                                self.game_state.frame.subsubmodule == 10
-                                    && self.game_state.world.location.dungeon_room_index() == 0x72;
-                            self.complete_dungeon_inter_room_transition_not_dark_room();
-                            if resumes_state_6_after_leading_nmi {
-                                // Preserve the state-5 BG1 request until the
-                                // next host's leading NMI. State 6 must not run
-                                // first and replace it with the BG2 request.
-                                self.game_execution_scheduler.schedule_pre_main_nmi_resume(
-                                    PreMainNmiResume::DungeonSupertileQuadrantBuildReturn,
-                                );
-                            }
-                            if resumes_state_11_before_next_vblank {
-                                // The state-10 BG1 quadrant DMA crosses the NMI
-                                // boundary before the ROM begins state 11. The
-                                // other NMI domains still publish at the
-                                // trailing host boundary, so consume only this
-                                // tilemap generation here. State 11 authors the
-                                // following BG2 request into the same buffer.
-                                self.nmi_upload_tilemap();
-
-                                // The room-$72 return then reaches the next
-                                // main-loop prefix and completes a full state-11
-                                // iteration, including Link animation and the
-                                // ordinary dungeon caller suffix. Its BG2
-                                // request remains pending for the next NMI.
-                                self.room_72_interrupted_main_prefix_oam_offset_active = true;
-                                self.increment_frame_counter();
-                                self.clear_oam_buffer();
-                                self.Module07_02_SupertileTransition();
-                                self.follower_link_state_mut()
-                                    .decrement_link_dma_countdown();
-                                self.complete_module07_dungeon_after_submodule();
-                                self.nmi_prepare_sprites();
-                                self.clear_nmi_update_latch();
-                            }
                         }
                         DungeonSupertileTransitionWork::FilteredQuadrantTilemapBuild => {
                             // The palette walk plus quadrant build crosses NMI,
@@ -19963,6 +20254,11 @@ impl ZeldaState {
                         },
                     );
                 }
+                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonLinkOamCallerReturn) => {
+                    unreachable!(
+                        "Link OAM caller return is handled before generic work publication"
+                    )
+                }
             }
             // The original ROM returns to the NMI boundary after the final
             // main-thread work slice. Attract loaders and item graphics both
@@ -20217,6 +20513,28 @@ impl ZeldaState {
         // is CPU-visible, but HDMA has already consumed the preceding staged
         // generation for the scanout that ends here.
         self.capture_display_snapshot_with_override(publication_override);
+        let effective_leading_link_dma = self.rom_startup_timing()
+            && self
+                .game_execution_scheduler
+                .eligible_leading_nmi_preceded_suspended_work()
+            && self.game_state.display.nmi_update_is_latched();
+        if effective_leading_link_dma {
+            // The ROM interval begins with NMI, then runs main until this caller
+            // is interrupted. The atomic port reaches the same boundary in the
+            // opposite order and still carries the preceding NMI's software
+            // latch, so the ordinary handler below cannot expose the hardware
+            // Link DMA. Record that real leading transfer explicitly. Its raw
+            // VRAM writes remain after the immutable scanout capture, while the
+            // effective receipt updates Snes9x's resident decoded OBJ cache.
+            let operands = self
+                .pre_main_graphics_dma
+                .as_ref()
+                .map(|graphics| graphics.link_operands);
+            self.begin_effective_presented_dma();
+            self.nmi_core_link_graphics_update(operands);
+            self.link_obj_dma_completed_this_frame = true;
+            self.record_effective_presented_dma_for_active_scanout();
+        }
         if self.dialogue_scroll_is_completion_pending_publication() {
             // The early scroll return is complete before this NMI, but the
             // scanout captured immediately above still owns the preceding
@@ -20247,6 +20565,14 @@ impl ZeldaState {
             }
         }
         if !defer_room_82_sprite_conversion_nmi {
+            let trailing_oam_dma_source = self
+                .game_execution_scheduler
+                .current_work()
+                .filter(|continuation| continuation.trailing_nmi_uses_live_oam_shadow())
+                .map(|_| self.sprite_oam_shadow_buffer().to_vec());
+            let trailing_oam_dma_source = trailing_oam_dma_source
+                .as_deref()
+                .or(oam_dma_source.as_deref());
             let room_82_deferred_nmi_retains_resident_oam = self.rom_startup_timing()
                 && rom_room_82_deferred_nmi_retains_resident_oam(
                     frame,
@@ -20263,11 +20589,11 @@ impl ZeldaState {
             });
             self.interrupt_nmi(
                 input,
-                oam_dma_source.as_deref(),
+                trailing_oam_dma_source,
                 defer_interface_exit_bg_upload,
             );
             if let Some(continuation) = self.game_execution_scheduler.take_post_trailing_nmi() {
-                self.complete_post_trailing_nmi_continuation(continuation);
+                self.complete_post_trailing_nmi_continuation(continuation, input);
             }
             if let Some(resident_oam) = resident_oam {
                 // This deferred vblank still publishes Link/BG/CGRAM work, but
@@ -22073,23 +22399,11 @@ impl ZeldaState {
                             self,
                             DUNGEON_SUBTILE_PALETTE_CPU_ENTRY,
                         )),
-                        (2, 14) => Some(dungeon_palette_caller_cpu_advance(
-                            self,
-                            DUNGEON_STATE_13_CPU_ENTRY,
-                        )),
                         _ => None,
                     }
                 } else {
                     None
                 };
-            if self.rom_startup_timing()
-                && self.game_state.frame.main_module == 7
-                && self.game_state.frame.submodule == 2
-                && self.game_state.frame.subsubmodule == 13
-            {
-                self.dungeon_state_13_cpu_nmi_pending =
-                    dungeon_supertile_state_13_cpu_advance(self).was_interrupted();
-            }
             self.replay_trace_ram_watch("game-loop-after-frame-counter");
             self.clear_oam_buffer();
             self.replay_trace_ram_watch("game-loop-after-clear-oam");
@@ -22121,18 +22435,6 @@ impl ZeldaState {
                 || self.dungeon_landing_wipe_return_slices_remaining != 0
                 || self.normal_dialogue_initialization_phase != 0)
         {
-            if scheduled_work_entry_prepares_animated_bg_before_suspension(
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule,
-                self.game_state.frame.subsubmodule,
-                self.game_state.world.location.dungeon_room_index(),
-                self.game_execution_scheduler.current_work(),
-            ) {
-                // The state-10 quadrant upload still owns $12 and its OAM,
-                // while the independent animated-BG preparation has reached
-                // the CPU boundary exposed by Snes9x.
-                self.nmi_prepare_animated_bg();
-            }
             // A mid-close long-table iteration finishes its circle build and
             // reaches Main_PrepSpritesForNmi in this same main slice; only
             // the display-boundary bookkeeping waits for the scheduled

@@ -40,7 +40,10 @@ Snes9x CPU position, so bus-stall cost can be measured without instruction
 tracing. Optional filters:
 
 - `ZELDA3_SNES9X_TRACE_FRAMES=FIRST-LAST` filters Snes9x's completed-frame
-  counter. That counter can advance during one `retro_run` call.
+  counter. That counter can advance during one `retro_run` call. In
+  `--live-oracle-rng` comparisons the required `rom-rng` events deliberately
+  remain route-wide, while every other requested trace domain still obeys
+  this window.
 - `ZELDA3_SNES9X_TRACE_PCS=BB:AAAA,...` selects up to 64 instruction-address
   ranges. A range is matched directly, so a large routine does not consume one
   filter slot per byte.
@@ -74,6 +77,22 @@ destination, byte count, initiating PC, and raster position, followed by the
 decoded OBJ cache provenance for a traced pixel. This avoids the common error
 of treating the restored core's internal `frame` counter as the absolute route
 frame.
+
+For CPU continuation work, collapse a narrow `pc,nmi,nmi-resume,frame` trace
+into a provenance-checked semantic ledger:
+
+```sh
+python3 scripts/snes9x_cpu_phase_ledger.py \
+  /tmp/compare/oracle-rom-random.jsonl \
+  --first-run 27238 --last-run 27251 \
+  --output /tmp/module7-ledger.json
+```
+
+The ledger coalesces hot-loop PC events into ordered spans while retaining NMI
+entry/resume boundaries. It records the trace, manifest, core, and ROM hashes,
+and uses the zero-based `retro_run` coordinate explicitly. It is offline
+reference evidence only; the Rust game runtime must use native semantic work
+and cycle budgets rather than reading the ROM or a route ledger.
 
 For an every-frame comparison of the state leading to OBJ scanout, use the
 instrumented core with `ZELDA3_CAPTURE_OBJ_STATE_LEDGER=1` and a session

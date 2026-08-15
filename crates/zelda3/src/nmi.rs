@@ -58,6 +58,24 @@ pub(super) fn nmi_vram_copy_packets(data: &[u8]) -> Vec<NmiVramCopyPacket<'_>> {
     packets
 }
 
+fn debug_hardware_frame_matches(frame: u32) -> bool {
+    let Some(selection) = std::env::var_os("ZELDA3_DEBUG_HARDWARE_FRAMES") else {
+        return true;
+    };
+    selection.to_string_lossy().split(',').any(|part| {
+        let part = part.trim();
+        if let Some((start, end)) = part.split_once('-') {
+            return start.trim().parse::<u32>().ok().is_some_and(|start| {
+                end.trim()
+                    .parse::<u32>()
+                    .ok()
+                    .is_some_and(|end| start <= frame && frame <= end)
+            });
+        }
+        part.parse::<u32>().ok() == Some(frame)
+    })
+}
+
 impl ZeldaState {
     /// Optional hot-reloaded parity experiment for NMI publication timing.
     ///
@@ -148,7 +166,8 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
-        let trace_nmi = std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some();
+        let trace_nmi = std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
+            && debug_hardware_frame_matches(self.frame_ctr_dbg);
         self.ppu.forced_blank_from_scanline = None;
         self.ppu.retain_active_display_history = false;
         let forced_blank_at_entry = self.ppu.forced_blank;
@@ -156,10 +175,13 @@ impl ZeldaState {
         if trace_nmi {
             let frame = self.game_state.frame;
             eprintln!(
-                "nmi_before host={} main={:02x} sub={:02x} latch={} pending={} target={:04x} disable={:02x} bgload={} forced_blank={} blank_lines_pending={} blank_from_pending={:?} blank_from_candidate={:?} link_tile_src={:04x} ram0000={:02x}{:02x}{:02x} vram40b0={:04x}",
+                "nmi_before host={} main={:02x} sub={:02x} subsub={:02x} frame_counter={:02x} scheduler={:?} latch={} pending={} target={:04x} disable={:02x} bgload={} forced_blank={} blank_lines_pending={} blank_from_pending={:?} blank_from_candidate={:?} link_tile_src={:04x} ram0000={:02x}{:02x}{:02x} vram40b0={:04x}",
                 self.frame_ctr_dbg,
                 frame.main_module,
                 frame.submodule,
+                frame.subsubmodule,
+                frame.frame_counter,
+                self.game_execution_scheduler,
                 self.game_state.display.nmi_update_is_latched(),
                 self.game_state.display.pending_nmi_subroutine,
                 self.game_state.display.nmi_load_target_address,
@@ -343,6 +365,7 @@ impl ZeldaState {
                 self.ppu.vram.get(0x40b0).copied().unwrap_or(0),
             );
         }
+        self.close_display_boundary_dma_receipts();
     }
 
     pub(super) fn interrupt_nmi_audio_parts(&mut self) {
@@ -569,29 +592,46 @@ impl ZeldaState {
                 .map(|graphics| graphics.entry_frame)
                 .unwrap_or(self.game_state.frame);
             let link_obj_operands_generation = self.following_nmi_link_obj_dma_generation();
+            let host_boundary_link_operands = self
+                .pre_main_graphics_dma
+                .as_ref()
+                .map(|graphics| graphics.link_operands);
             let captured_link_operands = matches!(
                 link_obj_operands_generation,
                 GraphicsDmaGeneration::HostBoundaryBeforeMain
             )
-            .then(|| {
-                self.pre_main_graphics_dma
-                    .as_ref()
-                    .map(|graphics| graphics.link_operands)
-            })
+            .then_some(host_boundary_link_operands)
             .flatten();
-            if std::env::var_os("ZELDA3_DEBUG_LINK_DMA").is_some() {
-                let captured_head_top = captured_link_operands
+            let trace_link_dma = std::env::var_os("ZELDA3_DEBUG_LINK_DMA").is_some()
+                && debug_hardware_frame_matches(self.frame_ctr_dbg);
+            if trace_link_dma {
+                let live_operands = PreMainLinkDmaOperands::capture(&self.ram);
+                let captured_head_top = host_boundary_link_operands
                     .map(|operands| operands.sources.source(LinkDmaSourceSlot::HeadTop));
                 let live_head_top = self.live_link_dma_source(LinkDmaSourceSlot::HeadTop);
                 // Entry and exit module phases are both printed: the plan keys on
                 // the exit frame while divergence reports name the entry frame,
                 // and the subsubmodule is the field the operand rules turn on.
-                let captured_body_upper = captured_link_operands
+                let captured_body_upper = host_boundary_link_operands
                     .map(|operands| operands.sources.source(LinkDmaSourceSlot::BodyPointerUpper));
                 let live_body_upper =
                     self.live_link_dma_source(LinkDmaSourceSlot::BodyPointerUpper);
+                let early_source_pairs = EARLY_LINK_OBJ_DMA_TRANSFERS.map(|(_, slot, _)| {
+                    (
+                        slot,
+                        host_boundary_link_operands.map(|operands| operands.sources.source(slot)),
+                        live_operands.sources.source(slot),
+                    )
+                });
+                let first_expanded_mismatch = host_boundary_link_operands.and_then(|operands| {
+                    operands
+                        .expanded_high_planes
+                        .iter()
+                        .zip(live_operands.expanded_high_planes)
+                        .position(|(captured, live)| *captured != live)
+                });
                 eprintln!(
-                    "link_dma host={} entry={:02x}/{:02x}/{:02x} exit={:02x}/{:02x}/{:02x} operands={link_obj_operands_generation:?} captured={} captured_body_upper={captured_body_upper:?} live_body_upper={live_body_upper:04x} captured_head_top={captured_head_top:?} captured_high={:02x?} live_head_top={live_head_top:04x} live_high={:02x?} vram_head_top_before={:04x} vram_high_before={:04x}",
+                    "link_dma host={} entry={:02x}/{:02x}/{:02x} exit={:02x}/{:02x}/{:02x} scheduler={:?} operands={link_obj_operands_generation:?} captured={} early_sources={early_source_pairs:?} captured_body_upper={captured_body_upper:?} live_body_upper={live_body_upper:04x} captured_head_top={captured_head_top:?} live_head_top={live_head_top:04x} captured_pack={:?} live_pack={} first_expanded_mismatch={first_expanded_mismatch:?} captured_high={:02x?} live_high={:02x?} vram_head_top_before={:04x} vram_high_before={:04x}",
                     self.frame_ctr_dbg,
                     entry_frame.main_module,
                     entry_frame.submodule,
@@ -599,8 +639,11 @@ impl ZeldaState {
                     self.game_state.frame.main_module,
                     self.game_state.frame.submodule,
                     self.game_state.frame.subsubmodule,
+                    self.game_execution_scheduler,
                     captured_link_operands.is_some(),
-                    captured_link_operands.map(|operands| {
+                    host_boundary_link_operands.map(|operands| operands.link_pack),
+                    live_operands.link_pack,
+                    host_boundary_link_operands.map(|operands| {
                         <[u8; 4]>::try_from(&operands.expanded_high_planes[..4])
                             .expect("four-byte Link staging prefix")
                     }),
@@ -612,7 +655,7 @@ impl ZeldaState {
             }
             self.nmi_core_link_graphics_update(captured_link_operands);
             self.link_obj_dma_completed_this_frame = true;
-            if std::env::var_os("ZELDA3_DEBUG_LINK_DMA").is_some() {
+            if trace_link_dma {
                 eprintln!(
                     "link_dma host={} vram_head_top_after={:04x} vram_high_after={:04x}",
                     self.frame_ctr_dbg, self.ppu.vram[0x4020], self.ppu.vram[0x4240],
@@ -650,6 +693,7 @@ impl ZeldaState {
                 self.ppu.cgram[i] = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + i * 2);
             }
             self.commit_palette_provenance_cgram();
+            self.record_completed_cgram_dma_for_display_boundary();
         }
 
         let debug_display_vram = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
@@ -705,7 +749,9 @@ impl ZeldaState {
             oam_operands_across_main(entry_frame, frame, graphics_dma_plan.oam_operands),
             self.dialogue_oam_publication_phase,
         );
-        if std::env::var_os("ZELDA3_DEBUG_OAM_DMA").is_some() {
+        if std::env::var_os("ZELDA3_DEBUG_OAM_DMA").is_some()
+            && debug_hardware_frame_matches(self.frame_ctr_dbg)
+        {
             let captured = oam_dma_source.unwrap_or_default();
             let live = self.sprite_oam_shadow_buffer();
             eprintln!(
@@ -717,8 +763,8 @@ impl ZeldaState {
                 frame.main_module,
                 frame.submodule,
                 frame.frame_counter,
-                [captured.get(465).copied(), captured.get(469).copied()],
-                [live.get(465).copied(), live.get(469).copied()],
+                [captured.get(369).copied(), captured.get(373).copied()],
+                [live.get(369).copied(), live.get(373).copied()],
             );
         }
         let mut oam_buf = if matches!(
@@ -749,13 +795,7 @@ impl ZeldaState {
         }
         let _ = std::mem::take(&mut self.rom_lag_frame_skip_oam_dma);
         if !defer_intro_initialization_oam_dma {
-            for i in 0..self.ppu.oam.len() {
-                self.ppu.oam[i] = read_word_from_slice(&oam_buf, i * 2);
-            }
-            self.record_completed_oam_dma_for_display_boundary(
-                oam_dma_source,
-                entry_frame.frame_counter != frame.frame_counter,
-            );
+            self.complete_oam_dma_from_source(&oam_buf);
         }
 
         if std::env::var_os("ZELDA3_DEBUG_ATTRACT_NMI_UPLOAD").is_some()
@@ -873,6 +913,22 @@ impl ZeldaState {
             24 => self.nmi_update_star_tiles(),
             _ => panic!("invalid nmi_subroutine_index {}", nmi_subroutine_index),
         }
+    }
+
+    /// Complete one hardware OAM DMA from its already-selected WRAM operand.
+    ///
+    /// Both an ordinary NMI and an effective leading-NMI continuation use this
+    /// primitive so resident PPU state and display-boundary receipts cannot
+    /// disagree about which byte generation the transfer installed.
+    pub(super) fn complete_oam_dma_from_source(&mut self, source: &[u8]) {
+        assert!(
+            source.len() >= self.ppu.oam.len() * 2,
+            "OAM DMA source is shorter than the hardware OAM payload"
+        );
+        for i in 0..self.ppu.oam.len() {
+            self.ppu.oam[i] = read_word_from_slice(source, i * 2);
+        }
+        self.record_completed_oam_dma_for_display_boundary();
     }
 
     pub(super) fn nmi_upload_tilemap(&mut self) {

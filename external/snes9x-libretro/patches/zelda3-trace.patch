@@ -193,6 +193,19 @@ index aa43b2ff..a5440ab9 100644
 +	return CheckCarry();
 +}
 +
++unsigned Zelda3TraceCpuStatus()
++{
++	return (CheckCarry() ? Carry : 0) |
++		(CheckZero() ? Zero : 0) |
++		(CheckIRQ() ? IRQ : 0) |
++		(CheckDecimal() ? Decimal : 0) |
++		(CheckIndex() ? IndexFlag : 0) |
++		(CheckMemory() ? MemoryFlag : 0) |
++		(CheckOverflow() ? Overflow : 0) |
++		(CheckNegative() ? Negative : 0) |
++		(CheckEmulation() ? Emulation : 0);
++}
++
  void S9xMainLoop (void)
  {
  	#define CHECK_FOR_IRQ_CHANGE() \
@@ -821,8 +834,9 @@ index 00000000..06a376d4
 +{
 +	initialize();
 +	return config.output && (config.events & event) &&
-+		IPPU.TotalEmulatedFrames >= config.first_frame &&
-+		IPPU.TotalEmulatedFrames <= config.last_frame;
++		((event & TRACE_ROM_RNG) ||
++		 (IPPU.TotalEmulatedFrames >= config.first_frame &&
++		  IPPU.TotalEmulatedFrames <= config.last_frame));
 +}
 +
 +bool includes(const AddressRange *ranges, unsigned count, uint32 value)
@@ -842,8 +856,10 @@ index 00000000..06a376d4
 +	std::fprintf(config.output,
 +		"{\"event\":\"%s\",\"run\":%llu,\"frame\":%u,\"v\":%d,\"cycles\":%d,"
 +		"\"pc\":%u,\"a\":%u,\"x\":%u,\"y\":%u,\"s\":%u,"
-+		"\"carry\":%u,"
++		"\"carry\":%u,\"p\":%u,"
 +		"\"main\":%u,\"sub\":%u,\"subsub\":%u,\"frame_counter\":%u,\"room\":%u,"
++		"\"lights_out\":%u,\"palette_countdown\":%u,\"palette_direction\":%u,"
++		"\"mosaic_target\":%u,"
 +		"\"spotlight_radius\":%u,\"spotlight_state\":%u,"
 +		"\"rng_seed\":%u,\"nmi_latch\":%u,\"nmi_disable\":%u,\"nmi_pending\":%u,"
 +		"\"return_address\":%u,"
@@ -851,9 +867,11 @@ index 00000000..06a376d4
 +		event, (unsigned long long) retro_run_index, IPPU.TotalEmulatedFrames,
 +		CPU.V_Counter, CPU.Cycles,
 +		Registers.PBPC & 0xffffff, Registers.A.W, Registers.X.W, Registers.Y.W,
-+		Registers.S.W, Zelda3TraceCpuCarry(),
++		Registers.S.W, Zelda3TraceCpuCarry(), Zelda3TraceCpuStatus(),
 +		Memory.RAM[0x10], Memory.RAM[0x11], Memory.RAM[0xb0],
 +		Memory.RAM[0x1a], Memory.RAM[0xa0] | (Memory.RAM[0xa1] << 8),
++		Memory.RAM[0xc005] | Memory.RAM[0xc006], Memory.RAM[0xc007],
++		Memory.RAM[0xc009], Memory.RAM[0xc00b],
 +		Memory.RAM[0x067c] | (Memory.RAM[0x067d] << 8),
 +		Memory.RAM[0x067e] | (Memory.RAM[0x067f] << 8),
 +		Memory.RAM[0x0fa1], Memory.RAM[0x12],
@@ -1343,6 +1361,7 @@ index 00000000..f5bb193a
 +extern bool Zelda3TraceWramEnabled;
 +
 +bool Zelda3TraceCpuCarry();
++unsigned Zelda3TraceCpuStatus();
 +void Zelda3TraceCaptureScanlinePpuState(int line);
 +void Zelda3TraceCapturePresentedPpuState();
 +int Zelda3TracePresentedOamValue(int index);
