@@ -144,7 +144,14 @@ impl CpuCycleBudget {
     /// during the instruction is observed immediately after it completes.
     pub(super) fn advance_instruction(&mut self, instruction_master_cycles: u32) -> CpuWorkAdvance {
         debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
-        self.advance_work_unbounded(instruction_master_cycles);
+        self.advance_uninterruptible(instruction_master_cycles)
+    }
+
+    /// Advance CPU-blocking work that must finish even when NMI is already
+    /// pending, such as a general DMA started by the just-completed
+    /// instruction.
+    pub(super) fn advance_uninterruptible(&mut self, work_master_cycles: u32) -> CpuWorkAdvance {
+        self.advance_work_unbounded(work_master_cycles);
         if self.clock_master_cycles >= self.nmi_master_cycles {
             CpuWorkAdvance::InterruptedAtNmi {
                 remaining_work_master_cycles: 0,
@@ -152,6 +159,21 @@ impl CpuCycleBudget {
         } else {
             CpuWorkAdvance::Complete
         }
+    }
+
+    /// Open the next field's CPU budget after an NMI becomes pending.
+    ///
+    /// The caller must execute the real interrupt entry and handler through
+    /// this same budget before resuming the interrupted instruction stream.
+    /// Handler duration is deliberately not accepted here: it depends on the
+    /// live NMI/DMA workload and therefore is not a constant.
+    pub(super) fn begin_nmi_handler(&mut self) {
+        debug_assert!(self.clock_master_cycles >= self.nmi_master_cycles);
+        self.nmi_master_cycles = self
+            .nmi_master_cycles
+            .checked_add(NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE)
+            .expect("CPU continuation NMI deadline overflowed");
+        debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
     }
 
     /// Advance ordered semantic phases until they complete or NMI preempts
@@ -229,10 +251,10 @@ enum CpuHostPhase {
     MainLoopReady,
     MainLoopRunning,
     SuspendedCallStack,
-    /// A caller suspended in the prior field has resumed and is executing its
-    /// suffix before the trailing NMI. DMA at that boundary consumes operands
-    /// authored by the resumed suffix, not the host-entry copy.
-    ResumedCallStackRunning,
+    /// A caller suspended in the prior field has resumed, but the following
+    /// NMI has not completed yet. CPU-authored buffers are therefore newer
+    /// than the effective hardware DMA generation at this publication.
+    ResumedCallStackBeforeNmi,
     ReturnedToMainLoop,
 }
 
@@ -277,7 +299,6 @@ impl ScheduledGameWork {
                 continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
-                | GameWorkContinuation::FinishDungeonSupertileFilteringReturn
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
                 | GameWorkContinuation::FinishStraightInterroomSpriteReset
@@ -503,8 +524,8 @@ impl GameExecutionScheduler {
         self.cpu_host_phase == CpuHostPhase::MainLoopReady
     }
 
-    pub(super) fn resumed_call_stack_is_running(self) -> bool {
-        self.cpu_host_phase == CpuHostPhase::ResumedCallStackRunning
+    pub(super) fn resumed_call_stack_is_before_nmi(self) -> bool {
+        self.cpu_host_phase == CpuHostPhase::ResumedCallStackBeforeNmi
     }
 
     fn schedule_continuation(&mut self, continuation: GameExecutionContinuation) {
@@ -530,6 +551,29 @@ impl GameExecutionScheduler {
         self.schedule_continuation(GameExecutionContinuation::ScheduledWork(
             ScheduledGameWork::schedule_before_trailing_nmi(continuation, total_nmi_slices),
         ));
+    }
+
+    /// Schedule CPU work measured as crossings from a call stack that is
+    /// currently executing before this host frame's trailing NMI.
+    pub(super) fn schedule_cpu_timed_work_before_trailing_nmi(
+        &mut self,
+        continuation: GameWorkContinuation,
+        total_nmi_crossings: u8,
+    ) {
+        assert!(
+            matches!(
+                self.cpu_host_phase,
+                CpuHostPhase::MainLoopRunning | CpuHostPhase::ResumedCallStackBeforeNmi
+            ),
+            "CPU-timed pre-NMI work scheduled from {:?}",
+            self.cpu_host_phase,
+        );
+        assert_ne!(total_nmi_crossings, 0);
+        if total_nmi_crossings == 1 {
+            self.schedule_post_trailing_nmi(continuation);
+        } else {
+            self.schedule_work_before_trailing_nmi(continuation, total_nmi_crossings);
+        }
     }
 
     pub(super) fn schedule_post_trailing_nmi(&mut self, continuation: GameWorkContinuation) {
@@ -632,9 +676,15 @@ impl GameExecutionScheduler {
         else {
             return None;
         };
+        let suspends_translated_call_stack = work.suspends_translated_call_stack();
         let step = work.advance_one_nmi_slice();
         if matches!(step, GameWorkStep::Complete(_)) {
             self.continuation = None;
+            if suspends_translated_call_stack
+                && self.cpu_host_phase == CpuHostPhase::SuspendedCallStack
+            {
+                self.cpu_host_phase = CpuHostPhase::ResumedCallStackBeforeNmi;
+            }
         }
         Some(step)
     }
@@ -730,7 +780,7 @@ impl GameExecutionScheduler {
         );
         self.continuation = None;
         if self.cpu_host_phase == CpuHostPhase::SuspendedCallStack {
-            self.cpu_host_phase = CpuHostPhase::ResumedCallStackRunning;
+            self.cpu_host_phase = CpuHostPhase::ResumedCallStackBeforeNmi;
         }
     }
 }
@@ -824,6 +874,31 @@ mod cpu_timing_tests {
     }
 
     #[test]
+    fn interrupted_instruction_stream_resumes_after_nmi_in_the_next_field() {
+        let mut budget = CpuCycleBudget::until_next_nmi(
+            CpuRasterPosition::new(224, 1_350),
+            CpuBusWorkload::default(),
+        );
+        assert_eq!(
+            budget.advance_instruction(28),
+            CpuWorkAdvance::InterruptedAtNmi {
+                remaining_work_master_cycles: 0,
+            }
+        );
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 14),);
+
+        budget.begin_nmi_handler();
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 14),);
+        assert_eq!(
+            budget.advance_interruptible(2_984),
+            CpuWorkAdvance::Complete,
+        );
+
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(227, 350),);
+        assert_eq!(budget.advance_instruction(24), CpuWorkAdvance::Complete,);
+    }
+
+    #[test]
     fn bus_stall_at_an_instruction_boundary_precedes_the_next_instruction() {
         for (event_cycle, stall) in [
             (WRAM_REFRESH_CYCLE, WRAM_REFRESH_STALL_MASTER_CYCLES),
@@ -876,15 +951,32 @@ mod cpu_timing_tests {
     }
 
     #[test]
-    fn resumed_caller_suffix_owns_the_trailing_nmi_operands() {
+    fn resumed_caller_suffix_remains_before_the_following_nmi() {
         let mut scheduler = GameExecutionScheduler::default();
         let continuation = PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter;
         scheduler.schedule_pre_main_caller_continuation(continuation);
         scheduler.begin_host_frame();
-        assert!(!scheduler.resumed_call_stack_is_running());
+        assert!(!scheduler.resumed_call_stack_is_before_nmi());
 
         scheduler.finish_pre_main_caller_continuation(continuation);
 
-        assert!(scheduler.resumed_call_stack_is_running());
+        assert!(scheduler.resumed_call_stack_is_before_nmi());
+    }
+
+    #[test]
+    fn completed_scheduled_stack_can_continue_through_the_current_trailing_nmi() {
+        let continuation = GameWorkContinuation::FinishDungeonSubtilePaletteFilter;
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.schedule_work(continuation, 1);
+        scheduler.begin_host_frame();
+
+        assert_eq!(
+            scheduler.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Complete(continuation))
+        );
+        assert!(scheduler.resumed_call_stack_is_before_nmi());
+
+        scheduler.schedule_cpu_timed_work_before_trailing_nmi(continuation, 1);
+        assert_eq!(scheduler.take_post_trailing_nmi(), Some(continuation));
     }
 }

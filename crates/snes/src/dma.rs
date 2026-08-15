@@ -411,6 +411,39 @@ impl Snes {
             false
         }
     }
+
+    /// Complete a latched general DMA and return the CPU stall in master
+    /// cycles.
+    ///
+    /// The hardware scheduler charges 16 cycles for the transfer, 8 for each
+    /// byte, and 8 for each active channel. `dma_do` already performs the
+    /// transfer byte-for-byte; this helper supplies the scheduler accounting
+    /// needed by read/write-isolated CPU timing runs.
+    pub fn dma_run_to_completion_master_cycles(&mut self) -> u32 {
+        if !self.dma.dma_busy {
+            return 0;
+        }
+
+        let mut master_cycles = 16u32;
+        loop {
+            let Some(channel) = self
+                .dma
+                .channel
+                .iter()
+                .position(|channel| channel.dma_active)
+            else {
+                self.dma.dma_busy = false;
+                self.dma.dma_timer = 0;
+                return master_cycles;
+            };
+            let completes_channel = self.dma.channel[channel].size == 1;
+            self.dma_do();
+            master_cycles = master_cycles.checked_add(8).expect("DMA timing overflowed");
+            if completes_channel {
+                master_cycles = master_cycles.checked_add(8).expect("DMA timing overflowed");
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -477,5 +510,29 @@ mod tests {
                                 // bAdr at $4301
         snes.write(0x0000_4301, 0x18);
         assert_eq!(snes.read(0x0000_4301), 0x18);
+    }
+
+    #[test]
+    fn general_dma_completion_reports_scheduler_master_cycles() {
+        let mut snes = Snes::new();
+        snes.dma.channel[0].a_bank = 0x7e;
+        snes.dma.channel[0].a_adr = 0x0100;
+        snes.dma.channel[0].b_adr = 0;
+        snes.dma.channel[0].size = 2;
+        snes.dma.channel[0].fixed = false;
+        snes.dma.channel[0].decrement = false;
+        snes.dma.channel[1].a_bank = 0x7e;
+        snes.dma.channel[1].a_adr = 0x0200;
+        snes.dma.channel[1].b_adr = 0;
+        snes.dma.channel[1].size = 1;
+        snes.dma.channel[1].fixed = false;
+        snes.dma.channel[1].decrement = false;
+        snes.dma_start_real(0b0000_0011, false);
+
+        assert_eq!(snes.dma_run_to_completion_master_cycles(), 56);
+        assert!(!snes.dma.dma_busy);
+        assert_eq!(snes.dma.channel[0].a_adr, 0x0102);
+        assert_eq!(snes.dma.channel[1].a_adr, 0x0201);
+        assert_eq!(snes.dma_run_to_completion_master_cycles(), 0);
     }
 }

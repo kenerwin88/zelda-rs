@@ -127,18 +127,18 @@ impl ZeldaState {
         );
     }
 
-    /// Run an NMI at an explicit scanout boundary and record its presentation
-    /// effects. OAM and scroll registers latch on this boundary; bulk-memory
-    /// writes become the resident baseline of the following publication.
+    /// Run an NMI at an explicit leading scanout boundary and record its
+    /// presentation effects. The snapshot already owns the CPU/register
+    /// generation, while vblank DMA completes before its visible scanlines.
     pub(super) fn interrupt_nmi_for_active_scanout(
         &mut self,
         input: u16,
         oam_dma_source: Option<&[u8]>,
         defer_bg_vram_upload: bool,
     ) {
-        let before = Some(DisplayDmaMemory::capture(&self.ppu));
+        self.begin_effective_presented_dma();
         self.interrupt_nmi(input, oam_dma_source, defer_bg_vram_upload);
-        self.record_effective_presented_dma(before);
+        self.record_effective_presented_dma_for_active_scanout();
     }
 
     pub(super) fn interrupt_nmi_with_animated_bg_operands(
@@ -492,6 +492,7 @@ impl ZeldaState {
         if dst + 0x200 > self.ppu.vram.len() || data.len() < 0x400 {
             return;
         }
+        self.mark_effective_dma_vram_range(dst..dst + 0x200);
         if std::env::var_os("ZELDA3_DEBUG_BOOT_DMA_SOURCE").is_some()
             && self.rom_startup_timing()
             && self.game_state.frame.main_module == 0
@@ -567,7 +568,7 @@ impl ZeldaState {
                 .as_ref()
                 .map(|graphics| graphics.entry_frame)
                 .unwrap_or(self.game_state.frame);
-            let link_obj_operands_generation = self.effective_link_obj_dma_generation();
+            let link_obj_operands_generation = self.following_nmi_link_obj_dma_generation();
             let captured_link_operands = matches!(
                 link_obj_operands_generation,
                 GraphicsDmaGeneration::HostBoundaryBeforeMain
@@ -676,6 +677,7 @@ impl ZeldaState {
                 .message_dma_destination_address_usize();
             if dst + HUD_TILEMAP_NMI_WORDS <= self.ppu.vram.len() {
                 let hud_buf = self.message_dma_tile_indices().to_vec();
+                self.mark_effective_dma_vram_range(dst..dst + HUD_TILEMAP_NMI_WORDS);
                 for i in 0..HUD_TILEMAP_NMI_WORDS {
                     self.ppu.vram[dst + i] = read_word_from_slice(&hud_buf, i * 2);
                 }
@@ -881,6 +883,7 @@ impl ZeldaState {
         };
         if target + word_count <= self.ppu.vram.len() {
             let buf = self.tilemap_upload_stripe_buffer().to_vec();
+            self.mark_effective_dma_vram_range(target..target + word_count);
             for i in 0..word_count {
                 self.ppu.vram[target + i] = read_word_from_slice(&buf, i * 2);
             }
@@ -909,6 +912,7 @@ impl ZeldaState {
             pos += 2;
             for i in 0..words {
                 if dst < self.ppu.vram.len() {
+                    self.mark_effective_dma_vram_word(dst);
                     self.ppu.vram[dst] = read_word_from_slice(&data, pos + i * 2);
                 }
                 dst += step;
@@ -1362,6 +1366,7 @@ impl ZeldaState {
         let words = len >> 1;
         for i in 0..words {
             if dstv < self.ppu.vram.len() && i * 2 + 1 < src.len() {
+                self.mark_effective_dma_vram_word(dstv);
                 self.ppu.vram[dstv] = read_word_from_slice(src, i * 2);
             }
             dstv += 32;
@@ -1377,6 +1382,7 @@ impl ZeldaState {
     pub(super) fn copy_to_vram_low_slice(&mut self, src: &[u8], addr: usize, num: usize) {
         for i in 0..num {
             if addr + i < self.ppu.vram.len() && i < src.len() {
+                self.mark_effective_dma_vram_word(addr + i);
                 self.ppu.vram[addr + i] = (self.ppu.vram[addr + i] & !0xff) | src[i] as u16;
             }
         }
@@ -1457,6 +1463,7 @@ impl ZeldaState {
         if source_addr + len > source.len() || dst_word + len.div_ceil(2) > self.ppu.vram.len() {
             return;
         }
+        self.mark_effective_dma_vram_range(dst_word..dst_word + len.div_ceil(2));
         for i in 0..len {
             let word_idx = dst_word + i / 2;
             let byte = source[source_addr + i] as u16;
@@ -1472,6 +1479,7 @@ impl ZeldaState {
         if self.game_state.display.has_pending_polyhedral_update() {
             let poly_buf = self.polyhedral_tile_buffer().to_vec();
             let mut display_vram = None;
+            self.mark_effective_dma_vram_range(0x5800..0x5c00);
             for i in 0..0x400 {
                 let dst = 0x5800 + i;
                 let value = read_word_from_slice(&poly_buf, i * 2);
@@ -1494,6 +1502,7 @@ impl ZeldaState {
     pub(super) fn nmi_update_bg_char_half(&mut self) {
         let dst = self.game_state.display.nmi_load_target_page() as usize * 256;
         let buf = self.background_character_half_buffer().to_vec();
+        self.mark_effective_dma_vram_range(dst..dst + 0x200);
         for i in 0..0x200 {
             self.ppu.vram[dst + i] = read_word_from_slice(&buf, i * 2);
         }
@@ -1520,6 +1529,7 @@ impl ZeldaState {
 
     pub(super) fn nmi_upload_bg3_text(&mut self) {
         let buf = self.background_character_buffer().to_vec();
+        self.mark_effective_dma_vram_range(0x7c00..0x7ff0);
         for i in 0..0x3f0 {
             self.ppu.vram[0x7c00 + i] = read_word_from_slice(&buf, i * 2);
         }
@@ -1540,6 +1550,7 @@ impl ZeldaState {
                 for _ in 0..0x20 {
                     for i in 0..0x20 {
                         if src + i < tilemap.len() {
+                            self.mark_effective_dma_vram_word(dst + i);
                             self.ppu.vram[dst + i] =
                                 (self.ppu.vram[dst + i] & 0xff00) | tilemap[src + i] as u16;
                         }
@@ -1569,6 +1580,7 @@ impl ZeldaState {
                     }
                     let value = stripes[0] as u16 | ((stripes[1] as u16) << 8);
                     for i in 0..((len + 1) >> 1) {
+                        self.mark_effective_dma_vram_word(vmem_addr as usize + i);
                         self.ppu.vram[vmem_addr as usize + i] = value;
                     }
                     stripes = &stripes[2..];
@@ -1587,6 +1599,7 @@ impl ZeldaState {
                 }
                 let value = stripes[0] as u16 | ((stripes[1] as u16) << 8);
                 for i in 0..((len + 1) >> 1) {
+                    self.mark_effective_dma_vram_word(vmem_addr as usize + i * 32);
                     self.ppu.vram[vmem_addr as usize + i * 32] = value;
                 }
                 stripes = &stripes[2..];
@@ -1597,6 +1610,7 @@ impl ZeldaState {
                     return;
                 }
                 for i in 0..words {
+                    self.mark_effective_dma_vram_word(vmem_addr as usize + i * 32);
                     self.ppu.vram[vmem_addr as usize + i * 32] =
                         read_word_from_slice(stripes, i * 2);
                 }
@@ -1716,6 +1730,7 @@ impl ZeldaState {
             return;
         }
         let current = self.ppu.vram[word];
+        self.mark_effective_dma_vram_word(word);
         self.ppu.vram[word] = if byte_offset & 1 == 0 {
             (current & 0xff00) | value as u16
         } else {

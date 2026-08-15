@@ -639,6 +639,7 @@ index 00000000..06a376d4
 +	TRACE_WRAM = 1 << 6,
 +	TRACE_HDMA = 1 << 7,
 +	TRACE_ROM_RNG = 1 << 8,
++	TRACE_NMI_RESUME = 1 << 9,
 +};
 +
 +struct AddressRange
@@ -664,6 +665,9 @@ index 00000000..06a376d4
 +
 +TraceConfig config = {};
 +uint64 retro_run_index = 0;
++bool nmi_resume_pending = false;
++uint32 nmi_resume_pc = 0;
++uint16 nmi_resume_stack = 0;
 +uint8 presented_oam[544] = {};
 +int8 presented_obj_sprites[SNES_HEIGHT_EXTENDED][128] = {};
 +uint8 presented_obj_rows[SNES_HEIGHT_EXTENDED][128] = {};
@@ -783,6 +787,7 @@ index 00000000..06a376d4
 +		events = "frame,nmi,rng";
 +	if (has_token(events, "frame")) config.events |= TRACE_FRAME;
 +	if (has_token(events, "nmi")) config.events |= TRACE_NMI;
++	if (has_token(events, "nmi-resume")) config.events |= TRACE_NMI_RESUME;
 +	if (has_token(events, "rng")) config.events |= TRACE_RNG;
 +	if (has_token(events, "rom-rng")) config.events |= TRACE_ROM_RNG;
 +	if (has_token(events, "pc")) config.events |= TRACE_PC;
@@ -792,7 +797,7 @@ index 00000000..06a376d4
 +	if (has_token(events, "wram")) config.events |= TRACE_WRAM;
 +	Zelda3TraceDmaEnabled = (config.events & TRACE_DMA) != 0;
 +	Zelda3TraceHdmaEnabled = (config.events & TRACE_HDMA) != 0;
-+	Zelda3TracePcEnabled = (config.events & TRACE_PC) != 0;
++	Zelda3TracePcEnabled = (config.events & (TRACE_PC | TRACE_NMI_RESUME)) != 0;
 +	Zelda3TracePpuEnabled = (config.events & TRACE_PPU) != 0;
 +	Zelda3TraceWramEnabled =
 +		(config.events & (TRACE_RNG | TRACE_ROM_RNG | TRACE_WRAM)) != 0;
@@ -1211,10 +1216,15 @@ index 00000000..06a376d4
 +
 +void Zelda3TraceInstruction(void)
 +{
-+	if (!active(TRACE_PC))
-+		return;
 +	const uint32 pc = Registers.PBPC & 0xffffff;
-+	if (includes(config.pc, config.pc_count, pc))
++	if (nmi_resume_pending && active(TRACE_NMI_RESUME) &&
++		pc == nmi_resume_pc && Registers.S.W == nmi_resume_stack)
++	{
++		write_machine_state("nmi-resume");
++		finish_event();
++		nmi_resume_pending = false;
++	}
++	if (active(TRACE_PC) && includes(config.pc, config.pc_count, pc))
 +	{
 +		write_machine_state("pc");
 +		finish_event();
@@ -1223,10 +1233,17 @@ index 00000000..06a376d4
 +
 +void Zelda3TraceNmi(void)
 +{
-+	if (!active(TRACE_NMI))
-+		return;
-+	write_machine_state("nmi");
-+	finish_event();
++	if (active(TRACE_NMI_RESUME))
++	{
++		nmi_resume_pending = true;
++		nmi_resume_pc = Registers.PBPC & 0xffffff;
++		nmi_resume_stack = Registers.S.W;
++	}
++	if (active(TRACE_NMI))
++	{
++		write_machine_state("nmi");
++		finish_event();
++	}
 +}
 +
 +void Zelda3TraceDma(uint8 channel, const SDMA *dma)

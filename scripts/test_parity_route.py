@@ -139,6 +139,53 @@ class ParityRouteTests(unittest.TestCase):
             ["--save-rolling-paired-resume", "1000", "video-checkpoints"],
         )
 
+    def test_precommit_gate_bundles_generated_input_and_cold_sram_together(self):
+        precommit = load_script("precommit_snes9x_parity_gate")
+        identity = {"core_sha256": "core", "rom_sha256": "rom"}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_sram = root / "boundary" / "initial.srm"
+            source_sram.parent.mkdir()
+            source_sram.write_bytes(b"sram")
+            input_path = root / "generated" / "input.txt"
+            input_path.parent.mkdir()
+            input_path.write_text("0 0\n", encoding="utf-8")
+            with (
+                mock.patch.object(precommit.recorder, "load_manifest", return_value={}),
+                mock.patch.object(
+                    precommit.recorder,
+                    "oracle_generations",
+                    return_value=[{"identity": identity}],
+                ),
+                mock.patch.object(
+                    precommit.recorder,
+                    "compare_input_command",
+                    return_value=[
+                        "zelda3",
+                        "--input-script",
+                        str(input_path),
+                        "--load-sram",
+                        str(source_sram),
+                    ],
+                ),
+            ):
+                command = precommit._build_check_command(
+                    binary=Path("zelda3"),
+                    core=Path("core"),
+                    rom=Path("rom"),
+                    project=Path("project"),
+                    session_dir=Path("session"),
+                    take_ids=[0],
+                    start_boundary=0,
+                    requested_frames=100,
+                    input_path=input_path,
+                    rom_random_path=None,
+                )
+
+            bundled_sram = input_path.parent / "initial.srm"
+            self.assertEqual(command[command.index("--load-sram") + 1], str(bundled_sram))
+            self.assertEqual(bundled_sram.read_bytes(), b"sram")
+
     def test_precommit_live_rng_preflight_uses_trace_core_without_resume(self):
         precommit = load_script("precommit_snes9x_parity_gate")
         identity = {"core_sha256": "stock", "rom_sha256": "rom"}

@@ -10193,6 +10193,14 @@ impl ZeldaState {
     pub(super) fn Module07_02_SupertileTransition(&mut self) {
         self.follower_link_state_mut()
             .cache_previous_position_from_current();
+        if self.rom_startup_timing() && self.game_state.frame.subsubmodule == 1 {
+            // The ROM timing checkpoint is the Module 7 dispatcher entry,
+            // before its shared attribute-loader prefix mutates $0200 and the
+            // room-attribute cursors. Capture that exact state once; cloning
+            // inside Module07_02_01 would execute the prefix twice in the
+            // isolated instruction stream.
+            self.dungeon_room_load_cpu_schedule = Some(dungeon_room_load_cpu_schedule(self));
+        }
         if self.game_state.frame.subsubmodule != 0 {
             if self.game_state.frame.subsubmodule >= 7 {
                 self.Graphics_IncrementalVRAMUpload();
@@ -10217,9 +10225,14 @@ impl ZeldaState {
             10 => self.Dungeon_InterRoomTrans_State10(),
             11 => self.Dungeon_InterRoomTrans_State9(),
             12 => {
-                self.Dungeon_InterRoomTrans_State12();
-                self.dungeon_state_12_module_return_nmi_pending = self.rom_startup_timing()
+                // The isolated ROM timing run begins at this translated body's
+                // entry. Snapshot state before the body mutates WRAM so its
+                // branch path and cycle count have the same provenance as the
+                // original CPU execution.
+                let module_return_crosses_nmi = self.rom_startup_timing()
                     && dungeon_supertile_state_12_cpu_advance(self).was_interrupted();
+                self.Dungeon_InterRoomTrans_State12();
+                self.dungeon_state_12_module_return_nmi_pending = module_return_crosses_nmi;
             }
             13 => self.Dungeon_InterRoomTrans_State13(),
             14 => {
@@ -10800,13 +10813,14 @@ impl ZeldaState {
     pub(super) fn DungeonTransition_Subtile_ApplyFilter(&mut self) {
         if self.game_state.dungeon.torch.wants_lights_out() == 0 {
             self.increment_subsubmodule();
+            self.suspend_dungeon_subtile_palette_filter_if_cpu_interrupted();
             return;
         }
         self.ApplyPaletteFilter_bounce();
         if !self.rom_startup_timing() && self.game_state.display.palette_filter.countdown() != 0 {
             self.ApplyPaletteFilter_bounce();
         }
-        self.suspend_dungeon_subtile_palette_filter_if_return_crosses_nmi();
+        self.suspend_dungeon_subtile_palette_filter_if_cpu_interrupted();
     }
 
     pub(super) fn DungeonTransition_Subtile_ResetShutters(&mut self) {
@@ -10845,9 +10859,6 @@ impl ZeldaState {
             self.clear_mosaic_target_level();
         }
         self.Dungeon_HandleTranslucencyAndPalette();
-        if self.game_state.frame.subsubmodule == 8 {
-            self.begin_dungeon_supertile_filtering_return();
-        }
     }
 
     pub(super) fn Module07_02_FadedFilter(&mut self) {
@@ -10860,6 +10871,7 @@ impl ZeldaState {
                 self.retain_palette_filter_input_cgram_on_next_display_capture();
             }
             self.ApplyPaletteFilter_bounce();
+            let caller_return_crosses_nmi = self.take_dungeon_state_14_caller_return_crosses_nmi();
             if self.game_state.display.palette_filter.countdown() != 0 {
                 if self.rom_startup_timing() {
                     // The room-load fade performs two full palette walks. The
@@ -10890,30 +10902,23 @@ impl ZeldaState {
                     self.stage_dungeon_faded_filter_first_palette_scanout();
                     self.dungeon_faded_filter_palette_completion_host_frame =
                         Some(self.frame_ctr_dbg);
-                    if self.game_state.frame.subsubmodule != entry_subsubmodule
-                        && matches!(
-                            self.game_state.world.location.dungeon_room_index(),
-                            0x22 | 0x41
-                        )
-                    {
-                        let scheduled = self.begin_dungeon_supertile_transition_work(
-                            DungeonSupertileTransitionWork::FadedFilterCallerReturn,
-                        );
+                    if caller_return_crosses_nmi {
+                        let work = if self.game_state.frame.subsubmodule != entry_subsubmodule {
+                            DungeonSupertileTransitionWork::FadedFilterCallerReturn
+                        } else {
+                            DungeonSupertileTransitionWork::FadedFilterPreCompletionCallerReturn
+                        };
+                        let scheduled = self.begin_dungeon_supertile_transition_work(work);
                         debug_assert!(scheduled);
                     }
                 }
             }
         } else {
             self.increment_subsubmodule();
-            if self.rom_startup_timing()
-                && entry_subsubmodule == 14
-                && matches!(
-                    self.game_state.world.location.dungeon_room_index(),
-                    0x22 | 0x41
-                )
-            {
-                // These measured landing fades reach state 15 just before
-                // vblank. Suspend only their common Module 7 caller return so
+            let caller_return_crosses_nmi = self.take_dungeon_state_14_caller_return_crosses_nmi();
+            if self.rom_startup_timing() && entry_subsubmodule == 14 && caller_return_crosses_nmi {
+                // The shadow CPU reached state 15 but not the Module 7 caller
+                // return before vblank. Suspend that real call-stack phase so
                 // state 15 cannot start one host frame early.
                 self.stage_dungeon_faded_filter_first_palette_scanout();
                 self.dungeon_faded_filter_palette_completion_host_frame = Some(self.frame_ctr_dbg);

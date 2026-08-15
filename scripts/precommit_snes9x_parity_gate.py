@@ -258,6 +258,20 @@ def _resolve_project(path: str) -> Path:
     return project
 
 
+def _co_locate_cold_replay_sources(command: list[str], input_path: Path) -> list[str]:
+    """Put the cold SRAM beside the generated input/RNG provenance bundle."""
+    if "--load-sram" not in command:
+        return command
+    command = command.copy()
+    load_index = command.index("--load-sram") + 1
+    source_sram = Path(command[load_index])
+    bundled_sram = input_path.parent / "initial.srm"
+    if source_sram.resolve() != bundled_sram.resolve():
+        shutil.copyfile(source_sram, bundled_sram)
+    command[load_index] = str(bundled_sram)
+    return command
+
+
 def _build_check_command(
     *,
     binary: Path,
@@ -294,6 +308,7 @@ def _build_check_command(
         session_dir=session_dir,
         identity=identity,
     )
+    command = _co_locate_cold_replay_sources(command, input_path)
     # The authoritative ratchet needs the earliest failing boundary and its
     # finalized session, not every later symptom. The route recorder defaults
     # to --scan-all for broad reports, so explicitly narrow the pre-commit

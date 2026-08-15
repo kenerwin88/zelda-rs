@@ -788,6 +788,9 @@ fn display_oracle_differences(receipt: &DisplayOracleReceipt) -> DisplayOracleDi
 
 fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
     oracle.debug_ppu_value(0, 0)?;
+    let presented_obj_tile_cache_supported = oracle
+        .debug_ppu_value(29, 0)
+        .is_some_and(|value| value >= 0);
     let presented_obj = PresentedObjEvaluation {
         lines: (0..224)
             .map(|line| {
@@ -867,16 +870,18 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
                 .collect(),
         ),
         presented_obj: Some(presented_obj),
-        presented_obj_tile_cache: Some(
+        // Older trace cores return -1 for unknown probe fields. Treat that as
+        // an unavailable capability, not 4096 bytes of cache divergence.
+        presented_obj_tile_cache: presented_obj_tile_cache_supported.then(|| {
             (0..64 * 64)
                 .map(|index| oracle.debug_ppu_value(29, index).unwrap_or(-1))
-                .collect(),
-        ),
-        presented_obj_tile_cache_valid: Some(
+                .collect()
+        }),
+        presented_obj_tile_cache_valid: presented_obj_tile_cache_supported.then(|| {
             (0..64)
                 .map(|index| oracle.debug_ppu_value(30, index).unwrap_or(-1))
-                .collect(),
-        ),
+                .collect()
+        }),
     })
 }
 
@@ -1509,7 +1514,7 @@ pub(crate) fn run_snes9x_script(args: &[String]) {
         }
         _ => {
             eprintln!(
-                "usage: zelda3 --run-snes9x-script <snes9x_libretro.dylib> <rom.sfc> <oracle.state> <input.txt> <frames> [--load-sram <path>] [--input-frame-offset <n>] [--save-state <path>] [--expected-core-sha256 <sha>] [--expected-rom-sha256 <sha>]"
+                "usage: zelda3 --run-snes9x-script <snes9x_libretro.dylib> <rom.sfc> <oracle.state> <input.txt> <frames> [--load-sram <path>] [--input-frame-offset <n>] [--save-state <path>] [--dump-wram <path>] [--dump-sram <path>] [--expected-core-sha256 <sha>] [--expected-rom-sha256 <sha>]"
             );
             process::exit(2);
         }
@@ -1518,6 +1523,8 @@ pub(crate) fn run_snes9x_script(args: &[String]) {
     let mut load_sram = None::<PathBuf>;
     let mut input_frame_offset = 0u32;
     let mut save_state = None::<PathBuf>;
+    let mut dump_wram = None::<PathBuf>;
+    let mut dump_sram = None::<PathBuf>;
     let mut expected_core_sha256 = None::<String>;
     let mut expected_rom_sha256 = None::<String>;
     let mut i = 5usize;
@@ -1543,6 +1550,20 @@ pub(crate) fn run_snes9x_script(args: &[String]) {
             "--save-state" => {
                 save_state = Some(PathBuf::from(args.get(i + 1).unwrap_or_else(|| {
                     eprintln!("--save-state requires a path");
+                    process::exit(2);
+                })));
+                i += 2;
+            }
+            "--dump-wram" => {
+                dump_wram = Some(PathBuf::from(args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--dump-wram requires a path");
+                    process::exit(2);
+                })));
+                i += 2;
+            }
+            "--dump-sram" => {
+                dump_sram = Some(PathBuf::from(args.get(i + 1).unwrap_or_else(|| {
+                    eprintln!("--dump-sram requires a path");
                     process::exit(2);
                 })));
                 i += 2;
@@ -1636,6 +1657,29 @@ pub(crate) fn run_snes9x_script(args: &[String]) {
             });
         }
         fs::write(&path, state).unwrap_or_else(|error| {
+            eprintln!("failed to write {}: {error}", path.display());
+            process::exit(1);
+        });
+    }
+
+    for (path, memory_id, label) in [
+        (dump_wram, RETRO_MEMORY_SYSTEM_RAM, "WRAM"),
+        (dump_sram, RETRO_MEMORY_SAVE_RAM, "SRAM"),
+    ] {
+        let Some(path) = path else {
+            continue;
+        };
+        let bytes = oracle.memory_bytes(memory_id).unwrap_or_else(|| {
+            eprintln!("failed to read final Snes9x {label}");
+            process::exit(1);
+        });
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap_or_else(|error| {
+                eprintln!("failed to create {}: {error}", parent.display());
+                process::exit(1);
+            });
+        }
+        fs::write(&path, bytes).unwrap_or_else(|error| {
             eprintln!("failed to write {}: {error}", path.display());
             process::exit(1);
         });

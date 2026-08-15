@@ -1997,11 +1997,16 @@ impl ZeldaState {
             self.sprite_execute_single(k);
             if self.dungeon_room_load_sprite_main_nmi_after_slot == Some(k as u8) {
                 self.dungeon_room_load_sprite_main_nmi_after_slot = None;
+                let nmi_slices = std::mem::take(&mut self.dungeon_room_load_sprite_main_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "room-load Sprite_Main continuation requires a measured NMI phase",
+                );
                 self.game_execution_scheduler.schedule_work(
                     GameWorkContinuation::FinishDungeonRoomLoadSpriteMain {
                         interrupted_slot: k as u8,
                     },
-                    1,
+                    nmi_slices,
                 );
             }
             if self
@@ -2015,6 +2020,17 @@ impl ZeldaState {
             }
         }
         self.complete_sprite_main_after_all_slots();
+        let suffix_nmi_slices =
+            std::mem::take(&mut self.dungeon_room_load_module_suffix_nmi_slices);
+        if suffix_nmi_slices != 0 {
+            self.game_execution_scheduler
+                .schedule_cpu_timed_work_before_trailing_nmi(
+                    GameWorkContinuation::FinishDungeonSupertileTransition {
+                        work: DungeonSupertileTransitionWork::RoomLoadCallerResume,
+                    },
+                    suffix_nmi_slices,
+                );
+        }
     }
 
     pub(super) fn complete_sprite_main_after_interrupted_slot(&mut self, interrupted_slot: usize) {
@@ -2024,6 +2040,17 @@ impl ZeldaState {
             debug_assert!(!self.game_execution_scheduler.work_is_pending());
         }
         self.complete_sprite_main_after_all_slots();
+        let suffix_nmi_slices =
+            std::mem::take(&mut self.dungeon_room_load_module_suffix_nmi_slices);
+        if suffix_nmi_slices != 0 {
+            self.game_execution_scheduler
+                .schedule_cpu_timed_work_before_trailing_nmi(
+                    GameWorkContinuation::FinishDungeonSupertileTransition {
+                        work: DungeonSupertileTransitionWork::RoomLoadCallerResume,
+                    },
+                    suffix_nmi_slices,
+                );
+        }
     }
 
     fn complete_sprite_main_after_all_slots(&mut self) {

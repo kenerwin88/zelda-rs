@@ -85,9 +85,32 @@ impl RomCpuTimingRun {
         (u32::from(self.shadow.cpu.k) << 16) | u32::from(self.shadow.cpu.pc)
     }
 
+    pub(crate) fn stack_pointer(&self) -> u16 {
+        self.shadow.cpu.sp
+    }
+
+    pub(crate) fn ram_byte(&self, address: usize) -> u8 {
+        self.shadow.ram[address]
+    }
+
     pub(crate) fn set_raster_position(&mut self, scanline: u16, master_cycle: u16) {
         self.shadow.v_pos = scanline;
         self.shadow.h_pos = master_cycle;
+        self.shadow.in_vblank = scanline >= 225;
+    }
+
+    /// Request a hardware NMI at the current instruction boundary. The next
+    /// `step` performs the 65816 interrupt entry through the ordinary timed CPU
+    /// path, so vector reads, stack writes, and handler control flow all remain
+    /// part of the measured shadow execution.
+    pub(crate) fn request_nmi(&mut self) {
+        self.shadow.in_nmi = true;
+        self.shadow.in_vblank = true;
+        self.shadow.cpu.nmi_wanted = true;
+    }
+
+    pub(crate) fn drain_started_dma_master_cycles(&mut self) -> u32 {
+        self.shadow.dma_run_to_completion_master_cycles()
     }
 
     pub(crate) fn step(&mut self) -> CpuInstructionTiming {

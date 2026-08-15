@@ -31,8 +31,10 @@ python3 scripts/snes9x_route_recorder.py compare-route \
   --no-build
 ```
 
-Available event domains are `frame`, `nmi`, `rng`, `pc`, `dma`, `hdma`, `ppu`,
-and `wram`. `frame,nmi,rng` is the default. `hdma` emits paired start/end
+Available event domains are `frame`, `nmi`, `nmi-resume`, `rng`, `pc`, `dma`,
+`hdma`, `ppu`, and `wram`. `frame,nmi,rng` is the default. `nmi-resume` emits
+one record when RTI restores the interrupted PC and stack, without enabling
+high-volume instruction logging. `hdma` emits paired start/end
 records for every active scanline, including the active-channel mask and exact
 Snes9x CPU position, so bus-stall cost can be measured without instruction
 tracing. Optional filters:

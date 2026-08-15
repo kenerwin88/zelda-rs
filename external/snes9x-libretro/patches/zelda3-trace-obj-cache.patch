@@ -105,6 +105,9 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
  bool Zelda3TraceHdmaEnabled = false;
 @@ -60,11 +60,18 @@ TraceConfig config;
  uint64 retro_run_index = 0;
+ bool nmi_resume_pending = false;
+ uint32 nmi_resume_pc = 0;
+ uint16 nmi_resume_stack = 0;
  uint8 presented_oam[544] = {};
  int8 presented_obj_sprites[SNES_HEIGHT_EXTENDED][128] = {};
 -uint8 presented_obj_rows[SNES_HEIGHT_EXTENDED][128] = {};
