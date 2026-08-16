@@ -2761,7 +2761,10 @@ fn dungeon_room_load_cpu_plan(
     // boundary.
     const SPRITE_MAIN_RETURN_PC: u32 = 0x02_8842;
     const SPRITE_EXECUTE_SINGLE_ENTRY_PC: u32 = 0x06_84e2;
-    const SPRITE_NORMAL_SLOTS_RETURN_PC: u32 = 0x06_83a7;
+    // The loop reaches this instruction after each Sprite_ExecuteSingle
+    // returns. It is a per-slot semantic commit point, not the end of the
+    // whole 16-slot walk.
+    const SPRITE_SLOT_RETURN_PC: u32 = 0x06_83a7;
 
     let mut run = RomCpuTimingRun::new(
         &state.rom,
@@ -2785,7 +2788,7 @@ fn dungeon_room_load_cpu_plan(
     let mut auxiliary_graphics_return_nmis = 0;
     let mut caller_first_nmi_observed = false;
     let mut sprite_main_current_slot = None;
-    let mut sprite_main_normal_slots_complete = false;
+    let mut sprite_main_last_completed_slot = None;
     let mut sprite_main_nmi_after_slot = None;
     let mut sprite_main_return_nmis = None;
 
@@ -2797,8 +2800,8 @@ fn dungeon_room_load_cpu_plan(
             assert!(slot < 16, "Sprite_Main entered an invalid slot {slot}");
             sprite_main_current_slot = Some(slot);
         }
-        if pc == SPRITE_NORMAL_SLOTS_RETURN_PC && auxiliary_graphics_return.is_some() {
-            sprite_main_normal_slots_complete = true;
+        if pc == SPRITE_SLOT_RETURN_PC && auxiliary_graphics_return.is_some() {
+            sprite_main_last_completed_slot = sprite_main_current_slot;
         }
         match pc {
             ROOM_LOAD_RETURN_PC if room_load_return.is_none() => {
@@ -2860,15 +2863,13 @@ fn dungeon_room_load_cpu_plan(
             if auxiliary_graphics_return.is_some() && !caller_first_nmi_observed {
                 caller_first_nmi_observed = true;
                 // The ROM writes $0fa0 immediately before every
-                // Sprite_ExecuteSingle call. Tracking that instruction entry
-                // gives the translated slot frontier even when the slot's
-                // state byte was already 9 and the old 8-to-9 heuristic was
-                // therefore ambiguous.
-                if sprite_main_normal_slots_complete {
-                    sprite_main_nmi_after_slot = Some(0);
-                } else {
-                    sprite_main_nmi_after_slot = sprite_main_current_slot;
-                }
+                // Sprite_ExecuteSingle call, then reaches $06:83a7 after that
+                // call returns. NMI may interrupt anywhere inside the current
+                // slot, so the safe translated continuation boundary is the
+                // preceding slot which completed, not the slot merely entered.
+                // This remains valid when state was already 9 and no 8-to-9
+                // write exists to reveal the frontier.
+                sprite_main_nmi_after_slot = sprite_main_last_completed_slot;
             }
             nmis = nmis.checked_add(1).expect("room-load NMI count overflowed");
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
@@ -2991,19 +2992,6 @@ pub(super) struct DungeonModuleCpuAdvance {
     pub(super) phase: DungeonModuleCpuPhase,
     pub(super) subsubmodule: u8,
     pub(super) palette_countdown: u8,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DungeonLandingCpuAdvancePending {
-    Native(DungeonLandingCpuWork),
-    RomMeasured(DungeonModuleCpuAdvance),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct DungeonLandingCpuWork {
-    entry_subsubmodule: u8,
-    entry_palette_countdown: u8,
-    first_palette_loop_master_cycles: u32,
 }
 
 fn dungeon_module_7_cpu_advance_at(
@@ -3143,184 +3131,8 @@ fn dungeon_supertile_state_12_cpu_advance(state: &ZeldaState) -> DungeonModuleCp
     .phase
 }
 
-fn dungeon_landing_phase_at(
-    entry: CpuRasterPosition,
-    phase_work_master_cycles: [u32; 6],
-) -> DungeonModuleCpuPhase {
-    let mut budget = CpuCycleBudget::until_next_nmi(
-        entry,
-        CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES),
-    );
-    match budget.advance_phases(&phase_work_master_cycles) {
-        CpuPhaseSequenceAdvance::Complete => DungeonModuleCpuPhase::CompleteBeforeNmi,
-        CpuPhaseSequenceAdvance::InterruptedAtNmi { phase_index, .. } => match phase_index {
-            0 => DungeonModuleCpuPhase::InterruptedBeforeSubmodule,
-            1 => DungeonModuleCpuPhase::InterruptedInSubmodule,
-            2 | 4 => DungeonModuleCpuPhase::InterruptedAfterSubmodule,
-            3 => DungeonModuleCpuPhase::InterruptedInLinkOam,
-            5 => DungeonModuleCpuPhase::InterruptedAfterModule,
-            _ => unreachable!("landing CPU phase sequence has six phases"),
-        },
-    }
-}
-
-fn dungeon_landing_phase_across_envelope(
-    minimum_phase_work: [u32; 6],
-    maximum_phase_work: [u32; 6],
-) -> DungeonModuleCpuPhase {
-    let phases = [
-        dungeon_landing_phase_at(
-            DUNGEON_LANDING_FILTERED_CPU_ENTRY_EARLIEST,
-            minimum_phase_work,
-        ),
-        dungeon_landing_phase_at(
-            DUNGEON_LANDING_FILTERED_CPU_ENTRY_EARLIEST,
-            maximum_phase_work,
-        ),
-        dungeon_landing_phase_at(
-            DUNGEON_LANDING_FILTERED_CPU_ENTRY_LATEST,
-            minimum_phase_work,
-        ),
-        dungeon_landing_phase_at(
-            DUNGEON_LANDING_FILTERED_CPU_ENTRY_LATEST,
-            maximum_phase_work,
-        ),
-    ];
-    assert!(
-        phases.iter().all(|&phase| phase == phases[0]),
-        "native dungeon landing timing is ambiguous across its measured workload envelope: \
-         {phases:?}",
-    );
-    phases[0]
-}
-
-impl DungeonLandingCpuWork {
-    fn new(state: &ZeldaState) -> Self {
-        Self {
-            entry_subsubmodule: state.game_state.frame.subsubmodule,
-            entry_palette_countdown: state.game_state.display.palette_filter.countdown(),
-            first_palette_loop_master_cycles: palette_filter_bounce_loop_master_cycles(state),
-        }
-    }
-
-    fn advance(self, state: &ZeldaState) -> DungeonModuleCpuAdvance {
-        const DISPATCHER_PREFIX: u32 = 5_988;
-        const LINK_TO_MODULE_RETURN: u32 = 744;
-
-        let following_subsubmodule = state.game_state.frame.subsubmodule;
-        let following_palette_countdown = state.game_state.display.palette_filter.countdown();
-        let (minimum, maximum) = match self.entry_subsubmodule {
-            13 if following_subsubmodule != self.entry_subsubmodule => {
-                // The movement-completion branch has one measured instruction
-                // path: the palette walk returns to Module 7, the translated
-                // state advances, and NMI_PrepareSprites enters Link OAM.
-                let submodule_return = self.first_palette_loop_master_cycles + 14_540;
-                let phases = [
-                    DISPATCHER_PREFIX,
-                    submodule_return - DISPATCHER_PREFIX,
-                    70_894,
-                    15_070,
-                    LINK_TO_MODULE_RETURN,
-                    12_110,
-                ];
-                (phases, phases)
-            }
-            13 => {
-                // The palette loop itself is exact and data-dependent. The
-                // remaining small variation comes from the movement handler
-                // and its Link-OAM selection. The Snes9x-extracted bounds are
-                // carried as an envelope: if either edge would select a
-                // different continuation, fail instead of guessing.
-                (
-                    [
-                        DISPATCHER_PREFIX,
-                        self.first_palette_loop_master_cycles + 14_000 - DISPATCHER_PREFIX,
-                        71_100,
-                        15_424,
-                        LINK_TO_MODULE_RETURN,
-                        11_674,
-                    ],
-                    [
-                        DISPATCHER_PREFIX,
-                        self.first_palette_loop_master_cycles + 14_220 - DISPATCHER_PREFIX,
-                        71_272,
-                        15_424,
-                        LINK_TO_MODULE_RETURN,
-                        11_674,
-                    ],
-                )
-            }
-            14 if following_palette_countdown != 0 => {
-                // FadedFilter performs a second palette walk whenever the
-                // first leaves a non-zero countdown. Aux colors are immutable
-                // across the pair, so the second loop is computed from the
-                // same native palette data at its actual next countdown.
-                let second_palette_loop = palette_filter_bounce_loop_master_cycles_for_countdown(
-                    state,
-                    u16::from(following_palette_countdown),
-                );
-                (
-                    [
-                        DISPATCHER_PREFIX,
-                        self.first_palette_loop_master_cycles + second_palette_loop + 14_672
-                            - DISPATCHER_PREFIX,
-                        70_894,
-                        15_070,
-                        LINK_TO_MODULE_RETURN,
-                        11_674,
-                    ],
-                    [
-                        DISPATCHER_PREFIX,
-                        self.first_palette_loop_master_cycles + second_palette_loop + 14_790
-                            - DISPATCHER_PREFIX,
-                        70_894,
-                        15_070,
-                        LINK_TO_MODULE_RETURN,
-                        11_674,
-                    ],
-                )
-            }
-            14 => {
-                // Countdown one and the already-zero completion call each
-                // execute one palette walk. Their distinct fixed terms are
-                // consequences of the palette direction-toggle branch, not a
-                // room or frame selection.
-                let fixed_to_submodule_return = match self.entry_palette_countdown {
-                    1 => 11_714,
-                    0 => 11_980,
-                    countdown => {
-                        panic!("unmeasured filtered landing completion from countdown {countdown}")
-                    }
-                };
-                let submodule_return =
-                    self.first_palette_loop_master_cycles + fixed_to_submodule_return;
-                let phases = [
-                    DISPATCHER_PREFIX,
-                    submodule_return - DISPATCHER_PREFIX,
-                    70_918,
-                    15_070,
-                    LINK_TO_MODULE_RETURN,
-                    11_674,
-                ];
-                (phases, phases)
-            }
-            state => panic!("native filtered landing timing does not model state {state}"),
-        };
-
-        DungeonModuleCpuAdvance {
-            phase: dungeon_landing_phase_across_envelope(minimum, maximum),
-            subsubmodule: following_subsubmodule,
-            palette_countdown: following_palette_countdown,
-        }
-    }
-}
-
-fn begin_dungeon_landing_cpu_advance(state: &ZeldaState) -> DungeonLandingCpuAdvancePending {
-    if state.game_state.dungeon.torch.any_lights_out_request() != 0 {
-        DungeonLandingCpuAdvancePending::Native(DungeonLandingCpuWork::new(state))
-    } else {
-        DungeonLandingCpuAdvancePending::RomMeasured(rom_dungeon_landing_cpu_advance(state))
-    }
+fn begin_dungeon_landing_cpu_advance(state: &ZeldaState) -> DungeonModuleCpuAdvance {
+    rom_dungeon_landing_cpu_advance(state)
 }
 
 fn rom_dungeon_landing_cpu_advance(state: &ZeldaState) -> DungeonModuleCpuAdvance {
@@ -6986,7 +6798,7 @@ pub struct ZeldaState {
     /// Instruction-level result captured at the common Module07_02 dispatcher
     /// before the translated state 13/14 prefix mutates WRAM.
     #[serde(skip)]
-    dungeon_landing_cpu_advance_pending: Option<DungeonLandingCpuAdvancePending>,
+    dungeon_landing_cpu_advance_pending: Option<DungeonModuleCpuAdvance>,
     /// The instruction-timed Module 7 shadow reached NMI inside LinkOam_Main.
     /// This is a semantic caller phase, not a room/frame publication rule.
     #[serde(skip)]
@@ -9947,10 +9759,7 @@ impl ZeldaState {
     }
 
     pub(super) fn take_dungeon_landing_cpu_advance(&mut self) -> Option<DungeonModuleCpuAdvance> {
-        match self.dungeon_landing_cpu_advance_pending.take()? {
-            DungeonLandingCpuAdvancePending::Native(work) => Some(work.advance(self)),
-            DungeonLandingCpuAdvancePending::RomMeasured(advance) => Some(advance),
-        }
+        self.dungeon_landing_cpu_advance_pending.take()
     }
 
     pub(super) fn suspend_dungeon_subtile_palette_filter_if_cpu_interrupted(&mut self) {
