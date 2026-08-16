@@ -8,9 +8,12 @@ use super::{
 const MASTER_CYCLES_PER_SCANLINE: u32 = 1_364;
 const NTSC_SCANLINES_PER_FIELD: u32 = 262;
 const NMI_SCANLINE: u32 = 225;
+const HDMA_INIT_CYCLE: u32 = 20;
 const WRAM_REFRESH_CYCLE: u32 = 538;
 const WRAM_REFRESH_STALL_MASTER_CYCLES: u32 = 40;
 const HDMA_START_CYCLE: u32 = 1_106;
+const SHORT_SCANLINE_END_CYCLE: u32 = 1_360;
+const SHORT_SCANLINE_MISSING_MASTER_CYCLES: u32 = 4;
 
 /// A 65816 position within an NTSC field, expressed in S-CPU master cycles.
 ///
@@ -44,13 +47,61 @@ impl CpuRasterPosition {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct CpuBusWorkload {
     hdma_stall_master_cycles: u16,
+    dynamic_hdma: bool,
 }
 
 impl CpuBusWorkload {
     pub(super) const fn with_hdma_stall(hdma_stall_master_cycles: u16) -> Self {
         Self {
             hdma_stall_master_cycles,
+            dynamic_hdma: false,
         }
+    }
+
+    pub(super) const fn with_dynamic_hdma() -> Self {
+        Self {
+            hdma_stall_master_cycles: 0,
+            dynamic_hdma: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CpuBusEvent {
+    WramRefresh,
+    HdmaInit,
+    HdmaStart,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CpuTimelineEvent {
+    Bus(CpuBusEvent),
+    ShortScanline,
+}
+
+/// Video-field state which changes the CPU's available master-cycle budget.
+/// In non-interlace mode, scanline 240 of each odd field is one dot shorter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct CpuFieldTiming {
+    odd_field: bool,
+    interlace: bool,
+}
+
+impl CpuFieldTiming {
+    pub(super) const NON_INTERLACE_EVEN: Self = Self {
+        odd_field: false,
+        interlace: false,
+    };
+
+    pub(super) const fn non_interlace(odd_field: bool) -> Self {
+        Self {
+            odd_field,
+            interlace: false,
+        }
+    }
+
+    const fn field_is_odd(self, field_index: u32) -> bool {
+        self.odd_field ^ (field_index & 1 != 0)
     }
 }
 
@@ -89,10 +140,16 @@ pub(super) struct CpuCycleBudget {
     clock_master_cycles: u32,
     nmi_master_cycles: u32,
     bus: CpuBusWorkload,
+    field_timing: CpuFieldTiming,
+    processed_timeline_event: Option<(u32, CpuTimelineEvent)>,
 }
 
 impl CpuCycleBudget {
-    pub(super) fn until_next_nmi(entry: CpuRasterPosition, bus: CpuBusWorkload) -> Self {
+    pub(super) fn until_next_nmi(
+        entry: CpuRasterPosition,
+        bus: CpuBusWorkload,
+        field_timing: CpuFieldTiming,
+    ) -> Self {
         let clock_master_cycles = entry.unwrapped_master_cycles();
         let nmi_field = u32::from(entry.scanline >= NMI_SCANLINE as u16);
         let nmi_master_cycles =
@@ -102,18 +159,21 @@ impl CpuCycleBudget {
             clock_master_cycles,
             nmi_master_cycles,
             bus,
+            field_timing,
+            processed_timeline_event: None,
         }
     }
 
-    /// Start at the hardware NMI boundary so the caller can execute an NMI
-    /// handler whose state effects precede an already-measured main-thread
-    /// entry position.
-    pub(super) fn at_nmi_boundary(bus: CpuBusWorkload) -> Self {
+    /// Start at the pinned Snes9x core's vblank NMI trigger so the caller can
+    /// execute the WAI wake and handler before the main-thread entry position.
+    pub(super) fn at_nmi_trigger(bus: CpuBusWorkload, field_timing: CpuFieldTiming) -> Self {
         let nmi_master_cycles = NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE;
         Self {
-            clock_master_cycles: nmi_master_cycles,
+            clock_master_cycles: nmi_master_cycles + 12,
             nmi_master_cycles,
             bus,
+            field_timing,
+            processed_timeline_event: None,
         }
     }
 
@@ -122,7 +182,8 @@ impl CpuCycleBudget {
     pub(super) fn advance_interruptible(&mut self, mut work_master_cycles: u32) -> CpuWorkAdvance {
         debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
         while work_master_cycles != 0 {
-            let (work_until_event, event_stall) = self.next_bus_event();
+            let (work_until_event, event) = self.next_timeline_event();
+            let event_stall = event.map_or(0, |event| self.fixed_event_advance(event));
             let master_cycles_until_nmi = self.nmi_master_cycles - self.clock_master_cycles;
             if master_cycles_until_nmi <= work_until_event {
                 if work_master_cycles <= master_cycles_until_nmi {
@@ -141,6 +202,9 @@ impl CpuCycleBudget {
 
             self.clock_master_cycles += work_until_event;
             work_master_cycles -= work_until_event;
+            if let Some(event) = event {
+                self.processed_timeline_event = Some((self.clock_master_cycles, event));
+            }
             if self.clock_master_cycles + event_stall >= self.nmi_master_cycles {
                 self.clock_master_cycles = self.nmi_master_cycles;
                 return CpuWorkAdvance::InterruptedAtNmi {
@@ -157,6 +221,40 @@ impl CpuCycleBudget {
     pub(super) fn advance_instruction(&mut self, instruction_master_cycles: u32) -> CpuWorkAdvance {
         debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
         self.advance_uninterruptible(instruction_master_cycles)
+    }
+
+    /// Advance one instruction while deriving each HDMA steal from the cloned
+    /// machine's live channel/table state. This is used by ROM timing shadows;
+    /// translated fixed-cost phases retain `advance_instruction`.
+    pub(super) fn advance_instruction_with_hdma(
+        &mut self,
+        instruction_master_cycles: u32,
+        mut hdma_stall: impl FnMut(CpuBusEvent, u16) -> u32,
+    ) -> CpuWorkAdvance {
+        debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
+        let dynamic_hdma = self.bus.dynamic_hdma;
+        let fixed_hdma_stall = u32::from(self.bus.hdma_stall_master_cycles);
+        self.advance_work_unbounded_with(
+            instruction_master_cycles,
+            |event, scanline| match event {
+                CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => WRAM_REFRESH_STALL_MASTER_CYCLES,
+                CpuTimelineEvent::Bus(event @ (CpuBusEvent::HdmaInit | CpuBusEvent::HdmaStart)) => {
+                    if dynamic_hdma {
+                        hdma_stall(event, scanline)
+                    } else {
+                        fixed_hdma_stall
+                    }
+                }
+                CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+            },
+        );
+        if self.clock_master_cycles >= self.nmi_master_cycles {
+            CpuWorkAdvance::InterruptedAtNmi {
+                remaining_work_master_cycles: 0,
+            }
+        } else {
+            CpuWorkAdvance::Complete
+        }
     }
 
     /// Advance CPU-blocking work that must finish even when NMI is already
@@ -209,36 +307,92 @@ impl CpuCycleBudget {
         CpuPhaseSequenceAdvance::Complete
     }
 
-    fn next_bus_event(self) -> (u32, u32) {
-        let field_cycle =
-            self.clock_master_cycles % (NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE);
+    fn next_timeline_event(self) -> (u32, Option<CpuTimelineEvent>) {
+        let nominal_field_master_cycles = NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE;
+        let field_index = self.clock_master_cycles / nominal_field_master_cycles;
+        let field_cycle = self.clock_master_cycles % nominal_field_master_cycles;
         let scanline = field_cycle / MASTER_CYCLES_PER_SCANLINE;
         let cycle = field_cycle % MASTER_CYCLES_PER_SCANLINE;
         let mut next_event_cycle = MASTER_CYCLES_PER_SCANLINE;
-        let mut event_stall = 0;
+        let mut next_event = None;
 
-        for (event_cycle, stall, enabled) in [
-            (WRAM_REFRESH_CYCLE, WRAM_REFRESH_STALL_MASTER_CYCLES, true),
+        for (event_cycle, event, enabled) in [
+            (
+                HDMA_INIT_CYCLE,
+                CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit),
+                scanline == 0 && self.bus.dynamic_hdma,
+            ),
+            (
+                WRAM_REFRESH_CYCLE,
+                CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh),
+                true,
+            ),
             (
                 HDMA_START_CYCLE,
-                u32::from(self.bus.hdma_stall_master_cycles),
-                scanline < NMI_SCANLINE && self.bus.hdma_stall_master_cycles != 0,
+                CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart),
+                scanline < NMI_SCANLINE
+                    && (self.bus.dynamic_hdma || self.bus.hdma_stall_master_cycles != 0),
+            ),
+            (
+                SHORT_SCANLINE_END_CYCLE,
+                CpuTimelineEvent::ShortScanline,
+                scanline == 240
+                    && !self.field_timing.interlace
+                    && self.field_timing.field_is_odd(field_index),
             ),
         ] {
-            if enabled && cycle <= event_cycle && event_cycle < next_event_cycle {
+            let already_processed =
+                self.processed_timeline_event == Some((self.clock_master_cycles, event));
+            if enabled
+                && !already_processed
+                && cycle <= event_cycle
+                && event_cycle < next_event_cycle
+            {
                 next_event_cycle = event_cycle;
-                event_stall = stall;
+                next_event = Some(event);
             }
         }
-        (next_event_cycle - cycle, event_stall)
+        (next_event_cycle - cycle, next_event)
     }
 
-    fn advance_work_unbounded(&mut self, mut work_master_cycles: u32) {
+    fn fixed_event_advance(&self, event: CpuTimelineEvent) -> u32 {
+        match event {
+            CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => WRAM_REFRESH_STALL_MASTER_CYCLES,
+            CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart) => {
+                u32::from(self.bus.hdma_stall_master_cycles)
+            }
+            CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => 0,
+            CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+        }
+    }
+
+    fn advance_work_unbounded(&mut self, work_master_cycles: u32) {
+        let hdma_stall_master_cycles = self.bus.hdma_stall_master_cycles;
+        self.advance_work_unbounded_with(work_master_cycles, |event, _| match event {
+            CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => WRAM_REFRESH_STALL_MASTER_CYCLES,
+            CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart) => u32::from(hdma_stall_master_cycles),
+            CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => 0,
+            CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+        });
+    }
+
+    fn advance_work_unbounded_with(
+        &mut self,
+        mut work_master_cycles: u32,
+        mut event_advance: impl FnMut(CpuTimelineEvent, u16) -> u32,
+    ) {
         while work_master_cycles != 0 {
-            let (work_until_event, event_stall) = self.next_bus_event();
+            let (work_until_event, event) = self.next_timeline_event();
             if work_until_event < work_master_cycles {
-                self.clock_master_cycles += work_until_event + event_stall;
+                self.clock_master_cycles += work_until_event;
                 work_master_cycles -= work_until_event;
+                if let Some(event) = event {
+                    let field_cycle = self.clock_master_cycles
+                        % (NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE);
+                    let scanline = (field_cycle / MASTER_CYCLES_PER_SCANLINE) as u16;
+                    self.processed_timeline_event = Some((self.clock_master_cycles, event));
+                    self.clock_master_cycles += event_advance(event, scanline);
+                }
             } else {
                 self.clock_master_cycles += work_master_cycles;
                 work_master_cycles = 0;
@@ -316,7 +470,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
                 | GameWorkContinuation::FinishStraightInterroomSpriteReset
-                | GameWorkContinuation::FinishDungeonRoomLoadSpriteMain { .. }
+                | GameWorkContinuation::FinishDungeonSpriteMain { .. }
                 | GameWorkContinuation::FinishDungeonCachedSpriteMain { .. }
                 | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
                 | GameWorkContinuation::FinishBigKeyDropGraphics { .. }
@@ -820,6 +974,7 @@ mod cpu_timing_tests {
         let mut budget = CpuCycleBudget::until_next_nmi(
             entry,
             CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         assert_eq!(
             budget.advance_interruptible(WORK_TO_CACHED_RESTORE),
@@ -858,6 +1013,7 @@ mod cpu_timing_tests {
             let mut budget = CpuCycleBudget::until_next_nmi(
                 entry,
                 CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
+                CpuFieldTiming::NON_INTERLACE_EVEN,
             );
             assert_eq!(
                 budget.advance_interruptible(WORK_TO_CACHED_RESTORE),
@@ -888,6 +1044,7 @@ mod cpu_timing_tests {
         let mut budget = CpuCycleBudget::until_next_nmi(
             CpuRasterPosition::new(224, 1_300),
             CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         assert_eq!(
             budget.advance_interruptible(100),
@@ -902,6 +1059,7 @@ mod cpu_timing_tests {
         let mut budget = CpuCycleBudget::until_next_nmi(
             CpuRasterPosition::new(224, 1_350),
             CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         assert_eq!(
             budget.advance_instruction(28),
@@ -931,6 +1089,7 @@ mod cpu_timing_tests {
             let mut budget = CpuCycleBudget::until_next_nmi(
                 CpuRasterPosition::new(100, (event_cycle - 6) as u16),
                 CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
+                CpuFieldTiming::NON_INTERLACE_EVEN,
             );
             assert_eq!(budget.advance_instruction(6), CpuWorkAdvance::Complete);
             assert_eq!(
@@ -947,10 +1106,28 @@ mod cpu_timing_tests {
     }
 
     #[test]
+    fn fixed_hdma_budget_does_not_invoke_the_dynamic_dma_model() {
+        let mut budget = CpuCycleBudget::until_next_nmi(
+            CpuRasterPosition::new(100, 1_100),
+            CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+
+        assert_eq!(
+            budget.advance_instruction_with_hdma(12, |_, _| {
+                panic!("fixed HDMA workload invoked the dynamic DMA model")
+            }),
+            CpuWorkAdvance::Complete,
+        );
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(100, 1_154),);
+    }
+
+    #[test]
     fn phase_sequence_reports_the_interrupted_continuation_phase() {
         let mut budget = CpuCycleBudget::until_next_nmi(
             CpuRasterPosition::new(224, 1_300),
             CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         assert_eq!(
             budget.advance_phases(&[32, 68]),
@@ -959,6 +1136,26 @@ mod cpu_timing_tests {
                 remaining_work_master_cycles: 36,
             }
         );
+    }
+
+    #[test]
+    fn odd_noninterlace_field_skips_the_missing_dot_on_scanline_240() {
+        let entry = CpuRasterPosition::new(240, 1_350);
+        let mut even = CpuCycleBudget::until_next_nmi(
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let mut odd = CpuCycleBudget::until_next_nmi(
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::non_interlace(true),
+        );
+
+        assert_eq!(even.advance_interruptible(20), CpuWorkAdvance::Complete);
+        assert_eq!(odd.advance_interruptible(20), CpuWorkAdvance::Complete);
+        assert_eq!(even.raster_position(), CpuRasterPosition::new(241, 6),);
+        assert_eq!(odd.raster_position(), CpuRasterPosition::new(241, 10));
     }
 
     #[test]

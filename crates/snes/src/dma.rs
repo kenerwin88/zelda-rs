@@ -415,16 +415,16 @@ impl Snes {
     /// Complete a latched general DMA and return the CPU stall in master
     /// cycles.
     ///
-    /// The hardware scheduler charges 16 cycles for the transfer, 8 for each
-    /// byte, and 8 for each active channel. `dma_do` already performs the
-    /// transfer byte-for-byte; this helper supplies the scheduler accounting
-    /// needed by read/write-isolated CPU timing runs.
+    /// The pinned Snes9x 1.63 scheduler charges its 18-cycle CPU/DMA sync,
+    /// then 8 cycles for each byte and 8 for each active channel. `dma_do`
+    /// already performs the transfer byte-for-byte; this helper supplies the
+    /// scheduler accounting needed by read/write-isolated CPU timing runs.
     pub fn dma_run_to_completion_master_cycles(&mut self) -> u32 {
         if !self.dma.dma_busy {
             return 0;
         }
 
-        let mut master_cycles = 16u32;
+        let mut master_cycles = 18u32;
         loop {
             let Some(channel) = self
                 .dma
@@ -529,7 +529,7 @@ mod tests {
         snes.dma.channel[1].decrement = false;
         snes.dma_start_real(0b0000_0011, false);
 
-        assert_eq!(snes.dma_run_to_completion_master_cycles(), 56);
+        assert_eq!(snes.dma_run_to_completion_master_cycles(), 58);
         assert!(!snes.dma.dma_busy);
         assert_eq!(snes.dma.channel[0].a_adr, 0x0102);
         assert_eq!(snes.dma.channel[1].a_adr, 0x0201);

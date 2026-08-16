@@ -571,6 +571,13 @@ impl ZeldaState {
         self.audio.modern.queue.input_commands
     }
 
+    /// Values currently driven by the SPC onto the main CPU's APUI read ports.
+    /// ROM timing shadows must inherit these latches just like WRAM, PPU, and
+    /// DMA state or NMI audio handshakes can follow the wrong control-flow path.
+    pub(crate) fn zelda_audio_apu_output_ports(&self) -> [u8; 4] {
+        self.audio.modern.queue.acknowledged_commands.legacy_ports()
+    }
+
     pub fn zelda_audio_command_acknowledged(&self, command: EngineAudioCommand) -> bool {
         let acknowledged = self.audio.modern.queue.acknowledged_commands;
         match command {

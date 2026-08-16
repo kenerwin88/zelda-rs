@@ -10148,6 +10148,13 @@ impl ZeldaState {
                     self.dungeon_state_13_recurring_main_publication_host_frame =
                         Some(self.frame_ctr_dbg);
                 }
+                DungeonModuleCpuPhase::InterruptedInLinkOam => {
+                    // The state body returned and Sprite_Main still executes
+                    // before the interrupting LinkOam_Main call. Let the
+                    // ordinary Module 7 suffix reach that call, then suspend
+                    // it through the shared Link OAM continuation.
+                    self.dungeon_link_oam_return_pending = true;
+                }
                 DungeonModuleCpuPhase::CompleteBeforeNmi => {
                     self.dungeon_state_13_atomic_caller_return_publication_host_frame =
                         Some(self.frame_ctr_dbg);
@@ -10186,9 +10193,13 @@ impl ZeldaState {
     }
 
     pub(super) fn Module07_02_SupertileTransition(&mut self) {
-        let state_12_cpu_advance = (self.rom_startup_timing()
-            && self.game_state.frame.subsubmodule == 12)
-            .then(|| dungeon_supertile_state_12_cpu_advance(self));
+        let state_12_cpu_advance =
+            (self.rom_startup_timing() && self.game_state.frame.subsubmodule == 12).then(|| {
+                let captured = self.take_dungeon_landing_cpu_advance();
+                let advance =
+                    captured.unwrap_or_else(|| begin_dungeon_supertile_state_12_cpu_advance(self));
+                advance
+            });
         self.follower_link_state_mut()
             .cache_previous_position_from_current();
         if self.rom_startup_timing() && self.game_state.frame.subsubmodule == 1 {
@@ -10223,19 +10234,21 @@ impl ZeldaState {
             10 => self.Dungeon_InterRoomTrans_State10(),
             11 => self.Dungeon_InterRoomTrans_State9(),
             12 => {
-                let caller_suffix_crosses_nmi = match state_12_cpu_advance {
-                    Some(DungeonModuleCpuPhase::InterruptedAfterModule) => true,
-                    Some(
-                        phase @ (DungeonModuleCpuPhase::InterruptedBeforeSubmodule
-                        | DungeonModuleCpuPhase::InterruptedInSubmodule
-                        | DungeonModuleCpuPhase::InterruptedAfterSubmodule
-                        | DungeonModuleCpuPhase::InterruptedInLinkOam
-                        | DungeonModuleCpuPhase::InterruptedInNmiPrepareSprites),
-                    ) => panic!(
-                        "state-12 vblank reached {phase:?}; a semantic continuation is required"
-                    ),
-                    Some(DungeonModuleCpuPhase::CompleteBeforeNmi) | None => false,
-                };
+                let caller_suffix_crosses_nmi =
+                    match state_12_cpu_advance.map(|advance| advance.phase) {
+                        Some(DungeonModuleCpuPhase::InterruptedBeforeNmiPrepareSprites) => true,
+                        Some(
+                            phase @ (DungeonModuleCpuPhase::InterruptedBeforeSubmodule
+                            | DungeonModuleCpuPhase::InterruptedInSubmodule
+                            | DungeonModuleCpuPhase::InterruptedAfterSubmodule
+                            | DungeonModuleCpuPhase::InterruptedInLinkOam
+                            | DungeonModuleCpuPhase::InterruptedInNmiPrepareSprites
+                            | DungeonModuleCpuPhase::InterruptedAfterModule),
+                        ) => panic!(
+                            "state-12 vblank reached {phase:?}; a semantic continuation is required"
+                        ),
+                        Some(DungeonModuleCpuPhase::CompleteBeforeNmi) | None => false,
+                    };
                 self.Dungeon_InterRoomTrans_State12();
                 self.dungeon_state_12_caller_suffix_nmi_pending = caller_suffix_crosses_nmi;
             }
@@ -10874,6 +10887,9 @@ impl ZeldaState {
             }
             self.ApplyPaletteFilter_bounce();
             let cpu_advance = self.take_dungeon_landing_cpu_advance();
+            let sprite_main_continuation_armed = cpu_advance.is_some_and(|advance| {
+                self.arm_dungeon_sprite_main_cpu_continuation(advance, entry_subsubmodule != 2)
+            });
             if self.game_state.display.palette_filter.countdown() != 0 {
                 if self.rom_startup_timing() {
                     let Some(advance) = cpu_advance else {
@@ -10920,8 +10936,15 @@ impl ZeldaState {
                     {
                         panic!(
                             "state-14 vblank interrupted the first palette pass; a range \
-                             continuation is required before executing it"
+                            continuation is required before executing it"
                         )
+                    }
+                    Some(advance)
+                        if advance.phase
+                            == DungeonModuleCpuPhase::InterruptedInNmiPrepareSprites =>
+                    {
+                        self.dungeon_nmi_prepare_sprites_return_pending = true;
+                        false
                     }
                     Some(_) | None => false,
                 };
@@ -10935,7 +10958,10 @@ impl ZeldaState {
                     self.stage_dungeon_faded_filter_first_palette_scanout();
                     self.dungeon_link_oam_return_pending = true;
                 }
-                if entry_subsubmodule == 2 {
+                if entry_subsubmodule == 2
+                    && !sprite_main_continuation_armed
+                    && !self.dungeon_nmi_prepare_sprites_return_pending
+                {
                     // The room-load walk returns immediately before a leading
                     // hardware NMI. Preserve that host boundary explicitly:
                     // the next fresh module iteration does not begin until the
@@ -10966,7 +10992,11 @@ impl ZeldaState {
             }
         } else {
             self.increment_subsubmodule();
-            let caller_return_crosses_nmi = match self.take_dungeon_landing_cpu_advance() {
+            let cpu_advance = self.take_dungeon_landing_cpu_advance();
+            if let Some(advance) = cpu_advance {
+                self.arm_dungeon_sprite_main_cpu_continuation(advance, true);
+            }
+            let caller_return_crosses_nmi = match cpu_advance {
                 Some(advance) if advance.phase == DungeonModuleCpuPhase::InterruptedAfterModule => {
                     true
                 }
@@ -10979,6 +11009,12 @@ impl ZeldaState {
                 Some(advance) if advance.phase == DungeonModuleCpuPhase::InterruptedInLinkOam => {
                     self.stage_dungeon_faded_filter_first_palette_scanout();
                     self.dungeon_link_oam_return_pending = true;
+                    false
+                }
+                Some(advance)
+                    if advance.phase == DungeonModuleCpuPhase::InterruptedInNmiPrepareSprites =>
+                {
+                    self.dungeon_nmi_prepare_sprites_return_pending = true;
                     false
                 }
                 Some(_) | None => false,
@@ -10995,6 +11031,30 @@ impl ZeldaState {
                 debug_assert!(scheduled);
             }
         }
+    }
+
+    fn arm_dungeon_sprite_main_cpu_continuation(
+        &mut self,
+        advance: DungeonModuleCpuAdvance,
+        returns_to_wait_loop: bool,
+    ) -> bool {
+        let Some(boundary) = advance.sprite_main_boundary else {
+            return false;
+        };
+        assert_eq!(
+            advance.phase,
+            DungeonModuleCpuPhase::InterruptedAfterSubmodule,
+            "Sprite_Main boundary requires a returned Module 7 submodule",
+        );
+        assert!(
+            self.dungeon_sprite_main_nmi_boundary.is_none(),
+            "Sprite_Main CPU continuation was already armed",
+        );
+        self.dungeon_sprite_main_nmi_boundary = Some(boundary);
+        // This CPU advance stops at the first NMI after the submodule return.
+        self.dungeon_sprite_main_nmi_slices = 1;
+        self.dungeon_sprite_main_returns_to_wait_loop = returns_to_wait_loop;
+        true
     }
 
     pub(super) fn complete_dungeon_faded_filter_second_palette_pass(&mut self) {
@@ -12718,10 +12778,22 @@ impl ZeldaState {
             return;
         }
         self.complete_module07_dungeon_after_submodule();
+        if std::mem::take(&mut self.dungeon_nmi_prepare_sprites_return_pending) {
+            debug_assert!(self.game_execution_scheduler.is_idle());
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn,
+                1,
+            );
+            return;
+        }
         if std::mem::take(&mut self.dungeon_state_12_caller_suffix_nmi_pending) {
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishCpuInstructionNmi {
-                    resume: PreMainNmiResume::DungeonSupertileQuadrantUploads,
+                    // The module body returned immediately before
+                    // Main_PrepSpritesForNmi. After the interrupt, finish
+                    // that real caller suffix and wait for the following
+                    // leading NMI before starting a fresh dungeon iteration.
+                    resume: PreMainNmiResume::DungeonSupertileCallerReturnNmi,
                 },
                 1,
             );

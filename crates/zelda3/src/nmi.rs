@@ -166,6 +166,10 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
+        // CPU continuation timing must observe the same pre-NMI RAM, latch,
+        // DMA, and raster generation as the real handler. Capture centrally
+        // so every hardware-NMI entry path has identical provenance.
+        self.capture_dungeon_state_12_cpu_advance_before_leading_nmi();
         let trace_nmi = std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && debug_hardware_frame_matches(self.frame_ctr_dbg);
         self.ppu.forced_blank_from_scanline = None;

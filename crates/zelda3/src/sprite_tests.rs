@@ -1381,6 +1381,7 @@ fn cached_sprite_cycle_budget_keeps_direction_cached_in_later_transition_phases(
         let mut budget = CpuCycleBudget::until_next_nmi(
             entry,
             CpuBusWorkload::with_hdma_stall(DUNGEON_TRANSITION_HDMA_STALL_MASTER_CYCLES),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         let work_before_restore = CACHED_SPRITE_ENTRY_TO_FIRST_CALL_MASTER_CYCLES
             + 4 * CACHED_SPRITE_COMPLETE_CALL_MASTER_CYCLES

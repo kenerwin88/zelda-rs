@@ -1933,6 +1933,30 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_main(&mut self) {
+        if self.dungeon_sprite_main_nmi_boundary
+            == Some(DungeonSpriteMainCpuBoundary::BeforeFirstSlot)
+        {
+            let boundary = self
+                .dungeon_sprite_main_nmi_boundary
+                .take()
+                .expect("Sprite_Main boundary was checked above");
+            let nmi_slices = std::mem::take(&mut self.dungeon_sprite_main_nmi_slices);
+            let returns_to_wait_loop =
+                std::mem::take(&mut self.dungeon_sprite_main_returns_to_wait_loop);
+            assert_ne!(
+                nmi_slices, 0,
+                "Sprite_Main continuation requires a measured NMI phase",
+            );
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonSpriteMain {
+                    boundary,
+                    returns_to_wait_loop,
+                },
+                nmi_slices,
+            );
+            return;
+        }
+
         let mut timing_workload = SpriteMainTimingWorkload::default();
         for slot in 0..16 {
             let sprite = self.sprite_slot_view(slot);
@@ -1995,16 +2019,24 @@ impl ZeldaState {
                 self.replay_trace_ram_watch(&format!("sprite-before-execute-single slot={k}"));
             }
             self.sprite_execute_single(k);
-            if self.dungeon_room_load_sprite_main_nmi_after_slot == Some(k as u8) {
-                self.dungeon_room_load_sprite_main_nmi_after_slot = None;
-                let nmi_slices = std::mem::take(&mut self.dungeon_room_load_sprite_main_nmi_slices);
+            if self.dungeon_sprite_main_nmi_boundary
+                == Some(DungeonSpriteMainCpuBoundary::AfterSlot(k as u8))
+            {
+                let boundary = self
+                    .dungeon_sprite_main_nmi_boundary
+                    .take()
+                    .expect("Sprite_Main boundary was checked above");
+                let nmi_slices = std::mem::take(&mut self.dungeon_sprite_main_nmi_slices);
+                let returns_to_wait_loop =
+                    std::mem::take(&mut self.dungeon_sprite_main_returns_to_wait_loop);
                 assert_ne!(
                     nmi_slices, 0,
-                    "room-load Sprite_Main continuation requires a measured NMI phase",
+                    "Sprite_Main continuation requires a measured NMI phase",
                 );
                 self.game_execution_scheduler.schedule_work(
-                    GameWorkContinuation::FinishDungeonRoomLoadSpriteMain {
-                        interrupted_slot: k as u8,
+                    GameWorkContinuation::FinishDungeonSpriteMain {
+                        boundary,
+                        returns_to_wait_loop,
                     },
                     nmi_slices,
                 );
@@ -2050,6 +2082,18 @@ impl ZeldaState {
                     },
                     suffix_nmi_slices,
                 );
+        }
+    }
+
+    pub(super) fn complete_sprite_main_after_cpu_boundary(
+        &mut self,
+        boundary: DungeonSpriteMainCpuBoundary,
+    ) {
+        match boundary {
+            DungeonSpriteMainCpuBoundary::BeforeFirstSlot => self.sprite_main(),
+            DungeonSpriteMainCpuBoundary::AfterSlot(interrupted_slot) => {
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot as usize)
+            }
         }
     }
 
@@ -2178,6 +2222,7 @@ impl ZeldaState {
         let mut budget = CpuCycleBudget::until_next_nmi(
             entry,
             CpuBusWorkload::with_hdma_stall(DUNGEON_TRANSITION_HDMA_STALL_MASTER_CYCLES),
+            CpuFieldTiming::non_interlace(self.frame_ctr_dbg & 1 == 0),
         );
         if budget
             .advance_interruptible(CACHED_SPRITE_ENTRY_TO_FIRST_CALL_MASTER_CYCLES)

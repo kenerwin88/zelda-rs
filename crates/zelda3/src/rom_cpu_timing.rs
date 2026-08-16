@@ -19,6 +19,7 @@ pub(crate) struct RomCpuCheckpoint {
     pub(crate) accumulator_is_8_bit: bool,
     pub(crate) index_is_8_bit: bool,
     pub(crate) emulation: bool,
+    pub(crate) waiting: bool,
     pub(crate) stack_address: u16,
     pub(crate) stack_bytes: &'static [u8],
 }
@@ -26,8 +27,8 @@ pub(crate) struct RomCpuCheckpoint {
 /// Read/write-isolated execution of a translated routine's original ROM path.
 ///
 /// The clone supplies instruction ordering and cycle timing only. Its WRAM,
-/// SRAM, PPU, and DMA mutations are discarded, leaving the translated Rust
-/// implementation as the sole owner of game state.
+/// SRAM, PPU, DMA, and APU-port mutations are discarded, leaving the translated
+/// Rust implementation as the sole owner of game state.
 pub(crate) struct RomCpuTimingRun {
     shadow: Snes,
     stop_pc: u32,
@@ -40,6 +41,7 @@ impl RomCpuTimingRun {
         sram: &[u8],
         ppu: &PpuState,
         dma: &DmaState,
+        apu_output_ports: [u8; 4],
         checkpoint: RomCpuCheckpoint,
     ) -> Result<Self, String> {
         let mut shadow = Snes::new();
@@ -48,6 +50,7 @@ impl RomCpuTimingRun {
         shadow.cart.ram.copy_from_slice(sram);
         shadow.ppu = ppu.clone();
         shadow.dma = dma.clone();
+        shadow.apu.out_ports = apu_output_ports;
 
         shadow.cpu.a = checkpoint.a;
         shadow.cpu.x = checkpoint.x;
@@ -66,6 +69,7 @@ impl RomCpuTimingRun {
         shadow.cpu.mf = checkpoint.accumulator_is_8_bit;
         shadow.cpu.xf = checkpoint.index_is_8_bit;
         shadow.cpu.e = checkpoint.emulation;
+        shadow.cpu.waiting = checkpoint.waiting;
 
         let stack_start = usize::from(checkpoint.stack_address);
         let stack_end = stack_start + checkpoint.stack_bytes.len();
@@ -111,6 +115,27 @@ impl RomCpuTimingRun {
 
     pub(crate) fn drain_started_dma_master_cycles(&mut self) -> u32 {
         self.shadow.dma_run_to_completion_master_cycles()
+    }
+
+    /// Run the cloned HDMA initialization event and report the pinned Snes9x
+    /// 1.63 bus cost. The native DMA core uses the Zelda C port's 16-cycle sync;
+    /// the oracle uses an 18-cycle CPU/DMA sync, hence the two-cycle adjustment.
+    pub(crate) fn run_hdma_init_master_cycles(&mut self) -> u32 {
+        self.shadow.dma_init_hdma();
+        self.take_hdma_master_cycles()
+    }
+
+    /// Run one cloned HDMA scanline, including descriptor reloads and transfer
+    /// widths from the live channel state, and report the pinned oracle cost.
+    pub(crate) fn run_hdma_scanline_master_cycles(&mut self) -> u32 {
+        self.shadow.dma_do_hdma();
+        self.take_hdma_master_cycles()
+    }
+
+    fn take_hdma_master_cycles(&mut self) -> u32 {
+        let master_cycles = u32::from(self.shadow.dma.hdma_timer);
+        self.shadow.dma.hdma_timer = 0;
+        master_cycles + u32::from(master_cycles != 0) * 2
     }
 
     pub(crate) fn step(&mut self) -> CpuInstructionTiming {
