@@ -10139,7 +10139,8 @@ impl ZeldaState {
         self.Dungeon_IntraRoomTrans_State5();
         if let Some(advance) = self.take_dungeon_landing_cpu_advance() {
             match advance.phase {
-                DungeonModuleCpuPhase::InterruptedAfterModule => {
+                DungeonModuleCpuPhase::InterruptedInNmiPrepareSprites
+                | DungeonModuleCpuPhase::InterruptedAfterModule => {
                     let scheduled = self.begin_dungeon_supertile_transition_work(
                         DungeonSupertileTransitionWork::State13CallerReturn,
                     );
@@ -10188,9 +10189,6 @@ impl ZeldaState {
         let state_12_cpu_advance = (self.rom_startup_timing()
             && self.game_state.frame.subsubmodule == 12)
             .then(|| dungeon_supertile_state_12_cpu_advance(self));
-        self.dungeon_landing_cpu_advance_pending = (self.rom_startup_timing()
-            && matches!(self.game_state.frame.subsubmodule, 13 | 14))
-        .then(|| begin_dungeon_landing_cpu_advance(self));
         self.follower_link_state_mut()
             .cache_previous_position_from_current();
         if self.rom_startup_timing() && self.game_state.frame.subsubmodule == 1 {
@@ -10231,7 +10229,8 @@ impl ZeldaState {
                         phase @ (DungeonModuleCpuPhase::InterruptedBeforeSubmodule
                         | DungeonModuleCpuPhase::InterruptedInSubmodule
                         | DungeonModuleCpuPhase::InterruptedAfterSubmodule
-                        | DungeonModuleCpuPhase::InterruptedInLinkOam),
+                        | DungeonModuleCpuPhase::InterruptedInLinkOam
+                        | DungeonModuleCpuPhase::InterruptedInNmiPrepareSprites),
                     ) => panic!(
                         "state-12 vblank reached {phase:?}; a semantic continuation is required"
                     ),
@@ -10878,12 +10877,9 @@ impl ZeldaState {
             if self.game_state.display.palette_filter.countdown() != 0 {
                 if self.rom_startup_timing() {
                     let Some(advance) = cpu_advance else {
-                        debug_assert_eq!(entry_subsubmodule, 2);
-                        self.stage_dungeon_faded_filter_first_palette_scanout();
-                        self.schedule_pre_main_caller_continuation(
-                            PreMainCallerContinuation::DungeonFadedFilterSecondPalettePass,
+                        panic!(
+                            "timed faded-filter entry {entry_subsubmodule} has no CPU continuation provenance"
                         );
-                        return;
                     };
                     if advance.phase == DungeonModuleCpuPhase::InterruptedInSubmodule {
                         // The CPU completed the first palette walk and reached
@@ -10896,7 +10892,11 @@ impl ZeldaState {
                         );
                         self.stage_dungeon_faded_filter_first_palette_scanout();
                         self.schedule_pre_main_caller_continuation(
-                            PreMainCallerContinuation::DungeonFadedFilterSecondPalettePass,
+                            PreMainCallerContinuation::DungeonFadedFilterSecondPalettePass {
+                                resumed_phase: advance.resumed_phase.expect(
+                                    "interrupted palette pass must measure its resumed CPU phase",
+                                ),
+                            },
                         );
                         return;
                     }

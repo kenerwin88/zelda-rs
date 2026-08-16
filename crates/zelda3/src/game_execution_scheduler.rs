@@ -105,6 +105,18 @@ impl CpuCycleBudget {
         }
     }
 
+    /// Start at the hardware NMI boundary so the caller can execute an NMI
+    /// handler whose state effects precede an already-measured main-thread
+    /// entry position.
+    pub(super) fn at_nmi_boundary(bus: CpuBusWorkload) -> Self {
+        let nmi_master_cycles = NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE;
+        Self {
+            clock_master_cycles: nmi_master_cycles,
+            nmi_master_cycles,
+            bus,
+        }
+    }
+
     /// Advance an interruptible span, stopping exactly when NMI becomes
     /// pending and retaining the unexecuted work for a continuation.
     pub(super) fn advance_interruptible(&mut self, mut work_master_cycles: u32) -> CpuWorkAdvance {
@@ -299,6 +311,7 @@ impl ScheduledGameWork {
                 continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
                 | GameWorkContinuation::FinishDungeonLinkOamCallerReturn
+                | GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
@@ -654,7 +667,7 @@ impl GameExecutionScheduler {
                 self.continuation,
                 Some(GameExecutionContinuation::PostTrailingNmi(_))
                     | Some(GameExecutionContinuation::PreMainCaller(
-                        PreMainCallerContinuation::DungeonFadedFilterSecondPalettePass
+                        PreMainCallerContinuation::DungeonFadedFilterSecondPalettePass { .. }
                             | PreMainCallerContinuation::SpiralStairsSecondPaletteFilter
                             | PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter
                     ))
