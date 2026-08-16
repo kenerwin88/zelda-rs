@@ -1941,17 +1941,12 @@ impl ZeldaState {
                 .take()
                 .expect("Sprite_Main boundary was checked above");
             let nmi_slices = std::mem::take(&mut self.dungeon_sprite_main_nmi_slices);
-            let returns_to_wait_loop =
-                std::mem::take(&mut self.dungeon_sprite_main_returns_to_wait_loop);
             assert_ne!(
                 nmi_slices, 0,
                 "Sprite_Main continuation requires a measured NMI phase",
             );
             self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishDungeonSpriteMain {
-                    boundary,
-                    returns_to_wait_loop,
-                },
+                GameWorkContinuation::FinishDungeonSpriteMain { boundary },
                 nmi_slices,
             );
             return;
@@ -2027,17 +2022,12 @@ impl ZeldaState {
                     .take()
                     .expect("Sprite_Main boundary was checked above");
                 let nmi_slices = std::mem::take(&mut self.dungeon_sprite_main_nmi_slices);
-                let returns_to_wait_loop =
-                    std::mem::take(&mut self.dungeon_sprite_main_returns_to_wait_loop);
                 assert_ne!(
                     nmi_slices, 0,
                     "Sprite_Main continuation requires a measured NMI phase",
                 );
                 self.game_execution_scheduler.schedule_work(
-                    GameWorkContinuation::FinishDungeonSpriteMain {
-                        boundary,
-                        returns_to_wait_loop,
-                    },
+                    GameWorkContinuation::FinishDungeonSpriteMain { boundary },
                     nmi_slices,
                 );
             }

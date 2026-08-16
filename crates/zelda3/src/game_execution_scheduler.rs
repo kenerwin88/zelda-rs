@@ -464,7 +464,7 @@ impl ScheduledGameWork {
             GameWorkContinuation::FinishItemReceiptGraphics {
                 continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
-                | GameWorkContinuation::FinishDungeonLinkOamCallerReturn
+                | GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
                 | GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
@@ -966,6 +966,7 @@ impl GameExecutionScheduler {
 #[cfg(test)]
 mod cpu_timing_tests {
     use super::*;
+    use crate::zelda_rtl::DungeonSpriteMainCpuBoundary;
 
     const DUNGEON_HDMA_STALL: u16 = 42;
     const WORK_TO_CACHED_RESTORE: u32 = 1_400 + 4 * 10_674 + 8_884;
@@ -1218,5 +1219,29 @@ mod cpu_timing_tests {
 
         scheduler.schedule_cpu_timed_work_before_trailing_nmi(continuation, 1);
         assert_eq!(scheduler.take_post_trailing_nmi(), Some(continuation));
+    }
+
+    #[test]
+    fn completed_scheduled_stack_reaches_the_next_main_loop_after_its_trailing_nmi() {
+        let continuation = GameWorkContinuation::FinishDungeonSpriteMain {
+            boundary: DungeonSpriteMainCpuBoundary::AfterSlot(3),
+        };
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.schedule_work(continuation, 1);
+        scheduler.begin_host_frame();
+
+        assert_eq!(
+            scheduler.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Complete(continuation))
+        );
+        assert!(scheduler.resumed_call_stack_is_before_nmi());
+        assert!(scheduler.is_idle());
+
+        // The host dispatcher emits the trailing NMI after completing the
+        // resumed caller. Its following host entry is therefore ready to run
+        // the next main-loop iteration; no second NMI continuation belongs
+        // between those two phases.
+        scheduler.begin_host_frame();
+        assert!(scheduler.fresh_main_loop_iteration_is_ready());
     }
 }

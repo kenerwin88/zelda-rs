@@ -4070,7 +4070,6 @@ fn room_load_sprite_main_preserves_every_measured_nmi_slice() {
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishDungeonSpriteMain {
             boundary: DungeonSpriteMainCpuBoundary::AfterSlot(5),
-            returns_to_wait_loop: false,
         }),
     );
     for _ in 0..3 {
@@ -4084,7 +4083,6 @@ fn room_load_sprite_main_preserves_every_measured_nmi_slice() {
         Some(GameWorkStep::Complete(
             GameWorkContinuation::FinishDungeonSpriteMain {
                 boundary: DungeonSpriteMainCpuBoundary::AfterSlot(5),
-                returns_to_wait_loop: false,
             },
         )),
     );
@@ -4233,36 +4231,41 @@ fn state_13_suspends_common_module_suffix_when_rom_run_reaches_nmi_after_module(
 }
 
 #[test]
-fn state_13_nmi_inside_link_oam_resumes_only_the_common_suffix() {
-    let mut state = ZeldaState::new();
-    state.restore_live_rom_timing_after_checkpoint();
-    state.set_main_module(7);
-    state.set_submodule(2);
-    state.set_subsubmodule(13);
-    state.set_dungeon_room_index(0x72);
-    state.set_countdown_word(26);
-    state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
-        phase: DungeonModuleCpuPhase::InterruptedInLinkOam,
-        resumed_phase: None,
-        subsubmodule: 13,
-        palette_countdown: 26,
-        sprite_main_boundary: None,
-    });
-    state.game_execution_scheduler.begin_host_frame();
-    state.game_execution_scheduler.begin_main_loop_iteration();
+fn state_13_nmi_after_sprite_main_resumes_only_the_common_suffix() {
+    for phase in [
+        DungeonModuleCpuPhase::InterruptedAfterSpriteMain,
+        DungeonModuleCpuPhase::InterruptedInLinkOam,
+    ] {
+        let mut state = ZeldaState::new();
+        state.restore_live_rom_timing_after_checkpoint();
+        state.set_main_module(7);
+        state.set_submodule(2);
+        state.set_subsubmodule(13);
+        state.set_dungeon_room_index(0x72);
+        state.set_countdown_word(26);
+        state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
+            phase,
+            resumed_phase: None,
+            subsubmodule: 13,
+            palette_countdown: 26,
+            sprite_main_boundary: None,
+        });
+        state.game_execution_scheduler.begin_host_frame();
+        state.game_execution_scheduler.begin_main_loop_iteration();
 
-    state.Dungeon_InterRoomTrans_State13();
-    assert_eq!(state.game_state.frame.subsubmodule, 13);
-    assert!(state.dungeon_link_oam_return_pending);
-    assert!(state.game_execution_scheduler.is_idle());
+        state.Dungeon_InterRoomTrans_State13();
+        assert_eq!(state.game_state.frame.subsubmodule, 13);
+        assert!(state.dungeon_post_sprite_main_return_pending);
+        assert!(state.game_execution_scheduler.is_idle());
 
-    state.complete_module07_dungeon_after_submodule();
-    assert!(!state.dungeon_link_oam_return_pending);
-    assert!(state.active_dungeon_sprite_main_return.is_some());
-    assert_eq!(
-        state.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishDungeonLinkOamCallerReturn)
-    );
+        state.complete_module07_dungeon_after_submodule();
+        assert!(!state.dungeon_post_sprite_main_return_pending);
+        assert!(state.active_dungeon_sprite_main_return.is_some());
+        assert_eq!(
+            state.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn)
+        );
+    }
 }
 
 #[test]
@@ -4277,6 +4280,34 @@ fn state_13_caller_return_accepts_post_call_state_14_in_any_room() {
     assert!(state.begin_dungeon_supertile_transition_work(
         DungeonSupertileTransitionWork::State13CallerReturn,
     ));
+}
+
+#[test]
+fn state_12_nmi_inside_sprite_preparation_resumes_only_that_caller() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(12);
+    state.set_overworld_map_state(5);
+    state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
+        phase: DungeonModuleCpuPhase::InterruptedInNmiPrepareSprites,
+        resumed_phase: None,
+        subsubmodule: 13,
+        palette_countdown: 0,
+        sprite_main_boundary: None,
+    });
+    state.game_execution_scheduler.begin_host_frame();
+    state.game_execution_scheduler.begin_main_loop_iteration();
+
+    state.module07_dungeon();
+
+    assert_eq!(state.game_state.frame.subsubmodule, 13);
+    assert!(!state.dungeon_nmi_prepare_sprites_return_pending);
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn),
+    );
 }
 
 #[test]
@@ -5933,7 +5964,7 @@ fn faded_filter_uses_the_interior_sprite_boundary_as_the_single_nmi_owner() {
     state.set_mosaic_target_level(31);
     state.dungeon_torch_mut().set_lights_out_request(1);
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
-        phase: DungeonModuleCpuPhase::InterruptedAfterSubmodule,
+        phase: DungeonModuleCpuPhase::InterruptedInSpriteMain,
         resumed_phase: None,
         subsubmodule: 3,
         palette_countdown: 0,
@@ -5956,7 +5987,6 @@ fn faded_filter_uses_the_interior_sprite_boundary_as_the_single_nmi_owner() {
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishDungeonSpriteMain {
             boundary: DungeonSpriteMainCpuBoundary::AfterSlot(0),
-            returns_to_wait_loop: false,
         }),
     );
 }
@@ -6014,14 +6044,14 @@ fn landing_nmi_inside_link_oam_resumes_only_the_common_suffix() {
 
     state.Module07_02_FadedFilter();
     assert_eq!(state.game_state.frame.subsubmodule, 15);
-    assert!(state.dungeon_link_oam_return_pending);
+    assert!(state.dungeon_post_sprite_main_return_pending);
 
     state.complete_module07_dungeon_after_submodule();
-    assert!(!state.dungeon_link_oam_return_pending);
+    assert!(!state.dungeon_post_sprite_main_return_pending);
     assert!(state.active_dungeon_sprite_main_return.is_some());
     assert_eq!(
         state.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishDungeonLinkOamCallerReturn)
+        Some(GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn)
     );
 
     state.game_execution_scheduler.begin_host_frame();
@@ -6056,7 +6086,7 @@ fn landing_nmi_inside_sprite_main_resumes_at_the_cpu_slot_boundary() {
         state.sprite_slot_view_mut(slot).set_sprite_type(0x6d);
     }
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
-        phase: DungeonModuleCpuPhase::InterruptedAfterSubmodule,
+        phase: DungeonModuleCpuPhase::InterruptedInSpriteMain,
         resumed_phase: None,
         subsubmodule: 15,
         palette_countdown: 0,
@@ -6083,7 +6113,6 @@ fn landing_nmi_inside_sprite_main_resumes_at_the_cpu_slot_boundary() {
         state.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishDungeonSpriteMain {
             boundary: DungeonSpriteMainCpuBoundary::AfterSlot(3),
-            returns_to_wait_loop: true,
         }),
     );
 }
