@@ -18515,11 +18515,18 @@ impl ZeldaState {
             self.assert_native_display_state_matches_ram();
             return true;
         }
-        if quadrant_cpu_advance == Some(DungeonQuadrantCpuAdvance::InterruptedInModule) {
+        let quadrant_has_modeled_cached_sprite_continuation = quadrant_cpu_advance
+            == Some(DungeonQuadrantCpuAdvance::InterruptedInModule)
+            && self.next_dungeon_quadrant_iteration_has_modeled_cached_sprite_interruption();
+        if quadrant_cpu_advance == Some(DungeonQuadrantCpuAdvance::InterruptedInModule)
+            && !quadrant_has_modeled_cached_sprite_continuation
+        {
             // These measured quadrant-upload boundaries consume one full
-            // vblank before the module iteration resumes. Keep the caller
-            // continuation explicit so the following host NMI can run main
-            // and rejoin the ordinary upload chain.
+            // vblank before an otherwise atomic module iteration resumes.
+            // Keep the caller continuation explicit so the following host
+            // NMI can run main and rejoin the ordinary upload chain. A module
+            // with its own semantic continuation instead runs below and
+            // suspends at that exact boundary.
             self.game_execution_scheduler.schedule_pre_main_nmi_resume(
                 PreMainNmiResume::DungeonSupertileQuadrantUploadsAfterHeldNmi,
             );

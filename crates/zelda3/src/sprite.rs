@@ -2146,8 +2146,27 @@ impl ZeldaState {
         {
             return None;
         }
-        let entry =
-            dungeon_transition_cached_sprite_entry_raster(self.game_state.frame.subsubmodule)?;
+        self.cached_sprite_cpu_interruption_at_phase(self.game_state.frame.subsubmodule)
+    }
+
+    pub(super) fn next_dungeon_quadrant_iteration_has_modeled_cached_sprite_interruption(
+        &self,
+    ) -> bool {
+        if !self.rom_startup_timing()
+            || self.game_state.frame.main_module != 7
+            || self.game_state.frame.submodule != 2
+            || !matches!(self.game_state.frame.subsubmodule, 4..=7)
+        {
+            return false;
+        }
+        self.cached_sprite_cpu_interruption_at_phase(
+            self.game_state.frame.subsubmodule.wrapping_add(1),
+        )
+        .is_some()
+    }
+
+    fn cached_sprite_cpu_interruption_at_phase(&self, subsubmodule: u8) -> Option<(usize, usize)> {
+        let entry = dungeon_transition_cached_sprite_entry_raster(subsubmodule)?;
         if (0..16usize).any(|slot| {
             let cached = self.cached_sprite_slot(slot);
             cached.is_active() && cached.type_byte() != CACHED_SPRITE_RAT

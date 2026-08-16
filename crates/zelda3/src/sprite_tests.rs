@@ -1406,3 +1406,26 @@ fn cached_sprite_cycle_budget_keeps_direction_cached_in_later_transition_phases(
     assert!(direction < fields_live(6));
     assert!(direction < fields_live(7));
 }
+
+#[test]
+fn quadrant_resume_uses_cached_sprite_continuation_only_when_work_crosses_nmi() {
+    use crate::game_state::constants::{ALT_SPRITE_STATE, ALT_SPRITE_TYPE};
+
+    let mut state = fresh_state();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(4);
+
+    for slot in [0, 1, 2, 8] {
+        state.ram[ALT_SPRITE_STATE + slot] = 9;
+        state.ram[ALT_SPRITE_TYPE + slot] = CACHED_SPRITE_RAT;
+    }
+    state.sync_native_game_state_from_ram();
+    assert!(!state.next_dungeon_quadrant_iteration_has_modeled_cached_sprite_interruption());
+
+    state.ram[ALT_SPRITE_STATE + 9] = 9;
+    state.ram[ALT_SPRITE_TYPE + 9] = CACHED_SPRITE_RAT;
+    state.sync_native_game_state_from_ram();
+    assert!(state.next_dungeon_quadrant_iteration_has_modeled_cached_sprite_interruption());
+}
