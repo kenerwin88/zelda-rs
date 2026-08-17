@@ -8986,6 +8986,17 @@ impl ZeldaState {
         &self.game_state.player.follower_link
     }
 
+    /// LINK_MAGIC_CONSUMPTION (0xf37b) read live from RAM, as C does at every consumer
+    /// (`kCapeDepletionTimers[link_magic_consumption]`,
+    /// `kLinkItem_MagicCosts[x * 3 + link_magic_consumption]`,
+    /// `kCaneSpark_Magic[link_magic_consumption]`). PlayerResourcesState is the sole
+    /// native owner -- it holds the only writer, the magic-shop 1/2-magic upgrade -- but
+    /// it is not resynced from RAM at handler entry the way follower_link is, so reading
+    /// the byte is both faithful to C and immune to that asymmetry.
+    pub(crate) fn magic_consumption_level_live(&self) -> u8 {
+        self.ram[crate::game_state::constants::LINK_MAGIC_CONSUMPTION]
+    }
+
     pub(crate) fn palette_swap_enabled(&self) -> bool {
         self.game_state.sprites.follower_runtime.palette_swap_flag() != 0
     }

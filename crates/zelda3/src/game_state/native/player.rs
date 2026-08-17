@@ -340,7 +340,6 @@ pub(crate) struct FollowerLinkState {
     flippers: u8,
     moon_pearl: u8,
     magic_power: u8,
-    magic_consumption: u8,
     ancilla_pickup_flag: u8,
     sprite_pickup_flag: u8,
     sprite_pickup_flag_cached: u8,
@@ -531,7 +530,6 @@ impl FollowerLinkState {
             flippers: ram_byte(ram, LINK_ITEM_FLIPPERS),
             moon_pearl: ram_byte(ram, LINK_ITEM_MOON_PEARL),
             magic_power: ram_byte(ram, LINK_MAGIC_POWER),
-            magic_consumption: ram_byte(ram, LINK_MAGIC_CONSUMPTION),
             ancilla_pickup_flag: ram_byte(ram, FLAG_IS_ANCILLA_TO_PICK_UP),
             sprite_pickup_flag: ram_byte(ram, FLAG_IS_SPRITE_TO_PICK_UP),
             sprite_pickup_flag_cached: ram_byte(ram, FLAG_IS_SPRITE_TO_PICK_UP_CACHED),
@@ -729,7 +727,10 @@ impl FollowerLinkState {
         ram[LINK_ITEM_FLIPPERS] = self.flippers;
         ram[LINK_ITEM_MOON_PEARL] = self.moon_pearl;
         ram[LINK_MAGIC_POWER] = self.magic_power;
-        ram[LINK_MAGIC_CONSUMPTION] = self.magic_consumption;
+        // LINK_MAGIC_CONSUMPTION (0xf37b) is solely owned by PlayerResourcesState, which
+        // holds its only writer (Sprite_MagicShopKeeper granting the 1/2-magic upgrade,
+        // C sprite_main.c `link_magic_consumption = 1`). C reads one live byte from every
+        // consumer; a second projected copy here re-stamped the frame-start value.
         ram[FLAG_IS_ANCILLA_TO_PICK_UP] = self.ancilla_pickup_flag;
         ram[FLAG_IS_SPRITE_TO_PICK_UP] = self.sprite_pickup_flag;
         ram[FLAG_IS_SPRITE_TO_PICK_UP_CACHED] = self.sprite_pickup_flag_cached;
@@ -1808,10 +1809,6 @@ impl FollowerLinkState {
 
     pub(crate) fn magic_power(&self) -> u8 {
         self.magic_power
-    }
-
-    pub(crate) fn magic_consumption_level(&self) -> u8 {
-        self.magic_consumption
     }
 
     pub(crate) fn ancilla_pickup_flag(&self) -> u8 {
