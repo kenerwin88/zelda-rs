@@ -6,7 +6,6 @@ const PUSHED_BLOCK_BANK_LEN: usize = 4;
 const PUSHED_BLOCK_SLOT_COUNT: usize = 2;
 const SWIM_AXIS_COUNT: usize = 2;
 const FALL_HOLE_SCAN_INDEX_LOCAL: usize = 0x02c9;
-const PLAYER_TILE_ATTRIBUTE_COUNT: usize = 0x400;
 
 fn swim_axis_index(offset: usize) -> Option<usize> {
     match offset {
@@ -43,37 +42,13 @@ fn move_link_axis_by_subpixel_delta(
     (moved >> 8) as u16
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) struct PlayerTileAttributeTableState {
-    attributes: Vec<u8>,
-}
-
-impl Default for PlayerTileAttributeTableState {
-    fn default() -> Self {
-        Self {
-            attributes: vec![0; PLAYER_TILE_ATTRIBUTE_COUNT],
-        }
-    }
-}
-
-impl PlayerTileAttributeTableState {
-    pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
-        let mut attributes = vec![0; PLAYER_TILE_ATTRIBUTE_COUNT];
-        for (index, attribute) in attributes.iter_mut().enumerate() {
-            *attribute = ram_byte(ram, ATTRIBUTES_FOR_TILE_PLAYER + index);
-        }
-        Self { attributes }
-    }
-
-    pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[ATTRIBUTES_FOR_TILE_PLAYER..ATTRIBUTES_FOR_TILE_PLAYER + PLAYER_TILE_ATTRIBUTE_COUNT]
-            .copy_from_slice(&self.attributes);
-    }
-
-    pub(crate) fn attr_for_tile(&self, tile: usize) -> u8 {
-        self.attributes[tile & (PLAYER_TILE_ATTRIBUTE_COUNT - 1)]
-    }
-}
+// ATTRIBUTES_FOR_TILE (0xfe00) owns exactly 0x200 bytes and is solely owned by
+// DungeonBg2AttributeState, which reads it straight out of RAM like C does
+// (`attributes_for_tile[tile & 0x3ff]`). A second 0x400-wide native mirror lived here and
+// bulk-projected 0xfe00..0x101ff every frame; because `player` projects after `dungeon`
+// in GameState::write_to_ram it re-stamped a stale frame-start copy over 0x10000..0x101ff,
+// which C uses for messaging_buf / blastwall_var* / skullwoodsfire_var*. Same overrun the
+// dungeon-side copy was already sized down to 0x200 to fix; do not reintroduce a mirror.
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct SpecialExitPositionState {
@@ -157,7 +132,6 @@ pub(crate) struct PlayerState {
     pub(crate) pushed_block: PushedBlockState,
     pub(crate) bg1_movement_accumulator: Bg1MovementAccumulatorState,
     pub(crate) tile_detection: TileDetectionState,
-    pub(crate) tile_attributes: PlayerTileAttributeTableState,
 }
 
 impl PlayerState {
@@ -169,7 +143,6 @@ impl PlayerState {
             pushed_block: PushedBlockState::load_from_ram(ram),
             bg1_movement_accumulator: Bg1MovementAccumulatorState::load_from_ram(ram),
             tile_detection: TileDetectionState::load_from_ram(ram),
-            tile_attributes: PlayerTileAttributeTableState::load_from_ram(ram),
         }
     }
 
@@ -180,7 +153,6 @@ impl PlayerState {
         self.pushed_block.write_to_ram(ram);
         self.bg1_movement_accumulator.write_to_ram(ram);
         self.tile_detection.write_to_ram(ram);
-        self.tile_attributes.write_to_ram(ram);
     }
 
     pub(crate) fn sync_follower_link_from_ram(&mut self, ram: &[u8]) {

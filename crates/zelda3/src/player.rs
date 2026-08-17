@@ -3990,7 +3990,7 @@ impl ZeldaState {
             .set_bg2_tile(pos as usize, 0x190f);
         self.dungeon_room_tilemaps_mut()
             .set_bg2_tile((pos + 64) as usize, 0x190f);
-        let attr = u16::from(self.game_state.player.tile_attributes.attr_for_tile(0x190f)) * 0x0101;
+        let attr = u16::from(self.dungeon_tile_attribute(0x190f)) * 0x0101;
         let vram0 = self.Dungeon_MapVramAddr(pos);
         let vram1 = self.Dungeon_MapVramAddr(pos + 64);
         self.dungeon_bg2_attributes_mut()
