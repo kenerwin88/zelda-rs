@@ -53,13 +53,27 @@ def parse_int(tok: str):
         return None
 
 
-def collect_constants() -> dict[str, int]:
+CANONICAL_CONSTS = CRATE_SRC / "game_state" / "constants.rs"
+
+
+def collect_constants(conflicts: list | None = None) -> dict[str, int]:
     raw: dict[str, str] = {}
-    for path in CRATE_SRC.rglob("*.rs"):
+    # `game_state/constants.rs` is THIS repo's canonical WRAM address map, so it must win
+    # over a same-named local const declared in some module. Those shadowing locals exist
+    # and disagree: sprite_main_dungeon_npcs.rs declares `MESSAGING_MODULE = 0x0e2` (C's
+    # BG2HOFS_copy2) while the real MESSAGING_MODULE is 0x1cd8, which made this finder
+    # report a phantom MessagingRuntimeState/PpuScrollCopyState overlap at 0xe2.
+    ordered = [CANONICAL_CONSTS] if CANONICAL_CONSTS.exists() else []
+    ordered += [p for p in sorted(CRATE_SRC.rglob("*.rs")) if p != CANONICAL_CONSTS]
+    for path in ordered:
         text = path.read_text(errors="replace")
         for m in CONST_RE.finditer(text):
             name, expr = m.group(1), m.group(2).strip()
-            raw.setdefault(name, expr)
+            if name in raw:
+                if conflicts is not None and raw[name] != expr:
+                    conflicts.append((name, raw[name], expr, path.name))
+                continue
+            raw[name] = expr
 
     resolved: dict[str, int] = {}
 
@@ -90,6 +104,16 @@ def collect_constants() -> dict[str, int]:
 
     for name in list(raw):
         resolve(name, frozenset())
+
+    if conflicts is not None:
+        # Only a redefinition that resolves to a DIFFERENT address matters; the same
+        # value written two ways (0x47c vs 0x047c) is just duplication, not shadowing.
+        kept = []
+        for (name, keep_expr, drop_expr, where) in conflicts:
+            a, b = resolved.get(name), parse_int(drop_expr)
+            if a is not None and b is not None and a != b:
+                kept.append((name, a, b, where))
+        conflicts[:] = kept
     return resolved
 
 
@@ -232,12 +256,121 @@ def enclosing_struct(text: str, pos: int) -> str:
 
 
 # ----------------------------------------------------------------------------
+# Projection reachability. Having a `write_to_ram` does NOT mean the composite ever
+# calls it. Some states are *derived views* built on demand and never stored as a
+# field — e.g. `EntranceEffectState::blast_wall()` mints a fresh `BlastWallState`, and
+# `.skull_woods_fire()` a `SkullWoodsFireState`. Their write_to_ram is dead code from
+# the projection's point of view, so an "overlap" with them cannot clobber anything.
+# Walk the real chain from `GameState::write_to_ram` and only count reachable owners.
+# ----------------------------------------------------------------------------
+STRUCT_DECL_RE = re.compile(r"\bstruct\s+([A-Za-z0-9_]+)\s*\{")
+FIELD_DECL_RE = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?([A-Za-z0-9_]+)\s*:\s*(.+?),\s*$", re.M)
+WTR_CALL_RE = re.compile(
+    r"(?:self\.)?([A-Za-z0-9_]+)\s*(?:\[[^\]]*\]|\([^)]*\))?"
+    r"\s*(?:\.[A-Za-z0-9_]+\([^)]*\))*\.write_to_ram\s*\(")
+FOR_OVER_SELF_RE = re.compile(r"for\s+\w+\s+in\s+(?:&\s*)?(?:mut\s+)?self\.([A-Za-z0-9_]+)")
+TYPE_IDENT_RE = re.compile(r"\b([A-Z][A-Za-z0-9_]*)")
+NON_STRUCT_TYPES = {"Vec", "Option", "Box", "Some", "None", "Self"}
+
+
+def collect_projection_reachable(files) -> set[str]:
+    """Structs whose write_to_ram is actually reached from GameState::write_to_ram."""
+    fields: dict[str, dict[str, str]] = defaultdict(dict)
+    projects: dict[str, set[str]] = defaultdict(set)
+
+    for path in files:
+        text = path.read_text(errors="replace")
+        for m in STRUCT_DECL_RE.finditer(text):
+            body = brace_body(text, text.index("{", m.end() - 1))
+            for fm in FIELD_DECL_RE.finditer(body):
+                fields[m.group(1)][fm.group(1)] = fm.group(2)
+        for fnm in re.finditer(r"fn\s+write_to_ram\s*\([^)]*\)\s*\{", text):
+            struct = enclosing_struct(text, fnm.start())
+            body = brace_body(text, text.index("{", fnm.start()))
+            for cm in WTR_CALL_RE.finditer(body):
+                projects[struct].add(cm.group(1))
+            for it in FOR_OVER_SELF_RE.finditer(body):
+                if ".write_to_ram(" in body[it.end():it.end() + 400]:
+                    projects[struct].add(it.group(1))
+
+    reachable: set[str] = set()
+    stack = ["GameState"]
+    while stack:
+        cur = stack.pop()
+        if cur in reachable:
+            continue
+        reachable.add(cur)
+        for field in projects.get(cur, ()):
+            ty = fields.get(cur, {}).get(field)
+            if not ty:
+                continue
+            for t in TYPE_IDENT_RE.findall(ty):
+                if t not in NON_STRUCT_TYPES and t not in reachable:
+                    stack.append(t)
+    return reachable
+
+
+# ----------------------------------------------------------------------------
 # Reference array layout from this repo's WRAM constant map for the
 # undersized-table lint. Each `const NAME: usize = 0xADDR;` marks a variable's
 # base; a variable's span = distance to the next constant. A native range-write
 # narrower than that span is likely truncated — exactly the class of the
 # presence-table bug (0x200 Vec for a 0x1000 array).
 # ----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
+# Optional cross-reference against the original C port's `g_ram` macro map, which is
+# the authority on what a WRAM address *is*. Two uses:
+#   * true array extents. The const-map gap to the next definition is an upper bound,
+#     not a length: OVERWORLD_SPRITE_WAS_LOADED's gap is 0x880 but C's own
+#     `memset(overworld_sprite_was_loaded, 0, 0x200)` proves the array is 0x200, so the
+#     native 0x200 write is correct and the undersized lint was a false positive.
+#   * deliberate aliasing. When C declares several differently-named macros at one
+#     address (0x15800 is swordbeam_arr / ether_* / quake_* / bombos_arr2 /
+#     weathervane_arr3), the byte is shared scratch by design. That does NOT make a Rust
+#     overlap safe — C never re-stamps, the projection does — but it does change the fix
+#     from "make one struct the sole owner" to "mode-gate or write-through", so label it.
+# Set ZELDA3_C_SRC to override; the checks degrade to no-ops when it is absent.
+# ----------------------------------------------------------------------------
+C_SRC_ENV = "ZELDA3_C_SRC"
+
+
+def c_ram_map():
+    """{addr: {macro names}} and {addr: proven_length} from the C port, if available."""
+    import os
+    src = pathlib.Path(os.environ.get(C_SRC_ENV, pathlib.Path.home() / "Documents" / "zelda3" / "src"))
+    if not src.is_dir():
+        return {}, {}
+    names: dict[int, set] = defaultdict(set)
+    lengths: dict[int, int] = {}
+    scalar = re.compile(
+        r"^#define\s+(\w+)\s+\(\*\(\s*u?int(8|16|32)\s*\*\)\s*\(\s*g_ram\s*\+\s*(0[xX][0-9a-fA-F]+)")
+    array = re.compile(
+        r"^#define\s+(\w+)\s+\(\(\s*u?int(8|16|32)\s*\*\)\s*\(\s*g_ram\s*\+\s*(0[xX][0-9a-fA-F]+)")
+    macro_addr: dict[str, int] = {}
+    texts = []
+    for path in sorted(list(src.glob("*.c")) + list(src.glob("*.h"))):
+        text = path.read_text(errors="replace")
+        texts.append(text)
+        for line in text.splitlines():
+            line = line.strip()
+            m = scalar.match(line) or array.match(line)
+            if m:
+                addr = int(m.group(3), 16)
+                names[addr].add(m.group(1))
+                macro_addr.setdefault(m.group(1), addr)
+    # `memset(name, v, LEN)` / `memcpy(name, src, LEN)` prove an array's real extent.
+    blob = "\n".join(texts)
+    for m in re.finditer(r"\bmem(?:set|cpy)\s*\(\s*(\w+)\s*,[^,]*,\s*(0[xX][0-9a-fA-F]+|\d+)\s*\)", blob):
+        addr = macro_addr.get(m.group(1))
+        if addr is None:
+            continue
+        val = parse_int(m.group(2))
+        if val:
+            lengths[addr] = max(lengths.get(addr, 0), val)
+    return names, lengths
+
+
 def ref_array_spans():
     """Return {base_addr: (name, span)} from this repo's address map."""
     defs = ref.address_defs()
@@ -412,12 +545,12 @@ def report_bridge_foreign_writes(byte_owners, consts, arrays):
     print()
 
 
-def report_undersized_tables(owner_intervals):
+def report_undersized_tables(owner_intervals, c_lengths):
     arrays = ref_array_spans()
     if not arrays:
         print("\n(no WRAM constant map found — skipping undersized-table lint)\n")
         return
-    findings = []
+    findings, ruled_out = [], []
     for struct, ivs in owner_intervals.items():
         for (s, e, label, fname) in ivs:
             # Only genuine table projections (slice / helper range-writers) can be
@@ -425,19 +558,31 @@ def report_undersized_tables(owner_intervals):
             # member access and is expected to be < the array span.
             if not (label.startswith("slice") or label.startswith("write_scroll")):
                 continue
-            if s in arrays:
-                cname, cspan = arrays[s]
-                span = e - s
-                if span < cspan:
-                    findings.append((s, struct, fname, label, span, cname, cspan))
+            if s not in arrays:
+                continue
+            cname, cspan = arrays[s]
+            span = e - s
+            # C's own memset/memcpy extent beats the const-map gap, which is only the
+            # distance to the next definition and so a loose upper bound.
+            proven = c_lengths.get(s)
+            if proven is not None:
+                if span >= proven:
+                    ruled_out.append((s, struct, cname, span, proven, cspan))
+                    continue
+                cspan = proven
+            if span < cspan:
+                findings.append((s, struct, fname, label, span, cname, cspan))
     print("\n################  UNDERSIZED NATIVE TABLES  ################")
-    print("(native range-write narrower than the const-map array span at the same base)\n")
-    if not findings:
-        print("  none\n")
-        return
-    for (s, struct, fname, label, span, cname, cspan) in sorted(findings):
-        print(f"  0x{s:05x} {struct} [{fname}]: writes 0x{span:x} bytes but array "
-              f"`{cname}` spans 0x{cspan:x}  (via {label})")
+    print("(native range-write narrower than the array's real extent at the same base)\n")
+    if findings:
+        for (s, struct, fname, label, span, cname, cspan) in sorted(findings):
+            print(f"  0x{s:05x} {struct} [{fname}]: writes 0x{span:x} bytes but array "
+                  f"`{cname}` spans 0x{cspan:x}  (via {label})")
+    else:
+        print("  none")
+    for (s, struct, cname, span, proven, cspan) in sorted(ruled_out):
+        print(f"  [ruled out] 0x{s:05x} {struct}: writes 0x{span:x}; const-map gap is "
+              f"0x{cspan:x} but C proves `{cname}` is 0x{proven:x} (memset/memcpy extent)")
     print()
 
 
@@ -445,9 +590,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--verbose", action="store_true",
                     help="list writes whose address couldn't be resolved")
+    ap.add_argument("--show-suppressed", action="store_true",
+                    help="also list overlaps ruled out as unreachable projections")
     args = ap.parse_args()
 
-    consts = collect_constants()
+    const_conflicts: list = []
+    consts = collect_constants(const_conflicts)
 
     # struct -> list of (start, end, label, file)
     owner_intervals: dict[str, list] = defaultdict(list)
@@ -496,20 +644,42 @@ def main():
                 if struct not in byte_owners[addr]:
                     byte_owners[addr][struct] = (label, fname)
 
+    reachable = collect_projection_reachable(files)
+    c_names, c_lengths = c_ram_map()
+
+    # An overlap can only clobber if 2+ of its owners are actually projected.
+    def live_owners(addr):
+        return {s for s in byte_owners[addr] if s in reachable}
+
     # Collapse overlapping bytes into contiguous ranges with the same owner-set.
     overlap_bytes = sorted(a for a, owners in byte_owners.items() if len(owners) >= 2)
+    real_bytes = [a for a in overlap_bytes if len(live_owners(a)) >= 2]
+    suppressed_bytes = [a for a in overlap_bytes if len(live_owners(a)) < 2]
+
+    unreachable_owners = sorted(
+        {s for a in suppressed_bytes for s in byte_owners[a] if s not in reachable})
 
     print(f"resolved {len(consts)} constants; "
-          f"{len(owner_intervals)} structs have write_to_ram; "
-          f"{len(overlap_bytes)} overlapping bytes\n")
+          f"{len(owner_intervals)} structs have write_to_ram "
+          f"({len(reachable & set(owner_intervals))} reachable from "
+          f"GameState::write_to_ram); {len(real_bytes)} overlapping bytes")
+    if suppressed_bytes:
+        print(f"  ruled out: {len(suppressed_bytes)} byte(s) whose co-owners are never "
+              f"projected ({', '.join(unreachable_owners)})")
+    if not c_names:
+        print(f"  note: no C checkout found (set {C_SRC_ENV}) — alias labels unavailable")
+    for (name, kept, dropped, where) in const_conflicts:
+        print(f"  note: const {name} shadowed as 0x{dropped:x} in {where}; using "
+              f"0x{kept:x} from the canonical map")
+    print()
 
-    if not overlap_bytes:
+    if not real_bytes:
         print("No dual-ownership overlaps found. ✅")
     else:
-        # group contiguous bytes that share the identical owner set
+        # group contiguous bytes that share the identical (projected) owner set
         groups = []
-        for addr in overlap_bytes:
-            owners = frozenset(byte_owners[addr])
+        for addr in real_bytes:
+            owners = frozenset(live_owners(addr))
             if groups and groups[-1][1] == owners and addr == groups[-1][0][-1] + 1:
                 groups[-1][0].append(addr)
             else:
@@ -528,7 +698,14 @@ def main():
             for addrs, owners, modes in group_list:
                 lo, hi = addrs[0], addrs[-1]
                 rng = f"0x{lo:05x}" if lo == hi else f"0x{lo:05x}-0x{hi:05x}"
-                print(f"  {rng}  ({len(addrs)} byte(s)) owned by {len(owners)} structs:")
+                aliases = {n for a in addrs for n in c_names.get(a, ())}
+                note = ""
+                if len(aliases) >= 2:
+                    note = (f"   [C-ALIASED: {', '.join(sorted(aliases))} — deliberate "
+                            f"scratch reuse, fix by mode-gate/write-through, NOT sole-owner]")
+                elif len(aliases) == 1:
+                    note = f"   [C: {next(iter(aliases))}]"
+                print(f"  {rng}  ({len(addrs)} byte(s)) owned by {len(owners)} structs:{note}")
                 for struct in sorted(owners):
                     label, fname = byte_owners[lo].get(
                         struct, byte_owners[addrs[0]][struct])
@@ -546,16 +723,24 @@ def main():
               "verify if unsure)\n")
         show(reuse)
 
+    if args.show_suppressed and suppressed_bytes:
+        print("################  RULED OUT: unreachable projections  ################")
+        print("(these structs have a write_to_ram the composite never calls — derived\n"
+              " views built on demand — so they cannot clobber anything)\n")
+        for struct in unreachable_owners:
+            print(f"  {struct}")
+        print()
+
     report_clear_coherence(byte_owners, consts)
     report_bridge_foreign_writes(byte_owners, consts, collect_array_constants(consts))
-    report_undersized_tables(owner_intervals)
+    report_undersized_tables(owner_intervals, c_lengths)
 
     if args.verbose and unresolved_all:
         print("\nUnresolved writes (address could not be computed statically):")
         for struct, fname, label in unresolved_all:
             print(f"  {struct} [{fname}]: {label}")
 
-    return 1 if overlap_bytes else 0
+    return 1 if real_bytes else 0
 
 
 if __name__ == "__main__":
