@@ -200,6 +200,77 @@ impl GameState {
     /// only mirror RAM in one game mode), so a few names form a stable baseline; a real
     /// coherence bug shows up as a state going incoherent at the step that introduced it.
     /// Driven by `replay_trace_ram_watch` under `ZELDA3_ASSERT_NATIVE_COHERENT`.
+    /// Report bytes in the `$7F5800` ancilla scratch area that two projected native
+    /// states would write with *different* values in the same projection.
+    ///
+    /// C aliases this window across mutually-exclusive effects (swordbeam / ether /
+    /// quake / bombos / break-tower-seal / weathervane debris / happiness-pond rupees)
+    /// and never re-stamps: whichever effect is running writes it and the others are
+    /// dormant. The native migration models it with eight states that ALL bulk-project
+    /// every frame, so last-writer-wins. That is only an actual clobber when two of them
+    /// disagree about a byte, which this detects directly instead of by inspection.
+    ///
+    /// Driven by `ZELDA3_ASSERT_SCRATCH_CONFLICTS`; each entry is
+    /// `(addr, winner, winner_value, loser, loser_value)` in projection order.
+    pub(crate) fn report_scratch_conflicts(
+        &self,
+        ram: &[u8],
+    ) -> Vec<(usize, &'static str, u8, &'static str, u8)> {
+        const LO: usize = 0x15800;
+        const HI: usize = 0x15880;
+
+        // What each state alone would leave in the window, starting from live RAM.
+        let claims = |f: &dyn Fn(&mut [u8])| -> Vec<(usize, u8)> {
+            let mut probe = ram.to_vec();
+            f(&mut probe);
+            (LO..HI)
+                .filter(|&a| probe[a] != ram[a])
+                .map(|a| (a, probe[a]))
+                .collect()
+        };
+
+        let e = &self.effects;
+        let s = &self.sprites;
+        // Projection order inside GameState::write_to_ram: sprites before effects.
+        let owners: [(&'static str, &dyn Fn(&mut [u8])); 8] = [
+            ("ether_orbit", &|r: &mut [u8]| s.ether_orbit.write_to_ram(r)),
+            ("angle_scratch", &|r: &mut [u8]| e.angle_scratch.write_to_ram(r)),
+            ("quake_bolts", &|r: &mut [u8]| e.quake_bolts.write_to_ram(r)),
+            ("quake_spell", &|r: &mut [u8]| e.quake_spell.write_to_ram(r)),
+            ("bombos_spell", &|r: &mut [u8]| e.bombos_spell.write_to_ram(r)),
+            ("tower_seal", &|r: &mut [u8]| e.tower_seal.write_to_ram(r)),
+            ("weather_vane_debris", &|r: &mut [u8]| e.weather_vane_debris.write_to_ram(r)),
+            ("happiness_pond_rupees", &|r: &mut [u8]| e.happiness_pond_rupees.write_to_ram(r)),
+        ];
+
+        // The clobber that matters is the FRAME-WIDE projection overwriting a live byte in
+        // the window. Two natives merely disagreeing is harmless once neither is
+        // bulk-projected, so trigger on the composite actually changing RAM here.
+        let mut probe = ram.to_vec();
+        self.write_to_ram(&mut probe);
+        let stomped: Vec<usize> = (LO..HI).filter(|&a| probe[a] != ram[a]).collect();
+        if stomped.is_empty() {
+            return Vec::new();
+        }
+
+        // Attribute each stomped byte: name the last projector that claims it, and the
+        // live RAM value it replaced.
+        let mut claimed: std::collections::BTreeMap<usize, (&'static str, u8)> =
+            Default::default();
+        for (name, project) in owners {
+            for (addr, value) in claims(project) {
+                claimed.insert(addr, (name, value));
+            }
+        }
+        stomped
+            .into_iter()
+            .map(|addr| {
+                let (name, value) = claimed.get(&addr).copied().unwrap_or(("<unattributed>", probe[addr]));
+                (addr, name, value, "live-ram", ram[addr])
+            })
+            .collect()
+    }
+
     pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {
         let fresh = Self::load_from_ram(ram);
         let mut out = Vec::new();

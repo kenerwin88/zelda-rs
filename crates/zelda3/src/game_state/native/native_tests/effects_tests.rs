@@ -52,13 +52,16 @@ fn native_effect_angle_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_effect_angle_bridge_projects_native_state_over_stale_ram() {
+fn native_effect_angle_bridge_composes_edits_onto_live_ram() {
+    // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is no
+    // longer bulk-projected, so the bridge must compose its edits onto whatever is in RAM
+    // now rather than re-stamp a stale native snapshot over a live effect's write.
+    let mut stale_ram = vec![0; WRAM_SIZE];
+    stale_ram[EFFECT_ANGLE_WORK + 1] = 60;
     let mut ram = vec![0; WRAM_SIZE];
-    ram[EFFECT_ANGLE_WORK + 1] = 60;
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[EFFECT_ANGLE_WORK + 1] = 3;
-    native_ram[EFFECT_ANGLE_WORK + 8] = 9;
-    let mut angles = EffectAngleScratchState::load_from_ram(&native_ram);
+    ram[EFFECT_ANGLE_WORK + 1] = 3;
+    ram[EFFECT_ANGLE_WORK + 8] = 9;
+    let mut angles = EffectAngleScratchState::load_from_ram(&stale_ram);
 
     {
         let mut bridge = NativeEffectAngleScratchBridgeMut::new(&mut angles, &mut ram);
@@ -122,18 +125,21 @@ fn native_quake_spell_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_quake_spell_bridge_projects_native_state_over_stale_ram() {
+fn native_quake_spell_bridge_composes_edits_onto_live_ram() {
+    // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is no
+    // longer bulk-projected, so the bridge must compose its edits onto whatever is in RAM
+    // now rather than re-stamp a stale native snapshot over a live effect's write.
+    let mut stale_ram = vec![0; WRAM_SIZE];
+    stale_ram[QUAKE_ACTIVE_BOLT_LIMIT] = 9;
+    write_le_u16(&mut stale_ram, QUAKE_ORIGIN_X, 0xffff);
     let mut ram = vec![0; WRAM_SIZE];
-    ram[QUAKE_ACTIVE_BOLT_LIMIT] = 9;
-    write_le_u16(&mut ram, QUAKE_ORIGIN_X, 0xffff);
-    let mut native_ram = vec![0; WRAM_SIZE];
-    ram[QUAKE_PENDING_STEP] = 8;
-    native_ram[QUAKE_ACTIVE_BOLT_LIMIT] = 2;
-    native_ram[QUAKE_PENDING_STEP] = 3;
-    write_le_u16(&mut native_ram, QUAKE_ORIGIN_X, 0x1234);
-    write_le_u16(&mut native_ram, QUAKE_ORIGIN_Y, 0x5678);
-    write_le_u16(&mut native_ram, QUAKE_SCREEN_SHAKE_Y, 0x0004);
-    let mut quake = QuakeSpellState::load_from_ram(&native_ram);
+    stale_ram[QUAKE_PENDING_STEP] = 8;
+    ram[QUAKE_ACTIVE_BOLT_LIMIT] = 2;
+    ram[QUAKE_PENDING_STEP] = 3;
+    write_le_u16(&mut ram, QUAKE_ORIGIN_X, 0x1234);
+    write_le_u16(&mut ram, QUAKE_ORIGIN_Y, 0x5678);
+    write_le_u16(&mut ram, QUAKE_SCREEN_SHAKE_Y, 0x0004);
+    let mut quake = QuakeSpellState::load_from_ram(&stale_ram);
 
     {
         let mut bridge = NativeQuakeSpellBridgeMut::new(&mut quake, &mut ram);
@@ -171,14 +177,17 @@ fn native_quake_bolt_bridge_syncs_seeded_ram_and_dual_writes_slot_changes() {
 }
 
 #[test]
-fn native_quake_bolt_bridge_projects_native_state_over_stale_ram() {
+fn native_quake_bolt_bridge_composes_edits_onto_live_ram() {
+    // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is no
+    // longer bulk-projected, so the bridge must compose its edits onto whatever is in RAM
+    // now rather than re-stamp a stale native snapshot over a live effect's write.
+    let mut stale_ram = vec![0; WRAM_SIZE];
+    stale_ram[QUAKE_BOLT_TIMER + 2] = 0xff;
+    stale_ram[QUAKE_BOLT_PHASE + 2] = 0xff;
     let mut ram = vec![0; WRAM_SIZE];
-    ram[QUAKE_BOLT_TIMER + 2] = 0xff;
-    ram[QUAKE_BOLT_PHASE + 2] = 0xff;
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[QUAKE_BOLT_TIMER + 2] = 7;
-    native_ram[QUAKE_BOLT_PHASE + 2] = 1;
-    let mut bolts = QuakeBoltState::load_from_ram(&native_ram);
+    ram[QUAKE_BOLT_TIMER + 2] = 7;
+    ram[QUAKE_BOLT_PHASE + 2] = 1;
+    let mut bolts = QuakeBoltState::load_from_ram(&stale_ram);
 
     {
         let mut bridge = NativeQuakeBoltBridgeMut::new(&mut bolts, &mut ram, 2);
@@ -267,18 +276,21 @@ fn native_bombos_spell_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_bombos_spell_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0xff; WRAM_SIZE];
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[BOMBOS_MODE] = 1;
-    native_ram[BOMBOS_FIRE_COLUMN_RADIUS] = 10;
-    native_ram[BOMBOS_BLAST_RELEASE_LOCKED] = 1;
-    native_ram[BOMBOS_BLAST_RELEASE_COUNTDOWN] = 2;
-    write_le_u16(&mut native_ram, BOMBOS_FIRE_COLUMN_SEED_X + 2, 0x1234);
-    write_le_u16(&mut native_ram, BOMBOS_FIRE_COLUMN_SEED_Y + 2, 0x5678);
-    write_le_u16(&mut native_ram, BOMBOS_BLAST_X + 8, 0x9abc);
-    write_le_u16(&mut native_ram, BOMBOS_BLAST_Y + 8, 0xdef0);
-    let mut bombos = BombosSpellState::load_from_ram(&native_ram);
+fn native_bombos_spell_bridge_composes_edits_onto_live_ram() {
+    // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is no
+    // longer bulk-projected, so the bridge must compose its edits onto whatever is in RAM
+    // now rather than re-stamp a stale native snapshot over a live effect's write.
+    let stale_ram = vec![0xff; WRAM_SIZE];
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[BOMBOS_MODE] = 1;
+    ram[BOMBOS_FIRE_COLUMN_RADIUS] = 10;
+    ram[BOMBOS_BLAST_RELEASE_LOCKED] = 1;
+    ram[BOMBOS_BLAST_RELEASE_COUNTDOWN] = 2;
+    write_le_u16(&mut ram, BOMBOS_FIRE_COLUMN_SEED_X + 2, 0x1234);
+    write_le_u16(&mut ram, BOMBOS_FIRE_COLUMN_SEED_Y + 2, 0x5678);
+    write_le_u16(&mut ram, BOMBOS_BLAST_X + 8, 0x9abc);
+    write_le_u16(&mut ram, BOMBOS_BLAST_Y + 8, 0xdef0);
+    let mut bombos = BombosSpellState::load_from_ram(&stale_ram);
 
     {
         let mut bridge = NativeBombosSpellBridgeMut::new(&mut bombos, &mut ram);
@@ -350,18 +362,21 @@ fn native_bombos_slot_bridges_preserve_overlapping_fire_column_layout() {
 }
 
 #[test]
-fn native_bombos_slot_bridges_project_native_state_over_stale_ram() {
-    let mut ram = vec![0xff; WRAM_SIZE];
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[BOMBOS_FIRE_COLUMN_TIMER + 3] = 2;
-    native_ram[BOMBOS_FIRE_COLUMN_PHASE + 3] = 0x40;
-    native_ram[BOMBOS_FIRE_COLUMN_X_LO + 3] = 0x34;
-    native_ram[BOMBOS_FIRE_COLUMN_X_HI + 3] = 0x12;
-    native_ram[BOMBOS_FIRE_COLUMN_Y_LO + 3] = 0x78;
-    native_ram[BOMBOS_FIRE_COLUMN_Y_HI + 3] = 0x56;
-    native_ram[BOMBOS_BLAST_TIMER + 7] = 2;
-    native_ram[BOMBOS_BLAST_PHASE + 7] = 0x80;
-    let mut bombos = BombosSpellState::load_from_ram(&native_ram);
+fn native_bombos_slot_bridges_compose_edits_onto_live_ram() {
+    // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is no
+    // longer bulk-projected, so the bridge must compose its edits onto whatever is in RAM
+    // now rather than re-stamp a stale native snapshot over a live effect's write.
+    let stale_ram = vec![0xff; WRAM_SIZE];
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[BOMBOS_FIRE_COLUMN_TIMER + 3] = 2;
+    ram[BOMBOS_FIRE_COLUMN_PHASE + 3] = 0x40;
+    ram[BOMBOS_FIRE_COLUMN_X_LO + 3] = 0x34;
+    ram[BOMBOS_FIRE_COLUMN_X_HI + 3] = 0x12;
+    ram[BOMBOS_FIRE_COLUMN_Y_LO + 3] = 0x78;
+    ram[BOMBOS_FIRE_COLUMN_Y_HI + 3] = 0x56;
+    ram[BOMBOS_BLAST_TIMER + 7] = 2;
+    ram[BOMBOS_BLAST_PHASE + 7] = 0x80;
+    let mut bombos = BombosSpellState::load_from_ram(&stale_ram);
 
     {
         let mut column = NativeBombosFireColumnBridgeMut::new(&mut bombos, &mut ram, 3);
@@ -443,17 +458,20 @@ fn native_tower_seal_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_tower_seal_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[TOWER_SEAL_RING_RADIUS] = 0xff;
-    ram[TOWER_SEAL_WAIT_COUNTDOWN] = 0xee;
+fn native_tower_seal_bridge_composes_edits_onto_live_ram() {
+    // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is no
+    // longer bulk-projected, so the bridge must compose its edits onto whatever is in RAM
+    // now rather than re-stamp a stale native snapshot over a live effect's write.
+    let mut stale_ram = vec![0; WRAM_SIZE];
+    stale_ram[TOWER_SEAL_RING_RADIUS] = 0xff;
+    stale_ram[TOWER_SEAL_WAIT_COUNTDOWN] = 0xee;
 
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[TOWER_SEAL_RING_RADIUS] = 12;
-    native_ram[TOWER_SEAL_WAIT_COUNTDOWN] = 3;
-    write_le_u16(&mut native_ram, TOWER_SEAL_CENTER_X, 0x1234);
-    write_le_u16(&mut native_ram, TOWER_SEAL_CENTER_Y, 0x5678);
-    let mut tower = TowerSealState::load_from_ram(&native_ram);
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[TOWER_SEAL_RING_RADIUS] = 12;
+    ram[TOWER_SEAL_WAIT_COUNTDOWN] = 3;
+    write_le_u16(&mut ram, TOWER_SEAL_CENTER_X, 0x1234);
+    write_le_u16(&mut ram, TOWER_SEAL_CENTER_Y, 0x5678);
+    let mut tower = TowerSealState::load_from_ram(&stale_ram);
 
     {
         let mut bridge = NativeTowerSealBridgeMut::new(&mut tower, &mut ram);
@@ -508,20 +526,23 @@ fn native_tower_seal_slot_bridges_sync_transient_orbits_and_sparkles() {
 }
 
 #[test]
-fn native_tower_seal_slot_bridges_project_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[TOWER_SEAL_ORBIT_ANGLE + 2] = 0xff;
-    ram[TOWER_SEAL_SPARKLE_PHASE + 5] = 0xee;
+fn native_tower_seal_slot_bridges_compose_edits_onto_live_ram() {
+    // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is no
+    // longer bulk-projected, so the bridge must compose its edits onto whatever is in RAM
+    // now rather than re-stamp a stale native snapshot over a live effect's write.
+    let mut stale_ram = vec![0; WRAM_SIZE];
+    stale_ram[TOWER_SEAL_ORBIT_ANGLE + 2] = 0xff;
+    stale_ram[TOWER_SEAL_SPARKLE_PHASE + 5] = 0xee;
 
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[TOWER_SEAL_ORBIT_ANGLE + 2] = 0x3f;
-    native_ram[TOWER_SEAL_SPARKLE_PHASE + 5] = 7;
-    native_ram[TOWER_SEAL_SPARKLE_TIMER + 5] = 2;
-    native_ram[TOWER_SEAL_BASE_SPARKLE_X_LO + 2] = 0x34;
-    native_ram[TOWER_SEAL_BASE_SPARKLE_X_HI + 2] = 0x12;
-    native_ram[TOWER_SEAL_BASE_SPARKLE_Y_LO + 2] = 0x78;
-    native_ram[TOWER_SEAL_BASE_SPARKLE_Y_HI + 2] = 0x56;
-    let mut tower = TowerSealState::load_from_ram(&native_ram);
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[TOWER_SEAL_ORBIT_ANGLE + 2] = 0x3f;
+    ram[TOWER_SEAL_SPARKLE_PHASE + 5] = 7;
+    ram[TOWER_SEAL_SPARKLE_TIMER + 5] = 2;
+    ram[TOWER_SEAL_BASE_SPARKLE_X_LO + 2] = 0x34;
+    ram[TOWER_SEAL_BASE_SPARKLE_X_HI + 2] = 0x12;
+    ram[TOWER_SEAL_BASE_SPARKLE_Y_LO + 2] = 0x78;
+    ram[TOWER_SEAL_BASE_SPARKLE_Y_HI + 2] = 0x56;
+    let mut tower = TowerSealState::load_from_ram(&stale_ram);
 
     {
         let mut orbit = NativeTowerSealOrbitBridgeMut::new(&mut tower, &mut ram, 2);

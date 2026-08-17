@@ -626,18 +626,21 @@ fn native_happiness_pond_rupee_bridge_loads_and_stores_snapshots() {
 }
 
 #[test]
-fn native_happiness_pond_rupee_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[HAPPINESS_POND_ACTIVE + 4] = 0xff;
-    ram[HAPPINESS_POND_X_LO + 4] = 0xee;
-    ram[HAPPINESS_POND_TIMER + 4] = 0xdd;
+fn native_happiness_pond_rupee_bridge_composes_edits_onto_live_ram() {
+    // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is no
+    // longer bulk-projected, so the bridge must compose its edits onto whatever is in RAM
+    // now rather than re-stamp a stale native snapshot over a live effect's write.
+    let mut stale_ram = vec![0; WRAM_SIZE];
+    stale_ram[HAPPINESS_POND_ACTIVE + 4] = 0xff;
+    stale_ram[HAPPINESS_POND_X_LO + 4] = 0xee;
+    stale_ram[HAPPINESS_POND_TIMER + 4] = 0xdd;
 
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[HAPPINESS_POND_ACTIVE + 4] = 1;
-    native_ram[HAPPINESS_POND_X_LO + 4] = 0x34;
-    native_ram[HAPPINESS_POND_X_HI + 4] = 0x12;
-    native_ram[HAPPINESS_POND_TIMER + 4] = 8;
-    let mut effects = EffectState::load_from_ram(&native_ram);
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[HAPPINESS_POND_ACTIVE + 4] = 1;
+    ram[HAPPINESS_POND_X_LO + 4] = 0x34;
+    ram[HAPPINESS_POND_X_HI + 4] = 0x12;
+    ram[HAPPINESS_POND_TIMER + 4] = 8;
+    let mut effects = EffectState::load_from_ram(&stale_ram);
 
     {
         let mut bridge =

@@ -1923,7 +1923,14 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 record.frame
             );
             matched = false;
-            break;
+            // ZELDA3_CACHED_AV_CONTINUE keeps replaying past the first divergence. The A/V
+            // verdict is unchanged (still a failure, and the ledger is no longer a parity
+            // receipt beyond this frame), but it lets an instrumentation pass — e.g.
+            // ZELDA3_ASSERT_SCRATCH_CONFLICTS — reach the later parts of a recorded route
+            // instead of stopping at the current frontier. Diagnostic use only.
+            if std::env::var_os("ZELDA3_CACHED_AV_CONTINUE").is_none() {
+                break;
+            }
         }
     }
     candidate_writer.flush().unwrap_or_else(|error| {

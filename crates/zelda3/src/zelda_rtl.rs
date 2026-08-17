@@ -8509,8 +8509,36 @@ impl ZeldaState {
         }
     }
 
+    /// `$7F5800` ancilla-scratch clobber detector. The eight effect states that model that
+    /// C-aliased window all bulk-project every frame, so last-writer-wins; this reports the
+    /// frames where two of them actually disagree about a byte (i.e. a real clobber rather
+    /// than a latent overlap). See GameState::report_scratch_conflicts.
+    fn replay_assert_scratch_conflicts(&self, label: &str) {
+        let Ok(mode) = std::env::var("ZELDA3_ASSERT_SCRATCH_CONFLICTS") else {
+            return;
+        };
+        let conflicts = self.game_state.report_scratch_conflicts(&self.ram);
+        if conflicts.is_empty() {
+            return;
+        }
+        let f = &self.game_state.frame;
+        for (addr, winner, wv, loser, lv) in &conflicts {
+            let msg = format!(
+                "scratch-conflict frame={} m=0x{:02x} sm=0x{:02x} ssm=0x{:02x} after '{label}': \
+                 0x{addr:05x} {winner}=0x{wv:02x} clobbers {loser}=0x{lv:02x}",
+                self.frame_ctr_dbg, f.main_module, f.submodule, f.subsubmodule
+            );
+            if mode == "panic" {
+                panic!("{msg}");
+            } else {
+                eprintln!("{msg}");
+            }
+        }
+    }
+
     fn replay_trace_ram_watch(&self, label: &str) {
         self.replay_assert_native_coherent(label);
+        self.replay_assert_scratch_conflicts(label);
         let Some(target) = Self::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_FRAME") else {
             return;
         };

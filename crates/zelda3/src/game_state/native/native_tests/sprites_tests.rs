@@ -322,13 +322,16 @@ fn ether_orbit_state_loads_from_and_projects_to_ram() {
 }
 
 #[test]
-fn native_ether_orbit_bridge_projects_native_state_over_stale_ram() {
-    let mut native_ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut native_ram, ETHER_BEAM_TOP_BUCKET, 0x1200);
-    native_ram[ETHER_SPIN_COUNTDOWN] = 0;
-    let mut orbit = EtherOrbitState::load_from_ram(&native_ram);
+fn native_ether_orbit_bridge_composes_edits_onto_live_ram() {
+    // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is no
+    // longer bulk-projected, so the bridge must compose its edits onto whatever is in RAM
+    // now rather than re-stamp a stale native snapshot over a live effect's write.
+    let mut ram = vec![0; WRAM_SIZE];
+    write_le_u16(&mut ram, ETHER_BEAM_TOP_BUCKET, 0x1200);
+    ram[ETHER_SPIN_COUNTDOWN] = 0;
+    let stale_ram = vec![0xff; WRAM_SIZE];
+    let mut orbit = EtherOrbitState::load_from_ram(&stale_ram);
 
-    let mut ram = vec![0xff; WRAM_SIZE];
     {
         let mut bridge = NativeEtherOrbitBridgeMut::new(&mut orbit, &mut ram);
         bridge.set_angle(0, 0x3f);
@@ -530,21 +533,24 @@ fn native_weather_vane_debris_bridge_updates_transient_slots() {
 }
 
 #[test]
-fn native_weather_vane_debris_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[WEATHERVANE_X_LO + 3] = 0xff;
-    ram[WEATHERVANE_X_HI + 3] = 0xee;
-    ram[WEATHERVANE_DRAW_STATE + 3] = 0xdd;
+fn native_weather_vane_debris_bridge_composes_edits_onto_live_ram() {
+    // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is no
+    // longer bulk-projected, so the bridge must compose its edits onto whatever is in RAM
+    // now rather than re-stamp a stale native snapshot over a live effect's write.
+    let mut stale_ram = vec![0; WRAM_SIZE];
+    stale_ram[WEATHERVANE_X_LO + 3] = 0xff;
+    stale_ram[WEATHERVANE_X_HI + 3] = 0xee;
+    stale_ram[WEATHERVANE_DRAW_STATE + 3] = 0xdd;
 
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[WEATHERVANE_X_LO + 3] = 0x34;
-    native_ram[WEATHERVANE_X_HI + 3] = 0x12;
-    native_ram[WEATHERVANE_Y_LO + 3] = 0x78;
-    native_ram[WEATHERVANE_Y_HI + 3] = 0x56;
-    native_ram[WEATHERVANE_Z + 3] = 0x21;
-    native_ram[WEATHERVANE_ANIM_TIMER + 3] = 1;
-    native_ram[WEATHERVANE_DRAW_STATE + 3] = 1;
-    let mut effects = EffectState::load_from_ram(&native_ram);
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[WEATHERVANE_X_LO + 3] = 0x34;
+    ram[WEATHERVANE_X_HI + 3] = 0x12;
+    ram[WEATHERVANE_Y_LO + 3] = 0x78;
+    ram[WEATHERVANE_Y_HI + 3] = 0x56;
+    ram[WEATHERVANE_Z + 3] = 0x21;
+    ram[WEATHERVANE_ANIM_TIMER + 3] = 1;
+    ram[WEATHERVANE_DRAW_STATE + 3] = 1;
+    let mut effects = EffectState::load_from_ram(&stale_ram);
 
     {
         let mut bridge =

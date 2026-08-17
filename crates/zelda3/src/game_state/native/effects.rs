@@ -84,13 +84,17 @@ impl EffectState {
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         self.door_debris.write_to_ram(ram);
-        self.angle_scratch.write_to_ram(ram);
-        self.quake_spell.write_to_ram(ram);
-        self.quake_bolts.write_to_ram(ram);
-        self.bombos_spell.write_to_ram(ram);
-        self.tower_seal.write_to_ram(ram);
-        self.happiness_pond_rupees.write_to_ram(ram);
-        self.weather_vane_debris.write_to_ram(ram);
+        // NOTE: the $7F58xx ancilla scratch states (angle_scratch, quake_spell, quake_bolts,
+        // bombos_spell, tower_seal, happiness_pond_rupees, weather_vane_debris, and
+        // sprites.ether_orbit) are intentionally NOT bulk-projected here. C aliases that
+        // window across mutually-exclusive effects — swordbeam_arr / ether_arr1 / quake_arr1
+        // / bombos_arr1 / breaktowerseal_var3 / weathervane_arr3 / happiness_pond_y_vel all
+        // name 0x15800 — and never re-stamps it: whichever effect is running owns it and the
+        // rest lie dormant. Projecting all of them every frame made it last-writer-wins, and
+        // ZELDA3_ASSERT_SCRATCH_CONFLICTS caught the real clobber: during a spin attack
+        // (ancilla 0x2b, which drives swordbeam_arr) a stale quake_bolts re-stamped 0x15800
+        // over the live sparkle angle. Each bridge is write-through and re-reads RAM before
+        // mutating (see the reload in every NativeEffect*BridgeMut::new).
         // Sprite-history scratch banks overlap entrance/digging effect scratch banks.
         // Project them explicitly through SpriteHistoryScratchState when that domain is active.
         self.entrance_effects.write_to_ram(ram);
@@ -173,6 +177,10 @@ pub(crate) struct NativeEffectAngleScratchBridgeMut<'a> {
 
 impl<'a> NativeEffectAngleScratchBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut EffectAngleScratchState, ram: &'a mut [u8]) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = EffectAngleScratchState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -306,6 +314,10 @@ pub(crate) struct NativeQuakeBoltBridgeMut<'a> {
 
 impl<'a> NativeQuakeBoltBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut QuakeBoltState, ram: &'a mut [u8], slot: usize) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = QuakeBoltState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -420,6 +432,10 @@ pub(crate) struct NativeQuakeSpellBridgeMut<'a> {
 
 impl<'a> NativeQuakeSpellBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut QuakeSpellState, ram: &'a mut [u8]) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = QuakeSpellState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -812,6 +828,10 @@ pub(crate) struct NativeBombosSpellBridgeMut<'a> {
 
 impl<'a> NativeBombosSpellBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8]) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = BombosSpellState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -875,6 +895,10 @@ pub(crate) struct NativeBombosFireColumnBridgeMut<'a> {
 
 impl<'a> NativeBombosFireColumnBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8], slot: usize) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = BombosSpellState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -934,6 +958,10 @@ pub(crate) struct NativeBombosBlastBridgeMut<'a> {
 
 impl<'a> NativeBombosBlastBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut BombosSpellState, ram: &'a mut [u8], slot: usize) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = BombosSpellState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -1172,6 +1200,10 @@ impl<'a> NativeHappinessPondRupeeBridgeMut<'a> {
         ram: &'a mut [u8],
         slot: usize,
     ) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = HappinessPondRupeesState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -1370,6 +1402,10 @@ impl<'a> NativeWeatherVaneDebrisBridgeMut<'a> {
         ram: &'a mut [u8],
         slot: usize,
     ) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = WeatherVaneDebrisState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -2279,6 +2315,10 @@ pub(crate) struct NativeTowerSealBridgeMut<'a> {
 
 impl<'a> NativeTowerSealBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8]) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = TowerSealState::load_from_ram(ram);
         Self { state, ram }
     }
 
@@ -2321,6 +2361,10 @@ pub(crate) struct NativeTowerSealOrbitBridgeMut<'a> {
 
 impl<'a> NativeTowerSealOrbitBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8], slot: usize) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = TowerSealState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 
@@ -2358,6 +2402,10 @@ pub(crate) struct NativeTowerSealSparkleBridgeMut<'a> {
 
 impl<'a> NativeTowerSealSparkleBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut TowerSealState, ram: &'a mut [u8], slot: usize) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *state = TowerSealState::load_from_ram(ram);
         Self { state, ram, slot }
     }
 

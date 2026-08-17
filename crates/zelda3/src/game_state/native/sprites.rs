@@ -228,7 +228,9 @@ impl SpriteState {
         self.enemy_damage_subclasses.write_to_ram(ram);
         self.tagalong_trail.write_to_ram(ram);
         self.chain_chomp_history.write_to_ram(ram);
-        self.ether_orbit.write_to_ram(ram);
+        // ether_orbit models part of the C-aliased $7F58xx ancilla scratch (it owns the
+        // swordbeam_temp_x/y alias too) and is write-through, not bulk-projected — see the
+        // note in EffectsState::write_to_ram.
         self.overworld_sprite_presence.write_to_ram(ram);
         self.overworld_sprite_loaded.write_to_ram(ram);
         self.failed_spin_sparkle_spawn.write_to_ram(ram);
@@ -6068,6 +6070,10 @@ pub(crate) struct NativeEtherOrbitBridgeMut<'a> {
 
 impl<'a> NativeEtherOrbitBridgeMut<'a> {
     pub(crate) fn new(orbit: &'a mut EtherOrbitState, ram: &'a mut [u8]) -> Self {
+        // The $7F58xx ancilla scratch is C-aliased across mutually-exclusive effects and is
+        // no longer bulk-projected (see EffectsState::write_to_ram). Re-read from RAM before
+        // mutating so a setter composes with whichever effect wrote the window last.
+        *orbit = EtherOrbitState::load_from_ram(ram);
         Self { orbit, ram }
     }
 
