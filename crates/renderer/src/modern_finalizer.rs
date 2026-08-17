@@ -106,13 +106,17 @@ impl ModernGpuFinalizer {
         let main_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("modern_finalize_main"),
             size: screen_bytes,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let sub_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("modern_finalize_sub"),
             size: screen_bytes,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
             mapped_at_creation: false,
         });
         let window_buffer = device.create_buffer(&wgpu::BufferDescriptor {

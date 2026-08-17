@@ -421,6 +421,10 @@ enum CpuHostPhase {
     /// NMI has not completed yet. CPU-authored buffers are therefore newer
     /// than the effective hardware DMA generation at this publication.
     ResumedCallStackBeforeNmi,
+    /// CPU work has reached the hardware wait loop, but the following NMI has
+    /// not completed yet. This covers both a resumed caller suffix and a fresh
+    /// main iteration which ran after the current interval's leading NMI.
+    ReturnedToMainLoopBeforeNmi,
     ReturnedToMainLoop,
 }
 
@@ -464,6 +468,7 @@ impl ScheduledGameWork {
             GameWorkContinuation::FinishItemReceiptGraphics {
                 continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
+                | GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
                 | GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
                 | GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
@@ -473,6 +478,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonSpriteMain { .. }
                 | GameWorkContinuation::FinishDungeonCachedSpriteMain { .. }
                 | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightEntry
                 | GameWorkContinuation::FinishBigKeyDropGraphics { .. }
         )
     }
@@ -632,6 +638,9 @@ pub(super) enum StartupSequenceStep {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GameExecutionContinuation {
     ScheduledWork(ScheduledGameWork),
+    /// The caller was interrupted by the preceding host's trailing NMI and
+    /// resumes at the start of this host without crossing another vblank.
+    AfterCurrentTrailingNmi(GameWorkContinuation),
     /// A translated call that crosses the current host frame's trailing NMI,
     /// then returns before `retro_run` reaches the following video boundary.
     /// Keeping this phase distinct prevents one-NMI calls from being resumed
@@ -651,6 +660,14 @@ pub(super) struct GameExecutionScheduler {
     /// next hardware interval therefore begins with an eligible leading NMI,
     /// even when the atomic port has not yet normalized its software latch.
     leading_nmi_follows_returned_main: bool,
+    /// The preceding host reached the main wait without consuming the next
+    /// NMI. The following callback must run that NMI before fresh main work.
+    leading_nmi_follows_unconsumed_main_return: bool,
+    /// The next translated main iteration begins after this callback's NMI.
+    /// If it reaches the wait loop without scheduling more work, the callback
+    /// must stop before the following NMI instead of reverting to the atomic
+    /// main-then-NMI ordering.
+    main_iteration_follows_leading_nmi: bool,
     /// The translated caller has returned through the leading NMI which
     /// starts a multi-state upload pipeline. This survives the one-shot
     /// continuation so later states can preserve that CPU/NMI ordering
@@ -670,6 +687,8 @@ impl GameExecutionScheduler {
     pub(super) fn begin_host_frame(&mut self) {
         self.leading_nmi_follows_returned_main =
             self.cpu_host_phase == CpuHostPhase::ReturnedToMainLoop;
+        self.leading_nmi_follows_unconsumed_main_return =
+            self.cpu_host_phase == CpuHostPhase::ReturnedToMainLoopBeforeNmi;
         self.cpu_host_phase = if self.work_suspends_translated_call_stack() {
             CpuHostPhase::SuspendedCallStack
         } else {
@@ -689,9 +708,20 @@ impl GameExecutionScheduler {
         debug_assert_eq!(self.cpu_host_phase, CpuHostPhase::MainLoopRunning);
         self.cpu_host_phase = if self.work_suspends_translated_call_stack() {
             CpuHostPhase::SuspendedCallStack
+        } else if self.main_iteration_follows_leading_nmi {
+            CpuHostPhase::ReturnedToMainLoopBeforeNmi
         } else {
             CpuHostPhase::ReturnedToMainLoop
         };
+        self.main_iteration_follows_leading_nmi = false;
+    }
+
+    pub(super) fn mark_main_iteration_after_leading_nmi(&mut self) {
+        debug_assert!(matches!(
+            self.cpu_host_phase,
+            CpuHostPhase::MainLoopReady | CpuHostPhase::ResumedCallStackBeforeNmi
+        ));
+        self.main_iteration_follows_leading_nmi = true;
     }
 
     pub(super) fn fresh_main_loop_iteration_is_ready(self) -> bool {
@@ -704,6 +734,47 @@ impl GameExecutionScheduler {
 
     pub(super) fn resumed_call_stack_is_before_nmi(self) -> bool {
         self.cpu_host_phase == CpuHostPhase::ResumedCallStackBeforeNmi
+    }
+
+    /// The current main-loop call stack reached an interruptible boundary and
+    /// is waiting for the NMI that suspended it. DMA at that boundary consumes
+    /// CPU-authored operands from the completed prefix, not the host-entry
+    /// snapshot retained for display publication.
+    pub(super) fn main_call_stack_is_suspended_before_nmi(self) -> bool {
+        self.cpu_host_phase == CpuHostPhase::SuspendedCallStack
+    }
+
+    /// Record that a translated caller suffix reached the main wait after this
+    /// host's NMI. Scheduled work enters through `ResumedCallStackBeforeNmi`;
+    /// continuations represented by another native state machine enter while
+    /// the scheduler is otherwise `MainLoopReady`.
+    pub(super) fn finish_call_stack_at_main_wait_before_nmi(&mut self) {
+        debug_assert!(matches!(
+            self.cpu_host_phase,
+            CpuHostPhase::MainLoopReady | CpuHostPhase::ResumedCallStackBeforeNmi
+        ));
+        debug_assert!(!self.work_suspends_translated_call_stack());
+        self.cpu_host_phase = CpuHostPhase::ReturnedToMainLoopBeforeNmi;
+    }
+
+    pub(super) fn main_return_requires_leading_nmi(self) -> bool {
+        self.leading_nmi_follows_unconsumed_main_return
+            && self.cpu_host_phase == CpuHostPhase::MainLoopReady
+            && !self.work_suspends_translated_call_stack()
+    }
+
+    pub(super) fn returned_main_is_waiting_for_nmi(self) -> bool {
+        self.cpu_host_phase == CpuHostPhase::ReturnedToMainLoopBeforeNmi
+    }
+
+    /// Record that the NMI following a completed atomic main iteration ran in
+    /// this host callback. A main iteration which returns after a leading NMI
+    /// deliberately does not call this method, so the next callback preserves
+    /// the same leading-NMI cadence without module-specific inference.
+    pub(super) fn finish_trailing_nmi_after_main_return(&mut self) {
+        if self.cpu_host_phase == CpuHostPhase::ReturnedToMainLoop {
+            self.cpu_host_phase = CpuHostPhase::AwaitingHostFrame;
+        }
     }
 
     fn schedule_continuation(&mut self, continuation: GameExecutionContinuation) {
@@ -758,6 +829,15 @@ impl GameExecutionScheduler {
         self.schedule_continuation(GameExecutionContinuation::PostTrailingNmi(continuation));
     }
 
+    pub(super) fn schedule_after_current_trailing_nmi(
+        &mut self,
+        continuation: GameWorkContinuation,
+    ) {
+        self.schedule_continuation(GameExecutionContinuation::AfterCurrentTrailingNmi(
+            continuation,
+        ));
+    }
+
     pub(super) fn schedule_file_select_graphics(&mut self) {
         self.schedule_continuation(GameExecutionContinuation::FileSelectGraphics(
             FileSelectGraphicsContinuation::begin(),
@@ -810,7 +890,10 @@ impl GameExecutionScheduler {
         self.scheduled_work().is_some()
             || matches!(
                 self.continuation,
-                Some(GameExecutionContinuation::PostTrailingNmi(_))
+                Some(
+                    GameExecutionContinuation::AfterCurrentTrailingNmi(_)
+                        | GameExecutionContinuation::PostTrailingNmi(_)
+                )
             )
     }
 
@@ -819,12 +902,14 @@ impl GameExecutionScheduler {
             .is_some_and(ScheduledGameWork::suspends_translated_call_stack)
             || matches!(
                 self.continuation,
-                Some(GameExecutionContinuation::PostTrailingNmi(_))
-                    | Some(GameExecutionContinuation::PreMainCaller(
-                        PreMainCallerContinuation::DungeonFadedFilterSecondPalettePass { .. }
-                            | PreMainCallerContinuation::SpiralStairsSecondPaletteFilter
-                            | PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter
-                    ))
+                Some(
+                    GameExecutionContinuation::AfterCurrentTrailingNmi(_)
+                        | GameExecutionContinuation::PostTrailingNmi(_)
+                ) | Some(GameExecutionContinuation::PreMainCaller(
+                    PreMainCallerContinuation::DungeonFadedFilterSecondPalettePass { .. }
+                        | PreMainCallerContinuation::SpiralStairsSecondPaletteFilter
+                        | PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter
+                ))
             )
     }
 
@@ -832,9 +917,10 @@ impl GameExecutionScheduler {
         self.scheduled_work()
             .map(|work| work.continuation)
             .or_else(|| match self.continuation {
-                Some(GameExecutionContinuation::PostTrailingNmi(continuation)) => {
-                    Some(continuation)
-                }
+                Some(
+                    GameExecutionContinuation::AfterCurrentTrailingNmi(continuation)
+                    | GameExecutionContinuation::PostTrailingNmi(continuation),
+                ) => Some(continuation),
                 _ => None,
             })
     }
@@ -842,6 +928,16 @@ impl GameExecutionScheduler {
     pub(super) fn take_post_trailing_nmi(&mut self) -> Option<GameWorkContinuation> {
         match self.continuation {
             Some(GameExecutionContinuation::PostTrailingNmi(continuation)) => {
+                self.continuation = None;
+                Some(continuation)
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn take_after_current_trailing_nmi(&mut self) -> Option<GameWorkContinuation> {
+        match self.continuation {
+            Some(GameExecutionContinuation::AfterCurrentTrailingNmi(continuation)) => {
                 self.continuation = None;
                 Some(continuation)
             }
@@ -872,6 +968,7 @@ impl GameExecutionScheduler {
             self.continuation,
             Some(
                 GameExecutionContinuation::ScheduledWork(_)
+                    | GameExecutionContinuation::AfterCurrentTrailingNmi(_)
                     | GameExecutionContinuation::PostTrailingNmi(_)
             )
         ) {
@@ -1192,6 +1289,13 @@ mod cpu_timing_tests {
     }
 
     #[test]
+    fn dungeon_exit_spotlight_entry_suspends_the_translated_call_stack() {
+        let work =
+            ScheduledGameWork::schedule(GameWorkContinuation::FinishDungeonExitSpotlightEntry, 1);
+        assert!(work.suspends_translated_call_stack());
+    }
+
+    #[test]
     fn resumed_caller_suffix_remains_before_the_following_nmi() {
         let mut scheduler = GameExecutionScheduler::default();
         let continuation = PreMainCallerContinuation::SpiralStairsSecondGrayscalePaletteFilter;
@@ -1222,7 +1326,7 @@ mod cpu_timing_tests {
     }
 
     #[test]
-    fn completed_scheduled_stack_reaches_the_next_main_loop_after_its_trailing_nmi() {
+    fn completed_scheduled_stack_and_following_main_preserve_leading_nmi_cadence() {
         let continuation = GameWorkContinuation::FinishDungeonSpriteMain {
             boundary: DungeonSpriteMainCpuBoundary::AfterSlot(3),
         };
@@ -1237,11 +1341,66 @@ mod cpu_timing_tests {
         assert!(scheduler.resumed_call_stack_is_before_nmi());
         assert!(scheduler.is_idle());
 
-        // The host dispatcher emits the trailing NMI after completing the
-        // resumed caller. Its following host entry is therefore ready to run
-        // the next main-loop iteration; no second NMI continuation belongs
-        // between those two phases.
+        scheduler.finish_call_stack_at_main_wait_before_nmi();
+
+        // The resumed suffix returned after this callback's NMI. The next
+        // callback must therefore consume another leading NMI before main.
         scheduler.begin_host_frame();
         assert!(scheduler.fresh_main_loop_iteration_is_ready());
+        assert!(scheduler.main_return_requires_leading_nmi());
+
+        scheduler.mark_main_iteration_after_leading_nmi();
+        scheduler.begin_main_loop_iteration();
+        scheduler.finish_main_loop_iteration();
+        scheduler.begin_host_frame();
+        assert!(scheduler.main_return_requires_leading_nmi());
+    }
+
+    #[test]
+    fn nmi_after_resumed_stack_marks_the_next_main_as_post_leading_nmi() {
+        let continuation = GameWorkContinuation::FinishDungeonSpriteMain {
+            boundary: DungeonSpriteMainCpuBoundary::AfterSlot(3),
+        };
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.schedule_work(continuation, 1);
+        scheduler.begin_host_frame();
+        assert_eq!(
+            scheduler.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Complete(continuation))
+        );
+        assert!(scheduler.resumed_call_stack_is_before_nmi());
+
+        // The resumed suffix reached a second NMI before the next fresh main
+        // iteration. Preserve that event across the host callback boundary.
+        scheduler.mark_main_iteration_after_leading_nmi();
+        scheduler.begin_host_frame();
+        scheduler.begin_main_loop_iteration();
+        scheduler.finish_main_loop_iteration();
+
+        assert!(scheduler.returned_main_is_waiting_for_nmi());
+    }
+
+    #[test]
+    fn completed_trailing_nmi_releases_atomic_main_for_the_next_host() {
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.begin_host_frame();
+        scheduler.begin_main_loop_iteration();
+        scheduler.finish_main_loop_iteration();
+        scheduler.finish_trailing_nmi_after_main_return();
+        scheduler.begin_host_frame();
+
+        assert!(scheduler.fresh_main_loop_iteration_is_ready());
+        assert!(!scheduler.main_return_requires_leading_nmi());
+    }
+
+    #[test]
+    fn native_caller_state_machine_can_return_to_wait_after_leading_nmi() {
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.begin_host_frame();
+        scheduler.finish_call_stack_at_main_wait_before_nmi();
+        scheduler.begin_host_frame();
+
+        assert!(scheduler.fresh_main_loop_iteration_is_ready());
+        assert!(scheduler.main_return_requires_leading_nmi());
     }
 }

@@ -114,6 +114,17 @@ pub struct PpuState {
     pub oam_second_write: bool,
     pub oam_buffer: u8,
 
+    /// Hardware H/V beam counters captured by a read from SLHV ($2137).
+    /// These latches are CPU-visible PPU state, independent of rendering.
+    #[serde(default)]
+    h_counter_latched: u16,
+    #[serde(default)]
+    v_counter_latched: u16,
+    #[serde(default)]
+    h_counter_high_byte: bool,
+    #[serde(default)]
+    v_counter_high_byte: bool,
+
     pub bg_layer: [BgLayer; 4],
     pub scroll_prev: u8,
     pub scroll_prev2: u8,
@@ -254,6 +265,10 @@ impl Default for PpuState {
             oam_adr: 0,
             oam_second_write: false,
             oam_buffer: 0,
+            h_counter_latched: 0,
+            v_counter_latched: 0,
+            h_counter_high_byte: false,
+            v_counter_high_byte: false,
             bg_layer: [BgLayer::default(); 4],
             scroll_prev: 0,
             scroll_prev2: 0,
@@ -324,6 +339,10 @@ impl PpuState {
         self.oam_adr = 0;
         self.oam_second_write = false;
         self.oam_buffer = 0;
+        self.h_counter_latched = 0;
+        self.v_counter_latched = 0;
+        self.h_counter_high_byte = false;
+        self.v_counter_high_byte = false;
         self.obj_tile_adr1 = 0x4000;
         self.obj_tile_adr2 = 0x5000;
         self.obj_size = 0;
@@ -429,14 +448,40 @@ impl PpuState {
         Ok(())
     }
 
-    /// `ppu_read` ($2134..$213f). The C version returns 0xff for nearly
-    /// everything; only $34..$36 (multiplication latch) are non-trivial.
+    pub fn latch_counters(&mut self, h_counter: u16, v_counter: u16) {
+        self.h_counter_latched = h_counter;
+        self.v_counter_latched = v_counter;
+    }
+
+    fn read_latched_counter(value: u16, high_byte: &mut bool) -> u8 {
+        let result = if *high_byte {
+            ((value >> 8) & 1) as u8
+        } else {
+            value as u8
+        };
+        *high_byte = !*high_byte;
+        result
+    }
+
+    /// `ppu_read` ($2134..$213f), including the CPU-visible beam-counter
+    /// latches used by raster synchronization loops.
     pub fn read(&mut self, adr: u8) -> u8 {
         match adr {
             0x34 | 0x35 | 0x36 => {
                 let result =
                     (self.m7_matrix[0] as i32).wrapping_mul((self.m7_matrix[1] >> 8) as i32);
                 ((result as u32) >> (8 * (adr - 0x34) as u32) & 0xff) as u8
+            }
+            0x3c => {
+                Self::read_latched_counter(self.h_counter_latched, &mut self.h_counter_high_byte)
+            }
+            0x3d => {
+                Self::read_latched_counter(self.v_counter_latched, &mut self.v_counter_high_byte)
+            }
+            0x3f => {
+                self.h_counter_high_byte = false;
+                self.v_counter_high_byte = false;
+                0xff
             }
             _ => 0xff,
         }
@@ -2667,5 +2712,19 @@ mod tests {
         assert!(loaded.bg_layer[2].tilemap_higher);
         assert_eq!(loaded.bg_layer[2].tilemap_adr, 0x789a);
         assert_eq!(loaded.bg_layer[2].tile_adr, 0);
+    }
+
+    #[test]
+    fn beam_counter_reads_follow_the_latched_raster_position() {
+        let mut ppu = PpuState::new();
+        ppu.latch_counters(0x0123, 0x00c0);
+
+        // STAT78 resets the high/low read toggles. Zelda's spotlight wait
+        // reads it between SLHV and OPVCT, then compares OPVCT's low byte.
+        assert_eq!(ppu.read(0x3f), 0xff);
+        assert_eq!(ppu.read(0x3d), 0xc0);
+        assert_eq!(ppu.read(0x3d), 0x00);
+        assert_eq!(ppu.read(0x3c), 0x23);
+        assert_eq!(ppu.read(0x3c), 0x01);
     }
 }

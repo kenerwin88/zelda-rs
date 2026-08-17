@@ -54,7 +54,9 @@ def frame_boundaries(events: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     return [event for event in events if event.get("event") == "frame"]
 
 
-def summarize(path: Path, host_frame: int, resume_frame: int) -> str:
+def summarize(
+    path: Path, host_frame: int, resume_frame: int, hdma_channel: int | None = None
+) -> str:
     run = host_frame - resume_frame
     if run < 0:
         raise SystemExit(
@@ -120,6 +122,33 @@ def summarize(path: Path, host_frame: int, resume_frame: int) -> str:
             f"bytes={dma.get('bytes')} mode={dma.get('mode')}{destination}"
         )
 
+    hdma_starts = [event for event in events if event.get("event") == "hdma-start"]
+    lines.append(f"HDMA scanlines: {len(hdma_starts)}")
+    if hdma_channel is not None:
+        if not 0 <= hdma_channel < 8:
+            raise SystemExit("--hdma-channel must be in 0..7")
+        selected = []
+        for event in hdma_starts:
+            for channel in event.get("channel_state", []):
+                if channel.get("channel") == hdma_channel:
+                    selected.append((event, channel))
+        if hdma_starts and not selected:
+            raise SystemExit(
+                f"trace has HDMA events for run {run}, but no channel_state for "
+                f"channel {hdma_channel}; rebuild the instrumented core"
+            )
+        lines.append(f"HDMA channel {hdma_channel} transfers: {len(selected)}")
+        for event, channel in selected:
+            data = " ".join(f"{int(value):02x}" for value in channel.get("data", []))
+            lines.append(
+                "  "
+                f"frame={event.get('frame')} raster={event.get('v')}:{event.get('cycles')} "
+                f"src={hex_address(int(channel.get('source', 0)))} "
+                f"table=${int(channel.get('table_address', 0)):04x} "
+                f"line={channel.get('line_count')} repeat={channel.get('repeat')} "
+                f"transfer={channel.get('do_transfer')} data=[{data}]"
+            )
+
     pixels = [event for event in events if event.get("event") == "pixel-write"]
     lines.append(f"captured pixel writes: {len(pixels)}")
     for pixel in pixels:
@@ -153,8 +182,20 @@ def main() -> None:
         default=0,
         help="absolute host frame represented by trace run 0 (default: 0)",
     )
+    parser.add_argument(
+        "--hdma-channel",
+        type=int,
+        help="include exact per-scanline source/data receipts for channel 0..7",
+    )
     args = parser.parse_args()
-    print(summarize(args.trace, args.host_frame, args.resume_frame))
+    print(
+        summarize(
+            args.trace,
+            args.host_frame,
+            args.resume_frame,
+            hdma_channel=args.hdma_channel,
+        )
+    )
 
 
 if __name__ == "__main__":

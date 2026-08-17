@@ -38,7 +38,9 @@ RAM write-watchpoints, and Rust-vs-Rust WRAM dumps
 Do NOT consult or reference the old parity baseline tooling; this repo's own code
 plus the
 Snes9x oracle are the only references.
-`zparity` now exists solely for the `coverage` subcommand (route coverage).
+`zparity` provides route coverage plus the typed Rust evidence plane used by
+`./parity trace-index`, `./parity trace-query`, and `./parity cache-verify`.
+It does not replace the pinned live Snes9x A/V authority.
 
 ## Common bug classes (almost every root is one of these) + fix recipes
 
@@ -170,6 +172,40 @@ See memory [[checkpoint-resume-debugging]].
 
 ## Parity-debugging tools (`scripts/`) — prefer these, in this order
 
+Before the numbered root-cause tools, run `./parity status` plus
+`./parity doctor` and use
+`./parity microscope --frontier <frame> ...` for the focused evidence window.
+The microscope pins the replay bundle and binary, expands both LoROM PC mirrors,
+maps route frames only through zero-based `retro_run`, symbolicates against the
+local C checkout for development evidence, and caches oracle-only artifacts by
+content hash. It refuses unfiltered PC/WRAM traces. See
+`docs/parity/frontier-microscope.md`. A microscope result is diagnostic; only
+two cold exact A/V receipts followed by `./parity promote` can update the
+commit-bound `routes/full_run/parity-frontier.json` ledger.
+Checkpointed traces default to only the last 12 internal frames, and the
+automatic CPU-checkpoint join maps Rust's absolute host frame through the
+session manifest before comparing it to Snes9x `retro_run`. `./parity inspect
+<session>` rejects legacy resumed traces that mislabeled the absolute frame as
+a window-relative run. Completed microscope runs also build a hash-bound Rust
+seek index when `target/parity/zparity` is available. Use `./parity trace-query
+<session> --host-frame N [--pc PC] [--wram RANGE]` to return exact source JSONL
+records without reparsing the whole trace; the query rejects changed trace or
+manifest bytes. `./parity cache-verify` independently verifies the immutable
+oracle cache in Rust. New sessions also write a complete canonical A/V hash
+ledger for every compared frame. `./parity av-compare <session>` checks its Rust
+RGB/audio hashes against the oracle-only cached ledger; `./parity
+receipt-compare <session>` recursively checks the sampled semantic receipts.
+These are fast regression/diagnostic tiers. They never promote the frontier;
+two cold pinned-core exact A/V receipts are still required. `./parity cached-av
+<cache>` is the no-Snes9x iteration path: it verifies a cold contiguous cache,
+replays Rust from its bound input, RNG, SRAM, and audio schedule, and stops at
+the first canonical A/V hash mismatch. It intentionally rejects resumed caches
+until a Rust starting checkpoint is independently bound to that cache.
+Create a complete cache with `./parity oracle-av-capture <source-session>
+--frames N`. It runs only pinned Snes9x, binds input, recorded RNG, SRAM, core,
+and ROM provenance, and explicitly records `oracle_captured` rather than a
+parity pass. A Rust regression therefore cannot truncate the reusable oracle.
+
 0. **`ZELDA3_ASSERT_NATIVE_COHERENT` — the native↔RAM coherence checker (RUN THIS
    FIRST for any "inputs match but the action diverges" bug).** The dominant remaining
    bug class is a native sub-state model drifting out of sync with RAM mid-frame — a
@@ -222,9 +258,11 @@ See memory [[checkpoint-resume-debugging]].
    one atomic load + compare per write (negligible). Used to prove the 0x10000 gfx cluster
    is a graphics-load *timing* divergence, not a byte-ownership bug.
 
-4. **`zparity coverage` (`crates/parity`)** — route-coverage reports/worklists for replay
-  probes. (The former capture/check/drill parity subcommands were retired with the
-  legacy parity pipeline.)
+4. **`zparity` (`crates/parity`)** — typed, streaming parity evidence tools.
+  `coverage` produces route-coverage reports/worklists; `trace-index` and
+  `trace-query` provide provenance-bound random access to original trace JSONL;
+  `cache-verify` validates cache identities and every artifact hash. (The former
+  capture/check/drill parity subcommands were retired with the legacy pipeline.)
 
 5. **`parity_probe.py --around <frame>`** — one-command repro of a Snes9x divergence
   window. Reuses a coverage-sufficient cold pre-commit `run-*/` input by default;

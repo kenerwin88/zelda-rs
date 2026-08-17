@@ -21,7 +21,31 @@ half-fix.
 
 ## Workflow
 
-1. Run the route comparison to find the earliest current divergence
+1. Run `./parity status` and `./parity doctor`, then use
+   `./parity microscope --frontier <frame>` for
+   the first focused evidence window. It validates replay coverage/provenance,
+   maps host frames through `retro_run`, symbolicates both LoROM mirrors, and
+   writes a reproducible report plus immutable oracle cache entry. Treat it as
+   diagnostic evidence, not parity authority. Checkpointed traces are
+   auto-bounded to the last 12 internal frames by default; widen with
+   `--trace-tail-frames` only when the causal event is earlier. Use `./parity
+   inspect <session>` before manually joining Rust and oracle coordinates.
+   For repeated trace inspection, use `./parity trace-index <session>` once and
+   `./parity trace-query <session> --host-frame N ...`; the Rust index is bound
+   to both trace and manifest hashes and emits exact source JSONL records. Run
+   `./parity cache-verify` when validating reusable oracle evidence independently.
+   Use `./parity receipt-compare <session>` for sampled semantic domains and
+   `./parity av-compare <session>` for the complete canonical per-compared-frame
+   RGB/audio hash ledger. The latter is a fast cached regression tier, not cold
+   live-Snes9x promotion authority. For ordinary iterations after a cold cache
+   exists, run `./parity cached-av <cache>`; it replays Rust only and does not
+   load Snes9x. It currently requires a cold contiguous cache starting and
+   comparing at frame zero.
+   If no complete cache exists, create it with `./parity oracle-av-capture
+   <source-session> --frames N`. That command runs Snes9x only, so current Rust
+   divergence cannot truncate the reference. It is evidence generation, not a
+   cold parity pass.
+2. Run the route comparison to find the earliest current divergence
    (`compare-route --project routes/full_run`; add `--no-build` if the release
    binary is already current). It writes a full `replay.sh` into
    `routes/full_run/comparisons/continuous/` — copy it and shrink the frame count
@@ -37,13 +61,13 @@ half-fix.
    repro, any pass that increases `last_checked_frame` must still be treated as a
    ratchet milestone and committed immediately.
    Do not run any C-oracle scripts or C-checkpoint bisectors in this lane.
-2. Use checkpoint resume (`--save-state-at` / `--load-state`) for any probe
+3. Use checkpoint resume (`--save-state-at` / `--load-state`) for any probe
    beyond a few thousand frames — never re-replay from frame 0 repeatedly.
-3. Root-cause with the standard toolchain in order:
+4. Root-cause with the standard toolchain in order:
    `ZELDA3_ASSERT_NATIVE_COHERENT` first for "inputs match but the action
    diverges", then `find_dual_ownership.py`, `whoowns.py <addr>`,
    `ZELDA3_WW_ADDR` write-watchpoints, `ZELDA3_WW_BACKTRACE`.
-4. Classify the bug into one of the four known classes (stale bulk-projection
+5. Classify the bug into one of the four known classes (stale bulk-projection
    clobber, oversized table, bounded-read-vs-raw-RAM, missing write/branch)
    and apply the matching recipe from CLAUDE.md. If it fits none of them, say
    so explicitly and describe the new class before fixing.
@@ -115,6 +139,11 @@ revisit the same divergence window.
   milestone**: run pre-commit again with no new args as a post-fix proof before
   you commit. Use the final front (`last_checked_frame` in state) as the new
   session target in the same run.
+- Each cold exact A/V pass writes a content-addressed local proof receipt. After
+  the implementation is committed and the tree is clean, `./parity promote`
+  requires two distinct receipts for the same binary and records the lower
+  twice-proven frontier against the exact commit in
+  `routes/full_run/parity-frontier.json`.
 - If `ZELDA3_PRECOMMIT_TARGET_FRAME` is used explicitly for a focused run, the
   gate must still update ratchet state upward on pass and you should immediately
   re-run the gate to confirm the next frontier is stable.

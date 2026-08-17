@@ -2767,6 +2767,12 @@ impl FrameRenderer {
         Some(out)
     }
 
+    pub fn read_modern_gpu_screen_pixel(&self, x: u32, y: u32) -> Option<(u32, u32)> {
+        self.modern_gpu
+            .as_ref()?
+            .read_screen_pixel(&self.device, &self.queue, x, y)
+    }
+
     fn maybe_log_viewport(&mut self) {
         if !self.log_viewport {
             return;

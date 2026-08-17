@@ -42,6 +42,11 @@ pub struct Snes {
     /// serialize only the original scheduler fields.
     #[serde(skip)]
     pub cpu_bus_master_cycles: u32,
+    /// Optional per-instruction CPU write receipt used by isolated timing
+    /// shadows. Production emulation leaves this disabled, so ordinary CPU
+    /// writes do not allocate or retain trace data.
+    #[serde(skip)]
+    pub debug_cpu_write_trace: Option<Vec<(u32, u8)>>,
     pub apu_catchup_cycles: f64,
 
     // nmi / irq
@@ -93,6 +98,7 @@ impl Snes {
             cpu_cycles_left: 0,
             cpu_mem_ops: 0,
             cpu_bus_master_cycles: 0,
+            debug_cpu_write_trace: None,
             apu_catchup_cycles: 0.0,
             h_irq_enabled: false,
             v_irq_enabled: false,
@@ -330,6 +336,10 @@ impl Snes {
 
     pub fn read_b_bus(&mut self, adr: u8) -> u8 {
         if adr < 0x40 {
+            if adr == 0x37 {
+                self.ppu.latch_counters(self.h_pos / 4, self.v_pos);
+                return self.open_bus;
+            }
             return self.ppu.read(adr);
         }
         if adr < 0x80 {
@@ -578,6 +588,9 @@ impl Snes {
         self.cpu_cycles_left = self
             .cpu_cycles_left
             .wrapping_add(self.access_time(full_adr));
+        if let Some(trace) = self.debug_cpu_write_trace.as_mut() {
+            trace.push((full_adr & 0x00ff_ffff, val));
+        }
         self.write(full_adr, val);
     }
 }
@@ -620,6 +633,21 @@ mod tests {
         assert_eq!(snes.read(0x0000_1234), 0xab);
         // banks 7e/7f mirror the same low WRAM at offset 0x1234.
         assert_eq!(snes.read(0x007e_1234), 0xab);
+    }
+
+    #[test]
+    fn cpu_write_receipts_are_opt_in_and_preserve_full_bus_addresses() {
+        let mut snes = Snes::new();
+        snes.cpu_write(0x7e_1234, 0xab);
+        assert!(snes.debug_cpu_write_trace.is_none());
+
+        snes.debug_cpu_write_trace = Some(Vec::new());
+        snes.cpu_write(0x7e_1234, 0xcd);
+        snes.cpu_write(0x00_1234, 0xef);
+        assert_eq!(
+            snes.debug_cpu_write_trace.as_deref(),
+            Some(&[(0x7e_1234, 0xcd), (0x00_1234, 0xef)][..])
+        );
     }
 
     #[test]

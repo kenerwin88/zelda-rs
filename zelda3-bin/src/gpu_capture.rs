@@ -42,6 +42,8 @@ const PLAYER_IS_INDOORS: usize = 0x001b;
 const MAIN_MODULE_INDEX: usize = 0x10;
 
 pub struct LiveGpuFrameCapture {
+    comparison_frame: Option<u32>,
+    host_frame: u32,
     hardware_startup_transient: Option<renderer::gpu_frame::HardwareStartupTransient>,
     ppu: snes::ppu::PpuState,
     cgram: Vec<u16>,
@@ -120,11 +122,30 @@ pub(crate) struct NativeWindowOracleRenderer {
 
 impl LiveGpuFrameCapture {
     pub fn from_game(game: &mut ZeldaState) -> Self {
-        game.with_display_snapshot(Self::from_current_game)
+        game.with_display_snapshot(|game| Self::from_current_game_with_probe_frame(game, None))
     }
 
+    #[cfg(test)]
     fn from_current_game(game: &mut ZeldaState) -> Self {
+        Self::from_current_game_with_probe_frame(game, None)
+    }
+
+    fn from_game_at_comparison_frame(game: &mut ZeldaState, comparison_frame: u32) -> Self {
+        game.with_display_snapshot(|game| {
+            Self::from_current_game_with_probe_frame(game, Some(comparison_frame))
+        })
+    }
+
+    fn from_current_game_with_probe_frame(
+        game: &mut ZeldaState,
+        comparison_frame: Option<u32>,
+    ) -> Self {
         let cgram = game.cgram_after_first_hdma_line();
+        let debug_target_frame = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok());
+        let probe_frame = comparison_frame.unwrap_or(game.frame_ctr_dbg);
+        let debug_this_frame = debug_target_frame.is_none_or(|frame| frame == probe_frame);
         // Capture-point audit (see also the commit-point audit in `commit_palette_provenance_cgram`):
         // the modern renderer substitutes the mirror's committed CGRAM image for the live PPU CGRAM,
         // so audit them here — every captured frame — against the base (pre-HDMA) PPU CGRAM. This is
@@ -155,8 +176,49 @@ impl LiveGpuFrameCapture {
                 }
             }
         }
+        if let Some(index) = debug_this_frame
+            .then(|| std::env::var("ZELDA3_DEBUG_CGRAM_INDEX").ok())
+            .flatten()
+            .and_then(|value| {
+                value
+                    .strip_prefix("0x")
+                    .and_then(|hex| usize::from_str_radix(hex, 16).ok())
+                    .or_else(|| value.parse::<usize>().ok())
+            })
+            .filter(|&index| index < cgram.len() && index < game.ppu.cgram.len())
+        {
+            let provenance = game.cgram_provenance_snapshot();
+            eprintln!(
+                "renderer_cgram_index host={} index={index:02x} ppu={:04x} after_hdma={:04x} provenance={:04x} known={}",
+                game.frame_ctr_dbg,
+                game.ppu.cgram[index],
+                cgram[index],
+                provenance.words[index],
+                provenance.known[index],
+            );
+        }
         let raw_scanlines = game.ppu_scanline_windows();
+        if debug_this_frame && std::env::var_os("ZELDA3_DEBUG_CGRAM_INDEX").is_some() {
+            eprintln!(
+                "renderer_scanline_registers host={} ppu_tm={:02x} line0_tm={:02x} line40_tm={:02x} line223_tm={:02x}",
+                game.frame_ctr_dbg,
+                game.ppu.screen_enabled[0],
+                raw_scanlines[0].4,
+                raw_scanlines[40].4,
+                raw_scanlines[223].4,
+            );
+        }
         let ppu = game.ppu.clone();
+        if debug_target_frame.is_some_and(|frame| frame == probe_frame) {
+            eprintln!(
+                "renderer_vram_frame comparison={comparison_frame:?} host={} hud={:04x}/{:04x}/{:04x}/{:04x}",
+                game.frame_ctr_dbg,
+                ppu.vram[0x60b9],
+                ppu.vram[0x60ba],
+                ppu.vram[0x60d9],
+                ppu.vram[0x60da],
+            );
+        }
         if std::env::var("ZELDA3_DEBUG_DISPLAY_OBJ_VRAM_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok())
@@ -323,6 +385,8 @@ impl LiveGpuFrameCapture {
         let player_indoors = game.ram[PLAYER_IS_INDOORS];
         let cgram_provenance = game.cgram_provenance_snapshot();
         Self {
+            comparison_frame,
+            host_frame: game.frame_ctr_dbg,
             hardware_startup_transient: snes9x_boot_material(
                 game.frame_ctr_dbg,
                 game.ram[MAIN_MODULE_INDEX],
@@ -346,6 +410,28 @@ impl LiveGpuFrameCapture {
             player_indoors,
             cgram_provenance,
         }
+    }
+
+    /// Exact PPU generation captured by the native-window renderer.
+    ///
+    /// Parity diagnostics must inspect this receipt instead of invoking
+    /// `with_display_snapshot` a second time after presentation: display
+    /// history can legitimately advance as the first capture retires.
+    pub(crate) fn presented_ppu(&self) -> &snes::ppu::PpuState {
+        &self.ppu
+    }
+
+    /// Per-scanline register image consumed by the same rendered frame.
+    pub(crate) fn presented_scanlines(&self) -> &RawScanlineFrame {
+        &self.raw_scanlines
+    }
+
+    pub(crate) fn comparison_frame(&self) -> Option<u32> {
+        self.comparison_frame
+    }
+
+    pub(crate) fn host_frame(&self) -> u32 {
+        self.host_frame
     }
 
     pub fn capture_input(&self) -> renderer::GpuFrameCaptureInput<'_> {
@@ -670,18 +756,123 @@ impl NativeWindowOracleRenderer {
     pub(crate) fn render_game_rgba(
         &mut self,
         game: &mut ZeldaState,
+        comparison_frame: u32,
     ) -> Result<GpuRgbaReadbackFrame, String> {
-        let capture = capture_gpu_frame_from_game(game);
+        self.render_game_rgba_with_capture(game, comparison_frame)
+            .map(|(frame, _)| frame)
+    }
+
+    pub(crate) fn render_game_rgba_with_capture(
+        &mut self,
+        game: &mut ZeldaState,
+        comparison_frame: u32,
+    ) -> Result<(GpuRgbaReadbackFrame, LiveGpuFrameCapture), String> {
+        let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(game, comparison_frame);
+        let debug_vram_frame = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok());
+        if debug_vram_frame.is_none_or(|frame| frame == comparison_frame) {
+            if let Ok(pixel) = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_PIXEL") {
+                if let Some((x, y)) = pixel
+                    .split_once(',')
+                    .and_then(|(x, y)| Some((x.parse::<i16>().ok()?, y.parse::<i16>().ok()?)))
+                {
+                    for line in trace_modern_asset_capture_pixel(
+                        &capture,
+                        self.resources.source_atlas(),
+                        self.resources.variant_atlas(),
+                        x,
+                        y,
+                    )? {
+                        eprintln!("renderer_input_{line}");
+                    }
+                    if let Some(atlas) = self.resources.source_atlas() {
+                        let gpu_frame = capture.gpu_frame();
+                        let src_table =
+                            renderer::source_table_from_entries(capture.source_entries());
+                        let software =
+                            renderer::modern_extract::render_modern_frame_full_scaled_from_sources(
+                                &gpu_frame,
+                                &src_table,
+                                atlas,
+                                &renderer::modern_hd_overrides::HdOverrideCtx::disabled(),
+                                1,
+                            );
+                        let offset = (y as usize * 256 + x as usize) * 4;
+                        let headless_pixel = self
+                            .resources
+                            .variant_headless()
+                            .and_then(|headless| {
+                                headless
+                                    .render_live_gpu_rgba_from_sources(
+                                        &gpu_frame,
+                                        &src_table,
+                                        atlas,
+                                        "palette_dung_bg_main",
+                                        "palette_main_spr",
+                                    )
+                                    .ok()
+                            })
+                            .map(|(rgba, _)| rgba[offset..offset + 4].to_vec());
+                        let fresh_gpu = renderer::ModernGpuHeadless::new()
+                            .render_rgba_from_sources(&gpu_frame, &src_table, atlas);
+                        eprintln!(
+                            "renderer_input_registers screen={:02x?} windowed={:02x?} brightness={} math={:02x} subtract={} half={} add_subscreen={} fixed={:02x}/{:02x}/{:02x} clip={} prevent={} windowsel={:08x} software_pixel={:02x?} headless_gpu_pixel={headless_pixel:02x?} fresh_gpu_pixel={:02x?}",
+                            gpu_frame.screen_enabled,
+                            gpu_frame.screen_windowed,
+                            gpu_frame.brightness,
+                            gpu_frame.math_enabled,
+                            gpu_frame.subtract_color,
+                            gpu_frame.half_color,
+                            gpu_frame.add_subscreen,
+                            gpu_frame.fixed_color_r,
+                            gpu_frame.fixed_color_g,
+                            gpu_frame.fixed_color_b,
+                            gpu_frame.clip_mode,
+                            gpu_frame.prevent_math_mode,
+                            gpu_frame.windowsel,
+                            &software[offset..offset + 4],
+                            &fresh_gpu[offset..offset + 4],
+                        );
+                        eprintln!(
+                            "renderer_input_vwf_runs count={} message={:?} origin={:?} runs={:?}",
+                            capture.bg3_vwf_glyph_runs.len(),
+                            capture.dialogue_message_id,
+                            capture.dialogue_layout_origin_tile_number,
+                            capture.bg3_vwf_glyph_runs,
+                        );
+                    }
+                }
+            }
+        }
         let report = self.frontend.present_modern_asset_live_frame_from_entries(
             capture.modern_asset_present_input(&self.resources, &mut self.live_stats),
         );
         if let Some(reason) = report.failure_line() {
             return Err(format!("native window renderer rejected frame: {reason}"));
         }
-        self.frontend
-            .read_modern_gpu_target_rgba()
-            .map(GpuRgbaReadbackFrame::from_rgba)
-            .ok_or_else(|| "native window renderer did not produce a modern GPU target".to_string())
+        drop(report);
+        let frame = self.frontend.read_modern_gpu_target_rgba().ok_or_else(|| {
+            "native window renderer did not produce a modern GPU target".to_string()
+        })?;
+        if debug_vram_frame.is_none_or(|target| target == comparison_frame) {
+            if let Ok(pixel) = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_PIXEL") {
+                if let Some((x, y)) = pixel
+                    .split_once(',')
+                    .and_then(|(x, y)| Some((x.parse::<u32>().ok()?, y.parse::<u32>().ok()?)))
+                {
+                    if let Some((main, sub)) = self.frontend.read_modern_gpu_screen_pixel(x, y) {
+                        let offset = (y as usize * 256 + x as usize) * 4;
+                        eprintln!(
+                            "renderer_production_pixel comparison={comparison_frame} host={} xy={x},{y} main={main:08x} sub={sub:08x} output={:02x?}",
+                            game.frame_ctr_dbg,
+                            &frame[offset..offset + 4],
+                        );
+                    }
+                }
+            }
+        }
+        Ok((GpuRgbaReadbackFrame::from_rgba(frame), capture))
     }
 
     pub(crate) fn trace_game_pixel(
@@ -719,6 +910,29 @@ fn trace_modern_asset_capture_pixel(
     );
     let mut output = trace_raw_obj_pixel_candidates(&frame, x, y);
     output.extend(trace_raw_vram_bg_pixel_candidates(&frame, x, y));
+    for layer in assets.frame.bg_layers.iter().take(3) {
+        for (packet, instance) in layer.index_tiles.iter().enumerate() {
+            let local_x = i32::from(x) - i32::from(instance.screen_x);
+            let local_y = i32::from(y) - i32::from(instance.screen_y);
+            if !(0..8).contains(&local_x) || !(0..8).contains(&local_y) {
+                continue;
+            }
+            let Some(cell) = assets.bg_cells.get(instance.cell_id as usize) else {
+                continue;
+            };
+            let index = cell.indices[local_y as usize * 8 + local_x as usize];
+            output.push(format!(
+                "surface=bg_base packet={packet} layer={} cell={} screen=({}, {}) local=({local_x}, {local_y}) palette_row={} priority={} index={index} source_key={:016x}",
+                layer.index,
+                instance.cell_id,
+                instance.screen_x,
+                instance.screen_y,
+                instance.palette,
+                u8::from(instance.priority),
+                cell.source_key,
+            ));
+        }
+    }
     for (packet, instance) in assets.frame.index_sprites.iter().enumerate() {
         let local_x = i32::from(x) - i32::from(instance.screen_x);
         let local_y = i32::from(y) - i32::from(instance.screen_y);
@@ -1789,6 +2003,19 @@ mod tests {
     }
 
     #[test]
+    fn validation_cache_key_distinguishes_presentation_register_publication() {
+        let mut game = ZeldaState::new();
+        let before = LiveGpuFrameCapture::from_current_game(&mut game);
+        let before_key = validation_cache_key(&before);
+
+        game.ppu.screen_enabled[0] ^= 1;
+        let after = LiveGpuFrameCapture::from_current_game(&mut game);
+
+        assert_ne!(before_key, validation_cache_key(&after));
+        assert_ne!(before.raw_scanlines, after.raw_scanlines);
+    }
+
+    #[test]
     fn dialogue_glyph_source_matcher_loads_generated_png_tiles() {
         let matcher = DialogueGlyphSourceMatcher::load(&repo_root())
             .expect("dialogue glyph source PNG matcher should load");
@@ -1841,6 +2068,8 @@ mod tests {
             scanline.6[2] = 0;
         }
         let capture = LiveGpuFrameCapture {
+            comparison_frame: None,
+            host_frame: 0,
             hardware_startup_transient: None,
             ppu,
             cgram: vec![0u16; 256],
@@ -1912,6 +2141,8 @@ mod tests {
             scanline.6[2] = 0;
         }
         let capture = LiveGpuFrameCapture {
+            comparison_frame: None,
+            host_frame: 0,
             hardware_startup_transient: None,
             ppu,
             cgram: vec![0u16; 256],
@@ -1964,6 +2195,8 @@ mod tests {
         indices[8] = 3;
         encode_2bpp_tile(&mut ppu.vram, 0x1000, 999, &indices);
         let capture = LiveGpuFrameCapture {
+            comparison_frame: None,
+            host_frame: 0,
             hardware_startup_transient: None,
             ppu,
             cgram: vec![0u16; 256],
@@ -2068,6 +2301,8 @@ mod tests {
 
     fn test_bg3_capture(ppu: snes::ppu::PpuState) -> LiveGpuFrameCapture {
         LiveGpuFrameCapture {
+            comparison_frame: None,
+            host_frame: 0,
             hardware_startup_transient: None,
             ppu,
             cgram: vec![0u16; 256],
@@ -2204,6 +2439,8 @@ mod tests {
         let mut cgram = vec![0u16; 256];
         cgram[1] = 0x7fff;
         let capture = LiveGpuFrameCapture {
+            comparison_frame: None,
+            host_frame: 0,
             hardware_startup_transient: None,
             ppu,
             cgram,

@@ -3987,6 +3987,49 @@ impl ModernGpuCompositor {
         )
     }
 
+    /// Read the packed MAIN/SUB inputs produced for one pixel by the persistent
+    /// screen builder. This is a diagnostic boundary: comparing these words to
+    /// the software compositor separates scene construction from final color
+    /// math without changing either render path.
+    pub fn read_screen_pixel(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        x: u32,
+        y: u32,
+    ) -> Option<(u32, u32)> {
+        if x >= u32::from(crate::modern_frame::MODERN_FRAME_WIDTH)
+            || y >= u32::from(crate::modern_frame::MODERN_FRAME_HEIGHT)
+        {
+            return None;
+        }
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("modern_screen_pixel_readback"),
+            size: 8,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let source_offset = u64::from(y * 256 + x) * 4;
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("modern_screen_pixel_readback"),
+        });
+        encoder.copy_buffer_to_buffer(&self.finalizer.main_buffer, source_offset, &staging, 0, 4);
+        encoder.copy_buffer_to_buffer(&self.finalizer.sub_buffer, source_offset, &staging, 4, 4);
+        queue.submit([encoder.finish()]);
+
+        let slice = staging.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("GPU poll failed during screen-pixel readback");
+        let mapped = slice.get_mapped_range();
+        let main = u32::from_le_bytes(mapped[0..4].try_into().unwrap());
+        let sub = u32::from_le_bytes(mapped[4..8].try_into().unwrap());
+        drop(mapped);
+        staging.unmap();
+        Some((main, sub))
+    }
+
     fn render_with_screen_builder_status(
         &self,
         device: &wgpu::Device,

@@ -477,6 +477,8 @@ struct DisplayPublicationCandidateProbe {
 
 #[derive(Debug, Serialize)]
 struct DisplayPublicationContextProbe {
+    render_host_frame: u32,
+    publication_host_frame: u32,
     entry_frame: [u8; 4],
     following_frame: [u8; 4],
     dungeon_room: u8,
@@ -488,10 +490,14 @@ struct DisplayPublicationContextProbe {
     link_obj_scanout_generation: String,
     link_obj_source_generation: String,
     captured_to_host_oam_mismatches: usize,
+    oam_dma_completed_after_active_scanout: bool,
 }
 
 #[derive(Debug, Serialize)]
 struct DisplayPpuProbe {
+    capture_source: &'static str,
+    comparison_frame: Option<u32>,
+    host_frame: Option<u32>,
     mode: i32,
     brightness: i32,
     mode7_scanout_brightness_override: Option<u8>,
@@ -557,6 +563,8 @@ struct ValueDomainDiff {
 struct VramDomainReceipt {
     rust_words: usize,
     oracle_words: usize,
+    rust_sha256: String,
+    oracle_sha256: String,
     mismatched_words: usize,
     first_mismatch_word: Option<usize>,
     first_rust_word: Option<u16>,
@@ -573,9 +581,14 @@ fn vram_domain_receipt(
     oracle_bytes: Option<&[u8]>,
 ) -> Option<VramDomainReceipt> {
     const MAX_MISMATCH_RANGES: usize = 16;
-    let oracle_words = oracle_bytes?
+    let oracle_bytes = oracle_bytes?;
+    let oracle_words = oracle_bytes
         .chunks_exact(2)
         .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+        .collect::<Vec<_>>();
+    let rust_bytes = rust_words
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
         .collect::<Vec<_>>();
     let first_mismatch_word = rust_words
         .iter()
@@ -632,6 +645,8 @@ fn vram_domain_receipt(
     Some(VramDomainReceipt {
         rust_words: rust_words.len(),
         oracle_words: oracle_words.len(),
+        rust_sha256: parity::evidence::sha256_bytes(&rust_bytes),
+        oracle_sha256: parity::evidence::sha256_bytes(oracle_bytes),
         mismatched_words,
         first_mismatch_word,
         first_rust_word: first_mismatch_word.and_then(|index| rust_words.get(index).copied()),
@@ -848,6 +863,9 @@ fn capture_oracle_ppu_probe(oracle: &LibretroCore) -> Option<DisplayPpuProbe> {
             .collect(),
     };
     Some(DisplayPpuProbe {
+        capture_source: "snes9x_last_completed_scanout",
+        comparison_frame: None,
+        host_frame: None,
         mode: oracle.debug_ppu_value(0, 0)?,
         brightness: oracle.debug_ppu_value(1, 0)?,
         mode7_scanout_brightness_override: None,
@@ -927,154 +945,193 @@ fn capture_rust_ppu_probe(
         .collect();
     game.with_display_snapshot(move |snapshot| {
         let scanlines = snapshot.ppu_scanline_windows();
-        let probe = DisplayPpuProbe {
-            mode: i32::from(snapshot.ppu.mode),
-            brightness: i32::from(snapshot.ppu.brightness),
-            mode7_scanout_brightness_override: snapshot.ppu.mode7_scanout_brightness_override,
-            forced_blank: snapshot.ppu.forced_blank,
-            brightness_white: i32::from(
-                snapshot.ppu.brightness_mult.get(31).copied().unwrap_or(0) >> 3,
+        capture_rust_ppu_probe_from_presented(
+            snapshot,
+            &snapshot.ppu,
+            &scanlines,
+            live_oam,
+            "rust_recomposed_display_snapshot",
+            None,
+            snapshot.frame_ctr_dbg,
+        )
+    })
+}
+
+fn capture_rendered_rust_ppu_probe(
+    game: &ZeldaState,
+    rendered: &crate::gpu_capture::LiveGpuFrameCapture,
+) -> (
+    DisplayPpuProbe,
+    Vec<DisplayPublicationCandidateProbe>,
+    Option<DisplayPublicationContextProbe>,
+) {
+    let live_oam = game
+        .ppu
+        .oam
+        .iter()
+        .flat_map(|word| word.to_le_bytes().map(i32::from))
+        .collect();
+    capture_rust_ppu_probe_from_presented(
+        game,
+        rendered.presented_ppu(),
+        rendered.presented_scanlines(),
+        live_oam,
+        "native_window_render_capture",
+        rendered.comparison_frame(),
+        rendered.host_frame(),
+    )
+}
+
+fn capture_rust_ppu_probe_from_presented(
+    game: &ZeldaState,
+    ppu: &snes::ppu::PpuState,
+    scanlines: &renderer::gpu_frame::RawScanlineFrame,
+    live_oam: Vec<i32>,
+    capture_source: &'static str,
+    comparison_frame: Option<u32>,
+    host_frame: u32,
+) -> (
+    DisplayPpuProbe,
+    Vec<DisplayPublicationCandidateProbe>,
+    Option<DisplayPublicationContextProbe>,
+) {
+    let probe = DisplayPpuProbe {
+        capture_source,
+        comparison_frame,
+        host_frame: Some(host_frame),
+        mode: i32::from(ppu.mode),
+        brightness: i32::from(ppu.brightness),
+        mode7_scanout_brightness_override: ppu.mode7_scanout_brightness_override,
+        forced_blank: ppu.forced_blank,
+        brightness_white: i32::from(ppu.brightness_mult.get(31).copied().unwrap_or(0) >> 3),
+        cgram: ppu.cgram.iter().map(|&value| i32::from(value)).collect(),
+        fixed_color: [
+            i32::from(ppu.fixed_color_r),
+            i32::from(ppu.fixed_color_g),
+            i32::from(ppu.fixed_color_b),
+        ],
+        display_control: [
+            i32::from(ppu.screen_enabled[0]),
+            i32::from(ppu.screen_enabled[1]),
+            i32::from(ppu.screen_windowed[0]),
+            i32::from(ppu.screen_windowed[1]),
+            i32::from(
+                u8::from(ppu.add_subscreen) << 1 | ppu.prevent_math_mode << 4 | ppu.clip_mode << 6,
             ),
-            cgram: snapshot
-                .ppu
-                .cgram
-                .iter()
-                .map(|&value| i32::from(value))
-                .collect(),
-            fixed_color: [
-                i32::from(snapshot.ppu.fixed_color_r),
-                i32::from(snapshot.ppu.fixed_color_g),
-                i32::from(snapshot.ppu.fixed_color_b),
-            ],
-            display_control: [
-                i32::from(snapshot.ppu.screen_enabled[0]),
-                i32::from(snapshot.ppu.screen_enabled[1]),
-                i32::from(snapshot.ppu.screen_windowed[0]),
-                i32::from(snapshot.ppu.screen_windowed[1]),
-                i32::from(
-                    u8::from(snapshot.ppu.add_subscreen) << 1
-                        | snapshot.ppu.prevent_math_mode << 4
-                        | snapshot.ppu.clip_mode << 6,
-                ),
-                i32::from(
-                    snapshot.ppu.math_enabled
-                        | u8::from(snapshot.ppu.half_color) << 6
-                        | u8::from(snapshot.ppu.subtract_color) << 7,
-                ),
-            ],
-            bg_scroll: std::array::from_fn(|i| {
-                let layer = &snapshot.ppu.bg_layer[i / 2];
-                i32::from(if i % 2 == 0 {
-                    layer.h_scroll
-                } else {
-                    layer.v_scroll
+            i32::from(
+                ppu.math_enabled
+                    | u8::from(ppu.half_color) << 6
+                    | u8::from(ppu.subtract_color) << 7,
+            ),
+        ],
+        bg_scroll: std::array::from_fn(|i| {
+            let layer = &ppu.bg_layer[i / 2];
+            i32::from(if i % 2 == 0 {
+                layer.h_scroll
+            } else {
+                layer.v_scroll
+            })
+        }),
+        oam: live_oam,
+        presented_oam: ppu
+            .oam
+            .iter()
+            .flat_map(|word| word.to_le_bytes().map(i32::from))
+            .collect(),
+        mode7: ppu.m7_matrix.map(i32::from),
+        mode7_scanlines: scanlines.iter().map(|line| line.7.map(i32::from)).collect(),
+        window_scanlines: scanlines
+            .iter()
+            .map(|line| [line.0, line.1, line.2, line.3].map(i32::from))
+            .collect(),
+        presented_clip: None,
+        presented_pixel: None,
+        presented_obj: None,
+        presented_obj_tile_cache: Some(
+            (0..64u16)
+                .flat_map(|tile| {
+                    let presented_obj_vram = ppu.obj_vram_latch.as_deref().unwrap_or(&ppu.vram);
+                    renderer::modern_extract::decode_snes_4bpp_tile_indices(
+                        presented_obj_vram,
+                        0x4000,
+                        tile,
+                    )
+                    .map(i32::from)
                 })
+                .collect(),
+        ),
+        presented_obj_tile_cache_valid: None,
+    };
+    let candidates = game
+        .zelda_debug_display_publication_candidates()
+        .iter()
+        .map(|candidate| DisplayPublicationCandidateProbe {
+            name: candidate.name,
+            cgram: None,
+            cgram_difference: None,
+            presented_oam: candidate.oam.as_ref().map(|oam| {
+                oam.iter()
+                    .flat_map(|word| word.to_le_bytes().map(i32::from))
+                    .collect()
             }),
-            oam: live_oam,
-            presented_oam: snapshot
-                .ppu
-                .oam
-                .iter()
-                .flat_map(|word| word.to_le_bytes().map(i32::from))
-                .collect(),
-            mode7: snapshot.ppu.m7_matrix.map(i32::from),
-            mode7_scanlines: scanlines.iter().map(|line| line.7.map(i32::from)).collect(),
-            window_scanlines: scanlines
-                .iter()
-                .map(|line| [line.0, line.1, line.2, line.3].map(i32::from))
-                .collect(),
-            presented_clip: None,
-            presented_pixel: None,
-            presented_obj: None,
-            presented_obj_tile_cache: Some(
+            presented_oam_difference: None,
+            presented_obj_tile_cache: candidate.obj_vram.as_ref().map(|obj_vram| {
                 (0..64u16)
                     .flat_map(|tile| {
-                        let presented_obj_vram = snapshot
-                            .ppu
-                            .obj_vram_latch
-                            .as_deref()
-                            .unwrap_or(&snapshot.ppu.vram);
-                        renderer::modern_extract::decode_snes_4bpp_tile_indices(
-                            presented_obj_vram,
-                            0x4000,
-                            tile,
-                        )
-                        .map(i32::from)
-                    })
-                    .collect(),
-            ),
-            presented_obj_tile_cache_valid: None,
-        };
-        let candidates = snapshot
-            .zelda_debug_display_publication_candidates()
-            .iter()
-            .map(|candidate| DisplayPublicationCandidateProbe {
-                name: candidate.name,
-                cgram: None,
-                cgram_difference: None,
-                presented_oam: candidate.oam.as_ref().map(|oam| {
-                    oam.iter()
-                        .flat_map(|word| word.to_le_bytes().map(i32::from))
-                        .collect()
-                }),
-                presented_oam_difference: None,
-                presented_obj_tile_cache: candidate.obj_vram.as_ref().map(|obj_vram| {
-                    (0..64u16)
-                        .flat_map(|tile| {
-                            renderer::modern_extract::decode_snes_4bpp_tile_indices(
-                                obj_vram, 0, tile,
-                            )
+                        renderer::modern_extract::decode_snes_4bpp_tile_indices(obj_vram, 0, tile)
                             .map(i32::from)
-                        })
-                        .collect()
-                }),
+                    })
+                    .collect()
+            }),
+            presented_obj_tile_cache_valid_difference: None,
+        })
+        .collect::<Vec<_>>();
+    let mut candidates = candidates;
+    for cgram_candidate in game.zelda_debug_display_cgram_candidates() {
+        let cgram = Some(
+            cgram_candidate
+                .cgram
+                .iter()
+                .copied()
+                .map(i32::from)
+                .collect(),
+        );
+        if let Some(candidate) = candidates
+            .iter_mut()
+            .find(|candidate| candidate.name == cgram_candidate.name)
+        {
+            candidate.cgram = cgram;
+        } else {
+            candidates.push(DisplayPublicationCandidateProbe {
+                name: cgram_candidate.name,
+                cgram,
+                cgram_difference: None,
+                presented_oam: None,
+                presented_oam_difference: None,
+                presented_obj_tile_cache: None,
                 presented_obj_tile_cache_valid_difference: None,
-            })
-            .collect::<Vec<_>>();
-        let mut candidates = candidates;
-        for cgram_candidate in snapshot.zelda_debug_display_cgram_candidates() {
-            let cgram = Some(
-                cgram_candidate
-                    .cgram
-                    .iter()
-                    .copied()
-                    .map(i32::from)
-                    .collect(),
-            );
-            if let Some(candidate) = candidates
-                .iter_mut()
-                .find(|candidate| candidate.name == cgram_candidate.name)
-            {
-                candidate.cgram = cgram;
-            } else {
-                candidates.push(DisplayPublicationCandidateProbe {
-                    name: cgram_candidate.name,
-                    cgram,
-                    cgram_difference: None,
-                    presented_oam: None,
-                    presented_oam_difference: None,
-                    presented_obj_tile_cache: None,
-                    presented_obj_tile_cache_valid_difference: None,
-                });
-            }
-        }
-        let context = snapshot
-            .zelda_debug_display_publication_context()
-            .map(|context| DisplayPublicationContextProbe {
-                entry_frame: context.entry_frame,
-                following_frame: context.following_frame,
-                dungeon_room: context.dungeon_room,
-                staircase_index: context.staircase_index,
-                palette_filter_countdown: context.palette_filter_countdown,
-                nmi_update_latch: context.nmi_update_latch,
-                oam_scanout_source: context.oam_scanout_source.clone(),
-                retain_captured_oam: context.retain_captured_oam,
-                link_obj_scanout_generation: context.link_obj_scanout_generation.clone(),
-                link_obj_source_generation: context.link_obj_source_generation.clone(),
-                captured_to_host_oam_mismatches: context.captured_to_host_oam_mismatches,
             });
-        (probe, candidates, context)
-    })
+        }
+    }
+    let context = game
+        .zelda_debug_display_publication_context()
+        .map(|context| DisplayPublicationContextProbe {
+            render_host_frame: context.render_host_frame,
+            publication_host_frame: context.publication_host_frame,
+            entry_frame: context.entry_frame,
+            following_frame: context.following_frame,
+            dungeon_room: context.dungeon_room,
+            staircase_index: context.staircase_index,
+            palette_filter_countdown: context.palette_filter_countdown,
+            nmi_update_latch: context.nmi_update_latch,
+            oam_scanout_source: context.oam_scanout_source.clone(),
+            retain_captured_oam: context.retain_captured_oam,
+            link_obj_scanout_generation: context.link_obj_scanout_generation.clone(),
+            link_obj_source_generation: context.link_obj_source_generation.clone(),
+            captured_to_host_oam_mismatches: context.captured_to_host_oam_mismatches,
+            oam_dma_completed_after_active_scanout: context.oam_dma_completed_after_active_scanout,
+        });
+    (probe, candidates, context)
 }
 
 fn write_display_oracle_receipt(
@@ -1323,6 +1380,592 @@ impl BootBoundaryState {
 
 pub(crate) fn run_compare_snes9x_oracle(args: &[String]) {
     run_compare_libretro_oracle(args, Some("snes9x"), Some("Snes9x"));
+}
+
+pub(crate) fn run_capture_snes9x_av(args: &[String]) {
+    let (
+        Some(core_path),
+        Some(rom_path),
+        Some(frames),
+        Some(input_path),
+        Some(rng_path),
+        Some(sram_path),
+        Some(output_dir),
+        Some(expected_core_sha256),
+        Some(expected_rom_sha256),
+    ) = (
+        args.first(),
+        args.get(1),
+        args.get(2),
+        args.get(3),
+        args.get(4),
+        args.get(5),
+        args.get(6),
+        args.get(7),
+        args.get(8),
+    )
+    else {
+        eprintln!(
+            "usage: zelda3 --capture-snes9x-av CORE ROM FRAMES INPUT RNG SRAM OUTPUT EXPECTED_CORE_SHA256 EXPECTED_ROM_SHA256"
+        );
+        process::exit(2);
+    };
+    if args.len() != 9 {
+        eprintln!(
+            "usage: zelda3 --capture-snes9x-av CORE ROM FRAMES INPUT RNG SRAM OUTPUT EXPECTED_CORE_SHA256 EXPECTED_ROM_SHA256"
+        );
+        process::exit(2);
+    }
+    let frames = frames.parse::<u32>().unwrap_or_else(|error| {
+        eprintln!("invalid oracle A/V capture frame count {frames}: {error}");
+        process::exit(2);
+    });
+    if frames == 0 {
+        eprintln!("oracle A/V capture frame count must be greater than zero");
+        process::exit(2);
+    }
+    verify_expected_sha256(core_path, "libretro core", Some(expected_core_sha256));
+    verify_expected_sha256(rom_path, "ROM", Some(expected_rom_sha256));
+    let input_path = Path::new(input_path);
+    let rng_path = Path::new(rng_path);
+    let sram_path = Path::new(sram_path);
+    let output_dir = Path::new(output_dir);
+    if output_dir.exists()
+        && fs::read_dir(output_dir)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(true)
+    {
+        eprintln!(
+            "oracle A/V capture output must be absent or empty: {}",
+            output_dir.display()
+        );
+        process::exit(2);
+    }
+    let input_script = InputScript::from_path(input_path).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to parse input script {}: {error}",
+            input_path.display()
+        );
+        process::exit(2);
+    });
+    let input_bytes = fs::read(input_path).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to read input script {}: {error}",
+            input_path.display()
+        );
+        process::exit(2);
+    });
+    let rng_bytes = fs::read(rng_path).unwrap_or_else(|error| {
+        eprintln!("failed to read RNG script {}: {error}", rng_path.display());
+        process::exit(2);
+    });
+    // Parsing is a provenance check even though the ROM, not this harness,
+    // produces random values on the oracle side.
+    let rng_text = std::str::from_utf8(&rng_bytes).unwrap_or_else(|error| {
+        eprintln!("RNG script {} is not UTF-8: {error}", rng_path.display());
+        process::exit(2);
+    });
+    zelda3::parse_rom_random_script(rng_text).unwrap_or_else(|error| {
+        eprintln!("failed to parse RNG script {}: {error}", rng_path.display());
+        process::exit(2);
+    });
+    let initial_sram = fs::read(sram_path).unwrap_or_else(|error| {
+        eprintln!("failed to read SRAM {}: {error}", sram_path.display());
+        process::exit(2);
+    });
+    fs::create_dir_all(output_dir).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to create oracle A/V capture {}: {error}",
+            output_dir.display()
+        );
+        process::exit(1);
+    });
+    fs::write(output_dir.join("input.txt"), &input_bytes).unwrap_or_else(|error| {
+        eprintln!("failed to persist oracle capture input: {error}");
+        process::exit(1);
+    });
+    fs::write(output_dir.join("rom-random.txt"), &rng_bytes).unwrap_or_else(|error| {
+        eprintln!("failed to persist oracle capture RNG: {error}");
+        process::exit(1);
+    });
+    fs::write(output_dir.join("initial.srm"), &initial_sram).unwrap_or_else(|error| {
+        eprintln!("failed to persist oracle capture SRAM: {error}");
+        process::exit(1);
+    });
+    let _compare_lock = acquire_snes9x_compare_lock();
+    let mut oracle = LibretroCore::load_with_sram(core_path, rom_path, Some(&initial_sram))
+        .unwrap_or_else(|error| {
+            eprintln!("failed to initialize Snes9x for A/V capture: {error}");
+            process::exit(1);
+        });
+    validate_required_libretro_core(
+        Some(("Snes9x", "1.63")),
+        &oracle.library_name,
+        &oracle.library_version,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("{error}");
+        process::exit(2);
+    });
+    let initial_oracle_state = oracle.serialize_state().unwrap_or_else(|error| {
+        eprintln!("failed to serialize initial Snes9x state: {error}");
+        process::exit(1);
+    });
+    fs::write(
+        output_dir.join("oracle_initial.state"),
+        &initial_oracle_state,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("failed to write initial Snes9x state: {error}");
+        process::exit(1);
+    });
+    let core_sha256 = parity::evidence::sha256_file(Path::new(core_path)).unwrap();
+    let rom_sha256 = parity::evidence::sha256_file(Path::new(rom_path)).unwrap();
+    let manifest = serde_json::json!({
+        "schema": 1,
+        "status": "oracle_capture_running",
+        "core": {
+            "path": core_path,
+            "sha256": core_sha256,
+            "library_name": oracle.library_name,
+            "library_version": oracle.library_version,
+            "libretro_api_version": oracle.api_version,
+        },
+        "rom": {"path": rom_path, "sha256": rom_sha256},
+        "rom_random_replay": {
+            "mode": "replay_script_provenance",
+            "artifact": "rom-random.txt",
+            "sha256": parity::evidence::sha256_bytes(&rng_bytes),
+        },
+        "timing": {
+            "fps": oracle.av_info.timing.fps,
+            "sample_rate": oracle.av_info.timing.sample_rate,
+            "frames_requested": frames,
+            "start_frame": 0,
+            "compare_from_frame": 0,
+            "fixed_oracle_startup_skip_frames": 0,
+            "dynamic_alignment": false,
+        },
+        "comparison_lanes": {"video": true, "audio": true},
+        "av_hash_ledger": {
+            "schema": 1,
+            "evidence_schema": 2,
+            "coverage": "every captured oracle frame",
+            "video_canonicalization": "visible row-major RGB bytes; alpha and libretro row padding excluded",
+            "audio_canonicalization": "interleaved stereo signed 16-bit little-endian samples",
+        },
+        "artifacts": [
+            "input.txt", "rom-random.txt", "initial.srm", "oracle_initial.state",
+            "oracle_last_before.state", "oracle_final.state", "av_hashes.jsonl",
+            "result.json"
+        ],
+    });
+    fs::write(
+        output_dir.join("manifest.json"),
+        serde_json::to_vec_pretty(&manifest).unwrap(),
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("failed to write oracle A/V capture manifest: {error}");
+        process::exit(1);
+    });
+    let mut writer = BufWriter::new(
+        fs::File::create(output_dir.join("av_hashes.jsonl")).unwrap_or_else(|error| {
+            eprintln!("failed to create oracle A/V hash ledger: {error}");
+            process::exit(1);
+        }),
+    );
+    let mut oracle_last_before = initial_oracle_state;
+    for frame in 0..frames {
+        if frame.saturating_add(1) == frames {
+            oracle
+                .serialize_state_into(&mut oracle_last_before)
+                .unwrap_or_else(|error| {
+                    eprintln!("failed to serialize final pre-frame Snes9x state: {error}");
+                    process::exit(1);
+                });
+        }
+        let input = input_script.input_for_frame(frame);
+        let capture = oracle.run_frame_with_input(input);
+        let video = canonical_oracle_video_digest(&capture).unwrap_or_else(|error| {
+            eprintln!("failed to hash oracle video at frame {frame}: {error}");
+            process::exit(1);
+        });
+        let audio = canonical_audio_digest(&capture.audio);
+        write_av_hash_record(
+            Some(&mut writer),
+            frame,
+            input,
+            capture.audio.len() / 2,
+            Some(serde_json::json!({"oracle": video})),
+            Some(serde_json::json!({"oracle": audio})),
+        );
+    }
+    writer.flush().unwrap_or_else(|error| {
+        eprintln!("failed to flush oracle A/V hash ledger: {error}");
+        process::exit(1);
+    });
+    fs::write(
+        output_dir.join("oracle_last_before.state"),
+        oracle_last_before,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("failed to write final pre-frame Snes9x state: {error}");
+        process::exit(1);
+    });
+    let oracle_final = oracle.serialize_state().unwrap_or_else(|error| {
+        eprintln!("failed to serialize final Snes9x state: {error}");
+        process::exit(1);
+    });
+    fs::write(output_dir.join("oracle_final.state"), oracle_final).unwrap_or_else(|error| {
+        eprintln!("failed to write final Snes9x state: {error}");
+        process::exit(1);
+    });
+    let result = serde_json::json!({
+        "status": "oracle_captured",
+        "parity_eligible": false,
+        "coverage_label": "oracle-only canonical A/V capture; no Rust comparison",
+        "frames_completed": frames,
+        "video": {"captured": true, "matched": null},
+        "audio": {"captured": true, "matched": null},
+    });
+    fs::write(
+        output_dir.join("result.json"),
+        serde_json::to_vec_pretty(&result).unwrap(),
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("failed to write oracle A/V capture result: {error}");
+        process::exit(1);
+    });
+    let mut finalized_manifest = manifest;
+    finalized_manifest["status"] = serde_json::json!("oracle_captured");
+    finalized_manifest["frames_completed"] = serde_json::json!(frames);
+    fs::write(
+        output_dir.join("manifest.json"),
+        serde_json::to_vec_pretty(&finalized_manifest).unwrap(),
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("failed to finalize oracle A/V capture manifest: {error}");
+        process::exit(1);
+    });
+    println!("captured {frames} oracle-only Snes9x A/V frame(s)");
+}
+
+#[derive(Debug, Deserialize)]
+struct CachedOracleAvRecord {
+    schema: u32,
+    frame: u32,
+    input: String,
+    oracle_audio_sample_frames: Option<usize>,
+    video: Option<parity::av::VideoDigest>,
+    audio: Option<parity::av::AudioDigest>,
+}
+
+fn cached_ledger_input(value: &str) -> Result<u16, String> {
+    let digits = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .ok_or_else(|| format!("cached input is not hexadecimal: {value}"))?;
+    u16::from_str_radix(digits, 16)
+        .map_err(|error| format!("invalid cached input {value}: {error}"))
+}
+
+pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
+    let (Some(cache), Some(rom), Some(output)) = (args.first(), args.get(1), args.get(2)) else {
+        eprintln!("usage: zelda3 --replay-cached-snes9x-av CACHE_DIR ROM_PATH OUTPUT_DIR");
+        process::exit(2);
+    };
+    if args.len() != 3 {
+        eprintln!("usage: zelda3 --replay-cached-snes9x-av CACHE_DIR ROM_PATH OUTPUT_DIR");
+        process::exit(2);
+    }
+    let cache = Path::new(cache);
+    let rom = Path::new(rom);
+    let output = Path::new(output);
+    parity::evidence::verify_oracle_cache_entry(cache).unwrap_or_else(|error| {
+        eprintln!("cached Snes9x evidence verification failed: {error}");
+        process::exit(2);
+    });
+    let manifest_path = cache.join("cache-manifest.json");
+    let manifest_bytes = fs::read(&manifest_path).unwrap_or_else(|error| {
+        eprintln!("failed to read {}: {error}", manifest_path.display());
+        process::exit(2);
+    });
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&manifest_bytes).unwrap_or_else(|error| {
+            eprintln!("failed to parse {}: {error}", manifest_path.display());
+            process::exit(2);
+        });
+    let identity = manifest.get("cache_identity").unwrap_or_else(|| {
+        eprintln!("{} has no cache identity", manifest_path.display());
+        process::exit(2);
+    });
+    let start_frame = identity
+        .get("start_frame")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    let compare_from_frame = identity
+        .get("compare_from_frame")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0);
+    if start_frame != 0 || compare_from_frame != 0 {
+        eprintln!(
+            "cached Rust-only A/V replay currently requires a cold cache with start_frame=0 and compare_from_frame=0; got {start_frame}/{compare_from_frame}"
+        );
+        process::exit(2);
+    }
+    let expected_rom_sha256 = identity
+        .get("rom_sha256")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| {
+            eprintln!("{} cache identity has no ROM hash", manifest_path.display());
+            process::exit(2);
+        });
+    let actual_rom_sha256 = parity::evidence::sha256_file(rom).unwrap_or_else(|error| {
+        eprintln!("failed to hash ROM {}: {error}", rom.display());
+        process::exit(2);
+    });
+    if actual_rom_sha256 != expected_rom_sha256 {
+        eprintln!(
+            "cached Rust-only A/V replay ROM mismatch: expected {expected_rom_sha256}, got {actual_rom_sha256}"
+        );
+        process::exit(2);
+    }
+    let lanes = identity.get("comparison_lanes").unwrap_or_else(|| {
+        eprintln!(
+            "{} cache identity has no comparison lanes",
+            manifest_path.display()
+        );
+        process::exit(2);
+    });
+    let compare_video = lanes
+        .get("video")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let compare_audio = lanes
+        .get("audio")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if !compare_video && !compare_audio {
+        eprintln!("cached Rust-only A/V replay requires at least one enabled lane");
+        process::exit(2);
+    }
+    let input_path = cache.join("input.txt");
+    let rng_path = cache.join("rom-random.txt");
+    let sram_path = cache.join("initial.srm");
+    let ledger_path = cache.join("oracle-av-hashes.jsonl");
+    let input_script = InputScript::from_path(&input_path).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to parse cached input {}: {error}",
+            input_path.display()
+        );
+        process::exit(2);
+    });
+    let rng_text = fs::read_to_string(&rng_path).unwrap_or_else(|error| {
+        eprintln!("failed to read cached RNG {}: {error}", rng_path.display());
+        process::exit(2);
+    });
+    let rng_samples = zelda3::parse_rom_random_script(&rng_text).unwrap_or_else(|error| {
+        eprintln!("failed to parse cached RNG {}: {error}", rng_path.display());
+        process::exit(2);
+    });
+    let sram = fs::read(&sram_path).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to read cached SRAM {}: {error}",
+            sram_path.display()
+        );
+        process::exit(2);
+    });
+    let rom_bytes = fs::read(rom).unwrap_or_else(|error| {
+        eprintln!("failed to read ROM {}: {error}", rom.display());
+        process::exit(2);
+    });
+    let mut game = load_default_play_state();
+    game.set_rom(&rom_bytes);
+    apply_sram_to_game_or_exit(&mut game, &sram_path, &sram);
+    game.install_rom_random_replay(rng_samples, 0);
+    let _compare_lock = acquire_snes9x_compare_lock();
+    let mut renderer = compare_video.then(|| {
+        NativeWindowOracleRenderer::load_from_env().unwrap_or_else(|error| {
+            eprintln!("failed to initialize cached A/V GPU renderer: {error}");
+            process::exit(1);
+        })
+    });
+    fs::create_dir_all(output).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to create cached A/V output {}: {error}",
+            output.display()
+        );
+        process::exit(1);
+    });
+    let ledger_file = fs::File::open(&ledger_path).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to open cached A/V ledger {}: {error}",
+            ledger_path.display()
+        );
+        process::exit(2);
+    });
+    let mut candidate_writer = BufWriter::new(
+        fs::File::create(output.join("av_hashes.jsonl")).unwrap_or_else(|error| {
+            eprintln!("failed to create Rust A/V candidate ledger: {error}");
+            process::exit(1);
+        }),
+    );
+    let mut audio_buffer = Vec::<i16>::new();
+    let mut frames_completed = 0_u32;
+    let mut matched = true;
+    let mut first_rng_drift = None;
+    for (line_index, line) in BufReader::new(ledger_file).lines().enumerate() {
+        let line = line.unwrap_or_else(|error| {
+            eprintln!("failed to read {}: {error}", ledger_path.display());
+            process::exit(2);
+        });
+        let record: CachedOracleAvRecord = serde_json::from_str(&line).unwrap_or_else(|error| {
+            eprintln!(
+                "invalid cached A/V record {}:{}: {error}",
+                ledger_path.display(),
+                line_index + 1
+            );
+            process::exit(2);
+        });
+        if record.schema != 1 || record.frame != frames_completed {
+            eprintln!(
+                "cached A/V ledger must be schema 1 and contiguous from frame zero; line {} has schema {} frame {}, expected {}",
+                line_index + 1,
+                record.schema,
+                record.frame,
+                frames_completed
+            );
+            process::exit(2);
+        }
+        let cached_input = cached_ledger_input(&record.input).unwrap_or_else(|error| {
+            eprintln!("{error}");
+            process::exit(2);
+        });
+        let replay_input = input_script.input_for_frame(record.frame);
+        if cached_input != replay_input {
+            eprintln!(
+                "cached input provenance mismatch at frame {}: ledger={cached_input:04x} script={replay_input:04x}",
+                record.frame
+            );
+            process::exit(2);
+        }
+        game.zelda_run_frame(replay_input as i32);
+        let rust_video = renderer.as_mut().map(|renderer| {
+            let rgba = renderer
+                .render_game_rgba(&mut game, record.frame)
+                .unwrap_or_else(|error| {
+                    eprintln!(
+                        "cached A/V video render failed at frame {}: {error}",
+                        record.frame
+                    );
+                    process::exit(1);
+                });
+            canonical_rust_video_digest(rgba.as_slice(), 256, 224).unwrap_or_else(|error| {
+                eprintln!(
+                    "cached A/V video hash failed at frame {}: {error}",
+                    record.frame
+                );
+                process::exit(1);
+            })
+        });
+        let sample_frames = record
+            .oracle_audio_sample_frames
+            .or_else(|| record.audio.as_ref().map(|audio| audio.sample_frames as usize))
+            .unwrap_or_else(|| {
+                eprintln!(
+                    "cached A/V record {} has no oracle audio frame schedule; regenerate the cache with the current harness",
+                    record.frame
+                );
+                process::exit(2);
+            });
+        audio_buffer.resize(sample_frames.saturating_mul(2), 0);
+        game.zelda_render_audio(&mut audio_buffer, sample_frames as i32, 2);
+        game.zelda_discard_unused_audio_frames();
+        let rust_audio = compare_audio.then(|| canonical_audio_digest(&audio_buffer));
+        let video_matches = match (&rust_video, &record.video) {
+            (Some(rust), Some(oracle)) => {
+                rust == &serde_json::to_value(oracle).expect("serialize cached video digest")
+            }
+            (None, None) => true,
+            _ => false,
+        };
+        let audio_matches = match (&rust_audio, &record.audio) {
+            (Some(rust), Some(oracle)) => {
+                rust == &serde_json::to_value(oracle).expect("serialize cached audio digest")
+            }
+            (None, None) => true,
+            _ => false,
+        };
+        write_av_hash_record(
+            Some(&mut candidate_writer),
+            record.frame,
+            replay_input,
+            sample_frames,
+            rust_video.map(|rust| serde_json::json!({"rust": rust})),
+            rust_audio.map(|rust| serde_json::json!({"rust": rust})),
+        );
+        frames_completed = frames_completed.saturating_add(1);
+        if first_rng_drift.is_none() {
+            if let Err(error) = game.finish_rom_random_replay_through(frames_completed) {
+                eprintln!(
+                    "cached A/V diagnostic: first ROM random consumption drift at execution frame {}: {error}",
+                    record.frame
+                );
+                first_rng_drift = Some(serde_json::json!({
+                    "execution_frame": record.frame,
+                    "error": error,
+                }));
+            }
+        }
+        if !video_matches || !audio_matches {
+            eprintln!(
+                "cached Snes9x A/V divergence at frame {}: video_match={video_matches} audio_match={audio_matches}",
+                record.frame
+            );
+            matched = false;
+            break;
+        }
+    }
+    candidate_writer.flush().unwrap_or_else(|error| {
+        eprintln!("failed to flush Rust A/V candidate ledger: {error}");
+        process::exit(1);
+    });
+    if matched {
+        game.finish_rom_random_replay_through(frames_completed)
+            .unwrap_or_else(|error| {
+                eprintln!("cached A/V ROM random replay did not complete: {error}");
+                process::exit(1);
+            });
+    } else if let Err(error) = game.finish_rom_random_replay_through(frames_completed) {
+        eprintln!(
+            "cached A/V diagnostic: ROM random consumption had already drifted by the first A/V mismatch: {error}"
+        );
+    }
+    let candidate_manifest = serde_json::json!({
+        "schema": 1,
+        "kind": "zelda3-rust-only-cached-snes9x-av-replay",
+        "oracle_cache": cache,
+        "oracle_cache_key": manifest.get("cache_key"),
+        "oracle_cache_manifest_sha256": parity::evidence::sha256_bytes(&manifest_bytes),
+        "rom": {"path": rom, "sha256": actual_rom_sha256},
+        "frames_completed": frames_completed,
+        "matched": matched,
+        "first_rng_drift": first_rng_drift,
+        "candidate_ledger": "av_hashes.jsonl",
+    });
+    fs::write(
+        output.join("manifest.json"),
+        serde_json::to_vec_pretty(&candidate_manifest).unwrap(),
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("failed to write cached A/V candidate manifest: {error}");
+        process::exit(1);
+    });
+    if matched {
+        println!("Rust-only cached Snes9x A/V replay matched {frames_completed} frame(s)");
+    } else {
+        process::exit(1);
+    }
 }
 
 pub(crate) fn replay_save_recorded_frames(path: &Path) -> Result<u32, String> {
@@ -2599,6 +3242,14 @@ pub(crate) fn run_compare_libretro_oracle(
         live_oracle_rng,
         scan_all,
     );
+    let mut av_hashes = session_dir.as_deref().map(|dir| {
+        BufWriter::new(
+            fs::File::create(dir.join("av_hashes.jsonl")).unwrap_or_else(|error| {
+                eprintln!("failed to create canonical A/V hash ledger: {error}");
+                process::exit(1);
+            }),
+        )
+    });
     let mut debug_dsp_globals = if env::var_os("ZELDA3_DEBUG_DSP_GLOBALS").is_some() {
         session_dir.as_deref().map(|dir| {
             BufWriter::new(
@@ -2896,7 +3547,7 @@ pub(crate) fn run_compare_libretro_oracle(
         let video_requested = trace_video_pixel.is_some() || compare_video;
         let render_video_this_frame =
             should_render_video_frame(frame_index, effective_compare_from_frame, video_requested);
-        let rust_video_frame = render_video_this_frame.then(|| {
+        let rendered_rust_frame = render_video_this_frame.then(|| {
             let restored = if debug_anim_lag {
                 pre_anim_region.as_ref().map(|prev| {
                     let cur = game.ppu.vram[0x3c00..0x3e00].to_vec();
@@ -2906,19 +3557,21 @@ pub(crate) fn run_compare_libretro_oracle(
             } else {
                 None
             };
-            let frame = native_window_video
+            let frame_result = native_window_video
                 .as_mut()
                 .expect("native window renderer allocated for libretro video comparison")
-                .render_game_rgba(&mut game)
-                .unwrap_or_else(|error| {
-                    eprintln!("native-window oracle video render failed: {error}");
-                    process::exit(1);
-                });
+                .render_game_rgba_with_capture(&mut game, frame_index);
+            let rendered = frame_result.unwrap_or_else(|error| {
+                eprintln!("native-window oracle video render failed: {error}");
+                process::exit(1);
+            });
             if let Some(cur) = restored {
                 game.ppu.vram[0x3c00..0x3e00].copy_from_slice(&cur);
             }
-            frame
+            rendered
         });
+        let rust_video_frame = rendered_rust_frame.as_ref().map(|(frame, _)| frame);
+        let rust_rendered_display = rendered_rust_frame.as_ref().map(|(_, display)| display);
         if video_requested && !render_video_this_frame {
             game.advance_display_publication_history();
         }
@@ -3722,6 +4375,12 @@ pub(crate) fn run_compare_libretro_oracle(
         }
         let rust_stats = AudioFrameStats::from_interleaved_stereo(&rust_audio);
         let oracle_stats = AudioFrameStats::from_interleaved_stereo(&capture.audio);
+        let av_audio_hashes = (compare_this_frame && compare_audio).then(|| {
+            serde_json::json!({
+                "rust": canonical_audio_digest(&rust_audio),
+                "oracle": canonical_audio_digest(&capture.audio),
+            })
+        });
         if compare_this_frame && env::var_os("ZELDA3_DEBUG_DSP_EVENT_PARITY").is_some() {
             let oracle_writes = oracle.debug_dsp_register_writes().unwrap_or_else(|| {
                 eprintln!(
@@ -3962,7 +4621,7 @@ pub(crate) fn run_compare_libretro_oracle(
             let snes9x_offset = y.saturating_mul(capture.video_pitch)
                 + x * snes9x_pixel_stride(capture.pixel_format).unwrap_or(0);
             let rust_pixel = rust_video_frame
-                .as_deref()
+                .map(|frame| frame.as_slice())
                 .and_then(|frame| rgba_pixel_at(frame, rust_offset))
                 .unwrap_or([0; 4]);
             let oracle_pixel = snes9x_rgba_pixel_at(&capture, snes9x_offset).unwrap_or([0; 4]);
@@ -4146,9 +4805,10 @@ pub(crate) fn run_compare_libretro_oracle(
                 println!("modern_pixel_owner frame={frame_index} xy=({x},{y}) {line}");
             }
         }
+        let mut av_video_hashes = None;
         if compare_this_frame && compare_video {
             let rust_video_frame = rust_video_frame
-                .as_deref()
+                .map(|frame| frame.as_slice())
                 .expect("GPU video frame rendered for libretro video comparison");
             if debug_video_frames.contains(&frame_index) {
                 if let Some(dir) = session_dir.as_deref() {
@@ -4222,6 +4882,13 @@ pub(crate) fn run_compare_libretro_oracle(
                     );
                 }
             }
+            av_video_hashes = Some(
+                canonical_video_digest_pair(rust_video_frame, width, height, &capture)
+                    .unwrap_or_else(|error| {
+                        eprintln!("failed to hash canonical A/V frame {frame_index}: {error}");
+                        process::exit(1);
+                    }),
+            );
             if let Some(video_diff) = video_diff {
                 video_mismatch_this_frame = true;
                 append_u32_range(&mut video_mismatch_ranges, frame_index);
@@ -4262,8 +4929,9 @@ pub(crate) fn run_compare_libretro_oracle(
                         });
                     let display_oracle_receipt =
                         capture_oracle_ppu_probe(&oracle).map(|oracle_ppu| {
-                            let (rust, mut rust_candidates, rust_context) =
-                                capture_rust_ppu_probe(&mut game);
+                            let (rust, mut rust_candidates, rust_context) = rust_rendered_display
+                                .map(|rendered| capture_rendered_rust_ppu_probe(&game, rendered))
+                                .unwrap_or_else(|| capture_rust_ppu_probe(&mut game));
                             annotate_display_candidate_differences(
                                 &oracle_ppu,
                                 &mut rust_candidates,
@@ -4293,6 +4961,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         oracle_name.as_str(),
                         oracle_system_ram.as_deref(),
                         Some(&oracle_before_vram),
+                        rust_rendered_display,
                         display_oracle_receipt.as_ref(),
                         format!("{oracle_name} video divergence: {video_diff}"),
                     )
@@ -4309,6 +4978,16 @@ pub(crate) fn run_compare_libretro_oracle(
                     }
                 }
             }
+        }
+        if compare_this_frame {
+            write_av_hash_record(
+                av_hashes.as_mut(),
+                frame_index,
+                input,
+                capture.audio.len() / 2,
+                av_video_hashes,
+                av_audio_hashes,
+            );
         }
         completed_frames = frame_index.saturating_add(1);
         if should_stop_after_first_mismatch(
@@ -4368,6 +5047,7 @@ pub(crate) fn run_compare_libretro_oracle(
     finalize_libretro_session(
         session_dir.as_deref(),
         frame_receipts.as_mut(),
+        av_hashes.as_mut(),
         &input_history,
         audio_report.as_ref(),
         &audio_frame_ends,
@@ -4951,6 +5631,7 @@ pub(crate) fn initialize_libretro_session(
         "first_audio_mismatch.json",
         "first_audio_mismatch_rust.wav",
         "first_audio_mismatch_oracle.wav",
+        "av_hashes.jsonl",
         "oracle_last_before.state",
         "oracle_final.state",
         "rust_final.z3state",
@@ -5060,6 +5741,7 @@ pub(crate) fn initialize_libretro_session(
         "oracle_last_before.state",
         "input.txt",
         "frame_receipts.jsonl",
+        "av_hashes.jsonl",
         "audio_frame_ends.json",
         "audio_report.json",
         "first_audio_mismatch.json",
@@ -5123,6 +5805,12 @@ pub(crate) fn initialize_libretro_session(
         "comparison_lanes": {
             "video": compare_video,
             "audio": compare_audio,
+        },
+        "av_hash_ledger": {
+            "schema": 1,
+            "coverage": "every compared frame for each enabled lane",
+            "video_canonicalization": "visible row-major RGB bytes; alpha and libretro row padding excluded",
+            "audio_canonicalization": "interleaved stereo signed 16-bit little-endian samples",
         },
         "audio": {
             "comparison": audio_comparison.as_str(),
@@ -5560,6 +6248,7 @@ pub(crate) fn oracle_music_route_state(ram: &[u8]) -> Option<[u8; 3]> {
 pub(crate) fn finalize_libretro_session(
     session_dir: Option<&Path>,
     writer: Option<&mut BufWriter<fs::File>>,
+    av_hash_writer: Option<&mut BufWriter<fs::File>>,
     input_history: &[(u32, u16)],
     audio_report: Option<&libretro_timeline::AudioComparisonReport>,
     audio_frame_ends: &[u64],
@@ -5577,6 +6266,12 @@ pub(crate) fn finalize_libretro_session(
     if let Some(writer) = writer {
         writer.flush().unwrap_or_else(|e| {
             eprintln!("failed to flush libretro frame receipts: {e}");
+            process::exit(1);
+        });
+    }
+    if let Some(writer) = av_hash_writer {
+        writer.flush().unwrap_or_else(|e| {
+            eprintln!("failed to flush canonical A/V hash ledger: {e}");
             process::exit(1);
         });
     }
@@ -5709,6 +6404,125 @@ pub(crate) fn compare_snes9x_video_frame(
     snes9x: &LibretroFrame,
 ) -> Option<String> {
     compare_libretro_video_frame(rust_frame, rust_width, rust_height, snes9x, 0, 0)
+}
+
+fn canonical_audio_digest(samples: &[i16]) -> serde_json::Value {
+    let mut digest = parity::evidence::Sha256Digest::new();
+    for sample in samples {
+        digest.update(&sample.to_le_bytes());
+    }
+    serde_json::json!({
+        "sample_frames": samples.len() / 2,
+        "channels": 2,
+        "sha256": digest.finish(),
+    })
+}
+
+fn canonical_rust_video_digest(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<serde_json::Value, String> {
+    let pixels = width as usize * height as usize;
+    let expected = pixels
+        .checked_mul(4)
+        .ok_or_else(|| format!("Rust video geometry overflows: {width}x{height}"))?;
+    if rgba.len() != expected {
+        return Err(format!(
+            "Rust RGBA byte count {} does not match {width}x{height} ({expected})",
+            rgba.len()
+        ));
+    }
+    let mut digest = parity::evidence::Sha256Digest::new();
+    for pixel in rgba.chunks_exact(4) {
+        digest.update(&pixel[..3]);
+    }
+    Ok(serde_json::json!({
+        "width": width,
+        "height": height,
+        "sha256": digest.finish(),
+    }))
+}
+
+fn canonical_oracle_video_digest(frame: &LibretroFrame) -> Result<serde_json::Value, String> {
+    if frame.video.is_empty() {
+        return Err("oracle provided no video frame".to_string());
+    }
+    let stride = snes9x_pixel_stride(frame.pixel_format)
+        .ok_or_else(|| format!("unsupported oracle pixel format {}", frame.pixel_format))?;
+    let visible_row_bytes = frame.video_width as usize * stride;
+    if frame.video_pitch < visible_row_bytes {
+        return Err(format!(
+            "oracle pitch {} is smaller than visible row {}",
+            frame.video_pitch, visible_row_bytes
+        ));
+    }
+    let required =
+        frame.video_height.saturating_sub(1) as usize * frame.video_pitch + visible_row_bytes;
+    if frame.video.len() < required {
+        return Err(format!(
+            "oracle video byte count {} is smaller than required {required}",
+            frame.video.len()
+        ));
+    }
+    let mut digest = parity::evidence::Sha256Digest::new();
+    for y in 0..frame.video_height as usize {
+        for x in 0..frame.video_width as usize {
+            let offset = y * frame.video_pitch + x * stride;
+            let [r, g, b, _] = snes9x_rgba_pixel_at(frame, offset)
+                .ok_or_else(|| format!("cannot decode oracle pixel ({x}, {y})"))?;
+            digest.update(&[r, g, b]);
+        }
+    }
+    Ok(serde_json::json!({
+        "width": frame.video_width,
+        "height": frame.video_height,
+        "sha256": digest.finish(),
+    }))
+}
+
+fn canonical_video_digest_pair(
+    rust_rgba: &[u8],
+    rust_width: u32,
+    rust_height: u32,
+    oracle: &LibretroFrame,
+) -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({
+        "rust": canonical_rust_video_digest(rust_rgba, rust_width, rust_height)?,
+        "oracle": canonical_oracle_video_digest(oracle)?,
+    }))
+}
+
+fn write_av_hash_record(
+    writer: Option<&mut BufWriter<fs::File>>,
+    frame: u32,
+    input: u16,
+    oracle_audio_sample_frames: usize,
+    video: Option<serde_json::Value>,
+    audio: Option<serde_json::Value>,
+) {
+    let Some(writer) = writer else {
+        return;
+    };
+    serde_json::to_writer(
+        &mut *writer,
+        &serde_json::json!({
+            "schema": 1,
+            "frame": frame,
+            "input": format!("0x{input:04x}"),
+            "oracle_audio_sample_frames": oracle_audio_sample_frames,
+            "video": video,
+            "audio": audio,
+        }),
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("failed to write canonical A/V hash record: {error}");
+        process::exit(1);
+    });
+    writer.write_all(b"\n").unwrap_or_else(|error| {
+        eprintln!("failed to terminate canonical A/V hash record: {error}");
+        process::exit(1);
+    });
 }
 
 pub(crate) fn compare_libretro_video_frame(
@@ -6052,6 +6866,7 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
     oracle_name: &str,
     oracle_system_ram: Option<&[u8]>,
     oracle_before_vram: Option<&[u8]>,
+    rendered_display: Option<&crate::gpu_capture::LiveGpuFrameCapture>,
     display_oracle_receipt: Option<&DisplayOracleReceipt>,
     message: String,
 ) -> Result<PathBuf, Box<dyn Error>> {
@@ -6106,31 +6921,52 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
     // live post-frame PPU can already contain registers and memory authored for
     // the following frame, so it is not a reliable description of the failed
     // image by itself.
-    let mut visible_game = post_game.clone();
-    let (visible_ppu_summary, visible_vram, visible_oam, visible_cgram) = visible_game
-        .with_display_snapshot(|display| {
+    let (visible_ppu_summary, visible_vram, visible_oam, visible_cgram) =
+        if let Some(rendered) = rendered_display {
+            let ppu = rendered.presented_ppu();
+            let mut visible_game = post_game.clone();
+            visible_game.ppu = ppu.clone();
             (
-                format_render_ppu_summary(display),
-                display
-                    .ppu
-                    .vram
+                format_render_ppu_summary(&visible_game),
+                ppu.vram
                     .iter()
                     .flat_map(|word| word.to_le_bytes())
                     .collect::<Vec<_>>(),
-                display
-                    .ppu
-                    .oam
+                ppu.oam
                     .iter()
                     .flat_map(|word| word.to_le_bytes())
                     .collect::<Vec<_>>(),
-                display
-                    .ppu
-                    .cgram
+                ppu.cgram
                     .iter()
                     .flat_map(|word| word.to_le_bytes())
                     .collect::<Vec<_>>(),
             )
-        });
+        } else {
+            let mut visible_game = post_game.clone();
+            visible_game.with_display_snapshot(|display| {
+                (
+                    format_render_ppu_summary(display),
+                    display
+                        .ppu
+                        .vram
+                        .iter()
+                        .flat_map(|word| word.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                    display
+                        .ppu
+                        .oam
+                        .iter()
+                        .flat_map(|word| word.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                    display
+                        .ppu
+                        .cgram
+                        .iter()
+                        .flat_map(|word| word.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                )
+            })
+        };
     fs::write(dir.join("rust_visible_vram.bin"), &visible_vram)?;
     fs::write(dir.join("rust_visible_oam.bin"), &visible_oam)?;
     fs::write(dir.join("rust_visible_cgram.bin"), &visible_cgram)?;
@@ -6144,6 +6980,10 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
         )?;
     }
 
+    let mut visible_game = post_game.clone();
+    if let Some(rendered) = rendered_display {
+        visible_game.ppu = rendered.presented_ppu().clone();
+    }
     let vram_capture = gpu_capture::capture_gpu_frame_from_game(&mut visible_game);
     let vram_gpu_frame = vram_capture.gpu_frame();
     let vram_modern_frame_rgba =
@@ -6308,19 +7148,20 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
 #[cfg(test)]
 mod tests {
     use super::{
-        checkpoint_member, compact_engine_state_mismatches, first_dsp_write_timing_mismatch,
-        fnv1a32, last_spc_clock_witness, libretro_engine_state_receipt,
-        oracle_preframe_snapshot_required, oracle_rng_sample_from_trace_line, paired_resume_paths,
-        parse_debug_frame_selection, parse_paired_resume_capture,
-        parse_rolling_paired_resume_capture, prune_rolling_paired_resume_captures,
-        resolve_replay_bundle, rolling_capture_frame_after, scan_all_policy,
-        should_render_video_frame, should_stop_after_first_mismatch, should_write_frame_receipt,
-        snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
-        summarize_value_domain, trace_events_with_rom_rng, validate_replay_source_parents,
-        vram_domain_receipt, BootBoundaryState, PairedResumeCapture, RollingPairedResumeCapture,
-        ValueDomainDiff, VramDomainReceipt,
+        cached_ledger_input, canonical_audio_digest, canonical_oracle_video_digest,
+        canonical_rust_video_digest, checkpoint_member, compact_engine_state_mismatches,
+        first_dsp_write_timing_mismatch, fnv1a32, last_spc_clock_witness,
+        libretro_engine_state_receipt, oracle_preframe_snapshot_required,
+        oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
+        parse_paired_resume_capture, parse_rolling_paired_resume_capture,
+        prune_rolling_paired_resume_captures, resolve_replay_bundle, rolling_capture_frame_after,
+        scan_all_policy, should_render_video_frame, should_stop_after_first_mismatch,
+        should_write_frame_receipt, snes9x_presented_scanline_for_video_y,
+        summarize_presented_obj_cache, summarize_value_domain, trace_events_with_rom_rng,
+        validate_replay_source_parents, vram_domain_receipt, BootBoundaryState,
+        PairedResumeCapture, RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt,
     };
-    use crate::libretro_core::LibretroDspRegisterWrite;
+    use crate::libretro_core::{LibretroDspRegisterWrite, LibretroFrame};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -6851,6 +7692,13 @@ mod tests {
             Some(VramDomainReceipt {
                 rust_words: 5,
                 oracle_words: 5,
+                rust_sha256: parity::evidence::sha256_bytes(
+                    &rust
+                        .iter()
+                        .flat_map(|word| word.to_le_bytes())
+                        .collect::<Vec<_>>(),
+                ),
+                oracle_sha256: parity::evidence::sha256_bytes(&oracle),
                 mismatched_words: 3,
                 first_mismatch_word: Some(1),
                 first_rust_word: Some(0x2222),
@@ -6860,5 +7708,42 @@ mod tests {
                 mismatch_blocks: vec![[0, 3]],
             })
         );
+    }
+
+    #[test]
+    fn canonical_video_hash_ignores_alpha_and_libretro_pitch_padding() {
+        let rust = [10, 20, 30, 0, 40, 50, 60, 1];
+        let oracle = LibretroFrame {
+            audio: Vec::new(),
+            // Libretro XRGB8888 is exposed as B,G,R,X bytes here. The final
+            // four bytes are row padding and must not enter the digest.
+            video: vec![30, 20, 10, 255, 60, 50, 40, 128, 9, 9, 9, 9],
+            video_width: 2,
+            video_height: 1,
+            video_pitch: 12,
+            pixel_format: 1,
+        };
+        let rust_digest = canonical_rust_video_digest(&rust, 2, 1).unwrap();
+        let oracle_digest = canonical_oracle_video_digest(&oracle).unwrap();
+        assert_eq!(rust_digest["sha256"], oracle_digest["sha256"]);
+    }
+
+    #[test]
+    fn canonical_audio_hash_is_little_endian_interleaved_i16() {
+        let samples = [0x1234_i16, -2_i16];
+        let digest = canonical_audio_digest(&samples);
+        assert_eq!(digest["sample_frames"], 1);
+        assert_eq!(digest["channels"], 2);
+        assert_eq!(
+            digest["sha256"],
+            parity::evidence::sha256_bytes(&[0x34, 0x12, 0xfe, 0xff])
+        );
+    }
+
+    #[test]
+    fn cached_av_inputs_require_an_explicit_hexadecimal_receipt() {
+        assert_eq!(cached_ledger_input("0x8080").unwrap(), 0x8080);
+        assert!(cached_ledger_input("32896").is_err());
+        assert!(cached_ledger_input("0x10000").is_err());
     }
 }

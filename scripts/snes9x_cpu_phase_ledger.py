@@ -24,8 +24,8 @@ MASTER_CYCLES_PER_SCANLINE = 1364
 NTSC_SCANLINES_PER_FIELD = 262
 DEFAULT_MARKERS = OrderedDict(
     [
-        ("main_wait", 0x00_8036),
-        ("main_entry", 0x00_8053),
+        ("main_wait", 0x00_8034),
+        ("main_entry", 0x00_8051),
         ("module_7", 0x02_87A2),
         ("supertile_transition", 0x02_8A26),
         ("faded_filter", 0x02_8B92),

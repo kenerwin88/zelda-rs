@@ -1479,16 +1479,16 @@ fn publication_plan_keeps_memory_domains_independent() {
 }
 
 #[test]
-fn effective_presented_obj_dma_advances_only_the_written_obj_page() {
+fn effective_presented_dma_advances_only_written_vram_words_and_obj_cache() {
     let mut state = ZeldaState::new();
     state.ppu.vram.fill(0x1111);
     state.ppu.oam.fill(0x2222);
     state.ppu.cgram.fill(0x3333);
     state.capture_display_snapshot();
 
-    // Model one NMI which writes ordinary BG VRAM, CGRAM, and one OBJ word.
-    // BG/CGRAM retain their existing publication owners; this receipt owns
-    // only the effective decoded OBJ page missing from that model.
+    // Model one explicit leading NMI which writes ordinary BG VRAM and one OBJ
+    // word. Every completed VRAM destination advances independently, while
+    // CGRAM still requires its own completed-transfer receipt.
     state.ppu.vram[0x1234] = 0x4444;
     state.ppu.vram[0x4009] = 0x5555;
     state.ppu.cgram[7] = 0x5555;
@@ -1496,7 +1496,10 @@ fn effective_presented_obj_dma_advances_only_the_written_obj_page() {
     writes.vram_words[0x1234] = true;
     writes.vram_words[0x4009] = true;
     let receipt = EffectivePresentedDma::from_write_set(writes.clone(), &state);
-    assert_eq!(receipt.obj_vram_writes, vec![(9, 0x5555)]);
+    assert_eq!(
+        receipt.vram_writes,
+        vec![(0x1234, 0x4444), (0x4009, 0x5555)]
+    );
 
     state.active_effective_dma_writes = Some(writes);
     state.record_effective_presented_dma_for_active_scanout();
@@ -1506,12 +1509,8 @@ fn effective_presented_obj_dma_advances_only_the_written_obj_page() {
     // before the interrupt.
     let active = state.display_snapshot.as_deref().unwrap().clone();
     assert_eq!(
-        active
-            .effective_presented_dma
-            .as_ref()
-            .unwrap()
-            .obj_vram_writes,
-        receipt.obj_vram_writes
+        active.effective_presented_dma.as_ref().unwrap().vram_writes,
+        receipt.vram_writes
     );
     state.last_presented_oam = Some(vec![0xbbbb; state.ppu.oam.len()]);
     state.last_presented_obj_vram = Some(vec![0xdddd; 0x400]);
@@ -1519,9 +1518,11 @@ fn effective_presented_obj_dma_advances_only_the_written_obj_page() {
     state.ppu.vram.fill(0xeeee);
     state.ppu.oam.fill(0xeeee);
     state.ppu.cgram.fill(0xeeee);
+    state.compose_effective_presented_vram(&active);
     state.compose_effective_presented_obj(&active);
 
-    assert_eq!(state.ppu.vram[0x1234], 0xeeee);
+    assert_eq!(state.ppu.vram[0x1234], 0x4444);
+    assert_eq!(state.ppu.vram[0x4009], 0x5555);
     assert_eq!(state.ppu.cgram[7], 0xeeee);
     assert_eq!(state.ppu.oam[0], 0xeeee);
     let obj = state.ppu.obj_vram_latch.as_ref().unwrap();
@@ -1548,6 +1549,33 @@ fn effective_presented_cgram_uses_the_palette_installed_by_the_leading_nmi() {
 }
 
 #[test]
+fn effective_presented_ppu_registers_use_the_values_installed_by_the_leading_nmi() {
+    let mut state = ZeldaState::new();
+    state.capture_display_snapshot();
+
+    state.begin_effective_presented_dma();
+    state.ppu.bg_layer[0].h_scroll = 0x0123;
+    state.ppu.bg_layer[1].h_scroll = 0x0456;
+    state.ppu.screen_enabled = [0x16, 0x02];
+    state.ppu.screen_windowed = [0x04, 0x08];
+    state.record_completed_ppu_registers_for_display_boundary();
+    state.record_effective_presented_dma_for_active_scanout();
+
+    let active = state.display_snapshot.as_deref().unwrap().clone();
+    state.ppu.bg_layer[0].h_scroll = 0xaaaa;
+    state.ppu.bg_layer[1].h_scroll = 0xbbbb;
+    state.ppu.screen_enabled = [0xff, 0xff];
+    state.ppu.screen_windowed = [0xff, 0xff];
+    state.compose_effective_presented_color_math(&active);
+    state.compose_effective_presented_bg_scroll(&active);
+
+    assert_eq!(state.ppu.bg_layer[0].h_scroll, 0x0123);
+    assert_eq!(state.ppu.bg_layer[1].h_scroll, 0x0456);
+    assert_eq!(state.ppu.screen_enabled, [0x16, 0x02]);
+    assert_eq!(state.ppu.screen_windowed, [0x04, 0x08]);
+}
+
+#[test]
 fn effective_presented_oam_dma_overrides_a_pre_interrupt_retained_generation() {
     let mut state = ZeldaState::new();
     state.ppu.oam.fill(0x1111);
@@ -1568,7 +1596,7 @@ fn effective_presented_oam_dma_overrides_a_pre_interrupt_retained_generation() {
 }
 
 #[test]
-fn effective_presented_oam_dma_does_not_override_explicit_retained_provenance() {
+fn effective_presented_oam_dma_overrides_predictive_retained_provenance() {
     let mut state = ZeldaState::new();
     state.capture_display_snapshot();
     state.display_snapshot.as_mut().unwrap().oam_scanout_source =
@@ -1583,7 +1611,163 @@ fn effective_presented_oam_dma_does_not_override_explicit_retained_provenance() 
     state.ppu.oam.fill(0x1111);
     state.compose_effective_presented_obj(&active);
 
+    assert!(state.ppu.oam.iter().all(|&word| word == 0x2222));
+}
+
+#[test]
+fn oam_dma_after_closed_boundary_preserves_that_publications_active_image() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam.fill(0x1111);
+    state.capture_display_snapshot();
+    state.close_display_boundary_dma_receipts();
+
+    state.ppu.oam.fill(0x2222);
+    state.record_completed_oam_dma_for_display_boundary();
+    let receipt = state
+        .display_snapshot
+        .as_deref()
+        .unwrap()
+        .closed_oam_boundary_receipt
+        .as_ref()
+        .unwrap();
+    assert_eq!(receipt.publication_host_frame, state.frame_ctr_dbg);
+    assert!(receipt.active_oam.iter().all(|&word| word == 0x1111));
+
+    let mut active = state.display_snapshot.as_deref().unwrap().clone();
+    active.oam_scanout_source = OamScanoutSource::ComposeLiveAfterNmi;
+    let plan = DisplayPublicationPlan::resolve(&active, DisplayPublicationSignals::default());
+    state.ppu.oam.fill(0x3333);
+    state.compose_display_oam(&active, &plan);
     assert!(state.ppu.oam.iter().all(|&word| word == 0x1111));
+    assert!(state.ppu.oam.iter().all(|&word| word != 0x2222));
+
+    // A same-host recapture retains the receipt because it is still the same
+    // publication epoch.
+    state.capture_display_snapshot();
+    assert!(state
+        .display_snapshot
+        .as_deref()
+        .unwrap()
+        .closed_oam_boundary_receipt
+        .is_some());
+
+    // Retaining the snapshot into another host cannot replay a closed-boundary
+    // receipt as though it belonged to the new publication.
+    state.frame_ctr_dbg += 1;
+    state.capture_display_snapshot();
+    assert!(state
+        .display_snapshot
+        .as_deref()
+        .unwrap()
+        .closed_oam_boundary_receipt
+        .is_none());
+}
+
+#[test]
+fn late_oam_dma_preserves_the_last_dma_accepted_by_the_active_boundary() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam.fill(0x1111);
+    state.capture_display_snapshot();
+
+    state.ppu.oam.fill(0x1212);
+    state.record_completed_oam_dma_for_display_boundary();
+    state.close_display_boundary_dma_receipts();
+    state.ppu.oam.fill(0x2222);
+    state.record_completed_oam_dma_for_display_boundary();
+
+    let active_oam = state
+        .display_snapshot
+        .as_deref()
+        .unwrap()
+        .closed_oam_boundary_receipt
+        .as_ref()
+        .unwrap()
+        .active_oam
+        .as_slice();
+    assert!(active_oam.iter().all(|&word| word == 0x1212));
+}
+
+#[test]
+fn late_oam_dma_uses_the_retiring_hardware_scanout() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam.fill(0x1111);
+    state.capture_display_snapshot();
+    state.close_display_boundary_dma_receipts();
+    state.last_presented_oam = Some(vec![0x1313; state.ppu.oam.len()]);
+    state.ppu.oam.fill(0x2222);
+    state.record_completed_oam_dma_for_display_boundary();
+
+    let active_oam = state
+        .display_snapshot
+        .as_deref()
+        .unwrap()
+        .closed_oam_boundary_receipt
+        .as_ref()
+        .unwrap()
+        .active_oam
+        .as_slice();
+    assert!(active_oam.iter().all(|&word| word == 0x1313));
+}
+
+#[test]
+fn retained_publication_does_not_accept_a_following_nmi_oam_dma() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam.fill(0x1111);
+    state.capture_display_snapshot();
+    state.ppu.oam.fill(0x1212);
+    state.record_completed_oam_dma_for_display_boundary();
+    state.close_display_boundary_dma_receipts();
+
+    state.frame_ctr_dbg += 1;
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::RetainPublished);
+    assert!(
+        !state
+            .display_snapshot
+            .as_deref()
+            .unwrap()
+            .accepts_nmi_dma_receipts
+    );
+    assert!(state
+        .display_snapshot
+        .as_deref()
+        .unwrap()
+        .completed_oam_dma_after_capture
+        .as_ref()
+        .is_some_and(|oam| oam.iter().all(|&word| word == 0x1212)));
+
+    state.ppu.oam.fill(0x2222);
+    state.record_completed_oam_dma_for_display_boundary();
+
+    let retained = state.display_snapshot.as_deref().unwrap();
+    assert!(retained
+        .completed_oam_dma_after_capture
+        .as_ref()
+        .is_some_and(|oam| oam.iter().all(|&word| word == 0x1212)));
+    assert!(retained.ppu.oam.iter().all(|&word| word == 0x1111));
+    assert!(retained
+        .closed_oam_boundary_receipt
+        .as_ref()
+        .is_some_and(|receipt| receipt.active_oam.iter().all(|&word| word == 0x1212)));
+}
+
+#[test]
+fn room_72_state_7_retains_the_exact_dma_latched_oam() {
+    let mut state = ZeldaState::new();
+    let mut following = captured_display_snapshot();
+    following.ram[crate::game_state::constants::MAIN_MODULE] = 7;
+    following.ram[crate::game_state::constants::SUBMODULE] = 2;
+    following.ram[crate::game_state::constants::SUBSUBMODULE] = 7;
+    following.ram[crate::game_state::constants::DUNGEON_ROOM] = 0x72;
+    following.oam_scanout_source = OamScanoutSource::RetainResidentPpuOam;
+    following.ppu.oam[92 * 2] = u16::from_le_bytes([0x30, 14]);
+    following.ppu.oam[93 * 2] = u16::from_le_bytes([0x30, 24]);
+    state.ppu.oam.clone_from(&following.ppu.oam);
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam[92 * 2].to_le_bytes()[1], 14);
+    assert_eq!(state.ppu.oam[93 * 2].to_le_bytes()[1], 24);
 }
 
 #[test]
@@ -1605,7 +1789,7 @@ fn effective_presented_obj_dma_empty_receipt_retains_last_decoded_page() {
         .effective_presented_dma
         .as_ref()
         .unwrap()
-        .obj_vram_writes
+        .vram_writes
         .is_empty());
     state.compose_effective_presented_obj(&active);
 
@@ -1613,6 +1797,29 @@ fn effective_presented_obj_dma_empty_receipt_retains_last_decoded_page() {
         &state.ppu.obj_vram_latch.as_ref().unwrap()[0x4000..0x4400],
         &[0x2222; 0x400]
     );
+}
+
+#[test]
+fn effective_presented_oam_uses_the_attached_dma_receipt() {
+    let mut state = ZeldaState::new();
+    state.capture_display_snapshot();
+
+    let dma_source = vec![0x22; state.ppu.oam.len() * 2];
+    state.active_effective_dma_writes = Some(EffectiveDmaWriteSet::new(state.ppu.vram.len()));
+    state.complete_oam_dma_from_source(&dma_source);
+    state.record_effective_presented_dma_for_active_scanout();
+
+    // AdvanceStaged/RetainPublished boundaries can intentionally lack this
+    // older side channel. The event receipt attached to the active scanout is
+    // still complete and must remain authoritative.
+    let snapshot = state.display_snapshot.as_mut().unwrap();
+    snapshot.completed_oam_dma_after_capture = None;
+    snapshot.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
+    state.resident_oam_dma = None;
+    state.ppu.oam.fill(0x1111);
+
+    let presented = state.with_display_snapshot(|display| display.ppu.oam.clone());
+    assert!(presented.iter().all(|&word| word == 0x2222));
 }
 
 #[test]
@@ -1631,7 +1838,7 @@ fn effective_presented_obj_dma_merge_keeps_latest_write_per_address() {
     let later = EffectivePresentedDma::from_write_set(second_writes, &state);
     merged.merge_after(later);
 
-    assert_eq!(merged.obj_vram_writes, vec![(9, 0x3333), (12, 0x4444)]);
+    assert_eq!(merged.vram_writes, vec![(0x4009, 0x3333), (0x400c, 0x4444)]);
 }
 
 #[test]
@@ -1643,7 +1850,7 @@ fn effective_presented_obj_dma_records_same_value_rewrites() {
 
     let receipt = EffectivePresentedDma::from_write_set(writes, &state);
 
-    assert_eq!(receipt.obj_vram_writes, vec![(9, 0x1111)]);
+    assert_eq!(receipt.vram_writes, vec![(0x4009, 0x1111)]);
 }
 
 #[test]
@@ -1844,7 +2051,7 @@ fn captured_oam_scanout_rejects_a_later_dma_when_main_iteration_finishes() {
 }
 
 #[test]
-fn explicit_retained_oam_receipt_rejects_a_later_completed_dma() {
+fn accepted_oam_receipt_overrides_predictive_retention() {
     let mut state = ZeldaState::new();
     state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
     state.ram[crate::game_state::constants::FRAME_COUNTER] = 0x10;
@@ -1859,16 +2066,19 @@ fn explicit_retained_oam_receipt_rejects_a_later_completed_dma() {
     completed_dma[40] = u16::from_le_bytes([0x38, 0xf0]);
     following.completed_oam_dma_after_capture = Some(completed_dma.clone());
     following.effective_presented_dma = Some(EffectivePresentedDma {
-        obj_vram_writes: Vec::new(),
+        vram_writes: Vec::new(),
         completed_oam: Some(completed_dma),
         completed_cgram: None,
+        completed_bg_scroll: None,
+        completed_color_math: None,
     });
     following.oam_scanout_source = OamScanoutSource::RetainCapturedBeforeNmi;
     let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
 
     state.compose_display_oam(&following, &plan);
+    state.compose_effective_presented_obj(&following);
 
-    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0x55]);
+    assert_eq!(state.ppu.oam[40].to_le_bytes(), [0x38, 0xf0]);
 }
 
 #[test]
@@ -1956,6 +2166,73 @@ fn completed_oam_dma_records_the_exact_installed_generation() {
             .map(|oam| oam[0]),
         Some(0xabcd),
     );
+}
+
+#[test]
+fn completed_oam_dma_remains_resident_across_snapshot_ppu_restores() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+
+    let dma_source = vec![0x22; state.ppu.oam.len() * 2];
+    state.complete_oam_dma_from_source(&dma_source);
+    assert_eq!(
+        state.resident_oam_dma.as_deref(),
+        Some(state.ppu.oam.as_slice())
+    );
+
+    // Display composition can restore an older immutable PPU view after the
+    // transfer. A later live-NMI scanout must still start from the payload
+    // installed by the actual DMA event.
+    state.ppu.oam.fill(0x1111);
+    state.capture_display_snapshot();
+    let presented = state.with_display_snapshot(|display| display.ppu.oam.clone());
+
+    assert!(presented.iter().all(|&word| word == 0x2222));
+    assert!(state.ppu.oam.iter().all(|&word| word == 0x1111));
+}
+
+#[test]
+fn hud_dma_inherits_the_persistent_oam_target_without_touching_vram() {
+    let mut state = ZeldaState::new();
+    let destination = 0x6040;
+    state.ppu.vram[destination..destination + HUD_TILEMAP_NMI_WORDS].fill(0x7f7f);
+    state.ppu.oam_adr = 0;
+    state.ppu.oam_second_write = false;
+    state.program_dma0_ppu_target(0, 0x04);
+    let source = vec![0x5a; HUD_TILEMAP_NMI_WORDS * 2];
+
+    state.complete_hud_dma_from_persistent_channel0(&source, destination);
+
+    assert!(
+        state.ppu.vram[destination..destination + HUD_TILEMAP_NMI_WORDS]
+            .iter()
+            .all(|&word| word == 0x7f7f)
+    );
+    assert_eq!(state.ppu.oam[0], 0x5a5a);
+    assert_eq!(state.dma.channel[0].mode, 0);
+    assert_eq!(state.dma.channel[0].b_adr, 0x04);
+    assert_eq!(state.dma.channel[0].a_bank, 0x7e);
+    assert_eq!(state.dma.channel[0].size, 0);
+}
+
+#[test]
+fn programmed_vram_dma_target_is_reused_by_the_following_hud_upload() {
+    let mut state = ZeldaState::new();
+    let destination = 0x6040;
+    state.program_dma0_ppu_target(0, 0x04);
+    state.copy_to_vram_slice(0x4000, &[0x12, 0x34], 2);
+    assert_eq!(state.dma.channel[0].mode, 1);
+    assert_eq!(state.dma.channel[0].b_adr, 0x18);
+
+    let mut source = vec![0; HUD_TILEMAP_NMI_WORDS * 2];
+    source[0] = 0x1e;
+    source[1] = 0x25;
+    state.complete_hud_dma_from_persistent_channel0(&source, destination);
+
+    assert_eq!(state.ppu.vram[destination], 0x251e);
+    assert_eq!(state.dma.channel[0].mode, 1);
+    assert_eq!(state.dma.channel[0].b_adr, 0x18);
 }
 
 #[test]
@@ -3599,6 +3876,50 @@ fn display_snapshot_consumes_vram_once_and_retains_active_obj_generation() {
             vram: held_obj_vram,
         },
     );
+}
+
+#[test]
+fn queued_published_oam_source_uses_its_host_boundary_payload() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.capture_display_snapshot();
+    state
+        .display_snapshot
+        .as_mut()
+        .unwrap()
+        .published_shadow_oam_dma = Some(vec![0x1111; state.ppu.oam.len()]);
+
+    let entry_frame = state.game_state.frame;
+    state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
+        entry_frame,
+        entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
+        entry_dialogue_text_render_state: 0,
+        entry_link_handler_state: 0,
+        animated_tile: None,
+        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_obj_vram: state.ppu.vram[0x4000..0x4400].to_vec(),
+        oam_shadow: vec![0x22; state.ppu.oam.len() * 2],
+    });
+    state.next_display_obj_scanout_generation = Some(ObjScanoutGenerations {
+        oam: OamScanoutSource::ComposePublishedShadowDma,
+        link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
+    });
+
+    state.capture_display_snapshot();
+
+    let snapshot = state.display_snapshot.as_ref().unwrap();
+    assert_eq!(
+        snapshot.oam_scanout_source,
+        OamScanoutSource::ComposePublishedShadowDma
+    );
+    assert!(snapshot
+        .published_shadow_oam_dma
+        .as_ref()
+        .unwrap()
+        .iter()
+        .all(|&word| word == 0x2222));
 }
 
 #[test]

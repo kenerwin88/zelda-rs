@@ -64,6 +64,16 @@ class ParityProbeTest(unittest.TestCase):
                 Path("crates/zelda3/tests/display_publication.rs")
             )
         )
+        self.assertFalse(
+            parity_probe.rust_source_affects_runtime_binary(
+                Path("crates/parity/src/evidence.rs")
+            )
+        )
+        self.assertFalse(
+            parity_probe.rust_source_affects_runtime_binary(
+                parity_probe.ROOT / "crates/parity/src/evidence.rs"
+            )
+        )
         self.assertTrue(
             parity_probe.rust_source_affects_runtime_binary(
                 Path("crates/zelda3/src/zelda_rtl.rs")
@@ -208,6 +218,29 @@ class ParityProbeTest(unittest.TestCase):
 
             with self.assertRaisesRegex(SystemExit, "covers only 10000"):
                 parity_probe.resolve_run_dir(project, run_dir, 11_753, binary)
+
+    def test_failed_bundle_sources_can_be_selected_but_not_claimed_as_atomic_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            binary = self.write_binary(project, 100)
+            run_dir = self.write_run(project, 31_382, 100, recorded_rom_random=True)
+            (run_dir / "manifest.json").write_text(
+                json.dumps({"frames_completed": 29_645}), encoding="utf-8"
+            )
+
+            selected = parity_probe.resolve_run_dir(project, run_dir, 31_287, binary)
+            _, replay = parity_probe.parse_replay_script(run_dir / "replay.sh")
+
+            self.assertEqual(selected, run_dir.resolve())
+            self.assertFalse(
+                parity_probe.cold_replay_bundle_available(
+                    run_dir,
+                    replay,
+                    target_frame=31_287,
+                    input_overridden=False,
+                    resuming=False,
+                )
+            )
 
     def test_authoritative_probe_skips_resumed_gate_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -480,6 +513,17 @@ class ParityProbeTest(unittest.TestCase):
             )
         )
 
+    def test_renderless_engine_pass_can_seed_only_a_diagnostic_checkpoint(self) -> None:
+        result = {
+            "status": "passed",
+            "parity_eligible": True,
+            "engine_state": {"matched": True},
+            "video": None,
+            "audio": None,
+        }
+        self.assertTrue(parity_probe.checkpoint_result_is_diagnostic(0, result))
+        self.assertFalse(parity_probe.checkpoint_result_is_promotable(0, result))
+
     def test_frontier_provenance_ignores_checkpoint_baseline_and_reports_new_onsets(self) -> None:
         receipts = [
             {
@@ -745,32 +789,78 @@ class ParityProbeTest(unittest.TestCase):
                 "input changed since the checkpoint was saved",
             )
 
+    def test_cross_build_checkpoint_accepts_explicit_live_rng_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory)
+            generation = checkpoint / "frame-00000100"
+            generation.mkdir()
+            (generation / "rust.z3state").write_bytes(b"rust")
+            (generation / "oracle.state").write_bytes(b"oracle")
+            (generation / "manifest.json").write_text(
+                json.dumps(
+                    {
+                        "frame": 100,
+                        "rust_state": "rust.z3state",
+                        "oracle_state": "oracle.state",
+                        "rom": {"sha256": "rom"},
+                        "input_script": {"sha256": "input"},
+                    }
+                )
+            )
+            (checkpoint / "latest.json").write_text(
+                json.dumps({"frame": 100, "checkpoint": generation.name})
+            )
+            (checkpoint / parity_probe.IDENTITY_NAME).write_text(
+                json.dumps(
+                    {
+                        "rom_sha256": "rom",
+                        "input_sha256": "input",
+                        "rom_random_sha256": None,
+                    }
+                )
+            )
+
+            self.assertIsNone(
+                parity_probe.checkpoint_reuse_problem(
+                    checkpoint,
+                    {
+                        "rom_sha256": "rom",
+                        "input_sha256": "input",
+                        "rom_random_sha256": None,
+                    },
+                    trust_cross_build=True,
+                )
+            )
+
     def test_cold_probe_uses_only_a_complete_atomic_replay_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             run_dir = Path(directory)
             replay = ["--compare-snes9x-oracle", "core", "rom", "10", "--load-sram", "old.srm"]
             for name in ("manifest.json", "input.txt", "rom-random.txt", "initial.srm"):
                 (run_dir / name).write_bytes(b"")
+            (run_dir / "manifest.json").write_text(
+                json.dumps({"frames_completed": 10}), encoding="utf-8"
+            )
 
             self.assertTrue(
                 parity_probe.cold_replay_bundle_available(
-                    run_dir, replay, input_overridden=False, resuming=False
+                    run_dir, replay, target_frame=10, input_overridden=False, resuming=False
                 )
             )
             self.assertFalse(
                 parity_probe.cold_replay_bundle_available(
-                    run_dir, replay, input_overridden=True, resuming=False
+                    run_dir, replay, target_frame=10, input_overridden=True, resuming=False
                 )
             )
             self.assertFalse(
                 parity_probe.cold_replay_bundle_available(
-                    run_dir, replay, input_overridden=False, resuming=True
+                    run_dir, replay, target_frame=10, input_overridden=False, resuming=True
                 )
             )
             (run_dir / "rom-random.txt").unlink()
             self.assertFalse(
                 parity_probe.cold_replay_bundle_available(
-                    run_dir, replay, input_overridden=False, resuming=False
+                    run_dir, replay, target_frame=10, input_overridden=False, resuming=False
                 )
             )
 

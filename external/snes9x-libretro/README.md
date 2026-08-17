@@ -41,7 +41,7 @@ tracing. Optional filters:
 
 - `ZELDA3_SNES9X_TRACE_FRAMES=FIRST-LAST` filters Snes9x's completed-frame
   counter. That counter can advance during one `retro_run` call. In
-  `--live-oracle-rng` comparisons the required `rom-rng` events deliberately
+`--live-oracle-rng` comparisons the required `rom-rng` events deliberately
   remain route-wide, while every other requested trace domain still obeys
   this window.
 - `ZELDA3_SNES9X_TRACE_PCS=BB:AAAA,...` selects up to 64 instruction-address
@@ -71,6 +71,11 @@ python3 scripts/snes9x_dma_receipt.py /tmp/snes9x-trace.jsonl \
   --host-frame 29644 --resume-frame 29010
 ```
 
+With an instrumented core built from the current trace patch, add
+`--hdma-channel 7` to include the exact source address and bytes consumed on
+every active scanline. This distinguishes the table present after a host frame
+from the generation HDMA actually presented during that frame.
+
 The tool deliberately maps `host frame - resume frame` to `run` and rejects
 missing or ambiguous runs. Its report gives the ordered DMA source,
 destination, byte count, initiating PC, and raster position, followed by the
@@ -93,6 +98,37 @@ entry/resume boundaries. It records the trace, manifest, core, and ROM hashes,
 and uses the zero-based `retro_run` coordinate explicitly. It is offline
 reference evidence only; the Rust game runtime must use native semantic work
 and cycle budgets rather than reading the ROM or a route ledger.
+
+To compare the oracle's actual main-thread checkpoint against the isolated
+Rust timing shadow without guessing a frame offset, enable the Rust checkpoint
+trace during the same comparison. Rust records an absolute host frame; the
+join uses `manifest.json`'s `timing.start_frame` to derive Snes9x's
+window-relative `retro_run`:
+
+```sh
+ZELDA3_CPU_CHECKPOINT_TRACE=/tmp/rust-cpu-checkpoints.jsonl \
+ZELDA3_SNES9X_TRACE_EVENTS=frame,nmi,nmi-resume,pc \
+ZELDA3_SNES9X_TRACE_PCS=00:8051 \
+ZELDA3_SNES9X_TRACE_FRAMES=33347-33352 \
+target/parity/zelda3 --compare-snes9x-oracle ...
+
+python3 scripts/compare_snes9x_cpu_checkpoints.py \
+  /tmp/compare/oracle-rom-random.jsonl \
+  /tmp/rust-cpu-checkpoints.jsonl \
+  --manifest /tmp/compare/manifest.json \
+  --first-host-frame 33347 --last-host-frame 33352
+```
+
+The join rejects duplicate/missing runs and semantic state disagreement. This
+is deliberate: a report is only valid when the Rust and Snes9x records prove
+that they describe the same host invocation and game state. The Rust hook is
+limited to timing shadows that begin at the current host's real main wait;
+future-envelope predictions are deliberately not emitted as capture-host
+checkpoints.
+
+Do not add `$00:8034` to a multi-frame PC trace: it is the hot main wait loop
+and produces millions of redundant records. The `nmi-resume` event already
+records the interrupted/resumed wait PC once per NMI.
 
 For an every-frame comparison of the state leading to OBJ scanout, use the
 instrumented core with `ZELDA3_CAPTURE_OBJ_STATE_LEDGER=1` and a session

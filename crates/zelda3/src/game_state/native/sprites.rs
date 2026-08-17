@@ -4013,6 +4013,28 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
         self.sync_slot_from_ram();
     }
 
+    pub(crate) fn restore_live_suffix_from_backup_before_nmi(
+        &mut self,
+        backup: &[u8; 24],
+        live_fields: usize,
+    ) {
+        debug_assert!(live_fields <= CACHED_SPRITE_LIVE_FIELDS.len());
+        for i in (live_fields..CACHED_SPRITE_LIVE_FIELDS.len()).rev() {
+            self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] = backup[i];
+        }
+    }
+
+    pub(crate) fn restore_live_prefix_from_backup_after_nmi(
+        &mut self,
+        backup: &[u8; 24],
+        live_fields: usize,
+    ) {
+        debug_assert!(live_fields <= CACHED_SPRITE_LIVE_FIELDS.len());
+        for i in (0..live_fields).rev() {
+            self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] = backup[i];
+        }
+    }
+
     pub(crate) fn restore_live_from_backup(&mut self, backup: &[u8; 24]) {
         for i in (0..CACHED_SPRITE_LIVE_FIELDS.len()).rev() {
             self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] = backup[i];

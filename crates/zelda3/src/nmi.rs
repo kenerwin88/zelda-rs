@@ -14,6 +14,27 @@ const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0: usize = 0x0000;
 const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1: usize = 0x0001;
 const FIRST_BOOT_NMI_DMA_SOURCE_BYTE_2: usize = 0x0002;
 
+// DMA channel 0 is deliberately reused throughout the ROM's NMI handler.
+// Most transfer sites program both of these registers, but the HUD upload at
+// $00:8b87 only programs the source, length, and VRAM address. It therefore
+// inherits the target selected by the preceding transfer, even across NMIs.
+const DMA_MODE_ONE_REGISTER: u8 = 0;
+const DMA_MODE_TWO_REGISTERS: u8 = 1;
+const PPU_BBUS_OAM_DATA: u8 = 0x04;
+const PPU_BBUS_VRAM_DATA_LOW: u8 = 0x18;
+const PPU_BBUS_CGRAM_DATA: u8 = 0x22;
+
+const DMA_BBUS_OFFSETS: [[u8; 4]; 8] = [
+    [0, 0, 0, 0],
+    [0, 1, 0, 1],
+    [0, 0, 0, 0],
+    [0, 0, 1, 1],
+    [0, 1, 2, 3],
+    [0, 1, 0, 1],
+    [0, 0, 0, 0],
+    [0, 0, 1, 1],
+];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum NmiVramCopyDirection {
     Horizontal,
@@ -77,6 +98,92 @@ fn debug_hardware_frame_matches(frame: u32) -> bool {
 }
 
 impl ZeldaState {
+    /// Record the two DMA-channel registers that select how channel 0 writes
+    /// the PPU B-bus. The semantic NMI implementation performs transfers in
+    /// bulk, but these registers remain hardware state between transfers.
+    pub(super) fn program_dma0_ppu_target(&mut self, mode: u8, b_adr: u8) {
+        let channel = &mut self.dma.channel[0];
+        channel.mode = mode & 7;
+        channel.b_adr = b_adr;
+        channel.fixed = false;
+        channel.decrement = false;
+        channel.indirect = false;
+        channel.from_b = false;
+        channel.unused_bit = false;
+    }
+
+    /// Execute the ROM's HUD DMA using channel 0 exactly as it is currently
+    /// configured. Unlike the normal VRAM/OAM/CGRAM transfer sites, the ROM
+    /// does not write DMAP0 or BBAD0 here, so the previous transfer owns the
+    /// destination and transfer pattern.
+    pub(super) fn complete_hud_dma_from_persistent_channel0(
+        &mut self,
+        source: &[u8],
+        dst_word: usize,
+    ) {
+        let len = HUD_TILEMAP_NMI_WORDS * 2;
+        assert!(
+            source.len() >= len,
+            "HUD DMA source is shorter than its payload"
+        );
+
+        // These PPU and DMA source registers are programmed by the HUD path
+        // regardless of the inherited B-bus destination.
+        self.ppu.write(0x15, 0x80);
+        self.ppu.write(0x16, dst_word as u8);
+        self.ppu.write(0x17, (dst_word >> 8) as u8);
+        {
+            let channel = &mut self.dma.channel[0];
+            channel.a_bank = 0x7e;
+            channel.a_adr = HUD_TILE_INDICES_BUFFER as u16;
+            channel.size = len as u16;
+            channel.dma_active = true;
+            channel.off_index = 0;
+        }
+
+        let channel = self.dma.channel[0];
+        let mode = usize::from(channel.mode & 7);
+        let mut touched_oam = false;
+        let mut touched_cgram = false;
+        for (index, &value) in source[..len].iter().enumerate() {
+            let b_adr = channel
+                .b_adr
+                .wrapping_add(DMA_BBUS_OFFSETS[mode][index & 3]);
+            match b_adr {
+                0x18 | 0x19 => {
+                    self.mark_effective_dma_vram_word(usize::from(self.ppu.vram_pointer & 0x7fff));
+                }
+                PPU_BBUS_OAM_DATA => touched_oam = true,
+                PPU_BBUS_CGRAM_DATA => touched_cgram = true,
+                _ => {}
+            }
+            self.ppu.write(b_adr, value);
+        }
+
+        {
+            let channel = &mut self.dma.channel[0];
+            if !channel.fixed {
+                channel.a_adr = if channel.decrement {
+                    channel.a_adr.wrapping_sub(len as u16)
+                } else {
+                    channel.a_adr.wrapping_add(len as u16)
+                };
+            }
+            channel.size = 0;
+            channel.dma_active = false;
+            channel.off_index = 0;
+        }
+        self.dma.dma_busy = false;
+
+        if touched_oam {
+            self.resident_oam_dma = Some(self.ppu.oam.clone());
+            self.record_completed_oam_dma_for_display_boundary();
+        }
+        if touched_cgram {
+            self.record_completed_cgram_dma_for_display_boundary();
+        }
+    }
+
     /// Optional hot-reloaded parity experiment for NMI publication timing.
     ///
     /// `config/parity-runtime.toml` is read at each NMI (or the path named by
@@ -443,11 +550,21 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_core_animated_bg_update(&mut self, graphics_dma_plan: GraphicsDmaPlan) {
+        // `interrupt_nmi_for_active_scanout` opens this write scope before it
+        // enters the handler. That is direct event provenance that this NMI
+        // precedes the translated main slice, so its DMA operands must come
+        // from the host-boundary capture. A module-derived default cannot
+        // override that ordering: main may advance $0adc only after this DMA.
+        let phase_owned_operands = if self.active_effective_dma_writes.is_some() {
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        } else {
+            graphics_dma_plan.animated_bg_operands
+        };
         let animated_bg_operands = animated_bg_operands_for_dungeon_landing(
             self.game_state.frame,
             self.game_state.world.location.dungeon_room_index(),
             self.game_state.player.follower_link.last_direction(),
-            graphics_dma_plan.animated_bg_operands,
+            phase_owned_operands,
         );
         let host_main_prefix_did_not_advance =
             self.pre_main_graphics_dma.as_ref().is_some_and(|graphics| {
@@ -508,7 +625,7 @@ impl ZeldaState {
                 "animated_bg_dma host={} source={src_addr:04x} destination={dst:04x} captured={} first_live_mismatch={first_live_mismatch:?} source_prefix={:02x?} live_prefix={:02x?} vram_prefix_before={:04x?}",
                 self.frame_ctr_dbg,
                 matches!(
-                    graphics_dma_plan.animated_bg_operands,
+                    animated_bg_operands,
                     GraphicsDmaGeneration::HostBoundaryBeforeMain
                 ),
                 &data[..data.len().min(8)],
@@ -519,6 +636,7 @@ impl ZeldaState {
         if dst + 0x200 > self.ppu.vram.len() || data.len() < 0x400 {
             return;
         }
+        self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
         self.mark_effective_dma_vram_range(dst..dst + 0x200);
         if std::env::var_os("ZELDA3_DEBUG_BOOT_DMA_SOURCE").is_some()
             && self.rom_startup_timing()
@@ -677,6 +795,49 @@ impl ZeldaState {
                 && frame.main_module == 0
                 && frame.submodule == 7
                 && !matches!(self.intro_bg_fade_poly_phase, 1 | 3));
+        let debug_display_vram = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
+            .ok()
+            .and_then(|frame| frame.parse::<u32>().ok())
+            .is_some_and(|frame| frame == self.frame_ctr_dbg);
+        if debug_display_vram {
+            let dst = self
+                .game_state
+                .display
+                .message_dma_destination_address_usize();
+            eprintln!(
+                "nmi_hud_candidate host={} enabled={} destination={dst:04x} dma0={:02x}/{:02x} floor_timer_low={:02x} floor_words={:04x}/{:04x}/{:04x}/{:04x} vram_60c3={:04x} native_buffer_131={:04x} ram_buffer_131={:04x}",
+                self.frame_ctr_dbg,
+                self.game_state.system_signals.should_update_hud(),
+                self.dma.channel[0].mode,
+                self.dma.channel[0].b_adr,
+                self.game_state
+                    .display
+                    .hud_tilemap
+                    .floor_changed_timer_low(),
+                self.game_state.display.hud_tilemap.tile_word(0xf2 / 2),
+                self.game_state.display.hud_tilemap.tile_word(0xf4 / 2),
+                self.game_state.display.hud_tilemap.tile_word(0x132 / 2),
+                self.game_state.display.hud_tilemap.tile_word(0x134 / 2),
+                self.ppu.vram[0x60c3],
+                self.game_state.display.hud_tilemap.tile_word(131),
+                read_word_from_slice(self.message_dma_tile_indices(), 131 * 2),
+            );
+        }
+        if self.game_state.system_signals.should_update_hud() {
+            let dst = self
+                .game_state
+                .display
+                .message_dma_destination_address_usize();
+            let hud_buf = self.message_dma_tile_indices().to_vec();
+            self.complete_hud_dma_from_persistent_channel0(&hud_buf, dst);
+        }
+        if debug_display_vram {
+            eprintln!(
+                "nmi_hud_selected host={} vram_60c3={:04x}",
+                self.frame_ctr_dbg, self.ppu.vram[0x60c3],
+            );
+        }
+
         if self.game_state.system_signals.should_update_cgram() && !defer_intro_cgram {
             // C: memcpy(g_zenv.ppu->cgram, main_palette_buffer, 0x200)
             // Read directly from WRAM so that set_aux_color() calls that overflow the
@@ -693,6 +854,7 @@ impl ZeldaState {
             if frame.main_module != 0 && self.cgram_upload_latch.is_none() {
                 self.cgram_upload_latch = Some(self.ppu.cgram.to_vec());
             }
+            self.program_dma0_ppu_target(DMA_MODE_ONE_REGISTER, PPU_BBUS_CGRAM_DATA);
             for i in 0..0x100 {
                 self.ppu.cgram[i] = read_le_u16(&self.ram, MAIN_PALETTE_BUFFER + i * 2);
             }
@@ -700,59 +862,27 @@ impl ZeldaState {
             self.record_completed_cgram_dma_for_display_boundary();
         }
 
-        let debug_display_vram = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
-            .ok()
-            .and_then(|frame| frame.parse::<u32>().ok())
-            .is_some_and(|frame| frame == self.frame_ctr_dbg);
-        if debug_display_vram {
-            let dst = self
-                .game_state
-                .display
-                .message_dma_destination_address_usize();
-            eprintln!(
-                "nmi_hud_candidate host={} enabled={} destination={dst:04x} vram_60c3={:04x} native_buffer_131={:04x} ram_buffer_131={:04x}",
-                self.frame_ctr_dbg,
-                self.game_state.system_signals.should_update_hud(),
-                self.ppu.vram[0x60c3],
-                self.game_state.display.hud_tilemap.tile_word(131),
-                read_word_from_slice(self.message_dma_tile_indices(), 131 * 2),
-            );
-        }
-        if self.game_state.system_signals.should_update_hud() {
-            let dst = self
-                .game_state
-                .display
-                .message_dma_destination_address_usize();
-            if dst + HUD_TILEMAP_NMI_WORDS <= self.ppu.vram.len() {
-                let hud_buf = self.message_dma_tile_indices().to_vec();
-                self.mark_effective_dma_vram_range(dst..dst + HUD_TILEMAP_NMI_WORDS);
-                for i in 0..HUD_TILEMAP_NMI_WORDS {
-                    self.ppu.vram[dst + i] = read_word_from_slice(&hud_buf, i * 2);
-                }
-            }
-        }
-        if debug_display_vram {
-            eprintln!(
-                "nmi_hud_selected host={} vram_60c3={:04x}",
-                self.frame_ctr_dbg, self.ppu.vram[0x60c3],
-            );
-        }
-
         self.clear_hud_update_flag();
         if !defer_intro_cgram {
             self.clear_cgram_update_flag();
         }
         let frame = self.game_state.frame;
-        let graphics_dma_plan = rom_graphics_dma_plan(frame.main_module, frame.submodule);
         let entry_frame = self
             .pre_main_graphics_dma
             .as_ref()
             .map(|graphics| graphics.entry_frame)
             .unwrap_or(frame);
-        let oam_operands_generation = oam_operands_for_nmi(
-            oam_operands_across_main(entry_frame, frame, graphics_dma_plan.oam_operands),
-            self.dialogue_oam_publication_phase,
-        );
+        // OAM DMA consumes the operand captured at the hardware boundary. The
+        // caller passes `None` only when an explicit scheduler event places
+        // this NMI after CPU work which authored a new shadow. Inferring the
+        // operand from the current module made ordinary main-thread movement
+        // leak into the preceding scanout and required transition-specific
+        // publication rules to hide the resulting one-frame lead.
+        let oam_operands_generation = if oam_dma_source.is_some() {
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        } else {
+            GraphicsDmaGeneration::LiveAfterMain
+        };
         if std::env::var_os("ZELDA3_DEBUG_OAM_DMA").is_some()
             && debug_hardware_frame_matches(self.frame_ctr_dbg)
         {
@@ -771,16 +901,9 @@ impl ZeldaState {
                 [live.get(369).copied(), live.get(373).copied()],
             );
         }
-        let mut oam_buf = if matches!(
-            oam_operands_generation,
-            GraphicsDmaGeneration::HostBoundaryBeforeMain
-        ) {
-            oam_dma_source
-                .map(Vec::from)
-                .unwrap_or_else(|| self.sprite_oam_shadow_buffer().to_vec())
-        } else {
-            self.sprite_oam_shadow_buffer().to_vec()
-        };
+        let mut oam_buf = oam_dma_source
+            .map(Vec::from)
+            .unwrap_or_else(|| self.sprite_oam_shadow_buffer().to_vec());
         // Snes9x shows the normal $00:0800 OAM DMA on the first initialized
         // vblank.  The startup CPU work has not yet authored the regular
         // sprite list, but its hardware-visible reset word is still a real
@@ -929,9 +1052,11 @@ impl ZeldaState {
             source.len() >= self.ppu.oam.len() * 2,
             "OAM DMA source is shorter than the hardware OAM payload"
         );
+        self.program_dma0_ppu_target(DMA_MODE_ONE_REGISTER, PPU_BBUS_OAM_DATA);
         for i in 0..self.ppu.oam.len() {
             self.ppu.oam[i] = read_word_from_slice(source, i * 2);
         }
+        self.resident_oam_dma = Some(self.ppu.oam.clone());
         self.record_completed_oam_dma_for_display_boundary();
     }
 
@@ -942,6 +1067,7 @@ impl ZeldaState {
             return;
         };
         if target + word_count <= self.ppu.vram.len() {
+            self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
             let buf = self.tilemap_upload_stripe_buffer().to_vec();
             self.mark_effective_dma_vram_range(target..target + word_count);
             for i in 0..word_count {
@@ -959,6 +1085,7 @@ impl ZeldaState {
         if data.len() < 2 {
             return;
         }
+        self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
         let f = read_word_from_slice(&data, 0);
         let step = if f & 0x8000 != 0 { 32 } else { 1 };
         let len = (f & 0x3fff) as usize;
@@ -1423,6 +1550,7 @@ impl ZeldaState {
 
     pub(super) fn copy_to_vram_vertical_slice(&mut self, mut dstv: usize, src: &[u8], len: usize) {
         assert_eq!(len & 1, 0);
+        self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
         let words = len >> 1;
         for i in 0..words {
             if dstv < self.ppu.vram.len() && i * 2 + 1 < src.len() {
@@ -1440,6 +1568,7 @@ impl ZeldaState {
     }
 
     pub(super) fn copy_to_vram_low_slice(&mut self, src: &[u8], addr: usize, num: usize) {
+        self.program_dma0_ppu_target(DMA_MODE_ONE_REGISTER, PPU_BBUS_VRAM_DATA_LOW);
         for i in 0..num {
             if addr + i < self.ppu.vram.len() && i < src.len() {
                 self.mark_effective_dma_vram_word(addr + i);
@@ -1523,6 +1652,7 @@ impl ZeldaState {
         if source_addr + len > source.len() || dst_word + len.div_ceil(2) > self.ppu.vram.len() {
             return;
         }
+        self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
         self.mark_effective_dma_vram_range(dst_word..dst_word + len.div_ceil(2));
         for i in 0..len {
             let word_idx = dst_word + i / 2;
@@ -1537,6 +1667,7 @@ impl ZeldaState {
 
     pub(super) fn nmi_update_irqgfx(&mut self) {
         if self.game_state.display.has_pending_polyhedral_update() {
+            self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
             let poly_buf = self.polyhedral_tile_buffer().to_vec();
             let mut display_vram = None;
             self.mark_effective_dma_vram_range(0x5800..0x5c00);
@@ -1562,6 +1693,7 @@ impl ZeldaState {
     pub(super) fn nmi_update_bg_char_half(&mut self) {
         let dst = self.game_state.display.nmi_load_target_page() as usize * 256;
         let buf = self.background_character_half_buffer().to_vec();
+        self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
         self.mark_effective_dma_vram_range(dst..dst + 0x200);
         for i in 0..0x200 {
             self.ppu.vram[dst + i] = read_word_from_slice(&buf, i * 2);
@@ -1589,6 +1721,7 @@ impl ZeldaState {
 
     pub(super) fn nmi_upload_bg3_text(&mut self) {
         let buf = self.background_character_buffer().to_vec();
+        self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
         self.mark_effective_dma_vram_range(0x7c00..0x7ff0);
         for i in 0..0x3f0 {
             self.ppu.vram[0x7c00 + i] = read_word_from_slice(&buf, i * 2);
@@ -1604,6 +1737,7 @@ impl ZeldaState {
     pub(super) fn nmi_update_load_light_world_map(&mut self) {
         const LIGHT_WORLD_TILEMAP_DSTS: [usize; 4] = [0, 0x20, 0x1000, 0x1020];
         if let Some(tilemap) = self.asset_raw(67).map(Vec::from) {
+            self.program_dma0_ppu_target(DMA_MODE_ONE_REGISTER, PPU_BBUS_VRAM_DATA_LOW);
             let mut src = 0usize;
             for dst_base in LIGHT_WORLD_TILEMAP_DSTS {
                 let mut dst = dst_base;
@@ -1632,6 +1766,7 @@ impl ZeldaState {
             let is_memset = stripes[2] & 0x40 != 0;
             let len = ((((stripes[2] as u16) << 8) | stripes[3] as u16) & 0x3fff) as usize + 1;
             stripes = &stripes[4..];
+            self.program_dma0_ppu_target(DMA_MODE_TWO_REGISTERS, PPU_BBUS_VRAM_DATA_LOW);
 
             if !vertical {
                 if is_memset {
@@ -1782,6 +1917,7 @@ impl ZeldaState {
         }
         self.zelda_ppu_write(0x210b, 0x22);
         self.zelda_ppu_write(0x210c, 0x07);
+        self.record_completed_ppu_registers_for_display_boundary();
     }
 
     pub(super) fn write_vram_byte(&mut self, byte_offset: usize, value: u8) {

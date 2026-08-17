@@ -158,6 +158,14 @@ fn main() {
         run_compare_snes9x_oracle(&args[2..]);
         return;
     }
+    if args.get(1).map(String::as_str) == Some("--replay-cached-snes9x-av") {
+        run_replay_cached_snes9x_av(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--capture-snes9x-av") {
+        run_capture_snes9x_av(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--validate-snes9x-replay") {
         run_validate_snes9x_replay(&args[2..]);
         return;

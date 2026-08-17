@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 import snes9x_route_recorder as recorder
+import parity_evidence
 from extract_snes9x_rom_random import extract_samples, write_script
 from parity_probe import TRACE_CORE, newest_source_mtime, validate_trace_core
 
@@ -838,7 +839,13 @@ def run_snes9x_gate() -> int:
                 }
             )
             print(f"pre-commit: paired resume checkpoint at frame {checkpoint_frame}")
+    pass_receipt = parity_evidence.record_cold_pass(
+        session=session_dir,
+        route_signature=signature,
+        binary=binary,
+    )
     _write_json(STATE_PATH, state)
+    print(f"pre-commit: cold proof receipt {pass_receipt}")
 
     checked = state["last_checked_frame"]
     if checked >= max_frames:

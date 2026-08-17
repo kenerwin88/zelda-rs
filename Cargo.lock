@@ -1670,6 +1670,7 @@ dependencies = [
  "memmap2",
  "serde",
  "serde_json",
+ "sha2",
  "zstd",
 ]
 

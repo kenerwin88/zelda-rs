@@ -199,10 +199,15 @@ def binary_identity(binary: Path) -> dict[str, object]:
 
 def rust_source_affects_runtime_binary(path: Path) -> bool:
     """Exclude Rust sources that Cargo only compiles into test artifacts."""
+    try:
+        repo_path = path.relative_to(ROOT)
+    except ValueError:
+        repo_path = path
     return not (
-        path.name.endswith("_tests.rs")
-        or "tests" in path.parts
-        or any(part.endswith("_tests") for part in path.parts)
+        repo_path.parts[:2] == ("crates", "parity")
+        or repo_path.name.endswith("_tests.rs")
+        or "tests" in repo_path.parts
+        or any(part.endswith("_tests") for part in repo_path.parts)
     )
 
 
@@ -239,6 +244,39 @@ def replay_target_frame(run_dir: Path) -> int:
         raise SystemExit(
             f"parity-probe: invalid target frame {replay_argv[3]!r} in {run_dir / 'replay.sh'}"
         ) from error
+
+
+def replay_covered_frame(run_dir: Path, replay_argv: list[str] | None = None) -> int:
+    """Return the replay bundle's proven coverage, not merely its requested target."""
+    if replay_argv is None:
+        requested = replay_target_frame(run_dir)
+    else:
+        try:
+            requested = int(replay_argv[3])
+        except (IndexError, ValueError) as error:
+            raise SystemExit("parity-probe: malformed replay argv while checking bundle coverage") from error
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return requested
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        raw_completed = manifest.get("frames_completed")
+        if raw_completed is None and (run_dir / "result.json").is_file():
+            result = json.loads((run_dir / "result.json").read_text(encoding="utf-8"))
+            raw_completed = result.get("frames_completed")
+        # A session whose manifest was initialized but never finalized is not a
+        # reusable replay bundle. Keep it out of automatic selection.
+        completed = 0 if raw_completed is None else int(raw_completed)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError) as error:
+        raise SystemExit(
+            f"parity-probe: invalid completed-frame provenance in {manifest_path}: {error}"
+        ) from error
+    if completed < 0 or completed > requested:
+        raise SystemExit(
+            f"parity-probe: impossible completed-frame provenance in {manifest_path}: "
+            f"completed={completed} requested={requested}"
+        )
+    return completed
 
 
 def source_start_problem(run_dir: Path, binary: Path) -> str | None:
@@ -434,6 +472,7 @@ def cold_replay_bundle_available(
     run_dir: Path,
     replay_argv: list[str],
     *,
+    target_frame: int,
     input_overridden: bool,
     resuming: bool,
 ) -> bool:
@@ -441,6 +480,7 @@ def cold_replay_bundle_available(
     return (
         not input_overridden
         and not resuming
+        and replay_covered_frame(run_dir, replay_argv) >= target_frame
         and option_value(replay_argv, "--load-sram") is not None
         and all(
             (run_dir / name).is_file()
@@ -589,8 +629,9 @@ def checkpoint_reuse_problem(
         ):
             if key not in wanted:
                 continue
-            recorded = provenance[key] or identity.get(key)
-            if recorded is None:
+            has_identity_value = key in identity
+            recorded = identity.get(key) if has_identity_value else provenance[key]
+            if recorded is None and not has_identity_value:
                 return f"paired checkpoint has no recorded {label} provenance"
             if recorded != wanted[key]:
                 return f"{label} changed since the checkpoint was saved"
@@ -687,6 +728,17 @@ def checkpoint_result_is_promotable(returncode: int, result: dict) -> bool:
         and result.get("parity_eligible") is True
         and video.get("matched") is True
         and audio.get("matched") is True
+    )
+
+
+def checkpoint_result_is_diagnostic(returncode: int, result: dict) -> bool:
+    """A renderless exact-engine pass may seed only the diagnostic checkpoint cache."""
+    engine = result.get("engine_state") or {}
+    return (
+        returncode == 0
+        and result.get("status") == "passed"
+        and result.get("parity_eligible") is True
+        and engine.get("matched") is True
     )
 
 
@@ -1417,11 +1469,38 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="disable audio comparison for diagnostic checkpoint/trace replays",
     )
+    parser.add_argument(
+        "--trace-only",
+        action="store_true",
+        help="disable video and audio while retaining engine-state/trace comparison; diagnostic only",
+    )
+    parser.add_argument(
+        "--live-oracle-rng",
+        action="store_true",
+        help="source cartridge RNG from this same instrumented oracle run; diagnostic only",
+    )
+    parser.add_argument(
+        "--rom-random-script",
+        type=Path,
+        help="override the selected run's recorded RNG script with an explicitly materialized one",
+    )
+    parser.add_argument(
+        "--engine-state-from-frame",
+        type=int,
+        default=200,
+        help="first frame for live-RNG engine-state comparison (default 200)",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.trace_only and args.video_only:
+        raise SystemExit("parity-probe: --trace-only cannot be combined with --video-only")
+    if args.live_oracle_rng and args.rom_random_script is not None:
+        raise SystemExit(
+            "parity-probe: --live-oracle-rng cannot be combined with --rom-random-script"
+        )
     if args.keep_probe_sessions < 0:
         raise SystemExit("parity-probe: --keep-probe-sessions must be non-negative")
     validate_stale_override(args.allow_stale, args.dry_run)
@@ -1496,7 +1575,9 @@ def main(argv: list[str] | None = None) -> int:
         # to the newest current-build failure instead of falling back to an old
         # cold run with a now-incompatible RNG call order.
         require_cold=not (use_checkpoint or args.capture),
-        require_recorded_rom_random=True,
+        require_recorded_rom_random=(
+            not args.live_oracle_rng and args.rom_random_script is None
+        ),
     )
     script_env, replay_argv = parse_replay_script(run_dir / "replay.sh")
 
@@ -1527,7 +1608,11 @@ def main(argv: list[str] | None = None) -> int:
             f"parity-probe: input stream is missing: {input_path}; "
             "pass --input-script with the preserved authoritative stream"
         )
-    rom_random_path = option_value(replay_argv, "--rom-random-script")
+    rom_random_path = None if args.live_oracle_rng else (
+        str(args.rom_random_script.resolve())
+        if args.rom_random_script is not None
+        else option_value(replay_argv, "--rom-random-script")
+    )
     rom_random = Path(rom_random_path) if rom_random_path else None
     if rom_random is not None and not rom_random.is_file():
         raise SystemExit(f"parity-probe: ROM-random stream is missing: {rom_random}")
@@ -1572,6 +1657,11 @@ def main(argv: list[str] | None = None) -> int:
                 wanted,
                 trust_cross_build=args.trust_cross_build_checkpoint,
             )
+            if args.checkpoint_dir is not None and problem is not None:
+                raise SystemExit(
+                    "parity-probe: explicitly selected checkpoint cannot be resumed: "
+                    f"{problem}: {checkpoint_dir}"
+                )
             if problem is None:
                 if args.trust_cross_build_checkpoint:
                     print(
@@ -1579,7 +1669,21 @@ def main(argv: list[str] | None = None) -> int:
                         "state changes and is never authoritative proof"
                     )
                 saved = saved_checkpoint_frame(checkpoint_dir)
+                if (
+                    args.checkpoint_dir is not None
+                    and args.checkpoint_frame is not None
+                    and saved != args.checkpoint_frame
+                ):
+                    raise SystemExit(
+                        "parity-probe: explicitly selected checkpoint frame does not "
+                        f"match its manifest ({args.checkpoint_frame} != {saved})"
+                    )
                 if saved is not None and saved >= args.around:
+                    if args.checkpoint_dir is not None:
+                        raise SystemExit(
+                            "parity-probe: explicitly selected checkpoint is not before "
+                            f"the probed frame ({saved} >= {args.around})"
+                        )
                     print(
                         f"parity-probe: checkpoint {checkpoint_dir} is at frame {saved}, past the probed "
                         f"frame {args.around}; replaying from frame 0 (pass an earlier --checkpoint-frame)",
@@ -1611,7 +1715,8 @@ def main(argv: list[str] | None = None) -> int:
     use_replay_bundle = cold_replay_bundle_available(
         run_dir,
         replay_argv,
-        input_overridden=args.input_script is not None,
+        target_frame=target_frame,
+        input_overridden=args.input_script is not None or args.live_oracle_rng,
         resuming=resume_dir is not None,
     )
     if use_replay_bundle:
@@ -1620,6 +1725,17 @@ def main(argv: list[str] | None = None) -> int:
         command += ["--input-script", str(input_path)]
         if rom_random:
             command += ["--rom-random-script", str(rom_random)]
+            if args.rom_random_script is not None:
+                # The override is bound to the paired checkpoint by SHA-256 in
+                # probe-identity.json. Its different parent directory is an
+                # intentional diagnostic layout, not accidental source mixing.
+                command.append("--allow-mixed-replay-provenance")
+        if args.live_oracle_rng:
+            command += [
+                "--live-oracle-rng",
+                "--compare-engine-state-from-frame",
+                str(args.engine_state_from_frame),
+            ]
     if resume_dir is not None:
         # `--load-sram` and paired resume are mutually exclusive: the resumed
         # states already carry the SRAM as it stood at the checkpoint frame.
@@ -1637,7 +1753,9 @@ def main(argv: list[str] | None = None) -> int:
             str(checkpoint_candidate_dir),
         ]
     diagnostic_video_only = args.video_only or (frontier_mode and resume_dir is not None)
-    if diagnostic_video_only:
+    if args.trace_only:
+        command.extend(("--ignore-video", "--ignore-audio"))
+    elif diagnostic_video_only:
         command.append("--ignore-audio")
     else:
         for option in (
@@ -1729,23 +1847,34 @@ def main(argv: list[str] | None = None) -> int:
     )
     checkpoint_promoted = False
     if checkpoint_candidate_dir is not None and checkpoint_candidate_dir.exists():
+        authoritative_checkpoint = checkpoint_result_is_promotable(process.returncode, result)
+        diagnostic_checkpoint = args.trace_only and checkpoint_result_is_diagnostic(
+            process.returncode, result
+        )
         if (
             checkpoint_dir is not None
             and wanted is not None
             and resume_dir is None
-            and checkpoint_result_is_promotable(process.returncode, result)
+            and (authoritative_checkpoint or diagnostic_checkpoint)
         ):
+            promoted_identity = dict(wanted)
+            promoted_identity["diagnostic_only"] = not authoritative_checkpoint
             saved_frame, quarantined = promote_checkpoint_candidate(
-                checkpoint_candidate_dir, checkpoint_dir, wanted, stamp
+                checkpoint_candidate_dir, checkpoint_dir, promoted_identity, stamp
             )
             checkpoint_promoted = True
-            print(f"parity-probe: promoted verified paired checkpoint {checkpoint_dir} (frame {saved_frame})")
+            authority = "verified" if authoritative_checkpoint else "diagnostic-only"
+            print(
+                f"parity-probe: promoted {authority} paired checkpoint "
+                f"{checkpoint_dir} (frame {saved_frame})"
+            )
             if quarantined is not None:
                 print(f"parity-probe: preserved replaced checkpoint at {quarantined}")
         else:
             print(
-                "parity-probe: checkpoint candidate was not promoted because the cold "
-                f"exact-A/V comparison did not pass; evidence remains in {checkpoint_candidate_dir}"
+                "parity-probe: checkpoint candidate was not promoted because neither a cold "
+                "exact-A/V pass nor a renderless exact-engine diagnostic pass completed; "
+                f"evidence remains in {checkpoint_candidate_dir}"
             )
 
     report_result(session_dir)

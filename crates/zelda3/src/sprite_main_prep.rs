@@ -12,8 +12,16 @@ impl ZeldaState {
 
     // void SpriteModule_Initialize(int k) {  // 86864d
     pub(super) fn sprite_module_initialize(&mut self, k: usize) {
+        self.sprite_module_initialize_properties(k);
+        self.sprite_module_initialize_after_properties(k);
+    }
+
+    pub(super) fn sprite_module_initialize_properties(&mut self, k: usize) {
         self.sprite_prep_load_properties(k);
         self.sprite_slot_view_mut(k).increment_state();
+    }
+
+    pub(super) fn sprite_module_initialize_after_properties(&mut self, k: usize) {
         match self.sprite_slot_view(k).sprite_type() {
             0x00 => self.sprite_prep_raven(k),
             0x01 => self.sprite_prep_vulture(k),
@@ -4562,9 +4570,18 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_zelda_bounce(&mut self, k: usize) {
+        let Some(saved_follower_indicator) = self.sprite_prep_zelda_before_follower_graphics(k)
+        else {
+            return;
+        };
+        self.load_follower_graphics();
+        self.sprite_prep_zelda_after_follower_graphics(k, saved_follower_indicator);
+    }
+
+    pub(super) fn sprite_prep_zelda_before_follower_graphics(&mut self, k: usize) -> Option<u8> {
         if self.game_state.inventory.items.sword_type() >= 2 {
             self.sprite_slot_view_mut(k).set_state(0);
-            return;
+            return None;
         }
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
         let dir = self.sprite_direction_to_face_link(k, None) ^ 3;
@@ -4573,8 +4590,16 @@ impl ZeldaState {
 
         let follower = self.game_state.sprites.follower_runtime.indicator();
         self.follower_state_mut().set_indicator(1);
-        self.load_follower_graphics();
-        self.follower_state_mut().set_indicator(follower);
+        Some(follower)
+    }
+
+    pub(super) fn sprite_prep_zelda_after_follower_graphics(
+        &mut self,
+        k: usize,
+        saved_follower_indicator: u8,
+    ) {
+        self.follower_state_mut()
+            .set_indicator(saved_follower_indicator);
 
         if self.game_state.world.location.dungeon_room_index() == 0x12 {
             self.sprite_slot_view_mut(k).set_subtype2(2);

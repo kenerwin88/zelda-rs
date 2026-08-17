@@ -2721,8 +2721,6 @@ impl ZeldaState {
         self.attract_scene_mut().mark_intro_did_run_step();
         if self.rom_startup_timing() {
             self.intro_poly_upload_delay = configured_intro_thread_start_delay();
-            self.intro_sprite_animation_start_delay =
-                configured_intro_sprite_animation_start_delay();
         }
         self.attract_scene_mut().clear_intro_step_state_block();
         // clear_intro_step_state_block fills ram[INTRO_STEP_INDEX..+0x70] (0x1e00-0x1e6f) to 0,
@@ -2746,12 +2744,6 @@ impl ZeldaState {
     }
 
     pub(super) fn intro_handle_all_triforce_animations(&mut self) {
-        if self.rom_startup_timing() && self.intro_sprite_animation_start_delay != 0 {
-            self.intro_sprite_animation_start_delay =
-                self.intro_sprite_animation_start_delay.saturating_sub(1);
-            self.intro_animate_triforce();
-            return;
-        }
         self.attract_scene_mut().increment_intro_frame_counter();
         self.intro_animate_triforce();
         self.scene_animate_every_sprite();

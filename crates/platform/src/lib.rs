@@ -447,6 +447,13 @@ impl NativeFrontend {
             .and_then(FrameRenderer::read_modern_gpu_target_rgba)
     }
 
+    pub fn read_modern_gpu_screen_pixel(&self, x: u32, y: u32) -> Option<(u32, u32)> {
+        self.handler
+            .renderer
+            .as_ref()
+            .and_then(|renderer| renderer.read_modern_gpu_screen_pixel(x, y))
+    }
+
     pub fn present_menu_overlay(&mut self, menu: &HostMenuState) {
         let overlay = renderer::MenuOverlayModel {
             tab: match menu.active_tab() {

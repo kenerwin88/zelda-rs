@@ -1,7 +1,53 @@
-# zparity — per-frame replay-route parity checker for zelda3-rs
+# zparity — typed parity evidence tools for zelda3-rs
 
-`zparity` is a C-free parity checker that surfaces per-frame WRAM/VRAM/SRAM/render
-divergences between the Rust port and the committed route golden. The workflow is:
+`zparity` is the Rust data plane beneath the repository's `./parity` Python
+workflow. It provides streaming, typed operations for route coverage, trace
+indexing/querying, semantic receipt comparison, canonical A/V hash comparison,
+and immutable oracle-cache verification. It never provides game-runtime data
+and does not replace the pinned live Snes9x A/V gate.
+
+## Evidence subcommands
+
+```sh
+zparity trace-index TRACE --manifest MANIFEST --output TRACE.zpti
+zparity trace-query TRACE.zpti [--host-frame N] [--run N] \
+  [--internal-frame N] [--pc BB:AAAA] [--wram FIRST-LAST] \
+  [--event EVENT] [--limit N]
+zparity cache-verify CACHE_ROOT [--json]
+zparity receipt-compare CANDIDATE_JSONL ORACLE_JSONL [--json]
+zparity av-compare CANDIDATE_JSONL ORACLE_JSONL [--json]
+```
+
+The trace index is a compact seek table. It records typed filter fields and
+byte offsets, then queries emit the exact original JSONL records. Both the
+source trace and comparison manifest are SHA-256 verified before every query.
+Cache verification recomputes the content-addressed identity and hashes every
+listed artifact.
+
+`receipt-compare` recursively localizes differences in the sampled semantic
+receipts. Its report states whether recorded frames are contiguous; it must not
+be interpreted as full-route coverage. `av-compare` checks the complete
+per-compared-frame ledger of canonical visible RGB and exact interleaved i16
+audio SHA-256 values. Hashes avoid retaining enormous raw frame streams while
+remaining byte-exact for pass/fail. A cached match is a fast regression check,
+not promotion authority; the cold pinned-core gate remains authoritative.
+
+The repository wrapper adds `./parity cached-av CACHE`. It verifies a cold,
+contiguous cache and replays the Rust engine only, using the cached input, RNG,
+SRAM, and per-frame oracle audio schedule. Snes9x is not loaded. The resulting
+candidate ledger is passed to `zparity av-compare`; this is the normal fast
+iteration tier after one pinned-core cache capture.
+
+Create that reference independently of the current Rust implementation with
+`./parity oracle-av-capture SOURCE_SESSION --frames N`. The producer runs only
+Snes9x, marks the session as oracle capture rather than parity proof, and then
+places the oracle-only ledger in the immutable cache. This prevents a Rust
+mismatch from truncating the reusable reference.
+
+## Retired workflow (historical)
+
+The legacy `capture`, `check`, and `drill` subcommands below were retired with
+the old golden/replay pipeline. This text remains only as historical context:
 
 ```
 capture (route replay, once)  →  golden committed to parity-golden/

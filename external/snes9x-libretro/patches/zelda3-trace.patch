@@ -859,6 +859,7 @@ index 00000000..06a376d4
 +		"\"carry\":%u,\"p\":%u,"
 +		"\"main\":%u,\"sub\":%u,\"subsub\":%u,\"frame_counter\":%u,\"room\":%u,"
 +		"\"lights_out\":%u,\"palette_countdown\":%u,\"palette_direction\":%u,"
++		"\"link_y\":%u,\"link_x\":%u,\"bg2_v\":%u,\"bg2_h\":%u,"
 +		"\"mosaic_target\":%u,"
 +		"\"spotlight_radius\":%u,\"spotlight_state\":%u,"
 +		"\"rng_seed\":%u,\"nmi_latch\":%u,\"nmi_disable\":%u,\"nmi_pending\":%u,"
@@ -871,7 +872,12 @@ index 00000000..06a376d4
 +		Memory.RAM[0x10], Memory.RAM[0x11], Memory.RAM[0xb0],
 +		Memory.RAM[0x1a], Memory.RAM[0xa0] | (Memory.RAM[0xa1] << 8),
 +		Memory.RAM[0xc005] | Memory.RAM[0xc006], Memory.RAM[0xc007],
-+		Memory.RAM[0xc009], Memory.RAM[0xc00b],
++		Memory.RAM[0xc009],
++		Memory.RAM[0x20] | (Memory.RAM[0x21] << 8),
++		Memory.RAM[0x22] | (Memory.RAM[0x23] << 8),
++		Memory.RAM[0xe8] | (Memory.RAM[0xe9] << 8),
++		Memory.RAM[0xe2] | (Memory.RAM[0xe3] << 8),
++		Memory.RAM[0xc00b],
 +		Memory.RAM[0x067c] | (Memory.RAM[0x067d] << 8),
 +		Memory.RAM[0x067e] | (Memory.RAM[0x067f] << 8),
 +		Memory.RAM[0x0fa1], Memory.RAM[0x12],
@@ -892,6 +898,12 @@ index 00000000..06a376d4
 +
 +void Zelda3TraceCapturePresentedPpuState()
 +{
++	if (active(TRACE_FRAME))
++	{
++		write_machine_state("video");
++		std::fputs(",\"stage\":\"presented\"", config.output);
++		finish_event();
++	}
 +	std::memcpy(presented_oam, PPU.OAMData, sizeof(presented_oam));
 +	for (int line = 0; line < SNES_HEIGHT_EXTENDED; line++)
 +	{
@@ -1284,6 +1296,41 @@ index 00000000..06a376d4
 +		return;
 +	write_machine_state(phase[0] == 's' ? "hdma-start" : "hdma-end");
 +	std::fprintf(config.output, ",\"channels\":%u", channels);
++	std::fprintf(config.output, ",\"channel_state\":[");
++	bool first = true;
++	for (unsigned channel = 0, mask = 1; channel < 8; channel++, mask <<= 1)
++	{
++		if (!(channels & mask))
++			continue;
++		const SDMA *dma = &DMA[channel];
++		const uint32 source = dma->HDMAIndirectAddressing
++			? ((uint32) dma->IndirectBank << 16) | dma->IndirectAddress
++			: ((uint32) dma->ABank << 16) | dma->Address;
++		std::fprintf(config.output,
++			"%s{\"channel\":%u,\"source\":%u,\"table_address\":%u,"
++			"\"indirect\":%u,\"line_count\":%u,\"repeat\":%u,"
++			"\"do_transfer\":%u,\"b_address\":%u,\"mode\":%u,\"data\":[",
++			first ? "" : ",", channel, source, dma->Address,
++			dma->HDMAIndirectAddressing, dma->LineCount, dma->Repeat,
++			dma->DoTransfer, dma->BAddress, dma->TransferMode);
++		first = false;
++		const unsigned byte_count_by_mode[8] = { 1, 2, 2, 4, 4, 4, 2, 4 };
++		const unsigned byte_count = dma->DoTransfer ? byte_count_by_mode[dma->TransferMode] : 0;
++		const uint8 bank = source >> 16;
++		for (unsigned byte = 0; byte < byte_count; byte++)
++		{
++			const uint32 offset = (source + byte) & 0xffff;
++			const bool low_wram_mirror =
++				(bank <= 0x3f || (bank >= 0x80 && bank <= 0xbf)) && offset < 0x2000;
++			const uint32 wram_offset = bank == 0x7f ? 0x10000 | offset : offset;
++			const unsigned value = bank == 0x7e || bank == 0x7f || low_wram_mirror
++				? Memory.RAM[wram_offset]
++				: 0;
++			std::fprintf(config.output, "%s%u", byte ? "," : "", value);
++		}
++		std::fprintf(config.output, "]}");
++	}
++	std::fprintf(config.output, "]");
 +	finish_event();
 +}
 +

@@ -57,6 +57,24 @@ class Snes9xDmaReceiptTests(unittest.TestCase):
                 "vram_address": 0x4000,
             },
             {
+                "event": "hdma-start",
+                "run": 4,
+                "frame": 12,
+                "v": 95,
+                "cycles": 1110,
+                "channel_state": [
+                    {
+                        "channel": 7,
+                        "source": 0x001BBE,
+                        "table_address": 0xF2FE,
+                        "line_count": 25,
+                        "repeat": 0,
+                        "do_transfer": 1,
+                        "data": [0, 255],
+                    }
+                ],
+            },
+            {
                 "event": "frame",
                 "stage": "return",
                 "run": 4,
@@ -71,7 +89,12 @@ class Snes9xDmaReceiptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             trace = Path(directory) / "trace.jsonl"
             trace.write_text("".join(f"{__import__('json').dumps(event)}\n" for event in events))
-            report = RECEIPT.summarize(trace, host_frame=29_014, resume_frame=29_010)
+            report = RECEIPT.summarize(
+                trace,
+                host_frame=29_014,
+                resume_frame=29_010,
+                hdma_channel=7,
+            )
 
         self.assertIn("host frame 29014 = trace run 4", report)
         self.assertIn("internal frames 12->13", report)
@@ -79,6 +102,10 @@ class Snes9xDmaReceiptTests(unittest.TestCase):
         self.assertIn("pc=$00:80c9 nmi_latch=0", report)
         self.assertIn("src=$10:8840", report)
         self.assertIn("dst_word=$4000", report)
+        self.assertIn("HDMA scanlines: 1", report)
+        self.assertIn("src=$00:1bbe", report)
+        self.assertIn("raster=95:1110", report)
+        self.assertIn("data=[00 ff]", report)
 
 
 if __name__ == "__main__":

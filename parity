@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""Repository-local parity workflow entry point."""
+
+from pathlib import Path
+import runpy
+
+
+runpy.run_path(
+    str(Path(__file__).resolve().parent / "scripts" / "parity_microscope.py"),
+    run_name="__main__",
+)

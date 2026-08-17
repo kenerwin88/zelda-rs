@@ -51,7 +51,6 @@ impl RomCpuTimingRun {
         shadow.ppu = ppu.clone();
         shadow.dma = dma.clone();
         shadow.apu.out_ports = apu_output_ports;
-
         shadow.cpu.a = checkpoint.a;
         shadow.cpu.x = checkpoint.x;
         shadow.cpu.y = checkpoint.y;
@@ -91,6 +90,16 @@ impl RomCpuTimingRun {
 
     pub(crate) fn stack_pointer(&self) -> u16 {
         self.shadow.cpu.sp
+    }
+
+    /// Decode the innermost 24-bit return address exactly as the Snes9x trace
+    /// oracle does. This identifies the translated semantic caller when NMI
+    /// interrupts inside a shared long-running helper.
+    pub(crate) fn stack_return_address(&self) -> u32 {
+        let start = usize::from(self.shadow.cpu.sp.wrapping_add(1));
+        u32::from(self.shadow.ram[start])
+            | (u32::from(self.shadow.ram[(start + 1) & 0xffff]) << 8)
+            | (u32::from(self.shadow.ram[(start + 2) & 0xffff]) << 16)
     }
 
     pub(crate) fn ram_byte(&self, address: usize) -> u8 {
@@ -139,6 +148,35 @@ impl RomCpuTimingRun {
     }
 
     pub(crate) fn step(&mut self) -> CpuInstructionTiming {
+        if let Some(trace) = self.shadow.debug_cpu_write_trace.as_mut() {
+            trace.clear();
+        }
         snes::cpu_run_opcode_timed(&mut self.shadow)
+    }
+
+    pub(crate) fn enable_cpu_write_trace(&mut self) {
+        self.shadow.debug_cpu_write_trace = Some(Vec::new());
+    }
+
+    /// Drain WRAM writes performed by the most recently stepped instruction.
+    /// Both banks $7E/$7F and the low-bank $0000-$1FFF mirrors are normalized
+    /// to offsets in the native 128 KiB WRAM image.
+    pub(crate) fn take_cpu_wram_writes(&mut self) -> Vec<(usize, u8)> {
+        self.shadow
+            .debug_cpu_write_trace
+            .as_mut()
+            .expect("ROM timing CPU write trace is not enabled")
+            .drain(..)
+            .filter_map(|(address, value)| {
+                let bank = (address >> 16) as u8;
+                let offset = (address & 0xffff) as usize;
+                match bank {
+                    0x7e => Some((offset, value)),
+                    0x7f => Some((0x1_0000 + offset, value)),
+                    0x00..=0x3f | 0x80..=0xbf if offset < 0x2000 => Some((offset, value)),
+                    _ => None,
+                }
+            })
+            .collect()
     }
 }

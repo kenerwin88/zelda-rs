@@ -1,0 +1,19 @@
+{
+  "legacy_local_ratchet": {
+    "binary_sha256": "70ed600d1b6e874a5e310f29da2bb0dee8f1132e899d0ddd15f6b45b19cfe31e",
+    "frame": 29627,
+    "note": "Imported from the pre-existing local ratchet. It predates commit-bound promotion receipts and is not a durable promoted frontier."
+  },
+  "policy": {
+    "promotion_requires_clean_committed_tree": true,
+    "required_cold_confirmations": 2,
+    "required_lanes": [
+      "engine_state",
+      "video",
+      "audio"
+    ]
+  },
+  "project": "routes/full_run",
+  "promoted": null,
+  "schema": 1
+}
