@@ -4893,7 +4893,6 @@ pub(crate) struct FollowerRuntimeState {
     saved_x: u16,
     saved_indoor_flag: u8,
     saved_floor: u8,
-    kiki_anim_counter: u8,
     palette_swap_flag: u8,
     zelda_rescue_cutscene_state: u8,
 }
@@ -4920,7 +4919,6 @@ impl FollowerRuntimeState {
             saved_x: read_le_u16(ram, FOLLOWER_SAVED_X),
             saved_indoor_flag: ram.get(FOLLOWER_SAVED_INDOORS).copied().unwrap_or(0),
             saved_floor: ram.get(FOLLOWER_SAVED_FLOOR).copied().unwrap_or(0),
-            kiki_anim_counter: ram.get(FOLLOWER_KIKI_ANIM_COUNTER).copied().unwrap_or(0),
             palette_swap_flag: ram.get(FOLLOWER_PALETTE_SWAP_FLAG).copied().unwrap_or(0),
             zelda_rescue_cutscene_state: ram.get(ZELDA_RESCUE_CUTSCENE_STATE).copied().unwrap_or(0),
         }
@@ -4943,7 +4941,11 @@ impl FollowerRuntimeState {
         write_le_u16(ram, FOLLOWER_SAVED_X, self.saved_x);
         ram[FOLLOWER_SAVED_INDOORS] = self.saved_indoor_flag;
         ram[FOLLOWER_SAVED_FLOOR] = self.saved_floor;
-        ram[FOLLOWER_KIKI_ANIM_COUNTER] = self.kiki_anim_counter;
+        // FOLLOWER_KIKI_ANIM_COUNTER (0xb69) is solely owned by SpriteSystemState. C
+        // reuses byte_7E0B69 across mutually-exclusive users -- Blind's head animation,
+        // the tutorial guard's message index, and this Kiki clear -- and follower_runtime
+        // projects AFTER system in SpriteState::write_to_ram, so a second copy here
+        // re-stamped the live counter every frame.
         ram[FOLLOWER_PALETTE_SWAP_FLAG] = self.palette_swap_flag;
         ram[ZELDA_RESCUE_CUTSCENE_STATE] = self.zelda_rescue_cutscene_state;
     }
@@ -5148,10 +5150,6 @@ impl FollowerRuntimeState {
         self.saved_floor = value;
     }
 
-    pub(crate) fn clear_kiki_anim_counter(&mut self) {
-        self.kiki_anim_counter = 0;
-    }
-
     pub(crate) fn set_zelda_rescue_cutscene_state(&mut self, value: u8) {
         self.zelda_rescue_cutscene_state = value;
     }
@@ -5314,11 +5312,6 @@ impl<'a> NativeFollowerRuntimeBridgeMut<'a> {
 
     pub(crate) fn set_saved_floor(&mut self, value: u8) {
         self.state.set_saved_floor(value);
-        self.sync();
-    }
-
-    pub(crate) fn clear_kiki_anim_counter(&mut self) {
-        self.state.clear_kiki_anim_counter();
         self.sync();
     }
 

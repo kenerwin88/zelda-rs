@@ -12,6 +12,9 @@ const ROOM_BOUND_COUNT: usize = 4;
 const SCROLL_TARGET_COUNT: usize = 4;
 const SCROLL_COUNTER_COUNT: usize = 4;
 const DUNGEON_REPLACEMENT_TILE_WORDS: usize = 0x400;
+/// C's overworld map16 stripe buffer walks `d = (d + 1) & 0x1f` over
+/// dung_replacement_tile_state, so 32 words is the whole window this state owns.
+const OVERWORLD_MAP16_STRIPE_WORDS: usize = 0x20;
 pub(crate) const DOOR_ANIMATION_REPLACEMENT_TILE_INDEX: usize =
     (DOOR_ANIMATION_STEP_INDICATOR - DUNG_REPLACEMENT_TILE_STATE) / 2;
 
@@ -2402,7 +2405,24 @@ impl WorldTransientState {
         // is the sole owner while the dungeon module is active; projecting the
         // stale overworld copy here clobbers the dungeon table on every frame.
         if ram_byte(ram, MAIN_MODULE) != 7 {
-            for (index, tile) in self.dungeon_replacement_tiles.iter().enumerate() {
+            // Project only the 32-word overworld map16 stripe window this state actually
+            // owns. The backing Vec is 0x400 words, but projecting all of it wrote
+            // 0x500..0xd00 -- 0x800 bytes reaching far past the C array (whose next
+            // variable, dung_object_pos_in_objdata, starts at 0x520) and straight through
+            // the sprite/overlord tables. Everything above index 31 was only ever a
+            // load-time snapshot, so it re-stamped stale bytes over live foreign systems;
+            // ZELDA3_ASSERT_SCRATCH_CONFLICTS caught it clobbering byte_7E0B69 (0xb69,
+            // index 820) while the tutorial guard was cycling its message index.
+            // C's own use is exactly 32 words -- BufferAndBuildMap16Stripes_X walks
+            // `d = (d + 1) & 0x1f` -- and every Rust writer masks & 0x1f to match.
+            // DOOR_ANIMATION_STEP_INDICATOR (0x690, index 200) is the one higher word the
+            // Vec mirrors, and write_scalar_fields_to_ram already projects it directly.
+            for (index, tile) in self
+                .dungeon_replacement_tiles
+                .iter()
+                .enumerate()
+                .take(OVERWORLD_MAP16_STRIPE_WORDS)
+            {
                 write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
             }
         }

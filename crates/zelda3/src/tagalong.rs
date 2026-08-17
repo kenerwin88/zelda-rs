@@ -1589,7 +1589,7 @@ impl ZeldaState {
         maiden.set_ignore_projectile(2);
         self.dungeon_savegame_state_mut()
             .or_savegame_state_bits(0x2000);
-        self.follower_state_mut().clear_kiki_anim_counter();
+        self.sprite_system_mut().set_blind_head_anim_counter(0);
     }
 
     pub(super) fn kiki_revert_to_sprite(&mut self, k: usize) {

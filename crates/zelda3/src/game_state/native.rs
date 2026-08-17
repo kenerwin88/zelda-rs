@@ -212,35 +212,70 @@ impl GameState {
     ///
     /// Driven by `ZELDA3_ASSERT_SCRATCH_CONFLICTS`; each entry is
     /// `(addr, winner, winner_value, loser, loser_value)` in projection order.
+    ///
+    /// The window defaults to the ancilla scratch and can be retargeted at any other
+    /// shared range with `ZELDA3_SCRATCH_CONFLICT_RANGE=0xLO-0xHI` (HI exclusive), which
+    /// is how the other C-aliased overlaps get measured rather than argued about.
+    fn scratch_conflict_window() -> (usize, usize) {
+        const DEFAULT: (usize, usize) = (0x15800, 0x15880);
+        let Ok(spec) = std::env::var("ZELDA3_SCRATCH_CONFLICT_RANGE") else {
+            return DEFAULT;
+        };
+        let parse = |t: &str| {
+            let t = t.trim();
+            usize::from_str_radix(t.strip_prefix("0x").unwrap_or(t), 16).ok()
+        };
+        match spec.split_once('-') {
+            Some((a, b)) => match (parse(a), parse(b)) {
+                (Some(a), Some(b)) if a < b => (a, b),
+                _ => DEFAULT,
+            },
+            None => DEFAULT,
+        }
+    }
+
     pub(crate) fn report_scratch_conflicts(
         &self,
         ram: &[u8],
     ) -> Vec<(usize, &'static str, u8, &'static str, u8)> {
-        const LO: usize = 0x15800;
-        const HI: usize = 0x15880;
+        let (lo, hi) = Self::scratch_conflict_window();
 
         // What each state alone would leave in the window, starting from live RAM.
         let claims = |f: &dyn Fn(&mut [u8])| -> Vec<(usize, u8)> {
             let mut probe = ram.to_vec();
             f(&mut probe);
-            (LO..HI)
+            (lo..hi)
                 .filter(|&a| probe[a] != ram[a])
                 .map(|a| (a, probe[a]))
                 .collect()
         };
 
-        let e = &self.effects;
-        let s = &self.sprites;
-        // Projection order inside GameState::write_to_ram: sprites before effects.
-        let owners: [(&'static str, &dyn Fn(&mut [u8])); 8] = [
-            ("ether_orbit", &|r: &mut [u8]| s.ether_orbit.write_to_ram(r)),
-            ("angle_scratch", &|r: &mut [u8]| e.angle_scratch.write_to_ram(r)),
-            ("quake_bolts", &|r: &mut [u8]| e.quake_bolts.write_to_ram(r)),
-            ("quake_spell", &|r: &mut [u8]| e.quake_spell.write_to_ram(r)),
-            ("bombos_spell", &|r: &mut [u8]| e.bombos_spell.write_to_ram(r)),
-            ("tower_seal", &|r: &mut [u8]| e.tower_seal.write_to_ram(r)),
-            ("weather_vane_debris", &|r: &mut [u8]| e.weather_vane_debris.write_to_ram(r)),
-            ("happiness_pond_rupees", &|r: &mut [u8]| e.happiness_pond_rupees.write_to_ram(r)),
+        // Attribute by top-level projection group, in GameState::write_to_ram order, so the
+        // detector names an owner for ANY range — not just the states it was first written
+        // for. Group granularity is enough to point at the file to read next.
+        let owners: [(&'static str, &dyn Fn(&mut [u8])); 22] = [
+            ("frame", &|r: &mut [u8]| self.frame.write_to_ram(r)),
+            ("system_signals", &|r: &mut [u8]| self.system_signals.write_to_ram(r)),
+            ("enhanced_features", &|r: &mut [u8]| self.enhanced_features.write_to_ram(r)),
+            ("scratch_counter", &|r: &mut [u8]| self.scratch_counter.write_to_ram(r)),
+            ("minigame", &|r: &mut [u8]| self.minigame.write_to_ram(r)),
+            ("intro_sword", &|r: &mut [u8]| self.intro_sword.write_to_ram(r)),
+            ("archery_game", &|r: &mut [u8]| self.archery_game.write_to_ram(r)),
+            ("sprite_battle", &|r: &mut [u8]| self.sprite_battle.write_to_ram(r)),
+            ("memorized_tiles", &|r: &mut [u8]| self.memorized_tiles.write_to_ram(r)),
+            ("save_load_transfer", &|r: &mut [u8]| self.save_load_transfer.write_to_ram(r)),
+            ("dungeon_map_display", &|r: &mut [u8]| self.dungeon_map_display.write_to_ram(r)),
+            ("dungeon", &|r: &mut [u8]| self.dungeon.write_to_ram(r)),
+            ("sprites", &|r: &mut [u8]| self.sprites.write_to_ram(r)),
+            ("player", &|r: &mut [u8]| self.player.write_to_ram(r)),
+            ("inventory", &|r: &mut [u8]| self.inventory.write_to_ram(r)),
+            ("ending", &|r: &mut [u8]| self.ending.write_to_ram(r)),
+            ("messaging", &|r: &mut [u8]| self.messaging.write_to_ram(r)),
+            ("world", &|r: &mut [u8]| self.world.write_to_ram(r)),
+            ("poly", &|r: &mut [u8]| self.poly.write_to_ram(r)),
+            ("display", &|r: &mut [u8]| self.display.write_to_ram(r)),
+            ("effects", &|r: &mut [u8]| self.effects.write_to_ram(r)),
+            ("oam", &|r: &mut [u8]| self.oam.write_to_ram(r)),
         ];
 
         // The clobber that matters is the FRAME-WIDE projection overwriting a live byte in
@@ -248,7 +283,7 @@ impl GameState {
         // bulk-projected, so trigger on the composite actually changing RAM here.
         let mut probe = ram.to_vec();
         self.write_to_ram(&mut probe);
-        let stomped: Vec<usize> = (LO..HI).filter(|&a| probe[a] != ram[a]).collect();
+        let stomped: Vec<usize> = (lo..hi).filter(|&a| probe[a] != ram[a]).collect();
         if stomped.is_empty() {
             return Vec::new();
         }
