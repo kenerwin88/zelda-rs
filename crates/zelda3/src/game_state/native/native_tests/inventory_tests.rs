@@ -294,6 +294,9 @@ fn save_progress_state_loads_from_and_projects_to_ram() {
     progress.increment_pending_death_save_counter();
     progress.set_total_death_save_counter(0x0045);
     progress.write_to_ram(&mut ram);
+    // The 0xf000..0xf500 save block is write-through, not bulk-projected, so the
+    // block-backed fields flush through the explicit block writer rather than write_to_ram.
+    progress.write_dungeon_info_to_ram(&mut ram);
 
     assert_eq!(ram[CUR_PALACE_INDEX_X2], 8);
     assert_eq!(ram[SRAM_PROGRESS_FLAGS], 0x41);
@@ -371,15 +374,20 @@ fn native_save_progress_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_save_progress_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0xff; WRAM_SIZE];
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[CUR_PALACE_INDEX_X2] = 10;
-    native_ram[SRAM_PROGRESS_FLAGS] = 0x10;
-    native_ram[SRAM_PROGRESS_INDICATOR_3] = 0xff;
-    native_ram[HUD_CUR_ITEM] = 1;
-    write_le_u16(&mut native_ram, SAVE_DUNG_INFO + 2, 0x0001);
-    let mut progress = SaveProgressState::load_from_ram(&native_ram);
+fn native_save_progress_bridge_composes_edits_onto_live_ram() {
+    // The 0xf000..0xf500 save block is owned and written live by the inventory / player /
+    // follower / overworld-event natives, exactly as C writes it straight into the SRAM
+    // mirror, so the bridge must compose its edits onto whatever is in RAM now — never
+    // re-stamp a stale frame-start snapshot over a live write.
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[CUR_PALACE_INDEX_X2] = 10;
+    ram[SRAM_PROGRESS_FLAGS] = 0x10;
+    ram[SRAM_PROGRESS_INDICATOR_3] = 0xff;
+    ram[HUD_CUR_ITEM] = 1;
+    write_le_u16(&mut ram, SAVE_DUNG_INFO + 2, 0x0001);
+
+    // A deliberately stale native snapshot: every field disagrees with live RAM.
+    let mut progress = SaveProgressState::load_from_ram(&vec![0xa5; WRAM_SIZE]);
 
     {
         let mut bridge = NativeSaveProgressBridgeMut::new(&mut progress, &mut ram);
@@ -387,17 +395,46 @@ fn native_save_progress_bridge_projects_native_state_over_stale_ram() {
         bridge.or_progress_flags(0x20);
         bridge.clear_progress_indicator_3_bits(0xf0);
         bridge.set_hud_current_item(2);
+        // 0x0001 is RAM's live value; the stale snapshot held 0xa5a5.
         assert_eq!(bridge.or_dungeon_info_word(1, 0x0100), 0x0101);
     }
 
+    // Each edit landed on the live RAM value, and the stale snapshot was discarded.
     assert_eq!(progress.palace_index_x2(), 8);
     assert_eq!(progress.progress_flags(), 0x30);
     assert_eq!(progress.progress_indicator_3(), 0x0f);
     assert_eq!(progress.hud_current_item(), 2);
     assert_eq!(progress.dungeon_info_word(1), 0x0101);
+
+    // ...and every edit still wrote through to RAM.
     assert_eq!(ram[CUR_PALACE_INDEX_X2], 8);
     assert_eq!(ram[SRAM_PROGRESS_FLAGS], 0x30);
     assert_eq!(ram[SRAM_PROGRESS_INDICATOR_3], 0x0f);
     assert_eq!(ram[HUD_CUR_ITEM], 2);
     assert_eq!(read_le_u16(&ram, SAVE_DUNG_INFO + 2), 0x0101);
+}
+
+#[test]
+fn save_progress_projection_leaves_the_live_save_block_alone() {
+    // Regression: SaveProgressState::write_to_ram used to bulk-copy its 0x500-byte cache
+    // over 0xf000..0xf500. Because `inventory` projects after `player` and `save_progress`
+    // after `player_resources`, that snapshot became the last writer for every live
+    // inventory byte in the block. It must no longer touch them.
+    let mut ram = vec![0; WRAM_SIZE];
+    let mut progress = SaveProgressState::load_from_ram(&ram);
+
+    // Another native writes live values into the block after the snapshot was taken.
+    ram[LINK_MAGIC_POWER] = 0x50;
+    ram[LINK_NUM_KEYS] = 3;
+    ram[LINK_ABILITY_FLAGS] = 0x04;
+    write_le_u16(&mut ram, LINK_RUPEES_GOAL, 0x0123);
+
+    progress.set_palace_index_x2(6);
+    progress.write_to_ram(&mut ram);
+
+    assert_eq!(ram[CUR_PALACE_INDEX_X2], 6, "own bytes still project");
+    assert_eq!(ram[LINK_MAGIC_POWER], 0x50);
+    assert_eq!(ram[LINK_NUM_KEYS], 3);
+    assert_eq!(ram[LINK_ABILITY_FLAGS], 0x04);
+    assert_eq!(read_le_u16(&ram, LINK_RUPEES_GOAL), 0x0123);
 }

@@ -684,14 +684,30 @@ impl SaveProgressState {
     }
 
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
-        ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + SAVE_DUNGEON_INFO_LEN]
-            .copy_from_slice(&self.dungeon_info);
+        // The 0x500-byte save block (0xf000..0xf500) is deliberately NOT bulk-projected.
+        // It spans every live inventory byte C keeps in the SRAM mirror — rupees, health,
+        // magic, keys, arrows, ability flags, crystals, pendants, bottles, follower state —
+        // each of which has its own native owner (PlayerResourcesState, InventoryItemsState,
+        // DungeonKeySlotsState, FollowerLinkState, FollowerRuntimeState, OverworldEventInfoState).
+        // Projecting the cached block here made it the last writer for all of them (see the
+        // field order in InventoryState::write_to_ram and the group order in
+        // GameState::write_to_ram), so a stale frame-start snapshot re-stamped their live
+        // values. C has no such cache: it reads and writes the block straight out of WRAM.
+        // The block is write-through instead — see write_dungeon_info_to_ram and the
+        // reload-before-mutate in NativeSaveProgressBridgeMut::new.
         ram[CUR_PALACE_INDEX_X2] = self.palace_index_x2;
         ram[HUD_CUR_ITEM] = self.hud_current_items[0];
         ram[HUD_CUR_ITEM_X] = self.hud_current_items[1];
         ram[HUD_CUR_ITEM_L] = self.hud_current_items[2];
         ram[HUD_CUR_ITEM_R] = self.hud_current_items[3];
         ram[HUD_POST_MESSAGE_REFRESH_FLAG] = self.post_message_refresh_flag;
+    }
+
+    /// Push the whole cached save block to RAM. Only the block-wide mutations
+    /// (clear / copy-in) use this; per-word edits write through a single word.
+    pub(crate) fn write_dungeon_info_to_ram(&self, ram: &mut [u8]) {
+        ram[SAVE_DUNG_INFO..SAVE_DUNG_INFO + SAVE_DUNGEON_INFO_LEN]
+            .copy_from_slice(&self.dungeon_info);
     }
 
     fn save_offset(address: usize) -> usize {
@@ -962,11 +978,19 @@ pub(crate) struct NativeSaveProgressBridgeMut<'a> {
 
 impl<'a> NativeSaveProgressBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut SaveProgressState, ram: &'a mut [u8]) -> Self {
+        // The 0xf000..0xf500 save block is not bulk-projected (see
+        // SaveProgressState::write_to_ram); its bytes are owned and written live by the
+        // inventory/player/follower/overworld-event natives, exactly as C writes them
+        // straight into the SRAM mirror. Re-read the cache from RAM before any mutation so
+        // per-word edits compose with those live writes instead of re-stamping a stale
+        // frame-start snapshot over them.
+        *state = SaveProgressState::load_from_ram(ram);
         Self { state, ram }
     }
 
     fn sync_all(&mut self) {
         self.state.write_to_ram(self.ram);
+        self.state.write_dungeon_info_to_ram(self.ram);
         self.debug_assert_matches_ram();
     }
 
