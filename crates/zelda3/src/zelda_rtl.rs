@@ -7447,6 +7447,11 @@ pub struct ZeldaState {
     iris_spotlight_goal_transition_pending: bool,
     #[serde(skip)]
     normal_dialogue_initialization_phase: u8,
+    /// OAM image of the last COMPLETED main at the moment `Text_Initialize`
+    /// began its multi-slice block, held for every slice of the window (see
+    /// `stage_dialogue_initialization_obj_scanout`).
+    #[serde(skip)]
+    dialogue_initialization_held_oam: Option<Vec<u16>>,
     #[serde(skip)]
     hud_tilemap_nmi_publication_phase: u8,
     #[serde(skip)]
@@ -13332,6 +13337,7 @@ impl ZeldaState {
             dungeon_exit_spotlight_resume_module: false,
             iris_spotlight_goal_transition_pending: false,
             normal_dialogue_initialization_phase: 0,
+            dialogue_initialization_held_oam: None,
             hud_tilemap_nmi_publication_phase: 0,
             intro_poly_upload_delay: 0,
             display_snapshot: None,
@@ -13456,6 +13462,7 @@ impl ZeldaState {
         self.dungeon_exit_spotlight_resume_module = false;
         self.iris_spotlight_goal_transition_pending = false;
         self.normal_dialogue_initialization_phase = 0;
+        self.dialogue_initialization_held_oam = None;
         self.dialogue_fast_forward_hold_pending = false;
         self.dialogue_fast_forward_hold_active = false;
         self.game_over_text_render_calls_remaining = 0;
@@ -13530,6 +13537,8 @@ impl ZeldaState {
             self.dungeon_exit_spotlight_resume_module = false;
             self.iris_spotlight_goal_transition_pending = false;
             self.normal_dialogue_initialization_phase = 0;
+            self.dialogue_initialization_held_oam = None;
+        self.dialogue_initialization_held_oam = None;
             self.hud_tilemap_nmi_publication_phase = 0;
             self.nmi_poly_upload_deferred = 0;
             self.nmi_poly_upload_started = false;
@@ -14305,55 +14314,50 @@ impl ZeldaState {
     }
 
     /// OBJ scanout for a frame consumed by the multi-slice `Text_Initialize`
-    /// worker. The long initializer blocks the translated main loop, so C's
-    /// `Interrupt_NMI` finds `nmi_boolean` still set and skips `NMI_DoUpdates`
-    /// for every held vblank: no $2104 transfer runs, and hardware keeps
-    /// scanning out the OAM left by the LAST COMPLETED frame's DMA — never a
-    /// live composition. Which lane holds that image differs by dialogue
-    /// context (both measured against the pinned core):
-    /// - OUTDOORS (route frame 5363): the entry boundary still transfers the
-    ///   shadow Module0E's Sprite_Main just authored, so the software shadow
-    ///   published at the host boundary is the resident generation. Live
-    ///   composition instead carries the post-`RunInterface` scroll-copy step
-    ///   one pixel ahead of it.
-    /// - INDOORS (route frame 3808): the block begins one boundary earlier
-    ///   (the entry vblank is already held), so the last completed transfer
-    ///   is the `resident_oam_dma` lane, one generation OLDER than the
-    ///   current software shadow.
-    /// Bug class 5 (collapsed timed side-effect phase).
+    /// worker. Trace- and pixel-verified against the pinned core (route
+    /// windows 3808, 5363, 7316, 8696): the $0800→$2104 OAM transfer runs at
+    /// v≈245 only on vblanks whose main completed (C's Interrupt_NMI gates
+    /// NMI_DoUpdates on nmi_boolean; the OAM memcpy sits OUTSIDE the
+    /// core-update gate), and a transfer becomes visible from the following
+    /// scanout. The blocked initializer's own main never completes, so any
+    /// OAM shadow it authored before blocking (Module0E's Sprite_Main runs
+    /// first) is never transferred: hardware keeps scanning out the shadow of
+    /// the LAST COMPLETED main for the whole window. That image is exactly
+    /// this frame's pre-main boundary capture. Hold it once for every slice.
     pub(super) fn stage_dialogue_initialization_obj_scanout(&mut self) {
-        if self.ram[crate::game_state::constants::PLAYER_IS_INDOORS] != 0 {
-            let resident = self
-                .resident_oam_dma
-                .clone()
-                .unwrap_or_else(|| self.ppu.oam.clone());
-            self.next_display_obj_memory_generation =
-                Some(DisplayObjGeneration::RetainCapturedOam { oam: resident });
-            self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
-                oam: OamScanoutSource::RetainResidentPpuOam,
-                link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
-                link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
-            }));
-        } else {
-            self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
-                oam: OamScanoutSource::ComposeHostBoundaryShadowDma,
-                link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
-                link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
-            }));
+        if self.dialogue_initialization_held_oam.is_none() {
+            let mut held = vec![0u16; self.ppu.oam.len()];
+            let captured = self
+                .pre_main_graphics_dma
+                .as_ref()
+                .is_some_and(|graphics| publish_oam_shadow(&mut held, &graphics.oam_shadow));
+            if !captured {
+                // No boundary capture (untimed replays): the live shadow is
+                // the closest available generation.
+                publish_oam_shadow(&mut held, self.sprite_oam_shadow_buffer());
+            }
+            self.dialogue_initialization_held_oam = Some(held);
         }
+        let held = self
+            .dialogue_initialization_held_oam
+            .clone()
+            .expect("held dialogue OAM image populated above");
+        self.next_display_obj_memory_generation =
+            Some(DisplayObjGeneration::RetainCapturedOam { oam: held });
+        self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::RetainResidentPpuOam,
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        }));
     }
 
-    /// OBJ scanout for the final `Text_Initialize` slice: the initializer's
-    /// suffix sets `nmi_disable_core_updates = 2`, so even the completion
-    /// slice's freshly authored Link OAM is NOT DMAed at the following
-    /// vblank — hardware still scans out the held generation, Link's entries
-    /// included (route frame 7316: Link moved during the dialogue open and
-    /// the presented live Link overlay sat two pixels from the held shadow
-    /// every lane still agreed on; at route frame 5368 Link was stationary,
-    /// which is why the live overlay previously looked correct there). The
-    /// held-slice staging already expresses exactly this.
+    /// The completion slice still scans out the held window generation (its
+    /// own early-vblank OAM DMA lands post-scanout, pixel-verified at route
+    /// frames 3812/5368/7316's completions); release the held image so the
+    /// next dialogue captures a fresh boundary.
     fn stage_dialogue_initialization_completion_obj_scanout(&mut self) {
         self.stage_dialogue_initialization_obj_scanout();
+        self.dialogue_initialization_held_oam = None;
     }
 
     fn pre_main_caller_continuation_is(&self, continuation: PreMainCallerContinuation) -> bool {
@@ -19886,10 +19890,6 @@ impl ZeldaState {
                     self.normal_dialogue_initialization_phase -= 1;
                 }
                 2 => {
-                    self.next_display_obj_memory_generation =
-                        Some(DisplayObjGeneration::RetainCapturedOam {
-                            oam: self.ppu.oam.clone(),
-                        });
                     self.complete_text_initialization_prefix();
                     self.prepare_text_character_buffer_for_carry();
                     // Stage after the completion work: the prefix's own display
@@ -19905,15 +19905,11 @@ impl ZeldaState {
                             oam: retained_oam.clone(),
                         });
                     retained_dialogue_completion_oam = Some(retained_oam);
-                    // Outdoors the completion slice's post-work OAM DMA is the
-                    // generation hardware scans out (route frame 5368). The
-                    // indoor completion (route frame 3812) still presents the
-                    // ordinary module cadence.
-                    if self.ram[crate::game_state::constants::PLAYER_IS_INDOORS] == 0 {
-                        self.stage_dialogue_initialization_completion_obj_scanout();
-                    }
+                    self.stage_dialogue_initialization_completion_obj_scanout();
                     self.complete_text_initialization_carry_suffix();
                     self.normal_dialogue_initialization_phase = 0;
+            self.dialogue_initialization_held_oam = None;
+        self.dialogue_initialization_held_oam = None;
                     self.complete_module0e_interface_after_run();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
