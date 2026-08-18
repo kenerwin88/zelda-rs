@@ -491,7 +491,7 @@ def expand_held(held: set, cont: dict[str, set]) -> set:
     return out
 
 
-def report_bridge_foreign_writes(byte_owners, consts, arrays):
+def report_bridge_foreign_writes(byte_owners, consts, arrays, reachable):
     """Flag a *Bridge* method that writes a WRAM address owned (in write_to_ram) by a
     native state the bridge does NOT hold. Such a write updates RAM but leaves that
     other state's native model stale, so a later native read sees the wrong value —
@@ -528,7 +528,10 @@ def report_bridge_foreign_writes(byte_owners, consts, arrays):
                     for a in arrays.get(am.group(1), []):
                         written.append((a, f"array {am.group(1)}[]"))
                 for addr, label in written:
-                    owners = set(byte_owners.get(addr, {}))
+                    # A state whose write_to_ram the composite never calls is write-through:
+                    # its bridge re-reads RAM before mutating, so a foreign write cannot leave
+                    # it stale. Only a bulk-projected owner can be desynced this way.
+                    owners = {s for s in byte_owners.get(addr, {}) if s in reachable}
                     if owners and not (owners & held):
                         for owner in sorted(owners):
                             key = (bname, fm.group(1), owner)
@@ -732,7 +735,7 @@ def main():
         print()
 
     report_clear_coherence(byte_owners, consts)
-    report_bridge_foreign_writes(byte_owners, consts, collect_array_constants(consts))
+    report_bridge_foreign_writes(byte_owners, consts, collect_array_constants(consts), reachable)
     report_undersized_tables(owner_intervals, c_lengths)
 
     if args.verbose and unresolved_all:
