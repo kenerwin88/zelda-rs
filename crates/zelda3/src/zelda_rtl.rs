@@ -6451,6 +6451,10 @@ enum DisplayObjGeneration {
     RetainCapturedOam {
         oam: Vec<u16>,
     },
+    /// Retain the OAM-law lane (`oam_law_visible`) as of the consuming
+    /// capture — resolved at the take site, after that frame's promotion, so
+    /// it always names the last completed main's transfer without copying it.
+    RetainOamLaw,
     RetainCapturedMemory {
         oam: Vec<u16>,
         vram: Vec<u16>,
@@ -6462,6 +6466,7 @@ impl DisplayObjGeneration {
         match self {
             Self::FollowModuleCadence => "follow-module-cadence",
             Self::RetainCapturedOam { .. } => "retain-captured-oam",
+            Self::RetainOamLaw => "retain-oam-law",
             Self::RetainCapturedMemory { .. } => "retain-captured-memory",
         }
     }
@@ -6470,12 +6475,13 @@ impl DisplayObjGeneration {
         match self {
             Self::FollowModuleCadence => None,
             Self::RetainCapturedOam { oam } | Self::RetainCapturedMemory { oam, .. } => Some(oam),
+            Self::RetainOamLaw => None,
         }
     }
 
     fn retained_vram(&self) -> Option<&[u16]> {
         match self {
-            Self::FollowModuleCadence | Self::RetainCapturedOam { .. } => None,
+            Self::FollowModuleCadence | Self::RetainCapturedOam { .. } | Self::RetainOamLaw => None,
             Self::RetainCapturedMemory { vram, .. } => Some(vram),
         }
     }
@@ -7447,11 +7453,7 @@ pub struct ZeldaState {
     iris_spotlight_goal_transition_pending: bool,
     #[serde(skip)]
     normal_dialogue_initialization_phase: u8,
-    /// OAM image of the last COMPLETED main at the moment `Text_Initialize`
-    /// began its multi-slice block, held for every slice of the window (see
-    /// `stage_dialogue_initialization_obj_scanout`).
-    #[serde(skip)]
-    dialogue_initialization_held_oam: Option<Vec<u16>>,
+
     #[serde(skip)]
     hud_tilemap_nmi_publication_phase: u8,
     #[serde(skip)]
@@ -7488,6 +7490,7 @@ pub struct ZeldaState {
     oam_law_pending: Option<Vec<u16>>,
     #[serde(skip)]
     oam_law_visible: Option<Vec<u16>>,
+
     /// CGRAM evaluated for the most recently rendered scanout. Long palette
     /// walks can author the next PPU palette before the current field consumes
     /// it, independently of the other display domains.
@@ -13348,7 +13351,6 @@ impl ZeldaState {
             dungeon_exit_spotlight_resume_module: false,
             iris_spotlight_goal_transition_pending: false,
             normal_dialogue_initialization_phase: 0,
-            dialogue_initialization_held_oam: None,
             hud_tilemap_nmi_publication_phase: 0,
             intro_poly_upload_delay: 0,
             display_snapshot: None,
@@ -13475,7 +13477,6 @@ impl ZeldaState {
         self.dungeon_exit_spotlight_resume_module = false;
         self.iris_spotlight_goal_transition_pending = false;
         self.normal_dialogue_initialization_phase = 0;
-        self.dialogue_initialization_held_oam = None;
         self.dialogue_fast_forward_hold_pending = false;
         self.dialogue_fast_forward_hold_active = false;
         self.game_over_text_render_calls_remaining = 0;
@@ -13552,8 +13553,6 @@ impl ZeldaState {
             self.dungeon_exit_spotlight_resume_module = false;
             self.iris_spotlight_goal_transition_pending = false;
             self.normal_dialogue_initialization_phase = 0;
-            self.dialogue_initialization_held_oam = None;
-        self.dialogue_initialization_held_oam = None;
             self.hud_tilemap_nmi_publication_phase = 0;
             self.nmi_poly_upload_deferred = 0;
             self.nmi_poly_upload_started = false;
@@ -14333,36 +14332,12 @@ impl ZeldaState {
     }
 
     /// OBJ scanout for a frame consumed by the multi-slice `Text_Initialize`
-    /// worker. Trace- and pixel-verified against the pinned core (route
-    /// windows 3808, 5363, 7316, 8696): the $0800→$2104 OAM transfer runs at
-    /// v≈245 only on vblanks whose main completed (C's Interrupt_NMI gates
-    /// NMI_DoUpdates on nmi_boolean; the OAM memcpy sits OUTSIDE the
-    /// core-update gate), and a transfer becomes visible from the following
-    /// scanout. The blocked initializer's own main never completes, so any
-    /// OAM shadow it authored before blocking (Module0E's Sprite_Main runs
-    /// first) is never transferred: hardware keeps scanning out the shadow of
-    /// the LAST COMPLETED main for the whole window. That image is exactly
-    /// this frame's pre-main boundary capture. Hold it once for every slice.
+    /// worker: retain the OAM-law lane. The lane already holds exactly the
+    /// generation hardware scans out through the window — the last completed
+    /// main's transfer, frozen across the initializer's held vblanks
+    /// (audit-verified delta-clean at route windows 3808, 5363, 7316, 8696).
     pub(super) fn stage_dialogue_initialization_obj_scanout(&mut self) {
-        if self.dialogue_initialization_held_oam.is_none() {
-            let mut held = vec![0u16; self.ppu.oam.len()];
-            let captured = self
-                .pre_main_graphics_dma
-                .as_ref()
-                .is_some_and(|graphics| publish_oam_shadow(&mut held, &graphics.oam_shadow));
-            if !captured {
-                // No boundary capture (untimed replays): the live shadow is
-                // the closest available generation.
-                publish_oam_shadow(&mut held, self.sprite_oam_shadow_buffer());
-            }
-            self.dialogue_initialization_held_oam = Some(held);
-        }
-        let held = self
-            .dialogue_initialization_held_oam
-            .clone()
-            .expect("held dialogue OAM image populated above");
-        self.next_display_obj_memory_generation =
-            Some(DisplayObjGeneration::RetainCapturedOam { oam: held });
+        self.next_display_obj_memory_generation = Some(DisplayObjGeneration::RetainOamLaw);
         self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
             oam: OamScanoutSource::RetainResidentPpuOam,
             link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
@@ -14370,14 +14345,6 @@ impl ZeldaState {
         }));
     }
 
-    /// The completion slice still scans out the held window generation (its
-    /// own early-vblank OAM DMA lands post-scanout, pixel-verified at route
-    /// frames 3812/5368/7316's completions); release the held image so the
-    /// next dialogue captures a fresh boundary.
-    fn stage_dialogue_initialization_completion_obj_scanout(&mut self) {
-        self.stage_dialogue_initialization_obj_scanout();
-        self.dialogue_initialization_held_oam = None;
-    }
 
     fn pre_main_caller_continuation_is(&self, continuation: PreMainCallerContinuation) -> bool {
         self.game_execution_scheduler
@@ -14533,6 +14500,15 @@ impl ZeldaState {
         // OAM-law clause: a transfer performed at the previous vblank becomes
         // visible at this scanout.
         if let Some(pending) = self.oam_law_pending.take() {
+            if nmi::debug_frame_selection_env_matches(
+                "ZELDA3_DEBUG_OAM_LAW_EVENTS",
+                self.frame_ctr_dbg,
+            ) {
+                eprintln!(
+                    "oam_law_promote host={} w204={:04x}",
+                    self.frame_ctr_dbg, pending[204]
+                );
+            }
             self.oam_law_visible = Some(pending);
         }
         // The native frame identifies the CPU publication phase. It can
@@ -14788,7 +14764,20 @@ impl ZeldaState {
                 )
             })
         });
-        let queued_obj_generation = self.next_display_obj_memory_generation.take();
+        let queued_obj_generation = self.next_display_obj_memory_generation.take().map(|g| {
+            if matches!(g, DisplayObjGeneration::RetainOamLaw) {
+                let oam = self.oam_law_visible.clone().unwrap_or_else(|| {
+                    // Untimed replays have no law lane; the host-boundary
+                    // shadow is the same generation.
+                    let mut image = vec![0u16; self.ppu.oam.len()];
+                    publish_oam_shadow(&mut image, self.sprite_oam_shadow_buffer());
+                    image
+                });
+                DisplayObjGeneration::RetainCapturedOam { oam }
+            } else {
+                g
+            }
+        });
         let obj_generation_source = if queued_obj_generation.is_some() {
             "queued"
         } else if transition_entry_obj.is_some() {
@@ -19953,11 +19942,9 @@ impl ZeldaState {
                             oam: retained_oam.clone(),
                         });
                     retained_dialogue_completion_oam = Some(retained_oam);
-                    self.stage_dialogue_initialization_completion_obj_scanout();
+                    self.stage_dialogue_initialization_obj_scanout();
                     self.complete_text_initialization_carry_suffix();
                     self.normal_dialogue_initialization_phase = 0;
-            self.dialogue_initialization_held_oam = None;
-        self.dialogue_initialization_held_oam = None;
                     self.complete_module0e_interface_after_run();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();

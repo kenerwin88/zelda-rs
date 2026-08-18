@@ -1073,12 +1073,31 @@ impl ZeldaState {
         }
         self.resident_oam_dma = Some(self.ppu.oam.clone());
         self.record_completed_oam_dma_for_display_boundary();
-        // OAM-law clause: the real transfer carries the software shadow as it
-        // stands at this vblank (post-main), independent of the operand the
-        // legacy pipeline selected above.
-        let mut law = vec![0u16; self.ppu.oam.len()];
-        if publish_oam_shadow(&mut law, self.sprite_oam_shadow_buffer()) {
-            self.oam_law_pending = Some(law);
+        // OAM-law clauses: the real transfer carries the software shadow as
+        // it stands at this vblank (post-main), independent of the operand the
+        // legacy pipeline selected above — and C performs exactly one such
+        // transfer per completed main iteration (`nmi_boolean` gates
+        // NMI_DoUpdates). A modeled NMI on a frame whose counter has not
+        // advanced is a held vblank hardware skipped.
+        // Scheduled work pending across this NMI means the main iteration has
+        // not completed yet (C's nmi_boolean stays set until the iteration's
+        // suspended tail returns); the transfer belongs to the completion
+        // slice, which carries the post-iteration shadow. Held NMIs never
+        // reach this point at all (the latch skips NMI_DoUpdates).
+        if self.game_execution_scheduler.current_work().is_none() {
+            let mut law = vec![0u16; self.ppu.oam.len()];
+            if publish_oam_shadow(&mut law, self.sprite_oam_shadow_buffer()) {
+                if debug_frame_selection_env_matches(
+                    "ZELDA3_DEBUG_OAM_LAW_EVENTS",
+                    self.frame_ctr_dbg,
+                ) {
+                    eprintln!(
+                        "oam_law_transfer host={} w204={:04x}",
+                        self.frame_ctr_dbg, law[204]
+                    );
+                }
+                self.oam_law_pending = Some(law);
+            }
         }
     }
 
