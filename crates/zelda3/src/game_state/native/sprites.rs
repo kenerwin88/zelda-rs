@@ -17,7 +17,7 @@ use crate::game_state::constants::{
     ETHER_ANGLE, ETHER_BEAM_TOP_BUCKET, ETHER_BEAM_Y, ETHER_ORBIT_X, ETHER_ORBIT_Y, ETHER_ORB_X,
     ETHER_ORB_Y, ETHER_RADIUS, ETHER_SPIN_COUNTDOWN, FOLLOWER_DROPPED,
     FOLLOWER_HOOKSHOT_RELEASE_TAIL_INDEX, FOLLOWER_INDICATOR, FOLLOWER_JUMP_TIMER,
-    FOLLOWER_KIKI_ANIM_COUNTER, FOLLOWER_PALETTE_SWAP_FLAG, FOLLOWER_SAVED_FLOOR,
+    FOLLOWER_PALETTE_SWAP_FLAG, FOLLOWER_SAVED_FLOOR,
     FOLLOWER_SAVED_INDOORS, FOLLOWER_SAVED_X, FOLLOWER_SAVED_Y, FOLLOWER_TAIL_WRITE_INDEX,
     GARNISH_ACTIVE, GARNISH_COUNTDOWN, GARNISH_FLOOR, GARNISH_OAM_FLAGS, GARNISH_SPRITE,
     GARNISH_TYPE, GARNISH_X_HI, GARNISH_X_LO, GARNISH_X_SUBPIXEL, GARNISH_X_VELOCITY, GARNISH_Y_HI,
@@ -221,7 +221,13 @@ impl SpriteState {
         self.ancilla_slots.write_to_ram(ram);
         self.overlord_slots.write_to_ram(ram);
         self.garnish_slots.write_to_ram(ram);
-        self.maze_game_timer.write_to_ram(ram);
+        // The 0x1fe00 window is C's `beamos_x_hi[]` sprite-history bank, borrowed by
+        // mutually-exclusive systems: word_7FFE00 (maze-race timer), byte_7FFE01 (Zelda
+        // rescue cutscene state) and beamos_x_hi[0]/[1] (digging-game prize spawn and
+        // attempt count). C never re-stamps it -- whichever system is running owns it.
+        // Bulk-projecting all three every frame made it last-writer-wins, the same shape
+        // as the $7F58xx ancilla scratch. Write-through instead; the sprite-history bank
+        // at the same base already is.
         self.prize_drop_cycle.write_to_ram(ram);
         self.dual_layer_tile_cache.write_to_ram(ram);
         self.draw_hitbox_work.write_to_ram(ram);
@@ -4947,7 +4953,8 @@ impl FollowerRuntimeState {
         // projects AFTER system in SpriteState::write_to_ram, so a second copy here
         // re-stamped the live counter every frame.
         ram[FOLLOWER_PALETTE_SWAP_FLAG] = self.palette_swap_flag;
-        ram[ZELDA_RESCUE_CUTSCENE_STATE] = self.zelda_rescue_cutscene_state;
+        // ZELDA_RESCUE_CUTSCENE_STATE (0x1fe01) is write-through, not projected -- see the
+        // note in SpriteState::write_to_ram.
     }
 
     pub(crate) fn indicator(&self) -> u8 {
@@ -5317,6 +5324,7 @@ impl<'a> NativeFollowerRuntimeBridgeMut<'a> {
 
     pub(crate) fn set_zelda_rescue_cutscene_state(&mut self, value: u8) {
         self.state.set_zelda_rescue_cutscene_state(value);
+        self.ram[ZELDA_RESCUE_CUTSCENE_STATE] = value;
         self.sync();
     }
 }
@@ -6872,6 +6880,9 @@ pub(crate) struct NativeMazeGameTimerBridgeMut<'a> {
 
 impl<'a> NativeMazeGameTimerBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut MazeGameTimerState, ram: &'a mut [u8]) -> Self {
+        // Shared 0x1fe00 window (see SpriteState::write_to_ram): re-read before mutating
+        // so a setter composes with whichever system wrote it last.
+        *state = MazeGameTimerState::load_from_ram(ram);
         Self { state, ram }
     }
 

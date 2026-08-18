@@ -76,15 +76,18 @@ fn maze_game_timer_state_loads_from_and_projects_to_ram() {
 }
 
 #[test]
-fn native_maze_game_timer_bridge_projects_native_state_over_stale_ram() {
-    let mut native_ram = vec![0; WRAM_SIZE];
-    write_le_u16(&mut native_ram, MAZE_GAME_TIMER_LO, 0x0007);
-    write_le_u16(&mut native_ram, MAZE_GAME_TIMER_HI, 0x0009);
-    write_le_u16(&mut native_ram, MAZE_GAME_TIMER_SNAPSHOT_LO, 0x0011);
-    write_le_u16(&mut native_ram, MAZE_GAME_TIMER_SNAPSHOT_HI, 0x0013);
-    let mut timer = MazeGameTimerState::load_from_ram(&native_ram);
+fn native_maze_game_timer_bridge_composes_edits_onto_live_ram() {
+    // The 0x1fe00 window is shared with mutually-exclusive systems and is no longer
+    // bulk-projected, so the bridge must compose its edits onto live RAM rather than
+    // re-stamp a stale native snapshot over whichever system wrote it last.
+    let mut ram = vec![0; WRAM_SIZE];
+    write_le_u16(&mut ram, MAZE_GAME_TIMER_LO, 0x0007);
+    write_le_u16(&mut ram, MAZE_GAME_TIMER_HI, 0x0009);
+    write_le_u16(&mut ram, MAZE_GAME_TIMER_SNAPSHOT_LO, 0x0011);
+    write_le_u16(&mut ram, MAZE_GAME_TIMER_SNAPSHOT_HI, 0x0013);
+    let stale_ram = vec![0xff; WRAM_SIZE];
+    let mut timer = MazeGameTimerState::load_from_ram(&stale_ram);
 
-    let mut ram = vec![0xff; WRAM_SIZE];
     {
         let mut bridge = NativeMazeGameTimerBridgeMut::new(&mut timer, &mut ram);
         assert_eq!(bridge.increment_elapsed_low(), 8);

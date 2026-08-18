@@ -379,7 +379,6 @@ pub(crate) struct FollowerLinkState {
     link_dma_tile_offset: u16,
     link_dma_countdown: u16,
     palette_bits_of_oam: u16,
-    link_sprite_index_scratch: u16,
     hop_origin_coord: u16,
     cached_x: u16,
     cached_y: u16,
@@ -569,7 +568,6 @@ impl FollowerLinkState {
             link_dma_tile_offset: read_le_u16(ram, LINK_DMA_TILE_OFFSET),
             link_dma_countdown: read_le_u16(ram, LINK_DMA_COUNTDOWN),
             palette_bits_of_oam: read_le_u16(ram, LINK_PALETTE_BITS_OF_OAM),
-            link_sprite_index_scratch: read_le_u16(ram, SCRATCH_1),
             hop_origin_coord: read_le_u16(ram, LINK_Y_COORD_ORIGINAL),
             cached_x: read_le_u16(ram, LINK_X_COORD_CACHED),
             cached_y: read_le_u16(ram, LINK_Y_COORD_CACHED),
@@ -778,7 +776,12 @@ impl FollowerLinkState {
         write_le_u16(ram, LINK_DMA_TILE_OFFSET, self.link_dma_tile_offset);
         write_le_u16(ram, LINK_DMA_COUNTDOWN, self.link_dma_countdown);
         write_le_u16(ram, LINK_PALETTE_BITS_OF_OAM, self.palette_bits_of_oam);
-        write_le_u16(ram, SCRATCH_1, self.link_sprite_index_scratch);
+        // SCRATCH_1 (0x74) is C's `scratch_1`, a call-local scratch register written and
+        // consumed inside a single routine (tile_detect, the overworld bush-poof spawn,
+        // ancilla, player_oam). TileDetectionState is the sole native model; a second copy
+        // here clobbered it 10866 times over the recorded route, on both bytes of the word.
+        // Link's sprite-index scratch has no reader at all -- the setter writes RAM
+        // directly, exactly as C's `scratch_1 = j` does.
         write_le_u16(ram, LINK_Y_COORD_ORIGINAL, self.hop_origin_coord);
         write_le_u16(ram, LINK_X_COORD_CACHED, self.cached_x);
         write_le_u16(ram, LINK_Y_COORD_CACHED, self.cached_y);
@@ -3776,10 +3779,6 @@ impl FollowerLinkState {
         self.link_dma_staging_index = value;
     }
 
-    fn set_link_sprite_index_scratch(&mut self, value: u16) {
-        self.link_sprite_index_scratch = value;
-    }
-
     fn set_hop_origin_coord(&mut self, value: u16) {
         self.hop_origin_coord = value;
     }
@@ -6298,8 +6297,9 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    /// C: `scratch_1 = j` in player_oam — a call-local scratch write with no native
+    /// model behind it (see FollowerLinkState::write_to_ram). Write RAM, like C.
     pub(crate) fn set_link_sprite_index_scratch(&mut self, value: u16) {
-        self.state.set_link_sprite_index_scratch(value);
         write_le_u16(self.ram, SCRATCH_1, value);
         self.debug_assert_matches_ram();
     }

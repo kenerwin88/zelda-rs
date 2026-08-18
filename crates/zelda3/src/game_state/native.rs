@@ -240,20 +240,35 @@ impl GameState {
     ) -> Vec<(usize, &'static str, u8, &'static str, u8)> {
         let (lo, hi) = Self::scratch_conflict_window();
 
-        // What each state alone would leave in the window, starting from live RAM.
+        // Which bytes a state WRITES, and with what — independent of whether the value
+        // happens to match RAM. Run it twice over opposite sentinel fills; a byte it writes
+        // lands on the same value both times, a byte it leaves alone keeps the sentinel.
+        // (Comparing against live RAM instead would miss an owner writing the current
+        // value, which is exactly the case that makes a shared byte look single-owned.)
         let claims = |f: &dyn Fn(&mut [u8])| -> Vec<(usize, u8)> {
-            let mut probe = ram.to_vec();
-            f(&mut probe);
+            let mut zeros = ram.to_vec();
+            let mut ones = ram.to_vec();
+            zeros[lo..hi].fill(0x00);
+            ones[lo..hi].fill(0xff);
+            f(&mut zeros);
+            f(&mut ones);
             (lo..hi)
-                .filter(|&a| probe[a] != ram[a])
-                .map(|a| (a, probe[a]))
+                .filter(|&a| zeros[a] == ones[a])
+                .map(|a| (a, zeros[a]))
                 .collect()
         };
 
         // Attribute by top-level projection group, in GameState::write_to_ram order, so the
         // detector names an owner for ANY range — not just the states it was first written
         // for. Group granularity is enough to point at the file to read next.
-        let owners: [(&'static str, &dyn Fn(&mut [u8])); 22] = [
+        // Groups named in ZELDA3_SCRATCH_CONFLICT_SPLIT are expanded into their sub-states.
+        // Needed whenever the two owners of a byte live in the SAME group: the group's own
+        // write_to_ram has already resolved them last-writer-wins, so at group granularity
+        // the conflict is invisible (this hid the 0x74 follower_link/tile_detection clobber
+        // and the 0xb69 world.transient overrun until the group was split).
+        let split = std::env::var("ZELDA3_SCRATCH_CONFLICT_SPLIT").unwrap_or_default();
+        let split: Vec<&str> = split.split(',').map(|s| s.trim()).collect();
+        let all: [(&'static str, &dyn Fn(&mut [u8])); 27] = [
             ("frame", &|r: &mut [u8]| self.frame.write_to_ram(r)),
             ("system_signals", &|r: &mut [u8]| self.system_signals.write_to_ram(r)),
             ("enhanced_features", &|r: &mut [u8]| self.enhanced_features.write_to_ram(r)),
@@ -267,7 +282,12 @@ impl GameState {
             ("dungeon_map_display", &|r: &mut [u8]| self.dungeon_map_display.write_to_ram(r)),
             ("dungeon", &|r: &mut [u8]| self.dungeon.write_to_ram(r)),
             ("sprites", &|r: &mut [u8]| self.sprites.write_to_ram(r)),
-            ("player", &|r: &mut [u8]| self.player.write_to_ram(r)),
+            ("player.special_exit_position", &|r: &mut [u8]| self.player.special_exit_position.write_to_ram(r)),
+            ("player.follower_link", &|r: &mut [u8]| self.player.follower_link.write_to_ram(r)),
+            ("player.swim_acceleration", &|r: &mut [u8]| self.player.swim_acceleration.write_to_ram(r)),
+            ("player.pushed_block", &|r: &mut [u8]| self.player.pushed_block.write_to_ram(r)),
+            ("player.bg1_movement_accumulator", &|r: &mut [u8]| self.player.bg1_movement_accumulator.write_to_ram(r)),
+            ("player.tile_detection", &|r: &mut [u8]| self.player.tile_detection.write_to_ram(r)),
             ("inventory", &|r: &mut [u8]| self.inventory.write_to_ram(r)),
             ("ending", &|r: &mut [u8]| self.ending.write_to_ram(r)),
             ("messaging", &|r: &mut [u8]| self.messaging.write_to_ram(r)),
@@ -277,33 +297,69 @@ impl GameState {
             ("effects", &|r: &mut [u8]| self.effects.write_to_ram(r)),
             ("oam", &|r: &mut [u8]| self.oam.write_to_ram(r)),
         ];
+        let owners: Vec<(&'static str, &dyn Fn(&mut [u8]))> = all
+            .into_iter()
+        .filter(|(name, _)| {
+            // Keep a group unless it was split; keep a sub-state only when its group was.
+            match name.split_once('.') {
+                Some((group, _)) => split.contains(&group),
+                None => !split.contains(name),
+            }
+        })
+        .collect();
 
-        // The clobber that matters is the FRAME-WIDE projection overwriting a live byte in
-        // the window. Two natives merely disagreeing is harmless once neither is
-        // bulk-projected, so trigger on the composite actually changing RAM here.
-        let mut probe = ram.to_vec();
-        self.write_to_ram(&mut probe);
-        let stomped: Vec<usize> = (lo..hi).filter(|&a| probe[a] != ram[a]).collect();
-        if stomped.is_empty() {
-            return Vec::new();
+        // Two signals, selected by ZELDA3_SCRATCH_CONFLICT_MODE:
+        //
+        // `shared` (default) — a genuine dual-ownership clobber: two projected groups both
+        //   WRITE the byte and disagree about its value, so the later one silently discards
+        //   the earlier one's. This is the precise question for a shared address.
+        // `stomp` — the broader "the frame-wide projection overwrote a live RAM byte".
+        //   Useful when hunting an unknown writer, but on a byte with a single legitimate
+        //   owner it also fires on ordinary native-vs-RAM drift, so it is not by itself
+        //   evidence of dual ownership.
+        let stomp_mode = std::env::var("ZELDA3_SCRATCH_CONFLICT_MODE")
+            .map(|m| m == "stomp")
+            .unwrap_or(false);
+
+        if stomp_mode {
+            let mut probe = ram.to_vec();
+            self.write_to_ram(&mut probe);
+            let stomped: Vec<usize> = (lo..hi).filter(|&a| probe[a] != ram[a]).collect();
+            if stomped.is_empty() {
+                return Vec::new();
+            }
+            let mut claimed: std::collections::BTreeMap<usize, (&'static str, u8)> =
+                Default::default();
+            for (name, project) in owners {
+                for (addr, value) in claims(project) {
+                    claimed.insert(addr, (name, value));
+                }
+            }
+            return stomped
+                .into_iter()
+                .map(|addr| {
+                    let (name, value) = claimed
+                        .get(&addr)
+                        .copied()
+                        .unwrap_or(("<unattributed>", probe[addr]));
+                    (addr, name, value, "live-ram", ram[addr])
+                })
+                .collect();
         }
 
-        // Attribute each stomped byte: name the last projector that claims it, and the
-        // live RAM value it replaced.
-        let mut claimed: std::collections::BTreeMap<usize, (&'static str, u8)> =
-            Default::default();
+        let mut claimed: std::collections::BTreeMap<usize, (&'static str, u8)> = Default::default();
+        let mut out = Vec::new();
         for (name, project) in owners {
             for (addr, value) in claims(project) {
+                if let Some(&(prev_name, prev_value)) = claimed.get(&addr) {
+                    if prev_value != value {
+                        out.push((addr, name, value, prev_name, prev_value));
+                    }
+                }
                 claimed.insert(addr, (name, value));
             }
         }
-        stomped
-            .into_iter()
-            .map(|addr| {
-                let (name, value) = claimed.get(&addr).copied().unwrap_or(("<unattributed>", probe[addr]));
-                (addr, name, value, "live-ram", ram[addr])
-            })
-            .collect()
+        out
     }
 
     pub(crate) fn report_incoherent_with_ram(&self, ram: &[u8]) -> Vec<&'static str> {

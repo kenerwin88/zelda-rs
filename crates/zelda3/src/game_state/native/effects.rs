@@ -98,7 +98,7 @@ impl EffectState {
         // Sprite-history scratch banks overlap entrance/digging effect scratch banks.
         // Project them explicitly through SpriteHistoryScratchState when that domain is active.
         self.entrance_effects.write_to_ram(ram);
-        self.digging_game_prize.write_to_ram(ram);
+        // digging_game_prize shares the 0x1fe00 window -- write-through, not projected.
     }
 
     pub(crate) fn reload_entrance_effects_from_ram(&mut self, ram: &[u8]) {
@@ -3155,6 +3155,8 @@ pub(crate) struct NativeDiggingGamePrizeBridgeMut<'a> {
 
 impl<'a> NativeDiggingGamePrizeBridgeMut<'a> {
     pub(crate) fn new(state: &'a mut DiggingGamePrizeState, ram: &'a mut [u8]) -> Self {
+        // Shared 0x1fe00 window: re-read before mutating.
+        *state = DiggingGamePrizeState::load_from_ram(ram);
         Self { state, ram }
     }
 

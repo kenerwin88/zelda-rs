@@ -804,15 +804,18 @@ fn native_digging_game_prize_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
-fn native_digging_game_prize_bridge_projects_native_state_over_stale_ram() {
-    let mut ram = vec![0; WRAM_SIZE];
-    ram[DIGGING_GAME_PRIZE_ATTEMPTS] = 0xff;
-    ram[DIGGING_GAME_PRIZE_SPAWNED] = 0xeb;
+fn native_digging_game_prize_bridge_composes_edits_onto_live_ram() {
+    // The 0x1fe00 window is shared with mutually-exclusive systems and is no longer
+    // bulk-projected, so the bridge must compose its edits onto live RAM rather than
+    // re-stamp a stale native snapshot over whichever system wrote it last.
+    let mut stale_ram = vec![0; WRAM_SIZE];
+    stale_ram[DIGGING_GAME_PRIZE_ATTEMPTS] = 0xff;
+    stale_ram[DIGGING_GAME_PRIZE_SPAWNED] = 0xeb;
 
-    let mut native_ram = vec![0; WRAM_SIZE];
-    native_ram[DIGGING_GAME_PRIZE_ATTEMPTS] = 9;
-    native_ram[DIGGING_GAME_PRIZE_SPAWNED] = 0;
-    let mut prize = DiggingGamePrizeState::load_from_ram(&native_ram);
+    let mut ram = vec![0; WRAM_SIZE];
+    ram[DIGGING_GAME_PRIZE_ATTEMPTS] = 9;
+    ram[DIGGING_GAME_PRIZE_SPAWNED] = 0;
+    let mut prize = DiggingGamePrizeState::load_from_ram(&stale_ram);
 
     {
         let mut bridge = NativeDiggingGamePrizeBridgeMut::new(&mut prize, &mut ram);
