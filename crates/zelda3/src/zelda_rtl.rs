@@ -7490,6 +7490,13 @@ pub struct ZeldaState {
     oam_law_pending: Option<Vec<u16>>,
     #[serde(skip)]
     oam_law_visible: Option<Vec<u16>>,
+    /// Frame counter observed at the current host frame's entry. A capture
+    /// whose frame did not advance the counter models a held vblank (the poly
+    /// worker or an overrunning iteration owned it): hardware ran no
+    /// NMI_DoUpdates there, so a pending transfer stays pending across it
+    /// instead of becoming visible one scanout early.
+    #[serde(skip)]
+    oam_law_entry_frame_counter: Option<u8>,
 
     /// CGRAM evaluated for the most recently rendered scanout. Long palette
     /// walks can author the next PPU palette before the current field consumes
@@ -13360,6 +13367,7 @@ impl ZeldaState {
             last_presented_oam: None,
             oam_law_pending: None,
             oam_law_visible: None,
+            oam_law_entry_frame_counter: None,
             last_presented_cgram: None,
             last_presented_obj_vram: None,
             last_presented_vram: None,
@@ -13583,8 +13591,6 @@ impl ZeldaState {
             self.last_presented_oam = None;
             self.oam_law_pending = None;
             self.oam_law_visible = None;
-        self.oam_law_pending = None;
-        self.oam_law_visible = None;
             self.last_presented_cgram = None;
             self.last_presented_obj_vram = None;
             self.last_presented_vram = None;
@@ -14498,8 +14504,15 @@ impl ZeldaState {
         publication_override: Option<DisplaySnapshotPublication>,
     ) {
         // OAM-law clause: a transfer performed at the previous vblank becomes
-        // visible at this scanout.
-        if let Some(pending) = self.oam_law_pending.take() {
+        // visible at this scanout — unless this frame's vblank was held (the
+        // frame counter did not advance): the transfer then belongs to the
+        // held vblank itself and is visible only from the scanout after it.
+        // (Trace-verified at the intro poly stalls, where the pinned core's
+        // poly worker owns the vblank rust's split model has already passed.)
+        let frame_counter_advanced = self
+            .oam_law_entry_frame_counter
+            .is_none_or(|entry| entry != self.game_state.frame.frame_counter);
+        if let Some(pending) = self.oam_law_pending.take_if(|_| frame_counter_advanced) {
             if nmi::debug_frame_selection_env_matches(
                 "ZELDA3_DEBUG_OAM_LAW_EVENTS",
                 self.frame_ctr_dbg,
@@ -19623,6 +19636,7 @@ impl ZeldaState {
     /// lockstep oracle starts validating them immediately.
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
         self.sync_native_game_state_from_ram();
+        self.oam_law_entry_frame_counter = Some(self.game_state.frame.frame_counter);
         self.game_execution_scheduler.begin_host_frame();
         if self
             .game_execution_scheduler
@@ -20697,6 +20711,29 @@ impl ZeldaState {
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                     if !ordinary_gfx_21_return {
+                        // The pinned core resumes the $2104 OAM transfer at
+                        // this completion vblank for both measured receipts
+                        // (chest $14 at f4587, uncle passage at f9020): the
+                        // decompressor returns and the epilogue sets
+                        // nmi_boolean before the vblank, whose DoUpdates then
+                        // carries the fully prepared post-receipt shadow. The
+                        // in-arm NMI above ran before that epilogue, so record
+                        // the law transfer it performs here.
+                        let mut law = vec![0u16; self.ppu.oam.len()];
+                        if publish_oam_shadow(&mut law, self.sprite_oam_shadow_buffer()) {
+                            if nmi::debug_frame_selection_env_matches(
+                                "ZELDA3_DEBUG_OAM_LAW_EVENTS",
+                                self.frame_ctr_dbg,
+                            ) {
+                                eprintln!(
+                                    "oam_law_transfer host={} w204={:04x} fc={:02x} (item-completion)",
+                                    self.frame_ctr_dbg,
+                                    law[204],
+                                    self.game_state.frame.frame_counter
+                                );
+                            }
+                            self.oam_law_pending = Some(law);
+                        }
                         self.stage_atomic_item_graphics_return_obj_scanout(continuation);
                         return;
                     }

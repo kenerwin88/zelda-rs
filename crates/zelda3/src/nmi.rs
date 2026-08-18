@@ -1092,8 +1092,10 @@ impl ZeldaState {
                     self.frame_ctr_dbg,
                 ) {
                     eprintln!(
-                        "oam_law_transfer host={} w204={:04x}",
-                        self.frame_ctr_dbg, law[204]
+                        "oam_law_transfer host={} w204={:04x} fc={:02x}",
+                        self.frame_ctr_dbg,
+                        law[204],
+                        self.game_state.frame.frame_counter
                     );
                 }
                 self.oam_law_pending = Some(law);
