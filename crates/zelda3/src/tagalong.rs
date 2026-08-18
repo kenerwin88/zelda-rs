@@ -684,7 +684,6 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_move_towards_link(&mut self) {
-        self.sync_follower_link_state_from_ram();
         loop {
             let k = 9;
             let j = self.game_state.sprites.follower_runtime.tail_write_index() as usize;
@@ -729,7 +728,6 @@ impl ZeldaState {
     }
 
     pub(super) fn follower_initialize(&mut self) {
-        self.sync_follower_link_state_from_ram();
         let link = self.game_state.player.follower_link;
         let y = link.y();
         let x = link.x();
@@ -755,7 +753,6 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_become_follower(&mut self, k: usize) {
-        self.sync_follower_link_state_from_ram();
         self.follower_state_mut().set_appearance_none_flag(0);
         let y = self.Tagalong_Sprite_GetY(k).wrapping_sub(6);
         let x = self.Tagalong_Sprite_GetX(k).wrapping_add(1);
@@ -778,7 +775,6 @@ impl ZeldaState {
         if self.game_state.sprites.follower_runtime.indicator() == 0 {
             return;
         }
-        self.sync_follower_link_state_from_ram();
         if self.game_state.sprites.follower_runtime.indicator() == 0x0e {
             self.follower_handle_trigger();
             return;
@@ -1600,7 +1596,6 @@ impl ZeldaState {
     }
 
     pub(super) fn kiki_spawn_handler_monke(&mut self, k: usize) -> Option<usize> {
-        self.sync_follower_link_state_from_ram();
         let Some((j, _info)) = self.Tagalong_Sprite_SpawnDynamically(k, 0xb6) else {
             return None;
         };
@@ -1827,7 +1822,6 @@ impl ZeldaState {
     }
 
     fn OldMan_RevertToSprite(&mut self, k: usize) {
-        self.sync_follower_link_state_from_ram();
         if let Some((j, _info)) = self.Tagalong_Sprite_SpawnDynamically(k, 0xad) {
             let layer = self.tagalong_slot(k).direction();
             let mut old_man = self.sprite_slot_view_mut(j);

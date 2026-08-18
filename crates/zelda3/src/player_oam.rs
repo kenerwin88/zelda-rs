@@ -2175,7 +2175,6 @@ impl ZeldaState {
             != 0;
         let mut oam_priority_value = kPlayerOam_FloorOamPrio
             [self.game_state.player.follower_link.lower_level_state() as usize];
-        self.sync_follower_link_state_from_ram();
         self.oam_state_mut().set_priority_word(oam_priority_value);
         let mut sort_sprites_offset_into_oam_buffer =
             kPlayerOam_SortSpritesOffs[self.game_state.oam.sprite_sorting_offset_index()];

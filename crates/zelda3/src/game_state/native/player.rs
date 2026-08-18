@@ -154,10 +154,6 @@ impl PlayerState {
         self.bg1_movement_accumulator.write_to_ram(ram);
         self.tile_detection.write_to_ram(ram);
     }
-
-    pub(crate) fn sync_follower_link_from_ram(&mut self, ram: &[u8]) {
-        self.follower_link = FollowerLinkState::load_from_ram(ram);
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -375,9 +371,6 @@ pub(crate) struct FollowerLinkState {
     sword_dma_graphics_index: u8,
     shield_dma_graphics_index: u8,
     link_dma_staging_index: u8,
-    link_dma_source_offset: u16,
-    link_dma_tile_offset: u16,
-    link_dma_countdown: u16,
     palette_bits_of_oam: u16,
     hop_origin_coord: u16,
     cached_x: u16,
@@ -564,9 +557,6 @@ impl FollowerLinkState {
             sword_dma_graphics_index: ram_byte(ram, LINK_DMA_SWORD_GRAPHICS_INDEX),
             shield_dma_graphics_index: ram_byte(ram, LINK_DMA_SHIELD_GRAPHICS_INDEX),
             link_dma_staging_index: ram_byte(ram, LINK_DMA_STAGING_INDEX),
-            link_dma_source_offset: read_le_u16(ram, LINK_DMA_SOURCE_OFFSET),
-            link_dma_tile_offset: read_le_u16(ram, LINK_DMA_TILE_OFFSET),
-            link_dma_countdown: read_le_u16(ram, LINK_DMA_COUNTDOWN),
             palette_bits_of_oam: read_le_u16(ram, LINK_PALETTE_BITS_OF_OAM),
             hop_origin_coord: read_le_u16(ram, LINK_Y_COORD_ORIGINAL),
             cached_x: read_le_u16(ram, LINK_X_COORD_CACHED),
@@ -772,9 +762,10 @@ impl FollowerLinkState {
         ram[LINK_DMA_SWORD_GRAPHICS_INDEX] = self.sword_dma_graphics_index;
         ram[LINK_DMA_SHIELD_GRAPHICS_INDEX] = self.shield_dma_graphics_index;
         ram[LINK_DMA_STAGING_INDEX] = self.link_dma_staging_index;
-        write_le_u16(ram, LINK_DMA_SOURCE_OFFSET, self.link_dma_source_offset);
-        write_le_u16(ram, LINK_DMA_TILE_OFFSET, self.link_dma_tile_offset);
-        write_le_u16(ram, LINK_DMA_COUNTDOWN, self.link_dma_countdown);
+        // LINK_DMA_SOURCE_OFFSET/TILE_OFFSET/COUNTDOWN (0xc00f/0xc015/0xc013) are
+        // deliberately NOT modeled: C's Graphics_IncrementalVRAMUpload reads and
+        // advances them raw in WRAM, and other systems reuse them during the
+        // attract/text sequence. The RAM player view owns the raw read-modify-write.
         write_le_u16(ram, LINK_PALETTE_BITS_OF_OAM, self.palette_bits_of_oam);
         // SCRATCH_1 (0x74) is C's `scratch_1`, a call-local scratch register written and
         // consumed inside a single routine (tile_detect, the overworld bush-poof spawn,
@@ -3736,37 +3727,6 @@ impl FollowerLinkState {
         self.palette_bits_of_oam = value;
     }
 
-    fn advance_link_dma_source_offset(&mut self) -> u16 {
-        self.link_dma_source_offset = self.link_dma_source_offset.wrapping_add(0x400);
-        if self.link_dma_source_offset == 0x0c00 {
-            self.link_dma_source_offset = 0;
-        }
-        self.link_dma_source_offset
-    }
-
-    fn advance_link_dma_tile_offset(&mut self) -> u16 {
-        self.link_dma_tile_offset = self.link_dma_tile_offset.wrapping_add(2);
-        if self.link_dma_tile_offset == 12 {
-            self.link_dma_tile_offset = 0;
-        }
-        self.link_dma_tile_offset
-    }
-
-    fn set_link_dma_countdown(&mut self, value: u16) {
-        self.link_dma_countdown = value;
-    }
-
-    fn decrement_link_dma_countdown(&mut self) -> u16 {
-        self.link_dma_countdown = self.link_dma_countdown.wrapping_sub(1);
-        self.link_dma_countdown
-    }
-
-    fn reset_link_dma_animation_cycle(&mut self, countdown: u16) {
-        self.link_dma_countdown = countdown;
-        self.link_dma_source_offset = 0;
-        self.link_dma_tile_offset = 0;
-    }
-
     fn set_sword_dma_graphics_index(&mut self, value: u8) {
         self.sword_dma_graphics_index = value;
     }
@@ -6244,35 +6204,9 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
-    pub(crate) fn advance_link_dma_source_offset(&mut self) -> u16 {
-        let value = self.state.advance_link_dma_source_offset();
-        write_le_u16(self.ram, LINK_DMA_SOURCE_OFFSET, value);
-        self.debug_assert_matches_ram();
-        value
-    }
-
-    pub(crate) fn advance_link_dma_tile_offset(&mut self) -> u16 {
-        let value = self.state.advance_link_dma_tile_offset();
-        write_le_u16(self.ram, LINK_DMA_TILE_OFFSET, value);
-        self.debug_assert_matches_ram();
-        value
-    }
-
-    pub(crate) fn set_link_dma_countdown(&mut self, value: u16) {
-        self.state.set_link_dma_countdown(value);
-        write_le_u16(self.ram, LINK_DMA_COUNTDOWN, value);
-        self.debug_assert_matches_ram();
-    }
-
-    pub(crate) fn decrement_link_dma_countdown(&mut self) -> u16 {
-        let value = self.state.decrement_link_dma_countdown();
-        write_le_u16(self.ram, LINK_DMA_COUNTDOWN, value);
-        self.debug_assert_matches_ram();
-        value
-    }
-
     pub(crate) fn reset_link_dma_animation_cycle(&mut self, countdown: u16) {
-        self.state.reset_link_dma_animation_cycle(countdown);
+        // Write-through: the Link DMA animation words are RAM-resident (see the
+        // note in FollowerLinkState::write_to_ram).
         write_le_u16(self.ram, LINK_DMA_COUNTDOWN, countdown);
         write_le_u16(self.ram, LINK_DMA_SOURCE_OFFSET, 0);
         write_le_u16(self.ram, LINK_DMA_TILE_OFFSET, 0);

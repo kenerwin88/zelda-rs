@@ -9001,12 +9001,6 @@ impl ZeldaState {
         }
     }
 
-    pub(crate) fn sync_follower_link_state_from_ram(&mut self) {
-        self.game_state
-            .player
-            .sync_follower_link_from_ram(&self.ram);
-    }
-
     pub(crate) fn follower_link_state(&self) -> &FollowerLinkState {
         &self.game_state.player.follower_link
     }

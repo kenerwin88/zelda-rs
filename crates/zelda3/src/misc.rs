@@ -1587,10 +1587,6 @@ impl ZeldaState {
             let source9 = LINK_ANIMATED_TILE_DMA_SOURCE_OFFSETS[index].wrapping_add(0xb280);
             self.set_link_animated_tile_dma_sources(source9, source9.wrapping_add(0x60));
         }
-        // Keep the cached gameplay projection from re-stamping these volatile
-        // WRAM bytes at a future state boundary.
-        self.sync_follower_link_state_from_ram();
-
         let source16 = 0xb940u16
             .wrapping_add((self.game_state.display.sprite_dma_head_pointer as u16).wrapping_mul(2));
         self.set_link_head_pointer_dma_sources(source16, source16.wrapping_add(0x200));
