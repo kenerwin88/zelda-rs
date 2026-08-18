@@ -14343,17 +14343,17 @@ impl ZeldaState {
         }
     }
 
-    /// OBJ scanout for the final `Text_Initialize` slice: the initializer
-    /// returns mid-frame, the remaining Module0E main authors a fresh OAM
-    /// shadow, and `nmi_prepare_sprites` DMAs it before this frame's vblank —
-    /// so the completed post-work DMA is the generation hardware scans out
-    /// (route frame 5368: the completed-OAM-DMA candidate matched exactly).
+    /// OBJ scanout for the final `Text_Initialize` slice: the initializer's
+    /// suffix sets `nmi_disable_core_updates = 2`, so even the completion
+    /// slice's freshly authored Link OAM is NOT DMAed at the following
+    /// vblank — hardware still scans out the held generation, Link's entries
+    /// included (route frame 7316: Link moved during the dialogue open and
+    /// the presented live Link overlay sat two pixels from the held shadow
+    /// every lane still agreed on; at route frame 5368 Link was stationary,
+    /// which is why the live overlay previously looked correct there). The
+    /// held-slice staging already expresses exactly this.
     fn stage_dialogue_initialization_completion_obj_scanout(&mut self) {
-        self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
-            oam: OamScanoutSource::ComposeCompletedWorkAfterNmi,
-            link_obj: GraphicsDmaGeneration::LiveAfterMain,
-            link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
-        }));
+        self.stage_dialogue_initialization_obj_scanout();
     }
 
     fn pre_main_caller_continuation_is(&self, continuation: PreMainCallerContinuation) -> bool {
