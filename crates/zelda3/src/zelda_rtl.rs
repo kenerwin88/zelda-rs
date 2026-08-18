@@ -773,15 +773,23 @@ const fn rom_graphics_dma_plan(main_module: u8, submodule: u8) -> GraphicsDmaPla
     // prepare Link's next shadow while the independently scheduled Link-CHR
     // upload remains on the ordinary live generation.
     let dungeon_shutter_oam_nmi_precedes_main = main_module == 7 && submodule == 5;
+    // The overworld transition's load pipeline (submodules 1..=4: LoadAuxGFX,
+    // FinishTransGfx, LoadNewMapAndGFX, LoadNewSprites) holds the main loop
+    // across its load slices, so hardware keeps scanning out the pre-hold OAM
+    // generation. Measured at route frames 6913 (submodule 1), 6931
+    // (submodule 3), and 6944 (submodule 4): Link's entries match the
+    // captured boundary image while the frame counter stands still.
     let player_link_obj_scanout_uses_host_boundary = (submodule == 0
         && matches!(main_module, 9 | 11))
-        || (main_module == 9 && matches!(submodule, 1 | 6..=8 | 0x0a));
-    // Module09_LoadAuxGFX suspends its caller suffix, but the intervening NMI
-    // still completes the OAM-shadow DMA before active display. Keep Link's
-    // animation sources on the host-boundary generation while allowing that
-    // independently published OAM image to become visible.
-    let player_oam_scanout_uses_host_boundary =
-        player_link_obj_scanout_uses_host_boundary && !(main_module == 9 && submodule == 1);
+        || (main_module == 9 && matches!(submodule, 1..=8 | 0x0a));
+    // The overworld screen-transition submodule keeps the ordinary retained
+    // cadence: its loader owns the main slice past the leading NMI (route
+    // frame 6913: Link's camera-dragged coordinates split the live composition
+    // from the boundary shadow hardware scans out, and the held load frames
+    // that follow keep the oracle on the same generation). The previous
+    // live-scanout exclusion here dated to a window where nothing moved during
+    // the load, making live and published indistinguishable.
+    let player_oam_scanout_uses_host_boundary = player_link_obj_scanout_uses_host_boundary;
     let oam_scanout_uses_host_boundary = dungeon_entrance_nmi_precedes_main
         || player_oam_scanout_uses_host_boundary
         || dungeon_stairs_nmi_precedes_link_animation
@@ -6553,6 +6561,7 @@ struct DisplayPublicationSignals {
     spiral_stair_landing_publishes_live_display: bool,
     spiral_stair_motion_publishes_live_oam: bool,
     spiral_stair_return_publishes_live_shadow_oam: bool,
+    overworld_sprite_reload_completion_retains_presented: bool,
     spiral_stair_return_publishes_live_registers: bool,
     spiral_stair_return_publishes_live_obj_cache: bool,
     dungeon_brightness_publishes_live_display: bool,
@@ -6644,6 +6653,8 @@ impl DisplayPublicationPlan {
             == DungeonFadedFilterPublicationPhase::CallerReturn
         {
             OamScanoutSource::RetainCapturedBeforeNmi
+        } else if signals.overworld_sprite_reload_completion_retains_presented {
+            OamScanoutSource::RetainResidentPpuOam
         } else if signals.spiral_stair_return_publishes_live_shadow_oam {
             OamScanoutSource::ComposeSpiralReturnPlayerShadowAfterMain
         } else if signals.spiral_stair_return_publishes_live_obj_cache {
@@ -17967,6 +17978,18 @@ impl ZeldaState {
             ),
             spiral_stair_return_publishes_live_shadow_oam:
                 spiral_stair_return_publication_is_active,
+            // Module09_LoadNewSprites' completing slice authors a shadow that
+            // hides Link's entries, but its suspended tail
+            // (FinishOverworldSpriteReloadTail) holds the following vblanks,
+            // so that shadow never reaches the PPU (route frames 6948..6950):
+            // keep the previously presented resident generation instead of
+            // adopting the published one while the tail is pending.
+            overworld_sprite_reload_completion_retains_presented: snapshot_frame.main_module == 9
+                && matches!(snapshot_frame.submodule, 4 | 5)
+                && matches!(
+                    self.game_execution_scheduler.current_work(),
+                    Some(GameWorkContinuation::FinishOverworldSpriteReloadTail { .. })
+                ),
             spiral_stair_return_publishes_live_registers: self
                 .spiral_stair_return_oam_publication_host_frame
                 == Some(self.frame_ctr_dbg),

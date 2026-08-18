@@ -7293,11 +7293,14 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
     assert!(!rom_display_oam_publication_is_deferred(
         7, 0, 0, false, false
     ));
+    // The overworld transition pipeline (submodules 1..=8) holds the main loop
+    // across its load slices, so the OAM scanout keeps the retained boundary
+    // cadence (measured at route frames 6913/6931/6944/6948).
     assert_eq!(
         rom_graphics_dma_plan(9, 1),
         GraphicsDmaPlan {
             oam_operands: GraphicsDmaGeneration::LiveAfterMain,
-            oam_scanout: OamScanoutSource::ComposeLiveAfterNmi,
+            oam_scanout: OamScanoutSource::RetainCapturedBeforeNmi,
             link_obj_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_operands: GraphicsDmaGeneration::LiveAfterMain,
@@ -7308,8 +7311,8 @@ fn graphics_dma_plan_separates_operands_from_visible_scanout() {
         rom_graphics_dma_plan(9, 5),
         GraphicsDmaPlan {
             oam_operands: GraphicsDmaGeneration::LiveAfterMain,
-            oam_scanout: OamScanoutSource::ComposeLiveAfterNmi,
-            link_obj_scanout: GraphicsDmaGeneration::LiveAfterMain,
+            oam_scanout: OamScanoutSource::RetainCapturedBeforeNmi,
+            link_obj_scanout: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_operands: GraphicsDmaGeneration::LiveAfterMain,
             animated_bg_operands: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             animated_bg_scanout: AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi,
