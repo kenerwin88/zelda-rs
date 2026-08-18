@@ -20068,6 +20068,33 @@ impl ZeldaState {
         } else {
             None
         };
+        if matches!(scheduled_work_step, Some(GameWorkStep::Waiting))
+            && matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishDungeonFallingEntrance {
+                    work: DungeonFallingEntranceWork::RoomAndTilesets,
+                })
+            )
+        {
+            // Module11_02's long call writes SUBSUBMODULE twice while the main
+            // loop is held: Dungeon_LoadAndDrawRoom's room parser zeroes it,
+            // and the call's `subsubmodule_index = bak + 1` restores 3 well
+            // before the tileset work finishes. Both are observable WRAM
+            // boundaries measured against the pinned core (route frames 8460
+            // and 8475; the room-and-tilesets budget is 56 slices).
+            let elapsed = DUNGEON_FALLING_ENTRANCE_ROOM_LOAD_NMI_SLICES.saturating_sub(
+                self.game_execution_scheduler
+                    .scheduled_work_slices_remaining()
+                    .unwrap_or(0),
+            );
+            const ROOM_PARSER_ZEROES_SUBSUB_SLICE: u8 = 9;
+            const SUBSUB_ADVANCE_WRITE_SLICE: u8 = 24;
+            if elapsed == ROOM_PARSER_ZEROES_SUBSUB_SLICE {
+                self.set_subsubmodule(0);
+            } else if elapsed == SUBSUB_ADVANCE_WRITE_SLICE {
+                self.set_subsubmodule(3);
+            }
+        }
         if let Some(GameWorkStep::Complete(
             continuation @ (GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
             | GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn),

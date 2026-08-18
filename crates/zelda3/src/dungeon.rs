@@ -10536,12 +10536,22 @@ impl ZeldaState {
         self.EnableForceBlank();
         self.set_color_window_selection(2);
         if self.begin_dungeon_falling_entrance_work(DungeonFallingEntranceWork::RoomAndTilesets) {
+            // C's Module11_02_LoadEntrance executes its quick entrance prefix
+            // (Dungeon_LoadEntrance through the Link y adjust) before the first
+            // heavy room-draw loop, so the room index, Link position, and
+            // indoors flag land in WRAM at the FIRST interrupted slice — the
+            // oracle flips them at route frame 8451 while the frame counter is
+            // already held. Only the heavy tail belongs to the completion
+            // slice. Bug class 5 (collapsed timed side-effect phase), the same
+            // split as the f2235 selected-game-load room preload.
+            self.module11_02_load_entrance_prefix();
             return;
         }
+        self.module11_02_load_entrance_prefix();
         self.complete_module11_02_load_entrance();
     }
 
-    pub(super) fn complete_module11_02_load_entrance(&mut self) {
+    fn module11_02_load_entrance_prefix(&mut self) {
         self.Dungeon_LoadEntrance();
 
         let dung = self.game_state.inventory.save_progress.palace_index_x2();
@@ -10582,8 +10592,19 @@ impl ZeldaState {
             .y()
             .wrapping_sub(u16::from(y).wrapping_add(16));
         self.follower_link_state_mut().set_y(new_y);
+    }
 
-        let bak = self.game_state.frame.subsubmodule;
+    pub(super) fn complete_module11_02_load_entrance(&mut self) {
+        // Under ROM timing the measured mid-window write already advanced
+        // SUBSUBMODULE to `bak + 1` (see the falling-entrance slice effects in
+        // zelda_rtl); the room parser below zeroes it again, so restore what
+        // that write established. The untimed inline path keeps C's literal
+        // save-then-advance order.
+        let bak = if self.rom_startup_timing() {
+            self.game_state.frame.subsubmodule.wrapping_sub(1)
+        } else {
+            self.game_state.frame.subsubmodule
+        };
         self.dungeon_torch_mut().clear_lit_torches();
         self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
         self.Dungeon_LoadAndDrawRoom();

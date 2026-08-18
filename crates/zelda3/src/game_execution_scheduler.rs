@@ -913,6 +913,12 @@ impl GameExecutionScheduler {
             )
     }
 
+    /// Remaining NMI slices of the currently scheduled work, if any. Lets
+    /// measured mid-window side effects fire at their exact held boundary.
+    pub(super) fn scheduled_work_slices_remaining(&self) -> Option<u8> {
+        self.scheduled_work().map(|work| work.nmi_slices_remaining)
+    }
+
     pub(super) fn current_work(self) -> Option<GameWorkContinuation> {
         self.scheduled_work()
             .map(|work| work.continuation)
