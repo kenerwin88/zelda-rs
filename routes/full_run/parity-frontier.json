@@ -15,25 +15,25 @@
   },
   "project": "routes/full_run",
   "promoted": {
-    "binary_sha256": "bdc0d7d6483f16269fea1b6194a0482ebd78ede0749faee67df19d01e2d3cb5e",
+    "binary_sha256": "8196cf21a3d2dd5e37fc437f3b8f625b22adfaa0d6c646806ae890a62645dbb0",
     "cold_confirmation_receipts": [
       {
-        "frames": 8695,
-        "path": ".git/parity-cold-passes/1787074574988082000-8695-cf58308eaf4f.json",
-        "session_result_sha256": "e8b7c0b0eec54f7a9ada0fa331d5c085fe7c4c9083451bf461bb9704d544ab47",
-        "sha256": "bd3a70333ae10d57897a159719617244d3652af6abeb8e6ebc481bb4fda840cb"
+        "frames": 9436,
+        "path": ".git/parity-cold-passes/1787078418438275000-9436-f9f11d0905a2.json",
+        "session_result_sha256": "5516b0c2226d1e29686fb41cfb843458d936bcaeb94e9df0941a37a61a58e83c",
+        "sha256": "7824dda2377308b1e1ca4b5b091aaa23a5e2f5597ea7e98471b98e351148b4f4"
       },
       {
-        "frames": 8696,
-        "path": ".git/parity-cold-passes/1787073898791962000-8696-e7663bea189a.json",
-        "session_result_sha256": "1efa73825b05f789412da9b510c970585560966ff3bb8af3bf72b65864adb1ba",
-        "sha256": "14fe3b75de1358041b4c99b86b7ca041fb66460c91d649b68005784d5f5e413d"
+        "frames": 9437,
+        "path": ".git/parity-cold-passes/1787078085227133000-9437-00da390687d8.json",
+        "session_result_sha256": "e1c21a187f29b57e103196f2f71ac25834c3692d335111e26d44cce65c80e243",
+        "sha256": "2652bf8e7f77d9750bb1fb1444b55723d46aa560a516671555ea07bb451fe375"
       }
     ],
-    "commit": "6f7a1c39ccfd92552eac4221ef665c740a2ccbc8",
-    "last_exact_audio_frame": 8695,
-    "last_exact_engine_state_frame": 8695,
-    "last_exact_video_frame": 8695,
+    "commit": "69ce49f45c7055c837414ec05f297789ae3677c6",
+    "last_exact_audio_frame": 9436,
+    "last_exact_engine_state_frame": 9436,
+    "last_exact_video_frame": 9436,
     "route_signature": {
       "core_sha256": "f82658246a0c1fed7d53c485f3de79fcc671a45d9ed0a0ac6bf6eace9d46ff9a",
       "generation_id": 2,
