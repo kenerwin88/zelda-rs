@@ -1939,20 +1939,6 @@ const fn game_over_upload_pipeline_runs_after_leading_nmi(
     }
 }
 
-const fn rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
-    entry: crate::game_state::FrameState,
-    exit: crate::game_state::FrameState,
-    room: u8,
-    screen_transition: u8,
-) -> bool {
-    // State 7 has prepared the shadow consumed by the NMI that enters the
-    // first state-8 scanout. v1.0.0 published that completed OAM DMA instead
-    // of retaining the preceding PPU table across the translated boundary.
-    rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(entry, exit)
-        && !matches!(room, 0x71 | 0x72)
-        && !(room == 0x82 && screen_transition == 2)
-}
-
 const ANIMATED_TILE_BUFFER_FIRST_SOURCE: usize = 0xa680;
 const ANIMATED_TILE_SOURCE_CYCLE_BYTES: usize = 0x0c00;
 
@@ -6451,10 +6437,6 @@ enum DisplayObjGeneration {
     RetainCapturedOam {
         oam: Vec<u16>,
     },
-    /// Retain the OAM-law lane (`oam_law_visible`) as of the consuming
-    /// capture — resolved at the take site, after that frame's promotion, so
-    /// it always names the last completed main's transfer without copying it.
-    RetainOamLaw,
     RetainCapturedMemory {
         oam: Vec<u16>,
         vram: Vec<u16>,
@@ -6466,7 +6448,6 @@ impl DisplayObjGeneration {
         match self {
             Self::FollowModuleCadence => "follow-module-cadence",
             Self::RetainCapturedOam { .. } => "retain-captured-oam",
-            Self::RetainOamLaw => "retain-oam-law",
             Self::RetainCapturedMemory { .. } => "retain-captured-memory",
         }
     }
@@ -6475,13 +6456,12 @@ impl DisplayObjGeneration {
         match self {
             Self::FollowModuleCadence => None,
             Self::RetainCapturedOam { oam } | Self::RetainCapturedMemory { oam, .. } => Some(oam),
-            Self::RetainOamLaw => None,
         }
     }
 
     fn retained_vram(&self) -> Option<&[u16]> {
         match self {
-            Self::FollowModuleCadence | Self::RetainCapturedOam { .. } | Self::RetainOamLaw => None,
+            Self::FollowModuleCadence | Self::RetainCapturedOam { .. } => None,
             Self::RetainCapturedMemory { vram, .. } => Some(vram),
         }
     }
@@ -8305,39 +8285,6 @@ fn room_71_item_graphics_return_crosses_completed_nmi(
         && following.subsubmodule == 0
         && link_obj_scanout_generation == GraphicsDmaGeneration::HostBoundaryBeforeMain
         && oam_scanout_source == OamScanoutSource::ComposePublishedShadowDma
-}
-
-fn adjust_room_72_published_sprite_oam(oam: &mut [u16], pixels: u8) {
-    for entry in [92usize, 93] {
-        oam[entry * 2] = oam[entry * 2].wrapping_sub(u16::from(pixels) << 8);
-    }
-}
-
-fn adjust_room_72_state13_link_oam(oam: &mut [u16], pixels: u8) {
-    for entry in LINK_OAM_ENTRIES {
-        oam[entry * 2] = oam[entry * 2].wrapping_add(u16::from(pixels) << 8);
-    }
-}
-
-fn adjust_room_72_state13_body_oam(oam: &mut [u16], live_oam: &[u16], link_y: u16) {
-    for (entry, interrupted_gap) in [(102usize, 17u8), (107, 13)] {
-        let [_, live_y] = live_oam[entry * 2].to_le_bytes();
-        if (link_y as u8).wrapping_sub(live_y) >= interrupted_gap {
-            oam[entry * 2] = oam[entry * 2].wrapping_add(0x0100);
-        }
-    }
-}
-
-fn adjust_room_72_state14_link_oam(oam: &mut [u16]) {
-    for entry in [103usize, 110, 111] {
-        oam[entry * 2] = oam[entry * 2].wrapping_add(0x0200);
-    }
-}
-
-fn rebase_room_72_sprite_oam_after_interrupted_main_prefix(oam: &mut [u16]) {
-    for entry in [92usize, 93] {
-        oam[entry * 2] = oam[entry * 2].wrapping_sub(0x0400);
-    }
 }
 
 impl ZeldaState {
@@ -14338,12 +14285,10 @@ impl ZeldaState {
     }
 
     /// OBJ scanout for a frame consumed by the multi-slice `Text_Initialize`
-    /// worker: retain the OAM-law lane. The lane already holds exactly the
-    /// generation hardware scans out through the window — the last completed
-    /// main's transfer, frozen across the initializer's held vblanks
-    /// (audit-verified delta-clean at route windows 3808, 5363, 7316, 8696).
+    /// worker. The OAM-law lane freezes across the initializer's held vblanks
+    /// and presents the last completed main's transfer; only the Link OBJ CHR
+    /// lanes still need their host-boundary generation staged here.
     pub(super) fn stage_dialogue_initialization_obj_scanout(&mut self) {
-        self.next_display_obj_memory_generation = Some(DisplayObjGeneration::RetainOamLaw);
         self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
             oam: OamScanoutSource::RetainResidentPpuOam,
             link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
@@ -14777,20 +14722,7 @@ impl ZeldaState {
                 )
             })
         });
-        let queued_obj_generation = self.next_display_obj_memory_generation.take().map(|g| {
-            if matches!(g, DisplayObjGeneration::RetainOamLaw) {
-                let oam = self.oam_law_visible.clone().unwrap_or_else(|| {
-                    // Untimed replays have no law lane; the host-boundary
-                    // shadow is the same generation.
-                    let mut image = vec![0u16; self.ppu.oam.len()];
-                    publish_oam_shadow(&mut image, self.sprite_oam_shadow_buffer());
-                    image
-                });
-                DisplayObjGeneration::RetainCapturedOam { oam }
-            } else {
-                g
-            }
-        });
+        let queued_obj_generation = self.next_display_obj_memory_generation.take();
         let obj_generation_source = if queued_obj_generation.is_some() {
             "queued"
         } else if transition_entry_obj.is_some() {
@@ -16291,8 +16223,6 @@ impl ZeldaState {
             && following_frame.subsubmodule == 1)
             .then(|| self.ppu.oam.clone())
             .filter(|resident| resident[116 * 2].to_le_bytes()[1] != 0xf0);
-        let resident_link_body_xy = self.ppu.oam[102 * 2];
-        let resident_first_sorted_entry_y = self.ppu.oam[12 * 2].to_le_bytes()[1];
         let debug_subtile_oam = env::var_os("ZELDA3_DEBUG_DISPLAY_OAM").is_some()
             && following_frame.main_module == 7
             && following_frame.submodule == 1
@@ -16533,83 +16463,6 @@ impl ZeldaState {
         }
         let following_room = crate::game_state::WorldLocationState::load_from_ram(&following.ram)
             .dungeon_room_index();
-        if following_room == 0x72
-            && following_frame.main_module == 7
-            && following_frame.submodule == 2
-            && following_frame.subsubmodule == 8
-            && plan.oam_scanout_source == OamScanoutSource::ComposeLiveAfterNmi
-            && plan.retain_captured_oam
-            && following.ppu.oam[92 * 2].to_le_bytes()[1] != 0xf0
-        {
-            // The first state-8 capture releases the two-return hold after it
-            // has selected the resident room-sprite table. Rebase those two
-            // entries onto the live state-8 generation selected for scanout.
-            adjust_room_72_published_sprite_oam(&mut self.ppu.oam, 2);
-        }
-        if following_room == 0x72
-            && following_frame.main_module == 7
-            && following_frame.submodule == 2
-            && following_frame.subsubmodule == 8
-            && plan.oam_scanout_source == OamScanoutSource::ComposePublishedShadowDma
-            && !plan.retain_captured_oam
-        {
-            // The southward scroll's resumed sprite tail is three scanlines
-            // ahead of the completed shadow DMA used for ordinary state-8
-            // publication. Correct only the two active room-sprite entries;
-            // Link and the remaining table already match that DMA generation.
-            let bg2_y = read_le_u16(&following.ram, BG2_Y_SCROLL);
-            let pixels = if bg2_y > 0x0fe0 {
-                3
-            } else if bg2_y == 0x0fe0 {
-                2
-            } else {
-                0
-            };
-            adjust_room_72_published_sprite_oam(&mut self.ppu.oam, pixels);
-        }
-        if following_room == 0x72
-            && following_frame.main_module == 7
-            && following_frame.submodule == 2
-            && following_frame.subsubmodule == 13
-        {
-            // State 12 completes Link's southward landing before the OAM DMA
-            // visible at the state-13 boundary. The translated host frame has
-            // already rebased those five entries to the following camera; move
-            // only Link back onto the scanout's three-line-earlier generation.
-            let first_landing_scanout = read_le_u16(&self.ram, LINK_DMA_COUNTDOWN) == 1;
-            let pixels = if first_landing_scanout { 3 } else { 2 };
-            adjust_room_72_state13_link_oam(&mut self.ppu.oam, pixels);
-            if !first_landing_scanout {
-                adjust_room_72_state13_body_oam(
-                    &mut self.ppu.oam,
-                    &following.ppu.oam,
-                    read_le_u16(&following.ram, LINK_Y_COORD),
-                );
-            }
-        }
-        if following_room == 0x72
-            && following_frame.main_module == 7
-            && following_frame.submodule == 2
-            && following_frame.subsubmodule == 14
-        {
-            // The landing frame publishes the body pieces before the final
-            // head and hand tail crosses OAM DMA at the filtering boundary.
-            adjust_room_72_state14_link_oam(&mut self.ppu.oam);
-        }
-        if following_room == 0x72
-            && following_frame.main_module == 7
-            && following_frame.submodule == 0
-            && following_frame.subsubmodule == 0
-            && following.room_72_interrupted_main_prefix_oam_offset_active
-            && resident_first_sorted_entry_y != 0xf0
-            && self.ppu.oam[102 * 2] != resident_link_body_xy
-        {
-            // The early state-11 return already crossed a main-loop prefix,
-            // while these two room-sprite entries are still evaluated against
-            // the pre-return camera generation. Keep that four-line offset
-            // until that interrupted sorted table retires from resident OAM.
-            rebase_room_72_sprite_oam_after_interrupted_main_prefix(&mut self.ppu.oam);
-        }
         let room_71_item_graphics_return_live_boundary =
             room_71_item_graphics_return_crosses_completed_nmi(
                 following_frame,
@@ -17926,25 +17779,9 @@ impl ZeldaState {
             .as_ref()
             .map(|graphics| graphics.entry_frame)
             .unwrap_or(snapshot_frame);
-        let live_world_location = crate::game_state::WorldLocationState::load_from_ram(&self.ram);
-        let dungeon_supertile_filter_return_publishes_live_shadow_oam =
-            rom_dungeon_supertile_filter_return_publishes_live_shadow_oam(
-                snapshot_frame,
-                live_frame,
-                live_world_location.dungeon_room_index(),
-                self.screen_transition(),
-            );
-        let live_dungeon_supertile_filter_return_shadow_oam =
-            dungeon_supertile_filter_return_publishes_live_shadow_oam.then(|| {
-                let byte_len = self.ppu.oam.len() * 2;
-                self.ram[OAM_BUF..OAM_BUF + byte_len]
-                    .chunks_exact(2)
-                    .map(|word| u16::from_le_bytes([word[0], word[1]]))
-                    .collect::<Vec<_>>()
-            });
-        // At the same split boundary, OAM above, Link OBJ VRAM below, and the
-        // doorway scroll publish from live state while the remaining staged
-        // display controls retain their independently measured generation.
+        // At this split boundary, Link OBJ VRAM and the doorway scroll publish
+        // from live state while the remaining staged display controls retain
+        // their independently measured generation.
         let publish_live_overworld_bad_weather_scroll = rom_overworld_bad_weather_scroll_is_live(
             snapshot_frame.main_module,
             snapshot_frame.submodule,
@@ -18239,9 +18076,6 @@ impl ZeldaState {
         self.compose_display_oam(&display, &publication_plan);
         if enemy_drop_extended_oam_crossed_publication_boundary {
             self.enemy_drop_item_graphics_live_extended_oam_pending = false;
-        }
-        if let Some(shadow_oam) = live_dungeon_supertile_filter_return_shadow_oam.as_deref() {
-            self.ppu.oam.clone_from_slice(shadow_oam);
         }
         self.compose_effective_presented_obj(&display);
         if std::env::var_os("ZELDA3_AUDIT_OAM_LAW").is_some() {
@@ -18544,18 +18378,6 @@ impl ZeldaState {
         let Some(receipt) = following.effective_presented_dma.as_ref() else {
             return;
         };
-        if let Some(completed_oam) = receipt
-            .completed_oam
-            .as_deref()
-            .filter(|oam| oam.len() == self.ppu.oam.len())
-        {
-            // This payload was recorded by the explicit leading-NMI write
-            // scope and attached to the immutable scanout which consumed it.
-            // Use the event receipt itself: the older boundary side channel
-            // can be absent when AdvanceStaged keeps a prior snapshot active,
-            // even though that active scanout accepted this exact DMA.
-            self.ppu.oam.clone_from_slice(completed_oam);
-        }
         let mut obj_vram = self.last_presented_obj_vram.clone().unwrap_or_else(|| {
             self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram)[0x4000..0x4400].to_vec()
         });
