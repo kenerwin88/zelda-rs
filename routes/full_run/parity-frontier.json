@@ -14,6 +14,39 @@
     ]
   },
   "project": "routes/full_run",
-  "promoted": null,
+  "promoted": {
+    "binary_sha256": "4c748a42a7f35be704d97fac13f0824441dab416989e4b8a01584bab95a2d969",
+    "cold_confirmation_receipts": [
+      {
+        "frames": 6912,
+        "path": ".git/parity-cold-passes/1787062552661338000-6912-b4d87b1f6166.json",
+        "session_result_sha256": "c79b99cd4dea0c66b83232763c7a25ac23dee0e2bd704585678f35bcc11281bf",
+        "sha256": "7554d6e0cb4b766dd0a39f75e627fabe5bfaad5e861b30397ae353326cfc2dde"
+      },
+      {
+        "frames": 6913,
+        "path": ".git/parity-cold-passes/1787062287360855000-6913-aec56c4ee109.json",
+        "session_result_sha256": "c6ed9ba0b87ff311dc2c53cd6fee5561fb464530a7998a87a4adeae431154830",
+        "sha256": "b8739259c9114ea3e60df5636e50667785517be655210472a108d6b66e449dae"
+      }
+    ],
+    "commit": "6add3b3b22ca901ec72bc072870451d47cdfa0a1",
+    "last_exact_audio_frame": 6912,
+    "last_exact_engine_state_frame": 6912,
+    "last_exact_video_frame": 6912,
+    "route_signature": {
+      "core_sha256": "f82658246a0c1fed7d53c485f3de79fcc671a45d9ed0a0ac6bf6eace9d46ff9a",
+      "generation_id": 2,
+      "initial_sram_sha256": "a6af0ddf25ae5feafba301100938f5ef81137ee76dcdc483a04fb6e961347828",
+      "input_sha256": "d55e86815c399ff2995cde0dfede417296ec3c614cdbba8229c807e6300b01e9",
+      "project": "routes/full_run",
+      "recorded_rng_sha256": "1550db69982ed535423c35eaea33ab758790301e073efacdeada6735b011685d",
+      "rom_sha256": "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb",
+      "schema": 1,
+      "take_count": 38,
+      "total_frames": 1581079
+    },
+    "route_signature_sha256": "ee5f162cff21db0fec57d44206dc80c3913b389f2981361181c22d84b93f2bb5"
+  },
   "schema": 1
 }
