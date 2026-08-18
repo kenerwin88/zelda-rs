@@ -18261,11 +18261,15 @@ impl ZeldaState {
                 }
             }
         }
-        if std::env::var_os("ZELDA3_OAM_LAW_PRESENTATION").is_some() {
-            if let Some(law) = self.oam_law_visible.as_deref() {
-                if law.len() == self.ppu.oam.len() {
-                    self.ppu.oam.clone_from_slice(law);
-                }
+        // The OAM-law lane is the presentation authority: the trace-verified
+        // hardware rule (a $0800→$2104 transfer at each completed-main vblank,
+        // visible from the following scanout, held vblanks skipped) is
+        // pixel-exact across the whole certified route with no per-window
+        // rules. The composed table above remains only until the rule zoo is
+        // deleted; ZELDA3_AUDIT_OAM_LAW diffs it against the lane.
+        if let Some(law) = self.oam_law_visible.as_deref() {
+            if law.len() == self.ppu.oam.len() {
+                self.ppu.oam.clone_from_slice(law);
             }
         }
         self.staged_presented_oam = Some(self.ppu.oam.clone());
