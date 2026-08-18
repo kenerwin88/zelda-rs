@@ -6782,15 +6782,12 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         // timer is preserved (see reset_properties_a_fields on the state).
         self.ram[LINK_TIMER_TEMPBUNNY] = 0;
         self.ram[LINK_NEED_FOR_POOF_FOR_TRANSFORM] = 0;
-        self.ram[IS_ARCHER_OR_SHOVEL_GAME] = 0;
         self.ram[LINK_NEED_FOR_PULLFORRUPEES_SPRITE] = 0;
         self.ram[BIT9_OF_XCOORD] = 0;
         self.ram[LINK_SOMETHING_WITH_HOOKSHOT] = 0;
         self.ram[LINK_GIVE_DAMAGE] = 0;
         self.ram[LINK_SPIN_OFFSETS] = 0;
-        self.ram[TAGALONG_EVENT_FLAGS] = 0;
         self.ram[LINK_WANT_MAKE_NOISE_WHEN_DASHED] = 0;
-        self.ram[TILEDETECT_TILE_TYPE] = 0;
         self.ram[ITEM_RECEIPT_METHOD] = 0;
         self.ram[LINK_TRIGGERED_BY_WHIRLPOOL_SPRITE] = 0;
         self.debug_assert_matches_ram();
@@ -7652,6 +7649,12 @@ impl TileDetectionState {
         self.tile_type = 0;
     }
 
+    /// C's Link_ResetProperties_A does `BYTE(tiledetect_tile_type) = 0` — a
+    /// single-byte store that preserves the high byte.
+    pub(crate) fn clear_tile_type_low(&mut self) {
+        self.tile_type &= 0xff00;
+    }
+
     pub(crate) fn set_spike_floor_and_triggers(&mut self, value: u8) {
         self.spike_floor_and_triggers = value;
     }
@@ -8165,6 +8168,15 @@ impl<'a> NativeTileDetectionBridgeMut<'a> {
     pub(crate) fn clear_tile_type(&mut self) {
         self.state.clear_tile_type();
         self.sync();
+    }
+
+    pub(crate) fn clear_tile_type_low(&mut self) {
+        self.state.clear_tile_type_low();
+        // Write-through single-byte store, matching C's `BYTE(tiledetect_tile_type)
+        // = 0`. Link_ResetProperties_A also runs during the ending sequence, where a
+        // full sync would re-stamp the attract-aliased tiledetect scratch words
+        // (0x51/0x5f/0x62) over the live scene state.
+        self.ram[TILEDETECT_TILE_TYPE] = 0;
     }
 
     pub(crate) fn set_spike_floor_and_triggers(&mut self, value: u8) {

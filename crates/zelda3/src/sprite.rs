@@ -1344,14 +1344,6 @@ impl ZeldaState {
             self.set_super_bomb_indicator_timer(0xfe);
         }
         self.sprite_workspace_mut().clear_where_in_room();
-        // sprite_where_in_overworld (presence markers) shares the 0x1df80 region the
-        // memset above (clear_where_in_room) just zeroed in RAM. Its native mirror is a
-        // separate Vec, so clear it too or it would re-project the stale markers (only
-        // outdoors, where presence projects) and miss the C memset's area-reload reset.
-        self.game_state
-            .sprites
-            .overworld_sprite_presence
-            .clear_all();
         self.clear_all_overworld_sprite_loaded_masks();
         self.dungeon_room_tracking_mut().reset_room_history();
     }
@@ -2161,7 +2153,6 @@ impl ZeldaState {
                         CachedSpriteCpuInterruption::Restoring { live_fields, .. } => {
                             self.cached_sprite_slot_mut(i)
                                 .load_cached_into_live(&mut live_slot_backup);
-                            self.sprite_system_mut().reload_live_slots_from_ram();
                             self.sprite_execute_single(i);
                             if self.sprite_slot_view(i).pause() != 0 {
                                 self.cached_sprite_slot_mut(i).clear_state();
@@ -2173,7 +2164,6 @@ impl ZeldaState {
                                 );
                         }
                     }
-                    self.sprite_system_mut().reload_live_slots_from_ram();
                     let dungeon = self
                         .active_dungeon_sprite_main_return
                         .take()
@@ -2205,7 +2195,6 @@ impl ZeldaState {
                         &mut live_slot_backup,
                         usize::from(copied_fields),
                     );
-                self.sprite_system_mut().reload_live_slots_from_ram();
                 self.sprite_execute_single(interrupted_slot);
                 if self.sprite_slot_view(interrupted_slot).pause() != 0 {
                     self.cached_sprite_slot_mut(interrupted_slot).clear_state();
@@ -2221,7 +2210,6 @@ impl ZeldaState {
                     );
             }
         }
-        self.sprite_system_mut().reload_live_slots_from_ram();
 
         for i in (0..interrupted_slot).rev() {
             self.sprite_system_mut().set_cur_object_index(i as u8);
@@ -2243,18 +2231,12 @@ impl ZeldaState {
         let mut bak = [0u8; 24];
         self.cached_sprite_slot_mut(k)
             .load_cached_into_live(&mut bak);
-        // load_cached_into_live copied the cached slot into the live sprite arrays in
-        // RAM only; resync the native live sprite slots so sprite_execute_single reads
-        // the uncached sprite, not the stale live one it replaced.
-        self.sprite_system_mut().reload_live_slots_from_ram();
         self.sprite_execute_single(k);
         if self.sprite_slot_view(k).pause() != 0 {
             self.cached_sprite_slot_mut(k).clear_state();
         }
         self.cached_sprite_slot_mut(k)
             .restore_live_from_backup(&bak);
-        // restore_live_from_backup also writes only RAM; resync the native slots.
-        self.sprite_system_mut().reload_live_slots_from_ram();
     }
 
     // void Dungeon_CacheTransSprites() {  // 89c176
@@ -2290,15 +2272,6 @@ impl ZeldaState {
             }
             self.cached_sprite_slot_mut(k).cache_live_fields();
         }
-        // cache_live_fields copies sprite_ai_state[0] into alt_sprite_spawned_flag[0]
-        // (0x1de0) directly in RAM, but SpriteSystemState.alt_sprite_spawned_flag (a
-        // native field modeling that same byte for the damage-tracker use,
-        // sprite_main.c:25815) would otherwise re-project its stale value at frame end
-        // and clobber the cached ai_state. Keep the native field coherent with the
-        // value the cache just wrote so it owns the same byte.
-        let cached_spawned_flag = self.ram[ALT_SPRITE_SPAWNED_FLAG_SPRITE];
-        self.sprite_system_mut()
-            .set_alt_sprite_spawned_flag(cached_spawned_flag);
     }
 
     pub(super) fn oam_allocate_from_region_a(&mut self, num: u8) -> u16 {

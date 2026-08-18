@@ -758,7 +758,13 @@ fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
     let mut state = SpriteState::load_from_ram(&ram);
 
     {
-        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+        let mut bridge = NativeCachedSpriteBridgeMut::new(
+            &mut state.cached_sprites,
+            &mut state.sprite_slots,
+            &mut state.system,
+            &mut ram,
+            3,
+        );
         bridge.cache_sprite_header(0xaa, 0x11, 0x22, 0x33, 0x44, 0x55);
     }
     let slot = state.cached_sprites.slot(3);
@@ -773,7 +779,13 @@ fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
     assert_eq!(ram[ALT_SPRITE_GRAPHICS + 3], 0x55);
 
     {
-        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+        let mut bridge = NativeCachedSpriteBridgeMut::new(
+            &mut state.cached_sprites,
+            &mut state.sprite_slots,
+            &mut state.system,
+            &mut ram,
+            3,
+        );
         bridge.initialize_trinexx_component();
         bridge.set_type_byte(0x66);
         bridge.set_y_high(0x77);
@@ -786,7 +798,13 @@ fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
         ram[live + 3] = index as u8;
     }
     {
-        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+        let mut bridge = NativeCachedSpriteBridgeMut::new(
+            &mut state.cached_sprites,
+            &mut state.sprite_slots,
+            &mut state.system,
+            &mut ram,
+            3,
+        );
         bridge.cache_live_fields();
     }
     for (index, alt) in CACHED_SPRITE_ALT_FIELDS.iter().copied().enumerate() {
@@ -798,7 +816,13 @@ fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
     }
     let mut backup = [0; 24];
     {
-        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+        let mut bridge = NativeCachedSpriteBridgeMut::new(
+            &mut state.cached_sprites,
+            &mut state.sprite_slots,
+            &mut state.system,
+            &mut ram,
+            3,
+        );
         bridge.load_cached_into_live(&mut backup);
         bridge.clear_state();
     }
@@ -808,7 +832,13 @@ fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
     }
     assert!(!state.cached_sprites.slot(3).is_active());
     {
-        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+        let mut bridge = NativeCachedSpriteBridgeMut::new(
+            &mut state.cached_sprites,
+            &mut state.sprite_slots,
+            &mut state.system,
+            &mut ram,
+            3,
+        );
         bridge.restore_live_from_backup(&backup);
     }
     for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
@@ -817,7 +847,12 @@ fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
 
     {
         let mut bridge =
-            NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 0x1a);
+            NativeCachedSpriteBridgeMut::new(
+            &mut state.cached_sprites,
+            &mut state.sprite_slots,
+            &mut state.system,
+            &mut ram,
+            0x1a);
         bridge.initialize_trinexx_component();
     }
     assert_eq!(state.cached_sprites.slot(0x1a).type_byte(), 0x40);
@@ -838,7 +873,13 @@ fn native_cached_sprite_bridge_projects_native_state_over_stale_ram() {
     let mut state = SpriteState::load_from_ram(&native_ram);
 
     {
-        let mut bridge = NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, 3);
+        let mut bridge = NativeCachedSpriteBridgeMut::new(
+            &mut state.cached_sprites,
+            &mut state.sprite_slots,
+            &mut state.system,
+            &mut ram,
+            3,
+        );
         bridge.set_type_byte(0x66);
         bridge.set_y_high(0x77);
     }
@@ -993,12 +1034,14 @@ fn native_overworld_sprite_flag_bridges_project_native_state_over_stale_ram() {
 fn native_sprite_workspace_bridge_allows_outdoor_presence_owner() {
     let native_ram = vec![0; WRAM_SIZE];
     let mut workspace = SpriteWorkspaceState::load_from_ram(&native_ram);
+    let mut presence = OverworldSpritePresenceState::load_from_ram(&native_ram);
     let mut ram = vec![0; WRAM_SIZE];
     ram[PLAYER_IS_INDOORS] = 0;
     ram[SPRITE_WHERE_IN_ROOM + 0x123] = 0x41;
 
     {
-        let mut bridge = NativeSpriteWorkspaceBridgeMut::new(&mut workspace, &mut ram);
+        let mut bridge =
+            NativeSpriteWorkspaceBridgeMut::new(&mut workspace, &mut presence, &mut ram);
         bridge.set_pickup_slot_cache(0x5a);
     }
 
@@ -1165,7 +1208,13 @@ fn cached_sprite_nmi_split_restore_matches_the_rom_field_order() {
     let mut backup = [0; 24];
     {
         let mut bridge =
-            NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
+            NativeCachedSpriteBridgeMut::new(
+            &mut state.cached_sprites,
+            &mut state.sprite_slots,
+            &mut state.system,
+            &mut ram,
+            slot,
+        );
         bridge.load_cached_into_live(&mut backup);
     }
     for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
@@ -1173,7 +1222,13 @@ fn cached_sprite_nmi_split_restore_matches_the_rom_field_order() {
     }
     {
         let mut bridge =
-            NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
+            NativeCachedSpriteBridgeMut::new(
+            &mut state.cached_sprites,
+            &mut state.sprite_slots,
+            &mut state.system,
+            &mut ram,
+            slot,
+        );
         bridge.restore_live_suffix_from_backup_before_nmi(&backup, LIVE_FIELDS);
     }
     for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {
@@ -1189,7 +1244,13 @@ fn cached_sprite_nmi_split_restore_matches_the_rom_field_order() {
 
     {
         let mut bridge =
-            NativeCachedSpriteBridgeMut::new(&mut state.cached_sprites, &mut ram, slot);
+            NativeCachedSpriteBridgeMut::new(
+            &mut state.cached_sprites,
+            &mut state.sprite_slots,
+            &mut state.system,
+            &mut ram,
+            slot,
+        );
         bridge.restore_live_prefix_from_backup_after_nmi(&backup, LIVE_FIELDS);
     }
     for (index, live) in CACHED_SPRITE_LIVE_FIELDS.iter().copied().enumerate() {

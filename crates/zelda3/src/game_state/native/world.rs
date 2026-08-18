@@ -1673,6 +1673,11 @@ impl OverworldMap16LoadState {
     }
 }
 
+/// The small-overworld scroll backup lives ONLY in RAM, exactly like C: its
+/// src_off word IS `orange_blue_barrier_state` (0xc172), which dungeon
+/// crystal-switch code writes as its own variable (mode reuse). A persistent
+/// native mirror here re-stamped stale backups over the live barrier word, so
+/// this is a transient view: load on read, write through on store.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SmallOverworldMap16ScrollBackupState {
     pub src_off: u16,
@@ -1702,7 +1707,6 @@ pub(crate) struct OverworldMap16State {
     pub(crate) previous_load: OverworldMap16LoadState,
     pub(crate) special_exit_src_off: u16,
     pub(crate) exit_src_off: u16,
-    pub(crate) small_scroll_backup: SmallOverworldMap16ScrollBackupState,
 }
 
 impl OverworldMap16State {
@@ -1712,7 +1716,6 @@ impl OverworldMap16State {
             previous_load: OverworldMap16LoadState::load_previous_from_ram(ram),
             special_exit_src_off: read_le_u16(ram, MAP16_LOAD_SRC_OFF_SPEXIT),
             exit_src_off: read_le_u16(ram, MAP16_LOAD_SRC_OFF_EXIT),
-            small_scroll_backup: SmallOverworldMap16ScrollBackupState::load_from_ram(ram),
         }
     }
 
@@ -1721,7 +1724,9 @@ impl OverworldMap16State {
         self.previous_load.write_previous_to_ram(ram);
         write_le_u16(ram, MAP16_LOAD_SRC_OFF_SPEXIT, self.special_exit_src_off);
         write_le_u16(ram, MAP16_LOAD_SRC_OFF_EXIT, self.exit_src_off);
-        self.small_scroll_backup.write_to_ram(ram);
+        // small_scroll_backup (0xc172/0xc174/0xc176) is deliberately NOT part of
+        // this model: 0xc172-73 doubles as the dungeon crystal-switch barrier
+        // word. Stores write through and reads load from RAM, like C.
     }
 }
 
@@ -4356,8 +4361,8 @@ impl<'a> NativeOverworldMap16BridgeMut<'a> {
     }
 
     pub(crate) fn set_small_scroll_backup(&mut self, state: SmallOverworldMap16ScrollBackupState) {
-        self.map16.small_scroll_backup = state;
-        self.sync();
+        // Write-through: the backup is RAM-resident (see the note on the struct).
+        state.write_to_ram(self.ram);
     }
 }
 

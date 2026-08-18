@@ -105,7 +105,11 @@ impl AttractSceneState {
         ram[ATTRACT_LEGEND_FLAG] = self.legend_flag;
         ram[ATTRACT_NEXT_LEGEND_GFX] = self.next_legend_gfx;
         write_le_u16(ram, ATTRACT_BG2_VOFS_BACKUP, self.bg2_vofs_backup);
-        ram[ATTRACT_THRONE_FADE_TIMER] = self.throne_fade_timer;
+        // ATTRACT_THRONE_FADE_TIMER (0x2c) aliases link_subpixel_z, which gameplay
+        // writes raw (prime_airborne_z_velocity, move_link_axis_by_velocity). The
+        // attract bridge writes this byte through per-setter, so projecting the
+        // (stale outside attract scenes) mirror here would re-stamp Link's live Z
+        // subpixel. Write-through only.
         ram[ATTRACT_PRISON_ZELDA_Y_BASE] = self.prison_zelda_y_base;
         ram[ATTRACT_ANIM_STEP_COUNTER] = self.anim_step_counter;
         ram[ATTRACT_SOLDIER_ANIM_STEP] = self.soldier_anim_step;

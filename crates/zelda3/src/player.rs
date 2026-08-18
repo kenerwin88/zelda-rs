@@ -213,6 +213,12 @@ impl ZeldaState {
 
     pub(super) fn link_reset_properties_a(&mut self) {
         self.follower_link_state_mut().reset_properties_a_fields();
+        // C's Link_ResetProperties_A also zeroes is_archer_or_shovel_game,
+        // tagalong_event_flags, and BYTE(tiledetect_tile_type); route those through
+        // the native states that own them so no model goes stale.
+        self.minigame_state_mut().clear_is_archer_or_shovel_game();
+        self.follower_state_mut().clear_event_flags();
+        self.tile_detect_position_mut().clear_tile_type_low();
         self.link_reset_swimming_state();
         self.link_reset_properties_b();
     }

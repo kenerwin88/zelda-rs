@@ -3904,13 +3904,36 @@ impl CachedSpriteRead {
 
 pub(crate) struct NativeCachedSpriteBridgeMut<'a> {
     state: &'a mut CachedSpritesState,
+    sprite_slots: &'a mut SpriteSlotsState,
+    system: &'a mut SpriteSystemState,
     ram: &'a mut [u8],
     slot: usize,
 }
 
 impl<'a> NativeCachedSpriteBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut CachedSpritesState, ram: &'a mut [u8], slot: usize) -> Self {
-        Self { state, ram, slot }
+    pub(crate) fn new(
+        state: &'a mut CachedSpritesState,
+        sprite_slots: &'a mut SpriteSlotsState,
+        system: &'a mut SpriteSystemState,
+        ram: &'a mut [u8],
+        slot: usize,
+    ) -> Self {
+        Self {
+            state,
+            sprite_slots,
+            system,
+            ram,
+            slot,
+        }
+    }
+
+    /// The cache copy/restore routines write the live sprite arrays directly in
+    /// RAM (ALT_SPRITE_* <-> SPRITE_*), matching C's raw walks. Adopt the
+    /// just-written bytes into the live-slot native model so a later slot sync
+    /// cannot re-stamp the stale pre-copy values and native reads see the
+    /// uncached sprite.
+    fn adopt_live_slots_from_ram(&mut self) {
+        *self.sprite_slots = SpriteSlotsState::load_from_ram(self.ram);
     }
 
     fn sync_slot_from_ram(&mut self) {
@@ -3980,6 +4003,11 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
                 self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot];
         }
         self.sync_slot_from_ram();
+        // Slot 0's ai-state cache byte IS alt_sprite_spawned_flag[0] (0x1de0), the
+        // byte SpriteSystemState models for the damage tracker (sprite_main.c:25815).
+        // Adopt it so the system projection can't re-stamp a stale flag over the
+        // cached ai_state.
+        self.system.adopt_alt_sprite_spawned_flag_from_ram(self.ram);
     }
 
     pub(crate) fn load_cached_into_live(&mut self, backup: &mut [u8; 24]) {
@@ -3989,6 +4017,7 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
                 self.ram[CACHED_SPRITE_ALT_FIELDS[i] + self.slot];
         }
         self.sync_slot_from_ram();
+        self.adopt_live_slots_from_ram();
     }
 
     pub(crate) fn load_cached_fields_into_live_before_nmi(
@@ -4005,6 +4034,7 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
                 self.ram[CACHED_SPRITE_ALT_FIELDS[i] + self.slot];
         }
         self.sync_slot_from_ram();
+        self.adopt_live_slots_from_ram();
     }
 
     pub(crate) fn complete_cached_dynamic_fields_into_live_after_nmi(
@@ -4019,6 +4049,7 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
                 self.ram[CACHED_SPRITE_ALT_FIELDS[i] + self.slot];
         }
         self.sync_slot_from_ram();
+        self.adopt_live_slots_from_ram();
     }
 
     pub(crate) fn restore_live_suffix_from_backup_before_nmi(
@@ -4030,6 +4061,7 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
         for i in (live_fields..CACHED_SPRITE_LIVE_FIELDS.len()).rev() {
             self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] = backup[i];
         }
+        self.adopt_live_slots_from_ram();
     }
 
     pub(crate) fn restore_live_prefix_from_backup_after_nmi(
@@ -4041,12 +4073,14 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
         for i in (0..live_fields).rev() {
             self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] = backup[i];
         }
+        self.adopt_live_slots_from_ram();
     }
 
     pub(crate) fn restore_live_from_backup(&mut self, backup: &[u8; 24]) {
         for i in (0..CACHED_SPRITE_LIVE_FIELDS.len()).rev() {
             self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot] = backup[i];
         }
+        self.adopt_live_slots_from_ram();
     }
 }
 
@@ -4104,6 +4138,12 @@ impl SpriteSystemState {
         ram[ANCILLA_ALLOC_ROTATE] = self.ancilla_alloc_rotate;
         ram[ALT_SPRITES_FLAG] = self.alt_sprites_flag;
         ram[SPR_RANGED_BASED_TOGGLER] = self.ranged_based_toggler;
+    }
+
+    /// Adopt the alt_sprite_spawned_flag byte (0x1de0) straight from RAM after the
+    /// cached-sprite copy wrote it raw (it doubles as slot 0's ai-state cache).
+    pub(crate) fn adopt_alt_sprite_spawned_flag_from_ram(&mut self, ram: &[u8]) {
+        self.alt_sprite_spawned_flag = ram.get(ALT_SPRITE_SPAWNED_FLAG).copied().unwrap_or(0);
     }
 
     pub(crate) fn limit_instance(&self) -> u8 {
@@ -4334,14 +4374,6 @@ impl<'a> NativeSpriteSystemBridgeMut<'a> {
 
     pub(crate) fn fill_live_states(&mut self, value: u8) {
         self.ram[SPRITE_STATE..SPRITE_STATE + SPRITE_SLOT_COUNT].fill(value);
-        *self.sprite_slots = SpriteSlotsState::load_from_ram(self.ram);
-    }
-
-    /// Resync the native live sprite slots from RAM. Needed after code that writes
-    /// the live sprite arrays directly in RAM (e.g. the cached-sprite uncache /
-    /// restore, which copies ALT_SPRITE_* <-> SPRITE_*), so subsequent native
-    /// sprite_slot(k) reads see the just-written values instead of stale state.
-    pub(crate) fn reload_live_slots_from_ram(&mut self) {
         *self.sprite_slots = SpriteSlotsState::load_from_ram(self.ram);
     }
 
@@ -4696,12 +4728,21 @@ impl SpriteWorkspaceState {
 
 pub(crate) struct NativeSpriteWorkspaceBridgeMut<'a> {
     state: &'a mut SpriteWorkspaceState,
+    overworld_sprite_presence: &'a mut OverworldSpritePresenceState,
     ram: &'a mut [u8],
 }
 
 impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
-    pub(crate) fn new(state: &'a mut SpriteWorkspaceState, ram: &'a mut [u8]) -> Self {
-        Self { state, ram }
+    pub(crate) fn new(
+        state: &'a mut SpriteWorkspaceState,
+        overworld_sprite_presence: &'a mut OverworldSpritePresenceState,
+        ram: &'a mut [u8],
+    ) -> Self {
+        Self {
+            state,
+            overworld_sprite_presence,
+            ram,
+        }
     }
 
     fn sync(&mut self) {
@@ -4805,8 +4846,11 @@ impl<'a> NativeSpriteWorkspaceBridgeMut<'a> {
         // indoors (see write_to_ram), so an OUTDOORS reset would otherwise leave RAM
         // untouched and the overworld presence table (sprite_where_in_overworld, the
         // same WRAM) would keep stale markers across an area reload. Clear RAM directly
-        // so both modes match the oracle.
+        // so both modes match the oracle, and clear the presence mirror that models the
+        // same region (its projection is outdoors-gated) so it cannot re-project the
+        // stale markers.
         self.ram[SPRITE_WHERE_IN_ROOM..SPRITE_WHERE_IN_ROOM + SPRITE_WHERE_IN_ROOM_BYTES].fill(0);
+        self.overworld_sprite_presence.clear_all();
         self.sync();
     }
 
@@ -5900,20 +5944,6 @@ impl<'a> NativeOverworldSpriteLoadedBridgeMut<'a> {
     pub(crate) fn clear_loaded_mask(&mut self, block: u16, loaded_mask: u8) {
         self.state.clear_loaded_mask(block, loaded_mask);
         self.sync();
-    }
-
-    pub(crate) fn clear_loaded_mask_wrapped(&mut self, block: u16, loaded_mask: u8) {
-        // C computes the 16-bit SNES address (mod-0x10000 wrap) before adding the
-        // 0x10000 bank, so a wrapping `block` lands in 0x10000..=0x10F7F. See
-        // `RtlState::clear_overworld_sprite_loaded_mask_wrapped`.
-        let addr16 = 0xEF80u16.wrapping_add(block >> 3);
-        let address = 0x10000 + usize::from(addr16);
-        self.ram[address] &= !loaded_mask;
-        if let Some(index) = address.checked_sub(OVERWORLD_SPRITE_WAS_LOADED) {
-            if index < OVERWORLD_SPRITE_FLAG_COUNT {
-                self.state.clear_loaded_mask(block, loaded_mask);
-            }
-        }
     }
 
     pub(crate) fn set_loaded_mask(&mut self, block: u16, loaded_mask: u8) {

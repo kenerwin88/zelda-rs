@@ -8972,9 +8972,6 @@ impl ZeldaState {
         pub(crate) fn dual_layer_tile_cache_mut() -> NativeDualLayerTileCacheBridgeMut {
             game_state.sprites.dual_layer_tile_cache
         }
-        pub(crate) fn sprite_workspace_mut() -> NativeSpriteWorkspaceBridgeMut {
-            game_state.sprites.workspace
-        }
         pub(crate) fn garnish_state_mut() -> NativeGarnishRuntimeBridgeMut {
             game_state.sprites.garnish_runtime
         }
@@ -12728,6 +12725,8 @@ impl ZeldaState {
     pub(crate) fn alt_sprite_slot_mut(&mut self, slot: usize) -> NativeCachedSpriteBridgeMut<'_> {
         NativeCachedSpriteBridgeMut::new(
             &mut self.game_state.sprites.cached_sprites,
+            &mut self.game_state.sprites.sprite_slots,
+            &mut self.game_state.sprites.system,
             &mut self.ram,
             slot,
         )
@@ -12743,6 +12742,8 @@ impl ZeldaState {
     ) -> NativeCachedSpriteBridgeMut<'_> {
         NativeCachedSpriteBridgeMut::new(
             &mut self.game_state.sprites.cached_sprites,
+            &mut self.game_state.sprites.sprite_slots,
+            &mut self.game_state.sprites.system,
             &mut self.ram,
             slot,
         )
@@ -12833,6 +12834,14 @@ impl ZeldaState {
         )
     }
 
+    pub(crate) fn sprite_workspace_mut(&mut self) -> NativeSpriteWorkspaceBridgeMut<'_> {
+        NativeSpriteWorkspaceBridgeMut::new(
+            &mut self.game_state.sprites.workspace,
+            &mut self.game_state.sprites.overworld_sprite_presence,
+            &mut self.ram,
+        )
+    }
+
     pub(crate) fn set_overworld_sprite_presence_marker(&mut self, index: usize, value: u8) {
         self.overworld_sprite_presence_mut()
             .set_marker(index, value);
@@ -12856,27 +12865,19 @@ impl ZeldaState {
         // mask the 16-bit address first, then add the 0x10000 bank.
         let addr16 = 0xEF80u16.wrapping_add(block >> 3);
         let address = 0x10000 + usize::from(addr16);
+        // A large `block` (e.g. a killed dungeon sprite whose load block is near
+        // 0xffff) wraps the 16-bit address below 0xEF80 and the raw `&=` spills out
+        // of the loaded table into 0x10000..=0x10F7F (the BG char buffer bank). No
+        // native state models that window, so the raw write needs no model adopt;
+        // only in-table addresses update the native loaded-mask mirror.
         self.ram[address] &= !loaded_mask;
-        let in_table = match address.checked_sub(OVERWORLD_SPRITE_WAS_LOADED) {
-            Some(index) if index < crate::game_state::OVERWORLD_SPRITE_FLAG_COUNT => {
+        if let Some(index) = address.checked_sub(OVERWORLD_SPRITE_WAS_LOADED) {
+            if index < crate::game_state::OVERWORLD_SPRITE_FLAG_COUNT {
                 self.game_state
                     .sprites
                     .overworld_sprite_loaded
                     .clear_loaded_mask(block, loaded_mask);
-                true
             }
-            _ => false,
-        };
-        // Legacy parity quirk: for a large `block` (e.g. a killed dungeon sprite whose
-        // load block is near 0xffff) the wrapped address can spill OUT of the
-        // overworld-sprite-loaded table and land deep in low WRAM modeled by the
-        // live sprite slots (SPRITE_FLAGS4 at 0xf60 == OVERWORLD_SPRITE_WAS_LOADED +
-        // 0x1fe0 wrapped). The raw `&=` above already wrote that byte, but the
-        // sprite-slot native model didn't see it, so its bulk projection would
-        // re-stamp the stale value on a later slot's sync. Resync the live slots
-        // from RAM so the direct write sticks (matches the legacy baseline raw RAM).
-        if !in_table {
-            self.sprite_system_mut().reload_live_slots_from_ram();
         }
     }
 
@@ -13110,12 +13111,6 @@ impl ZeldaState {
 
     pub fn set_overworld_exit_map16_src_off(&mut self, src_off: u16) {
         self.overworld_map16_mut().set_exit_src_off(src_off);
-    }
-
-    pub fn small_overworld_map16_scroll_backup_state(
-        &self,
-    ) -> SmallOverworldMap16ScrollBackupState {
-        self.game_state.world.overworld.map16.small_scroll_backup
     }
 
     pub fn set_small_overworld_map16_scroll_backup_state(

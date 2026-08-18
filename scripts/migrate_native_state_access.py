@@ -128,11 +128,6 @@ MANUAL_ACCESSORS: tuple[AccessorMapping, ...] = (
     AccessorMapping("swim_acceleration", "game_state.player.swim_acceleration"),
     AccessorMapping("tile_detect_position", "game_state.player.tile_detection"),
     AccessorMapping("follower_link_state", "game_state.player.follower_link"),
-    AccessorMapping(
-        "small_overworld_map16_scroll_backup_state",
-        "game_state.world.overworld.map16.small_scroll_backup",
-        borrowed_alias=False,
-    ),
     AccessorMapping("follower_state", "game_state.sprites.follower_runtime"),
     AccessorMapping("garnish_state", "game_state.sprites.garnish_runtime"),
     AccessorMapping("sprite_system", "game_state.sprites.system"),

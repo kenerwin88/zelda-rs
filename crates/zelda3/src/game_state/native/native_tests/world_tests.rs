@@ -1733,9 +1733,12 @@ fn overworld_map16_load_loads_from_and_projects_to_ram() {
     assert_eq!(map16.previous_load.y_unit, 0x0008);
     assert_eq!(map16.special_exit_src_off, 0x3456);
     assert_eq!(map16.exit_src_off, 0x4567);
-    assert_eq!(map16.small_scroll_backup.src_off, 0x5678);
-    assert_eq!(map16.small_scroll_backup.dst_off, 0x0079);
-    assert_eq!(map16.small_scroll_backup.y_unit, 0x000a);
+    // The small-overworld scroll backup is RAM-resident (0xc172 aliases the
+    // dungeon barrier word) and is read through the transient view, not the model.
+    let backup = SmallOverworldMap16ScrollBackupState::load_from_ram(&ram);
+    assert_eq!(backup.src_off, 0x5678);
+    assert_eq!(backup.dst_off, 0x0079);
+    assert_eq!(backup.y_unit, 0x000a);
 
     map16.active_load.src_off = 0x2222;
     map16.active_load.dst_off = 0x0034;
@@ -1745,12 +1748,14 @@ fn overworld_map16_load_loads_from_and_projects_to_ram() {
     map16.previous_load.y_unit = 0x000b;
     map16.special_exit_src_off = 0x4444;
     map16.exit_src_off = 0x5555;
-    map16.small_scroll_backup = SmallOverworldMap16ScrollBackupState {
+    map16.write_to_ram(&mut ram);
+    // The projection must NOT touch the RAM-resident backup words.
+    SmallOverworldMap16ScrollBackupState {
         src_off: 0x6666,
         dst_off: 0x0056,
         y_unit: 0x000c,
-    };
-    map16.write_to_ram(&mut ram);
+    }
+    .write_to_ram(&mut ram);
 
     assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x2222);
     assert_eq!(read_le_u16(&ram, MAP16_LOAD_DST_OFF), 0x0034);
@@ -1816,9 +1821,6 @@ fn native_overworld_map16_bridge_dual_writes_changes_from_native_state() {
     assert_eq!(map16.previous_load.y_unit, 0x000b);
     assert_eq!(map16.special_exit_src_off, 0x5678);
     assert_eq!(map16.exit_src_off, 0x6789);
-    assert_eq!(map16.small_scroll_backup.src_off, 0x789a);
-    assert_eq!(map16.small_scroll_backup.dst_off, 0x009b);
-    assert_eq!(map16.small_scroll_backup.y_unit, 0x000c);
     assert_eq!(read_le_u16(&ram, MAP16_LOAD_SRC_OFF), 0x3456);
     assert_eq!(read_le_u16(&ram, MAP16_LOAD_DST_OFF), 0x0078);
     assert_eq!(read_le_u16(&ram, MAP16_LOAD_Y_UNIT), 0x000a);

@@ -4048,7 +4048,10 @@ impl ZeldaState {
         self.set_edge_transition_direction_bits(0);
 
         if self.overworld_map_is_small() {
-            let backup = self.game_state.world.overworld.map16.small_scroll_backup;
+            // RAM-resident backup (C reads orange_blue_barrier_state / word_7EC174 /
+            // word_7EC176 live): a dungeon visit may legitimately have overwritten
+            // the barrier-aliased src_off word.
+            let backup = SmallOverworldMap16ScrollBackupState::load_from_ram(&self.ram);
             self.store_overworld_map16_load_state(OverworldMap16LoadState {
                 src_off: backup.src_off,
                 dst_off: backup.dst_off,
