@@ -2404,29 +2404,30 @@ impl WorldTransientState {
         // the overworld map16 scratch table elsewhere. DungeonObjectTrackingState
         // is the sole owner while the dungeon module is active; projecting the
         // stale overworld copy here clobbers the dungeon table on every frame.
-        if ram_byte(ram, MAIN_MODULE) != 7 {
-            // Project only the 32-word overworld map16 stripe window this state actually
-            // owns. The backing Vec is 0x400 words, but projecting all of it wrote
-            // 0x500..0xd00 -- 0x800 bytes reaching far past the C array (whose next
-            // variable, dung_object_pos_in_objdata, starts at 0x520) and straight through
-            // the sprite/overlord tables. Everything above index 31 was only ever a
-            // load-time snapshot, so it re-stamped stale bytes over live foreign systems;
-            // ZELDA3_ASSERT_SCRATCH_CONFLICTS caught it clobbering byte_7E0B69 (0xb69,
-            // index 820) while the tutorial guard was cycling its message index.
-            // C's own use is exactly 32 words -- BufferAndBuildMap16Stripes_X walks
-            // `d = (d + 1) & 0x1f` -- and every Rust writer masks & 0x1f to match.
-            // DOOR_ANIMATION_STEP_INDICATOR (0x690, index 200) is the one higher word the
-            // Vec mirrors, and write_scalar_fields_to_ram already projects it directly.
-            for (index, tile) in self
-                .dungeon_replacement_tiles
-                .iter()
-                .enumerate()
-                .take(OVERWORLD_MAP16_STRIPE_WORDS)
-            {
-                write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
-            }
-        }
+        // dung_replacement_tile_state (0x500) is NOT projected here at all. The bridge
+        // setter already writes each word straight to RAM, and debug_assert_matches_ram
+        // excludes the Vec, so the projection was pure redundancy -- and harmful: C's
+        // overworld stripe loop walks `d = (d + 1) & 0x1f`, which deliberately overruns the
+        // 16-word array into dung_object_pos_in_objdata (0x520), but C only writes there
+        // DURING a stripe build. Re-stamping the window every frame pushed stale zeros over
+        // that table (caught by ZELDA3_ASSERT_SCRATCH_CONFLICTS at 0x520/0x522/0x524).
+        // Before being bounded to the stripe window this loop covered 0x400 words and wrote
+        // 0x500..0xd00, straight through the sprite and overlord tables.
         self.write_scalar_fields_to_ram(ram);
+    }
+
+    /// Push the write-through replacement-tile window. Only round-trip tests use this;
+    /// production writes go straight to RAM in the bridge setter.
+    pub(crate) fn write_dungeon_replacement_tiles_to_ram(&self, ram: &mut [u8]) {
+        for (index, tile) in self.dungeon_replacement_tiles.iter().enumerate() {
+            write_le_u16(ram, DUNG_REPLACEMENT_TILE_STATE + index * 2, *tile);
+        }
+    }
+
+    /// Push the write-through door-animation word (0x690). Only the owning setter and
+    /// round-trip tests use this; it is deliberately absent from write_to_ram.
+    pub(crate) fn write_door_animation_step_to_ram(&self, ram: &mut [u8]) {
+        write_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR, self.door_animation_step);
     }
 
     pub(crate) fn write_scalar_fields_to_ram(&self, ram: &mut [u8]) {
@@ -2480,7 +2481,16 @@ impl WorldTransientState {
             self.overworld_bomb_tile_sweep_y_end,
         );
         ram[HUD_CUR_ITEM_X] = self.hud_current_item_x;
-        write_le_u16(ram, DOOR_ANIMATION_STEP_INDICATOR, self.door_animation_step);
+        // DOOR_ANIMATION_STEP_INDICATOR (0x690) is C's single `door_animation_step_indicator`,
+        // shared between the dungeon doors and the overworld entrance doors.
+        // DungeonDoorState is the write-through owner (it holds ~25 of the call sites and is
+        // deliberately absent from DungeonState::write_to_ram); this state is the overworld
+        // user. Every world_transient setter already re-reads the byte from RAM first (see
+        // sync_preserving_projected_door_animation_step) precisely so its sync would not
+        // clobber the dungeon value -- but the FRAME-WIDE GameState::write_to_ram had no such
+        // preserve step and re-stamped a stale copy anyway, which is what
+        // ZELDA3_ASSERT_SCRATCH_CONFLICTS caught at 0x690. Write-through only: the two door
+        // setters below write RAM directly.
         ram[ROOM_TRANSITIONING_FLAGS] = self.room_transitioning_flags;
         ram[FLAG_TRAVEL_BIRD] = self.travel_bird_flag;
         ram[TILE_INTERACTION_SHARED_FLAG] = self.tile_interaction_shared_flag;
@@ -3472,6 +3482,15 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    /// 0x690 is no longer bulk-projected, so the owning setter writes it itself.
+    fn write_door_animation_step_through(&mut self) {
+        write_le_u16(
+            self.ram,
+            DOOR_ANIMATION_STEP_INDICATOR,
+            self.state.door_animation_step(),
+        );
+    }
+
     fn sync_preserving_projected_door_animation_step(&mut self) {
         self.state
             .set_door_animation_step_word(read_le_u16(self.ram, DOOR_ANIMATION_STEP_INDICATOR));
@@ -3538,11 +3557,13 @@ impl<'a> NativeWorldTransientBridgeMut<'a> {
 
     pub(crate) fn set_door_animation_step(&mut self, value: u8) {
         self.state.set_door_animation_step(value);
+        self.write_door_animation_step_through();
         self.sync();
     }
 
     pub(crate) fn set_door_animation_step_word(&mut self, value: u16) {
         self.state.set_door_animation_step_word(value);
+        self.write_door_animation_step_through();
         self.sync();
     }
 

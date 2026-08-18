@@ -623,6 +623,9 @@ fn world_transient_loads_from_and_projects_to_ram() {
 
     let mut projected = vec![0; WRAM_SIZE];
     transient.write_to_ram(&mut projected);
+    // 0x690 is write-through (shared with DungeonDoorState), so it flushes separately.
+    transient.write_door_animation_step_to_ram(&mut projected);
+    transient.write_dungeon_replacement_tiles_to_ram(&mut projected);
     assert_eq!(WorldTransientState::load_from_ram(&projected), transient);
 }
 
