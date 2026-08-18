@@ -14774,11 +14774,10 @@ impl ZeldaState {
                     .map(|(oam, vram)| DisplayObjGeneration::RetainCapturedMemory { oam, vram })
             })
             .unwrap_or_else(|| self.active_display_obj_generation.clone());
-        if env::var("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
-            .ok()
-            .and_then(|frame| frame.parse::<u32>().ok())
-            .is_some_and(|frame| frame == self.frame_ctr_dbg)
-        {
+        if nmi::debug_frame_selection_env_matches(
+            "ZELDA3_DEBUG_DISPLAY_OAM_FRAME",
+            self.frame_ctr_dbg,
+        ) {
             eprintln!(
                 "display_obj_generation host={} phase={:02x}/{:02x}/{:02x} source={} selected={} active={} work={:?} caller={:?}",
                 self.frame_ctr_dbg,
@@ -16194,10 +16193,10 @@ impl ZeldaState {
         let live_extended_oam = following
             .enemy_drop_item_graphics_live_extended_oam
             .then(|| following.ppu.oam[256..].to_vec());
-        let debug_oam_frame = env::var("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
-            .ok()
-            .and_then(|frame| frame.parse::<u32>().ok())
-            .is_some_and(|frame| frame == self.frame_ctr_dbg);
+        let debug_oam_frame = nmi::debug_frame_selection_env_matches(
+            "ZELDA3_DEBUG_DISPLAY_OAM_FRAME",
+            self.frame_ctr_dbg,
+        );
         let debug_captured_oam = debug_oam_frame.then(|| self.ppu.oam.clone());
         let debug_host_boundary_oam = debug_oam_frame
             .then(|| {
@@ -18050,11 +18049,10 @@ impl ZeldaState {
             },
         };
         let publication_plan = DisplayPublicationPlan::resolve(&display, publication_signals);
-        if env::var("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
-            .ok()
-            .and_then(|frame| frame.parse::<u32>().ok())
-            .is_some_and(|frame| frame == self.frame_ctr_dbg)
-        {
+        if nmi::debug_frame_selection_env_matches(
+            "ZELDA3_DEBUG_DISPLAY_OAM_FRAME",
+            self.frame_ctr_dbg,
+        ) {
             eprintln!(
                 "display_publication_phase host={} snapshot={:02x}/{:02x}/{:02x} live={:02x}/{:02x}/{:02x} brightness_live={} faded={:?} cgram={:?} cgram_override={} effective_cgram={} oam_source={:?}",
                 self.frame_ctr_dbg,
@@ -18524,11 +18522,10 @@ impl ZeldaState {
         if let Some(writes) = self.active_effective_dma_writes.as_mut() {
             writes.completed_oam = Some(completed.clone());
         }
-        if env::var("ZELDA3_DEBUG_DISPLAY_OAM_FRAME")
-            .ok()
-            .and_then(|frame| frame.parse::<u32>().ok())
-            == Some(self.frame_ctr_dbg)
-        {
+        if nmi::debug_frame_selection_env_matches(
+            "ZELDA3_DEBUG_DISPLAY_OAM_FRAME",
+            self.frame_ctr_dbg,
+        ) {
             eprintln!(
                 "oam_dma_receipt host={} active_snapshot={:?}",
                 self.frame_ctr_dbg,

@@ -79,9 +79,12 @@ pub(super) fn nmi_vram_copy_packets(data: &[u8]) -> Vec<NmiVramCopyPacket<'_>> {
     packets
 }
 
-fn debug_hardware_frame_matches(frame: u32) -> bool {
-    let Some(selection) = std::env::var_os("ZELDA3_DEBUG_HARDWARE_FRAMES") else {
-        return true;
+/// Whether `frame` matches a comma-separated frame selection (`N`, `N-M`)
+/// held in `env_name`. Absent or empty env → no match. Shared by the
+/// per-frame display/hardware debug probes so every probe accepts ranges.
+pub(crate) fn debug_frame_selection_env_matches(env_name: &str, frame: u32) -> bool {
+    let Some(selection) = std::env::var_os(env_name) else {
+        return false;
     };
     selection.to_string_lossy().split(',').any(|part| {
         let part = part.trim();
@@ -95,6 +98,13 @@ fn debug_hardware_frame_matches(frame: u32) -> bool {
         }
         part.parse::<u32>().ok() == Some(frame)
     })
+}
+
+fn debug_hardware_frame_matches(frame: u32) -> bool {
+    if std::env::var_os("ZELDA3_DEBUG_HARDWARE_FRAMES").is_none() {
+        return true;
+    }
+    debug_frame_selection_env_matches("ZELDA3_DEBUG_HARDWARE_FRAMES", frame)
 }
 
 impl ZeldaState {
