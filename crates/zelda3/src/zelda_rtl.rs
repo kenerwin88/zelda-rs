@@ -7477,6 +7477,17 @@ pub struct ZeldaState {
     /// register domains continue advancing.
     #[serde(skip)]
     last_presented_oam: Option<Vec<u16>>,
+    /// OAM-law lanes (diagnostic; consumer-less by default — see the "OAM law
+    /// audit" tracing envs in CLAUDE.md). The hardware rule they model,
+    /// trace-verified against the pinned core: a $0800→$2104 transfer runs at
+    /// each vblank whose main completed, carries the software shadow as it
+    /// stands at that vblank, and becomes visible from the FOLLOWING scanout.
+    /// `pending` holds the latest modeled transfer; a scanout capture promotes
+    /// it to `visible`.
+    #[serde(skip)]
+    oam_law_pending: Option<Vec<u16>>,
+    #[serde(skip)]
+    oam_law_visible: Option<Vec<u16>>,
     /// CGRAM evaluated for the most recently rendered scanout. Long palette
     /// walks can author the next PPU palette before the current field consumes
     /// it, independently of the other display domains.
@@ -13345,6 +13356,8 @@ impl ZeldaState {
             active_effective_dma_writes: None,
             resident_oam_dma: None,
             last_presented_oam: None,
+            oam_law_pending: None,
+            oam_law_visible: None,
             last_presented_cgram: None,
             last_presented_obj_vram: None,
             last_presented_vram: None,
@@ -13496,6 +13509,8 @@ impl ZeldaState {
         self.active_effective_dma_writes = None;
         self.resident_oam_dma = None;
         self.last_presented_oam = None;
+        self.oam_law_pending = None;
+        self.oam_law_visible = None;
         self.last_presented_cgram = None;
         self.last_presented_obj_vram = None;
         self.last_presented_vram = None;
@@ -13567,6 +13582,10 @@ impl ZeldaState {
             self.active_effective_dma_writes = None;
             self.resident_oam_dma = None;
             self.last_presented_oam = None;
+            self.oam_law_pending = None;
+            self.oam_law_visible = None;
+        self.oam_law_pending = None;
+        self.oam_law_visible = None;
             self.last_presented_cgram = None;
             self.last_presented_obj_vram = None;
             self.last_presented_vram = None;
@@ -14511,6 +14530,11 @@ impl ZeldaState {
         &mut self,
         publication_override: Option<DisplaySnapshotPublication>,
     ) {
+        // OAM-law clause: a transfer performed at the previous vblank becomes
+        // visible at this scanout.
+        if let Some(pending) = self.oam_law_pending.take() {
+            self.oam_law_visible = Some(pending);
+        }
         // The native frame identifies the CPU publication phase. It can
         // deliberately lag a direct WRAM module handoff until NMI resumes.
         let frame = self.game_state.frame;
@@ -18218,6 +18242,30 @@ impl ZeldaState {
             self.ppu.oam.clone_from_slice(shadow_oam);
         }
         self.compose_effective_presented_obj(&display);
+        if std::env::var_os("ZELDA3_AUDIT_OAM_LAW").is_some() {
+            if let Some(law) = self.oam_law_visible.as_deref() {
+                let limit = self.ppu.oam.len().min(law.len());
+                let diffs: Vec<usize> = (0..limit)
+                    .filter(|&word| self.ppu.oam[word] != law[word])
+                    .collect();
+                if !diffs.is_empty() {
+                    eprintln!(
+                        "oam_law_delta host={} words={} first={:?} source={:?}",
+                        self.frame_ctr_dbg,
+                        diffs.len(),
+                        &diffs[..diffs.len().min(6)],
+                        publication_plan.oam_scanout_source,
+                    );
+                }
+            }
+        }
+        if std::env::var_os("ZELDA3_OAM_LAW_PRESENTATION").is_some() {
+            if let Some(law) = self.oam_law_visible.as_deref() {
+                if law.len() == self.ppu.oam.len() {
+                    self.ppu.oam.clone_from_slice(law);
+                }
+            }
+        }
         self.staged_presented_oam = Some(self.ppu.oam.clone());
         let presented_obj_vram = self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram);
         self.staged_presented_obj_vram = Some(presented_obj_vram[0x4000..0x4400].to_vec());

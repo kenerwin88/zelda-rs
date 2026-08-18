@@ -274,6 +274,11 @@ impl ZeldaState {
         self.begin_effective_presented_dma();
         self.interrupt_nmi(input, oam_dma_source, defer_bg_vram_upload);
         self.record_effective_presented_dma_for_active_scanout();
+        // OAM-law clause: a leading NMI's transfer completes before this
+        // frame's visible scanlines, so it is visible immediately.
+        if let Some(pending) = self.oam_law_pending.take() {
+            self.oam_law_visible = Some(pending);
+        }
     }
 
     pub(super) fn interrupt_nmi_with_animated_bg_operands(
@@ -1068,6 +1073,13 @@ impl ZeldaState {
         }
         self.resident_oam_dma = Some(self.ppu.oam.clone());
         self.record_completed_oam_dma_for_display_boundary();
+        // OAM-law clause: the real transfer carries the software shadow as it
+        // stands at this vblank (post-main), independent of the operand the
+        // legacy pipeline selected above.
+        let mut law = vec![0u16; self.ppu.oam.len()];
+        if publish_oam_shadow(&mut law, self.sprite_oam_shadow_buffer()) {
+            self.oam_law_pending = Some(law);
+        }
     }
 
     pub(super) fn nmi_upload_tilemap(&mut self) {

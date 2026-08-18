@@ -325,6 +325,15 @@ parity pass. A Rust regression therefore cannot truncate the reusable oracle.
   The core-update/prep cadence drives BG_TILE_ANIMATION_COUNTDOWN and
   link-DMA phase; use this to compare rust's prep schedule against the
   oracle's countdown trajectory when an animation phase drifts by one.
+- `ZELDA3_AUDIT_OAM_LAW=1` — per-frame differ between the presented OAM table
+  and the trace-verified hardware OAM law (a $2104 transfer runs at each
+  vblank whose main completed, carries the shadow as of that vblank, and is
+  visible from the following scanout; leading NMIs are visible immediately).
+  Prints `oam_law_delta host=<n> words=<k> ... source=<rule>` for every frame
+  where a publication rule deviates from the law — the migration map for
+  retiring per-window OAM rules. `ZELDA3_OAM_LAW_PRESENTATION=1` goes further
+  and PRESENTS the law lane's OAM table (diagnostic only): video-compare that
+  build against the oracle to see where the law itself is incomplete.
 - `ZELDA3_DEBUG_LINK_DMA=1` — one line per NMI Link OBJ DMA with the **entry and
   exit** `main/sub/subsub` the operand rules key on, the resolved
   `operands=HostBoundaryBeforeMain|LiveAfterMain`, `captured=<bool>` (false means
