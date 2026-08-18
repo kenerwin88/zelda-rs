@@ -14293,6 +14293,58 @@ impl ZeldaState {
         }));
     }
 
+    /// OBJ scanout for a frame consumed by the multi-slice `Text_Initialize`
+    /// worker. The long initializer blocks the translated main loop, so C's
+    /// `Interrupt_NMI` finds `nmi_boolean` still set and skips `NMI_DoUpdates`
+    /// for every held vblank: no $2104 transfer runs, and hardware keeps
+    /// scanning out the OAM left by the LAST COMPLETED frame's DMA — never a
+    /// live composition. Which lane holds that image differs by dialogue
+    /// context (both measured against the pinned core):
+    /// - OUTDOORS (route frame 5363): the entry boundary still transfers the
+    ///   shadow Module0E's Sprite_Main just authored, so the software shadow
+    ///   published at the host boundary is the resident generation. Live
+    ///   composition instead carries the post-`RunInterface` scroll-copy step
+    ///   one pixel ahead of it.
+    /// - INDOORS (route frame 3808): the block begins one boundary earlier
+    ///   (the entry vblank is already held), so the last completed transfer
+    ///   is the `resident_oam_dma` lane, one generation OLDER than the
+    ///   current software shadow.
+    /// Bug class 5 (collapsed timed side-effect phase).
+    pub(super) fn stage_dialogue_initialization_obj_scanout(&mut self) {
+        if self.ram[crate::game_state::constants::PLAYER_IS_INDOORS] != 0 {
+            let resident = self
+                .resident_oam_dma
+                .clone()
+                .unwrap_or_else(|| self.ppu.oam.clone());
+            self.next_display_obj_memory_generation =
+                Some(DisplayObjGeneration::RetainCapturedOam { oam: resident });
+            self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
+                oam: OamScanoutSource::RetainResidentPpuOam,
+                link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            }));
+        } else {
+            self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
+                oam: OamScanoutSource::ComposeHostBoundaryShadowDma,
+                link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            }));
+        }
+    }
+
+    /// OBJ scanout for the final `Text_Initialize` slice: the initializer
+    /// returns mid-frame, the remaining Module0E main authors a fresh OAM
+    /// shadow, and `nmi_prepare_sprites` DMAs it before this frame's vblank —
+    /// so the completed post-work DMA is the generation hardware scans out
+    /// (route frame 5368: the completed-OAM-DMA candidate matched exactly).
+    fn stage_dialogue_initialization_completion_obj_scanout(&mut self) {
+        self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::ComposeCompletedWorkAfterNmi,
+            link_obj: GraphicsDmaGeneration::LiveAfterMain,
+            link_obj_sources: GraphicsDmaGeneration::LiveAfterMain,
+        }));
+    }
+
     fn pre_main_caller_continuation_is(&self, continuation: PreMainCallerContinuation) -> bool {
         self.game_execution_scheduler
             .pre_main_caller_continuation_is(continuation)
@@ -19810,6 +19862,7 @@ impl ZeldaState {
                             .unwrap_or_else(|| self.sprite_oam_shadow_buffer().to_vec());
                         self.publish_dialogue_initialization_oam_dma(&entry_shadow);
                     }
+                    self.stage_dialogue_initialization_obj_scanout();
                     self.normal_dialogue_initialization_phase -= 1;
                 }
                 2 => {
@@ -19819,6 +19872,10 @@ impl ZeldaState {
                         });
                     self.complete_text_initialization_prefix();
                     self.prepare_text_character_buffer_for_carry();
+                    // Stage after the completion work: the prefix's own display
+                    // staging must not replace the held window generation this
+                    // slice still scans out.
+                    self.stage_dialogue_initialization_obj_scanout();
                     self.normal_dialogue_initialization_phase = 1;
                 }
                 1 => {
@@ -19828,6 +19885,13 @@ impl ZeldaState {
                             oam: retained_oam.clone(),
                         });
                     retained_dialogue_completion_oam = Some(retained_oam);
+                    // Outdoors the completion slice's post-work OAM DMA is the
+                    // generation hardware scans out (route frame 5368). The
+                    // indoor completion (route frame 3812) still presents the
+                    // ordinary module cadence.
+                    if self.ram[crate::game_state::constants::PLAYER_IS_INDOORS] == 0 {
+                        self.stage_dialogue_initialization_completion_obj_scanout();
+                    }
                     self.complete_text_initialization_carry_suffix();
                     self.normal_dialogue_initialization_phase = 0;
                     self.complete_module0e_interface_after_run();

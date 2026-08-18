@@ -3581,6 +3581,9 @@ impl ZeldaState {
         );
         if self.rom_startup_timing() && rom_initialization_slices != 0 {
             self.normal_dialogue_initialization_phase = rom_initialization_slices;
+            // This slice and every held one until the completion slice keep
+            // the host-boundary OAM shadow on screen (see the staging fn).
+            self.stage_dialogue_initialization_obj_scanout();
             return;
         }
         self.complete_text_initialization_prefix();
