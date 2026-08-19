@@ -697,13 +697,13 @@ const fn atomic_item_graphics_return_obj_scanout(
         // The enemy-drop pickup's $22 sheet has completed its last OBJ upload at
         // this boundary. Unlike ordinary equipment receipts, there is no
         // resident Link-sheet tail to retain after that upload returns.
-        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 | 0x22 } => {
+        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 | 0x22, .. } => {
             GraphicsDmaGeneration::LiveAfterMain
         }
         _ => GraphicsDmaGeneration::HostBoundaryBeforeMain,
     };
     let oam = match continuation {
-        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 } => {
+        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14, .. } => {
             OamScanoutSource::ComposeLivePlayerOamAfterMain
         }
         ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. } => {
@@ -4129,6 +4129,9 @@ impl DungeonFallingEntranceWork {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ItemReceiptCaller {
     AtomicCaller,
+    /// The ground handler's A-press opened a chest: the caller's remaining
+    /// iteration tail is deferred to the receipt's completion slice.
+    GroundApress,
     UnclePassage { sprite_slot: u8 },
 }
 
@@ -4163,7 +4166,16 @@ pub(super) struct DungeonSpriteMainReturn {
 enum ItemReceiptGraphicsContinuation {
     /// The translated caller is still atomic. Its suffix has already run, so
     /// the measured graphics delay only owns the ordinary main-loop epilogue.
-    CallerAlreadyCompleted { gfx: u8 },
+    CallerAlreadyCompleted {
+        gfx: u8,
+        /// `Some` when the receipt was initiated by the ground handler's
+        /// A-press (chest open): the ROM blocks inside AncillaAdd_ItemReceipt
+        /// for the intervening vblanks, so the ancilla tail, Link_ReceiveItem
+        /// tail, and the rest of HandleLink_From1D (movement with the latched
+        /// joypad included) all run after the decompression returns. The
+        /// completion arm resumes them here.
+        ground_apress_tail: Option<ItemReceiptReturn>,
+    },
     /// `DecodeAnimatedSpriteTile_variable` interrupted this real ROM call
     /// stack. Resume each typed caller suffix after the graphics routine
     /// returns instead of publishing selected side effects early.
@@ -7219,6 +7231,19 @@ pub struct ZeldaState {
     gloves_color: [u16; 2],
     initialized: bool,
     apply_links_movement_to_camera_called: bool,
+    /// Armed only across the ground handler's `link_handle_a_press` call so a
+    /// chest-open item receipt scheduled inside it defers the handler's
+    /// iteration tail to the receipt's completion slice (set and cleared
+    /// within one translated call; never live across a frame boundary).
+    #[serde(skip)]
+    ground_apress_defers_atomic_item_receipt: bool,
+    /// Host frame whose completion arm finished a ground A-press item
+    /// receipt. The following NMI consumes live Link OBJ operands: the next
+    /// iteration's LinkOam recomputes the pose pointers the receipt just
+    /// changed, and the core's vblank after that iteration uploads them
+    /// (f4587: the captured host boundary still held the pre-receipt pose).
+    #[serde(skip)]
+    item_receipt_completion_live_link_dma_host: Option<u32>,
     pub wanted_zelda_features: u32,
     pub state_recorder: StateRecorder,
     dialogue_blk_index: usize,
@@ -10523,16 +10548,29 @@ impl ZeldaState {
             .as_ref()
             .map(|graphics| graphics.entry_frame)
             .unwrap_or(exit_frame);
-        link_obj_dma_generations_for_cpu_phase(
+        let operands = link_obj_operands_across_main(
+            entry_frame,
+            exit_frame,
+            rom_graphics_dma_plan(exit_frame.main_module, exit_frame.submodule)
+                .link_obj_operands,
+        );
+        let mut generations = link_obj_dma_generations_for_cpu_phase(
             self.game_execution_scheduler
                 .resumed_call_stack_is_before_nmi(),
-            link_obj_operands_across_main(
-                entry_frame,
-                exit_frame,
-                rom_graphics_dma_plan(exit_frame.main_module, exit_frame.submodule)
-                    .link_obj_operands,
-            ),
-        )
+            operands,
+        );
+        if self
+            .item_receipt_completion_live_link_dma_host
+            .is_some_and(|host| host.wrapping_add(1) == self.frame_ctr_dbg)
+        {
+            // First NMI after a ground A-press receipt completion: this
+            // iteration's LinkOam recomputed the pose pointers the receipt
+            // changed, and the core's vblank consumes them live (f4587).
+            // Upload lane only — that upload is visible from the FOLLOWING
+            // scanout, so the presented generation keeps its cadence (f10039).
+            generations.following_nmi = GraphicsDmaGeneration::LiveAfterMain;
+        }
+        generations
     }
 
     /// Link OBJ generation which had actually completed DMA when the current
@@ -13242,6 +13280,8 @@ impl ZeldaState {
             gloves_color: default_gloves_color(),
             initialized: false,
             apply_links_movement_to_camera_called: false,
+            ground_apress_defers_atomic_item_receipt: false,
+            item_receipt_completion_live_link_dma_host: None,
             wanted_zelda_features: 0,
             state_recorder: StateRecorder::default(),
             dialogue_blk_index: 0,
@@ -13711,7 +13751,16 @@ impl ZeldaState {
         }
         let continuation = match caller {
             ItemReceiptCaller::AtomicCaller => {
-                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx }
+                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                    gfx,
+                    ground_apress_tail: None,
+                }
+            }
+            ItemReceiptCaller::GroundApress => {
+                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                    gfx,
+                    ground_apress_tail: Some(receipt),
+                }
             }
             ItemReceiptCaller::UnclePassage { sprite_slot } => {
                 let dungeon = self
@@ -15210,7 +15259,7 @@ impl ZeldaState {
         matches!(
             self.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::FinishItemReceiptGraphics {
-                continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx },
+                continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx, .. },
             }) if gfx != 0x22
         )
     }
@@ -15219,7 +15268,7 @@ impl ZeldaState {
         let enemy_drop_graphics_are_pending = matches!(
             self.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::FinishItemReceiptGraphics {
-                continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 },
+                continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, .. },
             })
         );
         if enemy_drop_graphics_are_pending {
@@ -15246,7 +15295,7 @@ impl ZeldaState {
     ) -> bool {
         if !matches!(
             continuation,
-            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x21 }
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x21, .. }
         ) {
             return false;
         }
@@ -15260,16 +15309,16 @@ impl ZeldaState {
         let scanout = atomic_item_graphics_return_obj_scanout(continuation);
         let retained_display_memory = !matches!(
             continuation,
-            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 }
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, .. }
         );
         let live_animated_bg = !retained_display_memory
             || matches!(
                 continuation,
-                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24 }
+                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24, .. }
             );
         if matches!(
             continuation,
-            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 }
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, .. }
         ) {
             self.enemy_drop_item_graphics_live_extended_oam_pending = true;
         }
@@ -15279,7 +15328,7 @@ impl ZeldaState {
         ) && scanout.link_obj == GraphicsDmaGeneration::HostBoundaryBeforeMain)
             || matches!(
                 continuation,
-                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24 }
+                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24, .. }
             )
         {
             self.next_display_interrupted_item_receipt_obj_cache = true;
@@ -15297,7 +15346,7 @@ impl ZeldaState {
         {
             snapshot.enemy_drop_item_graphics_live_extended_oam = matches!(
                 continuation,
-                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 }
+                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, .. }
             );
             snapshot.oam_scanout_source = match continuation {
                 ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. } => {
@@ -15325,7 +15374,7 @@ impl ZeldaState {
         }
         if matches!(
             continuation,
-            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24 }
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24, .. }
         ) {
             // This receipt finishes after the current retained scanout has
             // already selected its OAM, but Main_PrepSpritesForNmi has prepared
@@ -19463,6 +19512,29 @@ impl ZeldaState {
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
         self.sync_native_game_state_from_ram();
         self.oam_law_entry_frame_counter = Some(self.game_state.frame.frame_counter);
+        if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_LINK_FALL", self.frame_ctr_dbg) {
+            use crate::game_state::constants::{
+                FRAME_COUNTER, LINK_ACTUAL_Y_VELOCITY, LINK_AUXILIARY_STATE, LINK_HANDLER_STATE,
+                LINK_X_COORD, LINK_Y_COORD, LINK_Y_SUBPIXEL, LINK_Z_COORD, MAIN_MODULE, SUBMODULE,
+                SUBSUBMODULE,
+            };
+            eprintln!(
+                "link_fall host={} in={:04x} y={:04x} x={:04x} z={:04x} yvel={:02x} subpix={:02x} handler={:02x} state={:02x} fc={:02x} mod={:02x}/{:02x}/{:02x}",
+                self.frame_ctr_dbg,
+                input,
+                read_le_u16(&self.ram, LINK_Y_COORD),
+                read_le_u16(&self.ram, LINK_X_COORD),
+                read_le_u16(&self.ram, LINK_Z_COORD),
+                self.ram[LINK_ACTUAL_Y_VELOCITY],
+                self.ram[LINK_Y_SUBPIXEL],
+                self.ram[LINK_HANDLER_STATE],
+                self.ram[LINK_AUXILIARY_STATE],
+                self.ram[FRAME_COUNTER],
+                self.ram[MAIN_MODULE],
+                self.ram[SUBMODULE],
+                self.ram[SUBSUBMODULE],
+            );
+        }
         self.game_execution_scheduler.begin_host_frame();
         if self
             .game_execution_scheduler
@@ -20488,6 +20560,24 @@ impl ZeldaState {
                 GameWorkStep::Complete(GameWorkContinuation::FinishItemReceiptGraphics {
                     continuation,
                 }) => {
+                    if let ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                        ground_apress_tail: Some(_),
+                        ..
+                    } = continuation
+                    {
+                        // The ROM's chest-open iteration blocks inside
+                        // AncillaAdd_ItemReceipt's decompression; the trace
+                        // shows the ancilla tail landing inside the final held
+                        // vblank and the remainder of HandleLink_From1D —
+                        // movement with the joypad latch that iteration still
+                        // holds — completing before the resume vblank. Run
+                        // that remainder first so this completion boundary's
+                        // NMI uploads the post-tail Link pose exactly like the
+                        // core's resume vblank (f10034 boundary; f4587 pose).
+                        self.player_handler_00_ground_3_after_a_press(true);
+                        self.item_receipt_completion_live_link_dma_host =
+                            Some(self.frame_ctr_dbg);
+                    }
                     // The $21 item sheet returns through the ordinary module
                     // epilogue in v1.0.0: sprite preparation releases the NMI
                     // latch, then the common boundary below publishes the
@@ -20515,7 +20605,7 @@ impl ZeldaState {
                     }
                     if matches!(
                         continuation,
-                        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 }
+                        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, .. }
                     ) {
                         self.retire_enemy_drop_item_graphics_sound_effect_2();
                     }

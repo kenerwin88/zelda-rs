@@ -6372,6 +6372,14 @@ pub(crate) fn finalize_libretro_session(
         eprintln!("failed to write final Rust parity state: {e}");
         process::exit(1);
     });
+    // `ZELDA3_REPLAY_WRAM_DUMP=<path>` mirrors the replay-save diagnostic in
+    // the compare harness: the full 128KB Rust WRAM at the final compared
+    // frame, for byte-diffing against the oracle savestate's RAM block.
+    if let Some(path) = std::env::var_os("ZELDA3_REPLAY_WRAM_DUMP") {
+        if let Err(e) = fs::write(&path, &game.ram[..]) {
+            eprintln!("failed to write WRAM dump to {path:?}: {e}");
+        }
+    }
     let matched = audio_report.map(|report| report.matched).unwrap_or(true)
         && video_mismatch_ranges.is_empty()
         && first_engine_state_mismatch.is_none();

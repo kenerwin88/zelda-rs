@@ -335,6 +335,11 @@ parity pass. A Rust regression therefore cannot truncate the reusable oracle.
   `oam_law_delta host=<n> words=<k> ... source=<rule>` lines now map which
   legacy rules disagree with the lane — the deletion worklist for the
   remaining rule zoo.
+- `ZELDA3_DEBUG_LINK_FALL=<frames/ranges>` — one line per host frame at entry:
+  Link y/x/z, actual y-velocity, movement subpixel, handler/aux state, frame
+  counter, module triple, and the input word consumed. The fastest read on any
+  movement/physics divergence (found the f10034 chest-receipt movement
+  deferral in two probes).
 - `ZELDA3_DEBUG_LINK_DMA=1` — one line per NMI Link OBJ DMA with the **entry and
   exit** `main/sub/subsub` the operand rules key on, the resolved
   `operands=HostBoundaryBeforeMain|LiveAfterMain`, `captured=<bool>` (false means

@@ -2337,7 +2337,7 @@ fn atomic_item_return_marks_the_retained_and_following_link_generations() {
     state.capture_display_snapshot();
 
     state.stage_atomic_item_graphics_return_obj_scanout(
-        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 },
+        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14, ground_apress_tail: None },
     );
 
     let retained = state.display_snapshot.as_ref().unwrap();
@@ -2369,7 +2369,7 @@ fn atomic_item_return_marks_the_retained_and_following_link_generations() {
     assert_eq!(
         state.next_display_obj_scanout_generation,
         Some(atomic_item_graphics_return_obj_scanout(
-            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 },
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14, ground_apress_tail: None },
         ))
     );
     assert!(state.publish_live_hud_vram_on_next_capture);
@@ -2421,7 +2421,7 @@ fn room_71_item_graphics_return_crosses_completed_nmi_boundary() {
 #[test]
 fn gfx_21_item_return_uses_the_v1_ordinary_module_epilogue() {
     let mut state = ZeldaState::new();
-    let gfx_21 = ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x21 };
+    let gfx_21 = ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x21, ground_apress_tail: None };
 
     assert!(state.item_receipt_graphics_return_uses_ordinary_module_epilogue(gfx_21));
     state.follower_link_state_mut().set_handler_state(21);
@@ -2432,7 +2432,7 @@ fn gfx_21_item_return_uses_the_v1_ordinary_module_epilogue() {
     for gfx in [0x14, 0x22, 0x24] {
         assert!(
             !state.item_receipt_graphics_return_uses_ordinary_module_epilogue(
-                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx },
+                ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx, ground_apress_tail: None },
             )
         );
     }
@@ -2445,7 +2445,7 @@ fn uncle_sword_item_return_stages_the_prepared_oam_for_the_next_boundary() {
     state.ram[OAM_BUF..OAM_BUF + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
 
     state.stage_atomic_item_graphics_return_obj_scanout(
-        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24 },
+        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24, ground_apress_tail: None },
     );
 
     assert_eq!(
@@ -2469,7 +2469,7 @@ fn uncle_sword_item_return_stages_the_prepared_oam_for_the_next_boundary() {
 fn completed_gfx_24_return_publishes_live_animated_tiles() {
     let mut state = ZeldaState::new();
     state.capture_display_snapshot();
-    let continuation = ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24 };
+    let continuation = ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x24, ground_apress_tail: None };
 
     state.stage_atomic_item_graphics_return_obj_scanout(continuation);
 
@@ -2529,7 +2529,7 @@ fn atomic_item_return_builds_the_measured_mixed_obj_tile_cache() {
     let mut state = ZeldaState::new();
     state.game_execution_scheduler.schedule_work(
         GameWorkContinuation::FinishItemReceiptGraphics {
-            continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 },
+            continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14, ground_apress_tail: None },
         },
         ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
     );
@@ -3808,7 +3808,7 @@ fn queued_published_oam_source_uses_its_host_boundary_payload() {
 #[test]
 fn enemy_drop_item_graphics_keep_the_resident_full_obj_cache() {
     let continuation = |gfx| GameWorkContinuation::FinishItemReceiptGraphics {
-        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx },
+        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx, ground_apress_tail: None },
     };
 
     let mut ordinary_receipt = ZeldaState::new();
@@ -3855,7 +3855,7 @@ fn enemy_drop_return_publishes_only_the_live_extended_oam_generation() {
 fn enemy_drop_extended_oam_marker_survives_captures_until_presentation() {
     let mut state = ZeldaState::new();
     state.capture_display_snapshot();
-    let continuation = ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 };
+    let continuation = ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, ground_apress_tail: None };
 
     state.stage_atomic_item_graphics_return_obj_scanout(continuation);
     assert!(

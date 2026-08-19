@@ -5500,7 +5500,12 @@ impl ZeldaState {
             }
         }
 
-        self.link_receive_item(item, chest_position);
+        let caller = if self.ground_apress_defers_atomic_item_receipt {
+            ItemReceiptCaller::GroundApress
+        } else {
+            ItemReceiptCaller::AtomicCaller
+        };
+        let _ = self.link_receive_item_from(item, chest_position, caller);
     }
 
     pub(super) fn link_perform_statue_drag(&mut self) {
@@ -9691,9 +9696,38 @@ impl ZeldaState {
         self.follower_link_state_mut().set_actual_z_velocity(0xff);
         self.follower_link_state_mut().set_recoil_timer(0);
 
-        let mut clear_vel_after = false;
         if !self.link_handle_toss() {
+            self.ground_apress_defers_atomic_item_receipt = true;
             self.link_handle_a_press();
+            self.ground_apress_defers_atomic_item_receipt = false;
+            if matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                    continuation:
+                        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                            ground_apress_tail: Some(_),
+                            ..
+                        },
+                })
+            ) {
+                // The chest receipt scheduled by this A-press blocks the ROM
+                // iteration inside its decompression; the remainder of this
+                // handler runs at the receipt's completion slice with the
+                // joypad latch it holds now.
+                return;
+            }
+            self.player_handler_00_ground_3_after_a_press(true);
+        } else {
+            self.player_handler_00_ground_3_after_a_press(false);
+        }
+    }
+
+    /// Everything `HandleLink_From1D` runs after its A-press dispatch. Split
+    /// out so a chest receipt's completion slice can resume it after the
+    /// decompression the ROM blocks on (see the ground_apress_tail receipt).
+    pub(super) fn player_handler_00_ground_3_after_a_press(&mut self, ran_a_press: bool) {
+        let mut clear_vel_after = false;
+        if ran_a_press {
             if !self.game_state.player.follower_link.has_action_state()
                 && !self
                     .game_state
@@ -9728,6 +9762,7 @@ impl ZeldaState {
             }
         }
 
+        let _ = &mut clear_vel_after;
         self.link_handle_cape_passive_lift_check();
         if self.game_state.player.follower_link.incapacitated_timer() != 0 {
             self.follower_link_state_mut()

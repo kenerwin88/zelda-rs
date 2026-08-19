@@ -4772,7 +4772,7 @@ fn world_map_exit_overlay_conversions_resume_at_measured_boundaries() {
 #[test]
 fn enemy_drop_receipt_sound_retires_at_the_measured_graphics_return() {
     let continuation = GameWorkContinuation::FinishItemReceiptGraphics {
-        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 },
+        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, ground_apress_tail: None },
     };
     let mut state = ZeldaState::new();
     state.set_sound_effect_2(0x2f);
@@ -4829,7 +4829,7 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     // live/live boundary instead of an older retained-CHR assumption.
     assert_eq!(
         atomic_item_graphics_return_obj_scanout(
-            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 },
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14, ground_apress_tail: None },
         ),
         ObjScanoutGenerations {
             oam: OamScanoutSource::ComposeLivePlayerOamAfterMain,
@@ -4839,7 +4839,7 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     );
     assert_eq!(
         atomic_item_graphics_return_obj_scanout(
-            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22 },
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, ground_apress_tail: None },
         ),
         ObjScanoutGenerations {
             oam: OamScanoutSource::ComposePublishedShadowDma,
@@ -4849,7 +4849,7 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     );
 
     let continuation = GameWorkContinuation::FinishItemReceiptGraphics {
-        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 },
+        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14, ground_apress_tail: None },
     };
     let mut work =
         ScheduledGameWork::schedule(continuation, ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES);
@@ -7507,7 +7507,7 @@ fn retained_display_memory_resolves_link_obj_from_its_snapshot_dma_words() {
     state.ppu.vram[0x4020] = 0x1111;
     state.game_execution_scheduler.schedule_work(
         GameWorkContinuation::FinishItemReceiptGraphics {
-            continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14 },
+            continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14, ground_apress_tail: None },
         },
         ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
     );
