@@ -265,6 +265,7 @@ impl ZeldaState {
     /// Run an NMI at an explicit leading scanout boundary and record its
     /// presentation effects. The snapshot already owns the CPU/register
     /// generation, while vblank DMA completes before its visible scanlines.
+    #[track_caller]
     pub(super) fn interrupt_nmi_for_active_scanout(
         &mut self,
         input: u16,
@@ -291,6 +292,7 @@ impl ZeldaState {
         // CPU continuation timing must observe the same pre-NMI RAM, latch,
         // DMA, and raster generation as the real handler. Capture centrally
         // so every hardware-NMI entry path has identical provenance.
+        self.debug_obj_pipe("nmi_entry", &self.ppu.vram[0x4000..0x4400]);
         self.capture_dungeon_state_12_cpu_advance_before_leading_nmi();
         let trace_nmi = std::env::var_os("ZELDA3_DEBUG_NMI_LATCH").is_some()
             && debug_hardware_frame_matches(self.frame_ctr_dbg);
@@ -491,6 +493,7 @@ impl ZeldaState {
                 self.ppu.vram.get(0x40b0).copied().unwrap_or(0),
             );
         }
+        self.debug_obj_pipe("nmi_exit", &self.ppu.vram[0x4000..0x4400]);
         self.close_display_boundary_dma_receipts();
     }
 

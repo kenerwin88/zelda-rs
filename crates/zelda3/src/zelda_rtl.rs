@@ -10563,6 +10563,31 @@ impl ZeldaState {
         self.ppu.obj_vram_latch = value;
     }
 
+    /// Env-gated tracer for the presented Link OBJ CHR pipeline: under
+    /// `ZELDA3_DEBUG_OBJ_PIPE=<frames>` each stage (NMI bracket, snapshot
+    /// capture/publication, staging, promotion) logs a fingerprint of the OBJ
+    /// page ($4000-$43ff) so the snapshot generation feeding a scanout can be
+    /// followed end to end. `page` is the OBJ page slice itself.
+    fn debug_obj_pipe_enabled(&self) -> bool {
+        nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_OBJ_PIPE", self.frame_ctr_dbg)
+    }
+
+    pub(crate) fn debug_obj_pipe(&self, stage: &str, page: &[u16]) {
+        if !self.debug_obj_pipe_enabled() {
+            return;
+        }
+        let sum: u64 = page.iter().map(|&word| u64::from(word)).sum();
+        let sample = |offset: usize| page.get(offset).copied().unwrap_or(0);
+        eprintln!(
+            "objpipe host={} stage={stage} sum={sum:08x} w4020={:04x} w4030={:04x} w40b0={:04x} w4120={:04x}",
+            self.frame_ctr_dbg,
+            sample(0x20),
+            sample(0x30),
+            sample(0xb0),
+            sample(0x120),
+        );
+    }
+
     fn link_obj_dma_phase_generations(&self) -> LinkObjDmaPhaseGenerations {
         let exit_frame = self.game_state.frame;
         let entry_frame = self
@@ -15028,6 +15053,18 @@ impl ZeldaState {
         {
             resident_ppu.oam.clone_from_slice(resident_oam);
         }
+        if self.debug_obj_pipe_enabled() {
+            self.debug_obj_pipe(
+                &format!(
+                    "capture pub={publication:?} latch={} slots(disp={},vis={},def={})",
+                    self.ppu.obj_vram_latch.is_some(),
+                    self.display_snapshot.is_some(),
+                    self.visible_display_snapshot.is_some(),
+                    self.deferred_display_snapshot.is_some(),
+                ),
+                &self.ppu.vram[0x4000..0x4400],
+            );
+        }
         let mut snapshot = Box::new(DisplaySnapshot {
             ram: self.ram.clone(),
             ppu: resident_ppu,
@@ -15213,6 +15250,19 @@ impl ZeldaState {
                     // with the first retained boundary.
                     published.dungeon_item_hold_entry_scanout = false;
                 }
+            }
+        }
+        if self.debug_obj_pipe_enabled() {
+            if let Some(published) = self.display_snapshot.as_ref() {
+                let prior_publication_host = published.publication_host_frame;
+                let page = published.ppu.vram[0x4000..0x4400].to_vec();
+                self.debug_obj_pipe(
+                    &format!(
+                        "published prior_host={prior_publication_host} latch_in_snapshot={}",
+                        published.ppu.obj_vram_latch.is_some()
+                    ),
+                    &page,
+                );
             }
         }
         if let Some(published) = self.display_snapshot.as_mut() {
@@ -17737,6 +17787,17 @@ impl ZeldaState {
         else {
             return capture(self);
         };
+        if self.debug_obj_pipe_enabled() {
+            self.debug_obj_pipe(
+                &format!(
+                    "consume slot={} snapshot_pub_host={} latch_in_snapshot={}",
+                    if from_display_slot { "display" } else { "visible" },
+                    display.publication_host_frame,
+                    display.ppu.obj_vram_latch.is_some(),
+                ),
+                &display.ppu.vram[0x4000..0x4400],
+            );
+        }
         if self.presented_history_host_frame != Some(self.frame_ctr_dbg) {
             if self.presented_history_host_frame.is_some() {
                 if let Some(oam) = self.staged_presented_oam.take() {
@@ -17746,6 +17807,7 @@ impl ZeldaState {
                     self.last_presented_cgram = Some(cgram);
                 }
                 if let Some(vram) = self.staged_presented_obj_vram.take() {
+                    self.debug_obj_pipe("promote", &vram);
                     self.last_presented_obj_vram = Some(vram);
                 }
                 if let Some(vram) = self.staged_presented_vram.take() {
@@ -18182,6 +18244,12 @@ impl ZeldaState {
         }
         self.staged_presented_oam = Some(self.ppu.oam.clone());
         let presented_obj_vram = self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram);
+        if self.debug_obj_pipe_enabled() {
+            self.debug_obj_pipe(
+                &format!("stage latch={}", self.ppu.obj_vram_latch.is_some()),
+                &presented_obj_vram[0x4000..0x4400],
+            );
+        }
         self.staged_presented_obj_vram = Some(presented_obj_vram[0x4000..0x4400].to_vec());
         self.compose_display_raster(
             live_forced_blank,
@@ -18345,7 +18413,15 @@ impl ZeldaState {
     /// scanout and must be composed into that same snapshot. OAM joins this
     /// receipt only when `record_completed_oam_dma_for_display_boundary`
     /// observes an actual transfer while the explicit boundary is active.
+    #[track_caller]
     pub(super) fn begin_effective_presented_dma(&mut self) {
+        if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_OBJ_PIPE", self.frame_ctr_dbg) {
+            eprintln!(
+                "objpipe host={} stage=receipt_begin caller={}",
+                self.frame_ctr_dbg,
+                std::panic::Location::caller()
+            );
+        }
         debug_assert!(self.active_effective_dma_writes.is_none());
         self.active_effective_dma_writes = Some(EffectiveDmaWriteSet::new(self.ppu.vram.len()));
     }
@@ -18452,6 +18528,19 @@ impl ZeldaState {
         let Some(receipt) = following.effective_presented_dma.as_ref() else {
             return;
         };
+        if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_OBJ_PIPE", self.frame_ctr_dbg) {
+            let obj_writes = receipt
+                .vram_writes
+                .iter()
+                .filter(|&&(index, _)| (0x4000..0x4400).contains(&index))
+                .count();
+            eprintln!(
+                "objpipe host={} stage=receipt_compose obj_writes={obj_writes} total_writes={} last_presented_base={}",
+                self.frame_ctr_dbg,
+                receipt.vram_writes.len(),
+                self.last_presented_obj_vram.is_some(),
+            );
+        }
         let mut obj_vram = self.last_presented_obj_vram.clone().unwrap_or_else(|| {
             self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram)[0x4000..0x4400].to_vec()
         });
@@ -20600,6 +20689,17 @@ impl ZeldaState {
                         // NMI uploads the post-tail Link pose exactly like the
                         // core's resume vblank (f10034 boundary; f4587 pose).
                         self.player_handler_00_ground_3_after_a_press(true);
+                        // The resumed iteration then reaches Module07's tail
+                        // (dungeon.c: Sprite_Main → LinkOam_Main → HUD).
+                        // Sprite_Main already ran in the scheduling slice and
+                        // the sprite shadow is static across the receipt, but
+                        // LinkOam_Main must re-run HERE so the shadow carries
+                        // the post-tail position and post-receipt pose. The
+                        // completion transfer recorded below and the retained
+                        // OBJ generation both read this shadow; without the
+                        // rebuild they present the pre-receipt Link slots one
+                        // scanout too long (f10039).
+                        self.link_oam_main();
                         self.item_receipt_completion_live_link_dma_host =
                             Some(self.frame_ctr_dbg);
                     }
@@ -20667,10 +20767,12 @@ impl ZeldaState {
                                 self.frame_ctr_dbg,
                             ) {
                                 eprintln!(
-                                    "oam_law_transfer host={} w204={:04x} fc={:02x} (item-completion)",
+                                    "oam_law_transfer host={} w204={:04x} fc={:02x} link_y={:04x} bg2v={:04x} (item-completion)",
                                     self.frame_ctr_dbg,
                                     law[204],
-                                    self.game_state.frame.frame_counter
+                                    self.game_state.frame.frame_counter,
+                                    read_le_u16(&self.ram, crate::game_state::constants::LINK_Y_COORD),
+                                    read_le_u16(&self.ram, crate::game_state::constants::BG2_Y_SCROLL),
                                 );
                             }
                             self.oam_law_pending = Some(law);

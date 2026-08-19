@@ -325,6 +325,16 @@ parity pass. A Rust regression therefore cannot truncate the reusable oracle.
   The core-update/prep cadence drives BG_TILE_ANIMATION_COUNTDOWN and
   link-DMA phase; use this to compare rust's prep schedule against the
   oracle's countdown trajectory when an animation phase drifts by one.
+- `ZELDA3_DEBUG_OBJ_PIPE=<frames>` — end-to-end tracer for the presented OBJ
+  CHR pipeline: each stage (NMI entry/exit bracket, snapshot capture with its
+  publication mode and slot occupancy, post-dispatch published snapshot,
+  `with_display_snapshot` consume, compose staging, promotion to
+  `last_presented_obj_vram`, and effective-DMA receipt begin/compose with
+  `#[track_caller]` provenance) logs a sum+sample fingerprint of the OBJ page
+  ($4000-$43ff). One renderless run answers "which capture's VRAM did this
+  scanout present, and did the NMI run before or after it" — pair with
+  `ZELDA3_DEBUG_OBJ_LATCH` (which names the rule that authored a latch).
+  Found the f10039 stale-shadow mechanism in two probes.
 - `ZELDA3_AUDIT_OAM_LAW=1` — per-frame differ between the rule-composed OAM
   table and the trace-verified hardware OAM law (a $2104 transfer runs at
   each vblank whose main completed, carries the shadow as of that vblank, is
