@@ -5465,12 +5465,21 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
         map32_definition_changes: 796,
     };
     let screen_build_timing = overworld_map_and_sprite_graphics_timing(screen_build_workload);
-    let properties = GameWorkContinuation::FinishPreOverworldProperties {
+    let sprite_reset = GameWorkContinuation::PreOverworldPropertiesSpriteReset {
         overworld_screen: 0x00,
         animated_tiles: 0x58,
     };
     let stages = [
-        (properties, PRE_OVERWORLD_PROPERTIES_NMI_SLICES),
+        (
+            sprite_reset,
+            PRE_OVERWORLD_PROPERTIES_TO_SPRITE_RESET_NMI_SLICES,
+        ),
+        (
+            GameWorkContinuation::FinishPreOverworldProperties {
+                overworld_screen: 0x00,
+            },
+            PRE_OVERWORLD_PROPERTIES_AFTER_SPRITE_RESET_NMI_SLICES,
+        ),
         (
             GameWorkContinuation::FinishPreOverworldOverlays,
             PRE_OVERWORLD_OVERLAYS_NMI_SLICES,
@@ -5502,6 +5511,21 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
         work.advance_one_nmi_slice(),
         GameWorkStep::Complete(continuation)
     );
+}
+
+#[test]
+fn pre_overworld_sprite_reset_phase_clears_old_sprite_slots_before_the_reload_tail() {
+    let mut state = ZeldaState::new();
+    {
+        let mut sprite = state.sprite_slot_view_mut(0);
+        sprite.set_sprite_type(0x73);
+        sprite.set_state(9);
+    }
+
+    state.sprite_begin_reload_all_overworld();
+
+    assert_eq!(state.sprite_slot_view(0).state(), 0);
+    assert_eq!(state.sprite_slot_view(0).sprite_type(), 0x73);
 }
 
 #[test]

@@ -160,6 +160,18 @@ impl ZeldaState {
         overworld_screen: u8,
         animated_tiles: u8,
     ) {
+        self.complete_pre_overworld_load_properties_through_sprite_reset(
+            overworld_screen,
+            animated_tiles,
+        );
+        self.complete_pre_overworld_load_properties_after_sprite_reset(overworld_screen);
+    }
+
+    pub(super) fn complete_pre_overworld_load_properties_through_sprite_reset(
+        &mut self,
+        overworld_screen: u8,
+        animated_tiles: u8,
+    ) {
         self.DecompressAnimatedOverworldTiles(animated_tiles);
         self.InitializeTilesets();
         self.OverworldLoadScreensPaletteSet();
@@ -182,7 +194,14 @@ impl ZeldaState {
             self.DecodeAnimatedSpriteTile_variable(0x1e);
         }
         self.set_saved_module_for_menu(9);
-        self.sprite_reload_all_overworld();
+        self.sprite_begin_reload_all_overworld();
+    }
+
+    pub(super) fn complete_pre_overworld_load_properties_after_sprite_reset(
+        &mut self,
+        overworld_screen: u8,
+    ) {
+        self.sprite_finish_reload_all_overworld();
         if overworld_screen & 0x40 == 0 {
             self.sprite_initialize_mirror_portal();
         }

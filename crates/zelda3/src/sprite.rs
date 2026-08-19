@@ -1353,10 +1353,19 @@ impl ZeldaState {
         self.sprite_overworld_reload_all_just_load();
     }
 
+    pub(super) fn sprite_begin_reload_all_overworld(&mut self) {
+        self.sprite_disable_all();
+        self.sprite_reset_all_no_disable();
+    }
+
     pub(super) fn sprite_overworld_reload_all_just_load(
         &mut self,
     ) -> OverworldSpriteReloadWorkload {
         self.sprite_reset_all_no_disable();
+        self.sprite_finish_reload_all_overworld()
+    }
+
+    pub(super) fn sprite_finish_reload_all_overworld(&mut self) -> OverworldSpriteReloadWorkload {
         let sprite_records = self.overworld_load_sprites();
         let in_bounds_proximity_checks = self.sprite_activate_all_proxima();
         OverworldSpriteReloadWorkload {

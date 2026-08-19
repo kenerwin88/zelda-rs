@@ -2130,7 +2130,12 @@ const SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES: u8 = 1;
 // returning through the caller and main-loop suffix before beginning the next
 // interruptible build.
 const DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES: u8 = 1;
-const PRE_OVERWORLD_PROPERTIES_NMI_SLICES: u8 = 40;
+// PreOverworld_LoadProperties enters at $02:83c7. The C call stack reaches
+// Sprite_DisableAll's sprite-state clear at $09:c244 after 37 NMI crossings;
+// the uninterrupted reload prefix then resets the old sprite workspace. Three
+// more crossings load/activate overworld sprites and complete the caller tail.
+const PRE_OVERWORLD_PROPERTIES_TO_SPRITE_RESET_NMI_SLICES: u8 = 37;
+const PRE_OVERWORLD_PROPERTIES_AFTER_SPRITE_RESET_NMI_SLICES: u8 = 3;
 const PRE_OVERWORLD_OVERLAYS_NMI_SLICES: u8 = 6;
 const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
 // Attract_DramatizeWorldMap enters the tilemap erase immediately after
@@ -4250,9 +4255,12 @@ enum GameWorkContinuation {
     FinishSpotlightIteration {
         iteration: SpotlightIteration,
     },
-    FinishPreOverworldProperties {
+    PreOverworldPropertiesSpriteReset {
         overworld_screen: u8,
         animated_tiles: u8,
+    },
+    FinishPreOverworldProperties {
+        overworld_screen: u8,
     },
     FinishPreOverworldOverlays,
     FinishPreOverworldScreenBuild,
@@ -13721,11 +13729,11 @@ impl ZeldaState {
             return false;
         }
         self.game_execution_scheduler.schedule_work(
-            GameWorkContinuation::FinishPreOverworldProperties {
+            GameWorkContinuation::PreOverworldPropertiesSpriteReset {
                 overworld_screen,
                 animated_tiles,
             },
-            PRE_OVERWORLD_PROPERTIES_NMI_SLICES,
+            PRE_OVERWORLD_PROPERTIES_TO_SPRITE_RESET_NMI_SLICES,
         );
         true
     }
@@ -21061,11 +21069,27 @@ impl ZeldaState {
                             DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES;
                     }
                 }
+                GameWorkStep::Complete(
+                    GameWorkContinuation::PreOverworldPropertiesSpriteReset {
+                        overworld_screen,
+                        animated_tiles,
+                    },
+                ) => {
+                    self.complete_pre_overworld_load_properties_through_sprite_reset(
+                        overworld_screen,
+                        animated_tiles,
+                    );
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishPreOverworldProperties { overworld_screen },
+                        PRE_OVERWORLD_PROPERTIES_AFTER_SPRITE_RESET_NMI_SLICES,
+                    );
+                }
                 GameWorkStep::Complete(GameWorkContinuation::FinishPreOverworldProperties {
                     overworld_screen,
-                    animated_tiles,
                 }) => {
-                    self.complete_pre_overworld_load_properties(overworld_screen, animated_tiles);
+                    self.complete_pre_overworld_load_properties_after_sprite_reset(
+                        overworld_screen,
+                    );
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
                 }
