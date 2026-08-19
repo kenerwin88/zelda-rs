@@ -1723,10 +1723,10 @@ impl ZeldaState {
                 self.ppu.vram[dst] = value;
             }
             if self.nmi_poly_upload_from_deferred {
-                self.ppu.obj_vram_latch = None;
+                self.set_obj_vram_latch_traced(None);
             } else if let Some(display_vram) = display_vram {
                 self.obj_vram_latch_generation = self.obj_vram_latch_generation.wrapping_add(1);
-                self.ppu.obj_vram_latch = Some(display_vram);
+                self.set_obj_vram_latch_traced(Some(display_vram));
             }
             self.nmi_poly_upload_from_deferred = false;
             self.clear_pending_polyhedral_update();

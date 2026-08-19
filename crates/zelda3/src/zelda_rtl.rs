@@ -10541,6 +10541,28 @@ impl ZeldaState {
         }
     }
 
+
+    /// Env-gated provenance for the presented Link OBJ CHR latch: every
+    /// assignment logs its call site under `ZELDA3_DEBUG_OBJ_LATCH=<frames>`,
+    /// naming the rule that authored a frame's presented OBJ memory in one
+    /// probe (the CHR-domain counterpart of the OBJ-scanout staged_by tool).
+    #[track_caller]
+    pub(crate) fn set_obj_vram_latch_traced(&mut self, value: Option<Vec<u16>>) {
+        if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_OBJ_LATCH", self.frame_ctr_dbg) {
+            let sample = value
+                .as_deref()
+                .map(|latch| latch.get(0x4020).copied().unwrap_or(0));
+            eprintln!(
+                "obj_latch host={} some={} w4020={:04x?} caller={}",
+                self.frame_ctr_dbg,
+                value.is_some(),
+                sample,
+                std::panic::Location::caller()
+            );
+        }
+        self.ppu.obj_vram_latch = value;
+    }
+
     fn link_obj_dma_phase_generations(&self) -> LinkObjDmaPhaseGenerations {
         let exit_frame = self.game_state.frame;
         let entry_frame = self
@@ -10563,11 +10585,14 @@ impl ZeldaState {
             .item_receipt_completion_live_link_dma_host
             .is_some_and(|host| host.wrapping_add(1) == self.frame_ctr_dbg)
         {
-            // First NMI after a ground A-press receipt completion: this
-            // iteration's LinkOam recomputed the pose pointers the receipt
-            // changed, and the core's vblank consumes them live (f4587).
-            // Upload lane only — that upload is visible from the FOLLOWING
-            // scanout, so the presented generation keeps its cadence (f10039).
+            // First NMI after a ground A-press receipt completion. C's chain:
+            // LinkOam_Main assigns link_dma_graphics_index from the receipt's
+            // new pose, and the prep (misc.c:399) turns it into
+            // dma_source_addr_3/_4 — so the sources this NMI consumes were
+            // authored by the iteration that just ran, not by the stale host
+            // boundary captured before the receipt (f4587 CHR). Upload lane
+            // only: the upload is visible from the FOLLOWING scanout, so the
+            // presented generation keeps its cadence (f10039).
             generations.following_nmi = GraphicsDmaGeneration::LiveAfterMain;
         }
         generations
@@ -16747,7 +16772,7 @@ impl ZeldaState {
                 plan.retain_captured_oam,
             );
         }
-        self.ppu.obj_vram_latch = None;
+        self.set_obj_vram_latch_traced(None);
         if following_frame.main_module == 7
             && following_frame.submodule == 2
             && following_frame.subsubmodule == 3
@@ -16965,7 +16990,7 @@ impl ZeldaState {
                         *word = u16::from_le_bytes([bytes[0], bytes[1]]);
                     }
                 }
-                self.ppu.obj_vram_latch = Some(obj_cache_vram);
+                self.set_obj_vram_latch_traced(Some(obj_cache_vram));
             }
         }
         let dungeon_supertile_first_scroll_uses_live_obj_cache = following_frame.main_module == 7
@@ -17072,7 +17097,7 @@ impl ZeldaState {
             // VRAM contents.
             obj_cache_vram[0x4250..0x4260].fill(0);
             obj_cache_vram[0x4350..0x4360].fill(0);
-            self.ppu.obj_vram_latch = Some(obj_cache_vram);
+            self.set_obj_vram_latch_traced(Some(obj_cache_vram));
         } else {
             let dungeon_subtile_palette_filter_scanout = following_frame.main_module == 7
                 && following_frame.submodule == 1
@@ -17148,7 +17173,7 @@ impl ZeldaState {
                 // decode at the same host boundary where raw scanout retains its
                 // entry generation. Keep the renderer cache on the post-main
                 // generation without broadening the staircase-$34 early-DMA rule.
-                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
+                self.set_obj_vram_latch_traced(Some(following.ppu.vram.clone()));
             } else if let Some(obj_cache_base) = dungeon_gameplay_handoff_obj_cache_base.as_deref()
             {
                 // Gameplay's leading NMI has already decoded the early Link
@@ -17162,11 +17187,11 @@ impl ZeldaState {
                     .as_ref()
                     .map(|graphics| graphics.link_operands.sources)
                     .unwrap_or_else(|| LinkDmaSources::load_from_ram(&self.ram));
-                self.ppu.obj_vram_latch = Some(compose_early_link_obj_cache(
+                self.set_obj_vram_latch_traced(Some(compose_early_link_obj_cache(
                     obj_cache_base,
                     captured_sources,
                     self.asset_raw(57),
-                ));
+                )));
             } else if straight_interroom_fadeout_live_obj_cache
                 || straight_interroom_post_sprite_graphics_live_obj_cache
                 || dungeon_dialogue_render_entry_host_link_obj_cache
@@ -17184,23 +17209,23 @@ impl ZeldaState {
                 let obj_cache_base = straight_interroom_post_sprite_graphics_obj_cache_base
                     .as_deref()
                     .unwrap_or(&self.ppu.vram);
-                self.ppu.obj_vram_latch = Some(compose_early_link_obj_cache(
+                self.set_obj_vram_latch_traced(Some(compose_early_link_obj_cache(
                     obj_cache_base,
                     captured_sources,
                     self.asset_raw(57),
-                ));
+                )));
             } else if room_72_northward_palette_tail_uses_live_obj_cache {
                 // By the state-7 palette tail, the northward transition has
                 // crossed the Link DMA that Snes9x decodes for the active OBJ
                 // list. The captured pre-main operands still name the prior
                 // pose, while the following raw page is the decoded cache
                 // generation that owns this scanout.
-                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
+                self.set_obj_vram_latch_traced(Some(following.ppu.vram.clone()));
             } else if room_72_state8_scroll_after_first_tick_uses_live_obj_cache {
                 // After the first resumed scroll tick, Snes9x decodes every
                 // following Link DMA page before raw OBJ VRAM advances at the
                 // display boundary. Carry only that renderer cache live.
-                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
+                self.set_obj_vram_latch_traced(Some(following.ppu.vram.clone()));
             } else if dungeon_subtile_palette_filter_uses_live_obj_cache {
                 // The palette loop can hold NMI_DoUpdates for a host frame.
                 // Its captured source words still identify the decoded cache
@@ -17232,7 +17257,7 @@ impl ZeldaState {
                         obj_cache_vram[0x4020],
                     );
                 }
-                self.ppu.obj_vram_latch = Some(obj_cache_vram);
+                self.set_obj_vram_latch_traced(Some(obj_cache_vram));
             } else if dungeon_subtile_palette_filter_holds_decoded_obj_cache {
                 // A held NMI does not decode another Link batch. Raw OBJ VRAM
                 // still belongs to its independently retained generation, so
@@ -17241,7 +17266,7 @@ impl ZeldaState {
                 if let Some(previous) = self.last_presented_obj_vram.as_deref() {
                     let mut obj_cache_vram = self.ppu.vram.clone();
                     obj_cache_vram[0x4000..0x4400].copy_from_slice(previous);
-                    self.ppu.obj_vram_latch = Some(obj_cache_vram);
+                    self.set_obj_vram_latch_traced(Some(obj_cache_vram));
                 }
             } else if room_72_northward_subtile_shutter_retains_presented_obj_cache {
                 // The northward palette tail already published the decoded Link
@@ -17252,16 +17277,16 @@ impl ZeldaState {
                 if let Some(previous) = self.last_presented_obj_vram.as_deref() {
                     let mut obj_cache_vram = self.ppu.vram.clone();
                     obj_cache_vram[0x4000..0x4400].copy_from_slice(previous);
-                    self.ppu.obj_vram_latch = Some(obj_cache_vram);
+                    self.set_obj_vram_latch_traced(Some(obj_cache_vram));
                 } else {
-                    self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
+                    self.set_obj_vram_latch_traced(Some(following.ppu.vram.clone()));
                 }
             } else if dungeon_subtile_shutter_handoff_uses_live_obj_cache {
                 // Room $72's landing-to-shutter main slice retains the raw Link
                 // page selected at host entry. Snes9x has nevertheless decoded
                 // the post-main page for the active OBJ list, matching v1.0.0's
                 // coherent live-VRAM render without advancing raw scanout.
-                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
+                self.set_obj_vram_latch_traced(Some(following.ppu.vram.clone()));
             } else if dungeon_supertile_first_scroll_uses_live_obj_cache {
                 // The first steady supertile-scroll scanout retains the raw
                 // host-boundary Link tiles, but Snes9x's renderer cache has
@@ -17287,7 +17312,7 @@ impl ZeldaState {
                             u16::from_le_bytes([bytes[0], bytes[1]]);
                     }
                 }
-                self.ppu.obj_vram_latch = Some(obj_cache_vram);
+                self.set_obj_vram_latch_traced(Some(obj_cache_vram));
             } else if room_71_obj_cache_publication != Room71ObjCachePublication::RetainCurrent {
                 // v1.0.0 rendered this handoff from live state. Preserve that
                 // decoded OBJ generation while raw VRAM remains on the
@@ -17309,25 +17334,25 @@ impl ZeldaState {
                     let resident_obj_vram = &following.ppu.vram;
                     publish_live_link_head_obj_cache(&mut obj_cache_vram, resident_obj_vram);
                 }
-                self.ppu.obj_vram_latch = Some(obj_cache_vram);
+                self.set_obj_vram_latch_traced(Some(obj_cache_vram));
             } else if room_71_item_graphics_return_live_boundary {
                 // The same completed vblank that advanced the packed OAM
                 // size/X table also carried the 16x16 held-item CHR upload.
                 // Snes9x's completed scanout decoded those receipt tiles, so
                 // resolve the OBJ cache from live VRAM while raw scanout
                 // retains the host-boundary image.
-                self.ppu.obj_vram_latch = Some(following.ppu.vram.clone());
+                self.set_obj_vram_latch_traced(Some(following.ppu.vram.clone()));
             } else if interrupted_dungeon_faded_filter_first_palette_pass {
                 let captured_sources = self
                     .pre_main_graphics_dma
                     .as_ref()
                     .map(|graphics| graphics.link_operands.sources)
                     .unwrap_or_else(|| LinkDmaSources::load_from_ram(&self.ram));
-                self.ppu.obj_vram_latch = Some(compose_early_link_obj_cache(
+                self.set_obj_vram_latch_traced(Some(compose_early_link_obj_cache(
                     &self.ppu.vram,
                     captured_sources,
                     self.asset_raw(57),
-                ));
+                )));
             }
         }
         if following_frame.main_module == 7
@@ -17391,7 +17416,7 @@ impl ZeldaState {
                     }
                 }
             }
-            self.ppu.obj_vram_latch = Some(obj_cache_vram);
+            self.set_obj_vram_latch_traced(Some(obj_cache_vram));
         }
         if plan.publish_live_spiral_stair_obj_cache {
             if plan.publish_live_spiral_stair_return_obj_vram {
@@ -17405,12 +17430,12 @@ impl ZeldaState {
             // OBJ VRAM still belongs to the preceding display generation.
             // Snes9x has already decoded the live early Link DMA operands for
             // that OAM list, so keep the cache generation independent.
-            self.ppu.obj_vram_latch = Some(compose_complete_link_obj_cache(
+            self.set_obj_vram_latch_traced(Some(compose_complete_link_obj_cache(
                 &self.ppu.vram,
                 LinkDmaSources::load_from_ram(&following.ram),
                 self.asset_raw(57),
                 &following.ram,
-            ));
+            )));
         }
         if env::var("ZELDA3_DEBUG_DISPLAY_OBJ_VRAM_FRAME")
             .ok()
@@ -17492,7 +17517,7 @@ impl ZeldaState {
             if let Some(previous) = self.last_presented_obj_vram.as_deref() {
                 let mut obj_cache_vram = self.ppu.vram.clone();
                 obj_cache_vram[0x4000..0x4400].copy_from_slice(previous);
-                self.ppu.obj_vram_latch = Some(obj_cache_vram);
+                self.set_obj_vram_latch_traced(Some(obj_cache_vram));
             }
         }
         if capture_publication_candidates {
@@ -18438,7 +18463,7 @@ impl ZeldaState {
         if obj_vram.len() == 0x400 {
             let mut latch = self.ppu.vram.clone();
             latch[0x4000..0x4400].copy_from_slice(&obj_vram);
-            self.ppu.obj_vram_latch = Some(latch);
+            self.set_obj_vram_latch_traced(Some(latch));
         }
     }
 
