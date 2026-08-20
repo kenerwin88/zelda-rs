@@ -525,14 +525,22 @@ pub fn extract_modern_dungeon_frame_from_vram(
                         // BG3 2bpp: decode 0..3, then bake the classic BG3→CGRAM
                         // mapping (cgram_idx = palette*4 + pal_idx, 4 colors/palette in
                         // low CGRAM; bg_layer.wgsl). pal_idx 0 stays transparent.
-                        let raw = decode_snes_2bpp_tile_indices(frame.vram, chr_base, pattern_key);
+                        let raw = decode_snes_2bpp_tile_indices(
+                            frame.bg_vram.unwrap_or(frame.vram),
+                            chr_base,
+                            pattern_key,
+                        );
                         let mut baked = [0u8; 64];
                         for (b, &p) in baked.iter_mut().zip(raw.iter()) {
                             *b = if p == 0 { 0 } else { palette * 4 + p };
                         }
                         baked
                     } else {
-                        decode_snes_4bpp_tile_indices(frame.vram, chr_base, pattern_key)
+                        decode_snes_4bpp_tile_indices(
+                            frame.bg_vram.unwrap_or(frame.vram),
+                            chr_base,
+                            pattern_key,
+                        )
                     };
                     let id = cells.len() as u32;
                     cells.push(ModernIndexTile {
@@ -1456,8 +1464,11 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                     let pal = ((entry_word >> 10) & 7) as u8;
                     let chr_base = frame.bg[layer_index].tile_adr as usize;
                     let stable_pack = (tile_number as u16) | (u16::from(pal) << 10);
-                    let raw =
-                        decode_snes_2bpp_tile_indices(frame.vram, chr_base, entry_word & 0x03ff);
+                    let raw = decode_snes_2bpp_tile_indices(
+                        frame.bg_vram.unwrap_or(frame.vram),
+                        chr_base,
+                        entry_word & 0x03ff,
+                    );
                     let mut baked = [0u8; 64];
                     for (b, &p) in baked.iter_mut().zip(raw.iter()) {
                         *b = if p == 0 { 0 } else { pal * 4 + p };
@@ -1574,11 +1585,12 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                     }
                 } else {
                     let slot = chr_slot_base + tile_number;
+                    let bg_vram = frame.bg_vram.unwrap_or(frame.vram);
                     let (mut kind, mut pack, mut tile_off) = src_table.get(slot);
                     if kind == CHR_KIND_BG_STREAM {
                         // Re-derive the content-hash key from the FRAME-END pixels (see
                         // `content_hash32_slot`) so it matches how the assets dump keys.
-                        let h = content_hash32_slot(frame.vram, slot);
+                        let h = content_hash32_slot(bg_vram, slot);
                         pack = (h >> 16) as u16;
                         tile_off = (h & 0xffff) as u16;
                     }
@@ -1597,7 +1609,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                     // fallback.
                     let injective = kind == CHR_KIND_BG_STREAM;
                     if !injective {
-                        let h = content_hash32_slot(frame.vram, slot);
+                        let h = content_hash32_slot(bg_vram, slot);
                         kind = CHR_KIND_BG_STREAM;
                         pack = (h >> 16) as u16;
                         tile_off = (h & 0xffff) as u16;
@@ -1610,7 +1622,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                     });
                     if kind == CHR_KIND_BG_STREAM {
                         let live = decode_snes_4bpp_tile_indices(
-                            frame.vram,
+                            bg_vram,
                             frame.bg[layer_index].tile_adr as usize,
                             tile_number as u16,
                         );
@@ -1622,7 +1634,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                         if dbg && layer_index < 2 {
                             dbg_total += 1;
                             let live = decode_snes_4bpp_tile_indices(
-                                frame.vram,
+                                bg_vram,
                                 frame.bg[layer_index].tile_adr as usize,
                                 tile_number as u16,
                             );
@@ -1643,7 +1655,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                                     if kind == 6 {
                                         let mut h: u32 = 0x811c_9dc5;
                                         for off in 0..16 {
-                                            let w = *frame.vram.get(slot * 16 + off).unwrap_or(&0);
+                                            let w = *bg_vram.get(slot * 16 + off).unwrap_or(&0);
                                             for b in [(w & 0xff) as u8, (w >> 8) as u8] {
                                                 h ^= b as u32;
                                                 h = h.wrapping_mul(0x0100_0193);
@@ -1685,7 +1697,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                                 let chr_base = frame.bg[layer_index].tile_adr as usize;
                                 let pattern_key = entry_word & 0xC3FF;
                                 let indices = decode_snes_4bpp_tile_indices(
-                                    frame.vram,
+                                    bg_vram,
                                     chr_base,
                                     pattern_key,
                                 );
@@ -1744,8 +1756,11 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                         let pal = ((entry_word >> 10) & 7) as u8;
                         let chr_base = frame.bg[layer_index].tile_adr as usize;
                         let pattern_key = entry_word & 0xC3FF;
-                        let indices =
-                            decode_snes_4bpp_tile_indices(frame.vram, chr_base, pattern_key);
+                        let indices = decode_snes_4bpp_tile_indices(
+                            frame.bg_vram.unwrap_or(frame.vram),
+                            chr_base,
+                            pattern_key,
+                        );
                         if let Some((source_key, src)) = source_cell_by_indices(atlas, &indices) {
                             let id = *cell_ids.entry((src.id, hflip, vflip)).or_insert_with(|| {
                                 let indices = flip_index_pattern(&src.indices, hflip, vflip);
@@ -2981,6 +2996,36 @@ mod tests {
         let strict_pattern =
             extract_asset_resolved_modern_frame_from_sources(&frame, &table, &exact_pattern_atlas);
         assert!(!strict_pattern.has_unresolved_sources());
+    }
+
+    #[test]
+    fn bg_decoder_cache_does_not_replace_raw_tilemap_vram() {
+        use crate::modern_source_atlas::ModernSourceAtlas;
+
+        let mut raw_vram = vec![0u16; 0x8000];
+        raw_vram[0] = 4;
+        raw_vram[0x2040] = 0x0001;
+        let mut decoded_vram = raw_vram.clone();
+        decoded_vram[0] = 5;
+        decoded_vram[0x2040] = 0x0101;
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let mut frame = test_gpu_frame(&raw_vram, &cgram, &oam, 15, false);
+        frame.bg_vram = Some(&decoded_vram);
+        frame.mode = 1;
+        frame.bg[0].tilemap_adr = 0;
+        frame.bg[0].tile_adr = 0x2000;
+        frame.screen_enabled = [0x01, 0x00];
+
+        let atlas = ModernSourceAtlas::from_keyed_cells_for_test(vec![], &[]);
+        let table = |_slot: usize| (0, 0, 0);
+        let (modern, cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
+        let first = &modern.bg_layers[0].index_tiles[0];
+        assert_eq!(
+            cells[first.cell_id as usize].indices[7],
+            3,
+            "raw tilemap selects tile 4 while its pattern pixels come from the decoded BG cache"
+        );
     }
 
     #[test]
@@ -4602,6 +4647,7 @@ mod tests {
             hardware_startup_transient: None,
             vram,
             obj_vram: None,
+            bg_vram: None,
             cgram,
             oam,
             mode: 1,

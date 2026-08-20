@@ -26,14 +26,14 @@ fn attract_map_mode7_brightness_override_ends_with_fade_in() {
 }
 
 #[test]
-fn attract_map_exit_retains_scanout_until_the_tilemap_clear_returns() {
+fn attract_map_exit_drains_the_final_projection_before_the_tilemap_clear_returns() {
     let pending = ScheduledGameWork::schedule(
         GameWorkContinuation::FinishAttractWorldMapExit,
         ATTRACT_WORLD_MAP_EXIT_NMI_SLICES,
     );
     assert_eq!(
         pending.in_flight_display_snapshot_publication_override(),
-        Some(DisplaySnapshotPublication::RetainPublished)
+        Some(DisplaySnapshotPublication::AdvanceStaged)
     );
 }
 
@@ -3929,18 +3929,12 @@ fn room_72_supertile_room_load_caller_resume_crosses_one_additional_nmi() {
 }
 
 #[test]
-fn room_61_room_load_caller_waits_for_its_leading_nmi_before_fresh_main() {
+fn room_load_caller_waits_for_its_leading_nmi_before_fresh_main() {
     assert!(dungeon_supertile_caller_return_waits_for_leading_nmi(
         DungeonSupertileTransitionWork::RoomLoadCallerResume,
-        0x61,
-    ));
-    assert!(!dungeon_supertile_caller_return_waits_for_leading_nmi(
-        DungeonSupertileTransitionWork::RoomLoadCallerResume,
-        0x52,
     ));
     assert!(!dungeon_supertile_caller_return_waits_for_leading_nmi(
         DungeonSupertileTransitionWork::AuxiliarySpriteGraphics,
-        0x61,
     ));
     assert_eq!(
         PreMainNmiResume::DungeonSupertileRoomLoadCallerReturnNmi.nmi_latch_clear_phase(),
@@ -4181,6 +4175,7 @@ fn state_13_suspends_common_module_suffix_when_rom_run_reaches_nmi_after_module(
         state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
             phase,
             resumed_phase: None,
+            submodule_nmi_slices: 0,
             subsubmodule: 13,
             palette_countdown: 24,
             sprite_main_boundary: None,
@@ -4241,6 +4236,7 @@ fn state_13_nmi_after_sprite_main_resumes_only_the_common_suffix() {
         state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
             phase,
             resumed_phase: None,
+            submodule_nmi_slices: 0,
             subsubmodule: 13,
             palette_countdown: 26,
             sprite_main_boundary: None,
@@ -4289,6 +4285,7 @@ fn state_12_nmi_inside_sprite_preparation_resumes_only_that_caller() {
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::InterruptedInNmiPrepareSprites,
         resumed_phase: None,
+        submodule_nmi_slices: 0,
         subsubmodule: 13,
         palette_countdown: 0,
         sprite_main_boundary: None,
@@ -4319,6 +4316,7 @@ fn state_13_finishes_common_module_suffix_when_rom_run_completes_before_nmi() {
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::CompleteBeforeNmi,
         resumed_phase: None,
+        submodule_nmi_slices: 0,
         subsubmodule: 13,
         palette_countdown: 22,
         sprite_main_boundary: None,
@@ -4388,7 +4386,9 @@ fn injected_dungeon_cpu_schedule(
         caller_nmis,
         caller_sprite_main_nmis: 0,
         caller_suffix_nmis: caller_nmis,
+        caller_first_nmi_phase: None,
         sprite_main_nmi_after_slot: None,
+        cached_sprite_interruption: None,
         reenters_main_loop_before_nmi: false,
     }
 }
@@ -4479,7 +4479,6 @@ fn spiral_cpu_schedule_keeps_caller_nmis_separate_from_submodule_nmis() {
     ));
     assert_eq!(state.dungeon_submodule_cpu_schedule, Some(schedule));
 }
-
 
 #[test]
 fn dungeon_quadrant_hold_uses_the_dma_latched_resident_oam_without_copying_it() {
@@ -4590,6 +4589,58 @@ fn pre_dungeon_work_resumes_at_room_and_song_bank_transfer_boundaries() {
 }
 
 #[test]
+fn pre_dungeon_return_arms_the_first_module_sprite_main_boundary() {
+    let mut state = ZeldaState::new();
+
+    state.finish_pre_dungeon_caller_at_main_wait();
+
+    assert_eq!(
+        state.dungeon_sprite_main_nmi_boundary,
+        Some(DungeonSpriteMainCpuBoundary::BeforeFirstSlot)
+    );
+    assert_eq!(state.dungeon_sprite_main_nmi_slices, 1);
+    assert!(state
+        .game_execution_scheduler
+        .returned_main_is_waiting_for_nmi());
+}
+
+#[test]
+fn pre_dungeon_publishes_entrance_before_scheduled_room_construction() {
+    let mut expected = ZeldaState::new();
+    expected.assets = Some(probe_entrance_asset_pack(0, 0x0061));
+    expected.set_which_entrance(0);
+    expected.save_progress_mut().set_progress_indicator(2);
+    expected.Dungeon_LoadEntrance();
+    let expected_room = expected.game_state.world.location.dungeon_room();
+    let expected_x = expected.game_state.player.follower_link.x();
+    let expected_y = expected.game_state.player.follower_link.y();
+
+    let mut state = ZeldaState::new();
+    state.assets = Some(probe_entrance_asset_pack(0, 0x0061));
+    state.set_main_module(6);
+    state.set_which_entrance(0);
+    state.save_progress_mut().set_progress_indicator(2);
+    state.set_dungeon_room(0x0055);
+    state.follower_link_state_mut().set_x(0x07f8);
+    state.follower_link_state_mut().set_y(0x06f8);
+    state.set_rom_startup_timing(true);
+
+    state.module_pre_dungeon();
+
+    assert_eq!(state.game_state.frame.main_module, 6);
+    assert_eq!(
+        state.game_state.world.location.dungeon_room(),
+        expected_room
+    );
+    assert_eq!(state.game_state.player.follower_link.x(), expected_x);
+    assert_eq!(state.game_state.player.follower_link.y(), expected_y);
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishPreDungeonEntranceLoad)
+    );
+}
+
+#[test]
 fn throne_room_work_budget_follows_the_retained_sprite_tileset() {
     assert_eq!(attract_throne_room_nmi_slices(19), 42);
     assert_eq!(attract_throne_room_nmi_slices(66), 44);
@@ -4656,6 +4707,20 @@ fn heavy_prison_animation_makes_dialogue_initialization_resumable() {
     assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 3), 5);
     assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 2), 0);
     assert_eq!(rom_dialogue_initialization_nmi_slices(14, 0, 0), 5);
+}
+
+#[test]
+fn delayed_dialogue_return_keeps_dungeon_and_overworld_animation_domains_distinct() {
+    assert_eq!(
+        dialogue_return_decoded_bg_cache_destination(
+            OVERWORLD_ANIMATED_BG_VRAM_DESTINATION,
+        ),
+        Some(OVERWORLD_ANIMATED_BG_VRAM_DESTINATION),
+    );
+    assert_eq!(
+        dialogue_return_decoded_bg_cache_destination(DUNGEON_ANIMATED_BG_VRAM_DESTINATION),
+        None,
+    );
 }
 
 #[test]
@@ -4772,7 +4837,10 @@ fn world_map_exit_overlay_conversions_resume_at_measured_boundaries() {
 #[test]
 fn enemy_drop_receipt_sound_retires_at_the_measured_graphics_return() {
     let continuation = GameWorkContinuation::FinishItemReceiptGraphics {
-        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, ground_apress_tail: None },
+        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+            gfx: 0x22,
+            ground_apress_tail: None,
+        },
     };
     let mut state = ZeldaState::new();
     state.set_sound_effect_2(0x2f);
@@ -4829,7 +4897,10 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     // live/live boundary instead of an older retained-CHR assumption.
     assert_eq!(
         atomic_item_graphics_return_obj_scanout(
-            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14, ground_apress_tail: None },
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                gfx: 0x14,
+                ground_apress_tail: None
+            },
         ),
         ObjScanoutGenerations {
             oam: OamScanoutSource::ComposeLivePlayerOamAfterMain,
@@ -4839,7 +4910,10 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     );
     assert_eq!(
         atomic_item_graphics_return_obj_scanout(
-            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, ground_apress_tail: None },
+            ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                gfx: 0x22,
+                ground_apress_tail: None
+            },
         ),
         ObjScanoutGenerations {
             oam: OamScanoutSource::ComposePublishedShadowDma,
@@ -4849,7 +4923,10 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
     );
 
     let continuation = GameWorkContinuation::FinishItemReceiptGraphics {
-        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14, ground_apress_tail: None },
+        continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+            gfx: 0x14,
+            ground_apress_tail: None,
+        },
     };
     let mut work =
         ScheduledGameWork::schedule(continuation, ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES);
@@ -4888,6 +4965,23 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
         suspended.in_flight_display_snapshot_publication_override(),
         None
     );
+    let chest_receipt = ScheduledGameWork::schedule(
+        GameWorkContinuation::FinishItemReceiptGraphics {
+            continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                gfx: 0x10,
+                ground_apress_tail: Some(ItemReceiptReturn {
+                    ancilla_slot: 4,
+                    item: 0x24,
+                    chest_position: 0x0182,
+                }),
+            },
+        },
+        ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
+    );
+    assert!(
+        chest_receipt.suspends_translated_call_stack(),
+        "the synchronous chest decompressor must retain Module 7's pre-Sprite_Main stack",
+    );
     for _ in 0..ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES - 1 {
         assert_eq!(work.advance_one_nmi_slice(), GameWorkStep::Waiting);
     }
@@ -4905,17 +4999,40 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
     assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(
         0x70, 36
     ));
-    // Maximal 239-row table (Link's-house exit, vertical center 238): the
-    // $70 build still crosses vblank, and the module-15 entry build spans
-    // an extra host frame.
+    // Maximal 239-row table (Link's-house entrance, vertical center 238): the
+    // $70 build still crosses vblank, and the module-15 entry build spans an
+    // extra host frame regardless of where its caller returned.
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(
         0x70, 238
     ));
     assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(
         0x69, 238
     ));
-    assert!(rom_dungeon_exit_spotlight_entry_build_crosses_vblank(238));
-    assert!(!rom_dungeon_exit_spotlight_entry_build_crosses_vblank(36));
+    assert!(rom_dungeon_exit_spotlight_entry_build_crosses_vblank(
+        238, false
+    ));
+    assert!(!rom_dungeon_exit_spotlight_entry_build_crosses_vblank(
+        36, false
+    ));
+    // Overworld_UseEntrance returns to the main wait before module 15. Its
+    // first iris build therefore starts after NMI and crosses the next vblank
+    // even at the castle entrance's shorter table (Snes9x $02:9982 V=255,
+    // $00:f28b in the following field).
+    assert!(rom_dungeon_exit_spotlight_entry_build_crosses_vblank(
+        106, true
+    ));
+    assert!(rom_short_outdoor_spotlight_build_crosses_vblank(
+        0x62, 106, true
+    ));
+    assert!(!rom_short_outdoor_spotlight_build_crosses_vblank(
+        0x5b, 106, true
+    ));
+    assert!(!rom_short_outdoor_spotlight_build_crosses_vblank(
+        0x77, 36, false
+    ));
+    assert!(!rom_short_outdoor_spotlight_build_crosses_vblank(
+        0x77, 238, true
+    ));
     // Long-table centers (189-row dungeon landing / 239-row house exit)
     // merge the $3f->$38 crossing; the castle-entry close's smaller table
     // keeps the split return (oracle rad@11461, prep@11462).
@@ -5004,6 +5121,10 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
             .projects_following_table_tail_on_completion()
     );
     assert!(
+        SpotlightIteration::closing(SpotlightIterationPhase::WholeTableAfterTablePublication)
+            .projects_following_table_tail_on_completion()
+    );
+    assert!(
         SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn)
             .projects_following_table_tail_on_completion()
     );
@@ -5046,6 +5167,16 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         SpotlightIterationPhase::WholeTable
     );
     assert_eq!(DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES, 1);
+    assert_eq!(DUNGEON_EXIT_SPOTLIGHT_GOAL_CALLER_NMI_SLICES, 2);
+    assert_eq!(TRAILING_NMI_FORCE_BLANK_SCANLINE, 224);
+    assert_eq!(
+        rom_graphics_dma_plan(6, 0).oam_scanout,
+        OamScanoutSource::ComposeLiveAfterNmi,
+    );
+    assert_eq!(
+        rom_graphics_dma_plan(6, 0).link_obj_scanout,
+        GraphicsDmaGeneration::LiveAfterMain,
+    );
     assert_eq!(spotlight_mixed_scanout_live_tail_start(36, 0x38), 221);
     assert_eq!(spotlight_mixed_scanout_live_tail_start(238, 0x38), 224);
     assert_eq!(spotlight_mixed_scanout_live_tail_start(238, 0x31), 221);
@@ -5063,12 +5194,159 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
             iteration: closing_iteration,
         })
     );
+    let goal_iteration =
+        SpotlightIteration::closing(SpotlightIterationPhase::WholeTableAfterTablePublication);
+    let goal_continuation = GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller {
+        iteration: goal_iteration,
+    };
+    let mut goal_work = ScheduledGameWork::schedule(
+        goal_continuation,
+        DUNGEON_EXIT_SPOTLIGHT_GOAL_CALLER_NMI_SLICES,
+    );
+    assert!(goal_work.suspends_translated_call_stack());
+    assert_eq!(goal_work.advance_one_nmi_slice(), GameWorkStep::Waiting);
+    assert_eq!(
+        goal_work.advance_one_nmi_slice(),
+        GameWorkStep::Complete(goal_continuation)
+    );
     assert!(rom_spotlight_goal_transition_waits_for_iteration_return(
         16, 1,
     ));
     assert!(!rom_spotlight_goal_transition_waits_for_iteration_return(
         16, 0,
     ));
+}
+
+#[test]
+fn interrupted_dungeon_exit_spotlight_publishes_the_rom_prefix_before_waiting() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_indoor_flag(0);
+    state.set_main_screen_layers(0x16);
+    state.set_sub_screen_layers(0x01);
+    state.follower_link_state_mut().set_y(94);
+    for row in 0..240 {
+        state.set_spotlight_hdma_table_dynamic_entry(row, 0x00ff);
+    }
+
+    assert!(state.begin_dungeon_exit_spotlight_entry(106));
+
+    assert_eq!(state.game_state.display.bg12_window_selection, 0x33);
+    assert_eq!(state.game_state.display.bg34_window_selection, 0x03);
+    assert_eq!(state.game_state.display.object_color_window_selection, 0x33);
+    assert_eq!(state.game_state.display.main_screen_window_layers, 0x16);
+    assert_eq!(state.game_state.display.sub_screen_window_layers, 0x01);
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 0x7e);
+    assert_eq!(state.game_state.display.spotlight_hdma.window_state(), 0);
+    assert!(state.next_display_spotlight_scanout.is_some());
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. })
+    ));
+    // The C loop has authored 19 paired rows at the interrupt boundary. For
+    // center 106, the upper cursor wraps through rows 0..6 while the lower
+    // cursor covers rows 224..206.
+    assert_ne!(state.spotlight_hdma_table_dynamic_entry(0), 0x00ff);
+    assert_ne!(state.spotlight_hdma_table_dynamic_entry(206), 0x00ff);
+    assert_eq!(state.spotlight_hdma_table_dynamic_entry(7), 0x00ff);
+    assert_eq!(state.spotlight_hdma_table_dynamic_entry(205), 0x00ff);
+}
+
+#[test]
+fn short_dungeon_exit_build_projects_before_its_interrupted_suffix() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_indoor_flag(0);
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.follower_link_state_mut().set_y(93);
+    state.set_spotlight_window_radius(0x70);
+    state.set_spotlight_window_state(0);
+    for row in 0..240 {
+        state.set_spotlight_hdma_table_dynamic_entry(row, 0x00ff);
+    }
+    let iteration = SpotlightIteration::closing(
+        SpotlightIterationPhase::WholeTableAfterTablePublication,
+    );
+
+    assert!(state.begin_dungeon_exit_spotlight_build(iteration, 105));
+
+    // The C loop and memcpy precede the interrupt. Its radius write and caller
+    // suffix remain deferred, but both HDMA tables already own the new circle.
+    assert_ne!(state.spotlight_hdma_table_dynamic_entry(0), 0x00ff);
+    assert_eq!(
+        read_le_u16(&state.ram, RESERVED_HDMA_TABLE),
+        state.spotlight_hdma_table_dynamic_entry(0),
+    );
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 0x70);
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+            iteration: pending,
+        }) if pending == iteration
+    ));
+}
+
+#[test]
+fn dungeon_exit_crossing_publishes_the_completed_oam_dma_receipt() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam[0] = 0x1111;
+    state.capture_display_snapshot();
+    let mut following = *state.display_snapshot.take().unwrap();
+    following.ppu.oam[0] = 0x2222;
+    following.completed_oam_dma_after_capture = Some(vec![0x3333; state.ppu.oam.len()]);
+    following.closed_oam_boundary_receipt = Some(ClosedOamBoundaryReceipt {
+        publication_host_frame: following.publication_host_frame,
+        active_oam: vec![0x4444; state.ppu.oam.len()],
+    });
+    let plan = DisplayPublicationPlan::resolve(
+        &following,
+        DisplayPublicationSignals {
+            dungeon_exit_crosses_nmi_boundary: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+
+    assert_eq!(
+        plan.oam_scanout_source,
+        OamScanoutSource::ComposeCompletedWorkAfterNmi
+    );
+    state.compose_display_oam(&following, &plan);
+    assert_eq!(state.ppu.oam[0], 0x3333);
+
+    following.oam_scanout_source = OamScanoutSource::ComposeCompletedWorkAfterNmi;
+    state.oam_law_visible = Some(vec![0x5555; state.ppu.oam.len()]);
+    state.display_snapshot = Some(Box::new(following));
+    let presented = state.with_display_snapshot(|display| display.ppu.oam[0]);
+    assert_eq!(presented, 0x3333);
+
+    let snapshot = state.display_snapshot.as_mut().unwrap();
+    snapshot.effective_presented_dma = Some(EffectivePresentedDma {
+        vram_writes: Vec::new(),
+        decoded_bg_vram_writes: Vec::new(),
+        completed_oam: Some(vec![0x6666; state.ppu.oam.len()]),
+        completed_cgram: None,
+        completed_bg_scroll: None,
+        completed_color_math: None,
+        completed_inidisp: None,
+        completed_dialogue_metadata: None,
+    });
+    let presented = state.with_display_snapshot(|display| display.ppu.oam[0]);
+    assert_eq!(presented, 0x6666);
+
+    let return_scanout = dungeon_exit_spotlight_entry_return_obj_scanout();
+    assert_eq!(
+        return_scanout.oam,
+        OamScanoutSource::ComposeCompletedWorkAfterNmi
+    );
+    assert_eq!(
+        return_scanout.link_obj,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    );
+    assert_eq!(
+        return_scanout.link_obj_sources,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain
+    );
 }
 
 #[test]
@@ -5342,16 +5620,22 @@ fn nmi_copy_packets_publish_only_after_the_dma_boundary() {
 }
 
 #[test]
-fn animated_bg_uses_the_current_host_boundary_vram_at_either_destination() {
+fn animated_bg_uses_the_snapshot_owned_host_boundary_at_either_destination() {
     for destination in [0x3b00, 0x3c00] {
         let mut state = ZeldaState::new();
         state.set_animated_tile_vram_destination_address(destination as u16);
         state.ppu.vram[destination..destination + 0x200].fill(0x1111);
         state.capture_display_snapshot();
 
-        state.pre_nmi_animated_bg_scanout = Some(PreNmiAnimatedBgScanout {
+        state
+            .display_snapshot
+            .as_mut()
+            .unwrap()
+            .host_boundary_animated_bg_scanout = Some(AnimatedBgScanout {
             destination_address: destination,
             vram: vec![0x2222; 0x200],
+            logical_sources: crate::chr_source::VramChrSourceTable::default(),
+            preview_sources: crate::chr_source::VramChrSourceTable::default(),
         });
         state.ppu.vram[destination..destination + 0x200].fill(0x3333);
 
@@ -5372,9 +5656,15 @@ fn dungeon_entrance_publishes_the_animated_bg_written_by_its_leading_nmi() {
     state.ppu.vram[destination..destination + 0x200].fill(0x1111);
     state.capture_display_snapshot();
 
-    state.pre_nmi_animated_bg_scanout = Some(PreNmiAnimatedBgScanout {
+    state
+        .display_snapshot
+        .as_mut()
+        .unwrap()
+        .host_boundary_animated_bg_scanout = Some(AnimatedBgScanout {
         destination_address: destination,
         vram: vec![0x2222; 0x200],
+        logical_sources: crate::chr_source::VramChrSourceTable::default(),
+        preview_sources: crate::chr_source::VramChrSourceTable::default(),
     });
     state.ppu.vram[destination..destination + 0x200].fill(0x3333);
 
@@ -5435,9 +5725,15 @@ fn gameplay_leading_nmi_does_not_restore_stale_animated_bg_over_full_tilemap() {
     state.ppu.vram[destination..destination + 0x200].fill(0x1111);
     state.capture_display_snapshot();
 
-    state.pre_nmi_animated_bg_scanout = Some(PreNmiAnimatedBgScanout {
+    state
+        .display_snapshot
+        .as_mut()
+        .unwrap()
+        .host_boundary_animated_bg_scanout = Some(AnimatedBgScanout {
         destination_address: destination,
         vram: vec![0x2222; 0x200],
+        logical_sources: crate::chr_source::VramChrSourceTable::default(),
+        preview_sources: crate::chr_source::VramChrSourceTable::default(),
     });
     state.ppu.vram[destination..destination + 0x200].fill(0x3333);
 
@@ -5757,6 +6053,7 @@ fn dungeon_faded_filter_second_pass_resumes_without_a_new_main_iteration() {
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::InterruptedInSubmodule,
         resumed_phase: Some(DungeonModuleCpuPhase::CompleteBeforeNmi),
+        submodule_nmi_slices: 1,
         subsubmodule: 2,
         palette_countdown: 1,
         sprite_main_boundary: None,
@@ -5821,6 +6118,7 @@ fn resumed_dungeon_fade_runs_the_next_iteration_after_a_leading_nmi() {
         state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
             phase: DungeonModuleCpuPhase::InterruptedInSubmodule,
             resumed_phase: Some(DungeonModuleCpuPhase::CompleteBeforeNmi),
+            submodule_nmi_slices: 1,
             subsubmodule: 2,
             palette_countdown: entry_countdown as u8 + 1,
             sprite_main_boundary: None,
@@ -5868,6 +6166,7 @@ fn nmi_inside_sprite_preparation_resumes_without_replaying_dungeon_main() {
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::InterruptedInSubmodule,
         resumed_phase: Some(DungeonModuleCpuPhase::InterruptedInNmiPrepareSprites),
+        submodule_nmi_slices: 1,
         subsubmodule: 2,
         palette_countdown: 17,
         sprite_main_boundary: None,
@@ -5938,6 +6237,7 @@ fn faded_filter_uses_the_interior_sprite_boundary_as_the_single_nmi_owner() {
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::InterruptedInSpriteMain,
         resumed_phase: None,
+        submodule_nmi_slices: 0,
         subsubmodule: 3,
         palette_countdown: 0,
         sprite_main_boundary: Some(DungeonSpriteMainCpuBoundary::AfterSlot(0)),
@@ -5977,6 +6277,7 @@ fn faded_filter_preserves_nmi_prepare_sprites_caller_phase() {
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::InterruptedInNmiPrepareSprites,
         resumed_phase: None,
+        submodule_nmi_slices: 0,
         subsubmodule: 15,
         palette_countdown: 0,
         sprite_main_boundary: None,
@@ -6009,6 +6310,7 @@ fn landing_nmi_inside_link_oam_resumes_only_the_common_suffix() {
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::InterruptedInLinkOam,
         resumed_phase: None,
+        submodule_nmi_slices: 0,
         subsubmodule: 15,
         palette_countdown: 0,
         sprite_main_boundary: None,
@@ -6063,6 +6365,7 @@ fn landing_nmi_inside_sprite_main_resumes_at_the_cpu_slot_boundary() {
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::InterruptedInSpriteMain,
         resumed_phase: None,
+        submodule_nmi_slices: 0,
         subsubmodule: 15,
         palette_countdown: 0,
         sprite_main_boundary: Some(DungeonSpriteMainCpuBoundary::AfterSlot(3)),
@@ -6099,6 +6402,7 @@ fn cached_sprite_copy_boundary_supersedes_the_coarse_sprite_slot_boundary() {
     let advance = DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::InterruptedInSpriteMain,
         resumed_phase: None,
+        submodule_nmi_slices: 0,
         subsubmodule: 15,
         palette_countdown: 0,
         sprite_main_boundary: Some(DungeonSpriteMainCpuBoundary::AfterSlot(0)),
@@ -6134,6 +6438,7 @@ fn interrupted_landing_fades_suspend_their_caller_return_before_state_fifteen_ma
         state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
             phase: DungeonModuleCpuPhase::InterruptedAfterModule,
             resumed_phase: None,
+            submodule_nmi_slices: 0,
             subsubmodule: 15,
             palette_countdown: 0,
             sprite_main_boundary: None,
@@ -6187,6 +6492,7 @@ fn completed_landing_fade_without_cpu_interruption_returns_atomically() {
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::CompleteBeforeNmi,
         resumed_phase: None,
+        submodule_nmi_slices: 0,
         subsubmodule: 15,
         palette_countdown: 0,
         sprite_main_boundary: None,
@@ -6220,6 +6526,7 @@ fn penultimate_landing_palette_zero_suspends_its_pre_completion_caller_return() 
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::InterruptedAfterModule,
         resumed_phase: None,
+        submodule_nmi_slices: 0,
         subsubmodule: 14,
         palette_countdown: 0,
         sprite_main_boundary: None,
@@ -6254,6 +6561,7 @@ fn landing_fade_no_request_suspends_only_the_state_fifteen_caller_return() {
     state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
         phase: DungeonModuleCpuPhase::InterruptedAfterModule,
         resumed_phase: None,
+        submodule_nmi_slices: 0,
         subsubmodule: 15,
         palette_countdown: 0,
         sprite_main_boundary: None,
@@ -7531,7 +7839,10 @@ fn retained_display_memory_resolves_link_obj_from_its_snapshot_dma_words() {
     state.ppu.vram[0x4020] = 0x1111;
     state.game_execution_scheduler.schedule_work(
         GameWorkContinuation::FinishItemReceiptGraphics {
-            continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x14, ground_apress_tail: None },
+            continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                gfx: 0x14,
+                ground_apress_tail: None,
+            },
         },
         ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
     );
@@ -7765,6 +8076,61 @@ fn spotlight_hdma_can_publish_ahead_of_retained_obj_domains() {
 
     assert_eq!(read_le_u16(&composed_ram, HDMA_TABLE_DYNAMIC), 0xe612);
     assert_eq!(display.ppu.oam[0], 0x2222);
+}
+
+#[test]
+fn completed_short_spotlight_build_projects_its_authored_table_tail() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.set_spotlight_window_radius(0x70);
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
+    state.set_spotlight_hdma_table_dynamic_entry(221, 0xae4a);
+    write_le_u16(&mut state.ram, RESERVED_HDMA_TABLE + 221 * 2, 0xae4a);
+
+    state.project_following_spotlight_tail_to_active_scanout(
+        SpotlightIterationPhase::WholeTableAfterTablePublication,
+        false,
+    );
+
+    let display = state.display_snapshot.as_ref().unwrap();
+    let mut composed_ram = display.ram.clone();
+    display
+        .hdma_table_generation
+        .compose_into(&mut composed_ram);
+    assert_eq!(read_le_u16(&composed_ram, HDMA_TABLE_DYNAMIC + 221 * 2), 0xae4a);
+    assert_eq!(read_le_u16(&composed_ram, RESERVED_HDMA_TABLE + 221 * 2), 0xae4a);
+}
+
+#[test]
+fn trailing_nmi_force_blank_preserves_the_completed_fields_visible_rows() {
+    let mut state = ZeldaState::new();
+    state.set_screen_brightness(0x0f);
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
+    let display = state.display_snapshot.as_mut().unwrap();
+    display.dungeon_exit_spotlight_force_blank = true;
+    display.ppu.forced_blank_from_scanline = Some(TRAILING_NMI_FORCE_BLANK_SCANLINE);
+
+    state.ppu.forced_blank = true;
+    state.ppu.brightness = 0;
+    let scanout = state.with_display_snapshot(|display| {
+        (
+            display.ppu.forced_blank,
+            display.ppu.forced_blank_from_scanline,
+            display.ppu.brightness,
+            display.ppu.mode7_scanout_brightness_override,
+        )
+    });
+
+    assert_eq!(
+        scanout,
+        (
+            true,
+            Some(TRAILING_NMI_FORCE_BLANK_SCANLINE),
+            0,
+            Some(15),
+        )
+    );
 }
 
 #[test]
@@ -8103,7 +8469,6 @@ fn spiral_stairs_first_steady_slice_consumes_the_host_boundary_link_operands() {
     );
 }
 
-
 #[test]
 fn host_boundary_link_oam_composition_keeps_unrelated_live_sprites() {
     let mut live_oam = vec![0x1111; 0x110];
@@ -8280,26 +8645,6 @@ fn dialogue_exit_bg_packet_waits_for_the_following_nmi() {
 }
 
 #[test]
-fn dungeon_landing_hdma_reset_preserves_the_already_consumed_prefix() {
-    let mut state = ZeldaState::new();
-    state.set_main_module(14);
-    state.set_submodule(2);
-    for index in 0..DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES {
-        state.set_spotlight_hdma_table_dynamic_entry(index, 0xff00);
-    }
-    state.spotlight_hdma_reset_prefix = Some([0x10ef, 0x11ee, 0x12ed, 0x13ec]);
-
-    state.capture_display_snapshot();
-
-    let captured: [u16; DUNGEON_LANDING_HDMA_RESET_PREFIX_SCANLINES] =
-        state.with_display_snapshot(|display| {
-            std::array::from_fn(|index| display.spotlight_hdma_table_dynamic_entry(index))
-        });
-    assert_eq!(captured, [0x10ef, 0x11ee, 0x12ed, 0x13ec]);
-    assert_eq!(state.spotlight_hdma_table_dynamic_entry(0), 0xff00);
-}
-
-#[test]
 fn selected_game_load_resumes_until_the_cpu_heavy_setup_finishes() {
     let mut scheduler = GameExecutionScheduler::default();
     scheduler.schedule_selected_game_load();
@@ -8345,7 +8690,6 @@ fn dungeon_landing_wipe_table_projection_follows_spotlight_row_workload() {
     assert!(rom_dungeon_landing_wipe_is_active(7, 15));
     assert!(!rom_dungeon_landing_wipe_is_active(7, 14));
     assert!(!rom_dungeon_landing_wipe_is_active(14, 15));
-
     assert_eq!(spotlight_vertical_center(0x215a, 0x2110), 86);
     assert_eq!(spotlight_table_row_pairs(86), 139);
 
@@ -9076,6 +9420,54 @@ fn nmi_force_blank_gates_the_pre_nmi_display_snapshot() {
     let captured_forced_blank = state.with_display_snapshot(|display| display.ppu.forced_blank);
 
     assert!(captured_forced_blank);
+    assert!(state.ppu.forced_blank);
+}
+
+#[test]
+fn staged_attract_exit_does_not_rewrite_the_drained_projection() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.ppu.forced_blank = false;
+
+    // Seed the staged pipeline, then author the final visible field.
+    state.set_screen_brightness(3);
+    state.ppu.brightness = 3;
+    state.ppu.vram[0] = 0xaaaa;
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+    state.set_screen_brightness(2);
+    state.ppu.brightness = 2;
+    state.ppu.vram[0] = 0x1111;
+    state.attract_map_hdma_projection_before =
+        Some(vec![0; ATTRACT_MAP_PROJECTION_WORDS * 2]);
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+
+    // The following CPU generation requests force-blank and clears VRAM before
+    // its NMI. Advancing the staged pipeline must drain the visible field
+    // without merging either future write back into it.
+    state.set_screen_brightness(0x80);
+    state.ppu.vram[0] = 0;
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+    assert_eq!(state.display_snapshot.as_ref().unwrap().ppu.vram[0], 0x1111);
+    assert!(!state.display_snapshot.as_ref().unwrap().ppu.forced_blank);
+    assert_eq!(
+        state.deferred_display_snapshot.as_ref().unwrap().ram
+            [crate::game_state::constants::INIDISP_COPY],
+        0x80
+    );
+    state.ppu.forced_blank = true;
+    state.ppu.brightness = 0;
+
+    let presented = state.with_display_snapshot(|display| {
+        (
+            display.ppu.vram[0],
+            display.ppu.forced_blank,
+            display.ppu.brightness,
+        )
+    });
+
+    assert_eq!(presented, (0x1111, false, 2));
+    assert_eq!(state.ppu.vram[0], 0);
     assert!(state.ppu.forced_blank);
 }
 

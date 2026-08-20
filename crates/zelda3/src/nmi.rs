@@ -317,7 +317,7 @@ impl ZeldaState {
                 self.game_state.display.bg_vram_load_mode,
                 self.ppu.forced_blank,
                 self.nmi_forced_blank_scanlines_pending,
-                self.nmi_forced_blank_from_scanline_pending,
+                self.legacy_nmi_forced_blank_from_scanline_pending,
                 self.nmi_active_display_blanking_candidate.suffix_start_scanline,
                 self.live_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper),
                 self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0],
@@ -463,10 +463,6 @@ impl ZeldaState {
             if let Some(start) = prior_active_display_blanking.suffix_start_scanline {
                 self.ppu.forced_blank_from_scanline = Some(start);
                 self.ppu.retain_active_display_history = true;
-                self.nmi_forced_blank_from_scanline_pending = Some(
-                    self.nmi_forced_blank_from_scanline_pending
-                        .map_or(start, |pending| pending.min(start)),
-                );
             }
         }
         // After all CHR DMAs have settled this frame, refresh the OBJ CHR logical
@@ -487,7 +483,7 @@ impl ZeldaState {
                 self.ppu.forced_blank,
                 self.nmi_forced_blank_scanlines_pending,
                 self.ppu.forced_blank_from_scanline,
-                self.nmi_forced_blank_from_scanline_pending,
+                self.legacy_nmi_forced_blank_from_scanline_pending,
                 self.nmi_active_display_blanking_candidate.suffix_start_scanline,
                 self.live_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper),
                 self.ppu.vram.get(0x40b0).copied().unwrap_or(0),
@@ -669,6 +665,23 @@ impl ZeldaState {
         }
         for i in 0..0x200 {
             self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
+        }
+        let dialogue_decoder_cache_destination = self
+            .dialogue_initialization_decoded_bg_cache_destination
+            .take();
+        if let Some(active) = self.display_snapshot.as_mut().filter(|active| {
+            dialogue_decoder_cache_destination == Some(dst)
+                && active.accepts_nmi_dma_receipts
+                && active.animated_bg_scanout_generation
+                    == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
+        }) {
+            // Snes9x's BG decoder consumes this completed DMA even when the
+            // active snapshot retains its pre-NMI raw VRAM. Attach that exact
+            // cache event to the snapshot; tilemap/raw-memory ownership stays
+            // independent.
+            let mut decoded = active.ppu.vram.clone();
+            decoded[dst..dst + 0x200].copy_from_slice(&self.ppu.vram[dst..dst + 0x200]);
+            active.ppu.bg_vram_latch = Some(decoded);
         }
         if std::env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
             eprintln!(
@@ -1777,6 +1790,7 @@ impl ZeldaState {
         // CPU-authored list earlier lets the modern renderer paint text that
         // the SNES PPU has not received yet.
         self.publish_bg3_vwf_glyph_runs();
+        self.record_completed_dialogue_metadata_for_display_boundary();
         self.clear_core_update_disable_flag();
     }
 

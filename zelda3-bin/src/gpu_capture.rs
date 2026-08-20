@@ -1966,6 +1966,10 @@ fn gpu_frame_capture_from_ppu<'a>(
             .obj_vram_latch
             .as_deref()
             .filter(|vram| vram.len() == ppu.vram.len()),
+        bg_vram: ppu
+            .bg_vram_latch
+            .as_deref()
+            .filter(|vram| vram.len() == ppu.vram.len()),
         cgram,
         raw_scanlines,
         bg3_source_tiles,

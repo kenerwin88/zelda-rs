@@ -1314,7 +1314,9 @@ impl ZeldaState {
 
         self.rotate_animated_dungeon_tile_planes();
 
-        self.set_animated_tile_vram_destination_address(0x3b00);
+        self.set_animated_tile_vram_destination_address(
+            DUNGEON_ANIMATED_BG_VRAM_DESTINATION as u16,
+        );
     }
 
     pub(super) fn decompress_sprite_graphics_to_buffer(
@@ -1696,7 +1698,9 @@ impl ZeldaState {
         );
         let tmp = self.graphics_primary_decompression_buffer(0x600);
         self.do3_to_4_low_16bit_from_slice(0xae80, &tmp, 0, 32);
-        self.set_animated_tile_vram_destination_address(0x3c00);
+        self.set_animated_tile_vram_destination_address(
+            OVERWORLD_ANIMATED_BG_VRAM_DESTINATION as u16,
+        );
         // Remember the pack filling the animated-tile buffer so the per-frame
         // animated-tile DMA can tag its VRAM slots injectively (CHR_KIND_BG_ANIM).
         self.animated_tile_pack = a as u16;
@@ -3407,6 +3411,15 @@ impl ZeldaState {
     }
 
     pub(super) fn spotlight_internal(&mut self, x: u8, y: u8) {
+        self.spotlight_internal_before_table(x, y);
+        self.iris_spotlight_configure_table();
+        self.spotlight_internal_after_table();
+    }
+
+    /// Synchronous prefix of the ROM's `SpotlightInternal`, before the circle
+    /// table builder. These display controls are already live when a long
+    /// `IrisSpotlight_ConfigureTable` is interrupted by vblank.
+    pub(super) fn spotlight_internal_before_table(&mut self, x: u8, y: u8) {
         self.set_spotlight_window_radius(x as u16);
         self.set_spotlight_window_state(y as u16);
         self.hdma_setup(0x00f2fb, 0x00f2fb, 0x41, 0x26, 0x26, 0);
@@ -3422,13 +3435,35 @@ impl ZeldaState {
             self.set_fixed_color_green(0x40);
             self.set_fixed_color_blue(0x80);
         }
-        self.iris_spotlight_configure_table();
+    }
+
+    /// Synchronous suffix of the ROM's `SpotlightInternal`, reached only after
+    /// `IrisSpotlight_ConfigureTable` returns.
+    pub(super) fn spotlight_internal_after_table(&mut self) {
         self.set_hdma_enable_mask(0x80);
         self.set_screen_brightness(0x0f);
         self.stage_spotlight_scanout_for_next_display();
     }
 
+    /// Complete `SpotlightInternal` after its table builder resumed during an
+    /// already-active field. The register copies are live at NMI, but SNES
+    /// HDMA channel initialization for that field has already happened; the
+    /// authored program therefore begins with the following field.
+    pub(super) fn spotlight_internal_after_table_during_active_field(&mut self) {
+        self.set_hdma_enable_mask(0x80);
+        self.set_screen_brightness(0x0f);
+        self.stage_spotlight_scanout_after_active_field();
+    }
+
     pub(super) fn iris_spotlight_configure_table(&mut self) {
+        let build = self.begin_iris_spotlight_configure_table(usize::MAX);
+        self.complete_iris_spotlight_configure_table(build);
+    }
+
+    pub(super) fn begin_iris_spotlight_configure_table(
+        &mut self,
+        max_iterations: usize,
+    ) -> SpotlightTableBuildContinuation {
         let r14 = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
@@ -3450,10 +3485,28 @@ impl ZeldaState {
         if r6 < 224 {
             r6 = 224;
         }
-        let mut r4 = r14.wrapping_mul(2).wrapping_sub(r6);
-        loop {
+        let r4 = r14.wrapping_mul(2).wrapping_sub(r6);
+        let mut build = SpotlightTableBuildContinuation {
+            vertical_center: r14,
+            upper_cursor: r4,
+            lower_cursor: r6,
+            completed: false,
+        };
+        self.advance_iris_spotlight_configure_table(&mut build, max_iterations);
+        build
+    }
+
+    fn advance_iris_spotlight_configure_table(
+        &mut self,
+        build: &mut SpotlightTableBuildContinuation,
+        max_iterations: usize,
+    ) {
+        for _ in 0..max_iterations {
+            if build.completed {
+                return;
+            }
             let mut r8 = 0x00ff;
-            if r6 < self.game_state.display.spotlight_hdma.y_upper() {
+            if build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper() {
                 let t = self
                     .game_state
                     .display
@@ -3464,22 +3517,45 @@ impl ZeldaState {
                 }
                 r8 = self.iris_spotlight_calculate_circle_value(t);
             }
-            if r4 < 240 {
-                self.set_spotlight_hdma_table_dynamic_entry(r4 as usize, r8);
+            if build.upper_cursor < 240 {
+                self.set_spotlight_hdma_table_dynamic_entry(build.upper_cursor as usize, r8);
             }
-            if r6 < 240 {
-                self.set_spotlight_hdma_table_dynamic_entry(r6 as usize, r8);
+            if build.lower_cursor < 240 {
+                self.set_spotlight_hdma_table_dynamic_entry(build.lower_cursor as usize, r8);
             }
-            if r4 == r14 {
-                break;
+            if build.upper_cursor == build.vertical_center {
+                build.completed = true;
+                return;
             }
-            r4 = r4.wrapping_add(1);
-            r6 = r6.wrapping_sub(1);
+            build.upper_cursor = build.upper_cursor.wrapping_add(1);
+            build.lower_cursor = build.lower_cursor.wrapping_sub(1);
         }
+    }
+
+    pub(super) fn complete_iris_spotlight_configure_table(
+        &mut self,
+        build: SpotlightTableBuildContinuation,
+    ) {
+        self.complete_iris_spotlight_table_projection(build);
+        self.complete_iris_spotlight_configure_table_after_projection();
+    }
+
+    /// Finish the C routine through the 448-byte table copy. Some short
+    /// spotlight iterations reach this boundary before vblank even though the
+    /// radius/control suffix and caller return remain interrupted afterward.
+    pub(super) fn complete_iris_spotlight_table_projection(
+        &mut self,
+        mut build: SpotlightTableBuildContinuation,
+    ) {
+        self.advance_iris_spotlight_configure_table(&mut build, usize::MAX);
+        debug_assert!(build.completed);
 
         self.clear_spotlight_hdma_table_dynamic_range(224, 16);
         self.project_spotlight_dynamic_hdma_table_to_reserved(224);
+    }
 
+    /// Resume the C routine immediately after its table copy.
+    pub(super) fn complete_iris_spotlight_configure_table_after_projection(&mut self) {
         let idx = (self.game_state.display.spotlight_hdma.window_state() >> 1) as usize;
         let delta = SPOTLIGHT_DELTA_SIZE[idx] as i16 as u16;
         let next = self
@@ -3576,6 +3652,19 @@ impl ZeldaState {
     }
 
     pub(super) fn enable_force_blank(&mut self) {
+        if self.game_state.display.is_hdma_channel_enabled(7)
+            && self.dma.channel[7].b_adr == 0x26
+        {
+            // HDMA has completed the prior field before this C call disables
+            // channel 7. Its row-224 terminator is therefore the resident WH0/
+            // WH1 hardware state used while the ensuing load stays blank.
+            let terminal = read_le_u16(
+                &self.ram,
+                RESERVED_HDMA_TABLE + TRAILING_NMI_FORCE_BLANK_SCANLINE as usize * 2,
+            );
+            self.ppu.window1_left = terminal as u8;
+            self.ppu.window1_right = (terminal >> 8) as u8;
+        }
         self.set_screen_brightness(0x80);
         self.clear_hdma_enable_mask();
     }

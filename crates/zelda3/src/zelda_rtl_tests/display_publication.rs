@@ -1492,7 +1492,7 @@ fn effective_presented_dma_advances_only_written_vram_words_and_obj_cache() {
     state.ppu.vram[0x1234] = 0x4444;
     state.ppu.vram[0x4009] = 0x5555;
     state.ppu.cgram[7] = 0x5555;
-    let mut writes = EffectiveDmaWriteSet::new(state.ppu.vram.len());
+    let mut writes = EffectiveDmaWriteSet::new(state.ppu.vram.len(), true);
     writes.vram_words[0x1234] = true;
     writes.vram_words[0x4009] = true;
     let receipt = EffectivePresentedDma::from_write_set(writes.clone(), &state);
@@ -1531,6 +1531,47 @@ fn effective_presented_dma_advances_only_written_vram_words_and_obj_cache() {
 }
 
 #[test]
+fn host_boundary_animated_bg_is_not_reintroduced_by_a_leading_nmi_receipt() {
+    const DESTINATION: usize = 0x3b00;
+    const ORDINARY_WORD: usize = 0x1234;
+    let mut state = ZeldaState::new();
+    state.set_animated_tile_vram_destination_address(DESTINATION as u16);
+    state.capture_display_snapshot();
+
+    state.ppu.vram[DESTINATION] = 0xaaaa;
+    state.ppu.vram[ORDINARY_WORD] = 0xbbbb;
+    let mut writes = EffectiveDmaWriteSet::new(state.ppu.vram.len(), true);
+    writes.vram_words[DESTINATION] = true;
+    writes.vram_words[ORDINARY_WORD] = true;
+    state.active_effective_dma_writes = Some(writes);
+    state.record_effective_presented_dma_for_active_scanout();
+
+    let receipt = state
+        .display_snapshot
+        .as_ref()
+        .unwrap()
+        .effective_presented_dma
+        .as_ref()
+        .unwrap();
+    assert_eq!(receipt.vram_writes, vec![(ORDINARY_WORD, 0xbbbb)]);
+    assert_eq!(
+        receipt.decoded_bg_vram_writes,
+        vec![(DESTINATION, 0xaaaa)]
+    );
+
+    let active = state.display_snapshot.as_deref().unwrap().clone();
+    state.ppu.vram[DESTINATION] = 0x1111;
+    state.compose_effective_presented_vram(&active);
+    state.compose_effective_presented_bg_chr_cache(&active);
+
+    assert_eq!(state.ppu.vram[DESTINATION], 0x1111);
+    assert_eq!(
+        state.ppu.bg_vram_latch.as_ref().unwrap()[DESTINATION],
+        0xaaaa
+    );
+}
+
+#[test]
 fn effective_presented_cgram_uses_the_palette_installed_by_the_leading_nmi() {
     let mut state = ZeldaState::new();
     state.ppu.cgram.fill(0x1111);
@@ -1558,6 +1599,8 @@ fn effective_presented_ppu_registers_use_the_values_installed_by_the_leading_nmi
     state.ppu.bg_layer[1].h_scroll = 0x0456;
     state.ppu.screen_enabled = [0x16, 0x02];
     state.ppu.screen_windowed = [0x04, 0x08];
+    state.ppu.brightness = 0x0f;
+    state.ppu.forced_blank = false;
     state.record_completed_ppu_registers_for_display_boundary();
     state.record_effective_presented_dma_for_active_scanout();
 
@@ -1566,13 +1609,24 @@ fn effective_presented_ppu_registers_use_the_values_installed_by_the_leading_nmi
     state.ppu.bg_layer[1].h_scroll = 0xbbbb;
     state.ppu.screen_enabled = [0xff, 0xff];
     state.ppu.screen_windowed = [0xff, 0xff];
+    state.ppu.brightness = 0;
+    state.ppu.forced_blank = true;
+    state.ppu.forced_blank_scanlines = 10;
+    state.ppu.forced_blank_from_scanline = Some(10);
+    state.ppu.retain_active_display_history = true;
     state.compose_effective_presented_color_math(&active);
     state.compose_effective_presented_bg_scroll(&active);
+    state.compose_effective_presented_inidisp(&active);
 
     assert_eq!(state.ppu.bg_layer[0].h_scroll, 0x0123);
     assert_eq!(state.ppu.bg_layer[1].h_scroll, 0x0456);
     assert_eq!(state.ppu.screen_enabled, [0x16, 0x02]);
     assert_eq!(state.ppu.screen_windowed, [0x04, 0x08]);
+    assert_eq!(state.ppu.brightness, 0x0f);
+    assert!(!state.ppu.forced_blank);
+    assert_eq!(state.ppu.forced_blank_scanlines, 0);
+    assert_eq!(state.ppu.forced_blank_from_scanline, None);
+    assert!(!state.ppu.retain_active_display_history);
 }
 
 #[test]
@@ -1742,7 +1796,8 @@ fn effective_presented_obj_dma_empty_receipt_retains_last_decoded_page() {
     // explicit boundary receipt with no OBJ writes must not synthesize a new
     // decoded cache from either of them.
     state.ppu.vram[0x4000..0x4400].fill(0x3333);
-    state.active_effective_dma_writes = Some(EffectiveDmaWriteSet::new(state.ppu.vram.len()));
+    state.active_effective_dma_writes =
+        Some(EffectiveDmaWriteSet::new(state.ppu.vram.len(), true));
     state.record_effective_presented_dma_for_active_scanout();
 
     let active = state.display_snapshot.as_deref().unwrap().clone();
@@ -1764,13 +1819,13 @@ fn effective_presented_obj_dma_empty_receipt_retains_last_decoded_page() {
 fn effective_presented_obj_dma_merge_keeps_latest_write_per_address() {
     let mut state = ZeldaState::new();
     state.ppu.vram[0x4009] = 0x1111;
-    let mut first_writes = EffectiveDmaWriteSet::new(state.ppu.vram.len());
+    let mut first_writes = EffectiveDmaWriteSet::new(state.ppu.vram.len(), true);
     first_writes.vram_words[0x4009] = true;
     let mut merged = EffectivePresentedDma::from_write_set(first_writes, &state);
 
     state.ppu.vram[0x4009] = 0x3333;
     state.ppu.vram[0x400c] = 0x4444;
-    let mut second_writes = EffectiveDmaWriteSet::new(state.ppu.vram.len());
+    let mut second_writes = EffectiveDmaWriteSet::new(state.ppu.vram.len(), true);
     second_writes.vram_words[0x4009] = true;
     second_writes.vram_words[0x400c] = true;
     let later = EffectivePresentedDma::from_write_set(second_writes, &state);
@@ -1783,7 +1838,7 @@ fn effective_presented_obj_dma_merge_keeps_latest_write_per_address() {
 fn effective_presented_obj_dma_records_same_value_rewrites() {
     let mut state = ZeldaState::new();
     state.ppu.vram[0x4009] = 0x1111;
-    let mut writes = EffectiveDmaWriteSet::new(state.ppu.vram.len());
+    let mut writes = EffectiveDmaWriteSet::new(state.ppu.vram.len(), true);
     writes.vram_words[0x4009] = true;
 
     let receipt = EffectivePresentedDma::from_write_set(writes, &state);
@@ -3405,10 +3460,19 @@ fn dungeon_brightness_retains_the_host_boundary_animated_bg() {
     state.ppu.vram[TILE_WORD] = 0x1111;
     let mut retained = vec![0; 0x200];
     retained[TILE_WORD - DESTINATION] = 0x2222;
-    state.pre_nmi_animated_bg_scanout = Some(PreNmiAnimatedBgScanout {
+    let mut retained_logical_sources = crate::chr_source::VramChrSourceTable::default();
+    retained_logical_sources.record_tile_content_hash(
+        TILE_WORD / 16,
+        crate::chr_source::CHR_KIND_BG_STREAM,
+        0x1122_3344,
+    );
+    let retained_scanout = AnimatedBgScanout {
         destination_address: DESTINATION,
         vram: retained,
-    });
+        logical_sources: retained_logical_sources,
+        preview_sources: crate::chr_source::VramChrSourceTable::default(),
+    };
+    state.pre_nmi_animated_bg_scanout = Some(retained_scanout.clone());
 
     let mut following = captured_display_snapshot();
     write_le_u16(
@@ -3418,6 +3482,7 @@ fn dungeon_brightness_retains_the_host_boundary_animated_bg() {
     );
     following.ppu.vram[TILE_WORD] = 0x3333;
     following.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
+    following.host_boundary_animated_bg_scanout = Some(retained_scanout);
     let plan = DisplayPublicationPlan::resolve(
         &following,
         DisplayPublicationSignals {
@@ -3427,12 +3492,61 @@ fn dungeon_brightness_retains_the_host_boundary_animated_bg() {
     );
 
     state.compose_display_vram(&following, &plan, None);
+    state.compose_display_chr_sources(&following, &plan);
 
     assert_eq!(
         plan.animated_bg_scanout_generation,
         AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
     );
     assert_eq!(state.ppu.vram[TILE_WORD], 0x2222);
+    assert_eq!(
+        state.vram_chr_source.get(TILE_WORD / 16),
+        following
+            .host_boundary_animated_bg_scanout
+            .as_ref()
+            .unwrap()
+            .logical_sources
+            .get(TILE_WORD / 16),
+    );
+}
+
+#[test]
+fn retained_general_vram_still_publishes_the_snapshot_owned_animated_region() {
+    const DESTINATION: usize = 0x3b00;
+    const TILE_WORD: usize = DESTINATION + 0x100;
+    let mut state = ZeldaState::new();
+    state.ppu.vram[TILE_WORD] = 0x1111;
+
+    let mut logical_sources = crate::chr_source::VramChrSourceTable::default();
+    logical_sources.record_tile_content_hash(
+        TILE_WORD / 16,
+        crate::chr_source::CHR_KIND_BG_STREAM,
+        0xaabb_ccdd,
+    );
+    let scanout = AnimatedBgScanout {
+        destination_address: DESTINATION,
+        vram: {
+            let mut words = vec![0; 0x200];
+            words[TILE_WORD - DESTINATION] = 0x2222;
+            words
+        },
+        logical_sources,
+        preview_sources: crate::chr_source::VramChrSourceTable::default(),
+    };
+    let mut following = captured_display_snapshot();
+    following.vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
+    following.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
+    following.host_boundary_animated_bg_scanout = Some(scanout.clone());
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_vram(&following, &plan, None);
+    state.compose_display_chr_sources(&following, &plan);
+
+    assert_eq!(state.ppu.vram[TILE_WORD], 0x2222);
+    assert_eq!(
+        state.vram_chr_source.get(TILE_WORD / 16),
+        scanout.logical_sources.get(TILE_WORD / 16),
+    );
 }
 
 #[test]

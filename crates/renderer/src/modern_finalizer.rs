@@ -354,7 +354,7 @@ impl ModernGpuFinalizer {
             len,
             width,
             scale,
-            u32::from(frame.brightness),
+            u32::from(frame.scanout_brightness()),
             u32::from(frame.math_enabled),
             flags,
             fixed,

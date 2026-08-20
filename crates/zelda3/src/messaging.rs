@@ -532,6 +532,43 @@ impl ZeldaState {
                 && self.overworld_map_state() != 0;
         }
         if !skip_run {
+            if self.rom_startup_timing()
+                && self.game_state.frame.submodule == 2
+                && self.game_state.messaging.runtime.module() == 0
+                && self.pending_dialogue_initialization_schedule.is_none()
+            {
+                // Module0E enters in this measured raster interval. Execute
+                // both endpoints against the live ROM/state: the host only
+                // consumes the result when the interval has one schedule.
+                let earliest = super::dialogue_initialization_cpu_plan(self, (255, 528));
+                let latest = super::dialogue_initialization_cpu_plan(self, (255, 700));
+                assert_eq!(
+                    earliest.schedule_key(),
+                    latest.schedule_key(),
+                    "dialogue CPU schedule varies across the measured Module0E entry interval"
+                );
+                let current_host_owns_first_crossing = !self
+                    .game_execution_scheduler
+                    .current_main_iteration_follows_leading_nmi();
+                let initialization_phase = earliest
+                    .initialization_phase()
+                    .saturating_sub(current_host_owns_first_crossing as u8);
+                self.pending_dialogue_initialization_schedule = Some((
+                    initialization_phase,
+                    earliest.returns_after_scanout_frame_boundary(),
+                ));
+                if std::env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
+                    eprintln!(
+                        "dialogue_cpu_plan host={} earliest={:?} latest={:?} phase={} current_host_crossing={} defer_return={}",
+                        self.frame_ctr_dbg,
+                        earliest.diagnostic(),
+                        latest.diagnostic(),
+                        initialization_phase,
+                        current_host_owns_first_crossing,
+                        earliest.returns_after_scanout_frame_boundary(),
+                    );
+                }
+            }
             self.sprite_main();
             self.link_oam_main();
             if self.game_state.world.location.is_outdoors() {
@@ -3574,13 +3611,20 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_Initialize(&mut self) {
-        let rom_initialization_slices = rom_dialogue_initialization_nmi_slices(
+        let fallback_phase = rom_dialogue_initialization_nmi_slices(
             self.game_state.frame.main_module,
             self.game_state.messaging.runtime.module(),
             self.game_state.ending.attract_scene.sequence(),
         );
-        if self.rom_startup_timing() && rom_initialization_slices != 0 {
-            self.normal_dialogue_initialization_phase = rom_initialization_slices;
+        let (rom_initialization_phase, return_after_scanout_boundary) = self
+            .pending_dialogue_initialization_schedule
+            .take()
+            .unwrap_or((fallback_phase, true));
+        if self.rom_startup_timing() && rom_initialization_phase != 0 {
+            self.normal_dialogue_initialization_phase = rom_initialization_phase;
+            self.normal_dialogue_initialization_entry_phase = rom_initialization_phase;
+            self.normal_dialogue_initialization_return_after_scanout_boundary =
+                return_after_scanout_boundary;
             // This slice and every held one until the completion slice keep
             // the host-boundary OAM shadow on screen (see the staging fn).
             self.stage_dialogue_initialization_obj_scanout();

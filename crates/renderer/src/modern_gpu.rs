@@ -1304,7 +1304,7 @@ fn bg_effect_packet_complex_reject_reason(
     effect: &crate::modern_variant_atlas::TileEffect,
     allow_color_math: bool,
 ) -> Option<MixedOverlayComplexRejectReason> {
-    if frame.brightness != 15 {
+    if frame.scanout_brightness() != 15 {
         return Some(MixedOverlayComplexRejectReason::Brightness);
     }
     let Ok(layer) = u8::try_from(packet.layer_index) else {
@@ -1514,7 +1514,7 @@ fn can_render_final_index_base_gpu(frame: &ModernFrame, bg_cells: &[ModernIndexT
         // The direct-index pass bakes palette colors before it rasterizes.
         // Master brightness must instead be resolved after final color math,
         // so fades always use the common GPU screen-builder/finalizer path.
-        || frame.brightness != 15
+        || frame.scanout_brightness() != 15
         || !frame_uses_direct_final_index_math(frame)
         || frame.windowsel != 0
         || frame.screen_windowed_main != 0
@@ -1597,18 +1597,20 @@ fn finalize_snes_5bit_channel(channel: u8, brightness: u8) -> u8 {
 }
 
 fn finalize_modern_frame_colors_for_direct_index(frame: &mut ModernFrame) {
+    let scanout_brightness = frame.scanout_brightness();
     for color in &mut frame.cgram_rgba {
-        color[0] = finalize_snes_5bit_channel(color[0], frame.brightness);
-        color[1] = finalize_snes_5bit_channel(color[1], frame.brightness);
-        color[2] = finalize_snes_5bit_channel(color[2], frame.brightness);
+        color[0] = finalize_snes_5bit_channel(color[0], scanout_brightness);
+        color[1] = finalize_snes_5bit_channel(color[1], scanout_brightness);
+        color[2] = finalize_snes_5bit_channel(color[2], scanout_brightness);
     }
     frame.backdrop_color_rgba[0] =
-        finalize_snes_5bit_channel(frame.backdrop_color_rgba[0], frame.brightness);
+        finalize_snes_5bit_channel(frame.backdrop_color_rgba[0], scanout_brightness);
     frame.backdrop_color_rgba[1] =
-        finalize_snes_5bit_channel(frame.backdrop_color_rgba[1], frame.brightness);
+        finalize_snes_5bit_channel(frame.backdrop_color_rgba[1], scanout_brightness);
     frame.backdrop_color_rgba[2] =
-        finalize_snes_5bit_channel(frame.backdrop_color_rgba[2], frame.brightness);
+        finalize_snes_5bit_channel(frame.backdrop_color_rgba[2], scanout_brightness);
     frame.brightness = 15;
+    frame.mode7_scanout_brightness_override = None;
 }
 
 fn bg_effect_matches_live_cgram(
@@ -1765,7 +1767,7 @@ fn bg_packet_needs_prefinal_color_math(
 }
 
 fn frame_needs_material_sprite_prefinal_finalizer(frame: &ModernFrame) -> bool {
-    if frame.brightness != 15 || frame.clip_mode != 0 {
+    if frame.scanout_brightness() != 15 || frame.clip_mode != 0 {
         return true;
     }
     if frame.math_enabled == 0 {
@@ -2353,7 +2355,7 @@ fn bg_stable_packet_reject(
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     entry: &crate::modern_variant_atlas::VariantAtlasEntry,
 ) -> Option<MixedOverlayComplexRejectReason> {
-    if frame.brightness != 15 {
+    if frame.scanout_brightness() != 15 {
         return Some(MixedOverlayComplexRejectReason::Brightness);
     }
     let layer = u8::try_from(packet.layer_index)
@@ -3421,7 +3423,10 @@ fn build_live_effect_lut(
     });
     let mut lut_bytes = Vec::with_capacity(16 * EFFECT_LUT_WIDTH as usize * 4);
     for color in &frame.cgram_rgba {
-        lut_bytes.extend_from_slice(&final_live_cgram_rgba(*color, frame.brightness));
+        lut_bytes.extend_from_slice(&final_live_cgram_rgba(
+            *color,
+            frame.scanout_brightness(),
+        ));
     }
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
@@ -12624,6 +12629,7 @@ mod tests {
             hardware_startup_transient: None,
             vram,
             obj_vram: None,
+            bg_vram: None,
             cgram,
             oam,
             mode: 1,

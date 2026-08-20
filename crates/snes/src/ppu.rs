@@ -149,6 +149,11 @@ pub struct PpuState {
     pub obj_buffer: PpuPixelPrioBufs,
     pub obj_fetch_buffer: PpuPixelPrioBufs,
     pub obj_fetch_has_sprites: bool,
+    /// Optional decoded BG-CHR generation. Emulator tile caches can observe a
+    /// completed VRAM DMA while the raw VRAM image retained for the scanout is
+    /// still the preceding generation.
+    #[serde(default)]
+    pub bg_vram_latch: Option<Vec<u16>>,
     pub obj_vram_latch: Option<Vec<u16>>,
     pub obj_previous_frame_vram: Option<Vec<u16>>,
     pub vram: Vec<u16>, // 0x8000
@@ -291,6 +296,7 @@ impl Default for PpuState {
             obj_buffer: PpuPixelPrioBufs::default(),
             obj_fetch_buffer: PpuPixelPrioBufs::default(),
             obj_fetch_has_sprites: false,
+            bg_vram_latch: None,
             obj_vram_latch: None,
             obj_previous_frame_vram: None,
             vram: vec![0; 0x8000],
@@ -323,6 +329,7 @@ impl PpuState {
             *v = 0;
         }
         self.obj_fetch_has_sprites = false;
+        self.bg_vram_latch = None;
         self.obj_vram_latch = None;
         self.obj_previous_frame_vram = None;
         self.last_brightness_mult = 0xff;
@@ -710,10 +717,15 @@ impl PpuState {
 
     /// Refresh the INIDISP lookup table used by every scanout consumer.
     pub fn refresh_brightness_cache(&mut self) {
-        if self.brightness == self.last_brightness_mult {
+        // The override name is historical: publication can retain the active
+        // field's master brightness after the final PPU register has advanced,
+        // and both Mode 7 and ordinary scanout must consume that generation.
+        let brightness = self
+            .mode7_scanout_brightness_override
+            .unwrap_or(self.brightness);
+        if brightness == self.last_brightness_mult {
             return;
         }
-        let brightness = self.brightness;
         self.last_brightness_mult = brightness;
         for i in 0..32 {
             // INIDISP is a linear 0..15 master level: zero is black and 15 is
@@ -1013,8 +1025,9 @@ impl PpuState {
                     .wrapping_add((tile & 0x03ff).wrapping_mul(16))
                     .wrapping_add(tile_y)
                     & 0x7fff;
-                let bits = self.vram[tile_addr as usize] as u32
-                    | ((self.vram[tile_addr.wrapping_add(8) as usize & 0x7fff] as u32) << 16);
+                let bg_vram = self.bg_vram_latch.as_deref().unwrap_or(&self.vram);
+                let bits = bg_vram[tile_addr as usize] as u32
+                    | ((bg_vram[tile_addr.wrapping_add(8) as usize & 0x7fff] as u32) << 16);
                 if bits == 0 {
                     continue;
                 }
@@ -1060,7 +1073,10 @@ impl PpuState {
                     .wrapping_add((tile & 0x03ff).wrapping_mul(8))
                     .wrapping_add(tile_y)
                     & 0x7fff;
-                let bits = self.vram[tile_addr as usize];
+                let bits = self
+                    .bg_vram_latch
+                    .as_deref()
+                    .unwrap_or(&self.vram)[tile_addr as usize];
                 if bits == 0 {
                     continue;
                 }
@@ -1113,8 +1129,9 @@ impl PpuState {
                     .wrapping_add((tile & 0x03ff).wrapping_mul(16))
                     .wrapping_add(tile_y)
                     & 0x7fff;
-                let mut bits = self.vram[tile_addr as usize] as u32
-                    | ((self.vram[tile_addr.wrapping_add(8) as usize & 0x7fff] as u32) << 16);
+                let bg_vram = self.bg_vram_latch.as_deref().unwrap_or(&self.vram);
+                let mut bits = bg_vram[tile_addr as usize] as u32
+                    | ((bg_vram[tile_addr.wrapping_add(8) as usize & 0x7fff] as u32) << 16);
                 let x_in_tile = sx & 7;
                 let pixel = if tile & 0x4000 != 0 {
                     bits >>= x_in_tile;
@@ -1178,7 +1195,11 @@ impl PpuState {
                     .wrapping_add((tile & 0x03ff).wrapping_mul(8))
                     .wrapping_add(tile_y)
                     & 0x7fff;
-                let mut bits = self.vram[tile_addr as usize] as u32;
+                let mut bits = self
+                    .bg_vram_latch
+                    .as_deref()
+                    .unwrap_or(&self.vram)[tile_addr as usize]
+                    as u32;
                 let x_in_tile = sx & 7;
                 let pixel = if tile & 0x4000 != 0 {
                     bits >>= x_in_tile;
@@ -2397,7 +2418,9 @@ impl PpuState {
             return;
         }
 
-        if self.render_flags.contains(PpuRenderFlags::NEW_RENDERER) && self.forced_blank {
+        let forced_blank_for_line = self.forced_blank_on_line(line_index);
+
+        if self.render_flags.contains(PpuRenderFlags::NEW_RENDERER) && forced_blank_for_line {
             self.clear_backdrop();
             self.line_has_sprites = false;
             self.obj_fetch_buffer.data.fill(0x0500);
@@ -2417,7 +2440,9 @@ impl PpuState {
             self.obj_fetch_has_sprites = false;
         } else {
             self.clear_backdrop();
-            if self.forced_blank {
+            let final_forced_blank = self.forced_blank;
+            self.forced_blank = forced_blank_for_line;
+            if forced_blank_for_line {
                 self.line_has_sprites = false;
             } else {
                 let (has_sprites, buffer) = self.sprite_buffer_for_line(line);
@@ -2430,6 +2455,7 @@ impl PpuState {
             for x in 0..256 {
                 self.handle_pixel_old(x, line);
             }
+            self.forced_blank = final_forced_blank;
             if self.extra_left_right != 0 {
                 let row_start = line_index.saturating_mul(self.render_pitch as usize);
                 let Some(buffer) = self.render_buffer.as_mut() else {
@@ -2446,11 +2472,41 @@ impl PpuState {
             }
         }
     }
+
+    fn forced_blank_on_line(&self, line_index: usize) -> bool {
+        self.forced_blank
+            && self
+                .forced_blank_from_scanline
+                .is_none_or(|start| line_index >= usize::from(start))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn active_display_force_blank_starts_at_its_owned_scanline() {
+        let mut ppu = PpuState::new();
+        ppu.forced_blank = true;
+        ppu.forced_blank_from_scanline = Some(17);
+
+        for line_index in 0..17 {
+            assert!(!ppu.forced_blank_on_line(line_index));
+        }
+        assert!(ppu.forced_blank_on_line(17));
+    }
+
+    #[test]
+    fn scanout_brightness_override_keeps_the_active_register_generation() {
+        let mut ppu = PpuState::new();
+        ppu.brightness = 0;
+        ppu.mode7_scanout_brightness_override = Some(15);
+        ppu.refresh_brightness_cache();
+
+        assert_eq!(ppu.last_brightness_mult, 15);
+        assert_eq!(ppu.brightness_mult[31], 255);
+    }
 
     #[test]
     fn window_edges_start_as_snes9x_empty_intervals() {

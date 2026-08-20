@@ -44,6 +44,9 @@ pub struct GpuFrame<'a> {
     /// advance for sprite fetches while BG and raw VRAM scanout remain on the
     /// published generation.
     pub obj_vram: Option<&'a [u16]>,
+    /// Optional BG-CHR decoded generation. Tilemap words still come from
+    /// `vram`; only pattern fetches use this cache image.
+    pub bg_vram: Option<&'a [u16]>,
     /// CGRAM: 0x100 u16 words (256 palette entries), 15-bit BGR each.
     pub cgram: &'a [u16],
     /// OAM: 0x110 u16 words (sprite table, 128 sprites × 4 bytes + 16-byte high table).
@@ -187,6 +190,7 @@ pub struct GpuFrameCaptureInput<'a> {
     pub hardware_startup_transient: Option<HardwareStartupTransient>,
     pub registers: GpuFrameRegisterSnapshot<'a>,
     pub obj_vram: Option<&'a [u16]>,
+    pub bg_vram: Option<&'a [u16]>,
     pub cgram: &'a [u16],
     pub raw_scanlines: &'a RawScanlineFrame,
     pub bg3_source_tiles: &'a [GpuBg3SourceTile],
@@ -257,6 +261,7 @@ impl<'a> GpuFrame<'a> {
             hardware_startup_transient: input.hardware_startup_transient,
             vram: registers.vram,
             obj_vram: input.obj_vram,
+            bg_vram: input.bg_vram,
             cgram: input.cgram,
             oam: registers.oam,
             mode: registers.mode,
@@ -330,6 +335,7 @@ impl<'a> GpuFrame<'a> {
             hardware_startup_transient: None,
             vram: source.vram(),
             obj_vram: None,
+            bg_vram: None,
             cgram,
             oam: source.oam(),
             mode: source.mode(),
@@ -798,6 +804,7 @@ mod tests {
             hardware_startup_transient: None,
             registers,
             obj_vram: None,
+            bg_vram: None,
             cgram: &cgram,
             raw_scanlines: &raw,
             bg3_source_tiles: &[],

@@ -155,3 +155,20 @@ fn published_nmi_active_display_overrun_is_repeatable_and_advances_live_state() 
     assert_eq!(state.nmi_forced_blank_scanlines_pending, 0);
     assert_eq!(state.ppu.forced_blank_scanlines, 0);
 }
+
+#[test]
+fn active_display_force_blank_edge_is_not_replayed_in_the_following_field() {
+    let mut state = ZeldaState::new();
+    state.ppu.forced_blank = true;
+    state.ppu.forced_blank_from_scanline = Some(1);
+    state.ppu.retain_active_display_history = true;
+
+    state.capture_display_snapshot();
+
+    let following = state.display_snapshot.as_deref().unwrap();
+    assert!(following.ppu.forced_blank);
+    assert_eq!(following.ppu.forced_blank_from_scanline, None);
+    assert!(!following.ppu.retain_active_display_history);
+    assert_eq!(state.ppu.forced_blank_from_scanline, Some(1));
+    assert!(state.ppu.retain_active_display_history);
+}

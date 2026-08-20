@@ -10234,15 +10234,17 @@ impl ZeldaState {
             let schedule = dungeon_room_load_cpu_schedule(self);
             if std::env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                 eprintln!(
-                    "dungeon_room_load_cpu_schedule host={} room={:04x} room_load_nmis={} auxiliary_graphics_nmis={} caller_nmis={} sprite_main_nmis={} suffix_nmis={} boundary={:?}",
+                    "dungeon_room_load_cpu_schedule host={} room={:04x} room_load_nmis={} auxiliary_graphics_nmis={} caller_nmis={} prefix_nmis={} sprite_main_nmis={} suffix_nmis={} boundary={:?} cached_boundary={:?}",
                     self.frame_ctr_dbg,
                     self.game_state.world.location.dungeon_room_index(),
                     schedule.room_load_nmis,
                     schedule.auxiliary_graphics_nmis,
                     schedule.caller_nmis,
+                    schedule.caller_prefix_nmis,
                     schedule.caller_sprite_main_nmis,
                     schedule.caller_suffix_nmis,
                     schedule.sprite_main_boundary,
+                    schedule.cached_sprite_interruption,
                 );
             }
             self.dungeon_room_load_cpu_schedule = Some(schedule);
@@ -10343,11 +10345,19 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module07_02_01_after_auxiliary_sprite_graphics(&mut self) {
+        self.complete_module07_02_01_before_dungeon_reset_sprites();
+        self.complete_module07_02_01_from_dungeon_reset_sprites();
+    }
+
+    pub(super) fn complete_module07_02_01_before_dungeon_reset_sprites(&mut self) {
         self.increment_subsubmodule();
         self.set_overworld_map_state(0);
         let dungeon_room_index = self.game_state.world.location.dungeon_room_index();
         self.dungeon_room_tracking_mut()
             .set_room_index2(dungeon_room_index);
+    }
+
+    pub(super) fn complete_module07_02_01_from_dungeon_reset_sprites(&mut self) {
         self.dungeon_reset_sprites();
         if !self.game_state.dungeon.torch.dungeon_dark_with_lantern() {
             self.MirrorBg1Bg2Offs();
@@ -11931,6 +11941,9 @@ impl ZeldaState {
 
     pub(super) fn Module07_0F_LandingWipe(&mut self) {
         let cpu_advance = self.take_dungeon_landing_cpu_advance();
+        if self.game_state.frame.subsubmodule == 0 {
+            self.reset_dungeon_landing_spotlight_host_cadence();
+        }
         match self.game_state.frame.subsubmodule {
             0 => self.Module07_0F_00_InitSpotlight(),
             1 => self.Module07_0F_01_OperateSpotlight(),
@@ -11946,17 +11959,33 @@ impl ZeldaState {
             );
             match advance.phase {
                 DungeonModuleCpuPhase::InterruptedInSubmodule => {
-                    assert_eq!(
-                        advance.resumed_phase,
-                        Some(DungeonModuleCpuPhase::CompleteBeforeNmi),
-                        "landing-wipe submodule did not return before the following NMI",
+                    assert_ne!(
+                        advance.submodule_nmi_slices, 0,
+                        "interrupted landing-wipe submodule must cross an NMI",
                     );
-                    self.game_execution_scheduler.schedule_work(
-                        GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
-                        1,
-                    );
+                    // The ROM is still inside the indirect submodule call, so
+                    // Main_PrepSpritesForNmi has not reached its final
+                    // nmi_boolean = 0 store. Preserve that caller-owned latch:
+                    // the interrupt publishes PPU registers but skips the
+                    // NMI_DoUpdates DMA body.
+                    self.latch_nmi_update();
+                    if self.dungeon_landing_spotlight_returns_on_later_host() {
+                        self.game_execution_scheduler
+                            .schedule_cpu_timed_work_returning_on_later_host(
+                            GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+                            advance.submodule_nmi_slices,
+                            );
+                    } else {
+                        self.game_execution_scheduler
+                            .schedule_cpu_timed_work_before_trailing_nmi(
+                                GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+                                advance.submodule_nmi_slices,
+                            );
+                    }
                 }
-                DungeonModuleCpuPhase::CompleteBeforeNmi => {}
+                DungeonModuleCpuPhase::CompleteBeforeNmi => {
+                    debug_assert_eq!(advance.submodule_nmi_slices, 0);
+                }
                 phase => {
                     panic!("landing-wipe CPU continuation reached unsupported phase {phase:?}")
                 }
@@ -12663,10 +12692,12 @@ fn replay_room_write_trace_enabled() -> bool {
 impl ZeldaState {
     pub(super) fn module_pre_dungeon(&mut self) {
         self.module_pre_dungeon_audio_prefix();
+        self.module_pre_dungeon_entrance_prefix();
         if self.begin_pre_dungeon_entrance_load_work() {
             return;
         }
-        self.module_pre_dungeon_after_audio_prefix();
+        self.complete_module_pre_dungeon_before_return_suffix();
+        self.complete_module_pre_dungeon_entrance_load();
     }
 
     pub(super) fn module_pre_dungeon_audio_prefix(&mut self) {
@@ -12674,24 +12705,10 @@ impl ZeldaState {
         self.set_sound_effect_1(0);
     }
 
-    pub(super) fn module_pre_dungeon_after_audio_prefix(&mut self) {
-        self.module_pre_dungeon_after_audio_prefix_with_song_bank_timing(true);
-    }
-
-    pub(super) fn complete_module_pre_dungeon_after_selected_game_load(&mut self) {
-        // The selected-game continuation already spans the complete load,
-        // including LoadSongBank. Reuse the semantic state mutations without
-        // scheduling the ordinary module-6 song-bank continuation twice.
-        self.module_pre_dungeon_after_audio_prefix_with_song_bank_timing(false);
-    }
-
-    fn module_pre_dungeon_after_audio_prefix_with_song_bank_timing(
-        &mut self,
-        defer_song_bank: bool,
-    ) {
-        // The selected-game-load entry slice may have already run this room-load at
-        // the ROM's frame (bug class 5); if so, skip it here so it runs exactly once
-        // while the room draw below still happens at the completion boundary.
+    fn module_pre_dungeon_entrance_prefix(&mut self) {
+        // Module_PreDungeon commits the entrance selection and Link placement
+        // before Dungeon_LoadAndDrawRoom enters its interruptible construction
+        // stack. Keep those visible mutations on the initiating host call.
         if !std::mem::take(&mut self.selected_game_load_room_preloaded) {
             self.set_dungeon_room(0);
             self.dungeon_room_tracking_mut()
@@ -12707,6 +12724,22 @@ impl ZeldaState {
         self.hud_rebuild();
         self.dungeon_torch_mut().clear_lit_torches();
         self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
+    }
+
+    pub(super) fn complete_module_pre_dungeon_entrance_load(&mut self) {
+        self.module_pre_dungeon_after_sprite_reset_with_song_bank_timing(true);
+    }
+
+    pub(super) fn complete_module_pre_dungeon_after_selected_game_load(&mut self) {
+        // The selected-game continuation already spans the complete load,
+        // including LoadSongBank. Reuse the semantic state mutations without
+        // scheduling the ordinary module-6 song-bank continuation twice.
+        self.module_pre_dungeon_entrance_prefix();
+        self.complete_module_pre_dungeon_before_return_suffix();
+        self.module_pre_dungeon_after_sprite_reset_with_song_bank_timing(false);
+    }
+
+    pub(super) fn complete_module_pre_dungeon_before_return_suffix(&mut self) {
         self.Dungeon_LoadAndDrawRoom();
         self.Dungeon_LoadCustomTileAttr();
 
@@ -12770,6 +12803,12 @@ impl ZeldaState {
         self.set_bg_mode(9);
         self.follower_initialize();
         self.sprite_reset_all();
+    }
+
+    fn module_pre_dungeon_after_sprite_reset_with_song_bank_timing(
+        &mut self,
+        defer_song_bank: bool,
+    ) {
         self.dungeon_reset_sprites();
         self.messaging_state_mut()
             .clear_message_or_sprite_state_cache();
@@ -12916,6 +12955,10 @@ impl ZeldaState {
             return;
         }
         self.complete_module07_dungeon_after_submodule();
+        self.complete_module07_dungeon_after_submodule_caller();
+    }
+
+    pub(super) fn complete_module07_dungeon_after_submodule_caller(&mut self) {
         if std::mem::take(&mut self.dungeon_nmi_prepare_sprites_return_pending) {
             debug_assert!(self.game_execution_scheduler.is_idle());
             self.game_execution_scheduler.schedule_work(

@@ -2445,12 +2445,48 @@ impl ZeldaState {
     }
 
     pub(super) fn Spotlight_ConfigureTableAndControl(&mut self) {
+        let caller_interrupted = self.spotlight_configure_table_and_control(false);
+        debug_assert!(!caller_interrupted);
+    }
+
+    fn spotlight_configure_table_and_control(
+        &mut self,
+        interrupt_module0f_goal_caller: bool,
+    ) -> bool {
+        let entry_main_module = self.game_state.frame.main_module;
         self.IrisSpotlight_ConfigureTable();
+        self.complete_spotlight_configure_table_and_control_after_table(
+            entry_main_module,
+            interrupt_module0f_goal_caller,
+        )
+    }
+
+    fn complete_spotlight_configure_table_and_control_after_table(
+        &mut self,
+        entry_main_module: u8,
+        interrupt_module0f_goal_caller: bool,
+    ) -> bool {
         self.deactivate_nmi_thread();
         self.clear_pending_polyhedral_update();
         if self.game_state.frame.submodule != 0 {
-            return;
+            return false;
         }
+        if interrupt_module0f_goal_caller
+            && self.rom_startup_timing()
+            && entry_main_module == 15
+            && self.game_state.frame.main_module == 6
+        {
+            // IrisSpotlight_ConfigureTable has completed its goal transition,
+            // including INIDISP_copy = 0x80. The ROM is interrupted before
+            // Spotlight_ConfigureTableAndControl restores Link's coordinate
+            // or enters OpenSpotlight_Next2, so retain that exact caller stack.
+            return true;
+        }
+        self.complete_spotlight_configure_table_and_control_caller();
+        false
+    }
+
+    fn complete_spotlight_configure_table_and_control_caller(&mut self) {
         if self.game_state.frame.main_module == 6 {
             self.follower_link_state_mut()
                 .restore_y_from_overworld_exit();
@@ -2547,12 +2583,28 @@ impl ZeldaState {
             }
             self.Dungeon_PrepExitWithSpotlight_table_and_advance();
         } else {
-            self.Spotlight_ConfigureTableAndControl();
+            if self.begin_dungeon_exit_spotlight_build(
+                SpotlightIteration::closing(phase),
+                vertical_center,
+            ) {
+                return;
+            }
+            if self.spotlight_configure_table_and_control(true) {
+                self.schedule_dungeon_exit_spotlight_goal_caller(
+                    SpotlightIteration::closing(phase),
+                );
+                return;
+            }
         }
         self.module0f_spotlight_close_link_suffix(phase);
     }
 
     pub(super) fn module0f_spotlight_close_link_suffix(&mut self, phase: SpotlightIterationPhase) {
+        self.module0f_spotlight_close_link_and_oam();
+        self.schedule_spotlight_iteration_return(SpotlightIteration::closing(phase));
+    }
+
+    fn module0f_spotlight_close_link_and_oam(&mut self) {
         if self.game_state.world.location.is_outdoors() {
             if self.game_state.world.location.overworld_screen_index() == 0x0f {
                 self.follower_link_state_mut()
@@ -2577,10 +2629,12 @@ impl ZeldaState {
             .set_direction_and_last_direction(dir);
         self.link_handle_moving_animation_full_long_entry();
         self.link_oam_main();
-        self.schedule_spotlight_iteration_return(SpotlightIteration::closing(phase));
     }
 
-    pub(super) fn complete_dungeon_exit_spotlight_entry(&mut self) {
+    pub(super) fn complete_dungeon_exit_spotlight_entry(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+    ) {
         let vertical_center = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
@@ -2590,8 +2644,40 @@ impl ZeldaState {
             self.game_state.display.spotlight_hdma.window_radius(),
             vertical_center,
         );
-        self.Dungeon_PrepExitWithSpotlight_table_and_advance();
-        self.module0f_spotlight_close_link_suffix(phase);
+        self.complete_iris_spotlight_configure_table(table_build);
+        self.spotlight_internal_after_table_during_active_field();
+        self.increment_submodule();
+        self.module0f_spotlight_close_link_and_oam();
+        if phase == SpotlightIterationPhase::CloseEntryBeforeTablePublication {
+            self.schedule_spotlight_iteration_return(SpotlightIteration::closing(phase));
+        }
+    }
+
+    pub(super) fn complete_dungeon_exit_spotlight_build(&mut self, _iteration: SpotlightIteration) {
+        self.complete_iris_spotlight_configure_table_after_projection();
+        let caller_interrupted = self.complete_spotlight_configure_table_and_control_after_table(
+            self.game_state.frame.main_module,
+            false,
+        );
+        debug_assert!(!caller_interrupted);
+        self.module0f_spotlight_close_link_and_oam();
+        // On the short outdoor close, the resumed C table suffix returns
+        // through Module0F and Main_PrepSpritesForNmi in this same CPU slice.
+        // A separate return-only host would make every later circle one field
+        // late and split the radius/prep writes which the ROM performs together.
+        self.nmi_prepare_sprites();
+        self.clear_nmi_update_latch();
+    }
+
+    pub(super) fn complete_dungeon_exit_spotlight_goal_caller(&mut self) {
+        self.complete_spotlight_configure_table_and_control_caller();
+        self.module0f_spotlight_close_link_and_oam();
+        // This continuation resumes the suspended ZeldaRunGameLoop stack.
+        // The C caller does not return directly to the host after Module0F:
+        // it still packs/sorts the completed sprite shadow before clearing the
+        // NMI latch. That full shadow is the operand of the following OAM DMA.
+        self.nmi_prepare_sprites();
+        self.clear_nmi_update_latch();
     }
 
     pub(super) fn Dungeon_PrepExitWithSpotlight(&mut self) {
