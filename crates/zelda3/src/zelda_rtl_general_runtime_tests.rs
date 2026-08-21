@@ -5000,39 +5000,29 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         0x70, 36
     ));
     // Maximal 239-row table (Link's-house entrance, vertical center 238): the
-    // $70 build still crosses vblank, and the module-15 entry build spans an
-    // extra host frame regardless of where its caller returned.
+    // $70 build still crosses vblank.
     assert!(rom_dungeon_exit_spotlight_table_needs_entry_slice(
         0x70, 238
     ));
     assert!(!rom_dungeon_exit_spotlight_table_needs_entry_slice(
         0x69, 238
     ));
-    assert!(rom_dungeon_exit_spotlight_entry_build_crosses_vblank(
-        238, false
-    ));
-    assert!(!rom_dungeon_exit_spotlight_entry_build_crosses_vblank(
-        36, false
-    ));
-    // Overworld_UseEntrance returns to the main wait before module 15. Its
-    // first iris build therefore starts after NMI and crosses the next vblank
-    // even at the castle entrance's shorter table (Snes9x $02:9982 V=255,
-    // $00:f28b in the following field).
-    assert!(rom_dungeon_exit_spotlight_entry_build_crosses_vblank(
-        106, true
-    ));
-    assert!(rom_short_outdoor_spotlight_build_crosses_vblank(
-        0x62, 106, true
-    ));
-    assert!(!rom_short_outdoor_spotlight_build_crosses_vblank(
-        0x5b, 106, true
-    ));
-    assert!(!rom_short_outdoor_spotlight_build_crosses_vblank(
-        0x77, 36, false
-    ));
-    assert!(!rom_short_outdoor_spotlight_build_crosses_vblank(
-        0x77, 238, true
-    ));
+    let cpu_plan = |interrupted_pc| DungeonExitSpotlightCpuPlan {
+        interrupted_pc,
+        interrupted_return_address: 0,
+        iterations_before_nmi: 0,
+        returned_to_main_wait_before_first_nmi: false,
+        main_loop_sprite_preparation_completed_before_second_nmi: false,
+        active_window_words: [0; SPOTLIGHT_VISIBLE_SCANLINES],
+        following_window_words: [0; SPOTLIGHT_VISIBLE_SCANLINES],
+        next_entry_earliest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST),
+        next_entry_latest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST),
+    };
+    assert!(cpu_plan(0x00_f38d).interrupted_during_table_build_or_copy());
+    assert!(!cpu_plan(0x00_f38d).interrupted_during_table_copy());
+    assert!(cpu_plan(0x00_f3be).interrupted_during_table_build_or_copy());
+    assert!(cpu_plan(0x00_f3be).interrupted_during_table_copy());
+    assert!(!cpu_plan(0x00_f3c5).interrupted_during_table_build_or_copy());
     // Long-table centers (189-row dungeon landing / 239-row house exit)
     // merge the $3f->$38 crossing; the castle-entry close's smaller table
     // keeps the split return (oracle rad@11461, prep@11462).
@@ -5229,7 +5219,19 @@ fn interrupted_dungeon_exit_spotlight_publishes_the_rom_prefix_before_waiting() 
         state.set_spotlight_hdma_table_dynamic_entry(row, 0x00ff);
     }
 
-    assert!(state.begin_dungeon_exit_spotlight_entry(106));
+    assert!(state.begin_dungeon_exit_spotlight_entry(Some(
+        DungeonExitSpotlightCpuPlan {
+            interrupted_pc: 0x00_f38d,
+            interrupted_return_address: 0,
+            iterations_before_nmi: 19,
+            returned_to_main_wait_before_first_nmi: false,
+            main_loop_sprite_preparation_completed_before_second_nmi: false,
+            active_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
+            following_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
+            next_entry_earliest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST),
+            next_entry_latest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST),
+        }
+    )));
 
     assert_eq!(state.game_state.display.bg12_window_selection, 0x33);
     assert_eq!(state.game_state.display.bg34_window_selection, 0x03);
@@ -5253,7 +5255,7 @@ fn interrupted_dungeon_exit_spotlight_publishes_the_rom_prefix_before_waiting() 
 }
 
 #[test]
-fn short_dungeon_exit_build_projects_before_its_interrupted_suffix() {
+fn interrupted_dungeon_exit_copy_retains_the_c_suffix() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
     state.set_indoor_flag(0);
@@ -5268,11 +5270,23 @@ fn short_dungeon_exit_build_projects_before_its_interrupted_suffix() {
     let iteration = SpotlightIteration::closing(
         SpotlightIterationPhase::WholeTableAfterTablePublication,
     );
+    assert!(state.begin_dungeon_exit_spotlight_copy(
+        Some(DungeonExitSpotlightCpuPlan {
+            interrupted_pc: 0x00_f3be,
+            interrupted_return_address: 0,
+            iterations_before_nmi: usize::MAX,
+            returned_to_main_wait_before_first_nmi: false,
+            main_loop_sprite_preparation_completed_before_second_nmi: true,
+            active_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
+            following_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
+            next_entry_earliest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST),
+            next_entry_latest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST),
+        }),
+        iteration,
+    ));
 
-    assert!(state.begin_dungeon_exit_spotlight_build(iteration, 105));
-
-    // The C loop and memcpy precede the interrupt. Its radius write and caller
-    // suffix remain deferred, but both HDMA tables already own the new circle.
+    // The C builder and copy have completed, but the radius write and Module0F
+    // Link/OAM suffix remain on the interrupted call stack.
     assert_ne!(state.spotlight_hdma_table_dynamic_entry(0), 0x00ff);
     assert_eq!(
         read_le_u16(&state.ram, RESERVED_HDMA_TABLE),
@@ -5285,6 +5299,58 @@ fn short_dungeon_exit_build_projects_before_its_interrupted_suffix() {
             iteration: pending,
         }) if pending == iteration
     ));
+
+    // Model the long-close path which already returned through the C main-loop
+    // sprite preparation before this scheduled publication continuation.
+    state.nmi_prepare_sprites_for_main_loop();
+    write_le_u16(&mut state.ram, LINK_DMA_COUNTDOWN, 9);
+    state.set_bg_tile_animation_countdown(7);
+    state.complete_dungeon_exit_spotlight_build(iteration);
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 0x69);
+    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 9);
+    assert_eq!(state.game_state.display.bg_tile_animation_countdown, 7);
+}
+
+#[test]
+fn interrupted_dungeon_exit_copy_runs_the_unfinished_c_main_loop_sprite_prep() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_indoor_flag(0);
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.follower_link_state_mut().set_y(93);
+    state.set_spotlight_window_radius(0x70);
+    state.set_spotlight_window_state(0);
+    write_le_u16(&mut state.ram, LINK_DMA_COUNTDOWN, 9);
+    state.set_bg_tile_animation_countdown(7);
+
+    state.complete_dungeon_exit_spotlight_build(SpotlightIteration::closing(
+        SpotlightIterationPhase::WholeTableAfterTablePublication,
+    ));
+
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 0x69);
+    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 8);
+    assert_eq!(state.game_state.display.bg_tile_animation_countdown, 6);
+}
+
+#[test]
+fn rom_spotlight_following_field_uses_the_next_unowned_publication_slot() {
+    let active = [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES];
+    let mut following = active;
+    following[221] = 0xe818;
+
+    assert_eq!(
+        spotlight_following_field_publication(&active, &following, false),
+        SpotlightFollowingFieldPublication::WithCompletionCapture,
+    );
+    assert_eq!(
+        spotlight_following_field_publication(&active, &following, true),
+        SpotlightFollowingFieldPublication::AfterCompletionCapture,
+    );
+    assert_eq!(
+        spotlight_following_field_publication(&active, &active, false),
+        SpotlightFollowingFieldPublication::AfterCompletionCapture,
+    );
 }
 
 #[test]

@@ -2563,19 +2563,81 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {
+        let cpu_plan = if self.rom_startup_timing() {
+            let (entry_earliest, entry_latest) = if self.game_state.frame.submodule == 0 {
+                (
+                    DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST,
+                    DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST,
+                )
+            } else {
+                self.dungeon_exit_spotlight_cpu_entry_envelope
+                    .expect("recurring Module0F entry requires the preceding ROM CPU raster")
+            };
+            let plan = dungeon_exit_spotlight_cpu_plan(self, entry_earliest, entry_latest);
+            self.dungeon_exit_spotlight_main_loop_prep_before_second_nmi = plan
+                .is_some_and(|plan| {
+                    plan.main_loop_sprite_preparation_completed_before_second_nmi
+                });
+            self.dungeon_exit_spotlight_cpu_entry_envelope = plan.and_then(|plan| {
+                plan.next_entry_earliest.zip(plan.next_entry_latest)
+            });
+            plan
+        } else {
+            None
+        };
         let vertical_center = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
         );
-        let phase = SpotlightIterationPhase::for_close_iteration(
-            self.game_state.frame.submodule,
-            self.game_state.display.spotlight_hdma.window_radius(),
-            vertical_center,
+        let phase = cpu_plan.map_or_else(
+            || {
+                SpotlightIterationPhase::for_close_iteration(
+                    self.game_state.frame.submodule,
+                    self.game_state.display.spotlight_hdma.window_radius(),
+                    vertical_center,
+                )
+            },
+            |plan| {
+                if self.game_state.frame.submodule == 0 {
+                    if plan.interrupted_during_table_build_or_copy() {
+                        SpotlightIterationPhase::CloseEntryBeforeTablePublication
+                    } else {
+                        SpotlightIterationPhase::CloseEntryAfterTablePublication
+                    }
+                } else if plan.interrupted_during_table_build_or_copy() {
+                    SpotlightIterationPhase::WholeTable
+                } else {
+                    SpotlightIterationPhase::WholeTableAfterTablePublication
+                }
+            },
+        );
+        let iteration = cpu_plan.map_or_else(
+            || SpotlightIteration::closing(phase),
+            |plan| {
+                if plan.interrupted_during_table_build_or_copy() {
+                    SpotlightIteration::closing(phase)
+                } else {
+                    // The ROM run covers two concrete HDMA fields around the
+                    // $00:f3b7 table publication. An identical second field,
+                    // or an older queued receipt, still occupies the next
+                    // translated publication slot; otherwise the completion
+                    // capture is the next physical field and owns the receipt.
+                    let publication = spotlight_following_field_publication(
+                        &plan.active_window_words,
+                        &plan.following_window_words,
+                        self.next_display_spotlight_scanout.is_some(),
+                    );
+                    SpotlightIteration::closing(phase).with_rom_following_field_receipt(
+                        plan.following_window_words,
+                        publication,
+                    )
+                }
+            },
         );
         self.sprite_main();
         if self.game_state.frame.submodule == 0 {
             self.Dungeon_PrepExitWithSpotlight_before_table();
-            if self.begin_dungeon_exit_spotlight_entry(vertical_center) {
+            if self.begin_dungeon_exit_spotlight_entry(cpu_plan) {
                 // vblank interrupts the first IrisSpotlight_ConfigureTable
                 // build; the table copy, radius write, submodule advance, and
                 // Link/OAM suffix complete on the next host frame.
@@ -2583,25 +2645,19 @@ impl ZeldaState {
             }
             self.Dungeon_PrepExitWithSpotlight_table_and_advance();
         } else {
-            if self.begin_dungeon_exit_spotlight_build(
-                SpotlightIteration::closing(phase),
-                vertical_center,
-            ) {
+            if self.begin_dungeon_exit_spotlight_copy(cpu_plan, iteration) {
                 return;
             }
-            if self.spotlight_configure_table_and_control(true) {
-                self.schedule_dungeon_exit_spotlight_goal_caller(
-                    SpotlightIteration::closing(phase),
-                );
+            let caller_interrupted = self.spotlight_configure_table_and_control(true);
+            if caller_interrupted {
+                self.schedule_dungeon_exit_spotlight_goal_caller(iteration);
                 return;
             }
         }
-        self.module0f_spotlight_close_link_suffix(phase);
-    }
-
-    pub(super) fn module0f_spotlight_close_link_suffix(&mut self, phase: SpotlightIterationPhase) {
         self.module0f_spotlight_close_link_and_oam();
-        self.schedule_spotlight_iteration_return(SpotlightIteration::closing(phase));
+        if cpu_plan.is_none_or(|plan| !plan.returned_to_main_wait_before_first_nmi) {
+            self.schedule_spotlight_iteration_return(iteration);
+        }
     }
 
     fn module0f_spotlight_close_link_and_oam(&mut self) {
@@ -2661,11 +2717,11 @@ impl ZeldaState {
         );
         debug_assert!(!caller_interrupted);
         self.module0f_spotlight_close_link_and_oam();
-        // On the short outdoor close, the resumed C table suffix returns
-        // through Module0F and Main_PrepSpritesForNmi in this same CPU slice.
-        // A separate return-only host would make every later circle one field
-        // late and split the radius/prep writes which the ROM performs together.
-        self.nmi_prepare_sprites();
+        // This continuation returns through the remainder of ZeldaRunGameLoop.
+        // The C caller executes NMI_PrepareSprites exactly once after
+        // Module_MainRouting: some measured long-close slices reached it
+        // before suspension, while others reach it only here.
+        self.nmi_prepare_sprites_for_main_loop_once();
         self.clear_nmi_update_latch();
     }
 

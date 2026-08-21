@@ -106,6 +106,10 @@ impl RomCpuTimingRun {
         self.shadow.ram[address]
     }
 
+    pub(crate) fn window1_bounds(&self) -> (u8, u8) {
+        (self.shadow.ppu.window1_left, self.shadow.ppu.window1_right)
+    }
+
     pub(crate) fn set_raster_position(&mut self, scanline: u16, master_cycle: u16) {
         self.shadow.v_pos = scanline;
         self.shadow.h_pos = master_cycle;

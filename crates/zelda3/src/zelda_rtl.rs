@@ -2531,6 +2531,104 @@ const DUNGEON_MAIN_WAIT_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
     ..DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT
 };
 
+const DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
+    // Module0F_SpotlightClose at the indirect module-router call. Cold Snes9x
+    // traces at both exercised exits enter with this register/stack image; the
+    // saved return address is the final byte of JSL [$0080], so RTL stops at
+    // $00:805a.
+    entry_pc: 0x02_9982,
+    stop_pc: 0x00_805a,
+    a: 0xb702,
+    x: 0x00e0,
+    y: 0x000f,
+    sp: 0x01fc,
+    dp: 0,
+    db: 0,
+    carry: false,
+    zero: false,
+    overflow: false,
+    negative: false,
+    interrupt_disable: false,
+    decimal: false,
+    accumulator_is_8_bit: true,
+    index_is_8_bit: true,
+    emulation: false,
+    waiting: false,
+    stack_address: 0x01fd,
+    stack_bytes: &[0x59, 0x80, 0x00],
+};
+
+// The two cold route entries observed through the current frontier reach
+// Module0F at V=255, master cycle 480..598. Execute both measured ends and
+// require the same semantic plan so input-dependent prefix jitter cannot turn
+// into a route-specific publication rule.
+const DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST: CpuRasterPosition =
+    CpuRasterPosition::new(255, 480);
+const DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST: CpuRasterPosition =
+    CpuRasterPosition::new(255, 598);
+
+const SPOTLIGHT_VISIBLE_SCANLINES: usize = 224;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct DungeonExitSpotlightCpuPlan {
+    interrupted_pc: u32,
+    interrupted_return_address: u32,
+    iterations_before_nmi: usize,
+    returned_to_main_wait_before_first_nmi: bool,
+    main_loop_sprite_preparation_completed_before_second_nmi: bool,
+    active_window_words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    following_window_words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    next_entry_earliest: Option<CpuRasterPosition>,
+    next_entry_latest: Option<CpuRasterPosition>,
+}
+
+impl DungeonExitSpotlightCpuPlan {
+    fn current_boundary_key(
+        self,
+    ) -> (
+        u32,
+        u32,
+        usize,
+        bool,
+        bool,
+        [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+        [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    ) {
+        (
+            self.interrupted_pc,
+            self.interrupted_return_address,
+            self.iterations_before_nmi,
+            self.returned_to_main_wait_before_first_nmi,
+            self.main_loop_sprite_preparation_completed_before_second_nmi,
+            self.active_window_words,
+            self.following_window_words,
+        )
+    }
+
+    const fn interrupted_during_table_build_or_copy(self) -> bool {
+        (self.interrupted_pc >= 0x00_f361 && self.interrupted_pc <= 0x00_f3c4)
+            || self.interrupted_return_address == 0x00_f377
+    }
+
+    const fn interrupted_during_table_copy(self) -> bool {
+        self.interrupted_pc >= 0x00_f3b7 && self.interrupted_pc <= 0x00_f3c4
+    }
+
+    fn normalized_interruption_phase(mut self) -> Self {
+        if self.interrupted_during_table_copy() {
+            self.interrupted_pc = 0x00_f3b7;
+            self.interrupted_return_address = 0;
+        } else if self.interrupted_during_table_build_or_copy() {
+            self.interrupted_pc = 0x00_f361;
+            self.interrupted_return_address = 0;
+        } else {
+            self.interrupted_pc = 0;
+            self.interrupted_return_address = 0;
+        }
+        self
+    }
+}
+
 const MODULE0E_DIALOGUE_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
     // Entry to Module0E_Interface through the common module router. The
     // translated caller invokes the timing shadow at this same semantic
@@ -2809,6 +2907,197 @@ fn advance_rom_cpu_through_nmi(run: &mut RomCpuTimingRun, budget: &mut CpuCycleB
         }
     }
     panic!("ROM NMI handler did not return to {return_pc:06x}");
+}
+
+fn dungeon_exit_spotlight_cpu_plan_at(
+    state: &ZeldaState,
+    entry: CpuRasterPosition,
+) -> Option<DungeonExitSpotlightCpuPlan> {
+    // The C port relocates its 240-word working table to $1dba0. The original
+    // routine at $00:f37d authors $7f:7000 and the copy loop at $00:f3b7
+    // publishes it to the hardware table at $7e:1b00. Seed both original-ROM
+    // buffers from the translated live owner before running the isolated CPU.
+    let table_bytes = SPOTLIGHT_VISIBLE_SCANLINES * 2;
+    let mut rom_ram = state.ram.clone();
+    let live_table = state.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + table_bytes].to_vec();
+    rom_ram[0x1b00..0x1b00 + table_bytes].copy_from_slice(&live_table);
+    rom_ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + table_bytes]
+        .copy_from_slice(&live_table);
+
+    let mut run = RomCpuTimingRun::new(
+        &state.rom,
+        &rom_ram,
+        &state.sram,
+        &state.ppu,
+        &state.dma,
+        state.zelda_audio_apu_output_ports(),
+        DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT,
+    )
+    .expect("dungeon-exit spotlight CPU timing requires the loaded Zelda ROM");
+    let mut budget = CpuCycleBudget::until_next_nmi(
+        entry,
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
+    );
+    let mut iterations = 0usize;
+    let mut iterations_before_nmi = None;
+    let mut interrupted_pc = None;
+    let mut interrupted_return_address = None;
+    let mut returned_to_main_wait_before_first_nmi = None;
+    let mut main_loop_sprite_preparation_completed = false;
+    let mut main_loop_sprite_preparation_completed_before_second_nmi = None;
+    let mut active_window_words = [None; SPOTLIGHT_VISIBLE_SCANLINES];
+    let mut completed_active_window_words = None;
+    let mut following_window_words = [None; SPOTLIGHT_VISIBLE_SCANLINES];
+    let mut completed_following_window_words = None;
+    let mut next_entry_after_second_nmi = None;
+    let mut module_ended_after_second_nmi = false;
+
+    for _ in 0..5_000_000 {
+        // ZeldaRunGameLoop calls NMI_PrepareSprites at $00:805a. Reaching
+        // $00:805d proves the original subroutine returned; its complete DMA
+        // operand/countdown side effects now belong to this C iteration.
+        if run.pc() == 0x00_805d {
+            main_loop_sprite_preparation_completed = true;
+        }
+        if completed_active_window_words.is_some() {
+            if next_entry_after_second_nmi.is_none()
+                && run.pc() == DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT.entry_pc
+            {
+                next_entry_after_second_nmi = Some(budget.raster_position());
+            }
+            if run.pc() == 0x00_8036 && run.ram_byte(MAIN_MODULE) != 0x0f {
+                module_ended_after_second_nmi = true;
+            }
+        }
+        if let (Some(active_window_words), Some(following_window_words)) = (
+            completed_active_window_words,
+            completed_following_window_words,
+        ) {
+            if next_entry_after_second_nmi.is_some() || module_ended_after_second_nmi {
+                let iterations_before_nmi =
+                    iterations_before_nmi.expect("completed plan must retain its loop count");
+                return Some(DungeonExitSpotlightCpuPlan {
+                    interrupted_pc: interrupted_pc
+                        .expect("interrupted plan must retain its ROM PC"),
+                    interrupted_return_address: interrupted_return_address
+                        .expect("interrupted plan must retain its ROM return address"),
+                    iterations_before_nmi,
+                    returned_to_main_wait_before_first_nmi: returned_to_main_wait_before_first_nmi
+                        .expect("completed plan must classify its main-loop return"),
+                    main_loop_sprite_preparation_completed_before_second_nmi:
+                        main_loop_sprite_preparation_completed_before_second_nmi
+                            .expect("completed plan must classify its main-loop suffix"),
+                    active_window_words,
+                    following_window_words,
+                    next_entry_earliest: next_entry_after_second_nmi,
+                    next_entry_latest: next_entry_after_second_nmi,
+                });
+            }
+        }
+
+        if run.is_complete() && iterations_before_nmi.is_none() {
+            return None;
+        }
+
+        if completed_active_window_words.is_none() && run.pc() == 0x00_f39b {
+            // $f39b compares the just-authored upper cursor with the vertical
+            // center, so each visit is one complete C loop iteration.
+            iterations += 1;
+        }
+
+        let (scanline, master_cycle) = budget.raster_position().coordinates();
+        run.set_raster_position(scanline, master_cycle);
+        let timing = run.step();
+        let active_scanout =
+            iterations_before_nmi.is_some() && completed_active_window_words.is_none();
+        let following_scanout =
+            completed_active_window_words.is_some() && completed_following_window_words.is_none();
+        let instruction = budget.advance_instruction_with_hdma(
+            timing.master_cycles,
+            |event, scanline| match event {
+                CpuBusEvent::HdmaInit => {
+                    run.set_raster_position(scanline, 20);
+                    run.run_hdma_init_master_cycles()
+                }
+                CpuBusEvent::HdmaStart => {
+                    run.set_raster_position(scanline, 1_106);
+                    let cycles = run.run_hdma_scanline_master_cycles();
+                    let scanline = usize::from(scanline);
+                    if active_scanout && scanline < SPOTLIGHT_VISIBLE_SCANLINES {
+                        let (left, right) = run.window1_bounds();
+                        active_window_words[scanline] =
+                            Some(u16::from(left) | (u16::from(right) << 8));
+                    } else if following_scanout && scanline < SPOTLIGHT_VISIBLE_SCANLINES {
+                        let (left, right) = run.window1_bounds();
+                        following_window_words[scanline] =
+                            Some(u16::from(left) | (u16::from(right) << 8));
+                    }
+                    cycles
+                }
+                CpuBusEvent::WramRefresh => unreachable!(),
+            },
+        );
+        let dma = budget.advance_uninterruptible(run.drain_started_dma_master_cycles());
+        if instruction.was_interrupted() || dma.was_interrupted() {
+            if iterations_before_nmi.is_none() {
+                iterations_before_nmi = Some(iterations);
+                interrupted_pc = Some(run.pc());
+                interrupted_return_address = Some(run.stack_return_address());
+                returned_to_main_wait_before_first_nmi =
+                    Some(matches!(run.pc(), 0x00_8034 | 0x00_8036));
+            } else if completed_active_window_words.is_none() {
+                main_loop_sprite_preparation_completed_before_second_nmi =
+                    Some(main_loop_sprite_preparation_completed);
+                completed_active_window_words = Some(complete_spotlight_window_words(
+                    &run,
+                    &active_window_words,
+                ));
+            } else if completed_following_window_words.is_none() {
+                completed_following_window_words = Some(complete_spotlight_window_words(
+                    &run,
+                    &following_window_words,
+                ));
+            }
+            advance_rom_cpu_through_nmi(&mut run, &mut budget);
+        }
+    }
+    panic!(
+        "dungeon-exit spotlight ROM timing did not return from Module0F; stopped at {:06x}",
+        run.pc(),
+    );
+}
+
+fn complete_spotlight_window_words(
+    run: &RomCpuTimingRun,
+    captured: &[Option<u16>; SPOTLIGHT_VISIBLE_SCANLINES],
+) -> [u16; SPOTLIGHT_VISIBLE_SCANLINES] {
+    std::array::from_fn(|scanline| {
+        captured[scanline].unwrap_or_else(|| {
+            let address = 0x1b00 + scanline * 2;
+            u16::from(run.ram_byte(address)) | (u16::from(run.ram_byte(address + 1)) << 8)
+        })
+    })
+}
+
+fn dungeon_exit_spotlight_cpu_plan(
+    state: &ZeldaState,
+    entry_earliest: CpuRasterPosition,
+    entry_latest: CpuRasterPosition,
+) -> Option<DungeonExitSpotlightCpuPlan> {
+    let mut earliest = dungeon_exit_spotlight_cpu_plan_at(state, entry_earliest)
+        .map(DungeonExitSpotlightCpuPlan::normalized_interruption_phase);
+    let latest = dungeon_exit_spotlight_cpu_plan_at(state, entry_latest)
+        .map(DungeonExitSpotlightCpuPlan::normalized_interruption_phase);
+    assert_eq!(
+        earliest.map(DungeonExitSpotlightCpuPlan::current_boundary_key),
+        latest.map(DungeonExitSpotlightCpuPlan::current_boundary_key),
+        "measured Module0F entry raster envelope changed the spotlight CPU/HDMA plan",
+    );
+    if let (Some(earliest), Some(latest)) = (&mut earliest, latest) {
+        earliest.next_entry_latest = latest.next_entry_latest;
+    }
+    earliest
 }
 
 /// Emit the state-12 ROM timing shadow's post-leading-NMI main checkpoint.
@@ -4304,14 +4593,6 @@ const DUNGEON_SPIRAL_SPRITE_GRAPHICS_NMI_SLICES: u8 = 3;
 // also crossing vblank, one radius step beyond the 189-row calibration below.
 const SPOTLIGHT_MAX_TABLE_ROW_PAIRS: u16 = 239;
 
-// On the short outdoor module-15 entry, Snes9x reaches the circle loop after
-// the preceding overworld return and completes 19 paired iterations before
-// NMI. That is the loop's CPU continuation boundary: rows 224..206 have been
-// authored (and rows 0..6 after the upper cursor wraps) when hardware begins
-// consuming the table. Keep the count attached to this caller timing class,
-// not to a route frame, room, or pixel exception.
-const DUNGEON_EXIT_SPOTLIGHT_ENTRY_ITERATIONS_BEFORE_NMI: usize = 19;
-
 const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(
     radius: u16,
     vertical_center: u16,
@@ -4324,35 +4605,6 @@ const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(
     radius >= 0x77
         || (radius >= 0x70
             && spotlight_table_row_pairs(vertical_center) >= SPOTLIGHT_MAX_TABLE_ROW_PAIRS)
-}
-
-const fn rom_dungeon_exit_spotlight_entry_build_crosses_vblank(
-    vertical_center: u16,
-    begins_after_overworld_return: bool,
-) -> bool {
-    // Overworld_UseEntrance selects module 15 and returns to the main wait.
-    // The next iteration therefore begins after NMI; Sprite_Main enters at
-    // $02:9982 near the end of that field and IrisSpotlight_close cannot
-    // finish before the following vblank, even with a short table. Indoor
-    // exits can begin early enough for a short table to remain atomic, while
-    // the maximal 239-row table crosses regardless of entry phase.
-    begins_after_overworld_return
-        || spotlight_table_row_pairs(vertical_center) >= SPOTLIGHT_MAX_TABLE_ROW_PAIRS
-}
-
-const fn rom_short_outdoor_spotlight_build_crosses_vblank(
-    radius: u16,
-    vertical_center: u16,
-    begins_after_overworld_return: bool,
-) -> bool {
-    // A short outdoor entry finishes before its resumed host's trailing NMI,
-    // so each following main iteration begins after NMI and its iris work
-    // crosses the next boundary. Long outdoor tables finish in a later CPU
-    // phase and retain their established workload scheduler. Snes9x places
-    // the short-table crossover between the $62->$5b and $5b->$54 builds.
-    begins_after_overworld_return
-        && !spotlight_table_has_long_nmi_workload(vertical_center)
-        && radius >= 0x62
 }
 
 // IrisSpotlight_ConfigureTable waits for V=192, copies its 448-byte table, and
@@ -4830,6 +5082,35 @@ pub(super) enum SpotlightDirection {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SpotlightFollowingFieldPublication {
+    /// The active ROM field is already the retiring published generation, so
+    /// the completion capture owns the immediately following field.
+    WithCompletionCapture,
+    /// An older exact receipt still occupies the retiring generation. The
+    /// completion capture therefore owns this iteration's active field and
+    /// its following field belongs to the next publication boundary.
+    AfterCompletionCapture,
+}
+
+pub(super) fn spotlight_following_field_publication(
+    active: &[u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    following: &[u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    has_queued_receipt: bool,
+) -> SpotlightFollowingFieldPublication {
+    if active == following || has_queued_receipt {
+        SpotlightFollowingFieldPublication::AfterCompletionCapture
+    } else {
+        SpotlightFollowingFieldPublication::WithCompletionCapture
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SpotlightFollowingFieldReceipt {
+    words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    publication: SpotlightFollowingFieldPublication,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct SpotlightIteration {
     direction: SpotlightDirection,
     phase: SpotlightIterationPhase,
@@ -4837,6 +5118,7 @@ pub(super) struct SpotlightIteration {
     completion_publication: DisplaySnapshotPublication,
     projects_tail_on_completion: bool,
     projection_uses_published_prefix: bool,
+    rom_following_field_receipt: Option<SpotlightFollowingFieldReceipt>,
 }
 
 impl SpotlightIteration {
@@ -4854,6 +5136,7 @@ impl SpotlightIteration {
             },
             projects_tail_on_completion: false,
             projection_uses_published_prefix: false,
+            rom_following_field_receipt: None,
         }
     }
 
@@ -4873,7 +5156,26 @@ impl SpotlightIteration {
                 phase,
                 SpotlightIterationPhase::MixedTailAfterReturn
             ),
+            rom_following_field_receipt: None,
         }
+    }
+
+    const fn with_rom_following_field_receipt(
+        mut self,
+        words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+        publication: SpotlightFollowingFieldPublication,
+    ) -> Self {
+        // The isolated CPU/HDMA run supplies exact channel-7 rows for this
+        // iteration, so completion must not synthesize a geometry tail or
+        // retain the preceding whole-table approximation.
+        self.completion_publication = DisplaySnapshotPublication::PublishCaptured;
+        self.projects_tail_on_completion = false;
+        self.projection_uses_published_prefix = false;
+        self.rom_following_field_receipt = Some(SpotlightFollowingFieldReceipt {
+            words,
+            publication,
+        });
+        self
     }
 
     /// The Game Over close begins after the active scanout has already latched
@@ -4897,8 +5199,9 @@ impl SpotlightIteration {
                     phase,
                     SpotlightIterationPhase::WholeTable
                         | SpotlightIterationPhase::MixedTailAfterReturn
-                ),
+            ),
             projection_uses_published_prefix: !enters_iris,
+            rom_following_field_receipt: None,
         }
     }
 
@@ -4942,6 +5245,10 @@ impl SpotlightIteration {
 
     const fn projection_uses_published_prefix(self) -> bool {
         self.projection_uses_published_prefix
+    }
+
+    const fn rom_following_field_receipt(self) -> Option<SpotlightFollowingFieldReceipt> {
+        self.rom_following_field_receipt
     }
 
     const fn game_over_build_completion_publication(self) -> DisplaySnapshotPublication {
@@ -6776,6 +7083,7 @@ struct LiveSpotlightScanout {
     hdma_enable_mask: u8,
     dma_channels: [DmaChannel; 2],
     hdma_tables: [Vec<u8>; 2],
+    authoritative_rom_hdma_receipt: bool,
 }
 
 impl LiveSpotlightScanout {
@@ -6792,6 +7100,7 @@ impl LiveSpotlightScanout {
             hdma_enable_mask: state.ram[crate::game_state::constants::HDMAEN_COPY],
             dma_channels: [state.dma.channel[6], state.dma.channel[7]],
             hdma_tables: spotlight_hdma_tables_from_ram(&state.ram),
+            authoritative_rom_hdma_receipt: false,
         }
     }
 
@@ -6803,6 +7112,27 @@ impl LiveSpotlightScanout {
             state.ram[crate::game_state::constants::TMW_COPY],
             state.ram[crate::game_state::constants::TSW_COPY],
         ];
+        self
+    }
+
+    fn with_active_window_words(
+        mut self,
+        words: &[u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    ) -> Self {
+        let table = &mut self.hdma_tables[0];
+        for (scanline, word) in words.iter().copied().enumerate() {
+            let offset = scanline * 2;
+            table[offset..offset + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        self
+    }
+
+    fn with_authoritative_rom_hdma_words(
+        mut self,
+        words: &[u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    ) -> Self {
+        self = self.with_active_window_words(words);
+        self.authoritative_rom_hdma_receipt = true;
         self
     }
 
@@ -7963,6 +8293,11 @@ pub struct ZeldaState {
     enemy_drop_item_graphics_deferred_sound_effect_2: Option<u8>,
     #[serde(skip)]
     link_obj_dma_completed_this_frame: bool,
+    /// Whether this suspended C main-loop iteration has already returned
+    /// through `NMI_PrepareSprites`. A continuation may cross one or more
+    /// host frames, but the C caller owns exactly one preparation pass.
+    #[serde(skip)]
+    main_loop_sprite_preparation_completed: bool,
     #[serde(skip)]
     next_display_spotlight_scanout: Option<LiveSpotlightScanout>,
     /// Spotlight program authored after the current field's HDMA initialization.
@@ -8018,6 +8353,10 @@ pub struct ZeldaState {
     dungeon_exit_spotlight_table_delay: u8,
     #[serde(skip)]
     dungeon_exit_spotlight_resume_module: bool,
+    #[serde(skip)]
+    dungeon_exit_spotlight_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
+    #[serde(skip)]
+    dungeon_exit_spotlight_main_loop_prep_before_second_nmi: bool,
     #[serde(skip)]
     iris_spotlight_goal_transition_pending: bool,
     #[serde(skip)]
@@ -14067,6 +14406,7 @@ impl ZeldaState {
             enemy_drop_item_graphics_live_extended_oam_pending: false,
             enemy_drop_item_graphics_deferred_sound_effect_2: None,
             link_obj_dma_completed_this_frame: false,
+            main_loop_sprite_preparation_completed: false,
             next_display_spotlight_scanout: None,
             spotlight_scanout_after_active_field: None,
             interrupted_dungeon_submodule_publication: None,
@@ -14083,6 +14423,8 @@ impl ZeldaState {
             audio_nmi_processed_before_main: false,
             dungeon_exit_spotlight_table_delay: 0,
             dungeon_exit_spotlight_resume_module: false,
+            dungeon_exit_spotlight_cpu_entry_envelope: None,
+            dungeon_exit_spotlight_main_loop_prep_before_second_nmi: false,
             iris_spotlight_goal_transition_pending: false,
             normal_dialogue_initialization_phase: 0,
             normal_dialogue_initialization_entry_phase: 0,
@@ -14211,8 +14553,10 @@ impl ZeldaState {
         self.dungeon_quadrant_cpu_continuation_active = false;
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
+        self.main_loop_sprite_preparation_completed = false;
         self.dungeon_exit_spotlight_table_delay = 0;
         self.dungeon_exit_spotlight_resume_module = false;
+        self.dungeon_exit_spotlight_main_loop_prep_before_second_nmi = false;
         self.iris_spotlight_goal_transition_pending = false;
         self.normal_dialogue_initialization_phase = 0;
         self.normal_dialogue_initialization_entry_phase = 0;
@@ -14397,13 +14741,6 @@ impl ZeldaState {
         self.next_display_spotlight_scanout = Some(LiveSpotlightScanout::capture(self));
     }
 
-    fn stage_spotlight_controls_over_active_hdma(
-        &mut self,
-        active_hdma: LiveSpotlightScanout,
-    ) {
-        self.next_display_spotlight_scanout = Some(active_hdma.with_controls_from(self));
-    }
-
     pub(super) fn stage_spotlight_scanout_after_active_field(&mut self) {
         self.spotlight_scanout_after_active_field = Some(LiveSpotlightScanout::capture(self));
     }
@@ -14414,24 +14751,26 @@ impl ZeldaState {
     /// first radius write, SpotlightInternal suffix, submodule advance, and
     /// Link/OAM suffix complete on the next host frame through the scheduled
     /// continuation.
-    pub(super) fn begin_dungeon_exit_spotlight_entry(&mut self, vertical_center: u16) -> bool {
-        if !self.rom_startup_timing()
-            || !rom_dungeon_exit_spotlight_entry_build_crosses_vblank(
-                vertical_center,
-                self.game_state.world.location.is_outdoors(),
-            )
-        {
+    pub(super) fn begin_dungeon_exit_spotlight_entry(
+        &mut self,
+        cpu_plan: Option<DungeonExitSpotlightCpuPlan>,
+    ) -> bool {
+        let Some(cpu_plan) = cpu_plan.filter(|plan| {
+            self.rom_startup_timing() && plan.interrupted_during_table_build_or_copy()
+        }) else {
             return false;
-        }
-        // The ROM reaches every write before IrisSpotlight_ConfigureTable's
-        // circle loop before vblank. In particular, TM/TS have already been
-        // copied into TMW/TSW for the scanout that interrupts the table build.
-        let active_field_hdma = LiveSpotlightScanout::capture(self);
+        };
         self.spotlight_internal_before_table(0x7e, 0);
-        let table_build = self.begin_iris_spotlight_configure_table(
-            DUNGEON_EXIT_SPOTLIGHT_ENTRY_ITERATIONS_BEFORE_NMI,
+        let table_build = self
+            .begin_iris_spotlight_configure_table(cpu_plan.iterations_before_nmi);
+        // The isolated ROM run records what channel 7 actually consumed after
+        // the interrupt while $00:f3b7 copied $7f:7000 to $7e:1b00. Compose
+        // those row receipts with the translated controls instead of choosing
+        // either whole CPU buffer as a display-generation approximation.
+        self.next_display_spotlight_scanout = Some(
+            LiveSpotlightScanout::capture(self)
+                .with_authoritative_rom_hdma_words(&cpu_plan.active_window_words),
         );
-        self.stage_spotlight_controls_over_active_hdma(active_field_hdma);
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishDungeonExitSpotlightEntry { table_build },
             1,
@@ -14439,23 +14778,21 @@ impl ZeldaState {
         true
     }
 
-    pub(super) fn begin_dungeon_exit_spotlight_build(
+    pub(super) fn begin_dungeon_exit_spotlight_copy(
         &mut self,
+        cpu_plan: Option<DungeonExitSpotlightCpuPlan>,
         iteration: SpotlightIteration,
-        vertical_center: u16,
     ) -> bool {
-        if !self.rom_startup_timing()
-            || !rom_short_outdoor_spotlight_build_crosses_vblank(
-                self.game_state.display.spotlight_hdma.window_radius(),
-                vertical_center,
-                self.game_state.world.location.is_outdoors(),
-            )
-        {
+        let Some(_cpu_plan) = cpu_plan.filter(|plan| {
+            self.rom_startup_timing() && plan.interrupted_during_table_copy()
+        }) else {
             return false;
-        }
-        // The C circle loop and its 448-byte memcpy finish before this NMI;
-        // only the radius/control suffix and Module0F caller remain suspended.
-        // HDMA reads the just-authored WRAM table during the active scanout.
+        };
+        // The C circle builder has completed, but vblank interrupts the
+        // $00:f3b7 working-table copy before the radius write and Module0F
+        // suffix. Materialize the completed CPU buffers while retaining the
+        // call stack; the scheduled continuation carries the per-scanline
+        // receipt until the original copy caller actually returns.
         let table_build = self.begin_iris_spotlight_configure_table(usize::MAX);
         self.complete_iris_spotlight_table_projection(table_build);
         self.game_execution_scheduler.schedule_work(
@@ -15549,7 +15886,18 @@ impl ZeldaState {
         if let (Some(generation), Some(display)) =
             (hdma_table_generation, self.display_snapshot.as_mut())
         {
-            display.hdma_table_generation = generation;
+            // An explicit ROM CPU/HDMA receipt already records the table word
+            // consumed on every scanline. The older whole-table projection
+            // was only an approximation for paths without such a receipt and
+            // must not replace measured hardware ownership.
+            let has_authoritative_rom_receipt = matches!(
+                &display.spotlight_scanout_generation,
+                SpotlightScanoutGeneration::ComposeLiveAfterNmi(scanout)
+                    if scanout.authoritative_rom_hdma_receipt
+            );
+            if !has_authoritative_rom_receipt {
+                display.hdma_table_generation = generation;
+            }
         }
         if let (Some(after_projection), Some(display)) = (
             mixed_spotlight_after_projection,
@@ -21720,6 +22068,7 @@ impl ZeldaState {
             // the large-radius circle calculation; module routing resumes on a
             // later host frame without repeating that prefix.
             if !self.dungeon_exit_spotlight_resume_module {
+                self.main_loop_sprite_preparation_completed = false;
                 self.increment_frame_counter();
                 self.clear_oam_buffer();
                 self.latch_nmi_update();
@@ -22810,21 +23159,12 @@ impl ZeldaState {
                             self.game_state.display.spotlight_hdma.window_radius(),
                             close_vertical_center,
                         );
-                    // The $3f->$38 crossing return resumes the next main slice
-                    // before this frame's trailing NMI; that resumed slice
-                    // reaches Main_PrepSpritesForNmi through the ordinary
-                    // game-loop suffix. Prepping here as well double-advanced
-                    // the animation countdowns (oracle $0c00d trace shows one
-                    // write on the crossing frame, not two). Mid-close
-                    // long-table iterations already prepped in their own main
-                    // slice; their return boundary must not prep again.
-                    let iteration_prepped_with_main = self.game_state.frame.main_module == 15
-                        && rom_long_close_iteration_prep_returns_with_main(
-                            self.game_state.display.spotlight_hdma.window_radius(),
-                            close_vertical_center,
-                        );
-                    if !resume_main_after_spotlight_return && !iteration_prepped_with_main {
-                        self.nmi_prepare_sprites();
+                    // A deferred return completes the same ZeldaRunGameLoop
+                    // caller. Its sprite-preparation suffix runs exactly once:
+                    // the isolated ROM CPU plan may have proved it returned in
+                    // the prior slice, otherwise it returns here.
+                    if !resume_main_after_spotlight_return {
+                        self.nmi_prepare_sprites_for_main_loop_once();
                         self.clear_nmi_update_latch();
                     }
                     if self.game_state.frame.main_module == 15
@@ -23081,6 +23421,25 @@ impl ZeldaState {
                 self.assert_native_world_location_state_matches_ram();
                 self.assert_native_display_state_matches_ram();
                 return;
+            }
+            if let GameWorkStep::Complete(
+                GameWorkContinuation::FinishSpotlightIteration { iteration }
+                | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration },
+            ) = work_slice
+            {
+                if let Some(following) = iteration.rom_following_field_receipt() {
+                    let receipt = LiveSpotlightScanout::capture(self)
+                        .with_authoritative_rom_hdma_words(&following.words);
+                    match following.publication {
+                        SpotlightFollowingFieldPublication::WithCompletionCapture => {
+                            debug_assert!(self.next_display_spotlight_scanout.is_none());
+                            self.next_display_spotlight_scanout = Some(receipt);
+                        }
+                        SpotlightFollowingFieldPublication::AfterCompletionCapture => {
+                            self.spotlight_scanout_after_active_field = Some(receipt);
+                        }
+                    }
+                }
             }
             self.capture_display_snapshot_with_override(publication_override);
             if let GameWorkStep::Complete(GameWorkContinuation::FinishGameOverSpotlightBuild {
@@ -25274,7 +25633,7 @@ impl ZeldaState {
                 // before the next vblank. Complete the caller suffix now; the
                 // outer display boundary stages its text generation only after
                 // preserving the scanout that ended before this publication.
-                self.nmi_prepare_sprites();
+                self.nmi_prepare_sprites_for_main_loop();
                 self.clear_nmi_update_latch();
             }
             return;
@@ -25308,6 +25667,11 @@ impl ZeldaState {
             self.dungeon_landing_cpu_advance_pending = None;
         }
         if run_game_loop_prefix {
+            // This is the entry edge of ZeldaRunGameLoop in the C program.
+            // Resumed continuations deliberately skip this reset so the
+            // eventual caller suffix can tell whether its one sprite-prep
+            // pass already ran before suspension.
+            self.main_loop_sprite_preparation_completed = false;
             self.increment_frame_counter();
             self.dungeon_palette_cpu_advance_pending =
                 if self.rom_startup_timing() && self.game_state.frame.main_module == 7 {
@@ -25365,15 +25729,9 @@ impl ZeldaState {
                     .game_execution_scheduler
                     .spotlight_iteration()
                     .is_some_and(SpotlightIteration::is_closing)
-                && rom_long_close_iteration_prep_returns_with_main(
-                    self.game_state.display.spotlight_hdma.window_radius(),
-                    spotlight_vertical_center(
-                        self.game_state.player.follower_link.y(),
-                        self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
-                    ),
-                )
+                && self.dungeon_exit_spotlight_main_loop_prep_before_second_nmi
             {
-                self.nmi_prepare_sprites();
+                self.nmi_prepare_sprites_for_main_loop();
                 self.clear_nmi_update_latch();
             }
             return;
@@ -25383,7 +25741,7 @@ impl ZeldaState {
         // the actual interrupt still runs separately below and observes $0710.
         let partial_nmi = std::mem::take(&mut self.rom_load_partial_nmi_this_frame);
         if !self.dialogue_fast_forward_hold_active && !partial_nmi {
-            self.nmi_prepare_sprites();
+            self.nmi_prepare_sprites_for_main_loop();
             self.replay_trace_ram_watch("game-loop-after-prepare-sprites");
             // The ROM clears nmi_boolean only after Module_MainRouting and
             // NMI_PrepareSprites return. A vblank-interrupted VWF slice has
@@ -25392,6 +25750,17 @@ impl ZeldaState {
             self.clear_nmi_update_latch();
         }
         self.replay_trace_ram_watch("game-loop-exit");
+    }
+
+    pub(super) fn nmi_prepare_sprites_for_main_loop(&mut self) {
+        self.nmi_prepare_sprites();
+        self.main_loop_sprite_preparation_completed = true;
+    }
+
+    pub(super) fn nmi_prepare_sprites_for_main_loop_once(&mut self) {
+        if !self.main_loop_sprite_preparation_completed {
+            self.nmi_prepare_sprites_for_main_loop();
+        }
     }
 
     fn clear_oam_buffer(&mut self) {
