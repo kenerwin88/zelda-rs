@@ -508,23 +508,18 @@ pub fn extract_modern_dungeon_frame_from_vram(
                     continue;
                 }
                 // tile number (bits 0-9) + flip (bits 14/15); palette/priority dropped.
-                let pattern_key = entry_word & 0xC3FF;
+                let pattern_key = entry_word & 0xc3ff;
                 let palette = ((entry_word >> 10) & 7) as u8;
-                // For 2bpp BG3 the palette is BAKED into the cell (see below), so the
-                // dedup key must include the palette bits; the 4bpp path keeps the
-                // palette on the instance and keys on tile#+flip only. The chr_base is
-                // tagged for 2bpp so a 2bpp and 4bpp cell at the same base never alias.
+                // For 2bpp BG3 the palette is baked into the cell, so the dedup
+                // key includes palette bits. The 4bpp path keeps palette on the
+                // instance and keys only on tile number plus flip.
                 let (map_base, map_key) = if is_2bpp {
-                    (chr_base | (1usize << 28), entry_word & 0xDFFF)
+                    (chr_base | (1usize << 28), entry_word & 0xdfff)
                 } else {
                     (chr_base, pattern_key)
                 };
                 let cell_id = *cell_ids.entry((map_base, map_key)).or_insert_with(|| {
-                    // Bake flip into the cell: the dungeon composite samples without flip.
                     let indices = if is_2bpp {
-                        // BG3 2bpp: decode 0..3, then bake the classic BG3→CGRAM
-                        // mapping (cgram_idx = palette*4 + pal_idx, 4 colors/palette in
-                        // low CGRAM; bg_layer.wgsl). pal_idx 0 stays transparent.
                         let raw = decode_snes_2bpp_tile_indices(
                             frame.bg_vram.unwrap_or(frame.vram),
                             chr_base,
@@ -552,21 +547,14 @@ pub fn extract_modern_dungeon_frame_from_vram(
                     });
                     id
                 });
-                // The SNES BG is a torus: scroll wraps modulo the tilemap pixel
-                // size (cols*8 / rows*8), so a tile scrolled past one edge reappears
-                // on the opposite edge. Without this wrap, wide/tall (64-tile, 512px)
-                // dungeon tilemaps with a large scroll (e.g. h_scroll=640 on a 512px
-                // BG) push EVERY tile off-screen, leaving the room BG black. Bring the
-                // wrapped position into the visible window [-(bg-screen)..screen).
                 let bg_w = (cols * 8) as i32;
                 let bg_h = (rows * 8) as i32;
                 let mut sx = ((tx * 8) as i32 - h_scroll as i32).rem_euclid(bg_w);
                 if sx >= 256 {
                     sx -= bg_w;
                 }
-                // The SNES PPU fetches BG row `sy + 1` for output scanline `sy`
-                // (vertical +1 offset; see bg_layer.wgsl `source_y = sy + 1`). Apply
-                // it before wrapping so the modern BG aligns with the classic render.
+                // Snes9x RenderLine stores `VOffset + 1`; bake that hardware
+                // fetch offset into the instance before torus wrapping.
                 let mut sy = ((ty * 8) as i32 - v_scroll as i32 - 1).rem_euclid(bg_h);
                 if sy >= 224 {
                     sy -= bg_h;
@@ -578,7 +566,6 @@ pub fn extract_modern_dungeon_frame_from_vram(
                         source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                         screen_x: sx as i16,
                         screen_y: sy as i16,
-                        // 2bpp BG3 bakes the CGRAM index into the cell → palette 0.
                         palette: if is_2bpp { 0 } else { palette },
                         hflip: false,
                         vflip: false,
@@ -1696,11 +1683,8 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                                 let pal = ((entry_word >> 10) & 7) as u8;
                                 let chr_base = frame.bg[layer_index].tile_adr as usize;
                                 let pattern_key = entry_word & 0xC3FF;
-                                let indices = decode_snes_4bpp_tile_indices(
-                                    bg_vram,
-                                    chr_base,
-                                    pattern_key,
-                                );
+                                let indices =
+                                    decode_snes_4bpp_tile_indices(bg_vram, chr_base, pattern_key);
                                 if let Some((source_key, src)) =
                                     source_cell_by_indices(atlas, &indices)
                                 {
@@ -3022,8 +3006,7 @@ mod tests {
         let (modern, cells) = extract_modern_frame_from_sources(&frame, &table, &atlas);
         let first = &modern.bg_layers[0].index_tiles[0];
         assert_eq!(
-            cells[first.cell_id as usize].indices[7],
-            3,
+            cells[first.cell_id as usize].indices[7], 3,
             "raw tilemap selects tile 4 while its pattern pixels come from the decoded BG cache"
         );
     }

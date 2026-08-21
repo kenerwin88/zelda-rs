@@ -273,7 +273,12 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
     ) {
         self.begin_effective_presented_dma();
-        self.interrupt_nmi(input, oam_dma_source, defer_bg_vram_upload);
+        self.interrupt_nmi_with_animated_bg_operands(
+            input,
+            oam_dma_source,
+            defer_bg_vram_upload,
+            Some(GraphicsDmaGeneration::HostBoundaryBeforeMain),
+        );
         self.record_effective_presented_dma_for_active_scanout();
         // OAM-law clause: a leading NMI's transfer completes before this
         // frame's visible scanlines, so it is visible immediately.
@@ -289,6 +294,14 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
+        // Snes9x invalidates its decoded tile cache for every VRAM write. An
+        // explicit leading-boundary caller already owns a full DMA receipt;
+        // every other NMI still records the independently visible decoded-BG
+        // effect without advancing the captured raw display-memory domains.
+        let records_trailing_decoded_bg_cache = self.active_effective_dma_writes.is_none();
+        if records_trailing_decoded_bg_cache {
+            self.begin_effective_presented_dma();
+        }
         // CPU continuation timing must observe the same pre-NMI RAM, latch,
         // DMA, and raster generation as the real handler. Capture centrally
         // so every hardware-NMI entry path has identical provenance.
@@ -490,6 +503,9 @@ impl ZeldaState {
             );
         }
         self.debug_obj_pipe("nmi_exit", &self.ppu.vram[0x4000..0x4400]);
+        if records_trailing_decoded_bg_cache {
+            self.record_trailing_nmi_decoded_bg_dma_for_following_scanout();
+        }
         self.close_display_boundary_dma_receipts();
     }
 
@@ -564,21 +580,11 @@ impl ZeldaState {
     }
 
     pub(super) fn nmi_core_animated_bg_update(&mut self, graphics_dma_plan: GraphicsDmaPlan) {
-        // `interrupt_nmi_for_active_scanout` opens this write scope before it
-        // enters the handler. That is direct event provenance that this NMI
-        // precedes the translated main slice, so its DMA operands must come
-        // from the host-boundary capture. A module-derived default cannot
-        // override that ordering: main may advance $0adc only after this DMA.
-        let phase_owned_operands = if self.active_effective_dma_writes.is_some() {
-            GraphicsDmaGeneration::HostBoundaryBeforeMain
-        } else {
-            graphics_dma_plan.animated_bg_operands
-        };
         let animated_bg_operands = animated_bg_operands_for_dungeon_landing(
             self.game_state.frame,
             self.game_state.world.location.dungeon_room_index(),
             self.game_state.player.follower_link.last_direction(),
-            phase_owned_operands,
+            graphics_dma_plan.animated_bg_operands,
         );
         let host_main_prefix_did_not_advance =
             self.pre_main_graphics_dma.as_ref().is_some_and(|graphics| {
@@ -665,23 +671,6 @@ impl ZeldaState {
         }
         for i in 0..0x200 {
             self.ppu.vram[dst + i] = read_word_from_slice(&data, i * 2);
-        }
-        let dialogue_decoder_cache_destination = self
-            .dialogue_initialization_decoded_bg_cache_destination
-            .take();
-        if let Some(active) = self.display_snapshot.as_mut().filter(|active| {
-            dialogue_decoder_cache_destination == Some(dst)
-                && active.accepts_nmi_dma_receipts
-                && active.animated_bg_scanout_generation
-                    == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
-        }) {
-            // Snes9x's BG decoder consumes this completed DMA even when the
-            // active snapshot retains its pre-NMI raw VRAM. Attach that exact
-            // cache event to the snapshot; tilemap/raw-memory ownership stays
-            // independent.
-            let mut decoded = active.ppu.vram.clone();
-            decoded[dst..dst + 0x200].copy_from_slice(&self.ppu.vram[dst..dst + 0x200]);
-            active.ppu.bg_vram_latch = Some(decoded);
         }
         if std::env::var_os("ZELDA3_DEBUG_ANIMATED_BG_DMA").is_some() {
             eprintln!(
@@ -1109,9 +1098,7 @@ impl ZeldaState {
                 ) {
                     eprintln!(
                         "oam_law_transfer host={} w204={:04x} fc={:02x}",
-                        self.frame_ctr_dbg,
-                        law[204],
-                        self.game_state.frame.frame_counter
+                        self.frame_ctr_dbg, law[204], self.game_state.frame.frame_counter
                     );
                 }
                 self.oam_law_pending = Some(law);

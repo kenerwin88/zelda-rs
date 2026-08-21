@@ -2683,8 +2683,8 @@ impl ZeldaState {
         self.spotlight_internal(0, 2);
     }
 
-    pub(super) fn IrisSpotlight_ConfigureTable(&mut self) {
-        self.iris_spotlight_configure_table();
+    pub(super) fn IrisSpotlight_ConfigureTable(&mut self) -> bool {
+        self.iris_spotlight_configure_table()
     }
 
     pub(super) fn IrisSpotlight_ResetTable(&mut self) {
@@ -3455,9 +3455,9 @@ impl ZeldaState {
         self.stage_spotlight_scanout_after_active_field();
     }
 
-    pub(super) fn iris_spotlight_configure_table(&mut self) {
+    pub(super) fn iris_spotlight_configure_table(&mut self) -> bool {
         let build = self.begin_iris_spotlight_configure_table(usize::MAX);
-        self.complete_iris_spotlight_configure_table(build);
+        self.complete_iris_spotlight_configure_table(build)
     }
 
     pub(super) fn begin_iris_spotlight_configure_table(
@@ -3535,9 +3535,9 @@ impl ZeldaState {
     pub(super) fn complete_iris_spotlight_configure_table(
         &mut self,
         build: SpotlightTableBuildContinuation,
-    ) {
+    ) -> bool {
         self.complete_iris_spotlight_table_projection(build);
-        self.complete_iris_spotlight_configure_table_after_projection();
+        self.complete_iris_spotlight_configure_table_after_projection()
     }
 
     /// Finish the C routine through the 448-byte table copy. Some short
@@ -3555,7 +3555,7 @@ impl ZeldaState {
     }
 
     /// Resume the C routine immediately after its table copy.
-    pub(super) fn complete_iris_spotlight_configure_table_after_projection(&mut self) {
+    pub(super) fn complete_iris_spotlight_configure_table_after_projection(&mut self) -> bool {
         let idx = (self.game_state.display.spotlight_hdma.window_state() >> 1) as usize;
         let delta = SPOTLIGHT_DELTA_SIZE[idx] as i16 as u16;
         let next = self
@@ -3565,18 +3565,20 @@ impl ZeldaState {
             .window_radius()
             .wrapping_add(delta);
         self.set_spotlight_window_radius(next);
-        if next == SPOTLIGHT_GOAL[idx] {
-            if self.rom_startup_timing()
-                && rom_spotlight_goal_transition_waits_for_iteration_return(
-                    self.game_state.frame.main_module,
-                    self.game_state.frame.submodule,
-                )
-            {
-                self.iris_spotlight_goal_transition_pending = true;
-            } else {
-                self.complete_iris_spotlight_goal_transition();
-            }
+        if next != SPOTLIGHT_GOAL[idx] {
+            return false;
         }
+        if self.rom_startup_timing()
+            && rom_dungeon_landing_goal_transition_waits_for_caller_return(
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            )
+        {
+            self.dungeon_landing_goal_transition_pending = true;
+        } else {
+            self.complete_iris_spotlight_goal_transition();
+        }
+        true
     }
 
     pub(super) fn complete_iris_spotlight_goal_transition(&mut self) {
@@ -3652,9 +3654,7 @@ impl ZeldaState {
     }
 
     pub(super) fn enable_force_blank(&mut self) {
-        if self.game_state.display.is_hdma_channel_enabled(7)
-            && self.dma.channel[7].b_adr == 0x26
-        {
+        if self.game_state.display.is_hdma_channel_enabled(7) && self.dma.channel[7].b_adr == 0x26 {
             // HDMA has completed the prior field before this C call disables
             // channel 7. Its row-224 terminator is therefore the resident WH0/
             // WH1 hardware state used while the ensuing load stays blank.

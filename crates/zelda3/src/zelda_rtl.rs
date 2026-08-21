@@ -2164,10 +2164,6 @@ const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
 const SPOTLIGHT_ITERATION_SUFFIX_NMI_SLICES: u8 = 1;
 const DUNGEON_EXIT_SPOTLIGHT_GOAL_CALLER_NMI_SLICES: u8 = 2;
 const TRAILING_NMI_FORCE_BLANK_SCANLINE: u8 = 224;
-// After each active dungeon-exit circle build, the ROM spends one host frame
-// returning through the caller and main-loop suffix before beginning the next
-// interruptible build.
-const DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES: u8 = 1;
 // PreOverworld_LoadProperties enters at $02:83c7. The C call stack reaches
 // Sprite_DisableAll's sprite-state clear at $09:c244 after 37 NMI crossings;
 // the uninterrupted reload prefix then resets the old sprite workspace. Three
@@ -2212,7 +2208,8 @@ struct OverworldMapGraphicsWorkload {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OverworldMapAndSpriteGraphicsTiming {
     quadrant_load_nmi_slices: u8,
-    screen_map_and_sprite_gfx_tail_nmi_slices: u8,
+    map16_to_map8_tail_nmi_slices: u8,
+    scroll_map_and_sprite_gfx_tail_nmi_slices: u8,
 }
 
 const fn overworld_map_and_sprite_graphics_timing(
@@ -2221,11 +2218,16 @@ const fn overworld_map_and_sprite_graphics_timing(
     // The four quadrants always expand 1,024 map32 cells. The expensive branch
     // reloads twelve map16 definition bytes whenever the aligned definition
     // changes. PC/V-counter traces measure 670 changes on screen $1b as 13
-    // boundaries and 796 changes on screen $2b as 14. Keep the invariant in
-    // work units so later screens refine the calibration without route IDs.
+    // boundaries and 796 changes on screen $2b as 14. The C callers then
+    // diverge: Overworld_LoadAmbientOverlay runs Map16ToMap8 and returns after
+    // three crossings, while Module09_LoadNewMapAndGFX runs
+    // CreateInitialNewScreenMapToScroll plus LoadNewSpriteGFXSet and returns
+    // after four. Keep those distinct call paths explicit instead of sharing
+    // a route-dependent tail adjustment.
     OverworldMapAndSpriteGraphicsTiming {
         quadrant_load_nmi_slices: 8 + (workload.map32_definition_changes / 128) as u8,
-        screen_map_and_sprite_gfx_tail_nmi_slices: 4,
+        map16_to_map8_tail_nmi_slices: 3,
+        scroll_map_and_sprite_gfx_tail_nmi_slices: 4,
     }
 }
 
@@ -2558,14 +2560,108 @@ const DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint
     stack_bytes: &[0x59, 0x80, 0x00],
 };
 
+const OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
+    // Begin at ZeldaRunGameLoop's frame-counter increment, before ClearOamBuffer
+    // and the module router. Sprite_Main's cycle count depends on both the new
+    // frame counter and the OAM allocation state, so beginning at Module10
+    // would inherit translated scratch state instead of executing the C caller.
+    entry_pc: 0x00_8051,
+    stop_pc: 0x00_805a,
+    a: 0xb701,
+    x: 0,
+    y: 0x0010,
+    sp: 0x01ff,
+    dp: 0,
+    db: 0,
+    carry: false,
+    zero: false,
+    overflow: false,
+    negative: false,
+    interrupt_disable: false,
+    decimal: false,
+    accumulator_is_8_bit: true,
+    index_is_8_bit: true,
+    emulation: false,
+    waiting: false,
+    stack_address: 0,
+    stack_bytes: &[],
+};
+
+// Cold traces at both standard-route openings reach ZeldaRunGameLoop's $8051
+// frame-counter increment at V=248, C=1142..1208. The ROM shadow executes the
+// complete ClearOamBuffer/module-router caller from this measured envelope.
+const OVERWORLD_SPOTLIGHT_CPU_ENTRY_EARLIEST: CpuRasterPosition =
+    CpuRasterPosition::new(248, 1_142);
+const OVERWORLD_SPOTLIGHT_CPU_ENTRY_LATEST: CpuRasterPosition = CpuRasterPosition::new(248, 1_208);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct OverworldSpotlightCpuPlan {
+    interrupted_pc: u32,
+    interrupted_return_address: u32,
+    pub(super) iterations_before_nmi: usize,
+    nmis_before_module_exit: Option<u8>,
+    active_window_words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    following_window_words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    next_entry_earliest: Option<CpuRasterPosition>,
+    next_entry_latest: Option<CpuRasterPosition>,
+}
+
+impl OverworldSpotlightCpuPlan {
+    fn current_boundary_key(
+        self,
+    ) -> (
+        u32,
+        u32,
+        usize,
+        Option<u8>,
+        [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+        [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    ) {
+        (
+            self.interrupted_pc,
+            self.interrupted_return_address,
+            self.iterations_before_nmi,
+            self.nmis_before_module_exit,
+            self.active_window_words,
+            self.following_window_words,
+        )
+    }
+
+    pub(super) const fn interrupted_during_table_build_or_copy(self) -> bool {
+        (self.interrupted_pc >= 0x00_f361 && self.interrupted_pc <= 0x00_f3c4)
+            || self.interrupted_return_address == 0x00_f377
+    }
+
+    pub(super) const fn interrupted_during_table_copy(self) -> bool {
+        self.interrupted_pc >= 0x00_f3b7 && self.interrupted_pc <= 0x00_f3c4
+    }
+
+    const fn exits_module_before_next_nmi(self) -> bool {
+        matches!(self.nmis_before_module_exit, Some(1))
+    }
+
+    fn normalized_interruption_phase(mut self) -> Self {
+        if self.interrupted_during_table_copy() {
+            self.interrupted_pc = 0x00_f3b7;
+            self.interrupted_return_address = 0;
+        } else if self.interrupted_during_table_build_or_copy() {
+            self.interrupted_pc = 0x00_f361;
+            self.interrupted_return_address = 0;
+        } else {
+            self.interrupted_pc = 0;
+            self.interrupted_return_address = 0;
+        }
+        self
+    }
+}
+
 // The two cold route entries observed through the current frontier reach
 // Module0F at V=255, master cycle 480..598. Execute both measured ends and
 // require the same semantic plan so input-dependent prefix jitter cannot turn
 // into a route-specific publication rule.
 const DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST: CpuRasterPosition =
     CpuRasterPosition::new(255, 480);
-const DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST: CpuRasterPosition =
-    CpuRasterPosition::new(255, 598);
+const DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST: CpuRasterPosition = CpuRasterPosition::new(255, 598);
 
 const SPOTLIGHT_VISIBLE_SCANLINES: usize = 224;
 
@@ -2700,12 +2796,13 @@ pub(super) fn dialogue_initialization_cpu_plan(
     state: &ZeldaState,
     entry: (u16, u16),
 ) -> DialogueInitializationCpuPlan {
+    let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
         &state.ram,
         &state.sram,
         &state.ppu,
-        &state.dma,
+        &timing_dma,
         state.zelda_audio_apu_output_ports(),
         MODULE0E_DIALOGUE_CPU_CHECKPOINT,
     )
@@ -2728,8 +2825,7 @@ pub(super) fn dialogue_initialization_cpu_plan(
                 entered_text_initialize,
                 "Module0E dialogue timing returned without entering Text_Initialize"
             );
-            let (return_scanline, return_master_cycle) =
-                budget.raster_position().coordinates();
+            let (return_scanline, return_master_cycle) = budget.raster_position().coordinates();
             return DialogueInitializationCpuPlan {
                 nmi_crossings,
                 final_interrupted_pc,
@@ -2740,7 +2836,10 @@ pub(super) fn dialogue_initialization_cpu_plan(
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         run.set_raster_position(scanline, master_cycle);
         if advance_rom_cpu_step(&mut run, &mut budget).was_interrupted() {
-            assert!(entered_text_initialize, "Module0E reached NMI before Text_Initialize");
+            assert!(
+                entered_text_initialize,
+                "Module0E reached NMI before Text_Initialize"
+            );
             nmi_crossings = nmi_crossings
                 .checked_add(1)
                 .expect("dialogue NMI count overflowed");
@@ -2919,17 +3018,21 @@ fn dungeon_exit_spotlight_cpu_plan_at(
     // buffers from the translated live owner before running the isolated CPU.
     let table_bytes = SPOTLIGHT_VISIBLE_SCANLINES * 2;
     let mut rom_ram = state.ram.clone();
+    // The translated caller has just executed this increment. Rewind only the
+    // cloned timing image so the ROM owns the full ZeldaRunGameLoop prefix;
+    // ClearOamBuffer is idempotent and is intentionally executed by the ROM.
+    rom_ram[FRAME_COUNTER] = rom_ram[FRAME_COUNTER].wrapping_sub(1);
     let live_table = state.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + table_bytes].to_vec();
     rom_ram[0x1b00..0x1b00 + table_bytes].copy_from_slice(&live_table);
-    rom_ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + table_bytes]
-        .copy_from_slice(&live_table);
+    rom_ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + table_bytes].copy_from_slice(&live_table);
 
+    let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
         &rom_ram,
         &state.sram,
         &state.ppu,
-        &state.dma,
+        &timing_dma,
         state.zelda_audio_apu_output_ports(),
         DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT,
     )
@@ -3049,10 +3152,8 @@ fn dungeon_exit_spotlight_cpu_plan_at(
             } else if completed_active_window_words.is_none() {
                 main_loop_sprite_preparation_completed_before_second_nmi =
                     Some(main_loop_sprite_preparation_completed);
-                completed_active_window_words = Some(complete_spotlight_window_words(
-                    &run,
-                    &active_window_words,
-                ));
+                completed_active_window_words =
+                    Some(complete_spotlight_window_words(&run, &active_window_words));
             } else if completed_following_window_words.is_none() {
                 completed_following_window_words = Some(complete_spotlight_window_words(
                     &run,
@@ -3093,6 +3194,168 @@ fn dungeon_exit_spotlight_cpu_plan(
         earliest.map(DungeonExitSpotlightCpuPlan::current_boundary_key),
         latest.map(DungeonExitSpotlightCpuPlan::current_boundary_key),
         "measured Module0F entry raster envelope changed the spotlight CPU/HDMA plan",
+    );
+    if let (Some(earliest), Some(latest)) = (&mut earliest, latest) {
+        earliest.next_entry_latest = latest.next_entry_latest;
+    }
+    earliest
+}
+
+fn overworld_spotlight_cpu_plan_at(
+    state: &ZeldaState,
+    entry: CpuRasterPosition,
+) -> Option<OverworldSpotlightCpuPlan> {
+    let table_bytes = SPOTLIGHT_VISIBLE_SCANLINES * 2;
+    let mut rom_ram = state.ram.clone();
+    // The translated frame entry has already performed ZeldaRunGameLoop's
+    // increment. This isolated run begins at that instruction so it also owns
+    // ClearOamBuffer and the full C caller; rewind only the cloned timing RAM.
+    rom_ram[FRAME_COUNTER] = rom_ram[FRAME_COUNTER].wrapping_sub(1);
+    let live_table = state.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + table_bytes].to_vec();
+    rom_ram[0x1b00..0x1b00 + table_bytes].copy_from_slice(&live_table);
+    rom_ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + table_bytes].copy_from_slice(&live_table);
+
+    let timing_dma = state.dma_with_native_hdma_enable();
+    let mut run = RomCpuTimingRun::new(
+        &state.rom,
+        &rom_ram,
+        &state.sram,
+        &state.ppu,
+        &timing_dma,
+        state.zelda_audio_apu_output_ports(),
+        OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT,
+    )
+    .expect("overworld spotlight CPU timing requires the loaded Zelda ROM");
+    let mut budget = CpuCycleBudget::until_next_nmi(
+        entry,
+        CpuBusWorkload::with_dynamic_hdma(),
+        CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
+    );
+    let mut iterations = 0usize;
+    let mut interrupted_pc = None;
+    let mut interrupted_return_address = None;
+    let mut iterations_before_nmi = None;
+    let mut nmis_elapsed_after_interruption = 0u8;
+    let mut nmis_before_module_exit = None;
+    let mut active_window_words = [None; SPOTLIGHT_VISIBLE_SCANLINES];
+    let mut completed_active_window_words = None;
+    let mut following_window_words = [None; SPOTLIGHT_VISIBLE_SCANLINES];
+    let mut completed_following_window_words = None;
+    let mut next_entry = None;
+    let mut module_ended = false;
+
+    for _ in 0..5_000_000 {
+        if run.is_complete() && iterations_before_nmi.is_none() {
+            return None;
+        }
+        if iterations_before_nmi.is_some()
+            && next_entry.is_none()
+            && run.pc() == OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT.entry_pc
+        {
+            next_entry = Some(budget.raster_position());
+        }
+        if iterations_before_nmi.is_some()
+            && run.pc() == 0x00_8036
+            && run.ram_byte(MAIN_MODULE) != 0x10
+        {
+            module_ended = true;
+            nmis_before_module_exit.get_or_insert(nmis_elapsed_after_interruption);
+        }
+        if let (Some(active_window_words), Some(following_window_words)) = (
+            completed_active_window_words,
+            completed_following_window_words,
+        ) {
+            if next_entry.is_some() || module_ended {
+                return Some(OverworldSpotlightCpuPlan {
+                    interrupted_pc: interrupted_pc
+                        .expect("interrupted opening plan must retain its ROM PC"),
+                    interrupted_return_address: interrupted_return_address
+                        .expect("interrupted opening plan must retain its ROM return address"),
+                    iterations_before_nmi: iterations_before_nmi
+                        .expect("completed opening plan must retain its loop count"),
+                    nmis_before_module_exit,
+                    active_window_words,
+                    following_window_words,
+                    next_entry_earliest: next_entry,
+                    next_entry_latest: next_entry,
+                });
+            }
+        }
+        if run.pc() == 0x00_f39b && iterations_before_nmi.is_none() {
+            iterations += 1;
+        }
+        let (scanline, master_cycle) = budget.raster_position().coordinates();
+        run.set_raster_position(scanline, master_cycle);
+        let timing = run.step();
+        let active_scanout =
+            iterations_before_nmi.is_some() && completed_active_window_words.is_none();
+        let following_scanout =
+            completed_active_window_words.is_some() && completed_following_window_words.is_none();
+        let instruction = budget.advance_instruction_with_hdma(
+            timing.master_cycles,
+            |event, scanline| match event {
+                CpuBusEvent::HdmaInit => {
+                    run.set_raster_position(scanline, 20);
+                    run.run_hdma_init_master_cycles()
+                }
+                CpuBusEvent::HdmaStart => {
+                    run.set_raster_position(scanline, 1_106);
+                    let cycles = run.run_hdma_scanline_master_cycles();
+                    let scanline = usize::from(scanline);
+                    if active_scanout && scanline < SPOTLIGHT_VISIBLE_SCANLINES {
+                        let (left, right) = run.window1_bounds();
+                        active_window_words[scanline] =
+                            Some(u16::from(left) | (u16::from(right) << 8));
+                    } else if following_scanout && scanline < SPOTLIGHT_VISIBLE_SCANLINES {
+                        let (left, right) = run.window1_bounds();
+                        following_window_words[scanline] =
+                            Some(u16::from(left) | (u16::from(right) << 8));
+                    }
+                    cycles
+                }
+                CpuBusEvent::WramRefresh => unreachable!(),
+            },
+        );
+        let dma = budget.advance_uninterruptible(run.drain_started_dma_master_cycles());
+        if instruction.was_interrupted() || dma.was_interrupted() {
+            if iterations_before_nmi.is_none() {
+                iterations_before_nmi = Some(iterations);
+                interrupted_pc = Some(run.pc());
+                interrupted_return_address = Some(run.stack_return_address());
+            } else if completed_active_window_words.is_none() {
+                completed_active_window_words =
+                    Some(complete_spotlight_window_words(&run, &active_window_words));
+            } else if completed_following_window_words.is_none() {
+                completed_following_window_words = Some(complete_spotlight_window_words(
+                    &run,
+                    &following_window_words,
+                ));
+            }
+            nmis_elapsed_after_interruption = nmis_elapsed_after_interruption
+                .checked_add(1)
+                .expect("overworld spotlight NMI count overflowed");
+            advance_rom_cpu_through_nmi(&mut run, &mut budget);
+        }
+    }
+    panic!(
+        "overworld spotlight ROM timing did not reach NMI or return; stopped at {:06x}",
+        run.pc(),
+    );
+}
+
+fn overworld_spotlight_cpu_plan(
+    state: &ZeldaState,
+    entry_earliest: CpuRasterPosition,
+    entry_latest: CpuRasterPosition,
+) -> Option<OverworldSpotlightCpuPlan> {
+    let mut earliest = overworld_spotlight_cpu_plan_at(state, entry_earliest)
+        .map(OverworldSpotlightCpuPlan::normalized_interruption_phase);
+    let latest = overworld_spotlight_cpu_plan_at(state, entry_latest)
+        .map(OverworldSpotlightCpuPlan::normalized_interruption_phase);
+    assert_eq!(
+        earliest.map(OverworldSpotlightCpuPlan::current_boundary_key),
+        latest.map(OverworldSpotlightCpuPlan::current_boundary_key),
+        "measured Module10 entry raster envelope changed the spotlight CPU phase",
     );
     if let (Some(earliest), Some(latest)) = (&mut earliest, latest) {
         earliest.next_entry_latest = latest.next_entry_latest;
@@ -3195,12 +3458,13 @@ fn dungeon_room_load_cpu_plan(
     // loader and the rest of the prep routine have not returned yet.
     const ZELDA_FOLLOWER_GRAPHICS_RETURN_ADDRESS: u32 = 0x05_d444;
 
+    let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
         &state.ram,
         &state.sram,
         &state.ppu,
-        &state.dma,
+        &timing_dma,
         state.zelda_audio_apu_output_ports(),
         DUNGEON_ROOM_LOAD_CPU_CHECKPOINT,
     )
@@ -3406,12 +3670,13 @@ fn dungeon_submodule_cpu_schedule_plan(
     const SPRITE_EXECUTE_SINGLE_ENTRY_PC: u32 = 0x06_84e2;
     const SPRITE_SLOT_RETURN_PC: u32 = 0x06_83a7;
 
+    let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
         &state.ram,
         &state.sram,
         &state.ppu,
-        &state.dma,
+        &timing_dma,
         state.zelda_audio_apu_output_ports(),
         DUNGEON_MAIN_WAIT_CPU_CHECKPOINT,
     )
@@ -3818,12 +4083,13 @@ fn dungeon_module_7_cpu_advance(
         } else {
             checkpoint
         };
+    let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
         &state.ram,
         &state.sram,
         &state.ppu,
-        &state.dma,
+        &timing_dma,
         state.zelda_audio_apu_output_ports(),
         leading_nmi_checkpoint,
     )
@@ -4298,12 +4564,13 @@ fn dungeon_palette_caller_cpu_advance(
     state: &ZeldaState,
     entry: CpuRasterPosition,
 ) -> DungeonPaletteCpuAdvance {
+    let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
         &state.ram,
         &state.sram,
         &state.ppu,
-        &state.dma,
+        &timing_dma,
         state.zelda_audio_apu_output_ports(),
         DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT,
     )
@@ -4608,46 +4875,12 @@ const fn rom_dungeon_exit_spotlight_table_needs_entry_slice(
 }
 
 // IrisSpotlight_ConfigureTable waits for V=192, copies its 448-byte table, and
-// only then writes the next radius at $00:f3cf. PC/V-counter traces place the
-// write producing $3f after vblank and the write producing $38 before vblank.
-// The crossing iteration can therefore return and begin the next main slice
-// before the host's trailing NMI instead of consuming a return-only host frame.
+// only then writes the next radius at $00:f3cf. This boundary remains useful
+// for classifying which table rows HDMA can consume in the same field.
 const SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX: u16 = 0x38;
 
 const fn spotlight_close_next_radius(radius: u16) -> u16 {
     radius.saturating_sub(load_gfx::SPOTLIGHT_RADIUS_STEP)
-}
-
-const fn rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
-    radius: u16,
-    vertical_center: u16,
-) -> bool {
-    // The crossing was measured on long-table closes (the 189-row dungeon
-    // landing and the 239-row Link's-house exit). On the castle-entry close's
-    // smaller table the oracle keeps the split return through $3f->$38
-    // ($067c/$0c00d trace: rad 56 at run 11461, prep at 11462); firing the
-    // merge there ended the close one frame early and shifted the whole
-    // castle load (video 11461..11477, RNG schedule ±1 at f11561).
-    spotlight_table_has_long_nmi_workload(vertical_center)
-        && radius > SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
-        && spotlight_close_next_radius(radius) <= SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
-}
-
-const fn rom_long_close_iteration_prep_returns_with_main(
-    radius_after_shrink: u16,
-    vertical_center: u16,
-) -> bool {
-    // Oracle $0c00d/$067c write traces on the maximal-table close (vertical
-    // center 238, Link's-house exit): once the interrupted large-radius
-    // builds are behind it, each mid-close iteration finishes its table and
-    // reaches Main_PrepSpritesForNmi in the SAME host frame as its radius
-    // write (radius values 105 down to 63 pair rad+prep on one run), until
-    // the $3f->$38 crossing restores the split return. The interrupted
-    // builds themselves ($7e/$77, and $70 at the maximal table) still prep
-    // on their following return frame.
-    spotlight_table_has_long_nmi_workload(vertical_center)
-        && radius_after_shrink > SPOTLIGHT_CLOSE_RADIUS_UPDATE_BEFORE_NMI_MAX
-        && !rom_dungeon_exit_spotlight_table_needs_entry_slice(radius_after_shrink, vertical_center)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -4885,8 +5118,25 @@ enum GameWorkContinuation {
     },
     FinishDungeonExitSpotlightEntry {
         table_build: SpotlightTableBuildContinuation,
+        iteration: SpotlightIteration,
     },
     FinishDungeonExitSpotlightBuild {
+        table_build: SpotlightTableBuildContinuation,
+        projection_completed: bool,
+        iteration: SpotlightIteration,
+    },
+    /// Module10's Sprite_Main prefix returned, but vblank interrupted the
+    /// opening-iris table build or copy before its radius/control suffix.
+    FinishOverworldSpotlightBuild {
+        table_build: SpotlightTableBuildContinuation,
+        phase: OverworldSpotlightBuildPhase,
+        projection_completed: bool,
+        iteration: SpotlightIteration,
+    },
+    /// Module10 reached vblank in LinkOam_Main. This is the resumable suffix of
+    /// that concrete C caller; its ROM plan also supplies the next Module10
+    /// entry raster rather than reusing a fixed per-iteration estimate.
+    FinishOverworldSpotlightLinkOam {
         iteration: SpotlightIteration,
     },
     /// The closing iris reached its goal inside `IrisSpotlight_ConfigureTable`,
@@ -4915,7 +5165,7 @@ enum GameWorkContinuation {
     FinishWorldMapAmbientMap8,
     FinishOverworldAuxGraphics,
     FinishOverworldMapQuadrants {
-        screen_map_and_sprite_gfx_tail_nmi_slices: u8,
+        scroll_map_and_sprite_gfx_tail_nmi_slices: u8,
     },
     FinishOverworldScreenMapAndSpriteGraphicsTail,
     FinishOverworldSpriteReloadTail {
@@ -5076,8 +5326,14 @@ pub(super) struct SpotlightTableBuildContinuation {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum OverworldSpotlightBuildPhase {
+    Entry,
+    Recurring,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SpotlightDirection {
-    Opening { completes_goal_transition: bool },
+    Opening,
     Closing,
 }
 
@@ -5119,25 +5375,36 @@ pub(super) struct SpotlightIteration {
     projects_tail_on_completion: bool,
     projection_uses_published_prefix: bool,
     rom_following_field_receipt: Option<SpotlightFollowingFieldReceipt>,
+    main_loop_sprite_preparation_before_second_nmi: bool,
+    completed_hdma_table_owns_active_scanout: bool,
 }
 
 impl SpotlightIteration {
-    pub(super) const fn opening(completes_goal_transition: bool) -> Self {
+    pub(super) const fn opening() -> Self {
         Self {
-            direction: SpotlightDirection::Opening {
-                completes_goal_transition,
-            },
+            direction: SpotlightDirection::Opening,
             phase: SpotlightIterationPhase::WholeTable,
             in_flight_publication: DisplaySnapshotPublication::AdvanceStaged,
-            completion_publication: if completes_goal_transition {
-                DisplaySnapshotPublication::PublishCaptured
-            } else {
-                DisplaySnapshotPublication::AdvanceStaged
-            },
+            completion_publication: DisplaySnapshotPublication::AdvanceStaged,
             projects_tail_on_completion: false,
             projection_uses_published_prefix: false,
             rom_following_field_receipt: None,
+            main_loop_sprite_preparation_before_second_nmi: false,
+            completed_hdma_table_owns_active_scanout: false,
         }
+    }
+
+    fn opening_from_rom_cpu_plan(plan: Option<OverworldSpotlightCpuPlan>) -> Self {
+        let mut iteration = Self::opening();
+        if plan.is_some_and(OverworldSpotlightCpuPlan::exits_module_before_next_nmi) {
+            // On the opening goal return, the ROM reaches
+            // IrisSpotlight_ResetTable and OpenSpotlight_Next2 in vblank
+            // before the following active field. Only that completed HDMA
+            // table owns the next scanout directly; VRAM, OAM, and the other
+            // display domains retain their ordinary staged cadence.
+            iteration.completed_hdma_table_owns_active_scanout = true;
+        }
+        iteration
     }
 
     pub(super) const fn closing(phase: SpotlightIterationPhase) -> Self {
@@ -5157,6 +5424,8 @@ impl SpotlightIteration {
                 SpotlightIterationPhase::MixedTailAfterReturn
             ),
             rom_following_field_receipt: None,
+            main_loop_sprite_preparation_before_second_nmi: false,
+            completed_hdma_table_owns_active_scanout: false,
         }
     }
 
@@ -5171,10 +5440,41 @@ impl SpotlightIteration {
         self.completion_publication = DisplaySnapshotPublication::PublishCaptured;
         self.projects_tail_on_completion = false;
         self.projection_uses_published_prefix = false;
+        self.rom_following_field_receipt =
+            Some(SpotlightFollowingFieldReceipt { words, publication });
+        self
+    }
+
+    const fn with_rom_following_field_after_staged_active(
+        mut self,
+        words: [u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    ) -> Self {
+        // The first ROM field was staged when the table-build continuation
+        // began. Completion therefore retains that active field and queues
+        // the measured following rows for the next publication boundary.
+        self.projects_tail_on_completion = false;
+        self.projection_uses_published_prefix = false;
         self.rom_following_field_receipt = Some(SpotlightFollowingFieldReceipt {
             words,
-            publication,
+            publication: SpotlightFollowingFieldPublication::AfterCompletionCapture,
         });
+        self
+    }
+
+    const fn after_rom_following_field_was_staged(mut self) -> Self {
+        self.completion_publication = DisplaySnapshotPublication::PublishCaptured;
+        self.rom_following_field_receipt = None;
+        self.projects_tail_on_completion = false;
+        self.projection_uses_published_prefix = false;
+        self
+    }
+
+    const fn with_main_loop_sprite_preparation_before_second_nmi(mut self) -> Self {
+        // ZeldaRunGameLoop calls NMI_PrepareSprites after Module_MainRouting.
+        // When the isolated ROM run reaches that suffix between this
+        // iteration's two vblank boundaries, keep the fact on the suspended
+        // call itself instead of inferring it later from a module number.
+        self.main_loop_sprite_preparation_before_second_nmi = true;
         self
     }
 
@@ -5199,9 +5499,11 @@ impl SpotlightIteration {
                     phase,
                     SpotlightIterationPhase::WholeTable
                         | SpotlightIterationPhase::MixedTailAfterReturn
-            ),
+                ),
             projection_uses_published_prefix: !enters_iris,
             rom_following_field_receipt: None,
+            main_loop_sprite_preparation_before_second_nmi: false,
+            completed_hdma_table_owns_active_scanout: false,
         }
     }
 
@@ -5216,8 +5518,12 @@ impl SpotlightIteration {
         matches!(self.direction, SpotlightDirection::Closing)
     }
 
+    const fn prepares_main_loop_sprites_before_second_nmi(self) -> bool {
+        self.main_loop_sprite_preparation_before_second_nmi
+    }
+
     const fn is_opening(self) -> bool {
-        matches!(self.direction, SpotlightDirection::Opening { .. })
+        matches!(self.direction, SpotlightDirection::Opening)
     }
 
     const fn in_flight_publication(self) -> DisplaySnapshotPublication {
@@ -5237,6 +5543,10 @@ impl SpotlightIteration {
                     | SpotlightIterationPhase::WholeTableAfterTablePublication
             )
         )
+    }
+
+    const fn completed_hdma_table_owns_active_scanout(self) -> bool {
+        self.completed_hdma_table_owns_active_scanout
     }
 
     const fn projects_following_table_tail_on_completion(self) -> bool {
@@ -5465,12 +5775,11 @@ const fn dungeon_landing_goal_reset_preserves_scanout_prefix(vertical_center: u1
     !spotlight_table_has_long_nmi_workload(vertical_center)
 }
 
-const fn rom_spotlight_goal_transition_waits_for_iteration_return(
+const fn rom_dungeon_landing_goal_transition_waits_for_caller_return(
     main_module: u8,
     submodule: u8,
 ) -> bool {
     rom_dungeon_landing_wipe_is_active(main_module, submodule)
-        || (main_module == 16 && submodule == 1)
 }
 
 const fn rom_dialogue_initialization_nmi_slices(
@@ -5494,22 +5803,6 @@ const fn rom_dialogue_initialization_nmi_slices(
 
 const DUNGEON_ANIMATED_BG_VRAM_DESTINATION: usize = 0x3b00;
 const OVERWORLD_ANIMATED_BG_VRAM_DESTINATION: usize = 0x3c00;
-
-const fn dialogue_return_decoded_bg_cache_destination(
-    animated_bg_vram_destination: usize,
-) -> Option<usize> {
-    // C gives the two animation producers distinct VRAM domains:
-    // DecompressAnimatedDungeonTiles installs $3b00, while
-    // DecompressAnimatedOverworldTiles installs $3c00. During the delayed
-    // Module0E caller return, only the independently running overworld
-    // animation DMA has crossed the decoded-cache boundary. Dungeon dialogue
-    // remains on the field's retained $3b00 generation until its next NMI.
-    if animated_bg_vram_destination == OVERWORLD_ANIMATED_BG_VRAM_DESTINATION {
-        Some(animated_bg_vram_destination)
-    } else {
-        None
-    }
-}
 
 const ASSET_SIGNATURE_PREFIX: &[u8; 16] = b"Zelda3_v0     \n\0";
 const DIALOGUE_SOURCE_SIDECAR_ASSET_NAME: &str = "kDialogueSourceSemantic";
@@ -7115,10 +7408,7 @@ impl LiveSpotlightScanout {
         self
     }
 
-    fn with_active_window_words(
-        mut self,
-        words: &[u16; SPOTLIGHT_VISIBLE_SCANLINES],
-    ) -> Self {
+    fn with_active_window_words(mut self, words: &[u16; SPOTLIGHT_VISIBLE_SCANLINES]) -> Self {
         let table = &mut self.hdma_tables[0];
         for (scanline, word) in words.iter().copied().enumerate() {
             let offset = scanline * 2;
@@ -7957,7 +8247,6 @@ impl InidispRegisterScanout {
         ppu.mode7_scanout_brightness_override = None;
         ppu.refresh_brightness_cache();
     }
-
 }
 
 #[derive(Clone)]
@@ -8266,10 +8555,6 @@ pub struct ZeldaState {
     publish_live_hud_vram_on_next_capture: bool,
     #[serde(skip)]
     next_display_animated_bg_scanout_generation: Option<AnimatedBgScanoutGeneration>,
-    /// Animated BG generation completed after the active field was selected.
-    /// Promote it only after that field's snapshot has crossed publication.
-    #[serde(skip)]
-    animated_bg_scanout_after_active_field: Option<AnimatedBgScanoutGeneration>,
     #[serde(skip)]
     next_display_bg_scroll_generation: DisplayBgScrollGeneration,
     #[serde(skip)]
@@ -8309,8 +8594,7 @@ pub struct ZeldaState {
     /// apply this receipt at the next publication boundary, not to the image
     /// which was already visible when the interrupt occurred.
     #[serde(skip)]
-    interrupted_dungeon_submodule_publication:
-        Option<InterruptedDungeonSubmodulePublication>,
+    interrupted_dungeon_submodule_publication: Option<InterruptedDungeonSubmodulePublication>,
     #[serde(skip)]
     deferred_interrupted_dungeon_spotlight_scanout: Option<LiveSpotlightScanout>,
     /// Atomic image of a spotlight table whose C builder is still suspended
@@ -8350,15 +8634,11 @@ pub struct ZeldaState {
     #[serde(skip)]
     audio_nmi_processed_before_main: bool,
     #[serde(skip)]
-    dungeon_exit_spotlight_table_delay: u8,
-    #[serde(skip)]
-    dungeon_exit_spotlight_resume_module: bool,
-    #[serde(skip)]
     dungeon_exit_spotlight_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
     #[serde(skip)]
-    dungeon_exit_spotlight_main_loop_prep_before_second_nmi: bool,
+    overworld_spotlight_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
     #[serde(skip)]
-    iris_spotlight_goal_transition_pending: bool,
+    dungeon_landing_goal_transition_pending: bool,
     #[serde(skip)]
     normal_dialogue_initialization_phase: u8,
     #[serde(skip)]
@@ -8367,8 +8647,6 @@ pub struct ZeldaState {
     normal_dialogue_initialization_return_after_scanout_boundary: bool,
     #[serde(skip)]
     pending_dialogue_initialization_schedule: Option<(u8, bool)>,
-    #[serde(skip)]
-    dialogue_initialization_decoded_bg_cache_destination: Option<usize>,
 
     #[serde(skip)]
     hud_tilemap_nmi_publication_phase: u8,
@@ -9322,6 +9600,21 @@ fn room_71_item_graphics_return_crosses_completed_nmi(
 impl ZeldaState {
     pub(crate) fn compatibility_state_len(&self) -> usize {
         self.ram.len()
+    }
+
+    /// Materialize the hardware HDMA enable register for an isolated ROM run.
+    ///
+    /// The translated game owns the C `HDMAEN_copy` value in native display
+    /// state, while `DmaState` retains the channel descriptors configured by
+    /// `HdmaSetup`. Render-time HDMA already combines those two owners. ROM CPU
+    /// timing shadows must do the same or they omit each enabled scanline's bus
+    /// stall even though the C code and Snes9x both execute the transfer.
+    fn dma_with_native_hdma_enable(&self) -> DmaState {
+        let mut dma = self.dma.clone();
+        for (index, channel) in dma.channel.iter_mut().enumerate() {
+            channel.hdma_active = self.game_state.display.is_hdma_channel_enabled(index);
+        }
+        dma
     }
 
     fn replay_trace_col(&self, label: &str) {
@@ -14397,7 +14690,6 @@ impl ZeldaState {
             next_display_cgram_override: None,
             publish_live_hud_vram_on_next_capture: false,
             next_display_animated_bg_scanout_generation: None,
-            animated_bg_scanout_after_active_field: None,
             next_display_bg_scroll_generation: DisplayBgScrollGeneration::default(),
             next_display_obj_scanout_generation: None,
             next_display_obj_scanout_provenance: None,
@@ -14421,16 +14713,13 @@ impl ZeldaState {
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
-            dungeon_exit_spotlight_table_delay: 0,
-            dungeon_exit_spotlight_resume_module: false,
             dungeon_exit_spotlight_cpu_entry_envelope: None,
-            dungeon_exit_spotlight_main_loop_prep_before_second_nmi: false,
-            iris_spotlight_goal_transition_pending: false,
+            overworld_spotlight_cpu_entry_envelope: None,
+            dungeon_landing_goal_transition_pending: false,
             normal_dialogue_initialization_phase: 0,
             normal_dialogue_initialization_entry_phase: 0,
             normal_dialogue_initialization_return_after_scanout_boundary: false,
             pending_dialogue_initialization_schedule: None,
-            dialogue_initialization_decoded_bg_cache_destination: None,
             hud_tilemap_nmi_publication_phase: 0,
             intro_poly_upload_delay: 0,
             display_snapshot: None,
@@ -14554,15 +14843,11 @@ impl ZeldaState {
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
         self.main_loop_sprite_preparation_completed = false;
-        self.dungeon_exit_spotlight_table_delay = 0;
-        self.dungeon_exit_spotlight_resume_module = false;
-        self.dungeon_exit_spotlight_main_loop_prep_before_second_nmi = false;
-        self.iris_spotlight_goal_transition_pending = false;
+        self.dungeon_landing_goal_transition_pending = false;
         self.normal_dialogue_initialization_phase = 0;
         self.normal_dialogue_initialization_entry_phase = 0;
         self.normal_dialogue_initialization_return_after_scanout_boundary = false;
         self.pending_dialogue_initialization_schedule = None;
-        self.dialogue_initialization_decoded_bg_cache_destination = None;
         self.dialogue_fast_forward_hold_pending = false;
         self.dialogue_fast_forward_hold_active = false;
         self.game_over_text_render_calls_remaining = 0;
@@ -14634,14 +14919,11 @@ impl ZeldaState {
             self.dungeon_room_load_module_suffix_nmi_slices = 0;
             self.joypad_sampled_before_main = false;
             self.audio_nmi_processed_before_main = false;
-            self.dungeon_exit_spotlight_table_delay = 0;
-            self.dungeon_exit_spotlight_resume_module = false;
-            self.iris_spotlight_goal_transition_pending = false;
+            self.dungeon_landing_goal_transition_pending = false;
             self.normal_dialogue_initialization_phase = 0;
             self.normal_dialogue_initialization_entry_phase = 0;
             self.normal_dialogue_initialization_return_after_scanout_boundary = false;
             self.pending_dialogue_initialization_schedule = None;
-            self.dialogue_initialization_decoded_bg_cache_destination = None;
             self.hud_tilemap_nmi_publication_phase = 0;
             self.nmi_poly_upload_deferred = 0;
             self.nmi_poly_upload_started = false;
@@ -14685,8 +14967,7 @@ impl ZeldaState {
             self.staged_presented_vram_chr_source = None;
             self.staged_presented_vram_chr_preview_source = None;
             self.deferred_display_snapshot = None;
-            self.dungeon_landing_goal_display_handoff =
-                DungeonLandingGoalDisplayHandoff::None;
+            self.dungeon_landing_goal_display_handoff = DungeonLandingGoalDisplayHandoff::None;
         } else if !self.game_state.display.has_animated_tile_data_source() {
             self.rom_reset_frame_delay = configured_rom_reset_frame_delay();
         }
@@ -14727,6 +15008,31 @@ impl ZeldaState {
         );
     }
 
+    pub(super) fn schedule_overworld_spotlight_build(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        phase: OverworldSpotlightBuildPhase,
+        projection_completed: bool,
+        iteration: SpotlightIteration,
+    ) {
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishOverworldSpotlightBuild {
+                table_build,
+                phase,
+                projection_completed,
+                iteration,
+            },
+            1,
+        );
+    }
+
+    pub(super) fn schedule_overworld_spotlight_link_oam(&mut self, iteration: SpotlightIteration) {
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration },
+            1,
+        );
+    }
+
     pub(super) fn schedule_game_over_spotlight_build(&mut self, iteration: SpotlightIteration) {
         if !self.rom_startup_timing() {
             return;
@@ -14745,6 +15051,31 @@ impl ZeldaState {
         self.spotlight_scanout_after_active_field = Some(LiveSpotlightScanout::capture(self));
     }
 
+    /// Publish the exact channel-7 rows consumed after the first NMI in a
+    /// recurring dungeon-exit spotlight call. When the C caller has already
+    /// crossed a leading NMI, that field is the scanout captured earlier in
+    /// this host callback; otherwise it is the next staged scanout.
+    pub(super) fn publish_or_stage_spotlight_active_field(
+        &mut self,
+        words: &[u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    ) {
+        let scanout = LiveSpotlightScanout::capture(self).with_authoritative_rom_hdma_words(words);
+        if self
+            .game_execution_scheduler
+            .current_main_iteration_follows_leading_nmi()
+        {
+            let display = self
+                .display_snapshot
+                .as_mut()
+                .expect("leading-NMI spotlight main requires an active display snapshot");
+            display.spotlight_scanout_generation =
+                SpotlightScanoutGeneration::ComposeLiveAfterNmi(scanout);
+        } else {
+            debug_assert!(self.spotlight_scanout_after_active_field.is_none());
+            self.spotlight_scanout_after_active_field = Some(scanout);
+        }
+    }
+
     /// With the maximal spotlight table, the module-15 sub-0 call's first
     /// IrisSpotlight_ConfigureTable build is interrupted by vblank. The entry
     /// frame runs the PrepExit and SpotlightInternal prefixes; the table copy,
@@ -14754,6 +15085,7 @@ impl ZeldaState {
     pub(super) fn begin_dungeon_exit_spotlight_entry(
         &mut self,
         cpu_plan: Option<DungeonExitSpotlightCpuPlan>,
+        iteration: SpotlightIteration,
     ) -> bool {
         let Some(cpu_plan) = cpu_plan.filter(|plan| {
             self.rom_startup_timing() && plan.interrupted_during_table_build_or_copy()
@@ -14761,8 +15093,7 @@ impl ZeldaState {
             return false;
         };
         self.spotlight_internal_before_table(0x7e, 0);
-        let table_build = self
-            .begin_iris_spotlight_configure_table(cpu_plan.iterations_before_nmi);
+        let table_build = self.begin_iris_spotlight_configure_table(cpu_plan.iterations_before_nmi);
         // The isolated ROM run records what channel 7 actually consumed after
         // the interrupt while $00:f3b7 copied $7f:7000 to $7e:1b00. Compose
         // those row receipts with the translated controls instead of choosing
@@ -14772,31 +15103,36 @@ impl ZeldaState {
                 .with_authoritative_rom_hdma_words(&cpu_plan.active_window_words),
         );
         self.game_execution_scheduler.schedule_work(
-            GameWorkContinuation::FinishDungeonExitSpotlightEntry { table_build },
+            GameWorkContinuation::FinishDungeonExitSpotlightEntry {
+                table_build,
+                iteration,
+            },
             1,
         );
         true
     }
 
-    pub(super) fn begin_dungeon_exit_spotlight_copy(
+    pub(super) fn begin_dungeon_exit_spotlight_build(
         &mut self,
         cpu_plan: Option<DungeonExitSpotlightCpuPlan>,
         iteration: SpotlightIteration,
     ) -> bool {
-        let Some(_cpu_plan) = cpu_plan.filter(|plan| {
-            self.rom_startup_timing() && plan.interrupted_during_table_copy()
+        let Some(cpu_plan) = cpu_plan.filter(|plan| {
+            self.rom_startup_timing() && plan.interrupted_during_table_build_or_copy()
         }) else {
             return false;
         };
-        // The C circle builder has completed, but vblank interrupts the
-        // $00:f3b7 working-table copy before the radius write and Module0F
-        // suffix. Materialize the completed CPU buffers while retaining the
-        // call stack; the scheduled continuation carries the per-scanline
-        // receipt until the original copy caller actually returns.
-        let table_build = self.begin_iris_spotlight_configure_table(usize::MAX);
-        self.complete_iris_spotlight_table_projection(table_build);
+        let table_build = self.begin_iris_spotlight_configure_table(cpu_plan.iterations_before_nmi);
+        let projection_completed = cpu_plan.interrupted_during_table_copy();
+        if projection_completed {
+            self.complete_iris_spotlight_table_projection(table_build);
+        }
         self.game_execution_scheduler.schedule_work(
-            GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration },
+            GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+                table_build,
+                projection_completed,
+                iteration,
+            },
             1,
         );
         true
@@ -14848,9 +15184,9 @@ impl ZeldaState {
         let timing =
             overworld_map_and_sprite_graphics_timing(self.overworld_map_graphics_workload());
         self.game_execution_scheduler
-            .schedule_work_before_trailing_nmi(
+            .schedule_cpu_timed_work_from_current_main_iteration(
                 GameWorkContinuation::FinishPreOverworldScreenBuild,
-                timing.quadrant_load_nmi_slices + timing.screen_map_and_sprite_gfx_tail_nmi_slices,
+                timing.quadrant_load_nmi_slices + timing.map16_to_map8_tail_nmi_slices,
             );
         true
     }
@@ -15445,7 +15781,6 @@ impl ZeldaState {
         );
     }
 
-
     pub(super) fn begin_world_map_light_load_work(&mut self) -> bool {
         if !self.rom_startup_timing() {
             return false;
@@ -15775,23 +16110,24 @@ impl ZeldaState {
         let advances_landing_goal = self.dungeon_landing_goal_display_handoff
             == DungeonLandingGoalDisplayHandoff::AdvanceFinalCircle;
         let landing_goal_handoff = advances_landing_goal.then(|| {
-                self.dungeon_landing_goal_display_handoff =
-                    DungeonLandingGoalDisplayHandoff::None;
-                DisplaySnapshotPublication::AdvanceStaged
-            });
-        debug_assert!(publication_override.is_none() || landing_goal_handoff.is_none());
-        let publication = publication_override.or(landing_goal_handoff).unwrap_or_else(|| {
-            if rom_attract_world_map_display_is_one_frame_deferred(
-                frame.main_module,
-                frame.submodule,
-                self.game_state.ending.attract_scene.sequence(),
-                self.game_state.ending.attract_scene.state(),
-            ) {
-                DisplaySnapshotPublication::AdvanceStaged
-            } else {
-                rom_display_snapshot_publication(frame.main_module, frame.submodule)
-            }
+            self.dungeon_landing_goal_display_handoff = DungeonLandingGoalDisplayHandoff::None;
+            DisplaySnapshotPublication::AdvanceStaged
         });
+        debug_assert!(publication_override.is_none() || landing_goal_handoff.is_none());
+        let publication = publication_override
+            .or(landing_goal_handoff)
+            .unwrap_or_else(|| {
+                if rom_attract_world_map_display_is_one_frame_deferred(
+                    frame.main_module,
+                    frame.submodule,
+                    self.game_state.ending.attract_scene.sequence(),
+                    self.game_state.ending.attract_scene.state(),
+                ) {
+                    DisplaySnapshotPublication::AdvanceStaged
+                } else {
+                    rom_display_snapshot_publication(frame.main_module, frame.submodule)
+                }
+            });
         let spotlight_iteration = self.game_execution_scheduler.spotlight_iteration();
         let spotlight_vertical_center = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
@@ -15801,31 +16137,29 @@ impl ZeldaState {
             spotlight_vertical_center,
             self.game_state.display.spotlight_hdma.window_radius(),
         );
-        let spotlight_projection_waits_for_staged_publication = match self
-            .game_execution_scheduler
-            .current_work()
-        {
-            Some(GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration }) => {
-                iteration.phase == SpotlightIterationPhase::WholeTableAfterTablePublication
-            }
-            Some(GameWorkContinuation::FinishSpotlightIteration { iteration }) => {
-                // On the short Module 15 close, the C loop authors the next
-                // table during active display. The current scanout keeps the
-                // previously staged circle; the new table becomes visible at
-                // the caller-return boundary on the following host.
-                self.game_state.frame.main_module == 15
-                    && !spotlight_table_has_long_nmi_workload(spotlight_vertical_center)
-                    && iteration.phase
-                        == SpotlightIterationPhase::WholeTableAfterTablePublication
-            }
-            Some(GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. }) => {
-                // The goal build returns near the end of active display. Its
-                // reserved-table memcpy has not retroactively replaced rows
-                // HDMA already consumed from the preceding circle.
-                true
-            }
-            _ => false,
-        };
+        let spotlight_projection_waits_for_staged_publication =
+            match self.game_execution_scheduler.current_work() {
+                Some(GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+                    iteration, ..
+                }) => iteration.phase == SpotlightIterationPhase::WholeTableAfterTablePublication,
+                Some(GameWorkContinuation::FinishSpotlightIteration { iteration }) => {
+                    // On the short Module 15 close, the C loop authors the next
+                    // table during active display. The current scanout keeps the
+                    // previously staged circle; the new table becomes visible at
+                    // the caller-return boundary on the following host.
+                    self.game_state.frame.main_module == 15
+                        && !spotlight_table_has_long_nmi_workload(spotlight_vertical_center)
+                        && iteration.phase
+                            == SpotlightIterationPhase::WholeTableAfterTablePublication
+                }
+                Some(GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. }) => {
+                    // The goal build returns near the end of active display. Its
+                    // reserved-table memcpy has not retroactively replaced rows
+                    // HDMA already consumed from the preceding circle.
+                    true
+                }
+                _ => false,
+            };
         let spotlight_table_is_still_building = spotlight_iteration.is_some_and(|iteration| {
             iteration.is_closing()
                 && self.game_state.frame.main_module == 15
@@ -15834,17 +16168,13 @@ impl ZeldaState {
                     spotlight_vertical_center,
                 )
         });
-        let hdma_table_generation = spotlight_iteration
+        let hdma_table_published_ahead = spotlight_iteration
             .filter(|iteration| {
                 iteration.publishes_completed_hdma_table_to_active_scanout()
                     && !spotlight_table_is_still_building
                     && !spotlight_projection_waits_for_staged_publication
             })
-            .map(
-                |_| DisplayHdmaTableGeneration::SpotlightPublishedAheadOfSnapshot {
-                    active_table: self.hdma_dynamic_table_bytes(),
-                },
-            );
+            .map(|_| self.hdma_dynamic_table_bytes());
         let mixed_spotlight_after_projection = spotlight_iteration
             .filter(|iteration| iteration.phase == SpotlightIterationPhase::MixedTailAfterReturn)
             .map(|_| spotlight_hdma_tables_from_ram(&self.ram));
@@ -15883,21 +16213,8 @@ impl ZeldaState {
                 published.accepts_nmi_dma_receipts = false;
             }
         }
-        if let (Some(generation), Some(display)) =
-            (hdma_table_generation, self.display_snapshot.as_mut())
-        {
-            // An explicit ROM CPU/HDMA receipt already records the table word
-            // consumed on every scanline. The older whole-table projection
-            // was only an approximation for paths without such a receipt and
-            // must not replace measured hardware ownership.
-            let has_authoritative_rom_receipt = matches!(
-                &display.spotlight_scanout_generation,
-                SpotlightScanoutGeneration::ComposeLiveAfterNmi(scanout)
-                    if scanout.authoritative_rom_hdma_receipt
-            );
-            if !has_authoritative_rom_receipt {
-                display.hdma_table_generation = generation;
-            }
+        if let Some(active_table) = hdma_table_published_ahead {
+            self.publish_completed_spotlight_hdma_table_to_active_scanout(active_table);
         }
         if let (Some(after_projection), Some(display)) = (
             mixed_spotlight_after_projection,
@@ -15933,9 +16250,27 @@ impl ZeldaState {
             // table that was scanned before that NMI.
             if let Some(display) = self.display_snapshot.as_mut() {
                 display.dungeon_exit_spotlight_force_blank = true;
-                display.ppu.forced_blank_from_scanline =
-                    Some(TRAILING_NMI_FORCE_BLANK_SCANLINE);
+                display.ppu.forced_blank_from_scanline = Some(TRAILING_NMI_FORCE_BLANK_SCANLINE);
             }
+        }
+    }
+
+    fn publish_completed_spotlight_hdma_table_to_active_scanout(&mut self, active_table: Vec<u8>) {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return;
+        };
+        // An explicit ROM CPU/HDMA receipt already records the table word
+        // consumed on every scanline. A whole-table publication is only used
+        // when the ROM run proves that the completed copy/reset preceded the
+        // active field.
+        let has_authoritative_rom_receipt = matches!(
+            &display.spotlight_scanout_generation,
+            SpotlightScanoutGeneration::ComposeLiveAfterNmi(scanout)
+                if scanout.authoritative_rom_hdma_receipt
+        );
+        if !has_authoritative_rom_receipt {
+            display.hdma_table_generation =
+                DisplayHdmaTableGeneration::SpotlightPublishedAheadOfSnapshot { active_table };
         }
     }
 
@@ -16022,18 +16357,14 @@ impl ZeldaState {
                 // evaluation keeps the previously presented OAM, while the
                 // decoded Link batch uses the captured host operands.
                 display.oam_scanout_source = OamScanoutSource::RetainPreviousPresented;
-                display.link_obj_scanout_generation =
-                    GraphicsDmaGeneration::HostBoundaryBeforeMain;
-                display.link_obj_source_generation =
-                    GraphicsDmaGeneration::HostBoundaryBeforeMain;
+                display.link_obj_scanout_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
+                display.link_obj_source_generation = GraphicsDmaGeneration::HostBoundaryBeforeMain;
             }
         }
     }
 
     fn capture_animated_bg_scanout(&self) -> Option<AnimatedBgScanout> {
-        if !self.rom_startup_timing()
-            || !self.game_state.display.has_animated_tile_data_source()
-        {
+        if !self.rom_startup_timing() || !self.game_state.display.has_animated_tile_data_source() {
             return None;
         }
         let destination_address = self
@@ -16074,30 +16405,29 @@ impl ZeldaState {
             && self
                 .last_interrupted_dungeon_spotlight_stage_host
                 .is_some_and(|host| host.wrapping_add(1) == self.frame_ctr_dbg);
-        let (oam_scanout_source, obj_cache_generation) = if !self
-            .dungeon_landing_spotlight_later_host_cadence
-        {
-            // Before the adjacent interrupted iterations establish the C
-            // later-host cadence, the retiring field is still the immutable
-            // pre-NMI capture. No full-NMI resident generation belongs to it.
-            (
-                OamScanoutSource::RetainImmutableCapturedPpu,
-                DisplayObjCacheGeneration::CapturedBeforeNmi,
-            )
-        } else if consecutive_spotlight_iteration {
-            (
-                OamScanoutSource::RetainImmutableCapturedPpu,
-                DisplayObjCacheGeneration::HostBoundaryBeforeMain,
-            )
-        } else {
-            // The caller-return field follows the completed full NMI from the
-            // preceding pair. Its OAM DMA is now resident, while decoded Link
-            // CHR advances from the operands captured at that same boundary.
-            (
-                OamScanoutSource::RetainResidentPpuOam,
-                DisplayObjCacheGeneration::EarlyLinkDmaFromHostOperands,
-            )
-        };
+        let (oam_scanout_source, obj_cache_generation) =
+            if !self.dungeon_landing_spotlight_later_host_cadence {
+                // Before the adjacent interrupted iterations establish the C
+                // later-host cadence, the retiring field is still the immutable
+                // pre-NMI capture. No full-NMI resident generation belongs to it.
+                (
+                    OamScanoutSource::RetainImmutableCapturedPpu,
+                    DisplayObjCacheGeneration::CapturedBeforeNmi,
+                )
+            } else if consecutive_spotlight_iteration {
+                (
+                    OamScanoutSource::RetainImmutableCapturedPpu,
+                    DisplayObjCacheGeneration::HostBoundaryBeforeMain,
+                )
+            } else {
+                // The caller-return field follows the completed full NMI from the
+                // preceding pair. Its OAM DMA is now resident, while decoded Link
+                // CHR advances from the operands captured at that same boundary.
+                (
+                    OamScanoutSource::RetainResidentPpuOam,
+                    DisplayObjCacheGeneration::EarlyLinkDmaFromHostOperands,
+                )
+            };
         let spotlight = if spotlight_build_remains_suspended {
             // The translated function has already produced its atomic result,
             // but the C instruction stream has not reached the table copy or
@@ -16108,9 +16438,7 @@ impl ZeldaState {
             self.last_interrupted_dungeon_spotlight_stage_host = None;
             None
         } else if consecutive_spotlight_iteration {
-            let previous = self
-                .deferred_interrupted_dungeon_spotlight_scanout
-                .take();
+            let previous = self.deferred_interrupted_dungeon_spotlight_scanout.take();
             self.deferred_interrupted_dungeon_spotlight_scanout = authored_spotlight;
             previous
         } else {
@@ -16708,9 +17036,7 @@ impl ZeldaState {
         // The persistent `forced_blank` latch owns the following field from
         // row zero; carrying the suffix metadata forward would replay the same
         // raster edge twice. Consume legacy snapshot state without publishing it.
-        let _ = self
-            .legacy_nmi_forced_blank_from_scanline_pending
-            .take();
+        let _ = self.legacy_nmi_forced_blank_from_scanline_pending.take();
         snapshot.ppu.forced_blank_from_scanline = None;
         snapshot.ppu.retain_active_display_history = false;
         if frame.main_module == 0
@@ -16775,10 +17101,6 @@ impl ZeldaState {
         if let Some(following_spotlight) = self.spotlight_scanout_after_active_field.take() {
             debug_assert!(self.next_display_spotlight_scanout.is_none());
             self.next_display_spotlight_scanout = Some(following_spotlight);
-        }
-        if let Some(following_animated_bg) = self.animated_bg_scanout_after_active_field.take() {
-            debug_assert!(self.next_display_animated_bg_scanout_generation.is_none());
-            self.next_display_animated_bg_scanout_generation = Some(following_animated_bg);
         }
         if self.debug_obj_pipe_enabled() {
             if let Some(published) = self.display_snapshot.as_ref() {
@@ -17530,12 +17852,13 @@ impl ZeldaState {
                 }
             }
         }
-        if plan.animated_bg_scanout_generation
-            == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
+        if plan.animated_bg_scanout_generation == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
         {
             if let Some(scanout) = following.host_boundary_animated_bg_scanout.as_ref() {
                 let range = scanout.destination_address
-                    ..scanout.destination_address.saturating_add(scanout.vram.len());
+                    ..scanout
+                        .destination_address
+                        .saturating_add(scanout.vram.len());
                 self.vram_chr_source
                     .copy_word_range_from(&scanout.logical_sources, range.clone());
                 self.vram_chr_preview_source
@@ -17946,9 +18269,7 @@ impl ZeldaState {
             | OamScanoutSource::ComposeLiveAfterNmiWithHostBoundaryLink => {
                 following.published_shadow_oam_dma.as_deref()
             }
-            OamScanoutSource::ComposeHostBoundaryShadowDma => {
-                host_boundary_shadow_oam.as_deref()
-            }
+            OamScanoutSource::ComposeHostBoundaryShadowDma => host_boundary_shadow_oam.as_deref(),
             OamScanoutSource::RetainPreviousPresented
             | OamScanoutSource::RetainImmutableCapturedPpu
             | OamScanoutSource::RetainResidentPpuOam
@@ -19188,10 +19509,7 @@ impl ZeldaState {
             // A before/after receipt pair can compose twice within one host;
             // in that interval the retiring field is staged but has not yet
             // been promoted into `last_presented_oam`.
-            if let Some(previous) = self
-                .retiring_or_last_presented_oam()
-                .map(<[u16]>::to_vec)
-            {
+            if let Some(previous) = self.retiring_or_last_presented_oam().map(<[u16]>::to_vec) {
                 self.ppu.oam.copy_from_slice(&previous);
             }
         }
@@ -19348,8 +19666,8 @@ impl ZeldaState {
         plan: &DisplayPublicationPlan,
     ) {
         let captured_frame = crate::game_state::FrameState::load_from_ram(&self.ram);
-        live_forced_blank_from_scanline = live_forced_blank_from_scanline
-            .or(self.ppu.forced_blank_from_scanline);
+        live_forced_blank_from_scanline =
+            live_forced_blank_from_scanline.or(self.ppu.forced_blank_from_scanline);
         if live_forced_blank && live_forced_blank_from_scanline.is_none() {
             live_forced_blank_from_scanline = dungeon_map_terminal_fade_blank_scanline(
                 captured_frame.main_module,
@@ -19781,8 +20099,8 @@ impl ZeldaState {
                 &self.ppu.oam[..4],
             );
         }
-        let live_forced_blank = self.ppu.forced_blank
-            && !following_staged_scanout_owns_attract_exit_generation;
+        let live_forced_blank =
+            self.ppu.forced_blank && !following_staged_scanout_owns_attract_exit_generation;
         let live_forced_blank_from_scanline = self
             .active_display_force_blank_event
             .or(self.ppu.forced_blank_from_scanline);
@@ -19944,8 +20262,7 @@ impl ZeldaState {
             &publication_plan,
         );
         self.compose_effective_presented_inidisp(&display);
-        if display.game_over_iris_goal_scanout_closed
-            || display.dungeon_exit_spotlight_force_blank
+        if display.game_over_iris_goal_scanout_closed || display.dungeon_exit_spotlight_force_blank
         {
             // A terminal iris can publish brightness zero before the captured
             // CPU generation advances. Dungeon exit reaches that PPU state at
@@ -19953,8 +20270,7 @@ impl ZeldaState {
             // close the active field itself. Keep raster and final-register
             // ownership separate.
             if display.dungeon_exit_spotlight_force_blank {
-                self.ppu.mode7_scanout_brightness_override =
-                    Some(captured_screen_brightness);
+                self.ppu.mode7_scanout_brightness_override = Some(captured_screen_brightness);
             }
             self.ppu.brightness = 0;
             self.ppu.refresh_brightness_cache();
@@ -20215,6 +20531,58 @@ impl ZeldaState {
             existing.merge_after(receipt);
         } else {
             active.effective_presented_dma = Some(receipt);
+        }
+    }
+
+    pub(super) fn record_trailing_nmi_decoded_bg_dma_for_following_scanout(&mut self) {
+        let Some(writes) = self.active_effective_dma_writes.take() else {
+            return;
+        };
+        let accepts_decoded_bg_receipt = |snapshot: &DisplaySnapshot| {
+            snapshot.accepts_nmi_dma_receipts
+                && snapshot.animated_bg_scanout_generation
+                    == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
+        };
+        let following_scanout_is_staged = self
+            .deferred_display_snapshot
+            .as_deref()
+            .is_some_and(&accepts_decoded_bg_receipt);
+        if !following_scanout_is_staged {
+            // The ordinary main-then-NMI cadence has already captured the
+            // active scanout. Its trailing DMA becomes resident PPU state and
+            // will be present when the next scanout is captured; it cannot be
+            // attached retroactively to the active image. Only AdvanceStaged
+            // has materialized that following image early enough to need an
+            // explicit decoded-cache receipt.
+            return;
+        }
+
+        let destination = self
+            .game_state
+            .display
+            .animated_tile_vram_destination_usize();
+        let mut receipt = EffectivePresentedDma::from_write_set(writes, self);
+        receipt.decoded_bg_vram_writes =
+            receipt.take_vram_range(destination..destination.saturating_add(0x200));
+        if receipt.decoded_bg_vram_writes.is_empty() {
+            return;
+        }
+        receipt.vram_writes.clear();
+        receipt.completed_oam = None;
+        receipt.completed_cgram = None;
+        receipt.completed_bg_scroll = None;
+        receipt.completed_color_math = None;
+        receipt.completed_inidisp = None;
+        receipt.completed_dialogue_metadata = None;
+
+        let following = self
+            .deferred_display_snapshot
+            .as_mut()
+            .expect("trailing-NMI decoded BG receipt requires a staged following snapshot");
+        if let Some(existing) = following.effective_presented_dma.as_mut() {
+            existing.merge_after(receipt);
+        } else {
+            following.effective_presented_dma = Some(receipt);
         }
     }
 
@@ -21293,17 +21661,15 @@ impl ZeldaState {
         // The interrupting NMI landed before the indirect Module 7 submodule
         // call returned. Resume the common caller suffix exactly once without
         // replaying the translated submodule.
-        if self.iris_spotlight_goal_transition_pending {
-            self.iris_spotlight_goal_transition_pending = false;
+        if self.dungeon_landing_goal_transition_pending {
+            self.dungeon_landing_goal_transition_pending = false;
             let vertical_center = spotlight_vertical_center(
                 self.game_state.player.follower_link.y(),
                 self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
             );
             let reset_prefix = dungeon_landing_goal_reset_preserves_scanout_prefix(vertical_center)
                 .then(|| {
-                    std::array::from_fn(|index| {
-                        self.spotlight_hdma_table_dynamic_entry(index)
-                    })
+                    std::array::from_fn(|index| self.spotlight_hdma_table_dynamic_entry(index))
                 });
             self.complete_iris_spotlight_goal_transition();
             if let Some(reset_prefix) = reset_prefix {
@@ -21739,12 +22105,6 @@ impl ZeldaState {
                 // which the scheduler already owns on the next host.
                 let returned_scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
                 self.publish_bg_scroll_for_following_scanout(returned_scroll);
-                self.dialogue_initialization_decoded_bg_cache_destination =
-                    dialogue_return_decoded_bg_cache_destination(
-                        self.game_state
-                            .display
-                            .animated_tile_vram_destination_usize(),
-                    );
             }
             self.assert_native_frame_state_matches_ram();
             self.assert_native_world_location_state_matches_ram();
@@ -21897,8 +22257,7 @@ impl ZeldaState {
                     self.normal_dialogue_initialization_phase = 0;
                     self.normal_dialogue_initialization_entry_phase = 0;
                     let return_after_scanout_boundary = std::mem::take(
-                        &mut self
-                            .normal_dialogue_initialization_return_after_scanout_boundary,
+                        &mut self.normal_dialogue_initialization_return_after_scanout_boundary,
                     );
                     if return_after_scanout_boundary {
                         // Stage after the completion work: the prefix's own
@@ -22061,27 +22420,6 @@ impl ZeldaState {
             self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
             return;
         }
-        if self.rom_startup_timing() && self.dungeon_exit_spotlight_table_delay != 0 {
-            self.dungeon_exit_spotlight_table_delay -= 1;
-            // This is the prefix of a real main-loop iteration. The ROM has
-            // ticked the frame counter and cleared OAM before vblank interrupts
-            // the large-radius circle calculation; module routing resumes on a
-            // later host frame without repeating that prefix.
-            if !self.dungeon_exit_spotlight_resume_module {
-                self.main_loop_sprite_preparation_completed = false;
-                self.increment_frame_counter();
-                self.clear_oam_buffer();
-                self.latch_nmi_update();
-                self.dungeon_exit_spotlight_resume_module = true;
-            }
-            self.capture_display_snapshot_with_publication(
-                DisplaySnapshotPublication::AdvanceStaged,
-            );
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-            return;
-        }
-        let mut resume_main_after_spotlight_return = false;
-        let mut spotlight_scanout_started_before_resumed_main = None;
         let scheduled_work_entry_scroll = BgScrollRegisterScanout::capture(&self.ppu);
         let scheduled_work_step = if self.rom_startup_timing() {
             self.game_execution_scheduler.advance_work_one_nmi_slice()
@@ -22130,6 +22468,65 @@ impl ZeldaState {
             self.complete_module_pre_dungeon_before_return_suffix();
         }
         if let Some(GameWorkStep::Complete(
+            continuation @ (GameWorkContinuation::PreOverworldPropertiesSpriteReset { .. }
+            | GameWorkContinuation::FinishPreOverworldProperties { .. }
+            | GameWorkContinuation::FinishPreOverworldOverlays
+            | GameWorkContinuation::FinishPreOverworldScreenBuild),
+        )) = scheduled_work_step
+        {
+            // Each pre-overworld load is one synchronous C call. Its final
+            // measured slice is the NMI which interrupts that call; only
+            // afterward does the saved CPU stack mutate the semantic stage
+            // and return through ZeldaRunGameLoop. Publishing the completion
+            // before this NMI shifts every following module iteration one
+            // hardware boundary early.
+            self.capture_display_snapshot();
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            match continuation {
+                GameWorkContinuation::PreOverworldPropertiesSpriteReset {
+                    overworld_screen,
+                    animated_tiles,
+                } => {
+                    self.complete_pre_overworld_load_properties_through_sprite_reset(
+                        overworld_screen,
+                        animated_tiles,
+                    );
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishPreOverworldProperties { overworld_screen },
+                        PRE_OVERWORLD_PROPERTIES_AFTER_SPRITE_RESET_NMI_SLICES,
+                    );
+                }
+                GameWorkContinuation::FinishPreOverworldProperties { overworld_screen } => {
+                    self.complete_pre_overworld_load_properties_after_sprite_reset(
+                        overworld_screen,
+                    );
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    self.game_execution_scheduler
+                        .finish_call_stack_at_main_wait_before_nmi();
+                }
+                GameWorkContinuation::FinishPreOverworldOverlays => {
+                    self.complete_pre_overworld_load_overlays();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    self.game_execution_scheduler
+                        .finish_call_stack_at_main_wait_before_nmi();
+                }
+                GameWorkContinuation::FinishPreOverworldScreenBuild => {
+                    self.complete_pre_overworld_screen_build();
+                    self.nmi_prepare_sprites();
+                    self.clear_nmi_update_latch();
+                    self.game_execution_scheduler
+                        .finish_call_stack_at_main_wait_before_nmi();
+                }
+                _ => unreachable!(),
+            }
+            self.assert_native_frame_state_matches_ram();
+            self.assert_native_world_location_state_matches_ram();
+            self.assert_native_display_state_matches_ram();
+            return;
+        }
+        if let Some(GameWorkStep::Complete(
             continuation @ (GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
             | GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn),
         )) = scheduled_work_step
@@ -22173,16 +22570,13 @@ impl ZeldaState {
                         .as_ref()
                         .map(|display| display.effective_spotlight_hdma_tables())
                 });
-            let completed_spotlight = self
-                .interrupted_dungeon_spotlight_build_in_flight
-                .take();
+            let completed_spotlight = self.interrupted_dungeon_spotlight_build_in_flight.take();
             let after_projection = completed_spotlight
                 .as_ref()
                 .map(|spotlight| spotlight.hdma_tables.clone());
-            self.last_completed_interrupted_dungeon_spotlight_scanout =
-                completed_spotlight.clone();
+            self.last_completed_interrupted_dungeon_spotlight_scanout = completed_spotlight.clone();
             self.next_display_spotlight_scanout = completed_spotlight;
-            let completes_landing_wipe = self.iris_spotlight_goal_transition_pending;
+            let completes_landing_wipe = self.dungeon_landing_goal_transition_pending;
             if completes_landing_wipe {
                 // The C builder has projected the final circle, but its caller
                 // returns during the field that is still retiring the prior
@@ -22283,39 +22677,44 @@ impl ZeldaState {
                     self.set_next_display_obj_scanout(Some(generation));
                 }
             }
-            let publication_override = match work_slice {
-                GameWorkStep::Complete(GameWorkContinuation::FinishGameOverSpotlightBuild {
-                    iteration,
-                }) => Some(iteration.game_over_build_completion_publication()),
-                GameWorkStep::Complete(GameWorkContinuation::FinishSpotlightIteration {
-                    iteration,
-                }) => Some(iteration.completion_publication()),
-                // The interrupted entry build finishes mid-frame; its first
-                // table generation belongs to the scanout already staged.
-                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightEntry {
-                    ..
-                }) => {
-                    Some(DisplaySnapshotPublication::AdvanceStaged)
-                }
-                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightBuild {
-                    iteration,
-                }) => Some(iteration.completion_publication()),
-                GameWorkStep::Complete(
-                    GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. },
-                ) => {
-                    // The retained goal field and the following all-black hold
-                    // have both elapsed. The resumed C caller runs in vblank,
-                    // so its HDMA disable/window terminal state owns the next
-                    // active field directly.
-                    Some(DisplaySnapshotPublication::PublishCaptured)
-                }
-                GameWorkStep::Complete(GameWorkContinuation::FinishItemReceiptGraphics {
-                    ..
-                }) => Some(DisplaySnapshotPublication::RetainPublished),
-                _ => self
-                    .game_execution_scheduler
-                    .in_flight_display_publication(),
-            };
+            let publication_override =
+                match work_slice {
+                    GameWorkStep::Complete(
+                        GameWorkContinuation::FinishGameOverSpotlightBuild { iteration },
+                    ) => Some(iteration.game_over_build_completion_publication()),
+                    GameWorkStep::Complete(GameWorkContinuation::FinishSpotlightIteration {
+                        iteration,
+                    }) => Some(iteration.completion_publication()),
+                    GameWorkStep::Complete(
+                        GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. },
+                    ) => Some(iteration.completion_publication()),
+                    GameWorkStep::Complete(
+                        GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. },
+                    ) => Some(iteration.completion_publication()),
+                    // The interrupted entry build finishes mid-frame; its first
+                    // table generation belongs to the scanout already staged.
+                    GameWorkStep::Complete(
+                        GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. },
+                    ) => Some(DisplaySnapshotPublication::AdvanceStaged),
+                    GameWorkStep::Complete(
+                        GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. },
+                    ) => Some(iteration.completion_publication()),
+                    GameWorkStep::Complete(
+                        GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. },
+                    ) => {
+                        // The retained goal field and the following all-black hold
+                        // have both elapsed. The resumed C caller runs in vblank,
+                        // so its HDMA disable/window terminal state owns the next
+                        // active field directly.
+                        Some(DisplaySnapshotPublication::PublishCaptured)
+                    }
+                    GameWorkStep::Complete(GameWorkContinuation::FinishItemReceiptGraphics {
+                        ..
+                    }) => Some(DisplaySnapshotPublication::RetainPublished),
+                    _ => self
+                        .game_execution_scheduler
+                        .in_flight_display_publication(),
+                };
             let big_key_drop_graphics_slice = matches!(
                 work_slice,
                 GameWorkStep::Complete(GameWorkContinuation::FinishBigKeyDropGraphics { .. })
@@ -23082,6 +23481,7 @@ impl ZeldaState {
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightEntry {
                     table_build,
+                    iteration,
                 }) => {
                     // The vblank-interrupted first IrisSpotlight_ConfigureTable
                     // build finishes here: table copy, first radius write,
@@ -23091,15 +23491,36 @@ impl ZeldaState {
                     // the resumed-build frame, one at the following return).
                     // The frame counter was ticked by the entry frame's main
                     // prefix; this resumed slice must not tick it again.
-                    self.complete_dungeon_exit_spotlight_entry(table_build);
+                    self.complete_dungeon_exit_spotlight_entry(table_build, iteration);
                     self.set_next_display_obj_scanout(Some(
                         dungeon_exit_spotlight_entry_return_obj_scanout(),
                     ));
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+                    table_build,
+                    projection_completed,
                     iteration,
                 }) => {
-                    self.complete_dungeon_exit_spotlight_build(iteration);
+                    self.complete_dungeon_exit_spotlight_build(
+                        table_build,
+                        projection_completed,
+                        iteration,
+                    );
+                    self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
+                        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    )));
+                }
+                GameWorkStep::Complete(GameWorkContinuation::FinishOverworldSpotlightBuild {
+                    table_build,
+                    phase,
+                    projection_completed,
+                    ..
+                }) => {
+                    self.complete_overworld_spotlight_build(
+                        table_build,
+                        phase,
+                        projection_completed,
+                    );
                     self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                         GraphicsDmaGeneration::HostBoundaryBeforeMain,
                     )));
@@ -23137,78 +23558,23 @@ impl ZeldaState {
                     // visible, but OAM and Link OBJ CHR still belong to the
                     // host-boundary generation; the NMI below publishes their
                     // newly prepared sources for the following scanout.
-                    if self.iris_spotlight_goal_transition_pending {
-                        self.iris_spotlight_goal_transition_pending = false;
-                        self.complete_iris_spotlight_goal_transition();
-                        // The ROM returns from IrisSpotlight_ConfigureTable to
-                        // Spotlight_ConfigureTableAndControl, observes the
-                        // freshly cleared submodule, and immediately runs
-                        // OpenSpotlight_Next2. Keep that caller suffix on the
-                        // same deferred return boundary as the goal transition.
-                        self.OpenSpotlight_Next2();
-                    }
-                    let close_vertical_center = spotlight_vertical_center(
-                        self.game_state.player.follower_link.y(),
-                        self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
-                    );
                     self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                         GraphicsDmaGeneration::HostBoundaryBeforeMain,
                     )));
-                    resume_main_after_spotlight_return = self.game_state.frame.main_module == 15
-                        && rom_dungeon_exit_spotlight_radius_update_crosses_before_nmi(
-                            self.game_state.display.spotlight_hdma.window_radius(),
-                            close_vertical_center,
-                        );
                     // A deferred return completes the same ZeldaRunGameLoop
                     // caller. Its sprite-preparation suffix runs exactly once:
                     // the isolated ROM CPU plan may have proved it returned in
                     // the prior slice, otherwise it returns here.
-                    if !resume_main_after_spotlight_return {
-                        self.nmi_prepare_sprites_for_main_loop_once();
-                        self.clear_nmi_update_latch();
-                    }
-                    if self.game_state.frame.main_module == 15
-                        && rom_dungeon_exit_spotlight_table_needs_entry_slice(
-                            self.game_state.display.spotlight_hdma.window_radius(),
-                            close_vertical_center,
-                        )
-                    {
-                        self.dungeon_exit_spotlight_table_delay =
-                            DUNGEON_EXIT_SPOTLIGHT_INTER_ITERATION_HOLD_FRAMES;
-                    }
+                    self.nmi_prepare_sprites_for_main_loop_once();
+                    self.clear_nmi_update_latch();
                 }
-                GameWorkStep::Complete(
-                    GameWorkContinuation::PreOverworldPropertiesSpriteReset {
-                        overworld_screen,
-                        animated_tiles,
-                    },
-                ) => {
-                    self.complete_pre_overworld_load_properties_through_sprite_reset(
-                        overworld_screen,
-                        animated_tiles,
-                    );
-                    self.game_execution_scheduler.schedule_work(
-                        GameWorkContinuation::FinishPreOverworldProperties { overworld_screen },
-                        PRE_OVERWORLD_PROPERTIES_AFTER_SPRITE_RESET_NMI_SLICES,
-                    );
-                }
-                GameWorkStep::Complete(GameWorkContinuation::FinishPreOverworldProperties {
-                    overworld_screen,
+                GameWorkStep::Complete(GameWorkContinuation::FinishOverworldSpotlightLinkOam {
+                    ..
                 }) => {
-                    self.complete_pre_overworld_load_properties_after_sprite_reset(
-                        overworld_screen,
-                    );
-                    self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
-                }
-                GameWorkStep::Complete(GameWorkContinuation::FinishPreOverworldOverlays) => {
-                    self.complete_pre_overworld_load_overlays();
-                    self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
-                }
-                GameWorkStep::Complete(GameWorkContinuation::FinishPreOverworldScreenBuild) => {
-                    self.complete_pre_overworld_screen_build();
-                    self.nmi_prepare_sprites();
+                    self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
+                        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    )));
+                    self.nmi_prepare_sprites_for_main_loop_once();
                     self.clear_nmi_update_latch();
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishWorldMapExitTilesets) => {
@@ -23254,7 +23620,7 @@ impl ZeldaState {
                     return;
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishOverworldMapQuadrants {
-                    screen_map_and_sprite_gfx_tail_nmi_slices,
+                    scroll_map_and_sprite_gfx_tail_nmi_slices,
                 }) => {
                     // SomeTileMapChange increments the submodule before the
                     // remaining screen-map build and sprite conversion return.
@@ -23266,7 +23632,7 @@ impl ZeldaState {
                     self.complete_module09_load_new_map_quadrants();
                     self.game_execution_scheduler.schedule_work(
                         GameWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail,
-                        screen_map_and_sprite_gfx_tail_nmi_slices,
+                        scroll_map_and_sprite_gfx_tail_nmi_slices,
                     );
                     return;
                 }
@@ -23371,12 +23737,18 @@ impl ZeldaState {
                     );
                 }
                 GameWorkStep::Complete(
-                    GameWorkContinuation::FinishDialogueInitializationCallerReturn
+                    GameWorkContinuation::PreOverworldPropertiesSpriteReset { .. }
+                    | GameWorkContinuation::FinishPreOverworldProperties { .. }
+                    | GameWorkContinuation::FinishPreOverworldOverlays
+                    | GameWorkContinuation::FinishPreOverworldScreenBuild
+                    | GameWorkContinuation::FinishDialogueInitializationCallerReturn
                     | GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
                     | GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
                     | GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn,
                 ) => {
-                    unreachable!("post-NMI caller return is handled before generic work publication")
+                    unreachable!(
+                        "post-NMI caller return is handled before generic work publication"
+                    )
                 }
             }
             // The original ROM returns to the NMI boundary after the final
@@ -23424,7 +23796,9 @@ impl ZeldaState {
             }
             if let GameWorkStep::Complete(
                 GameWorkContinuation::FinishSpotlightIteration { iteration }
-                | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration },
+                | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
+                | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. },
             ) = work_slice
             {
                 if let Some(following) = iteration.rom_following_field_receipt() {
@@ -23442,6 +23816,16 @@ impl ZeldaState {
                 }
             }
             self.capture_display_snapshot_with_override(publication_override);
+            if let GameWorkStep::Complete(
+                GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
+                | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration },
+            ) = work_slice
+            {
+                if iteration.completed_hdma_table_owns_active_scanout() {
+                    let active_table = self.hdma_dynamic_table_bytes();
+                    self.publish_completed_spotlight_hdma_table_to_active_scanout(active_table);
+                }
+            }
             if let GameWorkStep::Complete(GameWorkContinuation::FinishGameOverSpotlightBuild {
                 iteration,
             }) = work_slice
@@ -23455,7 +23839,9 @@ impl ZeldaState {
             }
             if let GameWorkStep::Complete(
                 GameWorkContinuation::FinishSpotlightIteration { iteration }
-                | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration },
+                | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
+                | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. },
             ) = work_slice
             {
                 if iteration.projects_following_table_tail_on_completion() {
@@ -23465,49 +23851,18 @@ impl ZeldaState {
                     );
                 }
             }
-            if resume_main_after_spotlight_return {
-                // The $3f->$38 circle update occurs before the trailing NMI,
-                // but that main slice cannot replace the scanout which already
-                // started at the return boundary above. Preserve the active
-                // display generation while the ordinary capture below stages
-                // the resumed CPU generation for the following scanout.
-                spotlight_scanout_started_before_resumed_main = self.display_snapshot.clone();
-            } else {
-                // The scheduled caller return reaches the ordinary trailing
-                // NMI. Its DMA operands prepare the following scanout; only
-                // explicit leading-boundary continuations use the active-
-                // scanout receipt path.
-                self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-                if matches!(
-                    work_slice,
-                    GameWorkStep::Complete(GameWorkContinuation::FinishSpotlightIteration {
-                        iteration,
-                    }) if iteration.is_opening()
-                ) {
-                    // The return-boundary NMI decodes the animated BG upload
-                    // for the following opening-iris scanout. The active
-                    // snapshot has already begun and keeps its pre-NMI tile;
-                    // advancing both generations here shifts the animation a
-                    // field early.
-                    self.animated_bg_scanout_after_active_field =
-                        Some(AnimatedBgScanoutGeneration::LiveAfterNmi);
-                }
-                self.stage_suspended_dungeon_submodule_after_nmi();
-                if scheduled_work_completion_clears_nmi_latch_after_interrupt(work_slice) {
-                    // This caller returns after the hardware NMI has observed
-                    // the request. The fresh state-13 iteration is still on
-                    // the next host frame, so no translated main slice may
-                    // re-latch it here.
-                    self.clear_nmi_update_latch();
-                }
-                self.restore_room_61_sprite_conversion_resident_oam();
-                return;
+            // The scheduled caller return reaches the ordinary trailing NMI.
+            // Display domains that complete at this boundary select their
+            // post-NMI generation in the immutable snapshot plan above.
+            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            self.stage_suspended_dungeon_submodule_after_nmi();
+            if scheduled_work_completion_clears_nmi_latch_after_interrupt(work_slice) {
+                self.clear_nmi_update_latch();
             }
+            self.restore_room_61_sprite_conversion_resident_oam();
+            return;
         }
-        if self.rom_startup_timing()
-            && run_what & crate::RUN_MAIN != 0
-            && !self.dungeon_exit_spotlight_resume_module
-        {
+        if self.rom_startup_timing() && run_what & crate::RUN_MAIN != 0 {
             if self.uncle_passage_item_receipt_starts_this_main_slice() {
                 // ROM trace: Uncle_InPassage enters Link_ReceiveItem only
                 // after the pending NMI has consumed the dialogue-clear
@@ -23651,9 +24006,8 @@ impl ZeldaState {
                     // controls and INIDISP value.
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                     self.stage_suspended_dungeon_submodule_after_nmi();
-                    if let Some(continuation) = self
-                        .game_execution_scheduler
-                        .take_post_trailing_nmi()
+                    if let Some(continuation) =
+                        self.game_execution_scheduler.take_post_trailing_nmi()
                     {
                         debug_assert_eq!(
                             continuation,
@@ -23674,15 +24028,12 @@ impl ZeldaState {
                         // remaining measured crossings.
                         debug_assert_eq!(
                             self.game_execution_scheduler.current_work(),
-                            Some(
-                                GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
-                            ),
+                            Some(GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn),
                         );
-                        debug_assert!(
-                            self.game_execution_scheduler
-                                .scheduled_work_slices_remaining()
-                                .is_some_and(|remaining| remaining != 0)
-                        );
+                        debug_assert!(self
+                            .game_execution_scheduler
+                            .scheduled_work_slices_remaining()
+                            .is_some_and(|remaining| remaining != 0));
                     }
                 }
                 self.assert_native_frame_state_matches_ram();
@@ -23802,6 +24153,12 @@ impl ZeldaState {
         let resumed_main_is_waiting_for_nmi = self
             .game_execution_scheduler
             .returned_main_is_waiting_for_nmi();
+        let spotlight_main_loop_suffix_returns_after_trailing_nmi = self
+            .game_execution_scheduler
+            .spotlight_iteration()
+            .is_some_and(|iteration| {
+                iteration.is_closing() && iteration.prepares_main_loop_sprites_before_second_nmi()
+            });
         if !defer_room_82_sprite_conversion_nmi && !resumed_main_is_waiting_for_nmi {
             let trailing_oam_dma_source = self
                 .game_execution_scheduler
@@ -23833,6 +24190,10 @@ impl ZeldaState {
             self.stage_suspended_dungeon_submodule_after_nmi();
             self.game_execution_scheduler
                 .finish_trailing_nmi_after_main_return();
+            if spotlight_main_loop_suffix_returns_after_trailing_nmi {
+                self.nmi_prepare_sprites_for_main_loop_once();
+                self.clear_nmi_update_latch();
+            }
             if let Some(continuation) = self.game_execution_scheduler.take_post_trailing_nmi() {
                 self.complete_post_trailing_nmi_continuation(continuation, input);
             }
@@ -23866,9 +24227,6 @@ impl ZeldaState {
             if let Some(snapshot) = self.display_snapshot.as_mut() {
                 color_math_scanout.publish_to(&mut snapshot.ppu);
             }
-        }
-        if let Some(scanout) = spotlight_scanout_started_before_resumed_main {
-            self.display_snapshot = Some(scanout);
         }
         self.replay_trace_col("after-nmi");
         self.replay_trace_ram_watch("after-nmi");
@@ -25645,9 +26003,7 @@ impl ZeldaState {
         // set through `module_main_routing` so `Module0E_Interface` skips its
         // sprite/Link update, then rotates below.
         let hold_core = self.dialogue_fast_forward_hold_active;
-        let resume_dungeon_exit_spotlight =
-            std::mem::take(&mut self.dungeon_exit_spotlight_resume_module);
-        let run_game_loop_prefix = !hold_core && !resume_dungeon_exit_spotlight;
+        let run_game_loop_prefix = !hold_core;
         let frame = self.game_state.frame;
         if run_game_loop_prefix
             && self.rom_startup_timing()
@@ -25719,21 +26075,6 @@ impl ZeldaState {
                 )
                 || self.normal_dialogue_initialization_phase != 0)
         {
-            // A mid-close long-table iteration finishes its circle build and
-            // reaches Main_PrepSpritesForNmi in this same main slice; only
-            // the display-boundary bookkeeping waits for the scheduled
-            // return (oracle traces pair the radius write and the $0c00d
-            // decrement on one run for radii 105..63 on the maximal table).
-            if self.game_state.frame.main_module == 15
-                && self
-                    .game_execution_scheduler
-                    .spotlight_iteration()
-                    .is_some_and(SpotlightIteration::is_closing)
-                && self.dungeon_exit_spotlight_main_loop_prep_before_second_nmi
-            {
-                self.nmi_prepare_sprites_for_main_loop();
-                self.clear_nmi_update_latch();
-            }
             return;
         }
         // In the ROM this call is after Module_MainRouting. When vblank interrupts

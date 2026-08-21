@@ -1073,10 +1073,7 @@ impl PpuState {
                     .wrapping_add((tile & 0x03ff).wrapping_mul(8))
                     .wrapping_add(tile_y)
                     & 0x7fff;
-                let bits = self
-                    .bg_vram_latch
-                    .as_deref()
-                    .unwrap_or(&self.vram)[tile_addr as usize];
+                let bits = self.bg_vram_latch.as_deref().unwrap_or(&self.vram)[tile_addr as usize];
                 if bits == 0 {
                     continue;
                 }
@@ -1195,11 +1192,8 @@ impl PpuState {
                     .wrapping_add((tile & 0x03ff).wrapping_mul(8))
                     .wrapping_add(tile_y)
                     & 0x7fff;
-                let mut bits = self
-                    .bg_vram_latch
-                    .as_deref()
-                    .unwrap_or(&self.vram)[tile_addr as usize]
-                    as u32;
+                let mut bits =
+                    self.bg_vram_latch.as_deref().unwrap_or(&self.vram)[tile_addr as usize] as u32;
                 let x_in_tile = sx & 7;
                 let pixel = if tile & 0x4000 != 0 {
                     bits >>= x_in_tile;

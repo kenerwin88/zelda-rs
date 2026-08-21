@@ -2445,20 +2445,21 @@ impl ZeldaState {
     }
 
     pub(super) fn Spotlight_ConfigureTableAndControl(&mut self) {
-        let caller_interrupted = self.spotlight_configure_table_and_control(false);
+        let (caller_interrupted, _) = self.spotlight_configure_table_and_control(false);
         debug_assert!(!caller_interrupted);
     }
 
-    fn spotlight_configure_table_and_control(
+    pub(super) fn spotlight_configure_table_and_control(
         &mut self,
         interrupt_module0f_goal_caller: bool,
-    ) -> bool {
+    ) -> (bool, bool) {
         let entry_main_module = self.game_state.frame.main_module;
-        self.IrisSpotlight_ConfigureTable();
-        self.complete_spotlight_configure_table_and_control_after_table(
+        let reached_spotlight_goal = self.IrisSpotlight_ConfigureTable();
+        let caller_interrupted = self.complete_spotlight_configure_table_and_control_after_table(
             entry_main_module,
             interrupt_module0f_goal_caller,
-        )
+        );
+        (caller_interrupted, reached_spotlight_goal)
     }
 
     fn complete_spotlight_configure_table_and_control_after_table(
@@ -2550,16 +2551,88 @@ impl ZeldaState {
     }
 
     pub(super) fn Module10_SpotlightOpen(&mut self) {
+        let cpu_plan = if self.rom_startup_timing() {
+            let (entry_earliest, entry_latest) = if self.game_state.frame.submodule == 0 {
+                (
+                    OVERWORLD_SPOTLIGHT_CPU_ENTRY_EARLIEST,
+                    OVERWORLD_SPOTLIGHT_CPU_ENTRY_LATEST,
+                )
+            } else {
+                self.overworld_spotlight_cpu_entry_envelope
+                    .expect("recurring Module10 entry requires the preceding ROM CPU raster")
+            };
+            let plan = overworld_spotlight_cpu_plan(self, entry_earliest, entry_latest);
+            self.overworld_spotlight_cpu_entry_envelope =
+                plan.and_then(|plan| plan.next_entry_earliest.zip(plan.next_entry_latest));
+            plan
+        } else {
+            None
+        };
+        let iteration = SpotlightIteration::opening_from_rom_cpu_plan(cpu_plan);
         self.sprite_main();
+        if let Some(plan) = cpu_plan.filter(|plan| plan.interrupted_during_table_build_or_copy()) {
+            let phase = if self.game_state.frame.submodule == 0 {
+                self.spotlight_internal_before_table(0, 2);
+                OverworldSpotlightBuildPhase::Entry
+            } else {
+                OverworldSpotlightBuildPhase::Recurring
+            };
+            let table_build = self.begin_iris_spotlight_configure_table(plan.iterations_before_nmi);
+            let projection_completed = plan.interrupted_during_table_copy();
+            if projection_completed {
+                self.complete_iris_spotlight_table_projection(table_build);
+            }
+            self.schedule_overworld_spotlight_build(
+                table_build,
+                phase,
+                projection_completed,
+                iteration,
+            );
+            return;
+        }
         if self.game_state.frame.submodule == 0 {
             self.Module10_00_OpenIris();
         } else {
-            self.Spotlight_ConfigureTableAndControl();
+            let (caller_interrupted, _) = self.spotlight_configure_table_and_control(false);
+            debug_assert!(!caller_interrupted);
         }
         self.link_oam_main();
-        self.schedule_spotlight_iteration_return(SpotlightIteration::opening(
-            self.iris_spotlight_goal_transition_pending,
-        ));
+        if cpu_plan.is_some() {
+            self.schedule_overworld_spotlight_link_oam(iteration);
+        } else {
+            self.schedule_spotlight_iteration_return(iteration);
+        }
+    }
+
+    pub(super) fn complete_overworld_spotlight_build(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        phase: OverworldSpotlightBuildPhase,
+        projection_completed: bool,
+    ) {
+        let entry_main_module = self.game_state.frame.main_module;
+        if projection_completed {
+            self.complete_iris_spotlight_configure_table_after_projection();
+        } else {
+            self.complete_iris_spotlight_configure_table(table_build);
+        }
+        match phase {
+            OverworldSpotlightBuildPhase::Entry => {
+                self.spotlight_internal_after_table_during_active_field();
+                self.increment_submodule();
+            }
+            OverworldSpotlightBuildPhase::Recurring => {
+                let caller_interrupted = self
+                    .complete_spotlight_configure_table_and_control_after_table(
+                        entry_main_module,
+                        false,
+                    );
+                debug_assert!(!caller_interrupted);
+            }
+        }
+        self.link_oam_main();
+        self.nmi_prepare_sprites_for_main_loop_once();
+        self.clear_nmi_update_latch();
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {
@@ -2574,13 +2647,8 @@ impl ZeldaState {
                     .expect("recurring Module0F entry requires the preceding ROM CPU raster")
             };
             let plan = dungeon_exit_spotlight_cpu_plan(self, entry_earliest, entry_latest);
-            self.dungeon_exit_spotlight_main_loop_prep_before_second_nmi = plan
-                .is_some_and(|plan| {
-                    plan.main_loop_sprite_preparation_completed_before_second_nmi
-                });
-            self.dungeon_exit_spotlight_cpu_entry_envelope = plan.and_then(|plan| {
-                plan.next_entry_earliest.zip(plan.next_entry_latest)
-            });
+            self.dungeon_exit_spotlight_cpu_entry_envelope =
+                plan.and_then(|plan| plan.next_entry_earliest.zip(plan.next_entry_latest));
             plan
         } else {
             None
@@ -2614,30 +2682,48 @@ impl ZeldaState {
         let iteration = cpu_plan.map_or_else(
             || SpotlightIteration::closing(phase),
             |plan| {
-                if plan.interrupted_during_table_build_or_copy() {
-                    SpotlightIteration::closing(phase)
-                } else {
-                    // The ROM run covers two concrete HDMA fields around the
-                    // $00:f3b7 table publication. An identical second field,
-                    // or an older queued receipt, still occupies the next
-                    // translated publication slot; otherwise the completion
-                    // capture is the next physical field and owns the receipt.
-                    let publication = spotlight_following_field_publication(
-                        &plan.active_window_words,
-                        &plan.following_window_words,
-                        self.next_display_spotlight_scanout.is_some(),
-                    );
-                    SpotlightIteration::closing(phase).with_rom_following_field_receipt(
-                        plan.following_window_words,
-                        publication,
-                    )
+                // The isolated ROM run follows channel 7 across both fields,
+                // including a first-field table-build/copy interruption. Keep
+                // its following-field rows on the continuation instead of
+                // falling back to a geometry projection for interrupted calls.
+                if plan.interrupted_during_table_build_or_copy()
+                    && !plan.main_loop_sprite_preparation_completed_before_second_nmi
+                {
+                    return SpotlightIteration::closing(phase)
+                        .with_rom_following_field_after_staged_active(plan.following_window_words);
                 }
+                if plan.interrupted_during_table_build_or_copy() {
+                    return SpotlightIteration::closing(phase).with_rom_following_field_receipt(
+                        plan.following_window_words,
+                        SpotlightFollowingFieldPublication::AfterCompletionCapture,
+                    );
+                }
+                let publication = spotlight_following_field_publication(
+                    &plan.active_window_words,
+                    &plan.following_window_words,
+                    self.next_display_spotlight_scanout.is_some(),
+                );
+                SpotlightIteration::closing(phase)
+                    .with_rom_following_field_receipt(plan.following_window_words, publication)
             },
         );
+        let iteration = if cpu_plan.is_some_and(|plan| {
+            !plan.returned_to_main_wait_before_first_nmi
+                && plan.main_loop_sprite_preparation_completed_before_second_nmi
+        }) {
+            iteration.with_main_loop_sprite_preparation_before_second_nmi()
+        } else {
+            iteration
+        };
+        if self.game_state.frame.submodule != 0 {
+            if let Some(plan) = cpu_plan {
+                self.publish_or_stage_spotlight_active_field(&plan.active_window_words);
+            }
+        }
         self.sprite_main();
         if self.game_state.frame.submodule == 0 {
             self.Dungeon_PrepExitWithSpotlight_before_table();
-            if self.begin_dungeon_exit_spotlight_entry(cpu_plan) {
+            if self.begin_dungeon_exit_spotlight_entry(cpu_plan, iteration) {
                 // vblank interrupts the first IrisSpotlight_ConfigureTable
                 // build; the table copy, radius write, submodule advance, and
                 // Link/OAM suffix complete on the next host frame.
@@ -2645,10 +2731,10 @@ impl ZeldaState {
             }
             self.Dungeon_PrepExitWithSpotlight_table_and_advance();
         } else {
-            if self.begin_dungeon_exit_spotlight_copy(cpu_plan, iteration) {
+            if self.begin_dungeon_exit_spotlight_build(cpu_plan, iteration) {
                 return;
             }
-            let caller_interrupted = self.spotlight_configure_table_and_control(true);
+            let (caller_interrupted, _) = self.spotlight_configure_table_and_control(true);
             if caller_interrupted {
                 self.schedule_dungeon_exit_spotlight_goal_caller(iteration);
                 return;
@@ -2690,6 +2776,7 @@ impl ZeldaState {
     pub(super) fn complete_dungeon_exit_spotlight_entry(
         &mut self,
         table_build: SpotlightTableBuildContinuation,
+        iteration: SpotlightIteration,
     ) {
         let vertical_center = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
@@ -2705,24 +2792,42 @@ impl ZeldaState {
         self.increment_submodule();
         self.module0f_spotlight_close_link_and_oam();
         if phase == SpotlightIterationPhase::CloseEntryBeforeTablePublication {
-            self.schedule_spotlight_iteration_return(SpotlightIteration::closing(phase));
+            self.schedule_spotlight_iteration_return(iteration);
+        }
+        if iteration.prepares_main_loop_sprites_before_second_nmi() {
+            self.nmi_prepare_sprites_for_main_loop_once();
+            self.clear_nmi_update_latch();
         }
     }
 
-    pub(super) fn complete_dungeon_exit_spotlight_build(&mut self, _iteration: SpotlightIteration) {
-        self.complete_iris_spotlight_configure_table_after_projection();
+    pub(super) fn complete_dungeon_exit_spotlight_build(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        projection_completed: bool,
+        iteration: SpotlightIteration,
+    ) {
+        if projection_completed {
+            self.complete_iris_spotlight_configure_table_after_projection();
+        } else {
+            self.complete_iris_spotlight_configure_table(table_build);
+        }
         let caller_interrupted = self.complete_spotlight_configure_table_and_control_after_table(
             self.game_state.frame.main_module,
             false,
         );
         debug_assert!(!caller_interrupted);
         self.module0f_spotlight_close_link_and_oam();
-        // This continuation returns through the remainder of ZeldaRunGameLoop.
-        // The C caller executes NMI_PrepareSprites exactly once after
-        // Module_MainRouting: some measured long-close slices reached it
-        // before suspension, while others reach it only here.
-        self.nmi_prepare_sprites_for_main_loop_once();
-        self.clear_nmi_update_latch();
+        if iteration.prepares_main_loop_sprites_before_second_nmi() {
+            self.nmi_prepare_sprites_for_main_loop_once();
+            self.clear_nmi_update_latch();
+        } else {
+            // The ROM timing plan is still inside the ZeldaRunGameLoop caller
+            // at the second boundary. Preserve that suffix as a real C
+            // continuation instead of collapsing it into table completion.
+            self.schedule_spotlight_iteration_return(
+                iteration.after_rom_following_field_was_staged(),
+            );
+        }
     }
 
     pub(super) fn complete_dungeon_exit_spotlight_goal_caller(&mut self) {
@@ -3844,8 +3949,8 @@ impl ZeldaState {
             // the CPU stack for a separately named tail.
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishOverworldMapQuadrants {
-                    screen_map_and_sprite_gfx_tail_nmi_slices: timing
-                        .screen_map_and_sprite_gfx_tail_nmi_slices,
+                    scroll_map_and_sprite_gfx_tail_nmi_slices: timing
+                        .scroll_map_and_sprite_gfx_tail_nmi_slices,
                 },
                 timing.quadrant_load_nmi_slices,
             );

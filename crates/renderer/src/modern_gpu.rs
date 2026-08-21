@@ -3423,10 +3423,7 @@ fn build_live_effect_lut(
     });
     let mut lut_bytes = Vec::with_capacity(16 * EFFECT_LUT_WIDTH as usize * 4);
     for color in &frame.cgram_rgba {
-        lut_bytes.extend_from_slice(&final_live_cgram_rgba(
-            *color,
-            frame.scanout_brightness(),
-        ));
+        lut_bytes.extend_from_slice(&final_live_cgram_rgba(*color, frame.scanout_brightness()));
     }
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {

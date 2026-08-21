@@ -483,6 +483,8 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { .. }
+                | GameWorkContinuation::FinishOverworldSpotlightBuild { .. }
+                | GameWorkContinuation::FinishOverworldSpotlightLinkOam { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. }
                 | GameWorkContinuation::FinishBigKeyDropGraphics { .. }
         )
@@ -498,7 +500,10 @@ impl ScheduledGameWork {
         match self.continuation {
             GameWorkContinuation::FinishSpotlightIteration { iteration }
             | GameWorkContinuation::FinishGameOverSpotlightBuild { iteration }
-            | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration }
+            | GameWorkContinuation::FinishDungeonExitSpotlightEntry { iteration, .. }
+            | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
+            | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
+            | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration } => {
                 Some(iteration.in_flight_publication())
             }
@@ -521,7 +526,10 @@ impl ScheduledGameWork {
         match self.continuation {
             GameWorkContinuation::FinishSpotlightIteration { iteration }
             | GameWorkContinuation::FinishGameOverSpotlightBuild { iteration }
-            | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration }
+            | GameWorkContinuation::FinishDungeonExitSpotlightEntry { iteration, .. }
+            | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
+            | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
+            | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration } => {
                 Some(iteration)
             }
@@ -845,6 +853,26 @@ impl GameExecutionScheduler {
             self.schedule_post_trailing_nmi(continuation);
         } else {
             self.schedule_work_before_trailing_nmi(continuation, total_nmi_crossings);
+        }
+    }
+
+    /// Schedule a synchronous C call from the current main-loop iteration.
+    ///
+    /// An ordinary atomic iteration still owns its trailing NMI, so that
+    /// boundary consumes the first measured crossing. A main iteration which
+    /// began after a leading NMI has no boundary left in the current host
+    /// callback; all measured crossings remain future scheduled work.
+    pub(super) fn schedule_cpu_timed_work_from_current_main_iteration(
+        &mut self,
+        continuation: GameWorkContinuation,
+        total_nmi_crossings: u8,
+    ) {
+        assert_eq!(self.cpu_host_phase, CpuHostPhase::MainLoopRunning);
+        assert_ne!(total_nmi_crossings, 0);
+        if self.current_main_iteration_follows_leading_nmi() {
+            self.schedule_work(continuation, total_nmi_crossings);
+        } else {
+            self.schedule_cpu_timed_work_before_trailing_nmi(continuation, total_nmi_crossings);
         }
     }
 
@@ -1345,6 +1373,9 @@ mod cpu_timing_tests {
         let work = ScheduledGameWork::schedule(
             GameWorkContinuation::FinishDungeonExitSpotlightEntry {
                 table_build: crate::zelda_rtl::SpotlightTableBuildContinuation::default(),
+                iteration: crate::zelda_rtl::SpotlightIteration::closing(
+                    crate::zelda_rtl::SpotlightIterationPhase::CloseEntryBeforeTablePublication,
+                ),
             },
             1,
         );
@@ -1393,6 +1424,42 @@ mod cpu_timing_tests {
         assert!(scheduler.main_call_stack_is_suspended_before_nmi());
         assert_eq!(scheduler.take_post_trailing_nmi(), Some(continuation));
         assert!(scheduler.resumed_call_stack_is_before_nmi());
+    }
+
+    #[test]
+    fn cpu_timed_main_work_counts_only_a_boundary_still_ahead_of_the_cpu() {
+        let continuation = GameWorkContinuation::FinishPreOverworldScreenBuild;
+
+        let mut ordinary = GameExecutionScheduler::default();
+        ordinary.begin_host_frame();
+        ordinary.begin_main_loop_iteration();
+        ordinary.schedule_cpu_timed_work_from_current_main_iteration(continuation, 3);
+        assert_eq!(
+            ordinary.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Waiting)
+        );
+        assert_eq!(
+            ordinary.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Complete(continuation))
+        );
+
+        let mut after_leading_nmi = GameExecutionScheduler::default();
+        after_leading_nmi.begin_host_frame();
+        after_leading_nmi.mark_main_iteration_after_leading_nmi();
+        after_leading_nmi.begin_main_loop_iteration();
+        after_leading_nmi.schedule_cpu_timed_work_from_current_main_iteration(continuation, 3);
+        assert_eq!(
+            after_leading_nmi.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Waiting)
+        );
+        assert_eq!(
+            after_leading_nmi.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Waiting)
+        );
+        assert_eq!(
+            after_leading_nmi.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Complete(continuation))
+        );
     }
 
     #[test]

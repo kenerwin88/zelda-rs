@@ -11972,8 +11972,8 @@ impl ZeldaState {
                     if self.dungeon_landing_spotlight_returns_on_later_host() {
                         self.game_execution_scheduler
                             .schedule_cpu_timed_work_returning_on_later_host(
-                            GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
-                            advance.submodule_nmi_slices,
+                                GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+                                advance.submodule_nmi_slices,
                             );
                     } else {
                         self.game_execution_scheduler

@@ -4897,8 +4897,8 @@ impl ZeldaState {
             {
                 return;
             }
-            let cape_timer = PLAYER_CHECK_HANDLE_CAPE_STUFF_CAPE_DEPLETION_TIMERS[self.magic_consumption_level_live()
-                as usize];
+            let cape_timer = PLAYER_CHECK_HANDLE_CAPE_STUFF_CAPE_DEPLETION_TIMERS
+                [self.magic_consumption_level_live() as usize];
             self.follower_link_state_mut()
                 .set_cape_decrement_counter(cape_timer);
             if self.game_state.player.follower_link.magic_power() == 0 {
@@ -4924,8 +4924,7 @@ impl ZeldaState {
     }
 
     pub(super) fn link_check_magic_cost(&mut self, item: u8) -> bool {
-        let idx = item as usize * 3
-            + self.magic_consumption_level_live() as usize;
+        let idx = item as usize * 3 + self.magic_consumption_level_live() as usize;
         let cost = LINK_CHECK_MAGIC_COST_LINK_ITEM_MAGIC_COSTS[idx];
         if self.follower_link_state_mut().spend_magic(cost) {
             return true;
@@ -4939,8 +4938,7 @@ impl ZeldaState {
     }
 
     pub(super) fn refund_magic(&mut self, item: u8) {
-        let idx = item as usize * 3
-            + self.magic_consumption_level_live() as usize;
+        let idx = item as usize * 3 + self.magic_consumption_level_live() as usize;
         let cost = REFUND_MAGIC_LINK_ITEM_MAGIC_COSTS[idx];
 
         let clamp_full = self
@@ -4984,8 +4982,8 @@ impl ZeldaState {
 
             self.follower_link_state_mut().clear_action_handler_timer();
             self.follower_link_state_mut().set_cape_mode(1);
-            let cape_timer = LINK_ITEM_CAPE_CAPE_DEPLETION_TIMERS[self.magic_consumption_level_live()
-                as usize];
+            let cape_timer =
+                LINK_ITEM_CAPE_CAPE_DEPLETION_TIMERS[self.magic_consumption_level_live() as usize];
             self.follower_link_state_mut()
                 .set_cape_decrement_counter(cape_timer);
             self.follower_link_state_mut().set_cape_transform_timer(20);
@@ -5007,8 +5005,8 @@ impl ZeldaState {
             .cape_decrement_counter()
             == 0
         {
-            let cape_timer = LINK_ITEM_CAPE_CAPE_DEPLETION_TIMERS[self.magic_consumption_level_live()
-                as usize];
+            let cape_timer =
+                LINK_ITEM_CAPE_CAPE_DEPLETION_TIMERS[self.magic_consumption_level_live() as usize];
             self.follower_link_state_mut()
                 .set_cape_decrement_counter(cape_timer);
             if self.game_state.player.follower_link.magic_power() == 0
@@ -9703,11 +9701,10 @@ impl ZeldaState {
             if matches!(
                 self.game_execution_scheduler.current_work(),
                 Some(GameWorkContinuation::FinishItemReceiptGraphics {
-                    continuation:
-                        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
-                            ground_apress_tail: Some(_),
-                            ..
-                        },
+                    continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                        ground_apress_tail: Some(_),
+                        ..
+                    },
                 })
             ) {
                 // The chest receipt scheduled by this A-press blocks the ROM

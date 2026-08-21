@@ -270,24 +270,54 @@ impl GameState {
         let split: Vec<&str> = split.split(',').map(|s| s.trim()).collect();
         let all: [(&'static str, &dyn Fn(&mut [u8])); 27] = [
             ("frame", &|r: &mut [u8]| self.frame.write_to_ram(r)),
-            ("system_signals", &|r: &mut [u8]| self.system_signals.write_to_ram(r)),
-            ("enhanced_features", &|r: &mut [u8]| self.enhanced_features.write_to_ram(r)),
-            ("scratch_counter", &|r: &mut [u8]| self.scratch_counter.write_to_ram(r)),
+            ("system_signals", &|r: &mut [u8]| {
+                self.system_signals.write_to_ram(r)
+            }),
+            ("enhanced_features", &|r: &mut [u8]| {
+                self.enhanced_features.write_to_ram(r)
+            }),
+            ("scratch_counter", &|r: &mut [u8]| {
+                self.scratch_counter.write_to_ram(r)
+            }),
             ("minigame", &|r: &mut [u8]| self.minigame.write_to_ram(r)),
-            ("intro_sword", &|r: &mut [u8]| self.intro_sword.write_to_ram(r)),
-            ("archery_game", &|r: &mut [u8]| self.archery_game.write_to_ram(r)),
-            ("sprite_battle", &|r: &mut [u8]| self.sprite_battle.write_to_ram(r)),
-            ("memorized_tiles", &|r: &mut [u8]| self.memorized_tiles.write_to_ram(r)),
-            ("save_load_transfer", &|r: &mut [u8]| self.save_load_transfer.write_to_ram(r)),
-            ("dungeon_map_display", &|r: &mut [u8]| self.dungeon_map_display.write_to_ram(r)),
+            ("intro_sword", &|r: &mut [u8]| {
+                self.intro_sword.write_to_ram(r)
+            }),
+            ("archery_game", &|r: &mut [u8]| {
+                self.archery_game.write_to_ram(r)
+            }),
+            ("sprite_battle", &|r: &mut [u8]| {
+                self.sprite_battle.write_to_ram(r)
+            }),
+            ("memorized_tiles", &|r: &mut [u8]| {
+                self.memorized_tiles.write_to_ram(r)
+            }),
+            ("save_load_transfer", &|r: &mut [u8]| {
+                self.save_load_transfer.write_to_ram(r)
+            }),
+            ("dungeon_map_display", &|r: &mut [u8]| {
+                self.dungeon_map_display.write_to_ram(r)
+            }),
             ("dungeon", &|r: &mut [u8]| self.dungeon.write_to_ram(r)),
             ("sprites", &|r: &mut [u8]| self.sprites.write_to_ram(r)),
-            ("player.special_exit_position", &|r: &mut [u8]| self.player.special_exit_position.write_to_ram(r)),
-            ("player.follower_link", &|r: &mut [u8]| self.player.follower_link.write_to_ram(r)),
-            ("player.swim_acceleration", &|r: &mut [u8]| self.player.swim_acceleration.write_to_ram(r)),
-            ("player.pushed_block", &|r: &mut [u8]| self.player.pushed_block.write_to_ram(r)),
-            ("player.bg1_movement_accumulator", &|r: &mut [u8]| self.player.bg1_movement_accumulator.write_to_ram(r)),
-            ("player.tile_detection", &|r: &mut [u8]| self.player.tile_detection.write_to_ram(r)),
+            ("player.special_exit_position", &|r: &mut [u8]| {
+                self.player.special_exit_position.write_to_ram(r)
+            }),
+            ("player.follower_link", &|r: &mut [u8]| {
+                self.player.follower_link.write_to_ram(r)
+            }),
+            ("player.swim_acceleration", &|r: &mut [u8]| {
+                self.player.swim_acceleration.write_to_ram(r)
+            }),
+            ("player.pushed_block", &|r: &mut [u8]| {
+                self.player.pushed_block.write_to_ram(r)
+            }),
+            ("player.bg1_movement_accumulator", &|r: &mut [u8]| {
+                self.player.bg1_movement_accumulator.write_to_ram(r)
+            }),
+            ("player.tile_detection", &|r: &mut [u8]| {
+                self.player.tile_detection.write_to_ram(r)
+            }),
             ("inventory", &|r: &mut [u8]| self.inventory.write_to_ram(r)),
             ("ending", &|r: &mut [u8]| self.ending.write_to_ram(r)),
             ("messaging", &|r: &mut [u8]| self.messaging.write_to_ram(r)),
@@ -299,14 +329,14 @@ impl GameState {
         ];
         let owners: Vec<(&'static str, &dyn Fn(&mut [u8]))> = all
             .into_iter()
-        .filter(|(name, _)| {
-            // Keep a group unless it was split; keep a sub-state only when its group was.
-            match name.split_once('.') {
-                Some((group, _)) => split.contains(&group),
-                None => !split.contains(name),
-            }
-        })
-        .collect();
+            .filter(|(name, _)| {
+                // Keep a group unless it was split; keep a sub-state only when its group was.
+                match name.split_once('.') {
+                    Some((group, _)) => split.contains(&group),
+                    None => !split.contains(name),
+                }
+            })
+            .collect();
 
         // Two signals, selected by ZELDA3_SCRATCH_CONFLICT_MODE:
         //

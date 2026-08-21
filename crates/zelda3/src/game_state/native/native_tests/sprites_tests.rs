@@ -846,13 +846,13 @@ fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
     }
 
     {
-        let mut bridge =
-            NativeCachedSpriteBridgeMut::new(
+        let mut bridge = NativeCachedSpriteBridgeMut::new(
             &mut state.cached_sprites,
             &mut state.sprite_slots,
             &mut state.system,
             &mut ram,
-            0x1a);
+            0x1a,
+        );
         bridge.initialize_trinexx_component();
     }
     assert_eq!(state.cached_sprites.slot(0x1a).type_byte(), 0x40);
@@ -1207,8 +1207,7 @@ fn cached_sprite_nmi_split_restore_matches_the_rom_field_order() {
 
     let mut backup = [0; 24];
     {
-        let mut bridge =
-            NativeCachedSpriteBridgeMut::new(
+        let mut bridge = NativeCachedSpriteBridgeMut::new(
             &mut state.cached_sprites,
             &mut state.sprite_slots,
             &mut state.system,
@@ -1221,8 +1220,7 @@ fn cached_sprite_nmi_split_restore_matches_the_rom_field_order() {
         ram[live + slot] = 0x40 | index as u8;
     }
     {
-        let mut bridge =
-            NativeCachedSpriteBridgeMut::new(
+        let mut bridge = NativeCachedSpriteBridgeMut::new(
             &mut state.cached_sprites,
             &mut state.sprite_slots,
             &mut state.system,
@@ -1243,8 +1241,7 @@ fn cached_sprite_nmi_split_restore_matches_the_rom_field_order() {
     assert_eq!(ram[SPRITE_FLAGS2 + slot], 0x80 | 12);
 
     {
-        let mut bridge =
-            NativeCachedSpriteBridgeMut::new(
+        let mut bridge = NativeCachedSpriteBridgeMut::new(
             &mut state.cached_sprites,
             &mut state.sprite_slots,
             &mut state.system,

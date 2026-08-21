@@ -2068,8 +2068,8 @@ impl ZeldaState {
             if self.ancilla_slot_view(k).aux_timer() == 0 {
                 let value = 1;
                 self.ancilla_slot_view_mut(k).set_aux_timer(value);
-                let magic_cost = ANCILLA31_BYRNA_SPARK_CANE_SPARK_MAGIC[self.magic_consumption_level_live()
-                    as usize];
+                let magic_cost = ANCILLA31_BYRNA_SPARK_CANE_SPARK_MAGIC
+                    [self.magic_consumption_level_live() as usize];
                 let r0 = self
                     .game_state
                     .player
