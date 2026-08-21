@@ -556,16 +556,18 @@ impl ZeldaState {
                 self.pending_dialogue_initialization_schedule = Some((
                     initialization_phase,
                     earliest.returns_after_scanout_frame_boundary(),
+                    Some(earliest.following_main_nmi_uses_host_animated_bg_operands()),
                 ));
                 if std::env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
                     eprintln!(
-                        "dialogue_cpu_plan host={} earliest={:?} latest={:?} phase={} current_host_crossing={} defer_return={}",
+                        "dialogue_cpu_plan host={} earliest={:?} latest={:?} phase={} current_host_crossing={} defer_return={} following_main_animated_bg={:?}",
                         self.frame_ctr_dbg,
                         earliest.diagnostic(),
                         latest.diagnostic(),
                         initialization_phase,
                         current_host_owns_first_crossing,
                         earliest.returns_after_scanout_frame_boundary(),
+                        earliest.following_main_nmi_uses_host_animated_bg_operands(),
                     );
                 }
             }
@@ -3616,15 +3618,21 @@ impl ZeldaState {
             self.game_state.messaging.runtime.module(),
             self.game_state.ending.attract_scene.sequence(),
         );
-        let (rom_initialization_phase, return_after_scanout_boundary) = self
+        let (
+            rom_initialization_phase,
+            return_after_scanout_boundary,
+            following_main_nmi_uses_host_animated_bg_operands,
+        ) = self
             .pending_dialogue_initialization_schedule
             .take()
-            .unwrap_or((fallback_phase, true));
+            .unwrap_or((fallback_phase, true, None));
         if self.rom_startup_timing() && rom_initialization_phase != 0 {
             self.normal_dialogue_initialization_phase = rom_initialization_phase;
             self.normal_dialogue_initialization_entry_phase = rom_initialization_phase;
             self.normal_dialogue_initialization_return_after_scanout_boundary =
                 return_after_scanout_boundary;
+            self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands =
+                following_main_nmi_uses_host_animated_bg_operands;
             // This slice and every held one until the completion slice keep
             // the host-boundary OAM shadow on screen (see the staging fn).
             self.stage_dialogue_initialization_obj_scanout();

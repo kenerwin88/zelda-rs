@@ -717,6 +717,34 @@ impl ZeldaState {
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
         if !self.game_state.display.core_updates_are_disabled() {
+            if let Some(uses_host_operands) = self
+                .next_core_nmi_active_scanout_uses_host_animated_bg_operands
+                .take()
+            {
+                let (destination, data) = if uses_host_operands {
+                    let dma = self
+                        .pre_main_graphics_dma
+                        .as_ref()
+                        .and_then(|graphics| graphics.animated_tile.as_ref())
+                        .expect(
+                            "instruction-timed animated-BG receipt requires main-entry operands",
+                        );
+                    (dma.destination_address, dma.data.clone())
+                } else {
+                    (
+                        self.game_state
+                            .display
+                            .animated_tile_vram_destination_usize(),
+                        self.animated_tile_dma_source_bytes().to_vec(),
+                    )
+                };
+                // This is the DMA completed by the hardware NMI which the
+                // deferred CPU caller resumed from, not the live PPU write of
+                // the atomic NMI below. Keep those consecutive generations
+                // separate so the retiring scanout receives the observed
+                // payload while the following scanout inherits live PPU state.
+                self.record_observed_animated_bg_dma_for_active_scanout(destination, &data);
+            }
             let mut graphics_dma_plan = rom_graphics_dma_plan(
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,

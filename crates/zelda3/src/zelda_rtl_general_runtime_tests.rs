@@ -5898,6 +5898,90 @@ fn animated_bg_operand_generation_is_explicit_not_receipt_owned() {
 }
 
 #[test]
+fn measured_nmi_prepare_interruption_records_captured_dma_for_active_scanout_once() {
+    const CAPTURED_SOURCE: usize = 0xaa80;
+    const LIVE_SOURCE: usize = 0xae80;
+    const DESTINATION: usize = 0x3000;
+
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.set_animated_tile_data_source_address(LIVE_SOURCE as u16);
+    state.set_animated_tile_vram_destination_address(DESTINATION as u16);
+    state.ram[CAPTURED_SOURCE..CAPTURED_SOURCE + 0x400].fill(0x11);
+    state.ram[LIVE_SOURCE..LIVE_SOURCE + 0x400].fill(0x22);
+    state.ppu.vram[DESTINATION..DESTINATION + 0x200].fill(0x3333);
+    state.capture_display_snapshot();
+
+    let entry_frame = state.game_state.frame;
+    let captured_dma = PreMainAnimatedTileDma {
+        source_address: CAPTURED_SOURCE,
+        destination_address: DESTINATION,
+        data: state.ram[CAPTURED_SOURCE..CAPTURED_SOURCE + 0x400].to_vec(),
+    };
+    state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
+        entry_frame,
+        entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
+        entry_dialogue_text_render_state: 0,
+        entry_link_handler_state: 0,
+        animated_tile: Some(captured_dma),
+        link_operands: PreMainLinkDmaOperands::capture(&state.ram),
+        link_obj_vram: state.ppu.vram[0x4000..0x4400].to_vec(),
+        oam_shadow: vec![0; state.ppu.oam.len() * 2],
+    });
+    state.next_core_nmi_active_scanout_uses_host_animated_bg_operands = Some(true);
+
+    state.nmi_do_updates();
+
+    assert_eq!(state.ppu.vram[DESTINATION], 0x2222);
+    assert!(state
+        .next_core_nmi_active_scanout_uses_host_animated_bg_operands
+        .is_none());
+    assert_eq!(
+        state.game_state.display.animated_tile_data_source_usize(),
+        LIVE_SOURCE
+    );
+    assert!(state
+        .pre_main_graphics_dma
+        .as_ref()
+        .unwrap()
+        .animated_tile
+        .is_some());
+    let receipt = state
+        .display_snapshot
+        .as_ref()
+        .unwrap()
+        .effective_presented_dma
+        .as_ref()
+        .unwrap();
+    assert!(receipt.vram_writes.is_empty());
+    assert_eq!(receipt.decoded_bg_vram_writes[0], (DESTINATION, 0x1111));
+    assert_eq!(receipt.decoded_bg_vram_writes.len(), 0x200);
+
+    state
+        .display_snapshot
+        .as_mut()
+        .unwrap()
+        .effective_presented_dma = None;
+
+    state.nmi_do_updates();
+
+    assert_eq!(state.ppu.vram[DESTINATION], 0x2222);
+    assert!(state
+        .display_snapshot
+        .as_ref()
+        .unwrap()
+        .effective_presented_dma
+        .is_none());
+    assert!(state
+        .pre_main_graphics_dma
+        .as_ref()
+        .unwrap()
+        .animated_tile
+        .is_some());
+}
+
+#[test]
 fn gameplay_leading_nmi_does_not_restore_stale_animated_bg_over_full_tilemap() {
     let mut state = ZeldaState::new();
     let destination = 0x3b00;

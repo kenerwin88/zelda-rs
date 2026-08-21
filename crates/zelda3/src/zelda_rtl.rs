@@ -20,11 +20,12 @@ use crate::game_state::constants::nmi::{
     BG_CHAR_BUFFER_1 as NMI_BG_CHAR_BUFFER_1, BG_CHAR_HALF_BUFFER as NMI_BG_CHAR_HALF_BUFFER,
 };
 use crate::game_state::constants::{
-    ANIMATED_TILE_VRAM_ADDR, BG2_X_SCROLL, BG2_Y_SCROLL, CACHED_SPRITE_LIVE_FIELDS,
-    CRYSTAL_ROTATION_COUNTER, DARKENING_OR_LIGHTENING_SCREEN, DUNGEON_ROOM, FRAME_COUNTER,
-    HDMA_TABLE_DYNAMIC, MAIN_MODULE, MESSAGING_BUF_LOAD_GFX, MOVING_WALL_REPLACEMENT_BUFFER,
-    OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START, OVERWORLD_SCROLL_Y_END,
-    PALETTE_FILTER_COUNTDOWN, RESERVED_HDMA_TABLE, SUBMODULE, SUBSUBMODULE, VWF_ARR,
+    ANIMATED_TILE_DATA_SRC, ANIMATED_TILE_VRAM_ADDR, BG2_X_SCROLL, BG2_Y_SCROLL,
+    CACHED_SPRITE_LIVE_FIELDS, CRYSTAL_ROTATION_COUNTER, DARKENING_OR_LIGHTENING_SCREEN,
+    DUNGEON_ROOM, FRAME_COUNTER, HDMA_TABLE_DYNAMIC, MAIN_MODULE, MESSAGING_BUF_LOAD_GFX,
+    MOVING_WALL_REPLACEMENT_BUFFER, NMI_BOOLEAN, OVERWORLD_SCROLL_X_END, OVERWORLD_SCROLL_X_START,
+    OVERWORLD_SCROLL_Y_END, PALETTE_FILTER_COUNTDOWN, RESERVED_HDMA_TABLE, SUBMODULE, SUBSUBMODULE,
+    VWF_ARR,
 };
 use crate::game_state::{
     lanmola_flat_trail_entry_from_ram, loaded_room_data_word, Bg1MovementAccumulatorState,
@@ -2757,6 +2758,7 @@ pub(super) struct DialogueInitializationCpuPlan {
     final_interrupted_pc: u32,
     return_scanline: u16,
     return_master_cycle: u16,
+    following_main_nmi_uses_host_animated_bg_operands: bool,
 }
 
 impl DialogueInitializationCpuPlan {
@@ -2775,19 +2777,25 @@ impl DialogueInitializationCpuPlan {
         self.nmi_crossings + 1
     }
 
-    pub(super) const fn schedule_key(self) -> (u8, bool) {
+    pub(super) const fn schedule_key(self) -> (u8, bool, bool) {
         (
             self.nmi_crossings,
             self.returns_after_scanout_frame_boundary(),
+            self.following_main_nmi_uses_host_animated_bg_operands,
         )
     }
 
-    pub(super) const fn diagnostic(self) -> (u8, u32, u16, u16) {
+    pub(super) const fn following_main_nmi_uses_host_animated_bg_operands(self) -> bool {
+        self.following_main_nmi_uses_host_animated_bg_operands
+    }
+
+    pub(super) const fn diagnostic(self) -> (u8, u32, u16, u16, bool) {
         (
             self.nmi_crossings,
             self.final_interrupted_pc,
             self.return_scanline,
             self.return_master_cycle,
+            self.following_main_nmi_uses_host_animated_bg_operands,
         )
     }
 }
@@ -2815,40 +2823,65 @@ pub(super) fn dialogue_initialization_cpu_plan(
     let mut nmi_crossings = 0u8;
     let mut final_interrupted_pc = 0;
     let mut entered_text_initialize = false;
+    let mut completed_return = None;
 
     for _ in 0..5_000_000 {
         if run.pc() == 0x0e_c483 {
             entered_text_initialize = true;
         }
-        if run.is_complete() {
+        if run.is_complete() && completed_return.is_none() {
             assert!(
                 entered_text_initialize,
                 "Module0E dialogue timing returned without entering Text_Initialize"
             );
             let (return_scanline, return_master_cycle) = budget.raster_position().coordinates();
-            return DialogueInitializationCpuPlan {
-                nmi_crossings,
-                final_interrupted_pc,
-                return_scanline,
-                return_master_cycle,
-            };
+            let animated_tile_source = u16::from(run.ram_byte(ANIMATED_TILE_DATA_SRC))
+                | (u16::from(run.ram_byte(ANIMATED_TILE_DATA_SRC + 1)) << 8);
+            completed_return = Some((return_scanline, return_master_cycle, animated_tile_source));
         }
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         run.set_raster_position(scanline, master_cycle);
         if advance_rom_cpu_step(&mut run, &mut budget).was_interrupted() {
-            assert!(
-                entered_text_initialize,
-                "Module0E reached NMI before Text_Initialize"
-            );
-            nmi_crossings = nmi_crossings
-                .checked_add(1)
-                .expect("dialogue NMI count overflowed");
-            final_interrupted_pc = run.pc();
+            if let Some((return_scanline, return_master_cycle, return_animated_tile_source)) =
+                completed_return
+            {
+                // Bank00's NMI runs NMI_DoUpdates only when $12 is clear. Keep
+                // executing through any skipped interrupt until the next NMI
+                // that can actually consume animated-tile DMA operands.
+                if run.ram_byte(NMI_BOOLEAN) == 0 {
+                    let nmi_animated_tile_source = u16::from(run.ram_byte(ANIMATED_TILE_DATA_SRC))
+                        | (u16::from(run.ram_byte(ANIMATED_TILE_DATA_SRC + 1)) << 8);
+                    return DialogueInitializationCpuPlan {
+                        nmi_crossings,
+                        final_interrupted_pc,
+                        return_scanline,
+                        return_master_cycle,
+                        // ZeldaRunGameLoop calls NMI_PrepareSprites immediately
+                        // before clearing $12. If this NMI still sees the source
+                        // present at the preceding main-wait boundary, it
+                        // interrupted that caller before the animation-source
+                        // update. Its active-scanout receipt must therefore use
+                        // captured host-boundary operands while the atomic
+                        // port's following live PPU write remains independent.
+                        following_main_nmi_uses_host_animated_bg_operands: nmi_animated_tile_source
+                            == return_animated_tile_source,
+                    };
+                }
+            } else {
+                assert!(
+                    entered_text_initialize,
+                    "Module0E reached NMI before Text_Initialize"
+                );
+                nmi_crossings = nmi_crossings
+                    .checked_add(1)
+                    .expect("dialogue NMI count overflowed");
+                final_interrupted_pc = run.pc();
+            }
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
         }
     }
     panic!(
-        "dialogue ROM timing did not return from Module0E; stopped at {:06x}",
+        "dialogue ROM timing did not reach the following core-update NMI; stopped at {:06x}",
         run.pc()
     );
 }
@@ -8646,7 +8679,15 @@ pub struct ZeldaState {
     #[serde(skip)]
     normal_dialogue_initialization_return_after_scanout_boundary: bool,
     #[serde(skip)]
-    pending_dialogue_initialization_schedule: Option<(u8, bool)>,
+    normal_dialogue_following_main_nmi_uses_host_animated_bg_operands: Option<bool>,
+    /// Operand generation observed by the instruction-timed ROM shadow at the
+    /// core-update NMI following a deferred dialogue caller return. The NMI's
+    /// decoded-BG effect belongs to the active scanout even though the atomic
+    /// port reaches its live PPU write on the following host boundary.
+    #[serde(skip)]
+    next_core_nmi_active_scanout_uses_host_animated_bg_operands: Option<bool>,
+    #[serde(skip)]
+    pending_dialogue_initialization_schedule: Option<(u8, bool, Option<bool>)>,
 
     #[serde(skip)]
     hud_tilemap_nmi_publication_phase: u8,
@@ -8939,6 +8980,21 @@ struct EffectivePresentedDma {
 }
 
 impl EffectivePresentedDma {
+    fn animated_bg_only(decoded_only: bool, writes: Vec<(usize, u16)>) -> Self {
+        Self {
+            vram_writes: (!decoded_only)
+                .then_some(writes.clone())
+                .unwrap_or_default(),
+            decoded_bg_vram_writes: decoded_only.then_some(writes).unwrap_or_default(),
+            completed_oam: None,
+            completed_cgram: None,
+            completed_bg_scroll: None,
+            completed_color_math: None,
+            completed_inidisp: None,
+            completed_dialogue_metadata: None,
+        }
+    }
+
     fn from_write_set(writes: EffectiveDmaWriteSet, state: &ZeldaState) -> Self {
         Self {
             vram_writes: writes
@@ -14719,6 +14775,8 @@ impl ZeldaState {
             normal_dialogue_initialization_phase: 0,
             normal_dialogue_initialization_entry_phase: 0,
             normal_dialogue_initialization_return_after_scanout_boundary: false,
+            normal_dialogue_following_main_nmi_uses_host_animated_bg_operands: None,
+            next_core_nmi_active_scanout_uses_host_animated_bg_operands: None,
             pending_dialogue_initialization_schedule: None,
             hud_tilemap_nmi_publication_phase: 0,
             intro_poly_upload_delay: 0,
@@ -14847,6 +14905,8 @@ impl ZeldaState {
         self.normal_dialogue_initialization_phase = 0;
         self.normal_dialogue_initialization_entry_phase = 0;
         self.normal_dialogue_initialization_return_after_scanout_boundary = false;
+        self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands = None;
+        self.next_core_nmi_active_scanout_uses_host_animated_bg_operands = None;
         self.pending_dialogue_initialization_schedule = None;
         self.dialogue_fast_forward_hold_pending = false;
         self.dialogue_fast_forward_hold_active = false;
@@ -14923,6 +14983,8 @@ impl ZeldaState {
             self.normal_dialogue_initialization_phase = 0;
             self.normal_dialogue_initialization_entry_phase = 0;
             self.normal_dialogue_initialization_return_after_scanout_boundary = false;
+            self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands = None;
+            self.next_core_nmi_active_scanout_uses_host_animated_bg_operands = None;
             self.pending_dialogue_initialization_schedule = None;
             self.hud_tilemap_nmi_publication_phase = 0;
             self.nmi_poly_upload_deferred = 0;
@@ -20534,6 +20596,43 @@ impl ZeldaState {
         }
     }
 
+    pub(super) fn record_observed_animated_bg_dma_for_active_scanout(
+        &mut self,
+        destination: usize,
+        data: &[u8],
+    ) {
+        let Some(active) = self
+            .display_snapshot
+            .as_mut()
+            .filter(|active| active.accepts_nmi_dma_receipts)
+        else {
+            return;
+        };
+        let writes = data
+            .chunks_exact(2)
+            .take(0x200)
+            .enumerate()
+            .filter_map(|(offset, bytes)| {
+                let index = destination.checked_add(offset)?;
+                (index < active.ppu.vram.len())
+                    .then_some((index, u16::from_le_bytes([bytes[0], bytes[1]])))
+            })
+            .collect::<Vec<_>>();
+        if writes.is_empty() {
+            return;
+        }
+        let receipt = EffectivePresentedDma::animated_bg_only(
+            active.animated_bg_scanout_generation
+                == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi,
+            writes,
+        );
+        if let Some(existing) = active.effective_presented_dma.as_mut() {
+            existing.merge_after(receipt);
+        } else {
+            active.effective_presented_dma = Some(receipt);
+        }
+    }
+
     pub(super) fn record_trailing_nmi_decoded_bg_dma_for_following_scanout(&mut self) {
         let Some(writes) = self.active_effective_dma_writes.take() else {
             return;
@@ -21722,6 +21821,9 @@ impl ZeldaState {
                 self.complete_module0e_interface_after_run();
                 self.nmi_prepare_sprites();
                 self.clear_nmi_update_latch();
+                self.next_core_nmi_active_scanout_uses_host_animated_bg_operands = std::mem::take(
+                    &mut self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands,
+                );
             }
             GameWorkContinuation::FinishDungeonMapRoomDrawing => {
                 // The room builder resumes after the NMI and returns through
@@ -22301,6 +22403,7 @@ impl ZeldaState {
                     self.normal_dialogue_initialization_phase = 0;
                     self.normal_dialogue_initialization_entry_phase = 0;
                     self.normal_dialogue_initialization_return_after_scanout_boundary = false;
+                    self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands = None;
                     self.complete_module0e_interface_after_run();
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
