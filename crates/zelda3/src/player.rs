@@ -993,6 +993,14 @@ impl ZeldaState {
     }
 
     pub(super) fn link_move_position(&mut self) {
+        if let Some(position_return) = self.link_move_position_until_coordinates_integrated() {
+            self.complete_link_move_position_after_coordinates(position_return);
+        }
+    }
+
+    fn link_move_position_until_coordinates_integrated(
+        &mut self,
+    ) -> Option<LinkMovePositionReturn> {
         let x = self.game_state.player.follower_link.x();
         let y = self.game_state.player.follower_link.y();
         self.follower_link_state_mut()
@@ -1002,7 +1010,7 @@ impl ZeldaState {
             && self.game_state.player.follower_link.on_somaria_platform() == 2
         {
             self.link_handle_velocity_and_sand_drag(x, y);
-            return;
+            return None;
         }
 
         let actual_x_velocity = self.game_state.player.follower_link.actual_x_velocity();
@@ -1017,9 +1025,16 @@ impl ZeldaState {
                 .move_z_by_velocity(actual_z_velocity);
         }
 
+        Some(LinkMovePositionReturn { old_x: x, old_y: y })
+    }
+
+    pub(super) fn complete_link_move_position_after_coordinates(
+        &mut self,
+        position_return: LinkMovePositionReturn,
+    ) {
         self.link_handle_moving_floor();
         self.link_apply_conveyor();
-        self.link_handle_velocity_and_sand_drag(x, y);
+        self.link_handle_velocity_and_sand_drag(position_return.old_x, position_return.old_y);
     }
 
     pub(super) fn link_handle_velocity_and_sand_drag(&mut self, old_x: u16, old_y: u16) {
@@ -1777,6 +1792,14 @@ impl ZeldaState {
     }
 
     pub(super) fn link_handle_velocity(&mut self) {
+        if let Some(position_return) = self.link_handle_velocity_until_position_integrated() {
+            self.complete_link_move_position_after_coordinates(position_return);
+        }
+    }
+
+    pub(super) fn link_handle_velocity_until_position_integrated(
+        &mut self,
+    ) -> Option<LinkMovePositionReturn> {
         let old_x = self.game_state.player.follower_link.x();
         let old_y = self.game_state.player.follower_link.y();
 
@@ -1789,18 +1812,18 @@ impl ZeldaState {
         {
             self.store_link_safe_return_position(old_x, old_y);
             self.link_handle_velocity_and_sand_drag(old_x, old_y);
-            return;
+            return None;
         }
 
         if self.game_state.player.follower_link.handler_state() == 4 {
             self.handle_swim_stroke_and_subpixels();
-            return;
+            return None;
         }
 
         let mut speed_index = if self.game_state.player.follower_link.flag_moving() != 0 {
             if !self.game_state.player.follower_link.is_running() {
                 self.handle_swim_stroke_and_subpixels();
-                return;
+                return None;
             }
             24
         } else {
@@ -1820,7 +1843,7 @@ impl ZeldaState {
                     .tile_collision_bits_secondary())
                 == 0x0f
             {
-                return;
+                return None;
             }
             if self
                 .game_state
@@ -1879,7 +1902,7 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_actual_velocity_from_direction(direction, vel);
         self.follower_link_state_mut().prime_airborne_z_velocity();
-        self.link_move_position();
+        self.link_move_position_until_coordinates_integrated()
     }
 
     pub(super) fn handle_swim_stroke_and_subpixels(&mut self) {

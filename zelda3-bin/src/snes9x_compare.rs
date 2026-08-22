@@ -6084,6 +6084,22 @@ pub(crate) fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
         serde_json::Value::from(byte(0x0136)),
     );
     if let Some(map) = receipt.as_object_mut() {
+        for (name, value) in [
+            ("link_animation_counter", u64::from(byte(0x002d))),
+            ("link_animation_step", u64::from(byte(0x002e))),
+            ("link_facing", u64::from(byte(0x002f))),
+            ("link_last_direction", u64::from(byte(0x0026))),
+            ("link_speed_setting", u64::from(byte(0x005e))),
+            ("link_num_orthogonal_directions", u64::from(byte(0x006a))),
+            ("link_direction_lock", u64::from(byte(0x0050))),
+            ("link_direction_bits", u64::from(byte(0x0340))),
+            ("link_flag_moving", u64::from(byte(0x034a))),
+            ("link_dma_graphics_index", u64::from(word(0x0100))),
+            ("link_dma_body_top", u64::from(word(0x0acc))),
+            ("link_dma_head_top", u64::from(word(0x0ad0))),
+        ] {
+            map.insert(name.into(), value.into());
+        }
         map.insert("sprite_graphics_index".into(), byte(0x0aa3).into());
         map.insert(
             "sprite_graphics_subsets".into(),

@@ -2740,20 +2740,61 @@ impl ZeldaState {
                 return;
             }
         }
-        self.module0f_spotlight_close_link_and_oam();
+        if self.begin_module0f_spotlight_close_link_and_oam(cpu_plan, iteration) {
+            return;
+        }
         if cpu_plan.is_none_or(|plan| !plan.returned_to_main_wait_before_first_nmi) {
             self.schedule_spotlight_iteration_return(iteration);
         }
     }
 
+    fn begin_module0f_spotlight_close_link_and_oam(
+        &mut self,
+        cpu_plan: Option<DungeonExitSpotlightCpuPlan>,
+        iteration: SpotlightIteration,
+    ) -> bool {
+        if !cpu_plan.is_some_and(|plan| plan.link_position_integrated_before_first_nmi) {
+            self.module0f_spotlight_close_link_and_oam();
+            return false;
+        }
+        let position_return = self
+            .module0f_spotlight_close_velocity_until_position_integrated()
+            .expect("Player_MovePosition1_ interruption requires Module0F's outdoor velocity path");
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity {
+                position_return,
+                iteration,
+            },
+            1,
+        );
+        true
+    }
+
     fn module0f_spotlight_close_link_and_oam(&mut self) {
+        if let Some(position_return) =
+            self.module0f_spotlight_close_velocity_until_position_integrated()
+        {
+            self.complete_link_move_position_after_coordinates(position_return);
+        }
+        self.module0f_spotlight_close_after_velocity();
+    }
+
+    fn module0f_spotlight_close_velocity_until_position_integrated(
+        &mut self,
+    ) -> Option<LinkMovePositionReturn> {
         if self.game_state.world.location.is_outdoors() {
             if self.game_state.world.location.overworld_screen_index() == 0x0f {
                 self.follower_link_state_mut()
                     .set_water_ripple_or_grass_state(1);
             }
             self.follower_link_state_mut().set_speed_setting(6);
-            self.link_handle_velocity();
+            return self.link_handle_velocity_until_position_integrated();
+        }
+        None
+    }
+
+    fn module0f_spotlight_close_after_velocity(&mut self) {
+        if self.game_state.world.location.is_outdoors() {
             self.follower_link_state_mut().clear_movement_velocity();
         }
 
@@ -2771,6 +2812,21 @@ impl ZeldaState {
             .set_direction_and_last_direction(dir);
         self.link_handle_moving_animation_full_long_entry();
         self.link_oam_main();
+    }
+
+    pub(super) fn complete_dungeon_exit_spotlight_link_velocity(
+        &mut self,
+        position_return: LinkMovePositionReturn,
+        iteration: SpotlightIteration,
+    ) {
+        self.complete_link_move_position_after_coordinates(position_return);
+        self.module0f_spotlight_close_after_velocity();
+        if iteration.prepares_main_loop_sprites_before_second_nmi() {
+            self.nmi_prepare_sprites_for_main_loop_once();
+            self.clear_nmi_update_latch();
+        } else {
+            self.schedule_spotlight_iteration_return(iteration);
+        }
     }
 
     pub(super) fn complete_dungeon_exit_spotlight_entry(

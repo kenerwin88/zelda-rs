@@ -1502,6 +1502,16 @@ fn effective_presented_dma_advances_only_written_vram_words_and_obj_cache() {
     );
 
     state.active_effective_dma_writes = Some(writes);
+    write_le_u16(
+        &mut state.ram,
+        LinkDmaSourceSlot::HeadTop.ram_address(),
+        0xcd80,
+    );
+    let completed_link_sources = LinkDmaSources::load_from_ram(&state.ram);
+    state.record_completed_link_obj_dma_for_display_boundary(
+        completed_link_sources,
+        GraphicsDmaGeneration::LiveAfterMain,
+    );
     state.record_effective_presented_dma_for_active_scanout();
 
     // The early Link DMA completes in vblank before this active scanout fetches
@@ -1511,6 +1521,17 @@ fn effective_presented_dma_advances_only_written_vram_words_and_obj_cache() {
     assert_eq!(
         active.effective_presented_dma.as_ref().unwrap().vram_writes,
         receipt.vram_writes
+    );
+    assert_eq!(
+        active
+            .effective_presented_dma
+            .as_ref()
+            .unwrap()
+            .completed_link_obj_dma,
+        Some(CompletedLinkObjDma {
+            sources: completed_link_sources,
+            source_generation: GraphicsDmaGeneration::LiveAfterMain,
+        }),
     );
     state.last_presented_oam = Some(vec![0xbbbb; state.ppu.oam.len()]);
     state.last_presented_obj_vram = Some(vec![0xdddd; 0x400]);
@@ -1528,6 +1549,31 @@ fn effective_presented_dma_advances_only_written_vram_words_and_obj_cache() {
     let obj = state.ppu.obj_vram_latch.as_ref().unwrap();
     assert_eq!(obj[0x4008], 0xdddd);
     assert_eq!(obj[0x4009], 0x5555);
+}
+
+#[test]
+fn explicit_obj_cache_owner_is_not_replaced_by_a_bulk_nmi_receipt() {
+    let mut state = ZeldaState::new();
+    state.ppu.vram.fill(0x1111);
+    state.capture_display_snapshot();
+    let mut active = state.display_snapshot.as_deref().unwrap().clone();
+    active.effective_presented_dma = Some(EffectivePresentedDma {
+        vram_writes: vec![(0x4020, 0x2222)],
+        decoded_bg_vram_writes: Vec::new(),
+        completed_oam: None,
+        completed_link_obj_dma: None,
+        completed_cgram: None,
+        completed_bg_scroll: None,
+        completed_color_math: None,
+        completed_inidisp: None,
+        completed_dialogue_metadata: None,
+    });
+    state.last_presented_obj_vram = Some(vec![0x3333; 0x400]);
+    state.ppu.obj_vram_latch = Some(vec![0x4444; state.ppu.vram.len()]);
+
+    state.compose_effective_presented_obj(&active);
+
+    assert_eq!(state.ppu.obj_vram_latch.as_ref().unwrap()[0x4020], 0x4444);
 }
 
 #[test]
@@ -3413,6 +3459,215 @@ fn early_link_obj_cache_composes_body_head_and_hand_transfers_as_one_batch() {
 }
 
 #[test]
+fn planned_link_scanout_decodes_only_a_jointly_live_operand_generation() {
+    let mut host_ram = vec![0; 0x20000];
+    let mut live_ram = vec![0; 0x20000];
+    let mut graphics = vec![0; 0x1000];
+    let base_vram = vec![0x7777; 0x4400];
+
+    for (index, (_, slot, len)) in EARLY_LINK_OBJ_DMA_TRANSFERS.iter().copied().enumerate() {
+        let host_offset = index * 0x80;
+        let live_offset = 0x800 + index * 0x80;
+        write_le_u16(
+            &mut host_ram,
+            slot.ram_address(),
+            0x8000 + host_offset as u16,
+        );
+        write_le_u16(
+            &mut live_ram,
+            slot.ram_address(),
+            0x8000 + live_offset as u16,
+        );
+        for bytes in graphics[host_offset..host_offset + len].chunks_exact_mut(2) {
+            bytes.copy_from_slice(&(0x1100 + index as u16).to_le_bytes());
+        }
+        for bytes in graphics[live_offset..live_offset + len].chunks_exact_mut(2) {
+            bytes.copy_from_slice(&(0x2200 + index as u16).to_le_bytes());
+        }
+    }
+
+    let host_sources = LinkDmaSources::load_from_ram(&host_ram);
+    let live_sources = LinkDmaSources::load_from_ram(&live_ram);
+    let selected_host_sources = link_obj_scanout_sources_for_publication(
+        GraphicsDmaGeneration::LiveAfterMain,
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        host_sources,
+        live_sources,
+    );
+    let selected_live_sources = link_obj_scanout_sources_for_publication(
+        GraphicsDmaGeneration::LiveAfterMain,
+        GraphicsDmaGeneration::LiveAfterMain,
+        host_sources,
+        live_sources,
+    );
+    let host_cache =
+        compose_early_link_obj_cache(&base_vram, selected_host_sources, Some(&graphics));
+    let live_cache =
+        compose_early_link_obj_cache(&base_vram, selected_live_sources, Some(&graphics));
+
+    for (index, (destination, _, len)) in EARLY_LINK_OBJ_DMA_TRANSFERS.iter().copied().enumerate() {
+        assert!(host_cache[destination..destination + len / 2]
+            .iter()
+            .all(|&word| word == 0x1100 + index as u16));
+        assert!(live_cache[destination..destination + len / 2]
+            .iter()
+            .all(|&word| word == 0x2200 + index as u16));
+    }
+    let following_live_but_retained_sources = link_obj_scanout_sources_for_publication(
+        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        GraphicsDmaGeneration::LiveAfterMain,
+        host_sources,
+        live_sources,
+    );
+    let following_live_but_retained_scanout = compose_early_link_obj_cache(
+        &base_vram,
+        following_live_but_retained_sources,
+        Some(&graphics),
+    );
+    for (index, (destination, _, len)) in EARLY_LINK_OBJ_DMA_TRANSFERS.iter().copied().enumerate() {
+        assert!(
+            following_live_but_retained_scanout[destination..destination + len / 2]
+                .iter()
+                .all(|&word| word == 0x1100 + index as u16)
+        );
+    }
+}
+
+#[test]
+fn staged_display_snapshot_owns_exact_link_dma_source_words() {
+    let mut state = ZeldaState::new();
+    write_le_u16(
+        &mut state.ram,
+        LinkDmaSourceSlot::HeadTop.ram_address(),
+        0xcd80,
+    );
+    let captured_sources = LinkDmaSources::load_from_ram(&state.ram);
+
+    state.capture_display_snapshot();
+    write_le_u16(
+        &mut state.ram,
+        LinkDmaSourceSlot::HeadTop.ram_address(),
+        0x8800,
+    );
+
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .link_obj_scanout_sources,
+        captured_sources,
+    );
+}
+
+#[test]
+fn live_link_cache_requires_a_completed_dma_receipt() {
+    let planned = LinkDmaSources::load_from_ram(&vec![0; 0x20000]);
+    let mut completed_ram = vec![0; 0x20000];
+    write_le_u16(
+        &mut completed_ram,
+        LinkDmaSourceSlot::HeadTop.ram_address(),
+        0xcd80,
+    );
+    let completed = LinkDmaSources::load_from_ram(&completed_ram);
+    let completed_live = CompletedLinkObjDma {
+        sources: completed,
+        source_generation: GraphicsDmaGeneration::LiveAfterMain,
+    };
+    let completed_host = CompletedLinkObjDma {
+        sources: completed,
+        source_generation: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+    };
+
+    assert_eq!(
+        link_obj_cache_sources_for_publication(
+            GraphicsDmaGeneration::LiveAfterMain,
+            planned,
+            None,
+            false,
+        ),
+        None,
+    );
+    assert_eq!(
+        link_obj_cache_sources_for_publication(
+            GraphicsDmaGeneration::LiveAfterMain,
+            planned,
+            Some(completed_live),
+            false,
+        ),
+        Some(completed),
+    );
+    assert_eq!(
+        link_obj_cache_sources_for_publication(
+            GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            planned,
+            None,
+            false,
+        ),
+        Some(planned),
+    );
+    assert_eq!(
+        link_obj_cache_sources_for_publication(
+            GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            planned,
+            Some(completed_live),
+            false,
+        ),
+        Some(completed),
+    );
+    assert_eq!(
+        link_obj_cache_sources_for_publication(
+            GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            planned,
+            Some(completed_live),
+            true,
+        ),
+        None,
+    );
+    assert_eq!(
+        link_obj_cache_sources_for_publication(
+            GraphicsDmaGeneration::LiveAfterMain,
+            planned,
+            Some(completed_live),
+            true,
+        ),
+        Some(completed),
+    );
+    assert_eq!(
+        link_obj_cache_sources_for_publication(
+            GraphicsDmaGeneration::LiveAfterMain,
+            planned,
+            Some(completed_host),
+            false,
+        ),
+        None,
+    );
+}
+
+#[test]
+fn ordinary_trailing_link_dma_does_not_reenter_the_captured_display_owner() {
+    let mut state = ZeldaState::new();
+    state.capture_display_snapshot();
+    let mut ram = state.ram.clone();
+    write_le_u16(&mut ram, LinkDmaSourceSlot::HeadTop.ram_address(), 0xcd80);
+    let completed_sources = LinkDmaSources::load_from_ram(&ram);
+
+    state.begin_effective_presented_dma();
+    state.record_completed_link_obj_dma_for_display_boundary(
+        completed_sources,
+        GraphicsDmaGeneration::LiveAfterMain,
+    );
+    state.record_trailing_nmi_decoded_bg_dma_for_following_scanout();
+
+    assert!(state
+        .display_snapshot
+        .as_ref()
+        .unwrap()
+        .effective_presented_dma
+        .is_none());
+}
+
+#[test]
 fn completed_room_load_can_publish_live_animated_bg_independently() {
     let mut state = ZeldaState::new();
     state.capture_display_snapshot();
@@ -3742,7 +3997,7 @@ fn dungeon_exit_publication_plan_promotes_only_live_boundary_domains() {
 
     assert_eq!(
         plan.oam_scanout_source,
-        OamScanoutSource::ComposeLiveAfterNmi
+        OamScanoutSource::RetainCapturedBeforeNmi
     );
     assert_eq!(
         plan.link_obj_scanout_generation,
@@ -3882,6 +4137,34 @@ fn in_flight_obj_hold_prefers_the_retiring_scanout_then_falls_back_to_history() 
         state.retiring_or_last_presented_oam(),
         Some(last_presented.as_slice()),
     );
+}
+
+#[test]
+fn staged_promotion_retains_oam_only_when_the_c_iteration_is_still_resuming() {
+    let staged = OamScanoutSource::ComposeCompletedWorkAfterNmi;
+    assert_eq!(
+        oam_scanout_source_for_staged_promotion(false, staged),
+        OamScanoutSource::RetainPreviousPresented,
+    );
+    assert_eq!(
+        oam_scanout_source_for_staged_promotion(true, staged),
+        staged,
+    );
+    assert_eq!(
+        oam_scanout_source_for_staged_promotion(false, OamScanoutSource::ComposeLiveAfterNmi,),
+        OamScanoutSource::RetainPreviousPresented,
+    );
+    for retained in [
+        OamScanoutSource::RetainCapturedBeforeNmi,
+        OamScanoutSource::RetainImmutableCapturedPpu,
+        OamScanoutSource::RetainPreviousPresented,
+        OamScanoutSource::RetainResidentPpuOam,
+    ] {
+        assert_eq!(
+            oam_scanout_source_for_staged_promotion(false, retained),
+            retained,
+        );
+    }
 }
 
 #[test]

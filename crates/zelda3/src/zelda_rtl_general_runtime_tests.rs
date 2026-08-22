@@ -1902,6 +1902,37 @@ fn move_position_applies_sand_drag_to_velocity_delta() {
 }
 
 #[test]
+fn link_velocity_coordinate_boundary_resumes_to_the_atomic_c_result() {
+    fn configured_state() -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.set_main_module(0x0f);
+        state.set_submodule(1);
+        set_link_test_word(&mut state, LINK_X_COORD, 0x0100);
+        set_link_test_word(&mut state, LINK_Y_COORD, 0x0200);
+        set_link_test_byte(&mut state, LINK_DIRECTION, 8);
+        set_link_test_byte(&mut state, LINK_DIRECTION_LAST, 8);
+        state.follower_link_state_mut().set_speed_setting(6);
+        state
+    }
+
+    let mut atomic = configured_state();
+    atomic.link_handle_velocity();
+
+    let mut resumed = configured_state();
+    let position_return = resumed
+        .link_handle_velocity_until_position_integrated()
+        .expect("ordinary Module0F movement must reach Player_MovePosition1_");
+
+    // Player_MovePosition1_ has integrated coordinates, but the C calls to
+    // moving-floor, conveyor, and drag/velocity-delta handling are still on
+    // the suspended stack.
+    assert_eq!(link_test_byte(&resumed, LINK_Y_VEL), 0);
+    resumed.complete_link_move_position_after_coordinates(position_return);
+
+    assert_eq!(resumed.ram, atomic.ram);
+}
+
+#[test]
 fn move_position_applies_moving_floor_before_velocity_delta() {
     let mut state = ZeldaState::new();
     set_link_test_word(&mut state, LINK_X_COORD, 0x0100);
@@ -4997,6 +5028,7 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         interrupted_pc,
         interrupted_return_address: 0,
         iterations_before_nmi: 0,
+        link_position_integrated_before_first_nmi: false,
         returned_to_main_wait_before_first_nmi: false,
         main_loop_sprite_preparation_completed_before_second_nmi: false,
         active_window_words: [0; SPOTLIGHT_VISIBLE_SCANLINES],
@@ -5251,6 +5283,7 @@ fn interrupted_dungeon_exit_spotlight_publishes_the_rom_prefix_before_waiting() 
             interrupted_pc: 0x00_f38d,
             interrupted_return_address: 0,
             iterations_before_nmi: 19,
+            link_position_integrated_before_first_nmi: false,
             returned_to_main_wait_before_first_nmi: false,
             main_loop_sprite_preparation_completed_before_second_nmi: false,
             active_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
@@ -5306,6 +5339,7 @@ fn interrupted_dungeon_exit_build_retains_the_c_suffix() {
             interrupted_pc: 0x00_f3be,
             interrupted_return_address: 0,
             iterations_before_nmi: usize::MAX,
+            link_position_integrated_before_first_nmi: false,
             returned_to_main_wait_before_first_nmi: false,
             main_loop_sprite_preparation_completed_before_second_nmi: true,
             active_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
@@ -5371,6 +5405,7 @@ fn interrupted_dungeon_exit_table_build_defers_the_radius_write_until_return() {
             interrupted_pc: 0x00_f38d,
             interrupted_return_address: 0,
             iterations_before_nmi: 19,
+            link_position_integrated_before_first_nmi: false,
             returned_to_main_wait_before_first_nmi: false,
             main_loop_sprite_preparation_completed_before_second_nmi: true,
             active_window_words: [0x00ff; SPOTLIGHT_VISIBLE_SCANLINES],
@@ -5489,6 +5524,7 @@ fn dungeon_exit_crossing_publishes_the_completed_oam_dma_receipt() {
         vram_writes: Vec::new(),
         decoded_bg_vram_writes: Vec::new(),
         completed_oam: Some(vec![0x6666; state.ppu.oam.len()]),
+        completed_link_obj_dma: None,
         completed_cgram: None,
         completed_bg_scroll: None,
         completed_color_math: None,

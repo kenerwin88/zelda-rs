@@ -772,6 +772,9 @@ impl ZeldaState {
             )
             .then_some(host_boundary_link_operands)
             .flatten();
+            let completed_link_obj_sources = captured_link_operands
+                .map(|operands| operands.sources)
+                .unwrap_or_else(|| LinkDmaSources::load_from_ram(&self.ram));
             let trace_link_dma = std::env::var_os("ZELDA3_DEBUG_LINK_DMA").is_some()
                 && debug_hardware_frame_matches(self.frame_ctr_dbg);
             if trace_link_dma {
@@ -824,6 +827,10 @@ impl ZeldaState {
                 );
             }
             self.nmi_core_link_graphics_update(captured_link_operands);
+            self.record_completed_link_obj_dma_for_display_boundary(
+                completed_link_obj_sources,
+                link_obj_operands_generation,
+            );
             self.link_obj_dma_completed_this_frame = true;
             if trace_link_dma {
                 eprintln!(
