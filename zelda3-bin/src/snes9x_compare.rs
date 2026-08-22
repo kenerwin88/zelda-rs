@@ -5232,6 +5232,8 @@ fn compact_engine_state_mismatches(rust: &[u8], oracle: &[u8]) -> Vec<String> {
             ("y_subpixel", 0x0d60),
             ("y_velocity", 0x0d40),
             ("direction", 0x0de0),
+            ("head_direction", 0x0eb0),
+            ("graphics", 0x0dc0),
             ("ai_state", 0x0d80),
             ("wall_collision", 0x0e70),
             ("subtype", 0x0e30),
@@ -6260,6 +6262,8 @@ pub(crate) fn libretro_engine_state_receipt(ram: &[u8]) -> serde_json::Value {
                         "y_subpixel": byte(0x0d60 + slot),
                         "y_velocity": byte(0x0d40 + slot),
                         "direction": byte(0x0de0 + slot),
+                        "head_direction": byte(0x0eb0 + slot),
+                        "graphics": byte(0x0dc0 + slot),
                         "ai_state": byte(0x0d80 + slot),
                         "wall_collision": byte(0x0e70 + slot),
                         "subtype": byte(0x0e30 + slot),
@@ -7287,12 +7291,15 @@ mod tests {
         oracle[0x22..0x24].copy_from_slice(&0x05a8u16.to_le_bytes());
         rust[0x0df1] = 0x58;
         oracle[0x0df1] = 0x59;
+        rust[0x0eb1] = 2;
+        oracle[0x0eb1] = 3;
 
         assert_eq!(
             compact_engine_state_mismatches(&rust, &oracle),
             [
                 "subsubmodule rust=0x03 oracle=0x04",
                 "link_x rust=0x05a9 oracle=0x05a8",
+                "sprite[1].head_direction rust=0x02 oracle=0x03",
                 "sprite[1].delay_main rust=0x58 oracle=0x59",
             ]
         );
