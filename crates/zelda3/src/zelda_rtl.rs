@@ -637,6 +637,10 @@ enum OamScanoutSource {
     /// materialized, so neither the resident nor live PPU table represents the
     /// generation scanned by hardware.
     ComposeLiveShadowAfterMain,
+    /// Publish the exact software OAM shadow present when vblank interrupted
+    /// Sprite_Main. The ROM's NMI_DoUpdates copies $0800..$0a1f directly to
+    /// PPU OAM, including partial ordinary- or cached-sprite authorship.
+    ComposeInterruptedSpriteMainShadowDma,
     /// Publish only Link's sorted OAM range from the live software shadow.
     /// The spiral-stair return completes that player range before scanout,
     /// while the rest of the resident sprite table remains authoritative.
@@ -11939,6 +11943,53 @@ impl ZeldaState {
         self.next_display_obj_scanout_generation = value;
     }
 
+    /// Record the OAM consequence of an NMI that interrupted Sprite_Main.
+    /// Interrupt_NMI either retains hardware OAM when its software latch is
+    /// set, or NMI_DoUpdates copies the exact live $0800..$0a1f shadow.
+    pub(super) fn stage_interrupted_sprite_main_oam_scanout(&mut self) {
+        if !self.rom_startup_timing() {
+            return;
+        }
+        if self.ram[crate::game_state::constants::NMI_BOOLEAN] != 0 {
+            // Interrupt_NMI skips NMI_DoUpdates while the software latch is
+            // already set. No $2104 DMA occurs, so the resident hardware OAM
+            // table survives this vblank verbatim. Display capture versions
+            // that table through resident_oam_dma, which advances only on a
+            // real $2104 transfer.
+            self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
+                oam: OamScanoutSource::RetainResidentPpuOam,
+                link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            }));
+            return;
+        }
+        let oam = self
+            .sprite_oam_shadow_buffer()
+            .chunks_exact(2)
+            .take(self.ppu.oam.len())
+            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+            .collect();
+        self.next_display_obj_memory_generation =
+            Some(DisplayObjGeneration::RetainCapturedOam { oam });
+        self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::ComposeInterruptedSpriteMainShadowDma,
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        }));
+    }
+
+    /// A saved Sprite_Main stack resumes during active display and returns to
+    /// the ordinary ZeldaRunGameLoop suffix. The capture preceding its trailing
+    /// NMI still owns the resident OAM and host-boundary Link OBJ generation;
+    /// the DMA performed by that trailing NMI belongs to the following field.
+    fn stage_resumed_sprite_main_return_obj_scanout(&mut self) {
+        self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::RetainResidentPpuOam,
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        }));
+    }
+
     pub(super) fn stage_straight_interroom_fadeout_obj_source(&mut self) {
         if self.next_display_obj_scanout_generation.is_some() {
             // A resumed caller already staged the independently measured OAM
@@ -18508,6 +18559,7 @@ impl ZeldaState {
             | OamScanoutSource::ComposeLiveAfterNmi
             | OamScanoutSource::ComposeCompletedWorkAfterNmi
             | OamScanoutSource::ComposeLiveShadowAfterMain
+            | OamScanoutSource::ComposeInterruptedSpriteMainShadowDma
             | OamScanoutSource::ComposeSpiralReturnPlayerShadowAfterMain
             | OamScanoutSource::ComposeLivePlayerOamAfterMain => None,
         };
@@ -23874,6 +23926,7 @@ impl ZeldaState {
                         self.clear_nmi_update_latch();
                         self.game_execution_scheduler
                             .finish_call_stack_at_main_wait_before_nmi();
+                        self.stage_resumed_sprite_main_return_obj_scanout();
                         // The generic scheduled-work tail below publishes the
                         // following NMI after this resumed caller returns to the
                         // wait loop. That is the same trailing boundary the ROM
@@ -23910,6 +23963,7 @@ impl ZeldaState {
                     self.complete_module07_after_sprite_main(dungeon);
                     self.nmi_prepare_sprites();
                     self.clear_nmi_update_latch();
+                    self.stage_resumed_sprite_main_return_obj_scanout();
                 }
                 GameWorkStep::Complete(
                     GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. },

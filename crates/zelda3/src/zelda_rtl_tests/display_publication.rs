@@ -2153,6 +2153,24 @@ fn resident_oam_scanout_does_not_advance_during_an_unchanged_continuation() {
 }
 
 #[test]
+fn interrupted_sprite_main_scanout_publishes_its_partial_shadow_dma() {
+    let mut state = ZeldaState::new();
+    state.ppu.oam.fill(0x1111);
+
+    let mut following = captured_display_snapshot();
+    following.obj_generation = DisplayObjGeneration::RetainCapturedOam {
+        oam: vec![0x2222; following.ppu.oam.len()],
+    };
+    following.completed_oam_dma_after_capture = Some(vec![0x3333; following.ppu.oam.len()]);
+    following.oam_scanout_source = OamScanoutSource::ComposeInterruptedSpriteMainShadowDma;
+    let plan = DisplayPublicationPlan::resolve(&following, DisplayPublicationSignals::default());
+
+    state.compose_display_oam(&following, &plan);
+
+    assert_eq!(state.ppu.oam, vec![0x2222; state.ppu.oam.len()]);
+}
+
+#[test]
 fn resident_oam_scanout_does_not_advance_after_its_nmi_was_already_consumed() {
     let mut state = ZeldaState::new();
     state.ppu.oam[40] = u16::from_le_bytes([0x38, 0x34]);
@@ -2719,6 +2737,71 @@ fn uncle_sword_item_return_stages_the_prepared_oam_for_the_next_boundary() {
                 oam[1] = 0x4433;
                 oam
             },
+        })
+    );
+}
+
+#[test]
+fn interrupted_sprite_main_stages_the_exact_partial_oam_shadow_dma() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.ram[OAM_BUF..OAM_BUF + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+
+    state.stage_interrupted_sprite_main_oam_scanout();
+
+    assert_eq!(
+        state.next_display_obj_memory_generation,
+        Some(DisplayObjGeneration::RetainCapturedOam {
+            oam: {
+                let mut oam = vec![0; state.ppu.oam.len()];
+                oam[0] = 0x2211;
+                oam[1] = 0x4433;
+                oam
+            },
+        })
+    );
+    assert_eq!(
+        state.next_display_obj_scanout_generation,
+        Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::ComposeInterruptedSpriteMainShadowDma,
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        })
+    );
+}
+
+#[test]
+fn interrupted_sprite_main_with_latched_nmi_retains_resident_oam() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.ram[NMI_BOOLEAN] = 1;
+    state.ram[OAM_BUF..OAM_BUF + 4].copy_from_slice(&[0x11, 0x22, 0x33, 0x44]);
+
+    state.stage_interrupted_sprite_main_oam_scanout();
+
+    assert_eq!(state.next_display_obj_memory_generation, None);
+    assert_eq!(
+        state.next_display_obj_scanout_generation,
+        Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::RetainResidentPpuOam,
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        })
+    );
+}
+
+#[test]
+fn resumed_sprite_main_return_keeps_trailing_nmi_out_of_active_field() {
+    let mut state = ZeldaState::new();
+
+    state.stage_resumed_sprite_main_return_obj_scanout();
+
+    assert_eq!(
+        state.next_display_obj_scanout_generation,
+        Some(ObjScanoutGenerations {
+            oam: OamScanoutSource::RetainResidentPpuOam,
+            link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
         })
     );
 }
@@ -4241,6 +4324,7 @@ fn staged_promotion_retains_oam_only_when_the_c_iteration_is_still_resuming() {
         OamScanoutSource::RetainImmutableCapturedPpu,
         OamScanoutSource::RetainPreviousPresented,
         OamScanoutSource::RetainResidentPpuOam,
+        OamScanoutSource::ComposeInterruptedSpriteMainShadowDma,
     ] {
         assert_eq!(
             oam_scanout_source_for_staged_promotion(false, retained),

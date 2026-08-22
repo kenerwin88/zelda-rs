@@ -2029,6 +2029,7 @@ impl ZeldaState {
         boundary: DungeonSpriteMainCpuBoundary,
         nmi_slices: u8,
     ) {
+        self.stage_interrupted_sprite_main_oam_scanout();
         let continuation = GameWorkContinuation::FinishDungeonSpriteMain { boundary };
         if self.dungeon_quadrant_cpu_continuation_active && nmi_slices == 1 {
             self.game_execution_scheduler
@@ -2177,6 +2178,7 @@ impl ZeldaState {
                         .active_dungeon_sprite_main_return
                         .take()
                         .expect("cached-sprite interruption must suspend a Module 7 sprite loop");
+                    self.stage_interrupted_sprite_main_oam_scanout();
                     let continuation = GameWorkContinuation::FinishDungeonCachedSpriteMain {
                         boundary,
                         live_slot_backup,
