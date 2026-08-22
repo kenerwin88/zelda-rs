@@ -5902,7 +5902,7 @@ fn animated_bg_operand_generation_is_explicit_not_receipt_owned() {
             data: state.ram[CAPTURED_SOURCE..CAPTURED_SOURCE + 0x400].to_vec(),
         }),
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
-        link_obj_vram: state.ppu.vram[0x4000..0x4400].to_vec(),
+        obj_vram: state.ppu.vram.clone(),
         oam_shadow: vec![0; state.ppu.oam.len() * 2],
     });
 
@@ -5963,7 +5963,7 @@ fn measured_nmi_prepare_interruption_records_captured_dma_for_active_scanout_onc
         entry_link_handler_state: 0,
         animated_tile: Some(captured_dma),
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
-        link_obj_vram: state.ppu.vram[0x4000..0x4400].to_vec(),
+        obj_vram: state.ppu.vram.clone(),
         oam_shadow: vec![0; state.ppu.oam.len() * 2],
     });
     state.next_core_nmi_active_scanout_uses_host_animated_bg_operands = Some(true);
@@ -8572,7 +8572,7 @@ fn nmi_operand_consumption_preserves_the_scanout_plan() {
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
-        link_obj_vram: state.ppu.vram[0x4000..0x4400].to_vec(),
+        obj_vram: state.ppu.vram.clone(),
         oam_shadow: state.sprite_oam_shadow_buffer().to_vec(),
     });
 
@@ -8606,7 +8606,7 @@ fn leading_nmi_uses_the_captured_link_high_plane_staging_buffers() {
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
-        link_obj_vram: state.ppu.vram[0x4000..0x4400].to_vec(),
+        obj_vram: state.ppu.vram.clone(),
         oam_shadow: state.sprite_oam_shadow_buffer().to_vec(),
     });
 
@@ -8892,6 +8892,50 @@ fn spiral_stairs_first_steady_slice_consumes_the_host_boundary_link_operands() {
         link_obj_operands_across_main(module_entry, exit, live),
         GraphicsDmaGeneration::HostBoundaryBeforeMain
     );
+}
+
+#[test]
+fn supertile_scroll_keeps_the_pre_main_link_generation_from_palette_entry_through_scroll() {
+    let live = GraphicsDmaGeneration::LiveAfterMain;
+    let state_7 = crate::game_state::FrameState {
+        main_module: 7,
+        submodule: 2,
+        subsubmodule: 7,
+        ..Default::default()
+    };
+    let state_8 = crate::game_state::FrameState {
+        subsubmodule: 8,
+        ..state_7
+    };
+
+    for entry in [state_7, state_8] {
+        assert!(dungeon_supertile_scroll_nmi_precedes_link_animation(
+            entry, state_8,
+        ));
+        assert_eq!(
+            link_obj_scanout_across_main(entry, state_8, live, 0),
+            GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        );
+        assert_eq!(
+            link_obj_operands_across_main(entry, state_8, live),
+            GraphicsDmaGeneration::HostBoundaryBeforeMain,
+        );
+    }
+
+    let state_6 = crate::game_state::FrameState {
+        subsubmodule: 6,
+        ..state_7
+    };
+    let state_9 = crate::game_state::FrameState {
+        subsubmodule: 9,
+        ..state_8
+    };
+    assert!(!dungeon_supertile_scroll_nmi_precedes_link_animation(
+        state_6, state_7,
+    ));
+    assert!(!dungeon_supertile_scroll_nmi_precedes_link_animation(
+        state_8, state_9,
+    ));
 }
 
 #[test]

@@ -294,10 +294,9 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
-        // Snes9x invalidates its decoded tile cache for every VRAM write. An
-        // explicit leading-boundary caller already owns a full DMA receipt;
-        // every other NMI still records the independently visible decoded-BG
-        // effect without advancing the captured raw display-memory domains.
+        // Ordinary NMI writes cannot re-enter the active field, but an
+        // AdvanceStaged publication may already have materialized the next
+        // field. Record exact destinations so that staged owner can be refined.
         let records_trailing_decoded_bg_cache = self.active_effective_dma_writes.is_none();
         if records_trailing_decoded_bg_cache {
             self.begin_effective_presented_dma();

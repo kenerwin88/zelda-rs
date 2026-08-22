@@ -161,26 +161,6 @@ fn compose_early_link_obj_cache(
     obj_cache_vram
 }
 
-fn link_obj_scanout_sources_for_publication(
-    scanout_generation: GraphicsDmaGeneration,
-    source_generation: GraphicsDmaGeneration,
-    host_boundary_sources: LinkDmaSources,
-    live_sources: LinkDmaSources,
-) -> LinkDmaSources {
-    // The current scanout cannot use a following-NMI operand generation before
-    // that NMI is presented. Only a live scanout whose source owner is also
-    // live consumes post-main words; every host-owned combination decodes the
-    // host-boundary words. This is the durable counterpart of C's direct
-    // dma_source_addr_0..5 reads in NMI_DoUpdates.
-    if scanout_generation == GraphicsDmaGeneration::LiveAfterMain
-        && source_generation == GraphicsDmaGeneration::LiveAfterMain
-    {
-        live_sources
-    } else {
-        host_boundary_sources
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct CompletedLinkObjDma {
     sources: LinkDmaSources,
@@ -189,33 +169,20 @@ struct CompletedLinkObjDma {
 
 fn link_obj_cache_sources_for_publication(
     scanout_generation: GraphicsDmaGeneration,
-    planned_sources: LinkDmaSources,
     completed_dma: Option<CompletedLinkObjDma>,
     explicit_obj_cache_owner: bool,
 ) -> Option<LinkDmaSources> {
-    if let Some(completed) = completed_dma.filter(|completed| {
-        completed.source_generation == GraphicsDmaGeneration::LiveAfterMain
-            && (!explicit_obj_cache_owner
-                || scanout_generation == GraphicsDmaGeneration::LiveAfterMain)
-    }) {
-        // An explicit leading NMI completes before the active field begins.
-        // Its exact C source words refine an unowned page, or a typed page
-        // whose resolved plan also advances live. A host-owned typed cache
-        // remains authoritative.
-        return Some(completed.sources);
-    }
-    match (scanout_generation, explicit_obj_cache_owner) {
-        // Without a matching leading-NMI receipt, the scanout plan explicitly retains
-        // the pre-main decoded page. Preserve an explicit typed cache owner;
-        // otherwise reconstruct the planned early batch.
-        (GraphicsDmaGeneration::HostBoundaryBeforeMain, true) => None,
-        (GraphicsDmaGeneration::HostBoundaryBeforeMain, false) => Some(planned_sources),
-        // A live plan may advance only from the exact leading-NMI event which
-        // wrote the six C dma_source_addr_0..5 transfers. Without that receipt
-        // the captured decoded page remains authoritative. The six exact
-        // ranges refine, rather than replace, any typed cache owner.
-        (GraphicsDmaGeneration::LiveAfterMain, _) => None,
-    }
+    // C changes the Link OBJ page only in NMI_DoUpdates. A scanout-generation
+    // plan describes which already-completed page is visible; it is not proof
+    // that another DMA ran. Refine the captured decoded page only from the
+    // exact leading-NMI receipt which records those six transfers.
+    completed_dma
+        .filter(|completed| {
+            completed.source_generation == GraphicsDmaGeneration::LiveAfterMain
+                && (!explicit_obj_cache_owner
+                    || scanout_generation == GraphicsDmaGeneration::LiveAfterMain)
+        })
+        .map(|completed| completed.sources)
 }
 
 fn copy_bytes_into_obj_cache(vram: &mut [u16], destination: usize, source: &[u8]) {
@@ -1024,6 +991,23 @@ fn animated_bg_scanout_across_main(
     }
 }
 
+const fn dungeon_supertile_scroll_nmi_precedes_link_animation(
+    entry: crate::game_state::FrameState,
+    exit: crate::game_state::FrameState,
+) -> bool {
+    // Module07_02 runs Link_HandleMovingAnimation_FullLongEntry before the
+    // state-specific body. State 7 then enters state 8 through the palette
+    // setup, and recurring state 8 advances the scroll, but both CPU slices
+    // run after the NMI that supplied the active field's Link OBJ tiles. Their
+    // NMI_PrepareSprites results belong to the following field.
+    entry.main_module == 7
+        && entry.submodule == 2
+        && matches!(entry.subsubmodule, 7 | 8)
+        && exit.main_module == 7
+        && exit.submodule == 2
+        && exit.subsubmodule == 8
+}
+
 const fn link_obj_operands_across_main(
     entry: crate::game_state::FrameState,
     exit: crate::game_state::FrameState,
@@ -1058,18 +1042,12 @@ const fn link_obj_operands_across_main(
         && matches!(entry.subsubmodule, 3..=7)
         && exit.main_module == 7
         && exit.submodule == 1;
-    let dungeon_supertile_scroll_nmi_precedes_link_animation = entry.main_module == 7
-        && entry.submodule == 2
-        && entry.subsubmodule == 8
-        && exit.main_module == 7
-        && exit.submodule == 2
-        && exit.subsubmodule == 8;
     if entering_dungeon_spiral_stairs
         || entering_dungeon_supertile_transition
         || dungeon_spiral_stairs_nmi_precedes_link_animation
         || entering_dungeon_supertile_scroll
         || dungeon_subtile_scroll_nmi_precedes_link_animation
-        || dungeon_supertile_scroll_nmi_precedes_link_animation
+        || dungeon_supertile_scroll_nmi_precedes_link_animation(entry, exit)
     {
         GraphicsDmaGeneration::HostBoundaryBeforeMain
     } else {
@@ -1612,16 +1590,9 @@ const fn link_obj_scanout_across_main(
     if dungeon_gameplay_submodule_handoff_publishes_entry_shadow(entry, exit) {
         return GraphicsDmaGeneration::HostBoundaryBeforeMain;
     }
-    // State 8 resumes its held NMI before the translated main slice advances
-    // Link's animation. The next coarse display capture has already run that
-    // later slice, so active scanout keeps the completed host-boundary image.
-    if entry.main_module == 7
-        && entry.submodule == 2
-        && entry.subsubmodule == 8
-        && exit.main_module == 7
-        && exit.submodule == 2
-        && exit.subsubmodule == 8
-    {
+    // The state-7 palette entry and recurring state-8 scroll both run after
+    // the NMI that supplied the active field's Link tiles.
+    if dungeon_supertile_scroll_nmi_precedes_link_animation(entry, exit) {
         return GraphicsDmaGeneration::HostBoundaryBeforeMain;
     }
     // The subtile landing tail enters room-load/shutter control after the
@@ -1781,22 +1752,6 @@ const fn rom_dungeon_subtile_direction_one_publishes_live_animated_bg(
         && captured.main_module == 7
         && captured.submodule == 1
         && matches!(captured.subsubmodule, 1..=7)
-}
-
-const fn rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(
-    entry: crate::game_state::FrameState,
-    captured: crate::game_state::FrameState,
-) -> bool {
-    // State 7 finishes the room palette/filter call and reaches vblank before
-    // the first state-8 scroll iteration. That NMI's animated-BG transfer has
-    // completed by active scanout: Snes9x displays the post-NMI dungeon CHR
-    // while OAM and the scroll iteration retain their independent cadence.
-    entry.main_module == 7
-        && entry.submodule == 2
-        && entry.subsubmodule == 7
-        && captured.main_module == 7
-        && captured.submodule == 2
-        && captured.subsubmodule == 8
 }
 
 const fn rom_room_82_sprite_conversion_defers_trailing_nmi(
@@ -8823,8 +8778,6 @@ pub struct ZeldaState {
     intro_poly_upload_delay: u8,
     #[serde(skip)]
     display_snapshot: Option<Box<DisplaySnapshot>>,
-    #[serde(skip)]
-    visible_display_snapshot: Option<Box<DisplaySnapshot>>,
     /// Actual PPU memory destinations written while an explicit leading NMI
     /// executes. A value-diff is insufficient here: DMA can rewrite a word
     /// with the same live value, and that write still replaces an older
@@ -8866,15 +8819,11 @@ pub struct ZeldaState {
     /// it, independently of the other display domains.
     #[serde(skip)]
     last_presented_cgram: Option<Vec<u16>>,
-    /// OBJ tile data used by the most recently rendered scanout. Some
-    /// dungeon-transition states suppress Link's upload while the live PPU
-    /// has already advanced to the next source generation.
+    /// Complete VRAM generation backing the decoded OBJ cache used by the most
+    /// recently rendered scanout. Snes9x caches both OBJ name pages, so this
+    /// cannot be represented by Link's first 64 tiles alone.
     #[serde(skip)]
     last_presented_obj_vram: Option<Vec<u16>>,
-    /// Complete VRAM image used by the most recently rendered scanout. It is
-    /// the resident baseline when a leading NMI completes no VRAM transfer.
-    #[serde(skip)]
-    last_presented_vram: Option<Vec<u16>>,
     /// Host frame owning the staged presentation below. Repeated classic,
     /// modern, and diagnostic captures of one frame must all compose from the
     /// same prior scanout generation.
@@ -8886,8 +8835,6 @@ pub struct ZeldaState {
     staged_presented_cgram: Option<Vec<u16>>,
     #[serde(skip)]
     staged_presented_obj_vram: Option<Vec<u16>>,
-    #[serde(skip)]
-    staged_presented_vram: Option<Vec<u16>>,
     #[serde(skip)]
     last_presented_vram_chr_source: Option<crate::chr_source::VramChrSourceTable>,
     #[serde(skip)]
@@ -9097,9 +9044,8 @@ impl EffectiveDmaWriteSet {
 #[derive(Clone)]
 struct EffectivePresentedDma {
     vram_writes: Vec<(usize, u16)>,
-    /// VRAM writes completed at this boundary which are too late to replace
-    /// the raw display-memory generation, but which invalidated and repopulated
-    /// Snes9x's decoded BG tile cache before the completed frame was returned.
+    /// Pattern data completed by an explicit leading NMI whose raw VRAM
+    /// ownership remains at the captured host boundary.
     decoded_bg_vram_writes: Vec<(usize, u16)>,
     completed_oam: Option<Vec<u16>>,
     completed_link_obj_dma: Option<CompletedLinkObjDma>,
@@ -9219,10 +9165,6 @@ struct DisplaySnapshot {
     game_over_iris_goal_scanout_closed: bool,
     link_obj_scanout_generation: GraphicsDmaGeneration,
     link_obj_source_generation: GraphicsDmaGeneration,
-    /// Exact source words consumed by the early Link DMA that owns this
-    /// snapshot's OBJ scanout. These operands must survive staged publication
-    /// after live WRAM advances.
-    link_obj_scanout_sources: LinkDmaSources,
     oam_scanout_source: OamScanoutSource,
     /// Exact hardware OAM image DMAed after this display boundary was captured.
     /// `None` means no OAM DMA completed before the boundary was published, so
@@ -9558,7 +9500,10 @@ struct PreMainGraphicsDma {
     entry_link_handler_state: u8,
     animated_tile: Option<PreMainAnimatedTileDma>,
     link_operands: PreMainLinkDmaOperands,
-    link_obj_vram: Vec<u16>,
+    /// Complete PPU VRAM resident at the host boundary before main. OBJ cache
+    /// ownership is not limited to Link's first 64 tiles: both OBJ name pages
+    /// can remain decoded across a later NMI/main generation.
+    obj_vram: Vec<u16>,
     oam_shadow: Vec<u8>,
 }
 
@@ -14962,7 +14907,6 @@ impl ZeldaState {
             hud_tilemap_nmi_publication_phase: 0,
             intro_poly_upload_delay: 0,
             display_snapshot: None,
-            visible_display_snapshot: None,
             active_effective_dma_writes: None,
             resident_oam_dma: None,
             last_presented_oam: None,
@@ -14971,12 +14915,10 @@ impl ZeldaState {
             oam_law_entry_frame_counter: None,
             last_presented_cgram: None,
             last_presented_obj_vram: None,
-            last_presented_vram: None,
             presented_history_host_frame: None,
             staged_presented_oam: None,
             staged_presented_cgram: None,
             staged_presented_obj_vram: None,
-            staged_presented_vram: None,
             last_presented_vram_chr_source: None,
             last_presented_vram_chr_preview_source: None,
             staged_presented_vram_chr_source: None,
@@ -15119,7 +15061,6 @@ impl ZeldaState {
         self.intro_poly_presented_vram = None;
         self.sync_overworld_map16_state_from_ram();
         self.display_snapshot = None;
-        self.visible_display_snapshot = None;
         self.active_effective_dma_writes = None;
         self.resident_oam_dma = None;
         self.last_presented_oam = None;
@@ -15127,12 +15068,10 @@ impl ZeldaState {
         self.oam_law_visible = None;
         self.last_presented_cgram = None;
         self.last_presented_obj_vram = None;
-        self.last_presented_vram = None;
         self.presented_history_host_frame = None;
         self.staged_presented_oam = None;
         self.staged_presented_cgram = None;
         self.staged_presented_obj_vram = None;
-        self.staged_presented_vram = None;
         self.last_presented_vram_chr_source = None;
         self.last_presented_vram_chr_preview_source = None;
         self.staged_presented_vram_chr_source = None;
@@ -15193,7 +15132,6 @@ impl ZeldaState {
             self.intro_poly_vram_history.clear();
             self.intro_poly_presented_vram = None;
             self.display_snapshot = None;
-            self.visible_display_snapshot = None;
             self.active_effective_dma_writes = None;
             self.resident_oam_dma = None;
             self.last_presented_oam = None;
@@ -15201,12 +15139,10 @@ impl ZeldaState {
             self.oam_law_visible = None;
             self.last_presented_cgram = None;
             self.last_presented_obj_vram = None;
-            self.last_presented_vram = None;
             self.presented_history_host_frame = None;
             self.staged_presented_oam = None;
             self.staged_presented_cgram = None;
             self.staged_presented_obj_vram = None;
-            self.staged_presented_vram = None;
             self.last_presented_vram_chr_source = None;
             self.last_presented_vram_chr_preview_source = None;
             self.staged_presented_vram_chr_source = None;
@@ -16450,7 +16386,6 @@ impl ZeldaState {
         .then(|| {
             self.display_snapshot
                 .as_deref()
-                .or(self.visible_display_snapshot.as_deref())
                 .filter(|display| display.ppu.scanout_brightness_override.is_none())
                 .map(|display| display.ppu.scanout_brightness())
         })
@@ -17012,17 +16947,6 @@ impl ZeldaState {
                     self.screen_transition(),
                 )
             });
-        let host_boundary_link_obj_sources = self
-            .pre_main_graphics_dma
-            .as_ref()
-            .map(|graphics| graphics.link_operands.sources)
-            .unwrap_or_else(|| LinkDmaSources::load_from_ram(&self.ram));
-        let link_obj_scanout_sources = link_obj_scanout_sources_for_publication(
-            link_obj_scanout_generation,
-            link_obj_source_generation,
-            host_boundary_link_obj_sources,
-            LinkDmaSources::load_from_ram(&self.ram),
-        );
         let oam_dma_byte_len = self.ppu.oam.len() * 2;
         let dialogue_holds_published_oam = published_frame.is_some_and(|published| {
             dialogue_text_frame_holds_published_oam(
@@ -17182,10 +17106,9 @@ impl ZeldaState {
         if self.debug_obj_pipe_enabled() {
             self.debug_obj_pipe(
                 &format!(
-                    "capture pub={publication:?} latch={} slots(disp={},vis={},def={})",
+                    "capture pub={publication:?} latch={} slots(disp={},def={})",
                     self.ppu.obj_vram_latch.is_some(),
                     self.display_snapshot.is_some(),
-                    self.visible_display_snapshot.is_some(),
                     self.deferred_display_snapshot.is_some(),
                 ),
                 &self.ppu.vram[0x4000..0x4400],
@@ -17226,7 +17149,6 @@ impl ZeldaState {
             game_over_iris_goal_scanout_closed,
             link_obj_scanout_generation,
             link_obj_source_generation,
-            link_obj_scanout_sources,
             oam_scanout_source,
             completed_oam_dma_after_capture: None,
             closed_oam_boundary_receipt: same_epoch_closed_oam_receipt,
@@ -17269,10 +17191,6 @@ impl ZeldaState {
                             entry_frame,
                             captured_frame,
                             self.screen_transition(),
-                        )
-                        || rom_dungeon_supertile_filter_entry_publishes_live_animated_bg(
-                            entry_frame,
-                            captured_frame,
                         )
                     {
                         AnimatedBgScanoutGeneration::LiveAfterNmi
@@ -17350,7 +17268,6 @@ impl ZeldaState {
             != DisplaySnapshotPublication::RetainPublished
             && snapshot.room_72_interrupted_main_prefix_oam_offset_active
             && snapshot.ppu.oam[12 * 2].to_le_bytes()[1] == 0xf0;
-        self.visible_display_snapshot = None;
         match publication {
             DisplaySnapshotPublication::AdvanceStaged => {
                 let mut previous = self.deferred_display_snapshot.replace(snapshot);
@@ -17548,13 +17465,7 @@ impl ZeldaState {
         // object. Annotate that retained generation with split Link pixel and
         // provenance ownership now, then carry the same split into the next
         // captured boundary as well.
-        for snapshot in [
-            self.display_snapshot.as_mut(),
-            self.visible_display_snapshot.as_mut(),
-        ]
-        .into_iter()
-        .flatten()
-        {
+        if let Some(snapshot) = self.display_snapshot.as_mut() {
             snapshot.enemy_drop_item_graphics_live_extended_oam = matches!(
                 continuation,
                 ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, .. }
@@ -17618,19 +17529,12 @@ impl ZeldaState {
     fn stage_live_animated_bg_scanout(&mut self) {
         if std::env::var_os("ZELDA3_TRACE_DISPLAY_VRAM").is_some() {
             eprintln!(
-                "TRACE_STAGE_LIVE_ANIMATED display={} visible={} deferred={}",
+                "TRACE_STAGE_LIVE_ANIMATED display={} deferred={}",
                 self.display_snapshot.is_some(),
-                self.visible_display_snapshot.is_some(),
                 self.deferred_display_snapshot.is_some(),
             );
         }
-        for snapshot in [
-            self.display_snapshot.as_mut(),
-            self.visible_display_snapshot.as_mut(),
-        ]
-        .into_iter()
-        .flatten()
-        {
+        if let Some(snapshot) = self.display_snapshot.as_mut() {
             snapshot.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::LiveAfterNmi;
         }
         self.next_display_animated_bg_scanout_generation =
@@ -17704,7 +17608,7 @@ impl ZeldaState {
         let host_boundary_link_obj_vram = self
             .pre_main_graphics_dma
             .as_ref()
-            .map(|graphics| graphics.link_obj_vram.clone())
+            .map(|graphics| graphics.obj_vram[0x4000..0x4400].to_vec())
             .unwrap_or_else(|| self.ppu.vram[0x4000..0x4400].to_vec());
         let entry_link_obj_vram = (matches!(
             plan.link_obj_scanout_generation,
@@ -19045,8 +18949,8 @@ impl ZeldaState {
                     }
                 }
             } else if let Some(previous_obj_vram) = self.last_presented_obj_vram.as_deref() {
-                self.ppu.vram[0x4000..0x4050].copy_from_slice(&previous_obj_vram[0x000..0x050]);
-                self.ppu.vram[0x4100..0x4150].copy_from_slice(&previous_obj_vram[0x100..0x150]);
+                self.ppu.vram[0x4000..0x4050].copy_from_slice(&previous_obj_vram[0x4000..0x4050]);
+                self.ppu.vram[0x4100..0x4150].copy_from_slice(&previous_obj_vram[0x4100..0x4150]);
                 // The transition main slice has authored Link and the sorted
                 // sprite table, so active display evaluates the live OAM image.
                 // Entries visible in both the completed shadow and the live
@@ -19186,11 +19090,14 @@ impl ZeldaState {
             // head, and hand ranges remain on the image completed in state 1.
             // The live source words already describe the following upload and
             // would advance these ranges one scanout too early.
-            if let Some(completed_obj_vram) =
-                self.last_presented_obj_vram.as_deref().or_else(|| {
+            if let Some(completed_obj_vram) = self
+                .last_presented_obj_vram
+                .as_deref()
+                .map(|vram| &vram[0x4000..0x4400])
+                .or_else(|| {
                     self.pre_main_graphics_dma
                         .as_ref()
-                        .map(|graphics| graphics.link_obj_vram.as_slice())
+                        .map(|graphics| &graphics.obj_vram[0x4000..0x4400])
                 })
             {
                 self.ppu.vram[0x4000..0x4050].copy_from_slice(&completed_obj_vram[0x000..0x050]);
@@ -19501,7 +19408,7 @@ impl ZeldaState {
                 // presented instead of falling back to those raw words.
                 if let Some(previous) = self.last_presented_obj_vram.as_deref() {
                     let mut obj_cache_vram = self.ppu.vram.clone();
-                    obj_cache_vram[0x4000..0x4400].copy_from_slice(previous);
+                    obj_cache_vram[0x4000..0x4400].copy_from_slice(&previous[0x4000..0x4400]);
                     self.set_obj_vram_latch_traced(Some(obj_cache_vram));
                 }
             } else if room_72_northward_subtile_shutter_retains_presented_obj_cache {
@@ -19512,7 +19419,7 @@ impl ZeldaState {
                 // more frame.
                 if let Some(previous) = self.last_presented_obj_vram.as_deref() {
                     let mut obj_cache_vram = self.ppu.vram.clone();
-                    obj_cache_vram[0x4000..0x4400].copy_from_slice(previous);
+                    obj_cache_vram[0x4000..0x4400].copy_from_slice(&previous[0x4000..0x4400]);
                     self.set_obj_vram_latch_traced(Some(obj_cache_vram));
                 } else {
                     self.set_obj_vram_latch_traced(Some(following.ppu.vram.clone()));
@@ -19679,16 +19586,13 @@ impl ZeldaState {
             .is_some_and(|frame| frame == self.frame_ctr_dbg)
         {
             const LINK_TILE_02_WORDS: std::ops::Range<usize> = 0x4020..0x4030;
-            const PRESENTED_LINK_TILE_02_WORDS: std::ops::Range<usize> = 0x0020..0x0030;
             const LINK_TILE_03_WORDS: std::ops::Range<usize> = 0x4030..0x4040;
-            const PRESENTED_LINK_TILE_03_WORDS: std::ops::Range<usize> = 0x0030..0x0040;
             const TILE_20_WORDS: std::ops::Range<usize> = 0x4200..0x4210;
-            const PRESENTED_TILE_20_WORDS: std::ops::Range<usize> = 0x0200..0x0210;
             let selected = self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram);
             let last_presented = self
                 .last_presented_obj_vram
                 .as_deref()
-                .map(|vram| &vram[PRESENTED_TILE_20_WORDS]);
+                .map(|vram| &vram[TILE_20_WORDS.clone()]);
             let previous_frame = self
                 .ppu
                 .obj_previous_frame_vram
@@ -19701,7 +19605,7 @@ impl ZeldaState {
                 &following.ppu.vram[LINK_TILE_02_WORDS.clone()],
                 self.last_presented_obj_vram
                     .as_deref()
-                    .map(|vram| &vram[PRESENTED_LINK_TILE_02_WORDS]),
+                    .map(|vram| &vram[LINK_TILE_02_WORDS.clone()]),
                 self.ppu
                     .obj_previous_frame_vram
                     .as_deref()
@@ -19720,7 +19624,7 @@ impl ZeldaState {
                 &following.ppu.vram[LINK_TILE_03_WORDS.clone()],
                 self.last_presented_obj_vram
                     .as_deref()
-                    .map(|vram| &vram[PRESENTED_LINK_TILE_03_WORDS]),
+                    .map(|vram| &vram[LINK_TILE_03_WORDS.clone()]),
                 self.ppu
                     .obj_previous_frame_vram
                     .as_deref()
@@ -19752,20 +19656,17 @@ impl ZeldaState {
         if plan.dungeon_faded_filter_phase == DungeonFadedFilterPublicationPhase::CallerReturn {
             if let Some(previous) = self.last_presented_obj_vram.as_deref() {
                 let mut obj_cache_vram = self.ppu.vram.clone();
-                obj_cache_vram[0x4000..0x4400].copy_from_slice(previous);
+                obj_cache_vram[0x4000..0x4400].copy_from_slice(&previous[0x4000..0x4400]);
                 self.set_obj_vram_latch_traced(Some(obj_cache_vram));
             }
         }
         let interrupted_obj_cache = match effective_obj_cache_generation {
             DisplayObjCacheGeneration::FollowModuleCadence => None,
             DisplayObjCacheGeneration::CapturedBeforeNmi => interrupted_obj_cache_base,
-            DisplayObjCacheGeneration::HostBoundaryBeforeMain => {
-                self.pre_main_graphics_dma.as_ref().map(|graphics| {
-                    let mut cache = self.ppu.vram.clone();
-                    cache[0x4000..0x4400].copy_from_slice(&graphics.link_obj_vram);
-                    cache
-                })
-            }
+            DisplayObjCacheGeneration::HostBoundaryBeforeMain => self
+                .pre_main_graphics_dma
+                .as_ref()
+                .map(|graphics| graphics.obj_vram.clone()),
             DisplayObjCacheGeneration::EarlyLinkDmaFromHostOperands => self
                 .pre_main_graphics_dma
                 .as_ref()
@@ -19831,7 +19732,7 @@ impl ZeldaState {
                 candidates.push(DebugDisplayPublicationCandidate {
                     name: "host_boundary_before_main",
                     oam: host_oam.clone(),
-                    obj_vram: Some(graphics.link_obj_vram.clone()),
+                    obj_vram: obj_page(&graphics.obj_vram),
                 });
                 if let Some(captured_vram) = candidate_captured_vram.as_deref() {
                     candidates.push(DebugDisplayPublicationCandidate {
@@ -19870,11 +19771,11 @@ impl ZeldaState {
                 candidates.push(DebugDisplayPublicationCandidate {
                     name: "last_presented",
                     oam: self.last_presented_oam.clone(),
-                    obj_vram: self.last_presented_obj_vram.clone(),
+                    obj_vram: self.last_presented_obj_vram.as_deref().and_then(obj_page),
                 });
             }
             if let Some(captured_vram) = candidate_captured_vram.as_deref() {
-                let snapshot_sources = following
+                if let Some(snapshot_sources) = following
                     .effective_presented_dma
                     .as_ref()
                     .and_then(|receipt| receipt.completed_link_obj_dma)
@@ -19882,16 +19783,17 @@ impl ZeldaState {
                         completed.source_generation == GraphicsDmaGeneration::LiveAfterMain
                     })
                     .map(|completed| completed.sources)
-                    .unwrap_or(following.link_obj_scanout_sources);
-                candidates.push(DebugDisplayPublicationCandidate {
-                    name: "early_link_dma_from_snapshot_operands",
-                    oam: Some(following.ppu.oam.clone()),
-                    obj_vram: obj_page(&compose_early_link_obj_cache(
-                        captured_vram,
-                        snapshot_sources,
-                        self.asset_raw(57),
-                    )),
-                });
+                {
+                    candidates.push(DebugDisplayPublicationCandidate {
+                        name: "early_link_dma_from_completed_receipt",
+                        oam: Some(following.ppu.oam.clone()),
+                        obj_vram: obj_page(&compose_early_link_obj_cache(
+                            captured_vram,
+                            snapshot_sources,
+                            self.asset_raw(57),
+                        )),
+                    });
+                }
                 candidates.push(DebugDisplayPublicationCandidate {
                     name: "early_link_dma_from_live_operands",
                     oam: Some(following.ppu.oam.clone()),
@@ -20038,23 +19940,14 @@ impl ZeldaState {
     /// and the modern asset/GPU renderer. The returned value must own anything
     /// it borrows from `game`, because live state is restored before returning.
     pub fn with_display_snapshot<R>(&mut self, capture: impl FnOnce(&mut ZeldaState) -> R) -> R {
-        let from_display_slot = self.display_snapshot.is_some();
-        let Some(mut display) = self
-            .display_snapshot
-            .take()
-            .or_else(|| self.visible_display_snapshot.take())
-        else {
+        let Some(mut display) = self.display_snapshot.take() else {
             return capture(self);
         };
         if self.debug_obj_pipe_enabled() {
             self.debug_obj_pipe(
                 &format!(
                     "consume slot={} snapshot_pub_host={} latch_in_snapshot={}",
-                    if from_display_slot {
-                        "display"
-                    } else {
-                        "visible"
-                    },
+                    "display",
                     display.publication_host_frame,
                     display.ppu.obj_vram_latch.is_some(),
                 ),
@@ -20072,9 +19965,6 @@ impl ZeldaState {
                 if let Some(vram) = self.staged_presented_obj_vram.take() {
                     self.debug_obj_pipe("promote", &vram);
                     self.last_presented_obj_vram = Some(vram);
-                }
-                if let Some(vram) = self.staged_presented_vram.take() {
-                    self.last_presented_vram = Some(vram);
                 }
                 if let Some(source) = self.staged_presented_vram_chr_source.take() {
                     self.last_presented_vram_chr_source = Some(source);
@@ -20471,7 +20361,6 @@ impl ZeldaState {
         if let Some(previous_dialogue_scanout) = previous_dialogue_scanout.as_ref() {
             self.ppu.vram[0x7c00..0x7ff0].copy_from_slice(&previous_dialogue_scanout.vram);
         }
-        self.staged_presented_vram = Some(self.ppu.vram.clone());
         self.staged_presented_vram_chr_source = Some(self.vram_chr_source.clone());
         self.staged_presented_vram_chr_preview_source = Some(self.vram_chr_preview_source.clone());
         self.staged_presented_cgram = Some(self.ppu.cgram.clone());
@@ -20504,19 +20393,17 @@ impl ZeldaState {
             .and_then(|receipt| receipt.completed_link_obj_dma);
         if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_OBJ_PIPE", self.frame_ctr_dbg) {
             eprintln!(
-                "objpipe host={} stage=link_receipt_compose publication_host={} plan={:?} explicit={} planned={:?} captured={:?} completed={:?}",
+                "objpipe host={} stage=link_receipt_compose publication_host={} plan={:?} explicit={} captured={:?} completed={:?}",
                 self.frame_ctr_dbg,
                 display.publication_host_frame,
                 publication_plan.link_obj_scanout_generation,
                 explicit_obj_cache_owner,
-                display.link_obj_scanout_sources,
                 LinkDmaSources::load_from_ram(&display.ram),
                 completed_dma,
             );
         }
         let scanout_sources = link_obj_cache_sources_for_publication(
             publication_plan.link_obj_scanout_generation,
-            display.link_obj_scanout_sources,
             completed_dma,
             explicit_obj_cache_owner,
         );
@@ -20592,7 +20479,7 @@ impl ZeldaState {
                 &presented_obj_vram[0x4000..0x4400],
             );
         }
-        self.staged_presented_obj_vram = Some(presented_obj_vram[0x4000..0x4400].to_vec());
+        self.staged_presented_obj_vram = Some(presented_obj_vram.to_vec());
         self.compose_display_raster(
             live_forced_blank,
             live_forced_blank_from_scanline,
@@ -20726,11 +20613,7 @@ impl ZeldaState {
         );
         self.game_state = saved_game_state;
         drop(display);
-        if from_display_slot {
-            self.display_snapshot = Some(pristine_snapshot);
-        } else {
-            self.visible_display_snapshot = Some(pristine_snapshot);
-        }
+        self.display_snapshot = Some(pristine_snapshot);
         captured
     }
 
@@ -20913,16 +20796,14 @@ impl ZeldaState {
                 && snapshot.animated_bg_scanout_generation
                     == AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
         };
-        let attach_to_deferred = self
+        if !self
             .deferred_display_snapshot
             .as_deref()
-            .is_some_and(&accepts_decoded_bg_receipt);
-        if !attach_to_deferred {
-            // The ordinary main-then-NMI cadence has already captured the
-            // active scanout. Its trailing DMA becomes resident PPU state and
-            // will be present when the next scanout is captured. Only
-            // AdvanceStaged materializes that following image early enough to
-            // require an explicit decoded-cache receipt.
+            .is_some_and(&accepts_decoded_bg_receipt)
+        {
+            // A normal trailing DMA becomes resident PPU state for a later
+            // capture. It can refine only an already-materialized following
+            // field, never the active display snapshot.
             return;
         }
 
@@ -20931,9 +20812,6 @@ impl ZeldaState {
             .display
             .animated_tile_vram_destination_usize();
         let mut receipt = EffectivePresentedDma::from_write_set(writes, self);
-        // Link OBJ transfers from this trailing NMI become resident for the
-        // next cache generation; unlike an explicit leading NMI, they cannot
-        // replace operands on a scanout captured before the transfer.
         receipt.completed_link_obj_dma = None;
         receipt.decoded_bg_vram_writes =
             receipt.take_vram_range(destination..destination.saturating_add(0x200));
@@ -21077,10 +20955,9 @@ impl ZeldaState {
             return;
         }
 
-        // Raw VRAM and Snes9x's decoded tile cache are independently observed
-        // domains at a trailing vblank. Start from the raw generation selected
-        // for this scanout, then apply only the DMA destinations which the
-        // boundary explicitly classified as cache-visible.
+        // Only an explicit leading-NMI receipt can refine renderer pattern
+        // data independently. Ordinary trailing DMA is resident state for a
+        // later capture and never enters this path.
         let mut decoded = self
             .ppu
             .bg_vram_latch
@@ -21110,31 +20987,17 @@ impl ZeldaState {
         let Some(receipt) = following.effective_presented_dma.as_ref() else {
             return;
         };
-        if !receipt
-            .vram_writes
-            .iter()
-            .any(|&(index, _)| (0x4000..0x4400).contains(&index))
-        {
-            // An explicit leading-NMI receipt with no OBJ writes preserves
-            // the page decoded by the preceding sprite-evaluation event. Raw
-            // live VRAM may already contain source words for a later field, so
-            // install only the retained decoded page as the renderer latch.
-            if let Some(obj_vram) = self
-                .last_presented_obj_vram
-                .as_deref()
-                .filter(|obj_vram| obj_vram.len() == 0x400)
-            {
-                let mut latch = self.ppu.vram.clone();
-                latch[0x4000..0x4400].copy_from_slice(obj_vram);
-                self.set_obj_vram_latch_traced(Some(latch));
-            }
-            return;
-        }
+        let obj_name_base_1 = usize::from(self.ppu.obj_tile_adr1);
+        let obj_name_base_2 = usize::from(self.ppu.obj_tile_adr2);
+        let is_obj_cache_word = |index: usize| {
+            (obj_name_base_1..obj_name_base_1.saturating_add(0x1000)).contains(&index)
+                || (obj_name_base_2..obj_name_base_2.saturating_add(0x1000)).contains(&index)
+        };
         if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_OBJ_PIPE", self.frame_ctr_dbg) {
             let obj_writes = receipt
                 .vram_writes
                 .iter()
-                .filter(|&&(index, _)| (0x4000..0x4400).contains(&index))
+                .filter(|&&(index, _)| is_obj_cache_word(index))
                 .count();
             eprintln!(
                 "objpipe host={} stage=receipt_compose obj_writes={obj_writes} total_writes={} last_presented_base={}",
@@ -21143,19 +21006,30 @@ impl ZeldaState {
                 self.last_presented_obj_vram.is_some(),
             );
         }
-        let mut obj_vram = self.last_presented_obj_vram.clone().unwrap_or_else(|| {
-            self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram)[0x4000..0x4400].to_vec()
-        });
+        // Snes9x invalidates decoded 4bpp tiles at the exact VRAM writes, then
+        // lazily decodes them when OBJ evaluation needs them. Preserve the
+        // complete prior cache generation and advance only the two hardware
+        // OBJ name pages from this boundary's observed DMA writes.
+        let mut obj_vram = self
+            .last_presented_obj_vram
+            .as_ref()
+            .filter(|vram| vram.len() == self.ppu.vram.len())
+            .cloned()
+            .unwrap_or_else(|| {
+                self.ppu
+                    .obj_vram_latch
+                    .as_deref()
+                    .unwrap_or(&self.ppu.vram)
+                    .to_vec()
+            });
         for &(index, value) in &receipt.vram_writes {
-            if let Some(obj_index) = index.checked_sub(0x4000).filter(|&index| index < 0x400) {
-                obj_vram[obj_index] = value;
+            if is_obj_cache_word(index) {
+                if let Some(word) = obj_vram.get_mut(index) {
+                    *word = value;
+                }
             }
         }
-        if obj_vram.len() == 0x400 {
-            let mut latch = self.ppu.vram.clone();
-            latch[0x4000..0x4400].copy_from_slice(&obj_vram);
-            self.set_obj_vram_latch_traced(Some(latch));
-        }
+        self.set_obj_vram_latch_traced((obj_vram != self.ppu.vram).then_some(obj_vram));
     }
 
     pub(super) fn record_completed_link_obj_dma_for_display_boundary(
@@ -22212,7 +22086,7 @@ impl ZeldaState {
                 let host_boundary_obj_vram = self
                     .pre_main_graphics_dma
                     .as_ref()
-                    .map(|graphics| graphics.link_obj_vram.clone())
+                    .map(|graphics| graphics.obj_vram[0x4000..0x4400].to_vec())
                     .unwrap_or_else(|| self.ppu.vram[0x4000..0x4400].to_vec());
                 self.next_display_obj_memory_generation =
                     Some(DisplayObjGeneration::RetainCapturedMemory {
@@ -22473,7 +22347,7 @@ impl ZeldaState {
                 entry_link_handler_state: self.game_state.player.follower_link.handler_state(),
                 animated_tile,
                 link_operands: PreMainLinkDmaOperands::capture(&self.ram),
-                link_obj_vram: self.ppu.vram[0x4000..0x4400].to_vec(),
+                obj_vram: self.ppu.vram.clone(),
                 oam_shadow: self.sprite_oam_shadow_buffer().to_vec(),
             })
         } else {
@@ -24635,8 +24509,6 @@ impl ZeldaState {
             );
         if defer_room_82_sprite_conversion_nmi {
             if let Some(snapshot) = self.display_snapshot.as_mut() {
-                snapshot.room_82_sprite_conversion_deferred_nmi = true;
-            } else if let Some(snapshot) = self.visible_display_snapshot.as_mut() {
                 snapshot.room_82_sprite_conversion_deferred_nmi = true;
             }
         }

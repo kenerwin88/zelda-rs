@@ -148,9 +148,9 @@ pub struct PpuState {
     pub obj_buffer: PpuPixelPrioBufs,
     pub obj_fetch_buffer: PpuPixelPrioBufs,
     pub obj_fetch_has_sprites: bool,
-    /// Optional decoded BG-CHR generation. Emulator tile caches can observe a
-    /// completed VRAM DMA while the raw VRAM image retained for the scanout is
-    /// still the preceding generation.
+    /// Optional decoded BG-CHR generation. An exact NMI DMA receipt can update
+    /// the emulator's decoder cache at its owner boundary while raw VRAM for
+    /// the composed field remains independently owned.
     #[serde(default)]
     pub bg_vram_latch: Option<Vec<u16>>,
     pub obj_vram_latch: Option<Vec<u16>>,
