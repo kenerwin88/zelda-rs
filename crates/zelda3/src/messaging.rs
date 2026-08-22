@@ -553,9 +553,13 @@ impl ZeldaState {
                 let initialization_phase = earliest
                     .initialization_phase()
                     .saturating_sub(current_host_owns_first_crossing as u8);
+                let caller_return_requires_following_host = earliest
+                    .caller_return_requires_following_host_callback(
+                        current_host_owns_first_crossing,
+                    );
                 self.pending_dialogue_initialization_schedule = Some((
                     initialization_phase,
-                    earliest.returns_after_scanout_frame_boundary(),
+                    caller_return_requires_following_host,
                     Some(earliest.following_main_nmi_uses_host_animated_bg_operands()),
                 ));
                 if std::env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
@@ -566,7 +570,7 @@ impl ZeldaState {
                         latest.diagnostic(),
                         initialization_phase,
                         current_host_owns_first_crossing,
-                        earliest.returns_after_scanout_frame_boundary(),
+                        caller_return_requires_following_host,
                         earliest.following_main_nmi_uses_host_animated_bg_operands(),
                     );
                 }

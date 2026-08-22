@@ -1,6 +1,29 @@
 use super::*;
 use crate::dialogue_ir::{DialogueIrKind, TEXT_COMMAND_START_US};
 
+fn dialogue_initialization_plan_with_return_scanline(
+    return_scanline: u16,
+) -> DialogueInitializationCpuPlan {
+    DialogueInitializationCpuPlan {
+        nmi_crossings: 5,
+        final_interrupted_pc: 0,
+        return_scanline,
+        return_master_cycle: 0,
+        following_main_nmi_uses_host_animated_bg_operands: true,
+    }
+}
+
+#[test]
+fn dialogue_caller_return_host_ownership_combines_entry_nmi_and_return_raster() {
+    let vblank_return = dialogue_initialization_plan_with_return_scanline(256);
+    let active_scanout_return = dialogue_initialization_plan_with_return_scanline(20);
+
+    assert!(!vblank_return.caller_return_requires_following_host_callback(false));
+    assert!(active_scanout_return.caller_return_requires_following_host_callback(false));
+    assert!(vblank_return.caller_return_requires_following_host_callback(true));
+    assert!(active_scanout_return.caller_return_requires_following_host_callback(true));
+}
+
 #[test]
 fn bg3_vwf_glyph_runs_track_unaligned_glyphs_and_scroll() {
     let mut state = ZeldaState::new();

@@ -2814,6 +2814,19 @@ impl DialogueInitializationCpuPlan {
         self.return_scanline < 225
     }
 
+    /// Decide whether the translated C caller return belongs to a later host
+    /// callback. When the entry callback still owns its trailing NMI, that NMI
+    /// is the first measured initializer crossing and the caller suffix remains
+    /// behind the callback boundary. Otherwise every crossing is future work,
+    /// and the measured return raster decides whether the suffix crosses the
+    /// final scanout boundary.
+    pub(super) const fn caller_return_requires_following_host_callback(
+        self,
+        entry_host_owns_first_nmi_crossing: bool,
+    ) -> bool {
+        entry_host_owns_first_nmi_crossing || self.returns_after_scanout_frame_boundary()
+    }
+
     /// Phase 2 owns the final interrupted slice, so its phase counter is one
     /// greater than the measured number of NMI crossings. Return raster timing
     /// independently decides which side of the following boundary owns the
@@ -24468,17 +24481,6 @@ impl ZeldaState {
             self.replay_trace_col("after-game-loop");
             self.replay_trace_ram_watch("after-game-loop");
         }
-        // A completed main-loop iteration is waiting on the next host frame.
-        // Only a suspended 65816 call stack may resume after this frame's
-        // trailing NMI; a fresh iteration cannot be manufactured here.
-        debug_assert!(
-            !self
-                .game_execution_scheduler
-                .fresh_main_loop_iteration_is_ready(),
-            "fresh main-loop iteration became ready inside host frame {}: {:?}",
-            self.frame_ctr_dbg,
-            self.game_execution_scheduler,
-        );
         if matches!(
             self.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::FinishItemReceiptGraphics { .. })

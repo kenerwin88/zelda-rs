@@ -771,6 +771,7 @@ impl GameExecutionScheduler {
             && self.main_iteration_follows_leading_nmi
     }
 
+    #[cfg(test)]
     pub(super) fn fresh_main_loop_iteration_is_ready(self) -> bool {
         self.cpu_host_phase == CpuHostPhase::MainLoopReady
     }
