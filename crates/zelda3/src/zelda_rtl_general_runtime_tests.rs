@@ -6195,6 +6195,92 @@ fn rom_timed_audio_commands_written_by_main_wait_for_the_next_nmi() {
 }
 
 #[test]
+fn resumed_caller_audio_write_precedes_the_following_nmi_sample() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.rom_reset_frame_delay = 0;
+    state.initialized = true;
+    state.set_animated_tile_data_source_address(1);
+    state.set_music_control(0);
+    state.set_current_music_control(0);
+    state.set_last_music_control(0xf1);
+    state.dungeon_landing_entry_started_after_leading_nmi = true;
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+        1,
+    );
+    state.game_execution_scheduler.begin_host_frame();
+
+    // The final scheduled slice still owns the interrupted C stack. Its
+    // caller suffix must run before the following NMI samples audio commands.
+    state.prepare_audio_nmi_for_main_boundary(state.game_state.frame);
+    assert!(!state.audio_nmi_processed_before_main);
+    let audio_follows_host_publication =
+        state.resumed_dungeon_caller_audio_follows_host_publication();
+    assert!(audio_follows_host_publication);
+
+    assert_eq!(
+        state.game_execution_scheduler.advance_work_one_nmi_slice(),
+        Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+        ))
+    );
+    assert!(state
+        .game_execution_scheduler
+        .resumed_call_stack_is_before_nmi());
+    state
+        .game_execution_scheduler
+        .mark_audio_nmi_after_host_publication();
+
+    // Model the resumed C suffix's write. The host audio batch has already
+    // been published when its following NMI becomes reachable.
+    state.set_music_control(0x10);
+    state.zelda_push_apu_state();
+    assert!(state
+        .game_execution_scheduler
+        .take_audio_nmi_after_host_publication());
+    state.interrupt_nmi_audio_parts();
+    state.audio_nmi_processed_before_main = true;
+
+    assert!(state.audio_nmi_processed_before_main);
+    assert_eq!(state.game_state.system_signals.music_control(), 0);
+    assert_eq!(
+        state.game_state.system_signals.current_music_control(),
+        0x10
+    );
+    assert_eq!(state.game_state.system_signals.last_music_control(), 0x10);
+    assert_eq!(state.zelda_debug_apu_write_ports()[0], 0x10);
+    assert!(!state
+        .game_execution_scheduler
+        .take_audio_nmi_after_host_publication());
+}
+
+#[test]
+fn landing_entry_before_leading_nmi_keeps_ordinary_audio_publication() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.rom_reset_frame_delay = 0;
+    state.initialized = true;
+    state.set_animated_tile_data_source_address(1);
+    state.set_music_control(0x10);
+    state.set_current_music_control(0);
+    state.set_last_music_control(0xf1);
+    state.dungeon_landing_entry_started_after_leading_nmi = false;
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+        1,
+    );
+    state.game_execution_scheduler.begin_host_frame();
+
+    assert!(!state.resumed_dungeon_caller_audio_follows_host_publication());
+    state.prepare_audio_nmi_for_main_boundary(state.game_state.frame);
+
+    assert!(state.audio_nmi_processed_before_main);
+    assert_eq!(state.game_state.system_signals.music_control(), 0);
+    assert_eq!(state.game_state.system_signals.last_music_control(), 0x10);
+}
+
+#[test]
 fn file_select_graphics_resumes_the_module_after_every_intervening_nmi() {
     let mut scheduler = GameExecutionScheduler::default();
     scheduler.schedule_file_select_graphics();

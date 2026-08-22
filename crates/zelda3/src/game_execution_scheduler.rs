@@ -706,6 +706,11 @@ pub(super) struct GameExecutionScheduler {
     /// continuation so later states can preserve that CPU/NMI ordering
     /// without guessing from a room or from the module state alone.
     leading_nmi_upload_pipeline_active: bool,
+    /// A scheduled translated caller returned before the following NMI, but
+    /// that boundary lies after the current host audio publication. The game
+    /// state samples NMI-owned commands after the publication and exposes them
+    /// through the next audio batch.
+    audio_nmi_after_host_publication: bool,
 }
 
 impl GameExecutionScheduler {
@@ -1001,6 +1006,15 @@ impl GameExecutionScheduler {
     /// measured mid-window side effects fire at their exact held boundary.
     pub(super) fn scheduled_work_slices_remaining(&self) -> Option<u8> {
         self.scheduled_work().map(|work| work.nmi_slices_remaining)
+    }
+
+    pub(super) fn mark_audio_nmi_after_host_publication(&mut self) {
+        debug_assert!(!self.audio_nmi_after_host_publication);
+        self.audio_nmi_after_host_publication = true;
+    }
+
+    pub(super) fn take_audio_nmi_after_host_publication(&mut self) -> bool {
+        std::mem::take(&mut self.audio_nmi_after_host_publication)
     }
 
     /// True while a newly scheduled synchronous call is executing after the

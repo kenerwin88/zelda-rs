@@ -22221,6 +22221,9 @@ impl ZeldaState {
         if !self.rom_startup_timing() {
             return;
         }
+        if self.resumed_dungeon_caller_audio_follows_host_publication() {
+            return;
+        }
         let debug_audio_nmi = std::env::var("ZELDA3_DEBUG_AUDIO_NMI_FRAME")
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
@@ -22249,6 +22252,16 @@ impl ZeldaState {
                 self.frame_ctr_dbg, self.audio_nmi_processed_before_main,
             );
         }
+    }
+
+    fn resumed_dungeon_caller_audio_follows_host_publication(&self) -> bool {
+        self.dungeon_landing_entry_started_after_leading_nmi
+            && self
+                .game_execution_scheduler
+                .scheduled_work_slices_remaining()
+                == Some(1)
+            && self.game_execution_scheduler.current_work()
+                == Some(GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn)
     }
 
     /// `zelda_run_frame_internal`.
@@ -22760,6 +22773,8 @@ impl ZeldaState {
         let scheduled_work_started_after_leading_nmi = self
             .game_execution_scheduler
             .current_scheduled_work_started_after_leading_nmi();
+        let scheduled_work_audio_follows_host_publication =
+            self.resumed_dungeon_caller_audio_follows_host_publication();
         let scheduled_work_step = if self.rom_startup_timing() {
             self.game_execution_scheduler.advance_work_one_nmi_slice()
         } else {
@@ -22948,6 +22963,10 @@ impl ZeldaState {
                 input,
                 scheduled_work_started_after_leading_nmi,
             );
+            if scheduled_work_audio_follows_host_publication {
+                self.game_execution_scheduler
+                    .mark_audio_nmi_after_host_publication();
+            }
             if projects_live_tail && !scheduled_work_started_after_leading_nmi {
                 let live_tail_start = spotlight_mixed_scanout_live_tail_start(
                     spotlight_vertical_center,
@@ -25922,6 +25941,16 @@ impl ZeldaState {
             func(self, input_state, run_what);
         }
         self.zelda_push_apu_state();
+        if self
+            .game_execution_scheduler
+            .take_audio_nmi_after_host_publication()
+        {
+            // The resumed C caller reached the following NMI after this host's
+            // audio batch was published. Sample its commands now so the next
+            // batch exposes them at the same APU clock boundary as the ROM.
+            self.interrupt_nmi_audio_parts();
+            self.audio_nmi_processed_before_main = true;
+        }
         self.replay_trace_ram_watch("after-apu");
         is_replay
     }

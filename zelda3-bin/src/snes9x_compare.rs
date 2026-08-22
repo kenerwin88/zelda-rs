@@ -4452,6 +4452,8 @@ pub(crate) fn run_compare_libretro_oracle(
             if let Some(dir) = session_dir.as_deref() {
                 let modern_audio_state = game.zelda_modern_audio_state();
                 let receipt = serde_json::json!({
+                    "rust_audio_sequencer": &modern_audio_state.0,
+                    "rust_audio_sequence_stats": game.zelda_modern_audio_sequence_last_stats(),
                     "oracle_trace": oracle.debug_dsp_trace(),
                     "oracle_dsp_samples": oracle.debug_dsp_samples(),
                     "oracle_dsp_register_writes": oracle.debug_dsp_register_writes(),
