@@ -4418,7 +4418,7 @@ fn injected_dungeon_cpu_schedule(
         caller_sprite_main_nmis: 0,
         caller_suffix_nmis: caller_nmis,
         caller_first_nmi_phase: None,
-        sprite_main_nmi_after_slot: None,
+        sprite_main_boundary: None,
         cached_sprite_interruption: None,
         reenters_main_loop_before_nmi: false,
     }
@@ -6650,6 +6650,36 @@ fn faded_filter_uses_the_interior_sprite_boundary_as_the_single_nmi_owner() {
         Some(GameWorkContinuation::FinishDungeonSpriteMain {
             boundary: DungeonSpriteMainCpuBoundary::AfterSlot(0),
         }),
+    );
+}
+
+#[test]
+fn sprite_main_interruption_preserves_the_c_zelda_initializer_prefix() {
+    assert_eq!(
+        sprite_main_cpu_interruption_boundary(
+            Some(0),
+            Some(1),
+            Some(0),
+            ZELDA_FOLLOWER_GRAPHICS_RETURN_ADDRESS,
+        ),
+        Some(DungeonSpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(0)),
+    );
+}
+
+#[test]
+fn sprite_main_interruption_does_not_promote_an_unreturned_slot() {
+    assert_eq!(
+        sprite_main_cpu_interruption_boundary(Some(0), Some(1), Some(0), 0x00_e7a6),
+        Some(DungeonSpriteMainCpuBoundary::AfterSlot(1)),
+    );
+    assert_eq!(
+        sprite_main_cpu_interruption_boundary(
+            Some(0),
+            Some(1),
+            Some(2),
+            ZELDA_FOLLOWER_GRAPHICS_RETURN_ADDRESS,
+        ),
+        Some(DungeonSpriteMainCpuBoundary::AfterSlot(1)),
     );
 }
 

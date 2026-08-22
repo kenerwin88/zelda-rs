@@ -3032,7 +3032,7 @@ struct DungeonSubmoduleCpuSchedule {
     caller_sprite_main_nmis: u8,
     caller_suffix_nmis: u8,
     caller_first_nmi_phase: Option<DungeonModuleCpuPhase>,
-    sprite_main_nmi_after_slot: Option<u8>,
+    sprite_main_boundary: Option<DungeonSpriteMainCpuBoundary>,
     cached_sprite_interruption: Option<CachedSpriteCpuInterruption>,
     reenters_main_loop_before_nmi: bool,
 }
@@ -3557,12 +3557,6 @@ fn dungeon_room_load_cpu_plan(
     // returns. It is a per-slot semantic commit point, not the end of the
     // whole 16-slot walk.
     const SPRITE_SLOT_RETURN_PC: u32 = 0x06_83a7;
-    // Return address immediately after SpritePrep_Zelda's JSL to the shared
-    // follower-graphics loader. An NMI here has committed the state/property
-    // prefix and Zelda-specific direction/ignore-projectile writes, but the
-    // loader and the rest of the prep routine have not returned yet.
-    const ZELDA_FOLLOWER_GRAPHICS_RETURN_ADDRESS: u32 = 0x05_d444;
-
     let timing_dma = state.dma_with_native_hdma_enable();
     let mut run = RomCpuTimingRun::new(
         &state.rom,
@@ -3707,14 +3701,12 @@ fn dungeon_room_load_cpu_plan(
                 // preceding slot which completed, not the slot merely entered.
                 // This remains valid when state was already 9 and no 8-to-9
                 // write exists to reveal the frontier.
-                sprite_main_boundary = if sprite_main_current_slot == initialized_sprite_slot
-                    && run.stack_return_address() == ZELDA_FOLLOWER_GRAPHICS_RETURN_ADDRESS
-                {
-                    initialized_sprite_slot
-                        .map(DungeonSpriteMainCpuBoundary::BeforeZeldaFollowerGraphics)
-                } else {
-                    sprite_main_last_completed_slot.map(DungeonSpriteMainCpuBoundary::AfterSlot)
-                };
+                sprite_main_boundary = sprite_main_cpu_interruption_boundary(
+                    sprite_main_current_slot,
+                    sprite_main_last_completed_slot,
+                    initialized_sprite_slot,
+                    run.stack_return_address(),
+                );
             }
             nmis = nmis.checked_add(1).expect("room-load NMI count overflowed");
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
@@ -3822,7 +3814,8 @@ fn dungeon_submodule_cpu_schedule_plan(
     let mut caller_first_nmi_observed = false;
     let mut sprite_main_current_slot = None;
     let mut sprite_main_last_completed_slot = None;
-    let mut sprite_main_nmi_after_slot = None;
+    let mut initialized_sprite_slot = None;
+    let mut sprite_main_boundary = None;
     let mut sprite_main_return_nmis: Option<u8> = None;
     let mut link_oam_started = false;
     let mut nmi_prepare_sprites_started = false;
@@ -3839,7 +3832,7 @@ fn dungeon_submodule_cpu_schedule_plan(
             let sprite_main_return_nmis = sprite_main_return_nmis
                 .expect("dungeon submodule timing missed the Sprite_Main return checkpoint");
             if sprite_main_return_nmis == submodule_nmis {
-                sprite_main_nmi_after_slot = None;
+                sprite_main_boundary = None;
             }
             let mut reenters_main_loop_before_nmi = false;
             for _ in 0..64 {
@@ -3862,7 +3855,7 @@ fn dungeon_submodule_cpu_schedule_plan(
                 caller_sprite_main_nmis: sprite_main_return_nmis.saturating_sub(submodule_nmis),
                 caller_suffix_nmis: nmis.saturating_sub(sprite_main_return_nmis),
                 caller_first_nmi_phase,
-                sprite_main_nmi_after_slot,
+                sprite_main_boundary,
                 cached_sprite_interruption,
                 reenters_main_loop_before_nmi,
             };
@@ -3901,9 +3894,15 @@ fn dungeon_submodule_cpu_schedule_plan(
         run.set_raster_position(scanline, master_cycle);
         let prior_subsubmodule = run.ram_byte(SUBSUBMODULE);
         let advance = advance_rom_cpu_step(&mut run, &mut budget);
-        if let Some(copy) = cached_sprite_copy.as_mut() {
-            for (address, _) in run.take_cpu_wram_writes() {
+        for (address, value) in run.take_cpu_wram_writes() {
+            if let Some(copy) = cached_sprite_copy.as_mut() {
                 copy.observe_wram_write(address);
+            }
+            if submodule_nmis.is_some()
+                && (SPRITE_STATE..SPRITE_STATE + 16).contains(&address)
+                && value == 9
+            {
+                initialized_sprite_slot = Some((address - SPRITE_STATE) as u8);
             }
         }
         if submodule_nmis.is_none()
@@ -3915,7 +3914,12 @@ fn dungeon_submodule_cpu_schedule_plan(
         if advance.was_interrupted() {
             if submodule_nmis.is_some() && !caller_first_nmi_observed {
                 caller_first_nmi_observed = true;
-                sprite_main_nmi_after_slot = sprite_main_last_completed_slot;
+                sprite_main_boundary = sprite_main_cpu_interruption_boundary(
+                    sprite_main_current_slot,
+                    sprite_main_last_completed_slot,
+                    initialized_sprite_slot,
+                    run.stack_return_address(),
+                );
                 cached_sprite_interruption =
                     cached_sprite_copy.and_then(CachedSpriteCpuProgress::interruption);
                 caller_first_nmi_phase = Some(if nmi_prepare_sprites_started {
@@ -3928,7 +3932,7 @@ fn dungeon_submodule_cpu_schedule_plan(
                     DungeonModuleCpuPhase::InterruptedInSpriteMain
                 });
                 if env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
-                    let slot = cached_sprite_copy.map_or(0, |copy| copy.slot);
+                    let slot = sprite_main_current_slot.unwrap_or(0);
                     eprintln!(
                         "dungeon_submodule_first_caller_nmi pc={:06x} cached_progress={cached_sprite_copy:?} live_slot={} state={:02x} type={:02x} x={:02x}",
                         run.pc(),
@@ -4064,6 +4068,27 @@ enum DungeonSpriteMainCpuBoundary {
         slot: u8,
         saved_follower_indicator: u8,
     },
+}
+
+// Return address immediately after SpritePrep_Zelda's JSL to the shared
+// follower-graphics loader. At this point C has completed the generic state-8
+// initialization prefix and Zelda's prep prefix, but the current slot has not
+// returned to Sprite_Main yet.
+const ZELDA_FOLLOWER_GRAPHICS_RETURN_ADDRESS: u32 = 0x05_d444;
+
+fn sprite_main_cpu_interruption_boundary(
+    current_slot: Option<u8>,
+    last_completed_slot: Option<u8>,
+    initialized_slot: Option<u8>,
+    stack_return_address: u32,
+) -> Option<DungeonSpriteMainCpuBoundary> {
+    if current_slot == initialized_slot
+        && stack_return_address == ZELDA_FOLLOWER_GRAPHICS_RETURN_ADDRESS
+    {
+        initialized_slot.map(DungeonSpriteMainCpuBoundary::BeforeZeldaFollowerGraphics)
+    } else {
+        last_completed_slot.map(DungeonSpriteMainCpuBoundary::AfterSlot)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -11837,7 +11862,7 @@ impl ZeldaState {
             let schedule = dungeon_submodule_cpu_schedule(self);
             if env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                 eprintln!(
-                    "dungeon_cpu_schedule host={} module={:02x}/{:02x}/{:02x} submodule_nmis={} caller_nmis={} sprite_main_nmis={} suffix_nmis={} caller_phase={:?} after_slot={:?} cached_boundary={:?} reenters_main={}",
+                    "dungeon_cpu_schedule host={} module={:02x}/{:02x}/{:02x} submodule_nmis={} caller_nmis={} sprite_main_nmis={} suffix_nmis={} caller_phase={:?} sprite_boundary={:?} cached_boundary={:?} reenters_main={}",
                     self.frame_ctr_dbg,
                     frame.main_module,
                     frame.submodule,
@@ -11847,7 +11872,7 @@ impl ZeldaState {
                     schedule.caller_sprite_main_nmis,
                     schedule.caller_suffix_nmis,
                     schedule.caller_first_nmi_phase,
-                    schedule.sprite_main_nmi_after_slot,
+                    schedule.sprite_main_boundary,
                     schedule.cached_sprite_interruption,
                     schedule.reenters_main_loop_before_nmi,
                 );
@@ -15716,12 +15741,9 @@ impl ZeldaState {
                 self.dungeon_sprite_main_nmi_boundary = Some(boundary);
                 self.dungeon_sprite_main_nmi_slices = schedule.caller_sprite_main_nmis;
                 self.complete_module07_dungeon_after_submodule();
-                debug_assert!(matches!(
-                    self.game_execution_scheduler.current_work(),
-                    Some(GameWorkContinuation::FinishDungeonSpriteMain {
-                        boundary: scheduled_boundary,
-                    }) if scheduled_boundary == boundary
-                ));
+                debug_assert!(self
+                    .game_execution_scheduler
+                    .work_suspends_translated_call_stack());
             } else {
                 // No translated slot commit point was reached before the ROM
                 // interruption. Keep the measured remainder attached to the
@@ -23272,10 +23294,9 @@ impl ZeldaState {
                                         "cached-sprite conversion continuation was already armed",
                                     );
                                 } else {
-                                    let boundary = schedule.sprite_main_nmi_after_slot.map_or(
-                                        DungeonSpriteMainCpuBoundary::BeforeFirstSlot,
-                                        DungeonSpriteMainCpuBoundary::AfterSlot,
-                                    );
+                                    let boundary = schedule
+                                        .sprite_main_boundary
+                                        .unwrap_or(DungeonSpriteMainCpuBoundary::BeforeFirstSlot);
                                     self.dungeon_sprite_main_nmi_boundary = Some(boundary);
                                     self.dungeon_sprite_main_nmi_slices =
                                         schedule.caller_sprite_main_nmis;
@@ -23505,20 +23526,16 @@ impl ZeldaState {
                             self.dungeon_room_load_module_suffix_nmi_slices =
                                 schedule.caller_suffix_nmis;
                             if schedule.caller_sprite_main_nmis != 0 {
-                                let boundary = schedule.sprite_main_nmi_after_slot.map_or(
-                                    DungeonSpriteMainCpuBoundary::BeforeFirstSlot,
-                                    DungeonSpriteMainCpuBoundary::AfterSlot,
-                                );
+                                let boundary = schedule
+                                    .sprite_main_boundary
+                                    .unwrap_or(DungeonSpriteMainCpuBoundary::BeforeFirstSlot);
                                 self.dungeon_sprite_main_nmi_boundary = Some(boundary);
                                 self.dungeon_sprite_main_nmi_slices =
                                     schedule.caller_sprite_main_nmis;
                                 self.complete_module07_dungeon_after_submodule();
-                                debug_assert!(matches!(
-                                    self.game_execution_scheduler.current_work(),
-                                    Some(GameWorkContinuation::FinishDungeonSpriteMain {
-                                        boundary: scheduled_boundary,
-                                    }) if scheduled_boundary == boundary
-                                ));
+                                debug_assert!(self
+                                    .game_execution_scheduler
+                                    .work_suspends_translated_call_stack());
                             } else if schedule.caller_suffix_nmis == 0 {
                                 self.complete_module07_dungeon_after_submodule();
                                 self.nmi_prepare_sprites();
