@@ -11942,7 +11942,10 @@ impl ZeldaState {
     pub(super) fn Module07_0F_LandingWipe(&mut self) {
         let cpu_advance = self.take_dungeon_landing_cpu_advance();
         if self.game_state.frame.subsubmodule == 0 {
-            self.reset_dungeon_landing_spotlight_host_cadence();
+            let entry_started_after_leading_nmi = self
+                .game_execution_scheduler
+                .current_main_iteration_follows_leading_nmi();
+            self.begin_dungeon_landing_spotlight_publication(entry_started_after_leading_nmi);
         }
         match self.game_state.frame.subsubmodule {
             0 => self.Module07_0F_00_InitSpotlight(),
@@ -11969,19 +11972,18 @@ impl ZeldaState {
                     // the interrupt publishes PPU registers but skips the
                     // NMI_DoUpdates DMA body.
                     self.latch_nmi_update();
-                    if self.dungeon_landing_spotlight_returns_on_later_host() {
-                        self.game_execution_scheduler
-                            .schedule_cpu_timed_work_returning_on_later_host(
-                                GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
-                                advance.submodule_nmi_slices,
-                            );
-                    } else {
-                        self.game_execution_scheduler
-                            .schedule_cpu_timed_work_before_trailing_nmi(
-                                GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
-                                advance.submodule_nmi_slices,
-                            );
-                    }
+                    // Spotlight_open/IrisSpotlight_ConfigureTable are
+                    // synchronous C calls. An ordinary main iteration can
+                    // spend its still-pending trailing NMI on the first
+                    // crossing; an iteration which began after a leading NMI
+                    // has no second boundary in this host callback. Derive
+                    // that ownership from the scheduler's CPU phase instead
+                    // of inferring a cadence from adjacent spotlight frames.
+                    self.game_execution_scheduler
+                        .schedule_cpu_timed_work_from_current_main_iteration(
+                            GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+                            advance.submodule_nmi_slices,
+                        );
                 }
                 DungeonModuleCpuPhase::CompleteBeforeNmi => {
                     debug_assert_eq!(advance.submodule_nmi_slices, 0);

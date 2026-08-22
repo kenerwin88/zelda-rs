@@ -504,7 +504,7 @@ impl ZeldaState {
         }
         self.debug_obj_pipe("nmi_exit", &self.ppu.vram[0x4000..0x4400]);
         if records_trailing_decoded_bg_cache {
-            self.record_trailing_nmi_decoded_bg_dma_for_following_scanout();
+            self.record_trailing_nmi_decoded_bg_dma_receipt();
         }
         self.close_display_boundary_dma_receipts();
     }

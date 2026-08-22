@@ -4620,16 +4620,13 @@ fn pre_dungeon_work_resumes_at_room_and_song_bank_transfer_boundaries() {
 }
 
 #[test]
-fn pre_dungeon_return_arms_the_first_module_sprite_main_boundary() {
+fn pre_dungeon_return_leaves_the_landing_cpu_trace_to_own_the_first_boundary() {
     let mut state = ZeldaState::new();
 
     state.finish_pre_dungeon_caller_at_main_wait();
 
-    assert_eq!(
-        state.dungeon_sprite_main_nmi_boundary,
-        Some(DungeonSpriteMainCpuBoundary::BeforeFirstSlot)
-    );
-    assert_eq!(state.dungeon_sprite_main_nmi_slices, 1);
+    assert_eq!(state.dungeon_sprite_main_nmi_boundary, None);
+    assert_eq!(state.dungeon_sprite_main_nmi_slices, 0);
     assert!(state
         .game_execution_scheduler
         .returned_main_is_waiting_for_nmi());
@@ -5558,6 +5555,10 @@ fn overworld_animated_bg_vram_generation_follows_scanout_authority() {
     assert_eq!(
         AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi.resolve_live_override(true),
         AnimatedBgScanoutGeneration::LiveAfterNmi
+    );
+    assert_eq!(
+        rom_graphics_dma_plan(7, 0x0f).animated_bg_scanout,
+        AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi
     );
 }
 
@@ -6640,7 +6641,7 @@ fn landing_nmi_inside_link_oam_resumes_only_the_common_suffix() {
     };
     state.capture_display_snapshot();
     let captured_palette = state.display_snapshot.as_ref().unwrap().ppu.cgram.clone();
-    state.complete_post_trailing_nmi_continuation(continuation, 0);
+    state.complete_post_trailing_nmi_continuation(continuation, 0, false);
 
     assert!(state.active_dungeon_sprite_main_return.is_none());
     assert!(state.game_execution_scheduler.is_idle());
@@ -7861,19 +7862,6 @@ fn overworld_reload_scanout_keeps_prepublished_rain_out_of_its_bg1_generation() 
         assert_eq!(scroll.offsets[0], expected_bg1);
         assert_eq!(scroll.offsets[1], returned.offsets[1]);
     }
-}
-
-#[test]
-fn overworld_submodule6_entry_owns_the_live_animated_bg_upload() {
-    let frame = |submodule| crate::game_state::FrameState {
-        main_module: 9,
-        submodule,
-        ..Default::default()
-    };
-
-    assert!(rom_overworld_entry_to_submodule6_publishes_live_animated_bg(frame(5), frame(6),));
-    assert!(!rom_overworld_entry_to_submodule6_publishes_live_animated_bg(frame(4), frame(6),));
-    assert!(!rom_overworld_entry_to_submodule6_publishes_live_animated_bg(frame(5), frame(5),));
 }
 
 #[test]

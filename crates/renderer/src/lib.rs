@@ -1317,6 +1317,12 @@ fn modern_source_extraction_fingerprint<S: modern_extract::SourceTableView + ?Si
     // Hash the effective OBJ source so latch-only publication cannot reuse
     // sprite cells extracted from the preceding frame.
     frame.obj_vram().hash(&mut hasher);
+    // BG pattern extraction has the same split-generation contract: tilemap
+    // words come from raw VRAM, while pattern fetches can come from the
+    // explicitly published decoded BG cache. Include that effective source
+    // in the cache identity so a BG-latch-only boundary cannot reuse cells
+    // extracted from a different hardware generation.
+    frame.bg_vram.unwrap_or(frame.vram).hash(&mut hasher);
     frame.cgram.hash(&mut hasher);
     frame.oam.hash(&mut hasher);
     frame.mode.hash(&mut hasher);
@@ -3586,6 +3592,71 @@ mod tests {
         let raw = modern_source_extraction_fingerprint(&capture(None), &source_table).unwrap();
         let latched = modern_source_extraction_fingerprint(
             &capture(Some(decoded_obj.as_slice())),
+            &source_table,
+        )
+        .unwrap();
+
+        assert_ne!(raw, latched);
+    }
+
+    #[test]
+    fn modern_source_fingerprint_distinguishes_bg_latch_only_publication() {
+        let vram = vec![0u16; 0x8000];
+        let mut decoded_bg = vram.clone();
+        decoded_bg[0x3b20] = 1;
+        let cgram = vec![0u16; 0x100];
+        let oam = vec![0u16; 0x110];
+        let raw_scanlines = [(0, 0, 0, 0, 0, [0; 4], [0; 4], [0; 8], false); 224];
+        let registers = GpuFrameRegisterSnapshot {
+            vram: &vram,
+            oam: &oam,
+            mode: 1,
+            bg: [BgLayerRegs::default(); 4],
+            obj: ObjRegs::default(),
+            mosaic_enabled: 0,
+            mosaic_size: 0,
+            extra_left_right: 0,
+            mode7: Mode7Regs::default(),
+            screen_enabled: [0; 2],
+            screen_windowed: [0; 2],
+            brightness: 15,
+            scanout_brightness_override: None,
+            forced_blank: false,
+            retain_active_display_history: false,
+            math_enabled: 0,
+            subtract_color: false,
+            half_color: false,
+            fixed_color_r: 0,
+            fixed_color_g: 0,
+            fixed_color_b: 0,
+            add_subscreen: false,
+            clip_mode: 0,
+            prevent_math_mode: 0,
+            windowsel: 0,
+        };
+        let capture = |bg_vram| {
+            GpuFrame::from_capture_input(GpuFrameCaptureInput {
+                hardware_startup_transient: None,
+                registers,
+                obj_vram: None,
+                bg_vram,
+                cgram: &cgram,
+                raw_scanlines: &raw_scanlines,
+                bg3_source_tiles: &[],
+                bg3_vwf_glyph_runs: &[],
+                dialogue_message_id: None,
+                source_dialogue_ir: &[],
+                dialogue_ir: &[],
+                dialogue_layout: &[],
+                dialogue_layout_origin_tile_number: None,
+                cgram_provenance: None,
+            })
+        };
+        let source_table = |_: usize| (0, 0, 0);
+
+        let raw = modern_source_extraction_fingerprint(&capture(None), &source_table).unwrap();
+        let latched = modern_source_extraction_fingerprint(
+            &capture(Some(decoded_bg.as_slice())),
             &source_table,
         )
         .unwrap();

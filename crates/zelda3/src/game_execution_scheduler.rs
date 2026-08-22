@@ -439,6 +439,7 @@ pub(super) struct ScheduledGameWork {
     pub(super) continuation: GameWorkContinuation,
     nmi_slices_remaining: u8,
     entry_display_boundary_pending: bool,
+    scheduled_after_leading_nmi: bool,
 }
 
 impl ScheduledGameWork {
@@ -448,7 +449,14 @@ impl ScheduledGameWork {
             continuation,
             nmi_slices_remaining: nmi_slices,
             entry_display_boundary_pending: true,
+            scheduled_after_leading_nmi: false,
         }
+    }
+
+    fn schedule_after_leading_nmi(continuation: GameWorkContinuation, nmi_slices: u8) -> Self {
+        let mut work = Self::schedule(continuation, nmi_slices);
+        work.scheduled_after_leading_nmi = true;
+        work
     }
 
     pub(super) fn schedule_before_trailing_nmi(
@@ -873,7 +881,9 @@ impl GameExecutionScheduler {
         assert_eq!(self.cpu_host_phase, CpuHostPhase::MainLoopRunning);
         assert_ne!(total_nmi_crossings, 0);
         if self.current_main_iteration_follows_leading_nmi() {
-            self.schedule_work(continuation, total_nmi_crossings);
+            self.schedule_continuation(GameExecutionContinuation::ScheduledWork(
+                ScheduledGameWork::schedule_after_leading_nmi(continuation, total_nmi_crossings),
+            ));
         } else {
             self.schedule_cpu_timed_work_before_trailing_nmi(continuation, total_nmi_crossings);
         }
@@ -991,6 +1001,21 @@ impl GameExecutionScheduler {
     /// measured mid-window side effects fire at their exact held boundary.
     pub(super) fn scheduled_work_slices_remaining(&self) -> Option<u8> {
         self.scheduled_work().map(|work| work.nmi_slices_remaining)
+    }
+
+    /// True while a newly scheduled synchronous call is executing after the
+    /// leading NMI which already published this host's active field. Advancing
+    /// the first real NMI slice clears the entry boundary before publication
+    /// code observes this work again.
+    pub(super) fn active_field_precedes_current_scheduled_work(self) -> bool {
+        self.scheduled_work().is_some_and(|work| {
+            work.scheduled_after_leading_nmi && work.entry_display_boundary_pending
+        })
+    }
+
+    pub(super) fn current_scheduled_work_started_after_leading_nmi(self) -> bool {
+        self.scheduled_work()
+            .is_some_and(|work| work.scheduled_after_leading_nmi)
     }
 
     pub(super) fn current_work(self) -> Option<GameWorkContinuation> {
@@ -1437,6 +1462,7 @@ mod cpu_timing_tests {
         ordinary.begin_host_frame();
         ordinary.begin_main_loop_iteration();
         ordinary.schedule_cpu_timed_work_from_current_main_iteration(continuation, 3);
+        assert!(!ordinary.active_field_precedes_current_scheduled_work());
         assert_eq!(
             ordinary.advance_work_one_nmi_slice(),
             Some(GameWorkStep::Waiting)
@@ -1451,10 +1477,12 @@ mod cpu_timing_tests {
         after_leading_nmi.mark_main_iteration_after_leading_nmi();
         after_leading_nmi.begin_main_loop_iteration();
         after_leading_nmi.schedule_cpu_timed_work_from_current_main_iteration(continuation, 3);
+        assert!(after_leading_nmi.active_field_precedes_current_scheduled_work());
         assert_eq!(
             after_leading_nmi.advance_work_one_nmi_slice(),
             Some(GameWorkStep::Waiting)
         );
+        assert!(!after_leading_nmi.active_field_precedes_current_scheduled_work());
         assert_eq!(
             after_leading_nmi.advance_work_one_nmi_slice(),
             Some(GameWorkStep::Waiting)

@@ -1577,12 +1577,14 @@ fn explicit_obj_cache_owner_is_not_replaced_by_a_bulk_nmi_receipt() {
 }
 
 #[test]
-fn host_boundary_animated_bg_is_not_reintroduced_by_a_leading_nmi_receipt() {
+fn host_boundary_animated_bg_leading_nmi_receipt_does_not_override_stored_scanouts() {
     const DESTINATION: usize = 0x3b00;
     const ORDINARY_WORD: usize = 0x1234;
     let mut state = ZeldaState::new();
     state.set_animated_tile_vram_destination_address(DESTINATION as u16);
-    state.capture_display_snapshot();
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+    state.display_snapshot.as_mut().unwrap().vram_generation =
+        DisplayVramGeneration::ComposeLiveAfterNmi;
 
     state.ppu.vram[DESTINATION] = 0xaaaa;
     state.ppu.vram[ORDINARY_WORD] = 0xbbbb;
@@ -1600,7 +1602,13 @@ fn host_boundary_animated_bg_is_not_reintroduced_by_a_leading_nmi_receipt() {
         .as_ref()
         .unwrap();
     assert_eq!(receipt.vram_writes, vec![(ORDINARY_WORD, 0xbbbb)]);
-    assert_eq!(receipt.decoded_bg_vram_writes, vec![(DESTINATION, 0xaaaa)]);
+    assert!(receipt.decoded_bg_vram_writes.is_empty());
+    assert!(state
+        .deferred_display_snapshot
+        .as_ref()
+        .unwrap()
+        .effective_presented_dma
+        .is_none());
 
     let active = state.display_snapshot.as_deref().unwrap().clone();
     state.ppu.vram[DESTINATION] = 0x1111;
@@ -1608,9 +1616,77 @@ fn host_boundary_animated_bg_is_not_reintroduced_by_a_leading_nmi_receipt() {
     state.compose_effective_presented_bg_chr_cache(&active);
 
     assert_eq!(state.ppu.vram[DESTINATION], 0x1111);
+    assert!(state.ppu.bg_vram_latch.is_none());
+}
+
+#[test]
+fn first_interrupted_landing_field_retires_the_pre_spotlight_scanout() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0x0f);
+    state.set_subsubmodule(0);
+    state.begin_dungeon_landing_spotlight_publication(true);
+    state.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + ZeldaState::HDMA_DYNAMIC_TABLE_LEN]
+        .fill(0xff);
+    state.ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + ZeldaState::HDMA_DYNAMIC_TABLE_LEN]
+        .fill(0x7e);
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+
+    state.set_subsubmodule(1);
+    state.ram[crate::game_state::constants::W12SEL_COPY] = 0x33;
+    state.ram[crate::game_state::constants::W34SEL_COPY] = 0x03;
+    state.ram[crate::game_state::constants::WOBJSEL_COPY] = 0x33;
+    state.ram[crate::game_state::constants::TMW_COPY] = 0x16;
+    state.ram[crate::game_state::constants::TSW_COPY] = 0x01;
+    state.ram[crate::game_state::constants::HDMAEN_COPY] = 0x80;
+    state.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + ZeldaState::HDMA_DYNAMIC_TABLE_LEN]
+        .fill(0x00);
+    state.ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + ZeldaState::HDMA_DYNAMIC_TABLE_LEN]
+        .fill(0x11);
+    state.game_execution_scheduler.begin_host_frame();
+    state
+        .game_execution_scheduler
+        .mark_main_iteration_after_leading_nmi();
+    state.game_execution_scheduler.begin_main_loop_iteration();
+    state
+        .game_execution_scheduler
+        .schedule_cpu_timed_work_from_current_main_iteration(
+            GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+            1,
+        );
+    state
+        .display_snapshot
+        .as_mut()
+        .unwrap()
+        .animated_bg_scanout_generation = AnimatedBgScanoutGeneration::LiveAfterNmi;
+    state.stage_interrupted_dungeon_submodule_publication();
+
+    let pending = state
+        .interrupted_dungeon_submodule_publication
+        .as_ref()
+        .unwrap();
+    assert!(state.dungeon_landing_entry_started_after_leading_nmi);
+    let retiring = pending.retiring_pre_spotlight_scanout.as_ref().unwrap();
+    assert_eq!(retiring.windowsel, 0x33_03_33);
+    assert_eq!(retiring.screen_windowed, [0x16, 0x01]);
+    assert_eq!(retiring.hdma_enable_mask, 0x80);
+    assert!(retiring.hdma_tables[0].iter().all(|&byte| byte == 0x00));
+    assert!(retiring.hdma_tables[1].iter().all(|&byte| byte == 0x11));
+    assert!(pending.spotlight.is_none());
+
+    state.apply_interrupted_dungeon_submodule_publication();
     assert_eq!(
-        state.ppu.bg_vram_latch.as_ref().unwrap()[DESTINATION],
-        0xaaaa
+        state.display_snapshot.as_ref().unwrap().oam_scanout_source,
+        OamScanoutSource::RetainPreviousPresented
+    );
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .animated_bg_scanout_generation,
+        AnimatedBgScanoutGeneration::LiveAfterNmi,
+        "a held NMI publishes registers but cannot roll back the animated-BG DMA generation",
     );
 }
 
@@ -1625,7 +1701,7 @@ fn trailing_animated_bg_dma_receipt_belongs_to_the_following_scanout() {
     state.begin_effective_presented_dma();
     state.ppu.vram[DESTINATION] = 0x2222;
     state.mark_effective_dma_vram_word(DESTINATION);
-    state.record_trailing_nmi_decoded_bg_dma_for_following_scanout();
+    state.record_trailing_nmi_decoded_bg_dma_receipt();
 
     assert!(state
         .display_snapshot
@@ -1658,6 +1734,12 @@ fn trailing_animated_bg_dma_receipt_belongs_to_the_following_scanout() {
 }
 
 #[test]
+fn landing_goal_stages_its_final_circle_only_before_a_leading_nmi_entry() {
+    assert!(dungeon_landing_goal_stages_final_circle(false));
+    assert!(!dungeon_landing_goal_stages_final_circle(true));
+}
+
+#[test]
 fn trailing_animated_bg_dma_does_not_reenter_the_active_scanout() {
     const DESTINATION: usize = 0x3c00;
     let mut state = ZeldaState::new();
@@ -1667,7 +1749,7 @@ fn trailing_animated_bg_dma_does_not_reenter_the_active_scanout() {
     state.begin_effective_presented_dma();
     state.ppu.vram[DESTINATION] = 0x2222;
     state.mark_effective_dma_vram_word(DESTINATION);
-    state.record_trailing_nmi_decoded_bg_dma_for_following_scanout();
+    state.record_trailing_nmi_decoded_bg_dma_receipt();
 
     assert!(state
         .display_snapshot
@@ -3657,7 +3739,7 @@ fn ordinary_trailing_link_dma_does_not_reenter_the_captured_display_owner() {
         completed_sources,
         GraphicsDmaGeneration::LiveAfterMain,
     );
-    state.record_trailing_nmi_decoded_bg_dma_for_following_scanout();
+    state.record_trailing_nmi_decoded_bg_dma_receipt();
 
     assert!(state
         .display_snapshot
