@@ -23955,9 +23955,17 @@ impl ZeldaState {
                 }
             }
             // The scheduled caller return reaches the ordinary trailing NMI.
-            // Display domains that complete at this boundary select their
-            // post-NMI generation in the immutable snapshot plan above.
-            self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+            // C's ZeldaRunGameLoop calls NMI_PrepareSprites after the module
+            // returns and before clearing $12. If that suffix completed above,
+            // the hardware OAM DMA consumes the shadow it just packed; the
+            // host-boundary copy predates ClearOamBuffer and belongs only to an
+            // interrupt which occurred before the saved caller returned.
+            let trailing_oam_dma_source = if self.main_loop_sprite_preparation_completed {
+                None
+            } else {
+                oam_dma_source.as_deref()
+            };
+            self.interrupt_nmi(input, trailing_oam_dma_source, false);
             self.stage_suspended_dungeon_submodule_after_nmi();
             if scheduled_work_completion_clears_nmi_latch_after_interrupt(work_slice) {
                 self.clear_nmi_update_latch();
