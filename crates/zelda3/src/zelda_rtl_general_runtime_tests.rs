@@ -8416,19 +8416,21 @@ fn completed_short_spotlight_build_projects_its_authored_table_tail() {
 fn trailing_nmi_force_blank_preserves_the_completed_fields_visible_rows() {
     let mut state = ZeldaState::new();
     state.set_screen_brightness(0x0f);
+    state.ppu.brightness = 0x0f;
     state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
-    let display = state.display_snapshot.as_mut().unwrap();
-    display.dungeon_exit_spotlight_force_blank = true;
-    display.ppu.forced_blank_from_scanline = Some(TRAILING_NMI_FORCE_BLANK_SCANLINE);
-
+    state.schedule_dungeon_exit_spotlight_goal_caller(SpotlightIteration::closing(
+        SpotlightIterationPhase::WholeTableAfterTablePublication,
+    ));
+    state.set_screen_brightness(0x80);
     state.ppu.forced_blank = true;
     state.ppu.brightness = 0;
+    state.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::PublishCaptured));
     let scanout = state.with_display_snapshot(|display| {
         (
             display.ppu.forced_blank,
             display.ppu.forced_blank_from_scanline,
             display.ppu.brightness,
-            display.ppu.mode7_scanout_brightness_override,
+            display.ppu.scanout_brightness_override,
         )
     });
 
@@ -8436,6 +8438,20 @@ fn trailing_nmi_force_blank_preserves_the_completed_fields_visible_rows() {
         scanout,
         (true, Some(TRAILING_NMI_FORCE_BLANK_SCANLINE), 0, Some(15),)
     );
+
+    // The same two-slice C continuation is still scheduled, but the late
+    // INIDISP event was already attached to the retiring scanout above. A new
+    // capture owns the live forced-blank register without replaying that
+    // one-shot brightness generation.
+    state.capture_display_snapshot_with_override(Some(DisplaySnapshotPublication::PublishCaptured));
+    let following = state.with_display_snapshot(|display| {
+        (
+            display.ppu.forced_blank,
+            display.ppu.brightness,
+            display.ppu.scanout_brightness_override,
+        )
+    });
+    assert_eq!(following, (true, 0, None));
 }
 
 #[test]

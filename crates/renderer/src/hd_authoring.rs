@@ -181,7 +181,7 @@ mod tests {
             screen_enabled: [0, 0],
             screen_windowed: [0, 0],
             brightness,
-            mode7_scanout_brightness_override: None,
+            scanout_brightness_override: None,
             forced_blank,
             retain_active_display_history: false,
             math_enabled: 0,

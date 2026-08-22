@@ -96,12 +96,11 @@ pub struct PpuState {
     #[serde(default)]
     pub retain_active_display_history: bool,
     pub brightness: u8,
-    /// One-frame master-brightness generation for Mode 7 scanout when the ROM
-    /// publishes its INIDISP step ahead of the deferred display palette.
-    /// This is presentation metadata consumed by the modern renderer, never a
-    /// VRAM/CGRAM composition path.
+    /// One-frame master-brightness generation for an active scanout whose
+    /// visible rows precede the final INIDISP register write. This is
+    /// presentation metadata, never a VRAM/CGRAM composition path.
     #[serde(default)]
-    pub mode7_scanout_brightness_override: Option<u8>,
+    pub scanout_brightness_override: Option<u8>,
     pub mode: u8,
 
     pub vram_pointer: u16,
@@ -259,7 +258,7 @@ impl Default for PpuState {
             forced_blank_from_scanline: None,
             retain_active_display_history: false,
             brightness: 0,
-            mode7_scanout_brightness_override: None,
+            scanout_brightness_override: None,
             mode: 0,
             vram_pointer: 0,
             vram_increment: 1,
@@ -717,12 +716,7 @@ impl PpuState {
 
     /// Refresh the INIDISP lookup table used by every scanout consumer.
     pub fn refresh_brightness_cache(&mut self) {
-        // The override name is historical: publication can retain the active
-        // field's master brightness after the final PPU register has advanced,
-        // and both Mode 7 and ordinary scanout must consume that generation.
-        let brightness = self
-            .mode7_scanout_brightness_override
-            .unwrap_or(self.brightness);
+        let brightness = self.scanout_brightness();
         if brightness == self.last_brightness_mult {
             return;
         }
@@ -741,6 +735,10 @@ impl PpuState {
         for i in 32..self.brightness_mult.len() {
             self.brightness_mult[i] = self.brightness_mult[31];
         }
+    }
+
+    pub fn scanout_brightness(&self) -> u8 {
+        self.scanout_brightness_override.unwrap_or(self.brightness)
     }
 
     fn snes9x_gamma_component(component: usize) -> u8 {
@@ -2495,7 +2493,7 @@ mod tests {
     fn scanout_brightness_override_keeps_the_active_register_generation() {
         let mut ppu = PpuState::new();
         ppu.brightness = 0;
-        ppu.mode7_scanout_brightness_override = Some(15);
+        ppu.scanout_brightness_override = Some(15);
         ppu.refresh_brightness_cache();
 
         assert_eq!(ppu.last_brightness_mult, 15);

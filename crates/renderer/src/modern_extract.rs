@@ -1063,7 +1063,7 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
         }
     }
     modern.brightness = frame.brightness;
-    modern.mode7_scanout_brightness_override = frame.mode7_scanout_brightness_override;
+    modern.scanout_brightness_override = frame.scanout_brightness_override;
     modern.forced_blank_scanlines = frame
         .scanlines
         .iter()
@@ -4643,7 +4643,7 @@ mod tests {
             screen_enabled: [0, 0],
             screen_windowed: [0, 0],
             brightness,
-            mode7_scanout_brightness_override: None,
+            scanout_brightness_override: None,
             forced_blank,
             retain_active_display_history: false,
             math_enabled: 0,

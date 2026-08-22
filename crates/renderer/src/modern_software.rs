@@ -2302,7 +2302,7 @@ pub fn render_modern_mode7_frame(frame: &crate::gpu_frame::GpuFrame<'_>) -> Vec<
         }
     }
 
-    if modern.forced_blank && modern.mode7_scanout_brightness_override.is_none() {
+    if modern.forced_blank && modern.scanout_brightness_override.is_none() {
         let mut out = vec![0u8; len * 4];
         for px in out.chunks_exact_mut(4) {
             px.copy_from_slice(&[0, 0, 0, 0xff]);
@@ -2766,7 +2766,7 @@ mod tests {
         frame.fixed_color_g = 5;
         frame.fixed_color_b = 5;
         frame.brightness = 0;
-        frame.mode7_scanout_brightness_override = Some(1);
+        frame.scanout_brightness_override = Some(1);
 
         let out = render_modern_frame_full(&frame, &cells, &[]);
 

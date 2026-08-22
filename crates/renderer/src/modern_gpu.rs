@@ -1610,7 +1610,7 @@ fn finalize_modern_frame_colors_for_direct_index(frame: &mut ModernFrame) {
     frame.backdrop_color_rgba[2] =
         finalize_snes_5bit_channel(frame.backdrop_color_rgba[2], scanout_brightness);
     frame.brightness = 15;
-    frame.mode7_scanout_brightness_override = None;
+    frame.scanout_brightness_override = None;
 }
 
 fn bg_effect_matches_live_cgram(
@@ -12639,7 +12639,7 @@ mod tests {
             screen_enabled: [0, 0],
             screen_windowed: [0, 0],
             brightness,
-            mode7_scanout_brightness_override: None,
+            scanout_brightness_override: None,
             forced_blank,
             retain_active_display_history: false,
             math_enabled: 0,

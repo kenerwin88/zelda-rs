@@ -8373,7 +8373,7 @@ impl InidispRegisterScanout {
         ppu.forced_blank_scanlines = 0;
         ppu.forced_blank_from_scanline = None;
         ppu.retain_active_display_history = false;
-        ppu.mode7_scanout_brightness_override = None;
+        ppu.scanout_brightness_override = None;
         ppu.refresh_brightness_cache();
     }
 }
@@ -9185,7 +9185,6 @@ struct DisplaySnapshot {
     /// capture, while hardware uploaded this input generation at vblank.
     cgram_scanout_override: Option<Vec<u16>>,
     game_over_iris_goal_scanout_closed: bool,
-    dungeon_exit_spotlight_force_blank: bool,
     link_obj_scanout_generation: GraphicsDmaGeneration,
     link_obj_source_generation: GraphicsDmaGeneration,
     /// Exact source words consumed by the early Link DMA that owns this
@@ -16371,6 +16370,18 @@ impl ZeldaState {
                 .last_completed_interrupted_dungeon_spotlight_scanout
                 .clone();
         }
+        let trailing_force_blank_scanout_brightness = matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. })
+        )
+        .then(|| {
+            self.display_snapshot
+                .as_deref()
+                .or(self.visible_display_snapshot.as_deref())
+                .filter(|display| display.ppu.scanout_brightness_override.is_none())
+                .map(|display| display.ppu.scanout_brightness())
+        })
+        .flatten();
         self.capture_display_snapshot_with_publication(publication);
         if advances_landing_goal {
             // The receipt applied while publishing this snapshot belongs to
@@ -16413,17 +16424,14 @@ impl ZeldaState {
                     live_tail_start: spotlight_live_tail_start,
                 };
         }
-        if matches!(
-            self.game_execution_scheduler.current_work(),
-            Some(GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. })
-        ) {
+        if let Some(scanout_brightness) = trailing_force_blank_scanout_brightness {
             // IrisSpotlight_ConfigureTable's goal write is consumed by the
             // trailing NMI after the active field. Carry the resulting PPU
             // register generation even though the visible rows keep the iris
             // table that was scanned before that NMI.
             if let Some(display) = self.display_snapshot.as_mut() {
-                display.dungeon_exit_spotlight_force_blank = true;
                 display.ppu.forced_blank_from_scanline = Some(TRAILING_NMI_FORCE_BLANK_SCANLINE);
+                display.ppu.scanout_brightness_override = Some(scanout_brightness);
             }
         }
     }
@@ -17134,7 +17142,6 @@ impl ZeldaState {
             },
             cgram_scanout_override: self.next_display_cgram_override.take(),
             game_over_iris_goal_scanout_closed,
-            dungeon_exit_spotlight_force_blank: false,
             link_obj_scanout_generation,
             link_obj_source_generation,
             link_obj_scanout_sources,
@@ -19899,9 +19906,10 @@ impl ZeldaState {
             self.ppu.forced_blank_from_scanline = scanout.suffix_start_scanline;
             self.ppu.retain_active_display_history = scanout.retain_prior_surface;
         }
-        self.ppu.mode7_scanout_brightness_override = plan
-            .world_map_mode7_brightness_is_early_published
-            .then_some(captured_screen_brightness);
+        self.ppu.scanout_brightness_override = self.ppu.scanout_brightness_override.or_else(|| {
+            plan.world_map_mode7_brightness_is_early_published
+                .then_some(captured_screen_brightness)
+        });
     }
 
     fn displayed_dialogue_scanout(&self) -> Option<DialogueTextScanout> {
@@ -20510,16 +20518,10 @@ impl ZeldaState {
             &publication_plan,
         );
         self.compose_effective_presented_inidisp(&display);
-        if display.game_over_iris_goal_scanout_closed || display.dungeon_exit_spotlight_force_blank
-        {
+        if display.game_over_iris_goal_scanout_closed {
             // A terminal iris can publish brightness zero before the captured
-            // CPU generation advances. Dungeon exit reaches that PPU state at
-            // its trailing NMI, after this field's visible rows; Game Over can
-            // close the active field itself. Keep raster and final-register
-            // ownership separate.
-            if display.dungeon_exit_spotlight_force_blank {
-                self.ppu.mode7_scanout_brightness_override = Some(captured_screen_brightness);
-            }
+            // CPU generation advances. Game Over closes the active field
+            // itself, so its final register and visible scanout both own zero.
             self.ppu.brightness = 0;
             self.ppu.refresh_brightness_cache();
         }
