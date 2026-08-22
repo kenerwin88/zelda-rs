@@ -8747,6 +8747,11 @@ pub struct ZeldaState {
     joypad_sampled_before_main: bool,
     #[serde(skip)]
     audio_nmi_processed_before_main: bool,
+    /// Ambient APUI01 state sampled by a real C NMI after the ordinary host
+    /// audio batch was published. The following audio callbacks retain that
+    /// port read until the SPC exposes the matching acknowledgement.
+    #[serde(skip)]
+    audio_after_publication_ambient_nmi: Option<(u8, u8)>,
     #[serde(skip)]
     dungeon_exit_spotlight_cpu_entry_envelope: Option<(CpuRasterPosition, CpuRasterPosition)>,
     #[serde(skip)]
@@ -14855,6 +14860,7 @@ impl ZeldaState {
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
+            audio_after_publication_ambient_nmi: None,
             dungeon_exit_spotlight_cpu_entry_envelope: None,
             overworld_spotlight_cpu_entry_envelope: None,
             dungeon_landing_goal_transition_pending: false,
@@ -14986,6 +14992,7 @@ impl ZeldaState {
         self.dungeon_quadrant_cpu_continuation_active = false;
         self.joypad_sampled_before_main = false;
         self.audio_nmi_processed_before_main = false;
+        self.audio_after_publication_ambient_nmi = None;
         self.main_loop_sprite_preparation_completed = false;
         self.dungeon_landing_goal_transition_pending = false;
         self.normal_dialogue_initialization_phase = 0;
@@ -15065,6 +15072,7 @@ impl ZeldaState {
             self.dungeon_room_load_module_suffix_nmi_slices = 0;
             self.joypad_sampled_before_main = false;
             self.audio_nmi_processed_before_main = false;
+            self.audio_after_publication_ambient_nmi = None;
             self.dungeon_landing_goal_transition_pending = false;
             self.normal_dialogue_initialization_phase = 0;
             self.normal_dialogue_initialization_entry_phase = 0;
@@ -25948,7 +25956,12 @@ impl ZeldaState {
             // The resumed C caller reached the following NMI after this host's
             // audio batch was published. Sample its commands now so the next
             // batch exposes them at the same APU clock boundary as the ROM.
+            let ambient_nmi = (
+                self.game_state.system_signals.ambient_sound_effect(),
+                self.game_state.system_signals.last_ambient_sound_effect(),
+            );
             self.interrupt_nmi_audio_parts();
+            self.audio_after_publication_ambient_nmi = Some(ambient_nmi);
             self.audio_nmi_processed_before_main = true;
         }
         self.replay_trace_ram_watch("after-apu");

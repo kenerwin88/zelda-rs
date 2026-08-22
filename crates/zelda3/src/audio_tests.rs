@@ -1007,25 +1007,28 @@ fn audio_snapshot_has_versioned_header_and_accepts_preheader_payload_inner() {
 }
 #[test]
 fn acknowledged_ambient_clear_uses_the_live_nmi_latch_without_hiding_a_new_command() {
-    assert_eq!(super::resolved_driver_ambient_latch(3, 0, 3), 0);
-    assert_eq!(super::resolved_driver_ambient_latch(3, 0, 0), 3);
-    assert_eq!(super::resolved_driver_ambient_latch(0, 3, 3), 3);
+    assert_eq!(
+        super::resolve_after_publication_ambient_nmi(3, 0, 3, 3),
+        (0, true)
+    );
+    assert_eq!(
+        super::resolve_after_publication_ambient_nmi(3, 0, 3, 0),
+        (3, false)
+    );
+    assert_eq!(
+        super::resolve_after_publication_ambient_nmi(0, 3, 3, 3),
+        (3, true)
+    );
+    assert_eq!(
+        super::resolve_after_publication_ambient_nmi(4, 0, 3, 0),
+        (4, true)
+    );
 }
 
 #[test]
-fn spiral_return_ambient_override_covers_landing_without_leaking_to_other_rooms() {
-    assert!(super::spiral_return_audio_uses_live_ambient_latch(
-        7, 0x0e, 0x0b, 1, 0x30
-    ));
-    assert!(super::spiral_return_audio_uses_live_ambient_latch(
-        7, 0, 0, 1, 0x30
-    ));
-    assert!(!super::spiral_return_audio_uses_live_ambient_latch(
-        7, 0, 0, 2, 0x30
-    ));
-    assert!(!super::spiral_return_audio_uses_live_ambient_latch(
-        7, 0x0e, 0x0a, 1, 0x30
-    ));
+fn after_publication_ambient_override_is_provenance_driven() {
+    let state = ZeldaState::new();
+    assert_eq!(state.audio_after_publication_ambient_nmi, None);
 }
 
 #[test]

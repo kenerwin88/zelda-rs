@@ -27,11 +27,22 @@ const AUDIO_SNAPSHOT_VERSION: u16 = 8;
 const AUDIO_SNAPSHOT_FLAG_ORACLE_SIDECAR: u16 = 1;
 const AUDIO_SNAPSHOT_HEADER_BYTES: usize = 12;
 
-const fn resolved_driver_ambient_latch(queued: u8, live: u8, acknowledgement: u8) -> u8 {
-    if live != 0 || queued != 0 && acknowledgement == queued {
-        live
+const fn resolve_after_publication_ambient_nmi(
+    queued: u8,
+    live: u8,
+    last: u8,
+    acknowledgement: u8,
+) -> (u8, bool) {
+    if live != 0 {
+        (live, true)
+    } else if acknowledgement == last {
+        (0, true)
+    } else if queued != last {
+        // A later NMI has superseded the zero-path read before the SPC
+        // acknowledged the command this NMI observed.
+        (queued, true)
     } else {
-        queued
+        (queued, false)
     }
 }
 
@@ -47,19 +58,6 @@ const fn spiral_return_audio_uses_live_one_shot_sfx_latches(
         && subsubmodule >= 0x0b
         && dungeon_room == 1
         && staircase_index == 0x30
-}
-
-const fn spiral_return_audio_uses_live_ambient_latch(
-    main_module: u8,
-    submodule: u8,
-    subsubmodule: u8,
-    dungeon_room: u8,
-    staircase_index: u8,
-) -> bool {
-    main_module == 7
-        && dungeon_room == 1
-        && staircase_index == 0x30
-        && (submodule == 0 || submodule == 0x0e && subsubmodule >= 0x0b)
 }
 
 const MSU_TRACK_REPEATS: [u8; 48] = [
@@ -919,25 +917,22 @@ impl ZeldaState {
         let game_frame = self.game_state.frame;
         let dungeon_room = self.game_state.world.location.dungeon_room_index();
         let staircase_index = self.game_state.dungeon.stair_movement.staircase_index();
-        if spiral_return_audio_uses_live_ambient_latch(
-            game_frame.main_module,
-            game_frame.submodule,
-            game_frame.subsubmodule,
-            dungeon_room,
-            staircase_index,
-        ) {
+        if let Some((live_ambient, last_ambient)) = self.audio_after_publication_ambient_nmi {
             if let Some(clock) = self.audio.modern.driver_clock.as_ref() {
                 let queued_ambient = driver_commands.legacy_ports()[1];
-                let live_ambient = self.game_state.system_signals.ambient_sound_effect();
-                let ambient = resolved_driver_ambient_latch(
+                let (ambient, resolved) = resolve_after_publication_ambient_nmi(
                     queued_ambient,
                     live_ambient,
+                    last_ambient,
                     clock.host_acknowledgements()[1],
                 );
                 driver_commands.apply(EngineAudioCommand::from_sfx_port_value(
                     crate::game_output::AudioSfxBank::Ambient,
                     ambient,
                 ));
+                if resolved {
+                    self.audio_after_publication_ambient_nmi = None;
+                }
             }
         }
         if spiral_return_audio_uses_live_one_shot_sfx_latches(
