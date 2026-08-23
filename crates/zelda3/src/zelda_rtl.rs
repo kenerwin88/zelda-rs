@@ -4136,31 +4136,38 @@ pub(super) struct DungeonModuleCpuAdvance {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct DungeonModuleCpuTiming {
     advance: DungeonModuleCpuAdvance,
-    /// Number of leading visible rows whose HDMA read beat the goal-path
-    /// `IrisSpotlight_ResetTable` write in the isolated original-ROM run.
+    /// Leading rows whose HDMA read beat `IrisSpotlight_ResetTable`, but only
+    /// when the reset field remains owned by this caller-return publication.
     spotlight_reset_prefix_scanlines: Option<usize>,
 }
 
 fn spotlight_reset_prefix_scanlines(
     rows_reset_before_hdma: &[Option<bool>; SPOTLIGHT_VISIBLE_SCANLINES],
+    nmi_crossings_before_caller_return: u8,
 ) -> Option<usize> {
-    rows_reset_before_hdma.iter().any(Option::is_some).then(|| {
-        assert!(
-            rows_reset_before_hdma.iter().all(Option::is_some),
-            "ROM spotlight reset returned with an incomplete table-write trace",
-        );
-        let prefix = rows_reset_before_hdma
+    // A second submodule NMI retires the reset field before the translated
+    // caller returns. Its later publication owns the fully reset next field,
+    // not the discarded in-flight race.
+    if nmi_crossings_before_caller_return != 1
+        || !rows_reset_before_hdma.iter().any(Option::is_some)
+    {
+        return None;
+    }
+    assert!(
+        rows_reset_before_hdma.iter().all(Option::is_some),
+        "ROM spotlight reset returned with an incomplete table-write trace",
+    );
+    let prefix = rows_reset_before_hdma
+        .iter()
+        .take_while(|reset_before_hdma| reset_before_hdma == &&Some(false))
+        .count();
+    assert!(
+        rows_reset_before_hdma[prefix..]
             .iter()
-            .take_while(|reset_before_hdma| reset_before_hdma == &&Some(false))
-            .count();
-        assert!(
-            rows_reset_before_hdma[prefix..]
-                .iter()
-                .all(|reset_before_hdma| reset_before_hdma == &Some(true)),
-            "ROM spotlight reset produced a non-contiguous HDMA generation",
-        );
-        prefix
-    })
+            .all(|reset_before_hdma| reset_before_hdma == &Some(true)),
+        "single-NMI ROM spotlight reset produced a non-contiguous HDMA generation",
+    );
+    Some(prefix)
 }
 
 fn dungeon_module_7_cpu_advance_at(
@@ -4291,15 +4298,16 @@ fn dungeon_module_7_cpu_timing(
             };
             let timing = DungeonModuleCpuTiming {
                 advance: completed,
-                spotlight_reset_prefix_scanlines: spotlight_reset_prefix_scanlines(
-                    &spotlight_reset_rows_before_hdma,
-                ),
+                spotlight_reset_prefix_scanlines: None,
             };
             if let Some(mut first) = first_interruption {
                 first.resumed_phase = Some(completed.phase);
                 return DungeonModuleCpuTiming {
+                    spotlight_reset_prefix_scanlines: spotlight_reset_prefix_scanlines(
+                        &spotlight_reset_rows_before_hdma,
+                        first.submodule_nmi_slices,
+                    ),
                     advance: first,
-                    ..timing
                 };
             }
             return timing;
@@ -4396,9 +4404,9 @@ fn dungeon_module_7_cpu_timing(
                     continue;
                 }
                 let row = (address - 0x1b00) / 2;
-                // Writes during the preceding vblank win automatically. In
-                // active display, compare the completed CPU store against the
-                // real per-row HDMA fetch at master cycle 1106.
+                // Vblank stores precede every row of the following field. In
+                // active display, compare the completed CPU store with that
+                // row's physical HDMA read at master cycle 1106.
                 spotlight_reset_rows_before_hdma[row] = Some(
                     write_scanline >= 225
                         || write_scanline < row as u16
@@ -4502,10 +4510,11 @@ fn dungeon_module_7_cpu_timing(
                 }
                 first.resumed_phase = Some(interrupted.phase);
                 return DungeonModuleCpuTiming {
-                    advance: first,
                     spotlight_reset_prefix_scanlines: spotlight_reset_prefix_scanlines(
                         &spotlight_reset_rows_before_hdma,
+                        first.submodule_nmi_slices.saturating_add(1),
                     ),
+                    advance: first,
                 };
             }
             if interrupted.phase == DungeonModuleCpuPhase::InterruptedInSubmodule {
@@ -4514,10 +4523,11 @@ fn dungeon_module_7_cpu_timing(
                 continue;
             }
             return DungeonModuleCpuTiming {
-                advance: interrupted,
                 spotlight_reset_prefix_scanlines: spotlight_reset_prefix_scanlines(
                     &spotlight_reset_rows_before_hdma,
+                    1,
                 ),
+                advance: interrupted,
             };
         }
     }
@@ -8676,10 +8686,14 @@ pub struct ZeldaState {
     /// before the translated state 13/14 prefix mutates WRAM.
     #[serde(skip)]
     dungeon_landing_cpu_advance_pending: Option<DungeonModuleCpuAdvance>,
-    /// Original-ROM timing result for the goal-path race between the reset
-    /// loop's table stores and each visible row's HDMA read.
+    /// ROM-timed part of the one-NMI landing reset field that remains owned
+    /// by the corresponding caller-return publication.
     #[serde(skip)]
     dungeon_landing_spotlight_reset_prefix_scanlines: Option<usize>,
+    /// Reset-field provenance moved out of the timing queue with the exact
+    /// Module 7 iteration currently executing.
+    #[serde(skip)]
+    active_dungeon_landing_spotlight_reset_prefix_scanlines: Option<usize>,
     /// The instruction-timed Module 7 shadow reached NMI after Sprite_Main
     /// returned, either before or inside LinkOam_Main. This is a semantic
     /// caller phase, not a room/frame publication rule.
@@ -11875,7 +11889,10 @@ impl ZeldaState {
     }
 
     pub(super) fn take_dungeon_landing_cpu_advance(&mut self) -> Option<DungeonModuleCpuAdvance> {
-        self.dungeon_landing_cpu_advance_pending.take()
+        let advance = self.dungeon_landing_cpu_advance_pending.take();
+        self.active_dungeon_landing_spotlight_reset_prefix_scanlines =
+            self.dungeon_landing_spotlight_reset_prefix_scanlines.take();
+        advance
     }
 
     pub(super) fn begin_dungeon_landing_spotlight_publication(
@@ -11886,6 +11903,7 @@ impl ZeldaState {
         self.last_completed_interrupted_dungeon_spotlight_scanout = None;
         self.dungeon_landing_entry_started_after_leading_nmi = entry_started_after_leading_nmi;
         self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+        self.active_dungeon_landing_spotlight_reset_prefix_scanlines = None;
     }
 
     pub(super) fn take_dungeon_cached_sprite_cpu_interruption(
@@ -11903,6 +11921,7 @@ impl ZeldaState {
         {
             if self.dungeon_landing_cpu_advance_pending.is_none() {
                 let advance = begin_dungeon_supertile_state_12_cpu_advance(self);
+                self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
                 self.dungeon_landing_cpu_advance_pending = Some(advance);
             }
         }
@@ -14956,6 +14975,7 @@ impl ZeldaState {
             dungeon_state_12_caller_suffix_nmi_pending: false,
             dungeon_landing_cpu_advance_pending: None,
             dungeon_landing_spotlight_reset_prefix_scanlines: None,
+            active_dungeon_landing_spotlight_reset_prefix_scanlines: None,
             dungeon_post_sprite_main_return_pending: false,
             dungeon_nmi_prepare_sprites_return_pending: false,
             dungeon_palette_cpu_advance_pending: None,
@@ -15130,6 +15150,7 @@ impl ZeldaState {
         self.main_loop_sprite_preparation_completed = false;
         self.dungeon_landing_goal_transition_pending = false;
         self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+        self.active_dungeon_landing_spotlight_reset_prefix_scanlines = None;
         self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands = None;
         self.next_core_nmi_active_scanout_uses_host_animated_bg_operands = None;
         self.pending_dialogue_initialization_schedule = None;
@@ -15203,6 +15224,7 @@ impl ZeldaState {
             self.audio_after_publication_ambient_nmi = None;
             self.dungeon_landing_goal_transition_pending = false;
             self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+            self.active_dungeon_landing_spotlight_reset_prefix_scanlines = None;
             self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands = None;
             self.next_core_nmi_active_scanout_uses_host_animated_bg_operands = None;
             self.pending_dialogue_initialization_schedule = None;
@@ -21892,6 +21914,7 @@ impl ZeldaState {
         }
         if let Some(advance) = quadrant_module_cpu_advance {
             debug_assert!(self.dungeon_landing_cpu_advance_pending.is_none());
+            self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
             self.dungeon_landing_cpu_advance_pending = Some(advance);
         }
         self.replay_trace_col("before-game-loop");
@@ -21988,9 +22011,9 @@ impl ZeldaState {
         if self.dungeon_landing_goal_transition_pending {
             self.dungeon_landing_goal_transition_pending = false;
             let reset_prefix_scanlines = self
-                .dungeon_landing_spotlight_reset_prefix_scanlines
+                .active_dungeon_landing_spotlight_reset_prefix_scanlines
                 .take()
-                .expect("landing spotlight goal requires its ROM reset/HDMA timing result");
+                .unwrap_or(0);
             let reset_prefix = (0..reset_prefix_scanlines)
                 .map(|index| self.spotlight_hdma_table_dynamic_entry(index))
                 .collect();
@@ -22006,10 +22029,8 @@ impl ZeldaState {
 
     fn complete_dungeon_landing_goal_active_scanout(&mut self, reset_prefix: Vec<u16>) {
         let mut reset_tables = spotlight_hdma_tables_from_ram(&self.ram);
-        // The ROM resets the active dynamic table after projecting the final
-        // circle. The two WRAM buffers are alternate CPU generations, but the
-        // display-local projection describes the one physical HDMA stream;
-        // use the reset dynamic generation on both sides of that abstraction.
+        // C resets the active dynamic table after authoring the final circle.
+        // Both CPU buffers describe the one physical HDMA stream here.
         reset_tables[1] = reset_tables[0].clone();
         let Some(active) = self.display_snapshot.as_mut() else {
             return;
@@ -22224,10 +22245,8 @@ impl ZeldaState {
             return;
         }
         if let Some(timing) = begin_dungeon_module_cpu_timing_after_leading_nmi(self) {
-            if timing.spotlight_reset_prefix_scanlines.is_some() {
-                self.dungeon_landing_spotlight_reset_prefix_scanlines =
-                    timing.spotlight_reset_prefix_scanlines;
-            }
+            self.dungeon_landing_spotlight_reset_prefix_scanlines =
+                timing.spotlight_reset_prefix_scanlines;
             self.dungeon_landing_cpu_advance_pending = Some(timing.advance);
         }
     }
@@ -22592,6 +22611,7 @@ impl ZeldaState {
                                 advance.palette_countdown,
                             );
                         }
+                        self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
                         self.dungeon_landing_cpu_advance_pending = Some(advance);
                     }
                     true
@@ -26357,10 +26377,8 @@ impl ZeldaState {
         {
             if self.dungeon_landing_cpu_advance_pending.is_none() {
                 let timing = begin_dungeon_landing_cpu_advance(self);
-                if timing.spotlight_reset_prefix_scanlines.is_some() {
-                    self.dungeon_landing_spotlight_reset_prefix_scanlines =
-                        timing.spotlight_reset_prefix_scanlines;
-                }
+                self.dungeon_landing_spotlight_reset_prefix_scanlines =
+                    timing.spotlight_reset_prefix_scanlines;
                 self.dungeon_landing_cpu_advance_pending = Some(timing.advance);
             }
         } else if !(frame.main_module == 7
@@ -26368,6 +26386,7 @@ impl ZeldaState {
                 || frame.submodule == 0x0f))
         {
             self.dungeon_landing_cpu_advance_pending = None;
+            self.dungeon_landing_spotlight_reset_prefix_scanlines = None;
         }
         if run_game_loop_prefix {
             // This is the entry edge of ZeldaRunGameLoop in the C program.

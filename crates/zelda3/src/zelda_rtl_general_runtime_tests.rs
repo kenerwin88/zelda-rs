@@ -5299,6 +5299,7 @@ fn dungeon_landing_goal_authors_final_circle_before_resetting_the_live_table() {
         .to_vec();
     assert_eq!(dynamic, reserved, "the C memcpy preserves the final circle");
     assert!(dynamic.chunks_exact(2).any(|word| word != [0x00, 0xff]));
+    state.capture_display_snapshot();
 
     state.complete_iris_spotlight_goal_transition();
 
@@ -5311,6 +5312,90 @@ fn dungeon_landing_goal_authors_final_circle_before_resetting_the_live_table() {
         &state.ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + ZeldaState::HDMA_DYNAMIC_TABLE_LEN],
         reserved,
         "the reset is a later live-table generation, not a rewrite of the final circle",
+    );
+    assert_eq!(
+        state.with_display_snapshot(|display| display.ram
+            [HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + ZeldaState::HDMA_DYNAMIC_TABLE_LEN]
+            .to_vec()),
+        dynamic,
+        "the C reset cannot rewrite the field that already captured the final circle",
+    );
+
+    state.complete_dungeon_landing_goal_active_scanout(Vec::new());
+    let reset_stream =
+        state.with_display_snapshot(|display| spotlight_hdma_tables_from_ram(&display.ram));
+    assert!(reset_stream
+        .iter()
+        .all(|table| table.chunks_exact(2).all(|word| word == [0x00, 0xff])));
+
+    state.capture_display_snapshot();
+    assert!(state
+        .with_display_snapshot(|display| display.ram
+            [HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + ZeldaState::HDMA_DYNAMIC_TABLE_LEN]
+            .to_vec())
+        .chunks_exact(2)
+        .all(|word| word == [0x00, 0xff]));
+}
+
+#[test]
+fn spotlight_reset_field_is_published_only_when_the_caller_crosses_one_nmi() {
+    let mut one_crossing_rows = [Some(true); SPOTLIGHT_VISIBLE_SCANLINES];
+    one_crossing_rows[..4].fill(Some(false));
+
+    // The pinned Snes9x frame-2328 trace retains rows 0..3 from the final C
+    // circle and consumes IrisSpotlight_ResetTable below it. Its translated
+    // caller crosses exactly one NMI before returning.
+    assert_eq!(
+        spotlight_reset_prefix_scanlines(&one_crossing_rows, 1),
+        Some(4)
+    );
+
+    let mut two_crossing_rows = [Some(true); SPOTLIGHT_VISIBLE_SCANLINES];
+    two_crossing_rows[21..32].fill(Some(false));
+    two_crossing_rows[53..64].fill(Some(false));
+
+    // At frame 11,595 the same C reset work crosses two NMIs. Snes9x presents
+    // the final circle through 11,596 and the fully reset following field at
+    // 11,597; the discarded in-flight store pattern owns neither publication.
+    assert_eq!(
+        spotlight_reset_prefix_scanlines(&two_crossing_rows, 2),
+        None
+    );
+}
+
+#[test]
+fn spotlight_reset_prefix_expires_with_its_cpu_advance() {
+    let mut state = ZeldaState::new();
+    let advance = DungeonModuleCpuAdvance {
+        phase: DungeonModuleCpuPhase::InterruptedInSubmodule,
+        resumed_phase: Some(DungeonModuleCpuPhase::CompleteBeforeNmi),
+        submodule_nmi_slices: 1,
+        subsubmodule: 1,
+        palette_countdown: 0,
+        sprite_main_boundary: None,
+        cached_sprite_interruption: None,
+    };
+    state.dungeon_landing_cpu_advance_pending = Some(advance);
+    state.dungeon_landing_spotlight_reset_prefix_scanlines = Some(4);
+
+    assert_eq!(state.take_dungeon_landing_cpu_advance(), Some(advance));
+    assert_eq!(
+        state.active_dungeon_landing_spotlight_reset_prefix_scanlines,
+        Some(4)
+    );
+    assert_eq!(state.dungeon_landing_spotlight_reset_prefix_scanlines, None);
+
+    // The next two-NMI timing result has no presented reset field. Consuming
+    // that exact continuation must replace, not retain, the earlier prefix.
+    state.dungeon_landing_cpu_advance_pending = Some(DungeonModuleCpuAdvance {
+        submodule_nmi_slices: 2,
+        ..advance
+    });
+    state.dungeon_landing_spotlight_reset_prefix_scanlines = None;
+    state.take_dungeon_landing_cpu_advance();
+    assert_eq!(
+        state.active_dungeon_landing_spotlight_reset_prefix_scanlines,
+        None
     );
 }
 
