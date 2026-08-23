@@ -1825,7 +1825,7 @@ fn effective_presented_ppu_registers_use_the_values_installed_by_the_leading_nmi
     assert_eq!(state.ppu.m7_matrix, [1, 2, 3, 4, 5, 6, 7, 8]);
     let tile_addresses: [u16; 4] = std::array::from_fn(|index| state.ppu.bg_layer[index].tile_adr);
     assert_eq!(tile_addresses, [0x0000, 0x1000, 0x2000, 0x3000]);
-    assert_eq!(state.ppu.forced_blank_scanlines, 0);
+    assert_eq!(state.ppu.forced_blank_scanlines, 10);
     assert_eq!(state.ppu.forced_blank_from_scanline, None);
     assert!(!state.ppu.retain_active_display_history);
 }

@@ -582,12 +582,6 @@ impl ZeldaState {
         self.set_sound_effect_2(17);
         self.set_pending_nmi_subroutine(1);
         self.set_nmi_load_target_page(0x22);
-        if self.rom_startup_timing() {
-            // This full HUD tilemap request is authored after the hardware NMI
-            // represented by the current host slice. Track its real following-
-            // vblank publication separately from the port's coarse dispatcher.
-            self.hud_tilemap_nmi_publication_phase = 1;
-        }
         self.increment_overworld_map_state();
     }
 

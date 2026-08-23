@@ -406,13 +406,17 @@ fn nmi_active_display_blanking_for_pending_work(
     }
 }
 
-const fn hud_tilemap_nmi_forced_blank_prefix(upload_consumed: bool) -> u8 {
-    // NMI subroutine 1 uploads the complete $800-byte tilemap staging buffer.
-    // With ordinary core updates ahead of it, instrumented Snes9x reaches the
-    // DMA at ROM $008cdb on V=249 and does not restore INIDISP until V=1,
-    // H=870. The ROM asserted forced blank at NMI entry, so scanline zero of
-    // the snapshot captured immediately before this NMI is black.
-    if upload_consumed {
+const fn hud_and_full_tilemap_nmi_forced_blank_prefix(
+    hud_upload_pending: bool,
+    full_tilemap_upload_pending: bool,
+) -> u8 {
+    // C NMI_DoUpdates first uploads 165 HUD words when
+    // flag_update_hud_in_nmi is set, then subroutine 1 uploads the complete
+    // $800-byte tilemap staging buffer. With both transfers pending, Snes9x
+    // reaches the subroutine DMA at ROM $008cdb on V=249 and does not restore
+    // INIDISP until V=1 H=870, so output row zero is black. Subroutine 1 alone
+    // returns at V=261 and does not cross into the next field.
+    if hud_upload_pending && full_tilemap_upload_pending {
         1
     } else {
         0
@@ -8397,10 +8401,10 @@ impl InidispRegisterScanout {
     fn publish_to(self, ppu: &mut PpuState) {
         ppu.brightness = self.brightness;
         ppu.forced_blank = self.forced_blank;
-        // This receipt is the value installed by WritePpuRegisters during
-        // vblank, so it owns the whole following field. Active-display suffix
-        // metadata belongs only to a later mid-frame INIDISP write.
-        ppu.forced_blank_scanlines = 0;
+        // This receipt owns the value installed by C `WritePpuRegisters`, but
+        // cannot rewrite scanlines which elapsed before that write completed.
+        // Preserve the captured prefix; suffix metadata belongs to a later
+        // active-display INIDISP transition and is superseded by this write.
         ppu.forced_blank_from_scanline = None;
         ppu.retain_active_display_history = false;
         ppu.scanout_brightness_override = None;
@@ -8858,8 +8862,6 @@ pub struct ZeldaState {
     #[serde(skip)]
     pending_dialogue_initialization_schedule: Option<(u8, u8, Option<bool>)>,
 
-    #[serde(skip)]
-    hud_tilemap_nmi_publication_phase: u8,
     #[serde(skip)]
     intro_poly_upload_delay: u8,
     #[serde(skip)]
@@ -14987,7 +14989,6 @@ impl ZeldaState {
             normal_dialogue_following_main_nmi_uses_host_animated_bg_operands: None,
             next_core_nmi_active_scanout_uses_host_animated_bg_operands: None,
             pending_dialogue_initialization_schedule: None,
-            hud_tilemap_nmi_publication_phase: 0,
             intro_poly_upload_delay: 0,
             display_snapshot: None,
             active_effective_dma_writes: None,
@@ -15117,7 +15118,6 @@ impl ZeldaState {
         self.dialogue_fast_forward_hold_active = false;
         self.game_over_text_render_calls_remaining = 0;
         self.game_over_text_render_call_in_flight = false;
-        self.hud_tilemap_nmi_publication_phase = 0;
         self.nmi_poly_upload_deferred = 0;
         self.nmi_poly_upload_started = false;
         self.nmi_poly_deferred_upload_bypasses_latch = false;
@@ -15187,7 +15187,6 @@ impl ZeldaState {
             self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands = None;
             self.next_core_nmi_active_scanout_uses_host_animated_bg_operands = None;
             self.pending_dialogue_initialization_schedule = None;
-            self.hud_tilemap_nmi_publication_phase = 0;
             self.nmi_poly_upload_deferred = 0;
             self.nmi_poly_upload_started = false;
             self.nmi_poly_deferred_upload_bypasses_latch = false;

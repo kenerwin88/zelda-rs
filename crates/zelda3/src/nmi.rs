@@ -379,24 +379,14 @@ impl ZeldaState {
                 bg_vram_load_mode,
                 stripe_work,
             );
-            let hud_tilemap_is_pending = self.game_state.display.pending_nmi_subroutine == 1
+            let hud_upload_is_pending = self.game_state.system_signals.should_update_hud();
+            let full_tilemap_upload_is_pending = self.game_state.display.pending_nmi_subroutine
+                == 1
                 && !self.game_state.display.core_updates_are_disabled();
-            let publish_hud_tilemap_scanout = match (
-                self.hud_tilemap_nmi_publication_phase,
-                hud_tilemap_is_pending,
-            ) {
-                (1, true) => {
-                    self.hud_tilemap_nmi_publication_phase = 2;
-                    false
-                }
-                (2, true) => {
-                    self.hud_tilemap_nmi_publication_phase = 0;
-                    true
-                }
-                _ => false,
-            };
-            let current_scanout_prefix =
-                hud_tilemap_nmi_forced_blank_prefix(publish_hud_tilemap_scanout);
+            let current_scanout_prefix = hud_and_full_tilemap_nmi_forced_blank_prefix(
+                hud_upload_is_pending,
+                full_tilemap_upload_is_pending,
+            );
             if let Some(display) = self.display_snapshot.as_mut() {
                 display.ppu.forced_blank_scanlines = display
                     .ppu
