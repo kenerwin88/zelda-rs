@@ -5206,11 +5206,29 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
 }
 
 #[test]
-fn interrupted_spotlight_suffix_stages_the_measured_following_field() {
+fn interrupted_spotlight_suffix_matches_c_writes_and_stages_the_rom_receipt() {
     let mut state = ZeldaState::new();
     let measured = std::array::from_fn(|row| 0x00ff_u16.wrapping_add(row as u16));
+    let ram_before = state.ram.clone();
 
     state.spotlight_internal_after_table_during_active_rom_field(&measured);
+
+    // zelda3/src/load_gfx.c:SpotlightInternal writes exactly these two RAM
+    // mirrors after IrisSpotlight_ConfigureTable returns. Display-generation
+    // provenance is hardware state and must not manufacture another RAM write.
+    let changed_ram = ram_before
+        .iter()
+        .zip(&state.ram)
+        .enumerate()
+        .filter_map(|(address, (&before, &after))| (before != after).then_some((address, after)))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        changed_ram,
+        vec![
+            (crate::game_state::constants::INIDISP_COPY, 0x0f),
+            (crate::game_state::constants::HDMAEN_COPY, 0x80),
+        ]
+    );
 
     let staged = state
         .spotlight_scanout_after_active_field

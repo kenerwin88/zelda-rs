@@ -74,6 +74,16 @@ half-fix.
 
 ## Hard rules for what lands in the tree
 
+- **Every behavior fix requires a reference-proof regression test.** A test
+  derived only from the candidate Rust implementation is not proof. For
+  synchronous game logic, prefer a differential test against the C function;
+  when linking the C port is impractical, encode a source-exact contract that
+  names the C function and asserts all owned writes, branches, return values,
+  and the absence of extra writes. For CPU/NMI/DMA/HDMA/PPU timing—which the
+  atomic C port cannot represent—derive the test input or receipt from an
+  executable original-ROM run and require the cold live-RNG Snes9x gate. If a
+  change cannot be covered by one of these reference-backed forms, do not land
+  it as a parity fix.
 - **Experiments are disposable; only finished fixes are committed.** Temporary
   `eprintln!`s, env-gated probes, hack branches, and throwaway scripts are fine
   while investigating — but before committing, every one of them is removed
