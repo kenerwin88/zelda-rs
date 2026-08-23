@@ -3677,6 +3677,12 @@ impl ZeldaState {
             self.ppu.window1_right = (terminal >> 8) as u8;
         }
         self.set_screen_brightness(0x80);
+        // C's EnableForceBlank is a semantic request for the next complete
+        // field to be blank; WritePpuRegisters publishes its INIDISP_copy at
+        // the immediately following NMI. Keep that provenance distinct from
+        // other main-thread mirror assignments, such as the iris goal write
+        // after the current field has already begun scanning out.
+        self.active_display_force_blank_event = Some(0);
         self.clear_hdma_enable_mask();
     }
 

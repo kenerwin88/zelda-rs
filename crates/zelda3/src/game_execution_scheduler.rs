@@ -842,6 +842,22 @@ impl GameExecutionScheduler {
         ));
     }
 
+    /// Schedule measured CPU work whose entry occurs after the active field
+    /// has already begun scanning out. Every NMI crossing belongs to a future
+    /// field, so the entry snapshot cannot accept the first crossing's
+    /// register receipt even though the translated call stack is suspended.
+    pub(super) fn schedule_cpu_timed_work_after_active_field_started(
+        &mut self,
+        continuation: GameWorkContinuation,
+        total_nmi_crossings: u8,
+    ) {
+        assert_eq!(self.cpu_host_phase, CpuHostPhase::MainLoopRunning);
+        assert_ne!(total_nmi_crossings, 0);
+        self.schedule_continuation(GameExecutionContinuation::ScheduledWork(
+            ScheduledGameWork::schedule_after_leading_nmi(continuation, total_nmi_crossings),
+        ));
+    }
+
     pub(super) fn schedule_work_before_trailing_nmi(
         &mut self,
         continuation: GameWorkContinuation,

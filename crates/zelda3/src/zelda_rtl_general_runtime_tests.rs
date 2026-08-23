@@ -7488,8 +7488,8 @@ fn explicit_force_blank_event_owns_the_active_display_suffix() {
     // reaches that routine at V=49 on the standard route, so the direct $2100
     // write owns output row 48 onward even though the previously published PPU
     // generation was not blank.
-    assert!(live_forced_blank_for_scanout(false, Some(48), false));
-    assert!(!live_forced_blank_for_scanout(false, Some(48), true));
+    assert!(live_forced_blank_for_scanout(false, None, Some(48), false));
+    assert!(!live_forced_blank_for_scanout(false, None, Some(48), true));
     assert_eq!(
         resolve_active_display_blanking_scanout(false, Some(30), true),
         ActiveDisplayBlankingScanout {
@@ -7504,6 +7504,48 @@ fn explicit_force_blank_event_owns_the_active_display_suffix() {
             retain_prior_surface: true,
         }
     );
+}
+
+#[test]
+fn c_enable_force_blank_requests_the_following_field_from_row_zero() {
+    let mut state = ZeldaState::new();
+
+    // zelda3/src/load_gfx.c:EnableForceBlank assigns INIDISP_copy=$80 for
+    // WritePpuRegisters at the immediately following NMI. This is distinct
+    // from an arbitrary INIDISP_copy assignment made after a field began.
+    state.enable_force_blank();
+
+    assert_eq!(state.active_display_force_blank_event, Some(0));
+    assert!(live_forced_blank_for_scanout(
+        false,
+        None,
+        state.active_display_force_blank_event,
+        false,
+    ));
+}
+
+#[test]
+fn deleted_file_return_blanks_after_the_first_active_scanline() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(3);
+    state.set_submodule(4);
+    state.set_subsubmodule(0);
+    state.clear_select_file_cursor();
+    state.follower_link_state_mut().set_filtered_joypad_h(0x10);
+
+    // zelda3/src/select_file.c:SelectFile_Func16 clears both SRAM copies and
+    // calls ZeldaWriteSram before ReturnToFileSelect. Snes9x reaches that
+    // return at V=58 and the following EnableForceBlank at V=1.
+    state.select_file_func16();
+    assert_eq!(
+        state.pending_file_select_force_blank_output_scanline,
+        Some(1)
+    );
+
+    state.file_select_erase_triforce();
+
+    assert_eq!(state.pending_file_select_force_blank_output_scanline, None);
+    assert_eq!(state.active_display_force_blank_event, Some(1));
 }
 
 #[test]
@@ -7527,6 +7569,7 @@ fn world_map_fade_out_uses_the_preceding_sprite_main_workload() {
     assert_eq!(state.active_display_force_blank_event, Some(48));
     assert!(live_forced_blank_for_scanout(
         state.ppu.forced_blank,
+        None,
         state.active_display_force_blank_event,
         false,
     ));
@@ -9980,11 +10023,94 @@ fn nmi_force_blank_gates_the_pre_nmi_display_snapshot() {
     let mut state = ZeldaState::new();
     state.ppu.forced_blank = false;
     state.capture_display_snapshot();
-    state.ppu.forced_blank = true;
 
+    // zelda3/src/nmi.c:WritePpuRegisters publishes INIDISP_copy through the
+    // leading NMI. The completed register receipt, rather than the unrelated
+    // future live PPU latch, owns this retiring scanout.
+    state.set_screen_brightness(0x80);
+    state.interrupt_nmi_for_active_scanout(0, None, false);
+
+    assert!(state
+        .display_snapshot
+        .as_ref()
+        .and_then(|display| display.effective_presented_dma.as_ref())
+        .and_then(|receipt| receipt.completed_ppu_registers)
+        .is_some_and(|registers| registers.inidisp.forced_blank));
     let captured_forced_blank = state.with_display_snapshot(|display| display.ppu.forced_blank);
 
     assert!(captured_forced_blank);
+    assert!(state.ppu.forced_blank);
+}
+
+#[test]
+fn retained_spotlight_goal_scanout_rejects_the_following_main_force_blank() {
+    let mut state = ZeldaState::new();
+    state.set_screen_brightness(0x0f);
+    state.ppu.brightness = 0x0f;
+    state.ppu.forced_blank = false;
+    state.capture_display_snapshot();
+
+    // zelda3/src/load_gfx.c:IrisSpotlight_ConfigureTable writes
+    // INIDISP_copy=$80 when the closing radius reaches zero. On the standard
+    // route Snes9x enters that goal call at V=21 of internal frame 11,478,
+    // after it has already presented internal frame 11,477. The caller-return
+    // capture therefore retains the visible field; the new live latch belongs
+    // to the following scanout.
+    state.set_screen_brightness(0x80);
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::RetainPublished);
+    state.interrupt_nmi_for_active_scanout(0, None, false);
+
+    assert!(state.ppu.forced_blank);
+    assert!(state
+        .display_snapshot
+        .as_ref()
+        .is_some_and(|display| !display.accepts_nmi_dma_receipts
+            && display.effective_presented_dma.is_none()));
+
+    let presented = state.with_display_snapshot(|display| {
+        (
+            display.ppu.forced_blank,
+            display.ppu.brightness,
+            display.ram[crate::game_state::constants::INIDISP_COPY],
+        )
+    });
+
+    assert_eq!(presented, (false, 0x0f, 0x0f));
+    assert!(state.ppu.forced_blank);
+    assert_eq!(state.ppu.brightness, 0);
+}
+
+#[test]
+fn spotlight_goal_nmi_cannot_attach_to_the_field_that_precedes_its_cpu_work() {
+    let mut state = ZeldaState::new();
+    state.game_execution_scheduler.begin_host_frame();
+    state.game_execution_scheduler.begin_main_loop_iteration();
+    state.set_screen_brightness(0x0f);
+    state.ppu.brightness = 0x0f;
+    state.ppu.forced_blank = false;
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+
+    // zelda3/src/load_gfx.c:IrisSpotlight_ConfigureTable reaches the closing
+    // goal at V=21 in the pinned Snes9x trace. Its INIDISP_copy=$80 assignment
+    // and first NMI crossing therefore occur after this active field began.
+    state.schedule_dungeon_exit_spotlight_goal_caller(SpotlightIteration::closing(
+        SpotlightIterationPhase::WholeTableAfterTablePublication,
+    ));
+    assert!(state
+        .game_execution_scheduler
+        .active_field_precedes_current_scheduled_work());
+    state.set_screen_brightness(0x80);
+    state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::AdvanceStaged);
+    state.interrupt_nmi(0, None, false);
+
+    let published = state.display_snapshot.as_ref().unwrap();
+    assert!(!published.ppu.forced_blank);
+    assert!(published
+        .effective_presented_dma
+        .as_ref()
+        .and_then(|receipt| receipt.completed_ppu_registers)
+        .is_none());
+    assert!(!state.with_display_snapshot(|display| display.ppu.forced_blank));
     assert!(state.ppu.forced_blank);
 }
 

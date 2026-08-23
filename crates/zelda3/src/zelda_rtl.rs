@@ -343,10 +343,13 @@ const fn resolve_active_display_blanking_scanout(
 
 const fn live_forced_blank_for_scanout(
     published_ppu_is_blank: bool,
+    completed_nmi_forced_blank_write: Option<bool>,
     active_display_force_blank_write: Option<u8>,
     staged_scanout_owns_following_generation: bool,
 ) -> bool {
-    (published_ppu_is_blank || active_display_force_blank_write.is_some())
+    (published_ppu_is_blank
+        || matches!(completed_nmi_forced_blank_write, Some(true))
+        || active_display_force_blank_write.is_some())
         && !staged_scanout_owns_following_generation
 }
 
@@ -8974,6 +8977,12 @@ pub struct ZeldaState {
     nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking,
     #[serde(skip)]
     active_display_force_blank_event: Option<u8>,
+    /// Measured raster position of the next FileSelect_EraseTriforce
+    /// EnableForceBlank request when its preceding C caller crossed into the
+    /// active field. This is CPU-workload provenance, not display state, so it
+    /// is consumed exactly once by the following file-select iteration.
+    #[serde(default)]
+    pending_file_select_force_blank_output_scanline: Option<u8>,
     /// Work performed by the most recent `Sprite_Main` call in this host
     /// frame. Consumers use it only through measured raster timing models.
     #[serde(skip)]
@@ -15027,6 +15036,7 @@ impl ZeldaState {
             legacy_nmi_forced_blank_from_scanline_pending: None,
             nmi_active_display_blanking_candidate: NmiActiveDisplayBlanking::default(),
             active_display_force_blank_event: None,
+            pending_file_select_force_blank_output_scanline: None,
             last_sprite_main_timing_workload: None,
             nmi_poly_upload_deferred: 0,
             nmi_poly_upload_started: false,
@@ -15418,10 +15428,15 @@ impl ZeldaState {
         &mut self,
         iteration: SpotlightIteration,
     ) {
-        self.game_execution_scheduler.schedule_work(
-            GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration },
-            DUNGEON_EXIT_SPOTLIGHT_GOAL_CALLER_NMI_SLICES,
-        );
+        // Snes9x enters the C IrisSpotlight_ConfigureTable goal call at V=21.
+        // The active field is already scanning, so the call's first NMI
+        // crossing publishes only a future field even though it suspends the
+        // translated caller stack.
+        self.game_execution_scheduler
+            .schedule_cpu_timed_work_after_active_field_started(
+                GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration },
+                DUNGEON_EXIT_SPOTLIGHT_GOAL_CALLER_NMI_SLICES,
+            );
     }
 
     pub(super) fn begin_pre_overworld_properties_work(
@@ -20301,8 +20316,14 @@ impl ZeldaState {
                 &self.ppu.oam[..4],
             );
         }
+        let completed_nmi_forced_blank_write = display
+            .effective_presented_dma
+            .as_ref()
+            .and_then(|receipt| receipt.completed_ppu_registers)
+            .map(|registers| registers.inidisp.forced_blank);
         let live_forced_blank = live_forced_blank_for_scanout(
-            self.ppu.forced_blank,
+            display.ppu.forced_blank,
+            completed_nmi_forced_blank_write,
             self.active_display_force_blank_event,
             following_staged_scanout_owns_attract_exit_generation,
         );
@@ -20685,12 +20706,16 @@ impl ZeldaState {
     /// `WritePpuRegisters` result belongs to the accepted active snapshot.
     pub(super) fn begin_trailing_nmi_receipts(&mut self) {
         self.begin_effective_presented_dma();
-        let owns_active_scanout = self
+        let active_field_precedes_scheduled_work = self
             .game_execution_scheduler
-            .work_suspends_translated_call_stack()
-            || self
+            .active_field_precedes_current_scheduled_work();
+        let owns_active_scanout = !active_field_precedes_scheduled_work
+            && (self
                 .game_execution_scheduler
-                .main_call_stack_is_suspended_before_nmi();
+                .work_suspends_translated_call_stack()
+                || self
+                    .game_execution_scheduler
+                    .main_call_stack_is_suspended_before_nmi());
         if let Some(writes) = self.active_effective_dma_writes.as_mut() {
             writes.completed_ppu_registers_own_active_scanout = owns_active_scanout;
         }

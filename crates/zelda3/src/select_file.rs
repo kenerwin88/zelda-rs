@@ -198,7 +198,11 @@ impl ZeldaState {
 
     pub(super) fn file_select_erase_triforce(&mut self) {
         self.set_core_update_disable_flag(0x80);
-        self.enable_force_blank();
+        if let Some(scanline) = self.pending_file_select_force_blank_output_scanline.take() {
+            self.enable_force_blank_during_active_scanout(scanline);
+        } else {
+            self.enable_force_blank();
+        }
         self.erase_tile_maps_triforce();
         self.palette_load_for_file_select();
         self.increment_cgram_update_flag();
@@ -561,6 +565,13 @@ impl ZeldaState {
                 self.sram[base..base + 0x500].fill(0);
                 self.sram[base + 0x0f00..base + 0x1400].fill(0);
                 self.zelda_write_sram();
+                // C's SelectFile_Func16 performs both 0x500-byte clears and
+                // ZeldaWriteSram before ReturnToFileSelect. The pinned Snes9x
+                // trace enters KILLFile_HandleConfirmation at V=1, reaches
+                // ReturnToFileSelect at V=58, and reaches the following
+                // EnableForceBlank at V=1. Preserve that measured workload so
+                // output row 0 retires before the blank request takes effect.
+                self.pending_file_select_force_blank_output_scanline = Some(1);
             }
             self.return_to_file_select();
             self.set_subsubmodule(0);
