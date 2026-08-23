@@ -1454,13 +1454,7 @@ fn publication_plan_keeps_memory_domains_independent() {
     snapshot.animated_bg_scanout_generation = AnimatedBgScanoutGeneration::HostBoundaryBeforeNmi;
     snapshot.bg_scroll_generation = DisplayBgScrollGeneration::RetainCapturedBeforeNmi;
 
-    let plan = DisplayPublicationPlan::resolve(
-        &snapshot,
-        DisplayPublicationSignals {
-            publish_live_overworld_transition_half_color: true,
-            ..DisplayPublicationSignals::default()
-        },
-    );
+    let plan = DisplayPublicationPlan::resolve(&snapshot, DisplayPublicationSignals::default());
 
     assert_eq!(
         plan.vram_generation,
@@ -1483,7 +1477,6 @@ fn publication_plan_keeps_memory_domains_independent() {
         plan.bg_scroll_source,
         DisplayedBgScrollSource::CapturedBeforeNmi
     );
-    assert!(plan.publish_live_overworld_transition_half_color);
 }
 
 #[test]
@@ -1605,9 +1598,7 @@ fn explicit_obj_cache_owner_is_not_replaced_by_a_bulk_nmi_receipt() {
         completed_oam: None,
         completed_link_obj_dma: None,
         completed_cgram: None,
-        completed_bg_scroll: None,
-        completed_color_math: None,
-        completed_inidisp: None,
+        completed_ppu_registers: None,
         completed_dialogue_metadata: None,
     });
     state.last_presented_obj_vram = Some(vec![0x3333; state.ppu.vram.len()]);
@@ -1742,7 +1733,7 @@ fn trailing_animated_bg_dma_refines_only_an_already_staged_following_scanout() {
     state.begin_effective_presented_dma();
     state.ppu.vram[DESTINATION] = 0x2222;
     state.mark_effective_dma_vram_word(DESTINATION);
-    state.record_trailing_nmi_decoded_bg_dma_receipt();
+    state.record_trailing_nmi_receipts();
 
     assert!(state
         .display_snapshot
@@ -1793,6 +1784,13 @@ fn effective_presented_ppu_registers_use_the_values_installed_by_the_leading_nmi
     state.ppu.screen_windowed = [0x04, 0x08];
     state.ppu.brightness = 0x0f;
     state.ppu.forced_blank = false;
+    state.ppu.mode = 7;
+    state.ppu.mosaic_enabled = 0x03;
+    state.ppu.mosaic_size = 5;
+    state.ppu.m7_matrix = [1, 2, 3, 4, 5, 6, 7, 8];
+    for (index, layer) in state.ppu.bg_layer.iter_mut().enumerate() {
+        layer.tile_adr = 0x1000 * index as u16;
+    }
     state.record_completed_ppu_registers_for_display_boundary();
     state.record_effective_presented_dma_for_active_scanout();
 
@@ -1803,12 +1801,17 @@ fn effective_presented_ppu_registers_use_the_values_installed_by_the_leading_nmi
     state.ppu.screen_windowed = [0xff, 0xff];
     state.ppu.brightness = 0;
     state.ppu.forced_blank = true;
+    state.ppu.mode = 1;
+    state.ppu.mosaic_enabled = 0;
+    state.ppu.mosaic_size = 1;
+    state.ppu.m7_matrix = [0; 8];
+    for layer in &mut state.ppu.bg_layer {
+        layer.tile_adr = 0x7000;
+    }
     state.ppu.forced_blank_scanlines = 10;
     state.ppu.forced_blank_from_scanline = Some(10);
     state.ppu.retain_active_display_history = true;
-    state.compose_effective_presented_color_math(&active);
-    state.compose_effective_presented_bg_scroll(&active);
-    state.compose_effective_presented_inidisp(&active);
+    state.compose_effective_presented_ppu_registers(&active);
 
     assert_eq!(state.ppu.bg_layer[0].h_scroll, 0x0123);
     assert_eq!(state.ppu.bg_layer[1].h_scroll, 0x0456);
@@ -1816,9 +1819,75 @@ fn effective_presented_ppu_registers_use_the_values_installed_by_the_leading_nmi
     assert_eq!(state.ppu.screen_windowed, [0x04, 0x08]);
     assert_eq!(state.ppu.brightness, 0x0f);
     assert!(!state.ppu.forced_blank);
+    assert_eq!(state.ppu.mode, 7);
+    assert_eq!(state.ppu.mosaic_enabled, 0x03);
+    assert_eq!(state.ppu.mosaic_size, 5);
+    assert_eq!(state.ppu.m7_matrix, [1, 2, 3, 4, 5, 6, 7, 8]);
+    let tile_addresses: [u16; 4] = std::array::from_fn(|index| state.ppu.bg_layer[index].tile_adr);
+    assert_eq!(tile_addresses, [0x0000, 0x1000, 0x2000, 0x3000]);
     assert_eq!(state.ppu.forced_blank_scanlines, 0);
     assert_eq!(state.ppu.forced_blank_from_scanline, None);
     assert!(!state.ppu.retain_active_display_history);
+}
+
+#[test]
+fn c_write_ppu_registers_trailing_receipt_publishes_rain_half_color_without_a_route_rule() {
+    let mut state = ZeldaState::new();
+    state.ppu.half_color = false;
+    state.ppu.math_enabled = 0x32;
+    state.capture_display_snapshot();
+
+    // C sources:
+    // - `src/overworld.c::OverworldOverlay_HandleRain` writes
+    //   `CGADSUB_copy = 0x72` when frame_counter is 44.
+    // - `src/nmi.c::WritePpuRegisters` writes that mirror to CGADSUB as part
+    //   of the following coupled register publication.
+    state.set_color_math_control(0x72);
+    state.begin_effective_presented_dma();
+    state
+        .active_effective_dma_writes
+        .as_mut()
+        .unwrap()
+        .completed_ppu_registers_own_active_scanout = true;
+    state.write_ppu_registers();
+    state.record_trailing_nmi_receipts();
+
+    let active = state.display_snapshot.as_deref().unwrap().clone();
+    let registers = active
+        .effective_presented_dma
+        .as_ref()
+        .and_then(|receipt| receipt.completed_ppu_registers)
+        .expect("the accepted trailing NMI must retain its completed register write");
+    assert!(registers.color_math.half_color);
+    assert_eq!(registers.color_math.math_enabled, 0x32);
+
+    state.ppu.half_color = false;
+    state.ppu.math_enabled = 0;
+    state.compose_effective_presented_ppu_registers(&active);
+    assert!(state.ppu.half_color);
+    assert_eq!(state.ppu.math_enabled, 0x32);
+}
+
+#[test]
+fn completed_main_trailing_nmi_does_not_rewrite_the_active_scanout() {
+    let mut state = ZeldaState::new();
+    state.ppu.brightness = 15;
+    state.capture_display_snapshot();
+
+    // An ordinary atomic main slice has returned before this synthetic
+    // trailing NMI. Its register writes are resident for the next capture,
+    // unlike the interrupted-C-call boundary covered above.
+    state.game_state.display.screen_brightness = 14;
+    state.begin_effective_presented_dma();
+    state.write_ppu_registers();
+    state.record_trailing_nmi_receipts();
+
+    assert!(state
+        .display_snapshot
+        .as_ref()
+        .unwrap()
+        .effective_presented_dma
+        .is_none());
 }
 
 #[test]

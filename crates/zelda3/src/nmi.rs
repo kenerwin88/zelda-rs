@@ -297,9 +297,9 @@ impl ZeldaState {
         // Ordinary NMI writes cannot re-enter the active field, but an
         // AdvanceStaged publication may already have materialized the next
         // field. Record exact destinations so that staged owner can be refined.
-        let records_trailing_decoded_bg_cache = self.active_effective_dma_writes.is_none();
-        if records_trailing_decoded_bg_cache {
-            self.begin_effective_presented_dma();
+        let records_trailing_nmi_receipts = self.active_effective_dma_writes.is_none();
+        if records_trailing_nmi_receipts {
+            self.begin_trailing_nmi_receipts();
         }
         // CPU continuation timing must observe the same pre-NMI RAM, latch,
         // DMA, and raster generation as the real handler. Capture centrally
@@ -434,23 +434,12 @@ impl ZeldaState {
                 }
             }
         }
-        // The real NMI checks $012A (the interruptible-thread flag) right
-        // before the register-mirror publication and, when the thread is
-        // active, jumps straight to the epilogue: no $2123..$2132, TM/TS,
-        // scroll, mode, or INIDISP writes happen that vblank, so the PPU keeps
-        // last frame's register state. The attract history scene runs its
-        // text-writer thread across many frames and relies on this (its
-        // CGWSEL/COLDATA setup only reaches the PPU on thread-idle vblanks).
-        // The intro (module 0) poly thread is emulated in coarse slices, so
-        // our flag overstates the real at-vblank thread activity there; the
-        // dedicated poly timing machinery covers that module instead.
-        //
-        // Fast-forward dialogue slices are the same interrupted Module $0e
-        // thread even though the coarse native scheduler does not keep $012a
-        // asserted through every host-frame slice. Preserve the live PPU
-        // generation until that thread returns. The final-copy boundary's
-        // independently visible color-composition registers are published to
-        // its immutable display snapshot by run_frame_internal.
+        // The atomic C frontend calls `WritePpuRegisters` unconditionally, but
+        // it cannot represent an NMI taken while the original 65816 dialogue
+        // or attract call stack is still executing. The original-ROM/Snes9x
+        // frame-5377 receipt keeps the preceding coupled register generation
+        // at that boundary. Hold the whole set; never publish color math,
+        // scroll, mode, or brightness independently.
         let main_module = self.game_state.frame.main_module;
         let dialogue_scroll_holds_registers = self.dialogue_scroll_holds_nmi_registers();
         let thread_holds_registers = (main_module == 0x14
@@ -502,8 +491,8 @@ impl ZeldaState {
             );
         }
         self.debug_obj_pipe("nmi_exit", &self.ppu.vram[0x4000..0x4400]);
-        if records_trailing_decoded_bg_cache {
-            self.record_trailing_nmi_decoded_bg_dma_receipt();
+        if records_trailing_nmi_receipts {
+            self.record_trailing_nmi_receipts();
         }
         self.close_display_boundary_dma_receipts();
     }

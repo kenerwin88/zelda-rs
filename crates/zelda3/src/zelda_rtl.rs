@@ -2002,28 +2002,6 @@ const fn rom_spiral_stairs_suspended_animated_bg_source_address(
     }
 }
 
-const fn rom_overworld_transition_half_color_is_live(
-    snapshot_main_module: u8,
-    snapshot_submodule: u8,
-    live_main_module: u8,
-    live_submodule: u8,
-    snapshot_half_color: bool,
-    live_half_color: bool,
-) -> bool {
-    // On the rainy screen-$2b transition, instrumented Snes9x records
-    // WritePpuRegisters changing CGADSUB from $72 to $32 at V=257. The active
-    // scanout therefore uses the post-NMI half-color bit even though its VRAM
-    // and remaining controls retain their existing publication cadence.
-    snapshot_main_module == 9
-        && live_main_module == 9
-        && live_submodule == 3
-        // Depending on whether capture owns the interrupted ROM call or its
-        // returned caller, the immutable CPU generation is either the
-        // preceding transition step or submodule 3 itself.
-        && matches!(snapshot_submodule, 2 | 3)
-        && snapshot_half_color != live_half_color
-}
-
 const fn rom_display_snapshot_publication(
     main_module: u8,
     submodule: u8,
@@ -7839,7 +7817,6 @@ struct DisplayPublicationSignals {
     module_oam_publication_is_deferred: bool,
     dungeon_exit_crosses_nmi_boundary: bool,
     publish_live_overworld_bad_weather_scroll: bool,
-    publish_live_overworld_transition_half_color: bool,
     attract_map_retains_display_memory: bool,
     world_map_fade_display: bool,
     world_map_mode7_brightness_is_early_published: bool,
@@ -7899,7 +7876,6 @@ struct DisplayPublicationPlan {
     link_obj_source_generation: GraphicsDmaGeneration,
     animated_bg_scanout_generation: AnimatedBgScanoutGeneration,
     bg_scroll_source: DisplayedBgScrollSource,
-    publish_live_overworld_transition_half_color: bool,
     world_map_fade_display: bool,
     world_map_mode7_brightness_is_early_published: bool,
     publish_live_screen_layers: bool,
@@ -8025,8 +8001,6 @@ impl DisplayPublicationPlan {
                     signals.attract_map_retains_display_memory,
                 )
             },
-            publish_live_overworld_transition_half_color: signals
-                .publish_live_overworld_transition_half_color,
             world_map_fade_display: signals.world_map_fade_display,
             world_map_mode7_brightness_is_early_published: signals
                 .world_map_mode7_brightness_is_early_published,
@@ -8434,14 +8408,58 @@ impl InidispRegisterScanout {
     }
 }
 
+/// Coupled hardware generation installed by C `WritePpuRegisters`.
+///
+/// This is intentionally one receipt rather than independent predictions for
+/// color math, scroll, brightness, mode, mosaic, Mode 7, and BG character
+/// bases: the C NMI writes all of those registers in one ordered routine, and
+/// a display boundary either observes that completed routine or it does not.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct NmiPpuRegisterScanout {
+    color_math: ColorMathRegisterScanout,
+    bg_scroll: BgScrollRegisterScanout,
+    inidisp: InidispRegisterScanout,
+    mode: u8,
+    mosaic_enabled: u8,
+    mosaic_size: u8,
+    mode7_matrix: [i16; 8],
+    bg_tile_addresses: [u16; 4],
+}
+
+impl NmiPpuRegisterScanout {
+    fn capture(ppu: &PpuState) -> Self {
+        Self {
+            color_math: ColorMathRegisterScanout::capture(ppu),
+            bg_scroll: BgScrollRegisterScanout::capture(ppu),
+            inidisp: InidispRegisterScanout::capture(ppu),
+            mode: ppu.mode,
+            mosaic_enabled: ppu.mosaic_enabled,
+            mosaic_size: ppu.mosaic_size,
+            mode7_matrix: ppu.m7_matrix,
+            bg_tile_addresses: std::array::from_fn(|index| ppu.bg_layer[index].tile_adr),
+        }
+    }
+
+    fn publish_to(self, ppu: &mut PpuState) {
+        self.color_math.publish_to(ppu);
+        self.bg_scroll.publish_to(ppu);
+        self.inidisp.publish_to(ppu);
+        ppu.mode = self.mode;
+        ppu.mosaic_enabled = self.mosaic_enabled;
+        ppu.mosaic_size = self.mosaic_size;
+        ppu.m7_matrix = self.mode7_matrix;
+        for (layer, tile_address) in ppu.bg_layer.iter_mut().zip(self.bg_tile_addresses) {
+            layer.tile_adr = tile_address;
+        }
+    }
+}
+
 #[derive(Clone)]
 struct InterruptedDungeonSubmodulePublication {
     retiring_pre_spotlight_scanout: Option<LiveSpotlightScanout>,
     oam_scanout_source: OamScanoutSource,
     obj_cache_generation: DisplayObjCacheGeneration,
-    bg_scroll: BgScrollRegisterScanout,
-    color_math: ColorMathRegisterScanout,
-    inidisp: InidispRegisterScanout,
+    ppu_registers: NmiPpuRegisterScanout,
     spotlight: Option<LiveSpotlightScanout>,
     provenance: &'static core::panic::Location<'static>,
 }
@@ -9077,13 +9095,12 @@ impl PolyWorkMetrics {
 #[derive(Clone)]
 struct EffectiveDmaWriteSet {
     active_snapshot_accepts_receipt: bool,
+    completed_ppu_registers_own_active_scanout: bool,
     vram_words: Vec<bool>,
     completed_oam: Option<Vec<u16>>,
     completed_link_obj_dma: Option<CompletedLinkObjDma>,
     completed_cgram: Option<Vec<u16>>,
-    completed_bg_scroll: Option<BgScrollRegisterScanout>,
-    completed_color_math: Option<ColorMathRegisterScanout>,
-    completed_inidisp: Option<InidispRegisterScanout>,
+    completed_ppu_registers: Option<NmiPpuRegisterScanout>,
     completed_dialogue_metadata: Option<PublishedDialogueMetadata>,
 }
 
@@ -9091,13 +9108,12 @@ impl EffectiveDmaWriteSet {
     fn new(vram_words: usize, active_snapshot_accepts_receipt: bool) -> Self {
         Self {
             active_snapshot_accepts_receipt,
+            completed_ppu_registers_own_active_scanout: false,
             vram_words: vec![false; vram_words],
             completed_oam: None,
             completed_link_obj_dma: None,
             completed_cgram: None,
-            completed_bg_scroll: None,
-            completed_color_math: None,
-            completed_inidisp: None,
+            completed_ppu_registers: None,
             completed_dialogue_metadata: None,
         }
     }
@@ -9118,9 +9134,7 @@ struct EffectivePresentedDma {
     completed_oam: Option<Vec<u16>>,
     completed_link_obj_dma: Option<CompletedLinkObjDma>,
     completed_cgram: Option<Vec<u16>>,
-    completed_bg_scroll: Option<BgScrollRegisterScanout>,
-    completed_color_math: Option<ColorMathRegisterScanout>,
-    completed_inidisp: Option<InidispRegisterScanout>,
+    completed_ppu_registers: Option<NmiPpuRegisterScanout>,
     completed_dialogue_metadata: Option<PublishedDialogueMetadata>,
 }
 
@@ -9134,9 +9148,19 @@ impl EffectivePresentedDma {
             completed_oam: None,
             completed_link_obj_dma: None,
             completed_cgram: None,
-            completed_bg_scroll: None,
-            completed_color_math: None,
-            completed_inidisp: None,
+            completed_ppu_registers: None,
+            completed_dialogue_metadata: None,
+        }
+    }
+
+    fn ppu_registers_only(registers: NmiPpuRegisterScanout) -> Self {
+        Self {
+            vram_writes: Vec::new(),
+            decoded_bg_vram_writes: Vec::new(),
+            completed_oam: None,
+            completed_link_obj_dma: None,
+            completed_cgram: None,
+            completed_ppu_registers: Some(registers),
             completed_dialogue_metadata: None,
         }
     }
@@ -9153,9 +9177,7 @@ impl EffectivePresentedDma {
             completed_oam: writes.completed_oam,
             completed_link_obj_dma: writes.completed_link_obj_dma,
             completed_cgram: writes.completed_cgram,
-            completed_bg_scroll: writes.completed_bg_scroll,
-            completed_color_math: writes.completed_color_math,
-            completed_inidisp: writes.completed_inidisp,
+            completed_ppu_registers: writes.completed_ppu_registers,
             completed_dialogue_metadata: writes.completed_dialogue_metadata,
         }
     }
@@ -9184,14 +9206,8 @@ impl EffectivePresentedDma {
         if later.completed_cgram.is_some() {
             self.completed_cgram = later.completed_cgram;
         }
-        if later.completed_bg_scroll.is_some() {
-            self.completed_bg_scroll = later.completed_bg_scroll;
-        }
-        if later.completed_color_math.is_some() {
-            self.completed_color_math = later.completed_color_math;
-        }
-        if later.completed_inidisp.is_some() {
-            self.completed_inidisp = later.completed_inidisp;
+        if later.completed_ppu_registers.is_some() {
+            self.completed_ppu_registers = later.completed_ppu_registers;
         }
         if later.completed_dialogue_metadata.is_some() {
             self.completed_dialogue_metadata = later.completed_dialogue_metadata;
@@ -16128,15 +16144,15 @@ impl ZeldaState {
         self.dialogue_scroll_phase() == DialogueScrollPhase::ReturnOnly
     }
 
-    fn dialogue_scroll_is_completion_pending_publication(&self) -> bool {
-        self.dialogue_scroll_phase() == DialogueScrollPhase::CompletionPendingPublication
-    }
-
     pub(crate) fn dialogue_scroll_holds_nmi_registers(&self) -> bool {
         matches!(
             self.dialogue_scroll_phase(),
             DialogueScrollPhase::CopyingRemainingPixels { .. } | DialogueScrollPhase::ReturnOnly
         )
+    }
+
+    fn dialogue_scroll_is_completion_pending_publication(&self) -> bool {
+        self.dialogue_scroll_phase() == DialogueScrollPhase::CompletionPendingPublication
     }
 
     fn schedule_pre_main_caller_continuation(&mut self, continuation: PreMainCallerContinuation) {
@@ -16246,55 +16262,6 @@ impl ZeldaState {
             .then(|| self.dialogue_text_scanout_from_render_buffer());
         self.dialogue_scroll_machine_mut()
             .advance_display_boundary(retiring_text_dma);
-    }
-
-    fn color_math_scanout_from_nmi_register_mirrors(&self) -> ColorMathRegisterScanout {
-        let color_window = self
-            .game_state
-            .display
-            .palette_filter
-            .color_window_selection();
-        let color_math = self.game_state.display.palette_filter.color_math_control();
-        let mut fixed_color = [
-            self.ppu.fixed_color_r,
-            self.ppu.fixed_color_g,
-            self.ppu.fixed_color_b,
-        ];
-        for value in [
-            self.game_state.display.palette_filter.fixed_color_red(),
-            self.game_state.display.palette_filter.fixed_color_green(),
-            self.game_state.display.palette_filter.fixed_color_blue(),
-        ] {
-            if value & 0x20 != 0 {
-                fixed_color[0] = value & 0x1f;
-            }
-            if value & 0x40 != 0 {
-                fixed_color[1] = value & 0x1f;
-            }
-            if value & 0x80 != 0 {
-                fixed_color[2] = value & 0x1f;
-            }
-        }
-        ColorMathRegisterScanout {
-            windowsel: u32::from(self.game_state.display.bg12_window_selection)
-                | (u32::from(self.game_state.display.bg34_window_selection) << 8)
-                | (u32::from(self.game_state.display.object_color_window_selection) << 16),
-            clip_mode: (color_window & 0xc0) >> 6,
-            prevent_math_mode: (color_window & 0x30) >> 4,
-            add_subscreen: color_window & 0x02 != 0,
-            subtract_color: color_math & 0x80 != 0,
-            half_color: color_math & 0x40 != 0,
-            math_enabled: color_math & 0x3f,
-            fixed_color,
-            screen_enabled: [
-                self.game_state.display.main_screen_layers,
-                self.game_state.display.sub_screen_layers,
-            ],
-            screen_windowed: [
-                self.game_state.display.main_screen_window_layers,
-                self.game_state.display.sub_screen_window_layers,
-            ],
-        }
     }
 
     fn bg_scroll_scanout_from_nmi_register_mirrors(&self) -> BgScrollRegisterScanout {
@@ -16723,9 +16690,7 @@ impl ZeldaState {
                 retiring_pre_spotlight_scanout,
                 oam_scanout_source,
                 obj_cache_generation,
-                bg_scroll: BgScrollRegisterScanout::capture(&self.ppu),
-                color_math: ColorMathRegisterScanout::capture(&self.ppu),
-                inidisp: InidispRegisterScanout::capture(&self.ppu),
+                ppu_registers: NmiPpuRegisterScanout::capture(&self.ppu),
                 spotlight,
                 provenance: core::panic::Location::caller(),
             });
@@ -16765,9 +16730,7 @@ impl ZeldaState {
                 completed_oam: None,
                 completed_link_obj_dma: None,
                 completed_cgram: None,
-                completed_bg_scroll: None,
-                completed_color_math: None,
-                completed_inidisp: None,
+                completed_ppu_registers: None,
                 completed_dialogue_metadata: None,
             });
         if !observed_full_nmi_owns_obj_memory {
@@ -16777,9 +16740,7 @@ impl ZeldaState {
             receipt.completed_oam = None;
             receipt.completed_link_obj_dma = None;
         }
-        receipt.completed_bg_scroll = Some(pending.bg_scroll);
-        receipt.completed_color_math = Some(pending.color_math);
-        receipt.completed_inidisp = Some(pending.inidisp);
+        receipt.completed_ppu_registers = Some(pending.ppu_registers);
 
         active.vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
         active.hud_vram_generation = DisplayVramGeneration::RetainCapturedBeforeNmi;
@@ -17419,9 +17380,6 @@ impl ZeldaState {
             || plan.publish_live_dungeon_state_13_palette_and_registers
         {
             self.ppu.screen_enabled = following.ppu.screen_enabled;
-        }
-        if plan.publish_live_overworld_transition_half_color {
-            self.ppu.half_color = following.ppu.half_color;
         }
     }
 
@@ -20156,15 +20114,6 @@ impl ZeldaState {
             self.ppu.bg_layer[1].h_scroll,
             self.ppu.bg_layer[1].v_scroll,
         );
-        let publish_live_overworld_transition_half_color =
-            rom_overworld_transition_half_color_is_live(
-                snapshot_frame.main_module,
-                snapshot_frame.submodule,
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule,
-                display.ppu.half_color,
-                self.ppu.half_color,
-            );
         let spiral_stair_return_publication_is_active =
             self.spiral_stair_return_oam_publication_host_frame == Some(self.frame_ctr_dbg)
                 && self.game_state.world.location.dungeon_room_index() == 1
@@ -20175,7 +20124,6 @@ impl ZeldaState {
             module_oam_publication_is_deferred,
             dungeon_exit_crosses_nmi_boundary,
             publish_live_overworld_bad_weather_scroll,
-            publish_live_overworld_transition_half_color,
             attract_map_retains_display_memory: retain_previous_nmi_display_memory
                 && snapshot_frame.main_module == 20
                 && snapshot_frame.submodule == 0,
@@ -20379,8 +20327,7 @@ impl ZeldaState {
             &mut display.vram_chr_preview_source,
         );
         self.compose_display_registers(&display, &publication_plan);
-        self.compose_effective_presented_color_math(&display);
-        self.compose_effective_presented_bg_scroll(&display);
+        self.compose_effective_presented_ppu_registers(&display);
         let previous_dialogue_scanout = self.displayed_dialogue_scanout();
         if diagnostics.scroll_retain && self.dialogue_scroll_phase() != DialogueScrollPhase::Idle {
             let dialogue_scroll_phase = self.dialogue_scroll_phase();
@@ -20541,7 +20488,6 @@ impl ZeldaState {
             captured_screen_brightness,
             &publication_plan,
         );
-        self.compose_effective_presented_inidisp(&display);
         if display.game_over_iris_goal_scanout_closed {
             // A terminal iris can publish brightness zero before the captured
             // CPU generation advances. Game Over closes the active field
@@ -20631,8 +20577,8 @@ impl ZeldaState {
                 pristine_snapshot
                     .effective_presented_dma
                     .as_ref()
-                    .and_then(|receipt| receipt.completed_color_math)
-                    .map(|registers| registers.screen_enabled),
+                    .and_then(|receipt| receipt.completed_ppu_registers)
+                    .map(|registers| registers.color_math.screen_enabled),
                 pristine_snapshot
                     .effective_presented_dma
                     .as_ref()
@@ -20717,6 +20663,26 @@ impl ZeldaState {
             self.ppu.vram.len(),
             active_snapshot_accepts_receipt,
         ));
+    }
+
+    /// Open the write scope for an ordinary Rust trailing-NMI call.
+    ///
+    /// Most atomic main iterations have already completed; their appended NMI
+    /// is the next hardware field and must not rewrite the immutable scanout.
+    /// When the original 65816 call stack is suspended across NMI, however,
+    /// that boundary occurred inside the current host slice and its completed
+    /// `WritePpuRegisters` result belongs to the accepted active snapshot.
+    pub(super) fn begin_trailing_nmi_receipts(&mut self) {
+        self.begin_effective_presented_dma();
+        let owns_active_scanout = self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+            || self
+                .game_execution_scheduler
+                .main_call_stack_is_suspended_before_nmi();
+        if let Some(writes) = self.active_effective_dma_writes.as_mut() {
+            writes.completed_ppu_registers_own_active_scanout = owns_active_scanout;
+        }
     }
 
     pub(super) fn mark_effective_dma_vram_word(&mut self, index: usize) {
@@ -20841,10 +20807,37 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn record_trailing_nmi_decoded_bg_dma_receipt(&mut self) {
+    pub(super) fn record_trailing_nmi_receipts(&mut self) {
         let Some(writes) = self.active_effective_dma_writes.take() else {
             return;
         };
+        let active_snapshot_accepts_receipt = writes.active_snapshot_accepts_receipt;
+        let completed_ppu_registers_own_active_scanout =
+            writes.completed_ppu_registers_own_active_scanout;
+        let mut receipt = EffectivePresentedDma::from_write_set(writes, self);
+
+        // C `Interrupt_NMI` calls `WritePpuRegisters` after the optional DMA
+        // work on every register-publishing vblank. A translated call may be
+        // suspended across that boundary, so its immutable display snapshot
+        // cannot rely on a later host capture to discover the completed PPU
+        // generation. Attach the observed coupled register result to the
+        // snapshot that explicitly accepted this NMI; no module, room, or
+        // frame identity participates in the decision.
+        if let Some(registers) = receipt.completed_ppu_registers.take() {
+            if active_snapshot_accepts_receipt && completed_ppu_registers_own_active_scanout {
+                let active = self
+                    .display_snapshot
+                    .as_mut()
+                    .expect("trailing NMI register receipt requires an active display snapshot");
+                let register_receipt = EffectivePresentedDma::ppu_registers_only(registers);
+                if let Some(existing) = active.effective_presented_dma.as_mut() {
+                    existing.merge_after(register_receipt);
+                } else {
+                    active.effective_presented_dma = Some(register_receipt);
+                }
+            }
+        }
+
         let accepts_decoded_bg_receipt = |snapshot: &DisplaySnapshot| {
             snapshot.accepts_nmi_dma_receipts
                 && snapshot.animated_bg_scanout_generation
@@ -20865,7 +20858,6 @@ impl ZeldaState {
             .game_state
             .display
             .animated_tile_vram_destination_usize();
-        let mut receipt = EffectivePresentedDma::from_write_set(writes, self);
         receipt.completed_link_obj_dma = None;
         receipt.decoded_bg_vram_writes =
             receipt.take_vram_range(destination..destination.saturating_add(0x200));
@@ -20875,9 +20867,7 @@ impl ZeldaState {
         receipt.vram_writes.clear();
         receipt.completed_oam = None;
         receipt.completed_cgram = None;
-        receipt.completed_bg_scroll = None;
-        receipt.completed_color_math = None;
-        receipt.completed_inidisp = None;
+        receipt.completed_ppu_registers = None;
         receipt.completed_dialogue_metadata = None;
         let scanout = self
             .deferred_display_snapshot
@@ -20907,50 +20897,19 @@ impl ZeldaState {
         self.ppu.cgram.clone_from_slice(completed_cgram);
     }
 
-    fn compose_effective_presented_bg_scroll(&mut self, following: &DisplaySnapshot) {
-        let Some(completed_bg_scroll) = following
+    fn compose_effective_presented_ppu_registers(&mut self, following: &DisplaySnapshot) {
+        let Some(completed_registers) = following
             .effective_presented_dma
             .as_ref()
-            .and_then(|receipt| receipt.completed_bg_scroll)
+            .and_then(|receipt| receipt.completed_ppu_registers)
         else {
             return;
         };
 
-        // The explicit leading NMI writes the scroll mirrors into the PPU
-        // before active scanout. Preserve the exact latched register result;
-        // selecting a later live PPU would also admit post-boundary work.
-        completed_bg_scroll.publish_to(&mut self.ppu);
-    }
-
-    fn compose_effective_presented_color_math(&mut self, following: &DisplaySnapshot) {
-        let Some(completed_color_math) = following
-            .effective_presented_dma
-            .as_ref()
-            .and_then(|receipt| receipt.completed_color_math)
-        else {
-            return;
-        };
-
-        // `write_ppu_registers` installs this coupled window, color-math, and
-        // screen-layer generation during the explicit leading NMI. Apply the
-        // observed register result after snapshot-level predictions, just as
-        // the independently latched scroll registers are applied below.
-        completed_color_math.publish_to(&mut self.ppu);
-    }
-
-    fn compose_effective_presented_inidisp(&mut self, following: &DisplaySnapshot) {
-        let Some(completed_inidisp) = following
-            .effective_presented_dma
-            .as_ref()
-            .and_then(|receipt| receipt.completed_inidisp)
-        else {
-            return;
-        };
-
-        // WritePpuRegisters runs on every NMI, even while the software update
-        // latch suppresses NMI_DoUpdates. Its INIDISP write therefore advances
-        // independently from OAM, CGRAM, and VRAM DMA.
-        completed_inidisp.publish_to(&mut self.ppu);
+        // This is the exact post-WritePpuRegisters hardware generation. Apply
+        // it after snapshot-level composition so later live state cannot leak
+        // across the boundary and individual register domains cannot split.
+        completed_registers.publish_to(&mut self.ppu);
     }
 
     fn compose_effective_presented_vram(&mut self, following: &DisplaySnapshot) {
@@ -21153,9 +21112,7 @@ impl ZeldaState {
 
     pub(super) fn record_completed_ppu_registers_for_display_boundary(&mut self) {
         if let Some(writes) = self.active_effective_dma_writes.as_mut() {
-            writes.completed_bg_scroll = Some(BgScrollRegisterScanout::capture(&self.ppu));
-            writes.completed_color_math = Some(ColorMathRegisterScanout::capture(&self.ppu));
-            writes.completed_inidisp = Some(InidispRegisterScanout::capture(&self.ppu));
+            writes.completed_ppu_registers = Some(NmiPpuRegisterScanout::capture(&self.ppu));
         }
     }
 
@@ -24445,8 +24402,6 @@ impl ZeldaState {
             graphics_dma_plan.animated_bg_operands = GraphicsDmaGeneration::LiveAfterMain;
             self.nmi_core_animated_bg_update(graphics_dma_plan);
         }
-        let dialogue_scroll_finished_copy =
-            self.rom_startup_timing() && self.dialogue_scroll_is_return_only();
         let publication_override = self
             .game_execution_scheduler
             .in_flight_display_publication();
@@ -24564,17 +24519,6 @@ impl ZeldaState {
             // consumed the pending update. The final pass remains scheduled
             // and releases the same latch in its dedicated continuation.
             self.clear_nmi_update_latch();
-        }
-        if dialogue_scroll_finished_copy {
-            // The final copy slice reaches vblank before the RenderText caller
-            // suffix. The ROM NMI always publishes $2123..$2132 even while
-            // $12 keeps DMA work gated, and Snes9x exposes that color-composition
-            // generation in this scanout. Keep BG scroll and display memory on
-            // their independently measured generations.
-            let color_math_scanout = self.color_math_scanout_from_nmi_register_mirrors();
-            if let Some(snapshot) = self.display_snapshot.as_mut() {
-                color_math_scanout.publish_to(&mut snapshot.ppu);
-            }
         }
         self.replay_trace_col("after-nmi");
         self.replay_trace_ram_watch("after-nmi");

@@ -5603,9 +5603,7 @@ fn dungeon_exit_crossing_publishes_the_completed_oam_dma_receipt() {
         completed_oam: Some(vec![0x6666; state.ppu.oam.len()]),
         completed_link_obj_dma: None,
         completed_cgram: None,
-        completed_bg_scroll: None,
-        completed_color_math: None,
-        completed_inidisp: None,
+        completed_ppu_registers: None,
         completed_dialogue_metadata: None,
     });
     let presented = state.with_display_snapshot(|display| display.ppu.oam[0]);
@@ -8061,22 +8059,37 @@ fn overworld_reload_scanout_keeps_prepublished_rain_out_of_its_bg1_generation() 
 }
 
 #[test]
-fn overworld_transition_publishes_the_nmi_written_half_color_bit() {
-    assert!(rom_overworld_transition_half_color_is_live(
-        9, 3, 9, 3, true, false,
-    ));
-    assert!(!rom_overworld_transition_half_color_is_live(
-        9, 3, 9, 3, false, false,
-    ));
-    assert!(rom_overworld_transition_half_color_is_live(
-        9, 2, 9, 3, true, false,
-    ));
-    assert!(!rom_overworld_transition_half_color_is_live(
-        9, 1, 9, 3, true, false,
-    ));
-    assert!(!rom_overworld_transition_half_color_is_live(
-        9, 2, 9, 2, true, false,
-    ));
+fn c_overworld_handle_rain_color_math_branches_are_source_exact() {
+    // C `src/overworld.c::OverworldOverlay_HandleRain` has exactly these
+    // color-math branches: 3/88 -> $32, 5/44/90 -> $72, 36 -> SFX $36 and
+    // $32, with every other frame leaving both values alone.
+    for (frame_counter, expected_color_math, expected_sfx) in [
+        (3, 0x32, 0x00),
+        (88, 0x32, 0x00),
+        (5, 0x72, 0x00),
+        (44, 0x72, 0x00),
+        (90, 0x72, 0x00),
+        (36, 0x32, 0x36),
+        (37, 0x55, 0x00),
+    ] {
+        let mut state = ZeldaState::new();
+        state.game_state.frame.set_frame_counter(frame_counter);
+        state.set_color_math_control(0x55);
+        state.set_sound_effect_1(0);
+
+        state.OverworldOverlay_HandleRain();
+
+        assert_eq!(
+            state.game_state.display.palette_filter.color_math_control(),
+            expected_color_math,
+            "frame counter {frame_counter}",
+        );
+        assert_eq!(
+            state.game_state.system_signals.sound_effect_1(),
+            expected_sfx,
+            "frame counter {frame_counter}",
+        );
+    }
 }
 
 #[test]

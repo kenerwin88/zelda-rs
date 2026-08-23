@@ -189,7 +189,7 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
 }
 
 #[test]
-fn dialogue_final_copy_publishes_color_math_without_advancing_held_ppu_generation() {
+fn snes9x_dialogue_scroll_holds_the_coupled_register_generation() {
     let mut state = ZeldaState::new();
     state.initialized = true;
     state.restore_live_rom_timing_after_checkpoint();
@@ -214,6 +214,11 @@ fn dialogue_final_copy_publishes_color_math_without_advancing_held_ppu_generatio
 
     state.run_frame_internal(0, crate::RUN_MAIN);
 
+    // Original-ROM/Snes9x cold receipt at host frame 5377 (module $0e/$02,
+    // input $0020) retains the preceding color-math and scroll registers while
+    // the dialogue call stack crosses NMI. Publishing the mirrors here changes
+    // 2,221 exact pixels. The atomic C frontend cannot express this suspended
+    // call timing, so this is a hardware-timing contract rather than C logic.
     assert!(!state.ppu.half_color);
     assert_eq!(
         [
@@ -231,5 +236,5 @@ fn dialogue_final_copy_publishes_color_math_without_advancing_held_ppu_generatio
             ],
         )
     });
-    assert_eq!(displayed, (true, [0x00f0, 0x00c4]));
+    assert_eq!(displayed, (false, [0x00f0, 0x00c4]));
 }
