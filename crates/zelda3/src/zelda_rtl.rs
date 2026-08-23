@@ -341,6 +341,15 @@ const fn resolve_active_display_blanking_scanout(
     }
 }
 
+const fn live_forced_blank_for_scanout(
+    published_ppu_is_blank: bool,
+    active_display_force_blank_write: Option<u8>,
+    staged_scanout_owns_following_generation: bool,
+) -> bool {
+    (published_ppu_is_blank || active_display_force_blank_write.is_some())
+        && !staged_scanout_owns_following_generation
+}
+
 const fn dungeon_map_terminal_fade_blank_scanline(
     main_module: u8,
     submodule: u8,
@@ -20292,8 +20301,11 @@ impl ZeldaState {
                 &self.ppu.oam[..4],
             );
         }
-        let live_forced_blank =
-            self.ppu.forced_blank && !following_staged_scanout_owns_attract_exit_generation;
+        let live_forced_blank = live_forced_blank_for_scanout(
+            self.ppu.forced_blank,
+            self.active_display_force_blank_event,
+            following_staged_scanout_owns_attract_exit_generation,
+        );
         let live_forced_blank_from_scanline = self
             .active_display_force_blank_event
             .or(self.ppu.forced_blank_from_scanline);

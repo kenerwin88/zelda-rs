@@ -7484,6 +7484,12 @@ fn full_tilemap_upload_publishes_vram_at_the_following_nmi() {
 
 #[test]
 fn explicit_force_blank_event_owns_the_active_display_suffix() {
+    // C WorldMap_FadeOut calls EnableForceBlank from the main thread. The ROM
+    // reaches that routine at V=49 on the standard route, so the direct $2100
+    // write owns output row 48 onward even though the previously published PPU
+    // generation was not blank.
+    assert!(live_forced_blank_for_scanout(false, Some(48), false));
+    assert!(!live_forced_blank_for_scanout(false, Some(48), true));
     assert_eq!(
         resolve_active_display_blanking_scanout(false, Some(30), true),
         ActiveDisplayBlankingScanout {
@@ -7503,21 +7509,27 @@ fn explicit_force_blank_event_owns_the_active_display_suffix() {
 #[test]
 fn world_map_fade_out_uses_the_preceding_sprite_main_workload() {
     let mut state = ZeldaState::new();
+    state.ppu.forced_blank = false;
     state.set_screen_brightness(1);
     state.set_overworld_map_state(0);
     let mut workload = SpriteMainTimingWorkload::default();
     workload.record_active_sprite(0x6c, 0);
     workload.record_active_sprite(0x3f, 0);
     workload.record_active_sprite(0x3f, 0);
-    workload.record_garnish_table(false, 0);
+    workload.record_garnish_table(true, 0);
     state.last_sprite_main_timing_workload = Some(workload);
 
     state.WorldMap_FadeOut();
 
     assert_eq!(state.game_state.display.screen_brightness, 0x80);
     assert_eq!(state.overworld_map_state(), 1);
-    assert!(state.ppu.forced_blank);
-    assert_eq!(state.active_display_force_blank_event, Some(42));
+    assert!(!state.ppu.forced_blank);
+    assert_eq!(state.active_display_force_blank_event, Some(48));
+    assert!(live_forced_blank_for_scanout(
+        state.ppu.forced_blank,
+        state.active_display_force_blank_event,
+        false,
+    ));
     assert_eq!(state.ppu.forced_blank_from_scanline, None);
 }
 
