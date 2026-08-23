@@ -572,12 +572,6 @@ impl ZeldaState {
         self.nmi_do_updates_from(None, false, None);
     }
 
-    pub(super) fn publish_dialogue_initialization_oam_dma(&mut self, shadow: &[u8]) {
-        for (destination, bytes) in self.ppu.oam.iter_mut().zip(shadow.chunks_exact(2)) {
-            *destination = u16::from_le_bytes([bytes[0], bytes[1]]);
-        }
-    }
-
     pub(super) fn nmi_core_animated_bg_update(&mut self, graphics_dma_plan: GraphicsDmaPlan) {
         let animated_bg_operands = animated_bg_operands_for_dungeon_landing(
             self.game_state.frame,

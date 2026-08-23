@@ -547,30 +547,19 @@ impl ZeldaState {
                     latest.schedule_key(),
                     "dialogue CPU schedule varies across the measured Module0E entry interval"
                 );
-                let current_host_owns_first_crossing = !self
-                    .game_execution_scheduler
-                    .current_main_iteration_follows_leading_nmi();
-                let initialization_phase = earliest
-                    .initialization_phase()
-                    .saturating_sub(current_host_owns_first_crossing as u8);
-                let caller_return_requires_following_host = earliest
-                    .caller_return_requires_following_host_callback(
-                        current_host_owns_first_crossing,
-                    );
                 self.pending_dialogue_initialization_schedule = Some((
-                    initialization_phase,
-                    caller_return_requires_following_host,
+                    earliest.prefix_nmi_crossings(),
+                    earliest.caller_nmi_crossings(),
                     Some(earliest.following_main_nmi_uses_host_animated_bg_operands()),
                 ));
                 if std::env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
                     eprintln!(
-                        "dialogue_cpu_plan host={} earliest={:?} latest={:?} phase={} current_host_crossing={} defer_return={} following_main_animated_bg={:?}",
+                        "dialogue_cpu_plan host={} earliest={:?} latest={:?} prefix_crossings={} caller_crossings={} following_main_animated_bg={:?}",
                         self.frame_ctr_dbg,
                         earliest.diagnostic(),
                         latest.diagnostic(),
-                        initialization_phase,
-                        current_host_owns_first_crossing,
-                        caller_return_requires_following_host,
+                        earliest.prefix_nmi_crossings(),
+                        earliest.caller_nmi_crossings(),
                         earliest.following_main_nmi_uses_host_animated_bg_operands(),
                     );
                 }
@@ -589,8 +578,7 @@ impl ZeldaState {
         self.RunInterface();
         self.replay_trace_ram_watch("module0e-after-run-interface");
         if self.rom_startup_timing()
-            && (self.normal_dialogue_initialization_phase != 0
-                || self.game_execution_scheduler.work_is_pending()
+            && (self.game_execution_scheduler.work_is_pending()
                 // RenderText_Draw_Scroll is an interruptible caller frame, not
                 // an atomic buffer rewrite. Instrumented Snes9x runs remain in
                 // its $0e:cfe2..$0e:d088 copy loop across the next vblanks, so
@@ -3617,26 +3605,26 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_Initialize(&mut self) {
-        let fallback_phase = rom_dialogue_initialization_nmi_slices(
-            self.game_state.frame.main_module,
-            self.game_state.messaging.runtime.module(),
-            self.game_state.ending.attract_scene.sequence(),
-        );
-        let (
-            rom_initialization_phase,
-            return_after_scanout_boundary,
+        if let Some((
+            prefix_nmi_crossings,
+            caller_nmi_crossings,
             following_main_nmi_uses_host_animated_bg_operands,
-        ) = self
+        )) = self
             .pending_dialogue_initialization_schedule
             .take()
-            .unwrap_or((fallback_phase, true, None));
-        if self.rom_startup_timing() && rom_initialization_phase != 0 {
-            self.normal_dialogue_initialization_phase = rom_initialization_phase;
-            self.normal_dialogue_initialization_entry_phase = rom_initialization_phase;
-            self.normal_dialogue_initialization_return_after_scanout_boundary =
-                return_after_scanout_boundary;
+            .filter(|_| self.rom_startup_timing())
+        {
+            assert_ne!(prefix_nmi_crossings, 0);
+            assert_ne!(caller_nmi_crossings, 0);
             self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands =
                 following_main_nmi_uses_host_animated_bg_operands;
+            self.game_execution_scheduler
+                .schedule_cpu_timed_work_returning_on_later_host(
+                    GameWorkContinuation::FinishDialogueInitializationPrefix {
+                        caller_nmi_crossings,
+                    },
+                    prefix_nmi_crossings,
+                );
             // This slice and every held one until the completion slice keep
             // the host-boundary OAM shadow on screen (see the staging fn).
             self.stage_dialogue_initialization_obj_scanout();

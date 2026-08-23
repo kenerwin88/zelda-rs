@@ -482,6 +482,8 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
                 | GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
                 | GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn
+                | GameWorkContinuation::FinishDialogueInitializationPrefix { .. }
+                | GameWorkContinuation::FinishDialogueInitializationCallerReturn
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
@@ -1033,6 +1035,11 @@ impl GameExecutionScheduler {
             .is_some_and(|work| work.scheduled_after_leading_nmi)
     }
 
+    pub(super) fn current_scheduled_work_is_at_entry_boundary(self) -> bool {
+        self.scheduled_work()
+            .is_some_and(|work| work.entry_display_boundary_pending)
+    }
+
     pub(super) fn current_work(self) -> Option<GameWorkContinuation> {
         self.scheduled_work()
             .map(|work| work.continuation)
@@ -1062,6 +1069,9 @@ impl GameExecutionScheduler {
         match self.continuation {
             Some(GameExecutionContinuation::AfterCurrentTrailingNmi(continuation)) => {
                 self.continuation = None;
+                if self.cpu_host_phase == CpuHostPhase::SuspendedCallStack {
+                    self.cpu_host_phase = CpuHostPhase::ResumedCallStackBeforeNmi;
+                }
                 Some(continuation)
             }
             _ => None,
@@ -1506,6 +1516,54 @@ mod cpu_timing_tests {
             after_leading_nmi.advance_work_one_nmi_slice(),
             Some(GameWorkStep::Complete(continuation))
         );
+    }
+
+    #[test]
+    fn completed_loader_nmi_marks_the_next_host_main_as_after_leading_nmi() {
+        let continuation = GameWorkContinuation::FinishDialogueInitializationPrefix {
+            caller_nmi_crossings: 1,
+        };
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.begin_host_frame();
+
+        // The loader returns and consumes the field boundary before the fresh
+        // module begins in the following frontend callback.
+        scheduler.mark_main_iteration_after_leading_nmi();
+        scheduler.begin_host_frame();
+        scheduler.begin_main_loop_iteration();
+        assert!(scheduler.current_main_iteration_follows_leading_nmi());
+
+        scheduler.schedule_cpu_timed_work_from_current_main_iteration(continuation, 1);
+        scheduler.finish_main_loop_iteration();
+
+        // That loader-owned NMI cannot also be the new synchronous call's
+        // trailing boundary; its sole crossing is still future work.
+        assert_eq!(scheduler.take_post_trailing_nmi(), None);
+        assert_eq!(scheduler.scheduled_work_slices_remaining(), Some(1));
+        scheduler.begin_host_frame();
+        assert_eq!(
+            scheduler.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Complete(continuation))
+        );
+    }
+
+    #[test]
+    fn caller_resumed_after_an_interrupt_returns_before_the_next_leading_nmi() {
+        let continuation = GameWorkContinuation::FinishDialogueInitializationCallerReturn;
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.schedule_after_current_trailing_nmi(continuation);
+        scheduler.begin_host_frame();
+
+        assert_eq!(
+            scheduler.take_after_current_trailing_nmi(),
+            Some(continuation)
+        );
+        assert!(scheduler.resumed_call_stack_is_before_nmi());
+
+        scheduler.finish_call_stack_at_main_wait_before_nmi();
+        scheduler.begin_host_frame();
+
+        assert!(scheduler.main_return_requires_leading_nmi());
     }
 
     #[test]

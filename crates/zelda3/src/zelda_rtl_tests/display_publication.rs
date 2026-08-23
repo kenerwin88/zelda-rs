@@ -1733,12 +1733,6 @@ fn first_interrupted_landing_field_retires_the_pre_spotlight_scanout() {
 }
 
 #[test]
-fn landing_goal_stages_its_final_circle_only_before_a_leading_nmi_entry() {
-    assert!(dungeon_landing_goal_stages_final_circle(false));
-    assert!(!dungeon_landing_goal_stages_final_circle(true));
-}
-
-#[test]
 fn trailing_animated_bg_dma_refines_only_an_already_staged_following_scanout() {
     const DESTINATION: usize = 0x3c00;
     let mut state = ZeldaState::new();

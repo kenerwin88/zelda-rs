@@ -4731,19 +4731,6 @@ fn intro_poly_initialization_resumes_for_cold_start_and_attract_restart() {
 }
 
 #[test]
-fn heavy_prison_animation_makes_dialogue_initialization_resumable() {
-    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 3), 5);
-    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 2), 0);
-    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 0, 0), 5);
-}
-
-#[test]
-fn heavy_attract_scenes_share_the_dialogue_initialization_phase() {
-    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 3), 5);
-    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 4), 5);
-}
-
-#[test]
 fn attract_first_story_render_wait_is_armed_by_fade_completion() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -5232,6 +5219,44 @@ fn module10_opening_goal_completes_before_its_caller_returns() {
     assert_eq!(state.game_state.frame.submodule, 0x0a);
     assert_eq!(state.game_state.frame.subsubmodule, 0);
     assert!(!state.dungeon_landing_goal_transition_pending);
+}
+
+#[test]
+fn dungeon_landing_goal_authors_final_circle_before_resetting_the_live_table() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(7);
+    state.set_submodule(0x0f);
+    state.set_saved_module_for_menu(7);
+    state.follower_link_state_mut().set_x(0x80);
+    state.follower_link_state_mut().set_y(0x70);
+    state.set_spotlight_window_state(2);
+    state.set_spotlight_window_radius(0x77);
+
+    assert!(state.iris_spotlight_configure_table());
+    assert!(state.dungeon_landing_goal_transition_pending);
+
+    let dynamic = state.ram
+        [HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + ZeldaState::HDMA_DYNAMIC_TABLE_LEN]
+        .to_vec();
+    let reserved = state.ram
+        [RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + ZeldaState::HDMA_DYNAMIC_TABLE_LEN]
+        .to_vec();
+    assert_eq!(dynamic, reserved, "the C memcpy preserves the final circle");
+    assert!(dynamic.chunks_exact(2).any(|word| word != [0x00, 0xff]));
+
+    state.complete_iris_spotlight_goal_transition();
+
+    assert!(
+        state.ram[HDMA_TABLE_DYNAMIC..HDMA_TABLE_DYNAMIC + ZeldaState::HDMA_DYNAMIC_TABLE_LEN]
+            .chunks_exact(2)
+            .all(|word| word == [0x00, 0xff])
+    );
+    assert_eq!(
+        &state.ram[RESERVED_HDMA_TABLE..RESERVED_HDMA_TABLE + ZeldaState::HDMA_DYNAMIC_TABLE_LEN],
+        reserved,
+        "the reset is a later live-table generation, not a rewrite of the final circle",
+    );
 }
 
 #[test]
@@ -9171,8 +9196,6 @@ fn dungeon_landing_wipe_table_projection_follows_spotlight_row_workload() {
     assert_eq!(spotlight_table_row_pairs(183), 184);
     assert!(spotlight_table_has_long_nmi_workload(41));
     assert!(spotlight_table_has_long_nmi_workload(183));
-    assert!(dungeon_landing_goal_reset_preserves_scanout_prefix(86));
-    assert!(!dungeon_landing_goal_reset_preserves_scanout_prefix(183));
     assert!(spotlight_opening_projects_live_tail_before_hdma(0x3f, 183));
     assert!(!spotlight_opening_projects_live_tail_before_hdma(0x46, 183));
     assert!(!spotlight_opening_projects_live_tail_before_hdma(0x3f, 182));
@@ -9268,13 +9291,6 @@ fn spotlight_close_entry_publication_follows_circle_workload() {
         iris_goal,
     ));
     assert!(!game_over_iris_goal_scanout_is_closed(iris_goal, iris_goal,));
-}
-
-#[test]
-fn normal_dialogue_initialization_is_a_resumable_engine_operation() {
-    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 0, 0), 5);
-    assert_eq!(rom_dialogue_initialization_nmi_slices(14, 1, 0), 0);
-    assert_eq!(rom_dialogue_initialization_nmi_slices(20, 0, 2), 0);
 }
 
 #[test]

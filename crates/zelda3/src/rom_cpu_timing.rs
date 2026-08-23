@@ -1,5 +1,51 @@
 use snes::{CpuInstructionTiming, DmaState, PpuState, Snes};
 
+const TEXT_DIALOGUE_POINTERS: usize = 0x171c0;
+const ROM_DIALOGUE_MESSAGE_COUNT: usize = 398;
+const ROM_DIALOGUE_SECOND_SEGMENT_INDEX: usize = 359;
+const ROM_DIALOGUE_FIRST_SEGMENT: u32 = 0x1c_8000;
+const ROM_DIALOGUE_SECOND_SEGMENT: u32 = 0x0e_df40;
+const ROM_DIALOGUE_TERMINATOR: u8 = 0x7f;
+
+fn lorom_offset(address: u32) -> Option<usize> {
+    let address_in_bank = address as u16;
+    if address_in_bank < 0x8000 {
+        return None;
+    }
+    Some(((address as usize >> 16) & 0x7f) * 0x8000 + usize::from(address_in_bank - 0x8000))
+}
+
+const fn next_lorom_address(mut address: u32) -> u32 {
+    address += 1;
+    if (address as u16) < 0x8000 {
+        address += 0x8000;
+    }
+    address
+}
+
+fn rom_dialogue_message_pointers(rom: &[u8]) -> Result<[u32; ROM_DIALOGUE_MESSAGE_COUNT], String> {
+    let mut pointers = [0; ROM_DIALOGUE_MESSAGE_COUNT];
+    let mut address = ROM_DIALOGUE_FIRST_SEGMENT;
+    for (index, pointer) in pointers.iter_mut().enumerate() {
+        if index == ROM_DIALOGUE_SECOND_SEGMENT_INDEX {
+            address = ROM_DIALOGUE_SECOND_SEGMENT;
+        }
+        *pointer = address;
+        loop {
+            let offset = lorom_offset(address)
+                .ok_or_else(|| format!("dialogue address ${address:06x} is outside LoROM"))?;
+            let byte = *rom.get(offset).ok_or_else(|| {
+                format!("dialogue address ${address:06x} extends past the loaded ROM")
+            })?;
+            address = next_lorom_address(address);
+            if byte == ROM_DIALOGUE_TERMINATOR {
+                break;
+            }
+        }
+    }
+    Ok(pointers)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RomCpuCheckpoint {
     pub(crate) entry_pc: u32,
@@ -106,6 +152,25 @@ impl RomCpuTimingRun {
         self.shadow.ram[address]
     }
 
+    /// Replace the C port's compatibility-only dialogue pointers with the
+    /// original compressed-ROM boundaries expected by `Text_LoadCharacterBuffer`.
+    ///
+    /// `Text_GenerateMessagePointers` correctly derives translated state from
+    /// the C port's re-encoded semantic dialogue asset. A timing shadow instead
+    /// executes the original ROM, whose dictionary-compressed strings have
+    /// different byte lengths. Keeping this normalization inside the isolated
+    /// shadow preserves native C behavior and gives ROM execution its own data.
+    pub(crate) fn restore_original_dialogue_pointer_table(&mut self) -> Result<(), String> {
+        let pointers = rom_dialogue_message_pointers(&self.shadow.cart.rom)?;
+        for (index, pointer) in pointers.into_iter().enumerate() {
+            let destination = TEXT_DIALOGUE_POINTERS + index * 3;
+            self.shadow.ram[destination] = pointer as u8;
+            self.shadow.ram[destination + 1] = (pointer >> 8) as u8;
+            self.shadow.ram[destination + 2] = (pointer >> 16) as u8;
+        }
+        Ok(())
+    }
+
     pub(crate) fn window1_bounds(&self) -> (u8, u8) {
         (self.shadow.ppu.window1_left, self.shadow.ppu.window1_right)
     }
@@ -182,5 +247,37 @@ impl RomCpuTimingRun {
                 }
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconstructs_compressed_rom_message_boundaries_across_both_segments() {
+        let mut rom = vec![0; lorom_offset(ROM_DIALOGUE_FIRST_SEGMENT).unwrap() + 0x4000];
+        let mut expected = [0; ROM_DIALOGUE_MESSAGE_COUNT];
+        let mut address = ROM_DIALOGUE_FIRST_SEGMENT;
+        for (index, pointer) in expected.iter_mut().enumerate() {
+            if index == ROM_DIALOGUE_SECOND_SEGMENT_INDEX {
+                address = ROM_DIALOGUE_SECOND_SEGMENT;
+            }
+            *pointer = address;
+            for _ in 0..=index % 4 {
+                rom[lorom_offset(address).unwrap()] = 0x42;
+                address = next_lorom_address(address);
+            }
+            rom[lorom_offset(address).unwrap()] = ROM_DIALOGUE_TERMINATOR;
+            address = next_lorom_address(address);
+        }
+
+        let pointers = rom_dialogue_message_pointers(&rom).unwrap();
+        assert_eq!(pointers, expected);
+        assert_eq!(pointers[0], ROM_DIALOGUE_FIRST_SEGMENT);
+        assert_eq!(
+            pointers[ROM_DIALOGUE_SECOND_SEGMENT_INDEX],
+            ROM_DIALOGUE_SECOND_SEGMENT
+        );
     }
 }
