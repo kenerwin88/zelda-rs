@@ -279,6 +279,31 @@ def replay_covered_frame(run_dir: Path, replay_argv: list[str] | None = None) ->
     return completed
 
 
+def source_input_problem(run_dir: Path, required_frame: int) -> str | None:
+    """Reject legacy failed sessions that replaced full input with a prefix."""
+    completed = replay_covered_frame(run_dir)
+    if completed >= required_frame:
+        return None
+    manifest_path = run_dir / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return f"cannot verify the failed session's complete input artifact: {error}"
+    receipt = manifest.get("input_replay")
+    if not isinstance(receipt, dict) or receipt.get("mode") != "source_script":
+        return (
+            f"session completed only {completed} frame(s) and does not prove that "
+            "input.txt still contains the complete source script"
+        )
+    input_path = run_dir / str(receipt.get("artifact", "input.txt"))
+    expected_sha = receipt.get("sha256")
+    if not input_path.is_file() or not isinstance(expected_sha, str):
+        return "session input provenance receipt is incomplete"
+    if sha256_file(input_path) != expected_sha:
+        return "session input.txt does not match its complete-source provenance receipt"
+    return None
+
+
 def source_start_problem(run_dir: Path, binary: Path) -> str | None:
     _, replay_argv = parse_replay_script(run_dir / "replay.sh")
     rust_state = option_value(replay_argv, "--resume-rust-state")
@@ -334,6 +359,8 @@ def resolve_run_dir(
             )
         if problem := source_start_problem(run_dir, binary):
             raise SystemExit(f"parity-probe: cannot use {run_dir}: {problem}")
+        if problem := source_input_problem(run_dir, required_frame):
+            raise SystemExit(f"parity-probe: cannot use {run_dir}: {problem}")
         if require_cold and not source_start_is_cold(run_dir):
             raise SystemExit(
                 f"parity-probe: cannot use {run_dir} for authoritative proof: "
@@ -370,6 +397,7 @@ def resolve_run_dir(
         (frame, path)
         for frame, path in sufficient
         if source_start_problem(path, binary) is None
+        and source_input_problem(path, required_frame) is None
         and (not require_cold or source_start_is_cold(path))
         and (
             not require_recorded_rom_random

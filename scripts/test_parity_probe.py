@@ -225,7 +225,17 @@ class ParityProbeTest(unittest.TestCase):
             binary = self.write_binary(project, 100)
             run_dir = self.write_run(project, 31_382, 100, recorded_rom_random=True)
             (run_dir / "manifest.json").write_text(
-                json.dumps({"frames_completed": 29_645}), encoding="utf-8"
+                json.dumps(
+                    {
+                        "frames_completed": 29_645,
+                        "input_replay": {
+                            "artifact": "input.txt",
+                            "mode": "source_script",
+                            "sha256": parity_probe.sha256_file(run_dir / "input.txt"),
+                        },
+                    }
+                ),
+                encoding="utf-8",
             )
 
             selected = parity_probe.resolve_run_dir(project, run_dir, 31_287, binary)
@@ -241,6 +251,40 @@ class ParityProbeTest(unittest.TestCase):
                     resuming=False,
                 )
             )
+
+    def test_failed_legacy_session_cannot_supply_input_past_its_completed_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            binary = self.write_binary(project, 100)
+            run_dir = self.write_run(project, 21_443, 100, recorded_rom_random=True)
+            (run_dir / "manifest.json").write_text(
+                json.dumps({"frames_completed": 5_723}), encoding="utf-8"
+            )
+
+            with self.assertRaisesRegex(
+                SystemExit, "does not prove that input.txt still contains the complete source"
+            ):
+                parity_probe.resolve_run_dir(project, run_dir, 13_000, binary)
+
+    def test_automatic_probe_skips_a_newer_failed_session_with_unproven_input(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory)
+            precommit = project / "comparisons" / "precommit"
+            binary = self.write_binary(project, 100)
+            complete = self.write_run(precommit, 22_000, 100)
+            (complete / "manifest.json").write_text(
+                json.dumps({"frames_completed": 22_000}), encoding="utf-8"
+            )
+            truncated = self.write_run(precommit, 21_443, 200)
+            (truncated / "manifest.json").write_text(
+                json.dumps({"frames_completed": 5_723}), encoding="utf-8"
+            )
+
+            selected = parity_probe.resolve_run_dir(
+                project, None, 13_000, binary, require_cold=True
+            )
+
+            self.assertEqual(selected, complete.resolve())
 
     def test_authoritative_probe_skips_resumed_gate_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

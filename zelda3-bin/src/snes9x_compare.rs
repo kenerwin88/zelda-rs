@@ -3222,18 +3222,15 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut live_oracle_rng_trace = live_oracle_rng_trace_path.map(LiveOracleRngTrace::new);
     let debug_spc_clock_witness = env::var_os("ZELDA3_DEBUG_SPC_CLOCK_WITNESS").is_some();
     let mut previous_spc_clock_phase = None::<Option<u8>>;
-    let initial_input_script = input_script_path
-        .as_deref()
-        .map(|path| {
-            fs::read(path).unwrap_or_else(|error| {
-                eprintln!(
-                    "failed to read controller stream for replayable session {}: {error}",
-                    path.display()
-                );
-                process::exit(1);
-            })
+    let initial_input_script = input_script_path.as_deref().map(|path| {
+        fs::read(path).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to read controller stream for replayable session {}: {error}",
+                path.display()
+            );
+            process::exit(1);
         })
-        .unwrap_or_default();
+    });
     let mut frame_receipts = initialize_libretro_session(
         session_dir.as_deref(),
         core_path,
@@ -3252,7 +3249,7 @@ pub(crate) fn run_compare_libretro_oracle(
         timing_options,
         replay_save.as_deref(),
         replay_bundle.as_ref(),
-        &initial_input_script,
+        initial_input_script.as_deref().unwrap_or_default(),
         rom_random_script.as_deref(),
         live_oracle_rng,
         scan_all,
@@ -5097,6 +5094,7 @@ pub(crate) fn run_compare_libretro_oracle(
         frame_receipts.as_mut(),
         av_hashes.as_mut(),
         &input_history,
+        initial_input_script.as_deref(),
         audio_report.as_ref(),
         &audio_frame_ends,
         &oracle_before_state,
@@ -6318,6 +6316,7 @@ pub(crate) fn finalize_libretro_session(
     writer: Option<&mut BufWriter<fs::File>>,
     av_hash_writer: Option<&mut BufWriter<fs::File>>,
     input_history: &[(u32, u16)],
+    source_input_script: Option<&[u8]>,
     audio_report: Option<&libretro_timeline::AudioComparisonReport>,
     audio_frame_ends: &[u64],
     oracle_last_before: &[u8],
@@ -6343,7 +6342,8 @@ pub(crate) fn finalize_libretro_session(
             process::exit(1);
         });
     }
-    fs::write(dir.join("input.txt"), format_input_history(input_history)).unwrap_or_else(|e| {
+    let input_artifact = replayable_input_artifact(source_input_script, input_history);
+    fs::write(dir.join("input.txt"), &input_artifact).unwrap_or_else(|e| {
         eprintln!("failed to write captured controller stream: {e}");
         process::exit(1);
     });
@@ -6461,12 +6461,31 @@ pub(crate) fn finalize_libretro_session(
     manifest["status"] = serde_json::Value::String(status.to_string());
     manifest["parity_eligible"] = serde_json::Value::Bool(parity_eligible);
     manifest["frames_completed"] = serde_json::Value::from(frames);
+    manifest["input_replay"] = serde_json::json!({
+        "artifact": "input.txt",
+        "mode": if source_input_script.is_some() {
+            "source_script"
+        } else {
+            "captured_history"
+        },
+        "sha256": parity::evidence::sha256_bytes(&input_artifact),
+    });
     fs::write(manifest_path, serde_json::to_vec_pretty(&manifest).unwrap()).unwrap_or_else(
         |error| {
             eprintln!("failed to finalize libretro session manifest: {error}");
             process::exit(1);
         },
     );
+}
+
+fn replayable_input_artifact(
+    source_input_script: Option<&[u8]>,
+    input_history: &[(u32, u16)],
+) -> Vec<u8> {
+    source_input_script.map_or_else(
+        || format_input_history(input_history).into_bytes(),
+        <[u8]>::to_vec,
+    )
 }
 
 pub(crate) fn shell_single_quote(value: &str) -> String {
@@ -7230,18 +7249,40 @@ mod tests {
         libretro_engine_state_receipt, oracle_preframe_snapshot_required,
         oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
         parse_paired_resume_capture, parse_rolling_paired_resume_capture,
-        prune_rolling_paired_resume_captures, resolve_replay_bundle, rolling_capture_frame_after,
-        scan_all_policy, should_render_video_frame, should_stop_after_first_mismatch,
-        should_write_frame_receipt, snes9x_presented_scanline_for_video_y,
-        summarize_presented_obj_cache, summarize_value_domain, trace_events_with_rom_rng,
-        validate_replay_source_parents, vram_domain_receipt, BootBoundaryState,
-        PairedResumeCapture, RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt,
+        prune_rolling_paired_resume_captures, replayable_input_artifact, resolve_replay_bundle,
+        rolling_capture_frame_after, scan_all_policy, should_render_video_frame,
+        should_stop_after_first_mismatch, should_write_frame_receipt,
+        snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
+        summarize_value_domain, trace_events_with_rom_rng, validate_replay_source_parents,
+        vram_domain_receipt, BootBoundaryState, PairedResumeCapture, RollingPairedResumeCapture,
+        ValueDomainDiff, VramDomainReceipt,
     };
     use crate::libretro_core::{LibretroDspRegisterWrite, LibretroFrame};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
     use zelda3::{game_output::DspWriteEvent, RomRandomSample};
+
+    #[test]
+    fn failed_session_keeps_the_complete_authoritative_input_script() {
+        let source = b"0..5722 0x0000\n5723..21442 0x0080\n";
+        let completed_prefix = [(0, 0), (1, 0), (2, 0)];
+
+        assert_eq!(
+            replayable_input_artifact(Some(source), &completed_prefix),
+            source
+        );
+    }
+
+    #[test]
+    fn session_without_an_input_script_persists_its_captured_history() {
+        let captured = [(0, 0), (1, 0x80), (2, 0x80)];
+
+        assert_eq!(
+            replayable_input_artifact(None, &captured),
+            super::format_input_history(&captured).into_bytes()
+        );
+    }
 
     #[test]
     fn maps_cropped_libretro_video_rows_back_to_snes9x_presented_scanlines() {
