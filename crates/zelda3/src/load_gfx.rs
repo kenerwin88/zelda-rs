@@ -3455,6 +3455,17 @@ impl ZeldaState {
         self.stage_spotlight_scanout_after_active_field();
     }
 
+    /// Complete the ROM suffix after an interrupted table build and retain the
+    /// exact channel-7 rows measured for the field after the interrupting one.
+    pub(super) fn spotlight_internal_after_table_during_active_rom_field(
+        &mut self,
+        words: &[u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    ) {
+        self.set_hdma_enable_mask(0x80);
+        self.set_screen_brightness(0x0f);
+        self.stage_rom_spotlight_scanout_after_active_field(words);
+    }
+
     pub(super) fn iris_spotlight_configure_table(&mut self) -> bool {
         let build = self.begin_iris_spotlight_configure_table(usize::MAX);
         self.complete_iris_spotlight_configure_table(build)

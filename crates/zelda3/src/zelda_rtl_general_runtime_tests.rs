@@ -5042,6 +5042,18 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
             .completion_publication(),
         DisplaySnapshotPublication::AdvanceStaged
     );
+    let entry_with_rom_following_field =
+        SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryBeforeTablePublication)
+            .with_rom_following_field_after_staged_active([0x00ff; SPOTLIGHT_VISIBLE_SCANLINES]);
+    let entry_after_rom_following_field =
+        entry_with_rom_following_field.after_rom_following_field_was_staged();
+    assert!(entry_after_rom_following_field
+        .rom_following_field_receipt()
+        .is_none());
+    assert_eq!(
+        entry_after_rom_following_field.completion_publication(),
+        DisplaySnapshotPublication::PublishCaptured
+    );
     assert_eq!(
         SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryAfterTablePublication)
             .completion_publication(),
@@ -5191,6 +5203,31 @@ fn dungeon_exit_spotlight_models_measured_circle_and_suffix_boundaries() {
         7, 15
     ));
     assert!(!rom_dungeon_landing_goal_transition_waits_for_caller_return(16, 1));
+}
+
+#[test]
+fn interrupted_spotlight_suffix_stages_the_measured_following_field() {
+    let mut state = ZeldaState::new();
+    let measured = std::array::from_fn(|row| 0x00ff_u16.wrapping_add(row as u16));
+
+    state.spotlight_internal_after_table_during_active_rom_field(&measured);
+
+    let staged = state
+        .spotlight_scanout_after_active_field
+        .as_ref()
+        .expect("ROM following field");
+    assert!(staged.authoritative_rom_hdma_receipt);
+    for (row, word) in measured.into_iter().enumerate() {
+        let offset = row * 2;
+        assert_eq!(
+            u16::from_le_bytes(
+                staged.hdma_tables[0][offset..offset + 2]
+                    .try_into()
+                    .unwrap()
+            ),
+            word
+        );
+    }
 }
 
 #[test]

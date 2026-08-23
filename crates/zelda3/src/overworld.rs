@@ -2844,7 +2844,17 @@ impl ZeldaState {
             vertical_center,
         );
         self.complete_iris_spotlight_configure_table(table_build);
-        self.spotlight_internal_after_table_during_active_field();
+        let iteration = if let Some(following) = iteration.rom_following_field_receipt() {
+            // The isolated ROM run follows channel 7 from this second NMI to
+            // the third. Stage those exact rows when the resumed C table
+            // suffix executes, then remove the consumed receipt before the
+            // later ZeldaRunGameLoop caller-return continuation.
+            self.spotlight_internal_after_table_during_active_rom_field(&following.words);
+            iteration.after_rom_following_field_was_staged()
+        } else {
+            self.spotlight_internal_after_table_during_active_field();
+            iteration
+        };
         self.increment_submodule();
         self.module0f_spotlight_close_link_and_oam();
         if phase == SpotlightIterationPhase::CloseEntryBeforeTablePublication {

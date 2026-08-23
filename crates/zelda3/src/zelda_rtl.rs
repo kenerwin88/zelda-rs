@@ -15295,6 +15295,14 @@ impl ZeldaState {
         self.spotlight_scanout_after_active_field = Some(LiveSpotlightScanout::capture(self));
     }
 
+    pub(super) fn stage_rom_spotlight_scanout_after_active_field(
+        &mut self,
+        words: &[u16; SPOTLIGHT_VISIBLE_SCANLINES],
+    ) {
+        self.spotlight_scanout_after_active_field =
+            Some(LiveSpotlightScanout::capture(self).with_authoritative_rom_hdma_words(words));
+    }
+
     /// Publish the exact channel-7 rows consumed after the first NMI in a
     /// recurring dungeon-exit spotlight call. When the C caller has already
     /// crossed a leading NMI, that field is the scanout captured earlier in
