@@ -296,7 +296,6 @@ fn straight_interroom_entry_publishes_link_after_main_but_keeps_entry_oam() {
             gameplay,
             straight_stair_entry,
             OamScanoutSource::ComposeLiveAfterNmi,
-            0,
         ),
         OamScanoutSource::ComposePublishedShadowDma,
     );
@@ -305,7 +304,6 @@ fn straight_interroom_entry_publishes_link_after_main_but_keeps_entry_oam() {
             gameplay,
             straight_stair_entry,
             GraphicsDmaGeneration::HostBoundaryBeforeMain,
-            0,
         ),
         GraphicsDmaGeneration::LiveAfterMain,
     );
@@ -361,7 +359,7 @@ fn item_receipt_dismissal_publishes_the_entry_oam_shadow() {
     };
 
     assert_eq!(
-        oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi, 0),
+        oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi),
         OamScanoutSource::ComposePublishedShadowDma
     );
 }
@@ -382,7 +380,7 @@ fn dungeon_game_over_entry_publishes_the_entry_oam_shadow() {
     };
 
     assert_eq!(
-        oam_scanout_across_main(gameplay, death, OamScanoutSource::ComposeLiveAfterNmi, 0,),
+        oam_scanout_across_main(gameplay, death, OamScanoutSource::ComposeLiveAfterNmi),
         OamScanoutSource::ComposePublishedShadowDma,
     );
 }
@@ -407,7 +405,6 @@ fn game_over_pre_iris_entry_publishes_the_entry_oam_shadow() {
             death_initializer,
             pre_iris_delay,
             OamScanoutSource::ComposeLiveAfterNmi,
-            0,
         ),
         OamScanoutSource::ComposePublishedShadowDma,
     );
@@ -428,7 +425,7 @@ fn subtile_shutter_handoff_keeps_the_host_boundary_link_scanout() {
     };
 
     assert_eq!(
-        link_obj_scanout_across_main(landing, shutter, GraphicsDmaGeneration::LiveAfterMain, 0,),
+        link_obj_scanout_across_main(landing, shutter, GraphicsDmaGeneration::LiveAfterMain),
         GraphicsDmaGeneration::HostBoundaryBeforeMain,
     );
     assert!(dungeon_subtile_landing_enters_shutter(landing, shutter));
@@ -554,7 +551,7 @@ fn dungeon_submodule_two_handoff_publishes_the_entry_oam_shadow() {
     };
 
     assert_eq!(
-        oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi, 0),
+        oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi),
         OamScanoutSource::ComposePublishedShadowDma
     );
 }
@@ -573,7 +570,7 @@ fn dungeon_submodule_five_handoff_publishes_the_entry_oam_shadow() {
     };
 
     assert_eq!(
-        oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi, 0),
+        oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi),
         OamScanoutSource::ComposePublishedShadowDma
     );
 }
@@ -599,7 +596,7 @@ fn dungeon_dialogue_entry_publishes_the_entry_oam_shadow() {
             GraphicsDmaGeneration::HostBoundaryBeforeMain
         );
         assert_eq!(
-            oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi, 0),
+            oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi),
             if submodule == 1 {
                 OamScanoutSource::ComposePublishedShadowDma
             } else {
@@ -643,7 +640,7 @@ fn spiral_stair_entry_uses_host_link_operands_and_entry_oam_shadow() {
         GraphicsDmaGeneration::HostBoundaryBeforeMain
     );
     assert_eq!(
-        oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi, 0),
+        oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi),
         OamScanoutSource::ComposePublishedShadowDma
     );
 

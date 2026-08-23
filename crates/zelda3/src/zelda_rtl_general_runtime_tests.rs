@@ -3960,17 +3960,67 @@ fn room_72_supertile_room_load_caller_resume_crosses_one_additional_nmi() {
 }
 
 #[test]
-fn room_load_caller_waits_for_its_leading_nmi_before_fresh_main() {
-    assert!(dungeon_supertile_caller_return_waits_for_leading_nmi(
-        DungeonSupertileTransitionWork::RoomLoadCallerResume,
-    ));
-    assert!(!dungeon_supertile_caller_return_waits_for_leading_nmi(
-        DungeonSupertileTransitionWork::AuxiliarySpriteGraphics,
-    ));
+fn c_room_load_caller_clears_12_before_the_next_leading_nmi() {
+    // C ZeldaRunGameLoop returns through NMI_PrepareSprites and then executes
+    // `nmi_boolean = 0` before waiting. The next Interrupt_NMI therefore runs
+    // NMI_DoUpdates exactly once; hardware cadence belongs to the scheduler,
+    // not to a synthetic retained software latch.
+    let continuation = GameWorkContinuation::FinishDungeonSupertileTransition {
+        work: DungeonSupertileTransitionWork::RoomLoadCallerResume,
+    };
+    let mut state = ZeldaState::new();
+    state
+        .game_execution_scheduler
+        .schedule_work(continuation, 1);
+    state.game_execution_scheduler.begin_host_frame();
     assert_eq!(
-        PreMainNmiResume::DungeonSupertileRoomLoadCallerReturnNmi.nmi_latch_clear_phase(),
-        Some(NmiPhase::AfterNmi),
+        state.game_execution_scheduler.advance_work_one_nmi_slice(),
+        Some(GameWorkStep::Complete(continuation)),
     );
+    assert!(state
+        .game_execution_scheduler
+        .resumed_call_stack_is_before_nmi());
+
+    state.latch_nmi_update();
+    state.finish_dungeon_room_load_caller_at_main_wait();
+
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_execution_scheduler.pre_main_nmi_resume(), None);
+    assert!(state
+        .game_execution_scheduler
+        .returned_main_is_waiting_for_nmi());
+
+    state.game_execution_scheduler.begin_host_frame();
+    assert!(state
+        .game_execution_scheduler
+        .main_return_requires_leading_nmi());
+
+    // nmi.c NMI_DoUpdates performs one complete $220-byte OAM copy and
+    // consumes pending BG work when that cleared latch reaches the NMI.
+    let expected_oam = (0..0x220)
+        .map(|index| (index as u8).wrapping_mul(37).wrapping_add(11))
+        .collect::<Vec<_>>();
+    state.ram[OAM_BUF..OAM_BUF + expected_oam.len()].copy_from_slice(&expected_oam);
+    state.ppu.oam.fill(0xdead);
+    state.set_pending_nmi_subroutine(1);
+    state.set_nmi_load_target_page(0x22);
+    state.capture_display_snapshot();
+    state.interrupt_nmi_for_active_scanout(0, None, false);
+
+    let resident_oam = state
+        .ppu
+        .oam
+        .iter()
+        .flat_map(|word| word.to_le_bytes())
+        .collect::<Vec<_>>();
+    assert_eq!(resident_oam, expected_oam);
+    assert_eq!(state.game_state.display.pending_nmi_subroutine, 0);
+    assert!(state.game_state.display.nmi_update_is_latched());
+}
+
+#[test]
+fn dungeon_room_load_and_sprite_conversion_route_contracts() {
     assert_eq!(
         PreMainNmiResume::DungeonSupertileQuadrantUploads.nmi_latch_clear_phase(),
         Some(NmiPhase::BeforeNmi),
@@ -8863,7 +8913,7 @@ fn dungeon_exit_prep_oam_scanout_uses_the_published_shadow_generation() {
     let mut exit = entry;
     exit.main_module = 0x0f;
     let entry_scanout = rom_graphics_dma_plan(entry.main_module, entry.submodule).oam_scanout;
-    let transition_scanout = oam_scanout_across_main(entry, exit, entry_scanout, 0);
+    let transition_scanout = oam_scanout_across_main(entry, exit, entry_scanout);
 
     assert_eq!(
         rom_graphics_dma_plan(exit.main_module, exit.submodule).oam_operands,
@@ -8895,11 +8945,11 @@ fn game_over_fade_oam_scanout_uses_the_published_shadow_generation() {
         exit.frame_counter = if exit_submodule == 4 { 127 } else { 201 };
 
         assert_eq!(
-            oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi, 0,),
+            oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi),
             OamScanoutSource::ComposePublishedShadowDma,
         );
         assert_eq!(
-            link_obj_scanout_across_main(entry, exit, GraphicsDmaGeneration::LiveAfterMain, 0,),
+            link_obj_scanout_across_main(entry, exit, GraphicsDmaGeneration::LiveAfterMain),
             GraphicsDmaGeneration::HostBoundaryBeforeMain,
         );
     }
@@ -8917,11 +8967,11 @@ fn moving_game_over_letters_publish_the_entry_oam_generation() {
         exit.frame_counter = 44;
 
         assert_eq!(
-            oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi, 0),
+            oam_scanout_across_main(entry, exit, OamScanoutSource::ComposeLiveAfterNmi),
             OamScanoutSource::ComposePublishedShadowDma,
         );
         assert_eq!(
-            link_obj_scanout_across_main(entry, exit, GraphicsDmaGeneration::LiveAfterMain, 0),
+            link_obj_scanout_across_main(entry, exit, GraphicsDmaGeneration::LiveAfterMain),
             GraphicsDmaGeneration::HostBoundaryBeforeMain,
         );
     }
@@ -9047,11 +9097,11 @@ fn dungeon_transition_handoffs_use_the_published_oam_shadow() {
         let mut exit = entry;
         exit.submodule = submodule;
         assert_eq!(
-            oam_scanout_across_main(entry, exit, entry_scanout, 0),
+            oam_scanout_across_main(entry, exit, entry_scanout),
             OamScanoutSource::ComposePublishedShadowDma,
         );
         assert_eq!(
-            link_obj_scanout_across_main(entry, exit, GraphicsDmaGeneration::LiveAfterMain, 0,),
+            link_obj_scanout_across_main(entry, exit, GraphicsDmaGeneration::LiveAfterMain),
             GraphicsDmaGeneration::HostBoundaryBeforeMain,
         );
     }
@@ -9061,7 +9111,7 @@ fn dungeon_transition_handoffs_use_the_published_oam_shadow() {
     let mut subtile_exit = subtile_entry;
     subtile_exit.subsubmodule = 1;
     assert_eq!(
-        oam_scanout_across_main(subtile_entry, subtile_exit, entry_scanout, 0),
+        oam_scanout_across_main(subtile_entry, subtile_exit, entry_scanout),
         OamScanoutSource::ComposePublishedShadowDma,
     );
 }
@@ -9146,7 +9196,7 @@ fn supertile_scroll_keeps_the_pre_main_link_generation_from_palette_entry_throug
             entry, state_8,
         ));
         assert_eq!(
-            link_obj_scanout_across_main(entry, state_8, live, 0),
+            link_obj_scanout_across_main(entry, state_8, live),
             GraphicsDmaGeneration::HostBoundaryBeforeMain,
         );
         assert_eq!(
