@@ -696,10 +696,14 @@ impl ZeldaState {
             // Map16ToMap8 conversion across the measured vblank boundaries.
             // Keep the temporary overlay screen index live until that work
             // returns instead of restoring the gameplay screen atomically.
-            self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishWorldMapOverlayReload,
-                WORLD_MAP_OVERLAY_RELOAD_NMI_SLICES,
-            );
+            let schedule = self
+                .module09_cpu_schedule
+                .expect("Module09/$20 timing must be captured at its leading NMI");
+            self.game_execution_scheduler
+                .schedule_cpu_timed_work_from_current_main_iteration(
+                    GameWorkContinuation::FinishWorldMapOverlayReload,
+                    schedule.submodule_nmis,
+                );
             return;
         }
         self.finish_overworld_load_overlays();
@@ -758,10 +762,14 @@ impl ZeldaState {
         {
             // The main-page Map16ToMap8 conversion is likewise interruptible;
             // INIDISP=0 and submodule $22 are reached only after it returns.
-            self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishWorldMapAmbientMap8,
-                WORLD_MAP_AMBIENT_MAP8_NMI_SLICES,
-            );
+            let schedule = self
+                .module09_cpu_schedule
+                .expect("Module09/$21 timing must be captured at its leading NMI");
+            self.game_execution_scheduler
+                .schedule_cpu_timed_work_from_current_main_iteration(
+                    GameWorkContinuation::FinishWorldMapAmbientMap8,
+                    schedule.submodule_nmis,
+                );
             return;
         }
         self.Overworld_LoadAmbientOverlay(false);
@@ -885,6 +893,12 @@ impl ZeldaState {
     }
 
     fn complete_module09_sprite_and_hud_suffix(&mut self) {
+        let caller = self.begin_module09_sprite_main();
+        self.sprite_main();
+        self.complete_module09_after_sprite_main(caller);
+    }
+
+    fn begin_module09_sprite_main(&mut self) -> Module09SpriteMainReturn {
         let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         let bg1x = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
@@ -902,13 +916,21 @@ impl ZeldaState {
         self.set_bg1_v_live_and_copy(bg1y_off);
 
         self.replay_trace_ram_watch("module09-before-sprite-main");
-        self.sprite_main();
+        Module09SpriteMainReturn {
+            bg2_x: bg2x,
+            bg2_y: bg2y,
+            bg1_x: bg1x,
+            bg1_y: bg1y,
+        }
+    }
+
+    fn complete_module09_after_sprite_main(&mut self, caller: Module09SpriteMainReturn) {
         self.replay_trace_ram_watch("module09-after-sprite-main");
 
-        self.set_bg2_x(bg2x);
-        self.set_bg2_y(bg2y);
-        self.set_bg1_x(bg1x);
-        self.set_bg1_y(bg1y);
+        self.set_bg2_x(caller.bg2_x);
+        self.set_bg2_y(caller.bg2_y);
+        self.set_bg1_x(caller.bg1_x);
+        self.set_bg1_y(caller.bg1_y);
         self.replay_trace_ram_watch("module09-after-scroll-restore");
 
         self.replay_trace_ram_watch("module09-before-link-oam");
@@ -916,6 +938,37 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module09-after-link-oam");
         self.hud_refill_logic();
         self.replay_trace_ram_watch("module09-after-refill");
+    }
+
+    /// Resume `Overworld_LoadOverlays2` through the exact first caller NMI.
+    /// The original ROM reaches Sprite_Main slot 8 before that boundary and
+    /// resumes at slot 7 on the following host; the four scroll locals remain
+    /// live on the 65816 stack across the interrupt.
+    pub(super) fn begin_world_map_overlay_module09_sprite_return(
+        &mut self,
+        boundary: SpriteMainCpuBoundary,
+        nmi_slices: u8,
+    ) {
+        let module09 = self.begin_module09_sprite_main();
+        self.arm_sprite_main_cpu_continuation(
+            boundary,
+            nmi_slices,
+            SpriteMainCpuCaller::WorldMapOverlayReload { module09 },
+        );
+        self.sprite_main();
+        debug_assert!(self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack());
+    }
+
+    pub(super) fn complete_world_map_overlay_module09_sprite_return(
+        &mut self,
+        module09: Module09SpriteMainReturn,
+    ) {
+        self.complete_module09_after_sprite_main(module09);
+        self.OverworldOverlay_HandleRain();
+        self.replay_trace_ram_watch("module09-after-rain");
+        self.replay_trace_submodule("module09-exit");
     }
 
     fn publish_module09_transition_sprites_without_scroll(&mut self) {

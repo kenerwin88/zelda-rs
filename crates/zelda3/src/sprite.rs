@@ -1881,19 +1881,18 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_main(&mut self) {
-        if self.dungeon_sprite_main_nmi_boundary
-            == Some(DungeonSpriteMainCpuBoundary::BeforeFirstSlot)
-        {
+        if self.sprite_main_cpu_boundary == Some(SpriteMainCpuBoundary::BeforeFirstSlot) {
             let boundary = self
-                .dungeon_sprite_main_nmi_boundary
+                .sprite_main_cpu_boundary
                 .take()
                 .expect("Sprite_Main boundary was checked above");
-            let nmi_slices = std::mem::take(&mut self.dungeon_sprite_main_nmi_slices);
+            let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
             assert_ne!(
                 nmi_slices, 0,
                 "Sprite_Main continuation requires a measured NMI phase",
             );
-            self.schedule_dungeon_sprite_main_cpu_continuation(boundary, nmi_slices);
+            let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+            self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
             return;
         }
 
@@ -1958,17 +1957,15 @@ impl ZeldaState {
             if trace_sprite_slots {
                 self.replay_trace_ram_watch(&format!("sprite-before-execute-single slot={k}"));
             }
-            if self.dungeon_sprite_main_nmi_boundary
-                == Some(DungeonSpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(
-                    k as u8,
-                ))
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(k as u8))
             {
-                let nmi_slices = std::mem::take(&mut self.dungeon_sprite_main_nmi_slices);
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(
                     nmi_slices, 0,
                     "Zelda follower-graphics continuation requires a measured NMI phase",
                 );
-                self.dungeon_sprite_main_nmi_boundary = None;
+                self.sprite_main_cpu_boundary = None;
                 assert_eq!(self.sprite_slot_view(k).state(), 8);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x76);
                 self.sprite_timers_and_oam(k);
@@ -1976,29 +1973,30 @@ impl ZeldaState {
                 let saved_follower_indicator = self
                     .sprite_prep_zelda_before_follower_graphics(k)
                     .expect("ROM follower-graphics boundary requires Zelda's live prep path");
-                self.schedule_dungeon_sprite_main_cpu_continuation(
-                    DungeonSpriteMainCpuBoundary::AfterZeldaFollowerGraphics {
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterZeldaFollowerGraphics {
                         slot: k as u8,
                         saved_follower_indicator,
                     },
                     nmi_slices,
+                    caller,
                 );
                 return;
             }
             self.sprite_execute_single(k);
-            if self.dungeon_sprite_main_nmi_boundary
-                == Some(DungeonSpriteMainCpuBoundary::AfterSlot(k as u8))
-            {
+            if self.sprite_main_cpu_boundary == Some(SpriteMainCpuBoundary::AfterSlot(k as u8)) {
                 let boundary = self
-                    .dungeon_sprite_main_nmi_boundary
+                    .sprite_main_cpu_boundary
                     .take()
                     .expect("Sprite_Main boundary was checked above");
-                let nmi_slices = std::mem::take(&mut self.dungeon_sprite_main_nmi_slices);
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(
                     nmi_slices, 0,
                     "Sprite_Main continuation requires a measured NMI phase",
                 );
-                self.schedule_dungeon_sprite_main_cpu_continuation(boundary, nmi_slices);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
             }
             if self
                 .game_execution_scheduler
@@ -2024,14 +2022,46 @@ impl ZeldaState {
         }
     }
 
-    fn schedule_dungeon_sprite_main_cpu_continuation(
+    pub(super) fn arm_sprite_main_cpu_continuation(
         &mut self,
-        boundary: DungeonSpriteMainCpuBoundary,
+        boundary: SpriteMainCpuBoundary,
         nmi_slices: u8,
+        caller: SpriteMainCpuCaller,
+    ) {
+        assert_ne!(nmi_slices, 0, "Sprite_Main continuation requires an NMI");
+        assert!(
+            self.sprite_main_cpu_boundary.is_none(),
+            "Sprite_Main CPU continuation was already armed",
+        );
+        assert_eq!(self.sprite_main_cpu_nmi_slices, 0);
+        assert_eq!(self.sprite_main_cpu_caller, SpriteMainCpuCaller::default());
+        self.sprite_main_cpu_boundary = Some(boundary);
+        self.sprite_main_cpu_nmi_slices = nmi_slices;
+        self.sprite_main_cpu_caller = caller;
+    }
+
+    fn schedule_sprite_main_cpu_continuation(
+        &mut self,
+        boundary: SpriteMainCpuBoundary,
+        nmi_slices: u8,
+        caller: SpriteMainCpuCaller,
     ) {
         self.stage_interrupted_sprite_main_oam_scanout();
-        let continuation = GameWorkContinuation::FinishDungeonSpriteMain { boundary };
-        if self.dungeon_quadrant_cpu_continuation_active && nmi_slices == 1 {
+        let continuation = GameWorkContinuation::FinishSpriteMain { boundary, caller };
+        let resumes_after_current_nmi = match caller {
+            SpriteMainCpuCaller::DungeonModule07 => {
+                self.dungeon_quadrant_cpu_continuation_active && nmi_slices == 1
+            }
+            SpriteMainCpuCaller::WorldMapOverlayReload { .. } => {
+                self.game_execution_scheduler
+                    .schedule_cpu_timed_work_resuming_after_current_trailing_nmi(
+                        continuation,
+                        nmi_slices,
+                    );
+                return;
+            }
+        };
+        if resumes_after_current_nmi {
             self.game_execution_scheduler
                 .schedule_after_current_trailing_nmi(continuation);
         } else {
@@ -2062,14 +2092,14 @@ impl ZeldaState {
 
     pub(super) fn complete_sprite_main_after_cpu_boundary(
         &mut self,
-        boundary: DungeonSpriteMainCpuBoundary,
+        boundary: SpriteMainCpuBoundary,
     ) {
         match boundary {
-            DungeonSpriteMainCpuBoundary::BeforeFirstSlot => self.sprite_main(),
-            DungeonSpriteMainCpuBoundary::AfterSlot(interrupted_slot) => {
+            SpriteMainCpuBoundary::BeforeFirstSlot => self.sprite_main(),
+            SpriteMainCpuBoundary::AfterSlot(interrupted_slot) => {
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot as usize)
             }
-            DungeonSpriteMainCpuBoundary::AfterZeldaFollowerGraphics {
+            SpriteMainCpuBoundary::AfterZeldaFollowerGraphics {
                 slot,
                 saved_follower_indicator,
             } => {
@@ -2078,7 +2108,7 @@ impl ZeldaState {
                 self.sprite_prep_zelda_after_follower_graphics(slot, saved_follower_indicator);
                 self.complete_sprite_main_after_interrupted_slot(slot);
             }
-            DungeonSpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(_) => {
+            SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(_) => {
                 unreachable!("unstarted Zelda prep boundary cannot complete scheduled work")
             }
         }

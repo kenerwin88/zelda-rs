@@ -488,7 +488,9 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
                 | GameWorkContinuation::FinishStraightInterroomSpriteReset
-                | GameWorkContinuation::FinishDungeonSpriteMain { .. }
+                | GameWorkContinuation::FinishSpriteMain { .. }
+                | GameWorkContinuation::FinishWorldMapOverlayReload
+                | GameWorkContinuation::FinishWorldMapAmbientMap8
                 | GameWorkContinuation::FinishDungeonCachedSpriteMain { .. }
                 | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. }
@@ -946,6 +948,23 @@ impl GameExecutionScheduler {
         ));
     }
 
+    /// Schedule a saved CPU stack whose first measured crossing is this
+    /// callback's trailing NMI and whose return must occur on a later host.
+    /// A one-crossing caller resumes directly on the next callback; longer
+    /// callers retain only the crossings which remain after this boundary.
+    pub(super) fn schedule_cpu_timed_work_resuming_after_current_trailing_nmi(
+        &mut self,
+        continuation: GameWorkContinuation,
+        total_nmi_crossings: u8,
+    ) {
+        assert_ne!(total_nmi_crossings, 0);
+        if total_nmi_crossings == 1 {
+            self.schedule_after_current_trailing_nmi(continuation);
+        } else {
+            self.schedule_work_before_trailing_nmi(continuation, total_nmi_crossings);
+        }
+    }
+
     pub(super) fn schedule_file_select_graphics(&mut self) {
         self.schedule_continuation(GameExecutionContinuation::FileSelectGraphics(
             FileSelectGraphicsContinuation::begin(),
@@ -1212,7 +1231,7 @@ impl GameExecutionScheduler {
 #[cfg(test)]
 mod cpu_timing_tests {
     use super::*;
-    use crate::zelda_rtl::DungeonSpriteMainCpuBoundary;
+    use crate::zelda_rtl::{SpriteMainCpuBoundary, SpriteMainCpuCaller};
 
     const DUNGEON_HDMA_STALL: u16 = 42;
     const WORK_TO_CACHED_RESTORE: u32 = 1_400 + 4 * 10_674 + 8_884;
@@ -1604,8 +1623,9 @@ mod cpu_timing_tests {
 
     #[test]
     fn completed_scheduled_stack_and_following_main_preserve_leading_nmi_cadence() {
-        let continuation = GameWorkContinuation::FinishDungeonSpriteMain {
-            boundary: DungeonSpriteMainCpuBoundary::AfterSlot(3),
+        let continuation = GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::AfterSlot(3),
+            caller: SpriteMainCpuCaller::DungeonModule07,
         };
         let mut scheduler = GameExecutionScheduler::default();
         scheduler.schedule_work(continuation, 1);
@@ -1635,8 +1655,9 @@ mod cpu_timing_tests {
 
     #[test]
     fn nmi_after_resumed_stack_marks_the_next_main_as_post_leading_nmi() {
-        let continuation = GameWorkContinuation::FinishDungeonSpriteMain {
-            boundary: DungeonSpriteMainCpuBoundary::AfterSlot(3),
+        let continuation = GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::AfterSlot(3),
+            caller: SpriteMainCpuCaller::DungeonModule07,
         };
         let mut scheduler = GameExecutionScheduler::default();
         scheduler.schedule_work(continuation, 1);
