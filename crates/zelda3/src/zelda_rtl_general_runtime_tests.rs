@@ -3909,6 +3909,27 @@ fn room_32_staircase_35_sprite_reset_exposes_disabled_slots_for_one_nmi() {
 }
 
 #[test]
+fn snes9x_room_load_dispatcher_checkpoint_has_processor_status_30() {
+    // Both cold room-$50 and room-$72 Snes9x receipts enter the shared
+    // Module07 state-1 dispatcher at $02:8a26 with P=$30. Keep this executable
+    // checkpoint literal exact; the raster phase is modeled independently.
+    let checkpoint = DUNGEON_ROOM_LOAD_CPU_CHECKPOINT;
+    let packed_status = u8::from(checkpoint.carry)
+        | (u8::from(checkpoint.zero) << 1)
+        | (u8::from(checkpoint.interrupt_disable) << 2)
+        | (u8::from(checkpoint.decimal) << 3)
+        | (u8::from(checkpoint.index_is_8_bit) << 4)
+        | (u8::from(checkpoint.accumulator_is_8_bit) << 5)
+        | (u8::from(checkpoint.overflow) << 6)
+        | (u8::from(checkpoint.negative) << 7);
+
+    assert_eq!(checkpoint.entry_pc, 0x02_8a26);
+    assert_eq!(packed_status, 0x30);
+    assert!(!checkpoint.emulation);
+    assert!(!checkpoint.waiting);
+}
+
+#[test]
 fn c_dungeon_cache_trans_sprites_resumes_after_slot15_state_clear() {
     // The ROM step at $09:c17f commits the first loop statement from
     // sprite.c Dungeon_CacheTransSprites: alt_sprite_state[15] = 0. The

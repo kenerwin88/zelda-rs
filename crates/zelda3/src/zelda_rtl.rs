@@ -2893,8 +2893,8 @@ const DUNGEON_ROOM_LOAD_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
     carry: false,
     zero: false,
     overflow: false,
-    negative: true,
-    interrupt_disable: true,
+    negative: false,
+    interrupt_disable: false,
     decimal: false,
     accumulator_is_8_bit: true,
     index_is_8_bit: true,
@@ -9001,12 +9001,6 @@ pub struct ZeldaState {
     dungeon_landing_goal_display_handoff: DungeonLandingGoalDisplayHandoff,
     #[serde(skip)]
     active_display_obj_generation: DisplayObjGeneration,
-    /// The room-$72 state-10 quadrant builder returned through one complete
-    /// main-loop prefix before the next ordinary module iteration. Its two
-    /// room-sprite entries remain four lines ahead until that interrupted
-    /// sorted OAM generation retires from the captured PPU table.
-    #[serde(skip)]
-    room_72_interrupted_main_prefix_oam_offset_active: bool,
     #[serde(skip)]
     next_overworld_sprite_reload_entry_phase: Option<OverworldSpriteReloadEntryPhase>,
     #[serde(skip)]
@@ -9463,7 +9457,6 @@ struct DisplaySnapshot {
     dungeon_item_hold_entry_scanout: bool,
     dungeon_item_hold_entry_bg2_scroll: Option<(u16, u16)>,
     published_shadow_oam_dma: Option<Vec<u16>>,
-    room_72_interrupted_main_prefix_oam_offset_active: bool,
     animated_bg_scanout_generation: AnimatedBgScanoutGeneration,
     /// Exact animated-tile memory and default renderer provenance resident at
     /// the hardware boundary owned by this snapshot.
@@ -15146,7 +15139,6 @@ impl ZeldaState {
             dungeon_landing_entry_started_after_leading_nmi: false,
             dungeon_landing_goal_display_handoff: DungeonLandingGoalDisplayHandoff::None,
             active_display_obj_generation: DisplayObjGeneration::default(),
-            room_72_interrupted_main_prefix_oam_offset_active: false,
             next_overworld_sprite_reload_entry_phase: None,
             joypad_sampled_before_main: false,
             audio_nmi_processed_before_main: false,
@@ -17372,8 +17364,6 @@ impl ZeldaState {
                 .then_some((self.ppu.bg_layer[1].h_scroll, self.ppu.bg_layer[1].v_scroll)),
             published_shadow_oam_dma,
             obj_scanout_provenance,
-            room_72_interrupted_main_prefix_oam_offset_active: self
-                .room_72_interrupted_main_prefix_oam_offset_active,
             animated_bg_scanout_generation: self
                 .next_display_animated_bg_scanout_generation
                 .take()
@@ -17475,10 +17465,6 @@ impl ZeldaState {
         } else {
             self.intro_poly_vram_history.clear();
         }
-        let retires_room_72_interrupted_main_prefix_oam = publication
-            != DisplaySnapshotPublication::RetainPublished
-            && snapshot.room_72_interrupted_main_prefix_oam_offset_active
-            && snapshot.ppu.oam[12 * 2].to_le_bytes()[1] == 0xf0;
         match publication {
             DisplaySnapshotPublication::AdvanceStaged => {
                 let mut previous = self.deferred_display_snapshot.replace(snapshot);
@@ -17547,9 +17533,6 @@ impl ZeldaState {
                 publication != DisplaySnapshotPublication::RetainPublished;
         }
         self.apply_interrupted_dungeon_submodule_publication();
-        if retires_room_72_interrupted_main_prefix_oam {
-            self.room_72_interrupted_main_prefix_oam_offset_active = false;
-        }
     }
 
     fn compose_display_registers(
