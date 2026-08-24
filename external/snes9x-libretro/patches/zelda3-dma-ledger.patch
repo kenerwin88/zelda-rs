@@ -1,0 +1,761 @@
+diff --git a/apu/apu.cpp b/apu/apu.cpp
+index a4f40f3d..3d777b5d 100644
+--- a/apu/apu.cpp
++++ b/apu/apu.cpp
+@@ -293,6 +293,16 @@ uint32 S9xAPUTraceRemainder(void)
+     return spc::trace_remainder;
+ }
+ 
++int32 S9xAPUCurrentReferenceTime(void)
++{
++    return spc::reference_time;
++}
++
++uint32 S9xAPUCurrentRemainder(void)
++{
++    return spc::remainder;
++}
++
+ void S9xAPUEndScanline(void)
+ {
+     S9xAPUExecute();
+diff --git a/apu/apu.h b/apu/apu.h
+index 49a4f5ae..e0b0e228 100644
+--- a/apu/apu.h
++++ b/apu/apu.h
+@@ -25,6 +25,8 @@ void S9xAPUEndScanline (void);
+ void S9xAPUSetReferenceTime (int32);
+ int32 S9xAPUTraceReferenceTime (void);
+ uint32 S9xAPUTraceRemainder (void);
++int32 S9xAPUCurrentReferenceTime (void);
++uint32 S9xAPUCurrentRemainder (void);
+ void S9xAPUTimingSetSpeedup (int);
+ void S9xAPULoadState (uint8 *);
+ void S9xAPULoadBlarggState(uint8 *oldblock);
+diff --git a/dma.cpp b/dma.cpp
+index 2d6a2221..face3987 100644
+--- a/dma.cpp
++++ b/dma.cpp
+@@ -57,6 +57,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 	CPU.CurrentDMAorHDMAChannel = Channel;
+ 
+     SDMA	*d = &DMA[Channel];
++	Zelda3TraceDmaChannelBegin(Channel, d);
+ 	if (Zelda3TraceDmaEnabled)
+ 		Zelda3TraceDma(Channel, d);
+ 
+@@ -83,16 +84,20 @@ bool8 S9xDoDMA (uint8 Channel)
+ 		// 8 cycles per byte
+ 		while (c)
+ 		{
++			Zelda3TraceDmaByteBegin(0x2180, -1);
+ 			d->TransferBytes--;
+ 			d->AAddress++;
+ 			c--;
+ 			if (!addCyclesInDMA(Channel))
+ 			{
++				Zelda3TraceDmaByteEnd(FALSE);
++				Zelda3TraceDmaChannelEnd(Channel, d, FALSE);
+ 				CPU.InDMA = FALSE;
+ 				CPU.InDMAorHDMA = FALSE;
+ 				CPU.CurrentDMAorHDMAChannel = -1;
+ 				return (FALSE);
+ 			}
++			Zelda3TraceDmaByteEnd(TRUE);
+ 		}
+ 
+ 	#ifdef DEBUGGER
+@@ -103,6 +108,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 		}
+ 	#endif
+ 
++		Zelda3TraceDmaChannelEnd(Channel, d, TRUE);
+ 		CPU.InDMA = FALSE;
+ 		CPU.InDMAorHDMA = FALSE;
+ 		CPU.CurrentDMAorHDMAChannel = -1;
+@@ -390,12 +396,15 @@ bool8 S9xDoDMA (uint8 Channel)
+ 			p += inc; \
+ 			if (!addCyclesInDMA(Channel)) \
+ 			{ \
++				Zelda3TraceDmaByteEnd(FALSE); \
++				Zelda3TraceDmaChannelEnd(Channel, d, FALSE); \
+ 				CPU.InDMA = FALSE; \
+ 				CPU.InDMAorHDMA = FALSE; \
+ 				CPU.InWRAMDMAorHDMA = FALSE; \
+ 				CPU.CurrentDMAorHDMAChannel = -1; \
+ 				return (FALSE); \
+-			}
++			} \
++			Zelda3TraceDmaByteEnd(TRUE)
+ 
+ 		while (1)
+ 		{
+@@ -638,9 +647,10 @@ bool8 S9xDoDMA (uint8 Channel)
+ 							}
+ 							else
+ 							{
+-								do
+-								{
+-									UPDATE_COUNTERS;
++					do
++					{
++						Zelda3TraceDmaByteBegin(0x2180, -1);
++						UPDATE_COUNTERS;
+ 								} while (--count > 0);
+ 							}
+ 
+@@ -884,12 +894,15 @@ bool8 S9xDoDMA (uint8 Channel)
+ 			d->AAddress += inc; \
+ 			if (!addCyclesInDMA(Channel)) \
+ 			{ \
++				Zelda3TraceDmaByteEnd(FALSE); \
++				Zelda3TraceDmaChannelEnd(Channel, d, FALSE); \
+ 				CPU.InDMA = FALSE; \
+ 				CPU.InDMAorHDMA = FALSE; \
+ 				CPU.InWRAMDMAorHDMA = FALSE; \
+ 				CPU.CurrentDMAorHDMAChannel = -1; \
+ 				return (FALSE); \
+-			}
++			} \
++			Zelda3TraceDmaByteEnd(TRUE)
+ 
+ 		if (d->BAddress > 0x80 - 4 && d->BAddress <= 0x83 && !(d->ABank & 0x40))
+ 		{
+@@ -903,6 +916,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 					case 6:
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2100 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						count--;
+@@ -913,6 +927,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 					case 5:
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2100 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+@@ -920,6 +935,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2101 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2101 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						count--;
+@@ -930,6 +946,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 					case 7:
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2100 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+@@ -937,6 +954,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2100 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+@@ -944,6 +962,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2101 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2101 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+@@ -951,6 +970,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2101 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2101 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						count--;
+@@ -960,6 +980,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 					case 4:
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2100 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+@@ -967,6 +988,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2101 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2101 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+@@ -974,6 +996,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2102 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2102 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+@@ -981,6 +1004,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 
+ 						CPU.InWRAMDMAorHDMA = (d->AAddress < 0x2000);
+ 						Work = S9xGetPPU(0x2103 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2103 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						count--;
+@@ -994,6 +1018,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 					#endif
+ 						while (count)
+ 						{
++							Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, -1);
+ 							UPDATE_COUNTERS;
+ 							count--;
+ 						}
+@@ -1014,6 +1039,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 					case 2:
+ 					case 6:
+ 						Work = S9xGetPPU(0x2100 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						count--;
+@@ -1023,12 +1049,14 @@ bool8 S9xDoDMA (uint8 Channel)
+ 					case 1:
+ 					case 5:
+ 						Work = S9xGetPPU(0x2100 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+ 							break;
+ 
+ 						Work = S9xGetPPU(0x2101 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2101 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						count--;
+@@ -1038,24 +1066,28 @@ bool8 S9xDoDMA (uint8 Channel)
+ 					case 3:
+ 					case 7:
+ 						Work = S9xGetPPU(0x2100 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+ 							break;
+ 
+ 						Work = S9xGetPPU(0x2100 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+ 							break;
+ 
+ 						Work = S9xGetPPU(0x2101 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2101 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+ 							break;
+ 
+ 						Work = S9xGetPPU(0x2101 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2101 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						count--;
+@@ -1064,24 +1096,28 @@ bool8 S9xDoDMA (uint8 Channel)
+ 
+ 					case 4:
+ 						Work = S9xGetPPU(0x2100 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+ 							break;
+ 
+ 						Work = S9xGetPPU(0x2101 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2101 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+ 							break;
+ 
+ 						Work = S9xGetPPU(0x2102 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2102 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						if (!--count)
+ 							break;
+ 
+ 						Work = S9xGetPPU(0x2103 + d->BAddress);
++						Zelda3TraceDmaByteBegin(0x2103 + d->BAddress, Work);
+ 						S9xSetByte(Work, (d->ABank << 16) + d->AAddress);
+ 						UPDATE_COUNTERS;
+ 						count--;
+@@ -1095,6 +1131,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 					#endif
+ 						while (count)
+ 						{
++							Zelda3TraceDmaByteBegin(0x2100 + d->BAddress, -1);
+ 							UPDATE_COUNTERS;
+ 							count--;
+ 						}
+@@ -1123,6 +1160,7 @@ bool8 S9xDoDMA (uint8 Channel)
+ 		fprintf(stderr,"DMA[%d] TransferBytes not 0! $21%02x Reverse:%d %04x\n", Channel, d->BAddress, d->ReverseTransfer, d->TransferBytes);
+ #endif
+ 
++	Zelda3TraceDmaChannelEnd(Channel, d, TRUE);
+ 	CPU.InDMA = FALSE;
+ 	CPU.InDMAorHDMA = FALSE;
+ 	CPU.InWRAMDMAorHDMA = FALSE;
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+index efc800a4..b5703597 100644
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -990,6 +990,26 @@ extern "C" int zelda3_snes9x_debug_cpu_timing_transaction_overflow()
+     return Zelda3TraceCpuTimingTransactionOverflow();
+ }
+ 
++extern "C" int zelda3_snes9x_debug_dma_ledger_count()
++{
++    return Zelda3TraceDmaLedgerCount();
++}
++
++extern "C" int zelda3_snes9x_debug_dma_ledger_value(int event, int field)
++{
++    return Zelda3TraceDmaLedgerValue(event, field);
++}
++
++extern "C" int zelda3_snes9x_debug_dma_ledger_overflow()
++{
++    return Zelda3TraceDmaLedgerOverflow();
++}
++
++extern "C" int zelda3_snes9x_debug_dma_vram_snapshot_value(int outer, int phase, int address)
++{
++    return Zelda3TraceDmaVramSnapshotValue(outer, phase, address);
++}
++
+ extern "C" int zelda3_snes9x_debug_smp_output_port_write_count()
+ {
+     return Zelda3TraceSmpOutputPortWriteCount();
+diff --git a/ppu.cpp b/ppu.cpp
+index d8fa414a..835b14a2 100644
+--- a/ppu.cpp
++++ b/ppu.cpp
+@@ -209,6 +209,8 @@ void S9xFixColourBrightness (void)
+ 
+ void S9xSetPPU (uint8 Byte, uint16 Address)
+ {
++	if (Zelda3TraceDmaLedgerEnabled && CPU.InDMA)
++		Zelda3TraceDmaByteBegin(Address, Byte);
+ 	// MAP_PPU: $2000-$3FFF
+ 	if (Zelda3TracePpuEnabled)
+ 		Zelda3TracePpuWrite(Address, Byte);
+@@ -1512,6 +1514,7 @@ void S9xSetCPU (uint8 Byte, uint16 Address)
+ 			case 0x420b: // MDMAEN
+ 				if (CPU.InDMAorHDMA)
+ 					return;
++				Zelda3TraceDmaOuterBegin(Byte);
+ 				// XXX: Not quite right...
+                 if (Byte) {
+ 				CPU.Cycles += Timings.DMACPUSync;
+@@ -1532,6 +1535,7 @@ void S9xSetCPU (uint8 Byte, uint16 Address)
+ 					S9xDoDMA(6);
+ 				if (Byte & 0x80)
+ 					S9xDoDMA(7);
++				Zelda3TraceDmaOuterEnd(Byte);
+ 			#ifdef DEBUGGER
+ 				missing.dma_this_frame = Byte;
+ 				missing.dma_channels = Byte;
+diff --git a/ppu.h b/ppu.h
+index f5b0e0aa..a52fa320 100644
+--- a/ppu.h
++++ b/ppu.h
+@@ -7,6 +7,8 @@
+ #ifndef _PPU_H_
+ #define _PPU_H_
+ 
++#include "zelda3_trace.h"
++
+ #define FIRST_VISIBLE_LINE	1
+ 
+ #define TILE_2BIT			0
+@@ -250,6 +252,8 @@ static inline void S9xUpdateVRAMReadBuffer()
+ 
+ static inline void REGISTER_2104 (uint8 Byte)
+ {
++	if (Zelda3TraceDmaLedgerEnabled && CPU.InDMA)
++		Zelda3TraceDmaByteBegin(0x2104, Byte);
+ 	if (!(PPU.OAMFlip & 1))
+ 	{
+ 		PPU.OAMWriteRegister &= 0xff00;
+@@ -354,6 +358,8 @@ static inline void REGISTER_2104 (uint8 Byte)
+ 
+ static inline void REGISTER_2118 (uint8 Byte)
+ {
++	if (Zelda3TraceDmaLedgerEnabled && CPU.InDMA)
++		Zelda3TraceDmaByteBegin(0x2118, Byte);
+ 	CHECK_INBLANK();
+ 
+ 	uint32	address;
+@@ -391,6 +397,8 @@ static inline void REGISTER_2118 (uint8 Byte)
+ 
+ static inline void REGISTER_2118_tile (uint8 Byte)
+ {
++	if (Zelda3TraceDmaLedgerEnabled && CPU.InDMA)
++		Zelda3TraceDmaByteBegin(0x2118, Byte);
+ 	CHECK_INBLANK();
+ 
+ 	uint32 rem = PPU.VMA.Address & PPU.VMA.Mask1;
+@@ -416,6 +424,8 @@ static inline void REGISTER_2118_tile (uint8 Byte)
+ 
+ static inline void REGISTER_2118_linear (uint8 Byte)
+ {
++	if (Zelda3TraceDmaLedgerEnabled && CPU.InDMA)
++		Zelda3TraceDmaByteBegin(0x2118, Byte);
+ 	CHECK_INBLANK();
+ 
+ 	uint32	address;
+@@ -462,6 +472,8 @@ static inline void REGISTER_2118_linear (uint8 Byte)
+ 
+ static inline void REGISTER_2119 (uint8 Byte)
+ {
++	if (Zelda3TraceDmaLedgerEnabled && CPU.InDMA)
++		Zelda3TraceDmaByteBegin(0x2119, Byte);
+ 	CHECK_INBLANK();
+ 	uint32	address;
+ 
+@@ -498,6 +510,8 @@ static inline void REGISTER_2119 (uint8 Byte)
+ 
+ static inline void REGISTER_2119_tile (uint8 Byte)
+ {
++	if (Zelda3TraceDmaLedgerEnabled && CPU.InDMA)
++		Zelda3TraceDmaByteBegin(0x2119, Byte);
+ 	CHECK_INBLANK();
+ 
+ 	uint32 rem = PPU.VMA.Address & PPU.VMA.Mask1;
+@@ -523,6 +537,8 @@ static inline void REGISTER_2119_tile (uint8 Byte)
+ 
+ static inline void REGISTER_2119_linear (uint8 Byte)
+ {
++	if (Zelda3TraceDmaLedgerEnabled && CPU.InDMA)
++		Zelda3TraceDmaByteBegin(0x2119, Byte);
+ 	CHECK_INBLANK();
+ 
+ 	uint32	address;
+@@ -547,6 +563,8 @@ static inline void REGISTER_2119_linear (uint8 Byte)
+ 
+ static inline void REGISTER_2122 (uint8 Byte)
+ {
++	if (Zelda3TraceDmaLedgerEnabled && CPU.InDMA)
++		Zelda3TraceDmaByteBegin(0x2122, Byte);
+ 	if (PPU.CGFLIP)
+ 	{
+ 		if ((Byte & 0x7f) != (PPU.CGDATA[PPU.CGADD] >> 8) || PPU.CGSavedByte != (uint8) (PPU.CGDATA[PPU.CGADD] & 0xff))
+@@ -572,6 +590,8 @@ static inline void REGISTER_2122 (uint8 Byte)
+ 
+ static inline void REGISTER_2180 (uint8 Byte)
+ {
++	if (Zelda3TraceDmaLedgerEnabled && CPU.InDMA)
++		Zelda3TraceDmaByteBegin(0x2180, Byte);
+ 	Memory.RAM[PPU.WRAM++] = Byte;
+ 	PPU.WRAM &= 0x1ffff;
+ }
+diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
+index 6bd4dfa2..0cfedcf0 100644
+--- a/zelda3_trace.cpp
++++ b/zelda3_trace.cpp
+@@ -22,6 +22,7 @@ bool Zelda3TracePixelEnabled = false;
+ bool Zelda3TracePpuEnabled = false;
+ bool Zelda3TraceWramEnabled = false;
+ bool Zelda3TraceCpuTimingEnabled = false;
++bool Zelda3TraceDmaLedgerEnabled = false;
+ 
+ namespace
+ {
+@@ -143,6 +144,100 @@ constexpr int smp_instruction_field_count = 28;
+ int smp_instruction_count = 0;
+ int smp_instructions[smp_instruction_capacity][smp_instruction_field_count] = {};
+ uint64 smp_instruction_cycles[smp_instruction_capacity] = {};
++constexpr int dma_ledger_capacity = 131072;
++constexpr int dma_ledger_field_count = 72;
++constexpr int dma_vram_snapshot_capacity = 16;
++int dma_ledger_count = 0;
++int dma_ledger[dma_ledger_capacity][dma_ledger_field_count] = {};
++int dma_ledger_overflow = 0;
++int dma_ledger_active_byte = -1;
++int dma_ledger_outer_count = 0;
++int dma_ledger_current_outer = -1;
++int dma_ledger_global_byte = 0;
++int dma_ledger_channel_byte = 0;
++uint8 dma_vram_snapshots[dma_vram_snapshot_capacity][2][0x10000] = {};
++
++enum DmaLedgerEvent
++{
++	DMA_LEDGER_OUTER_BEGIN = 0,
++	DMA_LEDGER_CHANNEL_BEGIN = 1,
++	DMA_LEDGER_BYTE = 2,
++	DMA_LEDGER_CHANNEL_END = 3,
++	DMA_LEDGER_OUTER_END = 4,
++};
++
++void capture_dma_common(int *event, int offset)
++{
++	event[offset + 0] = CPU.V_Counter;
++	event[offset + 1] = CPU.Cycles;
++	event[offset + 2] = CPU.NextEvent;
++	event[offset + 3] = CPU.WhichEvent;
++	event[offset + 4] = Timings.H_Max;
++	event[offset + 5] = Timings.WRAMRefreshPos;
++	event[offset + 6] = Zelda3TraceCpuModelIdentity();
++	event[offset + 7] = Model->_5A22;
++	event[offset + 8] = S9xAPUCurrentReferenceTime();
++	event[offset + 9] = S9xAPUCurrentRemainder();
++	event[offset + 10] = SNES::smp.clock;
++	event[offset + 11] = SNES::smp.regs.pc;
++	event[offset + 12] = SNES::smp.opcode_number;
++	event[offset + 13] = SNES::smp.opcode_cycle;
++	event[offset + 14] = SNES::dsp.clock;
++	event[offset + 15] = SNES::dsp.spc_dsp.zelda3_debug_value(7);
++	event[offset + 16] = dsp_sample_count;
++	event[offset + 17] = Registers.PBPC & 0xffffff;
++}
++
++void capture_dma_before_state(int *event, const SDMA *dma)
++{
++	event[46] = dma ? dma->TransferMode : -1;
++	event[47] = dma ? dma->AAddressFixed : -1;
++	event[48] = dma ? dma->AAddressDecrement : -1;
++	event[49] = dma ? dma->TransferBytes : -1;
++	event[50] = dma ? dma->AAddress : -1;
++	event[51] = dma ? dma->ABank : -1;
++	event[52] = dma ? dma->BAddress : -1;
++	event[53] = PPU.VMA.Address;
++	event[54] = PPU.VMA.Increment;
++	event[55] = PPU.VMA.High;
++	event[56] = PPU.VMA.FullGraphicCount;
++	event[57] = PPU.OAMAddr;
++	event[58] = PPU.CGADD;
++	event[59] = PPU.CGFLIP;
++	event[60] = CPU.InWRAMDMAorHDMA;
++	event[61] = CPU.HDMARanInDMA;
++	event[62] = OpenBus;
++}
++
++void capture_dma_after_state(int *event, const SDMA *dma)
++{
++	event[63] = dma ? dma->TransferBytes : -1;
++	event[64] = dma ? dma->AAddress : -1;
++	event[65] = PPU.VMA.Address;
++	event[66] = PPU.OAMAddr;
++	event[67] = PPU.CGADD;
++	event[68] = PPU.CGFLIP;
++	event[69] = CPU.InWRAMDMAorHDMA;
++	event[70] = CPU.HDMARanInDMA;
++	event[71] = OpenBus;
++}
++
++int *begin_dma_ledger_event(int kind, int owner)
++{
++	if (!Zelda3TraceDmaLedgerEnabled)
++		return nullptr;
++	if (dma_ledger_count >= dma_ledger_capacity)
++	{
++		dma_ledger_overflow = 1;
++		return nullptr;
++	}
++	int *event = dma_ledger[dma_ledger_count++];
++	std::fill_n(event, dma_ledger_field_count, -1);
++	event[0] = kind;
++	event[1] = dma_ledger_current_outer;
++	event[2] = owner;
++	return event;
++}
+ 
+ constexpr int smp_ledger_abi_version = 1;
+ constexpr int smp_ledger_seed_field_count = 31;
+@@ -1238,9 +1333,18 @@ void Zelda3TraceRetroRunBegin()
+ {
+ 	const char *cpu_timing = std::getenv("ZELDA3_DEBUG_SNES9X_SMP_BOOTSTRAP");
+ 	Zelda3TraceCpuTimingEnabled = cpu_timing && *cpu_timing;
++	const char *dma_ledger = std::getenv("ZELDA3_DEBUG_SNES9X_DMA_LEDGER");
++	Zelda3TraceDmaLedgerEnabled = dma_ledger && *dma_ledger;
+ 	cpu_timing_transaction_count = 0;
+ 	cpu_timing_transaction_active = -1;
+ 	cpu_timing_transaction_overflow = 0;
++	dma_ledger_count = 0;
++	dma_ledger_overflow = 0;
++	dma_ledger_active_byte = -1;
++	dma_ledger_outer_count = 0;
++	dma_ledger_current_outer = -1;
++	dma_ledger_global_byte = 0;
++	dma_ledger_channel_byte = 0;
+ 	std::fill_n(presented_pixel, presented_pixel_field_count, -1);
+ 	dsp_sample_count = 0;
+ 	dsp_write_count = 0;
+@@ -1326,6 +1430,129 @@ void Zelda3TraceDma(uint8 channel, const SDMA *dma)
+ 	finish_event();
+ }
+ 
++void Zelda3TraceDmaOuterBegin(uint8 mask)
++{
++	if (!Zelda3TraceDmaLedgerEnabled)
++		return;
++	if (dma_ledger_outer_count >= dma_vram_snapshot_capacity)
++	{
++		dma_ledger_overflow = 1;
++		dma_ledger_current_outer = -1;
++		return;
++	}
++	dma_ledger_current_outer = dma_ledger_outer_count++;
++	dma_ledger_global_byte = 0;
++	std::memcpy(dma_vram_snapshots[dma_ledger_current_outer][0], Memory.VRAM, 0x10000);
++	int *event = begin_dma_ledger_event(DMA_LEDGER_OUTER_BEGIN, mask);
++	if (!event)
++		return;
++	event[9] = 1;
++	capture_dma_common(event, 10);
++	capture_dma_before_state(event, nullptr);
++}
++
++void Zelda3TraceDmaOuterEnd(uint8 mask)
++{
++	if (!Zelda3TraceDmaLedgerEnabled || dma_ledger_current_outer < 0)
++		return;
++	std::memcpy(dma_vram_snapshots[dma_ledger_current_outer][1], Memory.VRAM, 0x10000);
++	int *event = begin_dma_ledger_event(DMA_LEDGER_OUTER_END, mask);
++	if (event)
++	{
++		event[9] = 1;
++		capture_dma_common(event, 10);
++		capture_dma_before_state(event, nullptr);
++		capture_dma_after_state(event, nullptr);
++	}
++	dma_ledger_current_outer = -1;
++}
++
++void Zelda3TraceDmaChannelBegin(uint8 channel, const SDMA *dma)
++{
++	dma_ledger_channel_byte = 0;
++	int *event = begin_dma_ledger_event(DMA_LEDGER_CHANNEL_BEGIN, channel);
++	if (!event)
++		return;
++	event[9] = 1;
++	capture_dma_common(event, 10);
++	capture_dma_before_state(event, dma);
++}
++
++void Zelda3TraceDmaChannelEnd(uint8 channel, const SDMA *dma, bool8 completed)
++{
++	int *event = begin_dma_ledger_event(DMA_LEDGER_CHANNEL_END, channel);
++	if (!event)
++		return;
++	event[9] = completed;
++	capture_dma_common(event, 10);
++	capture_dma_before_state(event, dma);
++	capture_dma_after_state(event, dma);
++}
++
++void Zelda3TraceDmaByteBegin(uint16 b_address, int value)
++{
++	if (!Zelda3TraceDmaLedgerEnabled || !CPU.InDMA || dma_ledger_active_byte >= 0)
++		return;
++	const int channel = CPU.CurrentDMAorHDMAChannel;
++	if (channel < 0 || channel >= 8)
++	{
++		dma_ledger_overflow = 1;
++		return;
++	}
++	SDMA *dma = &DMA[channel];
++	int *event = begin_dma_ledger_event(DMA_LEDGER_BYTE, channel);
++	if (!event)
++		return;
++	dma_ledger_active_byte = dma_ledger_count - 1;
++	event[3] = dma_ledger_global_byte;
++	event[4] = dma_ledger_channel_byte;
++	event[5] = dma->ReverseTransfer;
++	event[6] = ((uint32) dma->ABank << 16) | dma->AAddress;
++	event[7] = b_address;
++	event[8] = value;
++	capture_dma_common(event, 10);
++	capture_dma_before_state(event, dma);
++}
++
++void Zelda3TraceDmaByteEnd(bool8 completed)
++{
++	if (!Zelda3TraceDmaLedgerEnabled || dma_ledger_active_byte < 0)
++		return;
++	int *event = dma_ledger[dma_ledger_active_byte];
++	const int channel = event[2];
++	SDMA *dma = channel >= 0 && channel < 8 ? &DMA[channel] : nullptr;
++	event[9] = completed;
++	capture_dma_common(event, 28);
++	capture_dma_after_state(event, dma);
++	dma_ledger_active_byte = -1;
++	dma_ledger_global_byte++;
++	dma_ledger_channel_byte++;
++}
++
++int Zelda3TraceDmaLedgerCount()
++{
++	return dma_ledger_count;
++}
++
++int Zelda3TraceDmaLedgerValue(int event, int field)
++{
++	return event >= 0 && event < dma_ledger_count &&
++		field >= 0 && field < dma_ledger_field_count
++		? dma_ledger[event][field] : -1;
++}
++
++int Zelda3TraceDmaLedgerOverflow()
++{
++	return dma_ledger_overflow;
++}
++
++int Zelda3TraceDmaVramSnapshotValue(int outer, int phase, int address)
++{
++	return outer >= 0 && outer < dma_ledger_outer_count &&
++		phase >= 0 && phase < 2 && address >= 0 && address < 0x10000
++		? dma_vram_snapshots[outer][phase][address] : -1;
++}
++
+ void Zelda3TraceHdma(const char *phase, uint8 channels)
+ {
+ 	if (!active(TRACE_HDMA))
+diff --git a/zelda3_trace.h b/zelda3_trace.h
+index 42df33ab..0db01fe5 100644
+--- a/zelda3_trace.h
++++ b/zelda3_trace.h
+@@ -23,6 +23,7 @@ extern bool Zelda3TracePixelEnabled;
+ extern bool Zelda3TracePpuEnabled;
+ extern bool Zelda3TraceWramEnabled;
+ extern bool Zelda3TraceCpuTimingEnabled;
++extern bool Zelda3TraceDmaLedgerEnabled;
+ 
+ enum Zelda3TraceCpuTimingKind
+ {
+@@ -121,6 +122,16 @@ void Zelda3TraceRetroRunEnd();
+ void Zelda3TraceInstruction(void);
+ void Zelda3TraceNmi(void);
+ void Zelda3TraceDma(uint8 channel, const SDMA *dma);
++void Zelda3TraceDmaOuterBegin(uint8 mask);
++void Zelda3TraceDmaOuterEnd(uint8 mask);
++void Zelda3TraceDmaChannelBegin(uint8 channel, const SDMA *dma);
++void Zelda3TraceDmaChannelEnd(uint8 channel, const SDMA *dma, bool8 completed);
++void Zelda3TraceDmaByteBegin(uint16 b_address, int value);
++void Zelda3TraceDmaByteEnd(bool8 completed);
++int Zelda3TraceDmaLedgerCount();
++int Zelda3TraceDmaLedgerValue(int event, int field);
++int Zelda3TraceDmaLedgerOverflow();
++int Zelda3TraceDmaVramSnapshotValue(int outer, int phase, int address);
+ void Zelda3TraceHdma(const char *phase, uint8 channels);
+ void Zelda3TracePpuRead(uint16 address, uint8 value);
+ void Zelda3TracePpuWrite(uint16 address, uint8 value);

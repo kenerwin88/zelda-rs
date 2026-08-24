@@ -21,6 +21,7 @@ TRACE_PATCHES = (
     PATCH_DIR / "zelda3-trace-obj-cache.patch",
     PATCH_DIR / "zelda3-spc-opcode-ledger.patch",
     PATCH_DIR / "zelda3-dsp-phase-ledger.patch",
+    PATCH_DIR / "zelda3-dma-ledger.patch",
 )
 LOCK = json.loads(LOCK_PATH.read_text())
 VERSION = LOCK["core_version"]
@@ -44,6 +45,7 @@ EXPECTED_PATCH_PATHS = frozenset(
         "libretro/Makefile.common",
         "libretro/libretro.cpp",
         "ppu.cpp",
+        "ppu.h",
         "tileimpl.h",
         "tileimpl-n1x1.cpp",
         "tileimpl-n2x1.cpp",

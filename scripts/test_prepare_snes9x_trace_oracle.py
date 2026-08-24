@@ -15,15 +15,19 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PrepareSnes9xTraceOracleTests(unittest.TestCase):
-    def test_trace_patch_stack_ends_with_direct_dsp_phase_ledger(self) -> None:
+    def test_trace_patch_stack_keeps_dsp_ledger_before_dma_ledger(self) -> None:
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-1].name,
+            MODULE.TRACE_PATCHES[-2].name,
             "zelda3-dsp-phase-ledger.patch",
         )
-        patch = MODULE.TRACE_PATCHES[-1].read_text()
+        patch = MODULE.TRACE_PATCHES[-2].read_text()
         self.assertIn("zelda3_snes9x_debug_dsp_ledger_abi_version", patch)
         self.assertIn("zelda3_ledger_copy_state", patch)
         self.assertIn("Zelda3TraceDspLedgerBranch", patch)
+        self.assertEqual(MODULE.TRACE_PATCHES[-1].name, "zelda3-dma-ledger.patch")
+        dma_patch = MODULE.TRACE_PATCHES[-1].read_text()
+        self.assertIn("zelda3_snes9x_debug_dma_ledger_count", dma_patch)
+        self.assertIn("Zelda3TraceDmaByteBegin", dma_patch)
 
     def test_lock_pins_the_official_snes9x_1_63_release(self) -> None:
         lock = json.loads(MODULE.LOCK_PATH.read_text())
@@ -59,6 +63,7 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
                 "libretro/Makefile.common",
                 "libretro/libretro.cpp",
                 "ppu.cpp",
+                "ppu.h",
                 "tileimpl.h",
                 "tileimpl-n1x1.cpp",
                 "tileimpl-n2x1.cpp",

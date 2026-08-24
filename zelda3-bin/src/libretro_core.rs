@@ -134,6 +134,11 @@ pub(crate) struct LibretroCore {
     pub(crate) debug_cpu_timing_transaction_value:
         Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_cpu_timing_transaction_overflow: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_dma_ledger_count: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_dma_ledger_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
+    pub(crate) debug_dma_ledger_overflow: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_dma_vram_snapshot_value:
+        Option<unsafe extern "C" fn(c_int, c_int, c_int) -> c_int>,
     pub(crate) debug_smp_output_port_write_count: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_smp_output_port_write_value:
         Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
@@ -262,6 +267,14 @@ impl LibretroCore {
                 handle,
                 "zelda3_snes9x_debug_cpu_timing_transaction_overflow",
             );
+            let debug_dma_ledger_count =
+                optional_symbol(handle, "zelda3_snes9x_debug_dma_ledger_count");
+            let debug_dma_ledger_value =
+                optional_symbol(handle, "zelda3_snes9x_debug_dma_ledger_value");
+            let debug_dma_ledger_overflow =
+                optional_symbol(handle, "zelda3_snes9x_debug_dma_ledger_overflow");
+            let debug_dma_vram_snapshot_value =
+                optional_symbol(handle, "zelda3_snes9x_debug_dma_vram_snapshot_value");
             let debug_smp_output_port_write_count =
                 optional_symbol(handle, "zelda3_snes9x_debug_smp_output_port_write_count");
             let debug_smp_output_port_write_value =
@@ -355,6 +368,10 @@ impl LibretroCore {
                 debug_cpu_timing_transaction_count,
                 debug_cpu_timing_transaction_value,
                 debug_cpu_timing_transaction_overflow,
+                debug_dma_ledger_count,
+                debug_dma_ledger_value,
+                debug_dma_ledger_overflow,
+                debug_dma_vram_snapshot_value,
                 debug_smp_output_port_write_count,
                 debug_smp_output_port_write_value,
                 debug_smp_output_port_write_cycle,
@@ -740,6 +757,48 @@ impl LibretroCore {
         ))
     }
 
+    pub(crate) fn debug_dma_ledger(&self) -> Result<Option<Vec<LibretroDmaLedgerEvent>>, String> {
+        let (Some(count), Some(value), Some(overflow)) = (
+            self.debug_dma_ledger_count,
+            self.debug_dma_ledger_value,
+            self.debug_dma_ledger_overflow,
+        ) else {
+            return Ok(None);
+        };
+        if unsafe { overflow() } != 0 {
+            return Err("Snes9x DMA ledger buffer overflowed".to_string());
+        }
+        let count = unsafe { count() }.max(0);
+        Ok(Some(
+            (0..count)
+                .map(|event| LibretroDmaLedgerEvent {
+                    fields: std::array::from_fn(|field| unsafe { value(event, field as c_int) }),
+                })
+                .collect(),
+        ))
+    }
+
+    pub(crate) fn debug_dma_vram_snapshot(
+        &self,
+        outer: i32,
+        phase: i32,
+    ) -> Result<Option<Vec<u8>>, String> {
+        let Some(value) = self.debug_dma_vram_snapshot_value else {
+            return Ok(None);
+        };
+        let mut snapshot = Vec::with_capacity(0x10000);
+        for address in 0..0x10000 {
+            let byte = unsafe { value(outer, phase, address) };
+            if !(0..=0xff).contains(&byte) {
+                return Err(format!(
+                    "Snes9x DMA VRAM snapshot {outer}/{phase} is unavailable at ${address:04x}"
+                ));
+            }
+            snapshot.push(byte as u8);
+        }
+        Ok(Some(snapshot))
+    }
+
     pub(crate) fn debug_smp_instructions(&self) -> Option<Vec<LibretroSmpInstruction>> {
         let (Some(count), Some(value), Some(cycle)) = (
             self.debug_smp_instruction_count,
@@ -938,6 +997,13 @@ pub(crate) struct LibretroCpuTimingTransaction {
     pub(crate) cpu_model_5a22: i32,
     pub(crate) start_wram_refresh_position: i32,
     pub(crate) end_wram_refresh_position: i32,
+}
+
+pub(crate) const LIBRETRO_DMA_LEDGER_FIELDS: usize = 72;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct LibretroDmaLedgerEvent {
+    pub(crate) fields: [i32; LIBRETRO_DMA_LEDGER_FIELDS],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
