@@ -1369,6 +1369,11 @@ mod tests {
     use crate::Snes9xApuClockCheckpoint;
     use std::collections::VecDeque;
 
+    const POST_HANDOFF_FIRST_NMI_FIXTURE: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../external/snes9x-libretro/fixtures/zelda3-cold-apu-first-nmi.jsonl"
+    ));
+
     fn synthetic_rom(program: &[u8]) -> Vec<u8> {
         let mut rom = vec![0xea; 0x8000];
         rom[..program.len()].copy_from_slice(program);
@@ -1421,6 +1426,14 @@ mod tests {
             actual.end_wram_refresh_position, expected.end_wram_refresh_position,
             "transaction {index}: {actual:?} != {expected:?}"
         );
+    }
+
+    fn post_handoff_first_nmi_record() -> serde_json::Value {
+        POST_HANDOFF_FIRST_NMI_FIXTURE
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|record| record["kind"] == "post-handoff-first-nmi")
+            .expect("fixture omitted the post-handoff first-NMI receipt")
     }
 
     #[test]
@@ -1891,6 +1904,116 @@ mod tests {
         );
         assert_eq!(cpu.machine.snes.ppu.screen_windowed[0], 0);
         assert_eq!(cpu.machine.snes.open_bus, 0);
+    }
+
+    #[test]
+    #[ignore = "requires the local, untracked Zelda 3 ROM"]
+    fn local_zelda_rom_matches_post_handoff_cpu_until_first_driver_hmax() {
+        let rom_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3.sfc");
+        let rom = std::fs::read(rom_path).expect("local zelda3.sfc is required for this proof");
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+
+        // First consume the permanent reset-through-IPL transaction stream so
+        // this test begins at the exact committed `$88fc STZ $2143` boundary.
+        let bootstrap = records()
+            .into_iter()
+            .find(|record| record["kind"] == "bootstrap-events")
+            .unwrap();
+        let mut actual = VecDeque::new();
+        let mut compared = 0usize;
+        let mut terminal_field_index = 0u64;
+        visit_cpu_timing_transactions(&bootstrap, |expected| {
+            while actual.is_empty() {
+                actual.extend(cpu.step().unwrap().transactions);
+            }
+            assert_timing_transaction(compared, actual.pop_front().unwrap(), expected);
+            terminal_field_index = expected.end_field_index;
+            compared += 1;
+        });
+        assert!(actual.is_empty());
+
+        let receipt = post_handoff_first_nmi_record();
+        let marker = &receipt["first_hmax_crossing_transaction"]["transaction"];
+        let mut expected = Vec::new();
+        visit_cpu_timing_transactions(&receipt, |mut transaction| {
+            transaction.start_field_index += terminal_field_index;
+            transaction.end_field_index += terminal_field_index;
+            expected.push(transaction);
+        });
+        let crossing = expected
+            .iter()
+            .position(|transaction| {
+                transaction.kind == marker["kind"].as_u64().unwrap() as u8
+                    && transaction.duration == marker["duration"].as_u64().unwrap() as u8
+                    && transaction.origin_pc == marker["origin_pc"].as_u64().unwrap() as u32
+                    && transaction.opcode == marker["opcode"].as_u64().unwrap() as u8
+                    && transaction.start_v_counter
+                        == marker["start_v_counter"].as_u64().unwrap() as u16
+                    && transaction.start_cpu_cycle
+                        == marker["start_cpu_cycle"].as_u64().unwrap() as u16
+            })
+            .expect("fixture omitted its declared first HMax crossing");
+        let opcode_fetch = expected[crossing - 1];
+        assert_eq!(opcode_fetch.kind, 0);
+        assert_eq!(opcode_fetch.origin_pc, 0x00_87da);
+        assert_eq!(opcode_fetch.opcode, 0x9d);
+        assert_eq!(opcode_fetch.duration, 8);
+        assert_eq!(opcode_fetch.start_cpu_cycle, 1_360);
+        assert_eq!(opcode_fetch.end_cpu_cycle, 1_368);
+
+        // Every transaction before the `$87da` instruction is a complete
+        // instruction receipt and can be compared tuple-for-tuple.
+        actual.clear();
+        for (index, expected) in expected[..crossing - 1].iter().copied().enumerate() {
+            while actual.is_empty() {
+                actual.extend(cpu.step().unwrap().transactions);
+            }
+            assert_timing_transaction(index, actual.pop_front().unwrap(), expected);
+        }
+        assert!(actual.is_empty());
+        assert_eq!(cpu.machine.snes.cpu.pc, 0x87da);
+        assert_eq!(
+            cpu.machine.timestamp().master_cycles(),
+            opcode_fetch.absolute_start_master_cycle()
+        );
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(120, 1_360)
+        );
+
+        // PCBase fetch commits H1360->1368 without draining. The following
+        // direct operand Add16 drains HMax at its full overshot endpoint H1384,
+        // which is represented as V121:H20. Batch A deliberately stops there:
+        // the independent resumable driver plan does not yet support `$0800:20`.
+        assert!(matches!(
+            cpu.step(),
+            Err(SourceCpuError::Machine(
+                CpuSynchronousMachineError::UnsupportedSmpOpcode(
+                    crate::apu::UnsupportedSmpMicroStep {
+                        opcode: 0x20,
+                        pc: 0x0800
+                    }
+                )
+            ))
+        ));
+        let crossing = expected[crossing];
+        assert_eq!(crossing.kind, 1);
+        assert_eq!(crossing.duration, 16);
+        assert_eq!(crossing.start_cpu_cycle, 1_368);
+        assert_eq!(crossing.end_v_counter, 121);
+        assert_eq!(crossing.end_cpu_cycle, 20);
+        assert_eq!(
+            cpu.machine.timestamp().master_cycles(),
+            crossing.absolute_end_master_cycle()
+        );
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(121, 20)
+        );
+        assert_eq!(cpu.machine.snes.cpu.pc, 0x87db);
+        assert_eq!(cpu.machine.snes.open_bus, 0);
+        assert_eq!(cpu.machine.timeline.wram_refresh_cycle(), 534);
+        assert_eq!(crossing.end_wram_refresh_position, 538);
     }
 
     #[test]

@@ -95,6 +95,19 @@ struct FramedCpuTimingTransaction {
     transaction: crate::libretro_core::LibretroCpuTimingTransaction,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct FramedSmpInstruction {
+    frame: u32,
+    instruction: crate::libretro_core::LibretroSmpInstruction,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SmpPostHandoffAnchor {
+    handoff_cycle: u64,
+    final_cpu_access: FramedApuPortAccess,
+    final_cpu_timing_transaction: FramedCpuTimingTransaction,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReplayBundle {
     dir: PathBuf,
@@ -2995,6 +3008,20 @@ pub(crate) fn run_compare_libretro_oracle(
         );
         process::exit(2);
     }
+    let debug_smp_bootstrap_path = env::var_os("ZELDA3_DEBUG_SNES9X_SMP_BOOTSTRAP");
+    let debug_smp_first_nmi_path = env::var_os("ZELDA3_DEBUG_SNES9X_SMP_FIRST_NMI");
+    if debug_smp_first_nmi_path.is_some() && debug_smp_bootstrap_path.is_none() {
+        // The pinned core's existing timing buffer is enabled by the original
+        // bootstrap flag at retro_run entry. This CLI is still single-threaded
+        // and the core has not been loaded yet, so it is safe to activate that
+        // maintained buffer without also creating a bootstrap output file.
+        unsafe {
+            env::set_var(
+                "ZELDA3_DEBUG_SNES9X_SMP_BOOTSTRAP",
+                "cpu-timing-enabled-by-first-nmi-capture",
+            );
+        }
+    }
     if !audio_window_ms.is_finite()
         || audio_window_ms <= 0.0
         || !audio_timing_tolerance_ms.is_finite()
@@ -3349,7 +3376,7 @@ pub(crate) fn run_compare_libretro_oracle(
                 process::exit(1);
             }))
         });
-    let mut debug_smp_bootstrap = env::var_os("ZELDA3_DEBUG_SNES9X_SMP_BOOTSTRAP").map(|path| {
+    let mut debug_smp_bootstrap = debug_smp_bootstrap_path.map(|path| {
         let mut writer = BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
             eprintln!("failed to create Snes9x SMP-bootstrap trace: {error}");
             process::exit(1);
@@ -3372,6 +3399,24 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut debug_smp_bootstrap_output_writes = Vec::new();
     let mut debug_smp_bootstrap_cpu_accesses = Vec::new();
     let mut debug_smp_bootstrap_cpu_timing_transactions = Vec::new();
+    let mut debug_smp_first_nmi = debug_smp_first_nmi_path.map(|path| {
+        let mut writer = BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
+            eprintln!("failed to create Snes9x post-handoff first-NMI trace: {error}");
+            process::exit(1);
+        }));
+        write_snes9x_smp_first_nmi_header(&mut writer, core_path, rom_path, &oracle)
+            .unwrap_or_else(|error| {
+                eprintln!("failed to write Snes9x post-handoff first-NMI header: {error}");
+                process::exit(1);
+            });
+        writer
+    });
+    let mut debug_smp_first_nmi_complete = false;
+    let mut debug_smp_first_nmi_anchor = None::<SmpPostHandoffAnchor>;
+    let mut debug_smp_first_nmi_instructions = Vec::new();
+    let mut debug_smp_first_nmi_output_writes = Vec::new();
+    let mut debug_smp_first_nmi_cpu_accesses = Vec::new();
+    let mut debug_smp_first_nmi_cpu_timing_transactions = Vec::new();
     let mut debug_native_apu_dsp_writes = native_apu_trace_path.map(|path| {
         BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
             eprintln!("failed to create native APU DSP-write trace: {error}");
@@ -4524,6 +4569,320 @@ pub(crate) fn run_compare_libretro_oracle(
                     writer.write_all(b"\n").unwrap();
                     writer.flush().unwrap();
                     debug_smp_bootstrap_complete = true;
+                }
+            }
+        }
+        if !debug_smp_first_nmi_complete {
+            if let Some(writer) = debug_smp_first_nmi.as_mut() {
+                let output_writes = oracle.debug_smp_output_port_writes().unwrap_or_else(|| {
+                    eprintln!(
+                        "post-handoff first-NMI trace requires the current instrumented Snes9x core"
+                    );
+                    process::exit(2);
+                });
+                let cpu_accesses = oracle.debug_apu_port_writes().unwrap_or_else(|| {
+                    eprintln!(
+                        "post-handoff first-NMI trace requires CPU-side APU-port instrumentation"
+                    );
+                    process::exit(2);
+                });
+                let cpu_timing_transactions = oracle
+                    .debug_cpu_timing_transactions()
+                    .unwrap_or_else(|error| {
+                        eprintln!("failed to capture Snes9x CPU timing transactions: {error}");
+                        process::exit(2);
+                    })
+                    .unwrap_or_else(|| {
+                        eprintln!(
+                            "post-handoff first-NMI trace requires CPU timing instrumentation"
+                        );
+                        process::exit(2);
+                    });
+                let smp_instructions = oracle.debug_smp_instructions().unwrap_or_else(|| {
+                    eprintln!(
+                        "post-handoff first-NMI trace requires SMP instruction instrumentation"
+                    );
+                    process::exit(2);
+                });
+                debug_smp_first_nmi_output_writes.extend(output_writes);
+                debug_smp_first_nmi_cpu_accesses.extend(cpu_accesses.into_iter().map(|access| {
+                    FramedApuPortAccess {
+                        frame: frame_index,
+                        access,
+                    }
+                }));
+                debug_smp_first_nmi_cpu_timing_transactions.extend(
+                    cpu_timing_transactions.into_iter().map(|transaction| {
+                        FramedCpuTimingTransaction {
+                            frame: frame_index,
+                            transaction,
+                        }
+                    }),
+                );
+                append_framed_smp_instruction_frame(
+                    &mut debug_smp_first_nmi_instructions,
+                    frame_index,
+                    smp_instructions,
+                );
+
+                if debug_smp_first_nmi_anchor.is_none() {
+                    if let Some(handoff_index) =
+                        framed_smp_bootstrap_handoff_index(&debug_smp_first_nmi_instructions)
+                    {
+                        let handoff_cycle = debug_smp_first_nmi_instructions[handoff_index + 1]
+                            .instruction
+                            .absolute_cycle;
+                        let cpu_end = debug_smp_first_nmi_cpu_accesses
+                            .iter()
+                            .position(|framed| {
+                                let access = &framed.access;
+                                !access.is_read
+                                    && access.port == 3
+                                    && access.value == 0
+                                    && (access.program_counter & 0xffff) == 0x88ff
+                            })
+                            .map(|index| index + 1)
+                            .unwrap_or_else(|| {
+                                eprintln!(
+                                    "SMP reached $0800 without Zelda's final $88fc STZ $2143"
+                                );
+                                process::exit(1);
+                            });
+                        let final_cpu_access =
+                            debug_smp_first_nmi_cpu_accesses[cpu_end - 1].clone();
+                        let cpu_timing_end = debug_smp_first_nmi_cpu_timing_transactions
+                            .iter()
+                            .position(|framed| {
+                                let transaction = &framed.transaction;
+                                framed.frame == final_cpu_access.frame
+                                    && transaction.kind == 2
+                                    && (transaction.origin_pc & 0xffff) == 0x88fc
+                                    && transaction.opcode == 0x9c
+                                    && transaction.start_v_counter
+                                        == final_cpu_access.access.v_counter
+                                    && transaction.start_cpu_cycle
+                                        == final_cpu_access.access.cpu_cycle
+                            })
+                            .map(|index| index + 1)
+                            .unwrap_or_else(|| {
+                                let candidates = debug_smp_first_nmi_cpu_timing_transactions
+                                    .iter()
+                                    .filter(|framed| {
+                                        (framed.transaction.origin_pc & 0xffff) == 0x88fc
+                                    })
+                                    .map(|framed| {
+                                        serde_json::json!({
+                                            "frame": framed.frame,
+                                            "transaction": framed.transaction,
+                                        })
+                                    })
+                                    .collect::<Vec<_>>();
+                                eprintln!(
+                                    "SMP reached $0800 without the final $88fc CPU timing anchor; \
+                                     final access={:?}; $88fc candidates={}",
+                                    final_cpu_access,
+                                    serde_json::to_string(&candidates).unwrap()
+                                );
+                                process::exit(1);
+                            });
+                        let final_cpu_timing_transaction =
+                            debug_smp_first_nmi_cpu_timing_transactions[cpu_timing_end - 1];
+                        debug_smp_first_nmi_cpu_accesses.drain(..cpu_end);
+                        debug_smp_first_nmi_cpu_timing_transactions.drain(..cpu_timing_end);
+                        debug_smp_first_nmi_output_writes
+                            .retain(|write| write.absolute_cycle > handoff_cycle);
+                        debug_smp_first_nmi_instructions.drain(..=handoff_index);
+                        debug_smp_first_nmi_anchor = Some(SmpPostHandoffAnchor {
+                            handoff_cycle,
+                            final_cpu_access,
+                            final_cpu_timing_transaction,
+                        });
+                    }
+                }
+
+                if let Some(anchor) = debug_smp_first_nmi_anchor.as_ref() {
+                    if let Some(cpu_access_index) =
+                        debug_smp_first_nmi_cpu_accesses.iter().position(|framed| {
+                            let access = &framed.access;
+                            access.is_read
+                                && access.port == 0
+                                && (access.program_counter & 0x00ff_ffff) == 0x0080e4
+                        })
+                    {
+                        let first_nmi_access =
+                            debug_smp_first_nmi_cpu_accesses[cpu_access_index].clone();
+                        let cpu_timing_index = debug_smp_first_nmi_cpu_timing_transactions
+                            .iter()
+                            .position(|framed| {
+                                let transaction = &framed.transaction;
+                                framed.frame == first_nmi_access.frame
+                                    && transaction.kind == 2
+                                    && (transaction.origin_pc & 0x00ff_ffff) == 0x0080e1
+                                    && transaction.opcode == 0xad
+                                    && transaction.start_v_counter
+                                        == first_nmi_access.access.v_counter
+                                    && transaction.start_cpu_cycle
+                                        == first_nmi_access.access.cpu_cycle
+                            })
+                            .unwrap_or_else(|| {
+                                eprintln!(
+                                    "first $8080e1 APU read has no completed kind-2 timing transaction"
+                                );
+                                process::exit(1);
+                            });
+                        debug_smp_first_nmi_cpu_accesses.truncate(cpu_access_index + 1);
+                        debug_smp_first_nmi_cpu_timing_transactions.truncate(cpu_timing_index + 1);
+
+                        let nmi_enable_index = debug_smp_first_nmi_cpu_timing_transactions
+                            .iter()
+                            .position(|framed| {
+                                framed.transaction.kind == 2
+                                    && (framed.transaction.origin_pc & 0x00ff_ffff) == 0x008031
+                                    && framed.transaction.opcode == 0x8d
+                            })
+                            .unwrap_or_else(|| {
+                                eprintln!("post-handoff trace never executed $8031 STA $4200");
+                                process::exit(1);
+                            });
+                        let nmi_entry_index = debug_smp_first_nmi_cpu_timing_transactions
+                            .iter()
+                            .position(|framed| {
+                                framed.transaction.kind == 0
+                                    && (framed.transaction.origin_pc & 0x00ff_ffff) == 0x0080c9
+                                    && framed.transaction.opcode == 0x78
+                            })
+                            .unwrap_or_else(|| {
+                                eprintln!(
+                                    "post-handoff trace never entered the first NMI at $80c9"
+                                );
+                                process::exit(1);
+                            });
+                        if !(nmi_enable_index < nmi_entry_index
+                            && nmi_entry_index < cpu_timing_index)
+                        {
+                            eprintln!(
+                                "post-handoff NMI-enable, entry, and APUI timing receipts are out of order"
+                            );
+                            process::exit(1);
+                        }
+
+                        let first_hmax_index = debug_smp_first_nmi_cpu_timing_transactions
+                            .iter()
+                            .position(|framed| {
+                                framed.transaction.end_v_counter
+                                    != framed.transaction.start_v_counter
+                            })
+                            .unwrap_or_else(|| {
+                                eprintln!(
+                                    "post-handoff trace has no HMax crossing before first NMI"
+                                );
+                                process::exit(1);
+                            });
+                        let (smp_before_index, smp_after_index) =
+                            smp_instruction_bracket_for_apu_access(
+                                &debug_smp_first_nmi_instructions,
+                                &first_nmi_access,
+                            )
+                            .unwrap_or_else(|error| {
+                                eprintln!(
+                                    "failed to bracket first-NMI APU synchronization: {error}"
+                                );
+                                process::exit(1);
+                            });
+                        let smp_terminal_successor = debug_smp_first_nmi_instructions
+                            .get(smp_after_index + 1)
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                eprintln!(
+                                    "first-NMI SMP owner boundary has no successor/end-cycle receipt"
+                                );
+                                process::exit(1);
+                            });
+                        let smp_stop_cycle = smp_terminal_successor.instruction.absolute_cycle;
+                        debug_smp_first_nmi_output_writes
+                            .retain(|write| write.absolute_cycle <= smp_stop_cycle);
+                        debug_smp_first_nmi_instructions.truncate(smp_after_index + 1);
+                        let smp_boundary_digest =
+                            framed_smp_instruction_digest(&debug_smp_first_nmi_instructions);
+                        let smp_boundary_sequence =
+                            compact_framed_smp_instructions(&debug_smp_first_nmi_instructions);
+
+                        serde_json::to_writer(
+                            &mut *writer,
+                            &serde_json::json!({
+                                "kind": "post-handoff-first-nmi",
+                                "start_anchor": {
+                                    "final_ipl_handoff": {
+                                        "absolute_cycle": anchor.handoff_cycle,
+                                        "origin_pc": 0xfffb,
+                                        "opcode": 0x1f,
+                                        "target_pc": 0x0800,
+                                    },
+                                    "final_cpu_apu_access": {
+                                        "frame": anchor.final_cpu_access.frame,
+                                        "access": &anchor.final_cpu_access.access,
+                                    },
+                                    "final_cpu_timing_transaction": {
+                                        "frame": anchor.final_cpu_timing_transaction.frame,
+                                        "transaction": &anchor.final_cpu_timing_transaction.transaction,
+                                    },
+                                },
+                                "nmi_enable_source": {
+                                    "load_immediate_origin_pc": 0x00802f,
+                                    "load_immediate_opcode": 0xa9,
+                                    "immediate_value": 0x81,
+                                    "store_origin_pc": 0x008031,
+                                    "store_opcode": 0x8d,
+                                    "absolute_address": 0x4200,
+                                    "rom_bytes": [0xa9, 0x81, 0x8d, 0x00, 0x42],
+                                    "timing_transaction": {
+                                        "frame": debug_smp_first_nmi_cpu_timing_transactions[nmi_enable_index].frame,
+                                        "transaction": &debug_smp_first_nmi_cpu_timing_transactions[nmi_enable_index].transaction,
+                                    },
+                                },
+                                "first_nmi_entry_transaction": {
+                                    "frame": debug_smp_first_nmi_cpu_timing_transactions[nmi_entry_index].frame,
+                                    "transaction": &debug_smp_first_nmi_cpu_timing_transactions[nmi_entry_index].transaction,
+                                },
+                                "first_hmax_crossing_transaction": {
+                                    "frame": debug_smp_first_nmi_cpu_timing_transactions[first_hmax_index].frame,
+                                    "transaction": &debug_smp_first_nmi_cpu_timing_transactions[first_hmax_index].transaction,
+                                },
+                                "first_nmi_apui_read": {
+                                    "instruction_origin_pc": 0x0080e1,
+                                    "instruction_opcode": 0xad,
+                                    "absolute_address": 0x2140,
+                                    "frame": first_nmi_access.frame,
+                                    "access": &first_nmi_access.access,
+                                    "completed_timing_transaction": &debug_smp_first_nmi_cpu_timing_transactions[cpu_timing_index].transaction,
+                                },
+                                "cpu_apu_access_sequence": compact_cpu_apu_accesses(
+                                    &debug_smp_first_nmi_cpu_accesses,
+                                ),
+                                "cpu_timing_transaction_sequence": compact_cpu_timing_transactions(
+                                    &debug_smp_first_nmi_cpu_timing_transactions,
+                                ),
+                                "smp_output_port_write_sequence": compact_smp_output_port_writes(
+                                    &debug_smp_first_nmi_output_writes,
+                                ),
+                                "smp_instruction_boundary_sequence": smp_boundary_sequence,
+                                "smp_instruction_boundaries": {
+                                    "fields_in_digest": framed_smp_instruction_digest_fields(),
+                                    "count": debug_smp_first_nmi_instructions.len(),
+                                    "expanded_sha256": smp_boundary_digest,
+                                    "absolute_end_cycle": smp_terminal_successor.instruction.absolute_cycle,
+                                    "terminal_successor": &smp_terminal_successor,
+                                    "before_sync": &debug_smp_first_nmi_instructions[smp_before_index],
+                                    "after_sync": &debug_smp_first_nmi_instructions[smp_after_index],
+                                },
+                                "stop_reason": "first_$8080e1_apui0_read_semantic_and_kind2_timing_complete",
+                            }),
+                        )
+                        .unwrap();
+                        writer.write_all(b"\n").unwrap();
+                        writer.flush().unwrap();
+                        debug_smp_first_nmi_complete = true;
+                    }
                 }
             }
         }
@@ -7611,6 +7970,8 @@ fn compact_cpu_apu_accesses(accesses: &[FramedApuPortAccess]) -> SmpBootstrapDel
             "smp_pc_after",
             "smp_opcode_before",
             "smp_opcode_after",
+            "smp_opcode_cycle_before",
+            "smp_opcode_cycle_after",
             "is_read",
             "cpu_model_5a22",
             "wram_refresh_position",
@@ -7634,6 +7995,8 @@ fn compact_cpu_apu_accesses(accesses: &[FramedApuPortAccess]) -> SmpBootstrapDel
                 i64::from(access.smp_pc_after),
                 i64::from(access.smp_opcode_before),
                 i64::from(access.smp_opcode_after),
+                i64::from(access.smp_opcode_cycle_before),
+                i64::from(access.smp_opcode_cycle_after),
                 i64::from(access.is_read),
                 i64::from(access.cpu_model_5a22),
                 i64::from(access.wram_refresh_position),
@@ -7748,6 +8111,32 @@ fn append_smp_instruction_frame(
     accumulated.extend(frame);
 }
 
+fn append_framed_smp_instruction_frame(
+    accumulated: &mut Vec<FramedSmpInstruction>,
+    frame_index: u32,
+    frame: Vec<crate::libretro_core::LibretroSmpInstruction>,
+) {
+    let mut frame = frame
+        .into_iter()
+        .map(|instruction| FramedSmpInstruction {
+            frame: frame_index,
+            instruction,
+        })
+        .peekable();
+    if accumulated
+        .last()
+        .zip(frame.peek())
+        .is_some_and(|(left, right)| {
+            left.instruction.absolute_cycle == right.instruction.absolute_cycle
+                && left.instruction.program_counter == right.instruction.program_counter
+                && left.instruction.opcode == right.instruction.opcode
+        })
+    {
+        *accumulated.last_mut().unwrap() = frame.next().unwrap();
+    }
+    accumulated.extend(frame);
+}
+
 fn smp_bootstrap_handoff_index(
     instructions: &[crate::libretro_core::LibretroSmpInstruction],
 ) -> Option<usize> {
@@ -7756,6 +8145,191 @@ fn smp_bootstrap_handoff_index(
             && pair[0].opcode == 0x1f
             && pair[1].program_counter == 0x0800
     })
+}
+
+fn framed_smp_bootstrap_handoff_index(instructions: &[FramedSmpInstruction]) -> Option<usize> {
+    instructions.windows(2).position(|pair| {
+        pair[0].instruction.program_counter == 0xfffb
+            && pair[0].instruction.opcode == 0x1f
+            && pair[1].instruction.program_counter == 0x0800
+    })
+}
+
+fn smp_instruction_frame_cycle(instruction: &FramedSmpInstruction) -> i64 {
+    i64::from(instruction.instruction.output_sample) * 32
+        + i64::from(instruction.instruction.dsp_phase)
+        + i64::from(instruction.instruction.smp_clock)
+}
+
+fn smp_instruction_bracket_for_apu_access(
+    instructions: &[FramedSmpInstruction],
+    access: &FramedApuPortAccess,
+) -> Result<(usize, usize), String> {
+    let owning_boundary = |apu_cycle: i32| {
+        instructions
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, framed)| {
+                (framed.frame == access.frame
+                    && smp_instruction_frame_cycle(framed) <= i64::from(apu_cycle))
+                .then_some(index)
+            })
+    };
+    let before = owning_boundary(access.access.apu_cycle_before).ok_or_else(|| {
+        format!(
+            "frame {} has no SMP boundary owning pre-sync APU cycle {}",
+            access.frame, access.access.apu_cycle_before
+        )
+    })?;
+    let after = owning_boundary(access.access.apu_cycle_after).ok_or_else(|| {
+        format!(
+            "frame {} has no SMP boundary owning post-sync APU cycle {}",
+            access.frame, access.access.apu_cycle_after
+        )
+    })?;
+    if after < before {
+        return Err(format!(
+            "SMP boundary order regressed across APU sync: {before} -> {after}"
+        ));
+    }
+    Ok((before, after))
+}
+
+fn framed_smp_instruction_digest_fields() -> &'static [&'static str] {
+    &[
+        "frame",
+        "absolute_cycle",
+        "program_counter",
+        "opcode",
+        "a",
+        "x",
+        "y",
+        "stack_pointer",
+        "status",
+        "timer0_stage1",
+        "timer0_stage2",
+        "timer0_stage3",
+        "output_sample",
+        "dsp_phase",
+        "smp_clock",
+        "direct_page_0_11[0..12]",
+        "boundary_opcode_cycle",
+        "op_step_calls",
+        "max_continuation_opcode_cycle",
+    ]
+}
+
+fn framed_smp_instruction_digest(instructions: &[FramedSmpInstruction]) -> String {
+    let mut bytes = Vec::with_capacity(instructions.len() * 128);
+    for framed in instructions {
+        bytes.extend_from_slice(&framed.frame.to_le_bytes());
+        let instruction = &framed.instruction;
+        bytes.extend_from_slice(&instruction.absolute_cycle.to_le_bytes());
+        for value in [
+            instruction.program_counter,
+            instruction.opcode,
+            instruction.a,
+            instruction.x,
+            instruction.y,
+            instruction.stack_pointer,
+            instruction.status,
+            instruction.timer0_stage1,
+            instruction.timer0_stage2,
+            instruction.timer0_stage3,
+            instruction.output_sample,
+            instruction.dsp_phase,
+            instruction.smp_clock,
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in instruction.direct_page_0_11 {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [
+            instruction.boundary_opcode_cycle,
+            instruction.op_step_calls,
+            instruction.max_continuation_opcode_cycle,
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    parity::evidence::sha256_bytes(&bytes)
+}
+
+fn compact_framed_smp_instructions(
+    instructions: &[FramedSmpInstruction],
+) -> SmpBootstrapDeltaSequence {
+    compact_delta_integer_sequence_with_zstd(
+        [
+            "frame",
+            "absolute_cycle",
+            "program_counter",
+            "opcode",
+            "a",
+            "x",
+            "y",
+            "stack_pointer",
+            "status",
+            "timer0_stage1",
+            "timer0_stage2",
+            "timer0_stage3",
+            "output_sample",
+            "dsp_phase",
+            "smp_clock",
+            "direct_page_0",
+            "direct_page_1",
+            "direct_page_2",
+            "direct_page_3",
+            "direct_page_4",
+            "direct_page_5",
+            "direct_page_6",
+            "direct_page_7",
+            "direct_page_8",
+            "direct_page_9",
+            "direct_page_10",
+            "direct_page_11",
+            "boundary_opcode_cycle",
+            "op_step_calls",
+            "max_continuation_opcode_cycle",
+        ],
+        instructions.iter().map(|framed| {
+            let instruction = &framed.instruction;
+            [
+                i64::from(framed.frame),
+                instruction.absolute_cycle as i64,
+                i64::from(instruction.program_counter),
+                i64::from(instruction.opcode),
+                i64::from(instruction.a),
+                i64::from(instruction.x),
+                i64::from(instruction.y),
+                i64::from(instruction.stack_pointer),
+                i64::from(instruction.status),
+                i64::from(instruction.timer0_stage1),
+                i64::from(instruction.timer0_stage2),
+                i64::from(instruction.timer0_stage3),
+                i64::from(instruction.output_sample),
+                i64::from(instruction.dsp_phase),
+                i64::from(instruction.smp_clock),
+                i64::from(instruction.direct_page_0_11[0]),
+                i64::from(instruction.direct_page_0_11[1]),
+                i64::from(instruction.direct_page_0_11[2]),
+                i64::from(instruction.direct_page_0_11[3]),
+                i64::from(instruction.direct_page_0_11[4]),
+                i64::from(instruction.direct_page_0_11[5]),
+                i64::from(instruction.direct_page_0_11[6]),
+                i64::from(instruction.direct_page_0_11[7]),
+                i64::from(instruction.direct_page_0_11[8]),
+                i64::from(instruction.direct_page_0_11[9]),
+                i64::from(instruction.direct_page_0_11[10]),
+                i64::from(instruction.direct_page_0_11[11]),
+                i64::from(instruction.boundary_opcode_cycle),
+                i64::from(instruction.op_step_calls),
+                i64::from(instruction.max_continuation_opcode_cycle),
+            ]
+        }),
+        true,
+    )
 }
 
 fn smp_bootstrap_steps_match(
@@ -7910,13 +8484,11 @@ fn compact_smp_bootstrap_instruction_sequence(
     })
 }
 
-fn write_snes9x_smp_bootstrap_header<W: Write>(
-    writer: &mut W,
+fn snes9x_smp_trace_provenance(
     core_path: &str,
     rom_path: &str,
     oracle: &LibretroCore,
-    initial_oracle_state: &[u8],
-) -> Result<(), Box<dyn Error>> {
+) -> Result<serde_json::Value, Box<dyn Error>> {
     let lock: serde_json::Value = serde_json::from_str(include_str!(
         "../../external/snes9x-libretro/oracle-lock.json"
     ))?;
@@ -7926,28 +8498,64 @@ fn write_snes9x_smp_bootstrap_header<W: Write>(
         .ok_or("oracle-lock.json has no source_revision")?;
     let trace_patch = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../external/snes9x-libretro/patches/zelda3-trace.patch");
+    Ok(serde_json::json!({
+        "kind": "provenance",
+        "schema": 1,
+        "core": {
+            "library_name": oracle.library_name,
+            "library_version": oracle.library_version,
+            "sha256": parity::evidence::sha256_file(Path::new(core_path))?,
+        },
+        "rom": {
+            "sha256": parity::evidence::sha256_file(Path::new(rom_path))?,
+        },
+        "source": {
+            "revision": source_revision,
+            "trace_patch_sha256": parity::evidence::sha256_file(&trace_patch)?,
+        },
+        "cpu_to_smp_ratio": {
+            "numerator": 15_664,
+            "denominator": 328_125,
+        },
+    }))
+}
+
+fn write_snes9x_smp_first_nmi_header<W: Write>(
+    writer: &mut W,
+    core_path: &str,
+    rom_path: &str,
+    oracle: &LibretroCore,
+) -> Result<(), Box<dyn Error>> {
+    let mut provenance = snes9x_smp_trace_provenance(core_path, rom_path, oracle)?;
+    let prefix_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../external/snes9x-libretro/fixtures/zelda3-cold-apu-bootstrap.jsonl");
+    provenance
+        .as_object_mut()
+        .ok_or("Snes9x trace provenance is not a JSON object")?
+        .insert(
+            "prefix_fixture".to_string(),
+            serde_json::json!({
+                "path": "external/snes9x-libretro/fixtures/zelda3-cold-apu-bootstrap.jsonl",
+                "sha256": parity::evidence::sha256_file(&prefix_fixture)?,
+                "terminal_event": "final_$fffb/1f_to_$0800_ipl_handoff",
+            }),
+        );
+    serde_json::to_writer(&mut *writer, &provenance)?;
+    writer.write_all(b"\n")?;
+    writer.flush()?;
+    Ok(())
+}
+
+fn write_snes9x_smp_bootstrap_header<W: Write>(
+    writer: &mut W,
+    core_path: &str,
+    rom_path: &str,
+    oracle: &LibretroCore,
+    initial_oracle_state: &[u8],
+) -> Result<(), Box<dyn Error>> {
     serde_json::to_writer(
         &mut *writer,
-        &serde_json::json!({
-            "kind": "provenance",
-            "schema": 1,
-            "core": {
-                "library_name": oracle.library_name,
-                "library_version": oracle.library_version,
-                "sha256": parity::evidence::sha256_file(Path::new(core_path))?,
-            },
-            "rom": {
-                "sha256": parity::evidence::sha256_file(Path::new(rom_path))?,
-            },
-            "source": {
-                "revision": source_revision,
-                "trace_patch_sha256": parity::evidence::sha256_file(&trace_patch)?,
-            },
-            "cpu_to_smp_ratio": {
-                "numerator": 15_664,
-                "denominator": 328_125,
-            },
-        }),
+        &snes9x_smp_trace_provenance(core_path, rom_path, oracle)?,
     )?;
     writer.write_all(b"\n")?;
 
@@ -8023,8 +8631,9 @@ mod tests {
         append_smp_instruction_frame, cached_ledger_input, canonical_audio_digest,
         canonical_oracle_video_digest, canonical_rust_video_digest, checkpoint_member,
         compact_delta_integer_sequence, compact_delta_integer_sequence_with_zstd,
-        compact_engine_state_mismatches, first_dsp_write_timing_mismatch, fnv1a32,
-        last_spc_clock_witness, libretro_engine_state_receipt, oracle_preframe_snapshot_required,
+        compact_engine_state_mismatches, compact_framed_smp_instructions,
+        first_dsp_write_timing_mismatch, fnv1a32, last_spc_clock_witness,
+        libretro_engine_state_receipt, oracle_preframe_snapshot_required,
         oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
         parse_paired_resume_capture, parse_rolling_paired_resume_capture,
         prune_rolling_paired_resume_captures, replayable_input_artifact, resolve_replay_bundle,
@@ -8032,8 +8641,8 @@ mod tests {
         should_stop_after_first_mismatch, should_write_frame_receipt, smp_bootstrap_handoff_index,
         snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
         summarize_value_domain, trace_events_with_rom_rng, validate_replay_source_parents,
-        vram_domain_receipt, BootBoundaryState, PairedResumeCapture, RollingPairedResumeCapture,
-        ValueDomainDiff, VramDomainReceipt,
+        vram_domain_receipt, BootBoundaryState, FramedSmpInstruction, PairedResumeCapture,
+        RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt,
     };
     use crate::libretro_core::{LibretroDspRegisterWrite, LibretroFrame, LibretroSmpInstruction};
     use std::fs;
@@ -8194,6 +8803,55 @@ mod tests {
             op_step_calls,
             max_continuation_opcode_cycle: op_step_calls - 1,
         }
+    }
+
+    #[test]
+    fn framed_smp_boundary_sequence_round_trips_all_recorded_fields() {
+        let mut first = bootstrap_instruction(1_000, 0x0800, 0x20, 2);
+        first.a = 0x11;
+        first.x = 0x22;
+        first.y = 0x33;
+        first.stack_pointer = 0xcc;
+        first.status = 0x81;
+        first.timer0_stage1 = 4;
+        first.timer0_stage2 = 5;
+        first.timer0_stage3 = 6;
+        first.output_sample = 7;
+        first.dsp_phase = 8;
+        first.smp_clock = -9;
+        first.direct_page_0_11 = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
+        first.boundary_opcode_cycle = 1;
+        first.max_continuation_opcode_cycle = 3;
+
+        let mut second = bootstrap_instruction(1_006, 0x0801, 0xcd, 1);
+        second.a = -1;
+        second.direct_page_0_11[11] = 0x7f;
+        let framed = [
+            FramedSmpInstruction {
+                frame: 79,
+                instruction: first,
+            },
+            FramedSmpInstruction {
+                frame: 80,
+                instruction: second,
+            },
+        ];
+
+        let sequence = serde_json::to_value(compact_framed_smp_instructions(&framed)).unwrap();
+        assert_eq!(sequence["fields"].as_array().unwrap().len(), 30);
+        assert_eq!(
+            expand_delta_sequence(&sequence),
+            vec![
+                vec![
+                    79, 1_000, 0x0800, 0x20, 0x11, 0x22, 0x33, 0xcc, 0x81, 4, 5, 6, 7, 8, -9, 10,
+                    11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 1, 2, 3,
+                ],
+                vec![
+                    80, 1_006, 0x0801, 0xcd, -1, 0, 0, 0xef, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0x7f, 0, 1, 0,
+                ],
+            ]
+        );
     }
 
     #[test]
@@ -8453,6 +9111,207 @@ mod tests {
         assert_eq!(
             expanded.last().copied(),
             Some((1_355_561, 1_355_567, 0xfffb, 0x1f, 1, 0))
+        );
+    }
+
+    #[test]
+    fn pinned_snes9x_post_handoff_fixture_reaches_first_nmi_apui_sync() {
+        const FIXTURE: &str =
+            include_str!("../../external/snes9x-libretro/fixtures/zelda3-cold-apu-first-nmi.jsonl");
+        assert!(
+            FIXTURE.len() < 20_000,
+            "post-handoff fixture lost compact encoding"
+        );
+        let records = FIXTURE
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), 2);
+
+        let provenance = &records[0];
+        assert_eq!(provenance["kind"], "provenance");
+        assert_eq!(provenance["schema"], 1);
+        assert_eq!(provenance["core"]["library_name"], "Snes9x");
+        assert_eq!(provenance["core"]["library_version"], "1.63 921f9f7b");
+        assert_eq!(
+            provenance["core"]["sha256"],
+            "7d4fa577dd2e0a79ace97ebec2630929ffcd6622d46ae5b23c4700514c7169cb"
+        );
+        assert_eq!(
+            provenance["source"]["revision"],
+            "921f9f7b83660eb44ad263022a57a4a029057c37"
+        );
+        assert_eq!(
+            provenance["rom"]["sha256"],
+            "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"
+        );
+        let trace_patch = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../external/snes9x-libretro/patches/zelda3-trace.patch");
+        assert_eq!(
+            provenance["source"]["trace_patch_sha256"],
+            parity::evidence::sha256_file(&trace_patch).unwrap()
+        );
+        let prefix_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../external/snes9x-libretro/fixtures/zelda3-cold-apu-bootstrap.jsonl");
+        assert_eq!(
+            provenance["prefix_fixture"]["sha256"],
+            parity::evidence::sha256_file(&prefix_fixture).unwrap()
+        );
+
+        let events = &records[1];
+        assert_eq!(events["kind"], "post-handoff-first-nmi");
+        assert_eq!(
+            events["stop_reason"],
+            "first_$8080e1_apui0_read_semantic_and_kind2_timing_complete"
+        );
+        assert_eq!(
+            events["start_anchor"]["final_ipl_handoff"]["absolute_cycle"],
+            1_355_567
+        );
+        assert_eq!(
+            events["start_anchor"]["final_cpu_timing_transaction"]["transaction"]["origin_pc"],
+            0x88fc
+        );
+        assert_eq!(
+            events["start_anchor"]["final_cpu_timing_transaction"]["transaction"]["kind"],
+            2
+        );
+        assert_eq!(
+            events["nmi_enable_source"]["rom_bytes"],
+            serde_json::json!([0xa9, 0x81, 0x8d, 0x00, 0x42])
+        );
+
+        let cpu_timing = expand_delta_sequence(&events["cpu_timing_transaction_sequence"]);
+        assert_eq!(cpu_timing.len(), 55_405);
+        assert_eq!(
+            cpu_timing.first().unwrap(),
+            &vec![79, 0, 8, 0x88ff, 0x28, 120, 390, 120, 398, 1, 2, 534, 534]
+        );
+        assert_eq!(
+            cpu_timing.last().unwrap(),
+            &vec![81, 2, 6, 0x80e1, 0xad, 225, 480, 225, 486, 1, 2, 534, 534]
+        );
+        assert!(cpu_timing.iter().all(|transaction| transaction[9] == 1));
+        assert!(cpu_timing.iter().all(|transaction| transaction[10] == 2));
+        assert!(cpu_timing
+            .iter()
+            .all(|transaction| matches!(transaction[11], 534 | 538)));
+        assert!(cpu_timing
+            .iter()
+            .all(|transaction| matches!(transaction[12], 534 | 538)));
+        assert_eq!(
+            events["first_hmax_crossing_transaction"],
+            serde_json::json!({
+                "frame": 79,
+                "transaction": {
+                    "kind": 1,
+                    "duration": 16,
+                    "origin_pc": 0x87da,
+                    "opcode": 0x9d,
+                    "start_v_counter": 120,
+                    "start_cpu_cycle": 1368,
+                    "end_v_counter": 121,
+                    "end_cpu_cycle": 20,
+                    "cpu_model_identity": 1,
+                    "cpu_model_5a22": 2,
+                    "start_wram_refresh_position": 534,
+                    "end_wram_refresh_position": 538,
+                },
+            })
+        );
+        assert_eq!(
+            events["nmi_enable_source"]["timing_transaction"]["transaction"]["origin_pc"],
+            0x8031
+        );
+        assert_eq!(
+            events["first_nmi_entry_transaction"]["transaction"]["origin_pc"],
+            0x80c9
+        );
+
+        let apui = expand_delta_sequence(&events["cpu_apu_access_sequence"]);
+        assert_eq!(
+            apui,
+            vec![vec![
+                81, 0, 0x8b, 0, 225, 480, 0x80e4, 19, 43, 0, 1, 0x0873, 0x0873, 0xf0, 0xf0, 0, 0,
+                1, 2, 534, 1,
+            ]]
+        );
+        let output = expand_delta_sequence(&events["smp_output_port_write_sequence"]);
+        assert_eq!(output.len(), 3);
+        assert_eq!(
+            output.iter().map(|write| &write[..3]).collect::<Vec<_>>(),
+            vec![
+                &[1_374_569, 1, 0][..],
+                &[1_374_676, 2, 0][..],
+                &[1_374_783, 3, 0][..]
+            ]
+        );
+
+        let boundaries = &events["smp_instruction_boundaries"];
+        assert_eq!(boundaries["count"], 6_146);
+        assert_eq!(
+            boundaries["expanded_sha256"],
+            "c7b7a58df7141c741a13e858532f317bd7e8c54e0056d15d79fb8c88fdb959d8"
+        );
+        let smp = expand_delta_sequence(&events["smp_instruction_boundary_sequence"]);
+        assert_eq!(
+            events["smp_instruction_boundary_sequence"]["fields"]
+                .as_array()
+                .unwrap()
+                .len(),
+            30
+        );
+        assert_eq!(smp.len(), 6_146);
+        assert_eq!(
+            smp.first().unwrap(),
+            &vec![
+                79, 1_355_567, 0x0800, 0x20, 0, 0, 0, 0xef, 2, 47, 0, 0, 319, 26, -45, 0, 8, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+            ]
+        );
+        assert_eq!(
+            smp.last().unwrap(),
+            &vec![
+                81, 1_379_527, 0x0876, 0xf0, 63, 69, 0, 207, 2, 71, 7, 0, 2, 22, -46, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+            ]
+        );
+        let mut digest_bytes = Vec::with_capacity(smp.len() * 128);
+        for row in &smp {
+            digest_bytes.extend_from_slice(&(row[0] as u32).to_le_bytes());
+            digest_bytes.extend_from_slice(&(row[1] as u64).to_le_bytes());
+            for value in &row[2..] {
+                digest_bytes.extend_from_slice(&(*value as i32).to_le_bytes());
+            }
+        }
+        assert_eq!(
+            boundaries["expanded_sha256"],
+            parity::evidence::sha256_bytes(&digest_bytes)
+        );
+        assert_eq!(
+            boundaries["before_sync"]["instruction"]["absolute_cycle"],
+            1_379_507
+        );
+        assert_eq!(
+            boundaries["before_sync"]["instruction"]["program_counter"],
+            0x0873
+        );
+        assert_eq!(
+            boundaries["after_sync"]["instruction"]["absolute_cycle"],
+            1_379_527
+        );
+        assert_eq!(
+            boundaries["after_sync"]["instruction"]["program_counter"],
+            0x0876
+        );
+        assert_eq!(boundaries["absolute_end_cycle"], 1_379_531);
+        assert_eq!(
+            boundaries["terminal_successor"]["instruction"]["absolute_cycle"],
+            1_379_531
+        );
+        assert_eq!(
+            boundaries["terminal_successor"]["instruction"]["program_counter"],
+            0x0873
         );
     }
     #[test]
