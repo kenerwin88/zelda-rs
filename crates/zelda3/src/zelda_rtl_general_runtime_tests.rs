@@ -69,6 +69,48 @@ fn test_run_frame_callback(state: &mut ZeldaState, input: u16, run_what: i32) {
     state.ram[0x45] = run_what as u8;
 }
 
+fn test_run_frame_callback_calls_internal(state: &mut ZeldaState, input: u16, _: i32) {
+    state.ram[0x43] = state.ram[0x43].wrapping_add(1);
+    state.run_frame_internal(input, 0);
+}
+
+fn test_run_frame_callback_observes_original_timing(
+    state: &mut ZeldaState,
+    input: u16,
+    run_what: i32,
+) {
+    assert!(state.original_timing_host_dispatch_active);
+    let receipt = state
+        .original_timing_host_receipt
+        .expect("source receipt must be visible during its host dispatch");
+    let OriginalTimingOwnerState::Live(live) = &state.original_timing_owner else {
+        panic!("source owner must be Live before callback dispatch");
+    };
+    assert_eq!(
+        receipt.main_loop.ended_at,
+        live.executor.machine().timestamp()
+    );
+    assert!(receipt.main_loop.instruction_count > 0);
+    assert_eq!(live.executor.machine().snes().input1.current_state, input);
+    state.ram[0x43] = state.ram[0x43].wrapping_add(1);
+    state.ram[0x44] = input as u8;
+    state.ram[0x45] = run_what as u8;
+}
+
+fn exact_timing_test_rom(opcode: u8) -> Vec<u8> {
+    let mut rom = vec![opcode; 0x8000];
+    rom[0x7ffc] = 0x00;
+    rom[0x7ffd] = 0x80;
+    rom
+}
+
+fn live_original_timing_timestamp(state: &ZeldaState) -> u64 {
+    let OriginalTimingOwnerState::Live(live) = &state.original_timing_owner else {
+        panic!("expected a Live original timing owner");
+    };
+    live.executor.machine().timestamp().master_cycles()
+}
+
 fn link_test_byte(state: &ZeldaState, addr: usize) -> u8 {
     state.ram[addr]
 }
@@ -1027,25 +1069,46 @@ fn emu_callback_setup_syncs_whole_state_and_regions() {
 }
 
 #[test]
-fn emu_runframe_callback_expires_unconsumed_cold_start_once() {
+fn emu_runframe_callback_advances_live_original_timing_once() {
     let mut state = ZeldaState::new();
+    state.set_rom(&exact_timing_test_rom(0x18));
     state.set_rom_startup_timing(true);
-    state.zelda_setup_emu_callbacks(None, Some(test_run_frame_callback), None);
+    state.zelda_setup_emu_callbacks(
+        None,
+        Some(test_run_frame_callback_observes_original_timing),
+        None,
+    );
     assert_eq!(
         state.original_timing_owner(),
         OriginalTimingOwner::PendingColdStart
     );
 
-    state.zelda_run_frame_with_replay_input_override(0x0080, None);
+    state.zelda_run_frame_with_replay_input_override(0x00b0, None);
 
     assert_eq!(state.ram[0x43], 1, "emulator callback ran more than once");
-    assert_eq!(state.ram[0x44], 0x80);
+    assert_eq!(state.ram[0x44], 0xa0);
     assert_eq!(state.rom_reset_frame_delay, 81);
-    assert_eq!(
-        state.original_timing_owner(),
-        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState)
-    );
+    assert_eq!(state.original_timing_owner(), OriginalTimingOwner::Live);
+    assert_eq!(live_original_timing_timestamp(&state), 306_908);
     assert!(!state.original_timing_cold_start_eligible);
+    assert!(!state.original_timing_host_dispatch_active);
+    assert!(state.original_timing_host_receipt.is_none());
+}
+
+#[test]
+fn callback_calling_public_internal_does_not_double_advance_live_timing() {
+    let mut state = ZeldaState::new();
+    state.set_rom(&exact_timing_test_rom(0x18));
+    state.set_rom_startup_timing(true);
+    state.zelda_setup_emu_callbacks(None, Some(test_run_frame_callback_calls_internal), None);
+
+    state.zelda_run_frame_with_replay_input_override(0x1234, None);
+
+    assert_eq!(state.ram[0x43], 1);
+    assert_eq!(state.original_timing_owner(), OriginalTimingOwner::Live);
+    assert_eq!(live_original_timing_timestamp(&state), 306_908);
+    assert!(!state.original_timing_host_dispatch_active);
+    assert!(state.original_timing_host_receipt.is_none());
 }
 
 #[test]
@@ -3367,7 +3430,7 @@ fn rom_startup_preroll_matches_live_console_timing() {
 }
 
 #[test]
-fn public_frame_wrapper_expires_unconsumed_cold_start_on_reset_delay_frame() {
+fn public_frame_wrapper_consumes_unseedable_cold_start_on_reset_delay_frame() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
     assert_eq!(state.rom_reset_frame_delay, 81);
@@ -3382,13 +3445,13 @@ fn public_frame_wrapper_expires_unconsumed_cold_start_on_reset_delay_frame() {
     assert_eq!(state.rom_reset_frame_delay, 80);
     assert_eq!(
         state.original_timing_owner(),
-        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState)
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::MissingRom)
     );
     assert!(!state.original_timing_cold_start_eligible);
 }
 
 #[test]
-fn direct_run_frame_internal_expires_unconsumed_cold_start_on_reset_delay_frame() {
+fn direct_run_frame_internal_consumes_unseedable_cold_start_on_reset_delay_frame() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
     assert_eq!(state.rom_reset_frame_delay, 81);
@@ -3402,9 +3465,89 @@ fn direct_run_frame_internal_expires_unconsumed_cold_start_on_reset_delay_frame(
     assert_eq!(state.rom_reset_frame_delay, 80);
     assert_eq!(
         state.original_timing_owner(),
-        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState)
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::MissingRom)
     );
     assert!(!state.original_timing_cold_start_eligible);
+}
+
+#[test]
+fn direct_host_calls_seed_advance_and_clone_the_live_owner_at_quiescent_boundaries() {
+    let mut state = ZeldaState::new();
+    let mut rom = exact_timing_test_rom(0x4c);
+    rom[0] = 0x4c; // JMP $8000 keeps every host call inside the audited ROM map.
+    rom[1] = 0x00;
+    rom[2] = 0x80;
+    state.set_rom(&rom);
+    state.set_rom_startup_timing(true);
+    let mut reference =
+        snes::Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&state.sram)).unwrap();
+    reference.set_joypad_serial_state(0x1234, 0);
+    let first_reference_receipt = reference.run_until_main_loop_return().unwrap();
+    let _ = reference.take_dsp_samples();
+
+    state.run_frame_internal(0x1234, 0);
+
+    assert_eq!(state.original_timing_owner(), OriginalTimingOwner::Live);
+    assert_eq!(
+        live_original_timing_timestamp(&state),
+        first_reference_receipt.ended_at.master_cycles()
+    );
+    let OriginalTimingOwnerState::Live(live) = &state.original_timing_owner else {
+        unreachable!();
+    };
+    assert_eq!(live.executor.machine().snes().input1.current_state, 0x1234);
+    assert_eq!(
+        bincode::serialize(&live.executor.capture_quiescent_checkpoint().unwrap()).unwrap(),
+        bincode::serialize(&reference.capture_quiescent_checkpoint().unwrap()).unwrap()
+    );
+    assert!(!state.original_timing_host_dispatch_active);
+    assert!(state.original_timing_host_receipt.is_none());
+
+    let mut cloned = state.clone();
+    state.run_frame_internal(0x4567, 0);
+    cloned.run_frame_internal(0x4567, 0);
+    assert_eq!(
+        live_original_timing_timestamp(&cloned),
+        live_original_timing_timestamp(&state)
+    );
+    let original = match &state.original_timing_owner {
+        OriginalTimingOwnerState::Live(live) => live
+            .executor
+            .capture_quiescent_checkpoint()
+            .expect("original Live owner remains quiescent"),
+        _ => unreachable!(),
+    };
+    let cloned = match &cloned.original_timing_owner {
+        OriginalTimingOwnerState::Live(live) => live
+            .executor
+            .capture_quiescent_checkpoint()
+            .expect("cloned Live owner remains quiescent"),
+        _ => unreachable!(),
+    };
+    assert_eq!(
+        bincode::serialize(&original).unwrap(),
+        bincode::serialize(&cloned).unwrap()
+    );
+}
+
+#[test]
+fn live_owner_execution_failure_is_terminal_and_never_reseeds() {
+    let mut state = ZeldaState::new();
+    state.set_rom(&exact_timing_test_rom(0x02));
+    state.set_rom_startup_timing(true);
+
+    state.run_frame_internal(0, 0);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::SourceExecution)
+    );
+
+    state.run_frame_internal(0, 0);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::SourceExecution)
+    );
+    assert!(state.original_timing_host_receipt.is_none());
 }
 
 #[test]
@@ -3443,7 +3586,14 @@ fn original_timing_owner_is_absent_from_serde_and_bincode_bytes() {
         OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore),
     ] {
         let mut state = disabled.clone();
-        state.original_timing_owner = owner;
+        state.original_timing_owner = match owner {
+            OriginalTimingOwner::Disabled => OriginalTimingOwnerState::Disabled,
+            OriginalTimingOwner::PendingColdStart => OriginalTimingOwnerState::PendingColdStart,
+            OriginalTimingOwner::Live => unreachable!("Live needs an exact executor"),
+            OriginalTimingOwner::Unavailable(reason) => {
+                OriginalTimingOwnerState::Unavailable(reason)
+            }
+        };
         state.original_timing_cold_start_eligible = false;
         assert_eq!(
             bincode::serialize(&state).expect("serialize runtime-only timing owner"),
@@ -3451,6 +3601,29 @@ fn original_timing_owner_is_absent_from_serde_and_bincode_bytes() {
             "runtime-only owner {owner:?} changed positional checkpoint bytes"
         );
     }
+
+    let mut live_state = disabled.clone();
+    let mut rom = exact_timing_test_rom(0x4c);
+    rom[0] = 0x4c;
+    rom[1] = 0x00;
+    rom[2] = 0x80;
+    let mut executor = snes::Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+    let main_loop = executor.run_until_main_loop_return().unwrap();
+    let dsp_sample_count = executor.take_dsp_samples().samples.len();
+    live_state.original_timing_owner = OriginalTimingOwnerState::Live(OriginalTimingLive {
+        executor: Box::new(executor),
+    });
+    live_state.original_timing_cold_start_eligible = false;
+    live_state.original_timing_host_dispatch_active = true;
+    live_state.original_timing_host_receipt = Some(OriginalTimingHostReceipt {
+        main_loop,
+        dsp_sample_count,
+    });
+    assert_eq!(
+        bincode::serialize(&live_state).expect("serialize Live runtime-only timing owner"),
+        expected,
+        "Live executor and dispatch receipt changed positional checkpoint bytes"
+    );
 
     let restored: ZeldaState =
         bincode::deserialize(&expected).expect("deserialize unchanged ZeldaState bytes");

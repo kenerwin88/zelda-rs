@@ -8634,18 +8634,16 @@ struct InterruptedDungeonSubmodulePublication {
     provenance: &'static core::panic::Location<'static>,
 }
 
-/// Lifecycle for the future persistent original CPU/APU timing machine.
-///
-/// Phase A deliberately has no `Live` variant: a source-exact machine may be
-/// constructed only by the later owner that consumes `PendingColdStart` at
-/// the fresh reset boundary. Checkpoint restore and late opt-in retain the
-/// translated ROM-timing policy, but must never fabricate a cold CPU start.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OriginalTimingOwner {
+    /// Original timing is not requested by the current runtime policy.
     Disabled,
-    /// Eligible and not yet consumed. This is a provenance receipt only;
-    /// `new`, policy enable, and reset never construct the timing machine.
+    /// A genuinely fresh reset is eligible to seed the exact owner at the
+    /// next host execution boundary.
     PendingColdStart,
+    /// The exact CPU/APU machine advances once per host call.
+    Live,
+    /// Exact timing cannot safely resume or retry from the current state.
     Unavailable(OriginalTimingUnavailableReason),
 }
 
@@ -8653,9 +8651,49 @@ pub(crate) enum OriginalTimingOwner {
 pub(crate) enum OriginalTimingUnavailableReason {
     ProgressedState,
     CheckpointRestore,
+    MissingRom,
+    SourceSeed,
+    SourceExecution,
 }
 
-impl Default for OriginalTimingOwner {
+struct OriginalTimingLive {
+    executor: Box<snes::Snes9xColdCpuExecutor>,
+}
+
+impl Clone for OriginalTimingLive {
+    fn clone(&self) -> Self {
+        let checkpoint = self
+            .executor
+            .capture_quiescent_checkpoint()
+            .expect("a Live original timing owner is always quiescent at a host boundary");
+        let executor = snes::Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint)
+            .expect("a captured Live original timing checkpoint restores exactly");
+        Self {
+            executor: Box::new(executor),
+        }
+    }
+}
+
+#[derive(Clone)]
+enum OriginalTimingOwnerState {
+    Disabled,
+    PendingColdStart,
+    Live(OriginalTimingLive),
+    Unavailable(OriginalTimingUnavailableReason),
+}
+
+impl OriginalTimingOwnerState {
+    const fn status(&self) -> OriginalTimingOwner {
+        match self {
+            Self::Disabled => OriginalTimingOwner::Disabled,
+            Self::PendingColdStart => OriginalTimingOwner::PendingColdStart,
+            Self::Live(_) => OriginalTimingOwner::Live,
+            Self::Unavailable(reason) => OriginalTimingOwner::Unavailable(*reason),
+        }
+    }
+}
+
+impl Default for OriginalTimingOwnerState {
     fn default() -> Self {
         // A skipped field is defaulted during deserialization. Defaulting to
         // unavailable makes every positional ZeldaState restore fail closed,
@@ -8663,6 +8701,12 @@ impl Default for OriginalTimingOwner {
         // has not yet invoked the live-ROM restoration hook.
         Self::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OriginalTimingHostReceipt {
+    main_loop: snes::Snes9xMainLoopReceipt,
+    dsp_sample_count: usize,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -8799,15 +8843,26 @@ pub struct ZeldaState {
     #[serde(default)]
     #[serde(skip)]
     rom_startup_timing: bool,
-    /// Runtime-only provenance for the future exact original timing machine.
-    /// Positional ZeldaState/bincode checkpoints must remain byte-identical.
+    /// Runtime-only exact original timing machine and lifecycle provenance.
+    /// Positional ZeldaState/bincode checkpoints remain byte-identical; bound
+    /// exact persistence belongs to a separately versioned timing sidecar.
     #[serde(skip)]
-    original_timing_owner: OriginalTimingOwner,
+    original_timing_owner: OriginalTimingOwnerState,
     /// Provenance latch distinguishing a genuinely fresh `new`/reset boundary
     /// from a restored frame-zero state after the public policy is disabled.
     /// Like the owner, this is runtime-only and absent from checkpoint bytes.
     #[serde(skip)]
     original_timing_cold_start_eligible: bool,
+    /// Re-entrancy guard spanning the public host wrapper's callback/internal
+    /// dispatch. A callback which invokes the public internal entry point must
+    /// observe the already-owned source interval and never advance it twice.
+    #[serde(skip)]
+    original_timing_host_dispatch_active: bool,
+    /// One-call receipt available only while translated/callback work for that
+    /// same host interval executes. Finalization always drops it, preventing
+    /// replay on the following call.
+    #[serde(skip)]
+    original_timing_host_receipt: Option<OriginalTimingHostReceipt>,
     // Set on a frame whose ROM NMI is PARTIAL because a heavy load runs on the
     // main thread past the vblank (Snes9x-verified per site): the intro
     // message-pointer generation step, and the module-5 selected-game
@@ -15111,8 +15166,10 @@ impl ZeldaState {
             dialogue_font_blk_index: 0,
             dialogue_flags: 0,
             rom_startup_timing: false,
-            original_timing_owner: OriginalTimingOwner::Disabled,
+            original_timing_owner: OriginalTimingOwnerState::Disabled,
             original_timing_cold_start_eligible: true,
+            original_timing_host_dispatch_active: false,
+            original_timing_host_receipt: None,
             rom_load_partial_nmi_this_frame: false,
             selected_game_load_room_preloaded: false,
             game_over_iris_goal_scanout_closed_pending: false,
@@ -15271,11 +15328,13 @@ impl ZeldaState {
     pub fn zelda_reset(&mut self, preserve_sram: bool) {
         self.frame_ctr_dbg = 0;
         self.original_timing_owner = if self.rom_startup_timing {
-            OriginalTimingOwner::PendingColdStart
+            OriginalTimingOwnerState::PendingColdStart
         } else {
-            OriginalTimingOwner::Disabled
+            OriginalTimingOwnerState::Disabled
         };
         self.original_timing_cold_start_eligible = true;
+        self.original_timing_host_dispatch_active = false;
+        self.original_timing_host_receipt = None;
         self.previous_host_controller_input = 0;
         self.dma.reset();
         self.ppu.reset();
@@ -15369,7 +15428,8 @@ impl ZeldaState {
             if self.frame_ctr_dbg != 0 {
                 self.original_timing_cold_start_eligible = false;
             }
-            self.original_timing_owner = OriginalTimingOwner::Disabled;
+            self.original_timing_owner = OriginalTimingOwnerState::Disabled;
+            self.original_timing_host_receipt = None;
             self.zelda_set_rom_startup_audio_phase(false);
             self.rom_reset_frame_delay = 0;
             self.intro_initialization_work_frames_pending = 0;
@@ -15436,15 +15496,16 @@ impl ZeldaState {
             self.deferred_display_snapshot = None;
             self.dungeon_landing_goal_display_handoff = DungeonLandingGoalDisplayHandoff::None;
         } else if self.original_timing_cold_start_eligible && self.frame_ctr_dbg == 0 {
-            self.original_timing_owner = OriginalTimingOwner::PendingColdStart;
+            self.original_timing_owner = OriginalTimingOwnerState::PendingColdStart;
             self.zelda_set_rom_startup_audio_phase(true);
             if !self.game_state.display.has_animated_tile_data_source() {
                 self.rom_reset_frame_delay = configured_rom_reset_frame_delay();
             }
         } else {
             self.original_timing_cold_start_eligible = false;
-            self.original_timing_owner =
-                OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState);
+            self.original_timing_owner = OriginalTimingOwnerState::Unavailable(
+                OriginalTimingUnavailableReason::ProgressedState,
+            );
         }
     }
 
@@ -15475,22 +15536,99 @@ impl ZeldaState {
     }
 
     pub(crate) const fn original_timing_owner(&self) -> OriginalTimingOwner {
-        self.original_timing_owner
-    }
-
-    fn expire_unconsumed_original_timing_cold_start(&mut self) {
-        if self.original_timing_owner != OriginalTimingOwner::PendingColdStart {
-            return;
-        }
-        self.original_timing_owner =
-            OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState);
-        self.original_timing_cold_start_eligible = false;
+        self.original_timing_owner.status()
     }
 
     fn invalidate_original_timing_after_checkpoint(&mut self) {
-        self.original_timing_owner =
-            OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore);
+        self.original_timing_owner = OriginalTimingOwnerState::Unavailable(
+            OriginalTimingUnavailableReason::CheckpointRestore,
+        );
         self.original_timing_cold_start_eligible = false;
+        self.original_timing_host_dispatch_active = false;
+        self.original_timing_host_receipt = None;
+    }
+
+    fn advance_original_timing_host_call(&mut self, input_state: u16) {
+        let owner = std::mem::replace(
+            &mut self.original_timing_owner,
+            OriginalTimingOwnerState::Disabled,
+        );
+        let next_owner = match owner {
+            OriginalTimingOwnerState::PendingColdStart => {
+                self.original_timing_cold_start_eligible = false;
+                if self.rom.is_empty() {
+                    OriginalTimingOwnerState::Unavailable(
+                        OriginalTimingUnavailableReason::MissingRom,
+                    )
+                } else {
+                    match snes::Snes9xColdCpuExecutor::from_lorom_reset_with_sram(
+                        &self.rom,
+                        Some(&self.sram),
+                    ) {
+                        Ok(mut executor) => {
+                            executor.set_joypad_serial_state(input_state, 0);
+                            match executor.run_until_main_loop_return() {
+                                Ok(main_loop) => {
+                                    let dsp_sample_count =
+                                        executor.take_dsp_samples().samples.len();
+                                    self.original_timing_host_receipt =
+                                        Some(OriginalTimingHostReceipt {
+                                            main_loop,
+                                            dsp_sample_count,
+                                        });
+                                    OriginalTimingOwnerState::Live(OriginalTimingLive {
+                                        executor: Box::new(executor),
+                                    })
+                                }
+                                Err(_) => OriginalTimingOwnerState::Unavailable(
+                                    OriginalTimingUnavailableReason::SourceExecution,
+                                ),
+                            }
+                        }
+                        Err(_) => OriginalTimingOwnerState::Unavailable(
+                            OriginalTimingUnavailableReason::SourceSeed,
+                        ),
+                    }
+                }
+            }
+            OriginalTimingOwnerState::Live(mut live) => {
+                live.executor.set_joypad_serial_state(input_state, 0);
+                match live.executor.run_until_main_loop_return() {
+                    Ok(main_loop) => {
+                        let dsp_sample_count = live.executor.take_dsp_samples().samples.len();
+                        self.original_timing_host_receipt = Some(OriginalTimingHostReceipt {
+                            main_loop,
+                            dsp_sample_count,
+                        });
+                        OriginalTimingOwnerState::Live(live)
+                    }
+                    Err(_) => OriginalTimingOwnerState::Unavailable(
+                        OriginalTimingUnavailableReason::SourceExecution,
+                    ),
+                }
+            }
+            owner @ (OriginalTimingOwnerState::Disabled
+            | OriginalTimingOwnerState::Unavailable(_)) => owner,
+        };
+        self.original_timing_owner = next_owner;
+    }
+
+    fn begin_original_timing_host_dispatch(&mut self, input_state: u16) -> bool {
+        if self.original_timing_host_dispatch_active {
+            return false;
+        }
+        debug_assert!(self.original_timing_host_receipt.is_none());
+        self.original_timing_host_dispatch_active = true;
+        self.advance_original_timing_host_call(input_state);
+        true
+    }
+
+    fn finish_original_timing_host_dispatch(&mut self, owns_dispatch: bool) {
+        if !owns_dispatch {
+            return;
+        }
+        self.original_timing_host_receipt = None;
+        self.original_timing_host_dispatch_active = false;
     }
 
     pub(super) fn schedule_spotlight_iteration_return(&mut self, iteration: SpotlightIteration) {
@@ -22500,9 +22638,12 @@ impl ZeldaState {
     /// skeletal. Future ports should land behind this entry point so the
     /// lockstep oracle starts validating them immediately.
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
-        // Direct runtime/crash callers bypass the public execution decision.
-        // Phase B must consume Pending before either frame-entry boundary.
-        self.expire_unconsumed_original_timing_cold_start();
+        let owns_original_timing_dispatch = self.begin_original_timing_host_dispatch(input);
+        self.run_frame_internal_after_original_timing(input, run_what);
+        self.finish_original_timing_host_dispatch(owns_original_timing_dispatch);
+    }
+
+    fn run_frame_internal_after_original_timing(&mut self, input: u16, run_what: u8) {
         self.sync_native_game_state_from_ram();
         self.oam_law_entry_frame_counter = Some(self.game_state.frame.frame_counter);
         if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_LINK_FALL", self.frame_ctr_dbg) {
@@ -26105,9 +26246,11 @@ impl ZeldaState {
             self.intro_bg_fade_poly_phase = 0;
             self.intro_bg_fade_defer_suffix_this_frame = false;
         }
-        // Expire before selecting the installed emulator callback or the
-        // translated engine. The direct-engine guard above is idempotent.
-        self.expire_unconsumed_original_timing_cold_start();
+        // The final replay-sanitized input and run decision are now fixed.
+        // Own exactly one source S9xMainLoop interval across either dispatch
+        // branch; a callback which calls the public internal entry sees this
+        // active guard and cannot advance it again.
+        let owns_original_timing_dispatch = self.begin_original_timing_host_dispatch(input_state);
         if self.emu_runframe.is_none()
             || self.game_state.enhanced_features.bits() != 0
             || self.dialogue_flags != 0
@@ -26136,6 +26279,7 @@ impl ZeldaState {
             self.audio_nmi_processed_before_main = true;
         }
         self.replay_trace_ram_watch("after-apu");
+        self.finish_original_timing_host_dispatch(owns_original_timing_dispatch);
         is_replay
     }
 
