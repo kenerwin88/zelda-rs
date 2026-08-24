@@ -1122,6 +1122,16 @@ pub struct SpcInstructionTrace {
     pub timer0_counter: u8,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct SpcBusTraceEvent {
+    kind: u8,
+    address: i32,
+    value: i32,
+    clocks: u8,
+    clock_before: u32,
+    clock_after: u32,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ApuState {
     pub ram: Vec<u8>,
@@ -1136,12 +1146,16 @@ pub struct ApuState {
     pub spc: SpcState,
     #[serde(skip)]
     smp_coroutine: SmpCoroutineState,
+    #[serde(skip)]
+    snes9x_dsp_clock: i32,
     pub cpu_cycles_left: u8,
     pub dsp_write_history: Vec<(u8, u8)>,
     #[serde(skip)]
     pub debug_dsp_write_trace: Option<Vec<(u32, u8, u8)>>,
     #[serde(skip)]
     pub debug_spc_instruction_trace: Option<Vec<SpcInstructionTrace>>,
+    #[serde(skip)]
+    debug_spc_bus_trace: Option<Vec<SpcBusTraceEvent>>,
     #[serde(skip)]
     scheduled_input_port_writes: Vec<(u32, u8, u8)>,
 }
@@ -1160,10 +1174,12 @@ impl Default for ApuState {
             timer: [ApuTimer::default(); 3],
             spc: SpcState::default(),
             smp_coroutine: SmpCoroutineState::default(),
+            snes9x_dsp_clock: 0,
             cpu_cycles_left: 7,
             dsp_write_history: Vec::new(),
             debug_dsp_write_trace: None,
             debug_spc_instruction_trace: None,
+            debug_spc_bus_trace: None,
             scheduled_input_port_writes: Vec::new(),
         }
     }
@@ -1186,12 +1202,16 @@ impl ApuState {
         self.out_ports = [0; 4];
         self.timer = [ApuTimer::default(); 3];
         self.smp_coroutine = SmpCoroutineState::default();
+        self.snes9x_dsp_clock = 0;
         self.cpu_cycles_left = 7;
         self.dsp_write_history.clear();
         if let Some(trace) = self.debug_dsp_write_trace.as_mut() {
             trace.clear();
         }
         if let Some(trace) = self.debug_spc_instruction_trace.as_mut() {
+            trace.clear();
+        }
+        if let Some(trace) = self.debug_spc_bus_trace.as_mut() {
             trace.clear();
         }
         self.scheduled_input_port_writes.clear();
@@ -1210,7 +1230,10 @@ impl ApuState {
     /// Capture the opt-in SMP continuation as a timing sidecar, separate from
     /// the stable `ApuState`/`Snes` machine serialization layout.
     pub fn capture_snes9x_coroutine_checkpoint(&self) -> Option<Snes9xSmpCoroutineCheckpoint> {
-        self.smp_coroutine.checkpoint()
+        self.smp_coroutine.checkpoint().map(|mut checkpoint| {
+            checkpoint.dsp_clock = self.snes9x_dsp_clock;
+            checkpoint
+        })
     }
 
     /// Restore a timing-sidecar continuation onto its matching APU machine
@@ -1219,6 +1242,7 @@ impl ApuState {
         &mut self,
         checkpoint: Snes9xSmpCoroutineCheckpoint,
     ) {
+        self.snes9x_dsp_clock = checkpoint.dsp_clock;
         self.smp_coroutine = SmpCoroutineState::restore(checkpoint);
     }
 
@@ -1576,6 +1600,7 @@ impl ApuState {
         }
 
         self.cycles = self.cycles.wrapping_add(1);
+        self.snes9x_dsp_clock = self.snes9x_dsp_clock.wrapping_add(1);
     }
 
     fn spc_reset(&mut self) {
@@ -2876,7 +2901,10 @@ impl ApuState {
         match adr {
             0xf0 | 0xf1 | 0xfa | 0xfb | 0xfc => 0,
             0xf2 => self.dsp_adr,
-            0xf3 => self.dsp.read(self.dsp_adr & 0x7f),
+            0xf3 => {
+                self.snes9x_dsp_clock = 0;
+                self.dsp.read(self.dsp_adr & 0x7f)
+            }
             0xf4..=0xf9 => self.in_ports[(adr - 0xf4) as usize],
             0xfd..=0xff => {
                 let i = (adr - 0xfd) as usize;
@@ -2912,6 +2940,7 @@ impl ApuState {
             }
             0xf2 => self.dsp_adr = val,
             0xf3 => {
+                self.snes9x_dsp_clock = 0;
                 if self.dsp_write_history.len() < 256 {
                     self.dsp_write_history.push((self.dsp_adr, val));
                 }
@@ -2934,8 +2963,19 @@ impl ApuState {
 
 impl SmpBus for ApuState {
     fn cycles(&mut self, cycles: i32) {
+        let before = self.cycles;
         for _ in 0..cycles {
             self.advance_hardware_cycle(false);
+        }
+        if let Some(trace) = self.debug_spc_bus_trace.as_mut() {
+            trace.push(SpcBusTraceEvent {
+                kind: 0,
+                address: -1,
+                value: -1,
+                clocks: cycles as u8,
+                clock_before: before,
+                clock_after: self.cycles,
+            });
         }
     }
 
@@ -2946,11 +2986,63 @@ impl SmpBus for ApuState {
     fn write(&mut self, address: u16, value: u8) {
         self.cpu_write(address, value);
     }
+
+    fn read_cycle(&mut self, address: u16) -> u8 {
+        self.read_bus_cycle(1, address)
+    }
+
+    fn write_cycle(&mut self, address: u16, value: u8) {
+        self.write_bus_cycle(2, address, value);
+    }
+
+    fn read_stack_cycle(&mut self, address: u16) -> u8 {
+        self.read_bus_cycle(3, address)
+    }
+
+    fn write_stack_cycle(&mut self, address: u16, value: u8) {
+        self.write_bus_cycle(4, address, value);
+    }
+}
+
+impl ApuState {
+    fn read_bus_cycle(&mut self, kind: u8, address: u16) -> u8 {
+        let before = self.cycles;
+        self.advance_hardware_cycle(false);
+        let value = self.cpu_read(address);
+        if let Some(trace) = self.debug_spc_bus_trace.as_mut() {
+            trace.push(SpcBusTraceEvent {
+                kind,
+                address: i32::from(address),
+                value: i32::from(value),
+                clocks: 1,
+                clock_before: before,
+                clock_after: self.cycles,
+            });
+        }
+        value
+    }
+
+    fn write_bus_cycle(&mut self, kind: u8, address: u16, value: u8) {
+        let before = self.cycles;
+        self.advance_hardware_cycle(false);
+        self.cpu_write(address, value);
+        if let Some(trace) = self.debug_spc_bus_trace.as_mut() {
+            trace.push(SpcBusTraceEvent {
+                kind,
+                address: i32::from(address),
+                value: i32::from(value),
+                clocks: 1,
+                clock_before: before,
+                clock_after: self.cycles,
+            });
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cycle_spc700::tests::{expand_ledger_sequence, opcode_ledger};
     use crate::test_bootstrap_fixture::{
         cpu_apu_accesses, first_cc_output_port_writes, records, smp_instruction_boundaries,
         smp_output_port_writes, split_first_cc_cpu_accesses,
@@ -2972,6 +3064,250 @@ mod tests {
             "IPL did not reach its first MOV dp,#imm at cycle {}, PC ${:04x}",
             apu.cycles, apu.spc.pc
         );
+    }
+
+    fn snes9x_timer_stage1(timer: ApuTimer, frequency: u8) -> u8 {
+        if timer.cycles == 0 || timer.cycles == frequency {
+            0
+        } else {
+            frequency - timer.cycles
+        }
+    }
+
+    #[test]
+    #[ignore = "requires full 32-phase Snes9x DSP sidecar"]
+    fn canonical_snes9x_apu_mmio_ledger_matches_exactly() {
+        let (_, ledger) = opcode_ledger();
+        let state_rows = expand_ledger_sequence(&ledger["state_sequence"]);
+        let dsp_rows = expand_ledger_sequence(&ledger["dsp_state_sequence"]);
+        let bus_rows = expand_ledger_sequence(&ledger["bus_event_sequence"]);
+        let ram_diff_rows = expand_ledger_sequence(&ledger["ram_diff_sequence"]);
+        let dsp_diff_rows = expand_ledger_sequence(&ledger["dsp_diff_sequence"]);
+        let cases = ledger["cases"].as_array().unwrap();
+        let mut state_index = cases[..292]
+            .iter()
+            .map(|case| case["expected_stages"].as_u64().unwrap() as usize)
+            .sum::<usize>();
+
+        for case in cases.iter().skip(292) {
+            let case_id = case["id"].as_i64().unwrap();
+            let opcode = case["opcode"].as_u64().unwrap() as u8;
+            let expected_stages = case["expected_stages"].as_u64().unwrap() as usize;
+            let expected = &state_rows[state_index];
+            state_index += expected_stages;
+            if expected_stages != 1 {
+                continue;
+            }
+
+            let seed = case["seed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_i64().unwrap())
+                .collect::<Vec<_>>();
+            let mut apu = ApuState::new();
+            for (address, value) in apu.ram.iter_mut().enumerate() {
+                *value = ((address * 37 + (address >> 8) * 13 + case_id as usize * 17 + 0x5a)
+                    & 0xff) as u8;
+            }
+            for override_ in case["ram_overrides"].as_array().unwrap() {
+                let override_ = override_.as_array().unwrap();
+                apu.ram[override_[0].as_u64().unwrap() as usize] =
+                    override_[1].as_u64().unwrap() as u8;
+            }
+            let initial_ram = apu.ram.clone();
+            apu.spc = SpcState {
+                pc: seed[0] as u16,
+                a: seed[1] as u8,
+                x: seed[2] as u8,
+                y: seed[3] as u8,
+                sp: seed[4] as u8,
+                c: seed[5] & 0x01 != 0,
+                z: seed[5] & 0x02 != 0,
+                i: seed[5] & 0x04 != 0,
+                h: seed[5] & 0x08 != 0,
+                b: seed[5] & 0x10 != 0,
+                p: seed[5] & 0x20 != 0,
+                v: seed[5] & 0x40 != 0,
+                n: seed[5] & 0x80 != 0,
+                stopped: false,
+                cycles_used: 0,
+            };
+            apu.rom_readable = seed[6] != 0;
+            apu.dsp_adr = seed[7] as u8;
+            apu.in_ports[4] = seed[8] as u8;
+            apu.in_ports[5] = seed[9] as u8;
+            apu.cycles = seed[10] as u32;
+            apu.snes9x_dsp_clock = seed[11] as i32;
+            for timer in 0..3 {
+                let field = 12 + timer * 5;
+                let frequency = if timer == 2 { 16 } else { 128 };
+                let stage1 = seed[field + 2] as u8;
+                apu.timer[timer] = ApuTimer {
+                    cycles: if stage1 == 0 {
+                        frequency
+                    } else {
+                        frequency - stage1
+                    },
+                    target: seed[field + 1] as u8,
+                    divider: seed[field + 3] as u8,
+                    counter: seed[field + 4] as u8,
+                    enabled: seed[field] != 0,
+                };
+            }
+            for port in 0..4 {
+                apu.in_ports[port] = seed[27 + port] as u8;
+            }
+            apu.smp_coroutine = SmpCoroutineState {
+                enabled: true,
+                opcode: None,
+                opcode_cycle: 0,
+                rd: 0xa101,
+                wr: 0xa202,
+                dp: 0xa303,
+                sp: 0xa404,
+                ya: 0xa505,
+                bit: 0xa606,
+            };
+            apu.debug_spc_bus_trace = Some(Vec::new());
+
+            let state = apu.cycle_sequenced_smp_state();
+            let mut coroutine = std::mem::take(&mut apu.smp_coroutine);
+            let (state, actual_psw, result) = {
+                let mut smp = Smp::new(&mut apu, state);
+                let fetched = smp.read_pc();
+                assert_eq!(fetched, opcode, "case {case_id}");
+                coroutine.opcode = Some(opcode);
+                let result = smp.run_resumable_micro_step(&mut coroutine).unwrap();
+                (smp.state(), smp.get_psw(), result)
+            };
+            apu.smp_coroutine = coroutine;
+            apu.apply_cycle_sequenced_smp_state(state);
+            assert_eq!(
+                result,
+                SmpMicroStepResult::InstructionComplete { opcode },
+                "case {case_id} ${opcode:02x}"
+            );
+            let actual = vec![
+                i64::from(apu.spc.pc),
+                i64::from(apu.spc.a),
+                i64::from(apu.spc.x),
+                i64::from(apu.spc.y),
+                i64::from(apu.spc.sp),
+                i64::from(actual_psw),
+                i64::from(opcode),
+                0,
+                i64::from(apu.smp_coroutine.rd),
+                i64::from(apu.smp_coroutine.wr),
+                i64::from(apu.smp_coroutine.dp),
+                i64::from(apu.smp_coroutine.sp),
+                i64::from(apu.smp_coroutine.ya),
+                i64::from(apu.smp_coroutine.bit),
+                i64::from(apu.cycles),
+                i64::from(apu.snes9x_dsp_clock),
+                i64::from(apu.rom_readable),
+                i64::from(apu.dsp_adr),
+                i64::from(apu.in_ports[4]),
+                i64::from(apu.in_ports[5]),
+                i64::from(apu.timer[0].enabled),
+                i64::from(apu.timer[0].target),
+                i64::from(snes9x_timer_stage1(apu.timer[0], 128)),
+                i64::from(apu.timer[0].divider),
+                i64::from(apu.timer[0].counter),
+                i64::from(apu.timer[1].enabled),
+                i64::from(apu.timer[1].target),
+                i64::from(snes9x_timer_stage1(apu.timer[1], 128)),
+                i64::from(apu.timer[1].divider),
+                i64::from(apu.timer[1].counter),
+                i64::from(apu.timer[2].enabled),
+                i64::from(apu.timer[2].target),
+                i64::from(snes9x_timer_stage1(apu.timer[2], 16)),
+                i64::from(apu.timer[2].divider),
+                i64::from(apu.timer[2].counter),
+                i64::from(apu.in_ports[0]),
+                i64::from(apu.in_ports[1]),
+                i64::from(apu.in_ports[2]),
+                i64::from(apu.in_ports[3]),
+                i64::from(apu.ram[0xf4]),
+                i64::from(apu.ram[0xf5]),
+                i64::from(apu.ram[0xf6]),
+                i64::from(apu.ram[0xf7]),
+                1,
+                0,
+            ];
+            assert_eq!(
+                actual,
+                expected[3..48],
+                "APU state mismatch in case {case_id} ${opcode:02x} {}",
+                case["variant"].as_str().unwrap()
+            );
+
+            let expected_bus = bus_rows
+                .iter()
+                .filter(|row| row[0] == case_id && row[1] == 0)
+                .map(|row| row[2..8].to_vec())
+                .collect::<Vec<_>>();
+            let actual_bus = apu
+                .debug_spc_bus_trace
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|event| {
+                    vec![
+                        i64::from(event.kind),
+                        i64::from(event.address),
+                        i64::from(event.value),
+                        i64::from(event.clocks),
+                        i64::from(event.clock_before),
+                        i64::from(event.clock_after),
+                    ]
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                actual_bus, expected_bus,
+                "APU bus mismatch in case {case_id} ${opcode:02x}"
+            );
+
+            let expected_ram = ram_diff_rows
+                .iter()
+                .filter(|row| row[0] == case_id && row[1] == 0)
+                .map(|row| (row[2] as usize, row[3] as u8))
+                .collect::<Vec<_>>();
+            let actual_ram = apu
+                .ram
+                .iter()
+                .zip(&initial_ram)
+                .enumerate()
+                .filter_map(|(address, (&actual, &before))| {
+                    (actual != before).then_some((address, actual))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                actual_ram, expected_ram,
+                "APU RAM mismatch in case {case_id} ${opcode:02x}"
+            );
+
+            let expected_dsp = dsp_rows
+                .iter()
+                .filter(|row| row[0] == case_id && row[1] == 0)
+                .map(|row| row[3] as u8)
+                .collect::<Vec<_>>();
+            let actual_dsp = (0..128)
+                .map(|address| apu.dsp.read(address))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                actual_dsp, expected_dsp,
+                "APU DSP state mismatch in case {case_id} ${opcode:02x}"
+            );
+            let expected_dsp_diffs = dsp_diff_rows
+                .iter()
+                .filter(|row| row[0] == case_id && row[1] == 0)
+                .collect::<Vec<_>>();
+            assert!(
+                expected_dsp_diffs.is_empty(),
+                "atomic case {case_id} unexpectedly changed DSP state"
+            );
+        }
     }
 
     #[test]
