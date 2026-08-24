@@ -1058,6 +1058,7 @@ impl Snes9xColdCpuExecutor {
                 self.set_zn(u16::from(data_bank), true);
                 self.machine.snes.open_bus = data_bank;
             }
+            0xb0 => self.branch(self.machine.snes.cpu.c, accesses)?,
             0xb7 => {
                 let address = self
                     .direct_indirect_long_address(accesses)?
@@ -5979,6 +5980,46 @@ mod tests {
     }
 
     #[test]
+    fn bcs_uses_carry_set_condition_with_shared_source_branch_timing() {
+        let rom = synthetic_rom(&[0xb0, 0x02]);
+        let mut not_taken = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        not_taken.machine.snes.cpu.c = false;
+
+        let not_taken_receipt = not_taken.step().unwrap();
+
+        assert_source_transaction_shape(
+            &not_taken_receipt,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 8),
+            ],
+        );
+        assert_eq!(not_taken.program_address(), 0x00_8002);
+
+        let mut taken = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        taken.machine.snes.cpu.c = true;
+
+        let taken_receipt = taken.step().unwrap();
+
+        assert_source_transaction_shape(
+            &taken_receipt,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 8),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 6),
+            ],
+        );
+        assert_eq!(taken.program_address(), 0x00_8004);
+        assert_eq!(taken.machine.snes.open_bus, 0x02);
+    }
+
+    #[test]
     fn bmi_uses_negative_set_condition_with_shared_source_branch_timing() {
         let rom = synthetic_rom(&[0x30, 0x02]);
         let mut not_taken = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
@@ -7951,18 +7992,46 @@ mod tests {
             cpu.machine.timeline.raster_position(),
             crate::CpuRasterPosition::new(153, 118)
         );
+        let bcs = cpu.step().unwrap();
+        assert_eq!(bcs.origin_pc, 0x0c_c179);
+        assert_eq!(bcs.opcode, 0xb0);
+        assert_source_transaction_shape(
+            &bcs,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 8),
+            ],
+        );
+        assert_eq!(cpu.program_address(), 0x0c_c17b);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(29_155_474));
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(153, 134)
+        );
+        for _ in 0..41 {
+            cpu.step().unwrap();
+        }
+        assert_eq!(cpu.program_address(), 0x0c_c1e5);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(29_156_982));
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(154, 278)
+        );
         assert_eq!(
             cpu.step(),
             Err(SourceCpuError::UnsupportedOpcode {
-                pc: 0x0c_c179,
-                opcode: 0xb0,
+                pc: 0x0c_c1e5,
+                opcode: 0xe4,
             })
         );
-        assert_eq!(cpu.program_address(), 0x0c_c17a);
-        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(29_155_466));
+        assert_eq!(cpu.program_address(), 0x0c_c1e6);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(29_156_990));
         assert_eq!(
             cpu.machine.timeline.raster_position(),
-            crate::CpuRasterPosition::new(153, 126)
+            crate::CpuRasterPosition::new(154, 286)
         );
         assert!(cpu.is_poisoned());
     }
