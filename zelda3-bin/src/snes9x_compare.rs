@@ -7536,6 +7536,9 @@ fn compact_cpu_apu_accesses(accesses: &[FramedApuPortAccess]) -> SmpBootstrapDel
             "smp_opcode_before",
             "smp_opcode_after",
             "is_read",
+            "cpu_model_5a22",
+            "wram_refresh_position",
+            "cpu_model_identity",
         ],
         accesses.iter().map(|framed| {
             let access = &framed.access;
@@ -7556,6 +7559,9 @@ fn compact_cpu_apu_accesses(accesses: &[FramedApuPortAccess]) -> SmpBootstrapDel
                 i64::from(access.smp_opcode_before),
                 i64::from(access.smp_opcode_after),
                 i64::from(access.is_read),
+                i64::from(access.cpu_model_5a22),
+                i64::from(access.wram_refresh_position),
+                i64::from(access.cpu_model_identity),
             ]
         }),
     )
@@ -7859,6 +7865,9 @@ fn write_snes9x_smp_bootstrap_header<W: Write>(
             })
         })
         .collect::<Vec<_>>();
+    let (cpu_model_5a22, cpu_model_identity, wram_refresh_position) = oracle
+        .debug_cpu_timing_model()
+        .ok_or("SMP-bootstrap trace requires Snes9x CPU timing-model instrumentation")?;
     serde_json::to_writer(
         &mut *writer,
         &serde_json::json!({
@@ -7881,6 +7890,9 @@ fn write_snes9x_smp_bootstrap_header<W: Write>(
             "ram_nonzero_bytes": snd[..RAM_BYTES].iter().filter(|byte| **byte != 0).count(),
             "cpu_reference_time": 0,
             "cpu_remainder": 0,
+            "cpu_model_5a22": cpu_model_5a22,
+            "cpu_model_identity": cpu_model_identity,
+            "wram_refresh_position": wram_refresh_position,
         }),
     )?;
     writer.write_all(b"\n")?;
@@ -8088,7 +8100,7 @@ mod tests {
         assert_eq!(provenance["core"]["library_version"], "1.63 921f9f7b");
         assert_eq!(
             provenance["core"]["sha256"],
-            "db33f4fb6421d033eefeabc17cd1b5054ddf41ff668bf7632f1b74a892db8233"
+            "83e99d6e7227e25db26df6d1ce1e4cb1661e5da22a8b71703d8fbc4ec9e30035"
         );
         assert_eq!(
             provenance["source"]["revision"],
@@ -8116,6 +8128,12 @@ mod tests {
         assert_eq!(reset["ipl_rom_enabled"], true);
         assert_eq!(reset["ram_nonzero_bytes"], 0);
         assert_eq!(reset["output_ports"], serde_json::json!([0, 0, 0, 0]));
+        // globals.cpp selects the M1SNES object, whose _5A22 field is 2.
+        // cpu.cpp therefore uses the v2 refresh schedule; the object name is
+        // not evidence that WRAM refresh occurs at the v1 position.
+        assert_eq!(reset["cpu_model_identity"], 1);
+        assert_eq!(reset["cpu_model_5a22"], 2);
+        assert_eq!(reset["wram_refresh_position"], 538);
 
         let events = &records[2];
         assert_eq!(events["kind"], "bootstrap-events");
@@ -8130,8 +8148,29 @@ mod tests {
         assert_eq!(cpu.len(), 356_174);
         assert_eq!(
             cpu[0],
-            vec![0, 0, 0, 0, 0, 326, 0x800d, 0, 16, 0, 1, 0xffc0, 0xffc5, 0, 0xd0, 0]
+            vec![0, 0, 0, 0, 0, 326, 0x800d, 0, 16, 0, 1, 0xffc0, 0xffc5, 0, 0xd0, 0, 2, 538, 1,]
         );
+        assert!(cpu.iter().all(|access| access[16] == 2));
+        assert!(cpu.iter().all(|access| matches!(access[17], 534 | 538)));
+        assert!(cpu.iter().all(|access| access[18] == 1));
+
+        let before_refresh_pair = cpu
+            .windows(2)
+            .find(|pair| {
+                pair[0][0] == 0
+                    && pair[0][4] == 44
+                    && pair[0][5] == 528
+                    && pair[1][4] == 44
+                    && pair[1][5] == 534
+            })
+            .expect("fixture lost the H528/H534 APUI pair");
+        // Both semantics precede this scanline's live H538 refresh event, so
+        // their six-master-cycle separation is not evidence of an H530 model.
+        for access in before_refresh_pair {
+            assert_eq!(access[16], 2);
+            assert_eq!(access[17], 538);
+            assert_eq!(access[18], 1);
+        }
         let initial_cc = cpu
             .iter()
             .position(|access| {
@@ -8146,7 +8185,7 @@ mod tests {
             cpu.last().unwrap(),
             &vec![
                 79, 3, 0, 319, 120, 384, 0x88ff, 10_255, 10_255, 4, 3, 0x0800, 0x0800, 0x1f, 0x1f,
-                0,
+                0, 2, 534, 1,
             ]
         );
 

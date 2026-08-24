@@ -574,6 +574,21 @@ index a8ffcb12..ea26bc9d 100644
 +    return Zelda3TraceApuPortWriteValue(write, field);
 +}
 +
++extern "C" int zelda3_snes9x_debug_cpu_model_5a22()
++{
++    return Zelda3TraceCpuModel5A22();
++}
++
++extern "C" int zelda3_snes9x_debug_cpu_model_identity()
++{
++    return Zelda3TraceCpuModelIdentity();
++}
++
++extern "C" int zelda3_snes9x_debug_wram_refresh_pos()
++{
++    return Zelda3TraceWramRefreshPos();
++}
++
 +extern "C" int zelda3_snes9x_debug_smp_output_port_write_count()
 +{
 +    return Zelda3TraceSmpOutputPortWriteCount();
@@ -842,7 +857,7 @@ index 00000000..06a376d4
 +int dsp_write_count = 0;
 +int dsp_writes[dsp_write_capacity][dsp_write_field_count] = {};
 +constexpr int apu_port_write_capacity = 65536;
-+constexpr int apu_port_write_field_count = 21;
++constexpr int apu_port_write_field_count = 24;
 +int apu_port_write_count = 0;
 +int apu_port_writes[apu_port_write_capacity][apu_port_write_field_count] = {};
 +constexpr int smp_output_port_write_capacity = 65536;
@@ -1284,6 +1299,9 @@ index 00000000..06a376d4
 +	write[18] = SNES::smp.opcode_cycle;
 +	write[19] = -1;
 +	write[20] = 0;
++	write[21] = Model->_5A22;
++	write[22] = Timings.WRAMRefreshPos;
++	write[23] = Zelda3TraceCpuModelIdentity();
 +}
 +
 +void Zelda3TraceFinalizeApuPortWrite()
@@ -1323,6 +1341,21 @@ index 00000000..06a376d4
 +	return write >= 0 && write < apu_port_write_count &&
 +		field >= 0 && field < apu_port_write_field_count
 +		? apu_port_writes[write][field] : -1;
++}
++
++int Zelda3TraceCpuModel5A22()
++{
++	return Model->_5A22;
++}
++
++int Zelda3TraceCpuModelIdentity()
++{
++	return Model == &M1SNES ? 1 : Model == &M2SNES ? 2 : 0;
++}
++
++int Zelda3TraceWramRefreshPos()
++{
++	return Timings.WRAMRefreshPos;
 +}
 +
 +void Zelda3TraceResetSmpCycle()
@@ -1661,6 +1694,9 @@ index 00000000..f5bb193a
 +void Zelda3TraceFinalizeApuPortRead(int value);
 +int Zelda3TraceApuPortWriteCount();
 +int Zelda3TraceApuPortWriteValue(int write, int field);
++int Zelda3TraceCpuModel5A22();
++int Zelda3TraceCpuModelIdentity();
++int Zelda3TraceWramRefreshPos();
 +void Zelda3TraceResetSmpCycle();
 +void Zelda3TraceTickSmpCycle(unsigned clocks);
 +void Zelda3TraceCaptureSmpOutputPortWrite(int port, int value);

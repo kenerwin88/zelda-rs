@@ -127,6 +127,9 @@ pub(crate) struct LibretroCore {
     pub(crate) debug_dsp_register_write_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_apu_port_write_count: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_apu_port_write_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
+    pub(crate) debug_cpu_model_5a22: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_cpu_model_identity: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_wram_refresh_pos: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_smp_output_port_write_count: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_smp_output_port_write_value:
         Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
@@ -241,6 +244,12 @@ impl LibretroCore {
                 optional_symbol(handle, "zelda3_snes9x_debug_apu_port_write_count");
             let debug_apu_port_write_value =
                 optional_symbol(handle, "zelda3_snes9x_debug_apu_port_write_value");
+            let debug_cpu_model_5a22 =
+                optional_symbol(handle, "zelda3_snes9x_debug_cpu_model_5a22");
+            let debug_cpu_model_identity =
+                optional_symbol(handle, "zelda3_snes9x_debug_cpu_model_identity");
+            let debug_wram_refresh_pos =
+                optional_symbol(handle, "zelda3_snes9x_debug_wram_refresh_pos");
             let debug_smp_output_port_write_count =
                 optional_symbol(handle, "zelda3_snes9x_debug_smp_output_port_write_count");
             let debug_smp_output_port_write_value =
@@ -328,6 +337,9 @@ impl LibretroCore {
                 debug_dsp_register_write_value,
                 debug_apu_port_write_count,
                 debug_apu_port_write_value,
+                debug_cpu_model_5a22,
+                debug_cpu_model_identity,
+                debug_wram_refresh_pos,
                 debug_smp_output_port_write_count,
                 debug_smp_output_port_write_value,
                 debug_smp_output_port_write_cycle,
@@ -656,9 +668,25 @@ impl LibretroCore {
                     smp_opcode_before: unsafe { value(write, 16) },
                     smp_opcode_after: unsafe { value(write, 17) },
                     is_read: unsafe { value(write, 20) } != 0,
+                    cpu_model_5a22: unsafe { value(write, 21) },
+                    wram_refresh_position: unsafe { value(write, 22) },
+                    cpu_model_identity: unsafe { value(write, 23) },
                 })
                 .collect(),
         )
+    }
+
+    pub(crate) fn debug_cpu_timing_model(&self) -> Option<(i32, i32, i32)> {
+        let (Some(version), Some(identity), Some(refresh)) = (
+            self.debug_cpu_model_5a22,
+            self.debug_cpu_model_identity,
+            self.debug_wram_refresh_pos,
+        ) else {
+            return None;
+        };
+        Some((unsafe { version() }, unsafe { identity() }, unsafe {
+            refresh()
+        }))
     }
 
     pub(crate) fn debug_smp_instructions(&self) -> Option<Vec<LibretroSmpInstruction>> {
@@ -838,6 +866,9 @@ pub(crate) struct LibretroApuPortWrite {
     pub(crate) smp_opcode_before: i32,
     pub(crate) smp_opcode_after: i32,
     pub(crate) is_read: bool,
+    pub(crate) cpu_model_5a22: i32,
+    pub(crate) wram_refresh_position: i32,
+    pub(crate) cpu_model_identity: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
