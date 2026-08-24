@@ -704,6 +704,7 @@ impl Snes9xColdCpuExecutor {
                     self.machine.snes.cpu.sp = 0x0100 | (self.machine.snes.cpu.sp & 0x00ff);
                 }
             }
+            0x30 => self.branch(self.machine.snes.cpu.n, accesses)?,
             0x38 => {
                 self.machine.snes.cpu.c = true;
                 self.add_cycles(ONE_CYCLE)?;
@@ -4725,6 +4726,21 @@ mod tests {
     }
 
     #[test]
+    fn bmi_uses_negative_set_condition_with_shared_source_branch_timing() {
+        let rom = synthetic_rom(&[0x30, 0x02]);
+        let mut not_taken = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        not_taken.machine.snes.cpu.n = false;
+        assert_eq!(not_taken.step().unwrap().transactions.len(), 2);
+        assert_eq!(not_taken.program_address(), 0x00_8002);
+
+        let mut taken = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        taken.machine.snes.cpu.n = true;
+        assert_eq!(taken.step().unwrap().transactions.len(), 3);
+        assert_eq!(taken.program_address(), 0x00_8004);
+        assert_eq!(taken.machine.snes.open_bus, 0x02);
+    }
+
+    #[test]
     fn adc_direct_m8_charges_nonzero_dp_then_sets_binary_flags() {
         let rom = synthetic_rom(&[0x65, 0x10]);
         let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
@@ -6438,18 +6454,37 @@ mod tests {
             cpu.machine.timeline.raster_position(),
             crate::CpuRasterPosition::new(258, 54)
         );
+        let bmi = cpu.step().unwrap();
+        assert_eq!(bmi.origin_pc, 0x00_e405);
+        assert_eq!(bmi.opcode, 0x30);
+        assert_eq!(cpu.program_address(), 0x00_e42b);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_941_268));
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(258, 76)
+        );
+
+        for _ in 0..4 {
+            cpu.step().unwrap();
+        }
+        assert_eq!(cpu.program_address(), 0x00_e434);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_941_364));
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(258, 172)
+        );
         assert_eq!(
             cpu.step(),
             Err(SourceCpuError::UnsupportedOpcode {
-                pc: 0x00_e405,
-                opcode: 0x30,
+                pc: 0x00_e434,
+                opcode: 0xee,
             })
         );
-        assert_eq!(cpu.program_address(), 0x00_e406);
-        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_941_254));
+        assert_eq!(cpu.program_address(), 0x00_e435);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_941_372));
         assert_eq!(
             cpu.machine.timeline.raster_position(),
-            crate::CpuRasterPosition::new(258, 62)
+            crate::CpuRasterPosition::new(258, 180)
         );
         assert!(cpu.is_poisoned());
     }
