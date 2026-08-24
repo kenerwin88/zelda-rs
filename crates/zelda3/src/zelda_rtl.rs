@@ -2777,7 +2777,7 @@ pub(super) fn dialogue_initialization_cpu_plan(
     .expect("dialogue CPU timing requires the loaded Zelda ROM");
     run.restore_original_dialogue_pointer_table()
         .expect("dialogue CPU timing requires the original compressed message table");
-    let mut budget = CpuCycleBudget::until_next_nmi(
+    let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
         CpuRasterPosition::new(entry.0, entry.1),
         CpuBusWorkload::with_dynamic_hdma(),
         CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
@@ -2807,7 +2807,10 @@ pub(super) fn dialogue_initialization_cpu_plan(
         }
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         run.set_raster_position(scanline, master_cycle);
-        if advance_rom_cpu_step(&mut run, &mut budget).was_interrupted() {
+        if advance_rom_cpu_step(&mut run, &mut budget)
+            .reached_boundary()
+            .is_some()
+        {
             if let Some((return_scanline, return_master_cycle, return_animated_tile_source)) =
                 completed_return
             {
@@ -2988,14 +2991,7 @@ fn advance_rom_cpu_step(run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget) 
             CpuBusEvent::WramRefresh => unreachable!(),
         });
     let dma_master_cycles = run.drain_started_dma_master_cycles();
-    let dma = budget.advance_uninterruptible(dma_master_cycles);
-    if instruction.was_interrupted() || dma.was_interrupted() {
-        CpuWorkAdvance::InterruptedAtNmi {
-            remaining_work_master_cycles: 0,
-        }
-    } else {
-        CpuWorkAdvance::Complete
-    }
+    budget.advance_started_general_dma(instruction, dma_master_cycles)
 }
 
 fn advance_rom_cpu_through_nmi(run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget) {
@@ -3049,7 +3045,7 @@ fn dungeon_exit_spotlight_cpu_plan_at(
         DUNGEON_EXIT_SPOTLIGHT_CPU_CHECKPOINT,
     )
     .expect("dungeon-exit spotlight CPU timing requires the loaded Zelda ROM");
-    let mut budget = CpuCycleBudget::until_next_nmi(
+    let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
         entry,
         CpuBusWorkload::with_dynamic_hdma(),
         CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
@@ -3167,8 +3163,9 @@ fn dungeon_exit_spotlight_cpu_plan_at(
                 CpuBusEvent::WramRefresh => unreachable!(),
             },
         );
-        let dma = budget.advance_uninterruptible(run.drain_started_dma_master_cycles());
-        if instruction.was_interrupted() || dma.was_interrupted() {
+        let advance =
+            budget.advance_started_general_dma(instruction, run.drain_started_dma_master_cycles());
+        if advance.reached_boundary().is_some() {
             if iterations_before_nmi.is_none() {
                 iterations_before_nmi = Some(iterations);
                 interrupted_pc = Some(run.pc());
@@ -3252,7 +3249,7 @@ fn overworld_spotlight_cpu_plan_at(
         OVERWORLD_SPOTLIGHT_CPU_CHECKPOINT,
     )
     .expect("overworld spotlight CPU timing requires the loaded Zelda ROM");
-    let mut budget = CpuCycleBudget::until_next_nmi(
+    let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
         entry,
         CpuBusWorkload::with_dynamic_hdma(),
         CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
@@ -3342,8 +3339,9 @@ fn overworld_spotlight_cpu_plan_at(
                 CpuBusEvent::WramRefresh => unreachable!(),
             },
         );
-        let dma = budget.advance_uninterruptible(run.drain_started_dma_master_cycles());
-        if instruction.was_interrupted() || dma.was_interrupted() {
+        let advance =
+            budget.advance_started_general_dma(instruction, run.drain_started_dma_master_cycles());
+        if advance.reached_boundary().is_some() {
             if iterations_before_nmi.is_none() {
                 iterations_before_nmi = Some(iterations);
                 interrupted_pc = Some(run.pc());
@@ -3489,7 +3487,7 @@ fn dungeon_room_load_cpu_plan(
         DUNGEON_ROOM_LOAD_CPU_CHECKPOINT,
     )
     .expect("dungeon room-load CPU timing requires the loaded Zelda ROM");
-    let mut budget = CpuCycleBudget::until_next_nmi(
+    let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
         entry,
         CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES),
         CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
@@ -3610,7 +3608,7 @@ fn dungeon_room_load_cpu_plan(
                 initialized_sprite_slot = Some((address - SPRITE_STATE) as u8);
             }
         }
-        if advance.was_interrupted() {
+        if advance.reached_boundary().is_some() {
             if sprite_main_entry_nmis.is_some() && !sprite_main_first_nmi_observed {
                 sprite_main_first_nmi_observed = true;
                 cached_sprite_interruption =
@@ -3701,7 +3699,7 @@ fn dungeon_submodule_cpu_schedule_plan(
     .expect("dungeon submodule CPU timing requires the loaded Zelda ROM");
     let field_timing = CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0);
     let mut budget =
-        CpuCycleBudget::at_nmi_trigger(CpuBusWorkload::with_dynamic_hdma(), field_timing);
+        CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(), field_timing);
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
     while run.pc() != DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT.entry_pc {
         let (scanline, master_cycle) = budget.raster_position().coordinates();
@@ -3714,7 +3712,7 @@ fn dungeon_submodule_cpu_schedule_plan(
         );
     }
     if let Some(entry) = dispatcher_entry {
-        budget = CpuCycleBudget::until_next_nmi(
+        budget = CpuCycleBudget::until_next_nmi_acceptance(
             entry,
             CpuBusWorkload::with_dynamic_hdma(),
             field_timing,
@@ -3760,7 +3758,10 @@ fn dungeon_submodule_cpu_schedule_plan(
             for _ in 0..64 {
                 let (scanline, master_cycle) = budget.raster_position().coordinates();
                 run.set_raster_position(scanline, master_cycle);
-                if advance_rom_cpu_step(&mut run, &mut budget).was_interrupted() {
+                if advance_rom_cpu_step(&mut run, &mut budget)
+                    .reached_boundary()
+                    .is_some()
+                {
                     break;
                 }
                 if run.pc() == DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT.entry_pc {
@@ -3833,7 +3834,7 @@ fn dungeon_submodule_cpu_schedule_plan(
         {
             submodule_nmis = Some(nmis);
         }
-        if advance.was_interrupted() {
+        if advance.reached_boundary().is_some() {
             if submodule_nmis.is_some() && !caller_first_nmi_observed {
                 caller_first_nmi_observed = true;
                 sprite_main_boundary = sprite_main_cpu_interruption_boundary(
@@ -3902,7 +3903,7 @@ fn module09_cpu_schedule(state: &ZeldaState) -> Module09CpuSchedule {
     .expect("Module09 CPU timing requires the loaded Zelda ROM");
     let field_timing = CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0);
     let mut budget =
-        CpuCycleBudget::at_nmi_trigger(CpuBusWorkload::with_dynamic_hdma(), field_timing);
+        CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(), field_timing);
     advance_rom_cpu_through_nmi(&mut run, &mut budget);
     while run.pc() != MODULE09_ENTRY_PC {
         let (scanline, master_cycle) = budget.raster_position().coordinates();
@@ -3996,7 +3997,7 @@ fn module09_cpu_schedule(state: &ZeldaState) -> Module09CpuSchedule {
         {
             submodule_nmis = Some(nmis);
         }
-        if advance.was_interrupted() {
+        if advance.reached_boundary().is_some() {
             if submodule_nmis.is_some() && caller_first_nmi_phase.is_none() {
                 sprite_main_boundary = sprite_main_cpu_interruption_boundary(
                     sprite_main_current_slot,
@@ -4059,7 +4060,7 @@ fn dungeon_supertile_state_9_cpu_advance(
         .map_or(DUNGEON_QUADRANT_PREPARE_MASTER_CYCLES, |palette_work| {
             DUNGEON_STATE_9_FILTERED_FIXED_MASTER_CYCLES + palette_work
         });
-    let mut budget = CpuCycleBudget::until_next_nmi(
+    let mut budget = CpuCycleBudget::until_next_vblank_publication(
         DUNGEON_STATE_9_CPU_ENTRY,
         CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES),
         CpuFieldTiming::NON_INTERLACE_EVEN,
@@ -4080,7 +4081,11 @@ fn dungeon_supertile_state_9_caller_continuation(
         && exit.subsubmodule == 10
         && matches!(
             dungeon_supertile_state_9_cpu_advance(palette_filter_loop_master_cycles),
-            CpuPhaseSequenceAdvance::InterruptedAtNmi { phase_index: 1, .. }
+            CpuPhaseSequenceAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::VblankPublication,
+                phase_index: 1,
+                ..
+            }
         ))
     .then_some(PreMainNmiResume::DungeonSupertileCallerReturnNmi)
 }
@@ -4088,7 +4093,7 @@ fn dungeon_supertile_state_9_caller_continuation(
 fn dungeon_supertile_state_10_cpu_advance(
     palette_filter_loop_master_cycles: u32,
 ) -> CpuPhaseSequenceAdvance {
-    let mut budget = CpuCycleBudget::until_next_nmi(
+    let mut budget = CpuCycleBudget::until_next_vblank_publication(
         DUNGEON_STATE_10_CPU_ENTRY,
         CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES),
         CpuFieldTiming::NON_INTERLACE_EVEN,
@@ -4101,7 +4106,7 @@ fn dungeon_supertile_state_10_cpu_advance(
 fn dungeon_supertile_state_11_cpu_advance(
     palette_filter_loop_master_cycles: u32,
 ) -> CpuPhaseSequenceAdvance {
-    let mut budget = CpuCycleBudget::until_next_nmi(
+    let mut budget = CpuCycleBudget::until_next_vblank_publication(
         DUNGEON_STATE_11_CPU_ENTRY,
         CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES),
         CpuFieldTiming::NON_INTERLACE_EVEN,
@@ -4365,7 +4370,7 @@ fn dungeon_module_7_cpu_timing(
     // the timing run, while the translated engine remains the state owner.
     let field_timing = CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0);
     let mut leading_nmi_budget =
-        CpuCycleBudget::at_nmi_trigger(CpuBusWorkload::with_dynamic_hdma(), field_timing);
+        CpuCycleBudget::at_nmi_acceptance(CpuBusWorkload::with_dynamic_hdma(), field_timing);
     advance_rom_cpu_through_nmi(&mut run, &mut leading_nmi_budget);
     while run.pc() != checkpoint.entry_pc {
         let (scanline, master_cycle) = leading_nmi_budget.raster_position().coordinates();
@@ -4382,7 +4387,11 @@ fn dungeon_module_7_cpu_timing(
         trace_dungeon_cpu_checkpoint(state, &run, leading_nmi_budget);
     }
     let mut budget = dispatcher_entry.map_or(leading_nmi_budget, |entry| {
-        CpuCycleBudget::until_next_nmi(entry, CpuBusWorkload::with_dynamic_hdma(), field_timing)
+        CpuCycleBudget::until_next_nmi_acceptance(
+            entry,
+            CpuBusWorkload::with_dynamic_hdma(),
+            field_timing,
+        )
     });
     const SUBMODULE_DISPATCH_PC: u32 = 0x02_87ac;
     // Some timing runs begin directly at the supertile submodule target.
@@ -4582,7 +4591,7 @@ fn dungeon_module_7_cpu_timing(
         module_returned |= submodule_returned && executing_nmi_prepare_sprites_entry;
         nmi_prepare_sprites_returned |=
             nmi_prepare_sprites_entry_sp.is_some_and(|entry_sp| run.stack_pointer() > entry_sp);
-        if advance.was_interrupted() {
+        if advance.reached_boundary().is_some() {
             let phase = if module_returned && !nmi_prepare_sprites_returned {
                 ModuleCpuPhase::InterruptedInNmiPrepareSprites
             } else if module_returned {
@@ -4898,7 +4907,7 @@ fn dungeon_palette_caller_cpu_advance(
         DUNGEON_PALETTE_CALLER_CPU_CHECKPOINT,
     )
     .expect("dungeon palette CPU timing requires the loaded Zelda ROM");
-    let mut budget = CpuCycleBudget::until_next_nmi(
+    let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
         entry,
         CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL_MASTER_CYCLES),
         CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
@@ -4918,7 +4927,7 @@ fn dungeon_palette_caller_cpu_advance(
         run.set_raster_position(scanline, master_cycle);
         let timing = run.step();
         let work = budget.advance_instruction(timing.master_cycles);
-        if work.was_interrupted() {
+        if work.reached_boundary().is_some() {
             let advance = DungeonPaletteCpuAdvance {
                 work,
                 pc: run.pc(),
@@ -12088,7 +12097,7 @@ impl ZeldaState {
             "subtile palette ROM shadow and translated palette disagree at PC {:06x}",
             advance.pc,
         );
-        if advance.work.was_interrupted() {
+        if advance.work.reached_boundary().is_some() {
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishDungeonSubtilePaletteFilter,
                 DUNGEON_SUBTILE_PALETTE_FILTER_RETURN_NMI_SLICES,
@@ -15818,7 +15827,11 @@ impl ZeldaState {
                     palette_filter_loop_master_cycles
                         .expect("filtered state 10 requires its palette-loop workload"),
                 ),
-                CpuPhaseSequenceAdvance::InterruptedAtNmi { phase_index: 0, .. }
+                CpuPhaseSequenceAdvance::ReachedBoundary {
+                    boundary: CpuRasterBoundary::VblankPublication,
+                    phase_index: 0,
+                    ..
+                }
             ) {
                 return false;
             }
@@ -15830,7 +15843,11 @@ impl ZeldaState {
                     palette_filter_loop_master_cycles
                         .expect("filtered state 11 requires its palette-loop workload"),
                 ),
-                CpuPhaseSequenceAdvance::InterruptedAtNmi { phase_index: 0, .. }
+                CpuPhaseSequenceAdvance::ReachedBoundary {
+                    boundary: CpuRasterBoundary::VblankPublication,
+                    phase_index: 0,
+                    ..
+                }
             ) {
                 return false;
             }

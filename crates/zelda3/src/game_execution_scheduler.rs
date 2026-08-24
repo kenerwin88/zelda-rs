@@ -18,12 +18,21 @@ const SHORT_SCANLINE_END_CYCLE: u32 = 1_360;
 const SHORT_SCANLINE_MISSING_MASTER_CYCLES: u32 = 4;
 const NTSC_FIELD_MASTER_CYCLES: u64 =
     NTSC_SCANLINES_PER_FIELD as u64 * MASTER_CYCLES_PER_SCANLINE as u64;
+// Pinned Snes9x 1.63 schedules an enabled VBlank NMI for 12 master cycles
+// after VBlank publication. CPU instructions remain atomic, so actual
+// acceptance can occur later than this earliest boundary.
+const SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES: u64 = 12;
+// Pinned Snes9x 1.63 retimes an NMI which remains pending when general DMA
+// completes to `CPU.Cycles + Timings.NMIDMADelay` (dma.cpp). The pinned timing
+// model sets NMIDMADelay to 24 master cycles (memmap.cpp).
+const SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES: u64 = 24;
 
 /// A 65816 position within an NTSC field, expressed in S-CPU master cycles.
 ///
-/// Translated routines normally execute atomically. Work that reaches NMI is
-/// instead advanced through this clock so the continuation is selected by the
-/// remaining cycle budget, not by a room or route identifier.
+/// Translated routines normally execute atomically. Work that reaches a
+/// hardware raster boundary is instead advanced through this clock so the
+/// continuation is selected by the remaining cycle budget, not by a room or
+/// route identifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct CpuRasterPosition {
     scanline: u16,
@@ -47,7 +56,7 @@ impl CpuRasterPosition {
     }
 }
 
-/// Bus work which can preempt the CPU before NMI.
+/// Bus work which consumes CPU time before the selected raster boundary.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct CpuBusWorkload {
     hdma_stall_master_cycles: u16,
@@ -112,10 +121,14 @@ impl CpuFieldTiming {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CpuWorkAdvance {
     Complete,
-    InterruptedAtNmi { remaining_work_master_cycles: u32 },
+    ReachedBoundary {
+        boundary: CpuRasterBoundary,
+        remaining_work_master_cycles: u32,
+    },
 }
 
-/// Result of advancing a sequence of semantic CPU phases toward NMI.
+/// Result of advancing a sequence of semantic CPU phases toward a raster
+/// boundary.
 ///
 /// The phase index is stable across translated implementations: callers can
 /// distinguish an interrupted routine body from an interrupted caller suffix
@@ -123,82 +136,157 @@ pub(super) enum CpuWorkAdvance {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CpuPhaseSequenceAdvance {
     Complete,
-    InterruptedAtNmi {
+    ReachedBoundary {
+        boundary: CpuRasterBoundary,
         phase_index: usize,
         remaining_work_master_cycles: u32,
     },
 }
 
 impl CpuWorkAdvance {
-    pub(super) const fn was_interrupted(self) -> bool {
-        matches!(self, Self::InterruptedAtNmi { .. })
+    pub(super) const fn reached_boundary(self) -> Option<CpuRasterBoundary> {
+        match self {
+            Self::Complete => None,
+            Self::ReachedBoundary { boundary, .. } => Some(boundary),
+        }
     }
 }
 
-/// Remaining CPU time before the next NMI, including refresh and HDMA bus
-/// steals. Instructions are advanced atomically: when NMI becomes pending in
-/// the middle of an instruction, that instruction completes before the
-/// continuation is suspended.
+/// The two hardware-visible boundaries which translated work and original-ROM
+/// execution can target. VBlank publication is a display ownership boundary at
+/// H=0; an enabled NMI becomes eligible for CPU acceptance at H=12.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CpuRasterBoundary {
+    VblankPublication,
+    CpuNmiAcceptance,
+}
+
+impl CpuRasterBoundary {
+    const fn field_master_cycle(self) -> u64 {
+        (NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE) as u64
+            + match self {
+                Self::VblankPublication => 0,
+                Self::CpuNmiAcceptance => SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
+            }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct CpuBoundaryDeadline {
+    boundary: CpuRasterBoundary,
+    master_cycles: u64,
+}
+
+impl CpuBoundaryDeadline {
+    fn next_after(entry: CpuRasterPosition, boundary: CpuRasterBoundary) -> Self {
+        let entry_master_cycles = entry.unwrapped_master_cycles();
+        let boundary_master_cycles = boundary.field_master_cycle();
+        let field = u64::from(entry_master_cycles >= boundary_master_cycles);
+        Self {
+            boundary,
+            master_cycles: field * NTSC_FIELD_MASTER_CYCLES + boundary_master_cycles,
+        }
+    }
+}
+
+/// Remaining CPU time before a typed raster boundary, including refresh and
+/// HDMA bus steals. Instructions are advanced atomically: when a boundary is
+/// reached in the middle of an instruction, that instruction completes before
+/// the continuation is suspended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct CpuCycleBudget {
     clock_master_cycles: u64,
-    nmi_master_cycles: u64,
+    deadline: CpuBoundaryDeadline,
     bus: CpuBusWorkload,
     field_timing: CpuFieldTiming,
     processed_timeline_event: Option<(u64, CpuTimelineEvent)>,
 }
 
 impl CpuCycleBudget {
-    pub(super) fn until_next_nmi(
+    pub(super) fn until_next_vblank_publication(
         entry: CpuRasterPosition,
         bus: CpuBusWorkload,
         field_timing: CpuFieldTiming,
     ) -> Self {
+        Self::until_next_boundary(
+            entry,
+            CpuRasterBoundary::VblankPublication,
+            bus,
+            field_timing,
+        )
+    }
+
+    pub(super) fn until_next_nmi_acceptance(
+        entry: CpuRasterPosition,
+        bus: CpuBusWorkload,
+        field_timing: CpuFieldTiming,
+    ) -> Self {
+        Self::until_next_boundary(
+            entry,
+            CpuRasterBoundary::CpuNmiAcceptance,
+            bus,
+            field_timing,
+        )
+    }
+
+    fn until_next_boundary(
+        entry: CpuRasterPosition,
+        boundary: CpuRasterBoundary,
+        bus: CpuBusWorkload,
+        field_timing: CpuFieldTiming,
+    ) -> Self {
         let clock_master_cycles = entry.unwrapped_master_cycles();
-        let nmi_field = u64::from(entry.scanline >= NMI_SCANLINE as u16);
-        let nmi_master_cycles = nmi_field * NTSC_FIELD_MASTER_CYCLES
-            + u64::from(NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE);
-        debug_assert!(clock_master_cycles < nmi_master_cycles);
+        let deadline = CpuBoundaryDeadline::next_after(entry, boundary);
+        debug_assert!(clock_master_cycles < deadline.master_cycles);
         Self {
             clock_master_cycles,
-            nmi_master_cycles,
+            deadline,
             bus,
             field_timing,
             processed_timeline_event: None,
         }
     }
 
-    /// Start at the pinned Snes9x core's vblank NMI trigger so the caller can
-    /// execute the WAI wake and handler before the main-thread entry position.
-    pub(super) fn at_nmi_trigger(bus: CpuBusWorkload, field_timing: CpuFieldTiming) -> Self {
-        let nmi_master_cycles = u64::from(NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE);
+    /// Start at the pinned Snes9x core's earliest CPU NMI acceptance boundary
+    /// so the caller can execute the interrupt entry and handler before the
+    /// main-thread entry position.
+    ///
+    /// The existing synthetic dungeon main-wait seed still models its busy
+    /// loop separately; this constructor does not claim that seed is a WAI.
+    pub(super) fn at_nmi_acceptance(bus: CpuBusWorkload, field_timing: CpuFieldTiming) -> Self {
+        let deadline = CpuBoundaryDeadline {
+            boundary: CpuRasterBoundary::CpuNmiAcceptance,
+            master_cycles: CpuRasterBoundary::CpuNmiAcceptance.field_master_cycle(),
+        };
         Self {
-            clock_master_cycles: nmi_master_cycles + 12,
-            nmi_master_cycles,
+            clock_master_cycles: deadline.master_cycles,
+            deadline,
             bus,
             field_timing,
             processed_timeline_event: None,
         }
     }
 
-    /// Advance an interruptible span, stopping exactly when NMI becomes
-    /// pending and retaining the unexecuted work for a continuation.
+    /// Advance an interruptible span, stopping exactly at the selected boundary
+    /// and retaining the unexecuted work for a continuation.
     pub(super) fn advance_interruptible(&mut self, mut work_master_cycles: u32) -> CpuWorkAdvance {
-        debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
+        debug_assert!(self.clock_master_cycles < self.deadline.master_cycles);
         while work_master_cycles != 0 {
             let (work_until_event, event) = self.next_timeline_event();
             let event_stall = event.map_or(0, |event| self.fixed_event_advance(event));
-            let master_cycles_until_nmi = self.nmi_master_cycles - self.clock_master_cycles;
-            if master_cycles_until_nmi <= u64::from(work_until_event) {
-                if u64::from(work_master_cycles) <= master_cycles_until_nmi {
+            let master_cycles_until_boundary =
+                self.deadline.master_cycles - self.clock_master_cycles;
+            if master_cycles_until_boundary <= u64::from(work_until_event) {
+                if u64::from(work_master_cycles) < master_cycles_until_boundary {
                     self.clock_master_cycles += u64::from(work_master_cycles);
                     return CpuWorkAdvance::Complete;
                 }
-                self.clock_master_cycles = self.nmi_master_cycles;
-                return CpuWorkAdvance::InterruptedAtNmi {
+                self.clock_master_cycles = self.deadline.master_cycles;
+                return CpuWorkAdvance::ReachedBoundary {
+                    boundary: self.deadline.boundary,
                     remaining_work_master_cycles: work_master_cycles
-                        - u32::try_from(master_cycles_until_nmi)
-                            .expect("NMI distance exceeded remaining CPU work"),
+                        - u32::try_from(master_cycles_until_boundary)
+                            .expect("raster-boundary distance exceeded remaining CPU work"),
                 };
             }
             if work_master_cycles <= work_until_event {
@@ -211,9 +299,10 @@ impl CpuCycleBudget {
             if let Some(event) = event {
                 self.processed_timeline_event = Some((self.clock_master_cycles, event));
             }
-            if self.clock_master_cycles + u64::from(event_stall) >= self.nmi_master_cycles {
-                self.clock_master_cycles = self.nmi_master_cycles;
-                return CpuWorkAdvance::InterruptedAtNmi {
+            if self.clock_master_cycles + u64::from(event_stall) >= self.deadline.master_cycles {
+                self.clock_master_cycles = self.deadline.master_cycles;
+                return CpuWorkAdvance::ReachedBoundary {
+                    boundary: self.deadline.boundary,
                     remaining_work_master_cycles: work_master_cycles,
                 };
             }
@@ -222,11 +311,11 @@ impl CpuCycleBudget {
         CpuWorkAdvance::Complete
     }
 
-    /// Advance one indivisible 65816 instruction. An NMI which becomes pending
-    /// during the instruction is observed immediately after it completes.
+    /// Advance one indivisible 65816 instruction. A boundary reached during the
+    /// instruction is observed immediately after it completes.
     pub(super) fn advance_instruction(&mut self, instruction_master_cycles: u32) -> CpuWorkAdvance {
-        debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
-        self.advance_uninterruptible(instruction_master_cycles)
+        debug_assert!(self.clock_master_cycles < self.deadline.master_cycles);
+        self.advance_atomic_work(instruction_master_cycles)
     }
 
     /// Advance one instruction while deriving each HDMA steal from the cloned
@@ -237,7 +326,7 @@ impl CpuCycleBudget {
         instruction_master_cycles: u32,
         mut hdma_stall: impl FnMut(CpuBusEvent, u16) -> u32,
     ) -> CpuWorkAdvance {
-        debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
+        debug_assert!(self.clock_master_cycles < self.deadline.master_cycles);
         let dynamic_hdma = self.bus.dynamic_hdma;
         let fixed_hdma_stall = u32::from(self.bus.hdma_stall_master_cycles);
         self.advance_work_unbounded_with(
@@ -254,8 +343,9 @@ impl CpuCycleBudget {
                 CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
             },
         );
-        if self.clock_master_cycles >= self.nmi_master_cycles {
-            CpuWorkAdvance::InterruptedAtNmi {
+        if self.clock_master_cycles >= self.deadline.master_cycles {
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: self.deadline.boundary,
                 remaining_work_master_cycles: 0,
             }
         } else {
@@ -263,13 +353,43 @@ impl CpuCycleBudget {
         }
     }
 
-    /// Advance CPU-blocking work that must finish even when NMI is already
-    /// pending, such as a general DMA started by the just-completed
-    /// instruction.
-    pub(super) fn advance_uninterruptible(&mut self, work_master_cycles: u32) -> CpuWorkAdvance {
+    /// Complete any general DMA started by the just-executed instruction.
+    ///
+    /// Snes9x does not accept a pending NMI between that instruction and DMA.
+    /// If either crossed the H=12 acceptance deadline, DMA completes first and
+    /// the pending NMI is retimed to DMA-end plus the pinned 24-master-cycle
+    /// delay. Consuming the provisional instruction result here prevents an
+    /// H=12 crossing from escaping as a false accepted interrupt.
+    pub(super) fn advance_started_general_dma(
+        &mut self,
+        instruction: CpuWorkAdvance,
+        dma_master_cycles: u32,
+    ) -> CpuWorkAdvance {
+        if dma_master_cycles == 0 {
+            return instruction;
+        }
+        assert_eq!(
+            self.deadline.boundary,
+            CpuRasterBoundary::CpuNmiAcceptance,
+            "general-DMA NMI deferral requires a CPU acceptance deadline",
+        );
+        self.advance_work_unbounded(dma_master_cycles);
+        if self.clock_master_cycles >= self.deadline.master_cycles {
+            self.deadline.master_cycles = self
+                .clock_master_cycles
+                .checked_add(SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES)
+                .expect("general-DMA NMI deadline overflowed");
+            return CpuWorkAdvance::Complete;
+        }
+        debug_assert_eq!(instruction, CpuWorkAdvance::Complete);
+        CpuWorkAdvance::Complete
+    }
+
+    fn advance_atomic_work(&mut self, work_master_cycles: u32) -> CpuWorkAdvance {
         self.advance_work_unbounded(work_master_cycles);
-        if self.clock_master_cycles >= self.nmi_master_cycles {
-            CpuWorkAdvance::InterruptedAtNmi {
+        if self.clock_master_cycles >= self.deadline.master_cycles {
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: self.deadline.boundary,
                 remaining_work_master_cycles: 0,
             }
         } else {
@@ -277,34 +397,46 @@ impl CpuCycleBudget {
         }
     }
 
-    /// Open the next field's CPU budget after an NMI becomes pending.
+    /// Open the next field's CPU budget after an NMI becomes eligible for CPU
+    /// acceptance.
     ///
     /// The caller must execute the real interrupt entry and handler through
     /// this same budget before resuming the interrupted instruction stream.
     /// Handler duration is deliberately not accepted here: it depends on the
     /// live NMI/DMA workload and therefore is not a constant.
     pub(super) fn begin_nmi_handler(&mut self) {
-        debug_assert!(self.clock_master_cycles >= self.nmi_master_cycles);
-        self.nmi_master_cycles = self
-            .nmi_master_cycles
-            .checked_add(NTSC_FIELD_MASTER_CYCLES)
+        assert_eq!(
+            self.deadline.boundary,
+            CpuRasterBoundary::CpuNmiAcceptance,
+            "only a CPU NMI acceptance boundary can begin the NMI handler",
+        );
+        debug_assert!(self.clock_master_cycles >= self.deadline.master_cycles);
+        let current_field = self.clock_master_cycles / NTSC_FIELD_MASTER_CYCLES;
+        self.deadline.master_cycles = current_field
+            .checked_add(1)
+            .and_then(|field| field.checked_mul(NTSC_FIELD_MASTER_CYCLES))
+            .and_then(|field_start| {
+                field_start.checked_add(CpuRasterBoundary::CpuNmiAcceptance.field_master_cycle())
+            })
             .expect("CPU continuation NMI deadline overflowed");
-        debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
+        debug_assert!(self.clock_master_cycles < self.deadline.master_cycles);
     }
 
-    /// Advance ordered semantic phases until they complete or NMI preempts
-    /// the current phase. The returned phase index identifies the continuation
+    /// Advance ordered semantic phases until they complete or reach the selected
+    /// raster boundary. The returned phase index identifies the continuation
     /// point without coupling the scheduler to a particular game subsystem.
     pub(super) fn advance_phases(
         &mut self,
         phase_work_master_cycles: &[u32],
     ) -> CpuPhaseSequenceAdvance {
         for (phase_index, &work_master_cycles) in phase_work_master_cycles.iter().enumerate() {
-            if let CpuWorkAdvance::InterruptedAtNmi {
+            if let CpuWorkAdvance::ReachedBoundary {
+                boundary,
                 remaining_work_master_cycles,
             } = self.advance_interruptible(work_master_cycles)
             {
-                return CpuPhaseSequenceAdvance::InterruptedAtNmi {
+                return CpuPhaseSequenceAdvance::ReachedBoundary {
+                    boundary,
                     phase_index,
                     remaining_work_master_cycles,
                 };
@@ -1246,20 +1378,24 @@ mod cpu_timing_tests {
         bus: CpuBusWorkload,
         field_timing: CpuFieldTiming,
     ) -> CpuCycleBudget {
-        let nmi_field = field_index + u64::from(entry.scanline >= NMI_SCANLINE as u16);
+        let boundary_master_cycles = CpuRasterBoundary::VblankPublication.field_master_cycle();
+        let boundary_field =
+            field_index + u64::from(entry.unwrapped_master_cycles() >= boundary_master_cycles);
         CpuCycleBudget {
             clock_master_cycles: field_index * NTSC_FIELD_MASTER_CYCLES
                 + entry.unwrapped_master_cycles(),
-            nmi_master_cycles: nmi_field * NTSC_FIELD_MASTER_CYCLES
-                + u64::from(NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE),
+            deadline: CpuBoundaryDeadline {
+                boundary: CpuRasterBoundary::VblankPublication,
+                master_cycles: boundary_field * NTSC_FIELD_MASTER_CYCLES + boundary_master_cycles,
+            },
             bus,
             field_timing,
             processed_timeline_event: None,
         }
     }
 
-    fn restored_fields_before_nmi(entry: CpuRasterPosition) -> usize {
-        let mut budget = CpuCycleBudget::until_next_nmi(
+    fn restored_fields_before_vblank(entry: CpuRasterPosition) -> usize {
+        let mut budget = CpuCycleBudget::until_next_vblank_publication(
             entry,
             CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
             CpuFieldTiming::NON_INTERLACE_EVEN,
@@ -1270,12 +1406,12 @@ mod cpu_timing_tests {
         );
         let mut restored = 0;
         for field in 0..24 {
-            if budget.advance_instruction(28).was_interrupted() {
+            if budget.advance_instruction(28).reached_boundary().is_some() {
                 break;
             }
             let advance = budget.advance_instruction(if field == 1 { 40 } else { 38 });
             restored += 1;
-            if advance.was_interrupted() {
+            if advance.reached_boundary().is_some() {
                 break;
             }
         }
@@ -1298,7 +1434,7 @@ mod cpu_timing_tests {
                 CpuRasterPosition::new(224, 582),
             ),
         ] {
-            let mut budget = CpuCycleBudget::until_next_nmi(
+            let mut budget = CpuCycleBudget::until_next_vblank_publication(
                 entry,
                 CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
                 CpuFieldTiming::NON_INTERLACE_EVEN,
@@ -1314,50 +1450,189 @@ mod cpu_timing_tests {
     #[test]
     fn cached_restore_cut_is_derived_from_remaining_cycles() {
         assert_eq!(
-            restored_fields_before_nmi(CpuRasterPosition::new(182, 1_266)),
+            restored_fields_before_vblank(CpuRasterPosition::new(182, 1_266)),
             15
         );
         assert_eq!(
-            restored_fields_before_nmi(CpuRasterPosition::new(183, 44)),
+            restored_fields_before_vblank(CpuRasterPosition::new(183, 44)),
             12
         );
         assert_eq!(
-            restored_fields_before_nmi(CpuRasterPosition::new(183, 124)),
+            restored_fields_before_vblank(CpuRasterPosition::new(183, 124)),
             11
         );
     }
 
     #[test]
-    fn interrupted_work_retains_its_remaining_cycle_budget() {
-        let mut budget = CpuCycleBudget::until_next_nmi(
+    fn publication_boundary_retains_the_remaining_cycle_budget() {
+        let mut budget = CpuCycleBudget::until_next_vblank_publication(
             CpuRasterPosition::new(224, 1_300),
             CpuBusWorkload::default(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         assert_eq!(
             budget.advance_interruptible(100),
-            CpuWorkAdvance::InterruptedAtNmi {
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::VblankPublication,
                 remaining_work_master_cycles: 36,
             }
         );
     }
 
     #[test]
-    fn interrupted_instruction_stream_resumes_after_nmi_in_the_next_field() {
-        let mut budget = CpuCycleBudget::until_next_nmi(
+    fn nmi_acceptance_is_twelve_master_cycles_after_vblank_publication() {
+        // Pinned Snes9x 1.63 publishes VBlank at V=225,H=0 and schedules an
+        // enabled NMI for H=12. Work can cross publication without claiming a
+        // CPU interrupt boundary.
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            CpuRasterPosition::new(224, 1_358),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        assert_eq!(budget.advance_interruptible(12), CpuWorkAdvance::Complete);
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 6));
+        assert_eq!(
+            budget.advance_interruptible(6),
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::CpuNmiAcceptance,
+                remaining_work_master_cycles: 0,
+            },
+        );
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 12));
+    }
+
+    #[test]
+    fn instruction_spanning_h12_completes_before_reporting_nmi_acceptance() {
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            CpuRasterPosition::new(224, 1_358),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        assert_eq!(
+            budget.advance_instruction(20),
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::CpuNmiAcceptance,
+                remaining_work_master_cycles: 0,
+            },
+        );
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 14));
+    }
+
+    #[test]
+    fn general_dma_crossing_h12_defers_nmi_until_dma_end_plus_24() {
+        // Snes9x dma.cpp retimes a pending NMI at DMA completion; memmap.cpp
+        // fixes NMIDMADelay at 24 master cycles for this model.
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            CpuRasterPosition::new(224, 1_358),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let instruction = budget.advance_instruction(12);
+        assert_eq!(instruction, CpuWorkAdvance::Complete);
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 6));
+
+        assert_eq!(
+            budget.advance_started_general_dma(instruction, 20),
+            CpuWorkAdvance::Complete,
+        );
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 26));
+        assert_eq!(
+            budget.deadline.master_cycles % NTSC_FIELD_MASTER_CYCLES,
+            u64::from(NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE + 50),
+        );
+
+        assert_eq!(budget.advance_instruction(20), CpuWorkAdvance::Complete);
+        assert_eq!(
+            budget.advance_instruction(8),
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::CpuNmiAcceptance,
+                remaining_work_master_cycles: 0,
+            },
+        );
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 54));
+    }
+
+    #[test]
+    fn instruction_triggered_dma_suppresses_its_provisional_h12_boundary() {
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            CpuRasterPosition::new(224, 1_358),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let instruction = budget.advance_instruction(20);
+        assert_eq!(
+            instruction,
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::CpuNmiAcceptance,
+                remaining_work_master_cycles: 0,
+            },
+        );
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 14));
+
+        assert_eq!(
+            budget.advance_started_general_dma(instruction, 40),
+            CpuWorkAdvance::Complete,
+        );
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 54));
+        assert_eq!(
+            budget.deadline.master_cycles % NTSC_FIELD_MASTER_CYCLES,
+            u64::from(NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE + 78),
+        );
+
+        assert_eq!(budget.advance_instruction(20), CpuWorkAdvance::Complete);
+        assert_eq!(
+            budget.advance_instruction(8),
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::CpuNmiAcceptance,
+                remaining_work_master_cycles: 0,
+            },
+        );
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 82));
+        budget.begin_nmi_handler();
+        assert_eq!(
+            budget.deadline.master_cycles % NTSC_FIELD_MASTER_CYCLES,
+            CpuRasterBoundary::CpuNmiAcceptance.field_master_cycle(),
+        );
+    }
+
+    #[test]
+    fn vblank_publication_budget_still_stops_at_h0() {
+        let mut budget = CpuCycleBudget::until_next_vblank_publication(
+            CpuRasterPosition::new(224, 1_358),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        assert_eq!(
+            budget.advance_interruptible(6),
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::VblankPublication,
+                remaining_work_master_cycles: 0,
+            },
+        );
+        assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 0));
+    }
+
+    #[test]
+    fn instruction_stream_resumes_after_nmi_at_next_fields_h12() {
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
             CpuRasterPosition::new(224, 1_350),
             CpuBusWorkload::default(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         assert_eq!(
             budget.advance_instruction(28),
-            CpuWorkAdvance::InterruptedAtNmi {
+            CpuWorkAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::CpuNmiAcceptance,
                 remaining_work_master_cycles: 0,
             }
         );
         assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 14),);
 
         budget.begin_nmi_handler();
+        assert_eq!(
+            budget.deadline.master_cycles % NTSC_FIELD_MASTER_CYCLES,
+            CpuRasterBoundary::CpuNmiAcceptance.field_master_cycle(),
+        );
         assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 14),);
         assert_eq!(
             budget.advance_interruptible(2_984),
@@ -1374,7 +1649,7 @@ mod cpu_timing_tests {
             (WRAM_REFRESH_CYCLE, WRAM_REFRESH_STALL_MASTER_CYCLES),
             (HDMA_START_CYCLE, u32::from(DUNGEON_HDMA_STALL)),
         ] {
-            let mut budget = CpuCycleBudget::until_next_nmi(
+            let mut budget = CpuCycleBudget::until_next_vblank_publication(
                 CpuRasterPosition::new(100, (event_cycle - 6) as u16),
                 CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
                 CpuFieldTiming::NON_INTERLACE_EVEN,
@@ -1400,7 +1675,7 @@ mod cpu_timing_tests {
         //   cpu.cpp: _5A22 != 2 selects SNES_WRAM_REFRESH_HC_v1
         //   snes9x.h: v1 = 530, refresh duration = 40 master cycles
         let entry = CpuRasterPosition::new(100, 524);
-        let short_timeline = CpuCycleBudget::until_next_nmi(
+        let short_timeline = CpuCycleBudget::until_next_vblank_publication(
             entry,
             CpuBusWorkload::default(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
@@ -1423,7 +1698,7 @@ mod cpu_timing_tests {
 
     #[test]
     fn fixed_hdma_budget_does_not_invoke_the_dynamic_dma_model() {
-        let mut budget = CpuCycleBudget::until_next_nmi(
+        let mut budget = CpuCycleBudget::until_next_vblank_publication(
             CpuRasterPosition::new(100, 1_100),
             CpuBusWorkload::with_hdma_stall(DUNGEON_HDMA_STALL),
             CpuFieldTiming::NON_INTERLACE_EVEN,
@@ -1440,14 +1715,15 @@ mod cpu_timing_tests {
 
     #[test]
     fn phase_sequence_reports_the_interrupted_continuation_phase() {
-        let mut budget = CpuCycleBudget::until_next_nmi(
+        let mut budget = CpuCycleBudget::until_next_vblank_publication(
             CpuRasterPosition::new(224, 1_300),
             CpuBusWorkload::default(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
         assert_eq!(
             budget.advance_phases(&[32, 68]),
-            CpuPhaseSequenceAdvance::InterruptedAtNmi {
+            CpuPhaseSequenceAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::VblankPublication,
                 phase_index: 1,
                 remaining_work_master_cycles: 36,
             }
@@ -1457,12 +1733,12 @@ mod cpu_timing_tests {
     #[test]
     fn odd_noninterlace_field_skips_the_missing_dot_on_scanline_240() {
         let entry = CpuRasterPosition::new(240, 1_350);
-        let mut even = CpuCycleBudget::until_next_nmi(
+        let mut even = CpuCycleBudget::until_next_vblank_publication(
             entry,
             CpuBusWorkload::default(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
-        let mut odd = CpuCycleBudget::until_next_nmi(
+        let mut odd = CpuCycleBudget::until_next_vblank_publication(
             entry,
             CpuBusWorkload::default(),
             CpuFieldTiming::non_interlace(true),
@@ -1475,30 +1751,30 @@ mod cpu_timing_tests {
     }
 
     #[test]
-    fn nmi_deadlines_remain_exact_beyond_twenty_four_thousand_fields() {
-        let mut budget = CpuCycleBudget::at_nmi_trigger(
+    fn nmi_acceptance_deadlines_remain_exact_beyond_twenty_four_thousand_fields() {
+        let mut budget = CpuCycleBudget::at_nmi_acceptance(
             CpuBusWorkload::default(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
-        let initial_nmi_master_cycles = budget.nmi_master_cycles;
+        let initial_nmi_master_cycles = budget.deadline.master_cycles;
 
         for _ in 0..LONG_TIMELINE_FIELD {
-            budget.clock_master_cycles = budget.nmi_master_cycles;
+            budget.clock_master_cycles = budget.deadline.master_cycles;
             budget.begin_nmi_handler();
         }
 
         assert_eq!(
-            budget.nmi_master_cycles,
+            budget.deadline.master_cycles,
             initial_nmi_master_cycles + LONG_TIMELINE_FIELD * NTSC_FIELD_MASTER_CYCLES,
         );
-        assert!(budget.nmi_master_cycles > u64::from(u32::MAX));
+        assert!(budget.deadline.master_cycles > u64::from(u32::MAX));
         assert_eq!(
-            budget.nmi_master_cycles - budget.clock_master_cycles,
+            budget.deadline.master_cycles - budget.clock_master_cycles,
             NTSC_FIELD_MASTER_CYCLES,
         );
         assert_eq!(
             budget.raster_position().coordinates(),
-            (NMI_SCANLINE as u16, 0),
+            (NMI_SCANLINE as u16, 12),
         );
 
         let late_raster = budget_at_field(

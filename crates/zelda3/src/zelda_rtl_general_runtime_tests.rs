@@ -4274,7 +4274,11 @@ fn filtered_state_9_interrupts_the_caller_suffix_from_cpu_work() {
     );
     assert!(matches!(
         dungeon_supertile_state_9_cpu_advance(Some(168_420)),
-        CpuPhaseSequenceAdvance::InterruptedAtNmi { phase_index: 1, .. }
+        CpuPhaseSequenceAdvance::ReachedBoundary {
+            boundary: CpuRasterBoundary::VblankPublication,
+            phase_index: 1,
+            ..
+        }
     ));
 
     let entry = FrameState {
@@ -4305,7 +4309,11 @@ fn filtered_state_9_interrupts_the_caller_suffix_from_cpu_work() {
 fn filtered_state_10_interrupts_the_quadrant_body_from_cpu_work() {
     assert!(matches!(
         dungeon_supertile_state_10_cpu_advance(187_620),
-        CpuPhaseSequenceAdvance::InterruptedAtNmi { phase_index: 0, .. }
+        CpuPhaseSequenceAdvance::ReachedBoundary {
+            boundary: CpuRasterBoundary::VblankPublication,
+            phase_index: 0,
+            ..
+        }
     ));
 }
 
@@ -4399,7 +4407,11 @@ fn filtered_state_10_quadrant_work_is_not_room_specific() {
 fn filtered_state_11_quadrant_work_is_not_room_specific() {
     assert!(matches!(
         dungeon_supertile_state_11_cpu_advance(189_976),
-        CpuPhaseSequenceAdvance::InterruptedAtNmi { phase_index: 0, .. }
+        CpuPhaseSequenceAdvance::ReachedBoundary {
+            boundary: CpuRasterBoundary::VblankPublication,
+            phase_index: 0,
+            ..
+        }
     ));
 
     for room in [0x21, 0x22, 0x41] {
@@ -4417,7 +4429,11 @@ fn filtered_state_11_quadrant_work_is_not_room_specific() {
         let palette_work = palette_filter_bounce_loop_master_cycles(&state);
         assert!(matches!(
             dungeon_supertile_state_11_cpu_advance(palette_work),
-            CpuPhaseSequenceAdvance::InterruptedAtNmi { phase_index: 0, .. }
+            CpuPhaseSequenceAdvance::ReachedBoundary {
+                boundary: CpuRasterBoundary::VblankPublication,
+                phase_index: 0,
+                ..
+            }
         ));
 
         state.Dungeon_InterRoomTrans_State9();
@@ -9611,7 +9627,8 @@ fn subtile_palette_filter_schedules_only_instruction_level_interruptions() {
     state.set_countdown(0);
     state.set_darkening_or_lightening_screen(0);
     state.dungeon_palette_cpu_advance_pending = Some(DungeonPaletteCpuAdvance {
-        work: CpuWorkAdvance::InterruptedAtNmi {
+        work: CpuWorkAdvance::ReachedBoundary {
+            boundary: CpuRasterBoundary::CpuNmiAcceptance,
             remaining_work_master_cycles: 0,
         },
         pc: 0x0d_fcd1,
