@@ -1508,6 +1508,11 @@ impl Snes9xColdCpuExecutor {
             self.machine.snes.in_nmi = false;
             return Ok((u8::from(latched) << 7) | (self.machine.snes.open_bus & 0x70) | 2);
         }
+        if (bank & 0x7f) < 0x40 && (0x4218..=0x421f).contains(&adr) {
+            let byte_index = usize::from(adr - 0x4218);
+            let word = self.machine.snes.port_auto_read[byte_index / 2];
+            return Ok(word.to_le_bytes()[byte_index & 1]);
+        }
         match self.source_map_class(address) {
             Some(SourceCpuMapClass::Wram) => {
                 let index = if bank == 0x7e || bank == 0x7f {
@@ -3110,6 +3115,97 @@ mod tests {
     }
 
     #[test]
+    fn auto_joy_result_m8_reads_all_four_words_in_little_endian_port_order() {
+        let words = [0x1234, 0xabcd, 0x00ff, 0x8001];
+        let expected = [0x34, 0x12, 0xcd, 0xab, 0xff, 0x00, 0x01, 0x80];
+
+        for (offset, expected) in expected.into_iter().enumerate() {
+            let address = 0x4218u16 + offset as u16;
+            let [low, high] = address.to_le_bytes();
+            let rom = synthetic_rom(&[0xad, low, high]);
+            let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+            cpu.machine.snes.port_auto_read = words;
+
+            let receipt = cpu.step().unwrap();
+
+            assert_source_transaction_shape(
+                &receipt,
+                &[
+                    (
+                        SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                        8,
+                    ),
+                    (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 16),
+                    (
+                        SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                        6,
+                    ),
+                ],
+            );
+            assert_eq!(receipt.accesses[2].address, u32::from(address));
+            assert_eq!(cpu.machine.snes.cpu.a as u8, expected);
+            assert_eq!(cpu.machine.snes.open_bus, expected);
+        }
+    }
+
+    #[test]
+    fn auto_joy_result_m16_splits_cpu_register_semantics_and_publishes_only_final_high() {
+        let rom = synthetic_rom(&[0xad, 0x1a, 0x42]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.e = false;
+        cpu.machine.snes.cpu.mf = false;
+        cpu.machine.snes.cpu.a = 0x7777;
+        cpu.machine.snes.port_auto_read[1] = 0xabcd;
+
+        let receipt = cpu.step().unwrap();
+
+        assert_source_transaction_shape(
+            &receipt,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 16),
+                (
+                    SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                    6,
+                ),
+                (
+                    SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                    6,
+                ),
+            ],
+        );
+        assert_eq!(receipt.accesses.len(), 4);
+        assert_eq!(receipt.accesses[2].address, 0x00_421a);
+        assert_eq!(receipt.accesses[2].timestamp, CpuMasterTimestamp::new(222));
+        assert_eq!(receipt.accesses[3].address, 0x00_421b);
+        assert_eq!(receipt.accesses[3].timestamp, CpuMasterTimestamp::new(228));
+        assert_eq!(cpu.machine.snes.cpu.a, 0xabcd);
+        assert_eq!(cpu.machine.snes.open_bus, 0xab);
+
+        let mut observed = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        observed.machine.snes.cpu.e = false;
+        observed.machine.snes.cpu.mf = false;
+        observed.machine.snes.cpu.a = 0x7777;
+        observed.machine.snes.port_auto_read[1] = 0xabcd;
+        install_hmax_smp_failure(&mut observed, 1_334);
+        assert!(matches!(
+            observed.step(),
+            Err(SourceCpuError::Machine(
+                CpuSynchronousMachineError::ApuClock(crate::Snes9xApuClockError::ZeroCycleSmpStep)
+            ))
+        ));
+        assert_eq!(observed.machine.snes.open_bus, 0x42);
+        assert_eq!(observed.machine.snes.cpu.a, 0x7777);
+        assert_eq!(
+            observed.machine.pending_completion(),
+            Some(CpuSynchronousCompletion::Read(0xcd))
+        );
+    }
+
+    #[test]
     fn ldx_absolute_x8_reads_after_operand_and_publishes_loaded_byte() {
         let rom = synthetic_rom(&[0xae, 0x34, 0x12]);
         let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
@@ -4037,15 +4133,31 @@ mod tests {
             cpu.machine.timeline.raster_position(),
             crate::CpuRasterPosition::new(250, 382)
         );
-        assert_eq!(
-            cpu.step(),
-            Err(SourceCpuError::UnsupportedBusMap { address: 0x00_4218 })
-        );
-        assert_eq!(cpu.program_address(), 0x00_83d7);
-        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_930_686));
+        let joy_result = cpu.step().unwrap();
+        assert_eq!(joy_result.origin_pc, 0x00_83d4);
+        assert_eq!(joy_result.opcode, 0xad);
+
+        for _ in 0..5 {
+            cpu.step().unwrap();
+        }
+        assert_eq!(cpu.program_address(), 0x00_83e2);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_930_858));
         assert_eq!(
             cpu.machine.timeline.raster_position(),
-            crate::CpuRasterPosition::new(250, 406)
+            crate::CpuRasterPosition::new(250, 578)
+        );
+        assert_eq!(
+            cpu.step(),
+            Err(SourceCpuError::UnsupportedOpcode {
+                pc: 0x00_83e2,
+                opcode: 0xa8,
+            })
+        );
+        assert_eq!(cpu.program_address(), 0x00_83e3);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_930_866));
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(250, 586)
         );
         assert!(cpu.is_poisoned());
     }
