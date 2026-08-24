@@ -3131,16 +3131,146 @@ mod tests {
     }
 
     #[test]
+    fn resumable_only_cold_ipl_reaches_fixture_cc_handshake() {
+        let fixture = pinned_snes9x_bootstrap_fixture();
+        let bootstrap = &fixture[2];
+        let expected_writes = bootstrap["smp_output_port_writes"].as_array().unwrap();
+        let boundary_sequence = &bootstrap["smp_instruction_boundary_sequence"];
+        assert_eq!(boundary_sequence["encoding"], "repeated-span-v1");
+        let mut expected_instructions = Vec::new();
+        for span in boundary_sequence["spans"].as_array().unwrap() {
+            let span_start = span["absolute_start_cycle"].as_u64().unwrap() as u32;
+            let stride = span["repeat_cycle_stride"].as_u64().unwrap() as u32;
+            for repeat in 0..span["repeat_count"].as_u64().unwrap() as u32 {
+                let base = span_start + repeat * stride;
+                for instruction in span["instructions"].as_array().unwrap() {
+                    expected_instructions.push((
+                        instruction["origin_pc"].as_u64().unwrap() as u16,
+                        instruction["opcode"].as_u64().unwrap() as u8,
+                        base + instruction["start_cycle_offset"].as_u64().unwrap() as u32,
+                        base + instruction["end_cycle_offset"].as_u64().unwrap() as u32,
+                        instruction["op_step_calls"].as_u64().unwrap() as u8,
+                        instruction["max_continuation_opcode_cycle"]
+                            .as_u64()
+                            .unwrap() as u8,
+                    ));
+                }
+            }
+        }
+        assert_eq!(
+            expected_instructions.len(),
+            boundary_sequence["instruction_count"].as_u64().unwrap() as usize
+        );
+
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        for event in bootstrap["cpu_apu_handshake_accesses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|event| !event["is_read"].as_bool().unwrap())
+        {
+            apu.schedule_input_port_event(
+                event["apu_cycle_after"].as_u64().unwrap() as u32,
+                event["port"].as_u64().unwrap() as u8,
+                event["value"].as_u64().unwrap() as u8,
+            );
+        }
+
+        let mut observed_writes = Vec::new();
+        let mut observed_instructions = Vec::new();
+        let mut instruction = None;
+        let mut previous_ports = apu.out_ports;
+        for _ in 0..5_000 {
+            if apu.smp_coroutine.is_idle() {
+                let origin_pc = apu.spc.pc;
+                let opcode = apu.cpu_read(origin_pc);
+                instruction = Some((origin_pc, opcode, apu.cycles, 0u8, 0u8));
+            }
+            let result = apu.run_snes9x_micro_step_without_dsp().unwrap();
+            let (_, result_opcode_cycle) = match result {
+                SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle,
+                } => (opcode, opcode_cycle),
+                SmpMicroStepResult::InstructionComplete { opcode } => (opcode, 0),
+            };
+            let active = instruction.as_mut().unwrap();
+            active.3 += 1;
+            active.4 = active.4.max(result_opcode_cycle);
+            for port in 0..4 {
+                if apu.out_ports[port] != previous_ports[port] {
+                    observed_writes.push((
+                        apu.cycles,
+                        active.0,
+                        match result {
+                            SmpMicroStepResult::InProgress { opcode, .. }
+                            | SmpMicroStepResult::InstructionComplete { opcode } => opcode,
+                        },
+                        port as u8,
+                        apu.out_ports[port],
+                    ));
+                }
+            }
+            previous_ports = apu.out_ports;
+            if matches!(result, SmpMicroStepResult::InstructionComplete { .. }) {
+                let (origin_pc, opcode, start_cycle, op_step_calls, max_opcode_cycle) =
+                    instruction.take().unwrap();
+                observed_instructions.push((
+                    origin_pc,
+                    opcode,
+                    start_cycle,
+                    apu.cycles,
+                    op_step_calls,
+                    max_opcode_cycle,
+                ));
+            }
+            if apu.out_ports[0] == 0xcc {
+                assert_eq!(
+                    result,
+                    SmpMicroStepResult::InstructionComplete { opcode: 0xc4 }
+                );
+                break;
+            }
+        }
+
+        assert_eq!(
+            observed_instructions.len(),
+            boundary_sequence["instruction_count"].as_u64().unwrap() as usize
+        );
+        assert_eq!(observed_instructions, expected_instructions);
+        let expected = expected_writes
+            .iter()
+            .map(|event| {
+                (
+                    event["absolute_cycle"].as_u64().unwrap() as u32,
+                    event["origin_pc"].as_u64().unwrap() as u16,
+                    event["opcode"].as_u64().unwrap() as u8,
+                    event["port"].as_u64().unwrap() as u8,
+                    event["value"].as_u64().unwrap() as u8,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(observed_writes, expected);
+        assert_eq!(apu.cycles, 2_461);
+        assert_eq!(apu.spc.pc, 0xfff7);
+        assert_eq!(apu.out_ports, [0xcc, 0xbb, 0, 0]);
+    }
+
+    #[test]
     fn unsupported_resumable_opcode_does_not_advance_or_fetch() {
         let mut apu = ApuState::new();
         apu.reset_snes9x_coroutine();
+        apu.rom_readable = false;
+        apu.spc.pc = 0x0200;
+        apu.ram[0x0200] = 0x00;
 
         let before = (apu.cycles, apu.spc.pc);
         assert_eq!(
             apu.run_snes9x_micro_step_without_dsp().unwrap_err(),
             UnsupportedSmpMicroStep {
-                opcode: 0xcd,
-                pc: 0xffc0,
+                opcode: 0x00,
+                pc: 0x0200,
             }
         );
         assert_eq!((apu.cycles, apu.spc.pc), before);
