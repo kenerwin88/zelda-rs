@@ -1808,7 +1808,10 @@ fn effective_presented_ppu_registers_use_the_values_installed_by_the_leading_nmi
     state.ppu.forced_blank_scanlines = 10;
     state.ppu.forced_blank_from_scanline = Some(10);
     state.ppu.retain_active_display_history = true;
-    state.compose_effective_presented_ppu_registers(&active);
+    state.compose_effective_presented_ppu_registers(
+        &active,
+        DisplayedBgScrollSource::CapturedBeforeNmi,
+    );
 
     assert_eq!(state.ppu.bg_layer[0].h_scroll, 0x0123);
     assert_eq!(state.ppu.bg_layer[1].h_scroll, 0x0456);
@@ -1860,7 +1863,10 @@ fn c_write_ppu_registers_trailing_receipt_publishes_rain_half_color_without_a_ro
 
     state.ppu.half_color = false;
     state.ppu.math_enabled = 0;
-    state.compose_effective_presented_ppu_registers(&active);
+    state.compose_effective_presented_ppu_registers(
+        &active,
+        DisplayedBgScrollSource::CapturedBeforeNmi,
+    );
     assert!(state.ppu.half_color);
     assert_eq!(state.ppu.math_enabled, 0x32);
 }

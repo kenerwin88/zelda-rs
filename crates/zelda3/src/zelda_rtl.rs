@@ -15734,6 +15734,7 @@ impl ZeldaState {
             // Only a live Module 7 sprite loop has a measured resumable caller.
             return false;
         };
+        let active_scanout_scroll = BgScrollRegisterScanout::capture(&self.ppu);
         self.game_execution_scheduler.schedule_work(
             GameWorkContinuation::FinishBigKeyDropGraphics {
                 sprite_slot: sprite_slot as u8,
@@ -15741,6 +15742,14 @@ impl ZeldaState {
             },
             BIG_KEY_DROP_GRAPHICS_NMI_SLICES,
         );
+        // C reaches SpritePrep_BigKey_load_graphics after the leading NMI has
+        // installed this field's scroll registers. The synchronous graphics
+        // call is interrupted before the following handler reaches
+        // WritePpuRegisters. Carry the A4 register generation into the
+        // imminent snapshot; the A2 software copies and trailing register
+        // receipt belong to the following field.
+        self.next_display_bg_scroll_generation =
+            DisplayBgScrollGeneration::RetainCpuSliceEntry(active_scanout_scroll);
         // The entry main slice has already crossed the OAM DMA that published
         // the host-boundary shadow, but it will not reach another sprite-prep
         // epilogue before the decompressor is interrupted. Publish that prior
@@ -20511,7 +20520,7 @@ impl ZeldaState {
             &mut display.vram_chr_preview_source,
         );
         self.compose_display_registers(&display, &publication_plan);
-        self.compose_effective_presented_ppu_registers(&display);
+        self.compose_effective_presented_ppu_registers(&display, publication_plan.bg_scroll_source);
         let previous_dialogue_scanout = self.displayed_dialogue_scanout();
         if diagnostics.scroll_retain && self.dialogue_scroll_phase() != DialogueScrollPhase::Idle {
             let dialogue_scroll_phase = self.dialogue_scroll_phase();
@@ -21085,7 +21094,11 @@ impl ZeldaState {
         self.ppu.cgram.clone_from_slice(completed_cgram);
     }
 
-    fn compose_effective_presented_ppu_registers(&mut self, following: &DisplaySnapshot) {
+    fn compose_effective_presented_ppu_registers(
+        &mut self,
+        following: &DisplaySnapshot,
+        bg_scroll_source: DisplayedBgScrollSource,
+    ) {
         let Some(completed_registers) = following
             .effective_presented_dma
             .as_ref()
@@ -21096,8 +21109,12 @@ impl ZeldaState {
 
         // This is the exact post-WritePpuRegisters hardware generation. Apply
         // it after snapshot-level composition so later live state cannot leak
-        // across the boundary and individual register domains cannot split.
+        // across the boundary. BG scroll is independently owned when the
+        // publication plan names a CPU-slice or live generation; reapply that
+        // explicit subdomain after the coupled receipt instead of letting the
+        // receipt silently overwrite its stronger provenance.
         completed_registers.publish_to(&mut self.ppu);
+        bg_scroll_source.compose_into(&mut self.ppu, &following.ppu);
     }
 
     fn compose_effective_presented_vram(&mut self, following: &DisplaySnapshot) {
@@ -23765,6 +23782,7 @@ impl ZeldaState {
                 GameWorkStep::Complete(GameWorkContinuation::FinishBigKeyDropGraphics {
                     sprite_slot,
                     dungeon,
+                    ..
                 }) => {
                     let sprite_slot = usize::from(sprite_slot);
                     // Resume exactly where PrepareEnemyDrop was interrupted:

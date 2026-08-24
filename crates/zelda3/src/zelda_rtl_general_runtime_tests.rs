@@ -4857,6 +4857,107 @@ fn big_key_drop_publishes_entry_dma_then_holds_it_across_waiting_slices() {
 }
 
 #[test]
+fn c_big_key_decompression_retains_leading_nmi_scroll_until_its_nmi_returns() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.ppu.bg_layer[0].h_scroll = 0x00a5;
+    state.ppu.bg_layer[1].h_scroll = 0x00a5;
+    state.ppu.bg_layer[0].v_scroll = 0x1010;
+    state.ppu.bg_layer[1].v_scroll = 0x1010;
+    state.ppu.mode = 1;
+    state.ppu.vram[0x1234] = 0x5678;
+    state.ppu.cgram[7] = 0x1357;
+    state.capture_display_snapshot();
+
+    // The leading NMI installs A4 after the retiring field was captured.
+    state.ppu.bg_layer[0].h_scroll = 0x00a4;
+    state.ppu.bg_layer[1].h_scroll = 0x00a4;
+    let active_scanout_scroll = BgScrollRegisterScanout::capture(&state.ppu);
+    state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        bg2_x: 1,
+        bg2_y: 2,
+        bg1_x: 3,
+        bg1_y: 4,
+    });
+    assert!(state.begin_big_key_drop_graphics_work(2));
+    assert_eq!(
+        state.next_display_bg_scroll_generation,
+        DisplayBgScrollGeneration::RetainCpuSliceEntry(active_scanout_scroll),
+    );
+    state.capture_display_snapshot();
+    assert_eq!(
+        state
+            .display_snapshot
+            .as_ref()
+            .unwrap()
+            .bg_scroll_generation,
+        DisplayBgScrollGeneration::RetainCpuSliceEntry(active_scanout_scroll),
+    );
+
+    // The resumed Module07 camera authors $00a2 after the synchronous call has
+    // begun but before Rust captures the atomic main result.
+    state.ppu.bg_layer[0].h_scroll = 0x00a2;
+    state.ppu.bg_layer[1].h_scroll = 0x00a2;
+    state.ppu.mode = 3;
+    let completed_registers = NmiPpuRegisterScanout::capture(&state.ppu);
+    state
+        .display_snapshot
+        .as_mut()
+        .unwrap()
+        .effective_presented_dma = Some(EffectivePresentedDma::ppu_registers_only(
+        completed_registers,
+    ));
+    let completion_host_entry = BgScrollRegisterScanout::capture(&state.ppu);
+    let publication = state
+        .game_execution_scheduler
+        .current_work()
+        .unwrap()
+        .completion_publication(completion_host_entry);
+    assert_eq!(
+        publication.bg_scroll, None,
+        "the call-origin A4 generation is one-shot and must not be republished at completion",
+    );
+
+    // C Module07_Dungeon runs Dungeon_HandleCamera before Sprite_Main. On the
+    // observed ROM boundary the leading NMI has installed $00a4, then the
+    // resumed camera authors $00a2 before SpritePrep_BigKey_load_graphics is
+    // interrupted in Decompression_GetNextByte. That NMI has not yet reached
+    // WritePpuRegisters when the field retires, so $00a2 is next-field state.
+    let receipt = state
+        .display_snapshot
+        .as_deref()
+        .unwrap()
+        .effective_presented_dma
+        .as_ref()
+        .unwrap();
+    assert!(receipt.completed_ppu_registers.is_some());
+    assert!(receipt.vram_writes.is_empty());
+    assert!(receipt.completed_oam.is_none());
+
+    let displayed = state.with_display_snapshot(|display| {
+        (
+            display.ppu.bg_layer[0].h_scroll,
+            display.ppu.bg_layer[1].h_scroll,
+            display.ppu.vram[0x1234],
+            display.ppu.cgram[7],
+            display.ppu.mode,
+        )
+    });
+    assert_eq!(displayed, (0x00a4, 0x00a4, 0x5678, 0x1357, 3));
+    assert_eq!(state.ppu.bg_layer[0].h_scroll, 0x00a2);
+    assert_eq!(state.ppu.bg_layer[1].h_scroll, 0x00a2);
+
+    state.capture_display_snapshot();
+    let following = state.with_display_snapshot(|display| {
+        (
+            display.ppu.bg_layer[0].h_scroll,
+            display.ppu.bg_layer[1].h_scroll,
+        )
+    });
+    assert_eq!(following, (0x00a2, 0x00a2));
+}
+
+#[test]
 fn pre_dungeon_work_resumes_at_room_and_song_bank_transfer_boundaries() {
     assert_eq!(PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES, 58);
     let stages = [
