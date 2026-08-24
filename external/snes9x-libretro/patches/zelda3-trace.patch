@@ -246,6 +246,12 @@ index f5c2e6e6..b1bbe698 100644
  #ifdef DEBUGGER
      if (Settings.TraceSMP)
      {
+@@ -72,5 +79,6 @@ void SMP::op_step() {
+     #include "core/oppseudo_read.cpp"
+     #include "core/oppseudo_rmw.cpp"
+   }
++  Zelda3TraceCaptureSmpOpcodeStepEnd(opcode_cycle);
+ }
 diff --git a/apu/bapu/smp/memory.cpp b/apu/bapu/smp/memory.cpp
 index 3df43b15..fd0cf5b0 100644
 --- a/apu/bapu/smp/memory.cpp
@@ -593,6 +599,11 @@ index a8ffcb12..ea26bc9d 100644
 +    return Zelda3TraceSmpInstructionValue(instruction, field);
 +}
 +
++extern "C" uint64_t zelda3_snes9x_debug_smp_instruction_cycle(int instruction)
++{
++    return Zelda3TraceSmpInstructionCycle(instruction);
++}
++
  
  void retro_reset()
  {
@@ -843,9 +854,10 @@ index 00000000..06a376d4
 +int smp_instruction_origin_pc = 0;
 +int smp_instruction_origin_opcode = 0;
 +constexpr int smp_instruction_capacity = 8192;
-+constexpr int smp_instruction_field_count = 25;
++constexpr int smp_instruction_field_count = 28;
 +int smp_instruction_count = 0;
 +int smp_instructions[smp_instruction_capacity][smp_instruction_field_count] = {};
++uint64 smp_instruction_cycles[smp_instruction_capacity] = {};
 +
 +uint32 parse_hex(const char *text, const char **end)
 +{
@@ -1373,7 +1385,9 @@ index 00000000..06a376d4
 +	smp_instruction_origin_opcode = opcode;
 +	if (smp_instruction_count >= smp_instruction_capacity)
 +		return;
-+	int *instruction = smp_instructions[smp_instruction_count++];
++	int index = smp_instruction_count++;
++	int *instruction = smp_instructions[index];
++	smp_instruction_cycles[index] = smp_cycle_since_reset;
 +	instruction[0] = pc;
 +	instruction[1] = opcode;
 +	instruction[2] = a;
@@ -1389,6 +1403,18 @@ index 00000000..06a376d4
 +	instruction[12] = SNES::smp.clock;
 +	for (int index = 0; index < 12; index++)
 +		instruction[13 + index] = direct_page[index];
++	instruction[25] = SNES::smp.opcode_cycle;
++	instruction[26] = 0;
++	instruction[27] = 0;
++}
++
++void Zelda3TraceCaptureSmpOpcodeStepEnd(int opcode_cycle)
++{
++	if (smp_instruction_count == 0)
++		return;
++	int *instruction = smp_instructions[smp_instruction_count - 1];
++	instruction[26]++;
++	instruction[27] = std::max(instruction[27], opcode_cycle);
 +}
 +
 +int Zelda3TraceSmpInstructionCount()
@@ -1401,6 +1427,12 @@ index 00000000..06a376d4
 +	return instruction >= 0 && instruction < smp_instruction_count &&
 +		field >= 0 && field < smp_instruction_field_count
 +		? smp_instructions[instruction][field] : -1;
++}
++
++uint64 Zelda3TraceSmpInstructionCycle(int instruction)
++{
++	return instruction >= 0 && instruction < smp_instruction_count
++		? smp_instruction_cycles[instruction] : 0;
 +}
 +
 +void Zelda3TraceRetroRunBegin()
@@ -1623,8 +1655,10 @@ index 00000000..f5bb193a
 +void Zelda3TraceCaptureSmpInstruction(int pc, int opcode, int a, int x, int y, int sp,
 +	int psw, int timer0_stage1, int timer0_stage2, int timer0_stage3,
 +	const uint8 *direct_page);
++void Zelda3TraceCaptureSmpOpcodeStepEnd(int opcode_cycle);
 +int Zelda3TraceSmpInstructionCount();
 +int Zelda3TraceSmpInstructionValue(int instruction, int field);
++uint64 Zelda3TraceSmpInstructionCycle(int instruction);
 +void Zelda3TraceRetroRunBegin();
 +void Zelda3TraceRetroRunEnd();
 +void Zelda3TraceInstruction(void);

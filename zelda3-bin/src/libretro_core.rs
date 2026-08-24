@@ -133,6 +133,7 @@ pub(crate) struct LibretroCore {
     pub(crate) debug_smp_output_port_write_cycle: Option<unsafe extern "C" fn(c_int) -> u64>,
     pub(crate) debug_smp_instruction_count: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_smp_instruction_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
+    pub(crate) debug_smp_instruction_cycle: Option<unsafe extern "C" fn(c_int) -> u64>,
     pub(crate) debug_ppu_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_scanline_mode7_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) api_version: c_uint,
@@ -250,6 +251,8 @@ impl LibretroCore {
                 optional_symbol(handle, "zelda3_snes9x_debug_smp_instruction_count");
             let debug_smp_instruction_value =
                 optional_symbol(handle, "zelda3_snes9x_debug_smp_instruction_value");
+            let debug_smp_instruction_cycle =
+                optional_symbol(handle, "zelda3_snes9x_debug_smp_instruction_cycle");
             let debug_ppu_value = optional_symbol(handle, "zelda3_snes9x_debug_ppu_value");
             let debug_scanline_mode7_value =
                 optional_symbol(handle, "zelda3_snes9x_debug_scanline_mode7_value");
@@ -330,6 +333,7 @@ impl LibretroCore {
                 debug_smp_output_port_write_cycle,
                 debug_smp_instruction_count,
                 debug_smp_instruction_value,
+                debug_smp_instruction_cycle,
                 debug_ppu_value,
                 debug_scanline_mode7_value,
                 api_version,
@@ -658,9 +662,10 @@ impl LibretroCore {
     }
 
     pub(crate) fn debug_smp_instructions(&self) -> Option<Vec<LibretroSmpInstruction>> {
-        let (Some(count), Some(value)) = (
+        let (Some(count), Some(value), Some(cycle)) = (
             self.debug_smp_instruction_count,
             self.debug_smp_instruction_value,
+            self.debug_smp_instruction_cycle,
         ) else {
             return None;
         };
@@ -668,6 +673,7 @@ impl LibretroCore {
         Some(
             (0..count)
                 .map(|instruction| LibretroSmpInstruction {
+                    absolute_cycle: unsafe { cycle(instruction) },
                     program_counter: unsafe { value(instruction, 0) },
                     opcode: unsafe { value(instruction, 1) },
                     a: unsafe { value(instruction, 2) },
@@ -684,6 +690,9 @@ impl LibretroCore {
                     direct_page_0_11: std::array::from_fn(|offset| unsafe {
                         value(instruction, 13 + offset as i32)
                     }),
+                    boundary_opcode_cycle: unsafe { value(instruction, 25) },
+                    op_step_calls: unsafe { value(instruction, 26) },
+                    max_continuation_opcode_cycle: unsafe { value(instruction, 27) },
                 })
                 .collect(),
         )
@@ -853,6 +862,7 @@ pub(crate) struct LibretroSmpOutputPortWrite {
 
 #[derive(serde::Serialize)]
 pub(crate) struct LibretroSmpInstruction {
+    pub(crate) absolute_cycle: u64,
     pub(crate) program_counter: i32,
     pub(crate) opcode: i32,
     pub(crate) a: i32,
@@ -867,6 +877,9 @@ pub(crate) struct LibretroSmpInstruction {
     pub(crate) dsp_phase: i32,
     pub(crate) smp_clock: i32,
     pub(crate) direct_page_0_11: [i32; 12],
+    pub(crate) boundary_opcode_cycle: i32,
+    pub(crate) op_step_calls: i32,
+    pub(crate) max_continuation_opcode_cycle: i32,
 }
 
 impl Drop for LibretroCore {

@@ -35,6 +35,46 @@ const CARTRIDGE_RNG_STORE_PC_LOW16: u64 = 0xba7f;
 const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct SmpBootstrapInstructionStep {
+    absolute_start_cycle: u64,
+    absolute_end_cycle: u64,
+    origin_pc: i32,
+    opcode: i32,
+    boundary_opcode_cycle: i32,
+    op_step_calls: i32,
+    max_continuation_opcode_cycle: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct SmpBootstrapPatternInstruction {
+    start_cycle_offset: u64,
+    end_cycle_offset: u64,
+    origin_pc: i32,
+    opcode: i32,
+    boundary_opcode_cycle: i32,
+    op_step_calls: i32,
+    max_continuation_opcode_cycle: i32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct SmpBootstrapInstructionSpan {
+    absolute_start_cycle: u64,
+    absolute_end_cycle: u64,
+    repeat_count: usize,
+    repeat_cycle_stride: u64,
+    instructions: Vec<SmpBootstrapPatternInstruction>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct SmpBootstrapInstructionSequence {
+    encoding: &'static str,
+    instruction_count: usize,
+    absolute_start_cycle: u64,
+    absolute_end_cycle: u64,
+    spans: Vec<SmpBootstrapInstructionSpan>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReplayBundle {
     dir: PathBuf,
     input_script: PathBuf,
@@ -4323,6 +4363,22 @@ pub(crate) fn run_compare_libretro_oracle(
                     || cpu_accesses.last().is_some_and(|event| {
                         event.is_read && event.port == 0 && event.value == 0xcc
                     });
+                let instruction_sequence = output_writes
+                    .iter()
+                    .find(|event| event.port == 0 && event.value == 0xcc)
+                    .map(|first_cc| {
+                        let instructions = oracle.debug_smp_instructions().unwrap_or_else(|| {
+                            eprintln!(
+                                "SMP-bootstrap trace requires Snes9x instruction instrumentation"
+                            );
+                            process::exit(2);
+                        });
+                        compact_smp_bootstrap_instruction_sequence(&instructions, first_cc)
+                            .unwrap_or_else(|error| {
+                                eprintln!("failed to compact Snes9x SMP-bootstrap trace: {error}");
+                                process::exit(1);
+                            })
+                    });
                 serde_json::to_writer(
                     &mut *writer,
                     &serde_json::json!({
@@ -4332,6 +4388,7 @@ pub(crate) fn run_compare_libretro_oracle(
                         "cpu_apu_reset_writes": &cpu_accesses[..cpu_reset_end],
                         "cpu_apu_poll_accesses_omitted": cpu_handshake_start.saturating_sub(cpu_reset_end),
                         "cpu_apu_handshake_accesses": &cpu_accesses[cpu_handshake_start..cpu_end],
+                        "smp_instruction_boundary_sequence": instruction_sequence,
                         "first_cc_acknowledged": observed_cc && cpu_observed_cc,
                     }),
                 )
@@ -7313,6 +7370,155 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
     state.get(data_start..data_start.checked_add(length)?)
 }
 
+fn smp_bootstrap_steps_match(
+    left: &SmpBootstrapInstructionStep,
+    right: &SmpBootstrapInstructionStep,
+) -> bool {
+    left.absolute_end_cycle - left.absolute_start_cycle
+        == right.absolute_end_cycle - right.absolute_start_cycle
+        && left.origin_pc == right.origin_pc
+        && left.opcode == right.opcode
+        && left.boundary_opcode_cycle == right.boundary_opcode_cycle
+        && left.op_step_calls == right.op_step_calls
+        && left.max_continuation_opcode_cycle == right.max_continuation_opcode_cycle
+}
+
+fn smp_bootstrap_span(
+    steps: &[SmpBootstrapInstructionStep],
+    pattern_len: usize,
+    repeat_count: usize,
+) -> SmpBootstrapInstructionSpan {
+    let absolute_start_cycle = steps[0].absolute_start_cycle;
+    let repeat_cycle_stride = steps[pattern_len - 1].absolute_end_cycle - absolute_start_cycle;
+    let absolute_end_cycle = steps[pattern_len * repeat_count - 1].absolute_end_cycle;
+    let instructions = steps[..pattern_len]
+        .iter()
+        .map(|step| SmpBootstrapPatternInstruction {
+            start_cycle_offset: step.absolute_start_cycle - absolute_start_cycle,
+            end_cycle_offset: step.absolute_end_cycle - absolute_start_cycle,
+            origin_pc: step.origin_pc,
+            opcode: step.opcode,
+            boundary_opcode_cycle: step.boundary_opcode_cycle,
+            op_step_calls: step.op_step_calls,
+            max_continuation_opcode_cycle: step.max_continuation_opcode_cycle,
+        })
+        .collect();
+    SmpBootstrapInstructionSpan {
+        absolute_start_cycle,
+        absolute_end_cycle,
+        repeat_count,
+        repeat_cycle_stride,
+        instructions,
+    }
+}
+
+fn compact_smp_bootstrap_steps(
+    steps: &[SmpBootstrapInstructionStep],
+) -> Vec<SmpBootstrapInstructionSpan> {
+    let mut spans = Vec::new();
+    let mut literal_start = 0;
+    let mut index = 0;
+    while index < steps.len() {
+        let mut best = None::<(usize, usize, usize)>;
+        for pattern_len in 1..=16.min((steps.len() - index) / 2) {
+            let mut repeat_count = 1;
+            while index + (repeat_count + 1) * pattern_len <= steps.len()
+                && (0..pattern_len).all(|offset| {
+                    smp_bootstrap_steps_match(
+                        &steps[index + offset],
+                        &steps[index + repeat_count * pattern_len + offset],
+                    )
+                })
+            {
+                repeat_count += 1;
+            }
+            let saved_instructions = (repeat_count - 1) * pattern_len;
+            if repeat_count >= 2
+                && best.is_none_or(|(best_saved, best_len, _)| {
+                    (saved_instructions, pattern_len) > (best_saved, best_len)
+                })
+            {
+                best = Some((saved_instructions, pattern_len, repeat_count));
+            }
+        }
+        let Some((_, pattern_len, repeat_count)) = best else {
+            index += 1;
+            continue;
+        };
+        if literal_start < index {
+            let literal = &steps[literal_start..index];
+            spans.push(smp_bootstrap_span(literal, literal.len(), 1));
+        }
+        let repeated = &steps[index..index + pattern_len * repeat_count];
+        spans.push(smp_bootstrap_span(repeated, pattern_len, repeat_count));
+        index += pattern_len * repeat_count;
+        literal_start = index;
+    }
+    if literal_start < steps.len() {
+        let literal = &steps[literal_start..];
+        spans.push(smp_bootstrap_span(literal, literal.len(), 1));
+    }
+    spans
+}
+
+fn compact_smp_bootstrap_instruction_sequence(
+    instructions: &[crate::libretro_core::LibretroSmpInstruction],
+    first_cc: &crate::libretro_core::LibretroSmpOutputPortWrite,
+) -> Result<SmpBootstrapInstructionSequence, String> {
+    let cc_index = instructions
+        .iter()
+        .position(|instruction| {
+            instruction.program_counter == first_cc.origin_pc
+                && instruction.opcode == first_cc.opcode
+                && instruction.absolute_cycle <= first_cc.absolute_cycle
+        })
+        .ok_or_else(|| {
+            "SMP trace has no instruction boundary owning the first CC write".to_string()
+        })?;
+    if cc_index + 1 >= instructions.len() {
+        return Err("SMP trace has no successor boundary after the first CC write".to_string());
+    }
+    let mut steps = Vec::with_capacity(cc_index + 1);
+    for index in 0..=cc_index {
+        let instruction = &instructions[index];
+        let absolute_end_cycle = instructions[index + 1].absolute_cycle;
+        if absolute_end_cycle < instruction.absolute_cycle {
+            return Err(format!(
+                "SMP instruction cycle regressed at trace index {index}: {} -> {absolute_end_cycle}",
+                instruction.absolute_cycle
+            ));
+        }
+        steps.push(SmpBootstrapInstructionStep {
+            absolute_start_cycle: instruction.absolute_cycle,
+            absolute_end_cycle,
+            origin_pc: instruction.program_counter,
+            opcode: instruction.opcode,
+            boundary_opcode_cycle: instruction.boundary_opcode_cycle,
+            op_step_calls: instruction.op_step_calls,
+            max_continuation_opcode_cycle: instruction.max_continuation_opcode_cycle,
+        });
+    }
+    if steps.first().map(|step| step.absolute_start_cycle) != Some(0) {
+        return Err(
+            "SMP bootstrap instruction trace does not begin at reset cycle zero".to_string(),
+        );
+    }
+    let absolute_end_cycle = steps.last().unwrap().absolute_end_cycle;
+    if absolute_end_cycle != first_cc.absolute_cycle {
+        return Err(format!(
+            "first CC write is at cycle {}, but its owning instruction ends at {absolute_end_cycle}",
+            first_cc.absolute_cycle
+        ));
+    }
+    Ok(SmpBootstrapInstructionSequence {
+        encoding: "repeated-span-v1",
+        instruction_count: steps.len(),
+        absolute_start_cycle: 0,
+        absolute_end_cycle,
+        spans: compact_smp_bootstrap_steps(&steps),
+    })
+}
+
 fn write_snes9x_smp_bootstrap_header<W: Write>(
     writer: &mut W,
     core_path: &str,
@@ -7492,6 +7698,77 @@ mod tests {
             assert_eq!(event["value"], value);
             assert_eq!(event["cpu_reference_time"], reference);
             assert_eq!(event["cpu_remainder"], remainder);
+        }
+
+        let sequence = &events["smp_instruction_boundary_sequence"];
+        assert_eq!(sequence["encoding"], "repeated-span-v1");
+        assert_eq!(sequence["instruction_count"], 735);
+        assert_eq!(sequence["absolute_start_cycle"], 0);
+        assert_eq!(sequence["absolute_end_cycle"], 2_461);
+        let spans = sequence["spans"].as_array().unwrap();
+        assert_eq!(spans.len(), 5);
+        assert_eq!(
+            spans
+                .iter()
+                .map(|span| span["repeat_count"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            [1, 238, 1, 3, 1]
+        );
+        let mut expanded = Vec::new();
+        let mut expected_cycle = 0;
+        for span in spans {
+            assert_eq!(span["absolute_start_cycle"].as_u64(), Some(expected_cycle));
+            let span_start = span["absolute_start_cycle"].as_u64().unwrap();
+            let stride = span["repeat_cycle_stride"].as_u64().unwrap();
+            let repeat_count = span["repeat_count"].as_u64().unwrap();
+            let pattern = span["instructions"].as_array().unwrap();
+            for repeat in 0..repeat_count {
+                let repeat_start = span_start + repeat * stride;
+                for instruction in pattern {
+                    let start = repeat_start + instruction["start_cycle_offset"].as_u64().unwrap();
+                    let end = repeat_start + instruction["end_cycle_offset"].as_u64().unwrap();
+                    assert_eq!(start, expected_cycle);
+                    assert!(end > start);
+                    assert_eq!(instruction["boundary_opcode_cycle"], 0);
+                    let calls = instruction["op_step_calls"].as_u64().unwrap();
+                    let continuation = instruction["max_continuation_opcode_cycle"]
+                        .as_u64()
+                        .unwrap();
+                    assert_eq!(continuation, calls - 1);
+                    expanded.push((
+                        start,
+                        end,
+                        instruction["origin_pc"].as_u64().unwrap(),
+                        instruction["opcode"].as_u64().unwrap(),
+                        calls,
+                        continuation,
+                    ));
+                    expected_cycle = end;
+                }
+            }
+            assert_eq!(span["absolute_end_cycle"].as_u64(), Some(expected_cycle));
+        }
+        assert_eq!(expanded.len(), 735);
+        assert_eq!(expected_cycle, 2_461);
+        assert_eq!(expanded[0], (0, 2, 0xffc0, 0xcd, 1, 0));
+        assert_eq!(expanded[1], (2, 4, 0xffc2, 0xbd, 1, 0));
+        assert_eq!(expanded[2], (4, 6, 0xffc3, 0xe8, 1, 0));
+        for (write, expected) in output.iter().zip([
+            (2_394, 2_399, 0xffc9, 0x8f, 3, 2),
+            (2_399, 2_404, 0xffcc, 0x8f, 3, 2),
+            (2_457, 2_461, 0xfff5, 0xc4, 3, 2),
+        ]) {
+            let owner = expanded
+                .iter()
+                .find(|instruction| {
+                    instruction.1 == write["absolute_cycle"].as_u64().unwrap()
+                        && instruction.2 == write["origin_pc"].as_u64().unwrap()
+                        && instruction.3 == write["opcode"].as_u64().unwrap()
+                })
+                .copied()
+                .unwrap();
+            assert_eq!(owner, expected);
+            assert_eq!(write["opcode_cycle"].as_u64(), Some(owner.5 + 1));
         }
 
         let cpu = events["cpu_apu_handshake_accesses"].as_array().unwrap();
@@ -7801,6 +8078,7 @@ mod tests {
             timer0_counter: 0,
         };
         let oracle_instruction = crate::libretro_core::LibretroSmpInstruction {
+            absolute_cycle: 0,
             program_counter: 0x1234,
             opcode: 0xe8,
             a: 1,
@@ -7815,6 +8093,9 @@ mod tests {
             output_sample: 0,
             dsp_phase: 0,
             smp_clock: 0,
+            boundary_opcode_cycle: 0,
+            op_step_calls: 1,
+            max_continuation_opcode_cycle: 0,
         };
 
         let witness =
