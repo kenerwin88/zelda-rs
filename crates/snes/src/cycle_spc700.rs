@@ -63,6 +63,141 @@ pub struct Snes9xSmpCoroutineCheckpoint {
     bit: u16,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Snes9xStoreValue {
+    A,
+    X,
+    Y,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Snes9xStoreIndex {
+    None,
+    X,
+    Y,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Snes9xStorePlan {
+    Direct {
+        value: Snes9xStoreValue,
+        index: Snes9xStoreIndex,
+    },
+    Absolute {
+        value: Snes9xStoreValue,
+        index: Snes9xStoreIndex,
+    },
+    IndirectX,
+    AutoIncrementX,
+    IndirectDpX,
+    IndirectDpY,
+    DirectWord,
+    ImmediateDirect,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Snes9xSplitPlan {
+    /// The exact source split is known, but its stages have not been ported.
+    Pending,
+    /// An already source-checked non-store implementation below.
+    ImplementedNonStore,
+    Store(Snes9xStorePlan),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Snes9xOpcodePlan {
+    Atomic,
+    Split(Snes9xSplitPlan),
+}
+
+// Pinned Snes9x 1.63 has exactly these 37 nested
+// `switch(++opcode_cycle)` cases in `apu/bapu/smp/core/oppseudo_*.cpp`.
+// Every other opcode is one atomic `op_step`, even when it consumes multiple
+// SMP cycles. Keep this invocation as the single production authority for the
+// split classifier; the macro also records which source stages are ported.
+macro_rules! define_snes9x_opcode_plans {
+    ($($opcode:literal => $plan:expr),+ $(,)?) => {
+        const SNES9X_OPCODE_PLANS: [Snes9xOpcodePlan; 256] = {
+            let mut plans = [Snes9xOpcodePlan::Atomic; 256];
+            $(plans[$opcode] = Snes9xOpcodePlan::Split($plan);)+
+            plans
+        };
+    };
+}
+
+define_snes9x_opcode_plans! {
+    0x7e => Snes9xSplitPlan::ImplementedNonStore,
+    0x8f => Snes9xSplitPlan::Store(Snes9xStorePlan::ImmediateDirect),
+    0xaa => Snes9xSplitPlan::Pending,
+    0xaf => Snes9xSplitPlan::Store(Snes9xStorePlan::AutoIncrementX),
+    0xba => Snes9xSplitPlan::ImplementedNonStore,
+    0xbf => Snes9xSplitPlan::Pending,
+    0xc4 => Snes9xSplitPlan::Store(Snes9xStorePlan::Direct {
+        value: Snes9xStoreValue::A,
+        index: Snes9xStoreIndex::None,
+    }),
+    0xc5 => Snes9xSplitPlan::Store(Snes9xStorePlan::Absolute {
+        value: Snes9xStoreValue::A,
+        index: Snes9xStoreIndex::None,
+    }),
+    0xc6 => Snes9xSplitPlan::Store(Snes9xStorePlan::IndirectX),
+    0xc7 => Snes9xSplitPlan::Store(Snes9xStorePlan::IndirectDpX),
+    0xc9 => Snes9xSplitPlan::Store(Snes9xStorePlan::Absolute {
+        value: Snes9xStoreValue::X,
+        index: Snes9xStoreIndex::None,
+    }),
+    0xca => Snes9xSplitPlan::Pending,
+    0xcb => Snes9xSplitPlan::Store(Snes9xStorePlan::Direct {
+        value: Snes9xStoreValue::Y,
+        index: Snes9xStoreIndex::None,
+    }),
+    0xcc => Snes9xSplitPlan::Store(Snes9xStorePlan::Absolute {
+        value: Snes9xStoreValue::Y,
+        index: Snes9xStoreIndex::None,
+    }),
+    0xd4 => Snes9xSplitPlan::Store(Snes9xStorePlan::Direct {
+        value: Snes9xStoreValue::A,
+        index: Snes9xStoreIndex::X,
+    }),
+    0xd5 => Snes9xSplitPlan::Store(Snes9xStorePlan::Absolute {
+        value: Snes9xStoreValue::A,
+        index: Snes9xStoreIndex::X,
+    }),
+    0xd6 => Snes9xSplitPlan::Store(Snes9xStorePlan::Absolute {
+        value: Snes9xStoreValue::A,
+        index: Snes9xStoreIndex::Y,
+    }),
+    0xd7 => Snes9xSplitPlan::Store(Snes9xStorePlan::IndirectDpY),
+    0xd8 => Snes9xSplitPlan::Store(Snes9xStorePlan::Direct {
+        value: Snes9xStoreValue::X,
+        index: Snes9xStoreIndex::None,
+    }),
+    0xd9 => Snes9xSplitPlan::Store(Snes9xStorePlan::Direct {
+        value: Snes9xStoreValue::X,
+        index: Snes9xStoreIndex::Y,
+    }),
+    0xda => Snes9xSplitPlan::Store(Snes9xStorePlan::DirectWord),
+    0xdb => Snes9xSplitPlan::Store(Snes9xStorePlan::Direct {
+        value: Snes9xStoreValue::Y,
+        index: Snes9xStoreIndex::X,
+    }),
+    0xe4 => Snes9xSplitPlan::ImplementedNonStore,
+    0xe5 => Snes9xSplitPlan::Pending,
+    0xe6 => Snes9xSplitPlan::Pending,
+    0xe7 => Snes9xSplitPlan::Pending,
+    0xe9 => Snes9xSplitPlan::Pending,
+    0xeb => Snes9xSplitPlan::ImplementedNonStore,
+    0xec => Snes9xSplitPlan::Pending,
+    0xf4 => Snes9xSplitPlan::Pending,
+    0xf5 => Snes9xSplitPlan::Pending,
+    0xf6 => Snes9xSplitPlan::Pending,
+    0xf7 => Snes9xSplitPlan::Pending,
+    0xf8 => Snes9xSplitPlan::Pending,
+    0xf9 => Snes9xSplitPlan::Pending,
+    0xfa => Snes9xSplitPlan::Pending,
+    0xfb => Snes9xSplitPlan::Pending,
+}
+
 impl SmpCoroutineState {
     pub(crate) fn enabled() -> Self {
         Self {
@@ -194,32 +329,32 @@ impl<'a> Smp<'a> {
         self.cycle_count - start
     }
 
+    const fn snes9x_opcode_plan(opcode: u8) -> Snes9xOpcodePlan {
+        SNES9X_OPCODE_PLANS[opcode as usize]
+    }
+
     pub(crate) const fn supports_resumable_opcode(opcode: u8) -> bool {
-        matches!(
-            opcode,
-            0x10 | 0x1d
-                | 0x1f
-                | 0x2f
-                | 0x5d
-                | 0x78
-                | 0x7e
-                | 0x8f
-                | 0xab
-                | 0xba
-                | 0xbd
-                | 0xc4
-                | 0xc6
-                | 0xcb
-                | 0xcd
-                | 0xd0
-                | 0xd7
-                | 0xda
-                | 0xdd
-                | 0xe4
-                | 0xe8
-                | 0xeb
-                | 0xfc
-        )
+        match Self::snes9x_opcode_plan(opcode) {
+            Snes9xOpcodePlan::Split(Snes9xSplitPlan::Pending) => false,
+            Snes9xOpcodePlan::Split(_) => true,
+            // Keep the already source-checked IPL atomics until the complete
+            // atomic engine has an exhaustive pinned-Snes9x differential test.
+            Snes9xOpcodePlan::Atomic => matches!(
+                opcode,
+                0x10 | 0x1d
+                    | 0x1f
+                    | 0x2f
+                    | 0x5d
+                    | 0x78
+                    | 0xab
+                    | 0xbd
+                    | 0xcd
+                    | 0xd0
+                    | 0xdd
+                    | 0xe8
+                    | 0xfc
+            ),
+        }
     }
 
     /// Execute exactly one Snes9x `SMP::op_step` boundary.
@@ -244,6 +379,12 @@ impl<'a> Smp<'a> {
                 opcode
             }
         };
+
+        if let Snes9xOpcodePlan::Split(Snes9xSplitPlan::Store(plan)) =
+            Self::snes9x_opcode_plan(opcode)
+        {
+            return self.run_snes9x_store_micro_step(opcode, plan, coroutine);
+        }
 
         match (opcode, coroutine.opcode_cycle) {
             (0xcd, 0) => {
@@ -278,27 +419,6 @@ impl<'a> Smp<'a> {
                 *coroutine = SmpCoroutineState::enabled();
                 Ok(SmpMicroStepResult::InstructionComplete { opcode })
             }
-            (0xc6, 0) => {
-                self.cycles(1);
-                coroutine.opcode_cycle = 1;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 1,
-                })
-            }
-            (0xc6, 1) => {
-                self.read_dp(self.reg_x);
-                coroutine.opcode_cycle = 2;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 2,
-                })
-            }
-            (0xc6, 2) => {
-                self.write_dp(self.reg_x, self.reg_a);
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
             (0x1d, 0) => {
                 self.cycles(1);
                 self.reg_x = self.dec(self.reg_x);
@@ -313,28 +433,6 @@ impl<'a> Smp<'a> {
                         .reg_pc
                         .wrapping_add(coroutine.rd as u8 as i8 as i16 as u16);
                 }
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0x8f, 0) => {
-                coroutine.rd = u16::from(self.read_pc());
-                coroutine.dp = u16::from(self.read_pc());
-                coroutine.opcode_cycle = 1;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 1,
-                })
-            }
-            (0x8f, 1) => {
-                self.read_dp(coroutine.dp as u8);
-                coroutine.opcode_cycle = 2;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 2,
-                })
-            }
-            (0x8f, 2) => {
-                self.write_dp(coroutine.dp as u8, coroutine.rd as u8);
                 *coroutine = SmpCoroutineState::enabled();
                 Ok(SmpMicroStepResult::InstructionComplete { opcode })
             }
@@ -391,35 +489,6 @@ impl<'a> Smp<'a> {
                 *coroutine = SmpCoroutineState::enabled();
                 Ok(SmpMicroStepResult::InstructionComplete { opcode })
             }
-            (0xda, 0) => {
-                coroutine.dp = u16::from(self.read_pc());
-                coroutine.opcode_cycle = 1;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 1,
-                })
-            }
-            (0xda, 1) => {
-                self.read_dp(coroutine.dp as u8);
-                coroutine.opcode_cycle = 2;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 2,
-                })
-            }
-            (0xda, 2) => {
-                self.write_dp(coroutine.dp as u8, self.reg_a);
-                coroutine.opcode_cycle = 3;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 3,
-                })
-            }
-            (0xda, 3) => {
-                self.write_dp((coroutine.dp as u8).wrapping_add(1), self.reg_y);
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
             (0xeb | 0xe4, 0) => {
                 coroutine.sp = u16::from(self.read_pc());
                 coroutine.opcode_cycle = 1;
@@ -454,87 +523,6 @@ impl<'a> Smp<'a> {
                 *coroutine = SmpCoroutineState::enabled();
                 Ok(SmpMicroStepResult::InstructionComplete { opcode })
             }
-            (0xc4, 0) => {
-                coroutine.dp = u16::from(self.read_pc());
-                coroutine.opcode_cycle = 1;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 1,
-                })
-            }
-            (0xc4, 1) => {
-                self.read_dp(coroutine.dp as u8);
-                coroutine.opcode_cycle = 2;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 2,
-                })
-            }
-            (0xc4, 2) => {
-                self.write_dp(coroutine.dp as u8, self.reg_a);
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0xcb, 0) => {
-                coroutine.dp = u16::from(self.read_pc());
-                coroutine.opcode_cycle = 1;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 1,
-                })
-            }
-            (0xcb, 1) => {
-                self.read_dp(coroutine.dp as u8);
-                coroutine.opcode_cycle = 2;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 2,
-                })
-            }
-            (0xcb, 2) => {
-                self.write_dp(coroutine.dp as u8, self.reg_y);
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0xd7, 0) => {
-                coroutine.sp = u16::from(self.read_pc());
-                coroutine.opcode_cycle = 1;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 1,
-                })
-            }
-            (0xd7, 1) => {
-                coroutine.dp = u16::from(self.read_dp(coroutine.sp as u8));
-                coroutine.opcode_cycle = 2;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 2,
-                })
-            }
-            (0xd7, 2) => {
-                coroutine.dp |= u16::from(self.read_dp((coroutine.sp as u8).wrapping_add(1))) << 8;
-                self.cycles(1);
-                coroutine.dp = coroutine.dp.wrapping_add(u16::from(self.reg_y));
-                coroutine.opcode_cycle = 3;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 3,
-                })
-            }
-            (0xd7, 3) => {
-                self.read(coroutine.dp);
-                coroutine.opcode_cycle = 4;
-                Ok(SmpMicroStepResult::InProgress {
-                    opcode,
-                    opcode_cycle: 4,
-                })
-            }
-            (0xd7, 4) => {
-                self.write(coroutine.dp, self.reg_a);
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
             (0xfc, 0) => {
                 self.cycles(1);
                 self.reg_y = self.inc(self.reg_y);
@@ -560,6 +548,236 @@ impl<'a> Smp<'a> {
                 *coroutine = SmpCoroutineState::enabled();
                 Ok(SmpMicroStepResult::InstructionComplete { opcode })
             }
+            _ => Err(UnsupportedSmpMicroStep {
+                opcode,
+                pc: self.reg_pc,
+            }),
+        }
+    }
+
+    fn snes9x_store_value(&self, value: Snes9xStoreValue) -> u8 {
+        match value {
+            Snes9xStoreValue::A => self.reg_a,
+            Snes9xStoreValue::X => self.reg_x,
+            Snes9xStoreValue::Y => self.reg_y,
+        }
+    }
+
+    fn snes9x_store_index(&self, index: Snes9xStoreIndex) -> u16 {
+        match index {
+            Snes9xStoreIndex::None => 0,
+            Snes9xStoreIndex::X => u16::from(self.reg_x),
+            Snes9xStoreIndex::Y => u16::from(self.reg_y),
+        }
+    }
+
+    fn snes9x_advance_store_stage(
+        coroutine: &mut SmpCoroutineState,
+        opcode: u8,
+        opcode_cycle: u8,
+    ) -> Result<SmpMicroStepResult, UnsupportedSmpMicroStep> {
+        coroutine.opcode_cycle = opcode_cycle;
+        Ok(SmpMicroStepResult::InProgress {
+            opcode,
+            opcode_cycle,
+        })
+    }
+
+    fn snes9x_complete_store(
+        coroutine: &mut SmpCoroutineState,
+        opcode: u8,
+    ) -> Result<SmpMicroStepResult, UnsupportedSmpMicroStep> {
+        *coroutine = SmpCoroutineState::enabled();
+        Ok(SmpMicroStepResult::InstructionComplete { opcode })
+    }
+
+    /// Execute one complete pinned-Snes9x store pseudo-case. A case may contain
+    /// several hardware cycles; `SMP::enter` can yield only after the case
+    /// returns, so none of these source groupings may be split further.
+    fn run_snes9x_store_micro_step(
+        &mut self,
+        opcode: u8,
+        plan: Snes9xStorePlan,
+        coroutine: &mut SmpCoroutineState,
+    ) -> Result<SmpMicroStepResult, UnsupportedSmpMicroStep> {
+        match (plan, coroutine.opcode_cycle) {
+            (Snes9xStorePlan::Direct { index, .. }, 0) => {
+                coroutine.dp = u16::from(self.read_pc());
+                if index != Snes9xStoreIndex::None {
+                    self.cycles(1);
+                    coroutine.dp = coroutine.dp.wrapping_add(self.snes9x_store_index(index));
+                }
+                Self::snes9x_advance_store_stage(coroutine, opcode, 1)
+            }
+            (Snes9xStorePlan::Direct { .. }, 1) => {
+                self.read_dp(coroutine.dp as u8);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 2)
+            }
+            (Snes9xStorePlan::Direct { value, .. }, 2) => {
+                let value = self.snes9x_store_value(value);
+                self.write_dp(coroutine.dp as u8, value);
+                Self::snes9x_complete_store(coroutine, opcode)
+            }
+
+            (
+                Snes9xStorePlan::Absolute {
+                    index: Snes9xStoreIndex::None,
+                    ..
+                },
+                0,
+            ) => {
+                coroutine.dp = u16::from(self.read_pc());
+                Self::snes9x_advance_store_stage(coroutine, opcode, 1)
+            }
+            (
+                Snes9xStorePlan::Absolute {
+                    index: Snes9xStoreIndex::None,
+                    ..
+                },
+                1,
+            ) => {
+                coroutine.dp |= u16::from(self.read_pc()) << 8;
+                Self::snes9x_advance_store_stage(coroutine, opcode, 2)
+            }
+            (
+                Snes9xStorePlan::Absolute {
+                    index: Snes9xStoreIndex::None,
+                    ..
+                },
+                2,
+            ) => {
+                self.read(coroutine.dp);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 3)
+            }
+            (
+                Snes9xStorePlan::Absolute {
+                    value,
+                    index: Snes9xStoreIndex::None,
+                },
+                3,
+            ) => {
+                let value = self.snes9x_store_value(value);
+                self.write(coroutine.dp, value);
+                Self::snes9x_complete_store(coroutine, opcode)
+            }
+            (Snes9xStorePlan::Absolute { index, .. }, 0) => {
+                coroutine.dp = u16::from(self.read_pc());
+                coroutine.dp |= u16::from(self.read_pc()) << 8;
+                self.cycles(1);
+                coroutine.dp = coroutine.dp.wrapping_add(self.snes9x_store_index(index));
+                Self::snes9x_advance_store_stage(coroutine, opcode, 1)
+            }
+            (Snes9xStorePlan::Absolute { .. }, 1) => {
+                self.read(coroutine.dp);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 2)
+            }
+            (Snes9xStorePlan::Absolute { value, .. }, 2) => {
+                let value = self.snes9x_store_value(value);
+                self.write(coroutine.dp, value);
+                Self::snes9x_complete_store(coroutine, opcode)
+            }
+
+            (Snes9xStorePlan::IndirectX, 0) => {
+                self.cycles(1);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 1)
+            }
+            (Snes9xStorePlan::IndirectX, 1) => {
+                self.read_dp(self.reg_x);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 2)
+            }
+            (Snes9xStorePlan::IndirectX, 2) => {
+                self.write_dp(self.reg_x, self.reg_a);
+                Self::snes9x_complete_store(coroutine, opcode)
+            }
+
+            (Snes9xStorePlan::AutoIncrementX, 0) => {
+                self.cycles(2);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 1)
+            }
+            (Snes9xStorePlan::AutoIncrementX, 1) => {
+                let address = self.reg_x;
+                self.reg_x = self.reg_x.wrapping_add(1);
+                self.write_dp(address, self.reg_a);
+                Self::snes9x_complete_store(coroutine, opcode)
+            }
+
+            (Snes9xStorePlan::IndirectDpX, 0) => {
+                coroutine.sp = u16::from(self.read_pc());
+                self.cycles(1);
+                coroutine.sp = coroutine.sp.wrapping_add(u16::from(self.reg_x));
+                Self::snes9x_advance_store_stage(coroutine, opcode, 1)
+            }
+            (Snes9xStorePlan::IndirectDpX, 1) => {
+                coroutine.dp = u16::from(self.read_dp(coroutine.sp as u8));
+                Self::snes9x_advance_store_stage(coroutine, opcode, 2)
+            }
+            (Snes9xStorePlan::IndirectDpX, 2) => {
+                coroutine.dp |= u16::from(self.read_dp((coroutine.sp as u8).wrapping_add(1))) << 8;
+                Self::snes9x_advance_store_stage(coroutine, opcode, 3)
+            }
+            (Snes9xStorePlan::IndirectDpX, 3) => {
+                self.read(coroutine.dp);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 4)
+            }
+            (Snes9xStorePlan::IndirectDpX, 4) => {
+                self.write(coroutine.dp, self.reg_a);
+                Self::snes9x_complete_store(coroutine, opcode)
+            }
+
+            (Snes9xStorePlan::IndirectDpY, 0) => {
+                coroutine.sp = u16::from(self.read_pc());
+                Self::snes9x_advance_store_stage(coroutine, opcode, 1)
+            }
+            (Snes9xStorePlan::IndirectDpY, 1) => {
+                coroutine.dp = u16::from(self.read_dp(coroutine.sp as u8));
+                Self::snes9x_advance_store_stage(coroutine, opcode, 2)
+            }
+            (Snes9xStorePlan::IndirectDpY, 2) => {
+                coroutine.dp |= u16::from(self.read_dp((coroutine.sp as u8).wrapping_add(1))) << 8;
+                self.cycles(1);
+                coroutine.dp = coroutine.dp.wrapping_add(u16::from(self.reg_y));
+                Self::snes9x_advance_store_stage(coroutine, opcode, 3)
+            }
+            (Snes9xStorePlan::IndirectDpY, 3) => {
+                self.read(coroutine.dp);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 4)
+            }
+            (Snes9xStorePlan::IndirectDpY, 4) => {
+                self.write(coroutine.dp, self.reg_a);
+                Self::snes9x_complete_store(coroutine, opcode)
+            }
+
+            (Snes9xStorePlan::DirectWord, 0) => {
+                coroutine.dp = u16::from(self.read_pc());
+                Self::snes9x_advance_store_stage(coroutine, opcode, 1)
+            }
+            (Snes9xStorePlan::DirectWord, 1) => {
+                self.read_dp(coroutine.dp as u8);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 2)
+            }
+            (Snes9xStorePlan::DirectWord, 2) => {
+                self.write_dp(coroutine.dp as u8, self.reg_a);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 3)
+            }
+            (Snes9xStorePlan::DirectWord, 3) => {
+                self.write_dp((coroutine.dp as u8).wrapping_add(1), self.reg_y);
+                Self::snes9x_complete_store(coroutine, opcode)
+            }
+
+            (Snes9xStorePlan::ImmediateDirect, 0) => {
+                coroutine.rd = u16::from(self.read_pc());
+                coroutine.dp = u16::from(self.read_pc());
+                Self::snes9x_advance_store_stage(coroutine, opcode, 1)
+            }
+            (Snes9xStorePlan::ImmediateDirect, 1) => {
+                self.read_dp(coroutine.dp as u8);
+                Self::snes9x_advance_store_stage(coroutine, opcode, 2)
+            }
+            (Snes9xStorePlan::ImmediateDirect, 2) => {
+                self.write_dp(coroutine.dp as u8, coroutine.rd as u8);
+                Self::snes9x_complete_store(coroutine, opcode)
+            }
+
             _ => Err(UnsupportedSmpMicroStep {
                 opcode,
                 pc: self.reg_pc,
@@ -1727,5 +1945,357 @@ impl<'a> Smp<'a> {
         }
 
         self.cycle_count
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    enum BusAccess {
+        Read(u16),
+        Write(u16, u8),
+    }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    struct TestBus {
+        memory: Vec<u8>,
+        cycles: u32,
+        accesses: Vec<BusAccess>,
+    }
+
+    impl Default for TestBus {
+        fn default() -> Self {
+            Self {
+                memory: vec![0; 0x10000],
+                cycles: 0,
+                accesses: Vec::new(),
+            }
+        }
+    }
+
+    impl SmpBus for TestBus {
+        fn cycles(&mut self, cycles: i32) {
+            self.cycles += cycles as u32;
+        }
+
+        fn read(&mut self, address: u16) -> u8 {
+            self.accesses.push(BusAccess::Read(address));
+            self.memory[usize::from(address)]
+        }
+
+        fn write(&mut self, address: u16, value: u8) {
+            self.accesses.push(BusAccess::Write(address, value));
+            self.memory[usize::from(address)] = value;
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct StoreCase {
+        opcode: u8,
+        operands: &'static [u8],
+        stage_cycles: &'static [u32],
+        writes: &'static [(u16, u8)],
+    }
+
+    fn store_cases() -> Vec<StoreCase> {
+        const DIRECT: &[u32] = &[2, 1, 1];
+        const DIRECT_INDEXED: &[u32] = &[3, 1, 1];
+        const ABSOLUTE: &[u32] = &[2, 1, 1, 1];
+        const ABSOLUTE_INDEXED: &[u32] = &[4, 1, 1];
+        vec![
+            StoreCase {
+                opcode: 0xc4,
+                operands: &[0x30],
+                stage_cycles: DIRECT,
+                writes: &[(0x0030, 0xa1)],
+            },
+            StoreCase {
+                opcode: 0xd8,
+                operands: &[0x30],
+                stage_cycles: DIRECT,
+                writes: &[(0x0030, 0x02)],
+            },
+            StoreCase {
+                opcode: 0xcb,
+                operands: &[0x30],
+                stage_cycles: DIRECT,
+                writes: &[(0x0030, 0x03)],
+            },
+            StoreCase {
+                opcode: 0xd4,
+                operands: &[0x30],
+                stage_cycles: DIRECT_INDEXED,
+                writes: &[(0x0032, 0xa1)],
+            },
+            StoreCase {
+                opcode: 0xd9,
+                operands: &[0x30],
+                stage_cycles: DIRECT_INDEXED,
+                writes: &[(0x0033, 0x02)],
+            },
+            StoreCase {
+                opcode: 0xdb,
+                operands: &[0x30],
+                stage_cycles: DIRECT_INDEXED,
+                writes: &[(0x0032, 0x03)],
+            },
+            StoreCase {
+                opcode: 0xc5,
+                operands: &[0x34, 0x12],
+                stage_cycles: ABSOLUTE,
+                writes: &[(0x1234, 0xa1)],
+            },
+            StoreCase {
+                opcode: 0xc9,
+                operands: &[0x34, 0x12],
+                stage_cycles: ABSOLUTE,
+                writes: &[(0x1234, 0x02)],
+            },
+            StoreCase {
+                opcode: 0xcc,
+                operands: &[0x34, 0x12],
+                stage_cycles: ABSOLUTE,
+                writes: &[(0x1234, 0x03)],
+            },
+            StoreCase {
+                opcode: 0xd5,
+                operands: &[0x34, 0x12],
+                stage_cycles: ABSOLUTE_INDEXED,
+                writes: &[(0x1236, 0xa1)],
+            },
+            StoreCase {
+                opcode: 0xd6,
+                operands: &[0x34, 0x12],
+                stage_cycles: ABSOLUTE_INDEXED,
+                writes: &[(0x1237, 0xa1)],
+            },
+            StoreCase {
+                opcode: 0xc6,
+                operands: &[],
+                stage_cycles: &[2, 1, 1],
+                writes: &[(0x0002, 0xa1)],
+            },
+            StoreCase {
+                opcode: 0xaf,
+                operands: &[],
+                stage_cycles: &[3, 1],
+                writes: &[(0x0002, 0xa1)],
+            },
+            StoreCase {
+                opcode: 0xc7,
+                operands: &[0x30],
+                stage_cycles: &[3, 1, 1, 1, 1],
+                writes: &[(0x2000, 0xa1)],
+            },
+            StoreCase {
+                opcode: 0xd7,
+                operands: &[0x30],
+                stage_cycles: &[2, 1, 2, 1, 1],
+                writes: &[(0x1237, 0xa1)],
+            },
+            StoreCase {
+                opcode: 0xda,
+                operands: &[0x30],
+                stage_cycles: &[2, 1, 1, 1],
+                writes: &[(0x0030, 0xa1), (0x0031, 0x03)],
+            },
+            StoreCase {
+                opcode: 0x8f,
+                operands: &[0x5a, 0x30],
+                stage_cycles: &[3, 1, 1],
+                writes: &[(0x0030, 0x5a)],
+            },
+        ]
+    }
+
+    fn setup_case(case: &StoreCase) -> (TestBus, SmpState, SmpCoroutineState) {
+        let mut bus = TestBus::default();
+        let pc = 0x0200usize;
+        bus.memory[pc] = case.opcode;
+        bus.memory[pc + 1..pc + 1 + case.operands.len()].copy_from_slice(case.operands);
+        bus.memory[0x0030] = 0x34;
+        bus.memory[0x0031] = 0x12;
+        bus.memory[0x0032] = 0x00;
+        bus.memory[0x0033] = 0x20;
+        let state = SmpState {
+            pc: pc as u16,
+            a: 0xa1,
+            x: 0x02,
+            y: 0x03,
+            sp: 0xef,
+            ..SmpState::default()
+        };
+        (bus, state, SmpCoroutineState::enabled())
+    }
+
+    fn step(
+        bus: &mut TestBus,
+        state: &mut SmpState,
+        coroutine: &mut SmpCoroutineState,
+    ) -> (SmpMicroStepResult, u32) {
+        let before = bus.cycles;
+        let (next_state, result) = {
+            let mut smp = Smp::new(bus, *state);
+            let result = smp.run_resumable_micro_step(coroutine).unwrap();
+            (smp.state(), result)
+        };
+        *state = next_state;
+        (result, bus.cycles - before)
+    }
+
+    fn run_to_completion(
+        bus: &mut TestBus,
+        state: &mut SmpState,
+        coroutine: &mut SmpCoroutineState,
+    ) {
+        for _ in 0..8 {
+            if matches!(
+                step(bus, state, coroutine).0,
+                SmpMicroStepResult::InstructionComplete { .. }
+            ) {
+                return;
+            }
+        }
+        panic!("store plan did not complete");
+    }
+
+    #[test]
+    fn snes9x_classifier_has_exact_source_split_set_and_store_descriptions() {
+        let expected_split = [
+            0x7e, 0x8f, 0xaa, 0xaf, 0xba, 0xbf, 0xc4, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcc,
+            0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xdb, 0xe4, 0xe5, 0xe6, 0xe7, 0xe9, 0xeb,
+            0xec, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb,
+        ];
+        let mut expected_stores = store_cases()
+            .into_iter()
+            .map(|case| case.opcode)
+            .collect::<Vec<_>>();
+        expected_stores.sort_unstable();
+        let actual_split = (0u8..=u8::MAX)
+            .filter(|opcode| matches!(Smp::snes9x_opcode_plan(*opcode), Snes9xOpcodePlan::Split(_)))
+            .collect::<Vec<_>>();
+        let actual_stores = (0u8..=u8::MAX)
+            .filter(|opcode| {
+                matches!(
+                    Smp::snes9x_opcode_plan(*opcode),
+                    Snes9xOpcodePlan::Split(Snes9xSplitPlan::Store(_))
+                )
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(actual_split, expected_split);
+        assert_eq!(actual_stores, expected_stores);
+        assert_eq!(
+            actual_split
+                .iter()
+                .filter(|opcode| matches!(
+                    Smp::snes9x_opcode_plan(**opcode),
+                    Snes9xOpcodePlan::Split(Snes9xSplitPlan::Pending)
+                ))
+                .count(),
+            16
+        );
+    }
+
+    #[test]
+    fn every_store_plan_preserves_source_op_step_stage_shapes() {
+        for case in store_cases() {
+            let (mut bus, mut state, mut coroutine) = setup_case(&case);
+            let mut observed_cycles = Vec::new();
+            for stage in 0..case.stage_cycles.len() {
+                let (result, cycles) = step(&mut bus, &mut state, &mut coroutine);
+                observed_cycles.push(cycles);
+                if stage + 1 == case.stage_cycles.len() {
+                    assert_eq!(
+                        result,
+                        SmpMicroStepResult::InstructionComplete {
+                            opcode: case.opcode
+                        },
+                        "${:02x} final stage",
+                        case.opcode
+                    );
+                } else {
+                    assert_eq!(
+                        result,
+                        SmpMicroStepResult::InProgress {
+                            opcode: case.opcode,
+                            opcode_cycle: (stage + 1) as u8,
+                        },
+                        "${:02x} stage {stage}",
+                        case.opcode
+                    );
+                }
+            }
+
+            assert_eq!(observed_cycles, case.stage_cycles, "${:02x}", case.opcode);
+            let writes = bus
+                .accesses
+                .iter()
+                .filter_map(|access| match access {
+                    BusAccess::Write(address, value) => Some((*address, *value)),
+                    BusAccess::Read(_) => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(writes, case.writes, "${:02x}", case.opcode);
+            assert_eq!(
+                state.pc,
+                0x0201 + case.operands.len() as u16,
+                "${:02x}",
+                case.opcode
+            );
+            assert_eq!(
+                state.x,
+                if case.opcode == 0xaf { 0x03 } else { 0x02 },
+                "${:02x}",
+                case.opcode
+            );
+            assert!(coroutine.is_idle(), "${:02x}", case.opcode);
+        }
+    }
+
+    #[test]
+    fn every_store_continuation_stage_round_trips_and_resumes_once() {
+        for case in store_cases() {
+            let (mut expected_bus, mut expected_state, mut expected_coroutine) = setup_case(&case);
+            run_to_completion(
+                &mut expected_bus,
+                &mut expected_state,
+                &mut expected_coroutine,
+            );
+
+            for steps_before_checkpoint in 1..case.stage_cycles.len() {
+                let (mut bus, mut state, mut coroutine) = setup_case(&case);
+                for _ in 0..steps_before_checkpoint {
+                    assert!(matches!(
+                        step(&mut bus, &mut state, &mut coroutine).0,
+                        SmpMicroStepResult::InProgress { .. }
+                    ));
+                }
+
+                let checkpoint = coroutine.checkpoint().unwrap();
+                let checkpoint: Snes9xSmpCoroutineCheckpoint =
+                    serde_json::from_slice(&serde_json::to_vec(&checkpoint).unwrap()).unwrap();
+                let mut restored = SmpCoroutineState::restore(checkpoint);
+                run_to_completion(&mut bus, &mut state, &mut restored);
+
+                assert_eq!(
+                    bus, expected_bus,
+                    "${:02x} after stage {steps_before_checkpoint}",
+                    case.opcode
+                );
+                assert_eq!(
+                    state, expected_state,
+                    "${:02x} after stage {steps_before_checkpoint}",
+                    case.opcode
+                );
+                assert_eq!(
+                    restored, expected_coroutine,
+                    "${:02x} after stage {steps_before_checkpoint}",
+                    case.opcode
+                );
+            }
+        }
     }
 }

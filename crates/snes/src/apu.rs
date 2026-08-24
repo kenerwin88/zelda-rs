@@ -3413,6 +3413,36 @@ mod tests {
     }
 
     #[test]
+    fn every_pending_snes9x_split_fails_before_fetch_or_state_advance() {
+        // Exact members of the pinned 37-opcode split set whose source stages
+        // have not yet been ported. Implemented non-store and store plans are
+        // covered separately in `cycle_spc700` tests.
+        for opcode in [
+            0xaa, 0xbf, 0xca, 0xe5, 0xe6, 0xe7, 0xe9, 0xec, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9,
+            0xfa, 0xfb,
+        ] {
+            let mut apu = ApuState::new();
+            apu.reset_snes9x_coroutine();
+            apu.rom_readable = false;
+            apu.spc.pc = 0x0200;
+            apu.ram[0x0200] = opcode;
+            let machine_before = serde_json::to_vec(&apu).unwrap();
+            let coroutine_before =
+                serde_json::to_vec(&apu.capture_snes9x_coroutine_checkpoint().unwrap()).unwrap();
+
+            assert_eq!(
+                apu.run_snes9x_micro_step_without_dsp().unwrap_err(),
+                UnsupportedSmpMicroStep { opcode, pc: 0x0200 }
+            );
+            assert_eq!(serde_json::to_vec(&apu).unwrap(), machine_before);
+            assert_eq!(
+                serde_json::to_vec(&apu.capture_snes9x_coroutine_checkpoint().unwrap()).unwrap(),
+                coroutine_before
+            );
+        }
+    }
+
+    #[test]
     fn resumable_smp_state_survives_clone_and_serde_mid_instruction() {
         let mut apu = ApuState::new();
         apu.reset_snes9x_coroutine();
