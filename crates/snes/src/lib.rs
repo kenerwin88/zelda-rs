@@ -22,6 +22,7 @@ pub mod ppu;
 pub mod snes;
 pub mod snes9x_apu_clock;
 pub mod snes9x_apu_timing;
+pub mod snes9x_dsp_phase;
 pub mod tracing;
 
 #[cfg(test)]
@@ -56,3 +57,8 @@ pub use snes9x_apu_clock::{
     SNES9X_NTSC_APU_CLOCK_DENOMINATOR, SNES9X_NTSC_APU_CLOCK_NUMERATOR,
 };
 pub use snes9x_apu_timing::{Snes9xApuTiming, Snes9xApuTimingCheckpoint, Snes9xApuTimingError};
+pub use snes9x_dsp_phase::{
+    Snes9xDspCheckpointError, Snes9xDspClockReceipt, Snes9xDspCompositeCheckpoint,
+    Snes9xDspEnvelopeMode, Snes9xDspInterpolationMode, Snes9xDspPhaseMachine, Snes9xDspPhaseState,
+    Snes9xDspSuboperation, Snes9xDspVoiceState,
+};
