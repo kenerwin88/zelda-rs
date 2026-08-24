@@ -83,6 +83,9 @@ pub struct CpuSynchronousMachine {
     /// linear VRAM addressing, so nonzero FullGraphicCount is fail-closed for
     /// the fast DMA path rather than approximated.
     source_vmain_full_graphic_count_nonzero: bool,
+    /// Pinned PPU.OpenBus1 for the audited CPU-visible PPU read subset. This
+    /// remains distinct from global CPU OpenBus across the enclosing drain.
+    source_ppu_open_bus1: u8,
     /// Pinned `CPU.NMIPending` plus its absolute `NMITriggerPos`. Interrupt
     /// entry remains instruction-boundary owned by the source CPU executor.
     nmi_acceptance_not_before: Option<CpuMasterTimestamp>,
@@ -119,6 +122,7 @@ impl CpuSynchronousMachine {
             pending_completion: None,
             pending_general_dma: None,
             source_vmain_full_graphic_count_nonzero: false,
+            source_ppu_open_bus1: 0,
             nmi_acceptance_not_before: None,
             deferred_nmi_enable_edge: false,
             irq_timer_at: None,
@@ -693,6 +697,7 @@ mod tests {
             pending_completion: None,
             pending_general_dma: None,
             source_vmain_full_graphic_count_nonzero: false,
+            source_ppu_open_bus1: 0,
             nmi_acceptance_not_before: None,
             deferred_nmi_enable_edge: false,
             irq_timer_at: None,
