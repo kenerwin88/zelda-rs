@@ -29,6 +29,101 @@ pub(crate) struct SmpState {
     pub(crate) stopped: bool,
 }
 
+/// Persistent state at a Snes9x SMP coroutine yield boundary.
+///
+/// Snes9x does not make every SPC700 instruction atomic. `op_step` retains the
+/// decoded opcode, its current pseudo-op case, and these scratch registers, and
+/// yields once the requested SMP clock has been reached. Keeping the complete
+/// generic scratch shape here lets individual opcodes be added without an
+/// address- or value-specific continuation model.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SmpCoroutineState {
+    enabled: bool,
+    opcode: Option<u8>,
+    opcode_cycle: u8,
+    rd: u16,
+    wr: u16,
+    dp: u16,
+    sp: u16,
+    ya: u16,
+    bit: u16,
+}
+
+/// Separately versionable continuation state for an opt-in Snes9x timing
+/// shadow. This deliberately does not participate in `ApuState`/`Snes` serde.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Snes9xSmpCoroutineCheckpoint {
+    opcode: Option<u8>,
+    opcode_cycle: u8,
+    rd: u16,
+    wr: u16,
+    dp: u16,
+    sp: u16,
+    ya: u16,
+    bit: u16,
+}
+
+impl SmpCoroutineState {
+    pub(crate) fn enabled() -> Self {
+        Self {
+            enabled: true,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn is_enabled(self) -> bool {
+        self.enabled
+    }
+
+    pub(crate) fn opcode(self) -> Option<u8> {
+        self.opcode
+    }
+
+    pub(crate) fn is_idle(self) -> bool {
+        self.opcode.is_none()
+    }
+
+    pub(crate) fn checkpoint(self) -> Option<Snes9xSmpCoroutineCheckpoint> {
+        self.enabled.then_some(Snes9xSmpCoroutineCheckpoint {
+            opcode: self.opcode,
+            opcode_cycle: self.opcode_cycle,
+            rd: self.rd,
+            wr: self.wr,
+            dp: self.dp,
+            sp: self.sp,
+            ya: self.ya,
+            bit: self.bit,
+        })
+    }
+
+    pub(crate) fn restore(checkpoint: Snes9xSmpCoroutineCheckpoint) -> Self {
+        Self {
+            enabled: true,
+            opcode: checkpoint.opcode,
+            opcode_cycle: checkpoint.opcode_cycle,
+            rd: checkpoint.rd,
+            wr: checkpoint.wr,
+            dp: checkpoint.dp,
+            sp: checkpoint.sp,
+            ya: checkpoint.ya,
+            bit: checkpoint.bit,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SmpMicroStepResult {
+    InProgress { opcode: u8, opcode_cycle: u8 },
+    InstructionComplete { opcode: u8 },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("SPC opcode ${opcode:02x} at ${pc:04x} has no resumable micro-step implementation")]
+pub struct UnsupportedSmpMicroStep {
+    pub opcode: u8,
+    pub pc: u16,
+}
+
 pub(crate) struct Smp<'a> {
     bus: &'a mut dyn SmpBus,
 
@@ -97,6 +192,63 @@ impl<'a> Smp<'a> {
         let start = self.cycle_count;
         self.run(start + 1);
         self.cycle_count - start
+    }
+
+    pub(crate) const fn supports_resumable_opcode(opcode: u8) -> bool {
+        matches!(opcode, 0x8f)
+    }
+
+    /// Execute exactly one Snes9x `SMP::op_step` boundary.
+    ///
+    /// The opcode fetch belongs to the first step. A later call resumes the
+    /// retained pseudo-op case without fetching or completing any future case.
+    /// Opcode `$8f` follows pinned Snes9x 1.63's generic `MOV dp,#imm` cases:
+    /// fetch+operands, dummy direct-page read, then direct-page write.
+    pub(crate) fn run_resumable_micro_step(
+        &mut self,
+        coroutine: &mut SmpCoroutineState,
+    ) -> Result<SmpMicroStepResult, UnsupportedSmpMicroStep> {
+        let opcode = match coroutine.opcode {
+            Some(opcode) => opcode,
+            None => {
+                let pc = self.reg_pc;
+                let opcode = self.read_pc();
+                if !Self::supports_resumable_opcode(opcode) {
+                    return Err(UnsupportedSmpMicroStep { opcode, pc });
+                }
+                coroutine.opcode = Some(opcode);
+                opcode
+            }
+        };
+
+        match (opcode, coroutine.opcode_cycle) {
+            (0x8f, 0) => {
+                coroutine.rd = u16::from(self.read_pc());
+                coroutine.dp = u16::from(self.read_pc());
+                coroutine.opcode_cycle = 1;
+                Ok(SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle: 1,
+                })
+            }
+            (0x8f, 1) => {
+                self.read_dp(coroutine.dp as u8);
+                coroutine.opcode_cycle = 2;
+                Ok(SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle: 2,
+                })
+            }
+            (0x8f, 2) => {
+                self.write_dp(coroutine.dp as u8, coroutine.rd as u8);
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
+            _ => Err(UnsupportedSmpMicroStep {
+                opcode,
+                pc: self.reg_pc,
+            }),
+        }
     }
 
     pub fn reset(&mut self) {
