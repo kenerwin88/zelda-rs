@@ -6,8 +6,7 @@ use super::{
 };
 pub(super) use snes::{CpuBusEvent, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
 use snes::{
-    CpuMasterTimeline, CpuTimelineDeadlineAdvance, CpuTimelineEvent, MASTER_CYCLES_PER_SCANLINE,
-    NMI_SCANLINE, NTSC_FIELD_MASTER_CYCLES, SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+    CpuMasterTimeline, CpuTimelineDeadlineAdvance, CpuTimelineEvent, NMI_SCANLINE,
     SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES, SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES,
     WRAM_REFRESH_STALL_MASTER_CYCLES,
 };
@@ -56,12 +55,14 @@ pub(super) enum CpuRasterBoundary {
 }
 
 impl CpuRasterBoundary {
-    const fn field_master_cycle(self) -> u64 {
-        (NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE) as u64
-            + match self {
+    const fn raster_position(self) -> CpuRasterPosition {
+        CpuRasterPosition::new(
+            NMI_SCANLINE as u16,
+            match self {
                 Self::VblankPublication => 0,
-                Self::CpuNmiAcceptance => SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
-            }
+                Self::CpuNmiAcceptance => SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES as u16,
+            },
+        )
     }
 }
 
@@ -72,13 +73,17 @@ pub(super) struct CpuBoundaryDeadline {
 }
 
 impl CpuBoundaryDeadline {
-    fn next_after(entry: CpuRasterPosition, boundary: CpuRasterBoundary) -> Self {
-        let entry_master_cycles = entry.unwrapped_master_cycles();
-        let boundary_master_cycles = boundary.field_master_cycle();
+    fn next_after(
+        entry: CpuRasterPosition,
+        boundary: CpuRasterBoundary,
+        field_timing: CpuFieldTiming,
+    ) -> Self {
+        let entry_master_cycles = field_timing.master_cycles_at(0, entry);
+        let boundary_master_cycles = field_timing.master_cycles_at(0, boundary.raster_position());
         let field = u64::from(entry_master_cycles >= boundary_master_cycles);
         Self {
             boundary,
-            master_cycles: field * NTSC_FIELD_MASTER_CYCLES + boundary_master_cycles,
+            master_cycles: field_timing.master_cycles_at(field, boundary.raster_position()),
         }
     }
 }
@@ -126,13 +131,10 @@ impl CpuCycleBudget {
         bus: CpuBusWorkload,
         field_timing: CpuFieldTiming,
     ) -> Self {
-        let clock_master_cycles = entry.unwrapped_master_cycles();
-        let deadline = CpuBoundaryDeadline::next_after(entry, boundary);
-        debug_assert!(clock_master_cycles < deadline.master_cycles);
-        Self {
-            timeline: CpuMasterTimeline::new(clock_master_cycles, bus, field_timing),
-            deadline,
-        }
+        let timeline = CpuMasterTimeline::at_raster(0, entry, bus, field_timing);
+        let deadline = CpuBoundaryDeadline::next_after(entry, boundary, field_timing);
+        debug_assert!(timeline.clock_master_cycles() < deadline.master_cycles);
+        Self { timeline, deadline }
     }
 
     /// Start at the pinned Snes9x core's earliest CPU NMI acceptance boundary
@@ -144,10 +146,16 @@ impl CpuCycleBudget {
     pub(super) fn at_nmi_acceptance(bus: CpuBusWorkload, field_timing: CpuFieldTiming) -> Self {
         let deadline = CpuBoundaryDeadline {
             boundary: CpuRasterBoundary::CpuNmiAcceptance,
-            master_cycles: CpuRasterBoundary::CpuNmiAcceptance.field_master_cycle(),
+            master_cycles: field_timing
+                .master_cycles_at(0, CpuRasterBoundary::CpuNmiAcceptance.raster_position()),
         };
         Self {
-            timeline: CpuMasterTimeline::new(deadline.master_cycles, bus, field_timing),
+            timeline: CpuMasterTimeline::at_raster(
+                0,
+                CpuRasterBoundary::CpuNmiAcceptance.raster_position(),
+                bus,
+                field_timing,
+            ),
             deadline,
         }
     }
@@ -205,7 +213,7 @@ impl CpuCycleBudget {
                             fixed_hdma_stall
                         }
                     }
-                    CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+                    CpuTimelineEvent::ShortScanline => 0,
                 },
             );
         if self.timeline.clock_master_cycles() >= self.deadline.master_cycles {
@@ -277,14 +285,15 @@ impl CpuCycleBudget {
             "only a CPU NMI acceptance boundary can begin the NMI handler",
         );
         debug_assert!(self.timeline.clock_master_cycles() >= self.deadline.master_cycles);
-        let current_field = self.timeline.clock_master_cycles() / NTSC_FIELD_MASTER_CYCLES;
-        self.deadline.master_cycles = current_field
+        let next_field = self
+            .timeline
+            .field_index()
             .checked_add(1)
-            .and_then(|field| field.checked_mul(NTSC_FIELD_MASTER_CYCLES))
-            .and_then(|field_start| {
-                field_start.checked_add(CpuRasterBoundary::CpuNmiAcceptance.field_master_cycle())
-            })
-            .expect("CPU continuation NMI deadline overflowed");
+            .expect("CPU continuation NMI field overflowed");
+        self.deadline.master_cycles = self.timeline.master_cycles_at_raster(
+            next_field,
+            CpuRasterBoundary::CpuNmiAcceptance.raster_position(),
+        );
         debug_assert!(self.timeline.clock_master_cycles() < self.deadline.master_cycles);
     }
 
@@ -1138,7 +1147,9 @@ impl GameExecutionScheduler {
 mod cpu_timing_tests {
     use super::*;
     use crate::zelda_rtl::{SpriteMainCpuBoundary, SpriteMainCpuCaller};
-    use snes::{HDMA_START_CYCLE, WRAM_REFRESH_CYCLE};
+    use snes::{
+        HDMA_START_CYCLE, MASTER_CYCLES_PER_SCANLINE, NTSC_FIELD_MASTER_CYCLES, WRAM_REFRESH_CYCLE,
+    };
 
     const DUNGEON_HDMA_STALL: u16 = 42;
     const LONG_TIMELINE_FIELD: u64 = 24_001;
@@ -1150,18 +1161,20 @@ mod cpu_timing_tests {
         bus: CpuBusWorkload,
         field_timing: CpuFieldTiming,
     ) -> CpuCycleBudget {
-        let boundary_master_cycles = CpuRasterBoundary::VblankPublication.field_master_cycle();
-        let boundary_field =
-            field_index + u64::from(entry.unwrapped_master_cycles() >= boundary_master_cycles);
+        let entry_master_cycles = field_timing.master_cycles_at(field_index, entry);
+        let boundary_master_cycles = field_timing.master_cycles_at(
+            field_index,
+            CpuRasterBoundary::VblankPublication.raster_position(),
+        );
+        let boundary_field = field_index + u64::from(entry_master_cycles >= boundary_master_cycles);
         CpuCycleBudget {
-            timeline: CpuMasterTimeline::new(
-                field_index * NTSC_FIELD_MASTER_CYCLES + entry.unwrapped_master_cycles(),
-                bus,
-                field_timing,
-            ),
+            timeline: CpuMasterTimeline::at_raster(field_index, entry, bus, field_timing),
             deadline: CpuBoundaryDeadline {
                 boundary: CpuRasterBoundary::VblankPublication,
-                master_cycles: boundary_field * NTSC_FIELD_MASTER_CYCLES + boundary_master_cycles,
+                master_cycles: field_timing.master_cycles_at(
+                    boundary_field,
+                    CpuRasterBoundary::VblankPublication.raster_position(),
+                ),
             },
         }
     }
@@ -1362,8 +1375,9 @@ mod cpu_timing_tests {
         assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 82));
         budget.begin_nmi_handler();
         assert_eq!(
-            budget.deadline.master_cycles % NTSC_FIELD_MASTER_CYCLES,
-            CpuRasterBoundary::CpuNmiAcceptance.field_master_cycle(),
+            budget.deadline.master_cycles,
+            CpuFieldTiming::NON_INTERLACE_EVEN
+                .master_cycles_at(1, CpuRasterBoundary::CpuNmiAcceptance.raster_position(),),
         );
     }
 
@@ -1402,8 +1416,9 @@ mod cpu_timing_tests {
 
         budget.begin_nmi_handler();
         assert_eq!(
-            budget.deadline.master_cycles % NTSC_FIELD_MASTER_CYCLES,
-            CpuRasterBoundary::CpuNmiAcceptance.field_master_cycle(),
+            budget.deadline.master_cycles,
+            CpuFieldTiming::NON_INTERLACE_EVEN
+                .master_cycles_at(1, CpuRasterBoundary::CpuNmiAcceptance.raster_position(),),
         );
         assert_eq!(budget.raster_position(), CpuRasterPosition::new(225, 14),);
         assert_eq!(
@@ -1516,8 +1531,12 @@ mod cpu_timing_tests {
             CpuFieldTiming::non_interlace(true),
         );
 
+        let even_clock = even.timeline.clock_master_cycles();
+        let odd_clock = odd.timeline.clock_master_cycles();
         assert_eq!(even.advance_interruptible(20), CpuWorkAdvance::Complete);
         assert_eq!(odd.advance_interruptible(20), CpuWorkAdvance::Complete);
+        assert_eq!(even.timeline.clock_master_cycles() - even_clock, 20);
+        assert_eq!(odd.timeline.clock_master_cycles() - odd_clock, 20);
         assert_eq!(even.raster_position(), CpuRasterPosition::new(241, 6),);
         assert_eq!(odd.raster_position(), CpuRasterPosition::new(241, 10));
     }
@@ -1541,12 +1560,13 @@ mod cpu_timing_tests {
 
         assert_eq!(
             budget.deadline.master_cycles,
-            initial_nmi_master_cycles + LONG_TIMELINE_FIELD * NTSC_FIELD_MASTER_CYCLES,
+            initial_nmi_master_cycles
+                + CpuFieldTiming::NON_INTERLACE_EVEN.field_start_master_cycles(LONG_TIMELINE_FIELD),
         );
         assert!(budget.deadline.master_cycles > u64::from(u32::MAX));
         assert_eq!(
             budget.deadline.master_cycles - budget.timeline.clock_master_cycles(),
-            NTSC_FIELD_MASTER_CYCLES,
+            CpuFieldTiming::NON_INTERLACE_EVEN.field_master_cycles(LONG_TIMELINE_FIELD - 1),
         );
         assert_eq!(
             budget.raster_position().coordinates(),
@@ -1578,8 +1598,12 @@ mod cpu_timing_tests {
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
 
+        let even_clock = even.timeline.clock_master_cycles();
+        let odd_clock = odd.timeline.clock_master_cycles();
         assert_eq!(even.advance_interruptible(20), CpuWorkAdvance::Complete);
         assert_eq!(odd.advance_interruptible(20), CpuWorkAdvance::Complete);
+        assert_eq!(even.timeline.clock_master_cycles() - even_clock, 20);
+        assert_eq!(odd.timeline.clock_master_cycles() - odd_clock, 20);
         assert_eq!(even.raster_position(), CpuRasterPosition::new(241, 6));
         assert_eq!(odd.raster_position(), CpuRasterPosition::new(241, 10));
     }

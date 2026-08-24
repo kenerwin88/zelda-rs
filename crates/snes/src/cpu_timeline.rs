@@ -1,10 +1,8 @@
 //! Generic S-CPU master-cycle timeline and hardware bus events.
 //!
-//! This is a behavior-neutral extraction of the timing model originally owned
-//! by Zelda's game-execution scheduler. In particular, the odd-field short
-//! scanline remains represented as a four-master-cycle timeline advance. A
-//! later physical-clock refactor can change that representation independently
-//! of Zelda's semantic raster deadlines.
+//! The absolute clock records physical elapsed master cycles. Non-interlaced
+//! odd fields therefore contain a 1,360-cycle scanline 240 and are four master
+//! cycles shorter than long fields; no synthetic time is added at that edge.
 
 pub const MASTER_CYCLES_PER_SCANLINE: u32 = 1_364;
 pub const NTSC_SCANLINES_PER_FIELD: u32 = 262;
@@ -16,9 +14,9 @@ pub const WRAM_REFRESH_CYCLE: u32 = 530;
 pub const WRAM_REFRESH_STALL_MASTER_CYCLES: u32 = 40;
 pub const HDMA_START_CYCLE: u32 = 1_106;
 pub const SHORT_SCANLINE_END_CYCLE: u32 = 1_360;
-pub const SHORT_SCANLINE_MISSING_MASTER_CYCLES: u32 = 4;
 pub const NTSC_FIELD_MASTER_CYCLES: u64 =
     NTSC_SCANLINES_PER_FIELD as u64 * MASTER_CYCLES_PER_SCANLINE as u64;
+pub const NTSC_SHORT_FIELD_MASTER_CYCLES: u64 = NTSC_FIELD_MASTER_CYCLES - 4;
 // Pinned Snes9x 1.63 schedules an enabled VBlank NMI for 12 master cycles
 // after VBlank publication. CPU instructions remain atomic, so actual
 // acceptance can occur later than this earliest boundary.
@@ -43,7 +41,7 @@ impl CpuRasterPosition {
         }
     }
 
-    pub const fn unwrapped_master_cycles(self) -> u64 {
+    const fn nominal_field_master_cycles(self) -> u64 {
         self.scanline as u64 * MASTER_CYCLES_PER_SCANLINE as u64 + self.master_cycle as u64
     }
 
@@ -117,8 +115,81 @@ impl CpuFieldTiming {
         }
     }
 
-    const fn field_is_odd(self, field_index: u64) -> bool {
+    pub const fn field_is_odd(self, field_index: u64) -> bool {
         self.odd_field ^ (field_index & 1 != 0)
+    }
+
+    pub const fn field_master_cycles(self, field_index: u64) -> u64 {
+        if !self.interlace && self.field_is_odd(field_index) {
+            NTSC_SHORT_FIELD_MASTER_CYCLES
+        } else {
+            NTSC_FIELD_MASTER_CYCLES
+        }
+    }
+
+    /// Physical master-clock timestamp of the selected field's H=0,V=0.
+    pub const fn field_start_master_cycles(self, field_index: u64) -> u64 {
+        if self.interlace {
+            return field_index * NTSC_FIELD_MASTER_CYCLES;
+        }
+        let complete_pairs = field_index / 2;
+        let mut clock =
+            complete_pairs * (NTSC_FIELD_MASTER_CYCLES + NTSC_SHORT_FIELD_MASTER_CYCLES);
+        if field_index & 1 != 0 {
+            clock += self.field_master_cycles(field_index - 1);
+        }
+        clock
+    }
+
+    /// Physical timestamp for a raster coordinate in the selected field.
+    pub const fn master_cycles_at(self, field_index: u64, raster: CpuRasterPosition) -> u64 {
+        let mut field_cycle = raster.nominal_field_master_cycles();
+        if !self.interlace
+            && self.field_is_odd(field_index)
+            && (raster.scanline > 240
+                || (raster.scanline == 240
+                    && raster.master_cycle as u32 >= SHORT_SCANLINE_END_CYCLE))
+        {
+            field_cycle -= 4;
+        }
+        self.field_start_master_cycles(field_index) + field_cycle
+    }
+
+    const fn field_and_cycle_at(self, clock_master_cycles: u64) -> (u64, u64) {
+        if self.interlace {
+            return (
+                clock_master_cycles / NTSC_FIELD_MASTER_CYCLES,
+                clock_master_cycles % NTSC_FIELD_MASTER_CYCLES,
+            );
+        }
+
+        let pair_master_cycles = NTSC_FIELD_MASTER_CYCLES + NTSC_SHORT_FIELD_MASTER_CYCLES;
+        let complete_pairs = clock_master_cycles / pair_master_cycles;
+        let within_pair = clock_master_cycles % pair_master_cycles;
+        let first_field = complete_pairs * 2;
+        let first_field_master_cycles = self.field_master_cycles(first_field);
+        if within_pair < first_field_master_cycles {
+            (first_field, within_pair)
+        } else {
+            (first_field + 1, within_pair - first_field_master_cycles)
+        }
+    }
+
+    const fn raster_at(self, field_index: u64, physical_field_cycle: u64) -> CpuRasterPosition {
+        let short_line_end =
+            240 * MASTER_CYCLES_PER_SCANLINE as u64 + SHORT_SCANLINE_END_CYCLE as u64;
+        let nominal_field_cycle = if !self.interlace
+            && self.field_is_odd(field_index)
+            && physical_field_cycle >= short_line_end
+        {
+            physical_field_cycle + 4
+        } else {
+            physical_field_cycle
+        };
+        CpuRasterPosition::new(
+            (nominal_field_cycle / MASTER_CYCLES_PER_SCANLINE as u64) as u16,
+            (nominal_field_cycle % MASTER_CYCLES_PER_SCANLINE as u64) as u16,
+        )
     }
 }
 
@@ -155,12 +226,35 @@ impl CpuMasterTimeline {
         }
     }
 
+    pub const fn at_raster(
+        field_index: u64,
+        raster: CpuRasterPosition,
+        bus: CpuBusWorkload,
+        field_timing: CpuFieldTiming,
+    ) -> Self {
+        Self::new(
+            field_timing.master_cycles_at(field_index, raster),
+            bus,
+            field_timing,
+        )
+    }
+
     pub const fn clock_master_cycles(self) -> u64 {
         self.clock_master_cycles
     }
 
     pub const fn bus_workload(self) -> CpuBusWorkload {
         self.bus
+    }
+
+    pub const fn field_index(self) -> u64 {
+        self.field_timing
+            .field_and_cycle_at(self.clock_master_cycles)
+            .0
+    }
+
+    pub const fn master_cycles_at_raster(self, field_index: u64, raster: CpuRasterPosition) -> u64 {
+        self.field_timing.master_cycles_at(field_index, raster)
     }
 
     /// Advance interruptible work no farther than an absolute caller-owned
@@ -214,7 +308,7 @@ impl CpuMasterTimeline {
             CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => WRAM_REFRESH_STALL_MASTER_CYCLES,
             CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart) => u32::from(hdma_stall_master_cycles),
             CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => 0,
-            CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+            CpuTimelineEvent::ShortScanline => 0,
         });
     }
 
@@ -229,8 +323,10 @@ impl CpuMasterTimeline {
                 self.clock_master_cycles += u64::from(work_until_event);
                 work_master_cycles -= work_until_event;
                 if let Some(event) = event {
-                    let field_cycle = self.clock_master_cycles % NTSC_FIELD_MASTER_CYCLES;
-                    let scanline = (field_cycle / u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16;
+                    let scanline = match event {
+                        CpuTimelineEvent::ShortScanline => 240,
+                        CpuTimelineEvent::Bus(_) => self.raster_position().scanline,
+                    };
                     self.processed_timeline_event = Some((self.clock_master_cycles, event));
                     self.clock_master_cycles += u64::from(event_advance(event, scanline));
                 }
@@ -242,18 +338,20 @@ impl CpuMasterTimeline {
     }
 
     pub fn raster_position(self) -> CpuRasterPosition {
-        let field_cycle = self.clock_master_cycles % NTSC_FIELD_MASTER_CYCLES;
-        CpuRasterPosition::new(
-            (field_cycle / u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
-            (field_cycle % u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
-        )
+        let (field_index, physical_field_cycle) = self
+            .field_timing
+            .field_and_cycle_at(self.clock_master_cycles);
+        self.field_timing
+            .raster_at(field_index, physical_field_cycle)
     }
 
     fn next_timeline_event(self) -> (u32, Option<CpuTimelineEvent>) {
-        let field_index = self.clock_master_cycles / NTSC_FIELD_MASTER_CYCLES;
-        let field_cycle = self.clock_master_cycles % NTSC_FIELD_MASTER_CYCLES;
-        let scanline = field_cycle / u64::from(MASTER_CYCLES_PER_SCANLINE);
-        let cycle = (field_cycle % u64::from(MASTER_CYCLES_PER_SCANLINE)) as u32;
+        let (field_index, _) = self
+            .field_timing
+            .field_and_cycle_at(self.clock_master_cycles);
+        let raster = self.raster_position();
+        let scanline = u64::from(raster.scanline);
+        let cycle = u32::from(raster.master_cycle);
         let mut next_event_cycle = MASTER_CYCLES_PER_SCANLINE;
         let mut next_event = None;
 
@@ -303,7 +401,7 @@ impl CpuMasterTimeline {
                 u32::from(self.bus.hdma_stall_master_cycles)
             }
             CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => 0,
-            CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+            CpuTimelineEvent::ShortScanline => 0,
         }
     }
 }
@@ -320,11 +418,7 @@ mod tests {
         bus: CpuBusWorkload,
         timing: CpuFieldTiming,
     ) -> CpuMasterTimeline {
-        CpuMasterTimeline::new(
-            field * NTSC_FIELD_MASTER_CYCLES + raster.unwrapped_master_cycles(),
-            bus,
-            timing,
-        )
+        CpuMasterTimeline::at_raster(field, raster, bus, timing)
     }
 
     #[test]
@@ -358,7 +452,7 @@ mod tests {
                 CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => WRAM_REFRESH_STALL_MASTER_CYCLES,
                 CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart) => 42,
                 CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => 0,
-                CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+                CpuTimelineEvent::ShortScanline => 0,
             }
         });
         assert_eq!(
@@ -375,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn odd_short_scanline_keeps_extracted_nominal_skip_behavior() {
+    fn odd_short_scanline_advances_raster_without_phantom_master_cycles() {
         let entry = CpuRasterPosition::new(240, 1_350);
         let mut even = at_raster(
             LONG_TIMELINE_FIELD - 1,
@@ -390,10 +484,97 @@ mod tests {
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
 
+        let even_clock = even.clock_master_cycles();
+        let odd_clock = odd.clock_master_cycles();
         even.advance_work_unbounded(20);
         odd.advance_work_unbounded(20);
+        assert_eq!(even.clock_master_cycles() - even_clock, 20);
+        assert_eq!(odd.clock_master_cycles() - odd_clock, 20);
         assert_eq!(even.raster_position(), CpuRasterPosition::new(241, 6));
         assert_eq!(odd.raster_position(), CpuRasterPosition::new(241, 10));
+    }
+
+    #[test]
+    fn odd_h1350_reaches_next_scanline_in_ten_physical_cycles() {
+        let mut odd = at_raster(
+            LONG_TIMELINE_FIELD,
+            CpuRasterPosition::new(240, 1_350),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let start = odd.clock_master_cycles();
+        odd.advance_work_unbounded(10);
+        assert_eq!(odd.clock_master_cycles(), start + 10);
+        assert_eq!(odd.raster_position(), CpuRasterPosition::new(241, 0));
+    }
+
+    #[test]
+    fn physical_clock_total_excludes_every_completed_short_line() {
+        let timing = CpuFieldTiming::NON_INTERLACE_EVEN;
+        let completed_short_fields = LONG_TIMELINE_FIELD / 2;
+        let expected = LONG_TIMELINE_FIELD * NTSC_FIELD_MASTER_CYCLES - completed_short_fields * 4;
+        assert_eq!(
+            timing.field_start_master_cycles(LONG_TIMELINE_FIELD),
+            expected,
+        );
+        let timeline = at_raster(
+            LONG_TIMELINE_FIELD,
+            CpuRasterPosition::new(0, 0),
+            CpuBusWorkload::default(),
+            timing,
+        );
+        assert_eq!(timeline.clock_master_cycles(), expected);
+        assert_eq!(timeline.field_index(), LONG_TIMELINE_FIELD);
+        assert_eq!(timeline.raster_position(), CpuRasterPosition::new(0, 0));
+    }
+
+    #[test]
+    fn initially_odd_timing_starts_with_the_short_field() {
+        let timing = CpuFieldTiming::non_interlace(true);
+        assert_eq!(
+            timing.field_master_cycles(0),
+            NTSC_SHORT_FIELD_MASTER_CYCLES
+        );
+        assert_eq!(timing.field_master_cycles(1), NTSC_FIELD_MASTER_CYCLES);
+        assert_eq!(
+            timing.field_start_master_cycles(1),
+            NTSC_SHORT_FIELD_MASTER_CYCLES,
+        );
+
+        let field_one = at_raster(
+            1,
+            CpuRasterPosition::new(0, 0),
+            CpuBusWorkload::default(),
+            timing,
+        );
+        assert_eq!(
+            field_one.clock_master_cycles(),
+            NTSC_SHORT_FIELD_MASTER_CYCLES
+        );
+        assert_eq!(field_one.field_index(), 1);
+        assert_eq!(field_one.raster_position(), CpuRasterPosition::new(0, 0));
+    }
+
+    #[test]
+    fn deadline_crossing_after_short_line_uses_physical_distance() {
+        let timing = CpuFieldTiming::NON_INTERLACE_EVEN;
+        let field = LONG_TIMELINE_FIELD;
+        let mut timeline = at_raster(
+            field,
+            CpuRasterPosition::new(240, 1_350),
+            CpuBusWorkload::default(),
+            timing,
+        );
+        let start = timeline.clock_master_cycles();
+        let deadline = timing.master_cycles_at(field, CpuRasterPosition::new(241, 4));
+        assert_eq!(
+            timeline.advance_interruptible_until(deadline, 20),
+            CpuTimelineDeadlineAdvance::ReachedDeadline {
+                remaining_work_master_cycles: 6,
+            },
+        );
+        assert_eq!(timeline.clock_master_cycles(), start + 14);
+        assert_eq!(timeline.raster_position(), CpuRasterPosition::new(241, 4));
     }
 
     #[test]
