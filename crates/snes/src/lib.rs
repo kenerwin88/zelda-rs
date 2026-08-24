@@ -19,6 +19,7 @@ pub mod loader;
 pub mod ppu;
 pub mod snes;
 pub mod snes9x_apu_clock;
+pub mod snes9x_apu_timing;
 pub mod tracing;
 
 pub use cpu_step::{cpu_run_opcode, cpu_run_opcode_timed, CpuInstructionTiming};
@@ -34,3 +35,4 @@ pub use snes9x_apu_clock::{
     Snes9xApuClockCheckpoint, Snes9xApuClockError, Snes9xApuClockState,
     SNES9X_NTSC_APU_CLOCK_DENOMINATOR, SNES9X_NTSC_APU_CLOCK_NUMERATOR,
 };
+pub use snes9x_apu_timing::{Snes9xApuTiming, Snes9xApuTimingCheckpoint, Snes9xApuTimingError};
