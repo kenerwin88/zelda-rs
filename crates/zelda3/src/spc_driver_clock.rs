@@ -6,7 +6,7 @@
 //! remains the sole renderer in production.
 
 use crate::game_output::{DspWriteEvent, EngineAudioCommandBatch};
-use snes::apu::ApuState;
+use snes::{apu::ApuState, snes9x_wram_refresh_cycle, CpuFieldTiming};
 
 const SPC_DRIVER_START: usize = 0x0800;
 const SPC_DRIVER_END: usize = 0x179e;
@@ -19,10 +19,6 @@ const SNES_MASTER_CLOCKS_PER_SCANLINE: u64 = 1_364;
 const SNES_NTSC_SCANLINES_PER_FRAME: u64 = 262;
 const SNES_SHORT_SCANLINE_MASTER_CLOCKS: u64 = 4;
 const SNES_SHORT_SCANLINE: u64 = 240;
-// The pinned Snes9x core defaults to M1SNES (`_5A22 == 1`). Unlike M2's
-// alternating v2 position, M1 schedules WRAM refresh at H=530 on every line,
-// including the shortened odd-field scanline 240.
-const SNES_WRAM_REFRESH_MASTER_CLOCK: u64 = 530;
 const SNES_WRAM_REFRESH_STALL_MASTER_CLOCKS: u64 = 40;
 const NMI_AUDIO_VCOUNTER: u64 = 225;
 // Normal NTSC NMI entry jitters with the interrupted CPU instruction. H=84 is
@@ -914,10 +910,25 @@ fn snes_scanline_clock(master_clock: u64) -> (u64, u64, u64, u64) {
     )
 }
 
+/// Return the next pinned-core WRAM-refresh event on the physical timeline.
+///
+/// Source authority in Snes9x 1.63: `ppu.h` defines `SModel::_5A22`,
+/// `globals.cpp` gives the selected M1SNES model `_5A22 == 2`, `cpu.cpp`
+/// initializes that model at v2/H=538, and `cpuexec.cpp` carries the phase by
+/// toggling H=534/H=538 at HMax. The one exception is the transition into
+/// odd-field, non-interlace V=240, where `cpuexec.cpp` deliberately does not
+/// toggle. Consequently the phase must carry across field boundaries rather
+/// than being reconstructed from local scanline parity.
 fn next_wram_refresh_master_clock(master_clock: u64) -> u64 {
     let (frame, scanline, scanline_start, scanline_clock) = snes_scanline_clock(master_clock);
-    if scanline_clock <= SNES_WRAM_REFRESH_MASTER_CLOCK {
-        return scanline_start + SNES_WRAM_REFRESH_MASTER_CLOCK;
+    let field_timing = CpuFieldTiming::NON_INTERLACE_EVEN;
+    let refresh_cycle = u64::from(snes9x_wram_refresh_cycle(
+        frame,
+        scanline as u16,
+        field_timing,
+    ));
+    if scanline_clock <= refresh_cycle {
+        return scanline_start + refresh_cycle;
     }
 
     let scanline_length = if frame & 1 != 0 && scanline == SNES_SHORT_SCANLINE {
@@ -926,7 +937,15 @@ fn next_wram_refresh_master_clock(master_clock: u64) -> u64 {
         SNES_MASTER_CLOCKS_PER_SCANLINE
     };
     let next_scanline_start = scanline_start + scanline_length;
-    next_scanline_start + SNES_WRAM_REFRESH_MASTER_CLOCK
+    let (next_frame, next_scanline, _, next_scanline_clock) =
+        snes_scanline_clock(next_scanline_start);
+    debug_assert_eq!(next_scanline_clock, 0);
+    next_scanline_start
+        + u64::from(snes9x_wram_refresh_cycle(
+            next_frame,
+            next_scanline as u16,
+            field_timing,
+        ))
 }
 
 fn advance_snes_cpu_master_clock(mut master_clock: u64, mut cpu_master_clocks: u64) -> u64 {
@@ -1085,31 +1104,60 @@ mod tests {
     }
 
     #[test]
-    fn m1_wram_refresh_owns_the_exact_h530_boundary_on_normal_and_short_lines() {
-        // Pinned Snes9x 1.63 source authority:
-        //   globals.cpp selects M1SNES (`_5A22 == 1`)
-        //   cpu.cpp selects SNES_WRAM_REFRESH_HC_v1
-        //   snes9x.h defines v1=530 and the refresh duration as 40 clocks
-        // Work which finishes exactly at H=530 wins the boundary; work which
-        // starts there observes refresh before consuming its first CPU clock.
-        let normal_start = snes_frame_start_master_clock(0);
-        let short_line_start = snes_frame_start_master_clock(1)
-            + SNES_SHORT_SCANLINE * SNES_MASTER_CLOCKS_PER_SCANLINE;
+    fn m1_v2_wram_refresh_phase_carries_through_the_odd_short_field() {
+        use snes::CpuRasterPosition;
 
-        for scanline_start in [normal_start, short_line_start] {
+        // The carried phase starts at H=538, alternates on normal HMax, skips
+        // the transition into odd non-interlace V=240, and therefore reaches
+        // the next even field shifted. These are state-history assertions, not
+        // a local scanline-parity approximation.
+        let cases = [
+            (0, 0, 538),
+            (0, 1, 534),
+            (1, 239, 534),
+            (1, 240, 534),
+            (1, 241, 538),
+            (2, 0, 534),
+        ];
+        for (field, scanline, refresh_cycle) in cases {
+            let scanline_start = CpuFieldTiming::NON_INTERLACE_EVEN
+                .master_cycles_at(field, CpuRasterPosition::new(scanline, 0));
             assert_eq!(
-                advance_snes_cpu_master_clock(scanline_start + 524, 6),
-                scanline_start + 530,
+                next_wram_refresh_master_clock(scanline_start),
+                scanline_start + refresh_cycle,
             );
             assert_eq!(
-                advance_snes_cpu_master_clock(scanline_start + 530, 6),
-                scanline_start + 576,
+                advance_snes_cpu_master_clock(scanline_start + refresh_cycle - 6, 6),
+                scanline_start + refresh_cycle,
             );
             assert_eq!(
-                advance_snes_cpu_master_clock(scanline_start + 524, 12),
-                scanline_start + 576,
+                advance_snes_cpu_master_clock(scanline_start + refresh_cycle, 6),
+                scanline_start + refresh_cycle + 46,
+            );
+            assert_eq!(
+                advance_snes_cpu_master_clock(scanline_start + refresh_cycle - 6, 12),
+                scanline_start + refresh_cycle + 46,
             );
         }
+    }
+
+    #[test]
+    fn m1_v2_wram_refresh_phase_remains_exact_after_24000_fields() {
+        use snes::CpuRasterPosition;
+
+        // By this point 12,001 odd V=240 transitions have skipped their
+        // toggle. A field-local parity formula would incorrectly return H=538.
+        let field = 24_002;
+        let scanline_start = CpuFieldTiming::NON_INTERLACE_EVEN
+            .master_cycles_at(field, CpuRasterPosition::new(0, 0));
+        assert_eq!(
+            next_wram_refresh_master_clock(scanline_start),
+            scanline_start + 534,
+        );
+        assert_eq!(
+            advance_snes_cpu_master_clock(scanline_start + 528, 12),
+            scanline_start + 580,
+        );
     }
 
     #[test]

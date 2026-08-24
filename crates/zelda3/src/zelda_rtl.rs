@@ -3395,7 +3395,11 @@ fn overworld_spotlight_cpu_plan(
 /// future CPU slice must not be mislabeled as checkpoints from the capture
 /// host. The comparison harness owns the window-relative `retro_run`; the game
 /// cannot derive it after checkpoint resume, so this trace must not claim to.
-fn trace_dungeon_cpu_checkpoint(state: &ZeldaState, run: &RomCpuTimingRun, budget: CpuCycleBudget) {
+fn trace_dungeon_cpu_checkpoint(
+    state: &ZeldaState,
+    run: &RomCpuTimingRun,
+    budget: &CpuCycleBudget,
+) {
     let Some(path) = env::var_os("ZELDA3_CPU_CHECKPOINT_TRACE") else {
         return;
     };
@@ -4384,7 +4388,7 @@ fn dungeon_module_7_cpu_timing(
     }
     if trace_host_checkpoint {
         debug_assert!(dispatcher_entry.is_none());
-        trace_dungeon_cpu_checkpoint(state, &run, leading_nmi_budget);
+        trace_dungeon_cpu_checkpoint(state, &run, &leading_nmi_budget);
     }
     let mut budget = dispatcher_entry.map_or(leading_nmi_budget, |entry| {
         CpuCycleBudget::until_next_nmi_acceptance(

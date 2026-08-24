@@ -92,7 +92,7 @@ impl CpuBoundaryDeadline {
 /// HDMA bus steals. Instructions are advanced atomically: when a boundary is
 /// reached in the middle of an instruction, that instruction completes before
 /// the continuation is suspended.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct CpuCycleBudget {
     timeline: CpuMasterTimeline,
     deadline: CpuBoundaryDeadline,
@@ -320,7 +320,7 @@ impl CpuCycleBudget {
         CpuPhaseSequenceAdvance::Complete
     }
 
-    pub(super) fn raster_position(self) -> CpuRasterPosition {
+    pub(super) fn raster_position(&self) -> CpuRasterPosition {
         self.timeline.raster_position()
     }
 }
@@ -1148,7 +1148,8 @@ mod cpu_timing_tests {
     use super::*;
     use crate::zelda_rtl::{SpriteMainCpuBoundary, SpriteMainCpuCaller};
     use snes::{
-        HDMA_START_CYCLE, MASTER_CYCLES_PER_SCANLINE, NTSC_FIELD_MASTER_CYCLES, WRAM_REFRESH_CYCLE,
+        snes9x_wram_refresh_cycle, HDMA_START_CYCLE, MASTER_CYCLES_PER_SCANLINE,
+        NTSC_FIELD_MASTER_CYCLES,
     };
 
     const DUNGEON_HDMA_STALL: u16 = 42;
@@ -1433,7 +1434,10 @@ mod cpu_timing_tests {
     #[test]
     fn bus_stall_at_an_instruction_boundary_precedes_the_next_instruction() {
         for (event_cycle, stall) in [
-            (WRAM_REFRESH_CYCLE, WRAM_REFRESH_STALL_MASTER_CYCLES),
+            (
+                snes9x_wram_refresh_cycle(0, 100, CpuFieldTiming::NON_INTERLACE_EVEN),
+                WRAM_REFRESH_STALL_MASTER_CYCLES,
+            ),
             (HDMA_START_CYCLE, u32::from(DUNGEON_HDMA_STALL)),
         ] {
             let mut budget = CpuCycleBudget::until_next_vblank_publication(
@@ -1456,12 +1460,13 @@ mod cpu_timing_tests {
     }
 
     #[test]
-    fn m1_wram_refresh_starts_at_530_on_short_and_long_timelines() {
+    fn m1_uses_the_carried_v2_wram_refresh_phase_on_short_and_long_timelines() {
         // Pinned Snes9x 1.63 source authority:
         //   globals.cpp: M1SNES = { 1, 3, 2 }, Model = &M1SNES
-        //   cpu.cpp: _5A22 != 2 selects SNES_WRAM_REFRESH_HC_v1
-        //   snes9x.h: v1 = 530, refresh duration = 40 master cycles
-        let entry = CpuRasterPosition::new(100, 524);
+        //   cpu.cpp: _5A22 == 2 selects SNES_WRAM_REFRESH_HC_v2
+        //   snes9x.h: v2 reset position = 538, refresh duration = 40
+        //   cpuexec.cpp: ordinary lines toggle 534/538; odd V240 does not
+        let entry = CpuRasterPosition::new(100, 532);
         let short_timeline = CpuCycleBudget::until_next_vblank_publication(
             entry,
             CpuBusWorkload::default(),
@@ -1476,10 +1481,10 @@ mod cpu_timing_tests {
 
         for mut budget in [short_timeline, long_timeline] {
             assert_eq!(budget.advance_instruction(6), CpuWorkAdvance::Complete);
-            assert_eq!(budget.raster_position(), CpuRasterPosition::new(100, 530),);
+            assert_eq!(budget.raster_position(), CpuRasterPosition::new(100, 538),);
 
             assert_eq!(budget.advance_instruction(6), CpuWorkAdvance::Complete);
-            assert_eq!(budget.raster_position(), CpuRasterPosition::new(100, 576),);
+            assert_eq!(budget.raster_position(), CpuRasterPosition::new(100, 584),);
         }
     }
 
@@ -1629,7 +1634,7 @@ mod cpu_timing_tests {
 
         let mut refresh = budget_at_field(
             LONG_TIMELINE_FIELD,
-            CpuRasterPosition::new(100, 524),
+            CpuRasterPosition::new(100, 532),
             CpuBusWorkload::with_dynamic_hdma(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
@@ -1639,7 +1644,7 @@ mod cpu_timing_tests {
             }),
             CpuWorkAdvance::Complete,
         );
-        assert_eq!(refresh.raster_position(), CpuRasterPosition::new(100, 576));
+        assert_eq!(refresh.raster_position(), CpuRasterPosition::new(100, 584));
 
         let mut hdma_start = budget_at_field(
             LONG_TIMELINE_FIELD,

@@ -552,7 +552,7 @@ impl Snes {
         6
     }
 
-    fn hardware_access_time(&self, full_adr: u32) -> u8 {
+    pub(crate) fn hardware_access_time(&self, full_adr: u32) -> u8 {
         let address = full_adr & 0x00ff_ffff;
         if address & 0x40_8000 != 0 {
             if address & 0x80_0000 != 0 && self.fast_mem {
@@ -567,6 +567,35 @@ impl Snes {
             return 6;
         }
         12
+    }
+
+    /// Resolve a CPU-visible APU port alias without performing any bus
+    /// semantics. The synchronous executor uses this to synchronize the
+    /// existing `Snes::apu` before the port is sampled or committed.
+    pub(crate) fn synchronous_cpu_apu_port(full_adr: u32) -> Option<u8> {
+        let bank = (full_adr >> 16) as u8;
+        let adr = (full_adr & 0xffff) as u16;
+        ((bank & 0x7f) < 0x40 && (0x2140..0x2180).contains(&adr)).then_some(adr as u8)
+    }
+
+    /// Sample one already-resolved CPU-visible APU port after synchronization.
+    pub(crate) fn synchronous_cpu_read_apu_port_semantic(&mut self, port: u8) -> u8 {
+        let value = self.apu.read_snes_port(port);
+        self.open_bus = value;
+        value
+    }
+
+    /// Commit one already-resolved CPU-visible APU port after synchronization.
+    pub(crate) fn synchronous_cpu_write_apu_port_semantic(
+        &mut self,
+        full_adr: u32,
+        port: u8,
+        value: u8,
+    ) {
+        self.open_bus = value;
+        self.apu.write_snes_port(port, value);
+        self.cart
+            .write((full_adr >> 16) as u8, full_adr as u16, value);
     }
 
     pub fn cpu_read(&mut self, full_adr: u32) -> u8 {

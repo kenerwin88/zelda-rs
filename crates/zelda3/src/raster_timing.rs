@@ -4,11 +4,10 @@
 //! vblank needs an explicit bus schedule when the PPU consumes memory while
 //! the CPU is still authoring it.
 
+use snes::cpu_timeline::{snes9x_wram_refresh_cycle, CpuFieldTiming};
+
 const MASTER_CYCLES_PER_SCANLINE: u32 = 1364;
 const NTSC_SCANLINES_PER_FIELD: u32 = 262;
-// The pinned Snes9x core defaults to M1SNES (`_5A22 == 1`). Its CPU reset
-// selects SNES_WRAM_REFRESH_HC_v1; 538 is the M2-only v2 position.
-const WRAM_REFRESH_CYCLE: u32 = 530;
 const WRAM_REFRESH_STALL_CYCLES: u32 = 40;
 const HDMA_INIT_CYCLE: u32 = 20;
 const HDMA_START_CYCLE: u32 = 1106;
@@ -168,6 +167,12 @@ fn advance_attract_map_projection_work(mut clock: u32, mut work: u32) -> u32 {
         let scanline = clock / MASTER_CYCLES_PER_SCANLINE;
         let cycle = clock % MASTER_CYCLES_PER_SCANLINE;
         let field_scanline = scanline % NTSC_SCANLINES_PER_FIELD;
+        let field_index = u64::from(scanline / NTSC_SCANLINES_PER_FIELD);
+        let refresh_cycle = snes9x_wram_refresh_cycle(
+            field_index,
+            field_scanline as u16,
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
         let mut next_cycle = MASTER_CYCLES_PER_SCANLINE;
         let mut stall = 0;
 
@@ -177,7 +182,7 @@ fn advance_attract_map_projection_work(mut clock: u32, mut work: u32) -> u32 {
                 ATTRACT_MAP_HDMA_BUS_STALL_CYCLES,
                 field_scanline == 0,
             ),
-            (WRAM_REFRESH_CYCLE, WRAM_REFRESH_STALL_CYCLES, true),
+            (refresh_cycle, WRAM_REFRESH_STALL_CYCLES, true),
             (
                 HDMA_START_CYCLE,
                 ATTRACT_MAP_HDMA_BUS_STALL_CYCLES,
@@ -227,12 +232,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn m1_wram_refresh_stalls_work_that_starts_or_crosses_cycle_530() {
-        // Pinned Snes9x 1.63: globals.cpp selects M1SNES, cpu.cpp selects
-        // SNES_WRAM_REFRESH_HC_v1, and snes9x.h defines it as 530 with a
-        // 40-master-cycle refresh. cpuexec.cpp processes NextEvent at equality.
-        assert_eq!(advance_attract_map_projection_work(530, 6), 576);
-        assert_eq!(advance_attract_map_projection_work(524, 12), 576);
+    fn pinned_m1_object_uses_its_5a22_v2_refresh_phase() {
+        // ppu.h makes `_5A22` the third SnesModel field, so globals.cpp's
+        // `M1SNES = { 1, 3, 2 }` selects cpu.cpp's v2 schedule. Reset starts at
+        // H=538 and the following scanline toggles to H=534.
+        assert_eq!(advance_attract_map_projection_work(538, 6), 584);
+        assert_eq!(advance_attract_map_projection_work(532, 12), 584);
+
+        let next_line = MASTER_CYCLES_PER_SCANLINE;
+        assert_eq!(
+            advance_attract_map_projection_work(next_line + 534, 6),
+            next_line + 580,
+        );
     }
 
     fn world_map_workload(

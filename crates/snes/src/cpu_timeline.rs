@@ -8,9 +8,11 @@ pub const MASTER_CYCLES_PER_SCANLINE: u32 = 1_364;
 pub const NTSC_SCANLINES_PER_FIELD: u32 = 262;
 pub const NMI_SCANLINE: u32 = 225;
 pub const HDMA_INIT_CYCLE: u32 = 20;
-// The pinned Snes9x core selects M1SNES (`_5A22 == 1`), whose cpu.cpp reset
-// path uses SNES_WRAM_REFRESH_HC_v1 rather than the M2-only v2 position.
-pub const WRAM_REFRESH_CYCLE: u32 = 530;
+// Despite its name, pinned Snes9x's `M1SNES = { 1, 3, 2 }`: `_5A22 == 2`
+// selects the v2 WRAM refresh schedule. Reset starts at H=538, then each new
+// scanline toggles H=534/H=538 except entry to odd non-interlace V=240.
+pub const SNES9X_WRAM_REFRESH_V2_EARLY_CYCLE: u32 = 534;
+pub const SNES9X_WRAM_REFRESH_V2_LATE_CYCLE: u32 = 538;
 pub const WRAM_REFRESH_STALL_MASTER_CYCLES: u32 = 40;
 pub const HDMA_START_CYCLE: u32 = 1_106;
 pub const SHORT_SCANLINE_END_CYCLE: u32 = 1_360;
@@ -92,6 +94,48 @@ pub enum CpuBusEvent {
 pub enum CpuTimelineEvent {
     Bus(CpuBusEvent),
     ShortScanline,
+}
+
+/// One physical-clock event observed by the opt-in synchronous CPU bus.
+///
+/// This is separate from [`CpuTimelineEvent`] because the legacy scheduler
+/// deliberately treats HMax as a coordinate rollover rather than a semantic
+/// callback. Synchronous device access must observe that rollover so the APU
+/// reference clock can be updated before the next bus semantic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CpuSynchronousTimelineEvent {
+    Bus(CpuBusEvent),
+    HMax {
+        completed_field_index: u64,
+        completed_scanline: u16,
+        line_master_cycles: u16,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum CpuSynchronousTimelineStartError {
+    #[error("CPU timeline was already advanced by the legacy scheduler")]
+    LegacyTimelineAlreadyClaimed,
+    #[error("CPU timeline checkpoint at {timestamp:?} has ambiguous {event:?} ownership")]
+    AmbiguousEventState {
+        event: CpuBusEvent,
+        timestamp: CpuMasterTimestamp,
+    },
+}
+
+/// A single physical S-CPU master-clock timestamp observed before bus
+/// semantics execute.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CpuMasterTimestamp(u64);
+
+impl CpuMasterTimestamp {
+    pub const fn new(master_cycles: u64) -> Self {
+        Self(master_cycles)
+    }
+
+    pub const fn master_cycles(self) -> u64 {
+        self.0
+    }
 }
 
 /// Video-field state which changes the CPU's available master-cycle budget.
@@ -193,6 +237,32 @@ impl CpuFieldTiming {
     }
 }
 
+/// Pinned Snes9x M1SNES (`_5A22 == 2`) WRAM-refresh position for one line.
+///
+/// This preserves the carried v2 toggle phase from reset's initial H=538.
+/// `CpuFieldTiming` makes the interlace premise explicit; its current public
+/// constructors model non-interlace timing, including the skipped toggle when
+/// entering V=240 of an odd field.
+pub const fn snes9x_wram_refresh_cycle(
+    field_index: u64,
+    scanline: u16,
+    field_timing: CpuFieldTiming,
+) -> u32 {
+    let odd_fields_before = if field_timing.field_is_odd(0) {
+        field_index / 2 + field_index % 2
+    } else {
+        field_index / 2
+    };
+    let skipped_current_v240_toggle =
+        !field_timing.interlace && field_timing.field_is_odd(field_index) && scanline >= 240;
+    let skipped_toggles = odd_fields_before + skipped_current_v240_toggle as u64;
+    if (scanline as u64 + skipped_toggles) & 1 == 0 {
+        SNES9X_WRAM_REFRESH_V2_LATE_CYCLE
+    } else {
+        SNES9X_WRAM_REFRESH_V2_EARLY_CYCLE
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CpuTimelineDeadlineAdvance {
     Complete,
@@ -204,12 +274,30 @@ pub enum CpuTimelineDeadlineAdvance {
 /// The timeline owns the absolute clock, field parity, bus workload, and event
 /// de-duplication. Callers retain ownership of semantic deadlines such as
 /// Zelda's display-publication and caller-continuation boundaries.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CpuMasterTimeline {
     clock_master_cycles: u64,
     bus: CpuBusWorkload,
     field_timing: CpuFieldTiming,
+    wram_refresh_cycle: u16,
     processed_timeline_event: Option<(u64, CpuTimelineEvent)>,
+    mode: CpuTimelineMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CpuTimelineMode {
+    Unclaimed,
+    Legacy,
+    Synchronous(CpuSynchronousEventCursor),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CpuSynchronousEventCursor {
+    master_cycles: u64,
+    field_index: u64,
+    scanline: u16,
+    cycle_in_scanline: u16,
+    event: CpuSynchronousTimelineEvent,
 }
 
 impl CpuMasterTimeline {
@@ -218,11 +306,20 @@ impl CpuMasterTimeline {
         bus: CpuBusWorkload,
         field_timing: CpuFieldTiming,
     ) -> Self {
+        let (field_index, physical_field_cycle) =
+            field_timing.field_and_cycle_at(clock_master_cycles);
+        let raster = field_timing.raster_at(field_index, physical_field_cycle);
         Self {
             clock_master_cycles,
             bus,
             field_timing,
+            wram_refresh_cycle: snes9x_wram_refresh_cycle(
+                field_index,
+                raster.scanline,
+                field_timing,
+            ) as u16,
             processed_timeline_event: None,
+            mode: CpuTimelineMode::Unclaimed,
         }
     }
 
@@ -239,21 +336,33 @@ impl CpuMasterTimeline {
         )
     }
 
-    pub const fn clock_master_cycles(self) -> u64 {
+    pub const fn clock_master_cycles(&self) -> u64 {
         self.clock_master_cycles
     }
 
-    pub const fn bus_workload(self) -> CpuBusWorkload {
+    pub const fn timestamp(&self) -> CpuMasterTimestamp {
+        CpuMasterTimestamp::new(self.clock_master_cycles)
+    }
+
+    pub const fn bus_workload(&self) -> CpuBusWorkload {
         self.bus
     }
 
-    pub const fn field_index(self) -> u64 {
+    pub const fn wram_refresh_cycle(&self) -> u32 {
+        self.wram_refresh_cycle as u32
+    }
+
+    pub const fn field_index(&self) -> u64 {
         self.field_timing
             .field_and_cycle_at(self.clock_master_cycles)
             .0
     }
 
-    pub const fn master_cycles_at_raster(self, field_index: u64, raster: CpuRasterPosition) -> u64 {
+    pub const fn master_cycles_at_raster(
+        &self,
+        field_index: u64,
+        raster: CpuRasterPosition,
+    ) -> u64 {
         self.field_timing.master_cycles_at(field_index, raster)
     }
 
@@ -264,6 +373,7 @@ impl CpuMasterTimeline {
         deadline_master_cycles: u64,
         mut work_master_cycles: u32,
     ) -> CpuTimelineDeadlineAdvance {
+        self.claim_legacy_timeline();
         debug_assert!(self.clock_master_cycles < deadline_master_cycles);
         while work_master_cycles != 0 {
             let (work_until_event, event) = self.next_timeline_event();
@@ -271,10 +381,10 @@ impl CpuMasterTimeline {
             let master_cycles_until_deadline = deadline_master_cycles - self.clock_master_cycles;
             if master_cycles_until_deadline <= u64::from(work_until_event) {
                 if u64::from(work_master_cycles) < master_cycles_until_deadline {
-                    self.clock_master_cycles += u64::from(work_master_cycles);
+                    self.advance_physical_clock(u64::from(work_master_cycles));
                     return CpuTimelineDeadlineAdvance::Complete;
                 }
-                self.clock_master_cycles = deadline_master_cycles;
+                self.set_physical_clock(deadline_master_cycles);
                 return CpuTimelineDeadlineAdvance::ReachedDeadline {
                     remaining_work_master_cycles: work_master_cycles
                         - u32::try_from(master_cycles_until_deadline)
@@ -282,22 +392,22 @@ impl CpuMasterTimeline {
                 };
             }
             if work_master_cycles <= work_until_event {
-                self.clock_master_cycles += u64::from(work_master_cycles);
+                self.advance_physical_clock(u64::from(work_master_cycles));
                 return CpuTimelineDeadlineAdvance::Complete;
             }
 
-            self.clock_master_cycles += u64::from(work_until_event);
+            self.advance_physical_clock(u64::from(work_until_event));
             work_master_cycles -= work_until_event;
             if let Some(event) = event {
                 self.processed_timeline_event = Some((self.clock_master_cycles, event));
             }
             if self.clock_master_cycles + u64::from(event_stall) >= deadline_master_cycles {
-                self.clock_master_cycles = deadline_master_cycles;
+                self.set_physical_clock(deadline_master_cycles);
                 return CpuTimelineDeadlineAdvance::ReachedDeadline {
                     remaining_work_master_cycles: work_master_cycles,
                 };
             }
-            self.clock_master_cycles += u64::from(event_stall);
+            self.advance_physical_clock(u64::from(event_stall));
         }
         CpuTimelineDeadlineAdvance::Complete
     }
@@ -317,10 +427,11 @@ impl CpuMasterTimeline {
         mut work_master_cycles: u32,
         mut event_advance: impl FnMut(CpuTimelineEvent, u16) -> u32,
     ) {
+        self.claim_legacy_timeline();
         while work_master_cycles != 0 {
             let (work_until_event, event) = self.next_timeline_event();
             if work_until_event < work_master_cycles {
-                self.clock_master_cycles += u64::from(work_until_event);
+                self.advance_physical_clock(u64::from(work_until_event));
                 work_master_cycles -= work_until_event;
                 if let Some(event) = event {
                     let scanline = match event {
@@ -328,16 +439,99 @@ impl CpuMasterTimeline {
                         CpuTimelineEvent::Bus(_) => self.raster_position().scanline,
                     };
                     self.processed_timeline_event = Some((self.clock_master_cycles, event));
-                    self.clock_master_cycles += u64::from(event_advance(event, scanline));
+                    self.advance_physical_clock(u64::from(event_advance(event, scanline)));
                 }
             } else {
-                self.clock_master_cycles += u64::from(work_master_cycles);
+                self.advance_physical_clock(u64::from(work_master_cycles));
                 work_master_cycles = 0;
             }
         }
     }
 
-    pub fn raster_position(self) -> CpuRasterPosition {
+    /// Claim a newly created timeline for source-ordered synchronous work.
+    /// Checkpoints in a fixed event's consumed-clock window are rejected: a
+    /// bare raster there cannot prove whether the event is pending or drained.
+    pub fn begin_synchronous_timeline(&mut self) -> Result<(), CpuSynchronousTimelineStartError> {
+        match self.mode {
+            CpuTimelineMode::Synchronous(_) => return Ok(()),
+            CpuTimelineMode::Legacy => {
+                return Err(CpuSynchronousTimelineStartError::LegacyTimelineAlreadyClaimed)
+            }
+            CpuTimelineMode::Unclaimed => {}
+        }
+
+        let raster = self.raster_position();
+        for (cycle, event, enabled) in
+            self.synchronous_bus_events(self.field_index(), raster.scanline)
+        {
+            if !enabled {
+                continue;
+            }
+            let fixed_stall = self.fixed_event_advance(CpuTimelineEvent::Bus(event));
+            let raster_cycle = u32::from(raster.master_cycle);
+            let ambiguous = if fixed_stall == 0 {
+                raster_cycle == cycle
+            } else {
+                (cycle..cycle + fixed_stall).contains(&raster_cycle)
+            };
+            if ambiguous {
+                return Err(CpuSynchronousTimelineStartError::AmbiguousEventState {
+                    event,
+                    timestamp: self.timestamp(),
+                });
+            }
+        }
+        let line_start_master_cycles = self.clock_master_cycles - u64::from(raster.master_cycle);
+        let cursor = self.synchronous_cursor_on_line_after(
+            self.field_index(),
+            raster.scanline,
+            line_start_master_cycles,
+            Some(u32::from(raster.master_cycle)),
+        );
+        self.mode = CpuTimelineMode::Synchronous(cursor);
+        Ok(())
+    }
+
+    /// Charge one complete Snes9x `AddCycles` transaction after its semantic,
+    /// then drain every due event using `Cycles >= NextEvent`. The callback
+    /// observes the transaction's access-end clock, including overshoot, and
+    /// returns clocks added by that event handler. A callback error retains the
+    /// due event and charged transaction; resume it with a zero-cycle call.
+    pub fn advance_synchronous_after_semantics_with<E>(
+        &mut self,
+        work_master_cycles: u32,
+        mut observe_event: impl FnMut(CpuSynchronousTimelineEvent, CpuMasterTimestamp) -> Result<u32, E>,
+    ) -> Result<(), E> {
+        let CpuTimelineMode::Synchronous(mut cursor) = self.mode else {
+            panic!("synchronous CPU work requires begin_synchronous_timeline")
+        };
+
+        // Snes9x getset/AddCycles performs the complete transaction charge
+        // before it drains every now-due event with `Cycles >= NextEvent`.
+        self.advance_physical_clock(u64::from(work_master_cycles));
+        while self.clock_master_cycles >= cursor.master_cycles {
+            let event = cursor.event;
+            let next_cursor = self.synchronous_cursor_after(cursor);
+            // Keep the current event owned until its fallible handler succeeds.
+            // Clocks returned by the handler are intentionally not drained
+            // recursively; the outer loop observes them after it returns.
+            let handler_master_cycles = observe_event(event, self.timestamp())?;
+            self.mode = CpuTimelineMode::Synchronous(next_cursor);
+            let fixed_master_cycles = match event {
+                CpuSynchronousTimelineEvent::Bus(event) => {
+                    self.fixed_event_advance(CpuTimelineEvent::Bus(event))
+                }
+                CpuSynchronousTimelineEvent::HMax { .. } => 0,
+            };
+            self.advance_physical_clock(
+                u64::from(fixed_master_cycles) + u64::from(handler_master_cycles),
+            );
+            cursor = next_cursor;
+        }
+        Ok(())
+    }
+
+    pub fn raster_position(&self) -> CpuRasterPosition {
         let (field_index, physical_field_cycle) = self
             .field_timing
             .field_and_cycle_at(self.clock_master_cycles);
@@ -345,7 +539,7 @@ impl CpuMasterTimeline {
             .raster_at(field_index, physical_field_cycle)
     }
 
-    fn next_timeline_event(self) -> (u32, Option<CpuTimelineEvent>) {
+    fn next_timeline_event(&self) -> (u32, Option<CpuTimelineEvent>) {
         let (field_index, _) = self
             .field_timing
             .field_and_cycle_at(self.clock_master_cycles);
@@ -362,7 +556,7 @@ impl CpuMasterTimeline {
                 scanline == 0 && self.bus.dynamic_hdma,
             ),
             (
-                WRAM_REFRESH_CYCLE,
+                u32::from(self.wram_refresh_cycle),
                 CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh),
                 true,
             ),
@@ -394,6 +588,110 @@ impl CpuMasterTimeline {
         (next_event_cycle - cycle, next_event)
     }
 
+    fn claim_legacy_timeline(&mut self) {
+        match self.mode {
+            CpuTimelineMode::Unclaimed | CpuTimelineMode::Legacy => {
+                self.mode = CpuTimelineMode::Legacy
+            }
+            CpuTimelineMode::Synchronous(_) => {
+                panic!("synchronous and legacy CPU timeline APIs cannot be mixed")
+            }
+        }
+    }
+
+    fn synchronous_bus_events(
+        &self,
+        field_index: u64,
+        scanline: u16,
+    ) -> [(u32, CpuBusEvent, bool); 3] {
+        [
+            (
+                HDMA_INIT_CYCLE,
+                CpuBusEvent::HdmaInit,
+                scanline == 0 && self.bus.dynamic_hdma,
+            ),
+            (
+                snes9x_wram_refresh_cycle(field_index, scanline, self.field_timing),
+                CpuBusEvent::WramRefresh,
+                true,
+            ),
+            (
+                HDMA_START_CYCLE,
+                CpuBusEvent::HdmaStart,
+                u32::from(scanline) < NMI_SCANLINE
+                    && (self.bus.dynamic_hdma || self.bus.hdma_stall_master_cycles != 0),
+            ),
+        ]
+    }
+
+    fn synchronous_cursor_on_line_after(
+        &self,
+        field_index: u64,
+        scanline: u16,
+        line_start_master_cycles: u64,
+        after_cycle: Option<u32>,
+    ) -> CpuSynchronousEventCursor {
+        for (cycle, event, enabled) in self.synchronous_bus_events(field_index, scanline) {
+            if enabled && after_cycle.is_none_or(|after| cycle > after) {
+                return CpuSynchronousEventCursor {
+                    master_cycles: line_start_master_cycles + u64::from(cycle),
+                    field_index,
+                    scanline,
+                    cycle_in_scanline: cycle as u16,
+                    event: CpuSynchronousTimelineEvent::Bus(event),
+                };
+            }
+        }
+
+        let short_scanline = scanline == 240
+            && !self.field_timing.interlace
+            && self.field_timing.field_is_odd(field_index);
+        let hmax = if short_scanline {
+            SHORT_SCANLINE_END_CYCLE
+        } else {
+            MASTER_CYCLES_PER_SCANLINE
+        };
+        CpuSynchronousEventCursor {
+            master_cycles: line_start_master_cycles + u64::from(hmax),
+            field_index,
+            scanline,
+            cycle_in_scanline: hmax as u16,
+            event: CpuSynchronousTimelineEvent::HMax {
+                completed_field_index: field_index,
+                completed_scanline: scanline,
+                line_master_cycles: hmax as u16,
+            },
+        }
+    }
+
+    fn synchronous_cursor_after(
+        &self,
+        cursor: CpuSynchronousEventCursor,
+    ) -> CpuSynchronousEventCursor {
+        match cursor.event {
+            CpuSynchronousTimelineEvent::Bus(_) => self.synchronous_cursor_on_line_after(
+                cursor.field_index,
+                cursor.scanline,
+                cursor.master_cycles - u64::from(cursor.cycle_in_scanline),
+                Some(u32::from(cursor.cycle_in_scanline)),
+            ),
+            CpuSynchronousTimelineEvent::HMax { .. } => {
+                let (field_index, scanline) =
+                    if u32::from(cursor.scanline) + 1 == NTSC_SCANLINES_PER_FIELD {
+                        (cursor.field_index + 1, 0)
+                    } else {
+                        (cursor.field_index, cursor.scanline + 1)
+                    };
+                self.synchronous_cursor_on_line_after(
+                    field_index,
+                    scanline,
+                    cursor.master_cycles,
+                    None,
+                )
+            }
+        }
+    }
+
     fn fixed_event_advance(&self, event: CpuTimelineEvent) -> u32 {
         match event {
             CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => WRAM_REFRESH_STALL_MASTER_CYCLES,
@@ -403,6 +701,22 @@ impl CpuMasterTimeline {
             CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => 0,
             CpuTimelineEvent::ShortScanline => 0,
         }
+    }
+
+    fn advance_physical_clock(&mut self, master_cycles: u64) {
+        self.set_physical_clock(self.clock_master_cycles + master_cycles);
+    }
+
+    fn set_physical_clock(&mut self, clock_master_cycles: u64) {
+        self.clock_master_cycles = clock_master_cycles;
+        let (field_index, physical_field_cycle) = self
+            .field_timing
+            .field_and_cycle_at(self.clock_master_cycles);
+        let raster = self
+            .field_timing
+            .raster_at(field_index, physical_field_cycle);
+        self.wram_refresh_cycle =
+            snes9x_wram_refresh_cycle(field_index, raster.scanline, self.field_timing) as u16;
     }
 }
 
@@ -426,15 +740,276 @@ mod tests {
         for field in [0, LONG_TIMELINE_FIELD] {
             let mut timeline = at_raster(
                 field,
-                CpuRasterPosition::new(100, 524),
+                CpuRasterPosition::new(100, 532),
                 CpuBusWorkload::default(),
                 CpuFieldTiming::NON_INTERLACE_EVEN,
             );
             timeline.advance_work_unbounded(6);
-            assert_eq!(timeline.raster_position(), CpuRasterPosition::new(100, 530));
+            assert_eq!(timeline.raster_position(), CpuRasterPosition::new(100, 538));
             timeline.advance_work_unbounded(6);
-            assert_eq!(timeline.raster_position(), CpuRasterPosition::new(100, 576));
+            assert_eq!(timeline.raster_position(), CpuRasterPosition::new(100, 584));
         }
+    }
+
+    #[test]
+    fn snes9x_v2_refresh_phase_is_carried_across_scanlines_and_fields() {
+        let timing = CpuFieldTiming::NON_INTERLACE_EVEN;
+
+        // cpu.cpp resets the selected v2 model at 538; cpuexec.cpp toggles
+        // 534/538 on each ordinary new scanline.
+        assert_eq!(snes9x_wram_refresh_cycle(0, 0, timing), 538);
+        assert_eq!(snes9x_wram_refresh_cycle(0, 1, timing), 534);
+        assert_eq!(snes9x_wram_refresh_cycle(0, 2, timing), 538);
+
+        // Entering V=240 of an odd non-interlace field is the one place where
+        // Snes9x skips the toggle, so V239 and V240 share H=534.
+        assert_eq!(snes9x_wram_refresh_cycle(1, 239, timing), 534);
+        assert_eq!(snes9x_wram_refresh_cycle(1, 240, timing), 534);
+        assert_eq!(snes9x_wram_refresh_cycle(1, 241, timing), 538);
+
+        // The skipped toggle is carried into the following field; it is not a
+        // function of scanline parity alone.
+        assert_eq!(snes9x_wram_refresh_cycle(2, 0, timing), 534);
+        assert_eq!(snes9x_wram_refresh_cycle(2, 1, timing), 538);
+        assert_eq!(snes9x_wram_refresh_cycle(4, 0, timing), 538);
+    }
+
+    #[test]
+    fn pinned_cold_fixture_receipt_selects_m1_and_v2_refresh_at_reset() {
+        let reset = crate::test_bootstrap_fixture::records()
+            .into_iter()
+            .find(|record| record["kind"] == "reset-state")
+            .expect("cold fixture must include its source reset receipt");
+        assert_eq!(reset["cpu_model_identity"].as_u64(), Some(1));
+        assert_eq!(reset["cpu_model_5a22"].as_u64(), Some(2));
+        assert_eq!(reset["wram_refresh_position"].as_u64(), Some(538));
+        assert_eq!(
+            snes9x_wram_refresh_cycle(0, 0, CpuFieldTiming::NON_INTERLACE_EVEN),
+            538
+        );
+    }
+
+    #[test]
+    fn timeline_retains_v2_refresh_phase_after_more_than_twenty_four_thousand_fields() {
+        let timing = CpuFieldTiming::NON_INTERLACE_EVEN;
+        let field = LONG_TIMELINE_FIELD;
+        let mut timeline = at_raster(
+            field,
+            CpuRasterPosition::new(239, 1_350),
+            CpuBusWorkload::default(),
+            timing,
+        );
+        assert_eq!(timeline.wram_refresh_cycle(), 534);
+
+        timeline.advance_work_unbounded(20);
+        assert_eq!(timeline.raster_position(), CpuRasterPosition::new(240, 6));
+        assert_eq!(timeline.wram_refresh_cycle(), 534);
+
+        let mut at_end_of_short_line = at_raster(
+            field,
+            CpuRasterPosition::new(240, 1_350),
+            CpuBusWorkload::default(),
+            timing,
+        );
+        at_end_of_short_line.advance_work_unbounded(10);
+        assert_eq!(
+            at_end_of_short_line.raster_position(),
+            CpuRasterPosition::new(241, 0)
+        );
+        assert_eq!(at_end_of_short_line.wram_refresh_cycle(), 538);
+    }
+
+    #[test]
+    fn synchronous_exact_refresh_endpoint_applies_stall_before_next_timestamp() {
+        let mut timeline = at_raster(
+            0,
+            CpuRasterPosition::new(100, 532),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        timeline.begin_synchronous_timeline().unwrap();
+        let refresh_timestamp = timeline.clock_master_cycles() + 6;
+        let mut events = Vec::new();
+        timeline
+            .advance_synchronous_after_semantics_with(6, |event, timestamp| {
+                events.push((event, timestamp));
+                Ok::<u32, ()>(0)
+            })
+            .unwrap();
+        assert_eq!(
+            events,
+            [(
+                CpuSynchronousTimelineEvent::Bus(CpuBusEvent::WramRefresh),
+                CpuMasterTimestamp::new(refresh_timestamp),
+            )]
+        );
+        assert_eq!(timeline.raster_position(), CpuRasterPosition::new(100, 578));
+        assert_eq!(timeline.clock_master_cycles(), refresh_timestamp + 40);
+    }
+
+    #[test]
+    fn synchronous_refresh_observes_access_overshoot_before_adding_stall() {
+        let mut timeline = at_raster(
+            0,
+            CpuRasterPosition::new(100, 534),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        timeline.begin_synchronous_timeline().unwrap();
+        let observation = timeline.clock_master_cycles() + 8;
+        let mut events = Vec::new();
+        timeline
+            .advance_synchronous_after_semantics_with(8, |event, timestamp| {
+                events.push((event, timestamp));
+                Ok::<u32, ()>(0)
+            })
+            .unwrap();
+        assert_eq!(
+            events,
+            [(
+                CpuSynchronousTimelineEvent::Bus(CpuBusEvent::WramRefresh),
+                CpuMasterTimestamp::new(observation),
+            )]
+        );
+        assert_eq!(timeline.raster_position(), CpuRasterPosition::new(100, 582));
+    }
+
+    #[test]
+    fn synchronous_hmax_emits_normal_and_odd_short_line_context_at_access_end() {
+        let cases = [
+            (
+                CpuFieldTiming::NON_INTERLACE_EVEN,
+                CpuRasterPosition::new(7, 1_358),
+                8,
+                CpuRasterPosition::new(8, 2),
+                7,
+                MASTER_CYCLES_PER_SCANLINE as u16,
+            ),
+            (
+                CpuFieldTiming::non_interlace(true),
+                CpuRasterPosition::new(240, 1_354),
+                6,
+                CpuRasterPosition::new(241, 0),
+                240,
+                SHORT_SCANLINE_END_CYCLE as u16,
+            ),
+        ];
+        for (timing, entry, work, expected_raster, completed_scanline, line_master_cycles) in cases
+        {
+            let mut timeline = at_raster(0, entry, CpuBusWorkload::default(), timing);
+            timeline.begin_synchronous_timeline().unwrap();
+            let expected_timestamp = timeline.clock_master_cycles() + u64::from(work);
+            let mut events = Vec::new();
+            timeline
+                .advance_synchronous_after_semantics_with(work, |event, timestamp| {
+                    events.push((event, timestamp));
+                    Ok::<u32, ()>(0)
+                })
+                .unwrap();
+            assert_eq!(
+                events,
+                [(
+                    CpuSynchronousTimelineEvent::HMax {
+                        completed_field_index: 0,
+                        completed_scanline,
+                        line_master_cycles,
+                    },
+                    CpuMasterTimestamp::new(expected_timestamp),
+                )]
+            );
+            assert_eq!(timeline.raster_position(), expected_raster);
+            assert_eq!(timeline.clock_master_cycles(), expected_timestamp);
+        }
+    }
+
+    #[test]
+    fn synchronous_handler_clocks_are_added_before_nested_events_drain() {
+        let mut timeline = at_raster(
+            0,
+            CpuRasterPosition::new(100, 534),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        timeline.begin_synchronous_timeline().unwrap();
+        let mut events = Vec::new();
+        timeline
+            .advance_synchronous_after_semantics_with(8, |event, timestamp| {
+                events.push((event, timestamp));
+                Ok::<u32, ()>(match event {
+                    CpuSynchronousTimelineEvent::Bus(CpuBusEvent::WramRefresh) => 900,
+                    _ => 0,
+                })
+            })
+            .unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(
+            events[0],
+            (
+                CpuSynchronousTimelineEvent::Bus(CpuBusEvent::WramRefresh),
+                CpuMasterTimestamp::new(
+                    CpuFieldTiming::NON_INTERLACE_EVEN
+                        .master_cycles_at(0, CpuRasterPosition::new(100, 542),),
+                ),
+            )
+        );
+        assert_eq!(
+            events[1],
+            (
+                CpuSynchronousTimelineEvent::HMax {
+                    completed_field_index: 0,
+                    completed_scanline: 100,
+                    line_master_cycles: MASTER_CYCLES_PER_SCANLINE as u16,
+                },
+                CpuMasterTimestamp::new(
+                    CpuFieldTiming::NON_INTERLACE_EVEN
+                        .master_cycles_at(0, CpuRasterPosition::new(101, 118),),
+                ),
+            )
+        );
+        assert_eq!(timeline.raster_position(), CpuRasterPosition::new(101, 118));
+    }
+
+    #[test]
+    fn synchronous_start_rejects_ambiguous_event_and_legacy_ownership() {
+        let mut exact_refresh = at_raster(
+            0,
+            CpuRasterPosition::new(100, SNES9X_WRAM_REFRESH_V2_LATE_CYCLE as u16),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        assert_eq!(
+            exact_refresh.begin_synchronous_timeline(),
+            Err(CpuSynchronousTimelineStartError::AmbiguousEventState {
+                event: CpuBusEvent::WramRefresh,
+                timestamp: exact_refresh.timestamp(),
+            })
+        );
+
+        let mut inside_refresh = at_raster(
+            0,
+            CpuRasterPosition::new(100, 542),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        assert_eq!(
+            inside_refresh.begin_synchronous_timeline(),
+            Err(CpuSynchronousTimelineStartError::AmbiguousEventState {
+                event: CpuBusEvent::WramRefresh,
+                timestamp: inside_refresh.timestamp(),
+            })
+        );
+
+        let mut legacy = at_raster(
+            0,
+            CpuRasterPosition::new(100, 100),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        legacy.advance_work_unbounded(1);
+        assert_eq!(
+            legacy.begin_synchronous_timeline(),
+            Err(CpuSynchronousTimelineStartError::LegacyTimelineAlreadyClaimed)
+        );
     }
 
     #[test]
