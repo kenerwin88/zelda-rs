@@ -14,6 +14,8 @@ const WRAM_REFRESH_STALL_MASTER_CYCLES: u32 = 40;
 const HDMA_START_CYCLE: u32 = 1_106;
 const SHORT_SCANLINE_END_CYCLE: u32 = 1_360;
 const SHORT_SCANLINE_MISSING_MASTER_CYCLES: u32 = 4;
+const NTSC_FIELD_MASTER_CYCLES: u64 =
+    NTSC_SCANLINES_PER_FIELD as u64 * MASTER_CYCLES_PER_SCANLINE as u64;
 
 /// A 65816 position within an NTSC field, expressed in S-CPU master cycles.
 ///
@@ -34,8 +36,8 @@ impl CpuRasterPosition {
         }
     }
 
-    const fn unwrapped_master_cycles(self) -> u32 {
-        self.scanline as u32 * MASTER_CYCLES_PER_SCANLINE + self.master_cycle as u32
+    const fn unwrapped_master_cycles(self) -> u64 {
+        self.scanline as u64 * MASTER_CYCLES_PER_SCANLINE as u64 + self.master_cycle as u64
     }
 
     pub(super) const fn coordinates(self) -> (u16, u16) {
@@ -100,7 +102,7 @@ impl CpuFieldTiming {
         }
     }
 
-    const fn field_is_odd(self, field_index: u32) -> bool {
+    const fn field_is_odd(self, field_index: u64) -> bool {
         self.odd_field ^ (field_index & 1 != 0)
     }
 }
@@ -137,11 +139,11 @@ impl CpuWorkAdvance {
 /// continuation is suspended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct CpuCycleBudget {
-    clock_master_cycles: u32,
-    nmi_master_cycles: u32,
+    clock_master_cycles: u64,
+    nmi_master_cycles: u64,
     bus: CpuBusWorkload,
     field_timing: CpuFieldTiming,
-    processed_timeline_event: Option<(u32, CpuTimelineEvent)>,
+    processed_timeline_event: Option<(u64, CpuTimelineEvent)>,
 }
 
 impl CpuCycleBudget {
@@ -151,9 +153,9 @@ impl CpuCycleBudget {
         field_timing: CpuFieldTiming,
     ) -> Self {
         let clock_master_cycles = entry.unwrapped_master_cycles();
-        let nmi_field = u32::from(entry.scanline >= NMI_SCANLINE as u16);
-        let nmi_master_cycles =
-            (nmi_field * NTSC_SCANLINES_PER_FIELD + NMI_SCANLINE) * MASTER_CYCLES_PER_SCANLINE;
+        let nmi_field = u64::from(entry.scanline >= NMI_SCANLINE as u16);
+        let nmi_master_cycles = nmi_field * NTSC_FIELD_MASTER_CYCLES
+            + u64::from(NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE);
         debug_assert!(clock_master_cycles < nmi_master_cycles);
         Self {
             clock_master_cycles,
@@ -167,7 +169,7 @@ impl CpuCycleBudget {
     /// Start at the pinned Snes9x core's vblank NMI trigger so the caller can
     /// execute the WAI wake and handler before the main-thread entry position.
     pub(super) fn at_nmi_trigger(bus: CpuBusWorkload, field_timing: CpuFieldTiming) -> Self {
-        let nmi_master_cycles = NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE;
+        let nmi_master_cycles = u64::from(NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE);
         Self {
             clock_master_cycles: nmi_master_cycles + 12,
             nmi_master_cycles,
@@ -185,33 +187,35 @@ impl CpuCycleBudget {
             let (work_until_event, event) = self.next_timeline_event();
             let event_stall = event.map_or(0, |event| self.fixed_event_advance(event));
             let master_cycles_until_nmi = self.nmi_master_cycles - self.clock_master_cycles;
-            if master_cycles_until_nmi <= work_until_event {
-                if work_master_cycles <= master_cycles_until_nmi {
-                    self.clock_master_cycles += work_master_cycles;
+            if master_cycles_until_nmi <= u64::from(work_until_event) {
+                if u64::from(work_master_cycles) <= master_cycles_until_nmi {
+                    self.clock_master_cycles += u64::from(work_master_cycles);
                     return CpuWorkAdvance::Complete;
                 }
                 self.clock_master_cycles = self.nmi_master_cycles;
                 return CpuWorkAdvance::InterruptedAtNmi {
-                    remaining_work_master_cycles: work_master_cycles - master_cycles_until_nmi,
+                    remaining_work_master_cycles: work_master_cycles
+                        - u32::try_from(master_cycles_until_nmi)
+                            .expect("NMI distance exceeded remaining CPU work"),
                 };
             }
             if work_master_cycles <= work_until_event {
-                self.clock_master_cycles += work_master_cycles;
+                self.clock_master_cycles += u64::from(work_master_cycles);
                 return CpuWorkAdvance::Complete;
             }
 
-            self.clock_master_cycles += work_until_event;
+            self.clock_master_cycles += u64::from(work_until_event);
             work_master_cycles -= work_until_event;
             if let Some(event) = event {
                 self.processed_timeline_event = Some((self.clock_master_cycles, event));
             }
-            if self.clock_master_cycles + event_stall >= self.nmi_master_cycles {
+            if self.clock_master_cycles + u64::from(event_stall) >= self.nmi_master_cycles {
                 self.clock_master_cycles = self.nmi_master_cycles;
                 return CpuWorkAdvance::InterruptedAtNmi {
                     remaining_work_master_cycles: work_master_cycles,
                 };
             }
-            self.clock_master_cycles += event_stall;
+            self.clock_master_cycles += u64::from(event_stall);
         }
         CpuWorkAdvance::Complete
     }
@@ -281,7 +285,7 @@ impl CpuCycleBudget {
         debug_assert!(self.clock_master_cycles >= self.nmi_master_cycles);
         self.nmi_master_cycles = self
             .nmi_master_cycles
-            .checked_add(NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE)
+            .checked_add(NTSC_FIELD_MASTER_CYCLES)
             .expect("CPU continuation NMI deadline overflowed");
         debug_assert!(self.clock_master_cycles < self.nmi_master_cycles);
     }
@@ -308,11 +312,10 @@ impl CpuCycleBudget {
     }
 
     fn next_timeline_event(self) -> (u32, Option<CpuTimelineEvent>) {
-        let nominal_field_master_cycles = NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE;
-        let field_index = self.clock_master_cycles / nominal_field_master_cycles;
-        let field_cycle = self.clock_master_cycles % nominal_field_master_cycles;
-        let scanline = field_cycle / MASTER_CYCLES_PER_SCANLINE;
-        let cycle = field_cycle % MASTER_CYCLES_PER_SCANLINE;
+        let field_index = self.clock_master_cycles / NTSC_FIELD_MASTER_CYCLES;
+        let field_cycle = self.clock_master_cycles % NTSC_FIELD_MASTER_CYCLES;
+        let scanline = field_cycle / u64::from(MASTER_CYCLES_PER_SCANLINE);
+        let cycle = (field_cycle % u64::from(MASTER_CYCLES_PER_SCANLINE)) as u32;
         let mut next_event_cycle = MASTER_CYCLES_PER_SCANLINE;
         let mut next_event = None;
 
@@ -330,7 +333,7 @@ impl CpuCycleBudget {
             (
                 HDMA_START_CYCLE,
                 CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart),
-                scanline < NMI_SCANLINE
+                scanline < u64::from(NMI_SCANLINE)
                     && (self.bus.dynamic_hdma || self.bus.hdma_stall_master_cycles != 0),
             ),
             (
@@ -384,28 +387,26 @@ impl CpuCycleBudget {
         while work_master_cycles != 0 {
             let (work_until_event, event) = self.next_timeline_event();
             if work_until_event < work_master_cycles {
-                self.clock_master_cycles += work_until_event;
+                self.clock_master_cycles += u64::from(work_until_event);
                 work_master_cycles -= work_until_event;
                 if let Some(event) = event {
-                    let field_cycle = self.clock_master_cycles
-                        % (NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE);
-                    let scanline = (field_cycle / MASTER_CYCLES_PER_SCANLINE) as u16;
+                    let field_cycle = self.clock_master_cycles % NTSC_FIELD_MASTER_CYCLES;
+                    let scanline = (field_cycle / u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16;
                     self.processed_timeline_event = Some((self.clock_master_cycles, event));
-                    self.clock_master_cycles += event_advance(event, scanline);
+                    self.clock_master_cycles += u64::from(event_advance(event, scanline));
                 }
             } else {
-                self.clock_master_cycles += work_master_cycles;
+                self.clock_master_cycles += u64::from(work_master_cycles);
                 work_master_cycles = 0;
             }
         }
     }
 
     pub(super) fn raster_position(self) -> CpuRasterPosition {
-        let field_cycle =
-            self.clock_master_cycles % (NTSC_SCANLINES_PER_FIELD * MASTER_CYCLES_PER_SCANLINE);
+        let field_cycle = self.clock_master_cycles % NTSC_FIELD_MASTER_CYCLES;
         CpuRasterPosition::new(
-            (field_cycle / MASTER_CYCLES_PER_SCANLINE) as u16,
-            (field_cycle % MASTER_CYCLES_PER_SCANLINE) as u16,
+            (field_cycle / u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
+            (field_cycle % u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
         )
     }
 }
@@ -1234,7 +1235,26 @@ mod cpu_timing_tests {
     use crate::zelda_rtl::{SpriteMainCpuBoundary, SpriteMainCpuCaller};
 
     const DUNGEON_HDMA_STALL: u16 = 42;
+    const LONG_TIMELINE_FIELD: u64 = 24_001;
     const WORK_TO_CACHED_RESTORE: u32 = 1_400 + 4 * 10_674 + 8_884;
+
+    fn budget_at_field(
+        field_index: u64,
+        entry: CpuRasterPosition,
+        bus: CpuBusWorkload,
+        field_timing: CpuFieldTiming,
+    ) -> CpuCycleBudget {
+        let nmi_field = field_index + u64::from(entry.scanline >= NMI_SCANLINE as u16);
+        CpuCycleBudget {
+            clock_master_cycles: field_index * NTSC_FIELD_MASTER_CYCLES
+                + entry.unwrapped_master_cycles(),
+            nmi_master_cycles: nmi_field * NTSC_FIELD_MASTER_CYCLES
+                + u64::from(NMI_SCANLINE * MASTER_CYCLES_PER_SCANLINE),
+            bus,
+            field_timing,
+            processed_timeline_event: None,
+        }
+    }
 
     fn restored_fields_before_nmi(entry: CpuRasterPosition) -> usize {
         let mut budget = CpuCycleBudget::until_next_nmi(
@@ -1422,6 +1442,118 @@ mod cpu_timing_tests {
         assert_eq!(odd.advance_interruptible(20), CpuWorkAdvance::Complete);
         assert_eq!(even.raster_position(), CpuRasterPosition::new(241, 6),);
         assert_eq!(odd.raster_position(), CpuRasterPosition::new(241, 10));
+    }
+
+    #[test]
+    fn nmi_deadlines_remain_exact_beyond_twenty_four_thousand_fields() {
+        let mut budget = CpuCycleBudget::at_nmi_trigger(
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let initial_nmi_master_cycles = budget.nmi_master_cycles;
+
+        for _ in 0..LONG_TIMELINE_FIELD {
+            budget.clock_master_cycles = budget.nmi_master_cycles;
+            budget.begin_nmi_handler();
+        }
+
+        assert_eq!(
+            budget.nmi_master_cycles,
+            initial_nmi_master_cycles + LONG_TIMELINE_FIELD * NTSC_FIELD_MASTER_CYCLES,
+        );
+        assert!(budget.nmi_master_cycles > u64::from(u32::MAX));
+        assert_eq!(
+            budget.nmi_master_cycles - budget.clock_master_cycles,
+            NTSC_FIELD_MASTER_CYCLES,
+        );
+        assert_eq!(
+            budget.raster_position().coordinates(),
+            (NMI_SCANLINE as u16, 0),
+        );
+
+        let late_raster = budget_at_field(
+            LONG_TIMELINE_FIELD,
+            CpuRasterPosition::new(259, 8),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        assert_eq!(late_raster.raster_position().coordinates(), (259, 8));
+    }
+
+    #[test]
+    fn odd_field_short_scanline_math_remains_exact_on_a_long_timeline() {
+        let entry = CpuRasterPosition::new(240, 1_350);
+        let mut even = budget_at_field(
+            LONG_TIMELINE_FIELD - 1,
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let mut odd = budget_at_field(
+            LONG_TIMELINE_FIELD,
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+
+        assert_eq!(even.advance_interruptible(20), CpuWorkAdvance::Complete);
+        assert_eq!(odd.advance_interruptible(20), CpuWorkAdvance::Complete);
+        assert_eq!(even.raster_position(), CpuRasterPosition::new(241, 6));
+        assert_eq!(odd.raster_position(), CpuRasterPosition::new(241, 10));
+    }
+
+    #[test]
+    fn dynamic_bus_events_remain_exact_on_a_long_timeline() {
+        let mut hdma_init = budget_at_field(
+            LONG_TIMELINE_FIELD,
+            CpuRasterPosition::new(0, 14),
+            CpuBusWorkload::with_dynamic_hdma(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let mut init_events = Vec::new();
+        assert_eq!(
+            hdma_init.advance_instruction_with_hdma(12, |event, scanline| {
+                init_events.push((event, scanline));
+                18
+            }),
+            CpuWorkAdvance::Complete,
+        );
+        assert_eq!(init_events, [(CpuBusEvent::HdmaInit, 0)]);
+        assert_eq!(hdma_init.raster_position(), CpuRasterPosition::new(0, 44));
+
+        let mut refresh = budget_at_field(
+            LONG_TIMELINE_FIELD,
+            CpuRasterPosition::new(100, 532),
+            CpuBusWorkload::with_dynamic_hdma(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        assert_eq!(
+            refresh.advance_instruction_with_hdma(12, |_, _| {
+                panic!("WRAM refresh invoked the HDMA model")
+            }),
+            CpuWorkAdvance::Complete,
+        );
+        assert_eq!(refresh.raster_position(), CpuRasterPosition::new(100, 584));
+
+        let mut hdma_start = budget_at_field(
+            LONG_TIMELINE_FIELD,
+            CpuRasterPosition::new(100, 1_100),
+            CpuBusWorkload::with_dynamic_hdma(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let mut start_events = Vec::new();
+        assert_eq!(
+            hdma_start.advance_instruction_with_hdma(12, |event, scanline| {
+                start_events.push((event, scanline));
+                26
+            }),
+            CpuWorkAdvance::Complete,
+        );
+        assert_eq!(start_events, [(CpuBusEvent::HdmaStart, 100)]);
+        assert_eq!(
+            hdma_start.raster_position(),
+            CpuRasterPosition::new(100, 1_138),
+        );
     }
 
     #[test]
