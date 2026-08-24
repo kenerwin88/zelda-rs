@@ -6599,7 +6599,6 @@ fn animated_bg_operand_generation_is_explicit_not_receipt_owned() {
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame,
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: Some(PreMainAnimatedTileDma {
             source_address: CAPTURED_SOURCE,
@@ -6664,7 +6663,6 @@ fn measured_nmi_prepare_interruption_records_captured_dma_for_active_scanout_onc
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame,
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: Some(captured_dma),
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
@@ -9345,7 +9343,6 @@ fn nmi_operand_consumption_preserves_the_scanout_plan() {
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame: state.game_state.frame,
         entry_plan,
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
@@ -9379,7 +9376,6 @@ fn leading_nmi_uses_the_captured_link_high_plane_staging_buffers() {
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame: state.game_state.frame,
         entry_plan,
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),

@@ -8784,15 +8784,6 @@ pub struct ZeldaState {
     // module_pre_dungeon_after_audio_prefix_with_song_bank_timing.
     #[serde(skip)]
     selected_game_load_room_preloaded: bool,
-    // Set on a frame whose ROM main thread runs PAST the next vblank (a lag
-    // frame, Bank00 Vector_NMI `LDA $12 : BNE .skip`): the NMI then skips
-    // NMI_DoUpdates entirely, so the $7E0800->$2104 OAM DMA does not happen and
-    // the scanout keeps the PREVIOUS frame's OAM. Snes9x-verified for the
-    // module-0x0F dungeon-exit prep frame (route frame 14661: the bed-sheet
-    // ancilla's OAM entries stay displayed one frame after the shadow hid
-    // them). Consumed (taken) in nmi_do_updates_from.
-    #[serde(skip)]
-    rom_lag_frame_skip_oam_dma: bool,
     #[serde(skip)]
     game_over_iris_goal_scanout_closed_pending: bool,
     #[serde(skip)]
@@ -9201,8 +9192,6 @@ pub struct ZeldaState {
     ending_coords: sprite::PrepOamCoordsRet,
     #[serde(skip)]
     intro_poly_vram_history: Vec<(u8, Vec<u16>, Vec<u16>)>,
-    #[serde(skip)]
-    intro_poly_presented_vram: Option<(u8, Vec<u16>)>,
     audio: audio::AudioState,
     #[serde(skip)]
     emu_memory_ptr: Option<Vec<u8>>,
@@ -9758,7 +9747,6 @@ impl NmiCopyPacketScanout {
 struct PreMainGraphicsDma {
     entry_frame: crate::game_state::FrameState,
     entry_plan: GraphicsDmaPlan,
-    entry_dialogue_text_render_state: u8,
     entry_link_handler_state: u8,
     animated_tile: Option<PreMainAnimatedTileDma>,
     link_operands: PreMainLinkDmaOperands,
@@ -15085,7 +15073,6 @@ impl ZeldaState {
             rom_startup_timing: false,
             rom_load_partial_nmi_this_frame: false,
             selected_game_load_room_preloaded: false,
-            rom_lag_frame_skip_oam_dma: false,
             game_over_iris_goal_scanout_closed_pending: false,
             intro_initialization_work_frames_pending: 0,
             intro_initialization_reset_obj_control_pending: false,
@@ -15210,7 +15197,6 @@ impl ZeldaState {
             replay_reopened_lamp_prompt: false,
             ending_coords: sprite::PrepOamCoordsRet::default(),
             intro_poly_vram_history: Vec::new(),
-            intro_poly_presented_vram: None,
             audio: audio::AudioState::default(),
             emu_memory_ptr: None,
             emu_runframe: None,
@@ -15305,7 +15291,6 @@ impl ZeldaState {
         self.intro_zelda_fade_transition_pending = false;
         self.intro_poly_thread_teardown_pending = false;
         self.intro_poly_vram_history.clear();
-        self.intro_poly_presented_vram = None;
         self.sync_overworld_map16_state_from_ram();
         self.display_snapshot = None;
         self.active_effective_dma_writes = None;
@@ -15377,7 +15362,6 @@ impl ZeldaState {
             self.intro_zelda_fade_transition_pending = false;
             self.intro_poly_thread_teardown_pending = false;
             self.intro_poly_vram_history.clear();
-            self.intro_poly_presented_vram = None;
             self.display_snapshot = None;
             self.active_effective_dma_writes = None;
             self.resident_oam_dma = None;
@@ -22539,11 +22523,6 @@ impl ZeldaState {
             Some(PreMainGraphicsDma {
                 entry_frame: self.game_state.frame,
                 entry_plan: rom_graphics_dma_plan_at_host_boundary(self.game_state.frame),
-                entry_dialogue_text_render_state: self
-                    .game_state
-                    .messaging
-                    .runtime
-                    .text_render_state(),
                 entry_link_handler_state: self.game_state.player.follower_link.handler_state(),
                 animated_tile,
                 link_operands: PreMainLinkDmaOperands::capture(&self.ram),

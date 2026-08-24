@@ -947,7 +947,6 @@ impl ZeldaState {
                 oam_buf[0x214..0x217].copy_from_slice(&boundary_oam[0x214..0x217]);
             }
         }
-        let _ = std::mem::take(&mut self.rom_lag_frame_skip_oam_dma);
         if !defer_intro_initialization_oam_dma {
             self.complete_oam_dma_from_source(&oam_buf);
         }

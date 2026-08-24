@@ -1385,7 +1385,6 @@ fn dungeon_dialogue_render_entry_decodes_host_link_obj_cache_only() {
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame,
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
@@ -1564,7 +1563,6 @@ fn host_boundary_obj_cache_retains_both_hardware_name_pages() {
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame,
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
@@ -3300,7 +3298,6 @@ fn brightness_entry_authors_retained_link_pages_from_captured_dma_operands() {
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame,
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
@@ -3470,7 +3467,6 @@ fn room_82_horizontal_state3_boundaries_publish_entry_oam_after_cache_compositio
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame,
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
@@ -3550,7 +3546,6 @@ fn room_82_horizontal_quadrant_filter_entry_publishes_host_boundary_oam() {
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame,
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
@@ -3594,7 +3589,6 @@ fn room_82_horizontal_first_scroll_releases_stale_capture_to_host_boundary_oam()
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame,
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
@@ -3645,7 +3639,6 @@ fn room_82_horizontal_first_scroll_host_boundary_survives_final_publication() {
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame,
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
@@ -4380,7 +4373,6 @@ fn queued_published_oam_source_uses_its_host_boundary_payload() {
     state.pre_main_graphics_dma = Some(PreMainGraphicsDma {
         entry_frame,
         entry_plan: rom_graphics_dma_plan_at_host_boundary(entry_frame),
-        entry_dialogue_text_render_state: 0,
         entry_link_handler_state: 0,
         animated_tile: None,
         link_operands: PreMainLinkDmaOperands::capture(&state.ram),
