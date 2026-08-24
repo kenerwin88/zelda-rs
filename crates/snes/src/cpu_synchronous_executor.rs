@@ -15,13 +15,14 @@ use crate::snes9x_apu_clock::{Snes9xApuClockError, Snes9xApuClockState};
 
 mod source_cpu;
 pub use source_cpu::{
-    Snes9xColdCpuExecutor, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
-    SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
+    Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError,
+    SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError, SourceCpuStepReceipt,
+    SourceCpuTransaction, SourceCpuTransactionKind,
 };
 
 /// A CPU bus semantic which has committed exactly once and whose access charge
 /// is waiting for a fallible hardware-event drain to finish.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CpuSynchronousCompletion {
     Read(u8),
     ReadWord(u16),

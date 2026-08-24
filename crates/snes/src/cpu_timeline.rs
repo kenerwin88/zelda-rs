@@ -29,7 +29,7 @@ pub const SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES: u64 = 12;
 pub const SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES: u64 = 24;
 
 /// A 65816 position within an NTSC field, expressed in S-CPU master cycles.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CpuRasterPosition {
     scanline: u16,
     master_cycle: u16,
@@ -53,7 +53,7 @@ impl CpuRasterPosition {
 }
 
 /// Bus work which consumes CPU time on the master-cycle timeline.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CpuBusWorkload {
     hdma_stall_master_cycles: u16,
     dynamic_hdma: bool,
@@ -83,14 +83,14 @@ impl CpuBusWorkload {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CpuBusEvent {
     WramRefresh,
     HdmaInit,
     HdmaStart,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CpuTimelineEvent {
     Bus(CpuBusEvent),
     ShortScanline,
@@ -102,7 +102,7 @@ pub enum CpuTimelineEvent {
 /// deliberately treats HMax as a coordinate rollover rather than a semantic
 /// callback. Synchronous device access must observe that rollover so the APU
 /// reference clock can be updated before the next bus semantic.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CpuSynchronousTimelineEvent {
     Bus(CpuBusEvent),
     HMax {
@@ -129,7 +129,18 @@ pub enum CpuSynchronousTimelineStartError {
 
 /// A single physical S-CPU master-clock timestamp observed before bus
 /// semantics execute.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct CpuMasterTimestamp(u64);
 
 impl CpuMasterTimestamp {
@@ -144,7 +155,7 @@ impl CpuMasterTimestamp {
 
 /// Video-field state which changes the CPU's available master-cycle budget.
 /// In non-interlace mode, scanline 240 of each odd field is one dot shorter.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CpuFieldTiming {
     odd_field: bool,
     interlace: bool,
@@ -278,7 +289,7 @@ pub enum CpuTimelineDeadlineAdvance {
 /// The timeline owns the absolute clock, field parity, bus workload, and event
 /// de-duplication. Callers retain ownership of semantic deadlines such as
 /// Zelda's display-publication and caller-continuation boundaries.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CpuMasterTimeline {
     clock_master_cycles: u64,
     bus: CpuBusWorkload,
@@ -288,14 +299,14 @@ pub struct CpuMasterTimeline {
     mode: CpuTimelineMode,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 enum CpuTimelineMode {
     Unclaimed,
     Legacy,
     Synchronous(CpuSynchronousEventCursor),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct CpuSynchronousEventCursor {
     master_cycles: u64,
     field_index: u64,
@@ -304,7 +315,88 @@ struct CpuSynchronousEventCursor {
     event: CpuSynchronousTimelineEvent,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum CpuSynchronousTimelineCheckpointError {
+    #[error("CPU timeline checkpoint is not owned by the synchronous executor")]
+    NotSynchronous,
+    #[error("quiescent synchronous CPU checkpoint contains unsupported bus workload")]
+    BusWorkload,
+    #[error("source-exact cold CPU checkpoint does not use pinned non-interlace-even timing")]
+    FieldTiming,
+    #[error("quiescent synchronous CPU checkpoint contains a legacy processed-event marker")]
+    LegacyProcessedEvent,
+    #[error(
+        "synchronous CPU checkpoint owns due event at {event_master_cycles}, clock is {clock_master_cycles}"
+    )]
+    DueEvent {
+        event_master_cycles: u64,
+        clock_master_cycles: u64,
+    },
+    #[error("synchronous CPU checkpoint WRAM refresh phase is {actual}, expected {expected}")]
+    RefreshPhase { actual: u16, expected: u16 },
+    #[error("synchronous CPU checkpoint event cursor does not match its physical clock")]
+    CursorMismatch,
+}
+
 impl CpuMasterTimeline {
+    pub(crate) fn validate_quiescent_synchronous_checkpoint(
+        &self,
+    ) -> Result<(), CpuSynchronousTimelineCheckpointError> {
+        let CpuTimelineMode::Synchronous(cursor) = self.mode else {
+            return Err(CpuSynchronousTimelineCheckpointError::NotSynchronous);
+        };
+        if self.bus != CpuBusWorkload::default() {
+            return Err(CpuSynchronousTimelineCheckpointError::BusWorkload);
+        }
+        if self.field_timing != CpuFieldTiming::NON_INTERLACE_EVEN {
+            return Err(CpuSynchronousTimelineCheckpointError::FieldTiming);
+        }
+        if self.processed_timeline_event.is_some() {
+            return Err(CpuSynchronousTimelineCheckpointError::LegacyProcessedEvent);
+        }
+        if cursor.master_cycles <= self.clock_master_cycles {
+            return Err(CpuSynchronousTimelineCheckpointError::DueEvent {
+                event_master_cycles: cursor.master_cycles,
+                clock_master_cycles: self.clock_master_cycles,
+            });
+        }
+
+        let raster = self.raster_position();
+        let field_index = self.field_index();
+        let expected_refresh =
+            snes9x_wram_refresh_cycle(field_index, raster.scanline, self.field_timing) as u16;
+        if self.wram_refresh_cycle != expected_refresh {
+            return Err(CpuSynchronousTimelineCheckpointError::RefreshPhase {
+                actual: self.wram_refresh_cycle,
+                expected: expected_refresh,
+            });
+        }
+        let line_start_master_cycles = self.clock_master_cycles - u64::from(raster.master_cycle);
+        let expected_cursor = self.synchronous_cursor_on_line_after(
+            field_index,
+            raster.scanline,
+            line_start_master_cycles,
+            Some(u32::from(raster.master_cycle)),
+        );
+        if cursor != expected_cursor {
+            return Err(CpuSynchronousTimelineCheckpointError::CursorMismatch);
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn corrupt_synchronous_cursor_for_test(&mut self) {
+        let CpuTimelineMode::Synchronous(cursor) = &mut self.mode else {
+            panic!("test requires a synchronous cursor")
+        };
+        cursor.master_cycles = cursor.master_cycles.wrapping_add(1);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn corrupt_field_timing_for_test(&mut self) {
+        self.field_timing = CpuFieldTiming::non_interlace(true);
+    }
+
     pub const fn new(
         clock_master_cycles: u64,
         bus: CpuBusWorkload,

@@ -5,10 +5,14 @@
 //! `S9xGet*`, `S9xSet*`, or `AddCycles` transaction boundary.
 
 use super::{CpuSynchronousCompletion, CpuSynchronousMachine, CpuSynchronousMachineError};
+use crate::apu::{Snes9xApuCoroutineCheckpoint, Snes9xApuCoroutineCheckpointError};
 use crate::cart::CartType;
-use crate::cpu_timeline::{CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuMasterTimestamp};
+use crate::cpu_timeline::{
+    CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuMasterTimestamp,
+    CpuSynchronousTimelineCheckpointError,
+};
 use crate::snes::Snes;
-use crate::snes9x_apu_clock::Snes9xApuClockState;
+use crate::snes9x_apu_clock::{Snes9xApuClockCheckpoint, Snes9xApuClockError, Snes9xApuClockState};
 
 const ONE_CYCLE: u32 = 6;
 const TWO_CYCLES: u32 = 12;
@@ -99,6 +103,67 @@ pub struct Snes9xColdCpuExecutor {
     machine: CpuSynchronousMachine,
     active_trace: Option<SourceCpuInstructionTrace>,
     poisoned: bool,
+}
+
+/// Versioned, standalone in-memory checkpoint of one quiescent source-exact
+/// CPU owner.
+///
+/// `Snes` keeps its legacy serialization unchanged. The exact SMP coroutine,
+/// DSP pipeline/RAM/sample publication state, physical CPU timeline cursor,
+/// and interrupt deadlines live alongside that stable machine in this one
+/// atomic sidecar. This intentionally contains the full ROM and duplicates APU
+/// RAM; a later persisted `.z3timing` wire format must instead be ROM-free and
+/// bind explicitly to its external machine/base-state identity.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct Snes9xCpuQuiescentCheckpoint {
+    version: u8,
+    snes: Snes,
+    timeline: CpuMasterTimeline,
+    apu_clock: Snes9xApuClockCheckpoint,
+    apu_exact: Snes9xApuCoroutineCheckpoint,
+    pending_completion: Option<CpuSynchronousCompletion>,
+    nmi_acceptance_not_before: Option<CpuMasterTimestamp>,
+    deferred_nmi_enable_edge: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum Snes9xCpuQuiescentCheckpointError {
+    #[error("source CPU executor is poisoned by a partial instruction")]
+    Poisoned,
+    #[error("source CPU executor has an active instruction trace")]
+    ActiveInstruction,
+    #[error("source CPU checkpoint has committed pending bus completion {completion:?}")]
+    PendingCompletion {
+        completion: CpuSynchronousCompletion,
+    },
+    #[error("source CPU checkpoint has an unpublished deferred NMI enable edge")]
+    DeferredNmiEnableEdge,
+    #[error("source CPU checkpoint contains transient debug/instruction state")]
+    TransientDebugState,
+    #[error("source CPU checkpoint is outside the audited IRQ/DMA/HDMA scope")]
+    UnsupportedExecutionScope,
+    #[error("source CPU checkpoint cannot resume WAI/STP state")]
+    UnsupportedPowerState,
+    #[error("source CPU checkpoint does not contain an exact APU sidecar")]
+    MissingApuSidecar,
+    #[error("unsupported source CPU checkpoint version {version}")]
+    Version { version: u8 },
+    #[error("APU clock reference {reference} is after CPU timeline clock {timeline}")]
+    ApuClockAfterTimeline { reference: u64, timeline: u64 },
+    #[error("source CPU checkpoint NMI pending bit and acceptance deadline disagree")]
+    NmiOwnershipMismatch,
+    #[error("source CPU checkpoint NMI deadline {deadline} is not in ({timeline}, {latest}]")]
+    NmiDeadline {
+        deadline: u64,
+        timeline: u64,
+        latest: u64,
+    },
+    #[error(transparent)]
+    Timeline(#[from] CpuSynchronousTimelineCheckpointError),
+    #[error(transparent)]
+    ApuClock(#[from] Snes9xApuClockError),
+    #[error(transparent)]
+    Apu(#[from] Snes9xApuCoroutineCheckpointError),
 }
 
 struct SourceCpuInstructionTrace {
@@ -195,6 +260,133 @@ impl Snes9xColdCpuExecutor {
 
     pub const fn machine(&self) -> &CpuSynchronousMachine {
         &self.machine
+    }
+
+    pub fn capture_quiescent_checkpoint(
+        &self,
+    ) -> Result<Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError> {
+        if self.poisoned {
+            return Err(Snes9xCpuQuiescentCheckpointError::Poisoned);
+        }
+        if self.active_trace.is_some() {
+            return Err(Snes9xCpuQuiescentCheckpointError::ActiveInstruction);
+        }
+        Self::validate_quiescent_machine(&self.machine)?;
+        let apu_exact = self
+            .machine
+            .snes
+            .apu
+            .capture_snes9x_apu_coroutine_checkpoint()
+            .ok_or(Snes9xCpuQuiescentCheckpointError::MissingApuSidecar)?;
+        Ok(Snes9xCpuQuiescentCheckpoint {
+            version: 1,
+            snes: self.machine.snes.clone(),
+            timeline: self.machine.timeline.clone(),
+            apu_clock: self.machine.apu_clock.checkpoint(),
+            apu_exact,
+            pending_completion: self.machine.pending_completion,
+            nmi_acceptance_not_before: self.machine.nmi_acceptance_not_before,
+            deferred_nmi_enable_edge: self.machine.deferred_nmi_enable_edge,
+        })
+    }
+
+    pub fn from_quiescent_checkpoint(
+        checkpoint: Snes9xCpuQuiescentCheckpoint,
+    ) -> Result<Self, Snes9xCpuQuiescentCheckpointError> {
+        if checkpoint.version != 1 {
+            return Err(Snes9xCpuQuiescentCheckpointError::Version {
+                version: checkpoint.version,
+            });
+        }
+        let apu_clock = Snes9xApuClockState::from_checkpoint(checkpoint.apu_clock)?;
+        let mut snes = checkpoint.snes;
+        snes.apu
+            .restore_snes9x_apu_coroutine_checkpoint(checkpoint.apu_exact)?;
+        let machine = CpuSynchronousMachine {
+            snes,
+            timeline: checkpoint.timeline,
+            apu_clock,
+            pending_completion: checkpoint.pending_completion,
+            nmi_acceptance_not_before: checkpoint.nmi_acceptance_not_before,
+            deferred_nmi_enable_edge: checkpoint.deferred_nmi_enable_edge,
+            #[cfg(test)]
+            force_zero_cycle_smp_step: false,
+        };
+        Self::validate_quiescent_machine(&machine)?;
+        Ok(Self {
+            machine,
+            active_trace: None,
+            poisoned: false,
+        })
+    }
+
+    pub fn restore_quiescent_checkpoint(
+        &mut self,
+        checkpoint: Snes9xCpuQuiescentCheckpoint,
+    ) -> Result<(), Snes9xCpuQuiescentCheckpointError> {
+        let candidate = Self::from_quiescent_checkpoint(checkpoint)?;
+        *self = candidate;
+        Ok(())
+    }
+
+    fn validate_quiescent_machine(
+        machine: &CpuSynchronousMachine,
+    ) -> Result<(), Snes9xCpuQuiescentCheckpointError> {
+        if let Some(completion) = machine.pending_completion {
+            return Err(Snes9xCpuQuiescentCheckpointError::PendingCompletion { completion });
+        }
+        if machine.deferred_nmi_enable_edge {
+            return Err(Snes9xCpuQuiescentCheckpointError::DeferredNmiEnableEdge);
+        }
+        if machine.snes.has_transient_synchronous_debug_state() {
+            return Err(Snes9xCpuQuiescentCheckpointError::TransientDebugState);
+        }
+        #[cfg(test)]
+        if machine.force_zero_cycle_smp_step {
+            return Err(Snes9xCpuQuiescentCheckpointError::TransientDebugState);
+        }
+        if machine.snes.h_irq_enabled
+            || machine.snes.v_irq_enabled
+            || machine.snes.cpu.irq_wanted
+            || machine
+                .snes
+                .dma
+                .channel
+                .iter()
+                .any(|channel| channel.dma_active || channel.hdma_active)
+        {
+            return Err(Snes9xCpuQuiescentCheckpointError::UnsupportedExecutionScope);
+        }
+        if machine.snes.cpu.waiting || machine.snes.cpu.stopped {
+            return Err(Snes9xCpuQuiescentCheckpointError::UnsupportedPowerState);
+        }
+        machine
+            .timeline
+            .validate_quiescent_synchronous_checkpoint()?;
+        let apu_reference = machine.apu_clock.checkpoint().cpu_reference_master_cycles();
+        let timeline_clock = machine.timestamp().master_cycles();
+        if apu_reference > timeline_clock {
+            return Err(Snes9xCpuQuiescentCheckpointError::ApuClockAfterTimeline {
+                reference: apu_reference,
+                timeline: timeline_clock,
+            });
+        }
+        if machine.snes.cpu.nmi_wanted != machine.nmi_acceptance_not_before.is_some() {
+            return Err(Snes9xCpuQuiescentCheckpointError::NmiOwnershipMismatch);
+        }
+        if let Some(deadline) = machine.nmi_acceptance_not_before {
+            let deadline = deadline.master_cycles();
+            let latest = timeline_clock
+                .saturating_add(crate::cpu_timeline::SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES);
+            if deadline <= timeline_clock || deadline > latest {
+                return Err(Snes9xCpuQuiescentCheckpointError::NmiDeadline {
+                    deadline,
+                    timeline: timeline_clock,
+                    latest,
+                });
+            }
+        }
+        Ok(())
     }
 
     pub fn step(&mut self) -> Result<SourceCpuStepReceipt, SourceCpuError> {
@@ -1564,6 +1756,226 @@ mod tests {
         rom[0x7ffc] = 0x00;
         rom[0x7ffd] = 0x80;
         rom
+    }
+
+    #[test]
+    fn quiescent_checkpoint_roundtrips_every_exact_owner_without_changing_legacy_snes_serde() {
+        let rom = synthetic_rom(&[0x18, 0x18]);
+        let mut original = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        original.machine.snes.input1.current_state = 0x1234;
+        original.machine.snes.input1.latched_state = 0xabcd;
+        let legacy_before = serde_json::to_vec(original.machine.snes()).unwrap();
+
+        let checkpoint = original.capture_quiescent_checkpoint().unwrap();
+        assert_eq!(serde_json::to_vec(&checkpoint.snes).unwrap(), legacy_before);
+        let encoded = serde_json::to_vec(&checkpoint).unwrap();
+        let checkpoint: Snes9xCpuQuiescentCheckpoint = serde_json::from_slice(&encoded).unwrap();
+        let mut restored = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
+
+        assert_eq!(
+            serde_json::to_vec(restored.machine.snes()).unwrap(),
+            legacy_before
+        );
+        assert_eq!(restored.machine.timestamp(), original.machine.timestamp());
+        assert_eq!(
+            restored
+                .machine
+                .snes
+                .apu
+                .capture_snes9x_apu_coroutine_checkpoint(),
+            original
+                .machine
+                .snes
+                .apu
+                .capture_snes9x_apu_coroutine_checkpoint()
+        );
+        assert_eq!(restored.step().unwrap(), original.step().unwrap());
+    }
+
+    #[test]
+    fn quiescent_checkpoint_rejects_nonquiescent_executor_state() {
+        let rom = synthetic_rom(&[0x18]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.pending_completion = Some(CpuSynchronousCompletion::Read(0x5a));
+        assert!(matches!(
+            cpu.capture_quiescent_checkpoint(),
+            Err(Snes9xCpuQuiescentCheckpointError::PendingCompletion {
+                completion: CpuSynchronousCompletion::Read(0x5a)
+            })
+        ));
+
+        cpu.machine.pending_completion = None;
+        cpu.machine.deferred_nmi_enable_edge = true;
+        assert_eq!(
+            cpu.capture_quiescent_checkpoint().err().unwrap(),
+            Snes9xCpuQuiescentCheckpointError::DeferredNmiEnableEdge
+        );
+
+        cpu.machine.deferred_nmi_enable_edge = false;
+        cpu.active_trace = Some(SourceCpuInstructionTrace {
+            origin_pc: 0x008000,
+            opcode: None,
+            memory_speed: None,
+            transactions: Vec::new(),
+        });
+        assert_eq!(
+            cpu.capture_quiescent_checkpoint().err().unwrap(),
+            Snes9xCpuQuiescentCheckpointError::ActiveInstruction
+        );
+
+        cpu.active_trace = None;
+        cpu.poisoned = true;
+        assert_eq!(
+            cpu.capture_quiescent_checkpoint().err().unwrap(),
+            Snes9xCpuQuiescentCheckpointError::Poisoned
+        );
+
+        cpu.poisoned = false;
+        cpu.machine.snes.debug_cpu_write_trace = Some(Vec::new());
+        assert_eq!(
+            cpu.capture_quiescent_checkpoint().err().unwrap(),
+            Snes9xCpuQuiescentCheckpointError::TransientDebugState
+        );
+
+        cpu.machine.snes.debug_cpu_write_trace = None;
+        cpu.machine.snes.cpu.waiting = true;
+        assert_eq!(
+            cpu.capture_quiescent_checkpoint().err().unwrap(),
+            Snes9xCpuQuiescentCheckpointError::UnsupportedPowerState
+        );
+        cpu.machine.snes.cpu.waiting = false;
+        cpu.machine.snes.cpu.stopped = true;
+        assert_eq!(
+            cpu.capture_quiescent_checkpoint().err().unwrap(),
+            Snes9xCpuQuiescentCheckpointError::UnsupportedPowerState
+        );
+    }
+
+    #[test]
+    fn quiescent_checkpoint_retains_pending_nmi_deadline_and_input_shift_state() {
+        let rom = synthetic_rom(&[0x18]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.nmi_wanted = true;
+        let deadline = CpuMasterTimestamp::new(cpu.machine.timestamp().master_cycles() + 12);
+        cpu.machine.nmi_acceptance_not_before = Some(deadline);
+        cpu.machine.snes.input1.current_state = 0x1357;
+        cpu.machine.snes.input1.latched_state = 0x2468;
+        cpu.machine.snes.input1.latch_line = true;
+
+        let encoded = serde_json::to_vec(&cpu.capture_quiescent_checkpoint().unwrap()).unwrap();
+        let checkpoint: Snes9xCpuQuiescentCheckpoint = serde_json::from_slice(&encoded).unwrap();
+        let restored = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
+
+        assert!(restored.machine.snes.cpu.nmi_wanted);
+        assert_eq!(restored.machine.nmi_acceptance_not_before, Some(deadline));
+        assert_eq!(restored.machine.snes.input1.current_state, 0x1357);
+        assert_eq!(restored.machine.snes.input1.latched_state, 0x2468);
+        assert!(restored.machine.snes.input1.latch_line);
+    }
+
+    #[test]
+    fn quiescent_checkpoint_restores_unpublished_dsp_samples_exactly_once() {
+        let rom = synthetic_rom(&[0x18]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        while cpu.machine.snes.apu.cycles < 32 {
+            cpu.machine
+                .snes
+                .apu
+                .run_snes9x_micro_step_without_dsp()
+                .unwrap();
+        }
+        cpu.machine.snes.apu.synchronize_snes9x_dsp();
+
+        let encoded = serde_json::to_vec(&cpu.capture_quiescent_checkpoint().unwrap()).unwrap();
+        let checkpoint: Snes9xCpuQuiescentCheckpoint = serde_json::from_slice(&encoded).unwrap();
+        let mut restored = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
+        let first = restored.machine.take_dsp_samples();
+        assert!(!first.samples.is_empty());
+        assert!(restored.machine.take_dsp_samples().samples.is_empty());
+    }
+
+    #[test]
+    fn malformed_or_mixed_quiescent_checkpoint_never_mutates_restore_target() {
+        let rom = synthetic_rom(&[0x18]);
+        let source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        let good = source.capture_quiescent_checkpoint().unwrap();
+
+        let mut target = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        let target_before = serde_json::to_vec(target.machine.snes()).unwrap();
+        let target_timestamp = target.machine.timestamp();
+        let assert_unchanged = |target: &Snes9xColdCpuExecutor| {
+            assert_eq!(
+                serde_json::to_vec(target.machine.snes()).unwrap(),
+                target_before
+            );
+            assert_eq!(target.machine.timestamp(), target_timestamp);
+        };
+
+        let mut malformed = good.clone();
+        malformed.version = 2;
+        assert!(matches!(
+            target.restore_quiescent_checkpoint(malformed),
+            Err(Snes9xCpuQuiescentCheckpointError::Version { version: 2 })
+        ));
+        assert_unchanged(&target);
+
+        let mut malformed = good.clone();
+        malformed.timeline.corrupt_field_timing_for_test();
+        assert!(matches!(
+            target.restore_quiescent_checkpoint(malformed),
+            Err(Snes9xCpuQuiescentCheckpointError::Timeline(
+                CpuSynchronousTimelineCheckpointError::FieldTiming
+            ))
+        ));
+        assert_unchanged(&target);
+
+        let mut malformed = good.clone();
+        malformed.timeline.corrupt_synchronous_cursor_for_test();
+        assert!(matches!(
+            target.restore_quiescent_checkpoint(malformed),
+            Err(Snes9xCpuQuiescentCheckpointError::Timeline(
+                CpuSynchronousTimelineCheckpointError::CursorMismatch
+            ))
+        ));
+        assert_unchanged(&target);
+
+        let mut mixed_owner = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        mixed_owner.machine.snes.apu.out_ports[0] = 1;
+        let mixed_apu = mixed_owner
+            .capture_quiescent_checkpoint()
+            .unwrap()
+            .apu_exact;
+        let mut malformed = good.clone();
+        malformed.apu_exact = mixed_apu;
+        assert!(matches!(
+            target.restore_quiescent_checkpoint(malformed),
+            Err(Snes9xCpuQuiescentCheckpointError::Apu(
+                Snes9xApuCoroutineCheckpointError::MachineIdentityMismatch
+            ))
+        ));
+        assert_unchanged(&target);
+
+        let mut malformed = good.clone();
+        malformed.snes.cpu.nmi_wanted = true;
+        assert_eq!(
+            target.restore_quiescent_checkpoint(malformed).unwrap_err(),
+            Snes9xCpuQuiescentCheckpointError::NmiOwnershipMismatch
+        );
+        assert_unchanged(&target);
+
+        for deadline in [
+            target_timestamp.master_cycles(),
+            target_timestamp.master_cycles() + 13,
+        ] {
+            let mut malformed = good.clone();
+            malformed.snes.cpu.nmi_wanted = true;
+            malformed.nmi_acceptance_not_before = Some(CpuMasterTimestamp::new(deadline));
+            assert!(matches!(
+                target.restore_quiescent_checkpoint(malformed),
+                Err(Snes9xCpuQuiescentCheckpointError::NmiDeadline { .. })
+            ));
+            assert_unchanged(&target);
+        }
     }
 
     fn assert_timing_transaction(

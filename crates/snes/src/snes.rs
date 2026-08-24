@@ -123,6 +123,12 @@ impl Snes {
         }
     }
 
+    pub(crate) fn has_transient_synchronous_debug_state(&self) -> bool {
+        self.cpu_bus_master_cycles != 0
+            || self.debug_cpu_write_trace.is_some()
+            || self.apu.has_transient_snes9x_debug_state()
+    }
+
     /// `snes_reset` — order matters because `cpu_reset` reads the reset
     /// vector from $FFFC, which routes through the cart.
     pub fn reset(&mut self, hard: bool) {

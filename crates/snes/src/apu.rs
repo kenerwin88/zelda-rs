@@ -1193,6 +1193,10 @@ pub enum Snes9xApuCoroutineCheckpointError {
     NegativeDspClock { clocks: i32 },
     #[error("Snes9x APU sidecar does not belong to this serialized APU machine")]
     MachineIdentityMismatch,
+    #[error("scheduled Snes9x APU input event {index} is earlier than its predecessor")]
+    ScheduledInputPortOrder { index: usize },
+    #[error("scheduled Snes9x APU input event {index} uses invalid port {port}")]
+    ScheduledInputPort { index: usize, port: u8 },
     #[error("bootstrap-only SMP checkpoint cannot capture or replace progressed DSP state")]
     BootstrapCheckpointAfterDspSync,
     #[error(transparent)]
@@ -1257,6 +1261,12 @@ impl Default for ApuState {
 impl ApuState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn has_transient_snes9x_debug_state(&self) -> bool {
+        self.debug_dsp_write_trace.is_some()
+            || self.debug_spc_instruction_trace.is_some()
+            || self.debug_spc_bus_trace.is_some()
     }
 
     pub fn reset(&mut self) {
@@ -1384,6 +1394,17 @@ impl ApuState {
             return Err(Snes9xApuCoroutineCheckpointError::NegativeDspClock {
                 clocks: checkpoint.smp.dsp_clock,
             });
+        }
+        for (index, event) in checkpoint.scheduled_input_port_writes.iter().enumerate() {
+            if event.1 > 3 {
+                return Err(Snes9xApuCoroutineCheckpointError::ScheduledInputPort {
+                    index,
+                    port: event.1,
+                });
+            }
+            if index != 0 && checkpoint.scheduled_input_port_writes[index - 1].0 > event.0 {
+                return Err(Snes9xApuCoroutineCheckpointError::ScheduledInputPortOrder { index });
+            }
         }
         if self.ram != checkpoint.shared_apu_ram
             || self.snes9x_machine_identity() != checkpoint.machine_identity
@@ -4103,6 +4124,34 @@ mod tests {
             apu.restore_snes9x_apu_coroutine_checkpoint(negative),
             Err(Snes9xApuCoroutineCheckpointError::NegativeDspClock { clocks: -1 })
         );
+    }
+
+    #[test]
+    fn exact_checkpoint_rejects_noncanonical_scheduled_input_events_before_mutation() {
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        apu.schedule_input_port_event(10, 0, 1);
+        apu.schedule_input_port_event(20, 1, 2);
+        let before = apu.capture_snes9x_apu_coroutine_checkpoint().unwrap();
+
+        let mut reversed = before.clone();
+        reversed.scheduled_input_port_writes.swap(0, 1);
+        assert_eq!(
+            apu.restore_snes9x_apu_coroutine_checkpoint(reversed),
+            Err(Snes9xApuCoroutineCheckpointError::ScheduledInputPortOrder { index: 1 })
+        );
+        assert_eq!(
+            apu.capture_snes9x_apu_coroutine_checkpoint(),
+            Some(before.clone())
+        );
+
+        let mut invalid_port = before.clone();
+        invalid_port.scheduled_input_port_writes[0].1 = 4;
+        assert_eq!(
+            apu.restore_snes9x_apu_coroutine_checkpoint(invalid_port),
+            Err(Snes9xApuCoroutineCheckpointError::ScheduledInputPort { index: 0, port: 4 })
+        );
+        assert_eq!(apu.capture_snes9x_apu_coroutine_checkpoint(), Some(before));
     }
 
     #[test]
