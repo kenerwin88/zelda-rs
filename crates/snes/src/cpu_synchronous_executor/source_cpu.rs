@@ -598,6 +598,10 @@ impl Snes9xColdCpuExecutor {
         accesses: &mut Vec<SourceCpuBusAccess>,
     ) -> Result<(), SourceCpuError> {
         match opcode {
+            0x0a => {
+                self.add_cycles(ONE_CYCLE)?;
+                self.asl_accumulator();
+            }
             0x0b => {
                 self.add_cycles(ONE_CYCLE)?;
                 let direct_page = self.machine.snes.cpu.dp;
@@ -1757,6 +1761,17 @@ impl Snes9xColdCpuExecutor {
         self.set_zn(value, eight_bit);
     }
 
+    fn asl_accumulator(&mut self) {
+        let eight_bit = self.machine.snes.cpu.mf;
+        let mask = if eight_bit { 0x00ff } else { 0xffff };
+        let sign = if eight_bit { 0x0080 } else { 0x8000 };
+        let value = self.machine.snes.cpu.a & mask;
+        self.machine.snes.cpu.c = value & sign != 0;
+        let result = value.wrapping_shl(1) & mask;
+        self.machine.snes.cpu.a = (self.machine.snes.cpu.a & !mask) | result;
+        self.set_zn(result, eight_bit);
+    }
+
     fn set_zn(&mut self, value: u16, eight_bit: bool) {
         let value = if eight_bit { value & 0xff } else { value };
         self.machine.snes.cpu.z = value == 0;
@@ -2815,6 +2830,60 @@ mod tests {
     }
 
     #[test]
+    fn asl_accumulator_m8_preserves_b_and_sets_carry_and_sign() {
+        let rom = synthetic_rom(&[0x0a]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.a = 0x12c1;
+        cpu.machine.snes.cpu.c = false;
+
+        let receipt = cpu.step().unwrap();
+
+        assert_source_transaction_shape(
+            &receipt,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 6),
+            ],
+        );
+        assert_eq!(receipt.accesses.len(), 1);
+        assert_eq!(cpu.machine.snes.cpu.a, 0x1282);
+        assert!(cpu.machine.snes.cpu.c);
+        assert!(cpu.machine.snes.cpu.n);
+        assert!(!cpu.machine.snes.cpu.z);
+    }
+
+    #[test]
+    fn asl_accumulator_m16_uses_bit_fifteen_and_wraps_to_zero() {
+        let rom = synthetic_rom(&[0x0a]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.e = false;
+        cpu.machine.snes.cpu.mf = false;
+        cpu.machine.snes.cpu.a = 0x8000;
+        cpu.machine.snes.cpu.c = false;
+
+        let receipt = cpu.step().unwrap();
+
+        assert_source_transaction_shape(
+            &receipt,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 6),
+            ],
+        );
+        assert_eq!(receipt.accesses.len(), 1);
+        assert_eq!(cpu.machine.snes.cpu.a, 0);
+        assert!(cpu.machine.snes.cpu.c);
+        assert!(!cpu.machine.snes.cpu.n);
+        assert!(cpu.machine.snes.cpu.z);
+    }
+
+    #[test]
     fn ldx_absolute_x8_reads_after_operand_and_publishes_loaded_byte() {
         let rom = synthetic_rom(&[0xae, 0x34, 0x12]);
         let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
@@ -3706,18 +3775,31 @@ mod tests {
             cpu.machine.timeline.raster_position(),
             crate::CpuRasterPosition::new(250, 160)
         );
+        let asl = cpu.step().unwrap();
+        assert_eq!(asl.origin_pc, 0x00_8c77);
+        assert_eq!(asl.opcode, 0x0a);
+
+        for _ in 0..2 {
+            cpu.step().unwrap();
+        }
+        assert_eq!(cpu.program_address(), 0x00_8c7b);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_930_492));
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(250, 212)
+        );
         assert_eq!(
             cpu.step(),
             Err(SourceCpuError::UnsupportedOpcode {
-                pc: 0x00_8c77,
-                opcode: 0x0a,
+                pc: 0x00_8c7b,
+                opcode: 0x7c,
             })
         );
-        assert_eq!(cpu.program_address(), 0x00_8c78);
-        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_930_448));
+        assert_eq!(cpu.program_address(), 0x00_8c7c);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_930_500));
         assert_eq!(
             cpu.machine.timeline.raster_position(),
-            crate::CpuRasterPosition::new(250, 168)
+            crate::CpuRasterPosition::new(250, 220)
         );
         assert!(cpu.is_poisoned());
     }
