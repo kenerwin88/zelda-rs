@@ -89,6 +89,9 @@ pub struct CpuSynchronousMachine {
     /// `$4200` low-to-high NMI edges are published by `CHECK_FOR_IRQ_CHANGE`
     /// after the writing instruction, not by the register semantic itself.
     deferred_nmi_enable_edge: bool,
+    /// Absolute source `Timings.NextIRQTimer` for the audited vertical-only
+    /// IRQ mode. `None` is Snes9x's disabled/out-of-range sentinel.
+    irq_timer_at: Option<CpuMasterTimestamp>,
     /// Pinned `SCAN_KEYS_FLAG`, with the exact VBlank H-event timestamp carried
     /// as its one-shot host-return receipt. Repeated VBlank events cannot
     /// replace an unconsumed return request.
@@ -118,6 +121,7 @@ impl CpuSynchronousMachine {
             source_vmain_full_graphic_count_nonzero: false,
             nmi_acceptance_not_before: None,
             deferred_nmi_enable_edge: false,
+            irq_timer_at: None,
             main_loop_return_pending: None,
             #[cfg(test)]
             force_zero_cycle_smp_step: false,
@@ -691,6 +695,7 @@ mod tests {
             source_vmain_full_graphic_count_nonzero: false,
             nmi_acceptance_not_before: None,
             deferred_nmi_enable_edge: false,
+            irq_timer_at: None,
             main_loop_return_pending: None,
             force_zero_cycle_smp_step: false,
         }
