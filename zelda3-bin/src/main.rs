@@ -11,6 +11,7 @@ mod audio_trace;
 mod developer_destinations;
 mod developer_modern_map;
 mod developer_room_commands;
+mod dsp_phase_ledger;
 mod frame_dump_commands;
 mod gpu_capture;
 mod hd_authoring_commands;
@@ -114,6 +115,10 @@ fn main() {
     let args: Vec<String> = env::args().collect();
     if args.get(1).map(String::as_str) == Some("--generate-snes9x-smp-opcode-ledger") {
         smp_opcode_ledger::run_generate_command(&args[2..]);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("--generate-snes9x-dsp-phase-ledger") {
+        dsp_phase_ledger::run_generate_command(&args[2..]);
         return;
     }
     if dispatch_rom_first_oracle_flags(&args) {

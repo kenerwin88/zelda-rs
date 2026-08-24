@@ -1,0 +1,777 @@
+diff --git a/apu/apu.cpp b/apu/apu.cpp
+--- a/apu/apu.cpp
++++ b/apu/apu.cpp
+@@ -4,6 +4,7 @@
+    For further information, consult the LICENSE file in the root directory.
+ \*****************************************************************************/
+ 
++#include <algorithm>
+ #include <cmath>
+ #include <vector>
+ #include "../snes9x.h"
+@@ -514,4 +515,284 @@
+     S9xSetSoundMute(false);
+ 
+     return true;
++}
++
++
++namespace {
++constexpr int state_capacity = 1024;
++constexpr int diff_capacity = 512;
++constexpr int sample_capacity = 32;
++constexpr int suboperation_capacity = 1024;
++constexpr int profile_preroll = 256;
++bool ledger_mode = false;
++bool active = false;
++int overflow = 0;
++int state_size = 0;
++uint8 state[state_capacity] = {};
++uint8 previous_ram[65536] = {};
++int ram_diff_count = 0;
++int ram_diff[diff_capacity][2] = {};
++int sample_count = 0;
++int samples[sample_capacity][2] = {};
++int suboperation_count = 0;
++int suboperations[suboperation_capacity][3] = {};
++int clock_before = 0;
++int clock_after = 0;
++int previous_interpolation_method = 0;
++int previous_separate_echo_buffer = 0;
++int ledger_interpolation_method = 0;
++int ledger_separate_echo_buffer = 0;
++uint64 branch_evaluated_mask = 0;
++uint64 branch_taken_mask = 0;
++uint64 branch_not_taken_mask = 0;
++}
++
++int Zelda3TraceDspLedgerAbiVersion() { return 2; }
++int Zelda3TraceDspLedgerStateCapacity() { return state_capacity; }
++
++static bool Zelda3TraceDspLedgerCaptureState()
++{
++	state_size = SNES::dsp.spc_dsp.zelda3_ledger_copy_state(state, state_capacity);
++	return state_size >= 0 && state_size <= state_capacity;
++}
++
++int Zelda3TraceDspLedgerBegin(int profile, int phase, int capture)
++{
++	if (profile < 0 || profile > 1 || phase < 0 || phase >= 32 ||
++		capture < 0 || capture > 1)
++		return 0;
++	ledger_mode = true;
++	previous_interpolation_method = Settings.InterpolationMethod;
++	previous_separate_echo_buffer = Settings.SeparateEchoBuffer;
++	Settings.InterpolationMethod = 2;
++	Settings.SeparateEchoBuffer = false;
++	ledger_interpolation_method = Settings.InterpolationMethod;
++	ledger_separate_echo_buffer = Settings.SeparateEchoBuffer;
++	active = false;
++	overflow = 0;
++	ram_diff_count = 0;
++	sample_count = 0;
++	suboperation_count = 0;
++	branch_evaluated_mask = 0;
++	branch_taken_mask = 0;
++	branch_not_taken_mask = 0;
++	SNES::smp.power();
++	for (int address = 0; address < 65536; address++)
++		SNES::smp.apuram[address] = (uint8) ((address * 37 +
++			(address >> 8) * 13 + profile * 97 + 0x5a) & 0xff);
++	for (int voice = 0; voice < 8; voice++)
++	{
++		int const directory = 0x2000 + voice * 4;
++		int const brr = 0x3000 + voice * 0x20;
++		SNES::smp.apuram[directory + 0] = brr & 0xff;
++		SNES::smp.apuram[directory + 1] = brr >> 8;
++		SNES::smp.apuram[directory + 2] = brr & 0xff;
++		SNES::smp.apuram[directory + 3] = brr >> 8;
++		SNES::smp.apuram[brr] = voice & 1 ? 0 : 3;
++	}
++	SNES::dsp.power();
++	if (!SNES::dsp.spc_dsp.zelda3_ledger_seed_profile(profile))
++		return 0;
++	if (profile == 0)
++	{
++		// Voice 6 reaches a direct GAIN envelope through the real pipeline,
++		// then a source write selects mode 7 with hidden_env already >= $600.
++		SNES::dsp.write(0x4c, 0xff);
++		SNES::dsp.clock = 256;
++		SNES::dsp.synchronize();
++		SNES::dsp.write(0x67, 0xff);
++		SNES::dsp.clock = profile_preroll;
++		SNES::dsp.synchronize();
++		SNES::dsp.write(0x4c, 0x01);
++		SNES::dsp.clock = phase;
++	}
++	else
++	{
++		SNES::dsp.clock = profile_preroll + phase;
++	}
++	SNES::dsp.synchronize();
++	sample_count = 0;
++	std::copy_n(SNES::smp.apuram, 65536, previous_ram);
++	state_size = 0;
++	if (capture && !Zelda3TraceDspLedgerCaptureState())
++		return 0;
++	clock_before = SNES::dsp.clock;
++	clock_after = SNES::dsp.clock;
++	active = capture != 0;
++	return 1;
+ }
++
++void Zelda3TraceDspLedgerEnd()
++{
++	active = false;
++	ledger_mode = false;
++	Settings.InterpolationMethod = previous_interpolation_method;
++	Settings.SeparateEchoBuffer = previous_separate_echo_buffer;
++}
++
++int Zelda3TraceDspLedgerOperate(int operation, int debt, int address, int value)
++{
++	if (!ledger_mode || overflow || operation < 0 || operation > 3 || debt < 0 ||
++		debt > 256 || address < 0 || address > 255 || value < 0 || value > 255)
++		return -1;
++	sample_count = 0;
++	suboperation_count = 0;
++	branch_evaluated_mask = 0;
++	branch_taken_mask = 0;
++	branch_not_taken_mask = 0;
++	clock_before = SNES::dsp.clock;
++	SNES::dsp.clock += debt;
++	int result = 0;
++	if (operation == 0)
++		SNES::dsp.synchronize();
++	else if (operation == 1)
++	{
++		SNES::smp.status.dsp_addr = address;
++		result = SNES::smp.mmio_read(0xf3);
++	}
++	else
++	{
++		SNES::smp.status.dsp_addr = address;
++		SNES::smp.mmio_write(0xf3, value);
++		result = value;
++	}
++	clock_after = SNES::dsp.clock;
++	ram_diff_count = 0;
++	for (int address_index = 0; address_index < 65536; address_index++)
++	{
++		const uint8 current = SNES::smp.apuram[address_index];
++		if (current == previous_ram[address_index])
++			continue;
++		if (ram_diff_count >= diff_capacity)
++		{
++			overflow = 1;
++			break;
++		}
++		ram_diff[ram_diff_count][0] = address_index;
++		ram_diff[ram_diff_count][1] = current;
++		ram_diff_count++;
++		previous_ram[address_index] = current;
++	}
++	state_size = 0;
++	if (active && !Zelda3TraceDspLedgerCaptureState())
++		overflow = 1;
++	return overflow ? -1 : result;
++}
++
++int Zelda3TraceDspLedgerFinalizeCapture()
++{
++	return ledger_mode && Zelda3TraceDspLedgerCaptureState() ? 1 : 0;
++}
++
++int Zelda3TraceDspLedgerStateSize() { return state_size; }
++int Zelda3TraceDspLedgerStateByte(int index)
++{
++	return ledger_mode && index >= 0 && index < state_size ? state[index] : -1;
++}
++int Zelda3TraceDspLedgerCopyRam(uint8 *out, int capacity)
++{
++	if (!ledger_mode || !out || capacity < 65536)
++		return -1;
++	std::copy_n(SNES::smp.apuram, 65536, out);
++	return 65536;
++}
++int Zelda3TraceDspLedgerRamDiffCount() { return ram_diff_count; }
++int Zelda3TraceDspLedgerRamDiffValue(int difference, int field)
++{
++	return difference >= 0 && difference < ram_diff_count && field >= 0 && field < 2
++		? ram_diff[difference][field] : -1;
++}
++int Zelda3TraceDspLedgerSampleCount() { return sample_count; }
++int Zelda3TraceDspLedgerSampleValue(int sample, int channel)
++{
++	return sample >= 0 && sample < sample_count && channel >= 0 && channel < 2
++		? samples[sample][channel] : -1;
++}
++int Zelda3TraceDspLedgerSubOperationCount() { return suboperation_count; }
++int Zelda3TraceDspLedgerSubOperationValue(int operation, int field)
++{
++	return operation >= 0 && operation < suboperation_count && field >= 0 && field < 3
++		? suboperations[operation][field] : -1;
++}
++int Zelda3TraceDspLedgerPhase() { return SNES::dsp.spc_dsp.zelda3_debug_value(7); }
++int Zelda3TraceDspLedgerClockBefore() { return clock_before; }
++int Zelda3TraceDspLedgerClockAfter() { return clock_after; }
++int Zelda3TraceDspLedgerConfigValue(int field)
++{
++	if (field == 0)
++		return ledger_separate_echo_buffer;
++	if (field == 3)
++		return ledger_interpolation_method;
++	return SNES::dsp.spc_dsp.zelda3_ledger_config_value(field);
++}
++uint64 Zelda3TraceDspLedgerBranchEvaluatedMask() { return branch_evaluated_mask; }
++uint64 Zelda3TraceDspLedgerBranchTakenMask() { return branch_taken_mask; }
++uint64 Zelda3TraceDspLedgerBranchNotTakenMask() { return branch_not_taken_mask; }
++int Zelda3TraceDspLedgerOverflow() { return overflow; }
++
++namespace SNES {
++void Zelda3TraceDspLedgerBranch(int branch, bool taken)
++{
++	if (active && branch >= 0 && branch < 64)
++	{
++		branch_evaluated_mask |= (uint64) 1 << branch;
++		if (taken)
++			branch_taken_mask |= (uint64) 1 << branch;
++		else
++			branch_not_taken_mask |= (uint64) 1 << branch;
++	}
++}
++bool Zelda3TraceDspLedgerCapturing() { return active; }
++bool Zelda3TraceDspLedgerMode() { return ledger_mode; }
++void Zelda3TraceDspLedgerSample(int left, int right)
++{
++	if (!ledger_mode)
++		return;
++	if (sample_count >= sample_capacity)
++	{
++		overflow = 1;
++		return;
++	}
++	samples[sample_count][0] = left;
++	samples[sample_count][1] = right;
++	sample_count++;
++}
++void Zelda3TraceDspLedgerSubOperation(int kind, int voice, int argument)
++{
++	if (!active)
++		return;
++	if (suboperation_count >= suboperation_capacity)
++	{
++		overflow = 1;
++		return;
++	}
++	suboperations[suboperation_count][0] = kind;
++	suboperations[suboperation_count][1] = voice;
++	suboperations[suboperation_count][2] = argument;
++	suboperation_count++;
++}
++}
++
++extern "C" int zelda3_snes9x_debug_dsp_ledger_abi_version() { return Zelda3TraceDspLedgerAbiVersion(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_state_capacity() { return Zelda3TraceDspLedgerStateCapacity(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_begin(int profile, int phase, int capture) { return Zelda3TraceDspLedgerBegin(profile, phase, capture); }
++extern "C" void zelda3_snes9x_debug_dsp_ledger_end() { Zelda3TraceDspLedgerEnd(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_operate(int operation, int debt, int address, int value) { return Zelda3TraceDspLedgerOperate(operation, debt, address, value); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_finalize_capture() { return Zelda3TraceDspLedgerFinalizeCapture(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_state_size() { return Zelda3TraceDspLedgerStateSize(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_state_byte(int index) { return Zelda3TraceDspLedgerStateByte(index); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_copy_ram(uint8_t *out, int capacity) { return Zelda3TraceDspLedgerCopyRam(out, capacity); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_ram_diff_count() { return Zelda3TraceDspLedgerRamDiffCount(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_ram_diff_value(int difference, int field) { return Zelda3TraceDspLedgerRamDiffValue(difference, field); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_sample_count() { return Zelda3TraceDspLedgerSampleCount(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_sample_value(int sample, int channel) { return Zelda3TraceDspLedgerSampleValue(sample, channel); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_suboperation_count() { return Zelda3TraceDspLedgerSubOperationCount(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_suboperation_value(int operation, int field) { return Zelda3TraceDspLedgerSubOperationValue(operation, field); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_phase() { return Zelda3TraceDspLedgerPhase(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_clock_before() { return Zelda3TraceDspLedgerClockBefore(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_clock_after() { return Zelda3TraceDspLedgerClockAfter(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_config_value(int field) { return Zelda3TraceDspLedgerConfigValue(field); }
++extern "C" uint64_t zelda3_snes9x_debug_dsp_ledger_branch_evaluated_mask() { return Zelda3TraceDspLedgerBranchEvaluatedMask(); }
++extern "C" uint64_t zelda3_snes9x_debug_dsp_ledger_branch_taken_mask() { return Zelda3TraceDspLedgerBranchTakenMask(); }
++extern "C" uint64_t zelda3_snes9x_debug_dsp_ledger_branch_not_taken_mask() { return Zelda3TraceDspLedgerBranchNotTakenMask(); }
++extern "C" int zelda3_snes9x_debug_dsp_ledger_overflow() { return Zelda3TraceDspLedgerOverflow(); }
+diff --git a/apu/bapu/dsp/SPC_DSP.cpp b/apu/bapu/dsp/SPC_DSP.cpp
+--- a/apu/bapu/dsp/SPC_DSP.cpp
++++ b/apu/bapu/dsp/SPC_DSP.cpp
+@@ -27,6 +27,11 @@
+ 	int voice, int channel, int output, int pipeline_output);
+ void Zelda3TraceCaptureDspInterpolation(
+ 	int voice, int offset, int oldest, int older, int old, int newest);
++void Zelda3TraceDspLedgerBranch(int branch, bool taken);
++bool Zelda3TraceDspLedgerCapturing();
++bool Zelda3TraceDspLedgerMode();
++void Zelda3TraceDspLedgerSample(int left, int right);
++void Zelda3TraceDspLedgerSubOperation(int kind, int voice, int argument);
+ 
+ #ifdef BLARGG_ENABLE_OPTIMIZER
+ 	#include BLARGG_ENABLE_OPTIMIZER
+@@ -79,8 +84,10 @@
+ #define SPC_DSP_OUT_HOOK(l, r)  \
+     {                           \
+         Zelda3TraceCaptureDspSample(this, l, r); \
+-        resampler->push_sample(l, r);  \
+-        if (Settings.MSU1)      \
++        Zelda3TraceDspLedgerSample(l, r); \
++        if (!Zelda3TraceDspLedgerMode()) \
++            resampler->push_sample(l, r);  \
++        if (!Zelda3TraceDspLedgerMode() && Settings.MSU1)      \
+             S9xMSU1Generate(2); \
+     }
+ 
+@@ -152,6 +159,75 @@
+ 	Zelda3TraceCaptureDspWrite(this, addr, data);
+ }
+ 
++static void zelda3_ledger_copy_bytes(unsigned char** io, void* state, size_t size)
++{
++	memcpy(*io, state, size);
++	*io += size;
++}
++
++int SPC_DSP::zelda3_ledger_copy_state(unsigned char* out, int capacity)
++{
++	if (!out || capacity < state_size)
++		return -1;
++	unsigned char* cursor = out;
++	copy_state(&cursor, zelda3_ledger_copy_bytes);
++	return (int) (cursor - out);
++}
++
++int SPC_DSP::zelda3_ledger_config_value(int field) const
++{
++	if (field == 0)
++		return Settings.SeparateEchoBuffer;
++	if (field == 1)
++		return stereo_switch;
++	if (field == 2)
++		return m.mute_mask;
++	if (field == 3)
++		return Settings.InterpolationMethod;
++	return -1;
++}
++
++int SPC_DSP::zelda3_ledger_seed_profile(int profile)
++{
++	if (profile < 0 || profile > 1 || !m.ram)
++		return 0;
++
++	uint8_t regs[register_count];
++	memset(regs, 0, sizeof regs);
++	regs[r_flg] = profile ? 0xe0 : 0x1f;
++	regs[r_mvoll] = 0x50;
++	regs[r_mvolr] = 0x58;
++	regs[r_evoll] = 0x20;
++	regs[r_evolr] = 0x28;
++	regs[r_efb] = 0x30;
++	regs[r_pmon] = profile ? 0x00 : 0xfe;
++	regs[r_non] = profile ? 0x00 : 0x55;
++	regs[r_eon] = profile ? 0x00 : 0xaa;
++	regs[r_kon] = 0x00;
++	regs[r_koff] = profile ? 0x0f : 0x00;
++	regs[r_dir] = 0x20;
++	regs[r_esa] = 0x40;
++	regs[r_edl] = profile ? 1 : 0;
++	static uint8_t const active_gain[voice_count] = {
++		0x7f, 0x60, 0x81, 0xa2, 0xc3, 0xe4, 0x7f, 0x7f
++	};
++	for (int voice = 0; voice < voice_count; voice++)
++	{
++		uint8_t* v = &regs[voice * 0x10];
++		v[v_voll] = 0x30 + voice;
++		v[v_volr] = 0x38 + voice;
++		v[v_pitchl] = 0x40 + voice;
++		v[v_pitchh] = 0x08;
++		v[v_srcn] = voice;
++		v[v_adsr0] = !profile && (voice == 0 || voice == 7) ? 0x8f : 0x00;
++		v[v_adsr1] = 0x5f;
++		v[v_gain] = profile ? 0x7f : active_gain[voice];
++	}
++	for (int address = 0; address < register_count; address++)
++		write(address, regs[address]);
++	return 1;
++}
++
+ void SPC_DSP::set_output( Resampler *resampler )
+ {
+ 	this->resampler = resampler;
+@@ -652,6 +728,7 @@
+ inline void SPC_DSP::run_envelope( voice_t* const v )
+ {
+ 	int env = v->env;
++	Zelda3TraceDspLedgerBranch(0, v->env_mode == env_release);
+ 	if ( v->env_mode == env_release ) // 60%
+ 	{
+ 		if ( (env -= 0x8) < 0 )
+@@ -662,6 +739,7 @@
+ 	{
+ 		int rate;
+ 		int env_data = VREG(v->regs,adsr1);
++		Zelda3TraceDspLedgerBranch(1, m.t_adsr0 & 0x80);
+ 		if ( m.t_adsr0 & 0x80 ) // 99% ADSR
+ 		{
+ 			if ( v->env_mode >= env_decay ) // 99%
+@@ -683,6 +761,7 @@
+ 			int mode;
+ 			env_data = VREG(v->regs,gain);
+ 			mode = env_data >> 5;
++			Zelda3TraceDspLedgerBranch(2, mode < 4);
+ 			if ( mode < 4 ) // direct
+ 			{
+ 				env = env_data * 0x10;
+@@ -691,20 +770,29 @@
+ 			else
+ 			{
+ 				rate = env_data & 0x1F;
++				Zelda3TraceDspLedgerBranch(3, mode == 4);
+ 				if ( mode == 4 ) // 4: linear decrease
+ 				{
+ 					env -= 0x20;
+ 				}
+-				else if ( mode < 6 ) // 5: exponential decrease
+-				{
+-					env--;
+-					env -= env >> 8;
+-				}
+-				else // 6,7: linear increase
++				else
+ 				{
+-					env += 0x20;
+-					if ( mode > 6 && (unsigned) v->hidden_env >= 0x600 )
+-						env += 0x8 - 0x20; // 7: two-slope linear increase
++					Zelda3TraceDspLedgerBranch(4, mode < 6);
++					if ( mode < 6 ) // 5: exponential decrease
++					{
++						env--;
++						env -= env >> 8;
++					}
++					else // 6,7: linear increase
++					{
++						Zelda3TraceDspLedgerBranch(5, mode == 6);
++						env += 0x20;
++						bool const two_slope = mode > 6 &&
++							(unsigned) v->hidden_env >= 0x600;
++						Zelda3TraceDspLedgerBranch(6, two_slope);
++						if ( two_slope )
++							env += 0x8 - 0x20; // 7: two-slope linear increase
++					}
+ 				}
+ 			}
+ 		}
+@@ -723,8 +811,12 @@
+ 				v->env_mode = env_decay;
+ 		}
+ 
+-		if ( !read_counter( rate ) )
++		bool const counter_tick = !read_counter( rate );
++		Zelda3TraceDspLedgerBranch(7, counter_tick);
++		if ( counter_tick )
++		{
+ 			v->env = env; // nothing else is controlled by the counter
++		}
+ 	}
+ }
+ 
+@@ -796,21 +888,28 @@
+ 
+ MISC_CLOCK( 27 )
+ {
++	Zelda3TraceDspLedgerSubOperation(27, -1, 27);
+ 	m.t_pmon = REG(pmon) & 0xFE; // voice 0 doesn't support PMON
+ }
+ MISC_CLOCK( 28 )
+ {
++	Zelda3TraceDspLedgerSubOperation(28, -1, 28);
+ 	m.t_non = REG(non);
+ 	m.t_eon = REG(eon);
+ 	m.t_dir = REG(dir);
+ }
+ MISC_CLOCK( 29 )
+ {
+-	if ( (m.every_other_sample ^= 1) != 0 )
++	Zelda3TraceDspLedgerSubOperation(29, -1, 29);
++	bool const every_other = (m.every_other_sample ^= 1) != 0;
++	Zelda3TraceDspLedgerBranch(21, every_other);
++	if ( every_other )
+ 		m.new_kon &= ~m.kon; // clears KON 63 clocks after it was last read
+ }
+ MISC_CLOCK( 30 )
+ {
++	Zelda3TraceDspLedgerSubOperation(30, -1, 30);
++	Zelda3TraceDspLedgerBranch(22, m.every_other_sample != 0);
+ 	if ( m.every_other_sample )
+ 	{
+ 		m.kon    = m.new_kon;
+@@ -820,7 +919,9 @@
+ 	run_counters();
+ 
+ 	// Noise
+-	if ( !read_counter( REG(flg) & 0x1F ) )
++	bool const noise_tick = !read_counter( REG(flg) & 0x1F );
++	Zelda3TraceDspLedgerBranch(23, noise_tick);
++	if ( noise_tick )
+ 	{
+ 		int feedback = (m.noise << 13) ^ (m.noise << 14);
+ 		m.noise = (feedback & 0x4000) ^ (m.noise >> 1);
+@@ -834,11 +935,13 @@
+ 
+ inline VOICE_CLOCK( V1 )
+ {
++	Zelda3TraceDspLedgerSubOperation(1, v->voice_number, 0);
+ 	m.t_dir_addr = (m.t_dir * 0x100 + m.t_srcn * 4) & 0xffff;
+ 	m.t_srcn = VREG(v->regs,srcn);
+ }
+ inline VOICE_CLOCK( V2 )
+ {
++	Zelda3TraceDspLedgerSubOperation(2, v->voice_number, 0);
+ 	// Read sample pointer (ignored if not needed)
+ 	uint8_t const* entry = &m.ram [m.t_dir_addr];
+ 	if ( !v->kon_delay )
+@@ -852,10 +955,12 @@
+ }
+ inline VOICE_CLOCK( V3a )
+ {
++	Zelda3TraceDspLedgerSubOperation(10, v->voice_number, 0);
+ 	m.t_pitch += (VREG(v->regs,pitchh) & 0x3F) << 8;
+ }
+ inline VOICE_CLOCK( V3b )
+ {
++	Zelda3TraceDspLedgerSubOperation(11, v->voice_number, 0);
+ 	// Read BRR header and byte
+ 	m.t_brr_byte   = m.ram [(v->brr_addr + v->brr_offset) & 0xFFFF];
+ 	m.t_brr_header = m.ram [v->brr_addr]; // brr_addr doesn't need masking
+@@ -863,10 +968,15 @@
+ 
+ inline VOICE_CLOCK( V3c )
+ {
++	Zelda3TraceDspLedgerSubOperation(12, v->voice_number, 0);
+ 	// Pitch modulation using previous voice's output
++	Zelda3TraceDspLedgerBranch(8, m.t_pmon & v->vbit);
+ 	if ( m.t_pmon & v->vbit )
++	{
+ 		m.t_pitch += ((m.t_output >> 5) * m.t_pitch) >> 10;
++	}
+ 
++	Zelda3TraceDspLedgerBranch(9, v->kon_delay != 0);
+ 	if ( v->kon_delay )
+ 	{
+ 		// Get ready to start BRR decoding on next sample
+@@ -904,8 +1014,11 @@
+ 		int output = interpolate( v );
+ 
+ 		// Noise
++		Zelda3TraceDspLedgerBranch(10, m.t_non & v->vbit);
+ 		if ( m.t_non & v->vbit )
++		{
+ 			output = (int16_t) (m.noise * 2);
++		}
+ 
+ 		// Apply envelope
+ 		m.t_output = (output * v->env) >> 11 & ~1;
+@@ -913,7 +1026,9 @@
+ 	}
+ 
+ 	// Immediate silence due to end of sample or soft reset
+-	if ( REG(flg) & 0x80 || (m.t_brr_header & 3) == 1 )
++	bool const reset_or_end = REG(flg) & 0x80 || (m.t_brr_header & 3) == 1;
++	Zelda3TraceDspLedgerBranch(11, reset_or_end);
++	if ( reset_or_end )
+ 	{
+ 		v->env_mode = env_release;
+ 		v->env      = 0;
+@@ -922,10 +1037,14 @@
+ 	if ( m.every_other_sample )
+ 	{
+ 		// KOFF
++		Zelda3TraceDspLedgerBranch(12, m.t_koff & v->vbit);
+ 		if ( m.t_koff & v->vbit )
++		{
+ 			v->env_mode = env_release;
++		}
+ 
+ 		// KON
++		Zelda3TraceDspLedgerBranch(13, m.kon & v->vbit);
+ 		if ( m.kon & v->vbit )
+ 		{
+ 			v->kon_delay = 5;
+@@ -950,6 +1069,7 @@
+ 	CLAMP16( m.t_main_out [ch] );
+ 
+ 	// Optionally add to echo total
++	Zelda3TraceDspLedgerBranch(14, m.t_eon & v->vbit);
+ 	if ( m.t_eon & v->vbit )
+ 	{
+ 		m.t_echo_out [ch] += amp;
+@@ -959,8 +1079,10 @@
+ 
+ inline VOICE_CLOCK( V4 )
+ {
++	Zelda3TraceDspLedgerSubOperation(4, v->voice_number, 0);
+ 	// Decode BRR
+ 	m.t_looped = 0;
++	Zelda3TraceDspLedgerBranch(15, v->interp_pos >= 0x4000);
+ 	if ( v->interp_pos >= 0x4000 )
+ 	{
+ 		decode_brr( v );
+@@ -970,6 +1092,7 @@
+ 			// Start decoding next BRR block
+ 			assert( v->brr_offset == brr_block_size );
+ 			v->brr_addr = (v->brr_addr + brr_block_size) & 0xFFFF;
++			Zelda3TraceDspLedgerBranch(16, m.t_brr_header & 1);
+ 			if ( m.t_brr_header & 1 )
+ 			{
+ 				v->brr_addr = m.t_brr_next_addr;
+@@ -991,6 +1114,7 @@
+ }
+ inline VOICE_CLOCK( V5 )
+ {
++	Zelda3TraceDspLedgerSubOperation(5, v->voice_number, 0);
+ 	// Output right
+ 	voice_output( v, 1 );
+ 
+@@ -1004,11 +1128,13 @@
+ }
+ inline VOICE_CLOCK( V6 )
+ {
++	Zelda3TraceDspLedgerSubOperation(6, v->voice_number, 0);
+ 	(void) v; // avoid compiler warning about unused v
+ 	m.outx_buf = (uint8_t) (m.t_output >> 8);
+ }
+ inline VOICE_CLOCK( V7 )
+ {
++	Zelda3TraceDspLedgerSubOperation(7, v->voice_number, 0);
+ 	// Update ENDX
+ 	REG(endx) = m.endx_buf;
+ 	XREG(endx) = m.endx_buf;
+@@ -1017,12 +1143,14 @@
+ }
+ inline VOICE_CLOCK( V8 )
+ {
++	Zelda3TraceDspLedgerSubOperation(8, v->voice_number, 0);
+ 	// Update OUTX
+ 	VREG(v->regs,outx) = m.outx_buf;
+ 	XVREG(v->regs,outx) = m.outx_buf;
+ }
+ inline VOICE_CLOCK( V9 )
+ {
++	Zelda3TraceDspLedgerSubOperation(9, v->voice_number, 0);
+ 	// Update ENVX
+ 	VREG(v->regs,envx) = m.envx_buf;
+ 	XVREG(v->regs,envx) = m.envx_buf;
+@@ -1065,6 +1193,7 @@
+ 
+ ECHO_CLOCK( 22 )
+ {
++	Zelda3TraceDspLedgerSubOperation(50, -1, 22);
+ 	// History
+ 	if ( ++m.echo_hist_pos >= &m.echo_hist [echo_hist_size] )
+ 		m.echo_hist_pos = m.echo_hist;
+@@ -1081,6 +1210,7 @@
+ }
+ ECHO_CLOCK( 23 )
+ {
++	Zelda3TraceDspLedgerSubOperation(50, -1, 23);
+ 	int l = CALC_FIR( 1, 0 ) + CALC_FIR( 2, 0 );
+ 	int r = CALC_FIR( 1, 1 ) + CALC_FIR( 2, 1 );
+ 
+@@ -1091,6 +1221,7 @@
+ }
+ ECHO_CLOCK( 24 )
+ {
++	Zelda3TraceDspLedgerSubOperation(50, -1, 24);
+ 	int l = CALC_FIR( 3, 0 ) + CALC_FIR( 4, 0 ) + CALC_FIR( 5, 0 );
+ 	int r = CALC_FIR( 3, 1 ) + CALC_FIR( 4, 1 ) + CALC_FIR( 5, 1 );
+ 
+@@ -1099,6 +1230,7 @@
+ }
+ ECHO_CLOCK( 25 )
+ {
++	Zelda3TraceDspLedgerSubOperation(50, -1, 25);
+ 	int l = m.t_echo_in [0] + CALC_FIR( 6, 0 );
+ 	int r = m.t_echo_in [1] + CALC_FIR( 6, 1 );
+ 
+@@ -1123,6 +1255,7 @@
+ }
+ ECHO_CLOCK( 26 )
+ {
++	Zelda3TraceDspLedgerSubOperation(50, -1, 26);
+ 	Zelda3TraceCaptureDspRawMain(m.t_main_out [0], m.t_main_out [1]);
+ 
+ 	// Left output volumes
+@@ -1141,6 +1274,7 @@
+ }
+ ECHO_CLOCK( 27 )
+ {
++	Zelda3TraceDspLedgerSubOperation(50, -1, 27);
+ 	// Output
+ 	int l = m.t_main_out [0];
+ 	int r = echo_output( 1 );
+@@ -1149,6 +1283,7 @@
+ 
+ 	// TODO: global muting isn't this simple (turns DAC on and off
+ 	// or something, causing small ~37-sample pulse when first muted)
++	Zelda3TraceDspLedgerBranch(17, REG(flg) & 0x40);
+ 	if ( REG(flg) & 0x40 )
+ 	{
+ 		l = 0;
+@@ -1166,25 +1301,36 @@
+ }
+ ECHO_CLOCK( 28 )
+ {
++	Zelda3TraceDspLedgerSubOperation(50, -1, 28);
+ 	m.t_echo_enabled = REG(flg);
+ }
+ inline void SPC_DSP::echo_write( int ch )
+ {
++	Zelda3TraceDspLedgerBranch(18, !(m.t_echo_enabled & 0x20));
+ 	if ( !(m.t_echo_enabled & 0x20) )
++	{
+ 		SET_LE16A( ECHO_PTR( ch ), m.t_echo_out [ch] );
++	}
+ 
+ 	m.t_echo_out [ch] = 0;
+ }
+ ECHO_CLOCK( 29 )
+ {
++	Zelda3TraceDspLedgerSubOperation(50, -1, 29);
+ 	m.t_esa = REG(esa);
+ 
++	Zelda3TraceDspLedgerBranch(19, !m.echo_offset);
+ 	if ( !m.echo_offset )
++	{
+ 		m.echo_length = (REG(edl) & 0x0F) * 0x800;
++	}
+ 
+ 	m.echo_offset += 4;
++	Zelda3TraceDspLedgerBranch(20, m.echo_offset >= m.echo_length);
+ 	if ( m.echo_offset >= m.echo_length )
++	{
+ 		m.echo_offset = 0;
++	}
+ 
+ 	// Write left echo
+ 	echo_write( 0 );
+@@ -1193,6 +1339,7 @@
+ }
+ ECHO_CLOCK( 30 )
+ {
++	Zelda3TraceDspLedgerSubOperation(50, -1, 30);
+ 	// Write right echo
+ 	echo_write( 1 );
+ }
+diff --git a/apu/bapu/dsp/SPC_DSP.h b/apu/bapu/dsp/SPC_DSP.h
+--- a/apu/bapu/dsp/SPC_DSP.h
++++ b/apu/bapu/dsp/SPC_DSP.h
+@@ -80,6 +80,9 @@
+ 	int     envx_value( int );
+ 	int     zelda3_debug_value( int field ) const;
+ 	void    zelda3_debug_capture_write( int addr, int data ) const;
++	int     zelda3_ledger_seed_profile( int profile );
++	int     zelda3_ledger_copy_state( unsigned char* out, int capacity );
++	int     zelda3_ledger_config_value( int field ) const;
+ 
+ // DSP register addresses
+ 

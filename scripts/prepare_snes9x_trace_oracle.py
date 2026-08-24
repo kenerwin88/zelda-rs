@@ -20,6 +20,7 @@ TRACE_PATCHES = (
     PATCH_DIR / "zelda3-trace.patch",
     PATCH_DIR / "zelda3-trace-obj-cache.patch",
     PATCH_DIR / "zelda3-spc-opcode-ledger.patch",
+    PATCH_DIR / "zelda3-dsp-phase-ledger.patch",
 )
 LOCK = json.loads(LOCK_PATH.read_text())
 VERSION = LOCK["core_version"]
@@ -200,9 +201,11 @@ def write_receipt(
         "source_tag": SOURCE_TAG,
         "source_url": SOURCE_URL,
         "source_revision": REVISION,
+        "oracle_lock_sha256": sha256(LOCK_PATH),
         "variant": variant,
         "patch": str(patches[0]) if patches else None,
         "patches": [str(patch) for patch in patches],
+        "patch_sha256s": [sha256(patch) for patch in patches],
         "patch_sha256": patch_set_sha256(patches),
         "core": str(output),
         "core_sha256": sha256(output),

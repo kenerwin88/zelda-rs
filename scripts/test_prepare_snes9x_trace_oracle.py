@@ -15,6 +15,16 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PrepareSnes9xTraceOracleTests(unittest.TestCase):
+    def test_trace_patch_stack_ends_with_direct_dsp_phase_ledger(self) -> None:
+        self.assertEqual(
+            MODULE.TRACE_PATCHES[-1].name,
+            "zelda3-dsp-phase-ledger.patch",
+        )
+        patch = MODULE.TRACE_PATCHES[-1].read_text()
+        self.assertIn("zelda3_snes9x_debug_dsp_ledger_abi_version", patch)
+        self.assertIn("zelda3_ledger_copy_state", patch)
+        self.assertIn("Zelda3TraceDspLedgerBranch", patch)
+
     def test_lock_pins_the_official_snes9x_1_63_release(self) -> None:
         lock = json.loads(MODULE.LOCK_PATH.read_text())
 
@@ -114,13 +124,16 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
             trace = json.loads(trace_receipt.read_text())
             self.assertEqual(stock["core_version"], "1.63")
             self.assertEqual(stock["source_tag"], "1.63")
+            self.assertEqual(stock["oracle_lock_sha256"], MODULE.sha256(MODULE.LOCK_PATH))
             self.assertEqual(stock["variant"], "stock")
             self.assertIsNone(stock["patch"])
             self.assertIsNone(stock["patch_sha256"])
             self.assertEqual(stock["patches"], [])
+            self.assertEqual(stock["patch_sha256s"], [])
             self.assertEqual(trace["variant"], "trace")
             self.assertEqual(trace["patch"], str(patch))
             self.assertEqual(trace["patches"], [str(patch)])
+            self.assertEqual(trace["patch_sha256s"], [MODULE.sha256(patch)])
             self.assertEqual(trace["patch_sha256"], MODULE.sha256(patch))
 
     def test_trace_patch_has_cartridge_only_rng_event(self) -> None:
