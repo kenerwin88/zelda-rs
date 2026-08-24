@@ -69,6 +69,47 @@ class ParityRouteTests(unittest.TestCase):
 
             self.assertNotEqual(before, after)
 
+    def test_precommit_gate_never_reuses_an_invocation_session_path(self):
+        precommit = load_script("precommit_snes9x_parity_gate")
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "route"
+            first = precommit._reserve_precommit_session_paths(project, 12_345)
+            second = precommit._reserve_precommit_session_paths(project, 12_345)
+
+            first_paths = {
+                first.exact,
+                first.video_preflight,
+                first.rng_calibration,
+            }
+            second_paths = {
+                second.exact,
+                second.video_preflight,
+                second.rng_calibration,
+            }
+            self.assertTrue(first_paths.isdisjoint(second_paths))
+            self.assertNotEqual(first.invocation_id, second.invocation_id)
+
+    def test_precommit_gate_groups_session_names_under_precommit(self):
+        precommit = load_script("precommit_snes9x_parity_gate")
+        with tempfile.TemporaryDirectory() as directory:
+            project = Path(directory) / "route"
+            sessions = precommit._reserve_precommit_session_paths(project, 12_345)
+            expected_parent = (project / "comparisons" / "precommit").resolve()
+            paths = (
+                sessions.exact,
+                sessions.video_preflight,
+                sessions.rng_calibration,
+            )
+
+            self.assertTrue(all(path.parent == expected_parent for path in paths))
+            self.assertTrue(
+                all(
+                    path.name.endswith(f"-{sessions.invocation_id}")
+                    for path in paths
+                )
+            )
+            self.assertTrue(sessions.exact.is_dir())
+
     def test_precommit_gate_stops_at_the_first_mismatch(self):
         precommit = load_script("precommit_snes9x_parity_gate")
         identity = {"core_sha256": "core", "rom_sha256": "rom"}

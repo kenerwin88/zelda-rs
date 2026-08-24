@@ -17,6 +17,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import NamedTuple
 
 import snes9x_route_recorder as recorder
 import parity_evidence
@@ -43,6 +44,42 @@ RESUME_CONFLICTING_OPTIONS = (
     "--resume-oracle-state",
     "--resume-oracle-sram",
 )
+
+
+class _PrecommitSessionPaths(NamedTuple):
+    invocation_id: str
+    exact: Path
+    video_preflight: Path
+    rng_calibration: Path
+
+
+def _reserve_precommit_session_paths(
+    project: Path,
+    requested_frames: int,
+) -> _PrecommitSessionPaths:
+    """Reserve one invocation's exact session and name its diagnostic siblings.
+
+    The exact directory is created atomically by ``mkdtemp``. Its unique suffix
+    is then shared by every session produced by this gate invocation, so two
+    concurrent or repeated checks of the same frame target cannot overwrite
+    each other's receipts. Keep the sessions as direct ``run-*`` children so
+    the existing parity probe and microscope discovery paths still find them.
+    """
+    root = (project / "comparisons" / "precommit").resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    exact_prefix = f"run-{requested_frames}-exact-"
+    exact = Path(tempfile.mkdtemp(prefix=exact_prefix, dir=root)).resolve()
+    invocation_id = exact.name[len(exact_prefix) :]
+    return _PrecommitSessionPaths(
+        invocation_id=invocation_id,
+        exact=exact,
+        video_preflight=(
+            root / f"run-{requested_frames}-video-preflight-{invocation_id}"
+        ).resolve(),
+        rng_calibration=(
+            root / f"run-{requested_frames}-rng-calibration-{invocation_id}"
+        ).resolve(),
+    )
 
 
 def env_int(name: str, default: int | None = None) -> int | None:
@@ -519,7 +556,6 @@ def run_snes9x_gate() -> int:
     resume_enabled = _resume_enabled()
     binary_identity = _binary_identity(binary) if resume_enabled else None
 
-    session_dir = (project / "comparisons" / "precommit" / f"run-{requested}").resolve()
     with tempfile.TemporaryDirectory(prefix="zelda3-precommit-") as temp_dir:
         temp_dir = Path(temp_dir)
         input_path = temp_dir / "input.txt"
@@ -531,6 +567,9 @@ def run_snes9x_gate() -> int:
         )
         if input_frames < requested:
             requested = input_frames
+
+        sessions = _reserve_precommit_session_paths(project, requested)
+        session_dir = sessions.exact
 
         rom_random_path = temp_dir / "rom-random.txt"
         rom_random_count = 0
@@ -571,12 +610,7 @@ def run_snes9x_gate() -> int:
             if cached_rng_count is not None:
                 rom_random_count = cached_rng_count
             if using_live_rng:
-                rng_session_dir = (
-                    project
-                    / "comparisons"
-                    / "precommit"
-                    / f"run-{requested}-rng-calibration"
-                ).resolve()
+                rng_session_dir = sessions.rng_calibration
                 rng_command = _build_check_command(
                     binary=binary,
                     core=trace_core,
@@ -663,12 +697,7 @@ def run_snes9x_gate() -> int:
                     "pre-commit: RNG cache hit "
                     f"({rom_random_count} cartridge sample(s))"
                 )
-            preflight_session_dir = (
-                project
-                / "comparisons"
-                / "precommit"
-                / f"run-{requested}-video-preflight"
-            ).resolve()
+            preflight_session_dir = sessions.video_preflight
             preflight_command = _build_check_command(
                 binary=binary,
                 core=required_core,
