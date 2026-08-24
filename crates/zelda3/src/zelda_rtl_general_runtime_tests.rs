@@ -63,6 +63,12 @@ fn test_sync_all(state: &mut ZeldaState) {
     state.ram[0x42] = state.ram[0x42].wrapping_add(1);
 }
 
+fn test_run_frame_callback(state: &mut ZeldaState, input: u16, run_what: i32) {
+    state.ram[0x43] = state.ram[0x43].wrapping_add(1);
+    state.ram[0x44] = input as u8;
+    state.ram[0x45] = run_what as u8;
+}
+
 fn link_test_byte(state: &ZeldaState, addr: usize) -> u8 {
     state.ram[addr]
 }
@@ -1021,6 +1027,28 @@ fn emu_callback_setup_syncs_whole_state_and_regions() {
 }
 
 #[test]
+fn emu_runframe_callback_expires_unconsumed_cold_start_once() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.zelda_setup_emu_callbacks(None, Some(test_run_frame_callback), None);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::PendingColdStart
+    );
+
+    state.zelda_run_frame_with_replay_input_override(0x0080, None);
+
+    assert_eq!(state.ram[0x43], 1, "emulator callback ran more than once");
+    assert_eq!(state.ram[0x44], 0x80);
+    assert_eq!(state.rom_reset_frame_delay, 81);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState)
+    );
+    assert!(!state.original_timing_cold_start_eligible);
+}
+
+#[test]
 fn byte_array_append_vl_matches_c_encoding() {
     let mut arr = ByteArray::default();
 
@@ -1056,6 +1084,11 @@ fn save_and_load_func_append_and_copy_bytes() {
 #[test]
 fn snes_state_save_load_roundtrips_runtime_regions() {
     let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::PendingColdStart
+    );
     state.ram[0x100] = 0x12;
     write_le_u16(&mut state.ram, MAP16_LOAD_SRC_OFF, 0x1390);
     write_le_u16(&mut state.ram, MAP16_LOAD_DST_OFF, 0x001f);
@@ -1104,6 +1137,10 @@ fn snes_state_save_load_roundtrips_runtime_regions() {
     assert!(state.ppu.bg_layer[1].tilemap_higher);
     assert_eq!(state.ppu.bg_layer[1].tilemap_adr, 0x1357);
     assert_eq!(state.dma.channel[6].a_adr, 0x4567);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore)
+    );
 }
 
 #[test]
@@ -1232,6 +1269,11 @@ fn state_recorder_replays_patch_bytes_and_can_stop() {
 #[test]
 fn state_recorder_replays_snapshot_boundary_commands() {
     let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::PendingColdStart
+    );
     state.ram[0x1234] = 0x5a;
     state.sram[0x234] = 0x6b;
     state.ppu.cgram[3] = 0x1357;
@@ -1261,6 +1303,10 @@ fn state_recorder_replays_snapshot_boundary_commands() {
     assert_eq!(state.ram[0x1234], 0x5a);
     assert_eq!(state.sram[0x234], 0x6b);
     assert_eq!(state.ppu.cgram[3], 0x1357);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore)
+    );
     assert_eq!(sr.last_inputs, 0);
     assert!(!sr.replay_mode);
 }
@@ -1295,6 +1341,11 @@ fn read_from_file_and_state_recorder_save_load_match_c_layout() {
     assert_eq!(bytes, [1, 2, 3, 4]);
 
     let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::PendingColdStart
+    );
     state.ram[0x123] = 0x45;
     state.sram[0x234] = 0x67;
     let mut sr = StateRecorder {
@@ -1320,6 +1371,10 @@ fn read_from_file_and_state_recorder_save_load_match_c_layout() {
     assert_eq!(loaded.log.data, vec![0x01, 0x23]);
     assert_eq!(state.ram[0x123], 0x45);
     assert_eq!(state.sram[0x234], 0x67);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore)
+    );
 }
 
 #[test]
@@ -3305,6 +3360,51 @@ fn rom_startup_preroll_matches_live_console_timing() {
     state.set_rom_startup_timing(true);
 
     assert_eq!(state.rom_reset_frame_delay, 81);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::PendingColdStart
+    );
+}
+
+#[test]
+fn public_frame_wrapper_expires_unconsumed_cold_start_on_reset_delay_frame() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    assert_eq!(state.rom_reset_frame_delay, 81);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::PendingColdStart
+    );
+
+    state.zelda_run_frame_with_replay_input_override(0, None);
+
+    assert_eq!(state.frame_ctr_dbg, 1);
+    assert_eq!(state.rom_reset_frame_delay, 80);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState)
+    );
+    assert!(!state.original_timing_cold_start_eligible);
+}
+
+#[test]
+fn direct_run_frame_internal_expires_unconsumed_cold_start_on_reset_delay_frame() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    assert_eq!(state.rom_reset_frame_delay, 81);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::PendingColdStart
+    );
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert_eq!(state.rom_reset_frame_delay, 80);
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState)
+    );
+    assert!(!state.original_timing_cold_start_eligible);
 }
 
 #[test]
@@ -3316,12 +3416,123 @@ fn checkpoint_resume_restores_live_timing_without_rephasing_audio() {
         bincode::deserialize(&encoded).expect("deserialize ZeldaState checkpoint");
 
     assert!(!restored.rom_startup_timing());
+    assert_eq!(
+        restored.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore)
+    );
     let audio_before = restored.zelda_audio_snapshot_bytes();
 
     restored.restore_live_rom_timing_after_checkpoint();
 
     assert!(restored.rom_startup_timing());
+    assert_eq!(
+        restored.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore)
+    );
     assert_eq!(restored.zelda_audio_snapshot_bytes(), audio_before);
+}
+
+#[test]
+fn original_timing_owner_is_absent_from_serde_and_bincode_bytes() {
+    let disabled = ZeldaState::new();
+    let expected = bincode::serialize(&disabled).expect("serialize disabled timing owner");
+
+    for owner in [
+        OriginalTimingOwner::PendingColdStart,
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore),
+    ] {
+        let mut state = disabled.clone();
+        state.original_timing_owner = owner;
+        state.original_timing_cold_start_eligible = false;
+        assert_eq!(
+            bincode::serialize(&state).expect("serialize runtime-only timing owner"),
+            expected,
+            "runtime-only owner {owner:?} changed positional checkpoint bytes"
+        );
+    }
+
+    let restored: ZeldaState =
+        bincode::deserialize(&expected).expect("deserialize unchanged ZeldaState bytes");
+    assert_eq!(
+        restored.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore)
+    );
+    assert!(!restored.original_timing_cold_start_eligible);
+}
+
+#[test]
+fn restored_frame_zero_cannot_be_reenabled_as_a_fresh_cold_start() {
+    let encoded = bincode::serialize(&ZeldaState::new()).expect("serialize frame-zero checkpoint");
+    let mut restored: ZeldaState =
+        bincode::deserialize(&encoded).expect("deserialize frame-zero checkpoint");
+    assert_eq!(restored.frame_ctr_dbg, 0);
+
+    restored.set_rom_startup_timing(false);
+    assert_eq!(
+        restored.original_timing_owner(),
+        OriginalTimingOwner::Disabled
+    );
+    let audio_before_reenable = restored.zelda_audio_snapshot_bytes();
+    restored.set_rom_startup_timing(true);
+
+    assert_eq!(
+        restored.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState)
+    );
+    assert_eq!(restored.zelda_audio_snapshot_bytes(), audio_before_reenable);
+}
+
+#[test]
+fn progressed_disable_then_reenable_refuses_a_cold_timing_restart() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.frame_ctr_dbg = 1;
+
+    state.set_rom_startup_timing(false);
+    assert_eq!(state.original_timing_owner(), OriginalTimingOwner::Disabled);
+    let audio_after_disable = state.zelda_audio_snapshot_bytes();
+
+    state.set_rom_startup_timing(true);
+
+    assert!(state.rom_startup_timing());
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState)
+    );
+    assert_eq!(state.zelda_audio_snapshot_bytes(), audio_after_disable);
+    assert_eq!(state.rom_reset_frame_delay, 0);
+}
+
+#[test]
+fn reset_is_the_only_progressed_state_path_back_to_pending_cold_start() {
+    let mut disabled = ZeldaState::new();
+    disabled.set_rom_startup_timing(true);
+    disabled.frame_ctr_dbg = 1;
+    disabled.set_rom_startup_timing(false);
+
+    disabled.reset(true);
+    assert_eq!(
+        disabled.original_timing_owner(),
+        OriginalTimingOwner::Disabled
+    );
+    disabled.set_rom_startup_timing(true);
+    assert_eq!(
+        disabled.original_timing_owner(),
+        OriginalTimingOwner::PendingColdStart
+    );
+
+    let mut restored = ZeldaState::new();
+    restored.restore_live_rom_timing_after_checkpoint();
+    assert!(matches!(
+        restored.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(_)
+    ));
+    restored.reset(true);
+    assert_eq!(
+        restored.original_timing_owner(),
+        OriginalTimingOwner::PendingColdStart
+    );
 }
 
 #[test]

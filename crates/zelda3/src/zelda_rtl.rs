@@ -8634,6 +8634,37 @@ struct InterruptedDungeonSubmodulePublication {
     provenance: &'static core::panic::Location<'static>,
 }
 
+/// Lifecycle for the future persistent original CPU/APU timing machine.
+///
+/// Phase A deliberately has no `Live` variant: a source-exact machine may be
+/// constructed only by the later owner that consumes `PendingColdStart` at
+/// the fresh reset boundary. Checkpoint restore and late opt-in retain the
+/// translated ROM-timing policy, but must never fabricate a cold CPU start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OriginalTimingOwner {
+    Disabled,
+    /// Eligible and not yet consumed. This is a provenance receipt only;
+    /// `new`, policy enable, and reset never construct the timing machine.
+    PendingColdStart,
+    Unavailable(OriginalTimingUnavailableReason),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OriginalTimingUnavailableReason {
+    ProgressedState,
+    CheckpointRestore,
+}
+
+impl Default for OriginalTimingOwner {
+    fn default() -> Self {
+        // A skipped field is defaulted during deserialization. Defaulting to
+        // unavailable makes every positional ZeldaState restore fail closed,
+        // including frame-zero and direct PlayCrash checkpoints whose caller
+        // has not yet invoked the live-ROM restoration hook.
+        Self::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore)
+    }
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ZeldaState {
     pub ram: Vec<u8>,
@@ -8768,6 +8799,15 @@ pub struct ZeldaState {
     #[serde(default)]
     #[serde(skip)]
     rom_startup_timing: bool,
+    /// Runtime-only provenance for the future exact original timing machine.
+    /// Positional ZeldaState/bincode checkpoints must remain byte-identical.
+    #[serde(skip)]
+    original_timing_owner: OriginalTimingOwner,
+    /// Provenance latch distinguishing a genuinely fresh `new`/reset boundary
+    /// from a restored frame-zero state after the public policy is disabled.
+    /// Like the owner, this is runtime-only and absent from checkpoint bytes.
+    #[serde(skip)]
+    original_timing_cold_start_eligible: bool,
     // Set on a frame whose ROM NMI is PARTIAL because a heavy load runs on the
     // main thread past the vblank (Snes9x-verified per site): the intro
     // message-pointer generation step, and the module-5 selected-game
@@ -15071,6 +15111,8 @@ impl ZeldaState {
             dialogue_font_blk_index: 0,
             dialogue_flags: 0,
             rom_startup_timing: false,
+            original_timing_owner: OriginalTimingOwner::Disabled,
+            original_timing_cold_start_eligible: true,
             rom_load_partial_nmi_this_frame: false,
             selected_game_load_room_preloaded: false,
             game_over_iris_goal_scanout_closed_pending: false,
@@ -15228,6 +15270,12 @@ impl ZeldaState {
 
     pub fn zelda_reset(&mut self, preserve_sram: bool) {
         self.frame_ctr_dbg = 0;
+        self.original_timing_owner = if self.rom_startup_timing {
+            OriginalTimingOwner::PendingColdStart
+        } else {
+            OriginalTimingOwner::Disabled
+        };
+        self.original_timing_cold_start_eligible = true;
         self.previous_host_controller_input = 0;
         self.dma.reset();
         self.ppu.reset();
@@ -15313,9 +15361,16 @@ impl ZeldaState {
     }
 
     pub fn set_rom_startup_timing(&mut self, enabled: bool) {
+        if enabled && self.rom_startup_timing {
+            return;
+        }
         self.rom_startup_timing = enabled;
-        self.zelda_set_rom_startup_audio_phase(enabled);
         if !enabled {
+            if self.frame_ctr_dbg != 0 {
+                self.original_timing_cold_start_eligible = false;
+            }
+            self.original_timing_owner = OriginalTimingOwner::Disabled;
+            self.zelda_set_rom_startup_audio_phase(false);
             self.rom_reset_frame_delay = 0;
             self.intro_initialization_work_frames_pending = 0;
             self.intro_initialization_reset_obj_control_pending = false;
@@ -15380,8 +15435,16 @@ impl ZeldaState {
             self.staged_presented_vram_chr_preview_source = None;
             self.deferred_display_snapshot = None;
             self.dungeon_landing_goal_display_handoff = DungeonLandingGoalDisplayHandoff::None;
-        } else if !self.game_state.display.has_animated_tile_data_source() {
-            self.rom_reset_frame_delay = configured_rom_reset_frame_delay();
+        } else if self.original_timing_cold_start_eligible && self.frame_ctr_dbg == 0 {
+            self.original_timing_owner = OriginalTimingOwner::PendingColdStart;
+            self.zelda_set_rom_startup_audio_phase(true);
+            if !self.game_state.display.has_animated_tile_data_source() {
+                self.rom_reset_frame_delay = configured_rom_reset_frame_delay();
+            }
+        } else {
+            self.original_timing_cold_start_eligible = false;
+            self.original_timing_owner =
+                OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState);
         }
     }
 
@@ -15397,6 +15460,7 @@ impl ZeldaState {
         self.dialogue_scroll_machine_mut()
             .restore_transient_after_checkpoint(completed_scanout);
         self.rom_startup_timing = true;
+        self.invalidate_original_timing_after_checkpoint();
     }
 
     /// Paired emulator checkpoints may only be captured between translated
@@ -15408,6 +15472,25 @@ impl ZeldaState {
 
     pub(super) fn rom_startup_timing(&self) -> bool {
         self.rom_startup_timing
+    }
+
+    pub(crate) const fn original_timing_owner(&self) -> OriginalTimingOwner {
+        self.original_timing_owner
+    }
+
+    fn expire_unconsumed_original_timing_cold_start(&mut self) {
+        if self.original_timing_owner != OriginalTimingOwner::PendingColdStart {
+            return;
+        }
+        self.original_timing_owner =
+            OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::ProgressedState);
+        self.original_timing_cold_start_eligible = false;
+    }
+
+    fn invalidate_original_timing_after_checkpoint(&mut self) {
+        self.original_timing_owner =
+            OriginalTimingOwner::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore);
+        self.original_timing_cold_start_eligible = false;
     }
 
     pub(super) fn schedule_spotlight_iteration_return(&mut self, iteration: SpotlightIteration) {
@@ -22417,6 +22500,9 @@ impl ZeldaState {
     /// skeletal. Future ports should land behind this entry point so the
     /// lockstep oracle starts validating them immediately.
     pub fn run_frame_internal(&mut self, input: u16, run_what: u8) {
+        // Direct runtime/crash callers bypass the public execution decision.
+        // Phase B must consume Pending before either frame-entry boundary.
+        self.expire_unconsumed_original_timing_cold_start();
         self.sync_native_game_state_from_ram();
         self.oam_law_entry_frame_counter = Some(self.game_state.frame.frame_counter);
         if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_LINK_FALL", self.frame_ctr_dbg) {
@@ -25490,6 +25576,11 @@ impl ZeldaState {
 
     fn load_snes_state(&mut self, func: &mut SaveLoadFunc<'_, '_>) {
         self.internal_save_load(func);
+        // Full C-format state loads back replay base snapshots, inline replay
+        // snapshots, and ordinary save-state restores. None contains the
+        // persistent original CPU/APU timing machine, so a pending cold seed
+        // cannot survive this boundary even when the restored host frame is 0.
+        self.invalidate_original_timing_after_checkpoint();
         self.restore_spotlight_hdma_from_saveload_buffer();
         self.zelda_restore_music_after_load_locked(false);
         self.sync_native_game_state_from_ram();
@@ -26014,6 +26105,9 @@ impl ZeldaState {
             self.intro_bg_fade_poly_phase = 0;
             self.intro_bg_fade_defer_suffix_this_frame = false;
         }
+        // Expire before selecting the installed emulator callback or the
+        // translated engine. The direct-engine guard above is idempotent.
+        self.expire_unconsumed_original_timing_cold_start();
         if self.emu_runframe.is_none()
             || self.game_state.enhanced_features.bits() != 0
             || self.dialogue_flags != 0
