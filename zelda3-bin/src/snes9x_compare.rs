@@ -89,6 +89,12 @@ struct FramedApuPortAccess {
     access: crate::libretro_core::LibretroApuPortWrite,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FramedCpuTimingTransaction {
+    frame: u32,
+    transaction: crate::libretro_core::LibretroCpuTimingTransaction,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReplayBundle {
     dir: PathBuf,
@@ -3365,6 +3371,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut debug_smp_bootstrap_instructions = Vec::new();
     let mut debug_smp_bootstrap_output_writes = Vec::new();
     let mut debug_smp_bootstrap_cpu_accesses = Vec::new();
+    let mut debug_smp_bootstrap_cpu_timing_transactions = Vec::new();
     let mut debug_native_apu_dsp_writes = native_apu_trace_path.map(|path| {
         BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
             eprintln!("failed to create native APU DSP-write trace: {error}");
@@ -4357,6 +4364,18 @@ pub(crate) fn run_compare_libretro_oracle(
                     );
                     process::exit(2);
                 });
+                let cpu_timing_transactions = oracle
+                    .debug_cpu_timing_transactions()
+                    .unwrap_or_else(|error| {
+                        eprintln!("failed to capture Snes9x CPU timing transactions: {error}");
+                        process::exit(2);
+                    })
+                    .unwrap_or_else(|| {
+                        eprintln!(
+                            "SMP-bootstrap trace requires Snes9x CPU timing transaction instrumentation"
+                        );
+                        process::exit(2);
+                    });
                 debug_smp_bootstrap_output_writes.extend(output_writes);
                 debug_smp_bootstrap_cpu_accesses.extend(cpu_accesses.into_iter().map(|access| {
                     FramedApuPortAccess {
@@ -4364,6 +4383,14 @@ pub(crate) fn run_compare_libretro_oracle(
                         access,
                     }
                 }));
+                debug_smp_bootstrap_cpu_timing_transactions.extend(
+                    cpu_timing_transactions.into_iter().map(|transaction| {
+                        FramedCpuTimingTransaction {
+                            frame: frame_index,
+                            transaction,
+                        }
+                    }),
+                );
                 append_smp_instruction_frame(
                     &mut debug_smp_bootstrap_instructions,
                     oracle.debug_smp_instructions().unwrap_or_else(|| {
@@ -4396,6 +4423,28 @@ pub(crate) fn run_compare_libretro_oracle(
                             process::exit(1);
                         });
                     debug_smp_bootstrap_cpu_accesses.truncate(cpu_end);
+                    let final_cpu_access = &debug_smp_bootstrap_cpu_accesses[cpu_end - 1];
+                    let cpu_timing_end = debug_smp_bootstrap_cpu_timing_transactions
+                        .iter()
+                        .position(|framed| {
+                            let transaction = &framed.transaction;
+                            framed.frame == final_cpu_access.frame
+                                && transaction.kind == 2
+                                && (transaction.origin_pc & 0xffff) == 0x88fc
+                                && transaction.opcode == 0x9c
+                                && transaction.start_v_counter
+                                    == final_cpu_access.access.v_counter
+                                && transaction.start_cpu_cycle
+                                    == final_cpu_access.access.cpu_cycle
+                        })
+                        .map(|index| index + 1)
+                        .unwrap_or_else(|| {
+                            eprintln!(
+                                "SMP reached $0800 without a timing receipt for the final $88fc STZ $2143"
+                            );
+                            process::exit(1);
+                        });
+                    debug_smp_bootstrap_cpu_timing_transactions.truncate(cpu_timing_end);
                     let first_cc = debug_smp_bootstrap_output_writes
                         .iter()
                         .find(|event| event.port == 0 && event.value == 0xcc)
@@ -4454,6 +4503,15 @@ pub(crate) fn run_compare_libretro_oracle(
                             "cpu_apu_access_milestones": cpu_milestones,
                             "cpu_apu_access_sequence": compact_cpu_apu_accesses(
                                 &debug_smp_bootstrap_cpu_accesses,
+                            ),
+                            "cpu_timing_transaction_kinds": {
+                                "0": "fast_pcbase_opcode_fetch_non_draining",
+                                "1": "cpuops_add_cycles_draining",
+                                "2": "getset_memory_access_after_semantic_draining",
+                                "3": "getset_memory_access_x2_after_semantic_draining",
+                            },
+                            "cpu_timing_transaction_sequence": compact_cpu_timing_transactions(
+                                &debug_smp_bootstrap_cpu_timing_transactions,
                             ),
                             "smp_output_port_write_milestones": output_milestones,
                             "smp_output_port_write_sequence": compact_smp_output_port_writes(
@@ -7476,6 +7534,14 @@ fn compact_delta_integer_sequence<const N: usize>(
     fields: [&'static str; N],
     rows: impl IntoIterator<Item = [i64; N]>,
 ) -> SmpBootstrapDeltaSequence {
+    compact_delta_integer_sequence_with_zstd(fields, rows, false)
+}
+
+fn compact_delta_integer_sequence_with_zstd<const N: usize>(
+    fields: [&'static str; N],
+    rows: impl IntoIterator<Item = [i64; N]>,
+    use_zstd: bool,
+) -> SmpBootstrapDeltaSequence {
     let rows = rows.into_iter().collect::<Vec<_>>();
     let mut encoded = Vec::new();
     let mut expanded = Vec::new();
@@ -7508,8 +7574,18 @@ fn compact_delta_integer_sequence<const N: usize>(
         push_unsigned_varint(&mut encoded, column.len() as u64);
         encoded.extend_from_slice(&column);
     }
+    let encoded = if use_zstd {
+        zstd::stream::encode_all(encoded.as_slice(), 19)
+            .expect("in-memory CPU timing fixture compression failed")
+    } else {
+        encoded
+    };
     SmpBootstrapDeltaSequence {
-        encoding: "columnar-signed-delta-zero-rle-varint-base64-v1",
+        encoding: if use_zstd {
+            "columnar-signed-delta-zero-rle-varint-zstd-base64-v1"
+        } else {
+            "columnar-signed-delta-zero-rle-varint-base64-v1"
+        },
         fields: fields.into_iter().collect(),
         record_count: rows.len(),
         expanded_sha256: parity::evidence::sha256_bytes(&expanded),
@@ -7564,6 +7640,47 @@ fn compact_cpu_apu_accesses(accesses: &[FramedApuPortAccess]) -> SmpBootstrapDel
                 i64::from(access.cpu_model_identity),
             ]
         }),
+    )
+}
+
+fn compact_cpu_timing_transactions(
+    transactions: &[FramedCpuTimingTransaction],
+) -> SmpBootstrapDeltaSequence {
+    compact_delta_integer_sequence_with_zstd(
+        [
+            "frame",
+            "kind",
+            "duration",
+            "origin_pc",
+            "opcode",
+            "start_v_counter",
+            "start_cpu_cycle",
+            "end_v_counter",
+            "end_cpu_cycle",
+            "cpu_model_identity",
+            "cpu_model_5a22",
+            "start_wram_refresh_position",
+            "end_wram_refresh_position",
+        ],
+        transactions.iter().map(|framed| {
+            let transaction = &framed.transaction;
+            [
+                i64::from(framed.frame),
+                i64::from(transaction.kind),
+                i64::from(transaction.duration),
+                i64::from(transaction.origin_pc),
+                i64::from(transaction.opcode),
+                i64::from(transaction.start_v_counter),
+                i64::from(transaction.start_cpu_cycle),
+                i64::from(transaction.end_v_counter),
+                i64::from(transaction.end_cpu_cycle),
+                i64::from(transaction.cpu_model_identity),
+                i64::from(transaction.cpu_model_5a22),
+                i64::from(transaction.start_wram_refresh_position),
+                i64::from(transaction.end_wram_refresh_position),
+            ]
+        }),
+        true,
     )
 }
 
@@ -7905,9 +8022,9 @@ mod tests {
     use super::{
         append_smp_instruction_frame, cached_ledger_input, canonical_audio_digest,
         canonical_oracle_video_digest, canonical_rust_video_digest, checkpoint_member,
-        compact_delta_integer_sequence, compact_engine_state_mismatches,
-        first_dsp_write_timing_mismatch, fnv1a32, last_spc_clock_witness,
-        libretro_engine_state_receipt, oracle_preframe_snapshot_required,
+        compact_delta_integer_sequence, compact_delta_integer_sequence_with_zstd,
+        compact_engine_state_mismatches, first_dsp_write_timing_mismatch, fnv1a32,
+        last_spc_clock_witness, libretro_engine_state_receipt, oracle_preframe_snapshot_required,
         oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
         parse_paired_resume_capture, parse_rolling_paired_resume_capture,
         prune_rolling_paired_resume_captures, replayable_input_artifact, resolve_replay_bundle,
@@ -7969,13 +8086,18 @@ mod tests {
     }
 
     fn expand_delta_sequence(sequence: &serde_json::Value) -> Vec<Vec<i64>> {
-        assert_eq!(
-            sequence["encoding"],
+        let encoding = sequence["encoding"].as_str().unwrap();
+        assert!(matches!(
+            encoding,
             "columnar-signed-delta-zero-rle-varint-base64-v1"
-        );
+                | "columnar-signed-delta-zero-rle-varint-zstd-base64-v1"
+        ));
         let field_count = sequence["fields"].as_array().unwrap().len();
         let record_count = sequence["record_count"].as_u64().unwrap() as usize;
-        let bytes = decode_base64_bytes(sequence["data_base64"].as_str().unwrap());
+        let mut bytes = decode_base64_bytes(sequence["data_base64"].as_str().unwrap());
+        if encoding == "columnar-signed-delta-zero-rle-varint-zstd-base64-v1" {
+            bytes = zstd::stream::decode_all(bytes.as_slice()).unwrap();
+        }
         let mut columns = Vec::with_capacity(field_count);
         let mut byte_index = 0;
         for _ in 0..field_count {
@@ -8024,6 +8146,20 @@ mod tests {
         let sequence = compact_delta_integer_sequence(
             ["a", "b", "c"],
             [[0, -3, 130], [1, -3, 129], [1, 400, -2]],
+        );
+        let value = serde_json::to_value(sequence).unwrap();
+        assert_eq!(
+            expand_delta_sequence(&value),
+            vec![vec![0, -3, 130], vec![1, -3, 129], vec![1, 400, -2]]
+        );
+    }
+
+    #[test]
+    fn bootstrap_zstd_delta_sequence_round_trips_signed_field_changes() {
+        let sequence = compact_delta_integer_sequence_with_zstd(
+            ["a", "b", "c"],
+            [[0, -3, 130], [1, -3, 129], [1, 400, -2]],
+            true,
         );
         let value = serde_json::to_value(sequence).unwrap();
         assert_eq!(
@@ -8100,7 +8236,7 @@ mod tests {
         assert_eq!(provenance["core"]["library_version"], "1.63 921f9f7b");
         assert_eq!(
             provenance["core"]["sha256"],
-            "83e99d6e7227e25db26df6d1ce1e4cb1661e5da22a8b71703d8fbc4ec9e30035"
+            "7d4fa577dd2e0a79ace97ebec2630929ffcd6622d46ae5b23c4700514c7169cb"
         );
         assert_eq!(
             provenance["source"]["revision"],
@@ -8187,6 +8323,61 @@ mod tests {
                 79, 3, 0, 319, 120, 384, 0x88ff, 10_255, 10_255, 4, 3, 0x0800, 0x0800, 0x1f, 0x1f,
                 0, 2, 534, 1,
             ]
+        );
+
+        assert_eq!(
+            events["cpu_timing_transaction_kinds"],
+            serde_json::json!({
+                "0": "fast_pcbase_opcode_fetch_non_draining",
+                "1": "cpuops_add_cycles_draining",
+                "2": "getset_memory_access_after_semantic_draining",
+                "3": "getset_memory_access_x2_after_semantic_draining",
+            })
+        );
+        let cpu_timing = expand_delta_sequence(&events["cpu_timing_transaction_sequence"]);
+        assert_eq!(cpu_timing.len(), 3_213_852);
+        assert_eq!(
+            &cpu_timing[..5],
+            &[
+                vec![0, 0, 8, 0x8000, 0x78, 0, 198, 0, 206, 1, 2, 538, 538],
+                vec![0, 1, 6, 0x8000, 0x78, 0, 206, 0, 212, 1, 2, 538, 538],
+                vec![0, 0, 8, 0x8001, 0x9c, 0, 212, 0, 220, 1, 2, 538, 538],
+                vec![0, 1, 16, 0x8001, 0x9c, 0, 220, 0, 236, 1, 2, 538, 538],
+                vec![0, 2, 6, 0x8001, 0x9c, 0, 236, 0, 242, 1, 2, 538, 538],
+            ]
+        );
+        assert_eq!(
+            [13, 16, 19, 22].map(|index| cpu_timing[index].clone()),
+            [
+                vec![0, 2, 6, 0x800a, 0x9c, 0, 326, 0, 332, 1, 2, 538, 538],
+                vec![0, 2, 6, 0x800d, 0x9c, 0, 356, 0, 362, 1, 2, 538, 538],
+                vec![0, 2, 6, 0x8010, 0x9c, 0, 386, 0, 392, 1, 2, 538, 538],
+                vec![0, 2, 6, 0x8013, 0x9c, 0, 416, 0, 422, 1, 2, 538, 538],
+            ]
+        );
+        assert!(cpu_timing.iter().all(|transaction| transaction[9] == 1));
+        assert!(cpu_timing.iter().all(|transaction| transaction[10] == 2));
+        assert!(cpu_timing
+            .iter()
+            .all(|transaction| matches!(transaction[11], 534 | 538)));
+        assert!(cpu_timing
+            .iter()
+            .all(|transaction| matches!(transaction[12], 534 | 538)));
+        assert_eq!(
+            cpu_timing
+                .iter()
+                .fold([0usize; 4], |mut counts, transaction| {
+                    counts[transaction[1] as usize] += 1;
+                    counts
+                }),
+            [1_143_074, 1_552_419, 464_286, 54_073]
+        );
+        assert!(cpu_timing.iter().any(|transaction| {
+            transaction == &vec![0, 1, 8, 0x8894, 0xd0, 0, 1_366, 1, 10, 1, 2, 538, 534]
+        }));
+        assert_eq!(
+            cpu_timing.last().unwrap(),
+            &vec![79, 2, 6, 0x88fc, 0x9c, 120, 384, 120, 390, 1, 2, 534, 534]
         );
 
         let output = expand_delta_sequence(&events["smp_output_port_write_sequence"]);

@@ -42,6 +42,7 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
                 "apu/bapu/smp/memory.cpp",
                 "apu/bapu/smp/smp.cpp",
                 "cpuexec.cpp",
+                "cpuops.cpp",
                 "dma.cpp",
                 "getset.h",
                 "gfx.cpp",

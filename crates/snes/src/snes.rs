@@ -580,9 +580,14 @@ impl Snes {
 
     /// Sample one already-resolved CPU-visible APU port after synchronization.
     pub(crate) fn synchronous_cpu_read_apu_port_semantic(&mut self, port: u8) -> u8 {
-        let value = self.apu.read_snes_port(port);
+        let value = self.synchronous_cpu_read_apu_port_raw_semantic(port);
         self.open_bus = value;
         value
+    }
+
+    /// Sample one synchronized APU port without publishing caller-owned OpenBus.
+    pub(crate) fn synchronous_cpu_read_apu_port_raw_semantic(&self, port: u8) -> u8 {
+        self.apu.read_snes_port(port)
     }
 
     /// Commit one already-resolved CPU-visible APU port after synchronization.
@@ -593,6 +598,16 @@ impl Snes {
         value: u8,
     ) {
         self.open_bus = value;
+        self.synchronous_cpu_write_apu_port_raw_semantic(full_adr, port, value);
+    }
+
+    /// Commit one synchronized APU port without publishing caller-owned OpenBus.
+    pub(crate) fn synchronous_cpu_write_apu_port_raw_semantic(
+        &mut self,
+        full_adr: u32,
+        port: u8,
+        value: u8,
+    ) {
         self.apu.write_snes_port(port, value);
         self.cart
             .write((full_adr >> 16) as u8, full_adr as u16, value);
@@ -654,6 +669,10 @@ impl Default for Snes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cpu_timeline::{
+        CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
+        CpuSynchronousTimelineEvent,
+    };
 
     #[test]
     fn wram_mirror_at_low_addresses() {
@@ -677,6 +696,53 @@ mod tests {
             snes.debug_cpu_write_trace.as_deref(),
             Some(&[(0x7e_1234, 0xcd), (0x00_1234, 0xef)][..])
         );
+    }
+
+    #[test]
+    fn raw_apui_semantics_leave_caller_owned_open_bus_unchanged() {
+        let mut snes = Snes::new();
+        snes.open_bus = 0x5a;
+        snes.apu.out_ports[0] = 0x12;
+        assert_eq!(snes.synchronous_cpu_read_apu_port_raw_semantic(0), 0x12);
+        assert_eq!(snes.open_bus, 0x5a);
+        snes.synchronous_cpu_write_apu_port_raw_semantic(0x002141, 1, 0x34);
+        assert_eq!(snes.apu.in_ports[1], 0x34);
+        assert_eq!(snes.open_bus, 0x5a);
+
+        assert_eq!(snes.synchronous_cpu_read_apu_port_semantic(0), 0x12);
+        assert_eq!(snes.open_bus, 0x12);
+        snes.synchronous_cpu_write_apu_port_semantic(0x002141, 1, 0x78);
+        assert_eq!(snes.open_bus, 0x78);
+    }
+
+    #[test]
+    fn raw_apui_semantic_remains_unpublished_during_hmax_observation() {
+        let mut snes = Snes::new();
+        snes.open_bus = 0x5a;
+        let mut timeline = CpuMasterTimeline::at_raster(
+            0,
+            CpuRasterPosition::new(0, 1358),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        timeline.begin_synchronous_timeline().unwrap();
+
+        snes.synchronous_cpu_write_apu_port_raw_semantic(0x002140, 0, 0x77);
+        assert_eq!(snes.apu.in_ports[0], 0x77);
+        assert_eq!(snes.open_bus, 0x5a);
+
+        let mut observed_hmax = false;
+        timeline
+            .advance_synchronous_after_semantics_with(6, |event, _timestamp| {
+                assert!(matches!(event, CpuSynchronousTimelineEvent::HMax { .. }));
+                assert_eq!(snes.open_bus, 0x5a);
+                observed_hmax = true;
+                Ok::<u32, ()>(0)
+            })
+            .unwrap();
+
+        assert!(observed_hmax);
+        assert_eq!(snes.open_bus, 0x5a);
     }
 
     #[test]

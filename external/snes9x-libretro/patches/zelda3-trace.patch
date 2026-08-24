@@ -217,7 +217,7 @@ index 953b13bf..c3da89f4 100644
  	m.external_regs [addr] = (uint8_t) data;
  	switch ( addr & 0x0F )
 diff --git a/apu/bapu/smp/core.cpp b/apu/bapu/smp/core.cpp
-index f5c2e6e6..b1bbe698 100644
+index f5c2e6e6..64a0e1f8 100644
 --- a/apu/bapu/smp/core.cpp
 +++ b/apu/bapu/smp/core.cpp
 @@ -1,4 +1,5 @@
@@ -246,7 +246,7 @@ index f5c2e6e6..b1bbe698 100644
  #ifdef DEBUGGER
      if (Settings.TraceSMP)
      {
-@@ -72,5 +79,6 @@ void SMP::op_step() {
+@@ -75,4 +82,5 @@ void SMP::op_step() {
      #include "core/oppseudo_read.cpp"
      #include "core/oppseudo_rmw.cpp"
    }
@@ -265,7 +265,7 @@ index 3df43b15..fd0cf5b0 100644
      break;
  
 diff --git a/apu/bapu/smp/smp.cpp b/apu/bapu/smp/smp.cpp
-index 2cf58afd..94331731 100644
+index 2cf58afd..fa615c1b 100644
 --- a/apu/bapu/smp/smp.cpp
 +++ b/apu/bapu/smp/smp.cpp
 @@ -5,6 +5,7 @@ char tmp[1024];
@@ -285,7 +285,7 @@ index 2cf58afd..94331731 100644
  
    opcode_number = 0;
 diff --git a/cpuexec.cpp b/cpuexec.cpp
-index aa43b2ff..a5440ab9 100644
+index aa43b2ff..18121ad6 100644
 --- a/cpuexec.cpp
 +++ b/cpuexec.cpp
 @@ -12,6 +12,7 @@
@@ -296,7 +296,7 @@ index aa43b2ff..a5440ab9 100644
  #ifdef DEBUGGER
  #include "debug.h"
  #include "missing.h"
-@@ -19,6 +20,11 @@
+@@ -19,6 +20,24 @@
  
  static inline void S9xReschedule (void);
  
@@ -321,7 +321,7 @@ index aa43b2ff..a5440ab9 100644
  void S9xMainLoop (void)
  {
  	#define CHECK_FOR_IRQ_CHANGE() \
-@@ -52,6 +58,7 @@ void S9xMainLoop (void)
+@@ -52,6 +71,7 @@ void S9xMainLoop (void)
  			#endif
  			if (Timings.NMITriggerPos <= CPU.Cycles)
  			{
@@ -329,7 +329,7 @@ index aa43b2ff..a5440ab9 100644
  				CPU.NMIPending = FALSE;
  				Timings.NMITriggerPos = 0xffff;
  				if (CPU.WaitingForInterrupt)
-@@ -138,6 +145,8 @@ void S9xMainLoop (void)
+@@ -138,10 +158,20 @@ void S9xMainLoop (void)
  		uint8				Op;
  		struct	SOpcodes	*Opcodes;
  
@@ -338,6 +338,56 @@ index aa43b2ff..a5440ab9 100644
  		if (CPU.PCBase)
  		{
  			Op = CPU.PCBase[Registers.PCw];
++			if (Zelda3TraceCpuTimingEnabled)
++			{
++				Zelda3TraceSetCpuInstruction(Registers.PBPC, Op);
++				Zelda3TraceBeginCpuTimingTransaction(
++					ZELDA3_TRACE_CPU_FAST_OPCODE_FETCH, CPU.MemSpeed);
++			}
+ 			CPU.Cycles += CPU.MemSpeed;
++			if (Zelda3TraceCpuTimingEnabled)
++				Zelda3TraceEndCpuTimingTransaction();
+ 			Opcodes = ICPU.S9xOpcodes;
+ 
+ 			if (CPU.Cycles > 1000000)
+@@ -154,7 +184,11 @@ void S9xMainLoop (void)
+ 		}
+ 		else
+ 		{
++			if (Zelda3TraceCpuTimingEnabled)
++				Zelda3TraceSetCpuInstruction(Registers.PBPC, -1);
+ 			Op = S9xGetByte(Registers.PBPC);
++			if (Zelda3TraceCpuTimingEnabled)
++				Zelda3TracePatchLastCpuTimingOpcode(Op);
+ 			OpenBus = Op;
+ 			Opcodes = S9xOpcodesSlow;
+ 		}
+diff --git a/cpuops.cpp b/cpuops.cpp
+index d7e3b95a..386b508d 100644
+--- a/cpuops.cpp
++++ b/cpuops.cpp
+@@ -7,6 +7,7 @@
+ #include "snes9x.h"
+ #include "memmap.h"
+ #include "apu/apu.h"
++#include "zelda3_trace.h"
+ 
+ // for "Magic WDM" features
+ #ifdef DEBUGGER	
+@@ -19,7 +20,12 @@
+ #ifdef SA1_OPCODES
+ #define AddCycles(n)	{ SA1.Cycles += (n); }
+ #else
+-#define AddCycles(n)	{ CPU.Cycles += (n); while (CPU.Cycles >= CPU.NextEvent) S9xDoHEventProcessing(); }
++#define AddCycles(n)	{ int32 zelda3_trace_cycles = (n); \
++	if (Zelda3TraceCpuTimingEnabled) Zelda3TraceBeginCpuTimingTransaction( \
++		ZELDA3_TRACE_CPUOPS_ADD_CYCLES, zelda3_trace_cycles); \
++	CPU.Cycles += zelda3_trace_cycles; \
++	while (CPU.Cycles >= CPU.NextEvent) S9xDoHEventProcessing(); \
++	if (Zelda3TraceCpuTimingEnabled) Zelda3TraceEndCpuTimingTransaction(); }
+ #endif
+ 
+ #include "cpuaddr.h"
 diff --git a/dma.cpp b/dma.cpp
 index e1ad324c..2d6a2221 100644
 --- a/dma.cpp
@@ -380,10 +430,10 @@ index e1ad324c..2d6a2221 100644
  }
  
 diff --git a/getset.h b/getset.h
-index ec55ea91..fdb36321 100644
+index ec55ea91..8195256b 100644
 --- a/getset.h
 +++ b/getset.h
-@@ -16,6 +16,7 @@
+@@ -16,21 +16,30 @@
  #include "seta.h"
  #include "bsx.h"
  #include "msu1.h"
@@ -391,7 +441,32 @@ index ec55ea91..fdb36321 100644
  
  #define addCyclesInMemoryAccess \
  	if (!CPU.InDMAorHDMA) \
-@@ -319,6 +320,8 @@ inline uint16 S9xGetWord (uint32 Address, enum s9xwrap_t w = WRAP_NONE)
+ 	{ \
+-		CPU.Cycles += speed; \
++		int32 zelda3_trace_cycles = speed; \
++		if (Zelda3TraceCpuTimingEnabled) Zelda3TraceBeginCpuTimingTransaction( \
++			ZELDA3_TRACE_CPU_MEMORY_ACCESS, zelda3_trace_cycles); \
++		CPU.Cycles += zelda3_trace_cycles; \
+ 		while (CPU.Cycles >= CPU.NextEvent) \
+ 			S9xDoHEventProcessing(); \
++		if (Zelda3TraceCpuTimingEnabled) Zelda3TraceEndCpuTimingTransaction(); \
+ 	}
+ 
+ #define addCyclesInMemoryAccess_x2 \
+ 	if (!CPU.InDMAorHDMA) \
+ 	{ \
+-		CPU.Cycles += speed << 1; \
++		int32 zelda3_trace_cycles = speed << 1; \
++		if (Zelda3TraceCpuTimingEnabled) Zelda3TraceBeginCpuTimingTransaction( \
++			ZELDA3_TRACE_CPU_MEMORY_ACCESS_X2, zelda3_trace_cycles); \
++		CPU.Cycles += zelda3_trace_cycles; \
+ 		while (CPU.Cycles >= CPU.NextEvent) \
+ 			S9xDoHEventProcessing(); \
++		if (Zelda3TraceCpuTimingEnabled) Zelda3TraceEndCpuTimingTransaction(); \
+ 	}
+ 
+ extern uint8	OpenBus;
+@@ -319,6 +328,8 @@ inline uint16 S9xGetWord (uint32 Address, enum s9xwrap_t w = WRAP_NONE)
  
  inline void S9xSetByte (uint8 Byte, uint32 Address)
  {
@@ -400,7 +475,7 @@ index ec55ea91..fdb36321 100644
  	int		block = (Address & 0xffffff) >> MEMMAP_SHIFT;
  	uint8	*SetAddress = Memory.WriteMap[block];
  	int32	speed = memory_speed(Address);
-@@ -425,7 +428,16 @@ inline void S9xSetByte (uint8 Byte, uint32 Address)
+@@ -425,7 +436,16 @@ inline void S9xSetByte (uint8 Byte, uint32 Address)
  
  inline void S9xSetWord (uint16 Word, uint32 Address, enum s9xwrap_t w = WRAP_NONE, enum s9xwriteorder_t o = WRITE_01)
  {
@@ -464,7 +539,7 @@ index ccb29c3f..930d23e7 100644
  				 $(CORE_DIR)/bml.cpp \
  				 $(CORE_DIR)/movie.cpp \
 diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
-index a8ffcb12..ea26bc9d 100644
+index a8ffcb12..d69655a3 100644
 --- a/libretro/libretro.cpp
 +++ b/libretro/libretro.cpp
 @@ -14,6 +14,7 @@
@@ -475,7 +550,7 @@ index a8ffcb12..ea26bc9d 100644
  #include <stdio.h>
  #include <vector>
  #include <string>
-@@ -845,6 +846,111 @@ unsigned retro_api_version()
+@@ -845,6 +846,161 @@ unsigned retro_api_version()
      return RETRO_API_VERSION;
  }
  
@@ -589,6 +664,21 @@ index a8ffcb12..ea26bc9d 100644
 +    return Zelda3TraceWramRefreshPos();
 +}
 +
++extern "C" int zelda3_snes9x_debug_cpu_timing_transaction_count()
++{
++    return Zelda3TraceCpuTimingTransactionCount();
++}
++
++extern "C" int zelda3_snes9x_debug_cpu_timing_transaction_value(int transaction, int field)
++{
++    return Zelda3TraceCpuTimingTransactionValue(transaction, field);
++}
++
++extern "C" int zelda3_snes9x_debug_cpu_timing_transaction_overflow()
++{
++    return Zelda3TraceCpuTimingTransactionOverflow();
++}
++
 +extern "C" int zelda3_snes9x_debug_smp_output_port_write_count()
 +{
 +    return Zelda3TraceSmpOutputPortWriteCount();
@@ -622,7 +712,7 @@ index a8ffcb12..ea26bc9d 100644
  
  void retro_reset()
  {
-@@ -1845,7 +1951,9 @@ void retro_run()
+@@ -1845,7 +2001,9 @@ void retro_run()
  
      poll_cb();
      report_buttons();
@@ -759,10 +849,10 @@ index 4025c694..e27bc426 100644
  	}
 diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 new file mode 100644
-index 00000000..06a376d4
+index 00000000..db614e5b
 --- /dev/null
 +++ b/zelda3_trace.cpp
-@@ -0,0 +1,680 @@
+@@ -0,0 +1,959 @@
 +#include "zelda3_trace.h"
 +#include "apu/apu.h"
 +
@@ -785,6 +875,7 @@ index 00000000..06a376d4
 +bool Zelda3TracePixelEnabled = false;
 +bool Zelda3TracePpuEnabled = false;
 +bool Zelda3TraceWramEnabled = false;
++bool Zelda3TraceCpuTimingEnabled = false;
 +
 +namespace
 +{
@@ -860,6 +951,14 @@ index 00000000..06a376d4
 +constexpr int apu_port_write_field_count = 24;
 +int apu_port_write_count = 0;
 +int apu_port_writes[apu_port_write_capacity][apu_port_write_field_count] = {};
++constexpr int cpu_timing_transaction_capacity = 262144;
++constexpr int cpu_timing_transaction_field_count = 12;
++int cpu_timing_transaction_count = 0;
++int cpu_timing_transactions[cpu_timing_transaction_capacity][cpu_timing_transaction_field_count] = {};
++int cpu_timing_transaction_active = -1;
++int cpu_timing_transaction_overflow = 0;
++int cpu_instruction_origin_pc = 0;
++int cpu_instruction_origin_opcode = 0;
 +constexpr int smp_output_port_write_capacity = 65536;
 +constexpr int smp_output_port_write_field_count = 15;
 +int smp_output_port_write_count = 0;
@@ -1358,6 +1457,73 @@ index 00000000..06a376d4
 +	return Timings.WRAMRefreshPos;
 +}
 +
++void Zelda3TraceSetCpuInstruction(int pc, int opcode)
++{
++	cpu_instruction_origin_pc = pc;
++	cpu_instruction_origin_opcode = opcode;
++}
++
++void Zelda3TracePatchLastCpuTimingOpcode(int opcode)
++{
++	cpu_instruction_origin_opcode = opcode;
++	if (cpu_timing_transaction_count > 0)
++		cpu_timing_transactions[cpu_timing_transaction_count - 1][3] = opcode;
++}
++
++void Zelda3TraceBeginCpuTimingTransaction(int kind, int duration)
++{
++	if (!Zelda3TraceCpuTimingEnabled)
++		return;
++	if (cpu_timing_transaction_count >= cpu_timing_transaction_capacity)
++	{
++		cpu_timing_transaction_overflow = 1;
++		cpu_timing_transaction_active = -1;
++		return;
++	}
++	cpu_timing_transaction_active = cpu_timing_transaction_count++;
++	int *transaction = cpu_timing_transactions[cpu_timing_transaction_active];
++	transaction[0] = kind;
++	transaction[1] = duration;
++	transaction[2] = cpu_instruction_origin_pc;
++	transaction[3] = cpu_instruction_origin_opcode;
++	transaction[4] = CPU.V_Counter;
++	transaction[5] = CPU.Cycles;
++	transaction[6] = -1;
++	transaction[7] = -1;
++	transaction[8] = Zelda3TraceCpuModelIdentity();
++	transaction[9] = Model->_5A22;
++	transaction[10] = Timings.WRAMRefreshPos;
++	transaction[11] = -1;
++}
++
++void Zelda3TraceEndCpuTimingTransaction()
++{
++	if (cpu_timing_transaction_active < 0)
++		return;
++	int *transaction = cpu_timing_transactions[cpu_timing_transaction_active];
++	transaction[6] = CPU.V_Counter;
++	transaction[7] = CPU.Cycles;
++	transaction[11] = Timings.WRAMRefreshPos;
++	cpu_timing_transaction_active = -1;
++}
++
++int Zelda3TraceCpuTimingTransactionCount()
++{
++	return cpu_timing_transaction_count;
++}
++
++int Zelda3TraceCpuTimingTransactionValue(int transaction, int field)
++{
++	return transaction >= 0 && transaction < cpu_timing_transaction_count &&
++		field >= 0 && field < cpu_timing_transaction_field_count
++		? cpu_timing_transactions[transaction][field] : -1;
++}
++
++int Zelda3TraceCpuTimingTransactionOverflow()
++{
++	return cpu_timing_transaction_overflow;
++}
++
 +void Zelda3TraceResetSmpCycle()
 +{
 +	smp_cycle_since_reset = 0;
@@ -1470,6 +1636,11 @@ index 00000000..06a376d4
 +
 +void Zelda3TraceRetroRunBegin()
 +{
++	const char *cpu_timing = std::getenv("ZELDA3_DEBUG_SNES9X_SMP_BOOTSTRAP");
++	Zelda3TraceCpuTimingEnabled = cpu_timing && *cpu_timing;
++	cpu_timing_transaction_count = 0;
++	cpu_timing_transaction_active = -1;
++	cpu_timing_transaction_overflow = 0;
 +	std::fill_n(presented_pixel, presented_pixel_field_count, -1);
 +	dsp_sample_count = 0;
 +	dsp_write_count = 0;
@@ -1643,10 +1814,10 @@ index 00000000..06a376d4
 +}
 diff --git a/zelda3_trace.h b/zelda3_trace.h
 new file mode 100644
-index 00000000..f5bb193a
+index 00000000..216df5ff
 --- /dev/null
 +++ b/zelda3_trace.h
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,90 @@
 +#ifndef ZELDA3_TRACE_H
 +#define ZELDA3_TRACE_H
 +
@@ -1671,6 +1842,15 @@ index 00000000..f5bb193a
 +extern bool Zelda3TracePixelEnabled;
 +extern bool Zelda3TracePpuEnabled;
 +extern bool Zelda3TraceWramEnabled;
++extern bool Zelda3TraceCpuTimingEnabled;
++
++enum Zelda3TraceCpuTimingKind
++{
++	ZELDA3_TRACE_CPU_FAST_OPCODE_FETCH = 0,
++	ZELDA3_TRACE_CPUOPS_ADD_CYCLES = 1,
++	ZELDA3_TRACE_CPU_MEMORY_ACCESS = 2,
++	ZELDA3_TRACE_CPU_MEMORY_ACCESS_X2 = 3,
++};
 +
 +bool Zelda3TraceCpuCarry();
 +unsigned Zelda3TraceCpuStatus();
@@ -1697,6 +1877,13 @@ index 00000000..f5bb193a
 +int Zelda3TraceCpuModel5A22();
 +int Zelda3TraceCpuModelIdentity();
 +int Zelda3TraceWramRefreshPos();
++void Zelda3TraceSetCpuInstruction(int pc, int opcode);
++void Zelda3TracePatchLastCpuTimingOpcode(int opcode);
++void Zelda3TraceBeginCpuTimingTransaction(int kind, int duration);
++void Zelda3TraceEndCpuTimingTransaction();
++int Zelda3TraceCpuTimingTransactionCount();
++int Zelda3TraceCpuTimingTransactionValue(int transaction, int field);
++int Zelda3TraceCpuTimingTransactionOverflow();
 +void Zelda3TraceResetSmpCycle();
 +void Zelda3TraceTickSmpCycle(unsigned clocks);
 +void Zelda3TraceCaptureSmpOutputPortWrite(int port, int value);

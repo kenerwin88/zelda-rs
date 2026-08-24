@@ -2311,6 +2311,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 1.0.69",
+ "zstd",
 ]
 
 [[package]]
@@ -3439,6 +3440,7 @@ dependencies = [
  "zelda3-compat",
  "zelda3-dialogue",
  "zelda3-palette",
+ "zstd",
 ]
 
 [[package]]

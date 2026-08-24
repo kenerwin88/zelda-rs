@@ -35,6 +35,7 @@ EXPECTED_PATCH_PATHS = frozenset(
         "apu/bapu/smp/memory.cpp",
         "apu/bapu/smp/smp.cpp",
         "cpuexec.cpp",
+        "cpuops.cpp",
         "dma.cpp",
         "getset.h",
         "gfx.cpp",

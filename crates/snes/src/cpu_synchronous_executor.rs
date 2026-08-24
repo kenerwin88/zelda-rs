@@ -13,12 +13,20 @@ use crate::cpu_timeline::{
 use crate::snes::Snes;
 use crate::snes9x_apu_clock::{Snes9xApuClockError, Snes9xApuClockState};
 
+mod source_cpu;
+pub use source_cpu::{
+    Snes9xColdCpuExecutor, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
+    SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
+};
+
 /// A CPU bus semantic which has committed exactly once and whose access charge
 /// is waiting for a fallible hardware-event drain to finish.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CpuSynchronousCompletion {
     Read(u8),
+    ReadWord(u16),
     Write,
+    WriteWord,
 }
 
 /// Coherent opt-in owner for the modeled synchronous S-CPU/APUI subset.
@@ -81,7 +89,11 @@ impl CpuSynchronousMachine {
         self.drain_add_cycles_after_committed_semantic(access_master_cycles)?;
         match self.take_pending_completion() {
             CpuSynchronousCompletion::Read(value) => Ok(value),
-            CpuSynchronousCompletion::Write => unreachable!("read installed a write completion"),
+            CpuSynchronousCompletion::ReadWord(_)
+            | CpuSynchronousCompletion::Write
+            | CpuSynchronousCompletion::WriteWord => {
+                unreachable!("read installed a byte-read completion")
+            }
         }
     }
 
@@ -299,6 +311,7 @@ mod tests {
             Err(unsupported_at_0200())
         );
         assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(1_364));
+        assert_eq!(machine.timeline.wram_refresh_cycle(), 538);
         assert_eq!(machine.snes.apu.in_ports[0], 0x77);
         assert_eq!(
             machine.pending_completion(),
@@ -313,6 +326,7 @@ mod tests {
         );
         assert_eq!(machine.snes.apu.in_ports[0], 0x77);
         assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(1_364));
+        assert_eq!(machine.timeline.wram_refresh_cycle(), 538);
 
         machine.snes.apu.ram[0x0200..0x0202].copy_from_slice(&[0xcd, 0x7f]);
         assert_eq!(
@@ -320,6 +334,7 @@ mod tests {
             CpuSynchronousCompletion::Write
         );
         assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(1_364));
+        assert_eq!(machine.timeline.wram_refresh_cycle(), 534);
         assert_eq!(machine.snes.apu.in_ports[0], 0x77);
         assert_eq!(machine.pending_completion(), None);
     }

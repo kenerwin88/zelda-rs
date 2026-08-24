@@ -130,6 +130,10 @@ pub(crate) struct LibretroCore {
     pub(crate) debug_cpu_model_5a22: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_cpu_model_identity: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_wram_refresh_pos: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_cpu_timing_transaction_count: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_cpu_timing_transaction_value:
+        Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
+    pub(crate) debug_cpu_timing_transaction_overflow: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_smp_output_port_write_count: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_smp_output_port_write_value:
         Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
@@ -250,6 +254,14 @@ impl LibretroCore {
                 optional_symbol(handle, "zelda3_snes9x_debug_cpu_model_identity");
             let debug_wram_refresh_pos =
                 optional_symbol(handle, "zelda3_snes9x_debug_wram_refresh_pos");
+            let debug_cpu_timing_transaction_count =
+                optional_symbol(handle, "zelda3_snes9x_debug_cpu_timing_transaction_count");
+            let debug_cpu_timing_transaction_value =
+                optional_symbol(handle, "zelda3_snes9x_debug_cpu_timing_transaction_value");
+            let debug_cpu_timing_transaction_overflow = optional_symbol(
+                handle,
+                "zelda3_snes9x_debug_cpu_timing_transaction_overflow",
+            );
             let debug_smp_output_port_write_count =
                 optional_symbol(handle, "zelda3_snes9x_debug_smp_output_port_write_count");
             let debug_smp_output_port_write_value =
@@ -340,6 +352,9 @@ impl LibretroCore {
                 debug_cpu_model_5a22,
                 debug_cpu_model_identity,
                 debug_wram_refresh_pos,
+                debug_cpu_timing_transaction_count,
+                debug_cpu_timing_transaction_value,
+                debug_cpu_timing_transaction_overflow,
                 debug_smp_output_port_write_count,
                 debug_smp_output_port_write_value,
                 debug_smp_output_port_write_cycle,
@@ -689,6 +704,40 @@ impl LibretroCore {
         }))
     }
 
+    pub(crate) fn debug_cpu_timing_transactions(
+        &self,
+    ) -> Result<Option<Vec<LibretroCpuTimingTransaction>>, String> {
+        let (Some(count), Some(value), Some(overflow)) = (
+            self.debug_cpu_timing_transaction_count,
+            self.debug_cpu_timing_transaction_value,
+            self.debug_cpu_timing_transaction_overflow,
+        ) else {
+            return Ok(None);
+        };
+        if unsafe { overflow() } != 0 {
+            return Err("Snes9x CPU timing transaction buffer overflowed".to_string());
+        }
+        let count = unsafe { count() }.max(0);
+        Ok(Some(
+            (0..count)
+                .map(|transaction| LibretroCpuTimingTransaction {
+                    kind: unsafe { value(transaction, 0) },
+                    duration: unsafe { value(transaction, 1) },
+                    origin_pc: unsafe { value(transaction, 2) },
+                    opcode: unsafe { value(transaction, 3) },
+                    start_v_counter: unsafe { value(transaction, 4) },
+                    start_cpu_cycle: unsafe { value(transaction, 5) },
+                    end_v_counter: unsafe { value(transaction, 6) },
+                    end_cpu_cycle: unsafe { value(transaction, 7) },
+                    cpu_model_identity: unsafe { value(transaction, 8) },
+                    cpu_model_5a22: unsafe { value(transaction, 9) },
+                    start_wram_refresh_position: unsafe { value(transaction, 10) },
+                    end_wram_refresh_position: unsafe { value(transaction, 11) },
+                })
+                .collect(),
+        ))
+    }
+
     pub(crate) fn debug_smp_instructions(&self) -> Option<Vec<LibretroSmpInstruction>> {
         let (Some(count), Some(value), Some(cycle)) = (
             self.debug_smp_instruction_count,
@@ -869,6 +918,22 @@ pub(crate) struct LibretroApuPortWrite {
     pub(crate) cpu_model_5a22: i32,
     pub(crate) wram_refresh_position: i32,
     pub(crate) cpu_model_identity: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct LibretroCpuTimingTransaction {
+    pub(crate) kind: i32,
+    pub(crate) duration: i32,
+    pub(crate) origin_pc: i32,
+    pub(crate) opcode: i32,
+    pub(crate) start_v_counter: i32,
+    pub(crate) start_cpu_cycle: i32,
+    pub(crate) end_v_counter: i32,
+    pub(crate) end_cpu_cycle: i32,
+    pub(crate) cpu_model_identity: i32,
+    pub(crate) cpu_model_5a22: i32,
+    pub(crate) start_wram_refresh_position: i32,
+    pub(crate) end_wram_refresh_position: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]

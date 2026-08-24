@@ -30,6 +30,8 @@ mod test_bootstrap_fixture;
 pub use cpu_step::{cpu_run_opcode, cpu_run_opcode_timed, CpuInstructionTiming};
 pub use cpu_synchronous_executor::{
     CpuSynchronousCompletion, CpuSynchronousMachine, CpuSynchronousMachineError,
+    Snes9xColdCpuExecutor, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
+    SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
 };
 
 pub use cart::{Cart, CartType};

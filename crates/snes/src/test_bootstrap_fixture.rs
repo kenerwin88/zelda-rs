@@ -44,6 +44,52 @@ pub(crate) struct SmpInstructionBoundary {
     pub max_continuation_opcode_cycle: u8,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CpuTimingTransaction {
+    pub frame: u64,
+    pub start_field_index: u64,
+    pub end_field_index: u64,
+    pub kind: u8,
+    pub duration: u8,
+    pub origin_pc: u32,
+    pub opcode: u8,
+    pub start_v_counter: u16,
+    pub start_cpu_cycle: u16,
+    pub end_v_counter: u16,
+    pub end_cpu_cycle: u16,
+    pub cpu_model_identity: u8,
+    pub cpu_model_5a22: u8,
+    pub start_wram_refresh_position: u16,
+    pub end_wram_refresh_position: u16,
+}
+
+impl CpuTimingTransaction {
+    pub(crate) fn absolute_start_master_cycle(self) -> u64 {
+        fixture_cpu_cycles_at(
+            self.start_field_index,
+            self.start_v_counter,
+            self.start_cpu_cycle,
+        )
+    }
+
+    pub(crate) fn absolute_end_master_cycle(self) -> u64 {
+        fixture_cpu_cycles_at(self.end_field_index, self.end_v_counter, self.end_cpu_cycle)
+    }
+}
+
+fn fixture_cpu_cycles_at(field_index: u64, scanline: u16, cpu_cycle: u16) -> u64 {
+    let timing = crate::CpuFieldTiming::NON_INTERLACE_EVEN;
+    let mut within_field =
+        u64::from(scanline) * u64::from(crate::MASTER_CYCLES_PER_SCANLINE) + u64::from(cpu_cycle);
+    // Snes9x may retain V240:H1360+ until a later AddCycles transaction drains
+    // the short-line HMax. Only a post-HMax V241+ coordinate has consumed the
+    // missing four physical clocks.
+    if timing.field_is_odd(field_index) && scanline > 240 {
+        within_field -= 4;
+    }
+    timing.field_start_master_cycles(field_index) + within_field
+}
+
 pub(crate) fn records() -> Vec<Value> {
     FIXTURE
         .lines()
@@ -162,6 +208,194 @@ pub(crate) fn smp_instruction_boundaries(bootstrap: &Value) -> Vec<SmpInstructio
     boundaries
 }
 
+pub(crate) fn cpu_timing_transactions_through_first_cc(
+    bootstrap: &Value,
+) -> Vec<CpuTimingTransaction> {
+    let cpu_accesses = cpu_apu_accesses(bootstrap);
+    let (_, first_cc_handshake) = split_first_cc_cpu_accesses(&cpu_accesses);
+    let first_cc = *first_cc_handshake
+        .last()
+        .expect("fixture omitted the first CPU CC acknowledgement");
+    // Every recorded Snes9x source transaction costs at least one six-master-
+    // cycle S-CPU cycle, so this is a source-derived upper bound rather than a
+    // fixture-size guess.
+    let prefix_limit = first_cc.absolute_master_cycle().div_ceil(6) as usize + 1;
+    let sequence =
+        decode_delta_sequence_prefix(&bootstrap["cpu_timing_transaction_sequence"], prefix_limit);
+    let mut physical_field_index = 0u64;
+    let mut transactions = sequence
+        .rows
+        .iter()
+        .map(|row| {
+            let start_v_counter = sequence.value(row, "start_v_counter") as u16;
+            let end_v_counter = sequence.value(row, "end_v_counter") as u16;
+            let start_field_index = physical_field_index;
+            let end_field_index = start_field_index + u64::from(end_v_counter < start_v_counter);
+            physical_field_index = end_field_index;
+            CpuTimingTransaction {
+                frame: sequence.value(row, "frame") as u64,
+                start_field_index,
+                end_field_index,
+                kind: sequence.value(row, "kind") as u8,
+                duration: sequence.value(row, "duration") as u8,
+                origin_pc: sequence.value(row, "origin_pc") as u32,
+                opcode: sequence.value(row, "opcode") as u8,
+                start_v_counter,
+                start_cpu_cycle: sequence.value(row, "start_cpu_cycle") as u16,
+                end_v_counter,
+                end_cpu_cycle: sequence.value(row, "end_cpu_cycle") as u16,
+                cpu_model_identity: sequence.value(row, "cpu_model_identity") as u8,
+                cpu_model_5a22: sequence.value(row, "cpu_model_5a22") as u8,
+                start_wram_refresh_position: sequence.value(row, "start_wram_refresh_position")
+                    as u16,
+                end_wram_refresh_position: sequence.value(row, "end_wram_refresh_position") as u16,
+            }
+        })
+        .collect::<Vec<_>>();
+    let first_cc_transaction = transactions
+        .iter()
+        .position(|transaction| {
+            transaction.frame == u64::from(first_cc.frame)
+                && transaction.kind == 2
+                && transaction.start_v_counter == first_cc.v_counter
+                && transaction.start_cpu_cycle == first_cc.cpu_cycle
+        })
+        .unwrap_or_else(|| {
+            let same_timestamp = transactions
+                .iter()
+                .filter(|transaction| {
+                    transaction.frame == u64::from(first_cc.frame)
+                        && transaction.start_v_counter == first_cc.v_counter
+                        && transaction.start_cpu_cycle == first_cc.cpu_cycle
+                })
+                .collect::<Vec<_>>();
+            panic!(
+                "timing fixture omitted the getset transaction for first CC {first_cc:?}; same timestamp: {same_timestamp:?}"
+            )
+        });
+    transactions.truncate(first_cc_transaction + 1);
+    transactions
+}
+
+pub(crate) fn visit_cpu_timing_transactions(
+    bootstrap: &Value,
+    mut visit: impl FnMut(CpuTimingTransaction),
+) {
+    let sequence = &bootstrap["cpu_timing_transaction_sequence"];
+    assert_eq!(
+        sequence["fields"],
+        serde_json::json!([
+            "frame",
+            "kind",
+            "duration",
+            "origin_pc",
+            "opcode",
+            "start_v_counter",
+            "start_cpu_cycle",
+            "end_v_counter",
+            "end_cpu_cycle",
+            "cpu_model_identity",
+            "cpu_model_5a22",
+            "start_wram_refresh_position",
+            "end_wram_refresh_position",
+        ])
+    );
+    let encoding = sequence["encoding"].as_str().unwrap();
+    assert_eq!(
+        encoding,
+        "columnar-signed-delta-zero-rle-varint-zstd-base64-v1"
+    );
+    let record_count = sequence["record_count"].as_u64().unwrap() as usize;
+    let compressed = decode_base64(sequence["data_base64"].as_str().unwrap());
+    let encoded = zstd::stream::decode_all(compressed.as_slice()).unwrap();
+    let mut remaining = encoded.as_slice();
+    let mut columns = Vec::with_capacity(13);
+    for _ in 0..13 {
+        let column_len = read_varint(&mut remaining) as usize;
+        let (column, rest) = remaining.split_at(column_len);
+        remaining = rest;
+        columns.push(DeltaColumnDecoder::new(column, record_count));
+    }
+    assert!(remaining.is_empty());
+
+    let mut physical_field_index = 0u64;
+    for _ in 0..record_count {
+        let mut row = [0i64; 13];
+        for (value, column) in row.iter_mut().zip(&mut columns) {
+            *value = column.next().expect("fixture column ended early");
+        }
+        let start_field_index = physical_field_index;
+        let end_field_index = start_field_index + u64::from(row[7] < row[5]);
+        physical_field_index = end_field_index;
+        visit(CpuTimingTransaction {
+            frame: row[0] as u64,
+            start_field_index,
+            end_field_index,
+            kind: row[1] as u8,
+            duration: row[2] as u8,
+            origin_pc: row[3] as u32,
+            opcode: row[4] as u8,
+            start_v_counter: row[5] as u16,
+            start_cpu_cycle: row[6] as u16,
+            end_v_counter: row[7] as u16,
+            end_cpu_cycle: row[8] as u16,
+            cpu_model_identity: row[9] as u8,
+            cpu_model_5a22: row[10] as u8,
+            start_wram_refresh_position: row[11] as u16,
+            end_wram_refresh_position: row[12] as u16,
+        });
+    }
+    assert!(columns.iter_mut().all(|column| column.next().is_none()));
+}
+
+struct DeltaColumnDecoder<'a> {
+    encoded: &'a [u8],
+    previous: i64,
+    repeated_remaining: usize,
+    remaining_values: usize,
+}
+
+impl<'a> DeltaColumnDecoder<'a> {
+    fn new(encoded: &'a [u8], remaining_values: usize) -> Self {
+        Self {
+            encoded,
+            previous: 0,
+            repeated_remaining: 0,
+            remaining_values,
+        }
+    }
+}
+
+impl Iterator for DeltaColumnDecoder<'_> {
+    type Item = i64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining_values == 0 {
+            assert!(self.encoded.is_empty() && self.repeated_remaining == 0);
+            return None;
+        }
+        if self.repeated_remaining == 0 {
+            let encoded_delta = read_varint(&mut self.encoded);
+            if encoded_delta == 0 {
+                self.repeated_remaining = read_varint(&mut self.encoded) as usize;
+                assert!(
+                    self.repeated_remaining != 0
+                        && self.repeated_remaining <= self.remaining_values
+                );
+            } else {
+                let zigzag = encoded_delta - 1;
+                let delta = ((zigzag >> 1) as i64) ^ -((zigzag & 1) as i64);
+                self.previous = self.previous.checked_add(delta).unwrap();
+                self.remaining_values -= 1;
+                return Some(self.previous);
+            }
+        }
+        self.repeated_remaining -= 1;
+        self.remaining_values -= 1;
+        Some(self.previous)
+    }
+}
+
 struct DecodedDeltaSequence {
     fields: Vec<String>,
     rows: Vec<Vec<i64>>,
@@ -178,18 +412,31 @@ impl DecodedDeltaSequence {
 }
 
 fn decode_delta_sequence(sequence: &Value) -> DecodedDeltaSequence {
-    assert_eq!(
-        sequence["encoding"],
+    decode_delta_sequence_prefix(
+        sequence,
+        sequence["record_count"].as_u64().unwrap() as usize,
+    )
+}
+
+fn decode_delta_sequence_prefix(sequence: &Value, prefix_limit: usize) -> DecodedDeltaSequence {
+    let encoding = sequence["encoding"].as_str().unwrap();
+    assert!(matches!(
+        encoding,
         "columnar-signed-delta-zero-rle-varint-base64-v1"
-    );
+            | "columnar-signed-delta-zero-rle-varint-zstd-base64-v1"
+    ));
     let fields = sequence["fields"]
         .as_array()
         .unwrap()
         .iter()
         .map(|field| field.as_str().unwrap().to_owned())
         .collect::<Vec<_>>();
-    let record_count = sequence["record_count"].as_u64().unwrap() as usize;
-    let bytes = decode_base64(sequence["data_base64"].as_str().unwrap());
+    let declared_record_count = sequence["record_count"].as_u64().unwrap() as usize;
+    let record_count = prefix_limit.min(declared_record_count);
+    let mut bytes = decode_base64(sequence["data_base64"].as_str().unwrap());
+    if encoding == "columnar-signed-delta-zero-rle-varint-zstd-base64-v1" {
+        bytes = zstd::stream::decode_all(bytes.as_slice()).unwrap();
+    }
     let mut encoded = bytes.as_slice();
     let mut columns = Vec::with_capacity(fields.len());
     for _ in &fields {
@@ -202,8 +449,8 @@ fn decode_delta_sequence(sequence: &Value) -> DecodedDeltaSequence {
             let encoded_delta = read_varint(&mut column);
             if encoded_delta == 0 {
                 let run_length = read_varint(&mut column) as usize;
-                assert!(run_length != 0 && values.len() + run_length <= record_count);
-                values.resize(values.len() + run_length, previous);
+                assert!(run_length != 0);
+                values.resize((values.len() + run_length).min(record_count), previous);
             } else {
                 let zigzag = encoded_delta - 1;
                 let delta = ((zigzag >> 1) as i64) ^ -((zigzag & 1) as i64);
@@ -211,7 +458,6 @@ fn decode_delta_sequence(sequence: &Value) -> DecodedDeltaSequence {
                 values.push(previous);
             }
         }
-        assert!(column.is_empty());
         columns.push(values);
     }
     assert!(encoded.is_empty());
@@ -296,4 +542,37 @@ fn compact_fixture_sequences_reconstruct_declared_record_counts() {
             .as_u64()
             .unwrap() as usize
     );
+}
+
+#[test]
+fn cpu_timing_decoder_preserves_pending_short_hmax_and_physical_field_rollover() {
+    let fixture = records();
+    let bootstrap = &fixture[2];
+    let timing = crate::CpuFieldTiming::NON_INTERLACE_EVEN;
+    let mut pending_short_hmax = None;
+    let mut field_rollover = None;
+    visit_cpu_timing_transactions(bootstrap, |transaction| {
+        if pending_short_hmax.is_none()
+            && timing.field_is_odd(transaction.start_field_index)
+            && transaction.start_v_counter == 240
+            && transaction.end_v_counter == 240
+            && transaction.end_cpu_cycle >= crate::SHORT_SCANLINE_END_CYCLE as u16
+        {
+            pending_short_hmax = Some(transaction);
+        }
+        if field_rollover.is_none() && transaction.end_v_counter < transaction.start_v_counter {
+            field_rollover = Some(transaction);
+        }
+    });
+
+    let pending = pending_short_hmax.expect("fixture omitted an odd V240 pending-HMax transaction");
+    assert_eq!(pending.start_field_index, pending.end_field_index);
+    assert_eq!(
+        pending.absolute_end_master_cycle() - pending.absolute_start_master_cycle(),
+        u64::from(pending.duration)
+    );
+
+    let rollover = field_rollover.expect("fixture omitted a V261-to-V0 field rollover");
+    assert_eq!(rollover.end_field_index, rollover.start_field_index + 1);
+    assert!(rollover.absolute_end_master_cycle() >= rollover.absolute_start_master_cycle());
 }

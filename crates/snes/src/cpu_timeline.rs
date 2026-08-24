@@ -508,7 +508,7 @@ impl CpuMasterTimeline {
 
         // Snes9x getset/AddCycles performs the complete transaction charge
         // before it drains every now-due event with `Cycles >= NextEvent`.
-        self.advance_physical_clock(u64::from(work_master_cycles));
+        self.advance_physical_clock_preserving_refresh(u64::from(work_master_cycles));
         while self.clock_master_cycles >= cursor.master_cycles {
             let event = cursor.event;
             let next_cursor = self.synchronous_cursor_after(cursor);
@@ -517,18 +517,36 @@ impl CpuMasterTimeline {
             // recursively; the outer loop observes them after it returns.
             let handler_master_cycles = observe_event(event, self.timestamp())?;
             self.mode = CpuTimelineMode::Synchronous(next_cursor);
+            if matches!(event, CpuSynchronousTimelineEvent::HMax { .. }) {
+                self.wram_refresh_cycle = snes9x_wram_refresh_cycle(
+                    next_cursor.field_index,
+                    next_cursor.scanline,
+                    self.field_timing,
+                ) as u16;
+            }
             let fixed_master_cycles = match event {
                 CpuSynchronousTimelineEvent::Bus(event) => {
                     self.fixed_event_advance(CpuTimelineEvent::Bus(event))
                 }
                 CpuSynchronousTimelineEvent::HMax { .. } => 0,
             };
-            self.advance_physical_clock(
+            self.advance_physical_clock_preserving_refresh(
                 u64::from(fixed_master_cycles) + u64::from(handler_master_cycles),
             );
             cursor = next_cursor;
         }
         Ok(())
+    }
+
+    /// Pinned Snes9x's direct `PCBase` opcode fetch increments `CPU.Cycles`
+    /// without invoking `AddCycles`; a due event is intentionally left owned
+    /// by the synchronous cursor until the next source transaction drains it.
+    pub(crate) fn advance_synchronous_pcbase_opcode_fetch(&mut self) {
+        assert!(
+            matches!(self.mode, CpuTimelineMode::Synchronous(_)),
+            "PCBase fetch requires a claimed synchronous timeline"
+        );
+        self.advance_physical_clock_preserving_refresh(8);
     }
 
     pub fn raster_position(&self) -> CpuRasterPosition {
@@ -705,6 +723,10 @@ impl CpuMasterTimeline {
 
     fn advance_physical_clock(&mut self, master_cycles: u64) {
         self.set_physical_clock(self.clock_master_cycles + master_cycles);
+    }
+
+    fn advance_physical_clock_preserving_refresh(&mut self, master_cycles: u64) {
+        self.clock_master_cycles += master_cycles;
     }
 
     fn set_physical_clock(&mut self, clock_master_cycles: u64) {
@@ -1168,5 +1190,41 @@ mod tests {
             },
         );
         assert_eq!(timeline.raster_position(), CpuRasterPosition::new(225, 0));
+    }
+
+    #[test]
+    fn non_draining_pcbase_crossing_retains_refresh_phase_until_hmax_drain() {
+        let mut timeline = at_raster(
+            0,
+            CpuRasterPosition::new(0, 1_358),
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        timeline.begin_synchronous_timeline().unwrap();
+        assert_eq!(timeline.wram_refresh_cycle(), 538);
+
+        timeline.advance_synchronous_pcbase_opcode_fetch();
+        assert_eq!(timeline.raster_position(), CpuRasterPosition::new(1, 2));
+        assert_eq!(timeline.wram_refresh_cycle(), 538);
+
+        let mut observed = Vec::new();
+        timeline
+            .advance_synchronous_after_semantics_with(8, |event, timestamp| {
+                observed.push((event, timestamp));
+                Ok::<_, ()>(0)
+            })
+            .unwrap();
+        assert_eq!(timeline.raster_position(), CpuRasterPosition::new(1, 10));
+        assert_eq!(timeline.wram_refresh_cycle(), 534);
+        assert_eq!(observed.len(), 1);
+        assert!(matches!(
+            observed[0].0,
+            CpuSynchronousTimelineEvent::HMax {
+                completed_field_index: 0,
+                completed_scanline: 0,
+                line_master_cycles: 1_364,
+            }
+        ));
+        assert_eq!(observed[0].1.master_cycles(), 1_374);
     }
 }
