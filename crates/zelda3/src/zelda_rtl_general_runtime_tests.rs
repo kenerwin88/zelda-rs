@@ -13,6 +13,7 @@ use crate::game_state::constants::{
     DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, DUNG_BG2, TM_COPY, TS_COPY,
 };
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
+use crate::game_state::CachedSpriteCacheField;
 use crate::game_state::FrameState;
 
 #[test]
@@ -3908,55 +3909,250 @@ fn room_32_staircase_35_sprite_reset_exposes_disabled_slots_for_one_nmi() {
 }
 
 #[test]
-fn room_82_supertile_load_crosses_one_additional_nmi() {
+fn c_dungeon_cache_trans_sprites_resumes_after_slot15_state_clear() {
+    // The ROM step at $09:c17f commits the first loop statement from
+    // sprite.c Dungeon_CacheTransSprites: alt_sprite_state[15] = 0. The
+    // cache flag was written just before it, but no type/position/dynamic
+    // field and no lower slot has been touched yet.
     let mut state = ZeldaState::new();
-    state.restore_live_rom_timing_after_checkpoint();
-    state.set_main_module(7);
-    state.set_submodule(2);
-    state.set_dungeon_room_index(0x82);
-
-    assert!(
-        state.begin_dungeon_supertile_transition_work(DungeonSupertileTransitionWork::RoomLoad,)
-    );
-    for _ in 0..DUNGEON_SUPERTILE_ROOM_LOAD_NMI_SLICES {
-        assert_eq!(
-            state.game_execution_scheduler.advance_work_one_nmi_slice(),
-            Some(GameWorkStep::Waiting),
-        );
+    state.set_indoor_flag(1);
+    for slot in 0..16 {
+        let mut live = state.sprite_slot_view_mut(slot);
+        live.set_state(9);
+        live.set_sprite_type(0x20 + slot as u8);
+        live.set_x_low(0x30 + slot as u8);
+        live.set_x_high(0x40 + slot as u8);
+        live.set_y_low(0x50 + slot as u8);
+        live.set_y_high(0x60 + slot as u8);
+        live.set_graphics(0x70 + slot as u8);
+        live.set_a(0x80 + slot as u8);
     }
+    for field in CachedSpriteCacheField::C_SOURCE_ORDER {
+        for slot in 0..16 {
+            state.ram[field.alt_address() + slot] = 0xa5;
+        }
+    }
+    state.sync_native_game_state_from_ram();
+    let mut atomic = state.clone();
+    let progress = sprite::DungeonResetSpritesCpuProgress::Cache {
+        slot: 15,
+        field: CachedSpriteCacheField::StateClear,
+    };
+
+    state.dungeon_reset_sprites_through_cpu_progress(progress);
+
     assert_eq!(
-        state.game_execution_scheduler.advance_work_one_nmi_slice(),
-        Some(GameWorkStep::Complete(
-            GameWorkContinuation::FinishDungeonSupertileTransition {
-                work: DungeonSupertileTransitionWork::RoomLoad,
-            },
-        )),
+        state.ram[CachedSpriteCacheField::StateClear.alt_address() + 15],
+        0,
     );
+    assert_eq!(
+        state.ram[CachedSpriteCacheField::Type.alt_address() + 15],
+        0xa5,
+    );
+    assert_eq!(
+        state.ram[CachedSpriteCacheField::StateClear.alt_address() + 14],
+        0xa5,
+    );
+    assert_eq!(state.sprite_slot_view(15).state(), 9);
+
+    state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
+    atomic.dungeon_reset_sprites();
+    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
 }
 
 #[test]
-fn room_72_supertile_room_load_caller_resume_crosses_one_additional_nmi() {
+fn c_dungeon_cache_trans_sprites_resumes_after_room50_slot3_flags2() {
+    // Cold Snes9x enters Module07 state 1 for route run 12416 at V=259,H=22.
+    // Its next reset-prefix NMI resumes at $09:c1de after the $09:c1db store
+    // has copied slot 3's flags2. This is the assignment immediately before
+    // floor in sprite.c Dungeon_CacheTransSprites (lines 3578..3579), not an
+    // envelope endpoint selected by the translated scheduler.
+    let progress = sprite::DungeonResetSpritesCpuProgress::Cache {
+        slot: 3,
+        field: CachedSpriteCacheField::Flags2,
+    };
     let mut state = ZeldaState::new();
-    state.restore_live_rom_timing_after_checkpoint();
+    state.set_indoor_flag(1);
+    for slot in 0..16 {
+        let mut live = state.sprite_slot_view_mut(slot);
+        live.set_state(9);
+        live.set_sprite_type(0x20 + slot as u8);
+        live.set_x_low(0x30 + slot as u8);
+        live.set_x_high(0x40 + slot as u8);
+        live.set_y_low(0x50 + slot as u8);
+        live.set_y_high(0x60 + slot as u8);
+        live.set_graphics(0x70 + slot as u8);
+        live.set_flags2(0x10 + slot as u8);
+        live.set_ignore_projectile(0x80 + slot as u8);
+    }
+    for field in CachedSpriteCacheField::C_SOURCE_ORDER {
+        for slot in 0..16 {
+            state.ram[field.alt_address() + slot] = 0xa5;
+        }
+    }
+    state.sync_native_game_state_from_ram();
+    let mut atomic = state.clone();
+
+    state.dungeon_reset_sprites_through_cpu_progress(progress);
+
+    for slot in 4..16 {
+        assert_eq!(
+            state.ram[CachedSpriteCacheField::IgnoreProjectile.alt_address() + slot],
+            0x80 + slot as u8,
+        );
+    }
+    assert_eq!(
+        state.ram[CachedSpriteCacheField::Flags2.alt_address() + 3],
+        0x13,
+    );
+    assert_eq!(
+        state.ram[CachedSpriteCacheField::Floor.alt_address() + 3],
+        0xa5,
+        "the field after the ROM checkpoint has not committed",
+    );
+    assert_eq!(
+        state.ram[CachedSpriteCacheField::StateClear.alt_address() + 2],
+        0xa5,
+        "the next descending cache slot has not started at the ROM boundary",
+    );
+
+    state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
+    atomic.dungeon_reset_sprites();
+    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+}
+
+#[test]
+fn c_dungeon_reset_sprites_resumes_after_the_rom_observed_y_checkpoint() {
+    // sprite.c Dungeon_ResetSprites -> Dungeon_LoadSprites ->
+    // Dungeon_LoadSingleSprite writes state, floor, Y, X, type, subtype, N,
+    // and die_action in that order. The observed boundary follows both Y
+    // writes of record 1, after record 0 completed.
+    let mut data = Vec::new();
+    let mut ranges = vec![(0, 0); 60];
+    put_test_asset(
+        &mut data,
+        &mut ranges,
+        58,
+        vec![0x02, 0x66, 0x21, 0x41, 0x79, 0x31, 0x42, 0xff],
+    );
+    put_test_asset(&mut data, &mut ranges, 59, vec![0, 0]);
+
+    let mut state = ZeldaState::new();
+    state.assets = Some(AssetPack::from_data_ranges(data, ranges));
     state.set_main_module(7);
     state.set_submodule(2);
-    state.set_dungeon_room_index(0x72);
+    state.set_subsubmodule(1);
+    state.dungeon_room_tracking_mut().set_room_index2_word(0);
+    for slot in [0, 1, 2, 9, 10] {
+        state.sprite_slot_view_mut(slot).set_state(9);
+    }
+    state.sprite_set_x(1, 0x7777);
+    state.sprite_slot_view_mut(1).set_sprite_type(0xaa);
+    state.sprite_slot_view_mut(1).set_subtype(0xbb);
+    state.sprite_slot_view_mut(1).set_n(0xcc);
+    state.sprite_slot_view_mut(1).set_die_action(0xdd);
+    state.set_frame_counter(0xf8);
+    state.set_pending_nmi_subroutine(24);
+    state.latch_nmi_update();
+    state.ram[OAM_BUF..OAM_BUF + 0x220].fill(0xa5);
+    state.sync_native_game_state_from_ram();
+    state.ppu.oam.fill(0x4567);
+    state.ppu.vram[0x3ed0..0x3ef0].fill(0x1234);
+    state.ppu.vram[0x4000..0x4400].fill(0x2345);
+    state.oam_law_entry_frame_counter = Some(0xf8);
+    state.capture_display_snapshot();
+    state.resident_oam_dma = Some(state.ppu.oam.clone());
+    state.oam_law_pending = Some(vec![0x3456; state.ppu.oam.len()]);
+    state.oam_law_visible = Some(vec![0x5678; state.ppu.oam.len()]);
+    let shadow_oam = state.ram[OAM_BUF..OAM_BUF + 0x220].to_vec();
+    let resident_oam = state.ppu.oam.clone();
+    let resident_oam_dma = state.resident_oam_dma.clone();
+    let pending_oam_law = state.oam_law_pending.clone();
+    let visible_oam_law = state.oam_law_visible.clone();
+    let star_tiles = state.ppu.vram[0x3ed0..0x3ef0].to_vec();
+    let obj_tiles = state.ppu.vram[0x4000..0x4400].to_vec();
+    let mut atomic = state.clone();
 
-    assert!(state.begin_dungeon_supertile_transition_work(
-        DungeonSupertileTransitionWork::RoomLoadCallerResume,
-    ));
-    assert_eq!(
-        state.game_execution_scheduler.advance_work_one_nmi_slice(),
-        Some(GameWorkStep::Waiting),
-    );
-    assert_eq!(
-        state.game_execution_scheduler.advance_work_one_nmi_slice(),
-        Some(GameWorkStep::Complete(
-            GameWorkContinuation::FinishDungeonSupertileTransition {
-                work: DungeonSupertileTransitionWork::RoomLoadCallerResume,
-            },
-        )),
-    );
+    let progress =
+        sprite::DungeonResetSpritesCpuProgress::Load(sprite::DungeonLoadSpritesCpuProgress {
+            record_index: 1,
+            slot: 1,
+            checkpoint: sprite::DungeonSpriteLoadCheckpoint::YHigh,
+        });
+    state.dungeon_reset_sprites_through_cpu_progress(progress);
+
+    assert_eq!(state.sprite_slot_view(0).state(), 8);
+    assert_eq!(state.sprite_get_y(0), 0x0060);
+    assert_eq!(state.sprite_get_x(0), 0x0010);
+    assert_eq!(state.sprite_slot_view(0).sprite_type(), 0x41);
+    assert_eq!(state.sprite_slot_view(0).subtype(), 0x19);
+    assert_eq!(state.sprite_slot_view(0).n(), 0);
+    assert_eq!(state.sprite_slot_view(0).die_action(), 0);
+    assert_eq!(state.sprite_slot_view(1).state(), 8);
+    assert_eq!(state.sprite_slot_view(1).floor(), 0);
+    assert_eq!(state.sprite_get_y(1), 0x0190);
+    assert_eq!(state.sprite_get_x(1), 0x7777);
+    assert_eq!(state.sprite_slot_view(1).sprite_type(), 0xaa);
+    assert_eq!(state.sprite_slot_view(1).subtype(), 0xbb);
+    assert_eq!(state.sprite_slot_view(1).n(), 0xcc);
+    assert_eq!(state.sprite_slot_view(1).die_action(), 0xdd);
+    assert_eq!(state.game_state.scratch_counter.value(), 0x79);
+    for slot in [2, 9, 10] {
+        assert_eq!(state.sprite_slot_view(slot).state(), 0);
+    }
+
+    state.set_subsubmodule(2);
+    state.capture_display_snapshot();
+    state.interrupt_nmi(0, None, false);
+    assert_eq!(state.game_state.frame.frame_counter, 0xf8);
+    assert_eq!(state.game_state.display.pending_nmi_subroutine, 24);
+    assert_eq!(&state.ram[OAM_BUF..OAM_BUF + 0x220], shadow_oam);
+    assert_eq!(state.ppu.oam, resident_oam);
+    assert_eq!(state.resident_oam_dma, resident_oam_dma);
+    assert_eq!(state.oam_law_pending, pending_oam_law);
+    assert_eq!(state.oam_law_visible, visible_oam_law);
+    assert_eq!(&state.ppu.vram[0x3ed0..0x3ef0], star_tiles);
+    assert_eq!(&state.ppu.vram[0x4000..0x4400], obj_tiles);
+    let snapshot = state
+        .display_snapshot
+        .as_ref()
+        .expect("held room-load NMI must retain a display snapshot");
+    assert_eq!(snapshot.completed_oam_dma_after_capture, None);
+    if let Some(receipt) = snapshot.effective_presented_dma.as_ref() {
+        assert!(receipt.vram_writes.is_empty());
+        assert!(receipt.decoded_bg_vram_writes.is_empty());
+        assert!(receipt.completed_oam.is_none());
+        assert!(receipt.completed_link_obj_dma.is_none());
+    }
+
+    state.dungeon_resume_reset_sprites_after_cpu_progress(progress);
+    atomic.dungeon_reset_sprites();
+    for slot in 0..2 {
+        assert_eq!(
+            state.sprite_slot_view(slot).state(),
+            atomic.sprite_slot_view(slot).state()
+        );
+        assert_eq!(state.sprite_get_y(slot), atomic.sprite_get_y(slot));
+        assert_eq!(state.sprite_get_x(slot), atomic.sprite_get_x(slot));
+        assert_eq!(
+            state.sprite_slot_view(slot).sprite_type(),
+            atomic.sprite_slot_view(slot).sprite_type(),
+        );
+        assert_eq!(
+            state.sprite_slot_view(slot).subtype(),
+            atomic.sprite_slot_view(slot).subtype(),
+        );
+        assert_eq!(
+            state.sprite_slot_view(slot).n(),
+            atomic.sprite_slot_view(slot).n()
+        );
+        assert_eq!(
+            state.sprite_slot_view(slot).die_action(),
+            atomic.sprite_slot_view(slot).die_action(),
+        );
+    }
 }
 
 #[test]

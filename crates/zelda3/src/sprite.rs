@@ -41,6 +41,47 @@ pub(super) struct PrepOamCoordsRet {
     pub flags: u8,
 }
 
+/// A C statement boundary inside `Dungeon_LoadSingleSprite` (`sprite.c:3649-3660`).
+///
+/// The room loader can cross vblank between these writes.  Keeping the
+/// checkpoint semantic lets the translated loader execute the same prefix and
+/// resume the same record without replaying already-visible sprite fields.
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+pub(super) enum DungeonSpriteLoadCheckpoint {
+    State,
+    TempY,
+    Floor,
+    YLow,
+    YHigh,
+    SharedX,
+    XLow,
+    XHigh,
+    Type,
+    SubtypeClear,
+    TempSubtype,
+    SubtypeFinal,
+    SpawnIndex,
+    Complete,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) struct DungeonLoadSpritesCpuProgress {
+    pub(super) record_index: u16,
+    pub(super) slot: u8,
+    pub(super) checkpoint: DungeonSpriteLoadCheckpoint,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) enum DungeonResetSpritesCpuProgress {
+    Cache {
+        slot: u8,
+        field: CachedSpriteCacheField,
+    },
+    Load(DungeonLoadSpritesCpuProgress),
+}
+
 fn hex_nibble(byte: u8) -> u8 {
     match byte {
         b'0'..=b'9' => byte - b'0',
@@ -1672,10 +1713,45 @@ impl ZeldaState {
         self.dungeon_load_sprites();
     }
 
+    pub(super) fn dungeon_reset_sprites_through_cpu_progress(
+        &mut self,
+        progress: DungeonResetSpritesCpuProgress,
+    ) {
+        match progress {
+            DungeonResetSpritesCpuProgress::Cache { slot, field } => {
+                self.dungeon_cache_trans_sprites_through_cpu_progress(slot, field);
+            }
+            DungeonResetSpritesCpuProgress::Load(progress) => {
+                self.dungeon_reset_sprites_before_room_load();
+                self.dungeon_load_sprites_through_cpu_progress(progress);
+            }
+        }
+    }
+
+    pub(super) fn dungeon_resume_reset_sprites_after_cpu_progress(
+        &mut self,
+        progress: DungeonResetSpritesCpuProgress,
+    ) {
+        match progress {
+            DungeonResetSpritesCpuProgress::Cache { slot, field } => {
+                self.dungeon_resume_cache_trans_sprites_after_cpu_progress(slot, field);
+                self.dungeon_reset_sprites_after_cache_before_room_load();
+                self.dungeon_load_sprites();
+            }
+            DungeonResetSpritesCpuProgress::Load(progress) => {
+                self.dungeon_resume_load_sprites_after_cpu_progress(progress);
+            }
+        }
+    }
+
     pub(super) fn dungeon_reset_sprites_before_room_load(&mut self) {
         if self.game_state.world.location.is_indoors() {
             self.dungeon_cache_trans_sprites();
         }
+        self.dungeon_reset_sprites_after_cache_before_room_load();
+    }
+
+    fn dungeon_reset_sprites_after_cache_before_room_load(&mut self) {
         {
             self.follower_link_state_mut().clear_picking_throw_state();
             self.follower_link_state_mut().clear_state_bits();
@@ -1706,17 +1782,10 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_load_sprites(&mut self) {
-        let Some(sprites) = self.asset_raw(58).map(Vec::from) else {
-            return;
-        };
-        let Some(offsets) = self.asset_raw(59).map(Vec::from) else {
+        let Some((sprites, start)) = self.dungeon_sprite_records() else {
             return;
         };
         let room = self.game_state.dungeon.room_tracking.room_index2_word() as usize;
-        let start = read_word_from_slice(&offsets, room * 2) as usize;
-        if start >= sprites.len() {
-            return;
-        }
 
         self.sprite_workspace_mut()
             .set_room_origin_y_high(((room >> 3) & 0xfe) as u8);
@@ -1740,6 +1809,140 @@ impl ZeldaState {
             k += 1;
             src += 3;
         }
+    }
+
+    fn dungeon_sprite_records(&self) -> Option<(Vec<u8>, usize)> {
+        let sprites = self.asset_raw(58).map(Vec::from)?;
+        let offsets = self.asset_raw(59).map(Vec::from)?;
+        let room = self.game_state.dungeon.room_tracking.room_index2_word() as usize;
+        let start = read_word_from_slice(&offsets, room * 2) as usize;
+        (start < sprites.len()).then_some((sprites, start))
+    }
+
+    fn dungeon_load_sprites_through_cpu_progress(
+        &mut self,
+        progress: DungeonLoadSpritesCpuProgress,
+    ) {
+        let Some((sprites, start)) = self.dungeon_sprite_records() else {
+            return;
+        };
+        let room = self.game_state.dungeon.room_tracking.room_index2_word() as usize;
+        self.sprite_workspace_mut()
+            .set_room_origin_y_high(((room >> 3) & 0xfe) as u8);
+        self.sprite_workspace_mut()
+            .set_room_origin_x_high(((room & 0x0f) << 1) as u8);
+        self.oam_state_mut()
+            .set_sprite_sorting_setting(sprites[start]);
+
+        let mut k = 0isize;
+        let mut src = start + 1;
+        let mut record_index = 0u16;
+        while src + 2 < sprites.len() && sprites[src] != 0xff {
+            let y = sprites[src];
+            let x = sprites[src + 1];
+            let sprite_type = sprites[src + 2];
+            if record_index == progress.record_index {
+                assert_eq!(
+                    k as u8, progress.slot,
+                    "translated room sprite slot disagrees with the ROM checkpoint",
+                );
+                assert!(
+                    self.dungeon_sprite_record_loads_normal_slot(k as usize, y, x, sprite_type),
+                    "ROM room-load checkpoint must identify a normal sprite record",
+                );
+                self.dungeon_load_single_sprite_fields(
+                    k as usize,
+                    y,
+                    x,
+                    sprite_type,
+                    None,
+                    progress.checkpoint,
+                );
+                return;
+            }
+            k = self.dungeon_load_single_sprite(k as usize, y, x, sprite_type);
+            k += 1;
+            src += 3;
+            record_index += 1;
+        }
+        panic!(
+            "ROM room-load checkpoint record {} is outside the room sprite list",
+            progress.record_index,
+        );
+    }
+
+    fn dungeon_resume_load_sprites_after_cpu_progress(
+        &mut self,
+        progress: DungeonLoadSpritesCpuProgress,
+    ) {
+        let Some((sprites, start)) = self.dungeon_sprite_records() else {
+            return;
+        };
+        let mut k = 0usize;
+        let mut src = start + 1;
+        let mut record_index = 0u16;
+        while src + 2 < sprites.len() && sprites[src] != 0xff {
+            let y = sprites[src];
+            let x = sprites[src + 1];
+            let sprite_type = sprites[src + 2];
+            if record_index < progress.record_index {
+                if Self::dungeon_sprite_record_advances_slot(y, x, sprite_type) {
+                    k += 1;
+                }
+            } else if record_index == progress.record_index {
+                assert_eq!(
+                    k as u8, progress.slot,
+                    "translated room sprite slot disagrees with the ROM checkpoint",
+                );
+                assert!(
+                    self.dungeon_sprite_record_loads_normal_slot(k, y, x, sprite_type),
+                    "ROM room-load checkpoint must identify a normal sprite record",
+                );
+                self.dungeon_load_single_sprite_fields(
+                    k,
+                    y,
+                    x,
+                    sprite_type,
+                    Some(progress.checkpoint),
+                    DungeonSpriteLoadCheckpoint::Complete,
+                );
+                k += 1;
+            } else {
+                k = (self.dungeon_load_single_sprite(k, y, x, sprite_type) + 1) as usize;
+            }
+            src += 3;
+            record_index += 1;
+        }
+        assert!(
+            record_index > progress.record_index,
+            "ROM room-load checkpoint record {} is outside the room sprite list",
+            progress.record_index,
+        );
+    }
+
+    fn dungeon_sprite_record_advances_slot(y: u8, x: u8, sprite_type: u8) -> bool {
+        if sprite_type == 0xe4 && (y == 0xfe || y == 0xfd) {
+            return false;
+        }
+        if sprite_type != 0xe4 && x >= 0xe0 {
+            return false;
+        }
+        true
+    }
+
+    fn dungeon_sprite_record_loads_normal_slot(
+        &self,
+        k: usize,
+        y: u8,
+        x: u8,
+        sprite_type: u8,
+    ) -> bool {
+        Self::dungeon_sprite_record_advances_slot(y, x, sprite_type)
+            && (sprite_init_value(SPRITE_INIT_DEFL_BITS_TABLE, sprite_type) & 1 != 0
+                || self.sprite_where_in_room_mask(
+                    self.game_state.dungeon.room_tracking.room_index2_word(),
+                ) & (1 << k)
+                    == 0)
     }
 
     pub(super) fn dungeon_load_single_sprite(
@@ -1771,38 +1974,79 @@ impl ZeldaState {
             return k as isize;
         }
 
-        let value = 8;
-        self.sprite_slot_view_mut(k).set_state(value);
-        self.temp_counter_mut().set(y);
-        let value = y >> 7;
-        self.sprite_slot_view_mut(k).set_floor(value);
+        self.dungeon_load_single_sprite_fields(
+            k,
+            y,
+            x,
+            sprite_type,
+            None,
+            DungeonSpriteLoadCheckpoint::Complete,
+        );
+        k as isize
+    }
 
+    fn dungeon_load_single_sprite_fields(
+        &mut self,
+        k: usize,
+        y: u8,
+        x: u8,
+        sprite_type: u8,
+        completed: Option<DungeonSpriteLoadCheckpoint>,
+        through: DungeonSpriteLoadCheckpoint,
+    ) {
+        let should_apply = |checkpoint| {
+            completed.is_none_or(|completed| checkpoint > completed) && checkpoint <= through
+        };
+        if should_apply(DungeonSpriteLoadCheckpoint::State) {
+            self.sprite_slot_view_mut(k).set_state(8);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::TempY) {
+            self.temp_counter_mut().set(y);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::Floor) {
+            self.sprite_slot_view_mut(k).set_floor(y >> 7);
+        }
         let y_coord = (((y as u16) << 4) & 0x01ff)
             + ((self.game_state.sprites.workspace.room_origin_y_high() as u16) << 8);
-        let value = y_coord as u8;
-        self.sprite_slot_view_mut(k).set_y_low(value);
-        let value = (y_coord >> 8) as u8;
-        self.sprite_slot_view_mut(k).set_y_high(value);
-
-        self.sprite_workspace_mut().set_shared_scratch_a(x);
+        if should_apply(DungeonSpriteLoadCheckpoint::YLow) {
+            self.sprite_slot_view_mut(k).set_y_low(y_coord as u8);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::YHigh) {
+            self.sprite_slot_view_mut(k)
+                .set_y_high((y_coord >> 8) as u8);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::SharedX) {
+            self.sprite_workspace_mut().set_shared_scratch_a(x);
+        }
         let x_coord = (((x as u16) << 4) & 0x01ff)
             + ((self.game_state.sprites.workspace.room_origin_x_high() as u16) << 8);
-        let value = x_coord as u8;
-        self.sprite_slot_view_mut(k).set_x_low(value);
-        let value = (x_coord >> 8) as u8;
-        self.sprite_slot_view_mut(k).set_x_high(value);
-
-        let value = sprite_type;
-        self.sprite_slot_view_mut(k).set_sprite_type(value);
-        let counter = (self.game_state.scratch_counter.value() & 0x60) >> 2;
-        self.temp_counter_mut().set(counter);
-        let value = self.game_state.scratch_counter.value() | (x >> 5);
-        self.sprite_slot_view_mut(k).set_subtype(value);
-        let value = k as u8;
-        self.sprite_slot_view_mut(k).set_n(value);
-        let value = 0;
-        self.sprite_slot_view_mut(k).set_die_action(value);
-        k as isize
+        if should_apply(DungeonSpriteLoadCheckpoint::XLow) {
+            self.sprite_slot_view_mut(k).set_x_low(x_coord as u8);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::XHigh) {
+            self.sprite_slot_view_mut(k)
+                .set_x_high((x_coord >> 8) as u8);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::Type) {
+            self.sprite_slot_view_mut(k).set_sprite_type(sprite_type);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::SubtypeClear) {
+            self.sprite_slot_view_mut(k).set_subtype(0);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::TempSubtype) {
+            let counter = (self.game_state.scratch_counter.value() & 0x60) >> 2;
+            self.temp_counter_mut().set(counter);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::SubtypeFinal) {
+            let subtype = self.game_state.scratch_counter.value() | (x >> 5);
+            self.sprite_slot_view_mut(k).set_subtype(subtype);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::SpawnIndex) {
+            self.sprite_slot_view_mut(k).set_n(k as u8);
+        }
+        if should_apply(DungeonSpriteLoadCheckpoint::Complete) {
+            self.sprite_slot_view_mut(k).set_die_action(0);
+        }
     }
 
     // void Dungeon_LoadSingleOverlord(const uint8 *src) {  // 89c3e8
@@ -2290,28 +2534,66 @@ impl ZeldaState {
         let value = self.game_state.world.location.indoor_flag();
         self.sprite_system_mut().set_alt_sprites_flag(value);
         for k in (0..16usize).rev() {
-            let slot = self.sprite_slot_view(k);
-            let sprite_type = slot.sprite_type();
-            let x_low = slot.x_low();
-            let x_high = slot.x_high();
-            let y_low = slot.y_low();
-            let y_high = slot.y_high();
-            let graphics = slot.graphics();
-            self.cached_sprite_slot_mut(k).cache_sprite_header(
-                sprite_type,
-                x_low,
-                x_high,
-                y_low,
-                y_high,
-                graphics,
-            );
-            if self.sprite_slot_view(k).pause() != 0
-                || self.sprite_slot_view(k).state() == 4
-                || self.sprite_slot_view(k).state() == 10
-            {
-                continue;
+            self.dungeon_cache_trans_sprite_fields(k, None, self.dungeon_cache_last_field(k));
+        }
+    }
+
+    fn dungeon_cache_trans_sprites_through_cpu_progress(
+        &mut self,
+        target_slot: u8,
+        through: CachedSpriteCacheField,
+    ) {
+        assert!(self.game_state.world.location.is_indoors());
+        let indoor_flag = self.game_state.world.location.indoor_flag();
+        self.sprite_system_mut().set_alt_sprites_flag(indoor_flag);
+        for k in (usize::from(target_slot)..16).rev() {
+            if k == usize::from(target_slot) {
+                assert!(through <= self.dungeon_cache_last_field(k));
+                self.dungeon_cache_trans_sprite_fields(k, None, through);
+                return;
             }
-            self.cached_sprite_slot_mut(k).cache_live_fields();
+            self.dungeon_cache_trans_sprite_fields(k, None, self.dungeon_cache_last_field(k));
+        }
+        unreachable!("cache checkpoint slot is outside the 16-slot C loop");
+    }
+
+    fn dungeon_resume_cache_trans_sprites_after_cpu_progress(
+        &mut self,
+        target_slot: u8,
+        completed: CachedSpriteCacheField,
+    ) {
+        assert!(self.game_state.world.location.is_indoors());
+        let target_slot = usize::from(target_slot);
+        assert!(completed <= self.dungeon_cache_last_field(target_slot));
+        self.dungeon_cache_trans_sprite_fields(
+            target_slot,
+            Some(completed),
+            self.dungeon_cache_last_field(target_slot),
+        );
+        for k in (0..target_slot).rev() {
+            self.dungeon_cache_trans_sprite_fields(k, None, self.dungeon_cache_last_field(k));
+        }
+    }
+
+    fn dungeon_cache_last_field(&self, k: usize) -> CachedSpriteCacheField {
+        let slot = self.sprite_slot_view(k);
+        if slot.pause() != 0 || matches!(slot.state(), 4 | 10) {
+            CachedSpriteCacheField::YHigh
+        } else {
+            CachedSpriteCacheField::IgnoreProjectile
+        }
+    }
+
+    fn dungeon_cache_trans_sprite_fields(
+        &mut self,
+        k: usize,
+        completed: Option<CachedSpriteCacheField>,
+        through: CachedSpriteCacheField,
+    ) {
+        for field in CachedSpriteCacheField::C_SOURCE_ORDER {
+            if completed.is_none_or(|completed| field > completed) && field <= through {
+                self.cached_sprite_slot_mut(k).cache_field_from_live(field);
+            }
         }
     }
 

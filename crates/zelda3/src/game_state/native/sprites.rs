@@ -62,6 +62,114 @@ const CHAIN_CHOMP_HISTORY_LEN: usize = 0x80;
 const ETHER_ANGLE_COUNT: usize = 8;
 const ENEMY_DAMAGE_SUBCLASS_COUNT: usize = 0x1000;
 pub(crate) const OVERWORLD_SPRITE_FLAG_COUNT: usize = 0x200;
+
+/// One WRAM statement in `Dungeon_CacheTransSprites`, in exact C source order.
+/// `StateClear` and `State` intentionally share the same destination: the C
+/// routine clears the cache slot before conditionally copying the live state.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+pub(crate) enum CachedSpriteCacheField {
+    StateClear,
+    Type,
+    XLow,
+    Graphics,
+    XHigh,
+    YLow,
+    YHigh,
+    State,
+    A,
+    HeadDirection,
+    OamFlags,
+    ObjPriority,
+    D,
+    Flags2,
+    Floor,
+    SpawnedFlag,
+    Flags3,
+    B,
+    C,
+    E,
+    Subtype2,
+    HeightAboveShadow,
+    DelayMain,
+    I,
+    IgnoreProjectile,
+}
+
+impl CachedSpriteCacheField {
+    pub(crate) const C_SOURCE_ORDER: [Self; 25] = [
+        Self::StateClear,
+        Self::Type,
+        Self::XLow,
+        Self::Graphics,
+        Self::XHigh,
+        Self::YLow,
+        Self::YHigh,
+        Self::State,
+        Self::A,
+        Self::HeadDirection,
+        Self::OamFlags,
+        Self::ObjPriority,
+        Self::D,
+        Self::Flags2,
+        Self::Floor,
+        Self::SpawnedFlag,
+        Self::Flags3,
+        Self::B,
+        Self::C,
+        Self::E,
+        Self::Subtype2,
+        Self::HeightAboveShadow,
+        Self::DelayMain,
+        Self::I,
+        Self::IgnoreProjectile,
+    ];
+
+    const fn live_field_index(self) -> Option<usize> {
+        Some(match self {
+            Self::StateClear => return None,
+            Self::State => 0,
+            Self::Type => 1,
+            Self::XLow => 2,
+            Self::XHigh => 3,
+            Self::YLow => 4,
+            Self::YHigh => 5,
+            Self::Graphics => 6,
+            Self::A => 7,
+            Self::HeadDirection => 8,
+            Self::OamFlags => 9,
+            Self::ObjPriority => 10,
+            Self::D => 11,
+            Self::Flags2 => 12,
+            Self::Floor => 13,
+            Self::SpawnedFlag => 14,
+            Self::Flags3 => 15,
+            Self::B => 16,
+            Self::C => 17,
+            Self::E => 18,
+            Self::Subtype2 => 19,
+            Self::HeightAboveShadow => 20,
+            Self::DelayMain => 21,
+            Self::I => 22,
+            Self::IgnoreProjectile => 23,
+        })
+    }
+
+    pub(crate) const fn alt_address(self) -> usize {
+        match self.live_field_index() {
+            Some(index) => CACHED_SPRITE_ALT_FIELDS[index],
+            None => ALT_SPRITE_STATE,
+        }
+    }
+
+    const fn live_address(self) -> Option<usize> {
+        match self.live_field_index() {
+            Some(index) => Some(CACHED_SPRITE_LIVE_FIELDS[index]),
+            None => None,
+        }
+    }
+}
 // `sprite_where_in_overworld` (presence markers, 0x1df80) is indexed by `blk`
 // DIRECTLY (C: `sprite_where_in_overworld[blk]`), and blk spans 0..0xfff, so the
 // table is 0x1000 bytes (0x1df80..0x1ef80, ending exactly at the was-loaded
@@ -3840,29 +3948,6 @@ impl CachedSpritesState {
         }
     }
 
-    fn cache_sprite_header(
-        &mut self,
-        slot: usize,
-        sprite_type: u8,
-        x_low: u8,
-        x_high: u8,
-        y_low: u8,
-        y_high: u8,
-        graphics: u8,
-    ) {
-        if let Some(cached) = self.slot_mut(slot) {
-            *cached = CachedSpriteSlotState {
-                state: 0,
-                type_byte: sprite_type,
-                x_low,
-                x_high,
-                y_low,
-                y_high,
-                graphics,
-            };
-        }
-    }
-
     fn sync_slot_from_ram(&mut self, ram: &[u8], slot: usize) {
         if let Some(cached) = self.slot_mut(slot) {
             *cached = CachedSpriteSlotState {
@@ -3969,44 +4054,23 @@ impl<'a> NativeCachedSpriteBridgeMut<'a> {
         self.ram[ALT_SPRITE_Y_HI + self.slot] = value;
     }
 
-    pub(crate) fn cache_sprite_header(
-        &mut self,
-        sprite_type: u8,
-        x_low: u8,
-        x_high: u8,
-        y_low: u8,
-        y_high: u8,
-        graphics: u8,
-    ) {
-        self.state.cache_sprite_header(
-            self.slot,
-            sprite_type,
-            x_low,
-            x_high,
-            y_low,
-            y_high,
-            graphics,
-        );
-        self.ram[ALT_SPRITE_STATE + self.slot] = 0;
-        self.ram[ALT_SPRITE_TYPE + self.slot] = sprite_type;
-        self.ram[ALT_SPRITE_X_LO + self.slot] = x_low;
-        self.ram[ALT_SPRITE_X_HI + self.slot] = x_high;
-        self.ram[ALT_SPRITE_Y_LO + self.slot] = y_low;
-        self.ram[ALT_SPRITE_Y_HI + self.slot] = y_high;
-        self.ram[ALT_SPRITE_GRAPHICS + self.slot] = graphics;
+    pub(crate) fn cache_field_from_live(&mut self, field: CachedSpriteCacheField) {
+        let value = field
+            .live_address()
+            .map(|address| self.ram[address + self.slot])
+            .unwrap_or(0);
+        self.write_cache_field(field, value);
     }
 
-    pub(crate) fn cache_live_fields(&mut self) {
-        for i in 0..CACHED_SPRITE_LIVE_FIELDS.len() {
-            self.ram[CACHED_SPRITE_ALT_FIELDS[i] + self.slot] =
-                self.ram[CACHED_SPRITE_LIVE_FIELDS[i] + self.slot];
-        }
+    fn write_cache_field(&mut self, field: CachedSpriteCacheField, value: u8) {
+        self.ram[field.alt_address() + self.slot] = value;
         self.sync_slot_from_ram();
-        // Slot 0's ai-state cache byte IS alt_sprite_spawned_flag[0] (0x1de0), the
-        // byte SpriteSystemState models for the damage tracker (sprite_main.c:25815).
-        // Adopt it so the system projection can't re-stamp a stale flag over the
-        // cached ai_state.
-        self.system.adopt_alt_sprite_spawned_flag_from_ram(self.ram);
+        if field == CachedSpriteCacheField::SpawnedFlag {
+            // Slot 0's ai-state cache byte IS alt_sprite_spawned_flag[0]
+            // (0x1de0), the byte SpriteSystemState models for the damage
+            // tracker (sprite_main.c:25815).
+            self.system.adopt_alt_sprite_spawned_flag_from_ram(self.ram);
+        }
     }
 
     pub(crate) fn load_cached_into_live(&mut self, backup: &mut [u8; 24]) {

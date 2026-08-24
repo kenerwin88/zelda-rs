@@ -757,6 +757,17 @@ fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
     let mut ram = vec![0; WRAM_SIZE];
     let mut state = SpriteState::load_from_ram(&ram);
 
+    for (address, value) in [
+        (SPRITE_TYPE, 0xaa),
+        (SPRITE_X_LO, 0x11),
+        (SPRITE_GRAPHICS, 0x55),
+        (SPRITE_X_HI, 0x22),
+        (SPRITE_Y_LO, 0x33),
+        (SPRITE_Y_HI, 0x44),
+    ] {
+        ram[address + 3] = value;
+    }
+
     {
         let mut bridge = NativeCachedSpriteBridgeMut::new(
             &mut state.cached_sprites,
@@ -765,7 +776,9 @@ fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
             &mut ram,
             3,
         );
-        bridge.cache_sprite_header(0xaa, 0x11, 0x22, 0x33, 0x44, 0x55);
+        for field in CachedSpriteCacheField::C_SOURCE_ORDER[..7].iter().copied() {
+            bridge.cache_field_from_live(field);
+        }
     }
     let slot = state.cached_sprites.slot(3);
     assert!(!slot.is_active());
@@ -805,7 +818,13 @@ fn native_cached_sprite_bridge_updates_alt_and_live_banks() {
             &mut ram,
             3,
         );
-        bridge.cache_live_fields();
+        for field in CachedSpriteCacheField::C_SOURCE_ORDER
+            .iter()
+            .copied()
+            .skip(1)
+        {
+            bridge.cache_field_from_live(field);
+        }
     }
     for (index, alt) in CACHED_SPRITE_ALT_FIELDS.iter().copied().enumerate() {
         assert_eq!(ram[alt + 3], index as u8);
