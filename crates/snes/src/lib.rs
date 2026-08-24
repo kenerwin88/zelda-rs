@@ -18,6 +18,7 @@ pub mod input;
 pub mod loader;
 pub mod ppu;
 pub mod snes;
+pub mod snes9x_apu_clock;
 pub mod tracing;
 
 pub use cpu_step::{cpu_run_opcode, cpu_run_opcode_timed, CpuInstructionTiming};
@@ -29,3 +30,7 @@ pub use input::InputState;
 pub use loader::{load_rom, LoadRomError};
 pub use ppu::PpuState;
 pub use snes::{Snes, WRAM_SIZE};
+pub use snes9x_apu_clock::{
+    Snes9xApuClockCheckpoint, Snes9xApuClockError, Snes9xApuClockState,
+    SNES9X_NTSC_APU_CLOCK_DENOMINATOR, SNES9X_NTSC_APU_CLOCK_NUMERATOR,
+};
