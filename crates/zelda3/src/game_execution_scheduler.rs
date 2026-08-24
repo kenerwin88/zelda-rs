@@ -4,119 +4,13 @@ use super::{
     FILE_SELECT_GRAPHICS_NMI_SLICES, SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
     SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES,
 };
-
-const MASTER_CYCLES_PER_SCANLINE: u32 = 1_364;
-const NTSC_SCANLINES_PER_FIELD: u32 = 262;
-const NMI_SCANLINE: u32 = 225;
-const HDMA_INIT_CYCLE: u32 = 20;
-// The pinned Snes9x core selects M1SNES (`_5A22 == 1`), whose cpu.cpp reset
-// path uses SNES_WRAM_REFRESH_HC_v1 rather than the M2-only v2 position.
-const WRAM_REFRESH_CYCLE: u32 = 530;
-const WRAM_REFRESH_STALL_MASTER_CYCLES: u32 = 40;
-const HDMA_START_CYCLE: u32 = 1_106;
-const SHORT_SCANLINE_END_CYCLE: u32 = 1_360;
-const SHORT_SCANLINE_MISSING_MASTER_CYCLES: u32 = 4;
-const NTSC_FIELD_MASTER_CYCLES: u64 =
-    NTSC_SCANLINES_PER_FIELD as u64 * MASTER_CYCLES_PER_SCANLINE as u64;
-// Pinned Snes9x 1.63 schedules an enabled VBlank NMI for 12 master cycles
-// after VBlank publication. CPU instructions remain atomic, so actual
-// acceptance can occur later than this earliest boundary.
-const SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES: u64 = 12;
-// Pinned Snes9x 1.63 retimes an NMI which remains pending when general DMA
-// completes to `CPU.Cycles + Timings.NMIDMADelay` (dma.cpp). The pinned timing
-// model sets NMIDMADelay to 24 master cycles (memmap.cpp).
-const SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES: u64 = 24;
-
-/// A 65816 position within an NTSC field, expressed in S-CPU master cycles.
-///
-/// Translated routines normally execute atomically. Work that reaches a
-/// hardware raster boundary is instead advanced through this clock so the
-/// continuation is selected by the remaining cycle budget, not by a room or
-/// route identifier.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct CpuRasterPosition {
-    scanline: u16,
-    master_cycle: u16,
-}
-
-impl CpuRasterPosition {
-    pub(super) const fn new(scanline: u16, master_cycle: u16) -> Self {
-        Self {
-            scanline,
-            master_cycle,
-        }
-    }
-
-    const fn unwrapped_master_cycles(self) -> u64 {
-        self.scanline as u64 * MASTER_CYCLES_PER_SCANLINE as u64 + self.master_cycle as u64
-    }
-
-    pub(super) const fn coordinates(self) -> (u16, u16) {
-        (self.scanline, self.master_cycle)
-    }
-}
-
-/// Bus work which consumes CPU time before the selected raster boundary.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(super) struct CpuBusWorkload {
-    hdma_stall_master_cycles: u16,
-    dynamic_hdma: bool,
-}
-
-impl CpuBusWorkload {
-    pub(super) const fn with_hdma_stall(hdma_stall_master_cycles: u16) -> Self {
-        Self {
-            hdma_stall_master_cycles,
-            dynamic_hdma: false,
-        }
-    }
-
-    pub(super) const fn with_dynamic_hdma() -> Self {
-        Self {
-            hdma_stall_master_cycles: 0,
-            dynamic_hdma: true,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CpuBusEvent {
-    WramRefresh,
-    HdmaInit,
-    HdmaStart,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CpuTimelineEvent {
-    Bus(CpuBusEvent),
-    ShortScanline,
-}
-
-/// Video-field state which changes the CPU's available master-cycle budget.
-/// In non-interlace mode, scanline 240 of each odd field is one dot shorter.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct CpuFieldTiming {
-    odd_field: bool,
-    interlace: bool,
-}
-
-impl CpuFieldTiming {
-    pub(super) const NON_INTERLACE_EVEN: Self = Self {
-        odd_field: false,
-        interlace: false,
-    };
-
-    pub(super) const fn non_interlace(odd_field: bool) -> Self {
-        Self {
-            odd_field,
-            interlace: false,
-        }
-    }
-
-    const fn field_is_odd(self, field_index: u64) -> bool {
-        self.odd_field ^ (field_index & 1 != 0)
-    }
-}
+pub(super) use snes::{CpuBusEvent, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
+use snes::{
+    CpuMasterTimeline, CpuTimelineDeadlineAdvance, CpuTimelineEvent, MASTER_CYCLES_PER_SCANLINE,
+    NMI_SCANLINE, NTSC_FIELD_MASTER_CYCLES, SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+    SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES, SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES,
+    WRAM_REFRESH_STALL_MASTER_CYCLES,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CpuWorkAdvance {
@@ -195,11 +89,8 @@ impl CpuBoundaryDeadline {
 /// the continuation is suspended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct CpuCycleBudget {
-    clock_master_cycles: u64,
+    timeline: CpuMasterTimeline,
     deadline: CpuBoundaryDeadline,
-    bus: CpuBusWorkload,
-    field_timing: CpuFieldTiming,
-    processed_timeline_event: Option<(u64, CpuTimelineEvent)>,
 }
 
 impl CpuCycleBudget {
@@ -239,11 +130,8 @@ impl CpuCycleBudget {
         let deadline = CpuBoundaryDeadline::next_after(entry, boundary);
         debug_assert!(clock_master_cycles < deadline.master_cycles);
         Self {
-            clock_master_cycles,
+            timeline: CpuMasterTimeline::new(clock_master_cycles, bus, field_timing),
             deadline,
-            bus,
-            field_timing,
-            processed_timeline_event: None,
         }
     }
 
@@ -259,62 +147,33 @@ impl CpuCycleBudget {
             master_cycles: CpuRasterBoundary::CpuNmiAcceptance.field_master_cycle(),
         };
         Self {
-            clock_master_cycles: deadline.master_cycles,
+            timeline: CpuMasterTimeline::new(deadline.master_cycles, bus, field_timing),
             deadline,
-            bus,
-            field_timing,
-            processed_timeline_event: None,
         }
     }
 
     /// Advance an interruptible span, stopping exactly at the selected boundary
     /// and retaining the unexecuted work for a continuation.
-    pub(super) fn advance_interruptible(&mut self, mut work_master_cycles: u32) -> CpuWorkAdvance {
-        debug_assert!(self.clock_master_cycles < self.deadline.master_cycles);
-        while work_master_cycles != 0 {
-            let (work_until_event, event) = self.next_timeline_event();
-            let event_stall = event.map_or(0, |event| self.fixed_event_advance(event));
-            let master_cycles_until_boundary =
-                self.deadline.master_cycles - self.clock_master_cycles;
-            if master_cycles_until_boundary <= u64::from(work_until_event) {
-                if u64::from(work_master_cycles) < master_cycles_until_boundary {
-                    self.clock_master_cycles += u64::from(work_master_cycles);
-                    return CpuWorkAdvance::Complete;
-                }
-                self.clock_master_cycles = self.deadline.master_cycles;
-                return CpuWorkAdvance::ReachedBoundary {
-                    boundary: self.deadline.boundary,
-                    remaining_work_master_cycles: work_master_cycles
-                        - u32::try_from(master_cycles_until_boundary)
-                            .expect("raster-boundary distance exceeded remaining CPU work"),
-                };
-            }
-            if work_master_cycles <= work_until_event {
-                self.clock_master_cycles += u64::from(work_master_cycles);
-                return CpuWorkAdvance::Complete;
-            }
-
-            self.clock_master_cycles += u64::from(work_until_event);
-            work_master_cycles -= work_until_event;
-            if let Some(event) = event {
-                self.processed_timeline_event = Some((self.clock_master_cycles, event));
-            }
-            if self.clock_master_cycles + u64::from(event_stall) >= self.deadline.master_cycles {
-                self.clock_master_cycles = self.deadline.master_cycles;
-                return CpuWorkAdvance::ReachedBoundary {
-                    boundary: self.deadline.boundary,
-                    remaining_work_master_cycles: work_master_cycles,
-                };
-            }
-            self.clock_master_cycles += u64::from(event_stall);
+    pub(super) fn advance_interruptible(&mut self, work_master_cycles: u32) -> CpuWorkAdvance {
+        debug_assert!(self.timeline.clock_master_cycles() < self.deadline.master_cycles);
+        match self
+            .timeline
+            .advance_interruptible_until(self.deadline.master_cycles, work_master_cycles)
+        {
+            CpuTimelineDeadlineAdvance::Complete => CpuWorkAdvance::Complete,
+            CpuTimelineDeadlineAdvance::ReachedDeadline {
+                remaining_work_master_cycles,
+            } => CpuWorkAdvance::ReachedBoundary {
+                boundary: self.deadline.boundary,
+                remaining_work_master_cycles,
+            },
         }
-        CpuWorkAdvance::Complete
     }
 
     /// Advance one indivisible 65816 instruction. A boundary reached during the
     /// instruction is observed immediately after it completes.
     pub(super) fn advance_instruction(&mut self, instruction_master_cycles: u32) -> CpuWorkAdvance {
-        debug_assert!(self.clock_master_cycles < self.deadline.master_cycles);
+        debug_assert!(self.timeline.clock_master_cycles() < self.deadline.master_cycles);
         self.advance_atomic_work(instruction_master_cycles)
     }
 
@@ -326,24 +185,30 @@ impl CpuCycleBudget {
         instruction_master_cycles: u32,
         mut hdma_stall: impl FnMut(CpuBusEvent, u16) -> u32,
     ) -> CpuWorkAdvance {
-        debug_assert!(self.clock_master_cycles < self.deadline.master_cycles);
-        let dynamic_hdma = self.bus.dynamic_hdma;
-        let fixed_hdma_stall = u32::from(self.bus.hdma_stall_master_cycles);
-        self.advance_work_unbounded_with(
-            instruction_master_cycles,
-            |event, scanline| match event {
-                CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => WRAM_REFRESH_STALL_MASTER_CYCLES,
-                CpuTimelineEvent::Bus(event @ (CpuBusEvent::HdmaInit | CpuBusEvent::HdmaStart)) => {
-                    if dynamic_hdma {
-                        hdma_stall(event, scanline)
-                    } else {
-                        fixed_hdma_stall
+        debug_assert!(self.timeline.clock_master_cycles() < self.deadline.master_cycles);
+        let bus = self.timeline.bus_workload();
+        let dynamic_hdma = bus.dynamic_hdma();
+        let fixed_hdma_stall = u32::from(bus.hdma_stall_master_cycles());
+        self.timeline
+            .advance_work_unbounded_with(
+                instruction_master_cycles,
+                |event, scanline| match event {
+                    CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => {
+                        WRAM_REFRESH_STALL_MASTER_CYCLES
                     }
-                }
-                CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
-            },
-        );
-        if self.clock_master_cycles >= self.deadline.master_cycles {
+                    CpuTimelineEvent::Bus(
+                        event @ (CpuBusEvent::HdmaInit | CpuBusEvent::HdmaStart),
+                    ) => {
+                        if dynamic_hdma {
+                            hdma_stall(event, scanline)
+                        } else {
+                            fixed_hdma_stall
+                        }
+                    }
+                    CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+                },
+            );
+        if self.timeline.clock_master_cycles() >= self.deadline.master_cycles {
             CpuWorkAdvance::ReachedBoundary {
                 boundary: self.deadline.boundary,
                 remaining_work_master_cycles: 0,
@@ -373,10 +238,11 @@ impl CpuCycleBudget {
             CpuRasterBoundary::CpuNmiAcceptance,
             "general-DMA NMI deferral requires a CPU acceptance deadline",
         );
-        self.advance_work_unbounded(dma_master_cycles);
-        if self.clock_master_cycles >= self.deadline.master_cycles {
+        self.timeline.advance_work_unbounded(dma_master_cycles);
+        if self.timeline.clock_master_cycles() >= self.deadline.master_cycles {
             self.deadline.master_cycles = self
-                .clock_master_cycles
+                .timeline
+                .clock_master_cycles()
                 .checked_add(SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES)
                 .expect("general-DMA NMI deadline overflowed");
             return CpuWorkAdvance::Complete;
@@ -386,8 +252,8 @@ impl CpuCycleBudget {
     }
 
     fn advance_atomic_work(&mut self, work_master_cycles: u32) -> CpuWorkAdvance {
-        self.advance_work_unbounded(work_master_cycles);
-        if self.clock_master_cycles >= self.deadline.master_cycles {
+        self.timeline.advance_work_unbounded(work_master_cycles);
+        if self.timeline.clock_master_cycles() >= self.deadline.master_cycles {
             CpuWorkAdvance::ReachedBoundary {
                 boundary: self.deadline.boundary,
                 remaining_work_master_cycles: 0,
@@ -410,8 +276,8 @@ impl CpuCycleBudget {
             CpuRasterBoundary::CpuNmiAcceptance,
             "only a CPU NMI acceptance boundary can begin the NMI handler",
         );
-        debug_assert!(self.clock_master_cycles >= self.deadline.master_cycles);
-        let current_field = self.clock_master_cycles / NTSC_FIELD_MASTER_CYCLES;
+        debug_assert!(self.timeline.clock_master_cycles() >= self.deadline.master_cycles);
+        let current_field = self.timeline.clock_master_cycles() / NTSC_FIELD_MASTER_CYCLES;
         self.deadline.master_cycles = current_field
             .checked_add(1)
             .and_then(|field| field.checked_mul(NTSC_FIELD_MASTER_CYCLES))
@@ -419,7 +285,7 @@ impl CpuCycleBudget {
                 field_start.checked_add(CpuRasterBoundary::CpuNmiAcceptance.field_master_cycle())
             })
             .expect("CPU continuation NMI deadline overflowed");
-        debug_assert!(self.clock_master_cycles < self.deadline.master_cycles);
+        debug_assert!(self.timeline.clock_master_cycles() < self.deadline.master_cycles);
     }
 
     /// Advance ordered semantic phases until they complete or reach the selected
@@ -445,103 +311,8 @@ impl CpuCycleBudget {
         CpuPhaseSequenceAdvance::Complete
     }
 
-    fn next_timeline_event(self) -> (u32, Option<CpuTimelineEvent>) {
-        let field_index = self.clock_master_cycles / NTSC_FIELD_MASTER_CYCLES;
-        let field_cycle = self.clock_master_cycles % NTSC_FIELD_MASTER_CYCLES;
-        let scanline = field_cycle / u64::from(MASTER_CYCLES_PER_SCANLINE);
-        let cycle = (field_cycle % u64::from(MASTER_CYCLES_PER_SCANLINE)) as u32;
-        let mut next_event_cycle = MASTER_CYCLES_PER_SCANLINE;
-        let mut next_event = None;
-
-        for (event_cycle, event, enabled) in [
-            (
-                HDMA_INIT_CYCLE,
-                CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit),
-                scanline == 0 && self.bus.dynamic_hdma,
-            ),
-            (
-                WRAM_REFRESH_CYCLE,
-                CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh),
-                true,
-            ),
-            (
-                HDMA_START_CYCLE,
-                CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart),
-                scanline < u64::from(NMI_SCANLINE)
-                    && (self.bus.dynamic_hdma || self.bus.hdma_stall_master_cycles != 0),
-            ),
-            (
-                SHORT_SCANLINE_END_CYCLE,
-                CpuTimelineEvent::ShortScanline,
-                scanline == 240
-                    && !self.field_timing.interlace
-                    && self.field_timing.field_is_odd(field_index),
-            ),
-        ] {
-            let already_processed =
-                self.processed_timeline_event == Some((self.clock_master_cycles, event));
-            if enabled
-                && !already_processed
-                && cycle <= event_cycle
-                && event_cycle < next_event_cycle
-            {
-                next_event_cycle = event_cycle;
-                next_event = Some(event);
-            }
-        }
-        (next_event_cycle - cycle, next_event)
-    }
-
-    fn fixed_event_advance(&self, event: CpuTimelineEvent) -> u32 {
-        match event {
-            CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => WRAM_REFRESH_STALL_MASTER_CYCLES,
-            CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart) => {
-                u32::from(self.bus.hdma_stall_master_cycles)
-            }
-            CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => 0,
-            CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
-        }
-    }
-
-    fn advance_work_unbounded(&mut self, work_master_cycles: u32) {
-        let hdma_stall_master_cycles = self.bus.hdma_stall_master_cycles;
-        self.advance_work_unbounded_with(work_master_cycles, |event, _| match event {
-            CpuTimelineEvent::Bus(CpuBusEvent::WramRefresh) => WRAM_REFRESH_STALL_MASTER_CYCLES,
-            CpuTimelineEvent::Bus(CpuBusEvent::HdmaStart) => u32::from(hdma_stall_master_cycles),
-            CpuTimelineEvent::Bus(CpuBusEvent::HdmaInit) => 0,
-            CpuTimelineEvent::ShortScanline => SHORT_SCANLINE_MISSING_MASTER_CYCLES,
-        });
-    }
-
-    fn advance_work_unbounded_with(
-        &mut self,
-        mut work_master_cycles: u32,
-        mut event_advance: impl FnMut(CpuTimelineEvent, u16) -> u32,
-    ) {
-        while work_master_cycles != 0 {
-            let (work_until_event, event) = self.next_timeline_event();
-            if work_until_event < work_master_cycles {
-                self.clock_master_cycles += u64::from(work_until_event);
-                work_master_cycles -= work_until_event;
-                if let Some(event) = event {
-                    let field_cycle = self.clock_master_cycles % NTSC_FIELD_MASTER_CYCLES;
-                    let scanline = (field_cycle / u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16;
-                    self.processed_timeline_event = Some((self.clock_master_cycles, event));
-                    self.clock_master_cycles += u64::from(event_advance(event, scanline));
-                }
-            } else {
-                self.clock_master_cycles += u64::from(work_master_cycles);
-                work_master_cycles = 0;
-            }
-        }
-    }
-
     pub(super) fn raster_position(self) -> CpuRasterPosition {
-        let field_cycle = self.clock_master_cycles % NTSC_FIELD_MASTER_CYCLES;
-        CpuRasterPosition::new(
-            (field_cycle / u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
-            (field_cycle % u64::from(MASTER_CYCLES_PER_SCANLINE)) as u16,
-        )
+        self.timeline.raster_position()
     }
 }
 
@@ -1367,6 +1138,7 @@ impl GameExecutionScheduler {
 mod cpu_timing_tests {
     use super::*;
     use crate::zelda_rtl::{SpriteMainCpuBoundary, SpriteMainCpuCaller};
+    use snes::{HDMA_START_CYCLE, WRAM_REFRESH_CYCLE};
 
     const DUNGEON_HDMA_STALL: u16 = 42;
     const LONG_TIMELINE_FIELD: u64 = 24_001;
@@ -1382,15 +1154,15 @@ mod cpu_timing_tests {
         let boundary_field =
             field_index + u64::from(entry.unwrapped_master_cycles() >= boundary_master_cycles);
         CpuCycleBudget {
-            clock_master_cycles: field_index * NTSC_FIELD_MASTER_CYCLES
-                + entry.unwrapped_master_cycles(),
+            timeline: CpuMasterTimeline::new(
+                field_index * NTSC_FIELD_MASTER_CYCLES + entry.unwrapped_master_cycles(),
+                bus,
+                field_timing,
+            ),
             deadline: CpuBoundaryDeadline {
                 boundary: CpuRasterBoundary::VblankPublication,
                 master_cycles: boundary_field * NTSC_FIELD_MASTER_CYCLES + boundary_master_cycles,
             },
-            bus,
-            field_timing,
-            processed_timeline_event: None,
         }
     }
 
@@ -1759,7 +1531,11 @@ mod cpu_timing_tests {
         let initial_nmi_master_cycles = budget.deadline.master_cycles;
 
         for _ in 0..LONG_TIMELINE_FIELD {
-            budget.clock_master_cycles = budget.deadline.master_cycles;
+            budget.timeline = CpuMasterTimeline::new(
+                budget.deadline.master_cycles,
+                CpuBusWorkload::default(),
+                CpuFieldTiming::NON_INTERLACE_EVEN,
+            );
             budget.begin_nmi_handler();
         }
 
@@ -1769,7 +1545,7 @@ mod cpu_timing_tests {
         );
         assert!(budget.deadline.master_cycles > u64::from(u32::MAX));
         assert_eq!(
-            budget.deadline.master_cycles - budget.clock_master_cycles,
+            budget.deadline.master_cycles - budget.timeline.clock_master_cycles(),
             NTSC_FIELD_MASTER_CYCLES,
         );
         assert_eq!(

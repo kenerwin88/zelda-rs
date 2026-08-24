@@ -12,6 +12,7 @@ pub mod cart;
 pub mod consts;
 pub mod cpu;
 pub mod cpu_step;
+pub mod cpu_timeline;
 mod cycle_spc700;
 pub mod dma;
 pub mod input;
@@ -26,6 +27,14 @@ pub use cpu_step::{cpu_run_opcode, cpu_run_opcode_timed, CpuInstructionTiming};
 
 pub use cart::{Cart, CartType};
 pub use cpu::CpuState;
+pub use cpu_timeline::{
+    CpuBusEvent, CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuRasterPosition,
+    CpuTimelineDeadlineAdvance, CpuTimelineEvent, HDMA_INIT_CYCLE, HDMA_START_CYCLE,
+    MASTER_CYCLES_PER_SCANLINE, NMI_SCANLINE, NTSC_FIELD_MASTER_CYCLES, NTSC_SCANLINES_PER_FIELD,
+    SHORT_SCANLINE_END_CYCLE, SHORT_SCANLINE_MISSING_MASTER_CYCLES,
+    SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES, SNES9X_NMI_GENERAL_DMA_DELAY_MASTER_CYCLES,
+    WRAM_REFRESH_CYCLE, WRAM_REFRESH_STALL_MASTER_CYCLES,
+};
 pub use dma::{DmaChannel, DmaState};
 pub use input::InputState;
 pub use loader::{load_rom, LoadRomError};
