@@ -109,6 +109,12 @@ struct SmpPostHandoffAnchor {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct FirstNmiApuAnchor {
+    access: FramedApuPortAccess,
+    completed_timing_transaction: FramedCpuTimingTransaction,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReplayBundle {
     dir: PathBuf,
     input_script: PathBuf,
@@ -3010,7 +3016,10 @@ pub(crate) fn run_compare_libretro_oracle(
     }
     let debug_smp_bootstrap_path = env::var_os("ZELDA3_DEBUG_SNES9X_SMP_BOOTSTRAP");
     let debug_smp_first_nmi_path = env::var_os("ZELDA3_DEBUG_SNES9X_SMP_FIRST_NMI");
-    if debug_smp_first_nmi_path.is_some() && debug_smp_bootstrap_path.is_none() {
+    let debug_first_nmi_dma_setup_path = env::var_os("ZELDA3_DEBUG_SNES9X_FIRST_NMI_DMA_SETUP");
+    if (debug_smp_first_nmi_path.is_some() || debug_first_nmi_dma_setup_path.is_some())
+        && debug_smp_bootstrap_path.is_none()
+    {
         // The pinned core's existing timing buffer is enabled by the original
         // bootstrap flag at retro_run entry. This CLI is still single-threaded
         // and the core has not been loaded yet, so it is safe to activate that
@@ -3417,6 +3426,29 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut debug_smp_first_nmi_output_writes = Vec::new();
     let mut debug_smp_first_nmi_cpu_accesses = Vec::new();
     let mut debug_smp_first_nmi_cpu_timing_transactions = Vec::new();
+    let mut debug_first_nmi_dma_setup = debug_first_nmi_dma_setup_path.map(|path| {
+        let mut writer = BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
+            eprintln!("failed to create Snes9x first-NMI DMA-setup trace: {error}");
+            process::exit(1);
+        }));
+        write_snes9x_first_nmi_dma_setup_header(
+            &mut writer,
+            core_path,
+            rom_path,
+            &oracle,
+            load_sram.as_deref(),
+            &initial_sram,
+        )
+        .unwrap_or_else(|error| {
+            eprintln!("failed to write Snes9x first-NMI DMA-setup header: {error}");
+            process::exit(1);
+        });
+        writer
+    });
+    let mut debug_first_nmi_dma_setup_complete = false;
+    let mut debug_first_nmi_dma_setup_anchor = None::<FirstNmiApuAnchor>;
+    let mut debug_first_nmi_dma_setup_cpu_accesses = Vec::new();
+    let mut debug_first_nmi_dma_setup_cpu_timing_transactions = Vec::new();
     let mut debug_native_apu_dsp_writes = native_apu_trace_path.map(|path| {
         BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
             eprintln!("failed to create native APU DSP-write trace: {error}");
@@ -4886,6 +4918,194 @@ pub(crate) fn run_compare_libretro_oracle(
                 }
             }
         }
+        if !debug_first_nmi_dma_setup_complete {
+            if let Some(writer) = debug_first_nmi_dma_setup.as_mut() {
+                let cpu_accesses = oracle.debug_apu_port_writes().unwrap_or_else(|| {
+                    eprintln!(
+                        "first-NMI DMA-setup trace requires CPU-side APU-port instrumentation"
+                    );
+                    process::exit(2);
+                });
+                let cpu_timing_transactions = oracle
+                    .debug_cpu_timing_transactions()
+                    .unwrap_or_else(|error| {
+                        eprintln!("failed to capture Snes9x CPU timing transactions: {error}");
+                        process::exit(2);
+                    })
+                    .unwrap_or_else(|| {
+                        eprintln!("first-NMI DMA-setup trace requires CPU timing instrumentation");
+                        process::exit(2);
+                    });
+                debug_first_nmi_dma_setup_cpu_accesses.extend(cpu_accesses.into_iter().map(
+                    |access| FramedApuPortAccess {
+                        frame: frame_index,
+                        access,
+                    },
+                ));
+                debug_first_nmi_dma_setup_cpu_timing_transactions.extend(
+                    cpu_timing_transactions.into_iter().map(|transaction| {
+                        FramedCpuTimingTransaction {
+                            frame: frame_index,
+                            transaction,
+                        }
+                    }),
+                );
+
+                if debug_first_nmi_dma_setup_anchor.is_none() {
+                    match first_nmi_apui_anchor_indices(
+                        &debug_first_nmi_dma_setup_cpu_accesses,
+                        &debug_first_nmi_dma_setup_cpu_timing_transactions,
+                    ) {
+                        Ok(Some((access_index, transaction_index))) => {
+                            let access =
+                                debug_first_nmi_dma_setup_cpu_accesses[access_index].clone();
+                            let completed_timing_transaction =
+                                debug_first_nmi_dma_setup_cpu_timing_transactions
+                                    [transaction_index];
+                            if access.frame != 81
+                                || access.access.v_counter != 225
+                                || access.access.cpu_cycle != 480
+                                || access.access.smp_clock_before != 0
+                                || access.access.smp_clock_after != 1
+                                || completed_timing_transaction.transaction.start_v_counter != 225
+                                || completed_timing_transaction.transaction.start_cpu_cycle != 480
+                                || completed_timing_transaction.transaction.end_v_counter != 225
+                                || completed_timing_transaction.transaction.end_cpu_cycle != 486
+                            {
+                                eprintln!(
+                                    "first-NMI DMA-setup trace does not continue the committed $8080e1 H480->486 / SMP-clock 0->1 anchor: access={:?}; transaction={:?}",
+                                    access, completed_timing_transaction
+                                );
+                                process::exit(1);
+                            }
+                            debug_first_nmi_dma_setup_cpu_accesses.drain(..=access_index);
+                            debug_first_nmi_dma_setup_cpu_timing_transactions
+                                .drain(..=transaction_index);
+                            debug_first_nmi_dma_setup_anchor = Some(FirstNmiApuAnchor {
+                                access,
+                                completed_timing_transaction,
+                            });
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            eprintln!("invalid first-NMI DMA-setup start anchor: {error}");
+                            process::exit(1);
+                        }
+                    }
+                }
+
+                if let Some(anchor) = debug_first_nmi_dma_setup_anchor.as_ref() {
+                    match first_nmi_dma_setup_stop_index(
+                        &debug_first_nmi_dma_setup_cpu_timing_transactions,
+                    ) {
+                        Ok(Some(stop_index)) => {
+                            let excluded_raw_fetch =
+                                debug_first_nmi_dma_setup_cpu_timing_transactions[stop_index];
+                            debug_first_nmi_dma_setup_cpu_timing_transactions.truncate(stop_index);
+                            let final_transaction = debug_first_nmi_dma_setup_cpu_timing_transactions
+                                .last()
+                                .copied()
+                                .unwrap_or_else(|| {
+                                    eprintln!(
+                                        "first-NMI DMA-setup trace has no setup transaction after the $8080e1 anchor"
+                                    );
+                                    process::exit(1);
+                                });
+                            let mut final_instruction_rows =
+                                debug_first_nmi_dma_setup_cpu_timing_transactions
+                                    .iter()
+                                    .rev()
+                                    .take_while(|framed| {
+                                        framed.transaction.origin_pc
+                                            == final_transaction.transaction.origin_pc
+                                    })
+                                    .collect::<Vec<_>>();
+                            final_instruction_rows.reverse();
+                            if (final_transaction.transaction.origin_pc & 0x00ff_ffff) != 0x008a33
+                                || final_transaction.transaction.opcode != 0xa9
+                                || final_instruction_rows.len() != 2
+                                || final_instruction_rows[0].transaction.kind != 0
+                                || final_instruction_rows[1].transaction.kind != 1
+                            {
+                                eprintln!(
+                                    "first-NMI DMA-setup trace did not stop after the exact $008a33 LDA #$07 fetch/operand pair: {:?}",
+                                    final_instruction_rows
+                                );
+                                process::exit(1);
+                            }
+                            let final_instruction_receipts = final_instruction_rows
+                                .iter()
+                                .map(|framed| {
+                                    serde_json::json!({
+                                        "frame": framed.frame,
+                                        "transaction": &framed.transaction,
+                                    })
+                                })
+                                .collect::<Vec<_>>();
+                            if debug_first_nmi_dma_setup_cpu_timing_transactions
+                                .iter()
+                                .any(|framed| {
+                                    (framed.transaction.origin_pc & 0x00ff_ffff) == 0x008a35
+                                })
+                            {
+                                eprintln!(
+                                    "first-NMI DMA-setup trace retained a $008a35 transaction"
+                                );
+                                process::exit(1);
+                            }
+
+                            serde_json::to_writer(
+                                &mut *writer,
+                                &serde_json::json!({
+                                    "kind": "first-nmi-dma-setup",
+                                    "start_anchor": {
+                                        "first_nmi_apui_read": {
+                                            "instruction_origin_pc": 0x0080e1,
+                                            "instruction_opcode": 0xad,
+                                            "absolute_address": 0x2140,
+                                            "frame": anchor.access.frame,
+                                            "access": &anchor.access.access,
+                                            "completed_timing_transaction": &anchor.completed_timing_transaction.transaction,
+                                        },
+                                    },
+                                    "final_completed_setup_instruction": {
+                                        "frame": final_transaction.frame,
+                                        "origin_pc": 0x008a33,
+                                        "opcode": 0xa9,
+                                        "rom_bytes": [0xa9, 0x07],
+                                        "ordered_timing_transactions": final_instruction_receipts,
+                                        "completed_timing_transaction": &final_transaction.transaction,
+                                    },
+                                    "stop_before_instruction": {
+                                        "origin_pc": 0x008a35,
+                                        "opcode": 0x8d,
+                                        "absolute_address": 0x420b,
+                                        "rom_bytes": [0x8d, 0x0b, 0x42],
+                                        "excluded_raw_fetch_transaction": {
+                                            "frame": excluded_raw_fetch.frame,
+                                            "transaction": &excluded_raw_fetch.transaction,
+                                        },
+                                    },
+                                    "cpu_timing_transaction_sequence": compact_cpu_timing_transactions(
+                                        &debug_first_nmi_dma_setup_cpu_timing_transactions,
+                                    ),
+                                    "stop_reason": "before_$008a35_sta_$420b_raw_fetch_transaction",
+                                }),
+                            )
+                            .unwrap();
+                            writer.write_all(b"\n").unwrap();
+                            writer.flush().unwrap();
+                            debug_first_nmi_dma_setup_complete = true;
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            eprintln!("invalid first-NMI DMA-setup stop anchor: {error}");
+                            process::exit(1);
+                        }
+                    }
+                }
+            }
+        }
         if let (Some(writer), Some(trace)) = (debug_dsp_globals.as_mut(), oracle.debug_dsp_trace())
         {
             for (sample, values) in trace.iter().take(trace.len().saturating_sub(1)).enumerate() {
@@ -5660,6 +5880,13 @@ pub(crate) fn run_compare_libretro_oracle(
         ) {
             break;
         }
+    }
+
+    if debug_first_nmi_dma_setup.is_some() && !debug_first_nmi_dma_setup_complete {
+        eprintln!(
+            "first-NMI DMA-setup capture ended before the completed $8080e1 anchor and excluded $008a35 raw-fetch receipt were both observed"
+        );
+        process::exit(1);
     }
 
     if engine_state_scan_all {
@@ -8047,6 +8274,53 @@ fn compact_cpu_timing_transactions(
     )
 }
 
+fn first_nmi_apui_anchor_indices(
+    accesses: &[FramedApuPortAccess],
+    transactions: &[FramedCpuTimingTransaction],
+) -> Result<Option<(usize, usize)>, String> {
+    let Some(access_index) = accesses.iter().position(|framed| {
+        let access = &framed.access;
+        access.is_read && access.port == 0 && (access.program_counter & 0x00ff_ffff) == 0x0080e4
+    }) else {
+        return Ok(None);
+    };
+    let access = &accesses[access_index];
+    let transaction_index = transactions
+        .iter()
+        .position(|framed| {
+            let transaction = &framed.transaction;
+            framed.frame == access.frame
+                && transaction.kind == 2
+                && (transaction.origin_pc & 0x00ff_ffff) == 0x0080e1
+                && transaction.opcode == 0xad
+                && transaction.start_v_counter == access.access.v_counter
+                && transaction.start_cpu_cycle == access.access.cpu_cycle
+        })
+        .ok_or_else(|| {
+            "first $8080e1 APU read has no matching completed kind-2 timing transaction".to_string()
+        })?;
+    Ok(Some((access_index, transaction_index)))
+}
+
+fn first_nmi_dma_setup_stop_index(
+    transactions: &[FramedCpuTimingTransaction],
+) -> Result<Option<usize>, String> {
+    let Some(index) = transactions
+        .iter()
+        .position(|framed| (framed.transaction.origin_pc & 0x00ff_ffff) == 0x008a35)
+    else {
+        return Ok(None);
+    };
+    let transaction = transactions[index].transaction;
+    if transaction.kind != 0 || transaction.opcode != 0x8d {
+        return Err(format!(
+            "first $008a35 transaction is not the expected STA raw fetch: {:?}",
+            transactions[index]
+        ));
+    }
+    Ok(Some(index))
+}
+
 fn compact_smp_output_port_writes(
     writes: &[crate::libretro_core::LibretroSmpOutputPortWrite],
 ) -> SmpBootstrapDeltaSequence {
@@ -8546,6 +8820,131 @@ fn write_snes9x_smp_first_nmi_header<W: Write>(
     Ok(())
 }
 
+fn write_snes9x_first_nmi_dma_setup_header<W: Write>(
+    writer: &mut W,
+    core_path: &str,
+    rom_path: &str,
+    oracle: &LibretroCore,
+    load_sram_path: Option<&Path>,
+    initial_sram: &[u8],
+) -> Result<(), Box<dyn Error>> {
+    let mut provenance = snes9x_smp_trace_provenance(core_path, rom_path, oracle)?;
+    let core_receipt_path = PathBuf::from(format!("{core_path}.json"));
+    let core_receipt: serde_json::Value =
+        serde_json::from_slice(&fs::read(&core_receipt_path).map_err(|error| {
+            format!(
+                "first-NMI DMA-setup core has no readable build receipt {}: {error}",
+                core_receipt_path.display()
+            )
+        })?)?;
+    let recorded_core_sha = core_receipt["core_sha256"]
+        .as_str()
+        .ok_or("first-NMI DMA-setup core receipt has no core_sha256")?;
+    if recorded_core_sha != provenance["core"]["sha256"] {
+        return Err("first-NMI DMA-setup core receipt does not bind the loaded dylib".into());
+    }
+    if core_receipt["variant"] != "trace"
+        || core_receipt["source_revision"] != provenance["source"]["revision"]
+        || core_receipt["patch_sha256s"]
+            .as_array()
+            .is_none_or(|patches| patches.is_empty())
+    {
+        return Err("first-NMI DMA-setup core receipt is not a pinned trace build".into());
+    }
+    let prefix_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../external/snes9x-libretro/fixtures/zelda3-cold-apu-first-nmi.jsonl");
+    let provenance = provenance
+        .as_object_mut()
+        .ok_or("Snes9x trace provenance is not a JSON object")?;
+    provenance.insert(
+        "prefix_fixture".to_string(),
+        serde_json::json!({
+            "path": "external/snes9x-libretro/fixtures/zelda3-cold-apu-first-nmi.jsonl",
+            "sha256": parity::evidence::sha256_file(&prefix_fixture)?,
+            "terminal_event": "completed_$0080e1_lda_$2140_semantic_and_kind2_timing",
+        }),
+    );
+    provenance.insert(
+        "core_build_receipt".to_string(),
+        serde_json::json!({
+            "schema": core_receipt["schema"],
+            "variant": core_receipt["variant"],
+            "source_revision": core_receipt["source_revision"],
+            "patch_sha256": core_receipt["patch_sha256"],
+            "patch_sha256s": core_receipt["patch_sha256s"],
+            "sha256": parity::evidence::sha256_file(&core_receipt_path)?,
+        }),
+    );
+    provenance.insert(
+        "initial_sram".to_string(),
+        first_nmi_dma_setup_initial_sram_provenance(load_sram_path, initial_sram)?,
+    );
+    serde_json::to_writer(&mut *writer, &provenance)?;
+    writer.write_all(b"\n")?;
+    writer.flush()?;
+    Ok(())
+}
+
+const FIRST_NMI_DMA_SETUP_INITIAL_SRAM_SHA256: &str =
+    "d8a02e6e08a22377f919c7350e5bfa6117c6408db9a728815af7ad6e4e6b83bc";
+const FIRST_NMI_DMA_SETUP_INITIAL_SRAM_BYTES: usize = 8_192;
+const FIRST_NMI_DMA_SETUP_VALID_SLOT_MARKER_OFFSET: usize = 0x03e5;
+
+fn first_nmi_dma_setup_initial_sram_provenance(
+    load_sram_path: Option<&Path>,
+    initial_sram: &[u8],
+) -> Result<serde_json::Value, Box<dyn Error>> {
+    let path = load_sram_path.ok_or(
+        "first-NMI DMA-setup capture requires --load-sram routes/full_run/comparisons/continuous-audio/initial.srm",
+    )?;
+    let source_sram = fs::read(path).map_err(|error| {
+        format!(
+            "failed to read first-NMI DMA-setup initial SRAM {}: {error}",
+            path.display()
+        )
+    })?;
+    if source_sram != initial_sram {
+        return Err(
+            "first-NMI DMA-setup SRAM file does not match the bytes loaded into Snes9x".into(),
+        );
+    }
+    if initial_sram.len() != FIRST_NMI_DMA_SETUP_INITIAL_SRAM_BYTES {
+        return Err(format!(
+            "first-NMI DMA-setup initial SRAM has {} bytes, expected {}",
+            initial_sram.len(),
+            FIRST_NMI_DMA_SETUP_INITIAL_SRAM_BYTES
+        )
+        .into());
+    }
+    let sha256 = parity::evidence::sha256_bytes(initial_sram);
+    if sha256 != FIRST_NMI_DMA_SETUP_INITIAL_SRAM_SHA256 {
+        return Err(format!(
+            "first-NMI DMA-setup initial SRAM SHA-256 is {sha256}, expected {FIRST_NMI_DMA_SETUP_INITIAL_SRAM_SHA256}"
+        )
+        .into());
+    }
+    let slot_marker = initial_sram
+        .get(
+            FIRST_NMI_DMA_SETUP_VALID_SLOT_MARKER_OFFSET
+                ..FIRST_NMI_DMA_SETUP_VALID_SLOT_MARKER_OFFSET + 2,
+        )
+        .ok_or("first-NMI DMA-setup initial SRAM has no save-slot marker")?;
+    if slot_marker != [0xaa, 0x55] {
+        return Err(
+            "first-NMI DMA-setup initial SRAM has no AA55 valid-slot marker at $03e5".into(),
+        );
+    }
+    Ok(serde_json::json!({
+        "source": "routes/full_run/comparisons/continuous-audio/initial.srm",
+        "sha256": sha256,
+        "bytes": initial_sram.len(),
+        "valid_slot_marker": {
+            "offset": FIRST_NMI_DMA_SETUP_VALID_SLOT_MARKER_OFFSET,
+            "bytes": [0xaa, 0x55],
+        },
+    }))
+}
+
 fn write_snes9x_smp_bootstrap_header<W: Write>(
     writer: &mut W,
     core_path: &str,
@@ -8632,8 +9031,9 @@ pub(crate) mod tests {
         canonical_oracle_video_digest, canonical_rust_video_digest, checkpoint_member,
         compact_delta_integer_sequence, compact_delta_integer_sequence_with_zstd,
         compact_engine_state_mismatches, compact_framed_smp_instructions,
-        first_dsp_write_timing_mismatch, fnv1a32, last_spc_clock_witness,
-        libretro_engine_state_receipt, oracle_preframe_snapshot_required,
+        first_dsp_write_timing_mismatch, first_nmi_apui_anchor_indices,
+        first_nmi_dma_setup_initial_sram_provenance, first_nmi_dma_setup_stop_index, fnv1a32,
+        last_spc_clock_witness, libretro_engine_state_receipt, oracle_preframe_snapshot_required,
         oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
         parse_paired_resume_capture, parse_rolling_paired_resume_capture,
         prune_rolling_paired_resume_captures, replayable_input_artifact, resolve_replay_bundle,
@@ -8641,10 +9041,14 @@ pub(crate) mod tests {
         should_stop_after_first_mismatch, should_write_frame_receipt, smp_bootstrap_handoff_index,
         snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
         summarize_value_domain, trace_events_with_rom_rng, validate_replay_source_parents,
-        vram_domain_receipt, BootBoundaryState, FramedSmpInstruction, PairedResumeCapture,
-        RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt,
+        vram_domain_receipt, BootBoundaryState, FramedApuPortAccess, FramedCpuTimingTransaction,
+        FramedSmpInstruction, PairedResumeCapture, RollingPairedResumeCapture, ValueDomainDiff,
+        VramDomainReceipt,
     };
-    use crate::libretro_core::{LibretroDspRegisterWrite, LibretroFrame, LibretroSmpInstruction};
+    use crate::libretro_core::{
+        LibretroApuPortWrite, LibretroCpuTimingTransaction, LibretroDspRegisterWrite,
+        LibretroFrame, LibretroSmpInstruction,
+    };
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -8761,6 +9165,109 @@ pub(crate) mod tests {
             expand_delta_sequence(&value),
             vec![vec![0, -3, 130], vec![1, -3, 129], vec![1, 400, -2]]
         );
+    }
+
+    #[test]
+    fn first_nmi_dma_setup_slice_starts_after_apui_completion_and_excludes_dma_start() {
+        let apui = FramedApuPortAccess {
+            frame: 81,
+            access: LibretroApuPortWrite {
+                port: 0,
+                value: 0x8b,
+                output_sample: 0,
+                v_counter: 225,
+                cpu_cycle: 480,
+                program_counter: 0x0080e4,
+                apu_cycle_before: 19,
+                apu_cycle_after: 43,
+                smp_clock_before: 0,
+                smp_clock_after: 1,
+                smp_pc_before: 0x0873,
+                smp_pc_after: 0x0873,
+                smp_opcode_before: 0xf0,
+                smp_opcode_after: 0xf0,
+                smp_opcode_cycle_before: 0,
+                smp_opcode_cycle_after: 0,
+                is_read: true,
+                cpu_model_5a22: 2,
+                wram_refresh_position: 534,
+                cpu_model_identity: 1,
+            },
+        };
+        let transaction = |kind, origin_pc, opcode, start_cpu_cycle| FramedCpuTimingTransaction {
+            frame: 81,
+            transaction: LibretroCpuTimingTransaction {
+                kind,
+                duration: if matches!(kind, 0 | 1) { 8 } else { 6 },
+                origin_pc,
+                opcode,
+                start_v_counter: 225,
+                start_cpu_cycle,
+                end_v_counter: 225,
+                end_cpu_cycle: start_cpu_cycle + if matches!(kind, 0 | 1) { 8 } else { 6 },
+                cpu_model_identity: 1,
+                cpu_model_5a22: 2,
+                start_wram_refresh_position: 534,
+                end_wram_refresh_position: 534,
+            },
+        };
+        let transactions = vec![
+            transaction(2, 0x0080e1, 0xad, 480),
+            transaction(0, 0x008a33, 0xa9, 486),
+            transaction(1, 0x008a33, 0xa9, 494),
+            transaction(0, 0x008a35, 0x8d, 500),
+            transaction(2, 0x008a35, 0x8d, 508),
+        ];
+
+        assert_eq!(
+            first_nmi_apui_anchor_indices(&[apui], &transactions).unwrap(),
+            Some((0, 0))
+        );
+        let post_anchor = &transactions[1..];
+        let stop = first_nmi_dma_setup_stop_index(post_anchor)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stop, 2);
+        assert_eq!(post_anchor[..stop].last().unwrap().transaction.kind, 1);
+        assert_eq!(
+            post_anchor[..stop].last().unwrap().transaction.origin_pc,
+            0x008a33
+        );
+        assert!(post_anchor[..stop]
+            .iter()
+            .all(|framed| { (framed.transaction.origin_pc & 0x00ff_ffff) != 0x008a35 }));
+        assert_eq!(post_anchor[stop].transaction.kind, 0);
+    }
+
+    #[test]
+    fn first_nmi_dma_setup_requires_the_route_initial_sram_loaded_into_snes9x() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../routes/full_run/comparisons/continuous-audio/initial.srm");
+        let sram = fs::read(&path).unwrap();
+        let provenance = first_nmi_dma_setup_initial_sram_provenance(Some(&path), &sram).unwrap();
+        assert_eq!(
+            provenance["sha256"],
+            "d8a02e6e08a22377f919c7350e5bfa6117c6408db9a728815af7ad6e4e6b83bc"
+        );
+        assert_eq!(provenance["bytes"], 8_192);
+        assert_eq!(provenance["valid_slot_marker"]["offset"], 0x03e5);
+        assert_eq!(
+            provenance["valid_slot_marker"]["bytes"],
+            serde_json::json!([0xaa, 0x55])
+        );
+
+        let missing = first_nmi_dma_setup_initial_sram_provenance(None, &sram)
+            .unwrap_err()
+            .to_string();
+        assert!(missing.contains("requires --load-sram"));
+
+        let mut different_loaded_sram = sram.clone();
+        different_loaded_sram[0] ^= 1;
+        let mismatch =
+            first_nmi_dma_setup_initial_sram_provenance(Some(&path), &different_loaded_sram)
+                .unwrap_err()
+                .to_string();
+        assert!(mismatch.contains("does not match the bytes loaded into Snes9x"));
     }
 
     #[test]
@@ -9314,6 +9821,107 @@ pub(crate) mod tests {
             0x0873
         );
     }
+
+    #[test]
+    fn pinned_snes9x_first_nmi_dma_setup_fixture_stops_before_dma() {
+        const FIXTURE: &str = include_str!(
+            "../../external/snes9x-libretro/fixtures/zelda3-cold-first-nmi-dma-setup.jsonl"
+        );
+        assert!(
+            FIXTURE.len() < 10_000,
+            "DMA-setup fixture lost compact encoding"
+        );
+        let records = FIXTURE
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(records.len(), 2);
+
+        let provenance = &records[0];
+        assert_eq!(provenance["kind"], "provenance");
+        assert_eq!(provenance["schema"], 1);
+        assert_eq!(
+            provenance["core"]["sha256"],
+            "7d4fa577dd2e0a79ace97ebec2630929ffcd6622d46ae5b23c4700514c7169cb"
+        );
+        assert_eq!(
+            provenance["source"]["revision"],
+            "921f9f7b83660eb44ad263022a57a4a029057c37"
+        );
+        assert_eq!(
+            provenance["rom"]["sha256"],
+            "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"
+        );
+        assert_eq!(
+            provenance["core_build_receipt"]["patch_sha256s"],
+            serde_json::json!([
+                "a285f684f69b58959367877e173759baad0bc7f6b152d6644c5b6a00f691f5a3",
+                "669b7767888be19f99623135ec00cc04913908fb74f19944da752fe863044dd2",
+            ])
+        );
+        let prefix_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../external/snes9x-libretro/fixtures/zelda3-cold-apu-first-nmi.jsonl");
+        assert_eq!(
+            provenance["prefix_fixture"]["sha256"],
+            parity::evidence::sha256_file(&prefix_fixture).unwrap()
+        );
+        let initial_sram = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../routes/full_run/comparisons/continuous-audio/initial.srm");
+        assert_eq!(
+            provenance["initial_sram"],
+            serde_json::json!({
+                "source": "routes/full_run/comparisons/continuous-audio/initial.srm",
+                "sha256": parity::evidence::sha256_file(&initial_sram).unwrap(),
+                "bytes": 8_192,
+                "valid_slot_marker": {"offset": 0x03e5, "bytes": [0xaa, 0x55]},
+            })
+        );
+
+        let events = &records[1];
+        assert_eq!(events["kind"], "first-nmi-dma-setup");
+        assert_eq!(
+            events["stop_reason"],
+            "before_$008a35_sta_$420b_raw_fetch_transaction"
+        );
+        let anchor = &events["start_anchor"]["first_nmi_apui_read"];
+        assert_eq!(anchor["instruction_origin_pc"], 0x0080e1);
+        assert_eq!(anchor["access"]["cpu_cycle"], 480);
+        assert_eq!(anchor["access"]["smp_clock_before"], 0);
+        assert_eq!(anchor["access"]["smp_clock_after"], 1);
+        assert_eq!(anchor["completed_timing_transaction"]["kind"], 2);
+        assert_eq!(anchor["completed_timing_transaction"]["end_cpu_cycle"], 486);
+
+        let cpu_timing = expand_delta_sequence(&events["cpu_timing_transaction_sequence"]);
+        assert_eq!(cpu_timing.len(), 157);
+        assert_eq!(
+            cpu_timing.first().unwrap(),
+            &vec![81, 0, 8, 0x80e4, 0xcd, 225, 486, 225, 494, 1, 2, 534, 534]
+        );
+        assert_eq!(
+            &cpu_timing[cpu_timing.len() - 2..],
+            &[
+                vec![81, 0, 8, 0x8a33, 0xa9, 226, 698, 226, 706, 1, 2, 538, 538],
+                vec![81, 1, 8, 0x8a33, 0xa9, 226, 706, 226, 714, 1, 2, 538, 538],
+            ]
+        );
+        assert!(cpu_timing
+            .iter()
+            .all(|transaction| transaction[3] != 0x8a35));
+
+        assert_eq!(
+            events["final_completed_setup_instruction"]["rom_bytes"],
+            serde_json::json!([0xa9, 0x07])
+        );
+        let excluded =
+            &events["stop_before_instruction"]["excluded_raw_fetch_transaction"]["transaction"];
+        assert_eq!(excluded["origin_pc"], 0x8a35);
+        assert_eq!(excluded["opcode"], 0x8d);
+        assert_eq!(excluded["kind"], 0);
+        assert_eq!(excluded["start_v_counter"], 226);
+        assert_eq!(excluded["start_cpu_cycle"], 714);
+        assert_eq!(excluded["end_cpu_cycle"], 722);
+    }
+
     #[test]
     fn failed_session_keeps_the_complete_authoritative_input_script() {
         let source = b"0..5722 0x0000\n5723..21442 0x0080\n";
