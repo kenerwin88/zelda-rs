@@ -1,0 +1,534 @@
+diff --git a/apu/bapu/smp/core.cpp b/apu/bapu/smp/core.cpp
+--- a/apu/bapu/smp/core.cpp
++++ b/apu/bapu/smp/core.cpp
+@@ -19,36 +19,57 @@
+ }
+ 
+ void SMP::op_io() {
++  int clock_before = clock;
+   tick();
++  Zelda3TraceSmpLedgerIo(1, clock_before, clock);
+ }
+ 
+ void SMP::op_io(unsigned clocks) {
++  int clock_before = clock;
+   tick(clocks);
++  Zelda3TraceSmpLedgerIo(clocks, clock_before, clock);
+ }
+ 
+ uint8 SMP::op_read(uint16 addr) {
++  int clock_before = clock;
+   tick();
+-  if((addr & 0xfff0) == 0x00f0) return mmio_read(addr);
+-  if(addr >= 0xffc0 && status.iplrom_enable) return iplrom[addr & 0x3f];
+-  return apuram[addr];
++  uint8 value;
++  if((addr & 0xfff0) == 0x00f0) value = mmio_read(addr);
++  else if(addr >= 0xffc0 && status.iplrom_enable) value = iplrom[addr & 0x3f];
++  else value = apuram[addr];
++  Zelda3TraceSmpLedgerRead(ZELDA3_TRACE_SMP_LEDGER_READ, addr, value,
++    clock_before, clock);
++  return value;
+ }
+ 
+ void SMP::op_write(uint16 addr, uint8 data) {
++  int clock_before = clock;
+   tick();
+   if((addr & 0xfff0) == 0x00f0) mmio_write(addr, data);
+   apuram[addr] = data;  //all writes go to RAM, even MMIO writes
++  Zelda3TraceSmpLedgerWrite(ZELDA3_TRACE_SMP_LEDGER_WRITE, addr, data,
++    clock_before, clock);
+ }
+ 
+ uint8 SMP::op_readstack()
+ {
++  int clock_before = clock;
+   tick();
+-  return apuram[0x0100 | ++regs.sp];
++  uint16 addr = 0x0100 | ++regs.sp;
++  uint8 value = apuram[addr];
++  Zelda3TraceSmpLedgerRead(ZELDA3_TRACE_SMP_LEDGER_READ_STACK, addr, value,
++    clock_before, clock);
++  return value;
+ }
+ 
+ void SMP::op_writestack(uint8 data)
+ {
++  int clock_before = clock;
+   tick();
+-  apuram[0x0100 | regs.sp--] = data;
++  uint16 addr = 0x0100 | regs.sp--;
++  apuram[addr] = data;
++  Zelda3TraceSmpLedgerWrite(ZELDA3_TRACE_SMP_LEDGER_WRITE_STACK, addr, data,
++    clock_before, clock);
+ }
+ 
+ void SMP::op_step() {
+diff --git a/apu/bapu/smp/smp.cpp b/apu/bapu/smp/smp.cpp
+--- a/apu/bapu/smp/smp.cpp
++++ b/apu/bapu/smp/smp.cpp
+@@ -76,3 +76,8 @@
+ }
+ 
+ }
++
++void Zelda3TraceStepSmpOpcode()
++{
++	SNES::smp.op_step();
++}
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -1018,9 +1018,90 @@
+ extern "C" uint64_t zelda3_snes9x_debug_smp_instruction_cycle(int instruction)
+ {
+     return Zelda3TraceSmpInstructionCycle(instruction);
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_abi_version()
++{
++    return Zelda3TraceSmpLedgerAbiVersion();
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_seed_field_count()
++{
++    return Zelda3TraceSmpLedgerSeedFieldCount();
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_state_field_count()
++{
++    return Zelda3TraceSmpLedgerStateFieldCount();
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_begin(int case_id,
++    const int *seed, int seed_count)
++{
++    return Zelda3TraceSmpLedgerBegin(case_id, seed, seed_count);
+ }
+ 
++extern "C" int zelda3_snes9x_debug_smp_ledger_set_ram(int address, int value)
++{
++    return Zelda3TraceSmpLedgerSetRam(address, value);
++}
+ 
++extern "C" int zelda3_snes9x_debug_smp_ledger_set_dsp(int address, int value)
++{
++    return Zelda3TraceSmpLedgerSetDsp(address, value);
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_seal()
++{
++    return Zelda3TraceSmpLedgerSeal();
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_step()
++{
++    return Zelda3TraceSmpLedgerStep();
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_state_value(int field)
++{
++    return Zelda3TraceSmpLedgerStateValue(field);
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_bus_count()
++{
++    return Zelda3TraceSmpLedgerBusCount();
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_bus_value(int event, int field)
++{
++    return Zelda3TraceSmpLedgerBusValue(event, field);
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_ram_diff_count()
++{
++    return Zelda3TraceSmpLedgerRamDiffCount();
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_ram_diff_value(int difference, int field)
++{
++    return Zelda3TraceSmpLedgerRamDiffValue(difference, field);
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_dsp_diff_count()
++{
++    return Zelda3TraceSmpLedgerDspDiffCount();
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_dsp_diff_value(int difference, int field)
++{
++    return Zelda3TraceSmpLedgerDspDiffValue(difference, field);
++}
++
++extern "C" int zelda3_snes9x_debug_smp_ledger_overflow()
++{
++    return Zelda3TraceSmpLedgerOverflow();
++}
++
++
+ void retro_reset()
+ {
+     S9xSoftReset();
+diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
+--- a/zelda3_trace.cpp
++++ b/zelda3_trace.cpp
+@@ -144,6 +144,27 @@
+ int smp_instructions[smp_instruction_capacity][smp_instruction_field_count] = {};
+ uint64 smp_instruction_cycles[smp_instruction_capacity] = {};
+ 
++constexpr int smp_ledger_abi_version = 1;
++constexpr int smp_ledger_seed_field_count = 31;
++constexpr int smp_ledger_scalar_state_field_count = 46;
++constexpr int smp_ledger_state_field_count = smp_ledger_scalar_state_field_count + 128;
++constexpr int smp_ledger_bus_capacity = 64;
++constexpr int smp_ledger_bus_field_count = 6;
++constexpr int smp_ledger_diff_capacity = 128;
++bool smp_ledger_active = false;
++bool smp_ledger_sealed = false;
++int smp_ledger_case_id = -1;
++int smp_ledger_step = 0;
++int smp_ledger_overflow = 0;
++int smp_ledger_bus_count = 0;
++int smp_ledger_bus[smp_ledger_bus_capacity][smp_ledger_bus_field_count] = {};
++int smp_ledger_ram_diff_count = 0;
++int smp_ledger_ram_diff[smp_ledger_diff_capacity][2] = {};
++int smp_ledger_dsp_diff_count = 0;
++int smp_ledger_dsp_diff[smp_ledger_diff_capacity][2] = {};
++uint8 smp_ledger_previous_ram[65536] = {};
++uint8 smp_ledger_previous_dsp[128] = {};
++
+ uint32 parse_hex(const char *text, const char **end)
+ {
+ 	char normalized[32];
+@@ -930,8 +951,289 @@
+ {
+ 	return instruction >= 0 && instruction < smp_instruction_count
+ 		? smp_instruction_cycles[instruction] : 0;
++}
++
++int Zelda3TraceSmpLedgerAbiVersion()
++{
++	return smp_ledger_abi_version;
++}
++
++int Zelda3TraceSmpLedgerSeedFieldCount()
++{
++	return smp_ledger_seed_field_count;
++}
++
++int Zelda3TraceSmpLedgerStateFieldCount()
++{
++	return smp_ledger_state_field_count;
++}
++
++int Zelda3TraceSmpLedgerBegin(int case_id, const int *seed, int seed_count)
++{
++	if (!seed || seed_count != smp_ledger_seed_field_count || case_id < 0)
++		return 0;
++
++	smp_ledger_active = false;
++	smp_ledger_sealed = false;
++	SNES::smp.power();
++	SNES::cpu.reset();
++	for (int address = 0; address < 65536; address++)
++		SNES::smp.apuram[address] = (uint8) ((address * 37 +
++			(address >> 8) * 13 + case_id * 17 + 0x5a) & 0xff);
++	SNES::dsp.power();
++
++	SNES::smp.regs.pc = (uint16) seed[0];
++	SNES::smp.regs.B.a = (uint8) seed[1];
++	SNES::smp.regs.x = (uint8) seed[2];
++	SNES::smp.regs.B.y = (uint8) seed[3];
++	SNES::smp.regs.sp = (uint8) seed[4];
++	SNES::smp.regs.p = (unsigned) seed[5];
++	SNES::smp.status.iplrom_enable = seed[6] != 0;
++	SNES::smp.status.dsp_addr = (uint8) seed[7];
++	SNES::smp.status.ram00f8 = (uint8) seed[8];
++	SNES::smp.status.ram00f9 = (uint8) seed[9];
++	SNES::smp.clock = seed[10];
++	SNES::dsp.clock = seed[11];
++	int field = 12;
++	SNES::smp.timer0.enable = seed[field++] != 0;
++	SNES::smp.timer0.target = (uint8) seed[field++];
++	SNES::smp.timer0.stage1_ticks = (uint8) seed[field++];
++	SNES::smp.timer0.stage2_ticks = (uint8) seed[field++];
++	SNES::smp.timer0.stage3_ticks = (uint8) seed[field++];
++	SNES::smp.timer1.enable = seed[field++] != 0;
++	SNES::smp.timer1.target = (uint8) seed[field++];
++	SNES::smp.timer1.stage1_ticks = (uint8) seed[field++];
++	SNES::smp.timer1.stage2_ticks = (uint8) seed[field++];
++	SNES::smp.timer1.stage3_ticks = (uint8) seed[field++];
++	SNES::smp.timer2.enable = seed[field++] != 0;
++	SNES::smp.timer2.target = (uint8) seed[field++];
++	SNES::smp.timer2.stage1_ticks = (uint8) seed[field++];
++	SNES::smp.timer2.stage2_ticks = (uint8) seed[field++];
++	SNES::smp.timer2.stage3_ticks = (uint8) seed[field++];
++	for (int port = 0; port < 4; port++)
++		SNES::cpu.registers[port] = (uint8) seed[field++];
++
++	SNES::smp.opcode_number = 0x100 | (case_id & 0xff);
++	SNES::smp.opcode_cycle = 0;
++	SNES::smp.rd = 0xa101;
++	SNES::smp.wr = 0xa202;
++	SNES::smp.dp = 0xa303;
++	SNES::smp.sp = 0xa404;
++	SNES::smp.ya = 0xa505;
++	SNES::smp.bit = 0xa606;
++	smp_ledger_case_id = case_id;
++	smp_ledger_step = 0;
++	smp_ledger_overflow = 0;
++	smp_ledger_bus_count = 0;
++	smp_ledger_ram_diff_count = 0;
++	smp_ledger_dsp_diff_count = 0;
++	return 1;
++}
++
++int Zelda3TraceSmpLedgerSetRam(int address, int value)
++{
++	if (smp_ledger_sealed || address < 0 || address >= 65536 || value < 0 || value > 255)
++		return 0;
++	SNES::smp.apuram[address] = (uint8) value;
++	return 1;
++}
++
++int Zelda3TraceSmpLedgerSetDsp(int address, int value)
++{
++	if (smp_ledger_sealed || address < 0 || address >= 128 || value < 0 || value > 255)
++		return 0;
++	SNES::dsp.spc_dsp.write(address, value);
++	return 1;
++}
++
++int Zelda3TraceSmpLedgerSeal()
++{
++	if (smp_ledger_sealed || smp_ledger_case_id < 0)
++		return 0;
++	std::copy_n(SNES::smp.apuram, 65536, smp_ledger_previous_ram);
++	for (int address = 0; address < 128; address++)
++		smp_ledger_previous_dsp[address] = SNES::dsp.spc_dsp.read(address);
++	smp_ledger_active = true;
++	smp_ledger_sealed = true;
++	return 1;
++}
++
++int Zelda3TraceSmpLedgerStep()
++{
++	if (!smp_ledger_active || !smp_ledger_sealed || smp_ledger_overflow)
++		return -1;
++	smp_ledger_bus_count = 0;
++	smp_ledger_ram_diff_count = 0;
++	smp_ledger_dsp_diff_count = 0;
++	Zelda3TraceStepSmpOpcode();
++	smp_ledger_step++;
++	for (int address = 0; address < 65536; address++)
++	{
++		uint8 value = SNES::smp.apuram[address];
++		if (value == smp_ledger_previous_ram[address])
++			continue;
++		if (smp_ledger_ram_diff_count >= smp_ledger_diff_capacity)
++		{
++			smp_ledger_overflow = 1;
++			break;
++		}
++		smp_ledger_ram_diff[smp_ledger_ram_diff_count][0] = address;
++		smp_ledger_ram_diff[smp_ledger_ram_diff_count][1] = value;
++		smp_ledger_ram_diff_count++;
++		smp_ledger_previous_ram[address] = value;
++	}
++	for (int address = 0; address < 128; address++)
++	{
++		uint8 value = SNES::dsp.spc_dsp.read(address);
++		if (value == smp_ledger_previous_dsp[address])
++			continue;
++		if (smp_ledger_dsp_diff_count >= smp_ledger_diff_capacity)
++		{
++			smp_ledger_overflow = 1;
++			break;
++		}
++		smp_ledger_dsp_diff[smp_ledger_dsp_diff_count][0] = address;
++		smp_ledger_dsp_diff[smp_ledger_dsp_diff_count][1] = value;
++		smp_ledger_dsp_diff_count++;
++		smp_ledger_previous_dsp[address] = value;
++	}
++	return smp_ledger_overflow ? -1 : (int) SNES::smp.opcode_cycle;
+ }
+ 
++int Zelda3TraceSmpLedgerStateValue(int field)
++{
++	if (!smp_ledger_sealed || field < 0 || field >= smp_ledger_state_field_count)
++		return -1;
++	switch (field)
++	{
++	case 0: return smp_ledger_case_id;
++	case 1: return SNES::smp.regs.pc;
++	case 2: return SNES::smp.regs.B.a;
++	case 3: return SNES::smp.regs.x;
++	case 4: return SNES::smp.regs.B.y;
++	case 5: return SNES::smp.regs.sp;
++	case 6: return SNES::smp.regs.p;
++	case 7: return SNES::smp.opcode_number;
++	case 8: return SNES::smp.opcode_cycle;
++	case 9: return SNES::smp.rd;
++	case 10: return SNES::smp.wr;
++	case 11: return SNES::smp.dp;
++	case 12: return SNES::smp.sp;
++	case 13: return SNES::smp.ya;
++	case 14: return SNES::smp.bit;
++	case 15: return SNES::smp.clock;
++	case 16: return SNES::dsp.clock;
++	case 17: return SNES::smp.status.iplrom_enable;
++	case 18: return SNES::smp.status.dsp_addr;
++	case 19: return SNES::smp.status.ram00f8;
++	case 20: return SNES::smp.status.ram00f9;
++	case 21: return SNES::smp.timer0.enable;
++	case 22: return SNES::smp.timer0.target;
++	case 23: return SNES::smp.timer0.stage1_ticks;
++	case 24: return SNES::smp.timer0.stage2_ticks;
++	case 25: return SNES::smp.timer0.stage3_ticks;
++	case 26: return SNES::smp.timer1.enable;
++	case 27: return SNES::smp.timer1.target;
++	case 28: return SNES::smp.timer1.stage1_ticks;
++	case 29: return SNES::smp.timer1.stage2_ticks;
++	case 30: return SNES::smp.timer1.stage3_ticks;
++	case 31: return SNES::smp.timer2.enable;
++	case 32: return SNES::smp.timer2.target;
++	case 33: return SNES::smp.timer2.stage1_ticks;
++	case 34: return SNES::smp.timer2.stage2_ticks;
++	case 35: return SNES::smp.timer2.stage3_ticks;
++	case 36: case 37: case 38: case 39:
++		return SNES::cpu.registers[field - 36];
++	case 40: case 41: case 42: case 43:
++		return SNES::smp.apuram[0xf4 + field - 40];
++	case 44: return smp_ledger_step;
++	case 45: return smp_ledger_overflow;
++	default: return SNES::dsp.spc_dsp.read(field - smp_ledger_scalar_state_field_count);
++	}
++}
++
++int Zelda3TraceSmpLedgerBusCount()
++{
++	return smp_ledger_bus_count;
++}
++
++int Zelda3TraceSmpLedgerBusValue(int event, int field)
++{
++	return event >= 0 && event < smp_ledger_bus_count &&
++		field >= 0 && field < smp_ledger_bus_field_count
++		? smp_ledger_bus[event][field] : -1;
++}
++
++int Zelda3TraceSmpLedgerRamDiffCount()
++{
++	return smp_ledger_ram_diff_count;
++}
++
++int Zelda3TraceSmpLedgerRamDiffValue(int difference, int field)
++{
++	return difference >= 0 && difference < smp_ledger_ram_diff_count &&
++		field >= 0 && field < 2 ? smp_ledger_ram_diff[difference][field] : -1;
++}
++
++int Zelda3TraceSmpLedgerDspDiffCount()
++{
++	return smp_ledger_dsp_diff_count;
++}
++
++int Zelda3TraceSmpLedgerDspDiffValue(int difference, int field)
++{
++	return difference >= 0 && difference < smp_ledger_dsp_diff_count &&
++		field >= 0 && field < 2 ? smp_ledger_dsp_diff[difference][field] : -1;
++}
++
++int Zelda3TraceSmpLedgerOverflow()
++{
++	return smp_ledger_overflow;
++}
++
++void Zelda3TraceSmpLedgerIo(int clocks, int clock_before, int clock_after)
++{
++	if (!smp_ledger_active)
++		return;
++	if (smp_ledger_bus_count >= smp_ledger_bus_capacity)
++	{
++		smp_ledger_overflow = 1;
++		return;
++	}
++	int *event = smp_ledger_bus[smp_ledger_bus_count++];
++	event[0] = ZELDA3_TRACE_SMP_LEDGER_IO;
++	event[1] = -1;
++	event[2] = -1;
++	event[3] = clocks;
++	event[4] = clock_before;
++	event[5] = clock_after;
++}
++
++void Zelda3TraceSmpLedgerRead(int kind, int address, int value,
++	int clock_before, int clock_after)
++{
++	if (!smp_ledger_active)
++		return;
++	if (smp_ledger_bus_count >= smp_ledger_bus_capacity)
++	{
++		smp_ledger_overflow = 1;
++		return;
++	}
++	int *event = smp_ledger_bus[smp_ledger_bus_count++];
++	event[0] = kind;
++	event[1] = address;
++	event[2] = value;
++	event[3] = 1;
++	event[4] = clock_before;
++	event[5] = clock_after;
++}
++
++void Zelda3TraceSmpLedgerWrite(int kind, int address, int value,
++	int clock_before, int clock_after)
++{
++	Zelda3TraceSmpLedgerRead(kind, address, value, clock_before, clock_after);
++}
++
+ void Zelda3TraceRetroRunBegin()
+ {
+ 	const char *cpu_timing = std::getenv("ZELDA3_DEBUG_SNES9X_SMP_BOOTSTRAP");
+diff --git a/zelda3_trace.h b/zelda3_trace.h
+index b9379138..42df33ab 100644
+--- a/zelda3_trace.h
++++ b/zelda3_trace.h
+@@ -86,6 +86,36 @@
+ int Zelda3TraceSmpInstructionCount();
+ int Zelda3TraceSmpInstructionValue(int instruction, int field);
+ uint64 Zelda3TraceSmpInstructionCycle(int instruction);
++enum Zelda3TraceSmpLedgerBusKind
++{
++	ZELDA3_TRACE_SMP_LEDGER_IO = 0,
++	ZELDA3_TRACE_SMP_LEDGER_READ = 1,
++	ZELDA3_TRACE_SMP_LEDGER_WRITE = 2,
++	ZELDA3_TRACE_SMP_LEDGER_READ_STACK = 3,
++	ZELDA3_TRACE_SMP_LEDGER_WRITE_STACK = 4,
++};
++int Zelda3TraceSmpLedgerAbiVersion();
++int Zelda3TraceSmpLedgerSeedFieldCount();
++int Zelda3TraceSmpLedgerStateFieldCount();
++int Zelda3TraceSmpLedgerBegin(int case_id, const int *seed, int seed_count);
++int Zelda3TraceSmpLedgerSetRam(int address, int value);
++int Zelda3TraceSmpLedgerSetDsp(int address, int value);
++int Zelda3TraceSmpLedgerSeal();
++int Zelda3TraceSmpLedgerStep();
++int Zelda3TraceSmpLedgerStateValue(int field);
++int Zelda3TraceSmpLedgerBusCount();
++int Zelda3TraceSmpLedgerBusValue(int event, int field);
++int Zelda3TraceSmpLedgerRamDiffCount();
++int Zelda3TraceSmpLedgerRamDiffValue(int difference, int field);
++int Zelda3TraceSmpLedgerDspDiffCount();
++int Zelda3TraceSmpLedgerDspDiffValue(int difference, int field);
++int Zelda3TraceSmpLedgerOverflow();
++void Zelda3TraceStepSmpOpcode();
++void Zelda3TraceSmpLedgerIo(int clocks, int clock_before, int clock_after);
++void Zelda3TraceSmpLedgerRead(int kind, int address, int value,
++	int clock_before, int clock_after);
++void Zelda3TraceSmpLedgerWrite(int kind, int address, int value,
++	int clock_before, int clock_after);
+ void Zelda3TraceRetroRunBegin();
+ void Zelda3TraceRetroRunEnd();
+ void Zelda3TraceInstruction(void);

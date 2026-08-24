@@ -29,6 +29,7 @@ mod replay_diagnostics;
 mod replay_save_config;
 mod route_coverage_commands;
 mod sheet_dump_commands;
+mod smp_opcode_ledger;
 mod snes9x_apu_tools;
 mod snes9x_compare;
 mod snes9x_record_commands;
@@ -111,6 +112,10 @@ const EMBEDDED_ASSETS: &[u8] = include_bytes!(env!("ZELDA3_EMBEDDED_ASSETS"));
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--generate-snes9x-smp-opcode-ledger") {
+        smp_opcode_ledger::run_generate_command(&args[2..]);
+        return;
+    }
     if dispatch_rom_first_oracle_flags(&args) {
         return;
     }

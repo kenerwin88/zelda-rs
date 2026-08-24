@@ -19,6 +19,7 @@ PATCH_DIR = REPO_ROOT / "external" / "snes9x-libretro" / "patches"
 TRACE_PATCHES = (
     PATCH_DIR / "zelda3-trace.patch",
     PATCH_DIR / "zelda3-trace-obj-cache.patch",
+    PATCH_DIR / "zelda3-spc-opcode-ledger.patch",
 )
 LOCK = json.loads(LOCK_PATH.read_text())
 VERSION = LOCK["core_version"]

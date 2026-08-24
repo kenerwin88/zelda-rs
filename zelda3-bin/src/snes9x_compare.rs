@@ -75,7 +75,7 @@ struct SmpBootstrapInstructionSequence {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-struct SmpBootstrapDeltaSequence {
+pub(crate) struct SmpBootstrapDeltaSequence {
     encoding: &'static str,
     fields: Vec<&'static str>,
     record_count: usize,
@@ -7896,7 +7896,7 @@ fn compact_delta_integer_sequence<const N: usize>(
     compact_delta_integer_sequence_with_zstd(fields, rows, false)
 }
 
-fn compact_delta_integer_sequence_with_zstd<const N: usize>(
+pub(crate) fn compact_delta_integer_sequence_with_zstd<const N: usize>(
     fields: [&'static str; N],
     rows: impl IntoIterator<Item = [i64; N]>,
     use_zstd: bool,
@@ -8626,7 +8626,7 @@ fn write_snes9x_smp_bootstrap_header<W: Write>(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{
         append_smp_instruction_frame, cached_ledger_input, canonical_audio_digest,
         canonical_oracle_video_digest, canonical_rust_video_digest, checkpoint_member,
@@ -8694,7 +8694,7 @@ mod tests {
         value
     }
 
-    fn expand_delta_sequence(sequence: &serde_json::Value) -> Vec<Vec<i64>> {
+    pub(crate) fn expand_delta_sequence(sequence: &serde_json::Value) -> Vec<Vec<i64>> {
         let encoding = sequence["encoding"].as_str().unwrap();
         assert!(matches!(
             encoding,
