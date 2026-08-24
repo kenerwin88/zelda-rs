@@ -27,6 +27,30 @@ microscope = load("parity_microscope")
 
 
 class ParityMicroscopeTests(unittest.TestCase):
+    def test_diagnostic_trace_path_follows_live_rng_trace_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            session = Path(directory)
+            ordinary = session / "snes9x-trace.jsonl"
+            live_rng = session / "oracle-rom-random.jsonl"
+
+            self.assertEqual(microscope.diagnostic_trace_path(session), ordinary)
+            self.assertEqual(
+                microscope.diagnostic_trace_path(session, live_oracle_rng=True),
+                live_rng,
+            )
+
+            live_rng.write_text("{}\n", encoding="utf-8")
+            self.assertEqual(microscope.diagnostic_trace_path(session), ordinary)
+
+            (session / "microscope-plan.json").write_text(
+                json.dumps({"trace": {"artifact": live_rng.name}}),
+                encoding="utf-8",
+            )
+            self.assertEqual(microscope.diagnostic_trace_path(session), live_rng)
+
+            ordinary.write_text("{}\n", encoding="utf-8")
+            self.assertEqual(microscope.diagnostic_trace_path(session), live_rng)
+
     def write_session(self, root: Path, name: str, *, frames: int = 100) -> Path:
         session = root / name
         session.mkdir()

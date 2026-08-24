@@ -98,11 +98,11 @@ def build_rust_trace_index(
     if engine is None:
         return None
     session = session.resolve()
-    trace = session / "snes9x-trace.jsonl"
+    trace = diagnostic_trace_path(session)
     manifest = session / "manifest.json"
     if not trace.is_file() or not manifest.is_file():
         raise SystemExit(
-            f"parity microscope: {session} needs snes9x-trace.jsonl and manifest.json"
+            f"parity microscope: {session} needs an oracle trace and manifest.json"
         )
     index = (output or session / "snes9x-trace.zpti").resolve()
     process = subprocess.run(
@@ -286,9 +286,33 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def diagnostic_trace_path(session: Path, *, live_oracle_rng: bool = False) -> Path:
+    """Return the trace artifact actually owned by the comparison process.
+
+    A live-oracle-RNG comparison merges every requested trace domain into its
+    authoritative RNG artifact. Pointing the microscope at a separate
+    `snes9x-trace.jsonl` in that mode watches and reports a file the comparison
+    never writes.
+    """
+    if live_oracle_rng:
+        return session / "oracle-rom-random.jsonl"
+    ordinary = session / "snes9x-trace.jsonl"
+    plan_path = session / "microscope-plan.json"
+    if plan_path.is_file():
+        try:
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            plan = {}
+        trace = plan.get("trace") if isinstance(plan, dict) else None
+        artifact = trace.get("artifact") if isinstance(trace, dict) else None
+        if isinstance(artifact, str) and Path(artifact).name == artifact:
+            return session / artifact
+    return ordinary
+
+
 def cpu_checkpoint_correlation(session: Path) -> dict[str, Any]:
     rust_trace = session / "rust-cpu-checkpoints.jsonl"
-    oracle_trace = session / "snes9x-trace.jsonl"
+    oracle_trace = diagnostic_trace_path(session)
     manifest = session / "manifest.json"
     if not rust_trace.is_file() or rust_trace.stat().st_size == 0:
         return {"status": "not-observed", "records": 0}
@@ -1239,7 +1263,7 @@ def command_inspect(args: argparse.Namespace) -> int:
         f"result: status={identity['status']} completed={identity['frames_completed']} "
         f"start={start_frame} first_cause={first_cause(result).get('classification')}"
     )
-    trace = session / "snes9x-trace.jsonl"
+    trace = diagnostic_trace_path(session)
     if trace.is_file():
         plan_path = session / "microscope-plan.json"
         plan = evidence.load_json(plan_path) if plan_path.is_file() else {}
@@ -1682,10 +1706,14 @@ def command_microscope(args: argparse.Namespace) -> int:
         and default_checkpoint_frame is not None
         and default_checkpoint_frame >= frontier
     )
-    trace = session / "snes9x-trace.jsonl"
+    trace = diagnostic_trace_path(
+        session,
+        live_oracle_rng=bool(args.cold and not args.recorded_rng),
+    )
     rust_trace = session / "rust-cpu-checkpoints.jsonl"
     trace_configuration = {
         "schema": 1,
+        "artifact": trace.name,
         "events": events,
         "pc_filter": pc_filter,
         "wram_filter": wram_filter,
