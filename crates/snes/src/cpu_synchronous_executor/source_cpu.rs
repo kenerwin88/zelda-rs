@@ -770,6 +770,11 @@ impl Snes9xColdCpuExecutor {
                 self.machine.snes.cpu.pc = target;
             }
             0x80 => self.branch(true, accesses)?,
+            0x84 => {
+                let address = self.direct_address(false, accesses)?;
+                let value = self.machine.snes.cpu.y;
+                self.store_index_register(address, value, accesses)?;
+            }
             0x85 => {
                 let address = self.direct_address(false, accesses)?;
                 self.store_accumulator(address, accesses)?;
@@ -3656,6 +3661,114 @@ mod tests {
     }
 
     #[test]
+    fn sty_direct_x8_charges_nonzero_dp_then_publishes_y_after_store() {
+        let rom = synthetic_rom(&[0x84, 0xff]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.dp = 0x0101;
+        cpu.machine.snes.cpu.y = 0x0080;
+        cpu.machine.snes.ram[0x0200] = 0x5a;
+        cpu.machine.snes.open_bus = 0x7c;
+
+        let receipt = cpu.step().unwrap();
+
+        assert_source_transaction_shape(
+            &receipt,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 8),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 6),
+                (
+                    SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                    8,
+                ),
+            ],
+        );
+        assert_eq!(receipt.accesses.len(), 3);
+        assert_eq!(receipt.accesses[2].address, 0x00_0200);
+        assert_eq!(receipt.accesses[2].timestamp, CpuMasterTimestamp::new(220));
+        assert_eq!(
+            receipt.accesses[2].kind,
+            SourceCpuBusAccessKind::Write {
+                value: 0x80,
+                width: 1,
+            }
+        );
+        assert_eq!(cpu.machine.snes.ram[0x0200], 0x80);
+        assert_eq!(cpu.machine.snes.open_bus, 0x80);
+    }
+
+    #[test]
+    fn sty_direct_x16_uses_bank_wrapped_word_owner_and_publishes_high_byte() {
+        let rom = synthetic_rom(&[0x84, 0xff]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.e = false;
+        cpu.machine.snes.cpu.xf = false;
+        cpu.machine.snes.cpu.dp = 0x0101;
+        cpu.machine.snes.cpu.y = 0x9234;
+        cpu.machine.snes.ram[0x0200] = 0xa5;
+        cpu.machine.snes.ram[0x0201] = 0x5a;
+        cpu.machine.snes.open_bus = 0x7c;
+
+        let receipt = cpu.step().unwrap();
+
+        assert_source_transaction_shape(
+            &receipt,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 8),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 6),
+                (
+                    SourceCpuTransactionKind::GetSetMemoryAccessX2AfterSemanticDraining,
+                    16,
+                ),
+            ],
+        );
+        assert_eq!(receipt.accesses.len(), 3);
+        assert_eq!(receipt.accesses[2].address, 0x00_0200);
+        assert_eq!(receipt.accesses[2].timestamp, CpuMasterTimestamp::new(220));
+        assert_eq!(
+            receipt.accesses[2].kind,
+            SourceCpuBusAccessKind::Write {
+                value: 0x9234,
+                width: 2,
+            }
+        );
+        assert_eq!(&cpu.machine.snes.ram[0x0200..0x0202], &[0x34, 0x92]);
+        assert_eq!(cpu.machine.snes.open_bus, 0x92);
+    }
+
+    #[test]
+    fn sty_direct_write_failure_commits_semantic_before_event_but_defers_open_bus() {
+        let rom = synthetic_rom(&[0x84, 0xff]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.dp = 0x0101;
+        cpu.machine.snes.cpu.y = 0x0080;
+        cpu.machine.snes.ram[0x0200] = 0x5a;
+        cpu.machine.snes.open_bus = 0x7c;
+        install_hmax_smp_failure(&mut cpu, 1_334);
+
+        assert!(matches!(
+            cpu.step(),
+            Err(SourceCpuError::Machine(
+                CpuSynchronousMachineError::ApuClock(crate::Snes9xApuClockError::ZeroCycleSmpStep)
+            ))
+        ));
+        assert_eq!(cpu.machine.snes.ram[0x0200], 0x80);
+        assert_eq!(cpu.machine.snes.open_bus, 0x7c);
+        assert_eq!(
+            cpu.machine.pending_completion(),
+            Some(CpuSynchronousCompletion::Write)
+        );
+        assert!(cpu.is_poisoned());
+    }
+
+    #[test]
     fn ldy_direct_x8_reads_after_dp_operand_and_publishes_loaded_byte() {
         let rom = synthetic_rom(&[0xa4, 0x15]);
         let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
@@ -4490,18 +4603,31 @@ mod tests {
             cpu.machine.timeline.raster_position(),
             crate::CpuRasterPosition::new(250, 664)
         );
+        let sty = cpu.step().unwrap();
+        assert_eq!(sty.origin_pc, 0x00_83e9);
+        assert_eq!(sty.opcode, 0x84);
+
+        for _ in 0..62 {
+            cpu.step().unwrap();
+        }
+        assert_eq!(cpu.program_address(), 0x00_81d6);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_932_730));
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(251, 1_086)
+        );
         assert_eq!(
             cpu.step(),
             Err(SourceCpuError::UnsupportedOpcode {
-                pc: 0x00_83e9,
-                opcode: 0x84,
+                pc: 0x00_81d6,
+                opcode: 0x29,
             })
         );
-        assert_eq!(cpu.program_address(), 0x00_83ea);
-        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_930_952));
+        assert_eq!(cpu.program_address(), 0x00_81d7);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_932_738));
         assert_eq!(
             cpu.machine.timeline.raster_position(),
-            crate::CpuRasterPosition::new(250, 672)
+            crate::CpuRasterPosition::new(251, 1_094)
         );
         assert!(cpu.is_poisoned());
     }
