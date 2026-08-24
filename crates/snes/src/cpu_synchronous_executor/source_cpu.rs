@@ -122,6 +122,8 @@ pub struct Snes9xCpuQuiescentCheckpoint {
     apu_clock: Snes9xApuClockCheckpoint,
     apu_exact: Snes9xApuCoroutineCheckpoint,
     pending_completion: Option<CpuSynchronousCompletion>,
+    #[serde(default)]
+    source_vmain_full_graphic_count_nonzero: bool,
     nmi_acceptance_not_before: Option<CpuMasterTimestamp>,
     deferred_nmi_enable_edge: bool,
 }
@@ -237,6 +239,8 @@ impl Snes9xColdCpuExecutor {
             timeline,
             apu_clock: Snes9xApuClockState::new(),
             pending_completion: None,
+            pending_general_dma: None,
+            source_vmain_full_graphic_count_nonzero: false,
             nmi_acceptance_not_before: None,
             deferred_nmi_enable_edge: false,
             #[cfg(test)]
@@ -279,12 +283,15 @@ impl Snes9xColdCpuExecutor {
             .capture_snes9x_apu_coroutine_checkpoint()
             .ok_or(Snes9xCpuQuiescentCheckpointError::MissingApuSidecar)?;
         Ok(Snes9xCpuQuiescentCheckpoint {
-            version: 1,
+            version: 2,
             snes: self.machine.snes.clone(),
             timeline: self.machine.timeline.clone(),
             apu_clock: self.machine.apu_clock.checkpoint(),
             apu_exact,
             pending_completion: self.machine.pending_completion,
+            source_vmain_full_graphic_count_nonzero: self
+                .machine
+                .source_vmain_full_graphic_count_nonzero,
             nmi_acceptance_not_before: self.machine.nmi_acceptance_not_before,
             deferred_nmi_enable_edge: self.machine.deferred_nmi_enable_edge,
         })
@@ -293,7 +300,7 @@ impl Snes9xColdCpuExecutor {
     pub fn from_quiescent_checkpoint(
         checkpoint: Snes9xCpuQuiescentCheckpoint,
     ) -> Result<Self, Snes9xCpuQuiescentCheckpointError> {
-        if checkpoint.version != 1 {
+        if checkpoint.version != 2 {
             return Err(Snes9xCpuQuiescentCheckpointError::Version {
                 version: checkpoint.version,
             });
@@ -307,6 +314,9 @@ impl Snes9xColdCpuExecutor {
             timeline: checkpoint.timeline,
             apu_clock,
             pending_completion: checkpoint.pending_completion,
+            pending_general_dma: None,
+            source_vmain_full_graphic_count_nonzero: checkpoint
+                .source_vmain_full_graphic_count_nonzero,
             nmi_acceptance_not_before: checkpoint.nmi_acceptance_not_before,
             deferred_nmi_enable_edge: checkpoint.deferred_nmi_enable_edge,
             #[cfg(test)]
@@ -334,6 +344,9 @@ impl Snes9xColdCpuExecutor {
     ) -> Result<(), Snes9xCpuQuiescentCheckpointError> {
         if let Some(completion) = machine.pending_completion {
             return Err(Snes9xCpuQuiescentCheckpointError::PendingCompletion { completion });
+        }
+        if machine.pending_general_dma.is_some() || machine.snes.dma.dma_busy {
+            return Err(Snes9xCpuQuiescentCheckpointError::UnsupportedExecutionScope);
         }
         if machine.deferred_nmi_enable_edge {
             return Err(Snes9xCpuQuiescentCheckpointError::DeferredNmiEnableEdge);
@@ -1230,7 +1243,22 @@ impl Snes9xColdCpuExecutor {
         let address = address & 0x00ff_ffff;
         self.guard_control_write(address, value)?;
         let timestamp = self.machine.timestamp();
-        if let Some(port) = Snes::synchronous_cpu_apu_port(address) {
+        let mirrored_bank = (address >> 16) as u8 & 0x7f;
+        if mirrored_bank < 0x40 && address as u16 == 0x420b && value != 0 {
+            let receipt = self.machine.write_general_dma_control(value)?;
+            self.record_transaction(
+                SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                self.machine.snes.hardware_access_time(address),
+                receipt.outer_started_at,
+                receipt.outer_ended_at,
+                receipt.outer_start_wram_refresh_position,
+                receipt.outer_end_wram_refresh_position,
+            );
+            debug_assert_eq!(
+                self.machine.take_pending_completion(),
+                CpuSynchronousCompletion::GeneralDmaWrite
+            );
+        } else if let Some(port) = Snes::synchronous_cpu_apu_port(address) {
             let force_zero_cycle_smp_step = self.machine.force_zero_cycle_smp_step();
             CpuSynchronousMachine::synchronize_apu(
                 &mut self.machine.snes,
@@ -1244,16 +1272,19 @@ impl Snes9xColdCpuExecutor {
         } else {
             self.source_write_semantic(address, value)?;
         }
-        self.machine.pending_completion = Some(CpuSynchronousCompletion::Write);
+        if !(mirrored_bank < 0x40 && address as u16 == 0x420b && value != 0) {
+            self.machine.pending_completion = Some(CpuSynchronousCompletion::Write);
+            let duration = self.machine.snes.hardware_access_time(address);
+            self.drain_and_record_transaction(
+                SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                u32::from(duration),
+            )?;
+            debug_assert_eq!(
+                self.machine.take_pending_completion(),
+                CpuSynchronousCompletion::Write
+            );
+        }
         let duration = self.machine.snes.hardware_access_time(address);
-        self.drain_and_record_transaction(
-            SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
-            u32::from(duration),
-        )?;
-        debug_assert_eq!(
-            self.machine.take_pending_completion(),
-            CpuSynchronousCompletion::Write
-        );
         accesses.push(SourceCpuBusAccess {
             address,
             timestamp,
@@ -1459,9 +1490,6 @@ impl Snes9xColdCpuExecutor {
             return Ok(());
         }
         if (bank & 0x7f) < 0x40 && matches!(adr, 0x420b | 0x420c) {
-            if value != 0 {
-                return Err(SourceCpuError::UnexpectedInterruptOrDma);
-            }
             return Ok(());
         }
         if (bank & 0x7f) < 0x40 && (0x4300..=0x437f).contains(&adr) {
@@ -1473,6 +1501,9 @@ impl Snes9xColdCpuExecutor {
             return Ok(());
         }
         if (bank & 0x7f) < 0x40 && (0x2100..=0x21ff).contains(&adr) {
+            if adr == 0x2115 {
+                self.machine.source_vmain_full_graphic_count_nonzero = value & 0x0c != 0;
+            }
             let open_bus = self.machine.snes.open_bus;
             self.machine.snes.write(address, value);
             self.machine.snes.open_bus = open_bus;
@@ -1576,9 +1607,7 @@ impl Snes9xColdCpuExecutor {
                 0x4200 if value & 0x30 != 0 => {
                     return Err(SourceCpuError::UnexpectedInterruptOrDma)
                 }
-                0x420b | 0x420c if value != 0 => {
-                    return Err(SourceCpuError::UnexpectedInterruptOrDma)
-                }
+                0x420c if value != 0 => return Err(SourceCpuError::UnexpectedInterruptOrDma),
                 _ => {}
             }
         }
@@ -1820,6 +1849,33 @@ mod tests {
     }
 
     #[test]
+    fn checkpoint_v2_roundtrips_nonlinear_vmain_capability() {
+        let rom = synthetic_rom(&[0x18]);
+        let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        source.machine.source_vmain_full_graphic_count_nonzero = true;
+        let encoded = serde_json::to_vec(&source.capture_quiescent_checkpoint().unwrap()).unwrap();
+        let checkpoint: Snes9xCpuQuiescentCheckpoint = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(checkpoint.version, 2);
+        let mut restored = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
+        assert!(restored.machine.source_vmain_full_graphic_count_nonzero);
+
+        let dma = &mut restored.machine.snes.dma.channel[0];
+        dma.a_bank = 0x7e;
+        dma.a_adr = 0;
+        dma.size = 2;
+        dma.mode = 1;
+        dma.b_adr = 0x18;
+        dma.fixed = false;
+        dma.decrement = false;
+        dma.from_b = false;
+        assert_eq!(
+            restored.machine.write_general_dma_control(1),
+            Err(CpuSynchronousMachineError::GeneralDmaNonlinearVram { channel: 0 })
+        );
+        assert_eq!(restored.machine.timestamp(), source.machine.timestamp());
+    }
+
+    #[test]
     fn quiescent_checkpoint_rejects_nonquiescent_executor_state() {
         let rom = synthetic_rom(&[0x18]);
         let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
@@ -1938,11 +1994,16 @@ mod tests {
             assert_eq!(target.machine.timestamp(), target_timestamp);
         };
 
-        let mut malformed = good.clone();
-        malformed.version = 2;
+        let mut legacy_v1 = serde_json::to_value(&good).unwrap();
+        legacy_v1["version"] = serde_json::json!(1);
+        legacy_v1
+            .as_object_mut()
+            .unwrap()
+            .remove("source_vmain_full_graphic_count_nonzero");
+        let malformed: Snes9xCpuQuiescentCheckpoint = serde_json::from_value(legacy_v1).unwrap();
         assert!(matches!(
             target.restore_quiescent_checkpoint(malformed),
-            Err(Snes9xCpuQuiescentCheckpointError::Version { version: 2 })
+            Err(Snes9xCpuQuiescentCheckpointError::Version { version: 1 })
         ));
         assert_unchanged(&target);
 
@@ -2809,6 +2870,79 @@ mod tests {
     }
 
     #[test]
+    fn nonzero_mdmaen_runs_nested_dma_before_the_outer_cpu_write_charge() {
+        let rom = synthetic_rom(&[0xa9, 0x01, 0x8d, 0x0b, 0x42]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.ram[0] = 0x7c;
+        let dma = &mut cpu.machine.snes.dma.channel[0];
+        dma.a_bank = 0x7e;
+        dma.a_adr = 0;
+        dma.size = 1;
+        dma.mode = 0;
+        dma.b_adr = 0x18;
+        dma.fixed = false;
+        dma.decrement = false;
+        dma.from_b = false;
+
+        cpu.step().unwrap();
+        let receipt = cpu.step().unwrap();
+
+        assert_source_transaction_shape(
+            &receipt,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 16),
+                (
+                    SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                    6,
+                ),
+            ],
+        );
+        assert_eq!(receipt.accesses.len(), 3);
+        let write = receipt.accesses.last().unwrap();
+        assert_eq!(write.address, 0x00_420b);
+        assert_eq!(write.timestamp, CpuMasterTimestamp::new(238));
+        assert_eq!(write.charged_master_cycles, 6);
+        assert_eq!(
+            receipt.transactions[2].started_at,
+            CpuMasterTimestamp::new(272)
+        );
+        assert_eq!(
+            receipt.transactions[2].ended_at,
+            CpuMasterTimestamp::new(278)
+        );
+        assert_eq!(cpu.machine.snes.ppu.vram[0], 0x007c);
+        assert_eq!(cpu.machine.snes.open_bus, 0x01);
+        assert_eq!(cpu.machine.snes.cpu.pc, 0x8005);
+    }
+
+    #[test]
+    fn nonzero_hdmaen_remains_fail_closed_before_register_semantics() {
+        let rom = synthetic_rom(&[0xa9, 0x01, 0x8d, 0x0c, 0x42]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.step().unwrap();
+        let before = cpu.machine.timestamp();
+
+        assert_eq!(cpu.step(), Err(SourceCpuError::UnexpectedInterruptOrDma));
+
+        // Opcode fetch and the absolute operand are source-owned, but neither
+        // HDMA enable state nor the enclosing write semantic/charge commits.
+        assert_eq!(before, CpuMasterTimestamp::new(214));
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(238));
+        assert!(cpu
+            .machine
+            .snes
+            .dma
+            .channel
+            .iter()
+            .all(|channel| !channel.hdma_active));
+        assert!(cpu.is_poisoned());
+    }
+
+    #[test]
     fn startup_init_opcode_and_map_delta_follows_snes9x_source_order() {
         let rom = synthetic_rom(&[
             0x18, // CLC
@@ -3148,6 +3282,61 @@ mod tests {
             .channel
             .iter()
             .all(|channel| !channel.dma_active));
+
+        // The next source instruction is the bounded nonzero MDMAEN path. At
+        // the authoritative H714 stop, its semantic begins at H738; channel 1
+        // zero-based byte 9 ends at H1364 and drains HMax, then all 160 bytes
+        // and the outer write finish on the following line at H742 (including
+        // that line's 40-clock WRAM
+        // refresh). No PC/mask special case participates.
+        let dma = cpu.step().unwrap();
+        assert_eq!(dma.origin_pc, 0x00_8a35);
+        assert_eq!(dma.opcode, 0x8d);
+        assert_source_transaction_shape(
+            &dma,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 16),
+                (
+                    SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                    6,
+                ),
+            ],
+        );
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(227, 742)
+        );
+        assert_eq!(cpu.program_address(), 0x00_8a38);
+        assert!(cpu
+            .machine
+            .snes
+            .dma
+            .channel
+            .iter()
+            .all(|channel| !channel.dma_active));
+        assert!(!cpu.machine.snes.dma.dma_busy);
+
+        for _ in 0..82 {
+            cpu.step().unwrap();
+        }
+        assert_eq!(cpu.program_address(), 0x00_8b50);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_911_998));
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(236, 814)
+        );
+        assert_eq!(
+            cpu.step(),
+            Err(SourceCpuError::UnsupportedOpcode {
+                pc: 0x00_8b50,
+                opcode: 0xae,
+            })
+        );
+        assert!(cpu.is_poisoned());
     }
 
     #[test]

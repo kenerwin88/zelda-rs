@@ -173,7 +173,152 @@ const B_ADR_OFFSETS: [[u8; 4]; 8] = [
 
 const TRANSFER_LENGTH: [u8; 8] = [1, 2, 2, 4, 4, 4, 2, 4];
 
+/// One source-ordered general-DMA bus semantic. Timing is deliberately owned
+/// by the synchronous CPU timeline rather than by the legacy DMA timer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SynchronousGeneralDmaByte {
+    pub channel: u8,
+    pub a_address: u32,
+    pub b_address: u8,
+    pub from_b: bool,
+    /// The one pinned fast-path assignment to `OpenBus`: mode 1/5, B=$18,
+    /// high-byte phase. The synchronous owner additionally verifies that the
+    /// A-bus address uses a direct base-pointer map.
+    pub publishes_fast_vram_high_open_bus: bool,
+    pub a_bus_is_wram: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub(crate) enum SynchronousGeneralDmaUnsupported {
+    #[error("general DMA channel {channel} collides with active HDMA")]
+    ActiveHdma { channel: u8 },
+    #[error("general DMA channel {channel} touches the fallible APUI synchronization path")]
+    ApuBus { channel: u8 },
+    #[error(
+        "general DMA channel {channel} maps its A-bus through an unimplemented low-bank I/O range"
+    )]
+    CpuOrPpuRegisterBus { channel: u8 },
+}
+
 impl Snes {
+    pub(crate) fn validate_synchronous_general_dma(
+        &self,
+        mask: u8,
+    ) -> Result<(), SynchronousGeneralDmaUnsupported> {
+        for channel in 0..8u8 {
+            if mask & (1 << channel) == 0 {
+                continue;
+            }
+            let dma = &self.dma.channel[usize::from(channel)];
+            if dma.hdma_active {
+                return Err(SynchronousGeneralDmaUnsupported::ActiveHdma { channel });
+            }
+            let phases = if dma.size == 0 {
+                u32::from(u16::MAX) + 1
+            } else {
+                u32::from(dma.size)
+            };
+            let mut a_address = dma.a_adr;
+            for transfer_index in 0..phases {
+                let b_phase = transfer_index as usize & 3;
+                let b_address = dma
+                    .b_adr
+                    .wrapping_add(B_ADR_OFFSETS[usize::from(dma.mode)][b_phase]);
+                if (0x40..0x80).contains(&b_address) {
+                    return Err(SynchronousGeneralDmaUnsupported::ApuBus { channel });
+                }
+                let full_address = (u32::from(dma.a_bank) << 16) | u32::from(a_address);
+                if Snes::synchronous_cpu_apu_port(full_address).is_some() {
+                    return Err(SynchronousGeneralDmaUnsupported::ApuBus { channel });
+                }
+                let bank = dma.a_bank & 0x7f;
+                if bank < 0x40 && matches!(a_address, 0x2000..=0x5fff) {
+                    return Err(SynchronousGeneralDmaUnsupported::CpuOrPpuRegisterBus { channel });
+                }
+                if !dma.fixed {
+                    a_address = if dma.decrement {
+                        a_address.wrapping_sub(1)
+                    } else {
+                        a_address.wrapping_add(1)
+                    };
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Latch `$420b`'s selected general-DMA channels without charging timing.
+    /// Pinned Snes9x charges the CPU-sync and channel/byte clocks around these
+    /// register semantics in `S9xSetCPU`/`S9xDoDMA`.
+    pub(crate) fn synchronous_general_dma_begin(&mut self, _mask: u8) {
+        // The selected mask is continuation ownership, not a source CPU flag:
+        // `CPU.InDMA` remains false during the initial DMACPUSync charge.
+        self.dma.dma_busy = false;
+    }
+
+    pub(crate) fn synchronous_general_dma_begin_channel(&mut self, channel: u8) {
+        self.dma.channel[usize::from(channel)].dma_active = true;
+        self.dma.dma_busy = true;
+    }
+
+    /// Begin one selected channel after its source eight-clock setup charge.
+    /// Describe the next A/B-bus semantic from the live generic DMA registers.
+    pub(crate) fn synchronous_general_dma_next_byte(
+        &self,
+        channel: u8,
+        b_phase: u8,
+    ) -> SynchronousGeneralDmaByte {
+        let channel_index = usize::from(channel);
+        let dma = &self.dma.channel[channel_index];
+        let bias = B_ADR_OFFSETS[usize::from(dma.mode)][usize::from(b_phase)];
+        SynchronousGeneralDmaByte {
+            channel,
+            a_address: (u32::from(dma.a_bank) << 16) | u32::from(dma.a_adr),
+            b_address: dma.b_adr.wrapping_add(bias),
+            from_b: dma.from_b,
+            publishes_fast_vram_high_open_bus: !dma.from_b
+                && matches!(dma.mode, 1 | 5)
+                && dma.b_adr == 0x18
+                && b_phase & 1 != 0,
+            a_bus_is_wram: matches!(dma.a_bank, 0x7e | 0x7f)
+                || (dma.a_bank & 0x40 == 0 && dma.a_adr < 0x2000),
+        }
+    }
+
+    /// Commit the counter updates which precede `addCyclesInDMA` in the pinned
+    /// `UPDATE_COUNTERS` macro. A zero initial size naturally wraps and means
+    /// 65,536 bytes, exactly as the source does.
+    pub(crate) fn synchronous_general_dma_commit_byte(&mut self, channel: u8) -> bool {
+        let dma = &mut self.dma.channel[usize::from(channel)];
+        if !dma.from_b && matches!(dma.a_bank, 0x7e | 0x7f) && dma.b_adr == 0x80 {
+            // dma.cpp's invalid WRAM->$2180 branch advances A unconditionally.
+            dma.a_adr = dma.a_adr.wrapping_add(1);
+        } else if !dma.fixed {
+            dma.a_adr = if dma.decrement {
+                dma.a_adr.wrapping_sub(1)
+            } else {
+                dma.a_adr.wrapping_add(1)
+            };
+        }
+        dma.size = dma.size.wrapping_sub(1);
+        dma.size == 0
+    }
+
+    pub(crate) fn synchronous_general_dma_finish_channel(&mut self, channel: u8) {
+        let dma = &mut self.dma.channel[usize::from(channel)];
+        dma.dma_active = false;
+        self.dma.dma_busy = false;
+    }
+
+    pub(crate) fn synchronous_general_dma_skips_nmi_retime(&self, channel: u8) -> bool {
+        let dma = &self.dma.channel[usize::from(channel)];
+        !dma.from_b && matches!(dma.a_bank, 0x7e | 0x7f) && dma.b_adr == 0x80
+    }
+
+    pub(crate) fn synchronous_general_dma_finish_all(&mut self) {
+        self.dma.dma_busy = false;
+    }
+
     pub(crate) fn dma_read_reg(&self, adr: u16) -> u8 {
         let c = ((adr & 0x70) >> 4) as usize;
         let ch = &self.dma.channel[c];
@@ -534,5 +679,47 @@ mod tests {
         assert_eq!(snes.dma.channel[0].a_adr, 0x0102);
         assert_eq!(snes.dma.channel[1].a_adr, 0x0201);
         assert_eq!(snes.dma_run_to_completion_master_cycles(), 0);
+    }
+
+    #[test]
+    fn synchronous_general_dma_uses_source_mode_patterns_and_local_phase() {
+        let expected = [
+            [0, 0, 0, 0],
+            [0, 1, 0, 1],
+            [0, 0, 0, 0],
+            [0, 0, 1, 1],
+            [0, 1, 2, 3],
+            [0, 1, 0, 1],
+            [0, 0, 0, 0],
+            [0, 0, 1, 1],
+        ];
+        for mode in 0..8u8 {
+            let mut snes = Snes::new();
+            let dma = &mut snes.dma.channel[0];
+            dma.mode = mode;
+            dma.b_adr = 0x20;
+            for phase in 0..4u8 {
+                assert_eq!(
+                    snes.synchronous_general_dma_next_byte(0, phase).b_address,
+                    0x20 + expected[usize::from(mode)][usize::from(phase)]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn synchronous_zero_size_wraps_to_exactly_65536_byte_counter_domain() {
+        let mut snes = Snes::new();
+        snes.dma.channel[0].size = 0;
+        snes.dma.channel[0].a_adr = 0xffff;
+        snes.dma.channel[0].fixed = false;
+        snes.dma.channel[0].decrement = false;
+
+        assert!(!snes.synchronous_general_dma_commit_byte(0));
+        assert_eq!(snes.dma.channel[0].size, 0xffff);
+        assert_eq!(snes.dma.channel[0].a_adr, 0);
+        snes.dma.channel[0].size = 1;
+        assert!(snes.synchronous_general_dma_commit_byte(0));
+        assert_eq!(snes.dma.channel[0].size, 0);
     }
 }
