@@ -197,7 +197,28 @@ impl<'a> Smp<'a> {
     pub(crate) const fn supports_resumable_opcode(opcode: u8) -> bool {
         matches!(
             opcode,
-            0x1d | 0x2f | 0x78 | 0x8f | 0xba | 0xbd | 0xc4 | 0xc6 | 0xcd | 0xd0 | 0xda | 0xe8
+            0x10 | 0x1d
+                | 0x1f
+                | 0x2f
+                | 0x5d
+                | 0x78
+                | 0x7e
+                | 0x8f
+                | 0xab
+                | 0xba
+                | 0xbd
+                | 0xc4
+                | 0xc6
+                | 0xcb
+                | 0xcd
+                | 0xd0
+                | 0xd7
+                | 0xda
+                | 0xdd
+                | 0xe4
+                | 0xe8
+                | 0xeb
+                | 0xfc
         )
     }
 
@@ -234,6 +255,20 @@ impl<'a> Smp<'a> {
             (0xbd, 0) => {
                 self.cycles(1);
                 self.reg_sp = self.reg_x;
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
+            (0xdd, 0) => {
+                self.cycles(1);
+                self.reg_a = self.reg_y;
+                self.set_psw_n_z(u32::from(self.reg_a));
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
+            (0x5d, 0) => {
+                self.cycles(1);
+                self.reg_x = self.reg_a;
+                self.set_psw_n_z(u32::from(self.reg_x));
                 *coroutine = SmpCoroutineState::enabled();
                 Ok(SmpMicroStepResult::InstructionComplete { opcode })
             }
@@ -321,6 +356,17 @@ impl<'a> Smp<'a> {
                 *coroutine = SmpCoroutineState::enabled();
                 Ok(SmpMicroStepResult::InstructionComplete { opcode })
             }
+            (0x10, 0) => {
+                coroutine.rd = u16::from(self.read_pc());
+                if !self.psw_n {
+                    self.cycles(2);
+                    self.reg_pc = self
+                        .reg_pc
+                        .wrapping_add(coroutine.rd as u8 as i8 as i16 as u16);
+                }
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
             (0xba, 0) => {
                 coroutine.sp = u16::from(self.read_pc());
                 coroutine.opcode_cycle = 1;
@@ -374,6 +420,40 @@ impl<'a> Smp<'a> {
                 *coroutine = SmpCoroutineState::enabled();
                 Ok(SmpMicroStepResult::InstructionComplete { opcode })
             }
+            (0xeb | 0xe4, 0) => {
+                coroutine.sp = u16::from(self.read_pc());
+                coroutine.opcode_cycle = 1;
+                Ok(SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle: 1,
+                })
+            }
+            (0xeb, 1) => {
+                self.reg_y = self.read_dp(coroutine.sp as u8);
+                self.set_psw_n_z(u32::from(self.reg_y));
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
+            (0xe4, 1) => {
+                self.reg_a = self.read_dp(coroutine.sp as u8);
+                self.set_psw_n_z(u32::from(self.reg_a));
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
+            (0x7e, 0) => {
+                coroutine.dp = u16::from(self.read_pc());
+                coroutine.opcode_cycle = 1;
+                Ok(SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle: 1,
+                })
+            }
+            (0x7e, 1) => {
+                coroutine.rd = u16::from(self.read_dp(coroutine.dp as u8));
+                self.reg_y = self.cmp(self.reg_y, coroutine.rd as u8);
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
             (0xc4, 0) => {
                 coroutine.dp = u16::from(self.read_pc());
                 coroutine.opcode_cycle = 1;
@@ -392,6 +472,91 @@ impl<'a> Smp<'a> {
             }
             (0xc4, 2) => {
                 self.write_dp(coroutine.dp as u8, self.reg_a);
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
+            (0xcb, 0) => {
+                coroutine.dp = u16::from(self.read_pc());
+                coroutine.opcode_cycle = 1;
+                Ok(SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle: 1,
+                })
+            }
+            (0xcb, 1) => {
+                self.read_dp(coroutine.dp as u8);
+                coroutine.opcode_cycle = 2;
+                Ok(SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle: 2,
+                })
+            }
+            (0xcb, 2) => {
+                self.write_dp(coroutine.dp as u8, self.reg_y);
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
+            (0xd7, 0) => {
+                coroutine.sp = u16::from(self.read_pc());
+                coroutine.opcode_cycle = 1;
+                Ok(SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle: 1,
+                })
+            }
+            (0xd7, 1) => {
+                coroutine.dp = u16::from(self.read_dp(coroutine.sp as u8));
+                coroutine.opcode_cycle = 2;
+                Ok(SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle: 2,
+                })
+            }
+            (0xd7, 2) => {
+                coroutine.dp |= u16::from(self.read_dp((coroutine.sp as u8).wrapping_add(1))) << 8;
+                self.cycles(1);
+                coroutine.dp = coroutine.dp.wrapping_add(u16::from(self.reg_y));
+                coroutine.opcode_cycle = 3;
+                Ok(SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle: 3,
+                })
+            }
+            (0xd7, 3) => {
+                self.read(coroutine.dp);
+                coroutine.opcode_cycle = 4;
+                Ok(SmpMicroStepResult::InProgress {
+                    opcode,
+                    opcode_cycle: 4,
+                })
+            }
+            (0xd7, 4) => {
+                self.write(coroutine.dp, self.reg_a);
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
+            (0xfc, 0) => {
+                self.cycles(1);
+                self.reg_y = self.inc(self.reg_y);
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
+            (0xab, 0) => {
+                coroutine.dp = u16::from(self.read_pc());
+                coroutine.rd = u16::from(self.read_dp(coroutine.dp as u8));
+                coroutine.rd = u16::from(self.inc(coroutine.rd as u8));
+                self.write_dp(coroutine.dp as u8, coroutine.rd as u8);
+                *coroutine = SmpCoroutineState::enabled();
+                Ok(SmpMicroStepResult::InstructionComplete { opcode })
+            }
+            (0x1f, 0) => {
+                coroutine.dp = u16::from(self.read_pc());
+                coroutine.dp |= u16::from(self.read_pc()) << 8;
+                self.cycles(1);
+                coroutine.dp = coroutine.dp.wrapping_add(u16::from(self.reg_x));
+                coroutine.rd = u16::from(self.read(coroutine.dp));
+                coroutine.rd |= u16::from(self.read(coroutine.dp.wrapping_add(1))) << 8;
+                self.reg_pc = coroutine.rd;
                 *coroutine = SmpCoroutineState::enabled();
                 Ok(SmpMicroStepResult::InstructionComplete { opcode })
             }

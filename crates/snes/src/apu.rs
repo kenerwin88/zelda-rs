@@ -3258,6 +3258,161 @@ mod tests {
     }
 
     #[test]
+    fn resumable_ipl_uploads_zelda_driver_prefix_and_hands_off_to_0800() {
+        // Actual Zelda ROM bytes at $99:8000, the start of the $0800 SPC
+        // driver upload. Zero-filling the rest of its first transfer page keeps
+        // the source bytes while deterministically exercising IPL page carry.
+        const ZELDA_DRIVER_PREFIX: [u8; 4] = [0x20, 0xcd, 0xcf, 0xbd];
+        let mut upload_page = [0; 0x100];
+        upload_page[..ZELDA_DRIVER_PREFIX.len()].copy_from_slice(&ZELDA_DRIVER_PREFIX);
+
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        apu.write_snes_port(0, 0xcc);
+        apu.write_snes_port(1, 1);
+        apu.write_snes_port(2, 0x00);
+        apu.write_snes_port(3, 0x08);
+
+        let mut seen_opcodes = std::collections::BTreeSet::new();
+        for _ in 0..5_000 {
+            if apu.smp_coroutine.is_idle() {
+                seen_opcodes.insert(apu.cpu_read(apu.spc.pc));
+            }
+            apu.run_snes9x_micro_step_without_dsp().unwrap();
+            if apu.out_ports[0] == 0xcc && apu.spc.pc == 0xfff7 {
+                break;
+            }
+        }
+        assert_eq!(apu.out_ports[..2], [0xcc, 0xbb]);
+
+        apu.write_snes_port(0, 0);
+        apu.write_snes_port(1, upload_page[0]);
+        let mut previous_ack = 0xcc;
+        let mut terminal_sent = false;
+        let mut active_instruction = None;
+        let mut post_cc_shapes = std::collections::BTreeSet::new();
+        for _ in 0..20_000 {
+            if apu.smp_coroutine.is_idle() {
+                let opcode = apu.cpu_read(apu.spc.pc);
+                seen_opcodes.insert(opcode);
+                active_instruction = Some((opcode, apu.cycles, 0u8, 0u8));
+            }
+            let result = apu.run_snes9x_micro_step_without_dsp().unwrap();
+            let active = active_instruction.as_mut().unwrap();
+            active.2 += 1;
+            if let SmpMicroStepResult::InProgress { opcode_cycle, .. } = result {
+                active.3 = active.3.max(opcode_cycle);
+            }
+            if matches!(result, SmpMicroStepResult::InstructionComplete { .. }) {
+                let (opcode, start_cycle, calls, max_opcode_cycle) =
+                    active_instruction.take().unwrap();
+                post_cc_shapes.insert((opcode, apu.cycles - start_cycle, calls, max_opcode_cycle));
+            }
+
+            let ack = apu.out_ports[0];
+            if ack != previous_ack {
+                previous_ack = ack;
+                let byte_index = usize::from(ack);
+                if !terminal_sent && byte_index < upload_page.len() {
+                    if byte_index + 1 < upload_page.len() {
+                        apu.write_snes_port(1, upload_page[byte_index + 1]);
+                        apu.write_snes_port(0, ack.wrapping_add(1));
+                    } else {
+                        // Skip one counter value to end the block, provide the
+                        // terminal entry address, and set port1=0 so IPL exits.
+                        apu.write_snes_port(0, ack.wrapping_add(2));
+                        apu.write_snes_port(1, 0);
+                        apu.write_snes_port(2, 0x00);
+                        apu.write_snes_port(3, 0x08);
+                        terminal_sent = true;
+                    }
+                }
+            }
+            if apu.spc.pc == 0x0800 {
+                break;
+            }
+        }
+
+        assert_eq!(&apu.ram[0x0800..0x0900], &upload_page);
+        assert_eq!(apu.spc.pc, 0x0800);
+        for opcode in [
+            0xdd, 0x5d, 0xeb, 0x7e, 0xe4, 0xcb, 0xd7, 0xfc, 0xab, 0x10, 0x1f,
+        ] {
+            assert!(
+                seen_opcodes.contains(&opcode),
+                "IPL did not execute ${opcode:02x}"
+            );
+        }
+        for shape in [
+            (0xdd, 2, 1, 0),
+            (0x5d, 2, 1, 0),
+            (0xeb, 3, 2, 1),
+            (0x7e, 3, 2, 1),
+            (0xe4, 3, 2, 1),
+            (0xcb, 4, 3, 2),
+            (0xd7, 7, 5, 4),
+            (0xfc, 2, 1, 0),
+            (0xab, 4, 1, 0),
+            (0x10, 2, 1, 0),
+            (0x10, 4, 1, 0),
+            (0x1f, 6, 1, 0),
+        ] {
+            assert!(
+                post_cc_shapes.contains(&shape),
+                "IPL did not execute source pseudo-step shape {shape:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn d7_indirect_upload_write_restores_mid_pseudo_case_scratch() {
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        apu.spc.pc = 0xffe2;
+        apu.spc.a = 0x5a;
+        apu.spc.y = 3;
+        apu.ram[0] = 0x00;
+        apu.ram[1] = 0x08;
+
+        for expected_cycle in [1, 2, 3] {
+            assert_eq!(
+                apu.run_snes9x_micro_step_without_dsp().unwrap(),
+                SmpMicroStepResult::InProgress {
+                    opcode: 0xd7,
+                    opcode_cycle: expected_cycle,
+                }
+            );
+        }
+        assert_eq!(apu.cycles, 5);
+
+        let checkpoint = apu.capture_snes9x_coroutine_checkpoint().unwrap();
+        let checkpoint: Snes9xSmpCoroutineCheckpoint =
+            serde_json::from_slice(&serde_json::to_vec(&checkpoint).unwrap()).unwrap();
+        let mut restored: ApuState =
+            serde_json::from_slice(&serde_json::to_vec(&apu).unwrap()).unwrap();
+        restored.restore_snes9x_coroutine_checkpoint(checkpoint);
+
+        for resumed in [&mut apu, &mut restored] {
+            assert_eq!(
+                resumed.run_snes9x_micro_step_without_dsp().unwrap(),
+                SmpMicroStepResult::InProgress {
+                    opcode: 0xd7,
+                    opcode_cycle: 4,
+                }
+            );
+            assert_eq!(resumed.cycles, 6);
+            assert_eq!(resumed.ram[0x0803], 0);
+            assert_eq!(
+                resumed.run_snes9x_micro_step_without_dsp().unwrap(),
+                SmpMicroStepResult::InstructionComplete { opcode: 0xd7 }
+            );
+            assert_eq!(resumed.cycles, 7);
+            assert_eq!(resumed.spc.pc, 0xffe4);
+            assert_eq!(resumed.ram[0x0803], 0x5a);
+        }
+    }
+
+    #[test]
     fn unsupported_resumable_opcode_does_not_advance_or_fetch() {
         let mut apu = ApuState::new();
         apu.reset_snes9x_coroutine();
