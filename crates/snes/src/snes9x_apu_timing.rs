@@ -4,14 +4,17 @@
 //! execution keeps its existing APU behavior unless a caller explicitly owns
 //! this timing shadow.
 
-use crate::apu::{ApuState, Snes9xSmpCoroutineCheckpoint, UnsupportedSmpMicroStep};
+use crate::apu::{
+    ApuState, Snes9xApuCoroutineCheckpoint, Snes9xApuCoroutineCheckpointError,
+    Snes9xDspSampleReceipt, UnsupportedSmpMicroStep,
+};
 use crate::snes9x_apu_clock::{Snes9xApuClockCheckpoint, Snes9xApuClockError, Snes9xApuClockState};
 
 /// Serializable timing sidecars for a separately serialized APU machine.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Snes9xApuTimingCheckpoint {
     pub clock: Snes9xApuClockCheckpoint,
-    pub coroutine: Snes9xSmpCoroutineCheckpoint,
+    pub coroutine: Snes9xApuCoroutineCheckpoint,
 }
 
 /// Opt-in APU timing owner following pinned Snes9x 1.63 synchronization.
@@ -47,7 +50,7 @@ impl Snes9xApuTiming {
         mut apu: ApuState,
         checkpoint: Snes9xApuTimingCheckpoint,
     ) -> Result<Self, Snes9xApuTimingError> {
-        apu.restore_snes9x_coroutine_checkpoint(checkpoint.coroutine);
+        apu.restore_snes9x_apu_coroutine_checkpoint(checkpoint.coroutine)?;
         Ok(Self {
             apu,
             clock: Snes9xApuClockState::from_checkpoint(checkpoint.clock)?,
@@ -59,9 +62,15 @@ impl Snes9xApuTiming {
             clock: self.clock.checkpoint(),
             coroutine: self
                 .apu
-                .capture_snes9x_coroutine_checkpoint()
+                .capture_snes9x_apu_coroutine_checkpoint()
                 .expect("Snes9x APU timing owner always enables its coroutine"),
         }
+    }
+
+    /// Atomically clone the stable machine and its identity-bound exact timing
+    /// sidecar from one immutable owner snapshot.
+    pub fn machine_and_checkpoint(&self) -> (ApuState, Snes9xApuTimingCheckpoint) {
+        (self.apu.clone(), self.checkpoint())
     }
 
     pub const fn apu(&self) -> &ApuState {
@@ -70,6 +79,11 @@ impl Snes9xApuTiming {
 
     pub const fn clock(&self) -> &Snes9xApuClockState {
         &self.clock
+    }
+
+    /// Transfer samples emitted by exact DSP synchronizations exactly once.
+    pub fn take_dsp_samples(&mut self) -> Snes9xDspSampleReceipt {
+        self.apu.take_snes9x_dsp_samples()
     }
 
     /// Bring the SMP forward to an absolute CPU master-clock timestamp.
@@ -129,12 +143,14 @@ impl Snes9xApuTiming {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Snes9xApuTimingError {
     #[error(transparent)]
     Clock(#[from] Snes9xApuClockError),
     #[error(transparent)]
     UnsupportedSmpOpcode(UnsupportedSmpMicroStep),
+    #[error(transparent)]
+    CoroutineCheckpoint(#[from] Snes9xApuCoroutineCheckpointError),
 }
 
 #[cfg(test)]
@@ -252,11 +268,13 @@ mod tests {
         let mut timing = Snes9xApuTiming::new();
         // Fixture T=v36:H1126 suspends the first $8f after pseudo-case 1.
         timing.sync_to(36 * 1_364 + 1_126).unwrap();
-        let checkpoint = timing.checkpoint();
-        let coroutine_json = serde_json::to_value(checkpoint.coroutine).unwrap();
-        assert_eq!(coroutine_json["opcode"], 0x8f);
-        assert_eq!(coroutine_json["opcode_cycle"], 1);
-        let machine_json = serde_json::to_vec(timing.apu()).unwrap();
+        timing.apu.dsp_adr = 0x7c;
+        let _ = timing.apu.cpu_read(0xf3);
+        let (machine, checkpoint) = timing.machine_and_checkpoint();
+        let coroutine_json = serde_json::to_value(&checkpoint.coroutine).unwrap();
+        assert_eq!(coroutine_json["smp"]["opcode"], 0x8f);
+        assert_eq!(coroutine_json["smp"]["opcode_cycle"], 1);
+        let machine_json = serde_json::to_vec(&machine).unwrap();
         let checkpoint_json = serde_json::to_vec(&checkpoint).unwrap();
 
         let machine: ApuState = serde_json::from_slice(&machine_json).unwrap();
@@ -272,5 +290,6 @@ mod tests {
         assert_eq!(restored.apu().ram, timing.apu().ram);
         assert_eq!(restored.apu().out_ports, timing.apu().out_ports);
         assert_eq!(restored.clock().checkpoint(), timing.clock().checkpoint());
+        assert_eq!(restored.take_dsp_samples(), timing.take_dsp_samples());
     }
 }

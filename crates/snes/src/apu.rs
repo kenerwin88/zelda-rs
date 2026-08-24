@@ -3,7 +3,11 @@
 
 use crate::cycle_spc700::{Smp, SmpBus, SmpCoroutineState, SmpState};
 pub use crate::cycle_spc700::{
-    SmpMicroStepResult, Snes9xSmpCoroutineCheckpoint, UnsupportedSmpMicroStep,
+    SmpMicroStepResult, Snes9xSmpCoroutineCheckpoint, Snes9xSmpCoroutineCheckpointError,
+    UnsupportedSmpMicroStep,
+};
+use crate::snes9x_dsp_phase::{
+    Snes9xDspCheckpointError, Snes9xDspPhaseMachine, Snes9xDspPhaseState,
 };
 
 const BOOT_ROM: [u8; 0x40] = [
@@ -1132,6 +1136,71 @@ struct SpcBusTraceEvent {
     clock_after: u32,
 }
 
+/// Samples produced while an opt-in Snes9x DSP synchronization drains its
+/// pending clocks. Taking a receipt transfers publication ownership: a second
+/// take cannot return the same sample again.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Snes9xDspSampleReceipt {
+    pub samples: Vec<[i16; 2]>,
+}
+
+#[derive(Clone, Debug)]
+struct Snes9xDspSidecar {
+    machine: Snes9xDspPhaseMachine,
+    pending_clocks: i32,
+    unpublished_samples: Vec<[i16; 2]>,
+}
+
+impl Snes9xDspSidecar {
+    fn power_on() -> Self {
+        Self {
+            machine: Snes9xDspPhaseMachine::power_on(),
+            pending_clocks: 0,
+            unpublished_samples: Vec::new(),
+        }
+    }
+}
+
+/// Versioned opt-in continuation for the source-exact SMP/DSP path.
+///
+/// `ApuState` remains the stable legacy machine serialization. This sidecar
+/// carries the Snes9x coroutine, exact DSP pipeline, its shared RAM image, and
+/// samples not yet transferred to an audio sink.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Snes9xApuCoroutineCheckpoint {
+    version: u8,
+    smp: Snes9xSmpCoroutineCheckpoint,
+    dsp: Snes9xDspPhaseState,
+    shared_apu_ram: Vec<u8>,
+    machine_identity: Vec<u8>,
+    scheduled_input_port_writes: Vec<(u32, u8, u8)>,
+    unpublished_samples: Vec<[i16; 2]>,
+}
+
+impl Snes9xApuCoroutineCheckpoint {
+    pub const fn pending_dsp_clocks(&self) -> i32 {
+        self.smp.dsp_clock
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum Snes9xApuCoroutineCheckpointError {
+    #[error("unsupported Snes9x APU coroutine checkpoint version {version}")]
+    Version { version: u8 },
+    #[error("Snes9x APU coroutine checkpoint RAM has length {actual}, expected 65536")]
+    SharedApuRamLength { actual: usize },
+    #[error("Snes9x DSP clock debt {clocks} is negative")]
+    NegativeDspClock { clocks: i32 },
+    #[error("Snes9x APU sidecar does not belong to this serialized APU machine")]
+    MachineIdentityMismatch,
+    #[error("bootstrap-only SMP checkpoint cannot capture or replace progressed DSP state")]
+    BootstrapCheckpointAfterDspSync,
+    #[error(transparent)]
+    Smp(#[from] Snes9xSmpCoroutineCheckpointError),
+    #[error(transparent)]
+    Dsp(#[from] Snes9xDspCheckpointError),
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ApuState {
     pub ram: Vec<u8>,
@@ -1147,7 +1216,7 @@ pub struct ApuState {
     #[serde(skip)]
     smp_coroutine: SmpCoroutineState,
     #[serde(skip)]
-    snes9x_dsp_clock: i32,
+    snes9x_dsp: Option<Snes9xDspSidecar>,
     pub cpu_cycles_left: u8,
     pub dsp_write_history: Vec<(u8, u8)>,
     #[serde(skip)]
@@ -1174,7 +1243,7 @@ impl Default for ApuState {
             timer: [ApuTimer::default(); 3],
             spc: SpcState::default(),
             smp_coroutine: SmpCoroutineState::default(),
-            snes9x_dsp_clock: 0,
+            snes9x_dsp: None,
             cpu_cycles_left: 7,
             dsp_write_history: Vec::new(),
             debug_dsp_write_trace: None,
@@ -1202,7 +1271,7 @@ impl ApuState {
         self.out_ports = [0; 4];
         self.timer = [ApuTimer::default(); 3];
         self.smp_coroutine = SmpCoroutineState::default();
-        self.snes9x_dsp_clock = 0;
+        self.snes9x_dsp = None;
         self.cpu_cycles_left = 7;
         self.dsp_write_history.clear();
         if let Some(trace) = self.debug_dsp_write_trace.as_mut() {
@@ -1225,25 +1294,157 @@ impl ApuState {
         self.spc.z = true;
         self.cpu_cycles_left = 0;
         self.smp_coroutine = SmpCoroutineState::enabled();
+        self.snes9x_dsp = Some(Snes9xDspSidecar::power_on());
     }
 
     /// Capture the opt-in SMP continuation as a timing sidecar, separate from
     /// the stable `ApuState`/`Snes` machine serialization layout.
-    pub fn capture_snes9x_coroutine_checkpoint(&self) -> Option<Snes9xSmpCoroutineCheckpoint> {
+    pub(crate) fn capture_snes9x_coroutine_checkpoint(
+        &self,
+    ) -> Option<Snes9xSmpCoroutineCheckpoint> {
+        if self.snes9x_dsp.as_ref().is_some_and(|sidecar| {
+            sidecar.machine != Snes9xDspPhaseMachine::power_on()
+                || !sidecar.unpublished_samples.is_empty()
+        }) {
+            return None;
+        }
         self.smp_coroutine.checkpoint().map(|mut checkpoint| {
-            checkpoint.dsp_clock = self.snes9x_dsp_clock;
+            checkpoint.dsp_clock = self
+                .snes9x_dsp
+                .as_ref()
+                .map_or(0, |sidecar| sidecar.pending_clocks);
             checkpoint
         })
     }
 
-    /// Restore a timing-sidecar continuation onto its matching APU machine
-    /// state after cloning or deserializing that machine state.
-    pub fn restore_snes9x_coroutine_checkpoint(
+    /// Restore the legacy bootstrap-only SMP continuation. This is exact only
+    /// before the first DSP synchronization; post-DSP persistence must use
+    /// `restore_snes9x_apu_coroutine_checkpoint`.
+    pub(crate) fn restore_snes9x_coroutine_checkpoint(
         &mut self,
         checkpoint: Snes9xSmpCoroutineCheckpoint,
-    ) {
-        self.snes9x_dsp_clock = checkpoint.dsp_clock;
-        self.smp_coroutine = SmpCoroutineState::restore(checkpoint);
+    ) -> Result<(), Snes9xApuCoroutineCheckpointError> {
+        SmpCoroutineState::validate_checkpoint(&checkpoint)?;
+        if checkpoint.dsp_clock < 0 {
+            return Err(Snes9xApuCoroutineCheckpointError::NegativeDspClock {
+                clocks: checkpoint.dsp_clock,
+            });
+        }
+        if self.snes9x_dsp.as_ref().is_some_and(|sidecar| {
+            sidecar.machine != Snes9xDspPhaseMachine::power_on()
+                || !sidecar.unpublished_samples.is_empty()
+        }) {
+            return Err(Snes9xApuCoroutineCheckpointError::BootstrapCheckpointAfterDspSync);
+        }
+        let sidecar = self
+            .snes9x_dsp
+            .get_or_insert_with(Snes9xDspSidecar::power_on);
+        sidecar.pending_clocks = checkpoint.dsp_clock;
+        self.smp_coroutine =
+            SmpCoroutineState::restore(checkpoint).expect("SMP checkpoint was validated");
+        Ok(())
+    }
+
+    /// Capture the complete source-exact sidecar together with the sole shared
+    /// APU RAM image. Unlike the legacy coroutine checkpoint, this can resume
+    /// after the DSP pipeline has already synchronized.
+    pub fn capture_snes9x_apu_coroutine_checkpoint(&self) -> Option<Snes9xApuCoroutineCheckpoint> {
+        let sidecar = self.snes9x_dsp.as_ref()?;
+        let mut smp = self.smp_coroutine.checkpoint()?;
+        smp.dsp_clock = sidecar.pending_clocks;
+        Some(Snes9xApuCoroutineCheckpoint {
+            version: 1,
+            smp,
+            dsp: sidecar.machine.checkpoint(),
+            shared_apu_ram: self.ram.clone(),
+            machine_identity: self.snes9x_machine_identity(),
+            scheduled_input_port_writes: self.scheduled_input_port_writes.clone(),
+            unpublished_samples: sidecar.unpublished_samples.clone(),
+        })
+    }
+
+    /// Restore a complete source-exact continuation without changing the
+    /// legacy `ApuState` serialization layout.
+    pub fn restore_snes9x_apu_coroutine_checkpoint(
+        &mut self,
+        checkpoint: Snes9xApuCoroutineCheckpoint,
+    ) -> Result<(), Snes9xApuCoroutineCheckpointError> {
+        SmpCoroutineState::validate_checkpoint(&checkpoint.smp)?;
+        if checkpoint.version != 1 {
+            return Err(Snes9xApuCoroutineCheckpointError::Version {
+                version: checkpoint.version,
+            });
+        }
+        if checkpoint.shared_apu_ram.len() != 0x10000 {
+            return Err(Snes9xApuCoroutineCheckpointError::SharedApuRamLength {
+                actual: checkpoint.shared_apu_ram.len(),
+            });
+        }
+        if checkpoint.smp.dsp_clock < 0 {
+            return Err(Snes9xApuCoroutineCheckpointError::NegativeDspClock {
+                clocks: checkpoint.smp.dsp_clock,
+            });
+        }
+        if self.ram != checkpoint.shared_apu_ram
+            || self.snes9x_machine_identity() != checkpoint.machine_identity
+        {
+            return Err(Snes9xApuCoroutineCheckpointError::MachineIdentityMismatch);
+        }
+        let machine = Snes9xDspPhaseMachine::from_checkpoint(checkpoint.dsp)?;
+        let coroutine =
+            SmpCoroutineState::restore(checkpoint.smp).expect("SMP checkpoint was validated");
+        self.ram = checkpoint.shared_apu_ram;
+        self.scheduled_input_port_writes = checkpoint.scheduled_input_port_writes;
+        self.smp_coroutine = coroutine;
+        self.snes9x_dsp = Some(Snes9xDspSidecar {
+            machine,
+            pending_clocks: checkpoint.smp.dsp_clock,
+            unpublished_samples: checkpoint.unpublished_samples,
+        });
+        Ok(())
+    }
+
+    fn snes9x_machine_identity(&self) -> Vec<u8> {
+        let mut identity = Vec::with_capacity(64);
+        identity.extend_from_slice(&self.out_ports);
+        identity.extend_from_slice(&self.in_ports);
+        identity.push(self.rom_readable as u8);
+        identity.push(self.dsp_adr);
+        identity.extend_from_slice(&self.cycles.to_le_bytes());
+        for timer in self.timer {
+            identity.extend_from_slice(&[
+                timer.cycles,
+                timer.divider,
+                timer.target,
+                timer.counter,
+                timer.enabled as u8,
+            ]);
+        }
+        identity.extend_from_slice(&[self.spc.a, self.spc.x, self.spc.y, self.spc.sp]);
+        identity.extend_from_slice(&self.spc.pc.to_le_bytes());
+        identity.extend_from_slice(&[
+            self.spc.c as u8,
+            self.spc.z as u8,
+            self.spc.v as u8,
+            self.spc.n as u8,
+            self.spc.i as u8,
+            self.spc.h as u8,
+            self.spc.p as u8,
+            self.spc.b as u8,
+            self.spc.stopped as u8,
+            self.spc.cycles_used,
+            self.cpu_cycles_left,
+        ]);
+        identity
+    }
+
+    /// Transfer every sample emitted by prior exact DSP synchronizations.
+    pub fn take_snes9x_dsp_samples(&mut self) -> Snes9xDspSampleReceipt {
+        Snes9xDspSampleReceipt {
+            samples: self.snes9x_dsp.as_mut().map_or_else(Vec::new, |sidecar| {
+                std::mem::take(&mut sidecar.unpublished_samples)
+            }),
+        }
     }
 
     /// Import the instruction-boundary SMP portion of a Snes9x 1.63 `SND`
@@ -1293,6 +1494,7 @@ impl ApuState {
         self.spc.stopped = false;
         self.spc.cycles_used = 0;
         self.smp_coroutine = SmpCoroutineState::default();
+        self.snes9x_dsp = None;
         self.rom_readable = next(&mut cursor) != 0;
         self.dsp_adr = next(&mut cursor) as u8;
         self.in_ports[4] = next(&mut cursor) as u8;
@@ -1389,6 +1591,7 @@ impl ApuState {
         // The C save format is instruction-boundary state and has no retained
         // Snes9x `op_step` continuation.
         self.smp_coroutine = SmpCoroutineState::default();
+        self.snes9x_dsp = None;
         Ok(())
     }
 
@@ -1408,6 +1611,10 @@ impl ApuState {
     /// individual bus or internal cycle. Unlike `cycle_without_dsp`, opcode
     /// effects occur at their hardware-visible cycle within the instruction.
     pub fn run_cycle_sequenced_instruction_without_dsp(&mut self) -> u8 {
+        assert!(
+            self.snes9x_dsp.is_none(),
+            "legacy complete-instruction execution cannot run while the exact Snes9x sidecar is enabled"
+        );
         assert!(
             self.smp_coroutine.is_idle(),
             "cannot run an atomic SPC instruction while a resumable instruction is in progress"
@@ -1560,6 +1767,10 @@ impl ApuState {
 
     fn cycle_inner(&mut self, render_dsp: bool) {
         assert!(
+            self.snes9x_dsp.is_none(),
+            "legacy APU cycle execution cannot run while the exact Snes9x sidecar owns DSP timing"
+        );
+        assert!(
             self.smp_coroutine.is_idle(),
             "cannot use the atomic SPC cycle path while a resumable instruction is in progress"
         );
@@ -1600,7 +1811,9 @@ impl ApuState {
         }
 
         self.cycles = self.cycles.wrapping_add(1);
-        self.snes9x_dsp_clock = self.snes9x_dsp_clock.wrapping_add(1);
+        if let Some(sidecar) = self.snes9x_dsp.as_mut() {
+            sidecar.pending_clocks = sidecar.pending_clocks.wrapping_add(1);
+        }
     }
 
     fn spc_reset(&mut self) {
@@ -2897,13 +3110,43 @@ impl ApuState {
         self.in_ports[(port & 3) as usize] = val;
     }
 
+    /// Pinned Snes9x `DSP::synchronize()`: drain every pending DSP clock
+    /// against this APU's sole RAM image and retain phase-27 samples until a
+    /// caller explicitly takes their publication receipt.
+    pub(crate) fn synchronize_snes9x_dsp(&mut self) {
+        let Some(sidecar) = self.snes9x_dsp.as_mut() else {
+            return;
+        };
+        let clocks = sidecar.pending_clocks;
+        assert!(clocks >= 0, "Snes9x DSP clock debt must not be negative");
+        let ram: &mut [u8; 0x10000] = self
+            .ram
+            .as_mut_slice()
+            .try_into()
+            .expect("APU RAM must remain exactly 64 KiB");
+        sidecar.pending_clocks = 0;
+        for _ in 0..clocks {
+            if let Some(sample) = sidecar.machine.run_clock(ram) {
+                sidecar.unpublished_samples.push(sample);
+            }
+        }
+    }
+
     pub fn cpu_read(&mut self, adr: u16) -> u8 {
         match adr {
             0xf0 | 0xf1 | 0xfa | 0xfb | 0xfc => 0,
             0xf2 => self.dsp_adr,
             0xf3 => {
-                self.snes9x_dsp_clock = 0;
-                self.dsp.read(self.dsp_adr & 0x7f)
+                if self.snes9x_dsp.is_some() {
+                    self.synchronize_snes9x_dsp();
+                    self.snes9x_dsp
+                        .as_ref()
+                        .expect("checked exact DSP sidecar")
+                        .machine
+                        .read_register(self.dsp_adr & 0x7f)
+                } else {
+                    self.dsp.read(self.dsp_adr & 0x7f)
+                }
             }
             0xf4..=0xf9 => self.in_ports[(adr - 0xf4) as usize],
             0xfd..=0xff => {
@@ -2940,14 +3183,24 @@ impl ApuState {
             }
             0xf2 => self.dsp_adr = val,
             0xf3 => {
-                self.snes9x_dsp_clock = 0;
                 if self.dsp_write_history.len() < 256 {
                     self.dsp_write_history.push((self.dsp_adr, val));
                 }
                 if let Some(trace) = self.debug_dsp_write_trace.as_mut() {
                     trace.push((self.cycles, self.dsp_adr, val));
                 }
-                if self.dsp_adr < 0x80 {
+                if self.snes9x_dsp.is_some() {
+                    // `SMP::mmio_write($f3)` rejects high-bit addresses before
+                    // `DSP::write`, so blocked writes retain pending clocks.
+                    if self.dsp_adr < 0x80 {
+                        self.synchronize_snes9x_dsp();
+                        self.snes9x_dsp
+                            .as_mut()
+                            .expect("checked exact DSP sidecar")
+                            .machine
+                            .write_register(self.dsp_adr, val);
+                    }
+                } else if self.dsp_adr < 0x80 {
                     self.dsp.write(self.dsp_adr, val, &self.ram);
                     self.dsp_regs[self.dsp_adr as usize] = self.dsp.read(self.dsp_adr);
                 }
@@ -3053,12 +3306,12 @@ mod tests {
     }
 
     fn advance_ipl_to_first_output_store(apu: &mut ApuState) {
-        for _ in 0..1_000 {
-            if apu.spc.pc == 0xffc9 {
+        for _ in 0..10_000 {
+            if apu.spc.pc == 0xffc9 && apu.smp_coroutine.is_idle() {
                 assert_eq!(apu.cycles, 2_394);
                 return;
             }
-            apu.run_cycle_sequenced_instruction_without_dsp();
+            apu.run_snes9x_micro_step_without_dsp().unwrap();
         }
         panic!(
             "IPL did not reach its first MOV dp,#imm at cycle {}, PC ${:04x}",
@@ -3075,14 +3328,12 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires full 32-phase Snes9x DSP sidecar"]
     fn canonical_snes9x_apu_mmio_ledger_matches_exactly() {
         let (_, ledger) = opcode_ledger();
         let state_rows = expand_ledger_sequence(&ledger["state_sequence"]);
         let dsp_rows = expand_ledger_sequence(&ledger["dsp_state_sequence"]);
         let bus_rows = expand_ledger_sequence(&ledger["bus_event_sequence"]);
         let ram_diff_rows = expand_ledger_sequence(&ledger["ram_diff_sequence"]);
-        let dsp_diff_rows = expand_ledger_sequence(&ledger["dsp_diff_sequence"]);
         let cases = ledger["cases"].as_array().unwrap();
         let mut state_index = cases[..292]
             .iter()
@@ -3093,11 +3344,8 @@ mod tests {
             let case_id = case["id"].as_i64().unwrap();
             let opcode = case["opcode"].as_u64().unwrap() as u8;
             let expected_stages = case["expected_stages"].as_u64().unwrap() as usize;
-            let expected = &state_rows[state_index];
+            let expected = &state_rows[state_index..state_index + expected_stages];
             state_index += expected_stages;
-            if expected_stages != 1 {
-                continue;
-            }
 
             let seed = case["seed"]
                 .as_array()
@@ -3138,7 +3386,11 @@ mod tests {
             apu.in_ports[4] = seed[8] as u8;
             apu.in_ports[5] = seed[9] as u8;
             apu.cycles = seed[10] as u32;
-            apu.snes9x_dsp_clock = seed[11] as i32;
+            apu.snes9x_dsp = Some(Snes9xDspSidecar {
+                machine: Snes9xDspPhaseMachine::power_on(),
+                pending_clocks: seed[11] as i32,
+                unpublished_samples: Vec::new(),
+            });
             for timer in 0..3 {
                 let field = 12 + timer * 5;
                 let frequency = if timer == 2 { 16 } else { 128 };
@@ -3171,142 +3423,149 @@ mod tests {
             };
             apu.debug_spc_bus_trace = Some(Vec::new());
 
-            let state = apu.cycle_sequenced_smp_state();
-            let mut coroutine = std::mem::take(&mut apu.smp_coroutine);
-            let (state, actual_psw, result) = {
-                let mut smp = Smp::new(&mut apu, state);
-                let fetched = smp.read_pc();
-                assert_eq!(fetched, opcode, "case {case_id}");
-                coroutine.opcode = Some(opcode);
-                let result = smp.run_resumable_micro_step(&mut coroutine).unwrap();
-                (smp.state(), smp.get_psw(), result)
-            };
-            apu.smp_coroutine = coroutine;
-            apu.apply_cycle_sequenced_smp_state(state);
-            assert_eq!(
-                result,
-                SmpMicroStepResult::InstructionComplete { opcode },
-                "case {case_id} ${opcode:02x}"
-            );
-            let actual = vec![
-                i64::from(apu.spc.pc),
-                i64::from(apu.spc.a),
-                i64::from(apu.spc.x),
-                i64::from(apu.spc.y),
-                i64::from(apu.spc.sp),
-                i64::from(actual_psw),
-                i64::from(opcode),
-                0,
-                i64::from(apu.smp_coroutine.rd),
-                i64::from(apu.smp_coroutine.wr),
-                i64::from(apu.smp_coroutine.dp),
-                i64::from(apu.smp_coroutine.sp),
-                i64::from(apu.smp_coroutine.ya),
-                i64::from(apu.smp_coroutine.bit),
-                i64::from(apu.cycles),
-                i64::from(apu.snes9x_dsp_clock),
-                i64::from(apu.rom_readable),
-                i64::from(apu.dsp_adr),
-                i64::from(apu.in_ports[4]),
-                i64::from(apu.in_ports[5]),
-                i64::from(apu.timer[0].enabled),
-                i64::from(apu.timer[0].target),
-                i64::from(snes9x_timer_stage1(apu.timer[0], 128)),
-                i64::from(apu.timer[0].divider),
-                i64::from(apu.timer[0].counter),
-                i64::from(apu.timer[1].enabled),
-                i64::from(apu.timer[1].target),
-                i64::from(snes9x_timer_stage1(apu.timer[1], 128)),
-                i64::from(apu.timer[1].divider),
-                i64::from(apu.timer[1].counter),
-                i64::from(apu.timer[2].enabled),
-                i64::from(apu.timer[2].target),
-                i64::from(snes9x_timer_stage1(apu.timer[2], 16)),
-                i64::from(apu.timer[2].divider),
-                i64::from(apu.timer[2].counter),
-                i64::from(apu.in_ports[0]),
-                i64::from(apu.in_ports[1]),
-                i64::from(apu.in_ports[2]),
-                i64::from(apu.in_ports[3]),
-                i64::from(apu.ram[0xf4]),
-                i64::from(apu.ram[0xf5]),
-                i64::from(apu.ram[0xf6]),
-                i64::from(apu.ram[0xf7]),
-                1,
-                0,
-            ];
-            assert_eq!(
-                actual,
-                expected[3..48],
-                "APU state mismatch in case {case_id} ${opcode:02x} {}",
-                case["variant"].as_str().unwrap()
-            );
+            for stage in 0..expected_stages {
+                apu.debug_spc_bus_trace.as_mut().unwrap().clear();
+                let state = apu.cycle_sequenced_smp_state();
+                let mut coroutine = std::mem::take(&mut apu.smp_coroutine);
+                let (state, actual_psw, result) = {
+                    let mut smp = Smp::new(&mut apu, state);
+                    if stage == 0 {
+                        let fetched = smp.read_pc();
+                        assert_eq!(fetched, opcode, "case {case_id}");
+                        coroutine.opcode = Some(opcode);
+                    }
+                    let result = smp.run_resumable_micro_step(&mut coroutine).unwrap();
+                    (smp.state(), smp.get_psw(), result)
+                };
+                apu.smp_coroutine = coroutine;
+                apu.apply_cycle_sequenced_smp_state(state);
+                let expected_result = if stage + 1 == expected_stages {
+                    SmpMicroStepResult::InstructionComplete { opcode }
+                } else {
+                    SmpMicroStepResult::InProgress {
+                        opcode,
+                        opcode_cycle: (stage + 1) as u8,
+                    }
+                };
+                assert_eq!(result, expected_result, "case {case_id} stage {stage}");
 
-            let expected_bus = bus_rows
-                .iter()
-                .filter(|row| row[0] == case_id && row[1] == 0)
-                .map(|row| row[2..8].to_vec())
-                .collect::<Vec<_>>();
-            let actual_bus = apu
-                .debug_spc_bus_trace
-                .as_ref()
-                .unwrap()
-                .iter()
-                .map(|event| {
-                    vec![
-                        i64::from(event.kind),
-                        i64::from(event.address),
-                        i64::from(event.value),
-                        i64::from(event.clocks),
-                        i64::from(event.clock_before),
-                        i64::from(event.clock_after),
-                    ]
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(
-                actual_bus, expected_bus,
-                "APU bus mismatch in case {case_id} ${opcode:02x}"
-            );
+                let sidecar = apu.snes9x_dsp.as_ref().unwrap();
+                let actual = vec![
+                    i64::from(apu.spc.pc),
+                    i64::from(apu.spc.a),
+                    i64::from(apu.spc.x),
+                    i64::from(apu.spc.y),
+                    i64::from(apu.spc.sp),
+                    i64::from(actual_psw),
+                    i64::from(opcode),
+                    if stage + 1 == expected_stages {
+                        0
+                    } else {
+                        (stage + 1) as i64
+                    },
+                    i64::from(apu.smp_coroutine.rd),
+                    i64::from(apu.smp_coroutine.wr),
+                    i64::from(apu.smp_coroutine.dp),
+                    i64::from(apu.smp_coroutine.sp),
+                    i64::from(apu.smp_coroutine.ya),
+                    i64::from(apu.smp_coroutine.bit),
+                    i64::from(apu.cycles),
+                    i64::from(sidecar.pending_clocks),
+                    i64::from(apu.rom_readable),
+                    i64::from(apu.dsp_adr),
+                    i64::from(apu.in_ports[4]),
+                    i64::from(apu.in_ports[5]),
+                    i64::from(apu.timer[0].enabled),
+                    i64::from(apu.timer[0].target),
+                    i64::from(snes9x_timer_stage1(apu.timer[0], 128)),
+                    i64::from(apu.timer[0].divider),
+                    i64::from(apu.timer[0].counter),
+                    i64::from(apu.timer[1].enabled),
+                    i64::from(apu.timer[1].target),
+                    i64::from(snes9x_timer_stage1(apu.timer[1], 128)),
+                    i64::from(apu.timer[1].divider),
+                    i64::from(apu.timer[1].counter),
+                    i64::from(apu.timer[2].enabled),
+                    i64::from(apu.timer[2].target),
+                    i64::from(snes9x_timer_stage1(apu.timer[2], 16)),
+                    i64::from(apu.timer[2].divider),
+                    i64::from(apu.timer[2].counter),
+                    i64::from(apu.in_ports[0]),
+                    i64::from(apu.in_ports[1]),
+                    i64::from(apu.in_ports[2]),
+                    i64::from(apu.in_ports[3]),
+                    i64::from(apu.ram[0xf4]),
+                    i64::from(apu.ram[0xf5]),
+                    i64::from(apu.ram[0xf6]),
+                    i64::from(apu.ram[0xf7]),
+                    (stage + 1) as i64,
+                    0,
+                ];
+                assert_eq!(
+                    actual,
+                    expected[stage][3..48],
+                    "APU state mismatch in case {case_id} ${opcode:02x} stage {stage} {}",
+                    case["variant"].as_str().unwrap()
+                );
 
-            let expected_ram = ram_diff_rows
-                .iter()
-                .filter(|row| row[0] == case_id && row[1] == 0)
-                .map(|row| (row[2] as usize, row[3] as u8))
-                .collect::<Vec<_>>();
-            let actual_ram = apu
-                .ram
-                .iter()
-                .zip(&initial_ram)
-                .enumerate()
-                .filter_map(|(address, (&actual, &before))| {
-                    (actual != before).then_some((address, actual))
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(
-                actual_ram, expected_ram,
-                "APU RAM mismatch in case {case_id} ${opcode:02x}"
-            );
+                let expected_bus = bus_rows
+                    .iter()
+                    .filter(|row| row[0] == case_id && row[1] == stage as i64)
+                    .map(|row| row[2..8].to_vec())
+                    .collect::<Vec<_>>();
+                let actual_bus = apu
+                    .debug_spc_bus_trace
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .map(|event| {
+                        vec![
+                            i64::from(event.kind),
+                            i64::from(event.address),
+                            i64::from(event.value),
+                            i64::from(event.clocks),
+                            i64::from(event.clock_before),
+                            i64::from(event.clock_after),
+                        ]
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    actual_bus, expected_bus,
+                    "APU bus mismatch in case {case_id} ${opcode:02x} stage {stage}"
+                );
 
-            let expected_dsp = dsp_rows
-                .iter()
-                .filter(|row| row[0] == case_id && row[1] == 0)
-                .map(|row| row[3] as u8)
-                .collect::<Vec<_>>();
-            let actual_dsp = (0..128)
-                .map(|address| apu.dsp.read(address))
-                .collect::<Vec<_>>();
-            assert_eq!(
-                actual_dsp, expected_dsp,
-                "APU DSP state mismatch in case {case_id} ${opcode:02x}"
-            );
-            let expected_dsp_diffs = dsp_diff_rows
-                .iter()
-                .filter(|row| row[0] == case_id && row[1] == 0)
-                .collect::<Vec<_>>();
-            assert!(
-                expected_dsp_diffs.is_empty(),
-                "atomic case {case_id} unexpectedly changed DSP state"
-            );
+                let expected_ram = ram_diff_rows
+                    .iter()
+                    .filter(|row| row[0] == case_id && row[1] == stage as i64)
+                    .map(|row| (row[2] as usize, row[3] as u8))
+                    .collect::<Vec<_>>();
+                let actual_ram = apu
+                    .ram
+                    .iter()
+                    .zip(&initial_ram)
+                    .enumerate()
+                    .filter_map(|(address, (&actual, &before))| {
+                        (actual != before).then_some((address, actual))
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    actual_ram, expected_ram,
+                    "APU RAM mismatch in case {case_id} ${opcode:02x} stage {stage}"
+                );
+
+                let expected_dsp = dsp_rows
+                    .iter()
+                    .filter(|row| row[0] == case_id && row[1] == stage as i64)
+                    .map(|row| row[3] as u8)
+                    .collect::<Vec<_>>();
+                let actual_dsp = (0..128)
+                    .map(|address| sidecar.machine.read_register(address))
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    actual_dsp, expected_dsp,
+                    "APU DSP state mismatch in case {case_id} ${opcode:02x} stage {stage}"
+                );
+            }
         }
     }
 
@@ -3707,7 +3966,9 @@ mod tests {
             serde_json::from_slice(&serde_json::to_vec(&checkpoint).unwrap()).unwrap();
         let mut restored: ApuState =
             serde_json::from_slice(&serde_json::to_vec(&apu).unwrap()).unwrap();
-        restored.restore_snes9x_coroutine_checkpoint(checkpoint);
+        restored
+            .restore_snes9x_coroutine_checkpoint(checkpoint)
+            .unwrap();
 
         for resumed in [&mut apu, &mut restored] {
             assert_eq!(
@@ -3749,36 +4010,6 @@ mod tests {
     }
 
     #[test]
-    fn every_pending_snes9x_split_fails_before_fetch_or_state_advance() {
-        // Exact members of the pinned 37-opcode split set whose source stages
-        // have not yet been ported. Implemented non-store and store plans are
-        // covered separately in `cycle_spc700` tests.
-        for opcode in [
-            0xaa, 0xbf, 0xca, 0xe5, 0xe6, 0xe7, 0xe9, 0xec, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9,
-            0xfa, 0xfb,
-        ] {
-            let mut apu = ApuState::new();
-            apu.reset_snes9x_coroutine();
-            apu.rom_readable = false;
-            apu.spc.pc = 0x0200;
-            apu.ram[0x0200] = opcode;
-            let machine_before = serde_json::to_vec(&apu).unwrap();
-            let coroutine_before =
-                serde_json::to_vec(&apu.capture_snes9x_coroutine_checkpoint().unwrap()).unwrap();
-
-            assert_eq!(
-                apu.run_snes9x_micro_step_without_dsp().unwrap_err(),
-                UnsupportedSmpMicroStep { opcode, pc: 0x0200 }
-            );
-            assert_eq!(serde_json::to_vec(&apu).unwrap(), machine_before);
-            assert_eq!(
-                serde_json::to_vec(&apu.capture_snes9x_coroutine_checkpoint().unwrap()).unwrap(),
-                coroutine_before
-            );
-        }
-    }
-
-    #[test]
     fn resumable_smp_state_survives_clone_and_serde_mid_instruction() {
         let mut apu = ApuState::new();
         apu.reset_snes9x_coroutine();
@@ -3796,12 +4027,16 @@ mod tests {
 
         let mut cloned = apu.clone();
         cloned.smp_coroutine = SmpCoroutineState::default();
-        cloned.restore_snes9x_coroutine_checkpoint(checkpoint);
+        cloned
+            .restore_snes9x_coroutine_checkpoint(checkpoint)
+            .unwrap();
 
         let machine_json = serde_json::to_vec(&apu).unwrap();
         let mut restored: ApuState = serde_json::from_slice(&machine_json).unwrap();
         assert!(restored.capture_snes9x_coroutine_checkpoint().is_none());
-        restored.restore_snes9x_coroutine_checkpoint(checkpoint);
+        restored
+            .restore_snes9x_coroutine_checkpoint(checkpoint)
+            .unwrap();
         for resumed in [&mut cloned, &mut restored] {
             assert_eq!(
                 resumed.run_snes9x_micro_step_without_dsp().unwrap(),
@@ -3828,12 +4063,157 @@ mod tests {
 
         let mut with_sidecar = ordinary.clone();
         with_sidecar.smp_coroutine = SmpCoroutineState::enabled();
+        with_sidecar.snes9x_dsp = Some(Snes9xDspSidecar::power_on());
         let with_sidecar_json = serde_json::to_vec(&with_sidecar).unwrap();
 
         assert_eq!(with_sidecar_json, ordinary_json);
         assert!(!String::from_utf8(ordinary_json)
             .unwrap()
             .contains("smp_coroutine"));
+    }
+
+    #[test]
+    fn exact_dsp_samples_transfer_once_and_checkpoint_with_shared_ram() {
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        for main_output in [[111, 222], [333, 444]] {
+            let sidecar = apu.snes9x_dsp.as_mut().unwrap();
+            let mut dsp = sidecar.machine.checkpoint();
+            dsp.phase = 27;
+            dsp.registers[0x6c] = 0;
+            dsp.registers[0x1c] = 127;
+            dsp.main_output = main_output;
+            sidecar.machine = Snes9xDspPhaseMachine::from_checkpoint(dsp).unwrap();
+            sidecar.pending_clocks = 1;
+            apu.synchronize_snes9x_dsp();
+        }
+        let receipt = apu.take_snes9x_dsp_samples();
+        assert_eq!(receipt.samples, [[111, 220], [333, 440]]);
+        assert!(apu.take_snes9x_dsp_samples().samples.is_empty());
+
+        apu.ram[0x4321] = 0x9a;
+        let checkpoint = apu.capture_snes9x_apu_coroutine_checkpoint().unwrap();
+        let checkpoint: Snes9xApuCoroutineCheckpoint =
+            serde_json::from_slice(&serde_json::to_vec(&checkpoint).unwrap()).unwrap();
+        let mut restored: ApuState =
+            serde_json::from_slice(&serde_json::to_vec(&apu).unwrap()).unwrap();
+        restored
+            .restore_snes9x_apu_coroutine_checkpoint(checkpoint.clone())
+            .unwrap();
+        assert_eq!(
+            restored.capture_snes9x_apu_coroutine_checkpoint(),
+            Some(checkpoint)
+        );
+        assert_eq!(restored.ram[0x4321], 0x9a);
+    }
+
+    #[test]
+    fn exact_checkpoint_rejects_negative_debt_and_mixed_machine_pairs() {
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        let checkpoint = apu.capture_snes9x_apu_coroutine_checkpoint().unwrap();
+
+        let mut mixed: ApuState =
+            serde_json::from_slice(&serde_json::to_vec(&apu).unwrap()).unwrap();
+        mixed.out_ports[0] ^= 1;
+        assert_eq!(
+            mixed.restore_snes9x_apu_coroutine_checkpoint(checkpoint.clone()),
+            Err(Snes9xApuCoroutineCheckpointError::MachineIdentityMismatch)
+        );
+
+        let mut negative = checkpoint;
+        negative.smp.dsp_clock = -1;
+        assert_eq!(
+            apu.restore_snes9x_apu_coroutine_checkpoint(negative),
+            Err(Snes9xApuCoroutineCheckpointError::NegativeDspClock { clocks: -1 })
+        );
+    }
+
+    #[test]
+    fn malformed_smp_checkpoints_are_rejected_before_apu_mutation() {
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        let base =
+            serde_json::to_value(apu.capture_snes9x_apu_coroutine_checkpoint().unwrap()).unwrap();
+
+        let mut idle_cycle = base.clone();
+        idle_cycle["smp"]["opcode"] = serde_json::Value::Null;
+        idle_cycle["smp"]["opcode_cycle"] = 1.into();
+        let mut atomic = base.clone();
+        atomic["smp"]["opcode"] = 0.into();
+        atomic["smp"]["opcode_cycle"] = 1.into();
+        let mut split_cycle_zero = base.clone();
+        split_cycle_zero["smp"]["opcode"] = 0x8f.into();
+        split_cycle_zero["smp"]["opcode_cycle"] = 0.into();
+        let mut split_terminal = base;
+        split_terminal["smp"]["opcode"] = 0x8f.into();
+        split_terminal["smp"]["opcode_cycle"] = 3.into();
+
+        let cases = [
+            (
+                idle_cycle,
+                Snes9xSmpCoroutineCheckpointError::IdleOpcodeCycle { opcode_cycle: 1 },
+            ),
+            (
+                atomic,
+                Snes9xSmpCoroutineCheckpointError::UnsupportedOpcode { opcode: 0 },
+            ),
+            (
+                split_cycle_zero,
+                Snes9xSmpCoroutineCheckpointError::InvalidOpcodeCycle {
+                    opcode: 0x8f,
+                    opcode_cycle: 0,
+                    stage_count: 3,
+                },
+            ),
+            (
+                split_terminal,
+                Snes9xSmpCoroutineCheckpointError::InvalidOpcodeCycle {
+                    opcode: 0x8f,
+                    opcode_cycle: 3,
+                    stage_count: 3,
+                },
+            ),
+        ];
+
+        for (json, expected) in cases {
+            let malformed: Snes9xApuCoroutineCheckpoint = serde_json::from_value(json).unwrap();
+            let machine_before = serde_json::to_vec(&apu).unwrap();
+            let sidecar_before = apu.capture_snes9x_apu_coroutine_checkpoint().unwrap();
+            assert_eq!(
+                apu.restore_snes9x_apu_coroutine_checkpoint(malformed),
+                Err(Snes9xApuCoroutineCheckpointError::Smp(expected))
+            );
+            assert_eq!(serde_json::to_vec(&apu).unwrap(), machine_before);
+            assert_eq!(
+                apu.capture_snes9x_apu_coroutine_checkpoint(),
+                Some(sidecar_before)
+            );
+        }
+    }
+
+    #[test]
+    fn bootstrap_checkpoint_is_rejected_after_dsp_synchronization() {
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        let bootstrap = apu.capture_snes9x_coroutine_checkpoint().unwrap();
+        apu.advance_hardware_cycle(false);
+        apu.dsp_adr = 0x7c;
+        let _ = apu.cpu_read(0xf3);
+
+        assert!(apu.capture_snes9x_coroutine_checkpoint().is_none());
+        assert_eq!(
+            apu.restore_snes9x_coroutine_checkpoint(bootstrap),
+            Err(Snes9xApuCoroutineCheckpointError::BootstrapCheckpointAfterDspSync)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "legacy APU cycle execution cannot run")]
+    fn exact_sidecar_rejects_legacy_cycle_execution() {
+        let mut apu = ApuState::new();
+        apu.reset_snes9x_coroutine();
+        apu.cycle();
     }
 
     #[test]

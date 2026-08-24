@@ -5,7 +5,7 @@
 //! timeline cursor, APU clock debt, and any post-semantic completion always
 //! move together.
 
-use crate::apu::UnsupportedSmpMicroStep;
+use crate::apu::{Snes9xDspSampleReceipt, UnsupportedSmpMicroStep};
 use crate::cpu_timeline::{
     CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuMasterTimestamp,
     CpuSynchronousTimelineEvent,
@@ -72,6 +72,12 @@ impl CpuSynchronousMachine {
 
     pub const fn pending_completion(&self) -> Option<CpuSynchronousCompletion> {
         self.pending_completion
+    }
+
+    /// Transfer samples emitted by scanline-end/F3 DSP synchronization exactly
+    /// once from the machine that owns the physical CPU/APU timeline.
+    pub fn take_dsp_samples(&mut self) -> Snes9xDspSampleReceipt {
+        self.snes.apu.take_snes9x_dsp_samples()
     }
 
     /// Read one CPU-visible APU port alias. If a post-semantic event cannot
@@ -162,6 +168,9 @@ impl CpuSynchronousMachine {
             {
                 CpuSynchronousTimelineEvent::HMax { .. } => {
                     Self::synchronize_apu(snes, apu_clock, timestamp)?;
+                    // Pinned `S9xAPUEndScanline`: execute the SMP through HMax,
+                    // then drain the DSP clock accumulated by that execution.
+                    snes.apu.synchronize_snes9x_dsp();
                     Ok(0)
                 }
                 CpuSynchronousTimelineEvent::Bus(_) => Ok(0),
@@ -411,6 +420,16 @@ mod tests {
             1_364
         );
         assert_eq!(machine.snes.apu.cycles, 2);
+        assert_eq!(
+            machine
+                .snes
+                .apu
+                .capture_snes9x_apu_coroutine_checkpoint()
+                .unwrap()
+                .pending_dsp_clocks(),
+            0
+        );
+        assert!(machine.take_dsp_samples().samples.is_empty());
         assert_eq!(MASTER_CYCLES_PER_SCANLINE, 1_364);
     }
 
