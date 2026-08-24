@@ -20,8 +20,22 @@ assert SPEC is not None and SPEC.loader is not None
 parity_probe = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(parity_probe)
 
+PREPARE_MODULE_PATH = Path(__file__).with_name("prepare_snes9x_trace_oracle.py")
+PREPARE_SPEC = importlib.util.spec_from_file_location(
+    "prepare_snes9x_trace_oracle", PREPARE_MODULE_PATH
+)
+assert PREPARE_SPEC is not None and PREPARE_SPEC.loader is not None
+prepare_snes9x_trace_oracle = importlib.util.module_from_spec(PREPARE_SPEC)
+PREPARE_SPEC.loader.exec_module(prepare_snes9x_trace_oracle)
+
 
 class ParityProbeTest(unittest.TestCase):
+    def test_trace_patch_order_matches_maintained_oracle_builder(self) -> None:
+        self.assertEqual(
+            [path.name for path in parity_probe.TRACE_PATCHES],
+            [path.name for path in prepare_snes9x_trace_oracle.TRACE_PATCHES],
+        )
+
     def test_display_capture_is_automatically_classified(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             session = Path(directory)
