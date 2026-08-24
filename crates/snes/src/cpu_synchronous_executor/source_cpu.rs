@@ -5,7 +5,9 @@
 //! `S9xGet*`, `S9xSet*`, or `AddCycles` transaction boundary.
 
 use super::{CpuSynchronousCompletion, CpuSynchronousMachine, CpuSynchronousMachineError};
-use crate::apu::{Snes9xApuCoroutineCheckpoint, Snes9xApuCoroutineCheckpointError};
+use crate::apu::{
+    Snes9xApuCoroutineCheckpoint, Snes9xApuCoroutineCheckpointError, Snes9xDspSampleReceipt,
+};
 use crate::cart::CartType;
 use crate::cpu_timeline::{
     CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuMasterTimestamp,
@@ -78,6 +80,17 @@ pub struct SourceCpuStepReceipt {
     pub transactions: Vec<SourceCpuTransaction>,
 }
 
+/// One exact pinned-Snes9x `S9xMainLoop` call, ending only after the
+/// instruction which observed VBlank and any interrupt entry due at that
+/// instruction boundary have completed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Snes9xMainLoopReceipt {
+    pub started_at: CpuMasterTimestamp,
+    pub ended_at: CpuMasterTimestamp,
+    pub vblank_event_at: CpuMasterTimestamp,
+    pub instruction_count: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum SourceCpuError {
     #[error("LoROM reset seed requires a non-empty power-of-two ROM")]
@@ -126,6 +139,8 @@ pub struct Snes9xCpuQuiescentCheckpoint {
     source_vmain_full_graphic_count_nonzero: bool,
     nmi_acceptance_not_before: Option<CpuMasterTimestamp>,
     deferred_nmi_enable_edge: bool,
+    #[serde(default)]
+    main_loop_return_pending: Option<CpuMasterTimestamp>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -160,6 +175,8 @@ pub enum Snes9xCpuQuiescentCheckpointError {
         timeline: u64,
         latest: u64,
     },
+    #[error("source CPU main-loop return event {event} is after timeline clock {timeline}")]
+    MainLoopReturnInFuture { event: u64, timeline: u64 },
     #[error(transparent)]
     Timeline(#[from] CpuSynchronousTimelineCheckpointError),
     #[error(transparent)]
@@ -243,6 +260,7 @@ impl Snes9xColdCpuExecutor {
             source_vmain_full_graphic_count_nonzero: false,
             nmi_acceptance_not_before: None,
             deferred_nmi_enable_edge: false,
+            main_loop_return_pending: None,
             #[cfg(test)]
             force_zero_cycle_smp_step: false,
         };
@@ -266,6 +284,53 @@ impl Snes9xColdCpuExecutor {
         &self.machine
     }
 
+    /// Publish the two libretro joypad words immediately before an exact
+    /// `S9xMainLoop` call. The source JOYSER latch and V228 auto-read semantics
+    /// consume these states later on the physical CPU timeline.
+    pub fn set_joypad_serial_state(&mut self, port1: u16, port2: u16) {
+        self.machine.snes.input1.current_state = port1;
+        self.machine.snes.input2.current_state = port2;
+    }
+
+    /// Transfer every sample emitted by the exact DSP sidecar since the prior
+    /// take. The receipt itself is non-Clone, preserving exactly-once delivery.
+    pub fn take_dsp_samples(&mut self) -> Snes9xDspSampleReceipt {
+        self.machine.take_dsp_samples()
+    }
+
+    pub fn run_until_main_loop_return(&mut self) -> Result<Snes9xMainLoopReceipt, SourceCpuError> {
+        self.run_until_main_loop_return_with(|_| {})
+    }
+
+    /// Execute one source `S9xMainLoop` interval while streaming each complete
+    /// instruction receipt to a caller-owned tracker. Receipts are never stored
+    /// in an accumulating production buffer or replayed across host calls.
+    pub fn run_until_main_loop_return_with(
+        &mut self,
+        mut consume_instruction: impl FnMut(&SourceCpuStepReceipt),
+    ) -> Result<Snes9xMainLoopReceipt, SourceCpuError> {
+        if self.poisoned {
+            return Err(SourceCpuError::Poisoned);
+        }
+        let started_at = self.machine.timestamp();
+        let mut instruction_count = 0u64;
+        loop {
+            if let Some(vblank_event_at) = self.machine.main_loop_return_pending.take() {
+                return Ok(Snes9xMainLoopReceipt {
+                    started_at,
+                    ended_at: self.machine.timestamp(),
+                    vblank_event_at,
+                    instruction_count,
+                });
+            }
+            let receipt = self.step()?;
+            instruction_count = instruction_count
+                .checked_add(1)
+                .expect("one host call instruction count fits u64");
+            consume_instruction(&receipt);
+        }
+    }
+
     pub fn capture_quiescent_checkpoint(
         &self,
     ) -> Result<Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError> {
@@ -283,7 +348,7 @@ impl Snes9xColdCpuExecutor {
             .capture_snes9x_apu_coroutine_checkpoint()
             .ok_or(Snes9xCpuQuiescentCheckpointError::MissingApuSidecar)?;
         Ok(Snes9xCpuQuiescentCheckpoint {
-            version: 2,
+            version: 3,
             snes: self.machine.snes.clone(),
             timeline: self.machine.timeline.clone(),
             apu_clock: self.machine.apu_clock.checkpoint(),
@@ -294,13 +359,14 @@ impl Snes9xColdCpuExecutor {
                 .source_vmain_full_graphic_count_nonzero,
             nmi_acceptance_not_before: self.machine.nmi_acceptance_not_before,
             deferred_nmi_enable_edge: self.machine.deferred_nmi_enable_edge,
+            main_loop_return_pending: self.machine.main_loop_return_pending,
         })
     }
 
     pub fn from_quiescent_checkpoint(
         checkpoint: Snes9xCpuQuiescentCheckpoint,
     ) -> Result<Self, Snes9xCpuQuiescentCheckpointError> {
-        if checkpoint.version != 2 {
+        if checkpoint.version != 3 {
             return Err(Snes9xCpuQuiescentCheckpointError::Version {
                 version: checkpoint.version,
             });
@@ -319,6 +385,7 @@ impl Snes9xColdCpuExecutor {
                 .source_vmain_full_graphic_count_nonzero,
             nmi_acceptance_not_before: checkpoint.nmi_acceptance_not_before,
             deferred_nmi_enable_edge: checkpoint.deferred_nmi_enable_edge,
+            main_loop_return_pending: checkpoint.main_loop_return_pending,
             #[cfg(test)]
             force_zero_cycle_smp_step: false,
         };
@@ -396,6 +463,15 @@ impl Snes9xColdCpuExecutor {
                     deadline,
                     timeline: timeline_clock,
                     latest,
+                });
+            }
+        }
+        if let Some(event) = machine.main_loop_return_pending {
+            let event = event.master_cycles();
+            if event > timeline_clock {
+                return Err(Snes9xCpuQuiescentCheckpointError::MainLoopReturnInFuture {
+                    event,
+                    timeline: timeline_clock,
                 });
             }
         }
@@ -2433,13 +2509,13 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_v2_roundtrips_nonlinear_vmain_capability() {
+    fn checkpoint_v3_roundtrips_nonlinear_vmain_capability() {
         let rom = synthetic_rom(&[0x18]);
         let mut source = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
         source.machine.source_vmain_full_graphic_count_nonzero = true;
         let encoded = serde_json::to_vec(&source.capture_quiescent_checkpoint().unwrap()).unwrap();
         let checkpoint: Snes9xCpuQuiescentCheckpoint = serde_json::from_slice(&encoded).unwrap();
-        assert_eq!(checkpoint.version, 2);
+        assert_eq!(checkpoint.version, 3);
         let mut restored = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
         assert!(restored.machine.source_vmain_full_graphic_count_nonzero);
 
@@ -2528,16 +2604,22 @@ mod tests {
         cpu.machine.snes.input1.current_state = 0x1357;
         cpu.machine.snes.input1.latched_state = 0x2468;
         cpu.machine.snes.input1.latch_line = true;
+        let return_event = cpu.machine.timestamp();
+        cpu.machine.main_loop_return_pending = Some(return_event);
 
         let encoded = serde_json::to_vec(&cpu.capture_quiescent_checkpoint().unwrap()).unwrap();
         let checkpoint: Snes9xCpuQuiescentCheckpoint = serde_json::from_slice(&encoded).unwrap();
-        let restored = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
+        let mut restored = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
 
         assert!(restored.machine.snes.cpu.nmi_wanted);
         assert_eq!(restored.machine.nmi_acceptance_not_before, Some(deadline));
         assert_eq!(restored.machine.snes.input1.current_state, 0x1357);
         assert_eq!(restored.machine.snes.input1.latched_state, 0x2468);
         assert!(restored.machine.snes.input1.latch_line);
+        let receipt = restored.run_until_main_loop_return().unwrap();
+        assert_eq!(receipt.instruction_count, 0);
+        assert_eq!(receipt.vblank_event_at, return_event);
+        assert_eq!(restored.machine.main_loop_return_pending, None);
     }
 
     #[test]
@@ -2578,16 +2660,26 @@ mod tests {
             assert_eq!(target.machine.timestamp(), target_timestamp);
         };
 
-        let mut legacy_v1 = serde_json::to_value(&good).unwrap();
-        legacy_v1["version"] = serde_json::json!(1);
-        legacy_v1
+        let mut legacy_v2 = serde_json::to_value(&good).unwrap();
+        legacy_v2["version"] = serde_json::json!(2);
+        legacy_v2
             .as_object_mut()
             .unwrap()
-            .remove("source_vmain_full_graphic_count_nonzero");
-        let malformed: Snes9xCpuQuiescentCheckpoint = serde_json::from_value(legacy_v1).unwrap();
+            .remove("main_loop_return_pending");
+        let malformed: Snes9xCpuQuiescentCheckpoint = serde_json::from_value(legacy_v2).unwrap();
         assert!(matches!(
             target.restore_quiescent_checkpoint(malformed),
-            Err(Snes9xCpuQuiescentCheckpointError::Version { version: 1 })
+            Err(Snes9xCpuQuiescentCheckpointError::Version { version: 2 })
+        ));
+        assert_unchanged(&target);
+
+        let mut malformed = good.clone();
+        malformed.main_loop_return_pending = Some(CpuMasterTimestamp::new(
+            malformed.timeline.timestamp().master_cycles() + 1,
+        ));
+        assert!(matches!(
+            target.restore_quiescent_checkpoint(malformed),
+            Err(Snes9xCpuQuiescentCheckpointError::MainLoopReturnInFuture { .. })
         ));
         assert_unchanged(&target);
 
@@ -4370,6 +4462,104 @@ mod tests {
         )
         .unwrap();
         cpu.machine.force_zero_cycle_smp_step = true;
+    }
+
+    fn place_source_cpu_at_raster(
+        cpu: &mut Snes9xColdCpuExecutor,
+        raster: crate::CpuRasterPosition,
+    ) {
+        cpu.machine.timeline = CpuMasterTimeline::at_raster(
+            0,
+            raster,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        cpu.machine.timeline.begin_synchronous_timeline().unwrap();
+        let reference = cpu.machine.timestamp().master_cycles();
+        cpu.machine.apu_clock = Snes9xApuClockState::from_checkpoint(
+            Snes9xApuClockCheckpoint::new(reference, 0, 0).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn main_loop_return_consumes_one_vblank_latch_per_host_call() {
+        let mut rom = vec![0x18; 0x8000]; // CLC is a stable two-transaction loop body.
+        rom[0x7ffc] = 0x00;
+        rom[0x7ffd] = 0x80;
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        place_source_cpu_at_raster(&mut cpu, crate::CpuRasterPosition::new(224, 1_358));
+        cpu.set_joypad_serial_state(0x1234, 0xabcd);
+        cpu.machine.snes.auto_joy_read = true;
+        let mut first_origins = Vec::new();
+
+        let first = cpu
+            .run_until_main_loop_return_with(|instruction| {
+                first_origins.push(instruction.origin_pc)
+            })
+            .unwrap();
+
+        assert_eq!(first.instruction_count, 1);
+        assert_eq!(first_origins, [0x00_8000]);
+        assert_eq!(
+            first.vblank_event_at.master_cycles(),
+            first.started_at.master_cycles() + 6
+        );
+        assert_eq!(
+            first.ended_at.master_cycles(),
+            first.started_at.master_cycles() + 14
+        );
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(225, 8)
+        );
+        assert_eq!(cpu.machine.snes.input1.current_state, 0x1234);
+        assert_eq!(cpu.machine.snes.input2.current_state, 0xabcd);
+
+        let checkpoint = cpu.capture_quiescent_checkpoint().unwrap();
+        let mut restored = Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint).unwrap();
+        let second = cpu.run_until_main_loop_return().unwrap();
+        let restored_second = restored.run_until_main_loop_return().unwrap();
+        assert_eq!(restored_second, second);
+        assert!(second.instruction_count > 20_000);
+        assert!(second.vblank_event_at > first.vblank_event_at);
+        assert!(second.ended_at >= second.vblank_event_at);
+        assert_eq!(cpu.machine.main_loop_return_pending, None);
+        assert_eq!(cpu.machine.snes.port_auto_read[0], 0x2c48);
+        assert_eq!(cpu.machine.snes.port_auto_read[1], 0xb3d5);
+        assert_eq!(cpu.program_address(), restored.program_address());
+        assert_eq!(
+            serde_json::to_vec(&cpu.capture_quiescent_checkpoint().unwrap()).unwrap(),
+            serde_json::to_vec(&restored.capture_quiescent_checkpoint().unwrap()).unwrap()
+        );
+    }
+
+    #[test]
+    fn main_loop_return_finishes_due_nmi_entry_before_breaking() {
+        let mut rom = synthetic_rom(&[0xa5, 0x10]);
+        rom[0x00c9] = 0x78;
+        rom[0x7fea] = 0xc9;
+        rom[0x7feb] = 0x80;
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.e = false;
+        cpu.machine.snes.nmi_enabled = true;
+        cpu.machine.snes.ram[0x0010] = 0x5a;
+        place_source_cpu_at_raster(&mut cpu, crate::CpuRasterPosition::new(224, 1_358));
+        let mut instructions = Vec::new();
+
+        let receipt = cpu
+            .run_until_main_loop_return_with(|instruction| instructions.push(instruction.clone()))
+            .unwrap();
+
+        assert_eq!(receipt.instruction_count, 1);
+        assert_eq!(instructions.len(), 1);
+        assert_eq!(instructions[0].origin_pc, 0x00_8000);
+        assert_eq!(instructions[0].opcode, 0xa5);
+        assert_eq!(cpu.program_address(), 0x00_80c9);
+        assert!(!cpu.machine.snes.cpu.nmi_wanted);
+        assert_eq!(cpu.machine.nmi_acceptance_not_before, None);
+        assert!(receipt.ended_at > receipt.vblank_event_at);
+        assert_eq!(cpu.machine.main_loop_return_pending, None);
     }
 
     #[test]
@@ -7914,6 +8104,40 @@ mod tests {
         );
         assert_eq!(cpu.machine.snes.ppu.screen_windowed[0], 0);
         assert_eq!(cpu.machine.snes.open_bus, 0);
+    }
+
+    #[test]
+    #[ignore = "requires the local Zelda 3 ROM and captured cold-route SRAM"]
+    fn local_zelda_rom_reaches_first_two_exact_main_loop_returns() {
+        let rom_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3.sfc");
+        let rom = std::fs::read(rom_path).expect("local zelda3.sfc is required for this proof");
+        let sram_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../routes/full_run/comparisons/continuous-audio/initial.srm");
+        let sram =
+            std::fs::read(sram_path).expect("captured route SRAM is required for this proof");
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset_with_sram(&rom, Some(&sram)).unwrap();
+
+        let first = cpu.run_until_main_loop_return().unwrap();
+        assert_eq!(first.started_at, CpuMasterTimestamp::new(198));
+        assert_eq!(first.ended_at, CpuMasterTimestamp::new(306_904));
+        assert_eq!(first.vblank_event_at, CpuMasterTimestamp::new(306_900));
+        assert_eq!(first.instruction_count, 12_012);
+        assert_eq!(cpu.program_address(), 0x00_88b3);
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(225, 4)
+        );
+
+        let second = cpu.run_until_main_loop_return().unwrap();
+        assert_eq!(second.started_at, first.ended_at);
+        assert_eq!(second.ended_at, CpuMasterTimestamp::new(664_268));
+        assert_eq!(second.vblank_event_at, CpuMasterTimestamp::new(664_268));
+        assert_eq!(second.instruction_count, 14_390);
+        assert_eq!(cpu.program_address(), 0x00_88a7);
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(225, 0)
+        );
     }
 
     #[test]

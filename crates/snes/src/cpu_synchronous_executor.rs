@@ -18,8 +18,8 @@ use crate::snes9x_apu_clock::{Snes9xApuClockError, Snes9xApuClockState};
 mod source_cpu;
 pub use source_cpu::{
     Snes9xColdCpuExecutor, Snes9xCpuQuiescentCheckpoint, Snes9xCpuQuiescentCheckpointError,
-    SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError, SourceCpuStepReceipt,
-    SourceCpuTransaction, SourceCpuTransactionKind,
+    Snes9xMainLoopReceipt, SourceCpuBusAccess, SourceCpuBusAccessKind, SourceCpuError,
+    SourceCpuStepReceipt, SourceCpuTransaction, SourceCpuTransactionKind,
 };
 
 /// A CPU bus semantic which has committed exactly once and whose access charge
@@ -89,6 +89,10 @@ pub struct CpuSynchronousMachine {
     /// `$4200` low-to-high NMI edges are published by `CHECK_FOR_IRQ_CHANGE`
     /// after the writing instruction, not by the register semantic itself.
     deferred_nmi_enable_edge: bool,
+    /// Pinned `SCAN_KEYS_FLAG`, with the exact VBlank H-event timestamp carried
+    /// as its one-shot host-return receipt. Repeated VBlank events cannot
+    /// replace an unconsumed return request.
+    main_loop_return_pending: Option<CpuMasterTimestamp>,
     #[cfg(test)]
     force_zero_cycle_smp_step: bool,
 }
@@ -114,6 +118,7 @@ impl CpuSynchronousMachine {
             source_vmain_full_graphic_count_nonzero: false,
             nmi_acceptance_not_before: None,
             deferred_nmi_enable_edge: false,
+            main_loop_return_pending: None,
             #[cfg(test)]
             force_zero_cycle_smp_step: false,
         }
@@ -531,6 +536,7 @@ impl CpuSynchronousMachine {
         let snes = &mut self.snes;
         let apu_clock = &mut self.apu_clock;
         let nmi_acceptance_not_before = &mut self.nmi_acceptance_not_before;
+        let main_loop_return_pending = &mut self.main_loop_return_pending;
         self.timeline
             .advance_synchronous_after_semantics_with(master_cycles, |event, timestamp| match event
             {
@@ -564,6 +570,11 @@ impl CpuSynchronousMachine {
                             );
                             *nmi_acceptance_not_before = Some(deadline);
                         }
+                        // cpuexec.cpp sets SCAN_KEYS_FLAG at the same VBlank
+                        // H-event. S9xMainLoop consumes it only after the
+                        // crossing instruction and any then-due interrupt
+                        // boundary have completed.
+                        main_loop_return_pending.get_or_insert(event_timestamp);
                     } else if next_scanline == 0 {
                         snes.in_vblank = false;
                         // cpuexec.cpp returns RDNMI to the model's low
@@ -680,6 +691,7 @@ mod tests {
             source_vmain_full_graphic_count_nonzero: false,
             nmi_acceptance_not_before: None,
             deferred_nmi_enable_edge: false,
+            main_loop_return_pending: None,
             force_zero_cycle_smp_step: false,
         }
     }
