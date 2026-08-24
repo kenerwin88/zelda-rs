@@ -19,8 +19,10 @@ const SNES_MASTER_CLOCKS_PER_SCANLINE: u64 = 1_364;
 const SNES_NTSC_SCANLINES_PER_FRAME: u64 = 262;
 const SNES_SHORT_SCANLINE_MASTER_CLOCKS: u64 = 4;
 const SNES_SHORT_SCANLINE: u64 = 240;
-const SNES_WRAM_REFRESH_MASTER_CLOCK: u64 = 538;
-const SNES_SHORT_SCANLINE_WRAM_REFRESH_MASTER_CLOCK: u64 = 534;
+// The pinned Snes9x core defaults to M1SNES (`_5A22 == 1`). Unlike M2's
+// alternating v2 position, M1 schedules WRAM refresh at H=530 on every line,
+// including the shortened odd-field scanline 240.
+const SNES_WRAM_REFRESH_MASTER_CLOCK: u64 = 530;
 const SNES_WRAM_REFRESH_STALL_MASTER_CLOCKS: u64 = 40;
 const NMI_AUDIO_VCOUNTER: u64 = 225;
 // Normal NTSC NMI entry jitters with the interrupted CPU instruction. H=84 is
@@ -914,13 +916,8 @@ fn snes_scanline_clock(master_clock: u64) -> (u64, u64, u64, u64) {
 
 fn next_wram_refresh_master_clock(master_clock: u64) -> u64 {
     let (frame, scanline, scanline_start, scanline_clock) = snes_scanline_clock(master_clock);
-    let refresh_clock = if frame & 1 != 0 && scanline == SNES_SHORT_SCANLINE {
-        SNES_SHORT_SCANLINE_WRAM_REFRESH_MASTER_CLOCK
-    } else {
-        SNES_WRAM_REFRESH_MASTER_CLOCK
-    };
-    if scanline_clock < refresh_clock {
-        return scanline_start + refresh_clock;
+    if scanline_clock <= SNES_WRAM_REFRESH_MASTER_CLOCK {
+        return scanline_start + SNES_WRAM_REFRESH_MASTER_CLOCK;
     }
 
     let scanline_length = if frame & 1 != 0 && scanline == SNES_SHORT_SCANLINE {
@@ -929,20 +926,14 @@ fn next_wram_refresh_master_clock(master_clock: u64) -> u64 {
         SNES_MASTER_CLOCKS_PER_SCANLINE
     };
     let next_scanline_start = scanline_start + scanline_length;
-    let (next_frame, next_scanline, _, _) = snes_scanline_clock(next_scanline_start);
-    next_scanline_start
-        + if next_frame & 1 != 0 && next_scanline == SNES_SHORT_SCANLINE {
-            SNES_SHORT_SCANLINE_WRAM_REFRESH_MASTER_CLOCK
-        } else {
-            SNES_WRAM_REFRESH_MASTER_CLOCK
-        }
+    next_scanline_start + SNES_WRAM_REFRESH_MASTER_CLOCK
 }
 
 fn advance_snes_cpu_master_clock(mut master_clock: u64, mut cpu_master_clocks: u64) -> u64 {
     while cpu_master_clocks != 0 {
         let refresh = next_wram_refresh_master_clock(master_clock);
         let clocks_until_refresh = refresh - master_clock;
-        if cpu_master_clocks < clocks_until_refresh {
+        if cpu_master_clocks <= clocks_until_refresh {
             return master_clock + cpu_master_clocks;
         }
         master_clock = refresh + SNES_WRAM_REFRESH_STALL_MASTER_CLOCKS;
@@ -1094,19 +1085,31 @@ mod tests {
     }
 
     #[test]
-    fn cpu_timeline_accounts_for_normal_and_short_scanline_wram_refresh() {
+    fn m1_wram_refresh_owns_the_exact_h530_boundary_on_normal_and_short_lines() {
+        // Pinned Snes9x 1.63 source authority:
+        //   globals.cpp selects M1SNES (`_5A22 == 1`)
+        //   cpu.cpp selects SNES_WRAM_REFRESH_HC_v1
+        //   snes9x.h defines v1=530 and the refresh duration as 40 clocks
+        // Work which finishes exactly at H=530 wins the boundary; work which
+        // starts there observes refresh before consuming its first CPU clock.
         let normal_start = snes_frame_start_master_clock(0);
-        assert_eq!(
-            advance_snes_cpu_master_clock(normal_start + 500, 100),
-            normal_start + 640
-        );
-
         let short_line_start = snes_frame_start_master_clock(1)
             + SNES_SHORT_SCANLINE * SNES_MASTER_CLOCKS_PER_SCANLINE;
-        assert_eq!(
-            advance_snes_cpu_master_clock(short_line_start + 500, 100),
-            short_line_start + 640
-        );
+
+        for scanline_start in [normal_start, short_line_start] {
+            assert_eq!(
+                advance_snes_cpu_master_clock(scanline_start + 524, 6),
+                scanline_start + 530,
+            );
+            assert_eq!(
+                advance_snes_cpu_master_clock(scanline_start + 530, 6),
+                scanline_start + 576,
+            );
+            assert_eq!(
+                advance_snes_cpu_master_clock(scanline_start + 524, 12),
+                scanline_start + 576,
+            );
+        }
     }
 
     #[test]
