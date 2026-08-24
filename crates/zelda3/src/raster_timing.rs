@@ -6,7 +6,9 @@
 
 const MASTER_CYCLES_PER_SCANLINE: u32 = 1364;
 const NTSC_SCANLINES_PER_FIELD: u32 = 262;
-const WRAM_REFRESH_CYCLE: u32 = 538;
+// The pinned Snes9x core defaults to M1SNES (`_5A22 == 1`). Its CPU reset
+// selects SNES_WRAM_REFRESH_HC_v1; 538 is the M2-only v2 position.
+const WRAM_REFRESH_CYCLE: u32 = 530;
 const WRAM_REFRESH_STALL_CYCLES: u32 = 40;
 const HDMA_INIT_CYCLE: u32 = 20;
 const HDMA_START_CYCLE: u32 = 1106;
@@ -182,7 +184,10 @@ fn advance_attract_map_projection_work(mut clock: u32, mut work: u32) -> u32 {
                 field_scanline <= 224,
             ),
         ] {
-            if enabled && cycle < event_cycle && event_cycle < next_cycle {
+            // Snes9x processes a scheduled bus event while CPU.Cycles is at or
+            // beyond NextEvent. Preserve that ownership when a work unit starts
+            // exactly on the event boundary as well as when it crosses it.
+            if enabled && cycle <= event_cycle && event_cycle < next_cycle {
                 next_cycle = event_cycle;
                 stall = event_stall;
             }
@@ -220,6 +225,15 @@ pub(crate) fn attract_map_projection_current_word_is_visible(scanline: usize) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn m1_wram_refresh_stalls_work_that_starts_or_crosses_cycle_530() {
+        // Pinned Snes9x 1.63: globals.cpp selects M1SNES, cpu.cpp selects
+        // SNES_WRAM_REFRESH_HC_v1, and snes9x.h defines it as 530 with a
+        // 40-master-cycle refresh. cpuexec.cpp processes NextEvent at equality.
+        assert_eq!(advance_attract_map_projection_work(530, 6), 576);
+        assert_eq!(advance_attract_map_projection_work(524, 12), 576);
+    }
 
     fn world_map_workload(
         tutorial_barriers: u8,

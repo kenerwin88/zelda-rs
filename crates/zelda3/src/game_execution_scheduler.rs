@@ -9,7 +9,9 @@ const MASTER_CYCLES_PER_SCANLINE: u32 = 1_364;
 const NTSC_SCANLINES_PER_FIELD: u32 = 262;
 const NMI_SCANLINE: u32 = 225;
 const HDMA_INIT_CYCLE: u32 = 20;
-const WRAM_REFRESH_CYCLE: u32 = 538;
+// The pinned Snes9x core selects M1SNES (`_5A22 == 1`), whose cpu.cpp reset
+// path uses SNES_WRAM_REFRESH_HC_v1 rather than the M2-only v2 position.
+const WRAM_REFRESH_CYCLE: u32 = 530;
 const WRAM_REFRESH_STALL_MASTER_CYCLES: u32 = 40;
 const HDMA_START_CYCLE: u32 = 1_106;
 const SHORT_SCANLINE_END_CYCLE: u32 = 1_360;
@@ -1392,6 +1394,34 @@ mod cpu_timing_tests {
     }
 
     #[test]
+    fn m1_wram_refresh_starts_at_530_on_short_and_long_timelines() {
+        // Pinned Snes9x 1.63 source authority:
+        //   globals.cpp: M1SNES = { 1, 3, 2 }, Model = &M1SNES
+        //   cpu.cpp: _5A22 != 2 selects SNES_WRAM_REFRESH_HC_v1
+        //   snes9x.h: v1 = 530, refresh duration = 40 master cycles
+        let entry = CpuRasterPosition::new(100, 524);
+        let short_timeline = CpuCycleBudget::until_next_nmi(
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+        let long_timeline = budget_at_field(
+            LONG_TIMELINE_FIELD,
+            entry,
+            CpuBusWorkload::default(),
+            CpuFieldTiming::NON_INTERLACE_EVEN,
+        );
+
+        for mut budget in [short_timeline, long_timeline] {
+            assert_eq!(budget.advance_instruction(6), CpuWorkAdvance::Complete);
+            assert_eq!(budget.raster_position(), CpuRasterPosition::new(100, 530),);
+
+            assert_eq!(budget.advance_instruction(6), CpuWorkAdvance::Complete);
+            assert_eq!(budget.raster_position(), CpuRasterPosition::new(100, 576),);
+        }
+    }
+
+    #[test]
     fn fixed_hdma_budget_does_not_invoke_the_dynamic_dma_model() {
         let mut budget = CpuCycleBudget::until_next_nmi(
             CpuRasterPosition::new(100, 1_100),
@@ -1523,7 +1553,7 @@ mod cpu_timing_tests {
 
         let mut refresh = budget_at_field(
             LONG_TIMELINE_FIELD,
-            CpuRasterPosition::new(100, 532),
+            CpuRasterPosition::new(100, 524),
             CpuBusWorkload::with_dynamic_hdma(),
             CpuFieldTiming::NON_INTERLACE_EVEN,
         );
@@ -1533,7 +1563,7 @@ mod cpu_timing_tests {
             }),
             CpuWorkAdvance::Complete,
         );
-        assert_eq!(refresh.raster_position(), CpuRasterPosition::new(100, 584));
+        assert_eq!(refresh.raster_position(), CpuRasterPosition::new(100, 576));
 
         let mut hdma_start = budget_at_field(
             LONG_TIMELINE_FIELD,
