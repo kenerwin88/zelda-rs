@@ -109,6 +109,10 @@ pub enum CpuSynchronousTimelineEvent {
         completed_field_index: u64,
         completed_scanline: u16,
         line_master_cycles: u16,
+        /// Exact physical HMax position. The callback's separate timestamp is
+        /// the fully charged transaction endpoint and may be later because
+        /// pinned Snes9x drains events only after an atomic AddCycles charge.
+        event_timestamp: CpuMasterTimestamp,
     },
 }
 
@@ -541,12 +545,12 @@ impl CpuMasterTimeline {
     /// Pinned Snes9x's direct `PCBase` opcode fetch increments `CPU.Cycles`
     /// without invoking `AddCycles`; a due event is intentionally left owned
     /// by the synchronous cursor until the next source transaction drains it.
-    pub(crate) fn advance_synchronous_pcbase_opcode_fetch(&mut self) {
+    pub(crate) fn advance_synchronous_pcbase_opcode_fetch(&mut self, memory_speed: u8) {
         assert!(
             matches!(self.mode, CpuTimelineMode::Synchronous(_)),
             "PCBase fetch requires a claimed synchronous timeline"
         );
-        self.advance_physical_clock_preserving_refresh(8);
+        self.advance_physical_clock_preserving_refresh(u64::from(memory_speed));
     }
 
     pub fn raster_position(&self) -> CpuRasterPosition {
@@ -678,6 +682,9 @@ impl CpuMasterTimeline {
                 completed_field_index: field_index,
                 completed_scanline: scanline,
                 line_master_cycles: hmax as u16,
+                event_timestamp: CpuMasterTimestamp::new(
+                    line_start_master_cycles + u64::from(hmax),
+                ),
             },
         }
     }
@@ -921,6 +928,9 @@ mod tests {
             let mut timeline = at_raster(0, entry, CpuBusWorkload::default(), timing);
             timeline.begin_synchronous_timeline().unwrap();
             let expected_timestamp = timeline.clock_master_cycles() + u64::from(work);
+            let expected_hmax_timestamp = timing.master_cycles_at(0, entry)
+                - u64::from(entry.coordinates().1)
+                + u64::from(line_master_cycles);
             let mut events = Vec::new();
             timeline
                 .advance_synchronous_after_semantics_with(work, |event, timestamp| {
@@ -935,6 +945,7 @@ mod tests {
                         completed_field_index: 0,
                         completed_scanline,
                         line_master_cycles,
+                        event_timestamp: CpuMasterTimestamp::new(expected_hmax_timestamp),
                     },
                     CpuMasterTimestamp::new(expected_timestamp),
                 )]
@@ -981,6 +992,10 @@ mod tests {
                     completed_field_index: 0,
                     completed_scanline: 100,
                     line_master_cycles: MASTER_CYCLES_PER_SCANLINE as u16,
+                    event_timestamp: CpuMasterTimestamp::new(
+                        CpuFieldTiming::NON_INTERLACE_EVEN
+                            .master_cycles_at(0, CpuRasterPosition::new(101, 0),),
+                    ),
                 },
                 CpuMasterTimestamp::new(
                     CpuFieldTiming::NON_INTERLACE_EVEN
@@ -1203,7 +1218,7 @@ mod tests {
         timeline.begin_synchronous_timeline().unwrap();
         assert_eq!(timeline.wram_refresh_cycle(), 538);
 
-        timeline.advance_synchronous_pcbase_opcode_fetch();
+        timeline.advance_synchronous_pcbase_opcode_fetch(8);
         assert_eq!(timeline.raster_position(), CpuRasterPosition::new(1, 2));
         assert_eq!(timeline.wram_refresh_cycle(), 538);
 
@@ -1223,6 +1238,7 @@ mod tests {
                 completed_field_index: 0,
                 completed_scanline: 0,
                 line_master_cycles: 1_364,
+                ..
             }
         ));
         assert_eq!(observed[0].1.master_cycles(), 1_374);

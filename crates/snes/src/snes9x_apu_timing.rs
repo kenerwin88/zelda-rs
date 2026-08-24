@@ -218,33 +218,6 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_opcode_retains_debt_for_same_timestamp_retry() {
-        let mut timing = Snes9xApuTiming::new();
-        timing.apu.rom_readable = false;
-        timing.apu.spc.pc = 0x0200;
-        timing.apu.ram[0x0200] = 0x00;
-
-        let error = timing.sync_to(21).unwrap_err();
-        assert_eq!(
-            error,
-            Snes9xApuTimingError::UnsupportedSmpOpcode(UnsupportedSmpMicroStep {
-                opcode: 0,
-                pc: 0x0200,
-            })
-        );
-        assert_eq!(timing.apu.cycles, 0);
-        assert_eq!(timing.apu.spc.pc, 0x0200);
-        assert_eq!(timing.clock.checkpoint().cpu_reference_master_cycles(), 21);
-        assert_eq!(timing.clock.checkpoint().smp_clock(), -1);
-
-        timing.apu.ram[0x0200..0x0202].copy_from_slice(&[0xcd, 0x7f]);
-        timing.sync_to(21).unwrap();
-        assert_eq!(timing.apu.cycles, 2);
-        assert_eq!(timing.apu.spc.pc, 0x0202);
-        assert_eq!(timing.clock.checkpoint().smp_clock(), 1);
-    }
-
-    #[test]
     fn zero_cycle_step_retains_debt_for_same_timestamp_retry() {
         let mut timing = Snes9xApuTiming::new();
 

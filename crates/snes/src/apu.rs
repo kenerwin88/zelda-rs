@@ -1665,8 +1665,8 @@ impl ApuState {
     /// Run exactly one pinned-Snes9x SMP coroutine pseudo-op boundary.
     ///
     /// This is opt-in: the existing complete-instruction execution path is
-    /// unchanged. An unsupported next opcode is reported without fetching it
-    /// or advancing the SPC clock, so callers can stop before losing phase.
+    /// unchanged. The resumable executor owns the sole timed opcode fetch;
+    /// typed errors report an invalid retained continuation state.
     pub fn run_snes9x_micro_step_without_dsp(
         &mut self,
     ) -> Result<SmpMicroStepResult, UnsupportedSmpMicroStep> {
@@ -1674,20 +1674,6 @@ impl ApuState {
             self.smp_coroutine.is_enabled(),
             "Snes9x micro-step execution requires reset_snes9x_coroutine"
         );
-        let opcode = self.smp_coroutine.opcode().unwrap_or_else(|| {
-            if self.rom_readable && self.spc.pc >= 0xffc0 {
-                BOOT_ROM[usize::from(self.spc.pc - 0xffc0)]
-            } else {
-                self.ram[self.spc.pc as usize]
-            }
-        });
-        if !Smp::supports_resumable_opcode(opcode) {
-            return Err(UnsupportedSmpMicroStep {
-                opcode,
-                pc: self.spc.pc,
-            });
-        }
-
         let state = self.cycle_sequenced_smp_state();
         let mut coroutine = std::mem::take(&mut self.smp_coroutine);
         let start_cycles = self.cycles;
@@ -1697,11 +1683,10 @@ impl ApuState {
             (smp.state(), result)
         };
         self.smp_coroutine = coroutine;
-        let result = result.expect("resumable opcode was validated before its first bus cycle");
         self.apply_cycle_sequenced_smp_state(state);
         self.spc.cycles_used = self.cycles.wrapping_sub(start_cycles) as u8;
         self.cpu_cycles_left = 0;
-        Ok(result)
+        result
     }
 
     fn cycle_sequenced_smp_state(&self) -> SmpState {
@@ -3328,19 +3313,16 @@ mod tests {
     }
 
     #[test]
-    fn canonical_snes9x_apu_mmio_ledger_matches_exactly() {
+    fn canonical_snes9x_apu_dispatch_matches_every_ledger_case_exactly() {
         let (_, ledger) = opcode_ledger();
         let state_rows = expand_ledger_sequence(&ledger["state_sequence"]);
         let dsp_rows = expand_ledger_sequence(&ledger["dsp_state_sequence"]);
         let bus_rows = expand_ledger_sequence(&ledger["bus_event_sequence"]);
         let ram_diff_rows = expand_ledger_sequence(&ledger["ram_diff_sequence"]);
         let cases = ledger["cases"].as_array().unwrap();
-        let mut state_index = cases[..292]
-            .iter()
-            .map(|case| case["expected_stages"].as_u64().unwrap() as usize)
-            .sum::<usize>();
+        let mut state_index = 0;
 
-        for case in cases.iter().skip(292) {
+        for case in cases {
             let case_id = case["id"].as_i64().unwrap();
             let opcode = case["opcode"].as_u64().unwrap() as u8;
             let expected_stages = case["expected_stages"].as_u64().unwrap() as usize;
@@ -3425,20 +3407,8 @@ mod tests {
 
             for stage in 0..expected_stages {
                 apu.debug_spc_bus_trace.as_mut().unwrap().clear();
-                let state = apu.cycle_sequenced_smp_state();
-                let mut coroutine = std::mem::take(&mut apu.smp_coroutine);
-                let (state, actual_psw, result) = {
-                    let mut smp = Smp::new(&mut apu, state);
-                    if stage == 0 {
-                        let fetched = smp.read_pc();
-                        assert_eq!(fetched, opcode, "case {case_id}");
-                        coroutine.opcode = Some(opcode);
-                    }
-                    let result = smp.run_resumable_micro_step(&mut coroutine).unwrap();
-                    (smp.state(), smp.get_psw(), result)
-                };
-                apu.smp_coroutine = coroutine;
-                apu.apply_cycle_sequenced_smp_state(state);
+                let result = apu.run_snes9x_micro_step_without_dsp().unwrap();
+                let actual_psw = apu.spc_get_flags();
                 let expected_result = if stage + 1 == expected_stages {
                     SmpMicroStepResult::InstructionComplete { opcode }
                 } else {
@@ -3991,22 +3961,28 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_resumable_opcode_does_not_advance_or_fetch() {
+    fn atomic_zero_dispatches_with_one_owned_fetch() {
         let mut apu = ApuState::new();
         apu.reset_snes9x_coroutine();
         apu.rom_readable = false;
         apu.spc.pc = 0x0200;
         apu.ram[0x0200] = 0x00;
+        apu.debug_spc_bus_trace = Some(Vec::new());
 
-        let before = (apu.cycles, apu.spc.pc);
         assert_eq!(
-            apu.run_snes9x_micro_step_without_dsp().unwrap_err(),
-            UnsupportedSmpMicroStep {
-                opcode: 0x00,
-                pc: 0x0200,
-            }
+            apu.run_snes9x_micro_step_without_dsp().unwrap(),
+            SmpMicroStepResult::InstructionComplete { opcode: 0x00 }
         );
-        assert_eq!((apu.cycles, apu.spc.pc), before);
+        assert_eq!((apu.cycles, apu.spc.pc), (2, 0x0201));
+        let fetches = apu
+            .debug_spc_bus_trace
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter(|event| event.kind == 1 && event.address == 0x0200)
+            .collect::<Vec<_>>();
+        assert_eq!(fetches.len(), 1);
+        assert_eq!(fetches[0].value, 0x00);
     }
 
     #[test]

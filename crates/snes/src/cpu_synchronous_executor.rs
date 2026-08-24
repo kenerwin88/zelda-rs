@@ -8,7 +8,7 @@
 use crate::apu::{Snes9xDspSampleReceipt, UnsupportedSmpMicroStep};
 use crate::cpu_timeline::{
     CpuBusWorkload, CpuFieldTiming, CpuMasterTimeline, CpuMasterTimestamp,
-    CpuSynchronousTimelineEvent,
+    CpuSynchronousTimelineEvent, NMI_SCANLINE, SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
 };
 use crate::snes::Snes;
 use crate::snes9x_apu_clock::{Snes9xApuClockError, Snes9xApuClockState};
@@ -40,6 +40,14 @@ pub struct CpuSynchronousMachine {
     timeline: CpuMasterTimeline,
     apu_clock: Snes9xApuClockState,
     pending_completion: Option<CpuSynchronousCompletion>,
+    /// Pinned `CPU.NMIPending` plus its absolute `NMITriggerPos`. Interrupt
+    /// entry remains instruction-boundary owned by the source CPU executor.
+    nmi_acceptance_not_before: Option<CpuMasterTimestamp>,
+    /// `$4200` low-to-high NMI edges are published by `CHECK_FOR_IRQ_CHANGE`
+    /// after the writing instruction, not by the register semantic itself.
+    deferred_nmi_enable_edge: bool,
+    #[cfg(test)]
+    force_zero_cycle_smp_step: bool,
 }
 
 impl CpuSynchronousMachine {
@@ -59,6 +67,10 @@ impl CpuSynchronousMachine {
             timeline,
             apu_clock: Snes9xApuClockState::new(),
             pending_completion: None,
+            nmi_acceptance_not_before: None,
+            deferred_nmi_enable_edge: false,
+            #[cfg(test)]
+            force_zero_cycle_smp_step: false,
         }
     }
 
@@ -88,7 +100,13 @@ impl CpuSynchronousMachine {
         let port = Snes::synchronous_cpu_apu_port(full_adr)
             .ok_or(CpuSynchronousMachineError::UnsupportedCpuBusAddress { full_adr })?;
         let timestamp = self.timestamp();
-        Self::synchronize_apu(&mut self.snes, &mut self.apu_clock, timestamp)?;
+        let force_zero_cycle_smp_step = self.force_zero_cycle_smp_step();
+        Self::synchronize_apu(
+            &mut self.snes,
+            &mut self.apu_clock,
+            timestamp,
+            force_zero_cycle_smp_step,
+        )?;
         let value = self.snes.synchronous_cpu_read_apu_port_semantic(port);
         self.pending_completion = Some(CpuSynchronousCompletion::Read(value));
         let access_master_cycles = u32::from(self.snes.hardware_access_time(full_adr));
@@ -115,7 +133,13 @@ impl CpuSynchronousMachine {
         let port = Snes::synchronous_cpu_apu_port(full_adr)
             .ok_or(CpuSynchronousMachineError::UnsupportedCpuBusAddress { full_adr })?;
         let timestamp = self.timestamp();
-        Self::synchronize_apu(&mut self.snes, &mut self.apu_clock, timestamp)?;
+        let force_zero_cycle_smp_step = self.force_zero_cycle_smp_step();
+        Self::synchronize_apu(
+            &mut self.snes,
+            &mut self.apu_clock,
+            timestamp,
+            force_zero_cycle_smp_step,
+        )?;
         self.snes
             .synchronous_cpu_write_apu_port_semantic(full_adr, port, value);
         self.pending_completion = Some(CpuSynchronousCompletion::Write);
@@ -161,16 +185,55 @@ impl CpuSynchronousMachine {
         &mut self,
         master_cycles: u32,
     ) -> Result<(), CpuSynchronousMachineError> {
+        let force_zero_cycle_smp_step = self.force_zero_cycle_smp_step();
         let snes = &mut self.snes;
         let apu_clock = &mut self.apu_clock;
+        let nmi_acceptance_not_before = &mut self.nmi_acceptance_not_before;
         self.timeline
             .advance_synchronous_after_semantics_with(master_cycles, |event, timestamp| match event
             {
-                CpuSynchronousTimelineEvent::HMax { .. } => {
-                    Self::synchronize_apu(snes, apu_clock, timestamp)?;
+                CpuSynchronousTimelineEvent::HMax {
+                    completed_field_index: _,
+                    completed_scanline,
+                    event_timestamp,
+                    ..
+                } => {
+                    Self::synchronize_apu(snes, apu_clock, timestamp, force_zero_cycle_smp_step)?;
                     // Pinned `S9xAPUEndScanline`: execute the SMP through HMax,
                     // then drain the DSP clock accumulated by that execution.
                     snes.apu.synchronize_snes9x_dsp();
+                    let next_scanline = if completed_scanline + 1
+                        == crate::cpu_timeline::NTSC_SCANLINES_PER_FIELD as u16
+                    {
+                        0
+                    } else {
+                        completed_scanline + 1
+                    };
+                    if u32::from(next_scanline) == NMI_SCANLINE {
+                        // cpuexec.cpp publishes RDNMI before scheduling an
+                        // enabled NMI for H=12 of the new VBlank scanline.
+                        snes.in_vblank = true;
+                        snes.in_nmi = true;
+                        if snes.nmi_enabled {
+                            snes.cpu.nmi_wanted = true;
+                            let deadline = CpuMasterTimestamp::new(
+                                event_timestamp.master_cycles()
+                                    + SNES9X_NMI_ACCEPTANCE_DELAY_MASTER_CYCLES,
+                            );
+                            *nmi_acceptance_not_before = Some(deadline);
+                        }
+                    } else if next_scanline == 0 {
+                        snes.in_vblank = false;
+                        // cpuexec.cpp returns RDNMI to the model's low
+                        // `_5A22` state at the start of the new field.
+                        snes.in_nmi = false;
+                    }
+                    // Pinned `S9xMainLoop`: after the scanline increment,
+                    // auto-read both joypad ports at ScreenHeight + 3 (V228)
+                    // when JOYSER0 is enabled by NMITIMEN bit 0.
+                    if next_scanline == 228 && snes.auto_joy_read {
+                        snes.do_auto_joypad();
+                    }
                     Ok(0)
                 }
                 CpuSynchronousTimelineEvent::Bus(_) => Ok(0),
@@ -181,10 +244,14 @@ impl CpuSynchronousMachine {
         snes: &mut Snes,
         apu_clock: &mut Snes9xApuClockState,
         timestamp: CpuMasterTimestamp,
+        force_zero_cycle_smp_step: bool,
     ) -> Result<(), CpuSynchronousMachineError> {
         let apu = &mut snes.apu;
         let mut unsupported = None;
         let clock_result = apu_clock.sync_to(timestamp.master_cycles(), || {
+            if force_zero_cycle_smp_step {
+                return 0;
+            }
             let before = apu.cycles;
             match apu.run_snes9x_micro_step_without_dsp() {
                 Ok(_) => apu.cycles.wrapping_sub(before),
@@ -198,6 +265,16 @@ impl CpuSynchronousMachine {
             return Err(CpuSynchronousMachineError::UnsupportedSmpOpcode(error));
         }
         clock_result.map_err(CpuSynchronousMachineError::ApuClock)
+    }
+
+    #[cfg(test)]
+    const fn force_zero_cycle_smp_step(&self) -> bool {
+        self.force_zero_cycle_smp_step
+    }
+
+    #[cfg(not(test))]
+    const fn force_zero_cycle_smp_step(&self) -> bool {
+        false
     }
 }
 
@@ -241,6 +318,9 @@ mod tests {
             timeline,
             apu_clock: clock,
             pending_completion: None,
+            nmi_acceptance_not_before: None,
+            deferred_nmi_enable_edge: false,
+            force_zero_cycle_smp_step: false,
         }
     }
 
@@ -250,17 +330,12 @@ mod tests {
             CpuRasterPosition::new(0, 1_358),
             Snes9xApuClockState::from_checkpoint(checkpoint).unwrap(),
         );
-        machine.snes.apu.rom_readable = false;
-        machine.snes.apu.spc.pc = 0x0200;
-        machine.snes.apu.ram[0x0200] = 0x00;
+        machine.force_zero_cycle_smp_step = true;
         machine
     }
 
-    fn unsupported_at_0200() -> CpuSynchronousMachineError {
-        CpuSynchronousMachineError::UnsupportedSmpOpcode(UnsupportedSmpMicroStep {
-            opcode: 0,
-            pc: 0x0200,
-        })
+    fn zero_cycle_smp_step() -> CpuSynchronousMachineError {
+        CpuSynchronousMachineError::ApuClock(Snes9xApuClockError::ZeroCycleSmpStep)
     }
 
     #[test]
@@ -285,6 +360,79 @@ mod tests {
     }
 
     #[test]
+    fn field_wrap_clears_vblank_and_rdnmi_latches_to_model_low_state() {
+        let raster = CpuRasterPosition::new(261, 1_358);
+        let start = CpuFieldTiming::NON_INTERLACE_EVEN.master_cycles_at(0, raster);
+        let clock = Snes9xApuClockState::from_checkpoint(
+            Snes9xApuClockCheckpoint::new(start, 0, 0).unwrap(),
+        )
+        .unwrap();
+        let mut machine = machine_at_source_checkpoint(raster, clock);
+        machine.snes.in_vblank = true;
+        machine.snes.in_nmi = true;
+
+        machine
+            .drain_add_cycles_after_committed_semantic(6)
+            .unwrap();
+
+        assert_eq!(
+            machine.timeline.raster_position(),
+            CpuRasterPosition::new(0, 0)
+        );
+        assert!(!machine.snes.in_vblank);
+        assert!(!machine.snes.in_nmi);
+        assert!(!machine.snes.cpu.nmi_wanted);
+        assert_eq!(machine.nmi_acceptance_not_before, None);
+    }
+
+    #[test]
+    fn hmax_at_v228_runs_auto_joypad_only_when_nmitimen_bit_zero_is_enabled() {
+        let raster = CpuRasterPosition::new(227, 1_358);
+        let start = CpuFieldTiming::NON_INTERLACE_EVEN.master_cycles_at(0, raster);
+        let clock = || {
+            Snes9xApuClockState::from_checkpoint(
+                Snes9xApuClockCheckpoint::new(start, 0, 0).unwrap(),
+            )
+            .unwrap()
+        };
+
+        let mut enabled = machine_at_source_checkpoint(raster, clock());
+        enabled.snes.auto_joy_read = true;
+        enabled.snes.input1.current_state = 0x1234;
+        enabled.snes.input2.current_state = 0xabcd;
+        enabled.snes.port_auto_read = [0xffff; 4];
+        enabled
+            .drain_add_cycles_after_committed_semantic(6)
+            .unwrap();
+
+        assert_eq!(
+            enabled.timeline.raster_position(),
+            CpuRasterPosition::new(228, 0)
+        );
+        assert_eq!(enabled.snes.port_auto_read, [0x2c48, 0xb3d5, 0, 0]);
+        assert!(!enabled.snes.input1.latch_line);
+        assert!(!enabled.snes.input2.latch_line);
+
+        let mut disabled = machine_at_source_checkpoint(raster, clock());
+        disabled.snes.auto_joy_read = false;
+        disabled.snes.input1.current_state = 0x1234;
+        disabled.snes.input2.current_state = 0xabcd;
+        disabled.snes.port_auto_read = [0x1111, 0x2222, 0x3333, 0x4444];
+        disabled
+            .drain_add_cycles_after_committed_semantic(6)
+            .unwrap();
+
+        assert_eq!(
+            disabled.timeline.raster_position(),
+            CpuRasterPosition::new(228, 0)
+        );
+        assert_eq!(
+            disabled.snes.port_auto_read,
+            [0x1111, 0x2222, 0x3333, 0x4444]
+        );
+    }
+
+    #[test]
     fn reset_seed_apui_semantics_own_their_six_cycle_transactions() {
         let mut machine = CpuSynchronousMachine::from_snes9x_apu_reset_seed();
         assert_eq!(machine.read_apu_port_alias(0x002140).unwrap(), 0);
@@ -299,13 +447,11 @@ mod tests {
     fn pre_semantic_sync_failure_commits_neither_semantic_nor_duration() {
         let mut machine =
             machine_at_source_checkpoint(CpuRasterPosition::new(0, 21), Snes9xApuClockState::new());
-        machine.snes.apu.rom_readable = false;
-        machine.snes.apu.spc.pc = 0x0200;
-        machine.snes.apu.ram[0x0200] = 0x00;
+        machine.force_zero_cycle_smp_step = true;
 
         assert_eq!(
             machine.write_apu_port_alias(0x002140, 0x77),
-            Err(unsupported_at_0200())
+            Err(zero_cycle_smp_step())
         );
         assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(21));
         assert_eq!(machine.snes.apu.in_ports[0], 0);
@@ -317,7 +463,7 @@ mod tests {
         let mut machine = post_semantic_hmax_failure_machine();
         assert_eq!(
             machine.write_apu_port_alias(0x002140, 0x77),
-            Err(unsupported_at_0200())
+            Err(zero_cycle_smp_step())
         );
         assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(1_364));
         assert_eq!(machine.timeline.wram_refresh_cycle(), 538);
@@ -337,7 +483,7 @@ mod tests {
         assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(1_364));
         assert_eq!(machine.timeline.wram_refresh_cycle(), 538);
 
-        machine.snes.apu.ram[0x0200..0x0202].copy_from_slice(&[0xcd, 0x7f]);
+        machine.force_zero_cycle_smp_step = false;
         assert_eq!(
             machine.resume_pending_completion().unwrap(),
             CpuSynchronousCompletion::Write
@@ -354,7 +500,7 @@ mod tests {
         machine.snes.apu.out_ports[0] = 0x5a;
         assert_eq!(
             machine.read_apu_port_alias(0x002140),
-            Err(unsupported_at_0200())
+            Err(zero_cycle_smp_step())
         );
         assert_eq!(machine.timestamp(), CpuMasterTimestamp::new(1_364));
         assert_eq!(
@@ -369,7 +515,7 @@ mod tests {
                 completion: CpuSynchronousCompletion::Read(0x5a),
             })
         );
-        machine.snes.apu.ram[0x0200..0x0202].copy_from_slice(&[0xcd, 0x7f]);
+        machine.force_zero_cycle_smp_step = false;
         assert_eq!(
             machine.resume_pending_completion().unwrap(),
             CpuSynchronousCompletion::Read(0x5a)

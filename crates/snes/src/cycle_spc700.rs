@@ -569,29 +569,6 @@ impl<'a> Smp<'a> {
         }
     }
 
-    pub(crate) const fn supports_resumable_opcode(opcode: u8) -> bool {
-        match Self::snes9x_opcode_plan(opcode) {
-            Snes9xOpcodePlan::Split(_) => true,
-            // Keep the already source-checked IPL atomics until the complete
-            // atomic engine has an exhaustive pinned-Snes9x differential test.
-            Snes9xOpcodePlan::Atomic => matches!(
-                opcode,
-                0x10 | 0x1d
-                    | 0x1f
-                    | 0x2f
-                    | 0x5d
-                    | 0x78
-                    | 0xab
-                    | 0xbd
-                    | 0xcd
-                    | 0xd0
-                    | 0xdd
-                    | 0xe8
-                    | 0xfc
-            ),
-        }
-    }
-
     /// Execute exactly one Snes9x `SMP::op_step` boundary.
     ///
     /// The opcode fetch belongs to the first step. A later call resumes the
@@ -605,133 +582,44 @@ impl<'a> Smp<'a> {
         let opcode = match coroutine.opcode {
             Some(opcode) => opcode,
             None => {
-                let pc = self.reg_pc;
                 let opcode = self.read_pc();
-                if !Self::supports_resumable_opcode(opcode) {
-                    return Err(UnsupportedSmpMicroStep { opcode, pc });
-                }
                 coroutine.opcode = Some(opcode);
                 opcode
             }
         };
 
-        if let Snes9xOpcodePlan::Split(Snes9xSplitPlan::Store(plan)) =
-            Self::snes9x_opcode_plan(opcode)
-        {
-            return self.run_snes9x_store_micro_step(opcode, plan, coroutine);
-        }
-        if let Snes9xOpcodePlan::Split(Snes9xSplitPlan::Load(plan)) =
-            Self::snes9x_opcode_plan(opcode)
-        {
-            return self.run_snes9x_load_micro_step(opcode, plan, coroutine);
-        }
-        if let Snes9xOpcodePlan::Split(Snes9xSplitPlan::Bit(plan)) =
-            Self::snes9x_opcode_plan(opcode)
-        {
-            return self.run_snes9x_bit_micro_step(opcode, plan, coroutine);
-        }
-        if matches!(
-            Self::snes9x_opcode_plan(opcode),
-            Snes9xOpcodePlan::Split(Snes9xSplitPlan::DirectCopy)
-        ) {
-            return self.run_snes9x_direct_copy_micro_step(opcode, coroutine);
-        }
-
-        if matches!(Self::snes9x_opcode_plan(opcode), Snes9xOpcodePlan::Atomic) {
-            self.import_coroutine_scratch(coroutine);
-            if matches!(opcode, 0xef | 0xff) {
-                // Pinned Snes9x keeps SLEEP/STOP opt-in execution live by
-                // returning to the same opcode on every `op_step`.
-                self.cycles(2);
-                self.reg_pc = self.reg_pc.wrapping_sub(1);
-            } else {
-                self.execute_opcode(opcode);
+        match Self::snes9x_opcode_plan(opcode) {
+            Snes9xOpcodePlan::Split(Snes9xSplitPlan::Store(plan)) => {
+                return self.run_snes9x_store_micro_step(opcode, plan, coroutine);
             }
-            self.export_coroutine_scratch(coroutine);
-            coroutine.opcode = None;
-            coroutine.opcode_cycle = 0;
-            return Ok(SmpMicroStepResult::InstructionComplete { opcode });
+            Snes9xOpcodePlan::Split(Snes9xSplitPlan::Load(plan)) => {
+                return self.run_snes9x_load_micro_step(opcode, plan, coroutine);
+            }
+            Snes9xOpcodePlan::Split(Snes9xSplitPlan::Bit(plan)) => {
+                return self.run_snes9x_bit_micro_step(opcode, plan, coroutine);
+            }
+            Snes9xOpcodePlan::Split(Snes9xSplitPlan::DirectCopy) => {
+                return self.run_snes9x_direct_copy_micro_step(opcode, coroutine);
+            }
+            Snes9xOpcodePlan::Split(Snes9xSplitPlan::ImplementedNonStore) => {}
+            Snes9xOpcodePlan::Atomic => {
+                self.import_coroutine_scratch(coroutine);
+                if matches!(opcode, 0xef | 0xff) {
+                    // Pinned Snes9x keeps SLEEP/STOP opt-in execution live by
+                    // returning to the same opcode on every `op_step`.
+                    self.cycles(2);
+                    self.reg_pc = self.reg_pc.wrapping_sub(1);
+                } else {
+                    self.execute_opcode(opcode);
+                }
+                self.export_coroutine_scratch(coroutine);
+                coroutine.opcode = None;
+                coroutine.opcode_cycle = 0;
+                return Ok(SmpMicroStepResult::InstructionComplete { opcode });
+            }
         }
 
         match (opcode, coroutine.opcode_cycle) {
-            (0xcd, 0) => {
-                self.reg_x = self.read_pc();
-                self.set_psw_n_z(u32::from(self.reg_x));
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0xbd, 0) => {
-                self.cycles(1);
-                self.reg_sp = self.reg_x;
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0xdd, 0) => {
-                self.cycles(1);
-                self.reg_a = self.reg_y;
-                self.set_psw_n_z(u32::from(self.reg_a));
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0x5d, 0) => {
-                self.cycles(1);
-                self.reg_x = self.reg_a;
-                self.set_psw_n_z(u32::from(self.reg_x));
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0xe8, 0) => {
-                self.reg_a = self.read_pc();
-                self.set_psw_n_z(u32::from(self.reg_a));
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0x1d, 0) => {
-                self.cycles(1);
-                self.reg_x = self.dec(self.reg_x);
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0xd0, 0) => {
-                coroutine.rd = u16::from(self.read_pc());
-                if !self.psw_z {
-                    self.cycles(2);
-                    self.reg_pc = self
-                        .reg_pc
-                        .wrapping_add(coroutine.rd as u8 as i8 as i16 as u16);
-                }
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0x78, 0) => {
-                coroutine.rd = u16::from(self.read_pc());
-                coroutine.dp = u16::from(self.read_pc());
-                coroutine.wr = u16::from(self.read_dp(coroutine.dp as u8));
-                self.cmp(coroutine.wr as u8, coroutine.rd as u8);
-                self.cycles(1);
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0x2f, 0) => {
-                coroutine.rd = u16::from(self.read_pc());
-                self.cycles(2);
-                self.reg_pc = self
-                    .reg_pc
-                    .wrapping_add(coroutine.rd as u8 as i8 as i16 as u16);
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0x10, 0) => {
-                coroutine.rd = u16::from(self.read_pc());
-                if !self.psw_n {
-                    self.cycles(2);
-                    self.reg_pc = self
-                        .reg_pc
-                        .wrapping_add(coroutine.rd as u8 as i8 as i16 as u16);
-                }
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
             (0xba, 0) => {
                 coroutine.sp = u16::from(self.read_pc());
                 coroutine.opcode_cycle = 1;
@@ -785,31 +673,6 @@ impl<'a> Smp<'a> {
                 coroutine.rd = u16::from(self.read_dp(coroutine.dp as u8));
                 self.reg_y = self.cmp(self.reg_y, coroutine.rd as u8);
                 Self::snes9x_complete_split(coroutine, opcode)
-            }
-            (0xfc, 0) => {
-                self.cycles(1);
-                self.reg_y = self.inc(self.reg_y);
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0xab, 0) => {
-                coroutine.dp = u16::from(self.read_pc());
-                coroutine.rd = u16::from(self.read_dp(coroutine.dp as u8));
-                coroutine.rd = u16::from(self.inc(coroutine.rd as u8));
-                self.write_dp(coroutine.dp as u8, coroutine.rd as u8);
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
-            }
-            (0x1f, 0) => {
-                coroutine.dp = u16::from(self.read_pc());
-                coroutine.dp |= u16::from(self.read_pc()) << 8;
-                self.cycles(1);
-                coroutine.dp = coroutine.dp.wrapping_add(u16::from(self.reg_x));
-                coroutine.rd = u16::from(self.read(coroutine.dp));
-                coroutine.rd |= u16::from(self.read(coroutine.dp.wrapping_add(1))) << 8;
-                self.reg_pc = coroutine.rd;
-                *coroutine = SmpCoroutineState::enabled();
-                Ok(SmpMicroStepResult::InstructionComplete { opcode })
             }
             _ => Err(UnsupportedSmpMicroStep {
                 opcode,
@@ -3040,9 +2903,6 @@ pub(crate) mod tests {
                 stopped: false,
             },
         );
-        let opcode = smp.read_pc();
-        assert_eq!(opcode, 0x01);
-        coroutine.opcode = Some(opcode);
         assert_eq!(
             smp.run_resumable_micro_step(&mut coroutine).unwrap(),
             SmpMicroStepResult::InstructionComplete { opcode: 0x01 }
@@ -3141,9 +3001,6 @@ pub(crate) mod tests {
                         stopped: false,
                     },
                 );
-                let fetched = smp.read_pc();
-                assert_eq!(fetched, opcode, "case {case_id}");
-                coroutine.opcode = Some(opcode);
                 let result = smp.run_resumable_micro_step(&mut coroutine).unwrap();
                 (smp.state(), smp.get_psw(), smp.cycle_count, result)
             };
@@ -3538,9 +3395,6 @@ pub(crate) mod tests {
 
         assert_eq!(actual_split, expected_split);
         assert_eq!(actual_stores, expected_stores);
-        assert!(actual_split
-            .iter()
-            .all(|opcode| Smp::supports_resumable_opcode(*opcode)));
         let source_stage_counts = provenance["classifier"]["split_opcodes_and_stages"]
             .as_array()
             .unwrap()
