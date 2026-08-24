@@ -2951,12 +2951,13 @@ impl SmpBus for ApuState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_bootstrap_fixture::{
+        cpu_apu_accesses, first_cc_output_port_writes, records, smp_instruction_boundaries,
+        smp_output_port_writes, split_first_cc_cpu_accesses,
+    };
 
     fn pinned_snes9x_bootstrap_fixture() -> Vec<serde_json::Value> {
-        include_str!("../../../external/snes9x-libretro/fixtures/zelda3-cold-apu-bootstrap.jsonl")
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect()
+        records()
     }
 
     fn advance_ipl_to_first_output_store(apu: &mut ApuState) {
@@ -3066,17 +3067,17 @@ mod tests {
         apu.reset_snes9x_coroutine();
         advance_ipl_to_first_output_store(&mut apu);
         let fixture = pinned_snes9x_bootstrap_fixture();
-        let writes = fixture[2]["smp_output_port_writes"].as_array().unwrap();
-        let aa_cycle = writes[0]["absolute_cycle"].as_u64().unwrap() as u32;
-        let bb_cycle = writes[1]["absolute_cycle"].as_u64().unwrap() as u32;
-        assert_eq!(writes[0]["origin_pc"], 0xffc9);
-        assert_eq!(writes[0]["opcode"], 0x8f);
-        assert_eq!(writes[0]["port"], 0);
-        assert_eq!(writes[0]["value"], 0xaa);
-        assert_eq!(writes[1]["origin_pc"], 0xffcc);
-        assert_eq!(writes[1]["opcode"], 0x8f);
-        assert_eq!(writes[1]["port"], 1);
-        assert_eq!(writes[1]["value"], 0xbb);
+        let writes = smp_output_port_writes(&fixture[2]);
+        let aa_cycle = writes[0].absolute_cycle;
+        let bb_cycle = writes[1].absolute_cycle;
+        assert_eq!(writes[0].origin_pc, 0xffc9);
+        assert_eq!(writes[0].opcode, 0x8f);
+        assert_eq!(writes[0].port, 0);
+        assert_eq!(writes[0].value, 0xaa);
+        assert_eq!(writes[1].origin_pc, 0xffcc);
+        assert_eq!(writes[1].opcode, 0x8f);
+        assert_eq!(writes[1].port, 1);
+        assert_eq!(writes[1].value, 0xbb);
         assert_eq!(apu.out_ports[..2], [0, 0]);
 
         assert_eq!(
@@ -3134,47 +3135,30 @@ mod tests {
     fn resumable_only_cold_ipl_reaches_fixture_cc_handshake() {
         let fixture = pinned_snes9x_bootstrap_fixture();
         let bootstrap = &fixture[2];
-        let expected_writes = bootstrap["smp_output_port_writes"].as_array().unwrap();
-        let boundary_sequence = &bootstrap["smp_instruction_boundary_sequence"];
-        assert_eq!(boundary_sequence["encoding"], "repeated-span-v1");
-        let mut expected_instructions = Vec::new();
-        for span in boundary_sequence["spans"].as_array().unwrap() {
-            let span_start = span["absolute_start_cycle"].as_u64().unwrap() as u32;
-            let stride = span["repeat_cycle_stride"].as_u64().unwrap() as u32;
-            for repeat in 0..span["repeat_count"].as_u64().unwrap() as u32 {
-                let base = span_start + repeat * stride;
-                for instruction in span["instructions"].as_array().unwrap() {
-                    expected_instructions.push((
-                        instruction["origin_pc"].as_u64().unwrap() as u16,
-                        instruction["opcode"].as_u64().unwrap() as u8,
-                        base + instruction["start_cycle_offset"].as_u64().unwrap() as u32,
-                        base + instruction["end_cycle_offset"].as_u64().unwrap() as u32,
-                        instruction["op_step_calls"].as_u64().unwrap() as u8,
-                        instruction["max_continuation_opcode_cycle"]
-                            .as_u64()
-                            .unwrap() as u8,
-                    ));
-                }
-            }
-        }
-        assert_eq!(
-            expected_instructions.len(),
-            boundary_sequence["instruction_count"].as_u64().unwrap() as usize
-        );
+        let all_expected_writes = smp_output_port_writes(bootstrap);
+        let expected_writes = first_cc_output_port_writes(&all_expected_writes);
+        let cc_cycle = expected_writes.last().unwrap().absolute_cycle;
+        let expected_instructions = smp_instruction_boundaries(bootstrap)
+            .into_iter()
+            .take_while(|instruction| instruction.absolute_end_cycle <= cc_cycle)
+            .map(|instruction| {
+                (
+                    instruction.origin_pc,
+                    instruction.opcode,
+                    instruction.absolute_start_cycle,
+                    instruction.absolute_end_cycle,
+                    instruction.op_step_calls,
+                    instruction.max_continuation_opcode_cycle,
+                )
+            })
+            .collect::<Vec<_>>();
 
         let mut apu = ApuState::new();
         apu.reset_snes9x_coroutine();
-        for event in bootstrap["cpu_apu_handshake_accesses"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|event| !event["is_read"].as_bool().unwrap())
-        {
-            apu.schedule_input_port_event(
-                event["apu_cycle_after"].as_u64().unwrap() as u32,
-                event["port"].as_u64().unwrap() as u8,
-                event["value"].as_u64().unwrap() as u8,
-            );
+        let cpu_accesses = cpu_apu_accesses(bootstrap);
+        let (_, handshake) = split_first_cc_cpu_accesses(&cpu_accesses);
+        for event in handshake.iter().filter(|event| !event.is_read) {
+            apu.schedule_input_port_event(event.apu_cycle_after, event.port, event.value);
         }
 
         let mut observed_writes = Vec::new();
@@ -3234,20 +3218,17 @@ mod tests {
             }
         }
 
-        assert_eq!(
-            observed_instructions.len(),
-            boundary_sequence["instruction_count"].as_u64().unwrap() as usize
-        );
+        assert_eq!(observed_instructions.len(), expected_instructions.len());
         assert_eq!(observed_instructions, expected_instructions);
         let expected = expected_writes
             .iter()
             .map(|event| {
                 (
-                    event["absolute_cycle"].as_u64().unwrap() as u32,
-                    event["origin_pc"].as_u64().unwrap() as u16,
-                    event["opcode"].as_u64().unwrap() as u8,
-                    event["port"].as_u64().unwrap() as u8,
-                    event["value"].as_u64().unwrap() as u8,
+                    event.absolute_cycle,
+                    event.origin_pc,
+                    event.opcode,
+                    event.port,
+                    event.value,
                 )
             })
             .collect::<Vec<_>>();

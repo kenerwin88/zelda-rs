@@ -34,9 +34,12 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
         self.assertEqual(
             MODULE.EXPECTED_PATCH_PATHS,
             {
+                "apu/apu.cpp",
+                "apu/apu.h",
                 "apu/bapu/dsp/SPC_DSP.cpp",
                 "apu/bapu/dsp/SPC_DSP.h",
                 "apu/bapu/smp/core.cpp",
+                "apu/bapu/smp/memory.cpp",
                 "apu/bapu/smp/smp.cpp",
                 "cpuexec.cpp",
                 "dma.cpp",

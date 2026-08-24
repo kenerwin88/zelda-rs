@@ -1442,7 +1442,22 @@ index 00000000..06a376d4
 +	dsp_write_count = 0;
 +	apu_port_write_count = 0;
 +	smp_output_port_write_count = 0;
-+	smp_instruction_count = 0;
++	// A pseudo-op can straddle retro_run boundaries. Retain its boundary
++	// record so continuation steps in the new frame still update the owning
++	// instruction; the host de-duplicates the repeated record by reset cycle.
++	if (smp_instruction_count > 0 && SNES::smp.opcode_cycle != 0)
++	{
++		const int previous = smp_instruction_count - 1;
++		if (previous != 0)
++		{
++			std::copy_n(smp_instructions[previous], smp_instruction_field_count,
++				smp_instructions[0]);
++			smp_instruction_cycles[0] = smp_instruction_cycles[previous];
++		}
++		smp_instruction_count = 1;
++	}
++	else
++		smp_instruction_count = 0;
 +	if (!active(TRACE_FRAME))
 +		return;
 +	write_machine_state("frame");

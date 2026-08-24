@@ -23,6 +23,9 @@ pub mod snes9x_apu_clock;
 pub mod snes9x_apu_timing;
 pub mod tracing;
 
+#[cfg(test)]
+mod test_bootstrap_fixture;
+
 pub use cpu_step::{cpu_run_opcode, cpu_run_opcode_timed, CpuInstructionTiming};
 
 pub use cart::{Cart, CartType};

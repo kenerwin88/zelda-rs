@@ -821,7 +821,7 @@ pub(crate) struct LibretroDspRegisterWrite {
     pub(crate) dsp_phase: i32,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct LibretroApuPortWrite {
     pub(crate) port: i32,
     pub(crate) value: i32,
@@ -860,7 +860,7 @@ pub(crate) struct LibretroSmpOutputPortWrite {
     pub(crate) output_sample: i32,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct LibretroSmpInstruction {
     pub(crate) absolute_cycle: u64,
     pub(crate) program_counter: i32,

@@ -74,6 +74,21 @@ struct SmpBootstrapInstructionSequence {
     spans: Vec<SmpBootstrapInstructionSpan>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+struct SmpBootstrapDeltaSequence {
+    encoding: &'static str,
+    fields: Vec<&'static str>,
+    record_count: usize,
+    expanded_sha256: String,
+    data_base64: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct FramedApuPortAccess {
+    frame: u32,
+    access: crate::libretro_core::LibretroApuPortWrite,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReplayBundle {
     dir: PathBuf,
@@ -3347,6 +3362,9 @@ pub(crate) fn run_compare_libretro_oracle(
         writer
     });
     let mut debug_smp_bootstrap_complete = false;
+    let mut debug_smp_bootstrap_instructions = Vec::new();
+    let mut debug_smp_bootstrap_output_writes = Vec::new();
+    let mut debug_smp_bootstrap_cpu_accesses = Vec::new();
     let mut debug_native_apu_dsp_writes = native_apu_trace_path.map(|path| {
         BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
             eprintln!("failed to create native APU DSP-write trace: {error}");
@@ -4339,63 +4357,116 @@ pub(crate) fn run_compare_libretro_oracle(
                     );
                     process::exit(2);
                 });
-                let output_end = output_writes
-                    .iter()
-                    .position(|event| event.port == 0 && event.value == 0xcc)
-                    .map(|index| index + 1)
-                    .unwrap_or(output_writes.len());
-                let cpu_end = cpu_accesses
-                    .iter()
-                    .position(|event| event.is_read && event.port == 0 && event.value == 0xcc)
-                    .map(|index| index + 1)
-                    .unwrap_or(cpu_accesses.len());
-                let cpu_reset_end = cpu_accesses.len().min(4);
-                let cpu_handshake_start = cpu_accesses
-                    .iter()
-                    .position(|event| event.is_read && event.value != 0)
-                    .map(|index| index.saturating_sub(2))
-                    .unwrap_or(cpu_end);
-                let observed_cc = output_end < output_writes.len()
-                    || output_writes
-                        .last()
-                        .is_some_and(|event| event.port == 0 && event.value == 0xcc);
-                let cpu_observed_cc = cpu_end < cpu_accesses.len()
-                    || cpu_accesses.last().is_some_and(|event| {
-                        event.is_read && event.port == 0 && event.value == 0xcc
-                    });
-                let instruction_sequence = output_writes
-                    .iter()
-                    .find(|event| event.port == 0 && event.value == 0xcc)
-                    .map(|first_cc| {
-                        let instructions = oracle.debug_smp_instructions().unwrap_or_else(|| {
-                            eprintln!(
-                                "SMP-bootstrap trace requires Snes9x instruction instrumentation"
-                            );
-                            process::exit(2);
-                        });
-                        compact_smp_bootstrap_instruction_sequence(&instructions, first_cc)
-                            .unwrap_or_else(|error| {
-                                eprintln!("failed to compact Snes9x SMP-bootstrap trace: {error}");
-                                process::exit(1);
-                            })
-                    });
-                serde_json::to_writer(
-                    &mut *writer,
-                    &serde_json::json!({
-                        "kind": "bootstrap-events",
-                        "frame": frame_index,
-                        "smp_output_port_writes": &output_writes[..output_end],
-                        "cpu_apu_reset_writes": &cpu_accesses[..cpu_reset_end],
-                        "cpu_apu_poll_accesses_omitted": cpu_handshake_start.saturating_sub(cpu_reset_end),
-                        "cpu_apu_handshake_accesses": &cpu_accesses[cpu_handshake_start..cpu_end],
-                        "smp_instruction_boundary_sequence": instruction_sequence,
-                        "first_cc_acknowledged": observed_cc && cpu_observed_cc,
+                debug_smp_bootstrap_output_writes.extend(output_writes);
+                debug_smp_bootstrap_cpu_accesses.extend(cpu_accesses.into_iter().map(|access| {
+                    FramedApuPortAccess {
+                        frame: frame_index,
+                        access,
+                    }
+                }));
+                append_smp_instruction_frame(
+                    &mut debug_smp_bootstrap_instructions,
+                    oracle.debug_smp_instructions().unwrap_or_else(|| {
+                        eprintln!(
+                            "SMP-bootstrap trace requires Snes9x instruction instrumentation"
+                        );
+                        process::exit(2);
                     }),
-                )
-                .unwrap();
-                writer.write_all(b"\n").unwrap();
-                writer.flush().unwrap();
-                debug_smp_bootstrap_complete = observed_cc && cpu_observed_cc;
+                );
+
+                if let Some(handoff_index) =
+                    smp_bootstrap_handoff_index(&debug_smp_bootstrap_instructions)
+                {
+                    let handoff_cycle =
+                        debug_smp_bootstrap_instructions[handoff_index + 1].absolute_cycle;
+                    debug_smp_bootstrap_output_writes
+                        .retain(|write| write.absolute_cycle <= handoff_cycle);
+                    let cpu_end = debug_smp_bootstrap_cpu_accesses
+                        .iter()
+                        .position(|framed| {
+                            let access = &framed.access;
+                            !access.is_read
+                                && access.port == 3
+                                && access.value == 0
+                                && (access.program_counter & 0xffff) == 0x88ff
+                        })
+                        .map(|index| index + 1)
+                        .unwrap_or_else(|| {
+                            eprintln!("SMP reached $0800 without Zelda's final $88fc STZ $2143");
+                            process::exit(1);
+                        });
+                    debug_smp_bootstrap_cpu_accesses.truncate(cpu_end);
+                    let first_cc = debug_smp_bootstrap_output_writes
+                        .iter()
+                        .find(|event| event.port == 0 && event.value == 0xcc)
+                        .unwrap_or_else(|| {
+                            eprintln!("SMP handoff trace has no initial CC write");
+                            process::exit(1);
+                        });
+                    let instruction_sequence = compact_smp_bootstrap_instruction_sequence(
+                        &debug_smp_bootstrap_instructions,
+                        first_cc,
+                    )
+                    .unwrap_or_else(|error| {
+                        eprintln!("failed to compact Snes9x SMP-bootstrap trace: {error}");
+                        process::exit(1);
+                    });
+                    let cpu_milestones = debug_smp_bootstrap_cpu_accesses
+                        .iter()
+                        .take(4)
+                        .chain(
+                            debug_smp_bootstrap_cpu_accesses
+                                .iter()
+                                .skip(4)
+                                .filter(|framed| {
+                                    let access = &framed.access;
+                                    (access.program_counter & 0xffff) == 0x88ef
+                                        && access.value == 0xcc
+                                })
+                                .take(1),
+                        )
+                        .chain(debug_smp_bootstrap_cpu_accesses.iter().rev().take(8).rev())
+                        .map(|framed| {
+                            serde_json::json!({
+                                "frame": framed.frame,
+                                "access": &framed.access,
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    let output_milestones = debug_smp_bootstrap_output_writes
+                        .iter()
+                        .take(3)
+                        .chain(debug_smp_bootstrap_output_writes.iter().rev().take(3).rev())
+                        .copied()
+                        .collect::<Vec<_>>();
+                    serde_json::to_writer(
+                        &mut *writer,
+                        &serde_json::json!({
+                            "kind": "bootstrap-events",
+                            "final_frame": frame_index,
+                            "first_cc_acknowledged": true,
+                            "final_ipl_handoff": {
+                                "absolute_cycle": handoff_cycle,
+                                "origin_pc": 0xfffb,
+                                "opcode": 0x1f,
+                                "target_pc": 0x0800,
+                            },
+                            "cpu_apu_access_milestones": cpu_milestones,
+                            "cpu_apu_access_sequence": compact_cpu_apu_accesses(
+                                &debug_smp_bootstrap_cpu_accesses,
+                            ),
+                            "smp_output_port_write_milestones": output_milestones,
+                            "smp_output_port_write_sequence": compact_smp_output_port_writes(
+                                &debug_smp_bootstrap_output_writes,
+                            ),
+                            "smp_instruction_boundary_sequence": instruction_sequence,
+                        }),
+                    )
+                    .unwrap();
+                    writer.write_all(b"\n").unwrap();
+                    writer.flush().unwrap();
+                    debug_smp_bootstrap_complete = true;
+                }
             }
         }
         if let (Some(writer), Some(trace)) = (debug_dsp_globals.as_mut(), oracle.debug_dsp_trace())
@@ -7370,6 +7441,200 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
     state.get(data_start..data_start.checked_add(length)?)
 }
 
+fn push_unsigned_varint(bytes: &mut Vec<u8>, mut value: u64) {
+    while value >= 0x80 {
+        bytes.push((value as u8) | 0x80);
+        value >>= 7;
+    }
+    bytes.push(value as u8);
+}
+
+fn base64_bytes(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let value = u32::from(chunk[0]) << 16
+            | u32::from(chunk.get(1).copied().unwrap_or(0)) << 8
+            | u32::from(chunk.get(2).copied().unwrap_or(0));
+        encoded.push(ALPHABET[((value >> 18) & 0x3f) as usize] as char);
+        encoded.push(ALPHABET[((value >> 12) & 0x3f) as usize] as char);
+        encoded.push(if chunk.len() >= 2 {
+            ALPHABET[((value >> 6) & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+        encoded.push(if chunk.len() == 3 {
+            ALPHABET[(value & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+    encoded
+}
+
+fn compact_delta_integer_sequence<const N: usize>(
+    fields: [&'static str; N],
+    rows: impl IntoIterator<Item = [i64; N]>,
+) -> SmpBootstrapDeltaSequence {
+    let rows = rows.into_iter().collect::<Vec<_>>();
+    let mut encoded = Vec::new();
+    let mut expanded = Vec::new();
+    for row in &rows {
+        for value in row {
+            expanded.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    for field in 0..N {
+        let mut column = Vec::new();
+        let mut previous = 0i64;
+        let mut row = 0;
+        while row < rows.len() {
+            let delta = rows[row][field] - previous;
+            previous = rows[row][field];
+            if delta != 0 {
+                let zigzag = ((delta << 1) ^ (delta >> 63)) as u64;
+                push_unsigned_varint(&mut column, zigzag + 1);
+                row += 1;
+                continue;
+            }
+            let mut run_length = 1usize;
+            while row + run_length < rows.len() && rows[row + run_length][field] == previous {
+                run_length += 1;
+            }
+            push_unsigned_varint(&mut column, 0);
+            push_unsigned_varint(&mut column, run_length as u64);
+            row += run_length;
+        }
+        push_unsigned_varint(&mut encoded, column.len() as u64);
+        encoded.extend_from_slice(&column);
+    }
+    SmpBootstrapDeltaSequence {
+        encoding: "columnar-signed-delta-zero-rle-varint-base64-v1",
+        fields: fields.into_iter().collect(),
+        record_count: rows.len(),
+        expanded_sha256: parity::evidence::sha256_bytes(&expanded),
+        data_base64: base64_bytes(&encoded),
+    }
+}
+
+fn compact_cpu_apu_accesses(accesses: &[FramedApuPortAccess]) -> SmpBootstrapDeltaSequence {
+    compact_delta_integer_sequence(
+        [
+            "frame",
+            "port",
+            "value",
+            "output_sample",
+            "v_counter",
+            "cpu_cycle",
+            "program_counter",
+            "apu_cycle_before",
+            "apu_cycle_after",
+            "smp_clock_before",
+            "smp_clock_after",
+            "smp_pc_before",
+            "smp_pc_after",
+            "smp_opcode_before",
+            "smp_opcode_after",
+            "is_read",
+        ],
+        accesses.iter().map(|framed| {
+            let access = &framed.access;
+            [
+                i64::from(framed.frame),
+                i64::from(access.port),
+                i64::from(access.value),
+                i64::from(access.output_sample),
+                i64::from(access.v_counter),
+                i64::from(access.cpu_cycle),
+                i64::from(access.program_counter),
+                i64::from(access.apu_cycle_before),
+                i64::from(access.apu_cycle_after),
+                i64::from(access.smp_clock_before),
+                i64::from(access.smp_clock_after),
+                i64::from(access.smp_pc_before),
+                i64::from(access.smp_pc_after),
+                i64::from(access.smp_opcode_before),
+                i64::from(access.smp_opcode_after),
+                i64::from(access.is_read),
+            ]
+        }),
+    )
+}
+
+fn compact_smp_output_port_writes(
+    writes: &[crate::libretro_core::LibretroSmpOutputPortWrite],
+) -> SmpBootstrapDeltaSequence {
+    compact_delta_integer_sequence(
+        [
+            "absolute_cycle",
+            "port",
+            "value",
+            "origin_pc",
+            "opcode",
+            "opcode_cycle",
+            "v_counter",
+            "cpu_cycle",
+            "cpu_program_counter",
+            "cpu_reference_time",
+            "cpu_remainder",
+            "smp_clock",
+            "next_pc",
+            "dsp_clock",
+            "dsp_phase",
+            "output_sample",
+        ],
+        writes.iter().map(|write| {
+            [
+                write.absolute_cycle as i64,
+                i64::from(write.port),
+                i64::from(write.value),
+                i64::from(write.origin_pc),
+                i64::from(write.opcode),
+                i64::from(write.opcode_cycle),
+                i64::from(write.v_counter),
+                i64::from(write.cpu_cycle),
+                i64::from(write.cpu_program_counter),
+                i64::from(write.cpu_reference_time),
+                i64::from(write.cpu_remainder),
+                i64::from(write.smp_clock),
+                i64::from(write.next_pc),
+                i64::from(write.dsp_clock),
+                i64::from(write.dsp_phase),
+                i64::from(write.output_sample),
+            ]
+        }),
+    )
+}
+
+fn append_smp_instruction_frame(
+    accumulated: &mut Vec<crate::libretro_core::LibretroSmpInstruction>,
+    frame: Vec<crate::libretro_core::LibretroSmpInstruction>,
+) {
+    let mut frame = frame.into_iter().peekable();
+    if accumulated
+        .last()
+        .zip(frame.peek())
+        .is_some_and(|(left, right)| {
+            left.absolute_cycle == right.absolute_cycle
+                && left.program_counter == right.program_counter
+                && left.opcode == right.opcode
+        })
+    {
+        *accumulated.last_mut().unwrap() = frame.next().unwrap();
+    }
+    accumulated.extend(frame);
+}
+
+fn smp_bootstrap_handoff_index(
+    instructions: &[crate::libretro_core::LibretroSmpInstruction],
+) -> Option<usize> {
+    instructions.windows(2).position(|pair| {
+        pair[0].program_counter == 0xfffb
+            && pair[0].opcode == 0x1f
+            && pair[1].program_counter == 0x0800
+    })
+}
+
 fn smp_bootstrap_steps_match(
     left: &SmpBootstrapInstructionStep,
     right: &SmpBootstrapInstructionStep,
@@ -7478,8 +7743,17 @@ fn compact_smp_bootstrap_instruction_sequence(
     if cc_index + 1 >= instructions.len() {
         return Err("SMP trace has no successor boundary after the first CC write".to_string());
     }
-    let mut steps = Vec::with_capacity(cc_index + 1);
-    for index in 0..=cc_index {
+    if instructions[cc_index + 1].absolute_cycle != first_cc.absolute_cycle {
+        return Err(format!(
+            "first CC write is at cycle {}, but its successor boundary is at {}",
+            first_cc.absolute_cycle,
+            instructions[cc_index + 1].absolute_cycle
+        ));
+    }
+    let handoff_index = smp_bootstrap_handoff_index(instructions)
+        .ok_or_else(|| "SMP trace has no final $fffb/1f -> $0800 handoff".to_string())?;
+    let mut steps = Vec::with_capacity(handoff_index + 1);
+    for index in 0..=handoff_index {
         let instruction = &instructions[index];
         let absolute_end_cycle = instructions[index + 1].absolute_cycle;
         if absolute_end_cycle < instruction.absolute_cycle {
@@ -7504,12 +7778,6 @@ fn compact_smp_bootstrap_instruction_sequence(
         );
     }
     let absolute_end_cycle = steps.last().unwrap().absolute_end_cycle;
-    if absolute_end_cycle != first_cc.absolute_cycle {
-        return Err(format!(
-            "first CC write is at cycle {}, but its owning instruction ends at {absolute_end_cycle}",
-            first_cc.absolute_cycle
-        ));
-    }
     Ok(SmpBootstrapInstructionSequence {
         encoding: "repeated-span-v1",
         instruction_count: steps.len(),
@@ -7623,41 +7891,212 @@ fn write_snes9x_smp_bootstrap_header<W: Write>(
 #[cfg(test)]
 mod tests {
     use super::{
-        cached_ledger_input, canonical_audio_digest, canonical_oracle_video_digest,
-        canonical_rust_video_digest, checkpoint_member, compact_engine_state_mismatches,
+        append_smp_instruction_frame, cached_ledger_input, canonical_audio_digest,
+        canonical_oracle_video_digest, canonical_rust_video_digest, checkpoint_member,
+        compact_delta_integer_sequence, compact_engine_state_mismatches,
         first_dsp_write_timing_mismatch, fnv1a32, last_spc_clock_witness,
         libretro_engine_state_receipt, oracle_preframe_snapshot_required,
         oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
         parse_paired_resume_capture, parse_rolling_paired_resume_capture,
         prune_rolling_paired_resume_captures, replayable_input_artifact, resolve_replay_bundle,
         rolling_capture_frame_after, scan_all_policy, should_render_video_frame,
-        should_stop_after_first_mismatch, should_write_frame_receipt,
+        should_stop_after_first_mismatch, should_write_frame_receipt, smp_bootstrap_handoff_index,
         snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
         summarize_value_domain, trace_events_with_rom_rng, validate_replay_source_parents,
         vram_domain_receipt, BootBoundaryState, PairedResumeCapture, RollingPairedResumeCapture,
         ValueDomainDiff, VramDomainReceipt,
     };
-    use crate::libretro_core::{LibretroDspRegisterWrite, LibretroFrame};
+    use crate::libretro_core::{LibretroDspRegisterWrite, LibretroFrame, LibretroSmpInstruction};
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
     use zelda3::{game_output::DspWriteEvent, RomRandomSample};
 
+    fn decode_base64_bytes(encoded: &str) -> Vec<u8> {
+        assert_eq!(encoded.len() % 4, 0);
+        let value = |byte: u8| match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            b'=' => 0,
+            _ => panic!("invalid fixture base64 digit"),
+        };
+        let mut decoded = Vec::with_capacity(encoded.len() / 4 * 3);
+        for chunk in encoded.as_bytes().chunks_exact(4) {
+            let bits = u32::from(value(chunk[0])) << 18
+                | u32::from(value(chunk[1])) << 12
+                | u32::from(value(chunk[2])) << 6
+                | u32::from(value(chunk[3]));
+            decoded.push((bits >> 16) as u8);
+            if chunk[2] != b'=' {
+                decoded.push((bits >> 8) as u8);
+            }
+            if chunk[3] != b'=' {
+                decoded.push(bits as u8);
+            }
+        }
+        decoded
+    }
+
+    fn read_unsigned_varint(bytes: &[u8], index: &mut usize) -> u64 {
+        let mut value = 0u64;
+        let mut shift = 0;
+        loop {
+            let byte = bytes[*index];
+            *index += 1;
+            value |= u64::from(byte & 0x7f) << shift;
+            if byte & 0x80 == 0 {
+                break;
+            }
+            shift += 7;
+            assert!(shift < 64);
+        }
+        value
+    }
+
+    fn expand_delta_sequence(sequence: &serde_json::Value) -> Vec<Vec<i64>> {
+        assert_eq!(
+            sequence["encoding"],
+            "columnar-signed-delta-zero-rle-varint-base64-v1"
+        );
+        let field_count = sequence["fields"].as_array().unwrap().len();
+        let record_count = sequence["record_count"].as_u64().unwrap() as usize;
+        let bytes = decode_base64_bytes(sequence["data_base64"].as_str().unwrap());
+        let mut columns = Vec::with_capacity(field_count);
+        let mut byte_index = 0;
+        for _ in 0..field_count {
+            let column_length = read_unsigned_varint(&bytes, &mut byte_index) as usize;
+            let column_end = byte_index + column_length;
+            let mut column = Vec::with_capacity(record_count);
+            let mut previous = 0i64;
+            while byte_index < column_end {
+                let code = read_unsigned_varint(&bytes, &mut byte_index);
+                if code == 0 {
+                    let run_length = read_unsigned_varint(&bytes, &mut byte_index) as usize;
+                    column.extend(std::iter::repeat_n(previous, run_length));
+                } else {
+                    let zigzag = code - 1;
+                    let delta = ((zigzag >> 1) as i64) ^ -((zigzag & 1) as i64);
+                    previous += delta;
+                    column.push(previous);
+                }
+            }
+            assert_eq!(byte_index, column_end);
+            assert_eq!(column.len(), record_count);
+            columns.push(column);
+        }
+        assert_eq!(byte_index, bytes.len());
+        let mut expanded_bytes = Vec::new();
+        let rows = (0..record_count)
+            .map(|row| {
+                (0..field_count)
+                    .map(|field| {
+                        let value = columns[field][row];
+                        expanded_bytes.extend_from_slice(&value.to_le_bytes());
+                        value
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            sequence["expanded_sha256"],
+            parity::evidence::sha256_bytes(&expanded_bytes)
+        );
+        rows
+    }
+
     #[test]
-    fn pinned_snes9x_cold_apu_bootstrap_fixture_reaches_first_cc_acknowledgement() {
-        let records =
-            include_str!("../../external/snes9x-libretro/fixtures/zelda3-cold-apu-bootstrap.jsonl")
-                .lines()
-                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-                .collect::<Vec<_>>();
+    fn bootstrap_delta_sequence_round_trips_signed_field_changes() {
+        let sequence = compact_delta_integer_sequence(
+            ["a", "b", "c"],
+            [[0, -3, 130], [1, -3, 129], [1, 400, -2]],
+        );
+        let value = serde_json::to_value(sequence).unwrap();
+        assert_eq!(
+            expand_delta_sequence(&value),
+            vec![vec![0, -3, 130], vec![1, -3, 129], vec![1, 400, -2]]
+        );
+    }
+
+    fn bootstrap_instruction(
+        absolute_cycle: u64,
+        program_counter: i32,
+        opcode: i32,
+        op_step_calls: i32,
+    ) -> LibretroSmpInstruction {
+        LibretroSmpInstruction {
+            absolute_cycle,
+            program_counter,
+            opcode,
+            a: 0,
+            x: 0,
+            y: 0,
+            stack_pointer: 0xef,
+            status: 2,
+            timer0_stage1: 0,
+            timer0_stage2: 0,
+            timer0_stage3: 0,
+            output_sample: 0,
+            dsp_phase: 0,
+            smp_clock: 0,
+            direct_page_0_11: [0; 12],
+            boundary_opcode_cycle: 0,
+            op_step_calls,
+            max_continuation_opcode_cycle: op_step_calls - 1,
+        }
+    }
+
+    #[test]
+    fn bootstrap_instruction_frames_replace_straddling_pseudo_op_record() {
+        let mut accumulated = vec![
+            bootstrap_instruction(0, 0xfff9, 0xd0, 1),
+            bootstrap_instruction(4, 0xfffb, 0x1f, 1),
+        ];
+        append_smp_instruction_frame(
+            &mut accumulated,
+            vec![
+                bootstrap_instruction(4, 0xfffb, 0x1f, 2),
+                bootstrap_instruction(10, 0x0800, 0xcd, 1),
+            ],
+        );
+
+        assert_eq!(accumulated.len(), 3);
+        assert_eq!(accumulated[1].op_step_calls, 2);
+        assert_eq!(smp_bootstrap_handoff_index(&accumulated), Some(1));
+    }
+
+    #[test]
+    fn pinned_snes9x_cold_apu_bootstrap_fixture_reaches_final_ipl_handoff() {
+        const FIXTURE: &str =
+            include_str!("../../external/snes9x-libretro/fixtures/zelda3-cold-apu-bootstrap.jsonl");
+        assert!(
+            FIXTURE.len() < 9_000_000,
+            "bootstrap fixture lost compact encoding"
+        );
+        let records = FIXTURE
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .collect::<Vec<_>>();
         assert_eq!(records.len(), 3);
 
         let provenance = &records[0];
         assert_eq!(provenance["kind"], "provenance");
         assert_eq!(provenance["schema"], 1);
+        assert_eq!(provenance["core"]["library_name"], "Snes9x");
+        assert_eq!(provenance["core"]["library_version"], "1.63 921f9f7b");
+        assert_eq!(
+            provenance["core"]["sha256"],
+            "db33f4fb6421d033eefeabc17cd1b5054ddf41ff668bf7632f1b74a892db8233"
+        );
         assert_eq!(
             provenance["source"]["revision"],
             "921f9f7b83660eb44ad263022a57a4a029057c37"
+        );
+        assert_eq!(
+            provenance["rom"]["sha256"],
+            "66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"
         );
         let trace_patch = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../external/snes9x-libretro/patches/zelda3-trace.patch");
@@ -7680,56 +8119,80 @@ mod tests {
 
         let events = &records[2];
         assert_eq!(events["kind"], "bootstrap-events");
-        assert_eq!(events["frame"], 0);
         assert_eq!(events["first_cc_acknowledged"], true);
-        assert_eq!(events["cpu_apu_poll_accesses_omitted"], 1_648);
-        let output = events["smp_output_port_writes"].as_array().unwrap();
-        assert_eq!(output.len(), 3);
-        for (event, cycle, pc, opcode, port, value, reference, remainder) in [
-            (&output[0], 2_399, 0xffc9, 0x8f, 0, 0xaa, 1_132, 52_954),
-            (&output[1], 2_404, 0xffcc, 0x8f, 1, 0xbb, 1_248, 229_353),
-            (&output[2], 2_461, 0xfff5, 0xc4, 0, 0xcc, 1_050, 118_577),
-        ] {
-            assert_eq!(event["absolute_cycle"], cycle);
-            assert_eq!(event["origin_pc"], pc);
-            assert_eq!(event["opcode"], opcode);
-            assert_eq!(event["opcode_cycle"], 3);
-            assert_eq!(event["port"], port);
-            assert_eq!(event["value"], value);
-            assert_eq!(event["cpu_reference_time"], reference);
-            assert_eq!(event["cpu_remainder"], remainder);
-        }
+        assert_eq!(events["final_frame"], 79);
+        assert_eq!(events["final_ipl_handoff"]["absolute_cycle"], 1_355_567);
+        assert_eq!(events["final_ipl_handoff"]["origin_pc"], 0xfffb);
+        assert_eq!(events["final_ipl_handoff"]["opcode"], 0x1f);
+        assert_eq!(events["final_ipl_handoff"]["target_pc"], 0x0800);
+
+        let cpu = expand_delta_sequence(&events["cpu_apu_access_sequence"]);
+        assert_eq!(cpu.len(), 356_174);
+        assert_eq!(
+            cpu[0],
+            vec![0, 0, 0, 0, 0, 326, 0x800d, 0, 16, 0, 1, 0xffc0, 0xffc5, 0, 0xd0, 0]
+        );
+        let initial_cc = cpu
+            .iter()
+            .position(|access| {
+                access[1] == 0 && access[2] == 0xcc && access[6] == 0x88ef && access[15] == 1
+            })
+            .unwrap();
+        assert_eq!(cpu[initial_cc][0], 0);
+        assert_eq!(cpu[initial_cc][4], 37);
+        assert_eq!(cpu[initial_cc][5], 1_102);
+        assert_eq!(cpu[initial_cc][8], 2_461);
+        assert_eq!(
+            cpu.last().unwrap(),
+            &vec![
+                79, 3, 0, 319, 120, 384, 0x88ff, 10_255, 10_255, 4, 3, 0x0800, 0x0800, 0x1f, 0x1f,
+                0,
+            ]
+        );
+
+        let output = expand_delta_sequence(&events["smp_output_port_write_sequence"]);
+        assert_eq!(output.len(), 54_043);
+        assert_eq!(
+            &output[..3],
+            &[
+                vec![
+                    2_399, 0, 0xaa, 0xffc9, 0x8f, 3, 36, 1_184, 0x8894, 1_132, 52_954, -1, 0xffcc,
+                    53, 10, 73
+                ],
+                vec![
+                    2_404, 1, 0xbb, 0xffcc, 0x8f, 3, 36, 1_300, 0x8894, 1_248, 229_353, -2, 0xffcf,
+                    58, 10, 73
+                ],
+                vec![
+                    2_461, 0, 0xcc, 0xfff5, 0xc4, 3, 37, 1_102, 0x88ef, 1_050, 118_577, 0, 0xfff7,
+                    52, 9, 75
+                ],
+            ]
+        );
+        assert_eq!(output.last().unwrap()[0], 1_355_555);
+        assert_eq!(output.last().unwrap()[2], 0x8b);
+        assert_eq!(output.last().unwrap()[3], 0xfff5);
 
         let sequence = &events["smp_instruction_boundary_sequence"];
         assert_eq!(sequence["encoding"], "repeated-span-v1");
-        assert_eq!(sequence["instruction_count"], 735);
+        assert_eq!(sequence["instruction_count"], 379_743);
         assert_eq!(sequence["absolute_start_cycle"], 0);
-        assert_eq!(sequence["absolute_end_cycle"], 2_461);
-        let spans = sequence["spans"].as_array().unwrap();
-        assert_eq!(spans.len(), 5);
-        assert_eq!(
-            spans
-                .iter()
-                .map(|span| span["repeat_count"].as_u64().unwrap())
-                .collect::<Vec<_>>(),
-            [1, 238, 1, 3, 1]
-        );
+        assert_eq!(sequence["absolute_end_cycle"], 1_355_567);
+        assert_eq!(sequence["spans"].as_array().unwrap().len(), 437);
         let mut expanded = Vec::new();
         let mut expected_cycle = 0;
-        for span in spans {
+        for span in sequence["spans"].as_array().unwrap() {
             assert_eq!(span["absolute_start_cycle"].as_u64(), Some(expected_cycle));
             let span_start = span["absolute_start_cycle"].as_u64().unwrap();
             let stride = span["repeat_cycle_stride"].as_u64().unwrap();
             let repeat_count = span["repeat_count"].as_u64().unwrap();
-            let pattern = span["instructions"].as_array().unwrap();
             for repeat in 0..repeat_count {
                 let repeat_start = span_start + repeat * stride;
-                for instruction in pattern {
+                for instruction in span["instructions"].as_array().unwrap() {
                     let start = repeat_start + instruction["start_cycle_offset"].as_u64().unwrap();
                     let end = repeat_start + instruction["end_cycle_offset"].as_u64().unwrap();
                     assert_eq!(start, expected_cycle);
                     assert!(end > start);
-                    assert_eq!(instruction["boundary_opcode_cycle"], 0);
                     let calls = instruction["op_step_calls"].as_u64().unwrap();
                     let continuation = instruction["max_continuation_opcode_cycle"]
                         .as_u64()
@@ -7748,52 +8211,20 @@ mod tests {
             }
             assert_eq!(span["absolute_end_cycle"].as_u64(), Some(expected_cycle));
         }
-        assert_eq!(expanded.len(), 735);
-        assert_eq!(expected_cycle, 2_461);
+        assert_eq!(expanded.len(), 379_743);
         assert_eq!(expanded[0], (0, 2, 0xffc0, 0xcd, 1, 0));
-        assert_eq!(expanded[1], (2, 4, 0xffc2, 0xbd, 1, 0));
-        assert_eq!(expanded[2], (4, 6, 0xffc3, 0xe8, 1, 0));
-        for (write, expected) in output.iter().zip([
-            (2_394, 2_399, 0xffc9, 0x8f, 3, 2),
-            (2_399, 2_404, 0xffcc, 0x8f, 3, 2),
-            (2_457, 2_461, 0xfff5, 0xc4, 3, 2),
-        ]) {
-            let owner = expanded
-                .iter()
-                .find(|instruction| {
-                    instruction.1 == write["absolute_cycle"].as_u64().unwrap()
-                        && instruction.2 == write["origin_pc"].as_u64().unwrap()
-                        && instruction.3 == write["opcode"].as_u64().unwrap()
-                })
-                .copied()
-                .unwrap();
-            assert_eq!(owner, expected);
-            assert_eq!(write["opcode_cycle"].as_u64(), Some(owner.5 + 1));
-        }
-
-        let cpu = events["cpu_apu_handshake_accesses"].as_array().unwrap();
-        assert!(cpu.iter().any(|event| {
-            event["is_read"] == true && event["port"] == 0 && event["value"] == 0xaa
-        }));
-        assert!(cpu.iter().any(|event| {
-            event["is_read"] == true && event["port"] == 1 && event["value"] == 0xbb
-        }));
-        let cc_write = cpu
+        assert_eq!(
+            expanded.iter().find(|step| step.0 == 2_461).copied(),
+            Some((2_461, 2_463, 0xfff7, 0xdd, 1, 0))
+        );
+        assert!(expanded
             .iter()
-            .position(|event| {
-                event["is_read"] == false && event["port"] == 0 && event["value"] == 0xcc
-            })
-            .unwrap();
-        let cc_read = cpu
-            .iter()
-            .position(|event| {
-                event["is_read"] == true && event["port"] == 0 && event["value"] == 0xcc
-            })
-            .unwrap();
-        assert!(cc_write < cc_read);
-        assert_eq!(cpu[cc_read]["apu_cycle_after"], 2_461);
+            .any(|step| step.2 == 0xffe7 && step.3 == 0xab));
+        assert_eq!(
+            expanded.last().copied(),
+            Some((1_355_561, 1_355_567, 0xfffb, 0x1f, 1, 0))
+        );
     }
-
     #[test]
     fn failed_session_keeps_the_complete_authoritative_input_script() {
         let source = b"0..5722 0x0000\n5723..21442 0x0080\n";

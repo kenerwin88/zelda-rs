@@ -140,77 +140,60 @@ pub enum Snes9xApuTimingError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn fixture() -> Vec<serde_json::Value> {
-        include_str!("../../../external/snes9x-libretro/fixtures/zelda3-cold-apu-bootstrap.jsonl")
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect()
-    }
-
-    fn absolute_master_cycle(event: &serde_json::Value) -> u64 {
-        event["v_counter"].as_u64().unwrap() * 1_364 + event["cpu_cycle"].as_u64().unwrap()
-    }
+    use crate::test_bootstrap_fixture::{cpu_apu_accesses, records, split_first_cc_cpu_accesses};
 
     #[test]
     fn cpu_port_timeline_matches_cold_snes9x_fixture_through_cc() {
-        let fixture = fixture();
+        let fixture = records();
         let events = &fixture[2];
         let mut timing = Snes9xApuTiming::new();
 
-        let reset_writes = events["cpu_apu_reset_writes"].as_array().unwrap();
+        let accesses = cpu_apu_accesses(events);
+        let (reset_writes, handshake) = split_first_cc_cpu_accesses(&accesses);
         for event in reset_writes {
             timing
-                .write_cpu_port_at(
-                    absolute_master_cycle(event),
-                    event["port"].as_u64().unwrap() as u8,
-                    event["value"].as_u64().unwrap() as u8,
-                )
+                .write_cpu_port_at(event.absolute_master_cycle(), event.port, event.value)
                 .unwrap();
-            assert_eq!(
-                u64::from(timing.apu().cycles),
-                event["apu_cycle_after"].as_u64().unwrap()
-            );
+            assert_eq!(timing.apu().cycles, event.apu_cycle_after);
         }
 
-        let handshake = events["cpu_apu_handshake_accesses"].as_array().unwrap();
-        let first_time = absolute_master_cycle(&handshake[0]);
-        let second_time = absolute_master_cycle(&handshake[1]);
-        assert_eq!(
-            handshake[0]["program_counter"],
-            handshake[1]["program_counter"]
-        );
+        let first_time = handshake[0].absolute_master_cycle();
+        let second_time = handshake[1].absolute_master_cycle();
+        assert_eq!(handshake[0].program_counter, handshake[1].program_counter);
         assert_eq!(second_time, first_time + 6);
-        assert_eq!(handshake[0]["value"], 0);
-        assert_eq!(handshake[1]["value"], 0);
-        assert_eq!(handshake[0]["apu_cycle_after"], 2_397);
-        assert_eq!(handshake[1]["apu_cycle_after"], 2_398);
+        assert_eq!(handshake[0].value, 0);
+        assert_eq!(handshake[1].value, 0);
+        assert_eq!(handshake[0].apu_cycle_after, 2_397);
+        assert_eq!(handshake[1].apu_cycle_after, 2_398);
 
         for event in handshake {
-            let timestamp = absolute_master_cycle(event);
-            let port = event["port"].as_u64().unwrap() as u8;
-            let value = event["value"].as_u64().unwrap() as u8;
-            if event["is_read"].as_bool().unwrap() {
-                assert_eq!(timing.read_cpu_port_at(timestamp, port).unwrap(), value);
+            let timestamp = event.absolute_master_cycle();
+            if event.is_read {
+                assert_eq!(
+                    timing.read_cpu_port_at(timestamp, event.port).unwrap(),
+                    event.value
+                );
             } else {
-                let before_input = timing.apu().in_ports[usize::from(port & 3)];
-                timing.write_cpu_port_at(timestamp, port, value).unwrap();
-                assert_eq!(timing.apu().in_ports[usize::from(port & 3)], value);
+                let before_input = timing.apu().in_ports[usize::from(event.port & 3)];
+                timing
+                    .write_cpu_port_at(timestamp, event.port, event.value)
+                    .unwrap();
+                assert_eq!(
+                    timing.apu().in_ports[usize::from(event.port & 3)],
+                    event.value
+                );
 
                 // The CC write occurs after synchronization. Consequently the
                 // just-completed CMP/branch still observed AA and returned to
                 // the polling PC before CC becomes visible to the SMP.
-                if port == 0 && value == 0xcc {
+                if event.port == 0 && event.value == 0xcc {
                     assert_eq!(before_input, 0);
                     assert_eq!(timing.apu().cycles, 2_431);
                     assert_eq!(timing.apu().spc.pc, 0xffcf);
                     assert!(!timing.apu().spc.z);
                 }
             }
-            assert_eq!(
-                u64::from(timing.apu().cycles),
-                event["apu_cycle_after"].as_u64().unwrap()
-            );
+            assert_eq!(timing.apu().cycles, event.apu_cycle_after);
         }
 
         assert_eq!(timing.apu().cycles, 2_461);
