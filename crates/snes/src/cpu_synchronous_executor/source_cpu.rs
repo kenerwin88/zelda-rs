@@ -1539,6 +1539,18 @@ impl Snes9xColdCpuExecutor {
         let address = address & 0x00ff_ffff;
         let bank = (address >> 16) as u8;
         let adr = address as u16;
+        if (bank & 0x7f) < 0x40 && adr == 0x4016 {
+            let latch_high = value & 1 != 0;
+            let was_high = self.machine.snes.input1.latch_line;
+            debug_assert_eq!(was_high, self.machine.snes.input2.latch_line);
+            self.machine.snes.input1.latch_line = latch_high;
+            self.machine.snes.input2.latch_line = latch_high;
+            if latch_high && !was_high {
+                self.machine.snes.input1.cycle();
+                self.machine.snes.input2.cycle();
+            }
+            return Ok(());
+        }
         if (bank & 0x7f) < 0x40 && adr == 0x4200 {
             if value & 0x30 != 0 {
                 return Err(SourceCpuError::UnexpectedInterruptOrDma);
@@ -3006,6 +3018,98 @@ mod tests {
     }
 
     #[test]
+    fn joyser0_rising_edge_latches_both_inputs_before_drain_and_publishes_after_success() {
+        let rom = synthetic_rom(&[0x8d, 0x16, 0x40]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.a = 1;
+        cpu.machine.snes.input1.current_state = 0x1234;
+        cpu.machine.snes.input2.current_state = 0xabcd;
+        cpu.machine.snes.open_bus = 0x5a;
+
+        let receipt = cpu.step().unwrap();
+
+        assert_source_transaction_shape(
+            &receipt,
+            &[
+                (
+                    SourceCpuTransactionKind::FastPcBaseOpcodeFetchNonDraining,
+                    8,
+                ),
+                (SourceCpuTransactionKind::CpuOpsAddCyclesDraining, 16),
+                (
+                    SourceCpuTransactionKind::GetSetMemoryAccessAfterSemanticDraining,
+                    12,
+                ),
+            ],
+        );
+        assert!(cpu.machine.snes.input1.latch_line);
+        assert!(cpu.machine.snes.input2.latch_line);
+        assert_eq!(cpu.machine.snes.input1.latched_state, 0x1234);
+        assert_eq!(cpu.machine.snes.input2.latched_state, 0xabcd);
+        assert_eq!(cpu.machine.snes.open_bus, 1);
+
+        let mut observed = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        observed.machine.snes.cpu.a = 1;
+        observed.machine.snes.input1.current_state = 0x1234;
+        observed.machine.snes.input2.current_state = 0xabcd;
+        observed.machine.snes.open_bus = 0x5a;
+        install_hmax_smp_failure(&mut observed, 1_334);
+        assert!(matches!(
+            observed.step(),
+            Err(SourceCpuError::Machine(
+                CpuSynchronousMachineError::ApuClock(crate::Snes9xApuClockError::ZeroCycleSmpStep)
+            ))
+        ));
+        assert!(observed.machine.snes.input1.latch_line);
+        assert!(observed.machine.snes.input2.latch_line);
+        assert_eq!(observed.machine.snes.input1.latched_state, 0x1234);
+        assert_eq!(observed.machine.snes.input2.latched_state, 0xabcd);
+        assert_eq!(observed.machine.snes.open_bus, 0x5a);
+        assert_eq!(
+            observed.machine.pending_completion(),
+            Some(CpuSynchronousCompletion::Write)
+        );
+    }
+
+    #[test]
+    fn joyser0_repeated_high_does_not_relatch_changed_current_state() {
+        let rom = synthetic_rom(&[0x8d, 0x16, 0x40, 0x8d, 0x16, 0x40]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.a = 1;
+        cpu.machine.snes.input1.current_state = 0x1234;
+        cpu.machine.snes.input2.current_state = 0xabcd;
+        cpu.step().unwrap();
+
+        cpu.machine.snes.input1.current_state = 0x5678;
+        cpu.machine.snes.input2.current_state = 0xef01;
+        cpu.step().unwrap();
+
+        assert!(cpu.machine.snes.input1.latch_line);
+        assert!(cpu.machine.snes.input2.latch_line);
+        assert_eq!(cpu.machine.snes.input1.latched_state, 0x1234);
+        assert_eq!(cpu.machine.snes.input2.latched_state, 0xabcd);
+    }
+
+    #[test]
+    fn joyser0_falling_edge_only_clears_both_latch_lines() {
+        let rom = synthetic_rom(&[0x8d, 0x16, 0x40]);
+        let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
+        cpu.machine.snes.cpu.a = 0;
+        cpu.machine.snes.input1.latch_line = true;
+        cpu.machine.snes.input2.latch_line = true;
+        cpu.machine.snes.input1.latched_state = 0x1234;
+        cpu.machine.snes.input2.latched_state = 0xabcd;
+
+        cpu.step().unwrap();
+
+        assert!(!cpu.machine.snes.input1.latch_line);
+        assert!(!cpu.machine.snes.input2.latch_line);
+        assert_eq!(cpu.machine.snes.input1.latched_state, 0x1234);
+        assert_eq!(cpu.machine.snes.input2.latched_state, 0xabcd);
+        assert_eq!(cpu.machine.snes.open_bus, 0);
+    }
+
+    #[test]
     fn ldx_absolute_x8_reads_after_operand_and_publishes_loaded_byte() {
         let rom = synthetic_rom(&[0xae, 0x34, 0x12]);
         let mut cpu = Snes9xColdCpuExecutor::from_lorom_reset(&rom).unwrap();
@@ -3923,15 +4027,25 @@ mod tests {
             cpu.machine.timeline.raster_position(),
             crate::CpuRasterPosition::new(250, 346)
         );
-        assert_eq!(
-            cpu.step(),
-            Err(SourceCpuError::UnsupportedBusMap { address: 0x00_4016 })
-        );
+        let joy_latch = cpu.step().unwrap();
+        assert_eq!(joy_latch.origin_pc, 0x00_83d1);
+        assert_eq!(joy_latch.opcode, 0x9c);
+
         assert_eq!(cpu.program_address(), 0x00_83d4);
-        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_930_650));
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_930_662));
         assert_eq!(
             cpu.machine.timeline.raster_position(),
-            crate::CpuRasterPosition::new(250, 370)
+            crate::CpuRasterPosition::new(250, 382)
+        );
+        assert_eq!(
+            cpu.step(),
+            Err(SourceCpuError::UnsupportedBusMap { address: 0x00_4218 })
+        );
+        assert_eq!(cpu.program_address(), 0x00_83d7);
+        assert_eq!(cpu.machine.timestamp(), CpuMasterTimestamp::new(28_930_686));
+        assert_eq!(
+            cpu.machine.timeline.raster_position(),
+            crate::CpuRasterPosition::new(250, 406)
         );
         assert!(cpu.is_poisoned());
     }
