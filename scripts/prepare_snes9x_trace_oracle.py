@@ -27,9 +27,12 @@ REVISION = LOCK["source_revision"]
 SOURCE_URL = LOCK["source_url"]
 EXPECTED_PATCH_PATHS = frozenset(
     {
+        "apu/apu.cpp",
+        "apu/apu.h",
         "apu/bapu/dsp/SPC_DSP.cpp",
         "apu/bapu/dsp/SPC_DSP.h",
         "apu/bapu/smp/core.cpp",
+        "apu/bapu/smp/memory.cpp",
         "apu/bapu/smp/smp.cpp",
         "cpuexec.cpp",
         "dma.cpp",

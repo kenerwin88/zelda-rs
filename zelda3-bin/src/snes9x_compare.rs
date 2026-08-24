@@ -3288,6 +3288,25 @@ pub(crate) fn run_compare_libretro_oracle(
                 process::exit(1);
             }))
         });
+    let mut debug_smp_bootstrap = env::var_os("ZELDA3_DEBUG_SNES9X_SMP_BOOTSTRAP").map(|path| {
+        let mut writer = BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
+            eprintln!("failed to create Snes9x SMP-bootstrap trace: {error}");
+            process::exit(1);
+        }));
+        write_snes9x_smp_bootstrap_header(
+            &mut writer,
+            core_path,
+            rom_path,
+            &oracle,
+            &initial_oracle_state,
+        )
+        .unwrap_or_else(|error| {
+            eprintln!("failed to write Snes9x SMP-bootstrap header: {error}");
+            process::exit(1);
+        });
+        writer
+    });
+    let mut debug_smp_bootstrap_complete = false;
     let mut debug_native_apu_dsp_writes = native_apu_trace_path.map(|path| {
         BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
             eprintln!("failed to create native APU DSP-write trace: {error}");
@@ -4267,6 +4286,60 @@ pub(crate) fn run_compare_libretro_oracle(
             .unwrap();
             writer.write_all(b"\n").unwrap();
             writer.flush().unwrap();
+        }
+        if !debug_smp_bootstrap_complete {
+            if let Some(writer) = debug_smp_bootstrap.as_mut() {
+                let output_writes = oracle.debug_smp_output_port_writes().unwrap_or_else(|| {
+                    eprintln!("SMP-bootstrap trace requires the current instrumented Snes9x core");
+                    process::exit(2);
+                });
+                let cpu_accesses = oracle.debug_apu_port_writes().unwrap_or_else(|| {
+                    eprintln!(
+                        "SMP-bootstrap trace requires Snes9x CPU-side APU-port instrumentation"
+                    );
+                    process::exit(2);
+                });
+                let output_end = output_writes
+                    .iter()
+                    .position(|event| event.port == 0 && event.value == 0xcc)
+                    .map(|index| index + 1)
+                    .unwrap_or(output_writes.len());
+                let cpu_end = cpu_accesses
+                    .iter()
+                    .position(|event| event.is_read && event.port == 0 && event.value == 0xcc)
+                    .map(|index| index + 1)
+                    .unwrap_or(cpu_accesses.len());
+                let cpu_reset_end = cpu_accesses.len().min(4);
+                let cpu_handshake_start = cpu_accesses
+                    .iter()
+                    .position(|event| event.is_read && event.value != 0)
+                    .map(|index| index.saturating_sub(2))
+                    .unwrap_or(cpu_end);
+                let observed_cc = output_end < output_writes.len()
+                    || output_writes
+                        .last()
+                        .is_some_and(|event| event.port == 0 && event.value == 0xcc);
+                let cpu_observed_cc = cpu_end < cpu_accesses.len()
+                    || cpu_accesses.last().is_some_and(|event| {
+                        event.is_read && event.port == 0 && event.value == 0xcc
+                    });
+                serde_json::to_writer(
+                    &mut *writer,
+                    &serde_json::json!({
+                        "kind": "bootstrap-events",
+                        "frame": frame_index,
+                        "smp_output_port_writes": &output_writes[..output_end],
+                        "cpu_apu_reset_writes": &cpu_accesses[..cpu_reset_end],
+                        "cpu_apu_poll_accesses_omitted": cpu_handshake_start.saturating_sub(cpu_reset_end),
+                        "cpu_apu_handshake_accesses": &cpu_accesses[cpu_handshake_start..cpu_end],
+                        "first_cc_acknowledged": observed_cc && cpu_observed_cc,
+                    }),
+                )
+                .unwrap();
+                writer.write_all(b"\n").unwrap();
+                writer.flush().unwrap();
+                debug_smp_bootstrap_complete = observed_cc && cpu_observed_cc;
+            }
         }
         if let (Some(writer), Some(trace)) = (debug_dsp_globals.as_mut(), oracle.debug_dsp_trace())
         {
@@ -7240,6 +7313,107 @@ pub(crate) fn snes9x_state_section<'a>(state: &'a [u8], tag: &[u8; 3]) -> Option
     state.get(data_start..data_start.checked_add(length)?)
 }
 
+fn write_snes9x_smp_bootstrap_header<W: Write>(
+    writer: &mut W,
+    core_path: &str,
+    rom_path: &str,
+    oracle: &LibretroCore,
+    initial_oracle_state: &[u8],
+) -> Result<(), Box<dyn Error>> {
+    let lock: serde_json::Value = serde_json::from_str(include_str!(
+        "../../external/snes9x-libretro/oracle-lock.json"
+    ))?;
+    let source_revision = lock
+        .get("source_revision")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("oracle-lock.json has no source_revision")?;
+    let trace_patch = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../external/snes9x-libretro/patches/zelda3-trace.patch");
+    serde_json::to_writer(
+        &mut *writer,
+        &serde_json::json!({
+            "kind": "provenance",
+            "schema": 1,
+            "core": {
+                "library_name": oracle.library_name,
+                "library_version": oracle.library_version,
+                "sha256": parity::evidence::sha256_file(Path::new(core_path))?,
+            },
+            "rom": {
+                "sha256": parity::evidence::sha256_file(Path::new(rom_path))?,
+            },
+            "source": {
+                "revision": source_revision,
+                "trace_patch_sha256": parity::evidence::sha256_file(&trace_patch)?,
+            },
+            "cpu_to_smp_ratio": {
+                "numerator": 15_664,
+                "denominator": 328_125,
+            },
+        }),
+    )?;
+    writer.write_all(b"\n")?;
+
+    let snd = crate::snes9x_apu_tools::snes9x_snapshot_block(initial_oracle_state, b"SND")
+        .map_err(|error| format!("failed to parse initial Snes9x SND block: {error}"))?;
+    const RAM_BYTES: usize = 0x1_0000;
+    const SMP_INT_COUNT: usize = 41;
+    if snd.len() < RAM_BYTES + SMP_INT_COUNT * 4 {
+        return Err(format!("initial Snes9x SND block is truncated: {} bytes", snd.len()).into());
+    }
+    let value = |index: usize| {
+        let start = RAM_BYTES + index * 4;
+        u32::from_le_bytes(snd[start..start + 4].try_into().unwrap())
+    };
+    let status = ((value(8) != 0) as u8) << 7
+        | ((value(9) != 0) as u8) << 6
+        | ((value(10) != 0) as u8) << 5
+        | ((value(11) != 0) as u8) << 4
+        | ((value(12) != 0) as u8) << 3
+        | ((value(13) != 0) as u8) << 2
+        | ((value(14) != 0) as u8) << 1
+        | (value(15) != 0) as u8;
+    let timers = (0..3)
+        .map(|timer| {
+            let base = 20 + timer * 5;
+            serde_json::json!({
+                "enabled": value(base) != 0,
+                "target": value(base + 1),
+                "stage1_ticks": value(base + 2),
+                "stage2_ticks": value(base + 3),
+                "stage3_ticks": value(base + 4),
+            })
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_writer(
+        &mut *writer,
+        &serde_json::json!({
+            "kind": "reset-state",
+            "absolute_cycle": 0,
+            "clock": value(0) as i32,
+            "opcode": value(1),
+            "opcode_cycle": value(2),
+            "pc": value(3),
+            "sp": value(4),
+            "a": value(5),
+            "x": value(6),
+            "y": value(7),
+            "status": status,
+            "ipl_rom_enabled": value(16) != 0,
+            "dsp_address": value(17),
+            "auxiliary_ram": [value(18), value(19)],
+            "output_ports": &snd[0xf4..0xf8],
+            "timers": timers,
+            "ram_nonzero_bytes": snd[..RAM_BYTES].iter().filter(|byte| **byte != 0).count(),
+            "cpu_reference_time": 0,
+            "cpu_remainder": 0,
+        }),
+    )?;
+    writer.write_all(b"\n")?;
+    writer.flush()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -7262,6 +7436,86 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
     use zelda3::{game_output::DspWriteEvent, RomRandomSample};
+
+    #[test]
+    fn pinned_snes9x_cold_apu_bootstrap_fixture_reaches_first_cc_acknowledgement() {
+        let records =
+            include_str!("../../external/snes9x-libretro/fixtures/zelda3-cold-apu-bootstrap.jsonl")
+                .lines()
+                .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+                .collect::<Vec<_>>();
+        assert_eq!(records.len(), 3);
+
+        let provenance = &records[0];
+        assert_eq!(provenance["kind"], "provenance");
+        assert_eq!(provenance["schema"], 1);
+        assert_eq!(
+            provenance["source"]["revision"],
+            "921f9f7b83660eb44ad263022a57a4a029057c37"
+        );
+        let trace_patch = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../external/snes9x-libretro/patches/zelda3-trace.patch");
+        assert_eq!(
+            provenance["source"]["trace_patch_sha256"],
+            parity::evidence::sha256_file(&trace_patch).unwrap()
+        );
+        assert_eq!(provenance["cpu_to_smp_ratio"]["numerator"], 15_664);
+        assert_eq!(provenance["cpu_to_smp_ratio"]["denominator"], 328_125);
+
+        let reset = &records[1];
+        assert_eq!(reset["kind"], "reset-state");
+        assert_eq!(reset["absolute_cycle"], 0);
+        assert_eq!(reset["pc"], 0xffc0);
+        assert_eq!(reset["sp"], 0xef);
+        assert_eq!(reset["status"], 0x02);
+        assert_eq!(reset["ipl_rom_enabled"], true);
+        assert_eq!(reset["ram_nonzero_bytes"], 0);
+        assert_eq!(reset["output_ports"], serde_json::json!([0, 0, 0, 0]));
+
+        let events = &records[2];
+        assert_eq!(events["kind"], "bootstrap-events");
+        assert_eq!(events["frame"], 0);
+        assert_eq!(events["first_cc_acknowledged"], true);
+        assert_eq!(events["cpu_apu_poll_accesses_omitted"], 1_648);
+        let output = events["smp_output_port_writes"].as_array().unwrap();
+        assert_eq!(output.len(), 3);
+        for (event, cycle, pc, opcode, port, value, reference, remainder) in [
+            (&output[0], 2_399, 0xffc9, 0x8f, 0, 0xaa, 1_132, 52_954),
+            (&output[1], 2_404, 0xffcc, 0x8f, 1, 0xbb, 1_248, 229_353),
+            (&output[2], 2_461, 0xfff5, 0xc4, 0, 0xcc, 1_050, 118_577),
+        ] {
+            assert_eq!(event["absolute_cycle"], cycle);
+            assert_eq!(event["origin_pc"], pc);
+            assert_eq!(event["opcode"], opcode);
+            assert_eq!(event["opcode_cycle"], 3);
+            assert_eq!(event["port"], port);
+            assert_eq!(event["value"], value);
+            assert_eq!(event["cpu_reference_time"], reference);
+            assert_eq!(event["cpu_remainder"], remainder);
+        }
+
+        let cpu = events["cpu_apu_handshake_accesses"].as_array().unwrap();
+        assert!(cpu.iter().any(|event| {
+            event["is_read"] == true && event["port"] == 0 && event["value"] == 0xaa
+        }));
+        assert!(cpu.iter().any(|event| {
+            event["is_read"] == true && event["port"] == 1 && event["value"] == 0xbb
+        }));
+        let cc_write = cpu
+            .iter()
+            .position(|event| {
+                event["is_read"] == false && event["port"] == 0 && event["value"] == 0xcc
+            })
+            .unwrap();
+        let cc_read = cpu
+            .iter()
+            .position(|event| {
+                event["is_read"] == true && event["port"] == 0 && event["value"] == 0xcc
+            })
+            .unwrap();
+        assert!(cc_write < cc_read);
+        assert_eq!(cpu[cc_read]["apu_cycle_after"], 2_461);
+    }
 
     #[test]
     fn failed_session_keeps_the_complete_authoritative_input_script() {

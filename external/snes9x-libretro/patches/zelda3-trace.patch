@@ -1,3 +1,73 @@
+diff --git a/apu/apu.cpp b/apu/apu.cpp
+index 3d63b1a4..8054de35 100644
+--- a/apu/apu.cpp
++++ b/apu/apu.cpp
+@@ -44,6 +44,8 @@ static Resampler resampler;
+ 
+ static int32 reference_time;
+ static uint32 remainder;
++static int32 trace_reference_time;
++static uint32 trace_remainder;
+ 
+ static const int timing_hack_numerator = 256;
+ static int timing_hack_denominator = 256;
+@@ -270,6 +272,8 @@ void S9xAPUSetReferenceTime(int32 cpucycles)
+ 
+ void S9xAPUExecute(void)
+ {
++    spc::trace_reference_time = spc::reference_time;
++    spc::trace_remainder = spc::remainder;
+     int cycles = S9xAPUGetClock(CPU.Cycles);
+     spc::remainder = S9xAPUGetClockRemainder(CPU.Cycles);
+     SNES::smp.clock -= cycles;
+@@ -278,6 +282,16 @@ void S9xAPUExecute(void)
+     S9xAPUSetReferenceTime(CPU.Cycles);
+ }
+ 
++int32 S9xAPUTraceReferenceTime(void)
++{
++    return spc::trace_reference_time;
++}
++
++uint32 S9xAPUTraceRemainder(void)
++{
++    return spc::trace_remainder;
++}
++
+ void S9xAPUEndScanline(void)
+ {
+     S9xAPUExecute();
+@@ -305,6 +319,8 @@ void S9xResetAPU(void)
+ {
+     spc::reference_time = 0;
+     spc::remainder = 0;
++    spc::trace_reference_time = 0;
++    spc::trace_remainder = 0;
+ 
+     SNES::cpu.reset();
+     SNES::smp.power();
+@@ -318,6 +334,8 @@ void S9xSoftResetAPU(void)
+ {
+     spc::reference_time = 0;
+     spc::remainder = 0;
++    spc::trace_reference_time = 0;
++    spc::trace_remainder = 0;
+     SNES::cpu.reset();
+     SNES::smp.reset();
+     SNES::dsp.reset();
+diff --git a/apu/apu.h b/apu/apu.h
+index 5d075b4c..49a4f5ae 100644
+--- a/apu/apu.h
++++ b/apu/apu.h
+@@ -23,6 +23,8 @@ void S9xAPUWritePort (int, uint8);
+ void S9xAPUExecute (void);
+ void S9xAPUEndScanline (void);
+ void S9xAPUSetReferenceTime (int32);
++int32 S9xAPUTraceReferenceTime (void);
++uint32 S9xAPUTraceRemainder (void);
+ void S9xAPUTimingSetSpeedup (int);
+ void S9xAPULoadState (uint8 *);
+ void S9xAPULoadBlarggState(uint8 *oldblock);
 diff --git a/apu/bapu/dsp/SPC_DSP.cpp b/apu/bapu/dsp/SPC_DSP.cpp
 index e3a70d76..bd4576cc 100644
 --- a/apu/bapu/dsp/SPC_DSP.cpp
@@ -147,19 +217,47 @@ index 953b13bf..c3da89f4 100644
  	m.external_regs [addr] = (uint8_t) data;
  	switch ( addr & 0x0F )
 diff --git a/apu/bapu/smp/core.cpp b/apu/bapu/smp/core.cpp
-index f5c2e6e6..f690c095 100644
+index f5c2e6e6..b1bbe698 100644
 --- a/apu/bapu/smp/core.cpp
 +++ b/apu/bapu/smp/core.cpp
-@@ -58,6 +58,9 @@ void SMP::op_step() {
+@@ -1,4 +1,5 @@
+ void SMP::tick() {
++  Zelda3TraceTickSmpCycle(1);
+   timer0.tick();
+   timer1.tick();
+   timer2.tick();
+@@ -8,6 +9,7 @@ void SMP::tick() {
+ }
+ 
+ void SMP::tick(unsigned clocks) {
++  Zelda3TraceTickSmpCycle(clocks);
+   timer0.tick(clocks);
+   timer1.tick(clocks);
+   timer2.tick(clocks);
+@@ -58,6 +60,11 @@ void SMP::op_step() {
  
    if(opcode_cycle == 0)
    {
-+    Zelda3TraceCaptureSmpInstruction(regs.pc, apuram[regs.pc], regs.B.a, regs.x,
++    uint8 trace_opcode = regs.pc >= 0xffc0 && status.iplrom_enable
++      ? iplrom[regs.pc & 0x3f] : apuram[regs.pc];
++    Zelda3TraceCaptureSmpInstruction(regs.pc, trace_opcode, regs.B.a, regs.x,
 +      regs.B.y, regs.sp, regs.p, timer0.stage1_ticks, timer0.stage2_ticks,
 +      timer0.stage3_ticks, apuram);
  #ifdef DEBUGGER
      if (Settings.TraceSMP)
      {
+diff --git a/apu/bapu/smp/memory.cpp b/apu/bapu/smp/memory.cpp
+index 3df43b15..fd0cf5b0 100644
+--- a/apu/bapu/smp/memory.cpp
++++ b/apu/bapu/smp/memory.cpp
+@@ -100,6 +100,7 @@ void SMP::mmio_write(unsigned addr, unsigned data) {
+   case 0xf5:
+   case 0xf6:
+   case 0xf7:
++    Zelda3TraceCaptureSmpOutputPortWrite(addr & 3, data);
+     port_write(addr, data);
+     break;
+ 
 diff --git a/apu/bapu/smp/smp.cpp b/apu/bapu/smp/smp.cpp
 index 2cf58afd..94331731 100644
 --- a/apu/bapu/smp/smp.cpp
@@ -172,6 +270,14 @@ index 2cf58afd..94331731 100644
  
  #define SMP_CPP
  namespace SNES {
+@@ -36,6 +37,7 @@ void SMP::power() {
+ }
+ 
+ void SMP::reset() {
++  Zelda3TraceResetSmpCycle();
+   for(unsigned n = 0x0000; n <= 0xffff; n++) apuram[n] = 0x00;
+ 
+   opcode_number = 0;
 diff --git a/cpuexec.cpp b/cpuexec.cpp
 index aa43b2ff..a5440ab9 100644
 --- a/cpuexec.cpp
@@ -462,6 +568,21 @@ index a8ffcb12..ea26bc9d 100644
 +    return Zelda3TraceApuPortWriteValue(write, field);
 +}
 +
++extern "C" int zelda3_snes9x_debug_smp_output_port_write_count()
++{
++    return Zelda3TraceSmpOutputPortWriteCount();
++}
++
++extern "C" int zelda3_snes9x_debug_smp_output_port_write_value(int write, int field)
++{
++    return Zelda3TraceSmpOutputPortWriteValue(write, field);
++}
++
++extern "C" uint64_t zelda3_snes9x_debug_smp_output_port_write_cycle(int write)
++{
++    return Zelda3TraceSmpOutputPortWriteCycle(write);
++}
++
 +extern "C" int zelda3_snes9x_debug_smp_instruction_count()
 +{
 +    return Zelda3TraceSmpInstructionCount();
@@ -617,6 +738,7 @@ index 00000000..06a376d4
 +++ b/zelda3_trace.cpp
 @@ -0,0 +1,680 @@
 +#include "zelda3_trace.h"
++#include "apu/apu.h"
 +
 +#include "dma.h"
 +#include "gfx.h"
@@ -712,6 +834,14 @@ index 00000000..06a376d4
 +constexpr int apu_port_write_field_count = 21;
 +int apu_port_write_count = 0;
 +int apu_port_writes[apu_port_write_capacity][apu_port_write_field_count] = {};
++constexpr int smp_output_port_write_capacity = 65536;
++constexpr int smp_output_port_write_field_count = 15;
++int smp_output_port_write_count = 0;
++int smp_output_port_writes[smp_output_port_write_capacity][smp_output_port_write_field_count] = {};
++uint64 smp_output_port_write_cycles[smp_output_port_write_capacity] = {};
++uint64 smp_cycle_since_reset = 0;
++int smp_instruction_origin_pc = 0;
++int smp_instruction_origin_opcode = 0;
 +constexpr int smp_instruction_capacity = 8192;
 +constexpr int smp_instruction_field_count = 25;
 +int smp_instruction_count = 0;
@@ -1183,10 +1313,64 @@ index 00000000..06a376d4
 +		? apu_port_writes[write][field] : -1;
 +}
 +
++void Zelda3TraceResetSmpCycle()
++{
++	smp_cycle_since_reset = 0;
++}
++
++void Zelda3TraceTickSmpCycle(unsigned clocks)
++{
++	smp_cycle_since_reset += clocks;
++}
++
++void Zelda3TraceCaptureSmpOutputPortWrite(int port, int value)
++{
++	if (smp_output_port_write_count >= smp_output_port_write_capacity)
++		return;
++	int index = smp_output_port_write_count++;
++	int *write = smp_output_port_writes[index];
++	smp_output_port_write_cycles[index] = smp_cycle_since_reset;
++	write[0] = port;
++	write[1] = value;
++	write[2] = smp_instruction_origin_pc;
++	write[3] = smp_instruction_origin_opcode;
++	write[4] = SNES::smp.opcode_cycle;
++	write[5] = CPU.V_Counter;
++	write[6] = CPU.Cycles;
++	write[7] = Registers.PBPC & 0xffffff;
++	write[8] = S9xAPUTraceReferenceTime();
++	write[9] = S9xAPUTraceRemainder();
++	write[10] = SNES::smp.clock;
++	write[11] = SNES::smp.regs.pc;
++	write[12] = SNES::dsp.clock;
++	write[13] = SNES::dsp.spc_dsp.zelda3_debug_value(7);
++	write[14] = dsp_sample_count;
++}
++
++int Zelda3TraceSmpOutputPortWriteCount()
++{
++	return smp_output_port_write_count;
++}
++
++int Zelda3TraceSmpOutputPortWriteValue(int write, int field)
++{
++	return write >= 0 && write < smp_output_port_write_count &&
++		field >= 0 && field < smp_output_port_write_field_count
++		? smp_output_port_writes[write][field] : -1;
++}
++
++uint64 Zelda3TraceSmpOutputPortWriteCycle(int write)
++{
++	return write >= 0 && write < smp_output_port_write_count
++		? smp_output_port_write_cycles[write] : 0;
++}
++
 +void Zelda3TraceCaptureSmpInstruction(int pc, int opcode, int a, int x, int y, int sp,
 +	int psw, int timer0_stage1, int timer0_stage2, int timer0_stage3,
 +	const uint8 *direct_page)
 +{
++	smp_instruction_origin_pc = pc;
++	smp_instruction_origin_opcode = opcode;
 +	if (smp_instruction_count >= smp_instruction_capacity)
 +		return;
 +	int *instruction = smp_instructions[smp_instruction_count++];
@@ -1225,6 +1409,7 @@ index 00000000..06a376d4
 +	dsp_sample_count = 0;
 +	dsp_write_count = 0;
 +	apu_port_write_count = 0;
++	smp_output_port_write_count = 0;
 +	smp_instruction_count = 0;
 +	if (!active(TRACE_FRAME))
 +		return;
@@ -1429,6 +1614,12 @@ index 00000000..f5bb193a
 +void Zelda3TraceFinalizeApuPortRead(int value);
 +int Zelda3TraceApuPortWriteCount();
 +int Zelda3TraceApuPortWriteValue(int write, int field);
++void Zelda3TraceResetSmpCycle();
++void Zelda3TraceTickSmpCycle(unsigned clocks);
++void Zelda3TraceCaptureSmpOutputPortWrite(int port, int value);
++int Zelda3TraceSmpOutputPortWriteCount();
++int Zelda3TraceSmpOutputPortWriteValue(int write, int field);
++uint64 Zelda3TraceSmpOutputPortWriteCycle(int write);
 +void Zelda3TraceCaptureSmpInstruction(int pc, int opcode, int a, int x, int y, int sp,
 +	int psw, int timer0_stage1, int timer0_stage2, int timer0_stage3,
 +	const uint8 *direct_page);

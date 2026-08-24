@@ -127,6 +127,10 @@ pub(crate) struct LibretroCore {
     pub(crate) debug_dsp_register_write_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_apu_port_write_count: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_apu_port_write_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
+    pub(crate) debug_smp_output_port_write_count: Option<unsafe extern "C" fn() -> c_int>,
+    pub(crate) debug_smp_output_port_write_value:
+        Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
+    pub(crate) debug_smp_output_port_write_cycle: Option<unsafe extern "C" fn(c_int) -> u64>,
     pub(crate) debug_smp_instruction_count: Option<unsafe extern "C" fn() -> c_int>,
     pub(crate) debug_smp_instruction_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
     pub(crate) debug_ppu_value: Option<unsafe extern "C" fn(c_int, c_int) -> c_int>,
@@ -236,6 +240,12 @@ impl LibretroCore {
                 optional_symbol(handle, "zelda3_snes9x_debug_apu_port_write_count");
             let debug_apu_port_write_value =
                 optional_symbol(handle, "zelda3_snes9x_debug_apu_port_write_value");
+            let debug_smp_output_port_write_count =
+                optional_symbol(handle, "zelda3_snes9x_debug_smp_output_port_write_count");
+            let debug_smp_output_port_write_value =
+                optional_symbol(handle, "zelda3_snes9x_debug_smp_output_port_write_value");
+            let debug_smp_output_port_write_cycle =
+                optional_symbol(handle, "zelda3_snes9x_debug_smp_output_port_write_cycle");
             let debug_smp_instruction_count =
                 optional_symbol(handle, "zelda3_snes9x_debug_smp_instruction_count");
             let debug_smp_instruction_value =
@@ -315,6 +325,9 @@ impl LibretroCore {
                 debug_dsp_register_write_value,
                 debug_apu_port_write_count,
                 debug_apu_port_write_value,
+                debug_smp_output_port_write_count,
+                debug_smp_output_port_write_value,
+                debug_smp_output_port_write_cycle,
                 debug_smp_instruction_count,
                 debug_smp_instruction_value,
                 debug_ppu_value,
@@ -676,6 +689,39 @@ impl LibretroCore {
         )
     }
 
+    pub(crate) fn debug_smp_output_port_writes(&self) -> Option<Vec<LibretroSmpOutputPortWrite>> {
+        let (Some(count), Some(value), Some(cycle)) = (
+            self.debug_smp_output_port_write_count,
+            self.debug_smp_output_port_write_value,
+            self.debug_smp_output_port_write_cycle,
+        ) else {
+            return None;
+        };
+        let count = unsafe { count() }.max(0);
+        Some(
+            (0..count)
+                .map(|write| LibretroSmpOutputPortWrite {
+                    absolute_cycle: unsafe { cycle(write) },
+                    port: unsafe { value(write, 0) },
+                    value: unsafe { value(write, 1) },
+                    origin_pc: unsafe { value(write, 2) },
+                    opcode: unsafe { value(write, 3) },
+                    opcode_cycle: unsafe { value(write, 4) },
+                    v_counter: unsafe { value(write, 5) },
+                    cpu_cycle: unsafe { value(write, 6) },
+                    cpu_program_counter: unsafe { value(write, 7) },
+                    cpu_reference_time: unsafe { value(write, 8) },
+                    cpu_remainder: unsafe { value(write, 9) },
+                    smp_clock: unsafe { value(write, 10) },
+                    next_pc: unsafe { value(write, 11) },
+                    dsp_clock: unsafe { value(write, 12) },
+                    dsp_phase: unsafe { value(write, 13) },
+                    output_sample: unsafe { value(write, 14) },
+                })
+                .collect(),
+        )
+    }
+
     pub(crate) fn debug_ppu_value(&self, field: i32, index: i32) -> Option<i32> {
         self.debug_ppu_value
             .map(|probe| unsafe { probe(field, index) })
@@ -783,6 +829,26 @@ pub(crate) struct LibretroApuPortWrite {
     pub(crate) smp_opcode_before: i32,
     pub(crate) smp_opcode_after: i32,
     pub(crate) is_read: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct LibretroSmpOutputPortWrite {
+    pub(crate) absolute_cycle: u64,
+    pub(crate) port: i32,
+    pub(crate) value: i32,
+    pub(crate) origin_pc: i32,
+    pub(crate) opcode: i32,
+    pub(crate) opcode_cycle: i32,
+    pub(crate) v_counter: i32,
+    pub(crate) cpu_cycle: i32,
+    pub(crate) cpu_program_counter: i32,
+    pub(crate) cpu_reference_time: i32,
+    pub(crate) cpu_remainder: i32,
+    pub(crate) smp_clock: i32,
+    pub(crate) next_pc: i32,
+    pub(crate) dsp_clock: i32,
+    pub(crate) dsp_phase: i32,
+    pub(crate) output_sample: i32,
 }
 
 #[derive(serde::Serialize)]
