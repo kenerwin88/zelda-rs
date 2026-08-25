@@ -20,8 +20,12 @@ use crate::libretro_timeline::{
     format_input_history, AudioComparisonMode, AudioTimingOptions, StreamingAudioComparator,
 };
 use crate::render_diagnostics::format_render_ppu_summary;
+use crate::snes9x_semantic_receipts::Snes9xOracleSemanticTrace;
 use serde::{Deserialize, Serialize};
-use zelda3::{game_output::DspWriteEvent, RomRandomSample, ZeldaState, RUN_MAIN};
+use zelda3::{
+    game_output::DspWriteEvent, OriginalTimingHostReceipts, OriginalTimingSemanticReceipt,
+    PresentedCgram, PresentedOam, PresentedObjTiles, RomRandomSample, ZeldaState, RUN_MAIN,
+};
 
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
@@ -513,6 +517,13 @@ fn rolling_capture_frame_after(frame: u32, interval: u32) -> u32 {
         .expect("rolling paired-resume interval is validated")
         .saturating_add(1)
         .saturating_mul(interval)
+}
+
+const fn semantic_trace_authority_available(
+    trace_configured: bool,
+    generic_trace_api_exported: bool,
+) -> bool {
+    trace_configured && generic_trace_api_exported
 }
 
 #[derive(Debug, Deserialize)]
@@ -3116,6 +3127,11 @@ pub(crate) fn run_compare_libretro_oracle(
             env::set_var("ZELDA3_DEBUG_SNES9X_DMA_LEDGER", "1");
         }
     }
+    let semantic_trace_available = replay_save.is_none()
+        && debug_smp_bootstrap_path.is_none()
+        && debug_smp_first_nmi_path.is_none()
+        && debug_first_nmi_dma_setup_path.is_none()
+        && debug_first_nmi_dma_path.is_none();
     if !audio_window_ms.is_finite()
         || audio_window_ms <= 0.0
         || !audio_timing_tolerance_ms.is_finite()
@@ -3185,6 +3201,16 @@ pub(crate) fn run_compare_libretro_oracle(
         // frame filter. Preserve an explicitly requested diagnostic window so
         // PC/DMA/HDMA traces cannot silently expand to the entire route.
         path
+    });
+    // Configure semantic receipt decoding only after every host-only trace
+    // producer has selected the shared generic trace path. Live RNG and Zelda
+    // semantic adapters then consume the same source stream through independent
+    // cursors instead of silently binding different files.
+    let mut oracle_semantic_trace = semantic_trace_available.then(|| {
+        Snes9xOracleSemanticTrace::configure(session_dir.as_deref()).unwrap_or_else(|error| {
+            eprintln!("failed to configure pinned-Snes9x semantic receipts: {error}");
+            process::exit(1);
+        })
     });
 
     let (mut game, start_frame) = if let Some(path) = resume_rust_state.as_deref() {
@@ -3289,6 +3315,18 @@ pub(crate) fn run_compare_libretro_oracle(
             process::exit(1);
         }
     };
+    if !semantic_trace_authority_available(
+        oracle_semantic_trace.is_some(),
+        oracle.debug_trace_count.is_some(),
+    ) {
+        // An empty trace interval is authoritative only when the loaded core
+        // actually exports the maintained generic trace API. The stock core
+        // used by the checkpointable video preflight creates no trace rows;
+        // treating that absence as a genuinely empty Snes9x receipt would
+        // activate Live timing and suppress the legacy fallback without any
+        // observation from the authority.
+        oracle_semantic_trace = None;
+    }
     if let Some(path) = resume_oracle_state.as_deref() {
         let state = read_file_or_exit(path, "libretro resume state");
         oracle.unserialize_state(&state).unwrap_or_else(|error| {
@@ -3757,7 +3795,9 @@ pub(crate) fn run_compare_libretro_oracle(
         stage(0, &mut stage_ns, &mut stage_mark);
         let rust_poly_cycles: Option<u64> = None;
         let mut early_oracle_capture = None;
-        if let Some(trace) = live_oracle_rng_trace.as_mut() {
+        if replay_save.is_none()
+            && (oracle_semantic_trace.is_some() || live_oracle_rng_trace.is_some())
+        {
             if oracle_preframe_snapshot_required(frame_index, frames, compare_this_frame) {
                 oracle
                     .serialize_state_into(&mut oracle_before_state)
@@ -3769,11 +3809,69 @@ pub(crate) fn run_compare_libretro_oracle(
                     });
             }
             early_oracle_capture = Some(oracle.run_frame_with_input(requested_input));
-            let samples = trace.samples_for_run(frame_index).unwrap_or_else(|error| {
-                eprintln!("live oracle RNG authority failed at frame {frame_index}: {error}");
-                process::exit(1);
-            });
-            game.install_rom_random_replay(samples, frame_index);
+            if let Some(trace) = oracle_semantic_trace.as_mut() {
+                let mut semantic = trace.read_after_host_call().unwrap_or_else(|error| {
+                    eprintln!(
+                        "failed to read pinned-Snes9x semantic receipts at frame {frame_index}: {error}"
+                    );
+                    process::exit(1);
+                });
+                semantic.extend(snes9x_oracle_semantic_receipts(&oracle).unwrap_or_else(|error| {
+                    eprintln!(
+                        "failed to decode pinned-Snes9x semantic receipts at frame {frame_index}: {error}"
+                    );
+                    process::exit(1);
+                }));
+                let mut receipts = OriginalTimingHostReceipts::new(
+                    u64::from(frame_index),
+                    requested_input,
+                    semantic,
+                );
+                if let Some(presented_cgram) =
+                    snes9x_presented_cgram(&oracle).unwrap_or_else(|error| {
+                        eprintln!(
+                            "failed to decode pinned-Snes9x presented CGRAM receipt at frame {frame_index}: {error}"
+                        );
+                        process::exit(1);
+                    })
+                {
+                    receipts = receipts.with_presented_cgram(presented_cgram);
+                }
+                if let Some(presented_oam) =
+                    snes9x_presented_oam(&oracle).unwrap_or_else(|error| {
+                        eprintln!(
+                            "failed to decode pinned-Snes9x presented OAM receipt at frame {frame_index}: {error}"
+                        );
+                        process::exit(1);
+                    })
+                {
+                    receipts = receipts.with_presented_oam(presented_oam);
+                }
+                if let Some(presented_obj_tiles) =
+                    snes9x_presented_obj_tiles(&oracle).unwrap_or_else(|error| {
+                        eprintln!(
+                            "failed to decode pinned-Snes9x presented OBJ receipt at frame {frame_index}: {error}"
+                        );
+                        process::exit(1);
+                    })
+                {
+                    receipts = receipts.with_presented_obj_tiles(presented_obj_tiles);
+                }
+                game.install_original_timing_host_receipts(receipts)
+                .unwrap_or_else(|error| {
+                    eprintln!(
+                        "failed to install pinned-Snes9x host receipt at frame {frame_index}: {error:?}"
+                    );
+                    process::exit(1);
+                });
+            }
+            if let Some(trace) = live_oracle_rng_trace.as_mut() {
+                let samples = trace.samples_for_run(frame_index).unwrap_or_else(|error| {
+                    eprintln!("live oracle RNG authority failed at frame {frame_index}: {error}");
+                    process::exit(1);
+                });
+                game.install_rom_random_replay(samples, frame_index);
+            }
         }
         stage(1, &mut stage_ns, &mut stage_mark);
         if replay_save.is_some() {
@@ -3786,6 +3884,14 @@ pub(crate) fn run_compare_libretro_oracle(
         } else {
             requested_input
         };
+        if oracle_semantic_trace.is_some()
+            && game.last_consumed_original_timing_host_call() != Some(u64::from(frame_index))
+        {
+            eprintln!(
+                "translated host call {frame_index} did not consume its pinned-Snes9x receipt"
+            );
+            process::exit(1);
+        }
         if compare_engine_state_from_frame.is_some_and(|start| frame_index >= start) {
             let oracle_ram = oracle
                 .memory_bytes(RETRO_MEMORY_SYSTEM_RAM)
@@ -8642,6 +8748,184 @@ fn first_nmi_dma_transaction_slice(
     Ok(Some((fetch_index, completion_index, successor_index)))
 }
 
+fn validate_complete_dma_outers(
+    events: &[crate::libretro_core::LibretroDmaLedgerEvent],
+) -> Result<(), String> {
+    let mut index = 0;
+    while index < events.len() {
+        let begin = &events[index];
+        if begin.fields[0] != 0 || begin.fields[9] != 1 {
+            return Err(format!(
+                "DMA continuation does not begin with a completed outer-begin row: {begin:?}"
+            ));
+        }
+        let outer = begin.fields[1];
+        let end = events[index..]
+            .iter()
+            .position(|event| event.fields[1] == outer && event.fields[0] == 4)
+            .map(|relative| index + relative)
+            .ok_or_else(|| format!("DMA outer {outer} has no outer-end row"))?;
+        if events[index..=end]
+            .iter()
+            .any(|event| event.fields[1] != outer || event.fields[9] != 1)
+        {
+            return Err(format!(
+                "DMA outer {outer} has mixed ownership or an incomplete row"
+            ));
+        }
+        let mut cursor = index + 1;
+        let mut global_byte_ordinal = 0;
+        while cursor < end {
+            let channel_begin = &events[cursor];
+            if channel_begin.fields[0] != 1 {
+                return Err(format!(
+                    "DMA outer {outer} expected a channel-begin row at event {cursor}: {channel_begin:?}"
+                ));
+            }
+            let channel = channel_begin.fields[2];
+            cursor += 1;
+            let mut channel_byte_ordinal = 0;
+            while cursor < end && events[cursor].fields[0] == 2 {
+                let byte = &events[cursor];
+                if byte.fields[2] != channel
+                    || byte.fields[3] != global_byte_ordinal
+                    || byte.fields[4] != channel_byte_ordinal
+                {
+                    return Err(format!(
+                        "DMA outer {outer} has a non-contiguous byte receipt at event {cursor}: {byte:?}"
+                    ));
+                }
+                global_byte_ordinal += 1;
+                channel_byte_ordinal += 1;
+                cursor += 1;
+            }
+            let channel_end = events.get(cursor).ok_or_else(|| {
+                format!("DMA outer {outer} ended before channel {channel} completion")
+            })?;
+            if channel_end.fields[0] != 3 || channel_end.fields[2] != channel {
+                return Err(format!(
+                    "DMA outer {outer} has no matching channel-end row for channel {channel}: {channel_end:?}"
+                ));
+            }
+            cursor += 1;
+        }
+        index = end + 1;
+    }
+    Ok(())
+}
+
+/// Convert emulator-private DMA chronology into the replaceable semantic
+/// contract consumed by translated Zelda. A stock core without the optional
+/// generic ledger can still provide host cadence; it simply owns no migrated
+/// DMA domain yet.
+fn snes9x_oracle_semantic_receipts(
+    oracle: &LibretroCore,
+) -> Result<Vec<OriginalTimingSemanticReceipt>, String> {
+    // Detailed DMA chronology is a fixture/debug capability, not part of the
+    // continuous Live cadence contract. Until Zelda consumes this semantic
+    // domain, leave it disabled so large transfers cannot make an unrelated
+    // sprite-reset authority fail.
+    if env::var_os("ZELDA3_DEBUG_SNES9X_DMA_LEDGER").is_none() {
+        return Ok(Vec::new());
+    }
+    let Some(events) = oracle.debug_dma_ledger()? else {
+        return Ok(Vec::new());
+    };
+    semantic_receipts_from_dma_ledger(&events)
+}
+
+/// Capture the presentation-domain OBJ tiles retained by the pinned oracle
+/// for the host surface it just returned. The patch exposes unflipped palette
+/// indices and validity only; emulator cache addresses and CPU/raster state do
+/// not cross the replaceable receipt boundary.
+fn snes9x_presented_obj_tiles(oracle: &LibretroCore) -> Result<Option<PresentedObjTiles>, String> {
+    if oracle.debug_ppu_value(29, 0).is_none() {
+        return Ok(None);
+    }
+    let tile_pixels = (0..PresentedObjTiles::TILE_COUNT * PresentedObjTiles::PIXELS_PER_TILE)
+        .map(|index| {
+            let value = oracle
+                .debug_ppu_value(29, index as i32)
+                .ok_or_else(|| format!("presented OBJ tile pixel {index} is unavailable"))?;
+            u8::try_from(value)
+                .ok()
+                .filter(|&pixel| pixel < 16)
+                .ok_or_else(|| format!("presented OBJ tile pixel {index} is invalid: {value}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let valid_tiles = (0..PresentedObjTiles::TILE_COUNT)
+        .map(|tile| {
+            oracle
+                .debug_ppu_value(30, tile as i32)
+                .map(|valid| valid != 0)
+                .ok_or_else(|| format!("presented OBJ tile validity {tile} is unavailable"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    PresentedObjTiles::new(tile_pixels, valid_tiles)
+        .map(Some)
+        .ok_or_else(|| "presented OBJ tile receipt has an invalid shape".to_string())
+}
+
+fn snes9x_presented_oam(oracle: &LibretroCore) -> Result<Option<PresentedOam>, String> {
+    if oracle.debug_ppu_value(20, 0).is_none() {
+        return Ok(None);
+    }
+    let bytes = (0..PresentedOam::BYTE_COUNT)
+        .map(|index| {
+            let value = oracle
+                .debug_ppu_value(20, index as i32)
+                .ok_or_else(|| format!("presented OAM byte {index} is unavailable"))?;
+            u8::try_from(value)
+                .map_err(|_| format!("presented OAM byte {index} is invalid: {value}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    PresentedOam::new(bytes)
+        .map(Some)
+        .ok_or_else(|| "presented OAM receipt has an invalid shape".to_string())
+}
+
+fn snes9x_presented_cgram(oracle: &LibretroCore) -> Result<Option<PresentedCgram>, String> {
+    if oracle.debug_ppu_value(36, 0).is_none() {
+        return Ok(None);
+    }
+    let colors = (0..PresentedCgram::COLOR_COUNT)
+        .map(|index| {
+            let value = oracle
+                .debug_ppu_value(36, index as i32)
+                .ok_or_else(|| format!("presented CGRAM color {index} is unavailable"))?;
+            u16::try_from(value)
+                .ok()
+                .filter(|&color| color <= 0x7fff)
+                .ok_or_else(|| format!("presented CGRAM color {index} is invalid: {value}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    PresentedCgram::new(colors)
+        .map(Some)
+        .ok_or_else(|| "presented CGRAM receipt has an invalid shape".to_string())
+}
+
+fn semantic_receipts_from_dma_ledger(
+    events: &[crate::libretro_core::LibretroDmaLedgerEvent],
+) -> Result<Vec<OriginalTimingSemanticReceipt>, String> {
+    validate_complete_dma_outers(events)?;
+    let mut receipts = Vec::new();
+    for event in events.iter().filter(|event| event.fields[0] == 4) {
+        let channel_mask = u8::try_from(event.fields[2]).map_err(|_| {
+            format!(
+                "completed Snes9x DMA outer has invalid channel mask {}",
+                event.fields[2]
+            )
+        })?;
+        // Snes9x still records the outer `$420b` semantic for a zero mask,
+        // but no DMA publication occurred. Keep validating that chronology
+        // above, then omit it from Zelda's semantic receipt stream.
+        if channel_mask != 0 {
+            receipts.push(OriginalTimingSemanticReceipt::DmaPublicationCompleted { channel_mask });
+        }
+    }
+    Ok(receipts)
+}
+
 fn first_nmi_dma_ledger_slice(
     events: &[crate::libretro_core::LibretroDmaLedgerEvent],
 ) -> Result<Option<(i32, Vec<crate::libretro_core::LibretroDmaLedgerEvent>)>, String> {
@@ -9560,13 +9844,13 @@ pub(crate) mod tests {
         oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
         parse_paired_resume_capture, parse_rolling_paired_resume_capture,
         prune_rolling_paired_resume_captures, replayable_input_artifact, resolve_replay_bundle,
-        rolling_capture_frame_after, scan_all_policy, should_render_video_frame,
-        should_stop_after_first_mismatch, should_write_frame_receipt, smp_bootstrap_handoff_index,
-        snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
-        summarize_value_domain, trace_events_with_rom_rng, validate_replay_source_parents,
-        vram_domain_receipt, BootBoundaryState, FramedApuPortAccess, FramedCpuTimingTransaction,
-        FramedSmpInstruction, PairedResumeCapture, RollingPairedResumeCapture, ValueDomainDiff,
-        VramDomainReceipt,
+        rolling_capture_frame_after, scan_all_policy, semantic_trace_authority_available,
+        should_render_video_frame, should_stop_after_first_mismatch, should_write_frame_receipt,
+        smp_bootstrap_handoff_index, snes9x_presented_scanline_for_video_y,
+        summarize_presented_obj_cache, summarize_value_domain, trace_events_with_rom_rng,
+        validate_replay_source_parents, vram_domain_receipt, BootBoundaryState,
+        FramedApuPortAccess, FramedCpuTimingTransaction, FramedSmpInstruction, PairedResumeCapture,
+        RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt,
     };
     use crate::libretro_core::{
         LibretroApuPortWrite, LibretroCpuTimingTransaction, LibretroDmaLedgerEvent,
@@ -9575,6 +9859,14 @@ pub(crate) mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn semantic_receipts_require_a_loaded_generic_trace_authority() {
+        assert!(semantic_trace_authority_available(true, true));
+        assert!(!semantic_trace_authority_available(true, false));
+        assert!(!semantic_trace_authority_available(false, true));
+        assert!(!semantic_trace_authority_available(false, false));
+    }
     use zelda3::{game_output::DspWriteEvent, RomRandomSample};
 
     fn decode_base64_bytes(encoded: &str) -> Vec<u8> {

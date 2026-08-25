@@ -402,7 +402,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
-                | GameWorkContinuation::FinishStraightInterroomSpriteReset
+                | GameWorkContinuation::FinishStraightInterroomSpriteReset { .. }
                 | GameWorkContinuation::FinishSpriteMain { .. }
                 | GameWorkContinuation::FinishWorldMapOverlayReload
                 | GameWorkContinuation::FinishWorldMapAmbientMap8
@@ -607,6 +607,10 @@ enum GameExecutionContinuation {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(super) struct GameExecutionScheduler {
     continuation: Option<GameExecutionContinuation>,
+    /// CPU work suspended by the same NMI already owned by
+    /// `PreMainNmiResume`.  This composes two semantic receipts at one hardware
+    /// boundary without scheduling or replaying a second interrupt.
+    after_pre_main_nmi: Option<GameWorkContinuation>,
     cpu_host_phase: CpuHostPhase,
     /// The preceding host slice reached the ordinary main-loop return. The
     /// next hardware interval therefore begins with an eligible leading NMI,
@@ -638,7 +642,7 @@ impl GameExecutionScheduler {
     }
 
     pub(super) fn is_idle(self) -> bool {
-        self.continuation.is_none()
+        self.continuation.is_none() && self.after_pre_main_nmi.is_none()
     }
 
     pub(super) fn begin_host_frame(&mut self) {
@@ -930,6 +934,7 @@ impl GameExecutionScheduler {
 
     pub(super) fn work_is_pending(self) -> bool {
         self.scheduled_work().is_some()
+            || self.after_pre_main_nmi.is_some()
             || matches!(
                 self.continuation,
                 Some(
@@ -942,6 +947,7 @@ impl GameExecutionScheduler {
     pub(super) fn work_suspends_translated_call_stack(self) -> bool {
         self.scheduled_work()
             .is_some_and(ScheduledGameWork::suspends_translated_call_stack)
+            || self.after_pre_main_nmi.is_some()
             || matches!(
                 self.continuation,
                 Some(
@@ -993,6 +999,7 @@ impl GameExecutionScheduler {
     pub(super) fn current_work(self) -> Option<GameWorkContinuation> {
         self.scheduled_work()
             .map(|work| work.continuation)
+            .or(self.after_pre_main_nmi)
             .or_else(|| match self.continuation {
                 Some(
                     GameExecutionContinuation::AfterCurrentTrailingNmi(continuation)
@@ -1073,6 +1080,29 @@ impl GameExecutionScheduler {
         self.schedule_continuation(GameExecutionContinuation::PreMainNmiResume(continuation));
     }
 
+    /// Attach a suspended C suffix to an already-owned pre-main NMI.
+    ///
+    /// Returns `false` when there is no pending pre-main boundary, allowing the
+    /// caller to use its ordinary scheduling path.  A successful composition
+    /// retains the existing NMI continuation and resumes `continuation` only
+    /// after that exact interrupt has run.
+    pub(super) fn schedule_after_pending_pre_main_nmi(
+        &mut self,
+        continuation: GameWorkContinuation,
+    ) -> bool {
+        if !matches!(
+            self.continuation,
+            Some(GameExecutionContinuation::PreMainNmiResume(_))
+        ) {
+            return false;
+        }
+        assert!(
+            self.after_pre_main_nmi.replace(continuation).is_none(),
+            "pre-main NMI already owns a post-interrupt continuation",
+        );
+        true
+    }
+
     pub(super) fn take_pre_main_nmi_resume(&mut self) -> Option<PreMainNmiResume> {
         match self.continuation {
             Some(GameExecutionContinuation::PreMainNmiResume(continuation)) => {
@@ -1081,6 +1111,14 @@ impl GameExecutionScheduler {
             }
             _ => None,
         }
+    }
+
+    pub(super) fn take_after_pre_main_nmi(&mut self) -> Option<GameWorkContinuation> {
+        let continuation = self.after_pre_main_nmi.take()?;
+        if self.cpu_host_phase == CpuHostPhase::SuspendedCallStack {
+            self.cpu_host_phase = CpuHostPhase::ResumedCallStackBeforeNmi;
+        }
+        Some(continuation)
     }
 
     pub(super) fn begin_leading_nmi_upload_pipeline(&mut self) {
@@ -1942,6 +1980,30 @@ mod cpu_timing_tests {
         scheduler.begin_host_frame();
 
         assert!(scheduler.fresh_main_loop_iteration_is_ready());
+        assert!(scheduler.main_return_requires_leading_nmi());
+    }
+
+    #[test]
+    fn pre_main_nmi_and_interrupted_cpu_suffix_share_one_boundary() {
+        let resume = PreMainNmiResume::DungeonModuleCallerCompletedBeforeNextNmi;
+        let continuation = GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn;
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.schedule_pre_main_nmi_resume(resume);
+
+        assert!(scheduler.schedule_after_pending_pre_main_nmi(continuation));
+        assert!(scheduler.work_suspends_translated_call_stack());
+        assert_eq!(scheduler.current_work(), Some(continuation));
+        scheduler.begin_host_frame();
+        assert_eq!(scheduler.take_pre_main_nmi_resume(), Some(resume));
+        assert!(
+            !scheduler.is_idle(),
+            "the CPU suffix remains owned until the shared NMI completes"
+        );
+        assert_eq!(scheduler.take_after_pre_main_nmi(), Some(continuation));
+        assert!(scheduler.resumed_call_stack_is_before_nmi());
+        assert!(scheduler.is_idle());
+        scheduler.finish_call_stack_at_main_wait_before_nmi();
+        scheduler.begin_host_frame();
         assert!(scheduler.main_return_requires_leading_nmi());
     }
 }

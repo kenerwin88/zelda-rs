@@ -22,6 +22,7 @@ TRACE_PATCHES = (
     PATCH_DIR / "zelda3-spc-opcode-ledger.patch",
     PATCH_DIR / "zelda3-dsp-phase-ledger.patch",
     PATCH_DIR / "zelda3-dma-ledger.patch",
+    PATCH_DIR / "zelda3-trace-presented-cgram.patch",
 )
 LOCK = json.loads(LOCK_PATH.read_text())
 VERSION = LOCK["core_version"]

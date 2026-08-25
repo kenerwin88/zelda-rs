@@ -552,9 +552,20 @@ def run_snes9x_gate() -> int:
             file=sys.stderr,
         )
         return 1
+    authority_core = required_core
+    authority_core_sha256: str | None = None
+    if _video_preflight_enabled():
+        authority_core = _abs_path(
+            os.environ.get("ZELDA3_PRECOMMIT_TRACE_CORE", str(TRACE_CORE))
+        )
+        authority_core_sha256 = validate_trace_core(authority_core)
 
     resume_enabled = _resume_enabled()
     binary_identity = _binary_identity(binary) if resume_enabled else None
+    if binary_identity is not None:
+        binary_identity["authority_core_sha256"] = (
+            authority_core_sha256 or recorder.sha256(authority_core)
+        )
 
     with tempfile.TemporaryDirectory(prefix="zelda3-precommit-") as temp_dir:
         temp_dir = Path(temp_dir)
@@ -596,10 +607,16 @@ def run_snes9x_gate() -> int:
                 print(f"pre-commit: resuming from paired checkpoint {resume_dir}")
 
         if _video_preflight_enabled():
-            trace_core = _abs_path(
-                os.environ.get("ZELDA3_PRECOMMIT_TRACE_CORE", str(TRACE_CORE))
-            )
-            trace_core_sha256 = validate_trace_core(trace_core)
+            trace_core = authority_core
+            trace_core_sha256 = authority_core_sha256
+            assert trace_core_sha256 is not None
+            # Continuous Zelda-level timing receipts are emitted only by the
+            # maintained trace build. Once the runtime consumes those receipts,
+            # replaying their RNG stream against a stock core silently runs a
+            # different scheduler and can shift source calls by a host frame.
+            # Use one core identity for calibration, checkpointable preflight,
+            # and cold exact certification so every tier observes the same
+            # authoritative host intervals.
             cached_rng_count = _restore_rng_cache(
                 signature,
                 requested,
@@ -700,7 +717,7 @@ def run_snes9x_gate() -> int:
             preflight_session_dir = sessions.video_preflight
             preflight_command = _build_check_command(
                 binary=binary,
-                core=required_core,
+                core=authority_core,
                 rom=rom,
                 project=project,
                 session_dir=preflight_session_dir,
@@ -712,9 +729,10 @@ def run_snes9x_gate() -> int:
                 resume_dir=resume_dir,
                 rolling=(interval, CHECKPOINT_PATH) if resume_enabled else None,
                 ignore_audio=True,
+                expected_core_sha256=authority_core_sha256,
             )
             print(
-                "pre-commit: running checkpointable stock-core video preflight "
+                "pre-commit: running checkpointable timing-authority video preflight "
                 "before exact A/V certification"
             )
             preflight_started = time.monotonic()
@@ -766,7 +784,7 @@ def run_snes9x_gate() -> int:
             print(
                 "pre-commit: RNG-verified video preflight passed "
                 f"({rom_random_count} cartridge sample(s)); "
-                "running cold stock-core exact A/V certification"
+                "running cold timing-authority exact A/V certification"
             )
         else:
             rom_random_count = recorder.write_continuous_rom_random(
@@ -780,7 +798,7 @@ def run_snes9x_gate() -> int:
 
         command = _build_check_command(
             binary=binary,
-            core=required_core,
+            core=authority_core,
             rom=rom,
             project=project,
             session_dir=session_dir,
@@ -792,6 +810,7 @@ def run_snes9x_gate() -> int:
             resume_dir=resume_dir,
             rolling=rolling,
             authoritative=True,
+            expected_core_sha256=authority_core_sha256,
         )
 
         exact_started = time.monotonic()

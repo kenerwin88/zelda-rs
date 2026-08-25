@@ -36,6 +36,7 @@ mod snes9x_compare;
 mod snes9x_record_commands;
 mod snes9x_route_recorder;
 mod snes9x_segment_matrix;
+mod snes9x_semantic_receipts;
 #[allow(unused_imports)]
 use libretro_core::*;
 #[allow(unused_imports)]

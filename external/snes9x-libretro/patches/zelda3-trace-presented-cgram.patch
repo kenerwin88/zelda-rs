@@ -1,0 +1,97 @@
+diff --git a/gfx.cpp b/gfx.cpp
+index 8170d4a3..f36fa2b1 100644
+--- a/gfx.cpp
++++ b/gfx.cpp
+@@ -155,6 +155,8 @@ void S9xBuildDirectColourMaps (void)
+ 
+ void S9xStartScreenRefresh (void)
+ {
++	Zelda3TraceBeginPresentedPpuState();
++
+ 	if (GFX.DoInterlace)
+ 		GFX.DoInterlace--;
+ 
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+index b5703597..7a937561 100644
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -916,6 +916,10 @@ extern "C" int zelda3_snes9x_debug_ppu_value(int field, int index)
+             return Zelda3TracePresentedBgScrollValue(1, index);
+         case 35:
+             return Zelda3TracePresentedBgProvenanceValue(index);
++        // Raw 15-bit colors retained at the beginning of the completed
++        // scanout. The trace fails closed if CGRAM changed during active
++        // display, because one frame-wide palette would then be insufficient.
++        case 36: return Zelda3TracePresentedCgramValue(index);
+         default: return -1;
+     }
+ }
+diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
+index 0cfedcf0..bda816cc 100644
+--- a/zelda3_trace.cpp
++++ b/zelda3_trace.cpp
+@@ -95,6 +95,9 @@ int presented_tile_number = 0;
+ int presented_tile_address = 0;
+ int presented_tile_cache_valid = 0;
+ uint32 presented_tile_cache_hash = 0;
++uint16 scanout_cgram[256] = {};
++uint16 presented_cgram[256] = {};
++bool presented_cgram_uniform = false;
+ SLineMatrixData presented_mode7[240] = {};
+ int scanline_windows[240][4] = {};
+ int presented_windows[240][4] = {};
+@@ -439,6 +442,11 @@ void finish_event()
+ 
+ }
+ 
++void Zelda3TraceBeginPresentedPpuState()
++{
++	std::memcpy(scanout_cgram, PPU.CGDATA, sizeof(scanout_cgram));
++}
++
+ void Zelda3TraceCapturePresentedPpuState()
+ {
+ 	if (active(TRACE_FRAME))
+@@ -479,11 +487,23 @@ void Zelda3TraceCapturePresentedPpuState()
+ 			presented_bg_h_scroll[line][bg] = LineData[line].BG[bg].HOffset;
+ 			presented_bg_v_scroll[line][bg] = LineData[line].BG[bg].VOffset;
+ 		}
++	presented_cgram_uniform =
++		std::memcmp(scanout_cgram, PPU.CGDATA, sizeof(scanout_cgram)) == 0;
++	std::memcpy(presented_cgram, scanout_cgram,
++		sizeof(presented_cgram));
+ 	std::memcpy(presented_mode7, LineMatrixData, sizeof(presented_mode7));
+ 	std::memcpy(presented_windows, scanline_windows, sizeof(presented_windows));
+ 	std::memcpy(presented_clip, IPPU.Clip, sizeof(presented_clip));
+ }
+ 
++int Zelda3TracePresentedCgramValue(int index)
++{
++	if (!presented_cgram_uniform)
++		return -2;
++	return index >= 0 && index < (int) (sizeof(presented_cgram) / sizeof(presented_cgram[0]))
++		? presented_cgram[index] : -1;
++}
++
+ void Zelda3TraceCaptureScanlinePpuState(int line)
+ {
+ 	if (line < 0 || line >= 240)
+diff --git a/zelda3_trace.h b/zelda3_trace.h
+index 0db01fe5..f204a1ef 100644
+--- a/zelda3_trace.h
++++ b/zelda3_trace.h
+@@ -36,12 +36,14 @@ enum Zelda3TraceCpuTimingKind
+ bool Zelda3TraceCpuCarry();
+ unsigned Zelda3TraceCpuStatus();
+ void Zelda3TraceCaptureScanlinePpuState(int line);
++void Zelda3TraceBeginPresentedPpuState();
+ void Zelda3TraceCapturePresentedPpuState();
+ int Zelda3TracePresentedOamValue(int index);
+ int Zelda3TracePresentedObjValue(int field, int index);
+ int Zelda3TracePresentedObjTileCacheValue(int field, int index);
+ int Zelda3TracePresentedBgTileCacheValue(int field, int index);
+ int Zelda3TracePresentedBgScrollValue(int field, int index);
++int Zelda3TracePresentedCgramValue(int index);
+ int Zelda3TracePresentedMode7Value(int line, int field);
+ int Zelda3TracePresentedClipValue(int index);
+ void Zelda3TraceCapturePresentedPixel(int offset, int palette_index, int main_color,

@@ -31,11 +31,11 @@ use crate::game_state::{
     lanmola_flat_trail_entry_from_ram, loaded_room_data_word, Bg1MovementAccumulatorState,
     BirdTravelDestinationState, BlastWallExplosionSlotState, BlastWallFireballSlotState,
     BlastWallFragmentSlotState, BombosBlastState, BombosFireColumnState, BossHomePositionRead,
-    CachedSpriteCacheField, CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut,
-    DungeonStairList, FollowerLinkState, GameState, GraphicsDecompressionScratch,
-    HappinessPondRupeeSlotState, HappinessPondRupeeSnapshot, HistoryPositionState, HudStateRead,
-    HudTilemapState, IntroActorRead, LanmolaFlatTrailEntry, LanmolaSegmentMotionState,
-    LinkDmaSourceSlot, LinkDmaSources, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
+    CachedSpriteRead, CompatibilityBytesView, CompatibilityBytesViewMut, DungeonStairList,
+    FollowerLinkState, GameState, GraphicsDecompressionScratch, HappinessPondRupeeSlotState,
+    HappinessPondRupeeSnapshot, HistoryPositionState, HudStateRead, HudTilemapState,
+    IntroActorRead, LanmolaFlatTrailEntry, LanmolaSegmentMotionState, LinkDmaSourceSlot,
+    LinkDmaSources, MsuResumeInfoState, MsuResumeSlot, MultiselectChoiceRead,
     NativeAncillaSlotBridgeMut, NativeAncillaSlotView, NativeArcheryGameBridgeMut,
     NativeArmosKnightHomePositionBridgeMut, NativeArrghusPuffHomePositionBridgeMut,
     NativeAttractSceneBridgeMut, NativeAttractVramDestinationBridgeMut,
@@ -109,6 +109,10 @@ use crate::raster_timing::{
     ATTRACT_MAP_PROJECTION_WORDS,
 };
 use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
+use crate::timing_receipts::{
+    sanitize_original_timing_input, DungeonResetSpritesProgressReceipt, OriginalTimingBoundary,
+    OriginalTimingHostReceipts, OriginalTimingReceiptInstallError, OriginalTimingSemanticReceipt,
+};
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
 
@@ -2231,7 +2235,6 @@ enum PreMainNmiResume {
     DungeonSupertileCallerReturnNmi,
     DungeonSupertileNextIterationAfterLeadingNmi,
     DungeonModuleCallerCompletedBeforeNextNmi,
-    StraightInterroomState5LeadingNmi,
 }
 
 /// Caller suffixes that resume before the next fresh module iteration.
@@ -2311,8 +2314,7 @@ impl PreMainNmiResume {
             | Self::DungeonSupertileQuadrantUploadsAfterHeldNmi
             | Self::DungeonSupertileNextIterationAfterLeadingNmi => Some(NmiPhase::BeforeNmi),
             Self::DungeonSupertileCallerReturnNmi
-            | Self::DungeonModuleCallerCompletedBeforeNextNmi
-            | Self::StraightInterroomState5LeadingNmi => Some(NmiPhase::AfterNmi),
+            | Self::DungeonModuleCallerCompletedBeforeNextNmi => Some(NmiPhase::AfterNmi),
             Self::OverworldAuxGraphicsReturn | Self::OverworldSpriteReloadReturn { .. } => None,
         }
     }
@@ -2343,8 +2345,7 @@ impl PreMainNmiResume {
             | Self::DungeonSupertileQuadrantUploadsAfterHeldNmi
             | Self::DungeonSupertileCallerReturnNmi
             | Self::DungeonSupertileNextIterationAfterLeadingNmi
-            | Self::DungeonModuleCallerCompletedBeforeNextNmi
-            | Self::StraightInterroomState5LeadingNmi => PreMainNmiScanoutGenerations {
+            | Self::DungeonModuleCallerCompletedBeforeNextNmi => PreMainNmiScanoutGenerations {
                 publication: DisplaySnapshotPublication::PublishCaptured,
                 vram: DisplayVramGeneration::ComposeLiveAfterNmi,
                 // This continuation captures before a leading hardware NMI.
@@ -2920,7 +2921,6 @@ struct DungeonRoomLoadCpuSchedule {
     caller_sprite_main_nmis: u8,
     caller_suffix_nmis: u8,
     sprite_main_boundary: Option<SpriteMainCpuBoundary>,
-    cached_sprite_interruption: Option<CachedSpriteCpuInterruption>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2936,7 +2936,6 @@ struct DungeonRoomLoadCpuPlan {
     caller_sprite_main_nmis: u8,
     caller_suffix_nmis: u8,
     sprite_main_boundary: Option<SpriteMainCpuBoundary>,
-    cached_sprite_interruption: Option<CachedSpriteCpuInterruption>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -2971,7 +2970,6 @@ impl DungeonRoomLoadCpuPlan {
             caller_sprite_main_nmis: self.caller_sprite_main_nmis,
             caller_suffix_nmis: self.caller_suffix_nmis,
             sprite_main_boundary: self.sprite_main_boundary,
-            cached_sprite_interruption: self.cached_sprite_interruption,
         }
     }
 }
@@ -3510,8 +3508,6 @@ fn dungeon_room_load_cpu_plan(
     let mut sprite_main_boundary = None;
     let mut sprite_main_entry_nmis: Option<u8> = None;
     let mut sprite_main_return_nmis: Option<u8> = None;
-    let mut cached_sprite_copy: Option<CachedSpriteCpuProgress> = None;
-    let mut cached_sprite_interruption = None;
 
     run.enable_cpu_write_trace();
 
@@ -3586,25 +3582,13 @@ fn dungeon_room_load_cpu_plan(
                 caller_sprite_main_nmis,
                 caller_suffix_nmis,
                 sprite_main_boundary,
-                cached_sprite_interruption,
             };
         }
 
-        if pc == 0x1d_ea00 {
-            cached_sprite_copy = Some(CachedSpriteCpuProgress::at_entry(
-                run.ram_byte(CUR_OBJECT_INDEX),
-            ));
-        }
-        if let Some(copy) = cached_sprite_copy.as_mut() {
-            copy.observe_pc(pc);
-        }
         let (scanline, master_cycle) = raster.coordinates();
         run.set_raster_position(scanline, master_cycle);
         let advance = advance_rom_cpu_step(&mut run, &mut budget);
         for (address, value) in run.take_cpu_wram_writes() {
-            if let Some(copy) = cached_sprite_copy.as_mut() {
-                copy.observe_wram_write(address);
-            }
             if auxiliary_graphics_return.is_some()
                 && (SPRITE_STATE..SPRITE_STATE + 16).contains(&address)
                 && value == 9
@@ -3615,8 +3599,6 @@ fn dungeon_room_load_cpu_plan(
         if advance.reached_boundary().is_some() {
             if sprite_main_entry_nmis.is_some() && !sprite_main_first_nmi_observed {
                 sprite_main_first_nmi_observed = true;
-                cached_sprite_interruption =
-                    cached_sprite_copy.and_then(CachedSpriteCpuProgress::interruption);
                 // The ROM writes $0fa0 immediately before every
                 // Sprite_ExecuteSingle call, then reaches $06:83a7 after that
                 // call returns. NMI may interrupt anywhere inside the current
@@ -4196,6 +4178,23 @@ impl CachedSpriteCpuInterruption {
     pub(super) const fn slot(self) -> u8 {
         match self {
             Self::Loading { slot, .. } | Self::Restoring { slot, .. } => slot,
+        }
+    }
+}
+
+impl From<crate::CachedSpriteExecutionProgress> for CachedSpriteCpuInterruption {
+    fn from(progress: crate::CachedSpriteExecutionProgress) -> Self {
+        match progress {
+            crate::CachedSpriteExecutionProgress::Loading {
+                slot,
+                copied_fields,
+            } => Self::Loading {
+                slot,
+                copied_fields,
+            },
+            crate::CachedSpriteExecutionProgress::Restoring { slot, live_fields } => {
+                Self::Restoring { slot, live_fields }
+            }
         }
     }
 }
@@ -5216,7 +5215,12 @@ const fn spotlight_close_next_radius(radius: u16) -> u16 {
 pub(super) enum DungeonSupertileTransitionWork {
     RoomLoad,
     AuxiliarySpriteGraphics,
-    RoomLoadSpriteReset,
+    /// Legacy scheduler ownership retained until this semantic domain has an
+    /// authoritative Dungeon_ResetSprites progress receipt.
+    RoomLoadSpriteResetFallback,
+    RoomLoadSpriteReset {
+        progress: DungeonResetSpritesCpuProgress,
+    },
     SpriteConversion,
     RoomLoadCallerResume,
     SpriteConversionCallerResume,
@@ -5273,7 +5277,7 @@ impl DungeonSupertileTransitionWork {
             Self::RoomLoad => DUNGEON_SUPERTILE_ROOM_LOAD_NMI_SLICES,
             Self::AuxiliarySpriteGraphics => DUNGEON_SUPERTILE_AUX_SPRITE_GFX_NMI_SLICES,
             // ROM timing mode replaces this placeholder before scheduling.
-            Self::RoomLoadSpriteReset => 1,
+            Self::RoomLoadSpriteResetFallback | Self::RoomLoadSpriteReset { .. } => 1,
             Self::SpriteConversion => DUNGEON_SUPERTILE_SPRITE_CONVERSION_NMI_SLICES,
             Self::RoomLoadCallerResume | Self::SpriteConversionCallerResume => {
                 DUNGEON_SUPERTILE_CALLER_RESUME_NMI_SLICES
@@ -5442,7 +5446,9 @@ enum GameWorkContinuation {
     FinishDialogueInitializationCallerReturn,
     FinishDungeonSubtilePaletteFilter,
     FinishStraightInterroomFadeoutSuffix,
-    FinishStraightInterroomSpriteReset,
+    FinishStraightInterroomSpriteReset {
+        progress: DungeonResetSpritesCpuProgress,
+    },
     FinishSpriteMain {
         boundary: SpriteMainCpuBoundary,
         caller: SpriteMainCpuCaller,
@@ -6297,6 +6303,11 @@ mod poly;
 mod select_file;
 #[path = "sprite.rs"]
 mod sprite;
+pub use crate::game_state::CachedSpriteCacheField;
+pub use sprite::{
+    DungeonLoadSpritesCpuProgress, DungeonResetSpritesCpuProgress, DungeonSpriteDisableCpuProgress,
+    DungeonSpriteLoadCheckpoint,
+};
 #[path = "sprite_main.rs"]
 mod sprite_main;
 #[path = "sprite_main_blind.rs"]
@@ -8641,7 +8652,7 @@ pub(crate) enum OriginalTimingOwner {
     /// A genuinely fresh reset is eligible to seed the exact owner at the
     /// next host execution boundary.
     PendingColdStart,
-    /// The exact CPU/APU machine advances once per host call.
+    /// An exact timing backend owns one receipt interval per host call.
     Live,
     /// Exact timing cannot safely resume or retry from the current state.
     Unavailable(OriginalTimingUnavailableReason),
@@ -8652,33 +8663,19 @@ pub(crate) enum OriginalTimingUnavailableReason {
     ProgressedState,
     CheckpointRestore,
     MissingRom,
-    SourceSeed,
-    SourceExecution,
-}
-
-struct OriginalTimingLive {
-    executor: Box<snes::Snes9xColdCpuExecutor>,
-}
-
-impl Clone for OriginalTimingLive {
-    fn clone(&self) -> Self {
-        let checkpoint = self
-            .executor
-            .capture_quiescent_checkpoint()
-            .expect("a Live original timing owner is always quiescent at a host boundary");
-        let executor = snes::Snes9xColdCpuExecutor::from_quiescent_checkpoint(checkpoint)
-            .expect("a captured Live original timing checkpoint restores exactly");
-        Self {
-            executor: Box::new(executor),
-        }
-    }
+    MissingAuthorityReceipt,
+    AuthorityReceiptInputMismatch,
 }
 
 #[derive(Clone)]
 enum OriginalTimingOwnerState {
     Disabled,
     PendingColdStart,
-    Live(OriginalTimingLive),
+    /// A replaceable timing authority is publishing one typed receipt interval
+    /// per host call. Backend identity remains outside ZeldaState: today the
+    /// producer is pinned Snes9x, while a native timing owner can later publish
+    /// the same Zelda-level receipt vocabulary without changing gameplay.
+    Live,
     Unavailable(OriginalTimingUnavailableReason),
 }
 
@@ -8687,7 +8684,7 @@ impl OriginalTimingOwnerState {
         match self {
             Self::Disabled => OriginalTimingOwner::Disabled,
             Self::PendingColdStart => OriginalTimingOwner::PendingColdStart,
-            Self::Live(_) => OriginalTimingOwner::Live,
+            Self::Live => OriginalTimingOwner::Live,
             Self::Unavailable(reason) => OriginalTimingOwner::Unavailable(*reason),
         }
     }
@@ -8701,12 +8698,6 @@ impl Default for OriginalTimingOwnerState {
         // has not yet invoked the live-ROM restoration hook.
         Self::Unavailable(OriginalTimingUnavailableReason::CheckpointRestore)
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct OriginalTimingHostReceipt {
-    main_loop: snes::Snes9xMainLoopReceipt,
-    dsp_sample_count: usize,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -8858,11 +8849,20 @@ pub struct ZeldaState {
     /// observe the already-owned source interval and never advance it twice.
     #[serde(skip)]
     original_timing_host_dispatch_active: bool,
-    /// One-call receipt available only while translated/callback work for that
-    /// same host interval executes. Finalization always drops it, preventing
-    /// replay on the following call.
+    /// External pinned-Snes9x semantic receipt for exactly one upcoming host
+    /// dispatch. The emulator remains outside ZeldaState and this receipt is
+    /// absent from Zelda checkpoints.
     #[serde(skip)]
-    original_timing_host_receipt: Option<OriginalTimingHostReceipt>,
+    original_timing_semantic_receipts: Option<OriginalTimingHostReceipts>,
+    /// Last pinned-Snes9x host-call receipt consumed by this live owner. The
+    /// next receipt must be its exact successor, so identical controller input
+    /// cannot make a stale receipt replayable.
+    #[serde(skip)]
+    original_timing_last_oracle_host_call: Option<u64>,
+    /// Decoded OBJ cache generation present when an authoritative NMI receipt
+    /// suspended the common sprite-preparation caller.
+    #[serde(skip)]
+    interrupted_nmi_prepare_obj_cache_vram: Option<Vec<u16>>,
     // Set on a frame whose ROM NMI is PARTIAL because a heavy load runs on the
     // main thread past the vblank (Snes9x-verified per site): the intro
     // message-pointer generation step, and the module-5 selected-game
@@ -9039,6 +9039,9 @@ pub struct ZeldaState {
     next_display_obj_scanout_provenance: Option<&'static core::panic::Location<'static>>,
     #[serde(skip)]
     next_display_obj_memory_generation: Option<DisplayObjGeneration>,
+    /// One-shot decoded OBJ cache publication, independent from raw OBJ VRAM.
+    #[serde(skip)]
+    next_display_obj_cache_vram: Option<Vec<u16>>,
     #[serde(skip)]
     next_display_interrupted_item_receipt_obj_cache: bool,
     #[serde(skip)]
@@ -9517,6 +9520,11 @@ struct DisplaySnapshot {
     /// `None` means no OAM DMA completed before the boundary was published, so
     /// the PPU-resident OAM captured in `ppu` remains authoritative.
     completed_oam_dma_after_capture: Option<Vec<u16>>,
+    /// Exact OAM generation used by the completed scanout returned from the
+    /// timing authority's host call. Native composition still runs so its
+    /// shadow/history owners advance normally, then this immutable surface
+    /// receipt wins at the renderer boundary without mutating live PPU OAM.
+    presented_oam_override: Option<Vec<u16>>,
     /// Exact resident OAM image owned by this publication when an OAM DMA
     /// completed after its receipt window closed. The receipt is keyed to the
     /// publication epoch so retaining the snapshot cannot replay it later.
@@ -9553,6 +9561,9 @@ struct DisplaySnapshot {
     spotlight_scanout_generation: SpotlightScanoutGeneration,
     obj_generation: DisplayObjGeneration,
     obj_cache_generation: DisplayObjCacheGeneration,
+    /// Exact decoded OBJ page selected by an instruction-timed semantic
+    /// continuation. Raw VRAM remains independently owned by completed DMA.
+    explicit_obj_cache_vram: Option<Vec<u16>>,
     interrupted_item_receipt_obj_cache: bool,
     enemy_drop_item_graphics_live_extended_oam: bool,
     published_bg3_vwf_glyph_runs: Vec<Bg3VwfGlyphRun>,
@@ -12302,37 +12313,69 @@ impl ZeldaState {
         true
     }
 
-    pub(super) fn schedule_straight_interroom_state5_after_leading_nmi(&mut self) {
-        if self.rom_startup_timing()
-            && self.game_state.frame.main_module == 7
-            && self.game_state.frame.submodule == 0x12
-            && self.game_state.frame.subsubmodule == 5
-            && self.game_state.world.location.dungeon_room_index() == 0x51
-            && self.game_state.dungeon.stair_movement.staircase_index() == 0x30
-        {
-            self.game_execution_scheduler
-                .schedule_pre_main_nmi_resume(PreMainNmiResume::StraightInterroomState5LeadingNmi);
-        }
-    }
-
     pub(super) fn suspend_straight_interroom_sprite_reset_before_room_load(&mut self) -> bool {
-        if !self.rom_startup_timing()
-            || self.game_state.frame.main_module != 7
-            || self.game_state.frame.submodule != 0x12
-            || self.game_state.frame.subsubmodule != 5
-            || self.game_state.world.location.dungeon_room_index() != 0x32
-            || self.game_state.dungeon.stair_movement.staircase_index() != 0x35
-        {
+        if !self.rom_startup_timing() {
             return false;
         }
+        let Some(receipt) = self.take_original_timing_dungeon_reset_sprites_progress() else {
+            return false;
+        };
+        let progress = receipt.progress;
 
-        // On this measured staircase, vblank lands after Dungeon_ResetSprites
-        // has disabled the old room's slots but before it loads the new room's
-        // sprite records. Preserve that directly observable halfway state.
-        self.dungeon_reset_sprites_before_room_load();
-        self.game_execution_scheduler
-            .schedule_work(GameWorkContinuation::FinishStraightInterroomSpriteReset, 1);
+        // The replaceable authority reports the source statement reached when
+        // this host interval returned.  Apply that prefix exactly and carry
+        // the typed token into the continuation; no room, staircase, raster,
+        // or emulator-program-counter selector belongs in translated code.
+        let dungeon_room_index = self.game_state.world.location.dungeon_room_index();
+        self.dungeon_room_tracking_mut()
+            .set_room_index2(dungeon_room_index);
+        self.dungeon_reset_sprites_through_cpu_progress(progress);
+        let continuation = GameWorkContinuation::FinishStraightInterroomSpriteReset { progress };
+        match receipt.boundary {
+            OriginalTimingBoundary::HostReturn => {
+                self.game_execution_scheduler.schedule_work(continuation, 1);
+            }
+            OriginalTimingBoundary::NmiAccepted => self
+                .game_execution_scheduler
+                .schedule_after_current_trailing_nmi(continuation),
+        }
         true
+    }
+
+    fn complete_straight_interroom_sprite_reset_after_timing_boundary(
+        &mut self,
+        progress: DungeonResetSpritesCpuProgress,
+    ) {
+        let progress = self.refine_dungeon_reset_progress_before_resume(progress);
+        self.dungeon_resume_reset_sprites_after_cpu_progress(progress);
+        // This caller crossed its leading display boundary inside
+        // Dungeon_ResetSprites. Keep that execution provenance after the
+        // one-shot continuation is consumed so the later quadrant-upload
+        // states retain the same NMI-first cadence.
+        self.game_execution_scheduler
+            .begin_leading_nmi_upload_pipeline();
+        self.complete_module07_dungeon_after_submodule();
+        self.nmi_prepare_sprites();
+        self.clear_nmi_update_latch();
+    }
+
+    fn refine_dungeon_reset_progress_before_resume(
+        &mut self,
+        completed: DungeonResetSpritesCpuProgress,
+    ) -> DungeonResetSpritesCpuProgress {
+        let Some(receipt) = self.take_original_timing_dungeon_reset_sprites_progress() else {
+            return completed;
+        };
+        assert_eq!(
+            receipt.boundary,
+            OriginalTimingBoundary::NmiAccepted,
+            "a queued Dungeon_ResetSprites caller may refine only at its accepting NMI",
+        );
+        assert!(
+            self.dungeon_advance_reset_sprites_cpu_progress(completed, receipt.progress),
+            "timing authority published an unsupported Dungeon_ResetSprites progress transition",
+        );
+        receipt.progress
     }
 
     pub(super) fn schedule_dungeon_faded_filter_completion_nmi(&mut self) {
@@ -15169,7 +15212,9 @@ impl ZeldaState {
             original_timing_owner: OriginalTimingOwnerState::Disabled,
             original_timing_cold_start_eligible: true,
             original_timing_host_dispatch_active: false,
-            original_timing_host_receipt: None,
+            original_timing_semantic_receipts: None,
+            original_timing_last_oracle_host_call: None,
+            interrupted_nmi_prepare_obj_cache_vram: None,
             rom_load_partial_nmi_this_frame: false,
             selected_game_load_room_preloaded: false,
             game_over_iris_goal_scanout_closed_pending: false,
@@ -15216,6 +15261,7 @@ impl ZeldaState {
             next_display_obj_scanout_generation: None,
             next_display_obj_scanout_provenance: None,
             next_display_obj_memory_generation: None,
+            next_display_obj_cache_vram: None,
             next_display_interrupted_item_receipt_obj_cache: false,
             enemy_drop_item_graphics_live_extended_oam_pending: false,
             enemy_drop_item_graphics_deferred_sound_effect_2: None,
@@ -15334,7 +15380,9 @@ impl ZeldaState {
         };
         self.original_timing_cold_start_eligible = true;
         self.original_timing_host_dispatch_active = false;
-        self.original_timing_host_receipt = None;
+        self.original_timing_semantic_receipts = None;
+        self.original_timing_last_oracle_host_call = None;
+        self.interrupted_nmi_prepare_obj_cache_vram = None;
         self.previous_host_controller_input = 0;
         self.dma.reset();
         self.ppu.reset();
@@ -15429,7 +15477,8 @@ impl ZeldaState {
                 self.original_timing_cold_start_eligible = false;
             }
             self.original_timing_owner = OriginalTimingOwnerState::Disabled;
-            self.original_timing_host_receipt = None;
+            self.original_timing_semantic_receipts = None;
+            self.original_timing_last_oracle_host_call = None;
             self.zelda_set_rom_startup_audio_phase(false);
             self.rom_reset_frame_delay = 0;
             self.intro_initialization_work_frames_pending = 0;
@@ -15528,7 +15577,17 @@ impl ZeldaState {
     /// game calls. The execution scheduler represents a suspended 65816 call
     /// stack and is intentionally absent from ordinary playable save states.
     pub fn paired_resume_cpu_boundary_is_quiescent(&self) -> bool {
-        self.game_execution_scheduler.is_idle() && self.active_dungeon_sprite_main_return.is_none()
+        self.game_execution_scheduler.is_idle()
+            && self.active_dungeon_sprite_main_return.is_none()
+            // These instruction-timing plans deliberately remain runtime-only:
+            // ordinary Zelda save states must not persist an emulated call
+            // stack. A paired parity checkpoint therefore cannot be captured
+            // while one spans host calls, or restore would silently default it
+            // to `None` and resume the translated continuation without its
+            // source-owned NMI schedule.
+            && self.dungeon_room_load_cpu_schedule.is_none()
+            && self.dungeon_submodule_cpu_schedule.is_none()
+            && self.module09_cpu_schedule.is_none()
     }
 
     pub(super) fn rom_startup_timing(&self) -> bool {
@@ -15539,95 +15598,393 @@ impl ZeldaState {
         self.original_timing_owner.status()
     }
 
+    /// Host-only acknowledgment that the timing-authority receipt for this
+    /// call was accepted and all mandatory semantic facts were consumed. No
+    /// CPU, raster, emulator, or backend identity crosses this boundary.
+    pub fn last_consumed_original_timing_host_call(&self) -> Option<u64> {
+        matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            .then_some(self.original_timing_last_oracle_host_call)
+            .flatten()
+    }
+
     fn invalidate_original_timing_after_checkpoint(&mut self) {
         self.original_timing_owner = OriginalTimingOwnerState::Unavailable(
             OriginalTimingUnavailableReason::CheckpointRestore,
         );
         self.original_timing_cold_start_eligible = false;
         self.original_timing_host_dispatch_active = false;
-        self.original_timing_host_receipt = None;
+        self.original_timing_semantic_receipts = None;
+        self.original_timing_last_oracle_host_call = None;
     }
 
-    fn advance_original_timing_host_call(&mut self, input_state: u16) {
-        let owner = std::mem::replace(
-            &mut self.original_timing_owner,
-            OriginalTimingOwnerState::Disabled,
-        );
-        let next_owner = match owner {
-            OriginalTimingOwnerState::PendingColdStart => {
-                self.original_timing_cold_start_eligible = false;
-                if self.rom.is_empty() {
-                    OriginalTimingOwnerState::Unavailable(
-                        OriginalTimingUnavailableReason::MissingRom,
+    /// Install one timing authority's semantic result for the next host call.
+    /// The backend remains externally owned; ZeldaState receives only the
+    /// replaceable, Zelda-level receipt vocabulary.
+    pub fn install_original_timing_host_receipts(
+        &mut self,
+        receipts: OriginalTimingHostReceipts,
+    ) -> Result<(), OriginalTimingReceiptInstallError> {
+        if !self.rom_startup_timing {
+            return Err(OriginalTimingReceiptInstallError::TimingDisabled);
+        }
+        if self.original_timing_host_dispatch_active {
+            return Err(OriginalTimingReceiptInstallError::ActiveHostDispatch);
+        }
+        if self.original_timing_semantic_receipts.is_some() {
+            return Err(OriginalTimingReceiptInstallError::ReceiptAlreadyInstalled);
+        }
+        if let Some(expected) = self
+            .original_timing_last_oracle_host_call
+            .map(|host_call| host_call.wrapping_add(1))
+        {
+            if receipts.host_call != expected {
+                return Err(OriginalTimingReceiptInstallError::OutOfSequence {
+                    expected,
+                    actual: receipts.host_call,
+                });
+            }
+        }
+        if receipts
+            .semantic
+            .iter()
+            .filter(|receipt| {
+                matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(_)
+                )
+            })
+            .count()
+            > 1
+        {
+            return Err(OriginalTimingReceiptInstallError::DuplicateDungeonResetProgress);
+        }
+        if receipts.semantic.iter().any(|receipt| match receipt {
+            OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(receipt) => {
+                match receipt.progress {
+                    DungeonResetSpritesCpuProgress::Cache { slot, .. } => slot >= 16,
+                    DungeonResetSpritesCpuProgress::Disable(
+                        DungeonSpriteDisableCpuProgress::SpriteStatesThrough { slot },
+                    ) => slot >= 16,
+                    DungeonResetSpritesCpuProgress::Disable(
+                        DungeonSpriteDisableCpuProgress::AncillasThrough { slot },
+                    ) => slot >= 10,
+                    DungeonResetSpritesCpuProgress::Disable(
+                        DungeonSpriteDisableCpuProgress::AncillaPickupFlagCleared
+                        | DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared,
                     )
-                } else {
-                    match snes::Snes9xColdCpuExecutor::from_lorom_reset_with_sram(
-                        &self.rom,
-                        Some(&self.sram),
-                    ) {
-                        Ok(mut executor) => {
-                            executor.set_joypad_serial_state(input_state, 0);
-                            match executor.run_until_main_loop_return() {
-                                Ok(main_loop) => {
-                                    let dsp_sample_count =
-                                        executor.take_dsp_samples().samples.len();
-                                    self.original_timing_host_receipt =
-                                        Some(OriginalTimingHostReceipt {
-                                            main_loop,
-                                            dsp_sample_count,
-                                        });
-                                    OriginalTimingOwnerState::Live(OriginalTimingLive {
-                                        executor: Box::new(executor),
-                                    })
-                                }
-                                Err(_) => OriginalTimingOwnerState::Unavailable(
-                                    OriginalTimingUnavailableReason::SourceExecution,
-                                ),
-                            }
-                        }
-                        Err(_) => OriginalTimingOwnerState::Unavailable(
-                            OriginalTimingUnavailableReason::SourceSeed,
-                        ),
-                    }
+                    | DungeonResetSpritesCpuProgress::SpritesDisabled => false,
+                    DungeonResetSpritesCpuProgress::Load(progress) => progress.slot >= 16,
                 }
             }
-            OriginalTimingOwnerState::Live(mut live) => {
-                live.executor.set_joypad_serial_state(input_state, 0);
-                match live.executor.run_until_main_loop_return() {
-                    Ok(main_loop) => {
-                        let dsp_sample_count = live.executor.take_dsp_samples().samples.len();
-                        self.original_timing_host_receipt = Some(OriginalTimingHostReceipt {
-                            main_loop,
-                            dsp_sample_count,
-                        });
-                        OriginalTimingOwnerState::Live(live)
-                    }
-                    Err(_) => OriginalTimingOwnerState::Unavailable(
-                        OriginalTimingUnavailableReason::SourceExecution,
-                    ),
+            _ => false,
+        }) {
+            return Err(OriginalTimingReceiptInstallError::InvalidDungeonResetProgress);
+        }
+        let cached_sprite_progress = receipts
+            .semantic
+            .iter()
+            .filter_map(|receipt| match receipt {
+                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(progress) => {
+                    Some(*progress)
                 }
-            }
-            owner @ (OriginalTimingOwnerState::Disabled
-            | OriginalTimingOwnerState::Unavailable(_)) => owner,
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if cached_sprite_progress.len() > 1 {
+            return Err(OriginalTimingReceiptInstallError::DuplicateCachedSpriteExecutionProgress);
+        }
+        if cached_sprite_progress
+            .iter()
+            .any(|progress| match progress {
+                crate::CachedSpriteExecutionProgress::Loading {
+                    slot,
+                    copied_fields,
+                } => *slot >= 16 || *copied_fields > 24,
+                crate::CachedSpriteExecutionProgress::Restoring { slot, live_fields } => {
+                    *slot >= 16 || *live_fields > 24
+                }
+            })
+        {
+            return Err(OriginalTimingReceiptInstallError::InvalidCachedSpriteExecutionProgress);
+        }
+        if receipts
+            .semantic
+            .iter()
+            .filter(|receipt| {
+                matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::MainLoopInterrupted(_)
+                )
+            })
+            .count()
+            > 1
+        {
+            return Err(OriginalTimingReceiptInstallError::DuplicateMainLoopInterruption);
+        }
+        self.original_timing_semantic_receipts = Some(receipts);
+        Ok(())
+    }
+
+    fn take_original_timing_dungeon_reset_sprites_progress(
+        &mut self,
+    ) -> Option<DungeonResetSpritesProgressReceipt> {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return None;
+        }
+        let receipts = self.original_timing_semantic_receipts.as_mut()?;
+        let matches = receipts
+            .semantic
+            .iter()
+            .enumerate()
+            .filter_map(|(index, receipt)| match receipt {
+                OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(receipt) => {
+                    Some((index, *receipt))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            matches.len() <= 1,
+            "one host call cannot publish multiple Dungeon_ResetSprites interruption points",
+        );
+        matches.first().map(|&(index, receipt)| {
+            receipts.semantic.remove(index);
+            receipt
+        })
+    }
+
+    fn take_original_timing_cached_sprite_execution_progress(
+        &mut self,
+    ) -> Option<crate::CachedSpriteExecutionProgress> {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return None;
+        }
+        let receipts = self.original_timing_semantic_receipts.as_mut()?;
+        let matches = receipts
+            .semantic
+            .iter()
+            .enumerate()
+            .filter_map(|(index, receipt)| match receipt {
+                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(progress) => {
+                    Some((index, *progress))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            matches.len() <= 1,
+            "one host call cannot publish multiple cached-sprite interruption points",
+        );
+        matches.first().map(|&(index, progress)| {
+            receipts.semantic.remove(index);
+            progress
+        })
+    }
+
+    fn original_timing_cached_sprite_execution_progress(
+        &self,
+    ) -> Option<crate::CachedSpriteExecutionProgress> {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return None;
+        }
+        self.original_timing_semantic_receipts
+            .as_ref()?
+            .semantic
+            .iter()
+            .find_map(|receipt| match receipt {
+                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(progress) => {
+                    Some(*progress)
+                }
+                _ => None,
+            })
+    }
+
+    /// Select the sole owner of a cached-sprite interruption boundary.
+    ///
+    /// The legacy shadow CPU can still provide a coarse Sprite_Main boundary,
+    /// but once the continuous timing authority is live it exclusively owns
+    /// fine-grained `UncacheAndExecuteSprite` statement progress. This prevents
+    /// the same source interruption from being armed first by a reconstructed
+    /// raster envelope and then again by the host-call receipt.
+    fn take_authoritative_cached_sprite_interruption(
+        &mut self,
+        legacy_shadow: Option<CachedSpriteCpuInterruption>,
+    ) -> Option<CachedSpriteCpuInterruption> {
+        if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            self.take_original_timing_cached_sprite_execution_progress()
+                .map(CachedSpriteCpuInterruption::from)
+        } else {
+            legacy_shadow
+        }
+    }
+
+    fn take_original_timing_main_loop_interruption(
+        &mut self,
+        phase: crate::MainLoopInterruption,
+    ) -> bool {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return false;
+        }
+        let Some(receipts) = self.original_timing_semantic_receipts.as_mut() else {
+            return false;
         };
-        self.original_timing_owner = next_owner;
+        let matches = receipts
+            .semantic
+            .iter()
+            .enumerate()
+            .filter_map(|(index, receipt)| {
+                matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::MainLoopInterrupted(observed)
+                        if *observed == phase
+                )
+                .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            matches.len() <= 1,
+            "one host call cannot interrupt the same main-loop phase twice",
+        );
+        matches.first().is_some_and(|&index| {
+            receipts.semantic.remove(index);
+            true
+        })
     }
 
     fn begin_original_timing_host_dispatch(&mut self, input_state: u16) -> bool {
         if self.original_timing_host_dispatch_active {
             return false;
         }
-        debug_assert!(self.original_timing_host_receipt.is_none());
         self.original_timing_host_dispatch_active = true;
-        self.advance_original_timing_host_call(input_state);
+        if let Some(receipts) = self.original_timing_semantic_receipts.as_ref() {
+            if receipts.input_state == input_state {
+                self.original_timing_cold_start_eligible = false;
+                self.original_timing_last_oracle_host_call = Some(receipts.host_call);
+                self.original_timing_owner = OriginalTimingOwnerState::Live;
+            } else {
+                self.original_timing_owner = OriginalTimingOwnerState::Unavailable(
+                    OriginalTimingUnavailableReason::AuthorityReceiptInputMismatch,
+                );
+            }
+        } else {
+            self.original_timing_owner = match self.original_timing_owner {
+                OriginalTimingOwnerState::PendingColdStart if self.rom.is_empty() => {
+                    self.original_timing_cold_start_eligible = false;
+                    OriginalTimingOwnerState::Unavailable(
+                        OriginalTimingUnavailableReason::MissingRom,
+                    )
+                }
+                OriginalTimingOwnerState::PendingColdStart | OriginalTimingOwnerState::Live => {
+                    self.original_timing_cold_start_eligible = false;
+                    OriginalTimingOwnerState::Unavailable(
+                        OriginalTimingUnavailableReason::MissingAuthorityReceipt,
+                    )
+                }
+                ref owner => owner.clone(),
+            };
+        }
         true
+    }
+
+    fn publish_original_timing_presented_obj_tiles(&mut self, receipt: crate::PresentedObjTiles) {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return;
+        };
+        let mut obj_vram = display
+            .ppu
+            .obj_vram_latch
+            .clone()
+            .unwrap_or_else(|| display.ppu.vram.clone());
+        for tile in 0..crate::PresentedObjTiles::TILE_COUNT {
+            if !receipt.valid_tiles[tile] {
+                continue;
+            }
+            let pixels = &receipt.tile_pixels[tile * 64..tile * 64 + 64];
+            let tile_base = 0x4000 + tile * 16;
+            for y in 0..8 {
+                let mut planes = [0_u8; 4];
+                for x in 0..8 {
+                    let pixel = pixels[y * 8 + x];
+                    let bit = 1_u8 << (7 - x);
+                    for (plane, value) in planes.iter_mut().enumerate() {
+                        if pixel & (1 << plane) != 0 {
+                            *value |= bit;
+                        }
+                    }
+                }
+                obj_vram[tile_base + y] = u16::from_le_bytes([planes[0], planes[1]]);
+                obj_vram[tile_base + 8 + y] = u16::from_le_bytes([planes[2], planes[3]]);
+            }
+        }
+        display.ppu.obj_vram_latch = Some(obj_vram.clone());
+        display.explicit_obj_cache_vram = Some(obj_vram);
+    }
+
+    fn publish_original_timing_presented_cgram(&mut self, receipt: crate::PresentedCgram) {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return;
+        };
+        display.ppu.cgram.clone_from_slice(&receipt.colors);
+        display.cgram_scanout_override = Some(receipt.colors);
+    }
+
+    fn publish_original_timing_presented_oam(&mut self, receipt: crate::PresentedOam) {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return;
+        };
+        display.presented_oam_override = Some(
+            receipt
+                .bytes
+                .chunks_exact(2)
+                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                .collect(),
+        );
     }
 
     fn finish_original_timing_host_dispatch(&mut self, owns_dispatch: bool) {
         if !owns_dispatch {
             return;
         }
-        self.original_timing_host_receipt = None;
+        let (presented_cgram, presented_oam, presented_obj_tiles) =
+            if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+                self.original_timing_semantic_receipts
+                    .as_ref()
+                    .map(|receipts| {
+                        (
+                            receipts.presented_cgram.clone(),
+                            receipts.presented_oam.clone(),
+                            receipts.presented_obj_tiles.clone(),
+                        )
+                    })
+                    .unwrap_or_default()
+            } else {
+                (None, None, None)
+            };
+        if let Some(presented_cgram) = presented_cgram {
+            // The source main thread may already have authored a later palette
+            // buffer. This receipt is the palette used by the surface returned
+            // from the current host call, so publish it only to that immutable
+            // display snapshot.
+            self.publish_original_timing_presented_cgram(presented_cgram);
+        }
+        if let Some(presented_oam) = presented_oam {
+            // The completed scanout may precede a VBlank OAM DMA that already
+            // changed both Zelda's live shadow and the PPU's current bytes.
+            // Publish the rendered generation only into the outgoing surface.
+            self.publish_original_timing_presented_oam(presented_oam);
+        }
+        if let Some(presented_obj_tiles) = presented_obj_tiles {
+            // The authority receipt describes the surface returned by this
+            // host call. Apply it after translated execution has selected the
+            // outgoing display snapshot, so later native main/NMI work cannot
+            // overwrite the already-published tile pixels.
+            self.publish_original_timing_presented_obj_tiles(presented_obj_tiles);
+        }
+        // Receipt domains migrate independently. A native owner may take the
+        // facts it currently shadows; every other typed fact expires here and
+        // can never replay into a later host call. Input, host-call ordering,
+        // and duplicate facts remain fail-closed at installation.
+        self.original_timing_semantic_receipts = None;
         self.original_timing_host_dispatch_active = false;
     }
 
@@ -16092,7 +16449,10 @@ impl ZeldaState {
                 DungeonSupertileTransitionWork::AuxiliarySpriteGraphics => {
                     schedule.auxiliary_graphics_nmis
                 }
-                DungeonSupertileTransitionWork::RoomLoadSpriteReset => schedule.caller_prefix_nmis,
+                DungeonSupertileTransitionWork::RoomLoadSpriteResetFallback => {
+                    schedule.caller_prefix_nmis
+                }
+                DungeonSupertileTransitionWork::RoomLoadSpriteReset { .. } => 1,
                 DungeonSupertileTransitionWork::RoomLoadCallerResume => schedule
                     .caller_sprite_main_nmis
                     .saturating_add(schedule.caller_suffix_nmis),
@@ -16173,6 +16533,7 @@ impl ZeldaState {
         schedule: DungeonRoomLoadCpuSchedule,
         input: u16,
         oam_dma_source: Option<&[u8]>,
+        reset_resumed_after_nmi: bool,
     ) -> bool {
         debug_assert_eq!(
             schedule.caller_nmis,
@@ -16183,8 +16544,15 @@ impl ZeldaState {
             "room-load caller phases must cover every measured NMI",
         );
         self.dungeon_room_load_module_suffix_nmi_slices = schedule.caller_suffix_nmis;
+        // Fine-grained cached-sprite progress changes within the old
+        // synthetic room-load entry envelope. Only a continuous timing owner
+        // may publish this semantic domain; absence of a receipt means no
+        // cached-sprite interruption was observed for this host call.
+        let cached_sprite_interruption = self
+            .take_original_timing_cached_sprite_execution_progress()
+            .map(CachedSpriteCpuInterruption::from);
         if schedule.caller_sprite_main_nmis != 0 {
-            if let Some(boundary) = schedule.cached_sprite_interruption {
+            if let Some(boundary) = cached_sprite_interruption {
                 assert_eq!(
                     schedule.caller_sprite_main_nmis, 1,
                     "cached-sprite room-load continuation crossed more than one NMI",
@@ -16225,12 +16593,24 @@ impl ZeldaState {
                 debug_assert!(scheduled);
             }
         } else if schedule.caller_suffix_nmis == 0 {
-            debug_assert!(schedule.sprite_main_boundary.is_none());
-            self.complete_dungeon_supertile_caller_return_host(
-                DungeonSupertileTransitionWork::RoomLoadCallerResume,
-                input,
-                oam_dma_source,
+            assert!(
+                cached_sprite_interruption.is_none(),
+                "cached-sprite progress requires a caller Sprite_Main NMI",
             );
+            debug_assert!(schedule.sprite_main_boundary.is_none());
+            if reset_resumed_after_nmi {
+                // The typed reset receipt already owns the interrupt which
+                // suspended Dungeon_ResetSprites. Resume the C caller and
+                // return to its main wait without fabricating the following
+                // leading NMI in the same host interval.
+                self.finish_dungeon_room_load_caller_after_trailing_nmi();
+            } else {
+                self.complete_dungeon_supertile_caller_return_host(
+                    DungeonSupertileTransitionWork::RoomLoadCallerResume,
+                    input,
+                    oam_dma_source,
+                );
+            }
             return true;
         } else {
             debug_assert!(schedule.sprite_main_boundary.is_none());
@@ -16245,6 +16625,36 @@ impl ZeldaState {
             ));
         }
         false
+    }
+
+    fn complete_room_load_sprite_reset_after_timing_boundary(
+        &mut self,
+        progress: DungeonResetSpritesCpuProgress,
+        input: u16,
+        oam_dma_source: Option<&[u8]>,
+    ) -> bool {
+        let progress = self.refine_dungeon_reset_progress_before_resume(progress);
+        self.dungeon_resume_reset_sprites_after_cpu_progress(progress);
+        self.complete_module07_02_01_after_dungeon_reset_sprites();
+        let schedule = self
+            .dungeon_room_load_cpu_schedule
+            .take()
+            .expect("room-load CPU schedule must survive sprite reset");
+        self.continue_dungeon_room_load_after_sprite_reset(schedule, input, oam_dma_source, true)
+    }
+
+    fn finish_dungeon_room_load_caller_after_trailing_nmi(&mut self) {
+        if let Some(sprite_return) = self.active_dungeon_sprite_main_return.take() {
+            self.complete_module07_after_sprite_main(sprite_return);
+        } else {
+            self.complete_module07_dungeon_after_submodule();
+        }
+        debug_assert!(!self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack());
+        self.stage_live_animated_bg_scanout();
+        self.nmi_prepare_sprites();
+        self.finish_dungeon_room_load_caller_at_main_wait();
     }
 
     fn complete_dungeon_supertile_caller_return_host(
@@ -17563,6 +17973,7 @@ impl ZeldaState {
             link_obj_source_generation,
             oam_scanout_source,
             completed_oam_dma_after_capture: None,
+            presented_oam_override: None,
             closed_oam_boundary_receipt: same_epoch_closed_oam_receipt,
             effective_presented_dma: None,
             interrupted_dungeon_submodule_nmi_owns_scanout: false,
@@ -17617,6 +18028,7 @@ impl ZeldaState {
                 .unwrap_or(SpotlightScanoutGeneration::CapturedBeforeNmi),
             obj_generation,
             obj_cache_generation: DisplayObjCacheGeneration::FollowModuleCadence,
+            explicit_obj_cache_vram: self.next_display_obj_cache_vram.take(),
             interrupted_item_receipt_obj_cache,
             enemy_drop_item_graphics_live_extended_oam,
             published_bg3_vwf_glyph_runs: self.published_bg3_vwf_glyph_runs.clone(),
@@ -17633,6 +18045,9 @@ impl ZeldaState {
             room_82_sprite_conversion_deferred_nmi: false,
             snes9x_poly_scheduler_counter: self.snes9x_poly_scheduler_counter,
         });
+        if let Some(explicit_obj_cache_vram) = snapshot.explicit_obj_cache_vram.as_ref() {
+            snapshot.ppu.obj_vram_latch = Some(explicit_obj_cache_vram.clone());
+        }
         let nmi_forced_blank_scanlines =
             std::mem::take(&mut self.nmi_forced_blank_scanlines_pending);
         snapshot.ppu.forced_blank_scanlines = nmi_forced_blank_scanlines;
@@ -20073,6 +20488,12 @@ impl ZeldaState {
             // and OAM keep their independently recorded generations.
             self.set_obj_vram_latch_traced(Some(interrupted_obj_cache));
         }
+        if let Some(explicit_obj_cache_vram) = following.explicit_obj_cache_vram.as_ref() {
+            // This semantic receipt names the cache which was decoded before
+            // sprite evaluation. A later raw-VRAM DMA in the same host interval
+            // cannot retroactively invalidate that completed scanout.
+            self.set_obj_vram_latch_traced(Some(explicit_obj_cache_vram.clone()));
+        }
         if plan.oam_scanout_source.retains_previous_presented() {
             // Select this render-boundary generation last. The short iris
             // caller has already authored a future software shadow and can
@@ -20779,11 +21200,12 @@ impl ZeldaState {
             .and_then(|receipt| receipt.completed_link_obj_dma);
         if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_OBJ_PIPE", self.frame_ctr_dbg) {
             eprintln!(
-                "objpipe host={} stage=link_receipt_compose publication_host={} plan={:?} explicit={} captured={:?} completed={:?}",
+                "objpipe host={} stage=link_receipt_compose publication_host={} plan={:?} explicit={} semantic_cache={} captured={:?} completed={:?}",
                 self.frame_ctr_dbg,
                 display.publication_host_frame,
                 publication_plan.link_obj_scanout_generation,
                 explicit_obj_cache_owner,
+                display.explicit_obj_cache_vram.is_some(),
                 LinkDmaSources::load_from_ram(&display.ram),
                 completed_dma,
             );
@@ -20856,6 +21278,13 @@ impl ZeldaState {
         .filter(|law| law.len() == self.ppu.oam.len())
         {
             self.ppu.oam.clone_from_slice(law);
+        }
+        if let Some(authoritative) = display
+            .presented_oam_override
+            .as_deref()
+            .filter(|oam| oam.len() == self.ppu.oam.len())
+        {
+            self.ppu.oam.clone_from_slice(authoritative);
         }
         self.staged_presented_oam = Some(self.ppu.oam.clone());
         let presented_obj_vram = self.ppu.obj_vram_latch.as_deref().unwrap_or(&self.ppu.vram);
@@ -21994,6 +22423,13 @@ impl ZeldaState {
                 }
                 if resumed_phase == ModuleCpuPhase::InterruptedInNmiPrepareSprites {
                     self.complete_module07_dungeon_after_submodule();
+                    self.interrupted_nmi_prepare_obj_cache_vram = Some(
+                        self.last_presented_obj_vram
+                            .as_ref()
+                            .cloned()
+                            .or_else(|| self.ppu.obj_vram_latch.clone())
+                            .unwrap_or_else(|| self.ppu.vram.clone()),
+                    );
                     self.game_execution_scheduler.schedule_work(
                         GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn,
                         1,
@@ -22131,10 +22567,6 @@ impl ZeldaState {
         };
         let (quadrant_cpu_advance, quadrant_module_cpu_advance) =
             dungeon_supertile_quadrant_cpu_advance_for_resume(resume, self);
-        if resume == PreMainNmiResume::StraightInterroomState5LeadingNmi {
-            self.game_execution_scheduler
-                .begin_leading_nmi_upload_pipeline();
-        }
         if resume == PreMainNmiResume::DungeonSupertileCallerReturnNmi {
             // This continuation resumes at the hardware boundary that
             // interrupted NMI_PrepareSprites, before its final latch-clear
@@ -22167,12 +22599,6 @@ impl ZeldaState {
         self.next_display_animated_bg_scanout_generation = scanout.animated_bg;
         self.next_display_bg_scroll_generation = scanout.bg_scroll;
         self.set_next_display_obj_scanout(scanout.obj);
-        if resume == PreMainNmiResume::StraightInterroomState5LeadingNmi {
-            if let Some(oam) = self.last_presented_oam.clone() {
-                self.next_display_obj_memory_generation =
-                    Some(DisplayObjGeneration::RetainCapturedOam { oam });
-            }
-        }
         if resume.nmi_latch_clear_phase() == Some(NmiPhase::BeforeNmi) {
             // The suspended quadrant caller returns with the software latch
             // still set, but the ROM reaches this leading hardware NMI before
@@ -22183,11 +22609,30 @@ impl ZeldaState {
         if matches!(
             resume,
             PreMainNmiResume::DungeonModuleCallerCompletedBeforeNextNmi
-                | PreMainNmiResume::StraightInterroomState5LeadingNmi
         ) {
             self.retain_completed_palette_filter_cgram_scanout();
         }
         self.interrupt_nmi_for_active_scanout(input, oam_dma_source, false);
+        if let Some(continuation) = self.game_execution_scheduler.take_after_pre_main_nmi() {
+            // The oracle reported CPU progress interrupted by this same NMI.
+            // Resume that saved source stack after the interrupt instead of
+            // scheduling a second synthetic boundary.
+            self.complete_post_trailing_nmi_continuation(continuation, input, false);
+            if self
+                .game_execution_scheduler
+                .resumed_call_stack_is_before_nmi()
+                && !self
+                    .game_execution_scheduler
+                    .work_suspends_translated_call_stack()
+            {
+                self.game_execution_scheduler
+                    .finish_call_stack_at_main_wait_before_nmi();
+            }
+            self.assert_native_frame_state_matches_ram();
+            self.assert_native_world_location_state_matches_ram();
+            self.assert_native_display_state_matches_ram();
+            return true;
+        }
         if resume == PreMainNmiResume::DungeonSupertileCallerReturnNmi {
             // The state body completed before vblank, but hardware interrupted
             // its common Module 7 caller while NMI_PrepareSprites still owned
@@ -22205,8 +22650,13 @@ impl ZeldaState {
         }
         let quadrant_has_modeled_cached_sprite_continuation = quadrant_cpu_advance
             == Some(DungeonQuadrantCpuAdvance::InterruptedInModule)
-            && quadrant_module_cpu_advance
-                .is_some_and(|advance| advance.cached_sprite_interruption.is_some());
+            && if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+                self.original_timing_cached_sprite_execution_progress()
+                    .is_some()
+            } else {
+                quadrant_module_cpu_advance
+                    .is_some_and(|advance| advance.cached_sprite_interruption.is_some())
+            };
         if quadrant_cpu_advance == Some(DungeonQuadrantCpuAdvance::InterruptedInModule)
             && !quadrant_has_modeled_cached_sprite_continuation
         {
@@ -22224,11 +22674,7 @@ impl ZeldaState {
             self.assert_native_display_state_matches_ram();
             return true;
         }
-        if matches!(
-            resume,
-            PreMainNmiResume::DungeonModuleCallerCompletedBeforeNextNmi
-                | PreMainNmiResume::StraightInterroomState5LeadingNmi
-        ) {
+        if resume == PreMainNmiResume::DungeonModuleCallerCompletedBeforeNextNmi {
             // The caller suffix completed on the preceding host boundary, but
             // the next fresh module iteration remains behind this leading
             // NMI. Consume the hardware boundary without running a second
@@ -22407,14 +22853,7 @@ impl ZeldaState {
             } => {
                 // Resume only the interrupted Module 7 suffix. The next fresh
                 // state-2 iteration remains behind the following leading NMI.
-                let sprite_return = self
-                    .active_dungeon_sprite_main_return
-                    .take()
-                    .expect("post-NMI room-load suffix must retain Sprite_Main return state");
-                self.complete_module07_after_sprite_main(sprite_return);
-                self.stage_live_animated_bg_scanout();
-                self.nmi_prepare_sprites();
-                self.finish_dungeon_room_load_caller_at_main_wait();
+                self.finish_dungeon_room_load_caller_after_trailing_nmi();
             }
             GameWorkContinuation::FinishSpriteMain { boundary, caller } => {
                 self.complete_sprite_main_after_cpu_boundary(boundary);
@@ -22551,8 +22990,23 @@ impl ZeldaState {
                 // handler skipped the consumer. Finish the idempotent
                 // preparation after the handler, clear the latch, and let the
                 // following NMI consume the completed operands.
+                let interrupted_obj_cache_vram = self
+                    .interrupted_nmi_prepare_obj_cache_vram
+                    .take()
+                    .unwrap_or_else(|| {
+                        self.ppu
+                            .obj_vram_latch
+                            .clone()
+                            .unwrap_or_else(|| self.ppu.vram.clone())
+                    });
                 self.nmi_prepare_sprites();
                 self.clear_nmi_update_latch();
+                // The accepted NMI which suspended NMI_PrepareSprites has not
+                // yet published the Link OBJ operands authored by this resumed
+                // caller. Keep the resident host-boundary OBJ generation for
+                // the scanout being retired; the synthetic trailing NMI below
+                // owns the following field.
+                self.stage_resumed_sprite_main_return_obj_scanout();
                 // The caller has now reached the real main wait. Preserve a
                 // continuous ROM-timed advance from this exact pre-NMI state
                 // for the fresh Module 7 iteration that begins next host.
@@ -22565,6 +23019,20 @@ impl ZeldaState {
                 }
                 let next_oam_dma_source = self.sprite_oam_shadow_buffer().to_vec();
                 self.interrupt_nmi(input, Some(&next_oam_dma_source), false);
+                // The trailing NMI's OBJ DMA is now complete, but a later NMI
+                // in the same coarse host interval may already begin authoring
+                // another generation. Preserve this completed publication as
+                // the immutable input to the following scanout.
+                self.next_display_obj_memory_generation =
+                    Some(DisplayObjGeneration::RetainCapturedMemory {
+                        oam: self.ppu.oam.clone(),
+                        vram: self.ppu.vram[0x4000..0x4400].to_vec(),
+                    });
+                self.next_display_obj_cache_vram = Some(interrupted_obj_cache_vram);
+                if self.debug_obj_pipe_enabled() {
+                    let cache = self.next_display_obj_cache_vram.as_deref().unwrap();
+                    self.debug_obj_pipe("semantic_cache_queued", &cache[0x4000..0x4400]);
+                }
                 self.game_execution_scheduler
                     .mark_main_iteration_after_leading_nmi();
             }
@@ -22815,7 +23283,21 @@ impl ZeldaState {
             // The preceding host already consumed the interrupt which
             // suspended this CPU stack. Resume it directly; inserting another
             // NMI here shifts every following dungeon state by one frame.
-            self.complete_post_trailing_nmi_continuation(continuation, input, false);
+            match continuation {
+                GameWorkContinuation::FinishDungeonSupertileTransition {
+                    work: DungeonSupertileTransitionWork::RoomLoadSpriteReset { progress },
+                } => {
+                    self.complete_room_load_sprite_reset_after_timing_boundary(
+                        progress,
+                        input,
+                        oam_dma_source.as_deref(),
+                    );
+                }
+                GameWorkContinuation::FinishStraightInterroomSpriteReset { progress } => {
+                    self.complete_straight_interroom_sprite_reset_after_timing_boundary(progress);
+                }
+                _ => self.complete_post_trailing_nmi_continuation(continuation, input, false),
+            }
             if self
                 .game_execution_scheduler
                 .resumed_call_stack_is_before_nmi()
@@ -23501,19 +23983,56 @@ impl ZeldaState {
                             self.continue_module07_02_01_after_room_load();
                         }
                         DungeonSupertileTransitionWork::AuxiliarySpriteGraphics => {
-                            let schedule = self
+                            let mut schedule = self
                                 .dungeon_room_load_cpu_schedule
                                 .take()
                                 .expect("room-load CPU schedule must survive auxiliary graphics");
                             self.complete_module07_02_01_before_dungeon_reset_sprites();
-                            if schedule.caller_prefix_nmis != 0 {
+                            let progress = self.take_original_timing_dungeon_reset_sprites_progress();
+                            if let Some(receipt) = progress {
+                                // This semantic domain transfers only when the
+                                // authority reports an exact source statement.
+                                // Remove the old predicted prefix in that case;
+                                // the typed boundary owns its replacement.
+                                schedule.caller_nmis = schedule
+                                    .caller_nmis
+                                    .saturating_sub(schedule.caller_prefix_nmis);
+                                schedule.caller_prefix_nmis = 0;
+                                let progress = receipt.progress;
+                                self.dungeon_reset_sprites_through_cpu_progress(progress);
                                 // In C this state publication precedes
                                 // Dungeon_ResetSprites. The ROM can cross NMI
                                 // inside that reset, leaving the old live slots
                                 // observable with the advanced state.
                                 self.dungeon_room_load_cpu_schedule = Some(schedule);
+                                let continuation =
+                                    GameWorkContinuation::FinishDungeonSupertileTransition {
+                                        work: DungeonSupertileTransitionWork::RoomLoadSpriteReset {
+                                            progress,
+                                        },
+                                    };
+                                match receipt.boundary {
+                                    OriginalTimingBoundary::HostReturn => {
+                                        let scheduled = self
+                                            .begin_dungeon_supertile_transition_work(
+                                                DungeonSupertileTransitionWork::RoomLoadSpriteReset {
+                                                    progress,
+                                                },
+                                            );
+                                        debug_assert!(scheduled);
+                                    }
+                                    OriginalTimingBoundary::NmiAccepted => self
+                                        .game_execution_scheduler
+                                        .schedule_after_current_trailing_nmi(continuation),
+                                }
+                            } else if schedule.caller_prefix_nmis != 0 {
+                                // No typed receipt means this domain has not
+                                // transferred. Preserve the existing scheduler
+                                // owner until Snes9x (or a native shadow) emits
+                                // the semantic boundary.
+                                self.dungeon_room_load_cpu_schedule = Some(schedule);
                                 let scheduled = self.begin_dungeon_supertile_transition_work(
-                                    DungeonSupertileTransitionWork::RoomLoadSpriteReset,
+                                    DungeonSupertileTransitionWork::RoomLoadSpriteResetFallback,
                                 );
                                 debug_assert!(scheduled);
                             } else {
@@ -23522,12 +24041,22 @@ impl ZeldaState {
                                     schedule,
                                     input,
                                     oam_dma_source.as_deref(),
+                                    false,
                                 ) {
                                     return;
                                 }
                             }
                         }
-                        DungeonSupertileTransitionWork::RoomLoadSpriteReset => {
+                        DungeonSupertileTransitionWork::RoomLoadSpriteReset { progress } => {
+                            if self.complete_room_load_sprite_reset_after_timing_boundary(
+                                progress,
+                                input,
+                                oam_dma_source.as_deref(),
+                            ) {
+                                return;
+                            }
+                        }
+                        DungeonSupertileTransitionWork::RoomLoadSpriteResetFallback => {
                             self.complete_module07_02_01_from_dungeon_reset_sprites();
                             let schedule = self
                                 .dungeon_room_load_cpu_schedule
@@ -23537,6 +24066,7 @@ impl ZeldaState {
                                 schedule,
                                 input,
                                 oam_dma_source.as_deref(),
+                                false,
                             ) {
                                 return;
                             }
@@ -23553,7 +24083,11 @@ impl ZeldaState {
                                     schedule.caller_sprite_main_nmis,
                                     "sprite-conversion caller has work after Sprite_Main",
                                 );
-                                if let Some(boundary) = schedule.cached_sprite_interruption {
+                                let cached_sprite_interruption = self
+                                    .take_authoritative_cached_sprite_interruption(
+                                        schedule.cached_sprite_interruption,
+                                    );
+                                if let Some(boundary) = cached_sprite_interruption {
                                     assert_eq!(
                                         schedule.caller_sprite_main_nmis, 1,
                                         "cached-sprite conversion continuation crossed more than one NMI",
@@ -23611,6 +24145,13 @@ impl ZeldaState {
                                         // suffix. Finish Module 7 now, then
                                         // resume only NMI_PrepareSprites.
                                         self.complete_module07_dungeon_after_submodule();
+                                        self.interrupted_nmi_prepare_obj_cache_vram = Some(
+                                            self.last_presented_obj_vram
+                                                .as_ref()
+                                                .cloned()
+                                                .or_else(|| self.ppu.obj_vram_latch.clone())
+                                                .unwrap_or_else(|| self.ppu.vram.clone()),
+                                        );
                                         self.game_execution_scheduler.schedule_work(
                                             GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn,
                                             schedule.caller_suffix_nmis,
@@ -24097,22 +24638,9 @@ impl ZeldaState {
                     return;
                 }
                 GameWorkStep::Complete(
-                    GameWorkContinuation::FinishStraightInterroomSpriteReset,
+                    GameWorkContinuation::FinishStraightInterroomSpriteReset { progress },
                 ) => {
-                    // Resume Dungeon_ResetSprites after the NMI that observed
-                    // its disabled-slot halfway point, then return through the
-                    // ordinary Module 7 suffix without starting state 5 again.
-                    self.complete_straight_interroom_sprite_reset();
-                    // This caller crossed its leading display boundary inside
-                    // Dungeon_ResetSprites. Keep that execution provenance
-                    // after the one-shot continuation is consumed so the
-                    // later quadrant-upload states retain the same NMI-first
-                    // cadence.
-                    self.game_execution_scheduler
-                        .begin_leading_nmi_upload_pipeline();
-                    self.complete_module07_dungeon_after_submodule();
-                    self.nmi_prepare_sprites();
-                    self.clear_nmi_update_latch();
+                    self.complete_straight_interroom_sprite_reset_after_timing_boundary(progress);
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishSpriteMain {
                     boundary,
@@ -26054,15 +26582,7 @@ impl ZeldaState {
     /// both directions on its axis and then sets itself. Consequently Down wins
     /// Up+Down and Right wins Left+Right. Preserve every non-direction button.
     fn sanitize_frame_inputs(inputs: i32) -> u16 {
-        let inputs = inputs as u16;
-        let mut directions = inputs & 0x00f0;
-        if directions & 0x0030 == 0x0030 {
-            directions &= !0x0010;
-        }
-        if directions & 0x00c0 == 0x00c0 {
-            directions &= !0x0040;
-        }
-        (inputs & !0x00f0) | directions
+        sanitize_original_timing_input(inputs as u16)
     }
 
     pub fn state_recorder_read_next_replay_state_with_input_override(

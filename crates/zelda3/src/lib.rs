@@ -22,6 +22,7 @@ mod raster_timing;
 mod rom_cpu_timing;
 mod rom_random;
 mod spc_driver_clock;
+mod timing_receipts;
 pub mod types;
 pub mod util;
 pub mod zelda_rtl;
@@ -31,10 +32,21 @@ pub use chr_source::{
     CHR_KIND_BG_ANIM, CHR_KIND_BG_STREAM, CHR_KIND_LINK, CHR_KIND_LINK_CONTENT, CHR_KIND_NONE,
     CHR_KIND_SPRITE, CHR_LINK_SRC_RAM_FLAG, VRAM_CHR_SLOTS,
 };
-pub use game_state::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
+pub use game_state::{
+    CachedSpriteCacheField, OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState,
+};
 pub use rom_random::{parse_rom_random_script, RomRandomSample};
+pub use timing_receipts::{
+    CachedSpriteExecutionProgress, DungeonResetSpritesProgressReceipt, MainLoopInterruption,
+    OriginalTimingBoundary, OriginalTimingHostReceipts, OriginalTimingReceiptInstallError,
+    OriginalTimingSemanticReceipt, PresentedCgram, PresentedOam, PresentedObjTiles,
+};
 pub use zelda3_dialogue as dialogue_ir;
-pub use zelda_rtl::{Bg3VwfGlyphRun, ZeldaState, SRAM_SIZE, VRAM_WORDS};
+pub use zelda_rtl::{
+    Bg3VwfGlyphRun, DungeonLoadSpritesCpuProgress, DungeonResetSpritesCpuProgress,
+    DungeonSpriteDisableCpuProgress, DungeonSpriteLoadCheckpoint, ZeldaState, SRAM_SIZE,
+    VRAM_WORDS,
+};
 
 /// Which engine thread(s) a frame step should run (`run_frame_internal`'s
 /// `run_what` bitmask): the main game thread and/or the polyhedral thread.

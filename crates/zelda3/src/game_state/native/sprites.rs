@@ -69,7 +69,7 @@ pub(crate) const OVERWORLD_SPRITE_FLAG_COUNT: usize = 0x200;
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
-pub(crate) enum CachedSpriteCacheField {
+pub enum CachedSpriteCacheField {
     StateClear,
     Type,
     XLow,

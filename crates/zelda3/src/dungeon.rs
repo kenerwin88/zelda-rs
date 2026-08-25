@@ -10234,7 +10234,7 @@ impl ZeldaState {
             let schedule = dungeon_room_load_cpu_schedule(self);
             if std::env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                 eprintln!(
-                    "dungeon_room_load_cpu_schedule host={} room={:04x} room_load_nmis={} auxiliary_graphics_nmis={} caller_nmis={} prefix_nmis={} sprite_main_nmis={} suffix_nmis={} boundary={:?} cached_boundary={:?}",
+                    "dungeon_room_load_cpu_schedule host={} room={:04x} room_load_nmis={} auxiliary_graphics_nmis={} caller_nmis={} prefix_nmis={} sprite_main_nmis={} suffix_nmis={} boundary={:?}",
                     self.frame_ctr_dbg,
                     self.game_state.world.location.dungeon_room_index(),
                     schedule.room_load_nmis,
@@ -10244,7 +10244,6 @@ impl ZeldaState {
                     schedule.caller_sprite_main_nmis,
                     schedule.caller_suffix_nmis,
                     schedule.sprite_main_boundary,
-                    schedule.cached_sprite_interruption,
                 );
             }
             self.dungeon_room_load_cpu_schedule = Some(schedule);
@@ -10359,6 +10358,10 @@ impl ZeldaState {
 
     pub(super) fn complete_module07_02_01_from_dungeon_reset_sprites(&mut self) {
         self.dungeon_reset_sprites();
+        self.complete_module07_02_01_after_dungeon_reset_sprites();
+    }
+
+    pub(super) fn complete_module07_02_01_after_dungeon_reset_sprites(&mut self) {
         if !self.game_state.dungeon.torch.dungeon_dark_with_lantern() {
             self.MirrorBg1Bg2Offs();
         }
@@ -11116,7 +11119,9 @@ impl ZeldaState {
         &mut self,
         advance: DungeonModuleCpuAdvance,
     ) -> bool {
-        if let Some(boundary) = advance.cached_sprite_interruption {
+        let cached_sprite_interruption =
+            self.take_authoritative_cached_sprite_interruption(advance.cached_sprite_interruption);
+        if let Some(boundary) = cached_sprite_interruption {
             assert_eq!(
                 advance.phase,
                 ModuleCpuPhase::InterruptedInSpriteMain,
@@ -12291,7 +12296,6 @@ impl ZeldaState {
         self.dungeon_room_tracking_mut()
             .set_room_index2(dungeon_room_index);
         self.dungeon_reset_sprites();
-        self.schedule_straight_interroom_state5_after_leading_nmi();
     }
 
     pub(super) fn Module07_11_09_LoadSpriteGraphics(&mut self) {
@@ -12941,6 +12945,44 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module07-after-layer-effect");
         self.run_dungeon_submodule();
         self.replay_trace_ram_watch("module07-after-submodule");
+        if !self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
+            if let Some(progress) = self.take_original_timing_cached_sprite_execution_progress() {
+                assert!(
+                    self.dungeon_cached_sprite_cpu_interruption_pending
+                        .replace(progress.into())
+                        .is_none(),
+                    "cached-sprite semantic continuation was already armed",
+                );
+            }
+        }
+        if !self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+            && self
+                .take_original_timing_main_loop_interruption(crate::MainLoopInterruption::LinkOam)
+        {
+            // The authority observed this completed submodule's shared Link
+            // OAM caller phase being interrupted. Reuse the existing semantic
+            // continuation so the following host resumes that phase instead
+            // of beginning the next dungeon state.
+            self.dungeon_post_sprite_main_return_pending = true;
+        }
+        if !self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+            && self.take_original_timing_main_loop_interruption(
+                crate::MainLoopInterruption::SpritePreparation,
+            )
+        {
+            // The authority observed this completed submodule's shared
+            // NMI_PrepareSprites caller suffix being interrupted. Reuse the
+            // existing semantic continuation so the following host resumes
+            // that suffix instead of beginning the next dungeon state.
+            self.dungeon_nmi_prepare_sprites_return_pending = true;
+        }
         if self
             .game_execution_scheduler
             .work_suspends_translated_call_stack()

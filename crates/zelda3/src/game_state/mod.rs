@@ -5,5 +5,7 @@ mod native;
 mod view;
 
 pub(crate) use native::*;
-pub use native::{OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState};
+pub use native::{
+    CachedSpriteCacheField, OverworldMap16LoadState, SmallOverworldMap16ScrollBackupState,
+};
 pub(crate) use view::*;

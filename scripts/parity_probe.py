@@ -50,6 +50,11 @@ TRACE_PATCHES = (
     ROOT / "external" / "snes9x-libretro" / "patches" / "zelda3-spc-opcode-ledger.patch",
     ROOT / "external" / "snes9x-libretro" / "patches" / "zelda3-dsp-phase-ledger.patch",
     ROOT / "external" / "snes9x-libretro" / "patches" / "zelda3-dma-ledger.patch",
+    ROOT
+    / "external"
+    / "snes9x-libretro"
+    / "patches"
+    / "zelda3-trace-presented-cgram.patch",
 )
 ORACLE_LOCK = ROOT / "external" / "snes9x-libretro" / "oracle-lock.json"
 IDENTITY_NAME = "probe-identity.json"

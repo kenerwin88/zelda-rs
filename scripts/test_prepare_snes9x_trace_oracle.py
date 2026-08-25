@@ -15,19 +15,28 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PrepareSnes9xTraceOracleTests(unittest.TestCase):
-    def test_trace_patch_stack_keeps_dsp_ledger_before_dma_ledger(self) -> None:
+    def test_trace_patch_stack_keeps_ledgers_before_presented_cgram(self) -> None:
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-2].name,
+            MODULE.TRACE_PATCHES[-3].name,
             "zelda3-dsp-phase-ledger.patch",
         )
-        patch = MODULE.TRACE_PATCHES[-2].read_text()
+        patch = MODULE.TRACE_PATCHES[-3].read_text()
         self.assertIn("zelda3_snes9x_debug_dsp_ledger_abi_version", patch)
         self.assertIn("zelda3_ledger_copy_state", patch)
         self.assertIn("Zelda3TraceDspLedgerBranch", patch)
-        self.assertEqual(MODULE.TRACE_PATCHES[-1].name, "zelda3-dma-ledger.patch")
-        dma_patch = MODULE.TRACE_PATCHES[-1].read_text()
+        self.assertEqual(MODULE.TRACE_PATCHES[-2].name, "zelda3-dma-ledger.patch")
+        dma_patch = MODULE.TRACE_PATCHES[-2].read_text()
         self.assertIn("zelda3_snes9x_debug_dma_ledger_count", dma_patch)
         self.assertIn("Zelda3TraceDmaByteBegin", dma_patch)
+        self.assertEqual(
+            MODULE.TRACE_PATCHES[-1].name,
+            "zelda3-trace-presented-cgram.patch",
+        )
+        cgram_patch = MODULE.TRACE_PATCHES[-1].read_text()
+        self.assertIn("Zelda3TraceBeginPresentedPpuState", cgram_patch)
+        self.assertIn("Zelda3TracePresentedCgramValue", cgram_patch)
+        self.assertIn("std::memcmp(scanout_cgram, PPU.CGDATA", cgram_patch)
+        self.assertIn("case 36: return Zelda3TracePresentedCgramValue", cgram_patch)
 
     def test_lock_pins_the_official_snes9x_1_63_release(self) -> None:
         lock = json.loads(MODULE.LOCK_PATH.read_text())

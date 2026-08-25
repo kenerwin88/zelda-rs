@@ -1,0 +1,13 @@
+{"event":"provenance","schema":"pinned-snes9x-dungeon-reset-semantic-v1","source_manifest_sha256":"71de87d132531a527f0c21b75ed91dec816346e832ffbd2bcec8d06ba39d4175","source_trace_sha256":"7b1a2a7d0c992cae50954f298fda5a7da415f44e0e765c41a58aadc01567b403","input_sha256":"9859eeb60bc238a5f7cfeed87dcd69441ff2975a9a1be013ad30df70e0fe2ace","rom_random_sha256":"8a0482a1580274cdedbd7dc60d3ea7ca8a97bdd6e7a50154407e2f5774179efe","initial_sram_sha256":"a6af0ddf25ae5feafba301100938f5ef81137ee76dcdc483a04fb6e961347828","core_sha256":"0efc5693d4d8da5e24a1f725cfd35ad72246043aa0e9b3d59cf0cbe1b47a58d6","rom_sha256":"66871d66be19ad2c34c927d6b14cd8eb6fc3181965b6e517cb361f7316009cfb"}
+{"event":"wram-write","run":23194,"frame":23195,"v":222,"cycles":356,"pc":639884,"x":0,"address":3536,"value":8}
+{"event":"wram-write","run":23194,"frame":23195,"v":222,"cycles":684,"pc":639905,"x":0,"address":3328,"value":96}
+{"event":"wram-write","run":23194,"frame":23195,"v":222,"cycles":770,"pc":639913,"x":0,"address":3360,"value":14}
+{"event":"wram-write","run":23194,"frame":23195,"v":222,"cycles":950,"pc":639926,"x":0,"address":3344,"value":16}
+{"event":"wram-write","run":23194,"frame":23195,"v":222,"cycles":1036,"pc":639934,"x":0,"address":3376,"value":5}
+{"event":"wram-write","run":23194,"frame":23195,"v":222,"cycles":1170,"pc":639940,"x":0,"address":3616,"value":65}
+{"event":"wram-write","run":23194,"frame":23195,"v":222,"cycles":1208,"pc":639943,"x":0,"address":3632,"value":0}
+{"event":"wram-write","run":23194,"frame":23195,"v":223,"cycles":124,"pc":639967,"x":0,"address":3632,"value":5}
+{"event":"wram-write","run":23194,"frame":23195,"v":224,"cycles":910,"pc":639884,"x":1,"address":3537,"value":8}
+{"event":"wram-write","run":23194,"frame":23195,"v":224,"cycles":1240,"pc":639905,"x":1,"address":3329,"value":144}
+{"event":"wram-write","run":23194,"frame":23195,"v":224,"cycles":1326,"pc":639913,"x":1,"address":3361,"value":15}
+{"event":"nmi","run":23194,"frame":23195,"v":225,"cycles":24,"pc":639916,"x":1}

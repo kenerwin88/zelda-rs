@@ -89,6 +89,45 @@ class ParityRouteTests(unittest.TestCase):
             self.assertTrue(first_paths.isdisjoint(second_paths))
             self.assertNotEqual(first.invocation_id, second.invocation_id)
 
+    def test_precommit_resume_is_bound_to_the_timing_authority_core(self):
+        precommit = load_script("precommit_snes9x_parity_gate")
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "frame-00000100"
+            checkpoint.mkdir()
+            (checkpoint / "manifest.json").write_text("{}\n")
+            signature = {"route": "cold"}
+            trace_identity = {
+                "sha256": "binary",
+                "authority_core_sha256": "trace",
+            }
+            state = {
+                "checkpoint_frame": 100,
+                "checkpoint_dir": str(checkpoint),
+                "route_signature": signature,
+                "checkpoint_binary": trace_identity,
+            }
+
+            self.assertEqual(
+                precommit._resume_checkpoint(
+                    state,
+                    signature=signature,
+                    binary_identity=trace_identity,
+                    requested=200,
+                ),
+                checkpoint,
+            )
+            self.assertIsNone(
+                precommit._resume_checkpoint(
+                    state,
+                    signature=signature,
+                    binary_identity={
+                        "sha256": "binary",
+                        "authority_core_sha256": "stock",
+                    },
+                    requested=200,
+                )
+            )
+
     def test_precommit_gate_groups_session_names_under_precommit(self):
         precommit = load_script("precommit_snes9x_parity_gate")
         with tempfile.TemporaryDirectory() as directory:

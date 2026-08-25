@@ -49,7 +49,7 @@ pub(super) struct PrepOamCoordsRet {
 #[derive(
     Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
-pub(super) enum DungeonSpriteLoadCheckpoint {
+pub enum DungeonSpriteLoadCheckpoint {
     State,
     TempY,
     Floor,
@@ -67,18 +67,53 @@ pub(super) enum DungeonSpriteLoadCheckpoint {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(super) struct DungeonLoadSpritesCpuProgress {
-    pub(super) record_index: u16,
-    pub(super) slot: u8,
-    pub(super) checkpoint: DungeonSpriteLoadCheckpoint,
+pub struct DungeonLoadSpritesCpuProgress {
+    /// Zero-based ordinal among normal sprite-slot publications. Room-list
+    /// marker, overlord, and already-loaded records do not publish
+    /// `sprite_state` and therefore do not consume an ordinal.
+    pub normal_load_ordinal: u16,
+    pub slot: u8,
+    pub checkpoint: DungeonSpriteLoadCheckpoint,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(super) enum DungeonResetSpritesCpuProgress {
+pub enum DungeonSpriteDisableCpuProgress {
+    /// The descending live-sprite loop has visited slots 15 through `slot`.
+    SpriteStatesThrough { slot: u8 },
+    /// The live-sprite loop is complete and the descending ancilla loop has
+    /// cleared slots 9 through `slot`.
+    AncillasThrough { slot: u8 },
+    /// Both descending loops are complete and the held-ancilla flag is clear.
+    AncillaPickupFlagCleared,
+    /// `sprite_limit_instance = 0` has published after the two loops.
+    SpriteLimitInstanceCleared,
+}
+
+impl DungeonSpriteDisableCpuProgress {
+    const fn source_ordinal(self) -> u8 {
+        match self {
+            Self::SpriteStatesThrough { slot } => 15 - slot,
+            Self::AncillasThrough { slot } => 16 + (9 - slot),
+            Self::AncillaPickupFlagCleared => 26,
+            Self::SpriteLimitInstanceCleared => 27,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DungeonResetSpritesCpuProgress {
     Cache {
         slot: u8,
         field: CachedSpriteCacheField,
     },
+    /// Source-level progress within `Sprite_DisableAll`. This deliberately
+    /// describes Zelda statements rather than the backend PC that observed
+    /// them, so a native timing owner can later publish the same receipt.
+    Disable(DungeonSpriteDisableCpuProgress),
+    /// `Sprite_DisableAll` has completed, including its final garnish-slot
+    /// clear, but the remaining room-history bookkeeping and new room sprite
+    /// load have not yet published.
+    SpritesDisabled,
     Load(DungeonLoadSpritesCpuProgress),
 }
 
@@ -1319,21 +1354,49 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_disable_all(&mut self) {
-        for k in (0..16).rev() {
-            if self.sprite_slot_view(k).state() != 0
-                && (self.game_state.world.location.is_indoors()
-                    || self.sprite_slot_view(k).sprite_type() != 0x6c)
-            {
-                let value = 0;
-                self.sprite_slot_view_mut(k).set_state(value);
+        self.apply_sprite_disable_actions_through(
+            None,
+            DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared,
+        );
+        self.sprite_disable_all_after_limit_instance();
+    }
+
+    fn apply_sprite_disable_actions_through(
+        &mut self,
+        completed: Option<DungeonSpriteDisableCpuProgress>,
+        target: DungeonSpriteDisableCpuProgress,
+    ) {
+        let start = completed
+            .map(DungeonSpriteDisableCpuProgress::source_ordinal)
+            .map_or(0, |ordinal| ordinal + 1);
+        let target = target.source_ordinal();
+        assert!(
+            start <= target,
+            "Sprite_DisableAll semantic progress moved backwards",
+        );
+        for ordinal in start..=target {
+            match ordinal {
+                0..=15 => {
+                    let k = usize::from(15 - ordinal);
+                    if self.sprite_slot_view(k).state() != 0
+                        && (self.game_state.world.location.is_indoors()
+                            || self.sprite_slot_view(k).sprite_type() != 0x6c)
+                    {
+                        self.sprite_slot_view_mut(k).set_state(0);
+                    }
+                }
+                16..=25 => {
+                    let k = usize::from(9 - (ordinal - 16));
+                    self.ancilla_slot_view_mut(k).clear();
+                }
+                26 => self.follower_link_state_mut().clear_ancilla_pickup_flag(),
+                27 => self.sprite_system_mut().set_limit_instance(0),
+                _ => unreachable!("Sprite_DisableAll action ordinal is bounded"),
             }
         }
-        for k in (0..10).rev() {
-            self.ancilla_slot_view_mut(k).clear();
-        }
+    }
 
-        self.follower_link_state_mut().clear_ancilla_pickup_flag();
-        self.sprite_system_mut().set_limit_instance(0);
+    fn sprite_disable_all_after_limit_instance(&mut self) {
         self.sprite_battle_mut().clear_item_drop_counter();
         self.archery_game_mut().clear_hit_counter();
         self.archery_game_mut().set_arrows_left(0);
@@ -1721,6 +1784,17 @@ impl ZeldaState {
             DungeonResetSpritesCpuProgress::Cache { slot, field } => {
                 self.dungeon_cache_trans_sprites_through_cpu_progress(slot, field);
             }
+            DungeonResetSpritesCpuProgress::Disable(progress) => {
+                if self.game_state.world.location.is_indoors() {
+                    self.dungeon_cache_trans_sprites();
+                }
+                self.follower_link_state_mut().clear_picking_throw_state();
+                self.follower_link_state_mut().clear_state_bits();
+                self.apply_sprite_disable_actions_through(None, progress);
+            }
+            DungeonResetSpritesCpuProgress::SpritesDisabled => {
+                self.dungeon_reset_sprites_through_sprite_disable_all();
+            }
             DungeonResetSpritesCpuProgress::Load(progress) => {
                 self.dungeon_reset_sprites_before_room_load();
                 self.dungeon_load_sprites_through_cpu_progress(progress);
@@ -1738,25 +1812,70 @@ impl ZeldaState {
                 self.dungeon_reset_sprites_after_cache_before_room_load();
                 self.dungeon_load_sprites();
             }
+            DungeonResetSpritesCpuProgress::Disable(progress) => {
+                if progress != DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared {
+                    self.apply_sprite_disable_actions_through(
+                        Some(progress),
+                        DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared,
+                    );
+                }
+                self.sprite_disable_all_after_limit_instance();
+                self.dungeon_reset_sprites_after_sprite_disable_before_room_load();
+                self.dungeon_load_sprites();
+            }
+            DungeonResetSpritesCpuProgress::SpritesDisabled => {
+                self.dungeon_reset_sprites_after_sprite_disable_before_room_load();
+                self.dungeon_load_sprites();
+            }
             DungeonResetSpritesCpuProgress::Load(progress) => {
                 self.dungeon_resume_load_sprites_after_cpu_progress(progress);
             }
         }
     }
 
+    /// Advance an already-applied source prefix to a later receipt from the
+    /// next timing-authority host call. This is deliberately narrow: today the
+    /// only cross-host refinement is within `Sprite_DisableAll` itself.
+    pub(super) fn dungeon_advance_reset_sprites_cpu_progress(
+        &mut self,
+        completed: DungeonResetSpritesCpuProgress,
+        target: DungeonResetSpritesCpuProgress,
+    ) -> bool {
+        match (completed, target) {
+            (
+                DungeonResetSpritesCpuProgress::Disable(completed),
+                DungeonResetSpritesCpuProgress::Disable(target),
+            ) if completed.source_ordinal() <= target.source_ordinal() => {
+                if completed != target {
+                    self.apply_sprite_disable_actions_through(Some(completed), target);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub(super) fn dungeon_reset_sprites_before_room_load(&mut self) {
+        self.dungeon_reset_sprites_through_sprite_disable_all();
+        self.dungeon_reset_sprites_after_sprite_disable_before_room_load();
+    }
+
+    fn dungeon_reset_sprites_through_sprite_disable_all(&mut self) {
         if self.game_state.world.location.is_indoors() {
             self.dungeon_cache_trans_sprites();
         }
-        self.dungeon_reset_sprites_after_cache_before_room_load();
+        self.dungeon_reset_sprites_after_cache_through_sprite_disable_all();
     }
 
-    fn dungeon_reset_sprites_after_cache_before_room_load(&mut self) {
+    fn dungeon_reset_sprites_after_cache_through_sprite_disable_all(&mut self) {
         {
             self.follower_link_state_mut().clear_picking_throw_state();
             self.follower_link_state_mut().clear_state_bits();
         }
         self.sprite_disable_all();
+    }
+
+    fn dungeon_reset_sprites_after_sprite_disable_before_room_load(&mut self) {
         self.garnish_state_mut().set_sprcoll_x_size(0xffff);
         self.garnish_state_mut().set_sprcoll_y_size(0xffff);
         let room = self.game_state.dungeon.room_tracking.room_index2_word();
@@ -1779,6 +1898,11 @@ impl ZeldaState {
                 self.set_sprite_where_in_room_mask(dropped, 0);
             }
         }
+    }
+
+    fn dungeon_reset_sprites_after_cache_before_room_load(&mut self) {
+        self.dungeon_reset_sprites_after_cache_through_sprite_disable_all();
+        self.dungeon_reset_sprites_after_sprite_disable_before_room_load();
     }
 
     pub(super) fn dungeon_load_sprites(&mut self) {
@@ -1836,19 +1960,17 @@ impl ZeldaState {
 
         let mut k = 0isize;
         let mut src = start + 1;
-        let mut record_index = 0u16;
+        let mut normal_load_ordinal = 0u16;
         while src + 2 < sprites.len() && sprites[src] != 0xff {
             let y = sprites[src];
             let x = sprites[src + 1];
             let sprite_type = sprites[src + 2];
-            if record_index == progress.record_index {
+            let loads_normal_slot =
+                self.dungeon_sprite_record_loads_normal_slot(k as usize, y, x, sprite_type);
+            if loads_normal_slot && normal_load_ordinal == progress.normal_load_ordinal {
                 assert_eq!(
                     k as u8, progress.slot,
                     "translated room sprite slot disagrees with the ROM checkpoint",
-                );
-                assert!(
-                    self.dungeon_sprite_record_loads_normal_slot(k as usize, y, x, sprite_type),
-                    "ROM room-load checkpoint must identify a normal sprite record",
                 );
                 self.dungeon_load_single_sprite_fields(
                     k as usize,
@@ -1862,12 +1984,14 @@ impl ZeldaState {
             }
             k = self.dungeon_load_single_sprite(k as usize, y, x, sprite_type);
             k += 1;
+            if loads_normal_slot {
+                normal_load_ordinal = normal_load_ordinal.saturating_add(1);
+            }
             src += 3;
-            record_index += 1;
         }
         panic!(
-            "ROM room-load checkpoint record {} is outside the room sprite list",
-            progress.record_index,
+            "ROM room-load checkpoint normal-load ordinal {} is outside the room sprite list",
+            progress.normal_load_ordinal,
         );
     }
 
@@ -1880,23 +2004,20 @@ impl ZeldaState {
         };
         let mut k = 0usize;
         let mut src = start + 1;
-        let mut record_index = 0u16;
+        let mut normal_load_ordinal = 0u16;
+        let mut target_reached = false;
         while src + 2 < sprites.len() && sprites[src] != 0xff {
             let y = sprites[src];
             let x = sprites[src + 1];
             let sprite_type = sprites[src + 2];
-            if record_index < progress.record_index {
-                if Self::dungeon_sprite_record_advances_slot(y, x, sprite_type) {
-                    k += 1;
-                }
-            } else if record_index == progress.record_index {
+            let loads_normal_slot =
+                self.dungeon_sprite_record_loads_normal_slot(k, y, x, sprite_type);
+            if target_reached {
+                k = (self.dungeon_load_single_sprite(k, y, x, sprite_type) + 1) as usize;
+            } else if loads_normal_slot && normal_load_ordinal == progress.normal_load_ordinal {
                 assert_eq!(
                     k as u8, progress.slot,
                     "translated room sprite slot disagrees with the ROM checkpoint",
-                );
-                assert!(
-                    self.dungeon_sprite_record_loads_normal_slot(k, y, x, sprite_type),
-                    "ROM room-load checkpoint must identify a normal sprite record",
                 );
                 self.dungeon_load_single_sprite_fields(
                     k,
@@ -1907,16 +2028,22 @@ impl ZeldaState {
                     DungeonSpriteLoadCheckpoint::Complete,
                 );
                 k += 1;
+                normal_load_ordinal = normal_load_ordinal.saturating_add(1);
+                target_reached = true;
             } else {
-                k = (self.dungeon_load_single_sprite(k, y, x, sprite_type) + 1) as usize;
+                if Self::dungeon_sprite_record_advances_slot(y, x, sprite_type) {
+                    k += 1;
+                }
+                if loads_normal_slot {
+                    normal_load_ordinal = normal_load_ordinal.saturating_add(1);
+                }
             }
             src += 3;
-            record_index += 1;
         }
         assert!(
-            record_index > progress.record_index,
-            "ROM room-load checkpoint record {} is outside the room sprite list",
-            progress.record_index,
+            target_reached,
+            "ROM room-load checkpoint normal-load ordinal {} is outside the room sprite list",
+            progress.normal_load_ordinal,
         );
     }
 
@@ -2458,7 +2585,12 @@ impl ZeldaState {
                         live_slot_backup,
                         dungeon,
                     };
-                    self.game_execution_scheduler.schedule_work(continuation, 1);
+                    if !self
+                        .game_execution_scheduler
+                        .schedule_after_pending_pre_main_nmi(continuation)
+                    {
+                        self.game_execution_scheduler.schedule_work(continuation, 1);
+                    }
                     return;
                 }
                 self.uncache_and_execute_sprite(i);
