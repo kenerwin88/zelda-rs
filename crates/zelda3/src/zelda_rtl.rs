@@ -110,8 +110,9 @@ use crate::raster_timing::{
 };
 use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
 use crate::timing_receipts::{
-    sanitize_original_timing_input, DungeonResetSpritesProgressReceipt, OriginalTimingBoundary,
-    OriginalTimingHostReceipts, OriginalTimingReceiptInstallError, OriginalTimingSemanticReceipt,
+    sanitize_original_timing_input, CachedSpriteExecutionProgressReceipt,
+    DungeonResetSpritesProgressReceipt, OriginalTimingBoundary, OriginalTimingHostReceipts,
+    OriginalTimingReceiptInstallError, OriginalTimingSemanticReceipt,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -8916,6 +8917,10 @@ pub struct ZeldaState {
     /// native Module 7 iteration is active.
     #[serde(skip)]
     dungeon_cached_sprite_cpu_interruption_pending: Option<CachedSpriteCpuInterruption>,
+    /// Hardware boundary paired with the pending semantic progress receipt.
+    /// Legacy shadow timing leaves this unset.
+    #[serde(skip)]
+    dungeon_cached_sprite_cpu_interruption_boundary: Option<OriginalTimingBoundary>,
     /// The state-12 ROM instruction stream completed its translated module
     /// suffix at the NMI edge. The next host first services that hardware NMI,
     /// then resumes the main loop at the following dungeon-state iteration.
@@ -12128,8 +12133,15 @@ impl ZeldaState {
 
     pub(super) fn take_dungeon_cached_sprite_cpu_interruption(
         &mut self,
-    ) -> Option<CachedSpriteCpuInterruption> {
-        self.dungeon_cached_sprite_cpu_interruption_pending.take()
+    ) -> Option<(CachedSpriteCpuInterruption, Option<OriginalTimingBoundary>)> {
+        self.dungeon_cached_sprite_cpu_interruption_pending
+            .take()
+            .map(|interruption| {
+                (
+                    interruption,
+                    self.dungeon_cached_sprite_cpu_interruption_boundary.take(),
+                )
+            })
     }
 
     pub(super) fn capture_cpu_schedules_before_nmi(&mut self) {
@@ -15239,6 +15251,7 @@ impl ZeldaState {
             game_execution_scheduler: GameExecutionScheduler::default(),
             active_dungeon_sprite_main_return: None,
             dungeon_cached_sprite_cpu_interruption_pending: None,
+            dungeon_cached_sprite_cpu_interruption_boundary: None,
             dungeon_state_12_caller_suffix_nmi_pending: false,
             dungeon_landing_cpu_advance_pending: None,
             dungeon_landing_spotlight_reset_prefix_scanlines: None,
@@ -15704,8 +15717,8 @@ impl ZeldaState {
             .semantic
             .iter()
             .filter_map(|receipt| match receipt {
-                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(progress) => {
-                    Some(*progress)
+                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(receipt) => {
+                    Some(*receipt)
                 }
                 _ => None,
             })
@@ -15715,13 +15728,13 @@ impl ZeldaState {
         }
         if cached_sprite_progress
             .iter()
-            .any(|progress| match progress {
+            .any(|receipt| match receipt.progress {
                 crate::CachedSpriteExecutionProgress::Loading {
                     slot,
                     copied_fields,
-                } => *slot >= 16 || *copied_fields > 24,
+                } => slot >= 16 || copied_fields > 24,
                 crate::CachedSpriteExecutionProgress::Restoring { slot, live_fields } => {
-                    *slot >= 16 || *live_fields > 24
+                    slot >= 16 || live_fields > 24
                 }
             })
         {
@@ -15775,7 +15788,7 @@ impl ZeldaState {
 
     fn take_original_timing_cached_sprite_execution_progress(
         &mut self,
-    ) -> Option<crate::CachedSpriteExecutionProgress> {
+    ) -> Option<CachedSpriteExecutionProgressReceipt> {
         if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
             return None;
         }
@@ -15785,8 +15798,8 @@ impl ZeldaState {
             .iter()
             .enumerate()
             .filter_map(|(index, receipt)| match receipt {
-                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(progress) => {
-                    Some((index, *progress))
+                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(receipt) => {
+                    Some((index, *receipt))
                 }
                 _ => None,
             })
@@ -15795,15 +15808,15 @@ impl ZeldaState {
             matches.len() <= 1,
             "one host call cannot publish multiple cached-sprite interruption points",
         );
-        matches.first().map(|&(index, progress)| {
+        matches.first().map(|&(index, receipt)| {
             receipts.semantic.remove(index);
-            progress
+            receipt
         })
     }
 
     fn original_timing_cached_sprite_execution_progress(
         &self,
-    ) -> Option<crate::CachedSpriteExecutionProgress> {
+    ) -> Option<CachedSpriteExecutionProgressReceipt> {
         if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
             return None;
         }
@@ -15812,8 +15825,8 @@ impl ZeldaState {
             .semantic
             .iter()
             .find_map(|receipt| match receipt {
-                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(progress) => {
-                    Some(*progress)
+                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(receipt) => {
+                    Some(*receipt)
                 }
                 _ => None,
             })
@@ -15829,12 +15842,12 @@ impl ZeldaState {
     fn take_authoritative_cached_sprite_interruption(
         &mut self,
         legacy_shadow: Option<CachedSpriteCpuInterruption>,
-    ) -> Option<CachedSpriteCpuInterruption> {
+    ) -> Option<(CachedSpriteCpuInterruption, Option<OriginalTimingBoundary>)> {
         if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
             self.take_original_timing_cached_sprite_execution_progress()
-                .map(CachedSpriteCpuInterruption::from)
+                .map(|receipt| (receipt.progress.into(), Some(receipt.boundary)))
         } else {
-            legacy_shadow
+            legacy_shadow.map(|boundary| (boundary, None))
         }
     }
 
@@ -16631,9 +16644,9 @@ impl ZeldaState {
         // cached-sprite interruption was observed for this host call.
         let cached_sprite_interruption = self
             .take_original_timing_cached_sprite_execution_progress()
-            .map(CachedSpriteCpuInterruption::from);
+            .map(|receipt| (receipt.progress.into(), receipt.boundary));
         if schedule.caller_sprite_main_nmis != 0 {
-            if let Some(boundary) = cached_sprite_interruption {
+            if let Some((boundary, authority_boundary)) = cached_sprite_interruption {
                 assert_eq!(
                     schedule.caller_sprite_main_nmis, 1,
                     "cached-sprite room-load continuation crossed more than one NMI",
@@ -16643,6 +16656,12 @@ impl ZeldaState {
                         .replace(boundary)
                         .is_none(),
                     "cached-sprite room-load continuation was already armed",
+                );
+                assert!(
+                    self.dungeon_cached_sprite_cpu_interruption_boundary
+                        .replace(authority_boundary)
+                        .is_none(),
+                    "cached-sprite room-load semantic boundary was already armed",
                 );
                 // Sprite_Main's ordinary 15..0 walk has completed. Its
                 // cached-sprite suffix is interrupted while temporarily
@@ -24168,7 +24187,9 @@ impl ZeldaState {
                                     .take_authoritative_cached_sprite_interruption(
                                         schedule.cached_sprite_interruption,
                                     );
-                                if let Some(boundary) = cached_sprite_interruption {
+                                if let Some((boundary, authority_boundary)) =
+                                    cached_sprite_interruption
+                                {
                                     assert_eq!(
                                         schedule.caller_sprite_main_nmis, 1,
                                         "cached-sprite conversion continuation crossed more than one NMI",
@@ -24179,6 +24200,8 @@ impl ZeldaState {
                                             .is_none(),
                                         "cached-sprite conversion continuation was already armed",
                                     );
+                                    self.dungeon_cached_sprite_cpu_interruption_boundary =
+                                        authority_boundary;
                                 } else {
                                     let boundary = schedule
                                         .sprite_main_boundary

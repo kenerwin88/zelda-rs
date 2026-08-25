@@ -2550,9 +2550,9 @@ impl ZeldaState {
         for i in (0..16usize).rev() {
             self.sprite_system_mut().set_cur_object_index(i as u8);
             if self.cached_sprite_slot(i).is_active() {
-                if interruption.is_some_and(|boundary| usize::from(boundary.slot()) == i) {
+                if interruption.is_some_and(|(boundary, _)| usize::from(boundary.slot()) == i) {
                     let mut live_slot_backup = [0; 24];
-                    let boundary = interruption.unwrap();
+                    let (boundary, authority_boundary) = interruption.unwrap();
                     match boundary {
                         CachedSpriteCpuInterruption::Loading { copied_fields, .. } => {
                             self.cached_sprite_slot_mut(i)
@@ -2585,11 +2585,21 @@ impl ZeldaState {
                         live_slot_backup,
                         dungeon,
                     };
-                    if !self
-                        .game_execution_scheduler
-                        .schedule_after_pending_pre_main_nmi(continuation)
-                    {
-                        self.game_execution_scheduler.schedule_work(continuation, 1);
+                    match authority_boundary {
+                        Some(OriginalTimingBoundary::NmiAccepted) => self
+                            .game_execution_scheduler
+                            .schedule_after_current_trailing_nmi(continuation),
+                        Some(OriginalTimingBoundary::HostReturn) => {
+                            self.game_execution_scheduler.schedule_work(continuation, 1);
+                        }
+                        None => {
+                            if !self
+                                .game_execution_scheduler
+                                .schedule_after_pending_pre_main_nmi(continuation)
+                            {
+                                self.game_execution_scheduler.schedule_work(continuation, 1);
+                            }
+                        }
                     }
                     return;
                 }

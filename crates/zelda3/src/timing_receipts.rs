@@ -122,6 +122,14 @@ pub enum CachedSpriteExecutionProgress {
     Restoring { slot: u8, live_fields: u8 },
 }
 
+/// Source-visible progress through one cached-sprite swap, together with the
+/// hardware boundary which exposed that partial C state to the host.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CachedSpriteExecutionProgressReceipt {
+    pub progress: CachedSpriteExecutionProgress,
+    pub boundary: OriginalTimingBoundary,
+}
+
 /// Hardware boundary which made a source-level progress receipt observable.
 ///
 /// This is deliberately a Zelda scheduling fact, not emulator provenance. A
@@ -151,7 +159,7 @@ pub enum OriginalTimingSemanticReceipt {
     /// The next host call must resume that phase and must not begin a fresh
     /// main iteration.
     MainLoopInterrupted(MainLoopInterruption),
-    CachedSpriteExecutionProgress(CachedSpriteExecutionProgress),
+    CachedSpriteExecutionProgress(CachedSpriteExecutionProgressReceipt),
     DungeonResetSpritesProgress(DungeonResetSpritesProgressReceipt),
     DmaPublicationCompleted {
         channel_mask: u8,

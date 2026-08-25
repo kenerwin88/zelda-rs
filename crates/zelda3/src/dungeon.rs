@@ -11119,20 +11119,24 @@ impl ZeldaState {
         &mut self,
         advance: DungeonModuleCpuAdvance,
     ) -> bool {
+        let live_authority = matches!(self.original_timing_owner, OriginalTimingOwnerState::Live);
         let cached_sprite_interruption =
             self.take_authoritative_cached_sprite_interruption(advance.cached_sprite_interruption);
-        if let Some(boundary) = cached_sprite_interruption {
-            assert_eq!(
-                advance.phase,
-                ModuleCpuPhase::InterruptedInSpriteMain,
-                "cached-sprite copy boundary must interrupt Sprite_Main",
-            );
+        if let Some((boundary, authority_boundary)) = cached_sprite_interruption {
+            if !live_authority {
+                assert_eq!(
+                    advance.phase,
+                    ModuleCpuPhase::InterruptedInSpriteMain,
+                    "cached-sprite copy boundary must interrupt Sprite_Main",
+                );
+            }
             assert!(
                 self.dungeon_cached_sprite_cpu_interruption_pending
                     .is_none(),
                 "cached-sprite CPU continuation was already armed",
             );
             self.dungeon_cached_sprite_cpu_interruption_pending = Some(boundary);
+            self.dungeon_cached_sprite_cpu_interruption_boundary = authority_boundary;
             return true;
         }
         let Some(boundary) = advance.sprite_main_boundary else {
@@ -11156,7 +11160,38 @@ impl ZeldaState {
         true
     }
 
-    fn apply_dungeon_quadrant_cpu_advance(&mut self, advance: DungeonModuleCpuAdvance) {
+    /// Transfer a source-observed `UncacheAndExecuteSprite` interruption into
+    /// the translated Sprite_Main continuation before consulting the legacy
+    /// quadrant timing reconstruction.
+    ///
+    /// The receipt describes the C statement boundary directly, so a
+    /// contradictory synthetic `ModuleCpuPhase` cannot demote it. This is the
+    /// authority handoff which lets a later native timing backend replace
+    /// Snes9x without exposing a CPU PC or raster selector to gameplay code.
+    fn arm_live_cached_sprite_main_cpu_continuation(&mut self) -> bool {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return false;
+        }
+        let Some(receipt) = self.take_original_timing_cached_sprite_execution_progress() else {
+            return false;
+        };
+        assert!(
+            self.dungeon_cached_sprite_cpu_interruption_pending
+                .replace(receipt.progress.into())
+                .is_none(),
+            "cached-sprite semantic continuation was already armed",
+        );
+        assert!(
+            self.dungeon_cached_sprite_cpu_interruption_boundary
+                .replace(receipt.boundary)
+                .is_none(),
+            "cached-sprite semantic boundary was already armed",
+        );
+        self.dungeon_quadrant_cpu_continuation_active = true;
+        true
+    }
+
+    pub(super) fn apply_dungeon_quadrant_cpu_advance(&mut self, advance: DungeonModuleCpuAdvance) {
         if std::env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
             eprintln!(
                 "dungeon_quadrant_cpu_apply host={} phase={:?} active_return={}",
@@ -11170,6 +11205,9 @@ impl ZeldaState {
             advance.palette_countdown,
             self.game_state.display.palette_filter.countdown(),
         );
+        if self.arm_live_cached_sprite_main_cpu_continuation() {
+            return;
+        }
         match advance.phase {
             ModuleCpuPhase::CompleteBeforeNmi | ModuleCpuPhase::InterruptedAfterModule => {}
             ModuleCpuPhase::InterruptedBeforeSpriteMain
@@ -12949,14 +12987,7 @@ impl ZeldaState {
             .game_execution_scheduler
             .work_suspends_translated_call_stack()
         {
-            if let Some(progress) = self.take_original_timing_cached_sprite_execution_progress() {
-                assert!(
-                    self.dungeon_cached_sprite_cpu_interruption_pending
-                        .replace(progress.into())
-                        .is_none(),
-                    "cached-sprite semantic continuation was already armed",
-                );
-            }
+            self.arm_live_cached_sprite_main_cpu_continuation();
         }
         if !self
             .game_execution_scheduler

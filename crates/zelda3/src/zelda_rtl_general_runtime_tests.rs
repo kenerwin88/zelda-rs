@@ -27,6 +27,15 @@ fn dungeon_reset_progress_receipt(
     })
 }
 
+fn cached_sprite_progress_receipt(
+    progress: crate::CachedSpriteExecutionProgress,
+    boundary: OriginalTimingBoundary,
+) -> OriginalTimingSemanticReceipt {
+    OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(
+        crate::CachedSpriteExecutionProgressReceipt { progress, boundary },
+    )
+}
+
 #[test]
 fn attract_map_mode7_brightness_override_ends_with_fade_in() {
     assert!(rom_attract_world_map_mode7_brightness_is_early_published(
@@ -1360,17 +1369,19 @@ fn pinned_snes9x_reset_progress_is_unique_and_unclaimed_facts_expire_in_their_ho
             0,
             0,
             vec![
-                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(
+                cached_sprite_progress_receipt(
                     crate::CachedSpriteExecutionProgress::Restoring {
                         slot: 7,
                         live_fields: 4,
                     },
+                    OriginalTimingBoundary::NmiAccepted,
                 ),
-                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(
+                cached_sprite_progress_receipt(
                     crate::CachedSpriteExecutionProgress::Restoring {
                         slot: 7,
                         live_fields: 4,
                     },
+                    OriginalTimingBoundary::NmiAccepted,
                 ),
             ],
         )),
@@ -1409,12 +1420,18 @@ fn live_cached_sprite_progress_is_taken_once_without_cpu_provenance() {
     state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
         0,
         0,
-        vec![OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(progress)],
+        vec![cached_sprite_progress_receipt(
+            progress,
+            OriginalTimingBoundary::NmiAccepted,
+        )],
     ));
 
     assert_eq!(
         state.take_original_timing_cached_sprite_execution_progress(),
-        Some(progress),
+        Some(crate::CachedSpriteExecutionProgressReceipt {
+            progress,
+            boundary: OriginalTimingBoundary::NmiAccepted,
+        }),
     );
     assert_eq!(
         state.take_original_timing_cached_sprite_execution_progress(),
@@ -8582,14 +8599,13 @@ fn live_cached_sprite_receipt_supersedes_conflicting_shadow_progress_once() {
     state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
         0,
         0,
-        vec![
-            OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(
-                crate::CachedSpriteExecutionProgress::Restoring {
-                    slot: 7,
-                    live_fields: 4,
-                },
-            ),
-        ],
+        vec![cached_sprite_progress_receipt(
+            crate::CachedSpriteExecutionProgress::Restoring {
+                slot: 7,
+                live_fields: 4,
+            },
+            OriginalTimingBoundary::NmiAccepted,
+        )],
     ));
     let advance = DungeonModuleCpuAdvance {
         phase: ModuleCpuPhase::InterruptedInSpriteMain,
@@ -8617,6 +8633,178 @@ fn live_cached_sprite_receipt_supersedes_conflicting_shadow_progress_once() {
         state.take_original_timing_cached_sprite_execution_progress(),
         None,
         "the semantic receipt must transfer exactly once into the continuation",
+    );
+}
+
+#[test]
+fn live_cached_sprite_receipt_overrides_the_synthetic_quadrant_phase() {
+    for shadow_phase in [
+        ModuleCpuPhase::CompleteBeforeNmi,
+        ModuleCpuPhase::InterruptedAfterSpriteMain,
+    ] {
+        let mut state = ZeldaState::new();
+        state.set_subsubmodule(5);
+        state.original_timing_owner = OriginalTimingOwnerState::Live;
+        state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![cached_sprite_progress_receipt(
+                crate::CachedSpriteExecutionProgress::Restoring {
+                    slot: 2,
+                    live_fields: 20,
+                },
+                OriginalTimingBoundary::NmiAccepted,
+            )],
+        ));
+        let advance = DungeonModuleCpuAdvance {
+            phase: shadow_phase,
+            resumed_phase: None,
+            submodule_nmi_slices: 0,
+            subsubmodule: 5,
+            palette_countdown: 0,
+            sprite_main_boundary: None,
+            cached_sprite_interruption: None,
+        };
+
+        state.apply_dungeon_quadrant_cpu_advance(advance);
+
+        assert!(state.dungeon_quadrant_cpu_continuation_active);
+        assert!(!state.dungeon_post_sprite_main_return_pending);
+        assert_eq!(
+            state.dungeon_cached_sprite_cpu_interruption_pending,
+            Some(CachedSpriteCpuInterruption::Restoring {
+                slot: 2,
+                live_fields: 20,
+            }),
+        );
+        assert_eq!(
+            state.dungeon_cached_sprite_cpu_interruption_boundary,
+            Some(OriginalTimingBoundary::NmiAccepted),
+        );
+        assert_eq!(
+            state.take_original_timing_cached_sprite_execution_progress(),
+            None,
+            "the Live receipt must transfer exactly once for {shadow_phase:?}",
+        );
+    }
+}
+
+#[test]
+fn cached_sprite_restore_receipt_resumes_to_the_atomic_c_endpoint() {
+    let mut base = ZeldaState::new();
+    base.set_indoor_flag(1);
+    base.set_submodule(2);
+    {
+        let mut slot = base.sprite_slot_view_mut(2);
+        slot.set_state(8);
+        slot.set_sprite_type(0x6d);
+        slot.set_x(0x04ab);
+        slot.set_y(0x0543);
+        slot.set_direction(1);
+        slot.set_graphics(2);
+    }
+    base.dungeon_cache_trans_sprites();
+    {
+        let mut slot = base.sprite_slot_view_mut(2);
+        slot.set_sprite_type(0x6f);
+        slot.set_x(0x0380);
+        slot.set_y(0x0460);
+        slot.set_direction(0);
+        slot.set_graphics(0);
+    }
+
+    let mut atomic = base.clone();
+    atomic.execute_cached_sprites();
+
+    let boundary = CachedSpriteCpuInterruption::Restoring {
+        slot: 2,
+        live_fields: 20,
+    };
+    let mut resumed = base;
+    resumed.dungeon_cached_sprite_cpu_interruption_pending = Some(boundary);
+    resumed.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        bg2_x: 0,
+        bg2_y: 0,
+        bg1_x: 0,
+        bg1_y: 0,
+    });
+    resumed.execute_cached_sprites();
+    let (scheduled_boundary, live_slot_backup) = match resumed
+        .game_execution_scheduler
+        .current_work()
+        .expect("the semantic boundary must suspend cached-sprite execution")
+    {
+        GameWorkContinuation::FinishDungeonCachedSpriteMain {
+            boundary,
+            live_slot_backup,
+            ..
+        } => (boundary, live_slot_backup),
+        work => panic!("unexpected cached-sprite continuation: {work:?}"),
+    };
+    assert_eq!(scheduled_boundary, boundary);
+
+    resumed
+        .complete_cached_sprite_main_after_interrupted_slot(scheduled_boundary, &live_slot_backup);
+
+    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(resumed.game_state.sprites, atomic.game_state.sprites);
+}
+
+#[test]
+fn cached_sprite_receipt_boundary_selects_the_source_resume_side_of_nmi() {
+    let make_state = |boundary| {
+        let mut state = ZeldaState::new();
+        state.set_indoor_flag(1);
+        state.set_submodule(2);
+        {
+            let mut slot = state.sprite_slot_view_mut(2);
+            slot.set_state(8);
+            slot.set_sprite_type(0x6d);
+            slot.set_x(0x04ab);
+            slot.set_y(0x0543);
+        }
+        state.dungeon_cache_trans_sprites();
+        state.sprite_slot_view_mut(2).set_sprite_type(0x6f);
+        state.dungeon_cached_sprite_cpu_interruption_pending =
+            Some(CachedSpriteCpuInterruption::Restoring {
+                slot: 2,
+                live_fields: 9,
+            });
+        state.dungeon_cached_sprite_cpu_interruption_boundary = Some(boundary);
+        state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+            bg2_x: 0,
+            bg2_y: 0,
+            bg1_x: 0,
+            bg1_y: 0,
+        });
+        state
+    };
+
+    let mut accepted = make_state(OriginalTimingBoundary::NmiAccepted);
+    accepted.execute_cached_sprites();
+    assert_eq!(
+        accepted
+            .game_execution_scheduler
+            .scheduled_work_slices_remaining(),
+        None,
+        "an already-accepted NMI must not be counted again",
+    );
+    accepted.game_execution_scheduler.begin_host_frame();
+    assert!(matches!(
+        accepted
+            .game_execution_scheduler
+            .take_after_current_trailing_nmi(),
+        Some(GameWorkContinuation::FinishDungeonCachedSpriteMain { .. }),
+    ));
+
+    let mut returned = make_state(OriginalTimingBoundary::HostReturn);
+    returned.execute_cached_sprites();
+    assert_eq!(
+        returned
+            .game_execution_scheduler
+            .scheduled_work_slices_remaining(),
+        Some(1),
+        "a SCAN_KEYS return before NMI must retain the pending crossing",
     );
 }
 

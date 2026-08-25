@@ -37,10 +37,10 @@ pub use game_state::{
 };
 pub use rom_random::{parse_rom_random_script, RomRandomSample};
 pub use timing_receipts::{
-    CachedSpriteExecutionProgress, DungeonResetSpritesProgressReceipt, MainLoopInterruption,
-    OriginalTimingAudioShadowResult, OriginalTimingBoundary, OriginalTimingHostReceipts,
-    OriginalTimingReceiptInstallError, OriginalTimingSemanticReceipt, PresentedAudio,
-    PresentedCgram, PresentedOam, PresentedObjTiles,
+    CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt,
+    DungeonResetSpritesProgressReceipt, MainLoopInterruption, OriginalTimingAudioShadowResult,
+    OriginalTimingBoundary, OriginalTimingHostReceipts, OriginalTimingReceiptInstallError,
+    OriginalTimingSemanticReceipt, PresentedAudio, PresentedCgram, PresentedOam, PresentedObjTiles,
 };
 pub use zelda3_dialogue as dialogue_ir;
 pub use zelda_rtl::{

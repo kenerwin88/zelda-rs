@@ -10,10 +10,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use zelda3::{
-    CachedSpriteCacheField, CachedSpriteExecutionProgress, DungeonLoadSpritesCpuProgress,
-    DungeonResetSpritesCpuProgress, DungeonResetSpritesProgressReceipt,
-    DungeonSpriteDisableCpuProgress, DungeonSpriteLoadCheckpoint, MainLoopInterruption,
-    OriginalTimingBoundary, OriginalTimingSemanticReceipt,
+    CachedSpriteCacheField, CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt,
+    DungeonLoadSpritesCpuProgress, DungeonResetSpritesCpuProgress,
+    DungeonResetSpritesProgressReceipt, DungeonSpriteDisableCpuProgress,
+    DungeonSpriteLoadCheckpoint, MainLoopInterruption, OriginalTimingBoundary,
+    OriginalTimingSemanticReceipt,
 };
 
 const TRACE_PATH_ENV: &str = "ZELDA3_SNES9X_TRACE";
@@ -310,7 +311,7 @@ impl Snes9xOracleSemanticTrace {
         // the following host reconstructs continuation order from its next
         // observed write, so no CPU address or call-stack state escapes this
         // adapter.
-        self.flush_reset_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+        self.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
         Ok(receipts)
     }
 
@@ -326,11 +327,20 @@ impl Snes9xOracleSemanticTrace {
         }
     }
 
-    fn flush_host_boundary_progress(&mut self, receipts: &mut Vec<OriginalTimingSemanticReceipt>) {
-        self.flush_reset_progress(receipts, OriginalTimingBoundary::NmiAccepted);
+    fn flush_host_boundary_progress(
+        &mut self,
+        receipts: &mut Vec<OriginalTimingSemanticReceipt>,
+        boundary: OriginalTimingBoundary,
+    ) {
+        self.flush_reset_progress(receipts, boundary);
         if let Some(progress) = self.cached_sprite_execution.take() {
             receipts.push(
-                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(progress.receipt()),
+                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(
+                    CachedSpriteExecutionProgressReceipt {
+                        progress: progress.receipt(),
+                        boundary,
+                    },
+                ),
             );
         }
     }
@@ -497,7 +507,7 @@ impl Snes9xOracleSemanticTrace {
                 }
             }
             "nmi" => {
-                self.flush_host_boundary_progress(receipts);
+                self.flush_host_boundary_progress(receipts, OriginalTimingBoundary::NmiAccepted);
                 receipts.push(OriginalTimingSemanticReceipt::NmiAccepted);
                 if let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) {
                     let phase = if (LINK_OAM_START_PC..LINK_OAM_END_PC).contains(&pc) {
@@ -696,21 +706,69 @@ mod tests {
             receipts,
             vec![
                 OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(
-                    CachedSpriteExecutionProgress::Loading {
-                        slot: 7,
-                        copied_fields: 4,
+                    CachedSpriteExecutionProgressReceipt {
+                        progress: CachedSpriteExecutionProgress::Loading {
+                            slot: 7,
+                            copied_fields: 4,
+                        },
+                        boundary: OriginalTimingBoundary::NmiAccepted,
                     },
                 ),
                 OriginalTimingSemanticReceipt::NmiAccepted,
                 OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(
-                    CachedSpriteExecutionProgress::Restoring {
-                        slot: 7,
-                        live_fields: 20,
+                    CachedSpriteExecutionProgressReceipt {
+                        progress: CachedSpriteExecutionProgress::Restoring {
+                            slot: 7,
+                            live_fields: 20,
+                        },
+                        boundary: OriginalTimingBoundary::NmiAccepted,
                     },
                 ),
                 OriginalTimingSemanticReceipt::NmiAccepted,
             ],
         );
+    }
+
+    #[test]
+    fn cached_sprite_progress_at_scan_keys_return_keeps_host_return_ownership() {
+        let mut tracker = Snes9xOracleSemanticTrace {
+            path: PathBuf::new(),
+            offset: 0,
+            cache_write_progress: None,
+            normal_load_ordinal: None,
+            pending_reset_progress: None,
+            cached_sprite_execution: None,
+        };
+        let mut receipts = Vec::new();
+        tracker
+            .consume_event(
+                raw(
+                    "wram-write",
+                    Some(UNCACHE_SPRITE_RESTORE_START_PC),
+                    None,
+                    Some(CACHED_SPRITE_LIVE_FIELDS[7] + 2),
+                ),
+                &mut receipts,
+            )
+            .unwrap();
+
+        tracker.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(
+                    CachedSpriteExecutionProgressReceipt {
+                        progress: CachedSpriteExecutionProgress::Restoring {
+                            slot: 2,
+                            live_fields: 7,
+                        },
+                        boundary: OriginalTimingBoundary::HostReturn,
+                    },
+                ),
+            ],
+        );
+        assert_eq!(tracker.cached_sprite_execution, None);
     }
 
     #[test]
