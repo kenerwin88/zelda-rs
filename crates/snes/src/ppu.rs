@@ -101,6 +101,11 @@ pub struct PpuState {
     /// presentation metadata, never a VRAM/CGRAM composition path.
     #[serde(default)]
     pub scanout_brightness_override: Option<u8>,
+    /// Top rows removed when the completed hardware scanout is published as
+    /// the fixed 224-line host surface. This is presentation geometry rather
+    /// than a live PPU register.
+    #[serde(skip)]
+    pub scanout_top_crop: u8,
     pub mode: u8,
 
     pub vram_pointer: u16,
@@ -259,6 +264,7 @@ impl Default for PpuState {
             retain_active_display_history: false,
             brightness: 0,
             scanout_brightness_override: None,
+            scanout_top_crop: 0,
             mode: 0,
             vram_pointer: 0,
             vram_increment: 1,
@@ -1989,7 +1995,11 @@ impl PpuState {
         let mut color = 0u16;
         let trace_pixel = std::env::var_os("TRACE_OBJ_EDGE").is_some()
             && ((x == 127 && (y == 56 || y == 57)) || (x == 40 && (y == 40 || y == 41)));
-        if !self.forced_blank {
+        // `run_line` and the legacy renderer number visible lines 1..=224,
+        // while presentation receipts number their output rows 0..223.
+        // Keep the conversion here, at the only legacy pixel entry point, so
+        // a force-blank edge beginning at receipt row 1 does not erase row 0.
+        if !self.forced_blank_on_line((y - 1) as usize) {
             let (found_main_layer, main_color) = self.get_pixel_old(x, y, false);
             let main_layer = found_main_layer;
             color = main_color;
@@ -2089,7 +2099,7 @@ impl PpuState {
     }
 
     fn draw_whole_line(&mut self, line: usize) {
-        if self.forced_blank {
+        if self.forced_blank_on_line(line.saturating_sub(1)) {
             self.fill_render_line(line - 1, 0);
             return;
         }
@@ -2466,10 +2476,9 @@ impl PpuState {
     }
 
     fn forced_blank_on_line(&self, line_index: usize) -> bool {
-        self.forced_blank
-            && self
-                .forced_blank_from_scanline
-                .is_none_or(|start| line_index >= usize::from(start))
+        self.forced_blank_from_scanline
+            .is_some_and(|start| line_index >= usize::from(start))
+            || (self.forced_blank && self.forced_blank_from_scanline.is_none())
     }
 }
 
@@ -2640,6 +2649,31 @@ mod tests {
             &[0x00, 0x00, 0xff, 0x00]
         );
         assert_eq!(ppu.forced_blank_scanlines, 1);
+    }
+
+    #[test]
+    fn legacy_renderer_blanks_only_the_published_active_display_suffix() {
+        let mut ppu = PpuState::new();
+        let width = 256 + ppu.extra_left_right as usize * 2;
+        ppu.render_pitch = (width * 4) as u32;
+        ppu.render_buffer = Some(vec![0; width * 2 * 4]);
+        ppu.write(0x00, 0x0f);
+        ppu.cgram[0] = 0x001f;
+        ppu.forced_blank = false;
+        ppu.forced_blank_from_scanline = Some(1);
+
+        ppu.run_line(1);
+        ppu.run_line(2);
+
+        let buffer = ppu.render_buffer.as_ref().unwrap();
+        let first_line_pixel = ppu.extra_left_right as usize * 4;
+        assert_eq!(
+            &buffer[first_line_pixel..first_line_pixel + 4],
+            &[0x00, 0x00, 0xff, 0x00]
+        );
+        assert!(buffer[width * 4..width * 2 * 4]
+            .iter()
+            .all(|&byte| byte == 0));
     }
 
     #[test]

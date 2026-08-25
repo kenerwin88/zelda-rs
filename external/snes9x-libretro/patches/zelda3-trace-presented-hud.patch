@@ -1,0 +1,168 @@
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -920,6 +920,13 @@ extern "C" int zelda3_snes9x_debug_ppu_value(int field, int index)
+         // scanout. The trace fails closed if CGRAM changed during active
+         // display, because one frame-wide palette would then be insufficient.
+         case 36: return Zelda3TracePresentedCgramValue(index);
++        // The 165-word Zelda HUD tilemap retained at the beginning of the
++        // completed scanout. This is the publication domain used by the top
++        // HUD lines, not the live VRAM generation after the scanout.
++        case 37: return Zelda3TracePresentedHudTilemapValue(index);
++        // Per-visible-line INIDISP values captured by RenderLine for the
++        // completed scanout, not the live register after the following NMI.
++        case 38: return Zelda3TracePresentedInidispValue(index);
++        // Exact row offset passed to the Libretro video callback. This is
++        // source-owned presentation geometry, not inferred from the PPU's
++        // maximum rendered height.
++        case 39: return Zelda3TracePresentedTopCrop();
++        // Zelda's animated-BG VRAM destination captured at the start of the
++        // completed scanout, before the following NMI can replace WRAM.
++        case 40: return Zelda3TracePresentedAnimatedBgDestination();
+         default: return -1;
+     }
+ }
+@@ -2190,6 +2197,8 @@ bool8 S9xDeinitUpdate(int width, int height)
+     }
+ 
++    Zelda3TraceSetPresentedTopCrop(overscan_offset);
++
+ 
+     if (blargg_filter)
+     {
+diff --git a/gfx.cpp b/gfx.cpp
+--- a/gfx.cpp
++++ b/gfx.cpp
+@@ -448,6 +448,8 @@ void S9xUpdateScreen (void)
+ 	if ((GFX.EndY = IPPU.CurrentLine - 1) >= PPU.ScreenHeight)
+ 		GFX.EndY = PPU.ScreenHeight - 1;
+ 
++	Zelda3TraceCaptureRenderedPpuRange(GFX.StartY, GFX.EndY);
++
+ 	if (!PPU.ForcedBlanking)
+ 	{
+ 		// If force blank, may as well completely skip all this. We only did
+diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
+--- a/zelda3_trace.cpp
++++ b/zelda3_trace.cpp
+@@ -98,6 +98,11 @@ uint32 presented_tile_cache_hash = 0;
+ uint16 scanout_cgram[256] = {};
+ uint16 presented_cgram[256] = {};
+ bool presented_cgram_uniform = false;
++constexpr int presented_hud_word_address = 0x6040;
++constexpr int presented_hud_word_count = 165;
++constexpr int presented_hud_first_line = 16;
++constexpr int presented_hud_end_line = 64;
++constexpr int animated_bg_destination_address = 0x0134;
++uint16 scanout_hud_tilemap[presented_hud_word_count] = {};
++uint16 presented_hud_tilemap[presented_hud_word_count] = {};
++bool scanout_hud_tilemap_valid = false;
++bool presented_hud_tilemap_valid = false;
++uint8 scanout_inidisp[SNES_HEIGHT_EXTENDED] = {};
++uint8 presented_inidisp[SNES_HEIGHT_EXTENDED] = {};
++int presented_top_crop = 0;
++uint16 scanout_animated_bg_destination = 0xffff;
++uint16 presented_animated_bg_destination = 0xffff;
+ SLineMatrixData presented_mode7[240] = {};
+ int scanline_windows[240][4] = {};
+ int presented_windows[240][4] = {};
+@@ -445,6 +450,9 @@ void finish_event()
+ void Zelda3TraceBeginPresentedPpuState()
+ {
+ 	std::memcpy(scanout_cgram, PPU.CGDATA, sizeof(scanout_cgram));
++	scanout_hud_tilemap_valid = false;
++	scanout_animated_bg_destination =
++		Memory.RAM[animated_bg_destination_address] |
++		(Memory.RAM[animated_bg_destination_address + 1] << 8);
+ }
+ 
+ void Zelda3TraceCapturePresentedPpuState()
+@@ -491,6 +499,8 @@ void Zelda3TraceCapturePresentedPpuState()
+ 		std::memcmp(scanout_cgram, PPU.CGDATA, sizeof(scanout_cgram)) == 0;
+ 	std::memcpy(presented_cgram, scanout_cgram,
+ 		sizeof(presented_cgram));
++	std::memcpy(presented_hud_tilemap, scanout_hud_tilemap,
++		sizeof(presented_hud_tilemap));
++	presented_hud_tilemap_valid = scanout_hud_tilemap_valid;
++	presented_animated_bg_destination = scanout_animated_bg_destination;
++	std::memcpy(presented_inidisp, scanout_inidisp,
++		sizeof(presented_inidisp));
+ 	std::memcpy(presented_mode7, LineMatrixData, sizeof(presented_mode7));
+ 	std::memcpy(presented_windows, scanline_windows, sizeof(presented_windows));
+ 	std::memcpy(presented_clip, IPPU.Clip, sizeof(presented_clip));
+@@ -504,10 +514,23 @@ int Zelda3TracePresentedCgramValue(int index)
+ 		? presented_cgram[index] : -1;
+ }
+ 
++int Zelda3TracePresentedHudTilemapValue(int index)
++{
++	return presented_hud_tilemap_valid &&
++		index >= 0 && index < presented_hud_word_count
++		? presented_hud_tilemap[index] : -1;
++}
++
++int Zelda3TracePresentedInidispValue(int index)
++{
++	return index >= 0 && index < SNES_HEIGHT_EXTENDED
++		? presented_inidisp[index] : -1;
++}
++
++void Zelda3TraceSetPresentedTopCrop(int rows)
++{
++	presented_top_crop = rows;
++}
++
++int Zelda3TracePresentedTopCrop()
++{
++	return presented_top_crop;
++}
++
++int Zelda3TracePresentedAnimatedBgDestination()
++{
++	return presented_animated_bg_destination;
++}
++
++void Zelda3TraceCaptureRenderedPpuRange(int start_line, int end_line)
++{
++	if (start_line < 0)
++		start_line = 0;
++	if (end_line >= SNES_HEIGHT_EXTENDED)
++		end_line = SNES_HEIGHT_EXTENDED - 1;
++	if (start_line > end_line)
++		return;
++	const uint8 inidisp = Memory.FillRAM[0x2100];
++	for (int line = start_line; line <= end_line; line++)
++		scanout_inidisp[line] = inidisp;
++	if (!scanout_hud_tilemap_valid && !(inidisp & 0x80) &&
++		start_line < presented_hud_end_line && end_line >= presented_hud_first_line)
++	{
++		std::memcpy(scanout_hud_tilemap,
++			Memory.VRAM + presented_hud_word_address * 2,
++			sizeof(scanout_hud_tilemap));
++		scanout_hud_tilemap_valid = true;
++	}
++}
++
+ void Zelda3TraceCaptureScanlinePpuState(int line)
+ {
+ 	if (line < 0 || line >= 240)
+ 		return;
+ 	scanline_windows[line][0] = PPU.Window1Left;
+ 	scanline_windows[line][1] = PPU.Window1Right;
+ 	scanline_windows[line][2] = PPU.Window2Left;
+diff --git a/zelda3_trace.h b/zelda3_trace.h
+--- a/zelda3_trace.h
++++ b/zelda3_trace.h
+@@ -44,6 +44,8 @@ int Zelda3TracePresentedObjTileCacheValue(int field, int index);
+ int Zelda3TracePresentedBgTileCacheValue(int field, int index);
+ int Zelda3TracePresentedBgScrollValue(int field, int index);
+ int Zelda3TracePresentedCgramValue(int index);
++int Zelda3TracePresentedHudTilemapValue(int index);
++int Zelda3TracePresentedInidispValue(int index);
++void Zelda3TraceSetPresentedTopCrop(int rows);
++int Zelda3TracePresentedTopCrop();
++int Zelda3TracePresentedAnimatedBgDestination();
++void Zelda3TraceCaptureRenderedPpuRange(int start_line, int end_line);
+ int Zelda3TracePresentedMode7Value(int line, int field);
+ int Zelda3TracePresentedClipValue(int index);
+ void Zelda3TraceCapturePresentedPixel(int offset, int palette_index, int main_color,

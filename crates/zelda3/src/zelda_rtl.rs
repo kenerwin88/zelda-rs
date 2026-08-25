@@ -1193,6 +1193,14 @@ const fn oam_scanout_across_main(
     exit: crate::game_state::FrameState,
     entry_scanout: OamScanoutSource,
 ) -> OamScanoutSource {
+    // Module07 can enter the dungeon-exit spotlight module from its ordinary
+    // gameplay tail. The C caller still finishes Sprite_Main/LinkOam_Main
+    // before returning to ZeldaRunGameLoop, so the trailing NMI consumes that
+    // completed entry shadow; Module0F's later work belongs to the next field.
+    let dungeon_exit_entry_publishes_entry_shadow = entry.main_module == 7
+        && entry.submodule == 0
+        && exit.main_module == 0x0f
+        && exit.submodule == 0;
     // The lethal gameplay slice crosses its leading NMI before Death_Func1
     // advances into Module12. Snes9x has already consumed gameplay's completed
     // OAM shadow for this scanout; the death initializer's newly authored
@@ -1259,7 +1267,8 @@ const fn oam_scanout_across_main(
         && exit.main_module == 7
         && exit.submodule == 0x0e
         && exit.subsubmodule == 1;
-    if dungeon_game_over_entry_publishes_entry_shadow
+    if dungeon_exit_entry_publishes_entry_shadow
+        || dungeon_game_over_entry_publishes_entry_shadow
         || game_over_pre_iris_entry_publishes_entry_shadow
         || game_over_publishes_entry_obj_generation(entry, exit)
         || dungeon_gameplay_submodule_handoff_publishes_entry_shadow(entry, exit)
@@ -1288,37 +1297,6 @@ const fn rom_dungeon_spiral_state_8_publishes_live_hud_tilemap(
         && frame.main_module == 7
         && frame.submodule == 0x0e
         && frame.subsubmodule == 8
-}
-
-const DUNGEON_FLOOR_INDICATOR_HUD_WORDS: [usize; 4] = [0xf2 / 2, 0xf4 / 2, 0x132 / 2, 0x134 / 2];
-
-fn pending_dungeon_floor_indicator_clear_publishes_live_hud_tilemap(
-    frame: crate::game_state::FrameState,
-    dungeon_room: u8,
-    staircase_index: u8,
-    hud_upload_pending: bool,
-    floor_changed_timer_low: u8,
-    hud_vram_destination: usize,
-    ram: &[u8],
-    resident_vram: &[u16],
-) -> bool {
-    if !hud_upload_pending
-        || floor_changed_timer_low != 0
-        || hud_vram_destination == 0
-        || frame.main_module != 7
-        || dungeon_room != 0x01
-        || staircase_index != 0x30
-    {
-        return false;
-    }
-
-    let clear_is_queued = DUNGEON_FLOOR_INDICATOR_HUD_WORDS
-        .iter()
-        .all(|&word| read_le_u16(ram, HUD_TILE_INDICES_BUFFER + word * 2) == 0x007f);
-    let resident_indicator_is_stale = DUNGEON_FLOOR_INDICATOR_HUD_WORDS
-        .iter()
-        .any(|&word| resident_vram.get(hud_vram_destination + word) != Some(&0x007f));
-    clear_is_queued && resident_indicator_is_stale
 }
 
 fn resumed_dungeon_spiral_state_7_publishes_audio_after_main(
@@ -6387,6 +6365,7 @@ const NMI_COPY_PACKETS_FLAG: usize = 0x18;
 const FLAG_UPDATE_CGRAM_IN_NMI: usize = 0x15;
 const FLAG_UPDATE_HUD_IN_NMI: usize = 0x16;
 const HUD_TILEMAP_NMI_WORDS: usize = 165;
+const HUD_TILEMAP_VRAM_DESTINATION: usize = 0x6040;
 const FULL_TILEMAP_NMI_WORDS: usize = 0x400;
 // Shared zero-page scratch; NES_Ver2 aliases include BMWORK/CRTNL/CRTNR, but these slots
 // are reused by unrelated player, overworld, and tile-detection code paths.
@@ -8100,6 +8079,11 @@ impl DisplayPublicationPlan {
             OamScanoutSource::RetainCapturedBeforeNmi
         } else if signals.overworld_sprite_reload_completion_retains_presented {
             OamScanoutSource::RetainResidentPpuOam
+        } else if signals.dungeon_exit_crosses_nmi_boundary {
+            // The suspended spotlight caller completed its shadow before the
+            // NMI. Use the exact completed DMA receipt; the snapshot's staged
+            // host generation describes the pre-interrupt entry only.
+            OamScanoutSource::ComposeCompletedWorkAfterNmi
         } else if signals.spiral_stair_return_publishes_live_shadow_oam {
             OamScanoutSource::ComposeSpiralReturnPlayerShadowAfterMain
         } else if signals.spiral_stair_return_publishes_live_obj_cache {
@@ -9539,6 +9523,21 @@ struct DisplaySnapshot {
     /// shadow/history owners advance normally, then this immutable surface
     /// receipt wins at the renderer boundary without mutating live PPU OAM.
     presented_oam_override: Option<Vec<u16>>,
+    /// Exact HUD tilemap used by the completed source scanout. Apply this
+    /// after native VRAM-generation composition so a later authored HUD
+    /// buffer cannot leak backward across the NMI publication boundary.
+    presented_hud_tilemap_override: Option<Vec<u16>>,
+    /// Uniform INIDISP state used by the completed source scanout. Native
+    /// brightness/blanking composition still advances first; this immutable
+    /// presentation receipt wins only at the outgoing surface boundary.
+    presented_inidisp_override: Option<crate::PresentedInidisp>,
+    /// Host-surface crop applied to the completed hardware scanout. This is a
+    /// presentation-domain receipt, not a mutation of Zelda's live registers.
+    presented_scanout_geometry_override: Option<crate::PresentedScanoutGeometry>,
+    /// Exact decoded generation of Zelda's animated BG upload used by the
+    /// completed source scanout. Raw VRAM may already contain the following
+    /// NMI's words, so this remains an independent presentation domain.
+    presented_animated_bg_tiles_override: Option<crate::PresentedAnimatedBgTiles>,
     /// Exact resident OAM image owned by this publication when an OAM DMA
     /// completed after its receipt window closed. The receipt is keyed to the
     /// publication epoch so retaining the snapshot cannot replay it later.
@@ -15953,6 +15952,63 @@ impl ZeldaState {
         display.explicit_obj_cache_vram = Some(obj_vram);
     }
 
+    fn publish_original_timing_presented_animated_bg_tiles(
+        &mut self,
+        receipt: crate::PresentedAnimatedBgTiles,
+    ) {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return;
+        };
+        display.presented_animated_bg_tiles_override = Some(receipt);
+    }
+
+    fn apply_original_timing_presented_animated_bg_tiles(
+        &mut self,
+        receipt: &crate::PresentedAnimatedBgTiles,
+    ) {
+        let destination = read_le_u16(&self.ram, ANIMATED_TILE_VRAM_ADDR) as usize;
+        let word_count = crate::PresentedAnimatedBgTiles::TILE_COUNT * 16;
+        let Some(end) = destination.checked_add(word_count) else {
+            return;
+        };
+        if end > self.ppu.vram.len() {
+            debug_assert!(
+                false,
+                "animated BG presentation destination is outside VRAM"
+            );
+            return;
+        }
+        let mut bg_vram = self
+            .ppu
+            .bg_vram_latch
+            .take()
+            .unwrap_or_else(|| self.ppu.vram.clone());
+        for tile in 0..crate::PresentedAnimatedBgTiles::TILE_COUNT {
+            let tile_base = destination + tile * 16;
+            if !receipt.valid_tiles[tile] {
+                bg_vram[tile_base..tile_base + 16]
+                    .copy_from_slice(&self.ppu.vram[tile_base..tile_base + 16]);
+                continue;
+            }
+            let pixels = &receipt.tile_pixels[tile * 64..tile * 64 + 64];
+            for y in 0..8 {
+                let mut planes = [0_u8; 4];
+                for x in 0..8 {
+                    let pixel = pixels[y * 8 + x];
+                    let bit = 1_u8 << (7 - x);
+                    for (plane, value) in planes.iter_mut().enumerate() {
+                        if pixel & (1 << plane) != 0 {
+                            *value |= bit;
+                        }
+                    }
+                }
+                bg_vram[tile_base + y] = u16::from_le_bytes([planes[0], planes[1]]);
+                bg_vram[tile_base + 8 + y] = u16::from_le_bytes([planes[2], planes[3]]);
+            }
+        }
+        self.ppu.bg_vram_latch = (bg_vram != self.ppu.vram).then_some(bg_vram);
+    }
+
     fn publish_original_timing_presented_cgram(&mut self, receipt: crate::PresentedCgram) {
         let Some(display) = self.display_snapshot.as_mut() else {
             return;
@@ -15974,26 +16030,68 @@ impl ZeldaState {
         );
     }
 
+    fn publish_original_timing_presented_hud_tilemap(
+        &mut self,
+        receipt: crate::PresentedHudTilemap,
+    ) {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return;
+        };
+        display.presented_hud_tilemap_override = Some(receipt.words);
+    }
+
+    fn publish_original_timing_presented_inidisp(&mut self, receipt: crate::PresentedInidisp) {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return;
+        };
+        display.presented_inidisp_override = Some(receipt);
+    }
+
+    fn publish_original_timing_presented_scanout_geometry(
+        &mut self,
+        receipt: crate::PresentedScanoutGeometry,
+    ) {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return;
+        };
+        display.presented_scanout_geometry_override = Some(receipt);
+    }
+
     fn finish_original_timing_host_dispatch(&mut self, owns_dispatch: bool) {
         if !owns_dispatch {
             return;
         }
-        let (presented_cgram, presented_oam, presented_obj_tiles, presented_audio) =
-            if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
-                self.original_timing_semantic_receipts
-                    .as_ref()
-                    .map(|receipts| {
-                        (
-                            receipts.presented_cgram.clone(),
-                            receipts.presented_oam.clone(),
-                            receipts.presented_obj_tiles.clone(),
-                            receipts.presented_audio.clone(),
-                        )
-                    })
-                    .unwrap_or_default()
-            } else {
-                (None, None, None, None)
-            };
+        let (
+            presented_animated_bg_tiles,
+            presented_cgram,
+            presented_inidisp,
+            presented_scanout_geometry,
+            presented_hud_tilemap,
+            presented_oam,
+            presented_obj_tiles,
+            presented_audio,
+        ) = if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            self.original_timing_semantic_receipts
+                .as_ref()
+                .map(|receipts| {
+                    (
+                        receipts.presented_animated_bg_tiles.clone(),
+                        receipts.presented_cgram.clone(),
+                        receipts.presented_inidisp,
+                        receipts.presented_scanout_geometry,
+                        receipts.presented_hud_tilemap.clone(),
+                        receipts.presented_oam.clone(),
+                        receipts.presented_obj_tiles.clone(),
+                        receipts.presented_audio.clone(),
+                    )
+                })
+                .unwrap_or_default()
+        } else {
+            (None, None, None, None, None, None, None, None)
+        };
+        if let Some(presented_animated_bg_tiles) = presented_animated_bg_tiles {
+            self.publish_original_timing_presented_animated_bg_tiles(presented_animated_bg_tiles);
+        }
         if let Some(presented_cgram) = presented_cgram {
             // The source main thread may already have authored a later palette
             // buffer. This receipt is the palette used by the surface returned
@@ -16001,11 +16099,20 @@ impl ZeldaState {
             // display snapshot.
             self.publish_original_timing_presented_cgram(presented_cgram);
         }
+        if let Some(presented_inidisp) = presented_inidisp {
+            self.publish_original_timing_presented_inidisp(presented_inidisp);
+        }
+        if let Some(presented_scanout_geometry) = presented_scanout_geometry {
+            self.publish_original_timing_presented_scanout_geometry(presented_scanout_geometry);
+        }
         if let Some(presented_oam) = presented_oam {
             // The completed scanout may precede a VBlank OAM DMA that already
             // changed both Zelda's live shadow and the PPU's current bytes.
             // Publish the rendered generation only into the outgoing surface.
             self.publish_original_timing_presented_oam(presented_oam);
+        }
+        if let Some(presented_hud_tilemap) = presented_hud_tilemap {
+            self.publish_original_timing_presented_hud_tilemap(presented_hud_tilemap);
         }
         if let Some(presented_obj_tiles) = presented_obj_tiles {
             // The authority receipt describes the surface returned by this
@@ -18006,17 +18113,6 @@ impl ZeldaState {
             .game_state
             .display
             .message_dma_destination_address_usize();
-        let dungeon_floor_indicator_clear_publishes_live_hud_tilemap =
-            pending_dungeon_floor_indicator_clear_publishes_live_hud_tilemap(
-                captured_frame,
-                self.game_state.world.location.dungeon_room_index(),
-                self.game_state.dungeon.stair_movement.staircase_index(),
-                hud_upload_pending,
-                self.hud_state().floor_changed_timer_low(),
-                hud_vram_destination,
-                &self.ram,
-                &self.ppu.vram,
-            );
         let mut resident_ppu = self.ppu.clone();
         if let Some(resident_oam) = self
             .resident_oam_dma
@@ -18055,7 +18151,6 @@ impl ZeldaState {
             hud_vram_generation: (if std::mem::take(&mut self.publish_live_hud_vram_on_next_capture)
                 || !hud_upload_pending
                 || spiral_state_8_publishes_live_hud_tilemap
-                || dungeon_floor_indicator_clear_publishes_live_hud_tilemap
             {
                 DisplayVramGeneration::ComposeLiveAfterNmi
             } else {
@@ -18074,6 +18169,10 @@ impl ZeldaState {
             oam_scanout_source,
             completed_oam_dma_after_capture: None,
             presented_oam_override: None,
+            presented_hud_tilemap_override: None,
+            presented_inidisp_override: None,
+            presented_scanout_geometry_override: None,
+            presented_animated_bg_tiles_override: None,
             closed_oam_boundary_receipt: same_epoch_closed_oam_receipt,
             effective_presented_dma: None,
             interrupted_dungeon_submodule_nmi_owns_scanout: false,
@@ -21260,8 +21359,17 @@ impl ZeldaState {
             retained_full_tilemap_vram.as_ref(),
         );
         self.compose_effective_presented_vram(&display);
+        if let Some(words) = display.presented_hud_tilemap_override.as_deref() {
+            debug_assert_eq!(words.len(), HUD_TILEMAP_NMI_WORDS);
+            self.ppu.vram[HUD_TILEMAP_VRAM_DESTINATION
+                ..HUD_TILEMAP_VRAM_DESTINATION + HUD_TILEMAP_NMI_WORDS]
+                .copy_from_slice(words);
+        }
         self.compose_effective_presented_bg_chr_cache(&display);
         self.compose_decoded_bg_chr_cache();
+        if let Some(receipt) = display.presented_animated_bg_tiles_override.as_ref() {
+            self.apply_original_timing_presented_animated_bg_tiles(receipt);
+        }
         self.compose_display_chr_sources(&display, &publication_plan);
         self.compose_display_cgram(&display, &publication_plan);
         self.compose_effective_presented_cgram(&display);
@@ -21402,6 +21510,25 @@ impl ZeldaState {
             captured_screen_brightness,
             &publication_plan,
         );
+        if let Some(inidisp) = display.presented_inidisp_override {
+            // The receipt describes the completed scanout's semantic raster,
+            // so it replaces the native approximation for this one outgoing
+            // surface without mutating the live post-frame mirror.
+            self.ppu.brightness = inidisp.brightness;
+            self.ppu.scanout_brightness_override = None;
+            self.ppu.forced_blank_scanlines = inidisp.forced_blank_prefix;
+            self.ppu.forced_blank_from_scanline = inidisp.forced_blank_suffix_start;
+            // `forced_blank` is the frame-wide register shortcut. Partial
+            // rasters are owned exclusively by the prefix/suffix fields so
+            // renderers cannot erase rows which scanned out before the edge.
+            self.ppu.forced_blank =
+                usize::from(inidisp.forced_blank_prefix) == crate::PresentedInidisp::VISIBLE_LINES;
+            self.ppu.retain_active_display_history = inidisp.retain_prior_surface;
+            self.ppu.refresh_brightness_cache();
+        }
+        self.ppu.scanout_top_crop = display
+            .presented_scanout_geometry_override
+            .map_or(0, |geometry| geometry.top_crop);
         if display.game_over_iris_goal_scanout_closed {
             // A terminal iris can publish brightness zero before the captured
             // CPU generation advances. Game Over closes the active field

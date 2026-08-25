@@ -4003,76 +4003,29 @@ fn retained_general_vram_still_publishes_the_snapshot_owned_animated_region() {
 }
 
 #[test]
-fn pending_floor_indicator_clear_only_publishes_at_the_measured_spiral_return() {
+fn pending_hud_authorship_never_guesses_that_nmi_already_published_it() {
     const DESTINATION: usize = 0x6040;
 
-    let mut clearing = ZeldaState::new();
-    clearing.set_main_module(7);
-    clearing.set_dungeon_room_index(0x01);
-    clearing
-        .dungeon_stair_movement_mut()
-        .set_staircase_index(0x30);
-    clearing.set_message_dma_destination_address(DESTINATION as u16);
-    clearing.set_hud_floor_changed_timer(0);
-    for word in DUNGEON_FLOOR_INDICATOR_HUD_WORDS {
-        clearing.set_hud_tile_word(word, 0x007f);
-        clearing.ppu.vram[DESTINATION + word] = 0x2508;
+    for (room, staircase) in [(0x01, 0x30), (0x48, 0x34)] {
+        let mut state = ZeldaState::new();
+        state.set_main_module(7);
+        state.set_dungeon_room_index(room);
+        state
+            .dungeon_stair_movement_mut()
+            .set_staircase_index(staircase);
+        state.set_message_dma_destination_address(DESTINATION as u16);
+        state.set_hud_floor_changed_timer(0);
+        state.set_hud_tile_word(0x79, 0x007f);
+        state.ppu.vram[DESTINATION + 0x79] = 0x2508;
+        state.increment_hud_update_flag();
+        state.capture_display_snapshot();
+
+        assert_eq!(
+            state.display_snapshot.as_ref().unwrap().hud_vram_generation,
+            DisplayVramGeneration::RetainCapturedBeforeNmi,
+            "queued HUD authorship is not evidence of a completed NMI DMA",
+        );
     }
-    clearing.increment_hud_update_flag();
-    clearing.capture_display_snapshot();
-
-    assert_eq!(
-        clearing
-            .display_snapshot
-            .as_ref()
-            .unwrap()
-            .hud_vram_generation,
-        DisplayVramGeneration::ComposeLiveAfterNmi
-    );
-
-    let mut other_room_clear = ZeldaState::new();
-    other_room_clear.set_main_module(7);
-    other_room_clear.set_dungeon_room_index(0x48);
-    other_room_clear
-        .dungeon_stair_movement_mut()
-        .set_staircase_index(0x34);
-    other_room_clear.set_message_dma_destination_address(DESTINATION as u16);
-    other_room_clear.set_hud_floor_changed_timer(0);
-    for word in DUNGEON_FLOOR_INDICATOR_HUD_WORDS {
-        other_room_clear.set_hud_tile_word(word, 0x007f);
-        other_room_clear.ppu.vram[DESTINATION + word] = 0x2508;
-    }
-    other_room_clear.increment_hud_update_flag();
-    other_room_clear.capture_display_snapshot();
-
-    assert_eq!(
-        other_room_clear
-            .display_snapshot
-            .as_ref()
-            .unwrap()
-            .hud_vram_generation,
-        DisplayVramGeneration::RetainCapturedBeforeNmi
-    );
-
-    let mut ordinary_update = ZeldaState::new();
-    ordinary_update.set_main_module(7);
-    ordinary_update.set_message_dma_destination_address(DESTINATION as u16);
-    ordinary_update.set_hud_floor_changed_timer(0);
-    for word in DUNGEON_FLOOR_INDICATOR_HUD_WORDS {
-        ordinary_update.set_hud_tile_word(word, 0x2508);
-        ordinary_update.ppu.vram[DESTINATION + word] = 0x007f;
-    }
-    ordinary_update.increment_hud_update_flag();
-    ordinary_update.capture_display_snapshot();
-
-    assert_eq!(
-        ordinary_update
-            .display_snapshot
-            .as_ref()
-            .unwrap()
-            .hud_vram_generation,
-        DisplayVramGeneration::RetainCapturedBeforeNmi
-    );
 }
 
 #[test]
@@ -4114,7 +4067,7 @@ fn dungeon_exit_publication_plan_promotes_only_live_boundary_domains() {
 
     assert_eq!(
         plan.oam_scanout_source,
-        OamScanoutSource::RetainCapturedBeforeNmi
+        OamScanoutSource::ComposeCompletedWorkAfterNmi
     );
     assert_eq!(
         plan.link_obj_scanout_generation,

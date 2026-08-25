@@ -49,6 +49,34 @@ impl PresentedObjTiles {
     }
 }
 
+/// Palette-index pixels for Zelda's 32-tile animated BG upload as consumed by
+/// one completed host scanout.
+///
+/// Raw VRAM can already contain the following NMI's upload while the completed
+/// surface still uses tiles decoded earlier in the field. This receipt names
+/// that semantic animated-tile generation without exposing cache addresses or
+/// emulator execution state to translated gameplay.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PresentedAnimatedBgTiles {
+    pub(crate) tile_pixels: Vec<u8>,
+    pub(crate) valid_tiles: Vec<bool>,
+}
+
+impl PresentedAnimatedBgTiles {
+    pub const TILE_COUNT: usize = 32;
+    pub const PIXELS_PER_TILE: usize = 64;
+
+    pub fn new(tile_pixels: Vec<u8>, valid_tiles: Vec<bool>) -> Option<Self> {
+        (tile_pixels.len() == Self::TILE_COUNT * Self::PIXELS_PER_TILE
+            && valid_tiles.len() == Self::TILE_COUNT
+            && tile_pixels.iter().all(|&pixel| pixel < 16))
+        .then_some(Self {
+            tile_pixels,
+            valid_tiles,
+        })
+    }
+}
+
 /// The 256 SNES colors that produced one completed host scanout.
 ///
 /// This is presentation state rather than Zelda's live palette buffer. The
@@ -58,6 +86,97 @@ impl PresentedObjTiles {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PresentedCgram {
     pub(crate) colors: Vec<u16>,
+}
+
+/// The complete 165-word HUD tilemap published by Zelda's NMI DMA for one
+/// completed host scanout.
+///
+/// The temporary oracle adapter may recognize the underlying DMA registers,
+/// but translated gameplay receives only this semantic display domain. A
+/// native timing owner can publish the same words without exposing CPU or PPU
+/// execution details.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PresentedHudTilemap {
+    pub(crate) words: Vec<u16>,
+}
+
+/// INIDISP scanout state that produced one completed host surface.
+///
+/// This is deliberately presentation state, not Zelda's live `$2100` mirror:
+/// the main thread can author the next brightness while the host is still
+/// returning the field rendered with the preceding value. The typed shape is
+/// exactly the raster form supported by the native renderer: one brightness,
+/// an optional forced-blank prefix, and an optional forced-blank suffix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PresentedInidisp {
+    pub(crate) brightness: u8,
+    pub(crate) forced_blank_prefix: u8,
+    pub(crate) forced_blank_suffix_start: Option<u8>,
+    /// The visible interval between the blank prefix and suffix is byte-exact
+    /// to the preceding completed host surface. This is a presentation-domain
+    /// fact, not an emulator timing guess: the temporary oracle derives it
+    /// from consecutive returned surfaces, and a native owner can eventually
+    /// publish the same fact from its own scanout generations.
+    pub(crate) retain_prior_surface: bool,
+}
+
+/// Geometry used to turn the PPU's completed scanout surface into the host
+/// surface returned for one call.
+///
+/// SNES overscan is rendered in the hardware scanline domain and the libretro
+/// frontend crops an equal top/bottom border when returning a 224-line image.
+/// Keeping that translation explicit lets a future native scanout owner emit
+/// the same fact without exposing an emulator height or PPU register.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PresentedScanoutGeometry {
+    pub(crate) top_crop: u8,
+}
+
+impl PresentedScanoutGeometry {
+    pub const MAX_TOP_CROP: u8 = 15;
+
+    pub fn new(top_crop: u8) -> Option<Self> {
+        (top_crop <= Self::MAX_TOP_CROP).then_some(Self { top_crop })
+    }
+
+    pub const fn top_crop(self) -> u8 {
+        self.top_crop
+    }
+}
+
+impl PresentedInidisp {
+    pub const VISIBLE_LINES: usize = 224;
+
+    pub fn new(
+        brightness: u8,
+        forced_blank_prefix: u8,
+        forced_blank_suffix_start: Option<u8>,
+    ) -> Option<Self> {
+        (brightness <= 0x0f
+            && usize::from(forced_blank_prefix) <= Self::VISIBLE_LINES
+            && forced_blank_suffix_start.is_none_or(|suffix| {
+                usize::from(suffix) <= Self::VISIBLE_LINES && suffix >= forced_blank_prefix
+            }))
+        .then_some(Self {
+            brightness,
+            forced_blank_prefix,
+            forced_blank_suffix_start,
+            retain_prior_surface: false,
+        })
+    }
+
+    pub fn with_retained_prior_surface(mut self, retain: bool) -> Self {
+        self.retain_prior_surface = retain;
+        self
+    }
+}
+
+impl PresentedHudTilemap {
+    pub const WORD_COUNT: usize = 165;
+
+    pub fn new(words: Vec<u16>) -> Option<Self> {
+        (words.len() == Self::WORD_COUNT).then_some(Self { words })
+    }
 }
 
 /// Interleaved stereo samples returned by one completed host call.
@@ -172,7 +291,11 @@ pub struct OriginalTimingHostReceipts {
     pub(crate) host_call: u64,
     pub(crate) input_state: u16,
     pub(crate) semantic: Vec<OriginalTimingSemanticReceipt>,
+    pub(crate) presented_animated_bg_tiles: Option<PresentedAnimatedBgTiles>,
     pub(crate) presented_cgram: Option<PresentedCgram>,
+    pub(crate) presented_inidisp: Option<PresentedInidisp>,
+    pub(crate) presented_scanout_geometry: Option<PresentedScanoutGeometry>,
+    pub(crate) presented_hud_tilemap: Option<PresentedHudTilemap>,
     pub(crate) presented_oam: Option<PresentedOam>,
     pub(crate) presented_obj_tiles: Option<PresentedObjTiles>,
     pub(crate) presented_audio: Option<PresentedAudio>,
@@ -188,15 +311,39 @@ impl OriginalTimingHostReceipts {
             host_call,
             input_state: sanitize_original_timing_input(input_state),
             semantic,
+            presented_animated_bg_tiles: None,
             presented_cgram: None,
+            presented_inidisp: None,
+            presented_scanout_geometry: None,
+            presented_hud_tilemap: None,
             presented_oam: None,
             presented_obj_tiles: None,
             presented_audio: None,
         }
     }
 
+    pub fn with_presented_animated_bg_tiles(mut self, receipt: PresentedAnimatedBgTiles) -> Self {
+        self.presented_animated_bg_tiles = Some(receipt);
+        self
+    }
+
     pub fn with_presented_cgram(mut self, receipt: PresentedCgram) -> Self {
         self.presented_cgram = Some(receipt);
+        self
+    }
+
+    pub fn with_presented_inidisp(mut self, receipt: PresentedInidisp) -> Self {
+        self.presented_inidisp = Some(receipt);
+        self
+    }
+
+    pub fn with_presented_scanout_geometry(mut self, receipt: PresentedScanoutGeometry) -> Self {
+        self.presented_scanout_geometry = Some(receipt);
+        self
+    }
+
+    pub fn with_presented_hud_tilemap(mut self, receipt: PresentedHudTilemap) -> Self {
+        self.presented_hud_tilemap = Some(receipt);
         self
     }
 

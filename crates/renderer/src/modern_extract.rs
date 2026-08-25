@@ -167,9 +167,9 @@ const SPRITE_SIZES: [[u8; 2]; 8] = [
 /// straddle scanline 0). Remapping such a tile's screen Y by `-256` reproduces that
 /// wrap exactly: tiles in 249..262 become -7..6 (visible at top); 224..248 become
 /// -32..-8 (off-screen either way). The per-pixel clip then handles the boundary.
-fn obj_tile_screen_y(top_y: i32, sty: i32) -> i16 {
+fn obj_tile_screen_y(top_y: i32, sty: i32, top_crop: u8) -> i16 {
     let y = top_y + sty * 8;
-    (if y >= 224 { y - 256 } else { y }) as i16
+    (if y >= 224 { y - 256 } else { y } - i32::from(top_crop)) as i16
 }
 
 /// Replicate the SNES per-scanline OBJ range/time-over limits (max 32 sprites and
@@ -188,7 +188,8 @@ fn compute_obj_drawn_tiles(frame: &GpuFrame<'_>) -> Vec<Vec<(u8, i16)>> {
     let extra = frame.extra_left_right as i32;
     let mut drawn: Vec<Vec<(u8, i16)>> = vec![Vec::new(); 224];
 
-    for line in 1..=224i32 {
+    let top_crop = i32::from(frame.scanout_top_crop);
+    for line in (1 + top_crop)..=(224 + top_crop) {
         // +1 sentinels: 33 sprites / 35 tiles → the 33rd sprite and 35th tile are
         // the ones that make the counter hit 0 and are NOT drawn (range/time over).
         let mut sprites_left = 33i32;
@@ -228,7 +229,7 @@ fn compute_obj_drawn_tiles(frame: &GpuFrame<'_>) -> Vec<Vec<(u8, i16)>> {
             sprites.push((sprite_num, x, sprite_size));
         }
 
-        let out_y = (line - 1) as usize;
+        let out_y = (line - 1 - top_crop) as usize;
         'tiles: for (sprite_num, sx, sprite_size) in sprites {
             let mut col = 0;
             while col < sprite_size {
@@ -338,7 +339,7 @@ pub fn extract_modern_sprites(
                 let effective_tile = bank + used_tile;
 
                 let screen_x = (x + stx * 8) as i16;
-                let screen_y = obj_tile_screen_y(top_y, sty);
+                let screen_y = obj_tile_screen_y(top_y, sty, frame.scanout_top_crop);
                 let row_mask = obj_row_mask(&drawn, sprite_num, screen_x, screen_y);
                 if row_mask == 0 {
                     continue; // fully dropped by the per-scanline OBJ budget
@@ -555,7 +556,9 @@ pub fn extract_modern_dungeon_frame_from_vram(
                 }
                 // Snes9x RenderLine stores `VOffset + 1`; bake that hardware
                 // fetch offset into the instance before torus wrapping.
-                let mut sy = ((ty * 8) as i32 - v_scroll as i32 - 1).rem_euclid(bg_h);
+                let mut sy =
+                    ((ty * 8) as i32 - v_scroll as i32 - 1 - i32::from(frame.scanout_top_crop))
+                        .rem_euclid(bg_h);
                 if sy >= 224 {
                     sy -= bg_h;
                 }
@@ -687,7 +690,7 @@ pub fn extract_modern_sprites_from_vram(
                 }
 
                 let screen_x = (x + stx * 8) as i16;
-                let screen_y = obj_tile_screen_y(top_y, sty);
+                let screen_y = obj_tile_screen_y(top_y, sty, frame.scanout_top_crop);
                 let row_mask = obj_row_mask(&drawn, sprite_num, screen_x, screen_y);
                 if row_mask == 0 {
                     continue; // fully dropped by the per-scanline OBJ budget
@@ -793,7 +796,9 @@ pub fn extract_modern_frame_with_atlas(
                         screen_width_px: atlas_entry.atlas_width_px / scale,
                         screen_height_px: atlas_entry.atlas_height_px / scale,
                         screen_x: (col * 8) as i16 - frame.bg[layer_index].h_scroll as i16,
-                        screen_y: (row * 8) as i16 - frame.bg[layer_index].v_scroll as i16,
+                        screen_y: (row * 8) as i16
+                            - frame.bg[layer_index].v_scroll as i16
+                            - i16::from(frame.scanout_top_crop),
                         palette: fields.palette,
                         priority: u8::from(fields.priority),
                         // atlas bakes the word's flip into the cell appearance; do not re-apply
@@ -850,7 +855,9 @@ pub fn extract_modern_frame_with_index_atlas(
                         cell_id: cell.id,
                         source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                         screen_x: (col * 8) as i16 - h_scroll as i16,
-                        screen_y: (row * 8) as i16 - v_scroll as i16,
+                        screen_y: (row * 8) as i16
+                            - v_scroll as i16
+                            - i16::from(frame.scanout_top_crop),
                         palette: ((entry_word >> 10) & 7) as u8,
                         hflip: false,
                         vflip: false,
@@ -933,7 +940,9 @@ pub fn extract_modern_frame_with_dungeon_atlas(
                         cell_id: cell.id,
                         source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
                         screen_x: (tx * 8) as i16 - h_scroll as i16,
-                        screen_y: (ty * 8) as i16 - v_scroll as i16,
+                        screen_y: (ty * 8) as i16
+                            - v_scroll as i16
+                            - i16::from(frame.scanout_top_crop),
                         palette: ((entry_word >> 10) & 7) as u8,
                         hflip: false,
                         vflip: false,
@@ -1797,7 +1806,9 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                 if sx >= 256 {
                     sx -= bg_w;
                 }
-                let mut sy = ((ty * 8) as i32 - v_scroll as i32 - 1).rem_euclid(bg_h);
+                let mut sy =
+                    ((ty * 8) as i32 - v_scroll as i32 - 1 - i32::from(frame.scanout_top_crop))
+                        .rem_euclid(bg_h);
                 if sy >= 224 {
                     sy -= bg_h;
                 }
@@ -2106,7 +2117,9 @@ fn bg3_tilemap_offset_screen_xy(frame: &GpuFrame<'_>, tilemap_offset: u16) -> Op
     if sx >= 256 {
         sx -= bg_w;
     }
-    let mut sy = ((ty * 8) as i32 - i32::from(layer.v_scroll) - 1).rem_euclid(bg_h);
+    let mut sy =
+        ((ty * 8) as i32 - i32::from(layer.v_scroll) - 1 - i32::from(frame.scanout_top_crop))
+            .rem_euclid(bg_h);
     if sy >= 224 {
         sy -= bg_h;
     }
@@ -2196,7 +2209,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                     as usize;
 
                 let screen_x = (x + stx * 8) as i16;
-                let screen_y = obj_tile_screen_y(top_y, sty);
+                let screen_y = obj_tile_screen_y(top_y, sty, frame.scanout_top_crop);
                 let slot = chr_slot_base + used_tile;
                 let row_mask = obj_row_mask(&drawn, sprite_num, screen_x, screen_y);
                 if debug_pixel.is_some_and(|(debug_x, debug_y)| {
@@ -2865,7 +2878,13 @@ mod tests {
 
         let mut vram = vec![0u16; 0x8000];
         let cgram = vec![0u16; 0x100];
-        let oam = vec![0u16; 0x110];
+        // Zeroed OAM is not empty hardware state: it places every sprite at
+        // the top-left and the SNES range limit admits the first 32. Keep this
+        // BG-only fixture source-valid by moving all 128 entries off-screen.
+        let mut oam = vec![0u16; 0x110];
+        for sprite in 0..128usize {
+            oam[sprite * 2] = 0xf000;
+        }
         vram[0] = 4; // BG1 tilemap entry: tile# 4
                      // Live 4bpp CHR for tile#4 at chr_base 0x2000: tile_base = 0x2000 + 4*16 =
                      // 0x2040. Row 0 plane01 word: set pixel x=7 (bit 0x01) in plane0 → index 1.
@@ -3052,6 +3071,7 @@ mod tests {
 
     #[test]
     fn asset_resolved_semantic_bg3_uses_live_keyed_cells_over_stale_source_hit() {
+        use crate::gpu_frame::GpuBg3SourceTile;
         use crate::modern_source_atlas::ModernSourceAtlas;
 
         let stale_cell = ModernIndexTile {
@@ -3070,7 +3090,10 @@ mod tests {
 
         let mut vram = vec![0u16; 0x8000];
         let mut cgram = vec![0u16; 0x100];
-        let oam = vec![0u16; 0x110];
+        let mut oam = vec![0u16; 0x110];
+        for sprite in 0..128usize {
+            oam[sprite * 2] = 0xf000;
+        }
         cgram[25] = 0x3800;
         let tilemap_addr = 19 * 32 + 5;
         vram[tilemap_addr] = 7 | (6 << 10) | 0x2000;
@@ -3084,6 +3107,15 @@ mod tests {
             scanline.screen_enabled_main = 0x04;
         }
         frame.dialogue_message_id = Some(0x1f);
+        // The semantic renderer consumes the recorded CHR identity, not a
+        // message-id inference. The pixels remain live because this runtime
+        // BG3 slot changed after the committed atlas cell was authored.
+        let source_tiles = [GpuBg3SourceTile {
+            chr_base: 0,
+            tile_number: 7,
+            source_key: crate::modern_source_atlas::modern_source_key(CHR_KIND_BG3, source_pack, 0),
+        }];
+        frame.bg3_source_tiles = &source_tiles;
 
         let resolved = extract_asset_resolved_modern_frame_from_sources(&frame, &table, &atlas);
         assert!(
@@ -3738,17 +3770,20 @@ mod tests {
     #[test]
     fn obj_tile_screen_y_wraps_high_y_objects_to_top() {
         // Normal on-screen sprite: unchanged.
-        assert_eq!(obj_tile_screen_y(10, 0), 10);
-        assert_eq!(obj_tile_screen_y(10, 1), 18);
+        assert_eq!(obj_tile_screen_y(10, 0, 0), 10);
+        assert_eq!(obj_tile_screen_y(10, 1, 0), 18);
         // Top-straddling sprite (yy==0 -> top_y==-1): unchanged (small negative).
-        assert_eq!(obj_tile_screen_y(-1, 0), -1);
+        assert_eq!(obj_tile_screen_y(-1, 0, 0), -1);
         // High-Y wrap (yy==250 -> top_y==249, 16px sprite): tile0 -> -7, tile1 -> 1.
-        assert_eq!(obj_tile_screen_y(249, 0), -7);
-        assert_eq!(obj_tile_screen_y(249, 1), 1);
+        assert_eq!(obj_tile_screen_y(249, 0, 0), -7);
+        assert_eq!(obj_tile_screen_y(249, 1, 0), 1);
         // Boundary: exactly at the bottom edge wraps but stays off-screen (-32).
-        assert_eq!(obj_tile_screen_y(224, 0), -32);
+        assert_eq!(obj_tile_screen_y(224, 0, 0), -32);
         // Last on-screen row is not wrapped.
-        assert_eq!(obj_tile_screen_y(223, 0), 223);
+        assert_eq!(obj_tile_screen_y(223, 0, 0), 223);
+        // A 239-line hardware surface cropped to 224 host lines translates
+        // every OBJ tile into the returned surface's coordinate space.
+        assert_eq!(obj_tile_screen_y(105, 0, 7), 98);
     }
 
     /// Craft an OAM with ONE 8×8 sprite and assert `extract_modern_sprites`
@@ -3796,6 +3831,12 @@ mod tests {
         assert_eq!(s.screen_y, 50);
         assert!(!s.hflip);
         assert!(!s.vflip);
+
+        frame.scanout_top_crop = 7;
+        let cropped = extract_modern_sprites(&frame, &atlas, CONTEXT);
+        assert_eq!(cropped.len(), 1);
+        assert_eq!(cropped[0].screen_y, 43);
+        assert_eq!(cropped[0].row_mask, 0xff);
 
         // Wrong context → no resolution.
         assert!(extract_modern_sprites(&frame, &atlas, CONTEXT + 1).is_empty());
@@ -4644,6 +4685,7 @@ mod tests {
             screen_windowed: [0, 0],
             brightness,
             scanout_brightness_override: None,
+            scanout_top_crop: 0,
             forced_blank,
             retain_active_display_history: false,
             math_enabled: 0,
@@ -4657,7 +4699,15 @@ mod tests {
             prevent_math_mode: 0,
             windowsel_cm: 0,
             windowsel: 0,
-            scanlines: Box::new([ScanlineRegs::default(); 224]),
+            // A physical forced-blank frame has the same INIDISP state in
+            // every captured scanline receipt; the frame-level latch alone is
+            // not a substitute for those authoritative rows.
+            scanlines: Box::new(
+                [ScanlineRegs {
+                    forced_blank,
+                    ..ScanlineRegs::default()
+                }; 224],
+            ),
             bg3_source_tiles: &[],
             bg3_vwf_glyph_runs: &[],
             dialogue_message_id: None,

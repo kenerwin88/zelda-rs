@@ -15,28 +15,42 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PrepareSnes9xTraceOracleTests(unittest.TestCase):
-    def test_trace_patch_stack_keeps_ledgers_before_presented_cgram(self) -> None:
+    def test_trace_patch_stack_keeps_ledgers_before_presentation_receipts(self) -> None:
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-3].name,
+            MODULE.TRACE_PATCHES[-4].name,
             "zelda3-dsp-phase-ledger.patch",
         )
-        patch = MODULE.TRACE_PATCHES[-3].read_text()
+        patch = MODULE.TRACE_PATCHES[-4].read_text()
         self.assertIn("zelda3_snes9x_debug_dsp_ledger_abi_version", patch)
         self.assertIn("zelda3_ledger_copy_state", patch)
         self.assertIn("Zelda3TraceDspLedgerBranch", patch)
-        self.assertEqual(MODULE.TRACE_PATCHES[-2].name, "zelda3-dma-ledger.patch")
-        dma_patch = MODULE.TRACE_PATCHES[-2].read_text()
+        self.assertEqual(MODULE.TRACE_PATCHES[-3].name, "zelda3-dma-ledger.patch")
+        dma_patch = MODULE.TRACE_PATCHES[-3].read_text()
         self.assertIn("zelda3_snes9x_debug_dma_ledger_count", dma_patch)
         self.assertIn("Zelda3TraceDmaByteBegin", dma_patch)
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-1].name,
+            MODULE.TRACE_PATCHES[-2].name,
             "zelda3-trace-presented-cgram.patch",
         )
-        cgram_patch = MODULE.TRACE_PATCHES[-1].read_text()
+        cgram_patch = MODULE.TRACE_PATCHES[-2].read_text()
         self.assertIn("Zelda3TraceBeginPresentedPpuState", cgram_patch)
         self.assertIn("Zelda3TracePresentedCgramValue", cgram_patch)
         self.assertIn("std::memcmp(scanout_cgram, PPU.CGDATA", cgram_patch)
         self.assertIn("case 36: return Zelda3TracePresentedCgramValue", cgram_patch)
+        self.assertEqual(
+            MODULE.TRACE_PATCHES[-1].name,
+            "zelda3-trace-presented-hud.patch",
+        )
+        hud_patch = MODULE.TRACE_PATCHES[-1].read_text()
+        self.assertIn("Zelda3TracePresentedHudTilemapValue", hud_patch)
+        self.assertIn("presented_hud_word_address = 0x6040", hud_patch)
+        self.assertIn("case 37: return Zelda3TracePresentedHudTilemapValue", hud_patch)
+        self.assertIn("Zelda3TraceCaptureRenderedPpuRange(GFX.StartY, GFX.EndY)", hud_patch)
+        self.assertIn("scanout_hud_tilemap_valid", hud_patch)
+        self.assertIn("presented_hud_first_line = 16", hud_patch)
+        self.assertIn("case 38: return Zelda3TracePresentedInidispValue", hud_patch)
+        self.assertIn("Zelda3TraceSetPresentedTopCrop(overscan_offset)", hud_patch)
+        self.assertIn("case 40: return Zelda3TracePresentedAnimatedBgDestination", hud_patch)
 
     def test_lock_pins_the_official_snes9x_1_63_release(self) -> None:
         lock = json.loads(MODULE.LOCK_PATH.read_text())

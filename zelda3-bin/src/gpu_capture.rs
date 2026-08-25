@@ -2629,6 +2629,7 @@ fn gpu_frame_register_snapshot_from_ppu<'a>(
         screen_windowed: ppu.screen_windowed,
         brightness: ppu.brightness,
         scanout_brightness_override: ppu.scanout_brightness_override,
+        scanout_top_crop: ppu.scanout_top_crop,
         forced_blank: ppu.forced_blank,
         retain_active_display_history: ppu.retain_active_display_history,
         math_enabled: ppu.math_enabled,

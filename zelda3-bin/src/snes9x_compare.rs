@@ -24,8 +24,8 @@ use crate::snes9x_semantic_receipts::Snes9xOracleSemanticTrace;
 use serde::{Deserialize, Serialize};
 use zelda3::{
     game_output::DspWriteEvent, OriginalTimingHostReceipts, OriginalTimingSemanticReceipt,
-    PresentedAudio, PresentedCgram, PresentedOam, PresentedObjTiles, RomRandomSample, ZeldaState,
-    RUN_MAIN,
+    PresentedAnimatedBgTiles, PresentedAudio, PresentedCgram, PresentedHudTilemap, PresentedOam,
+    PresentedObjTiles, RomRandomSample, ZeldaState, RUN_MAIN,
 };
 
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
@@ -3673,6 +3673,7 @@ pub(crate) fn run_compare_libretro_oracle(
     });
     let mut previous_oracle_vram = None::<Vec<u8>>;
     let mut previous_rust_vram = None::<Vec<u8>>;
+    let mut previous_oracle_video = None::<PresentedOracleVideo>;
     let mut previous_shield_dma_trace = None::<(u8, u8, u16, u16, u8, u8, u16, u16)>;
     let mut previous_uncle_trace = None::<(u8, u8, u8, u8, u8, u8, u8, u8)>;
     // Video parity is intentionally measured through the same native window
@@ -3842,6 +3843,54 @@ pub(crate) fn run_compare_libretro_oracle(
                     process::exit(1);
                 });
                 receipts = receipts.with_presented_audio(presented_audio);
+                if let Some(presented_animated_bg_tiles) =
+                    snes9x_presented_animated_bg_tiles(&oracle).unwrap_or_else(|error| {
+                        eprintln!(
+                            "failed to decode pinned-Snes9x presented animated-BG receipt at frame {frame_index}: {error}"
+                        );
+                        process::exit(1);
+                    })
+                {
+                    receipts = receipts
+                        .with_presented_animated_bg_tiles(presented_animated_bg_tiles);
+                }
+                let presented_scanout_geometry =
+                    snes9x_presented_scanout_geometry(&oracle).unwrap_or_else(|error| {
+                        eprintln!(
+                            "failed to decode pinned-Snes9x presented scanout geometry at frame {frame_index}: {error}"
+                        );
+                        process::exit(1);
+                    });
+                if let Some(presented_inidisp) = snes9x_presented_inidisp(
+                    &oracle,
+                    presented_scanout_geometry,
+                    early_oracle_capture
+                        .as_ref()
+                        .expect("Snes9x host capture precedes semantic receipt decoding"),
+                    previous_oracle_video.as_ref(),
+                )
+                .unwrap_or_else(|error| {
+                        eprintln!(
+                            "failed to decode pinned-Snes9x presented INIDISP receipt at frame {frame_index}: {error}"
+                        );
+                        process::exit(1);
+                    })
+                {
+                    receipts = receipts.with_presented_inidisp(presented_inidisp);
+                }
+                if let Some(presented_scanout_geometry) = presented_scanout_geometry {
+                    receipts = receipts.with_presented_scanout_geometry(presented_scanout_geometry);
+                }
+                if let Some(presented_hud_tilemap) =
+                    snes9x_presented_hud_tilemap(&oracle).unwrap_or_else(|error| {
+                        eprintln!(
+                            "failed to decode pinned-Snes9x presented HUD receipt at frame {frame_index}: {error}"
+                        );
+                        process::exit(1);
+                    })
+                {
+                    receipts = receipts.with_presented_hud_tilemap(presented_hud_tilemap);
+                }
                 if let Some(presented_cgram) =
                     snes9x_presented_cgram(&oracle).unwrap_or_else(|error| {
                         eprintln!(
@@ -3879,6 +3928,9 @@ pub(crate) fn run_compare_libretro_oracle(
                     );
                     process::exit(1);
                 });
+                previous_oracle_video = early_oracle_capture
+                    .as_ref()
+                    .map(PresentedOracleVideo::from);
             }
             if let Some(trace) = live_oracle_rng_trace.as_mut() {
                 let samples = trace.samples_for_run(frame_index).unwrap_or_else(|error| {
@@ -8847,6 +8899,259 @@ fn snes9x_oracle_semantic_receipts(
         return Ok(Vec::new());
     };
     semantic_receipts_from_dma_ledger(&events)
+}
+
+fn snes9x_presented_animated_bg_tiles(
+    oracle: &LibretroCore,
+) -> Result<Option<PresentedAnimatedBgTiles>, String> {
+    // Zelda owns this as the 0x200-word animated BG upload destination. The
+    // adapter may inspect WRAM/cache provenance, but the typed receipt exposes
+    // only the 32 decoded tiles consumed by the completed scanout.
+    // The destination belongs to the beginning of the completed scanout.
+    // Reading live WRAM here would cross the following NMI publication and
+    // pair the right cache pixels with the wrong tile range.
+    let destination = match oracle.debug_ppu_value(40, 0) {
+        None | Some(-1) => return Ok(None),
+        Some(value) => usize::try_from(value)
+            .map_err(|_| format!("presented animated-BG destination is invalid: {value}"))?,
+    };
+    // Zelda leaves this operand at Snes9x's 0x55 reset fill until graphics
+    // setup. That represents absence of a publication, not a corrupt receipt.
+    if !destination.is_multiple_of(16) {
+        return Ok(None);
+    }
+    let first_tile = destination / 16;
+    if first_tile + PresentedAnimatedBgTiles::TILE_COUNT > 1024 {
+        return Ok(None);
+    }
+    if oracle.debug_ppu_value(32, first_tile as i32).is_none() {
+        return Ok(None);
+    }
+
+    let mut tile_pixels = vec![0; PresentedAnimatedBgTiles::TILE_COUNT * 64];
+    let mut valid_tiles = vec![false; PresentedAnimatedBgTiles::TILE_COUNT];
+    for tile in 0..PresentedAnimatedBgTiles::TILE_COUNT {
+        let cache_tile = first_tile + tile;
+        let valid = oracle
+            .debug_ppu_value(32, cache_tile as i32)
+            .ok_or_else(|| format!("presented animated-BG validity {tile} is unavailable"))?
+            != 0;
+        valid_tiles[tile] = valid;
+        if !valid {
+            continue;
+        }
+        for pixel in 0..PresentedAnimatedBgTiles::PIXELS_PER_TILE {
+            let value = oracle
+                .debug_ppu_value(31, (cache_tile * 64 + pixel) as i32)
+                .ok_or_else(|| {
+                    format!("presented animated-BG tile {tile} pixel {pixel} is unavailable")
+                })?;
+            tile_pixels[tile * 64 + pixel] = u8::try_from(value)
+                .ok()
+                .filter(|&index| index < 16)
+                .ok_or_else(|| {
+                format!("presented animated-BG tile {tile} pixel {pixel} is invalid: {value}")
+            })?;
+        }
+    }
+    PresentedAnimatedBgTiles::new(tile_pixels, valid_tiles)
+        .map(Some)
+        .ok_or_else(|| "presented animated-BG receipt has an invalid shape".to_string())
+}
+
+fn snes9x_presented_hud_tilemap(
+    oracle: &LibretroCore,
+) -> Result<Option<PresentedHudTilemap>, String> {
+    let first = match oracle.debug_ppu_value(37, 0) {
+        None | Some(-1) => return Ok(None),
+        Some(value) => value,
+    };
+    let words = (0..PresentedHudTilemap::WORD_COUNT)
+        .map(|index| {
+            let value = if index == 0 {
+                first
+            } else {
+                oracle
+                    .debug_ppu_value(37, index as i32)
+                    .ok_or_else(|| format!("presented HUD tilemap word {index} is unavailable"))?
+            };
+            u16::try_from(value)
+                .map_err(|_| format!("presented HUD tilemap word {index} is invalid: {value}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    PresentedHudTilemap::new(words)
+        .map(Some)
+        .ok_or_else(|| "presented HUD tilemap receipt has an invalid shape".to_string())
+}
+
+fn snes9x_presented_scanout_geometry(
+    oracle: &LibretroCore,
+) -> Result<Option<zelda3::PresentedScanoutGeometry>, String> {
+    let top_crop = match oracle.debug_ppu_value(39, 0) {
+        None | Some(-1) => return Ok(None),
+        Some(value) => u8::try_from(value)
+            .ok()
+            .filter(|&rows| rows <= zelda3::PresentedScanoutGeometry::MAX_TOP_CROP)
+            .ok_or_else(|| format!("presented scanout top crop is invalid: {value}"))?,
+    };
+    zelda3::PresentedScanoutGeometry::new(top_crop)
+        .map(Some)
+        .ok_or_else(|| format!("presented scanout top crop is invalid: {top_crop}"))
+}
+
+#[derive(Clone, Debug)]
+struct PresentedOracleVideo {
+    bytes: Vec<u8>,
+    width: u32,
+    height: u32,
+    pitch: usize,
+    pixel_format: u32,
+}
+
+impl From<&LibretroFrame> for PresentedOracleVideo {
+    fn from(frame: &LibretroFrame) -> Self {
+        Self {
+            bytes: frame.video.clone(),
+            width: frame.video_width,
+            height: frame.video_height,
+            pitch: frame.video_pitch,
+            pixel_format: frame.pixel_format,
+        }
+    }
+}
+
+fn presented_video_rows_match_prior_surface(
+    current: &LibretroFrame,
+    previous: Option<&PresentedOracleVideo>,
+    start_row: usize,
+    end_row: usize,
+) -> Result<bool, String> {
+    if start_row >= end_row {
+        return Ok(false);
+    }
+    let Some(previous) = previous else {
+        return Ok(false);
+    };
+    if current.video_width != previous.width
+        || current.video_height != previous.height
+        || current.video_pitch != previous.pitch
+        || current.pixel_format != previous.pixel_format
+    {
+        return Err("consecutive Snes9x host surfaces changed layout".to_string());
+    }
+    let stride = snes9x_pixel_stride(current.pixel_format)
+        .ok_or_else(|| format!("unsupported Snes9x pixel format {}", current.pixel_format))?;
+    let row_bytes = usize::try_from(current.video_width)
+        .ok()
+        .and_then(|width| width.checked_mul(stride))
+        .ok_or_else(|| "Snes9x host row byte count overflowed".to_string())?;
+    if row_bytes > current.video_pitch || end_row > current.video_height as usize {
+        return Err("Snes9x host surface cannot contain the presented row interval".to_string());
+    }
+    for row in start_row..end_row {
+        let start = row
+            .checked_mul(current.video_pitch)
+            .ok_or_else(|| "Snes9x host row offset overflowed".to_string())?;
+        let end = start
+            .checked_add(row_bytes)
+            .ok_or_else(|| "Snes9x host row end overflowed".to_string())?;
+        let current_row = current
+            .video
+            .get(start..end)
+            .ok_or_else(|| format!("current Snes9x host row {row} is truncated"))?;
+        let previous_row = previous
+            .bytes
+            .get(start..end)
+            .ok_or_else(|| format!("previous Snes9x host row {row} is truncated"))?;
+        if current_row != previous_row {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn snes9x_presented_inidisp(
+    oracle: &LibretroCore,
+    geometry: Option<zelda3::PresentedScanoutGeometry>,
+    current_video: &LibretroFrame,
+    previous_video: Option<&PresentedOracleVideo>,
+) -> Result<Option<zelda3::PresentedInidisp>, String> {
+    let top_crop = usize::from(geometry.map_or(0, |geometry| geometry.top_crop()));
+    let first = match oracle.debug_ppu_value(38, top_crop as i32) {
+        None | Some(-1) => return Ok(None),
+        Some(value) => value,
+    };
+    if !(0..=0xff).contains(&first) {
+        return Err(format!("presented INIDISP line 0 is invalid: {first}"));
+    }
+    let mut lines = Vec::with_capacity(zelda3::PresentedInidisp::VISIBLE_LINES);
+    lines.push(((first & 0x0f) as u8, first & 0x80 != 0));
+    for line in 1..zelda3::PresentedInidisp::VISIBLE_LINES {
+        let source_line = line + top_crop;
+        let value = oracle
+            .debug_ppu_value(38, source_line as i32)
+            .ok_or_else(|| format!("presented INIDISP source line {source_line} is unavailable"))?;
+        if !(0..=0xff).contains(&value) {
+            return Err(format!("presented INIDISP line {line} is invalid: {value}"));
+        }
+        lines.push(((value & 0x0f) as u8, value & 0x80 != 0));
+    }
+
+    let prefix = lines.iter().take_while(|line| line.1).count();
+    let suffix = lines
+        .iter()
+        .enumerate()
+        .skip(prefix)
+        .find_map(|(line, value)| value.1.then_some(line));
+    let visible_end = suffix.unwrap_or(lines.len());
+    if lines[prefix..visible_end].iter().any(|line| line.1)
+        || lines[visible_end..].iter().any(|line| !line.1)
+    {
+        return Err("presented INIDISP has a non-contiguous forced-blank raster".to_string());
+    }
+    let brightness = lines
+        .get(prefix)
+        .filter(|_| prefix < visible_end)
+        .map(|line| line.0)
+        .unwrap_or(lines[0].0);
+    if lines[prefix..visible_end]
+        .iter()
+        .any(|line| line.0 != brightness)
+    {
+        return Err("presented INIDISP has per-line brightness changes".to_string());
+    }
+    // Pinned Snes9x's `S9xUpdateScreen` skips drawing entirely while
+    // `PPU.ForcedBlanking` is set. A fully blank completed scanout therefore
+    // returns the preceding libretro surface rather than a newly cleared
+    // black surface. Partial suffix blanking retains only the already-scanned
+    // visible interval for the same source-level reason.
+    let retain_prior_surface = if prefix == zelda3::PresentedInidisp::VISIBLE_LINES {
+        presented_video_rows_match_prior_surface(
+            current_video,
+            previous_video,
+            0,
+            zelda3::PresentedInidisp::VISIBLE_LINES,
+        )?
+    } else if suffix.is_some() {
+        presented_video_rows_match_prior_surface(
+            current_video,
+            previous_video,
+            prefix,
+            visible_end,
+        )?
+    } else {
+        false
+    };
+    let prefix = u8::try_from(prefix)
+        .map_err(|_| "presented INIDISP blank prefix is invalid".to_string())?;
+    let suffix = suffix
+        .map(u8::try_from)
+        .transpose()
+        .map_err(|_| "presented INIDISP blank suffix is invalid".to_string())?;
+    let receipt = zelda3::PresentedInidisp::new(brightness, prefix, suffix)
+        .ok_or_else(|| "presented INIDISP receipt has an invalid shape".to_string())?;
+    let receipt = receipt.with_retained_prior_surface(retain_prior_surface);
+    Ok(Some(receipt))
 }
 
 /// Capture the presentation-domain OBJ tiles retained by the pinned oracle

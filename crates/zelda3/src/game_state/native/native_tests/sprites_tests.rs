@@ -1202,6 +1202,17 @@ fn native_follower_runtime_bridge_preserves_overlapping_timer_tail_byte() {
     assert_eq!(read_le_u16(&ram, FOLLOWER_SAVED_Y), 0x1112);
     assert_eq!(read_le_u16(&ram, FOLLOWER_SAVED_X), 0x1314);
     assert_eq!(ram[FOLLOWER_PALETTE_SWAP_FLAG], 0x80);
+    assert_eq!(
+        ram[ZELDA_RESCUE_CUTSCENE_STATE], 0xff,
+        "bulk follower projection must preserve the independently write-through rescue byte"
+    );
+
+    {
+        let mut bridge = NativeFollowerRuntimeBridgeMut::new(&mut follower, &mut ram);
+        bridge.set_zelda_rescue_cutscene_state(2);
+    }
+    assert_eq!(follower.zelda_rescue_cutscene_state(), 2);
+    assert_eq!(ram[ZELDA_RESCUE_CUTSCENE_STATE], 2);
 }
 
 #[test]

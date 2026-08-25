@@ -7762,6 +7762,10 @@ mod tests {
         let mut frame = ModernFrame::empty();
         frame.backdrop_color_rgba = [0, 0, 0, 0xff];
         frame.screen_enabled_main = 0x10;
+        // Static-effect eligibility is deliberately checked against the live
+        // CGRAM row. Model the same palette color instead of accidentally
+        // forcing this packet onto the live-CGRAM fallback with black index 1.
+        frame.cgram_rgba[0x80 + 16 + 1] = [200, 20, 20, 0xff];
         frame.cgram_rgba[0x80 + 16 + 9] = [9, 90, 9, 0xff];
         frame.index_sprites.push(ModernIndexSpriteInstance {
             cell_id: 0,
@@ -12640,6 +12644,7 @@ mod tests {
             screen_windowed: [0, 0],
             brightness,
             scanout_brightness_override: None,
+            scanout_top_crop: 0,
             forced_blank,
             retain_active_display_history: false,
             math_enabled: 0,
@@ -12653,7 +12658,12 @@ mod tests {
             prevent_math_mode: 0,
             windowsel_cm: 0,
             windowsel: 0,
-            scanlines: Box::new([crate::gpu_frame::ScanlineRegs::default(); 224]),
+            scanlines: Box::new(
+                [crate::gpu_frame::ScanlineRegs {
+                    forced_blank,
+                    ..crate::gpu_frame::ScanlineRegs::default()
+                }; 224],
+            ),
             bg3_source_tiles: &[],
             bg3_vwf_glyph_runs: &[],
             dialogue_message_id: None,
@@ -12868,6 +12878,9 @@ mod tests {
             frame.backdrop_color_rgba = [0, 0, 0, 0xff];
             frame.screen_enabled_main = 0x11;
             frame.cgram_rgba[2 * 16 + 1] = [90, 100, 110, 0xff];
+            // The sprite palette effect is valid only when its authored row
+            // agrees with the live SNES CGRAM row used by the fallback path.
+            frame.cgram_rgba[0x80 + 4 * 16 + 3] = [120, 130, 140, 0xff];
             let mut layer = ModernBgLayer::new(0);
             layer.enabled_main = true;
             layer.index_tiles.push(ModernIndexTileInstance {

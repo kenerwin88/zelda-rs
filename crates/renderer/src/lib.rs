@@ -1349,6 +1349,7 @@ fn modern_source_extraction_fingerprint<S: modern_extract::SourceTableView + ?Si
     frame.screen_enabled.hash(&mut hasher);
     frame.screen_windowed.hash(&mut hasher);
     frame.brightness.hash(&mut hasher);
+    frame.scanout_top_crop.hash(&mut hasher);
     frame.forced_blank.hash(&mut hasher);
     frame.math_enabled.hash(&mut hasher);
     frame.subtract_color.hash(&mut hasher);
@@ -1453,6 +1454,13 @@ fn create_modern_gpu_target(
 fn active_display_history_rows(frame: &modern_frame::ModernFrame) -> Option<(u32, u32)> {
     if !frame.retain_active_display_history {
         return None;
+    }
+    // Pinned Snes9x leaves its host screen buffer untouched when the whole
+    // completed scanout is force-blank. Preserve the entire preceding host
+    // surface in that case; partial active-display transitions retain only
+    // the interval which scanned out before the blanking edge.
+    if frame.forced_blank || frame.forced_blank_scanlines >= 224 {
+        return Some((0, 224));
     }
     let start = u32::from(frame.forced_blank_scanlines).min(224);
     let end = u32::from(frame.forced_blank_from_scanline?).min(224);
@@ -3556,6 +3564,7 @@ mod tests {
             screen_windowed: [0; 2],
             brightness: 15,
             scanout_brightness_override: None,
+            scanout_top_crop: 0,
             forced_blank: false,
             retain_active_display_history: false,
             math_enabled: 0,
@@ -3621,6 +3630,7 @@ mod tests {
             screen_windowed: [0; 2],
             brightness: 15,
             scanout_brightness_override: None,
+            scanout_top_crop: 0,
             forced_blank: false,
             retain_active_display_history: false,
             math_enabled: 0,
@@ -3672,6 +3682,16 @@ mod tests {
         frame.retain_active_display_history = true;
 
         assert_eq!(active_display_history_rows(&frame), Some((2, 5)));
+    }
+
+    #[test]
+    fn active_display_history_rows_preserve_the_whole_snes9x_force_blank_surface() {
+        let mut frame = modern_frame::ModernFrame::empty();
+        frame.forced_blank = true;
+        frame.forced_blank_scanlines = 224;
+        frame.retain_active_display_history = true;
+
+        assert_eq!(active_display_history_rows(&frame), Some((0, 224)));
     }
 
     #[test]
@@ -3889,6 +3909,7 @@ mod tests {
             screen_windowed: [0, 0],
             brightness: 15,
             scanout_brightness_override: None,
+            scanout_top_crop: 0,
             forced_blank: false,
             retain_active_display_history: false,
             math_enabled: 0,
@@ -3957,6 +3978,7 @@ mod tests {
             screen_windowed: [0, 0],
             brightness: 15,
             scanout_brightness_override: None,
+            scanout_top_crop: 0,
             forced_blank: false,
             retain_active_display_history: false,
             math_enabled: 0,

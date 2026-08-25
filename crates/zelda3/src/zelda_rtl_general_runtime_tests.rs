@@ -1211,6 +1211,7 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     state.ppu.vram[0x4010] = 0x5678;
     state.ppu.cgram[33] = 0x1234;
     state.ppu.oam[0] = 0x1234;
+    write_le_u16(&mut state.ram, ANIMATED_TILE_VRAM_ADDR, 0x3c00);
     state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
 
     let mut pixels = vec![0; crate::PresentedObjTiles::TILE_COUNT * 64];
@@ -1218,6 +1219,12 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     let mut valid = vec![false; crate::PresentedObjTiles::TILE_COUNT];
     valid[0] = true;
     let presentation = crate::PresentedObjTiles::new(pixels, valid).unwrap();
+    let mut animated_bg_pixels = vec![0; crate::PresentedAnimatedBgTiles::TILE_COUNT * 64];
+    animated_bg_pixels[..64].fill(1);
+    let mut animated_bg_valid = vec![false; crate::PresentedAnimatedBgTiles::TILE_COUNT];
+    animated_bg_valid[0] = true;
+    let presented_animated_bg =
+        crate::PresentedAnimatedBgTiles::new(animated_bg_pixels, animated_bg_valid).unwrap();
     let mut colors = vec![0; crate::PresentedCgram::COLOR_COUNT];
     colors[33] = 0x0421;
     let presented_cgram = crate::PresentedCgram::new(colors).unwrap();
@@ -1225,11 +1232,24 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     oam[0] = 0x78;
     oam[1] = 0x56;
     let presented_oam = crate::PresentedOam::new(oam).unwrap();
+    let mut hud = vec![0; crate::PresentedHudTilemap::WORD_COUNT];
+    hud[0x79] = 0x2508;
+    let presented_hud = crate::PresentedHudTilemap::new(hud).unwrap();
+    let presented_inidisp = crate::PresentedInidisp::new(1, 0, Some(48))
+        .unwrap()
+        .with_retained_prior_surface(true);
+    let presented_scanout_geometry = crate::PresentedScanoutGeometry::new(7).unwrap();
+    state.ppu.brightness = 1;
+    state.ppu.forced_blank = true;
     state.original_timing_owner = OriginalTimingOwnerState::Live;
     state.original_timing_host_dispatch_active = true;
     state.original_timing_semantic_receipts = Some(
         OriginalTimingHostReceipts::new(0, 0, Vec::new())
+            .with_presented_animated_bg_tiles(presented_animated_bg.clone())
             .with_presented_cgram(presented_cgram)
+            .with_presented_inidisp(presented_inidisp)
+            .with_presented_scanout_geometry(presented_scanout_geometry)
+            .with_presented_hud_tilemap(presented_hud)
             .with_presented_oam(presented_oam)
             .with_presented_obj_tiles(presentation),
     );
@@ -1245,6 +1265,26 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
         0x5678
     );
     assert_eq!(state.ppu.oam[0], 0x1234, "live OAM stays private");
+    assert_eq!(
+        display.presented_hud_tilemap_override.as_deref().unwrap()[0x79],
+        0x2508
+    );
+    assert_ne!(
+        state.ppu.vram[0x6040 + 0x79],
+        0x2508,
+        "live VRAM stays private",
+    );
+    assert_eq!(display.presented_inidisp_override, Some(presented_inidisp));
+    assert_eq!(
+        display.presented_scanout_geometry_override,
+        Some(presented_scanout_geometry)
+    );
+    assert_eq!(
+        display.presented_animated_bg_tiles_override,
+        Some(presented_animated_bg)
+    );
+    assert_eq!(state.ppu.brightness, 1, "live INIDISP stays private");
+    assert!(state.ppu.forced_blank, "live INIDISP stays private");
     let published = display.ppu.obj_vram_latch.as_ref().unwrap();
     assert_eq!(published[0x4000], 0x8080);
     assert_eq!(published[0x4008], 0x8080);
@@ -1255,8 +1295,35 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     assert_eq!(display.explicit_obj_cache_vram.as_ref(), Some(published));
     assert!(state.original_timing_semantic_receipts.is_none());
 
-    let (rendered_color, rendered_oam) =
-        state.with_display_snapshot(|display| (display.ppu.cgram[33], display.ppu.oam[0]));
+    let (
+        rendered_color,
+        rendered_oam,
+        rendered_hud,
+        rendered_brightness,
+        rendered_blank,
+        rendered_blank_prefix,
+        rendered_blank_suffix,
+        rendered_retain_prior_surface,
+        rendered_top_crop,
+        rendered_animated_bg_word,
+    ) = state.with_display_snapshot(|display| {
+        (
+            display.ppu.cgram[33],
+            display.ppu.oam[0],
+            display.ppu.vram[0x6040 + 0x79],
+            display.ppu.brightness,
+            display.ppu.forced_blank,
+            display.ppu.forced_blank_scanlines,
+            display.ppu.forced_blank_from_scanline,
+            display.ppu.retain_active_display_history,
+            display.ppu.scanout_top_crop,
+            display
+                .ppu
+                .bg_vram_latch
+                .as_deref()
+                .unwrap_or(&display.ppu.vram)[0x3c00],
+        )
+    });
     assert_eq!(
         rendered_color, 0x0421,
         "native generation composition must not replace an authoritative completed-scanout palette",
@@ -1265,6 +1332,17 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
         rendered_oam, 0x5678,
         "native OAM composition must not replace an authoritative completed-scanout OAM image",
     );
+    assert_eq!(
+        rendered_hud, 0x2508,
+        "native VRAM composition must not replace an authoritative completed HUD DMA",
+    );
+    assert_eq!(rendered_brightness, 1);
+    assert!(!rendered_blank);
+    assert_eq!(rendered_blank_prefix, 0);
+    assert_eq!(rendered_blank_suffix, Some(48));
+    assert!(rendered_retain_prior_surface);
+    assert_eq!(rendered_top_crop, 7);
+    assert_eq!(rendered_animated_bg_word, 0x00ff);
 }
 
 #[test]
@@ -6028,6 +6106,7 @@ fn pre_dungeon_work_resumes_at_room_and_song_bank_transfer_boundaries() {
 #[test]
 fn pre_dungeon_return_leaves_the_landing_cpu_trace_to_own_the_first_boundary() {
     let mut state = ZeldaState::new();
+    state.game_execution_scheduler.begin_host_frame();
 
     state.finish_pre_dungeon_caller_at_main_wait();
 
@@ -8029,6 +8108,7 @@ fn file_select_graphics_resumes_the_module_after_every_intervening_nmi() {
 #[test]
 fn startup_dispatcher_runs_pre_dungeon_audio_at_the_measured_boundary() {
     let mut selected_game = ZeldaState::new();
+    selected_game.assets = Some(probe_entrance_asset_pack(0, 0x0061));
     selected_game.set_rom_startup_timing(true);
     selected_game.rom_reset_frame_delay = 0;
     selected_game.initialized = true;
@@ -9926,6 +10006,8 @@ fn completed_overworld_reload_uses_its_measured_return_phase() {
 fn suspended_spiral_palette_filter_holds_core_nmi_updates() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
+    state.set_main_module(7);
+    state.set_submodule(0x0e);
 
     assert!(state
         .suspend_spiral_staircase_palette_filter(SpiralStaircasePaletteTail::PrepareNextQuadrant,));
@@ -10555,6 +10637,8 @@ fn completed_short_spotlight_build_projects_its_authored_table_tail() {
 #[test]
 fn trailing_nmi_force_blank_preserves_the_completed_fields_visible_rows() {
     let mut state = ZeldaState::new();
+    state.game_execution_scheduler.begin_host_frame();
+    state.game_execution_scheduler.begin_main_loop_iteration();
     state.set_screen_brightness(0x0f);
     state.ppu.brightness = 0x0f;
     state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
@@ -10851,9 +10935,16 @@ fn dungeon_transition_handoffs_use_the_published_oam_shadow() {
             oam_scanout_across_main(entry, exit, entry_scanout),
             OamScanoutSource::ComposePublishedShadowDma,
         );
+        let expected_link = if submodule == 0x12 {
+            // Straight inter-room stairs perform their first Link upload after
+            // the leading NMI, before active OBJ evaluation.
+            GraphicsDmaGeneration::LiveAfterMain
+        } else {
+            GraphicsDmaGeneration::HostBoundaryBeforeMain
+        };
         assert_eq!(
             link_obj_scanout_across_main(entry, exit, GraphicsDmaGeneration::LiveAfterMain),
-            GraphicsDmaGeneration::HostBoundaryBeforeMain,
+            expected_link,
         );
     }
 

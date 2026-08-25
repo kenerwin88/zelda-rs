@@ -40,7 +40,9 @@ pub use timing_receipts::{
     CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt,
     DungeonResetSpritesProgressReceipt, MainLoopInterruption, OriginalTimingAudioShadowResult,
     OriginalTimingBoundary, OriginalTimingHostReceipts, OriginalTimingReceiptInstallError,
-    OriginalTimingSemanticReceipt, PresentedAudio, PresentedCgram, PresentedOam, PresentedObjTiles,
+    OriginalTimingSemanticReceipt, PresentedAnimatedBgTiles, PresentedAudio, PresentedCgram,
+    PresentedHudTilemap, PresentedInidisp, PresentedOam, PresentedObjTiles,
+    PresentedScanoutGeometry,
 };
 pub use zelda3_dialogue as dialogue_ir;
 pub use zelda_rtl::{

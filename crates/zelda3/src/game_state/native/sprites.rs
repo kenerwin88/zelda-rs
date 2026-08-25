@@ -5285,7 +5285,13 @@ impl<'a> NativeFollowerRuntimeBridgeMut<'a> {
     }
 
     fn debug_assert_matches_ram(&self) {
-        debug_assert_eq!(*self.state, FollowerRuntimeState::load_from_ram(self.ram));
+        let mut projected = FollowerRuntimeState::load_from_ram(self.ram);
+        // This byte is deliberately write-through: unrelated follower mutations must
+        // not project the frame-start rescue state back over a newer C-order write.
+        // Exclude it from the bulk-projection assertion; its dedicated setter below
+        // still writes and verifies the byte in the same operation.
+        projected.zelda_rescue_cutscene_state = self.state.zelda_rescue_cutscene_state;
+        debug_assert_eq!(*self.state, projected);
     }
 
     pub(crate) fn clear_palette_swap_flag(&mut self) {

@@ -73,6 +73,9 @@ pub struct GpuFrame<'a> {
     /// Mode 7 BG1-only scanout brightness when the ROM advances INIDISP ahead
     /// of the deferred display palette.
     pub scanout_brightness_override: Option<u8>,
+    /// Number of hardware scanout rows cropped above the returned 224-line
+    /// host surface.
+    pub scanout_top_crop: u8,
     /// If true, output is forced to all black (INIDISP forced-blank).
     pub forced_blank: bool,
     /// Preserve the visible prefix from the preceding physical surface because
@@ -172,6 +175,7 @@ pub struct GpuFrameRegisterSnapshot<'a> {
     pub screen_windowed: [u8; 2],
     pub brightness: u8,
     pub scanout_brightness_override: Option<u8>,
+    pub scanout_top_crop: u8,
     pub forced_blank: bool,
     pub retain_active_display_history: bool,
     pub math_enabled: u8,
@@ -275,6 +279,7 @@ impl<'a> GpuFrame<'a> {
             screen_windowed: registers.screen_windowed,
             brightness: registers.brightness,
             scanout_brightness_override: registers.scanout_brightness_override,
+            scanout_top_crop: registers.scanout_top_crop,
             forced_blank: registers.forced_blank,
             retain_active_display_history: registers.retain_active_display_history,
             math_enabled: registers.math_enabled,
@@ -367,6 +372,7 @@ impl<'a> GpuFrame<'a> {
             screen_windowed: source.screen_windowed(),
             brightness: source.brightness(),
             scanout_brightness_override: None,
+            scanout_top_crop: 0,
             forced_blank: source.forced_blank(),
             retain_active_display_history: source.retain_active_display_history(),
             math_enabled: source.math_enabled(),
@@ -786,6 +792,7 @@ mod tests {
             screen_windowed: [0x01, 0x02],
             brightness: 14,
             scanout_brightness_override: Some(1),
+            scanout_top_crop: 7,
             forced_blank: true,
             retain_active_display_history: true,
             math_enabled: 0x2f,

@@ -140,7 +140,8 @@ mod tests {
     use super::*;
     use crate::gpu_frame::{GpuFrame, ScanlineRegs};
     use crate::modern_extract::{
-        extract_modern_frame_from_sources, extract_modern_sprites_from_sources,
+        decode_snes_4bpp_tile_indices, extract_modern_frame_from_sources,
+        extract_modern_sprites_from_sources,
     };
     use crate::modern_frame::ModernFrame;
     use crate::modern_hd_overrides::NO_SOURCE_KEY;
@@ -182,6 +183,7 @@ mod tests {
             screen_windowed: [0, 0],
             brightness,
             scanout_brightness_override: None,
+            scanout_top_crop: 0,
             forced_blank,
             retain_active_display_history: false,
             math_enabled: 0,
@@ -195,7 +197,12 @@ mod tests {
             prevent_math_mode: 0,
             windowsel_cm: 0,
             windowsel: 0,
-            scanlines: Box::new([ScanlineRegs::default(); 224]),
+            scanlines: Box::new(
+                [ScanlineRegs {
+                    forced_blank,
+                    ..ScanlineRegs::default()
+                }; 224],
+            ),
             bg3_source_tiles: &[],
             bg3_vwf_glyph_runs: &[],
             dialogue_message_id: None,
@@ -315,7 +322,12 @@ mod tests {
 
         let mut vram = vec![0u16; 0x8000];
         let mut cgram = vec![0u16; 0x100];
-        let oam = vec![0u16; 0x110];
+        // An all-zero OAM table is 128 sprites at (0, 0), not an empty OBJ
+        // surface. This fixture exercises BG authoring only.
+        let mut oam = vec![0u16; 0x110];
+        for sprite in 0..128usize {
+            oam[sprite * 2] = 0xf000;
+        }
         cgram[7] = 0x001f;
         for (i, word) in vram[0x2040..0x2050].iter_mut().enumerate() {
             *word = 0x1000u16.wrapping_add(i as u16);
@@ -328,8 +340,9 @@ mod tests {
             (hash & 0xffff) as u16,
         );
 
-        let mut indices = [0u8; 64];
-        indices[0] = 7;
+        // The tracked source identity is admissible only when its atlas cell
+        // is byte-exact for the frame-end CHR pixels.
+        let indices = decode_snes_4bpp_tile_indices(&vram, 0x2000, 4);
         let atlas = ModernSourceAtlas::from_keyed_cells_for_test(
             vec![ModernIndexTile {
                 id: 0,

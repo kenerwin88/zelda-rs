@@ -72,6 +72,7 @@ fn dialogue_snapshot_exposes_only_nmi_published_vwf_metadata() {
 #[test]
 fn dialogue_scroll_publishes_nmi_work_only_after_its_final_copy_slice() {
     let mut state = ZeldaState::new();
+    state.game_execution_scheduler.begin_host_frame();
     state.set_main_module(14);
     state.set_submodule(2);
     state
