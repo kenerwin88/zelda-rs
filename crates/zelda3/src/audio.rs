@@ -1014,6 +1014,11 @@ impl ZeldaState {
         if self.audio.msu_player.has_file && channels == 2 {
             self.msu_player_mix(audio_buffer, samples);
         }
+        // The native audio engine always advances and renders first. While the
+        // temporary live oracle owns this presentation domain, compare that
+        // shadow result and publish the typed authority receipt exactly once.
+        // No SPC/DSP implementation detail crosses into Zelda gameplay.
+        self.apply_original_timing_presented_audio(audio_buffer, samples, channels);
         frame
     }
 

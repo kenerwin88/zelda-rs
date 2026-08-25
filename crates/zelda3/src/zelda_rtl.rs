@@ -8665,6 +8665,7 @@ pub(crate) enum OriginalTimingUnavailableReason {
     MissingRom,
     MissingAuthorityReceipt,
     AuthorityReceiptInputMismatch,
+    AuthorityAudioShapeMismatch,
 }
 
 #[derive(Clone)]
@@ -8854,6 +8855,14 @@ pub struct ZeldaState {
     /// absent from Zelda checkpoints.
     #[serde(skip)]
     original_timing_semantic_receipts: Option<OriginalTimingHostReceipts>,
+    /// One completed authority-owned audio presentation awaiting the native
+    /// renderer's shadow pass. It is consumed exactly once by audio output.
+    #[serde(skip)]
+    original_timing_presented_audio: Option<crate::PresentedAudio>,
+    /// Most recent native-vs-authority audio comparison. Diagnostic only;
+    /// authority remains with the typed presentation receipt.
+    #[serde(skip)]
+    original_timing_audio_shadow_result: Option<crate::OriginalTimingAudioShadowResult>,
     /// Last pinned-Snes9x host-call receipt consumed by this live owner. The
     /// next receipt must be its exact successor, so identical controller input
     /// cannot make a stale receipt replayable.
@@ -15213,6 +15222,8 @@ impl ZeldaState {
             original_timing_cold_start_eligible: true,
             original_timing_host_dispatch_active: false,
             original_timing_semantic_receipts: None,
+            original_timing_presented_audio: None,
+            original_timing_audio_shadow_result: None,
             original_timing_last_oracle_host_call: None,
             interrupted_nmi_prepare_obj_cache_vram: None,
             rom_load_partial_nmi_this_frame: false,
@@ -15381,6 +15392,8 @@ impl ZeldaState {
         self.original_timing_cold_start_eligible = true;
         self.original_timing_host_dispatch_active = false;
         self.original_timing_semantic_receipts = None;
+        self.original_timing_presented_audio = None;
+        self.original_timing_audio_shadow_result = None;
         self.original_timing_last_oracle_host_call = None;
         self.interrupted_nmi_prepare_obj_cache_vram = None;
         self.previous_host_controller_input = 0;
@@ -15478,6 +15491,8 @@ impl ZeldaState {
             }
             self.original_timing_owner = OriginalTimingOwnerState::Disabled;
             self.original_timing_semantic_receipts = None;
+            self.original_timing_presented_audio = None;
+            self.original_timing_audio_shadow_result = None;
             self.original_timing_last_oracle_host_call = None;
             self.zelda_set_rom_startup_audio_phase(false);
             self.rom_reset_frame_delay = 0;
@@ -15614,6 +15629,8 @@ impl ZeldaState {
         self.original_timing_cold_start_eligible = false;
         self.original_timing_host_dispatch_active = false;
         self.original_timing_semantic_receipts = None;
+        self.original_timing_presented_audio = None;
+        self.original_timing_audio_shadow_result = None;
         self.original_timing_last_oracle_host_call = None;
     }
 
@@ -15632,6 +15649,9 @@ impl ZeldaState {
         }
         if self.original_timing_semantic_receipts.is_some() {
             return Err(OriginalTimingReceiptInstallError::ReceiptAlreadyInstalled);
+        }
+        if self.original_timing_presented_audio.is_some() {
+            return Err(OriginalTimingReceiptInstallError::UnconsumedPresentedAudio);
         }
         if let Some(expected) = self
             .original_timing_last_oracle_host_call
@@ -15945,7 +15965,7 @@ impl ZeldaState {
         if !owns_dispatch {
             return;
         }
-        let (presented_cgram, presented_oam, presented_obj_tiles) =
+        let (presented_cgram, presented_oam, presented_obj_tiles, presented_audio) =
             if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
                 self.original_timing_semantic_receipts
                     .as_ref()
@@ -15954,11 +15974,12 @@ impl ZeldaState {
                             receipts.presented_cgram.clone(),
                             receipts.presented_oam.clone(),
                             receipts.presented_obj_tiles.clone(),
+                            receipts.presented_audio.clone(),
                         )
                     })
                     .unwrap_or_default()
             } else {
-                (None, None, None)
+                (None, None, None, None)
             };
         if let Some(presented_cgram) = presented_cgram {
             // The source main thread may already have authored a later palette
@@ -15980,12 +16001,72 @@ impl ZeldaState {
             // overwrite the already-published tile pixels.
             self.publish_original_timing_presented_obj_tiles(presented_obj_tiles);
         }
+        if let Some(presented_audio) = presented_audio {
+            assert!(
+                self.original_timing_presented_audio.is_none(),
+                "an authoritative audio presentation must be consumed before the next host call",
+            );
+            self.original_timing_presented_audio = Some(presented_audio);
+        }
         // Receipt domains migrate independently. A native owner may take the
         // facts it currently shadows; every other typed fact expires here and
         // can never replay into a later host call. Input, host-call ordering,
         // and duplicate facts remain fail-closed at installation.
         self.original_timing_semantic_receipts = None;
         self.original_timing_host_dispatch_active = false;
+    }
+
+    pub fn last_original_timing_audio_shadow_result(
+        &self,
+    ) -> Option<crate::OriginalTimingAudioShadowResult> {
+        self.original_timing_audio_shadow_result
+    }
+
+    pub(crate) fn apply_original_timing_presented_audio(
+        &mut self,
+        audio_buffer: &mut [i16],
+        samples: i32,
+        channels: i32,
+    ) {
+        self.original_timing_audio_shadow_result = None;
+        let Some(receipt) = self.original_timing_presented_audio.take() else {
+            return;
+        };
+        let Some(output_len) = usize::try_from(samples)
+            .ok()
+            .zip(usize::try_from(channels).ok())
+            .and_then(|(samples, channels)| samples.checked_mul(channels))
+        else {
+            self.original_timing_owner = OriginalTimingOwnerState::Unavailable(
+                OriginalTimingUnavailableReason::AuthorityAudioShapeMismatch,
+            );
+            return;
+        };
+        if channels as usize != crate::PresentedAudio::CHANNELS
+            || output_len != receipt.interleaved_stereo.len()
+            || audio_buffer.len() < output_len
+        {
+            self.original_timing_owner = OriginalTimingOwnerState::Unavailable(
+                OriginalTimingUnavailableReason::AuthorityAudioShapeMismatch,
+            );
+            return;
+        }
+        let output = &mut audio_buffer[..output_len];
+        let first_mismatch_interleaved = output
+            .iter()
+            .zip(&receipt.interleaved_stereo)
+            .position(|(native, authority)| native != authority);
+        let mismatched_interleaved_samples = output
+            .iter()
+            .zip(&receipt.interleaved_stereo)
+            .filter(|(native, authority)| native != authority)
+            .count();
+        self.original_timing_audio_shadow_result = Some(crate::OriginalTimingAudioShadowResult {
+            sample_frames: receipt.sample_frames(),
+            mismatched_interleaved_samples,
+            first_mismatch_interleaved,
+        });
+        output.copy_from_slice(&receipt.interleaved_stereo);
     }
 
     pub(super) fn schedule_spotlight_iteration_return(&mut self, iteration: SpotlightIteration) {

@@ -60,6 +60,40 @@ pub struct PresentedCgram {
     pub(crate) colors: Vec<u16>,
 }
 
+/// Interleaved stereo samples returned by one completed host call.
+///
+/// This is an audio-presentation receipt, not an SPC/DSP execution snapshot.
+/// The temporary Snes9x authority and a future native audio owner can publish
+/// the same samples without exposing emulator registers, addresses, or phase
+/// state to translated gameplay.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PresentedAudio {
+    pub(crate) interleaved_stereo: Vec<i16>,
+}
+
+impl PresentedAudio {
+    pub const CHANNELS: usize = 2;
+
+    pub fn new(interleaved_stereo: Vec<i16>) -> Option<Self> {
+        (!interleaved_stereo.is_empty() && interleaved_stereo.len().is_multiple_of(Self::CHANNELS))
+            .then_some(Self { interleaved_stereo })
+    }
+
+    pub fn sample_frames(&self) -> usize {
+        self.interleaved_stereo.len() / Self::CHANNELS
+    }
+}
+
+/// Result of shadowing one authoritative audio-presentation receipt with the
+/// native renderer. Authority remains with the receipt until this reports an
+/// exact match and the domain is deliberately transferred.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OriginalTimingAudioShadowResult {
+    pub sample_frames: usize,
+    pub mismatched_interleaved_samples: usize,
+    pub first_mismatch_interleaved: Option<usize>,
+}
+
 impl PresentedCgram {
     pub const COLOR_COUNT: usize = 256;
 
@@ -133,6 +167,7 @@ pub struct OriginalTimingHostReceipts {
     pub(crate) presented_cgram: Option<PresentedCgram>,
     pub(crate) presented_oam: Option<PresentedOam>,
     pub(crate) presented_obj_tiles: Option<PresentedObjTiles>,
+    pub(crate) presented_audio: Option<PresentedAudio>,
 }
 
 impl OriginalTimingHostReceipts {
@@ -148,6 +183,7 @@ impl OriginalTimingHostReceipts {
             presented_cgram: None,
             presented_oam: None,
             presented_obj_tiles: None,
+            presented_audio: None,
         }
     }
 
@@ -166,6 +202,11 @@ impl OriginalTimingHostReceipts {
         self
     }
 
+    pub fn with_presented_audio(mut self, receipt: PresentedAudio) -> Self {
+        self.presented_audio = Some(receipt);
+        self
+    }
+
     pub fn semantic(&self) -> &[OriginalTimingSemanticReceipt] {
         &self.semantic
     }
@@ -176,6 +217,7 @@ pub enum OriginalTimingReceiptInstallError {
     TimingDisabled,
     ActiveHostDispatch,
     ReceiptAlreadyInstalled,
+    UnconsumedPresentedAudio,
     DuplicateDungeonResetProgress,
     InvalidDungeonResetProgress,
     DuplicateCachedSpriteExecutionProgress,

@@ -24,7 +24,8 @@ use crate::snes9x_semantic_receipts::Snes9xOracleSemanticTrace;
 use serde::{Deserialize, Serialize};
 use zelda3::{
     game_output::DspWriteEvent, OriginalTimingHostReceipts, OriginalTimingSemanticReceipt,
-    PresentedCgram, PresentedOam, PresentedObjTiles, RomRandomSample, ZeldaState, RUN_MAIN,
+    PresentedAudio, PresentedCgram, PresentedOam, PresentedObjTiles, RomRandomSample, ZeldaState,
+    RUN_MAIN,
 };
 
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
@@ -3827,6 +3828,20 @@ pub(crate) fn run_compare_libretro_oracle(
                     requested_input,
                     semantic,
                 );
+                let presented_audio = PresentedAudio::new(
+                    early_oracle_capture
+                        .as_ref()
+                        .expect("Snes9x host capture precedes semantic receipt decoding")
+                        .audio
+                        .clone(),
+                )
+                .unwrap_or_else(|| {
+                    eprintln!(
+                        "pinned-Snes9x returned an invalid stereo audio receipt at frame {frame_index}"
+                    );
+                    process::exit(1);
+                });
+                receipts = receipts.with_presented_audio(presented_audio);
                 if let Some(presented_cgram) =
                     snes9x_presented_cgram(&oracle).unwrap_or_else(|error| {
                         eprintln!(

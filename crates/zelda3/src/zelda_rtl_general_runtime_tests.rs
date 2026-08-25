@@ -1259,6 +1259,69 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
 }
 
 #[test]
+fn live_audio_presentation_runs_native_shadow_then_publishes_exactly_once() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    let authority = vec![12_345, -12_345, 23_456, -23_456];
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_host_dispatch_active = true;
+    state.original_timing_semantic_receipts = Some(
+        OriginalTimingHostReceipts::new(0, 0, Vec::new())
+            .with_presented_audio(crate::PresentedAudio::new(authority.clone()).unwrap()),
+    );
+
+    state.finish_original_timing_host_dispatch(true);
+    assert_eq!(
+        state.install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            1,
+            0,
+            Vec::new(),
+        )),
+        Err(OriginalTimingReceiptInstallError::UnconsumedPresentedAudio),
+        "a completed audio presentation cannot roll into a later host call",
+    );
+
+    let mut output = vec![0; authority.len()];
+    state.zelda_render_audio(&mut output, 2, 2);
+    assert_eq!(output, authority);
+    let shadow = state
+        .last_original_timing_audio_shadow_result()
+        .expect("native renderer shadows every authoritative presentation");
+    assert_eq!(shadow.sample_frames, 2);
+    assert!(shadow.mismatched_interleaved_samples > 0);
+    assert!(shadow.first_mismatch_interleaved.is_some());
+
+    let mut next = vec![0; authority.len()];
+    state.zelda_render_audio(&mut next, 2, 2);
+    assert_ne!(next, authority, "the authority receipt must never replay");
+    assert_eq!(state.last_original_timing_audio_shadow_result(), None);
+}
+
+#[test]
+fn live_audio_presentation_shape_mismatch_fails_closed() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_host_dispatch_active = true;
+    state.original_timing_semantic_receipts = Some(
+        OriginalTimingHostReceipts::new(0, 0, Vec::new())
+            .with_presented_audio(crate::PresentedAudio::new(vec![1, 2, 3, 4]).unwrap()),
+    );
+    state.finish_original_timing_host_dispatch(true);
+
+    let mut mono = vec![0; 2];
+    state.zelda_render_audio(&mut mono, 2, 1);
+
+    assert_eq!(
+        state.original_timing_owner(),
+        OriginalTimingOwner::Unavailable(
+            OriginalTimingUnavailableReason::AuthorityAudioShapeMismatch,
+        ),
+    );
+    assert_eq!(state.last_original_timing_audio_shadow_result(), None);
+}
+
+#[test]
 fn pinned_snes9x_reset_progress_is_unique_and_unclaimed_facts_expire_in_their_host_call() {
     let progress = sprite::DungeonResetSpritesCpuProgress::Cache {
         slot: 15,
@@ -3941,6 +4004,14 @@ fn original_timing_owner_is_absent_from_serde_and_bincode_bytes() {
         0x1234,
         vec![OriginalTimingSemanticReceipt::NmiAccepted],
     ));
+    oracle_state.original_timing_presented_audio =
+        Some(crate::PresentedAudio::new(vec![1, -1]).unwrap());
+    oracle_state.original_timing_audio_shadow_result =
+        Some(crate::OriginalTimingAudioShadowResult {
+            sample_frames: 1,
+            mismatched_interleaved_samples: 2,
+            first_mismatch_interleaved: Some(0),
+        });
     assert_eq!(
         bincode::serialize(&oracle_state).expect("serialize oracle runtime-only receipt"),
         expected,
