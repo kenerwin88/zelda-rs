@@ -1935,6 +1935,28 @@ mod cpu_timing_tests {
     }
 
     #[test]
+    fn completed_dialogue_prefix_can_return_before_the_next_nmi() {
+        let continuation = GameWorkContinuation::FinishDialogueInitializationPrefix {
+            caller_nmi_crossings: 0,
+        };
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.schedule_work(continuation, 1);
+        scheduler.begin_host_frame();
+
+        assert_eq!(
+            scheduler.advance_work_one_nmi_slice(),
+            Some(GameWorkStep::Complete(continuation))
+        );
+        assert!(scheduler.resumed_call_stack_is_before_nmi());
+        assert!(scheduler.is_idle());
+
+        scheduler.finish_call_stack_at_main_wait_before_nmi();
+        scheduler.begin_host_frame();
+
+        assert!(scheduler.main_return_requires_leading_nmi());
+    }
+
+    #[test]
     fn nmi_after_resumed_stack_marks_the_next_main_as_post_leading_nmi() {
         let continuation = GameWorkContinuation::FinishSpriteMain {
             boundary: SpriteMainCpuBoundary::AfterSlot(3),

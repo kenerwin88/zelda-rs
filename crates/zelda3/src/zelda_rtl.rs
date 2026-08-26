@@ -24255,7 +24255,28 @@ impl ZeldaState {
                 ) => {
                     self.complete_text_initialization_prefix();
                     self.prepare_text_character_buffer_for_carry();
-                    if caller_nmi_crossings == 1 {
+                    if caller_nmi_crossings == 0 {
+                        // The final interrupt inside Text_Initialize can land
+                        // before Text_LoadCharacterBuffer, while the rest of
+                        // that function and Module0E's caller still return to
+                        // ZeldaRunGameLoop's main wait before the next NMI.
+                        // Complete that synchronous C suffix in this resumed
+                        // host slice; scheduling a zero-length continuation
+                        // would invent an extra interrupt and host frame.
+                        self.complete_post_trailing_nmi_continuation(
+                            GameWorkContinuation::FinishDialogueInitializationCallerReturn,
+                            input,
+                            false,
+                        );
+                        self.game_execution_scheduler
+                            .finish_call_stack_at_main_wait_before_nmi();
+                        let returned_scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
+                        self.publish_bg_scroll_for_following_scanout(returned_scroll);
+                        self.assert_native_frame_state_matches_ram();
+                        self.assert_native_world_location_state_matches_ram();
+                        self.assert_native_display_state_matches_ram();
+                        return;
+                    } else if caller_nmi_crossings == 1 {
                         self.game_execution_scheduler
                             .schedule_after_current_trailing_nmi(
                                 GameWorkContinuation::FinishDialogueInitializationCallerReturn,

@@ -3615,7 +3615,6 @@ impl ZeldaState {
             .filter(|_| self.rom_startup_timing())
         {
             assert_ne!(prefix_nmi_crossings, 0);
-            assert_ne!(caller_nmi_crossings, 0);
             self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands =
                 following_main_nmi_uses_host_animated_bg_operands;
             self.game_execution_scheduler
