@@ -100,6 +100,61 @@ pub struct PresentedHudTilemap {
     pub(crate) words: Vec<u16>,
 }
 
+/// One BG name-table generation used by a completed host scanout.
+///
+/// The receipt names the semantic PPU layer and tilemap geometry, but carries
+/// no CPU address, program counter, raster deadline, or emulator-owned cache.
+/// A native timing owner can therefore publish the same layer generation when
+/// authority for this domain moves out of the temporary Snes9x backend.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PresentedBgTilemapLayer {
+    pub(crate) layer: u8,
+    pub(crate) word_address: u16,
+    pub(crate) wider: bool,
+    pub(crate) higher: bool,
+    pub(crate) words: Vec<u16>,
+}
+
+impl PresentedBgTilemapLayer {
+    pub const WORDS_PER_SCREEN: usize = 32 * 32;
+
+    pub fn new(
+        layer: u8,
+        word_address: u16,
+        wider: bool,
+        higher: bool,
+        words: Vec<u16>,
+    ) -> Option<Self> {
+        let screen_count = (if wider { 2 } else { 1 }) * (if higher { 2 } else { 1 });
+        (layer < 4 && words.len() == Self::WORDS_PER_SCREEN * screen_count).then_some(Self {
+            layer,
+            word_address,
+            wider,
+            higher,
+            words,
+        })
+    }
+}
+
+/// Complete BG name-table publication for one completed host scanout.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PresentedBgTilemaps {
+    pub(crate) layers: Vec<PresentedBgTilemapLayer>,
+}
+
+impl PresentedBgTilemaps {
+    pub const LAYER_COUNT: usize = 4;
+
+    pub fn new(layers: Vec<PresentedBgTilemapLayer>) -> Option<Self> {
+        let complete = layers.len() == Self::LAYER_COUNT
+            && layers
+                .iter()
+                .enumerate()
+                .all(|(layer, receipt)| usize::from(receipt.layer) == layer);
+        complete.then_some(Self { layers })
+    }
+}
+
 /// INIDISP scanout state that produced one completed host surface.
 ///
 /// This is deliberately presentation state, not Zelda's live `$2100` mirror:
@@ -213,6 +268,17 @@ pub struct OriginalTimingAudioShadowResult {
     pub first_mismatch_interleaved: Option<usize>,
 }
 
+/// Result of shadowing one authoritative BG tilemap presentation with the
+/// native NMI/PPU owner. Authority remains with the typed receipt until this
+/// domain reports exact matches and is deliberately transferred.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OriginalTimingBgTilemapShadowResult {
+    pub mismatched_geometry_layers: usize,
+    pub compared_words: usize,
+    pub mismatched_words: usize,
+    pub first_mismatch: Option<(u8, usize)>,
+}
+
 impl PresentedCgram {
     pub const COLOR_COUNT: usize = 256;
 
@@ -296,6 +362,7 @@ pub struct OriginalTimingHostReceipts {
     pub(crate) presented_inidisp: Option<PresentedInidisp>,
     pub(crate) presented_scanout_geometry: Option<PresentedScanoutGeometry>,
     pub(crate) presented_hud_tilemap: Option<PresentedHudTilemap>,
+    pub(crate) presented_bg_tilemaps: Option<PresentedBgTilemaps>,
     pub(crate) presented_oam: Option<PresentedOam>,
     pub(crate) presented_obj_tiles: Option<PresentedObjTiles>,
     pub(crate) presented_audio: Option<PresentedAudio>,
@@ -316,6 +383,7 @@ impl OriginalTimingHostReceipts {
             presented_inidisp: None,
             presented_scanout_geometry: None,
             presented_hud_tilemap: None,
+            presented_bg_tilemaps: None,
             presented_oam: None,
             presented_obj_tiles: None,
             presented_audio: None,
@@ -344,6 +412,11 @@ impl OriginalTimingHostReceipts {
 
     pub fn with_presented_hud_tilemap(mut self, receipt: PresentedHudTilemap) -> Self {
         self.presented_hud_tilemap = Some(receipt);
+        self
+    }
+
+    pub fn with_presented_bg_tilemaps(mut self, receipt: PresentedBgTilemaps) -> Self {
+        self.presented_bg_tilemaps = Some(receipt);
         self
     }
 

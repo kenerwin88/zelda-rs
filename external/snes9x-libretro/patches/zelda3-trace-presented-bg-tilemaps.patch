@@ -1,0 +1,154 @@
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+index 803c6d2e..649678ae 100644
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -934,6 +934,12 @@ extern "C" int zelda3_snes9x_debug_ppu_value(int field, int index)
+         // Zelda's animated-BG VRAM destination captured at the start of the
+         // completed scanout, before the following NMI can replace WRAM.
+         case 40: return Zelda3TracePresentedAnimatedBgDestination();
++        // Stable BG name-table generations that produced the completed
++        // scanout. Metadata and words are separate so the replaceable host
++        // adapter can cache unchanged generations without exporting CPU or
++        // raster internals to Zelda gameplay.
++        case 41: return Zelda3TracePresentedBgTilemapMetaValue(index);
++        case 42: return Zelda3TracePresentedBgTilemapWordValue(index);
+         default: return -1;
+     }
+ }
+diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
+index e1e64df8..aa3ac5e0 100644
+--- a/zelda3_trace.cpp
++++ b/zelda3_trace.cpp
+@@ -112,6 +112,16 @@ uint8 presented_inidisp[SNES_HEIGHT_EXTENDED] = {};
+ int presented_top_crop = 0;
+ uint16 scanout_animated_bg_destination = 0xffff;
+ uint16 presented_animated_bg_destination = 0xffff;
++constexpr int presented_bg_layer_count = 4;
++constexpr int presented_bg_max_words = 4096;
++uint8 scanout_vram[0x10000] = {};
++uint8 presented_vram[0x10000] = {};
++uint16 scanout_bg_tilemap_base[presented_bg_layer_count] = {};
++uint16 scanout_bg_tilemap_size[presented_bg_layer_count] = {};
++uint16 presented_bg_tilemap_base[presented_bg_layer_count] = {};
++uint16 presented_bg_tilemap_size[presented_bg_layer_count] = {};
++bool scanout_bg_tilemaps_valid = false;
++bool presented_bg_tilemaps_valid = false;
+ SLineMatrixData presented_mode7[240] = {};
+ int scanline_windows[240][4] = {};
+ int presented_windows[240][4] = {};
+@@ -459,6 +469,13 @@ void finish_event()
+ void Zelda3TraceBeginPresentedPpuState()
+ {
+ 	std::memcpy(scanout_cgram, PPU.CGDATA, sizeof(scanout_cgram));
++	std::memcpy(scanout_vram, Memory.VRAM, sizeof(scanout_vram));
++	for (int layer = 0; layer < presented_bg_layer_count; layer++)
++	{
++		scanout_bg_tilemap_base[layer] = PPU.BG[layer].SCBase;
++		scanout_bg_tilemap_size[layer] = PPU.BG[layer].SCSize;
++	}
++	scanout_bg_tilemaps_valid = true;
+ 	scanout_hud_tilemap_valid = false;
+ 	scanout_animated_bg_destination =
+ 		Memory.RAM[animated_bg_destination_address] |
+@@ -513,6 +530,17 @@ void Zelda3TraceCapturePresentedPpuState()
+ 		sizeof(presented_hud_tilemap));
+ 	presented_hud_tilemap_valid = scanout_hud_tilemap_valid;
+ 	presented_animated_bg_destination = scanout_animated_bg_destination;
++	presented_bg_tilemaps_valid = scanout_bg_tilemaps_valid &&
++		std::memcmp(scanout_vram, Memory.VRAM, sizeof(scanout_vram)) == 0;
++	for (int layer = 0; layer < presented_bg_layer_count; layer++)
++	{
++		presented_bg_tilemaps_valid = presented_bg_tilemaps_valid &&
++			scanout_bg_tilemap_base[layer] == PPU.BG[layer].SCBase &&
++			scanout_bg_tilemap_size[layer] == PPU.BG[layer].SCSize;
++		presented_bg_tilemap_base[layer] = scanout_bg_tilemap_base[layer];
++		presented_bg_tilemap_size[layer] = scanout_bg_tilemap_size[layer];
++	}
++	std::memcpy(presented_vram, scanout_vram, sizeof(presented_vram));
+ 	std::memcpy(presented_inidisp, scanout_inidisp,
+ 		sizeof(presented_inidisp));
+ 	std::memcpy(presented_mode7, LineMatrixData, sizeof(presented_mode7));
+@@ -556,6 +584,53 @@ int Zelda3TracePresentedAnimatedBgDestination()
+ 	return presented_animated_bg_destination;
+ }
+ 
++int Zelda3TracePresentedBgTilemapMetaValue(int index)
++{
++	if (!presented_bg_tilemaps_valid)
++		return -2;
++	if (index == 0)
++		return 1;
++	const int layer = (index - 1) / 5;
++	const int field = (index - 1) % 5;
++	if (layer < 0 || layer >= presented_bg_layer_count)
++		return -1;
++	const int size = presented_bg_tilemap_size[layer] & 3;
++	const int word_count = 1024 << ((size & 1 ? 1 : 0) + (size & 2 ? 1 : 0));
++	if (field == 0)
++		return presented_bg_tilemap_base[layer];
++	if (field == 1)
++		return size;
++	if (field == 2)
++		return word_count;
++	uint32 hash = 2166136261u;
++	for (int offset = 0; offset < word_count; offset++)
++	{
++		const int byte_address =
++			((presented_bg_tilemap_base[layer] + offset) & 0x7fff) << 1;
++		hash = (hash ^ presented_vram[byte_address]) * 16777619u;
++		hash = (hash ^ presented_vram[byte_address + 1]) * 16777619u;
++	}
++	return field == 3 ? static_cast<int>(hash & 0xffff) :
++		static_cast<int>(hash >> 16);
++}
++
++int Zelda3TracePresentedBgTilemapWordValue(int index)
++{
++	if (!presented_bg_tilemaps_valid || index < 0)
++		return presented_bg_tilemaps_valid ? -1 : -2;
++	const int layer = index / presented_bg_max_words;
++	const int offset = index % presented_bg_max_words;
++	if (layer < 0 || layer >= presented_bg_layer_count)
++		return -1;
++	const int size = presented_bg_tilemap_size[layer] & 3;
++	const int word_count = 1024 << ((size & 1 ? 1 : 0) + (size & 2 ? 1 : 0));
++	if (offset >= word_count)
++		return -1;
++	const int byte_address =
++		((presented_bg_tilemap_base[layer] + offset) & 0x7fff) << 1;
++	return presented_vram[byte_address] |
++		(presented_vram[byte_address + 1] << 8);
++}
++
+ void Zelda3TraceCaptureRenderedPpuRange(int start_line, int end_line)
+ {
+ 	if (start_line < 0)
+@@ -565,6 +640,15 @@ void Zelda3TraceCaptureRenderedPpuRange(int start_line, int end_line)
+ 	if (start_line > end_line)
+ 		return;
+ 	const uint8 inidisp = Memory.FillRAM[0x2100];
++	if (!(inidisp & 0x80) && scanout_bg_tilemaps_valid)
++	{
++		scanout_bg_tilemaps_valid =
++			std::memcmp(scanout_vram, Memory.VRAM, sizeof(scanout_vram)) == 0;
++		for (int layer = 0; layer < presented_bg_layer_count; layer++)
++			scanout_bg_tilemaps_valid = scanout_bg_tilemaps_valid &&
++				scanout_bg_tilemap_base[layer] == PPU.BG[layer].SCBase &&
++				scanout_bg_tilemap_size[layer] == PPU.BG[layer].SCSize;
++	}
+ 	for (int line = start_line; line <= end_line; line++)
+ 		scanout_inidisp[line] = inidisp;
+ 	if (!scanout_hud_tilemap_valid && !(inidisp & 0x80) &&
+diff --git a/zelda3_trace.h b/zelda3_trace.h
+index a998eff5..a0668999 100644
+--- a/zelda3_trace.h
++++ b/zelda3_trace.h
+@@ -49,6 +49,8 @@ int Zelda3TracePresentedInidispValue(int index);
+ void Zelda3TraceSetPresentedTopCrop(int rows);
+ int Zelda3TracePresentedTopCrop();
+ int Zelda3TracePresentedAnimatedBgDestination();
++int Zelda3TracePresentedBgTilemapMetaValue(int index);
++int Zelda3TracePresentedBgTilemapWordValue(int index);
+ void Zelda3TraceCaptureRenderedPpuRange(int start_line, int end_line);
+ int Zelda3TracePresentedMode7Value(int line, int field);
+ int Zelda3TracePresentedClipValue(int index);

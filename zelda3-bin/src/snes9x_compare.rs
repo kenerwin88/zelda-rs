@@ -20,6 +20,7 @@ use crate::libretro_timeline::{
     format_input_history, AudioComparisonMode, AudioTimingOptions, StreamingAudioComparator,
 };
 use crate::render_diagnostics::format_render_ppu_summary;
+use crate::snes9x_presented_bg_tilemaps::{snes9x_presented_bg_tilemaps, PresentedBgTilemapCache};
 use crate::snes9x_semantic_receipts::Snes9xOracleSemanticTrace;
 use serde::{Deserialize, Serialize};
 use zelda3::{
@@ -3674,6 +3675,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut previous_oracle_vram = None::<Vec<u8>>;
     let mut previous_rust_vram = None::<Vec<u8>>;
     let mut previous_oracle_video = None::<PresentedOracleVideo>;
+    let mut presented_bg_tilemap_cache = PresentedBgTilemapCache::default();
     let mut previous_shield_dma_trace = None::<(u8, u8, u16, u16, u8, u8, u16, u16)>;
     let mut previous_uncle_trace = None::<(u8, u8, u8, u8, u8, u8, u8, u8)>;
     // Video parity is intentionally measured through the same native window
@@ -3890,6 +3892,18 @@ pub(crate) fn run_compare_libretro_oracle(
                     })
                 {
                     receipts = receipts.with_presented_hud_tilemap(presented_hud_tilemap);
+                }
+                if let Some(presented_bg_tilemaps) = snes9x_presented_bg_tilemaps(
+                    &oracle,
+                    &mut presented_bg_tilemap_cache,
+                )
+                .unwrap_or_else(|error| {
+                    eprintln!(
+                        "failed to decode pinned-Snes9x presented BG tilemaps at frame {frame_index}: {error}"
+                    );
+                    process::exit(1);
+                }) {
+                    receipts = receipts.with_presented_bg_tilemaps(presented_bg_tilemaps);
                 }
                 if let Some(presented_cgram) =
                     snes9x_presented_cgram(&oracle).unwrap_or_else(|error| {

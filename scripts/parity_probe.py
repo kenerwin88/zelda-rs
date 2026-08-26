@@ -60,6 +60,11 @@ TRACE_PATCHES = (
     / "snes9x-libretro"
     / "patches"
     / "zelda3-trace-presented-hud.patch",
+    ROOT
+    / "external"
+    / "snes9x-libretro"
+    / "patches"
+    / "zelda3-trace-presented-bg-tilemaps.patch",
 )
 ORACLE_LOCK = ROOT / "external" / "snes9x-libretro" / "oracle-lock.json"
 IDENTITY_NAME = "probe-identity.json"

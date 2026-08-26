@@ -1211,8 +1211,15 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     state.ppu.vram[0x4010] = 0x5678;
     state.ppu.cgram[33] = 0x1234;
     state.ppu.oam[0] = 0x1234;
+    for (layer, bg) in state.ppu.bg_layer.iter_mut().enumerate() {
+        bg.tilemap_adr = (layer * 0x400) as u16;
+    }
+    state.ppu.vram[0x0750] = 0x19e1;
     write_le_u16(&mut state.ram, ANIMATED_TILE_VRAM_ADDR, 0x3c00);
     state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
+    // Native NMI reaches the correct following name-table generation, while
+    // the already-captured outgoing surface still holds the preceding word.
+    state.ppu.vram[0x0750] = 0x19e2;
 
     let mut pixels = vec![0; crate::PresentedObjTiles::TILE_COUNT * 64];
     pixels[0] = 0x0f;
@@ -1235,6 +1242,25 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     let mut hud = vec![0; crate::PresentedHudTilemap::WORD_COUNT];
     hud[0x79] = 0x2508;
     let presented_hud = crate::PresentedHudTilemap::new(hud).unwrap();
+    let presented_bg_tilemaps = crate::PresentedBgTilemaps::new(
+        (0..crate::PresentedBgTilemaps::LAYER_COUNT)
+            .map(|layer| {
+                let mut words = vec![0; crate::PresentedBgTilemapLayer::WORDS_PER_SCREEN];
+                if layer == 1 {
+                    words[0x350] = 0x19e2;
+                }
+                crate::PresentedBgTilemapLayer::new(
+                    layer as u8,
+                    (layer * 0x400) as u16,
+                    false,
+                    false,
+                    words,
+                )
+                .unwrap()
+            })
+            .collect(),
+    )
+    .unwrap();
     let presented_inidisp = crate::PresentedInidisp::new(1, 0, Some(48))
         .unwrap()
         .with_retained_prior_surface(true);
@@ -1250,6 +1276,7 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
             .with_presented_inidisp(presented_inidisp)
             .with_presented_scanout_geometry(presented_scanout_geometry)
             .with_presented_hud_tilemap(presented_hud)
+            .with_presented_bg_tilemaps(presented_bg_tilemaps)
             .with_presented_oam(presented_oam)
             .with_presented_obj_tiles(presentation),
     );
@@ -1273,6 +1300,18 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
         state.ppu.vram[0x6040 + 0x79],
         0x2508,
         "live VRAM stays private",
+    );
+    assert_eq!(display.ppu.vram[0x0750], 0x19e2);
+    assert_eq!(display.ppu.bg_layer[1].tilemap_adr, 0x0400);
+    assert_eq!(state.ppu.vram[0x0750], 0x19e2, "live VRAM stays private");
+    assert_eq!(
+        state.last_original_timing_bg_tilemap_shadow_result(),
+        Some(crate::OriginalTimingBgTilemapShadowResult {
+            mismatched_geometry_layers: 0,
+            compared_words: 4 * 0x400,
+            mismatched_words: 0,
+            first_mismatch: None,
+        }),
     );
     assert_eq!(display.presented_inidisp_override, Some(presented_inidisp));
     assert_eq!(

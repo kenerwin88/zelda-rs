@@ -39,8 +39,9 @@ pub use rom_random::{parse_rom_random_script, RomRandomSample};
 pub use timing_receipts::{
     CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt,
     DungeonResetSpritesProgressReceipt, MainLoopInterruption, OriginalTimingAudioShadowResult,
-    OriginalTimingBoundary, OriginalTimingHostReceipts, OriginalTimingReceiptInstallError,
-    OriginalTimingSemanticReceipt, PresentedAnimatedBgTiles, PresentedAudio, PresentedCgram,
+    OriginalTimingBgTilemapShadowResult, OriginalTimingBoundary, OriginalTimingHostReceipts,
+    OriginalTimingReceiptInstallError, OriginalTimingSemanticReceipt, PresentedAnimatedBgTiles,
+    PresentedAudio, PresentedBgTilemapLayer, PresentedBgTilemaps, PresentedCgram,
     PresentedHudTilemap, PresentedInidisp, PresentedOam, PresentedObjTiles,
     PresentedScanoutGeometry,
 };

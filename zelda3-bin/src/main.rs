@@ -33,6 +33,7 @@ mod sheet_dump_commands;
 mod smp_opcode_ledger;
 mod snes9x_apu_tools;
 mod snes9x_compare;
+mod snes9x_presented_bg_tilemaps;
 mod snes9x_record_commands;
 mod snes9x_route_recorder;
 mod snes9x_segment_matrix;

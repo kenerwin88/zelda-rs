@@ -8848,6 +8848,10 @@ pub struct ZeldaState {
     /// authority remains with the typed presentation receipt.
     #[serde(skip)]
     original_timing_audio_shadow_result: Option<crate::OriginalTimingAudioShadowResult>,
+    /// Most recent native-vs-authority BG name-table comparison. Diagnostic
+    /// only; the typed presentation receipt remains authoritative.
+    #[serde(skip)]
+    original_timing_bg_tilemap_shadow_result: Option<crate::OriginalTimingBgTilemapShadowResult>,
     /// Last pinned-Snes9x host-call receipt consumed by this live owner. The
     /// next receipt must be its exact successor, so identical controller input
     /// cannot make a stale receipt replayable.
@@ -15235,6 +15239,7 @@ impl ZeldaState {
             original_timing_semantic_receipts: None,
             original_timing_presented_audio: None,
             original_timing_audio_shadow_result: None,
+            original_timing_bg_tilemap_shadow_result: None,
             original_timing_last_oracle_host_call: None,
             interrupted_nmi_prepare_obj_cache_vram: None,
             rom_load_partial_nmi_this_frame: false,
@@ -15406,6 +15411,7 @@ impl ZeldaState {
         self.original_timing_semantic_receipts = None;
         self.original_timing_presented_audio = None;
         self.original_timing_audio_shadow_result = None;
+        self.original_timing_bg_tilemap_shadow_result = None;
         self.original_timing_last_oracle_host_call = None;
         self.interrupted_nmi_prepare_obj_cache_vram = None;
         self.previous_host_controller_input = 0;
@@ -15505,6 +15511,7 @@ impl ZeldaState {
             self.original_timing_semantic_receipts = None;
             self.original_timing_presented_audio = None;
             self.original_timing_audio_shadow_result = None;
+            self.original_timing_bg_tilemap_shadow_result = None;
             self.original_timing_last_oracle_host_call = None;
             self.zelda_set_rom_startup_audio_phase(false);
             self.rom_reset_frame_delay = 0;
@@ -15643,6 +15650,7 @@ impl ZeldaState {
         self.original_timing_semantic_receipts = None;
         self.original_timing_presented_audio = None;
         self.original_timing_audio_shadow_result = None;
+        self.original_timing_bg_tilemap_shadow_result = None;
         self.original_timing_last_oracle_host_call = None;
     }
 
@@ -16040,6 +16048,55 @@ impl ZeldaState {
         display.presented_hud_tilemap_override = Some(receipt.words);
     }
 
+    fn shadow_and_publish_original_timing_presented_bg_tilemaps(
+        &mut self,
+        receipt: crate::PresentedBgTilemaps,
+    ) {
+        let mut mismatched_geometry_layers = 0;
+        let mut compared_words = 0;
+        let mut mismatched_words = 0;
+        let mut first_mismatch = None;
+        for layer in &receipt.layers {
+            let layer_index = usize::from(layer.layer);
+            let native = &self.ppu.bg_layer[layer_index];
+            if native.tilemap_adr != layer.word_address
+                || native.tilemap_wider != layer.wider
+                || native.tilemap_higher != layer.higher
+            {
+                mismatched_geometry_layers += 1;
+            }
+            for (offset, &authority) in layer.words.iter().enumerate() {
+                let word = (usize::from(layer.word_address) + offset) & 0x7fff;
+                compared_words += 1;
+                if self.ppu.vram[word] != authority {
+                    mismatched_words += 1;
+                    first_mismatch.get_or_insert((layer.layer, offset));
+                }
+            }
+        }
+        self.original_timing_bg_tilemap_shadow_result =
+            Some(crate::OriginalTimingBgTilemapShadowResult {
+                mismatched_geometry_layers,
+                compared_words,
+                mismatched_words,
+                first_mismatch,
+            });
+
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return;
+        };
+        for layer in receipt.layers {
+            let layer_index = usize::from(layer.layer);
+            display.ppu.bg_layer[layer_index].tilemap_adr = layer.word_address;
+            display.ppu.bg_layer[layer_index].tilemap_wider = layer.wider;
+            display.ppu.bg_layer[layer_index].tilemap_higher = layer.higher;
+            for (offset, value) in layer.words.into_iter().enumerate() {
+                let word = (usize::from(layer.word_address) + offset) & 0x7fff;
+                display.ppu.vram[word] = value;
+            }
+        }
+    }
+
     fn publish_original_timing_presented_inidisp(&mut self, receipt: crate::PresentedInidisp) {
         let Some(display) = self.display_snapshot.as_mut() else {
             return;
@@ -16067,6 +16124,7 @@ impl ZeldaState {
             presented_inidisp,
             presented_scanout_geometry,
             presented_hud_tilemap,
+            presented_bg_tilemaps,
             presented_oam,
             presented_obj_tiles,
             presented_audio,
@@ -16080,6 +16138,7 @@ impl ZeldaState {
                         receipts.presented_inidisp,
                         receipts.presented_scanout_geometry,
                         receipts.presented_hud_tilemap.clone(),
+                        receipts.presented_bg_tilemaps.clone(),
                         receipts.presented_oam.clone(),
                         receipts.presented_obj_tiles.clone(),
                         receipts.presented_audio.clone(),
@@ -16087,7 +16146,7 @@ impl ZeldaState {
                 })
                 .unwrap_or_default()
         } else {
-            (None, None, None, None, None, None, None, None)
+            (None, None, None, None, None, None, None, None, None)
         };
         if let Some(presented_animated_bg_tiles) = presented_animated_bg_tiles {
             self.publish_original_timing_presented_animated_bg_tiles(presented_animated_bg_tiles);
@@ -16113,6 +16172,10 @@ impl ZeldaState {
         }
         if let Some(presented_hud_tilemap) = presented_hud_tilemap {
             self.publish_original_timing_presented_hud_tilemap(presented_hud_tilemap);
+        }
+        self.original_timing_bg_tilemap_shadow_result = None;
+        if let Some(presented_bg_tilemaps) = presented_bg_tilemaps {
+            self.shadow_and_publish_original_timing_presented_bg_tilemaps(presented_bg_tilemaps);
         }
         if let Some(presented_obj_tiles) = presented_obj_tiles {
             // The authority receipt describes the surface returned by this
@@ -16140,6 +16203,12 @@ impl ZeldaState {
         &self,
     ) -> Option<crate::OriginalTimingAudioShadowResult> {
         self.original_timing_audio_shadow_result
+    }
+
+    pub fn last_original_timing_bg_tilemap_shadow_result(
+        &self,
+    ) -> Option<crate::OriginalTimingBgTilemapShadowResult> {
+        self.original_timing_bg_tilemap_shadow_result
     }
 
     pub(crate) fn apply_original_timing_presented_audio(
