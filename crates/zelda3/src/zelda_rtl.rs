@@ -8852,6 +8852,14 @@ pub struct ZeldaState {
     /// only; the typed presentation receipt remains authoritative.
     #[serde(skip)]
     original_timing_bg_tilemap_shadow_result: Option<crate::OriginalTimingBgTilemapShadowResult>,
+    /// Most recent native-vs-authority BG scroll comparison. Diagnostic only;
+    /// the typed completed-scanout receipt remains authoritative.
+    #[serde(skip)]
+    original_timing_bg_scroll_shadow_result: Option<crate::OriginalTimingBgScrollShadowResult>,
+    /// Scanline scroll receipt active only while the renderer consumes one
+    /// immutable display snapshot. It never mutates Zelda's live PPU mirrors.
+    #[serde(skip)]
+    active_presented_bg_scroll: Option<crate::PresentedBgScroll>,
     /// Last pinned-Snes9x host-call receipt consumed by this live owner. The
     /// next receipt must be its exact successor, so identical controller input
     /// cannot make a stale receipt replayable.
@@ -9531,6 +9539,10 @@ struct DisplaySnapshot {
     /// after native VRAM-generation composition so a later authored HUD
     /// buffer cannot leak backward across the NMI publication boundary.
     presented_hud_tilemap_override: Option<Vec<u16>>,
+    /// Exact BG scroll registers used by the completed source scanout. Native
+    /// register composition still runs so the shadow owner advances normally;
+    /// this immutable receipt wins only at the outgoing renderer boundary.
+    presented_bg_scroll_override: Option<crate::PresentedBgScroll>,
     /// Uniform INIDISP state used by the completed source scanout. Native
     /// brightness/blanking composition still advances first; this immutable
     /// presentation receipt wins only at the outgoing surface boundary.
@@ -15240,6 +15252,8 @@ impl ZeldaState {
             original_timing_presented_audio: None,
             original_timing_audio_shadow_result: None,
             original_timing_bg_tilemap_shadow_result: None,
+            original_timing_bg_scroll_shadow_result: None,
+            active_presented_bg_scroll: None,
             original_timing_last_oracle_host_call: None,
             interrupted_nmi_prepare_obj_cache_vram: None,
             rom_load_partial_nmi_this_frame: false,
@@ -15412,6 +15426,7 @@ impl ZeldaState {
         self.original_timing_presented_audio = None;
         self.original_timing_audio_shadow_result = None;
         self.original_timing_bg_tilemap_shadow_result = None;
+        self.original_timing_bg_scroll_shadow_result = None;
         self.original_timing_last_oracle_host_call = None;
         self.interrupted_nmi_prepare_obj_cache_vram = None;
         self.previous_host_controller_input = 0;
@@ -15512,6 +15527,7 @@ impl ZeldaState {
             self.original_timing_presented_audio = None;
             self.original_timing_audio_shadow_result = None;
             self.original_timing_bg_tilemap_shadow_result = None;
+            self.original_timing_bg_scroll_shadow_result = None;
             self.original_timing_last_oracle_host_call = None;
             self.zelda_set_rom_startup_audio_phase(false);
             self.rom_reset_frame_delay = 0;
@@ -15651,6 +15667,7 @@ impl ZeldaState {
         self.original_timing_presented_audio = None;
         self.original_timing_audio_shadow_result = None;
         self.original_timing_bg_tilemap_shadow_result = None;
+        self.original_timing_bg_scroll_shadow_result = None;
         self.original_timing_last_oracle_host_call = None;
     }
 
@@ -16097,6 +16114,16 @@ impl ZeldaState {
         }
     }
 
+    fn shadow_and_publish_original_timing_presented_bg_scroll(
+        &mut self,
+        receipt: crate::PresentedBgScroll,
+    ) {
+        let Some(display) = self.display_snapshot.as_mut() else {
+            return;
+        };
+        display.presented_bg_scroll_override = Some(receipt);
+    }
+
     fn publish_original_timing_presented_inidisp(&mut self, receipt: crate::PresentedInidisp) {
         let Some(display) = self.display_snapshot.as_mut() else {
             return;
@@ -16125,6 +16152,7 @@ impl ZeldaState {
             presented_scanout_geometry,
             presented_hud_tilemap,
             presented_bg_tilemaps,
+            presented_bg_scroll,
             presented_oam,
             presented_obj_tiles,
             presented_audio,
@@ -16139,6 +16167,7 @@ impl ZeldaState {
                         receipts.presented_scanout_geometry,
                         receipts.presented_hud_tilemap.clone(),
                         receipts.presented_bg_tilemaps.clone(),
+                        receipts.presented_bg_scroll.clone(),
                         receipts.presented_oam.clone(),
                         receipts.presented_obj_tiles.clone(),
                         receipts.presented_audio.clone(),
@@ -16146,7 +16175,7 @@ impl ZeldaState {
                 })
                 .unwrap_or_default()
         } else {
-            (None, None, None, None, None, None, None, None, None)
+            (None, None, None, None, None, None, None, None, None, None)
         };
         if let Some(presented_animated_bg_tiles) = presented_animated_bg_tiles {
             self.publish_original_timing_presented_animated_bg_tiles(presented_animated_bg_tiles);
@@ -16176,6 +16205,10 @@ impl ZeldaState {
         self.original_timing_bg_tilemap_shadow_result = None;
         if let Some(presented_bg_tilemaps) = presented_bg_tilemaps {
             self.shadow_and_publish_original_timing_presented_bg_tilemaps(presented_bg_tilemaps);
+        }
+        self.original_timing_bg_scroll_shadow_result = None;
+        if let Some(presented_bg_scroll) = presented_bg_scroll {
+            self.shadow_and_publish_original_timing_presented_bg_scroll(presented_bg_scroll);
         }
         if let Some(presented_obj_tiles) = presented_obj_tiles {
             // The authority receipt describes the surface returned by this
@@ -16209,6 +16242,12 @@ impl ZeldaState {
         &self,
     ) -> Option<crate::OriginalTimingBgTilemapShadowResult> {
         self.original_timing_bg_tilemap_shadow_result
+    }
+
+    pub fn last_original_timing_bg_scroll_shadow_result(
+        &self,
+    ) -> Option<crate::OriginalTimingBgScrollShadowResult> {
+        self.original_timing_bg_scroll_shadow_result
     }
 
     pub(crate) fn apply_original_timing_presented_audio(
@@ -18239,6 +18278,7 @@ impl ZeldaState {
             completed_oam_dma_after_capture: None,
             presented_oam_override: None,
             presented_hud_tilemap_override: None,
+            presented_bg_scroll_override: None,
             presented_inidisp_override: None,
             presented_scanout_geometry_override: None,
             presented_animated_bg_tiles_override: None,
@@ -21020,6 +21060,8 @@ impl ZeldaState {
         let Some(mut display) = self.display_snapshot.take() else {
             return capture(self);
         };
+        let saved_presented_bg_scroll = self.active_presented_bg_scroll.take();
+        self.active_presented_bg_scroll = display.presented_bg_scroll_override.clone();
         if self.debug_obj_pipe_enabled() {
             self.debug_obj_pipe(
                 &format!(
@@ -21712,6 +21754,7 @@ impl ZeldaState {
         let saved_published_dialogue = presented_dialogue.replace_in(self);
         let captured = capture(self);
         saved_published_dialogue.replace_in(self);
+        self.active_presented_bg_scroll = saved_presented_bg_scroll;
 
         std::mem::swap(&mut self.ram, &mut display.ram);
         std::mem::swap(&mut self.ppu, &mut display.ppu);
@@ -26231,6 +26274,30 @@ impl ZeldaState {
         }
         self.ppu.m7_matrix = saved_m7_matrix;
         self.ppu.m7_prev = saved_m7_prev;
+
+        if let Some(authority) = self.active_presented_bg_scroll.as_ref() {
+            let mut mismatched_scanline_layers = 0;
+            let mut first_mismatch = None;
+            for (line, (native, authority)) in
+                result.iter_mut().zip(authority.scanlines()).enumerate()
+            {
+                for layer in 0..crate::PresentedBgScroll::LAYER_COUNT {
+                    if [native.5[layer], native.6[layer]] != authority[layer] {
+                        mismatched_scanline_layers += 1;
+                        first_mismatch.get_or_insert((line as u16, layer as u8));
+                    }
+                    native.5[layer] = authority[layer][0];
+                    native.6[layer] = authority[layer][1];
+                }
+            }
+            self.original_timing_bg_scroll_shadow_result =
+                Some(crate::OriginalTimingBgScrollShadowResult {
+                    compared_scanline_layers: crate::PresentedBgScroll::VISIBLE_LINES
+                        * crate::PresentedBgScroll::LAYER_COUNT,
+                    mismatched_scanline_layers,
+                    first_mismatch,
+                });
+        }
 
         result
     }

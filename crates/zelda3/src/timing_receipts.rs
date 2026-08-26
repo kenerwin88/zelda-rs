@@ -155,6 +155,29 @@ impl PresentedBgTilemaps {
     }
 }
 
+/// Per-scanline BG scroll registers that produced one completed host scanout.
+///
+/// This is presentation state rather than Zelda's live `$210d..$2114`
+/// mirrors. A timing backend may derive it from private raster execution, but
+/// translated gameplay sees only the rendered horizontal/vertical pairs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PresentedBgScroll {
+    pub(crate) scanlines: Vec<[[u16; 2]; 4]>,
+}
+
+impl PresentedBgScroll {
+    pub const LAYER_COUNT: usize = 4;
+    pub const VISIBLE_LINES: usize = 224;
+
+    pub fn new(scanlines: Vec<[[u16; 2]; Self::LAYER_COUNT]>) -> Option<Self> {
+        (scanlines.len() == Self::VISIBLE_LINES).then_some(Self { scanlines })
+    }
+
+    pub fn scanlines(&self) -> &[[[u16; 2]; Self::LAYER_COUNT]] {
+        &self.scanlines
+    }
+}
+
 /// INIDISP scanout state that produced one completed host surface.
 ///
 /// This is deliberately presentation state, not Zelda's live `$2100` mirror:
@@ -279,6 +302,15 @@ pub struct OriginalTimingBgTilemapShadowResult {
     pub first_mismatch: Option<(u8, usize)>,
 }
 
+/// Result of shadowing one authoritative BG-scroll presentation with the
+/// native publication resolver. Authority remains with the typed receipt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OriginalTimingBgScrollShadowResult {
+    pub compared_scanline_layers: usize,
+    pub mismatched_scanline_layers: usize,
+    pub first_mismatch: Option<(u16, u8)>,
+}
+
 impl PresentedCgram {
     pub const COLOR_COUNT: usize = 256;
 
@@ -363,6 +395,7 @@ pub struct OriginalTimingHostReceipts {
     pub(crate) presented_scanout_geometry: Option<PresentedScanoutGeometry>,
     pub(crate) presented_hud_tilemap: Option<PresentedHudTilemap>,
     pub(crate) presented_bg_tilemaps: Option<PresentedBgTilemaps>,
+    pub(crate) presented_bg_scroll: Option<PresentedBgScroll>,
     pub(crate) presented_oam: Option<PresentedOam>,
     pub(crate) presented_obj_tiles: Option<PresentedObjTiles>,
     pub(crate) presented_audio: Option<PresentedAudio>,
@@ -384,6 +417,7 @@ impl OriginalTimingHostReceipts {
             presented_scanout_geometry: None,
             presented_hud_tilemap: None,
             presented_bg_tilemaps: None,
+            presented_bg_scroll: None,
             presented_oam: None,
             presented_obj_tiles: None,
             presented_audio: None,
@@ -417,6 +451,11 @@ impl OriginalTimingHostReceipts {
 
     pub fn with_presented_bg_tilemaps(mut self, receipt: PresentedBgTilemaps) -> Self {
         self.presented_bg_tilemaps = Some(receipt);
+        self
+    }
+
+    pub fn with_presented_bg_scroll(mut self, receipt: PresentedBgScroll) -> Self {
+        self.presented_bg_scroll = Some(receipt);
         self
     }
 

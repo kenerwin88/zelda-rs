@@ -39,11 +39,11 @@ pub use rom_random::{parse_rom_random_script, RomRandomSample};
 pub use timing_receipts::{
     CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt,
     DungeonResetSpritesProgressReceipt, MainLoopInterruption, OriginalTimingAudioShadowResult,
-    OriginalTimingBgTilemapShadowResult, OriginalTimingBoundary, OriginalTimingHostReceipts,
-    OriginalTimingReceiptInstallError, OriginalTimingSemanticReceipt, PresentedAnimatedBgTiles,
-    PresentedAudio, PresentedBgTilemapLayer, PresentedBgTilemaps, PresentedCgram,
-    PresentedHudTilemap, PresentedInidisp, PresentedOam, PresentedObjTiles,
-    PresentedScanoutGeometry,
+    OriginalTimingBgScrollShadowResult, OriginalTimingBgTilemapShadowResult,
+    OriginalTimingBoundary, OriginalTimingHostReceipts, OriginalTimingReceiptInstallError,
+    OriginalTimingSemanticReceipt, PresentedAnimatedBgTiles, PresentedAudio, PresentedBgScroll,
+    PresentedBgTilemapLayer, PresentedBgTilemaps, PresentedCgram, PresentedHudTilemap,
+    PresentedInidisp, PresentedOam, PresentedObjTiles, PresentedScanoutGeometry,
 };
 pub use zelda3_dialogue as dialogue_ir;
 pub use zelda_rtl::{

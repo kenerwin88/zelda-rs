@@ -1214,12 +1214,15 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     for (layer, bg) in state.ppu.bg_layer.iter_mut().enumerate() {
         bg.tilemap_adr = (layer * 0x400) as u16;
     }
+    state.ppu.bg_layer[0].h_scroll = 0x0100;
+    state.ppu.bg_layer[0].v_scroll = 0x0200;
     state.ppu.vram[0x0750] = 0x19e1;
     write_le_u16(&mut state.ram, ANIMATED_TILE_VRAM_ADDR, 0x3c00);
     state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
     // Native NMI reaches the correct following name-table generation, while
     // the already-captured outgoing surface still holds the preceding word.
     state.ppu.vram[0x0750] = 0x19e2;
+    state.ppu.bg_layer[0].h_scroll = 0x0102;
 
     let mut pixels = vec![0; crate::PresentedObjTiles::TILE_COUNT * 64];
     pixels[0] = 0x0f;
@@ -1261,6 +1264,11 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
             .collect(),
     )
     .unwrap();
+    let presented_bg_scroll = crate::PresentedBgScroll::new(vec![
+        [[0x00fe, 0x0200], [0, 0], [0, 0], [0, 0]];
+        crate::PresentedBgScroll::VISIBLE_LINES
+    ])
+    .unwrap();
     let presented_inidisp = crate::PresentedInidisp::new(1, 0, Some(48))
         .unwrap()
         .with_retained_prior_surface(true);
@@ -1277,6 +1285,7 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
             .with_presented_scanout_geometry(presented_scanout_geometry)
             .with_presented_hud_tilemap(presented_hud)
             .with_presented_bg_tilemaps(presented_bg_tilemaps)
+            .with_presented_bg_scroll(presented_bg_scroll.clone())
             .with_presented_oam(presented_oam)
             .with_presented_obj_tiles(presentation),
     );
@@ -1303,6 +1312,13 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     );
     assert_eq!(display.ppu.vram[0x0750], 0x19e2);
     assert_eq!(display.ppu.bg_layer[1].tilemap_adr, 0x0400);
+    assert_eq!(display.ppu.bg_layer[0].h_scroll, 0x0100);
+    assert_eq!(display.ppu.bg_layer[0].v_scroll, 0x0200);
+    assert_eq!(
+        display.presented_bg_scroll_override,
+        Some(presented_bg_scroll.clone())
+    );
+    assert_eq!(state.ppu.bg_layer[0].h_scroll, 0x0102);
     assert_eq!(state.ppu.vram[0x0750], 0x19e2, "live VRAM stays private");
     assert_eq!(
         state.last_original_timing_bg_tilemap_shadow_result(),
@@ -1312,6 +1328,11 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
             mismatched_words: 0,
             first_mismatch: None,
         }),
+    );
+    assert_eq!(
+        state.last_original_timing_bg_scroll_shadow_result(),
+        None,
+        "the native scroll shadow runs when the renderer consumes scanlines",
     );
     assert_eq!(display.presented_inidisp_override, Some(presented_inidisp));
     assert_eq!(
@@ -1345,7 +1366,9 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
         rendered_retain_prior_surface,
         rendered_top_crop,
         rendered_animated_bg_word,
+        rendered_bg1_scroll,
     ) = state.with_display_snapshot(|display| {
+        let scanlines = display.ppu_scanline_windows();
         (
             display.ppu.cgram[33],
             display.ppu.oam[0],
@@ -1361,6 +1384,7 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
                 .bg_vram_latch
                 .as_deref()
                 .unwrap_or(&display.ppu.vram)[0x3c00],
+            [scanlines[0].5[0], scanlines[0].6[0]],
         )
     });
     assert_eq!(
@@ -1382,6 +1406,24 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     assert!(rendered_retain_prior_surface);
     assert_eq!(rendered_top_crop, 7);
     assert_eq!(rendered_animated_bg_word, 0x00ff);
+    assert_eq!(rendered_bg1_scroll, [0x00fe, 0x0200]);
+    assert_eq!(
+        state.last_original_timing_bg_scroll_shadow_result(),
+        Some(crate::OriginalTimingBgScrollShadowResult {
+            compared_scanline_layers: crate::PresentedBgScroll::VISIBLE_LINES
+                * crate::PresentedBgScroll::LAYER_COUNT,
+            mismatched_scanline_layers: crate::PresentedBgScroll::VISIBLE_LINES,
+            first_mismatch: Some((0, 0)),
+        }),
+    );
+    assert_eq!(
+        [
+            state.ppu.bg_layer[0].h_scroll,
+            state.ppu.bg_layer[0].v_scroll,
+        ],
+        [0x0102, 0x0200],
+        "the authority receipt must not mutate live BG scroll state",
+    );
 }
 
 #[test]
