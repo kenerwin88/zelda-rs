@@ -211,6 +211,30 @@ fn cucco_calm_seeds_velocity_when_delay_zero() {
 }
 
 #[test]
+fn cucco_calm_delay_consumes_the_rom_rng_carry() {
+    let mut s = fresh_state();
+    let k = 10;
+    s.sprite_slot_view_mut(k).set_delay_main(0);
+    s.install_rom_random_replay(
+        vec![
+            crate::RomRandomSample::with_carry(52_002, 0xf8, false),
+            crate::RomRandomSample::with_carry(52_002, 0xb2, true),
+        ],
+        52_002,
+    );
+    s.rom_random_replay.begin_frame();
+
+    s.cucco_calm(k);
+
+    // ROM $06:a6a1-$06:a6a5 is AND #$1f; ADC #$10, so the carry
+    // returned by GetRandomNumber turns $12 + $10 into $23.
+    assert_eq!(s.sprite_slot_view(k).delay_main(), 0x23);
+    assert_eq!(s.sprite_slot_view(k).x_velocity(), 0);
+    assert_eq!(s.sprite_slot_view(k).y_velocity(), 16);
+    assert_eq!(s.sprite_slot_view(k).ai_state(), 1);
+}
+
+#[test]
 fn chicken_hopping_bounces_when_z_wraps_negative() {
     let mut s = fresh_state();
     let k = 0;

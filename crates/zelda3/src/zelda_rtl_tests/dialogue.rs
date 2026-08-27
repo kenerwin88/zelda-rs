@@ -154,6 +154,49 @@ fn dialogue_return_only_boundary_publishes_nmi_scroll_scanout() {
 }
 
 #[test]
+fn dialogue_return_only_receipt_continues_into_the_source_next_iteration() {
+    let mut state = ZeldaState::new();
+    state.initialized = true;
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.set_animated_tile_data_source_address(0xa680);
+    state.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
+    state.finish_dialogue_scroll_remaining_pixels();
+    state.audio_nmi_processed_before_main = true;
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+            crate::MainLoopProgress::IterationStarted,
+        )],
+    ));
+    // The assertion targets the shared ZeldaRunGameLoop boundary rather than
+    // another dialogue command. Keep Module0E active but choose its C no-op
+    // text-render dispatch state so the unit test needs no external ROM asset.
+    state.messaging_state_mut().set_module(1);
+    state.messaging_state_mut().set_text_render_state(5);
+    let frame_counter = state.game_state.frame.frame_counter;
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert_eq!(
+        state.game_state.frame.frame_counter,
+        frame_counter.wrapping_add(1),
+        "the source-started C iteration must not be dropped behind ReturnOnly",
+    );
+    assert_eq!(
+        state.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletedScroll,
+    );
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
 fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     let mut state = ZeldaState::new();
     state.initialized = true;
@@ -187,6 +230,44 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     state.interrupt_nmi_audio_parts();
     assert_eq!(state.game_state.system_signals.sound_effect_2(), 0);
     assert_eq!(state.zelda_debug_apu_write_ports()[3], 12);
+}
+
+#[test]
+fn dialogue_vwf_return_receipt_continues_into_the_source_next_iteration() {
+    let mut state = ZeldaState::new();
+    state.initialized = true;
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.set_animated_tile_data_source_address(0xa680);
+    state.schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+    state.dialogue_fast_forward_hold_active = true;
+    state.audio_nmi_processed_before_main = true;
+    state.set_pending_nmi_subroutine(2);
+    state.set_core_update_disable_flag(2);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        48_105,
+        0,
+        vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+            crate::MainLoopProgress::IterationStarted,
+        )],
+    ));
+    // ZeldaRunGameLoop increments the frame counter before Module_MainRouting.
+    // Keep Module0E's dispatch on a source-valid no-op state so the test proves
+    // the caller/NMI/main-loop order without requiring an external dialogue ROM.
+    state.messaging_state_mut().set_module(1);
+    state.messaging_state_mut().set_text_render_state(5);
+    state.set_frame_counter(0xe0);
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert_eq!(state.game_state.frame.frame_counter, 0xe1);
+    assert!(state
+        .game_execution_scheduler
+        .pre_main_caller_continuation()
+        .is_none());
+    assert!(state.original_timing_semantic_receipts.is_none());
 }
 
 #[test]

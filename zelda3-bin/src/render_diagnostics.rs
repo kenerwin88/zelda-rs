@@ -3,8 +3,10 @@ use zelda3::ZeldaState;
 pub(crate) fn format_render_ppu_summary(state: &ZeldaState) -> String {
     let ppu = &state.ppu;
     format!(
-        "mode={} forced_blank={} blank_lines={} brightness={} mosaic={:02x}/{} screen={:02x}/{:02x} window={:02x}/{:02x} math={:02x} cg={:02x}/{:02x} fixed=({:02x},{:02x},{:02x}) obj=({:04x},{:04x},size={}) m7={:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x} bg1=({:04x},{:04x},tm={:04x},chr={:04x},map={}x{}) bg2=({:04x},{:04x},tm={:04x},chr={:04x},map={}x{}) bg3=({:04x},{:04x},tm={:04x},chr={:04x},map={}x{}) bg4=({:04x},{:04x},tm={:04x},chr={:04x},map={}x{}) hdma={:02x} dma6={:02x}:{:04x}->{:02x} dma7={:02x}:{:04x}->{:02x} cgram0={:04x} cgram1={:04x} vram0000={:04x} vram1000={:04x}",
+        "mode={} raw_bgmode={:02x} mode1_bg3_priority={} forced_blank={} blank_lines={} brightness={} mosaic={:02x}/{} screen={:02x}/{:02x} window=({:02x}/{:02x}) math={:02x} cg={:02x}/{:02x} fixed=({:02x},{:02x},{:02x}) obj=({:04x},{:04x},size={}) m7={:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x} bg1=({:04x},{:04x},tm={:04x},chr={:04x},map={}x{}) bg2=({:04x},{:04x},tm={:04x},chr={:04x},map={}x{}) bg3=({:04x},{:04x},tm={:04x},chr={:04x},map={}x{}) bg4=({:04x},{:04x},tm={:04x},chr={:04x},map={}x{}) hdma={:02x} dma6={:02x}:{:04x}->{:02x} dma7={:02x}:{:04x}->{:02x} cgram0={:04x} cgram1={:04x} vram0000={:04x} vram1000={:04x}",
+        ppu.bg_mode(),
         ppu.mode,
+        ppu.mode1_bg3_priority(),
         ppu.forced_blank,
         ppu.forced_blank_scanlines,
         ppu.brightness,

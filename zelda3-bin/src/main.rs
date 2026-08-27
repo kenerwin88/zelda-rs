@@ -35,6 +35,8 @@ mod snes9x_apu_tools;
 mod snes9x_compare;
 mod snes9x_presented_bg_scroll;
 mod snes9x_presented_bg_tilemaps;
+mod snes9x_presented_dialogue_text;
+mod snes9x_presented_window_mask;
 mod snes9x_record_commands;
 mod snes9x_route_recorder;
 mod snes9x_segment_matrix;
@@ -574,7 +576,7 @@ fn print_asset_gpu_smoke_progress(
         "{label} asset GPU smoke progress frames={frames} main={:02x}; sub={:02x}; mode={}; screen={:02x}/{:02x}; validation_cache_hits={cache_hits}; validation_cache_misses={cache_misses}; validation_cache_entries={cache_entries}; validation_key_ms={cache_key_ms}; validation_miss_ms={cache_miss_ms}; validation_bg_extract_ms={bg_extract_ms}; validation_sprite_extract_ms={sprite_extract_ms}; validation_stats_ms={stats_ms}",
         game.ram[0x10],
         game.ram[0x11],
-        game.ppu.mode,
+        game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],
     );
@@ -747,11 +749,11 @@ fn run_replay_save(args: &[String]) {
         }
         frames = frames.wrapping_add(1);
         if ppu_mode_summary {
-            let mode = usize::from(game.ppu.mode);
+            let mode = usize::from(game.ppu.bg_mode());
             if mode < ppu_mode_counts.len() {
                 ppu_mode_counts[mode] += 1;
             }
-            if game.ppu.mode == 7 {
+            if game.ppu.bg_mode() == 7 {
                 first_mode7_frame.get_or_insert(frames);
                 last_mode7_frame = Some(frames);
             }
@@ -816,7 +818,7 @@ fn run_replay_save(args: &[String]) {
             frames,
             game.ram[0x10],
             game.ram[0x11],
-            game.ppu.mode,
+            game.ppu.bg_mode(),
             game.ppu.screen_enabled[0],
             game.ppu.screen_enabled[1],
             game.ppu.cgram.iter().filter(|&&v| v != 0).count(),
@@ -1477,7 +1479,7 @@ pub(crate) fn write_play_crash_report(
         game.frame_ctr_dbg,
         fnv1a64(&game.ram),
         fnv1a64(&game.sram),
-        game.ppu.mode,
+        game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],
         game.ppu.forced_blank,
@@ -1849,7 +1851,7 @@ fn run_smoke_render(args: &[String]) {
         u16::from_le_bytes([game.ram[0x1f0a], game.ram[0x1f0b]]),
         game.ppu.forced_blank,
         game.ppu.brightness,
-        game.ppu.mode,
+        game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],
         game.ppu.vram.iter().filter(|&&v| v != 0).count(),

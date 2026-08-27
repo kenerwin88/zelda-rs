@@ -34,6 +34,7 @@ ORACLE_SESSION_FILES = (
     "snes9x-trace.jsonl",
     "display_oracle.jsonl",
     "obj_state_ledger.jsonl",
+    "original-timing-host-receipts.jsonl.zst",
 )
 REPLAY_SOURCE_FILES = ("input.txt", "rom-random.txt", "initial.srm")
 
@@ -456,6 +457,17 @@ def cache_oracle_session(
     identity = session_identity(session)
     frame_receipts = session / "frame_receipts.jsonl"
     av_hashes = session / "av_hashes.jsonl"
+    timing_host_receipts = session / "original-timing-host-receipts.jsonl.zst"
+    session_manifest = load_json(session / "manifest.json")
+    timing_host_receipts_schema = 0
+    if timing_host_receipts.is_file():
+        timing_host_receipts_schema = (
+            session_manifest.get("original_timing_host_receipts", {}).get("schema")
+        )
+        if not isinstance(timing_host_receipts_schema, int) or timing_host_receipts_schema <= 0:
+            raise SystemExit(
+                "parity evidence: source timing receipts require a positive manifest schema"
+            )
     cache_identity = {
         "schema": CACHE_SCHEMA,
         "core_sha256": identity["core_sha256"],
@@ -465,9 +477,15 @@ def cache_oracle_session(
         "compare_from_frame": identity["compare_from_frame"],
         "comparison_lanes": identity["comparison_lanes"],
         "source_artifact_sha256": identity["source_artifact_sha256"],
+        "oracle_initial_state_sha256": (
+            sha256_file(session / "oracle_initial.state")
+            if (session / "oracle_initial.state").is_file()
+            else None
+        ),
         "trace_configuration": trace_configuration or {},
         "oracle_evidence": {
             "semantic_receipts_schema": 1 if frame_receipts.is_file() else 0,
+            "timing_host_receipts_schema": timing_host_receipts_schema,
             "canonical_av_hash_ledger_schema": _av_hash_evidence_schema(av_hashes),
         },
     }

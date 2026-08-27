@@ -1,7 +1,8 @@
 use super::{
     DisplaySnapshotPublication, GameWorkContinuation, ItemReceiptGraphicsContinuation,
-    PreMainCallerContinuation, PreMainNmiResume, SpotlightIteration,
-    FILE_SELECT_GRAPHICS_NMI_SLICES, SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
+    PreDungeonSpriteResetContinuation, PreMainCallerContinuation, PreMainNmiResume,
+    SpotlightIteration, SpriteResetAllProgress, FILE_SELECT_GRAPHICS_NMI_SLICES,
+    SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
     SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES,
 };
 pub(super) use snes::{CpuBusEvent, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
@@ -396,7 +397,7 @@ impl ScheduledGameWork {
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
                 | GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
                 | GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
-                | GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn
+                | GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn { .. }
                 | GameWorkContinuation::FinishDialogueInitializationPrefix { .. }
                 | GameWorkContinuation::FinishDialogueInitializationCallerReturn
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
@@ -707,6 +708,24 @@ impl GameExecutionScheduler {
         self.cpu_host_phase == CpuHostPhase::ResumedCallStackBeforeNmi
     }
 
+    /// Prepare the next ZeldaRunGameLoop iteration when the timing authority
+    /// observed the preceding caller return early enough for that iteration to
+    /// begin before this host interval's trailing NMI. Scheduled work which
+    /// keeps its caller implicit is already `MainLoopReady`; an explicit
+    /// translated call-stack continuation arrives through
+    /// `ResumedCallStackBeforeNmi`. Both denote the same source boundary here.
+    /// The new iteration is ordinary pre-NMI work: it did not begin after a
+    /// leading NMI, and therefore still owns the trailing boundary.
+    pub(super) fn prepare_same_host_main_iteration_after_authoritative_return(&mut self) {
+        debug_assert!(matches!(
+            self.cpu_host_phase,
+            CpuHostPhase::MainLoopReady | CpuHostPhase::ResumedCallStackBeforeNmi
+        ));
+        debug_assert!(!self.work_suspends_translated_call_stack());
+        self.cpu_host_phase = CpuHostPhase::MainLoopReady;
+        self.main_iteration_follows_leading_nmi = false;
+    }
+
     /// The current main-loop call stack reached an interruptible boundary and
     /// is waiting for the NMI that suspended it. DMA at that boundary consumes
     /// CPU-authored operands from the completed prefix, not the host-entry
@@ -1009,6 +1028,64 @@ impl GameExecutionScheduler {
             })
     }
 
+    pub(super) fn mark_pre_dungeon_sprite_reset_progress(
+        &mut self,
+        progress: SpriteResetAllProgress,
+    ) -> bool {
+        let Some(GameExecutionContinuation::ScheduledWork(work)) = self.continuation.as_mut()
+        else {
+            return false;
+        };
+        let GameWorkContinuation::FinishPreDungeonEntranceLoad { sprite_reset } =
+            &mut work.continuation
+        else {
+            return false;
+        };
+        if *sprite_reset != PreDungeonSpriteResetContinuation::Pending {
+            return false;
+        }
+        *sprite_reset = match progress {
+            SpriteResetAllProgress::SpriteDisableAllCompleted => {
+                PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted
+            }
+        };
+        true
+    }
+
+    pub(super) fn mark_pre_dungeon_sprite_reset_completed(&mut self) -> bool {
+        let Some(GameExecutionContinuation::ScheduledWork(work)) = self.continuation.as_mut()
+        else {
+            return false;
+        };
+        let GameWorkContinuation::FinishPreDungeonEntranceLoad { sprite_reset } =
+            &mut work.continuation
+        else {
+            return false;
+        };
+        if *sprite_reset == PreDungeonSpriteResetContinuation::Completed {
+            return false;
+        }
+        *sprite_reset = PreDungeonSpriteResetContinuation::Completed;
+        true
+    }
+
+    pub(super) fn mark_pre_overworld_sprite_presence_published(&mut self) -> bool {
+        let Some(GameExecutionContinuation::ScheduledWork(work)) = self.continuation.as_mut()
+        else {
+            return false;
+        };
+        let GameWorkContinuation::FinishPreOverworldProperties {
+            sprite_presence_published,
+            ..
+        } = &mut work.continuation
+        else {
+            return false;
+        };
+        let newly_published = !*sprite_presence_published;
+        *sprite_presence_published = true;
+        newly_published
+    }
+
     pub(super) fn take_post_trailing_nmi(&mut self) -> Option<GameWorkContinuation> {
         match self.continuation {
             Some(GameExecutionContinuation::PostTrailingNmi(continuation)) => {
@@ -1051,6 +1128,33 @@ impl GameExecutionScheduler {
             }
         }
         Some(step)
+    }
+
+    /// Advance the native timing shadow while a replaceable authority owns the
+    /// actual source-call completion. A zero native estimate remains pending
+    /// until the semantic receipt arrives; it can never complete gameplay
+    /// early. The receipt may also complete before the estimate reaches zero.
+    pub(super) fn advance_work_one_nmi_slice_with_authoritative_completion(
+        &mut self,
+        authority_completed: bool,
+    ) -> Option<GameWorkStep> {
+        let Some(GameExecutionContinuation::ScheduledWork(work)) = self.continuation.as_mut()
+        else {
+            return None;
+        };
+        let continuation = work.continuation;
+        let suspends_translated_call_stack = work.suspends_translated_call_stack();
+        work.entry_display_boundary_pending = false;
+        work.nmi_slices_remaining = work.nmi_slices_remaining.saturating_sub(1);
+        if !authority_completed {
+            return Some(GameWorkStep::Waiting);
+        }
+        self.continuation = None;
+        if suspends_translated_call_stack && self.cpu_host_phase == CpuHostPhase::SuspendedCallStack
+        {
+            self.cpu_host_phase = CpuHostPhase::ResumedCallStackBeforeNmi;
+        }
+        Some(GameWorkStep::Complete(continuation))
     }
 
     pub(super) fn finish_work(&mut self) {
@@ -1762,6 +1866,63 @@ mod cpu_timing_tests {
         scheduler.finish_pre_main_caller_continuation(continuation);
 
         assert!(scheduler.resumed_call_stack_is_before_nmi());
+    }
+
+    #[test]
+    fn authoritative_caller_return_can_begin_an_ordinary_iteration_before_trailing_nmi() {
+        let continuation = GameWorkContinuation::FinishPreDungeonEntranceLoad {
+            sprite_reset: PreDungeonSpriteResetContinuation::Pending,
+        };
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.schedule_work(continuation, 1);
+        scheduler.begin_host_frame();
+
+        assert_eq!(
+            scheduler.advance_work_one_nmi_slice_with_authoritative_completion(true),
+            Some(GameWorkStep::Complete(continuation))
+        );
+        assert!(scheduler.fresh_main_loop_iteration_is_ready());
+
+        scheduler.prepare_same_host_main_iteration_after_authoritative_return();
+        assert!(scheduler.fresh_main_loop_iteration_is_ready());
+        scheduler.begin_main_loop_iteration();
+        assert!(!scheduler.current_main_iteration_follows_leading_nmi());
+        scheduler.finish_main_loop_iteration();
+
+        assert_eq!(scheduler.cpu_host_phase, CpuHostPhase::ReturnedToMainLoop);
+    }
+
+    #[test]
+    fn pre_dungeon_sprite_reset_checkpoint_advances_without_replay() {
+        let mut scheduler = GameExecutionScheduler::default();
+        scheduler.schedule_work(
+            GameWorkContinuation::FinishPreDungeonEntranceLoad {
+                sprite_reset: PreDungeonSpriteResetContinuation::Pending,
+            },
+            2,
+        );
+
+        assert!(scheduler.mark_pre_dungeon_sprite_reset_progress(
+            SpriteResetAllProgress::SpriteDisableAllCompleted,
+        ));
+        assert!(!scheduler.mark_pre_dungeon_sprite_reset_progress(
+            SpriteResetAllProgress::SpriteDisableAllCompleted,
+        ));
+        assert_eq!(
+            scheduler.current_work(),
+            Some(GameWorkContinuation::FinishPreDungeonEntranceLoad {
+                sprite_reset: PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted,
+            }),
+        );
+
+        assert!(scheduler.mark_pre_dungeon_sprite_reset_completed());
+        assert!(!scheduler.mark_pre_dungeon_sprite_reset_completed());
+        assert_eq!(
+            scheduler.current_work(),
+            Some(GameWorkContinuation::FinishPreDungeonEntranceLoad {
+                sprite_reset: PreDungeonSpriteResetContinuation::Completed,
+            }),
+        );
     }
 
     #[test]

@@ -444,7 +444,7 @@ pub(crate) fn run_dump_developer_destination(args: &[String]) {
         out_path.display(),
         game.ram[0x10],
         game.ram[0x11],
-        game.ppu.mode,
+        game.ppu.bg_mode(),
         game.ppu.screen_enabled[0],
         game.ppu.screen_enabled[1],
         game.ppu.bg_layer[0].tilemap_adr,

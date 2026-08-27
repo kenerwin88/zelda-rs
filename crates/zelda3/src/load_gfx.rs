@@ -3502,8 +3502,101 @@ impl ZeldaState {
             upper_cursor: r4,
             lower_cursor: r6,
             completed: false,
+            pending_circle_input: None,
+            pending_lower_value: None,
+            projection_tail_cleared: false,
+            projection_words_copied: 0,
         };
         self.advance_iris_spotlight_configure_table(&mut build, max_iterations);
+        build
+    }
+
+    /// Recreate the exact C table-builder state exposed by a semantic timing
+    /// receipt. The current iteration has already loaded its circle input and
+    /// conditionally decremented `spotlight_var4`, but has not yet calculated
+    /// or stored either table word.
+    pub(super) fn begin_iris_spotlight_configure_table_at_progress(
+        &mut self,
+        progress: crate::SpotlightTableBuildProgress,
+    ) -> SpotlightTableBuildContinuation {
+        let mut build =
+            self.begin_iris_spotlight_configure_table(usize::from(progress.completed_iterations));
+        match progress.checkpoint {
+            crate::SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
+                pending_circle_input,
+            } => {
+                assert!(
+                    !build.completed,
+                    "spotlight circle progress cannot point beyond the completed C table loop",
+                );
+                assert!(
+                    build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper(),
+                    "pending spotlight circle calculation requires the lower cursor inside the iris",
+                );
+                assert_eq!(
+                    self.game_state
+                        .display
+                        .spotlight_hdma
+                        .window_y_buffer_byte(),
+                    pending_circle_input,
+                    "spotlight receipt circle input disagrees with native C state",
+                );
+                if pending_circle_input != 0 {
+                    self.decrement_spotlight_window_y_buffer();
+                }
+                build.pending_circle_input = Some(pending_circle_input);
+            }
+            crate::SpotlightTableBuildCheckpoint::BeforeLowerTableWrite {
+                lower_cursor,
+                circle_value,
+            } => {
+                assert!(
+                    !build.completed,
+                    "spotlight lower-write progress cannot point beyond the completed C table loop",
+                );
+                assert_eq!(
+                    build.lower_cursor, lower_cursor,
+                    "spotlight lower-write receipt disagrees with the native C loop cursor",
+                );
+                let pending_circle_input = self
+                    .game_state
+                    .display
+                    .spotlight_hdma
+                    .window_y_buffer_byte();
+                if pending_circle_input != 0 {
+                    self.decrement_spotlight_window_y_buffer();
+                }
+                assert_eq!(
+                    self.iris_spotlight_calculate_circle_value(pending_circle_input),
+                    circle_value,
+                    "spotlight lower-write receipt disagrees with the native circle value",
+                );
+                if build.upper_cursor < 240 {
+                    self.set_spotlight_hdma_table_dynamic_entry(
+                        build.upper_cursor as usize,
+                        circle_value,
+                    );
+                }
+                build.pending_lower_value = Some(circle_value);
+            }
+            crate::SpotlightTableBuildCheckpoint::ProjectionCopy { copied_words } => {
+                assert!(
+                    build.completed,
+                    "spotlight projection progress requires the completed C table loop",
+                );
+                assert!(
+                    copied_words <= 224,
+                    "spotlight projection progress exceeds the 224-word C memcpy",
+                );
+                self.clear_spotlight_hdma_table_dynamic_range(224, 16);
+                self.project_spotlight_dynamic_hdma_table_range_to_reserved(
+                    0,
+                    usize::from(copied_words),
+                );
+                build.projection_tail_cleared = true;
+                build.projection_words_copied = copied_words;
+            }
+        }
         build
     }
 
@@ -3516,8 +3609,22 @@ impl ZeldaState {
             if build.completed {
                 return;
             }
+            if let Some(r8) = build.pending_lower_value.take() {
+                if build.lower_cursor < 240 {
+                    self.set_spotlight_hdma_table_dynamic_entry(build.lower_cursor as usize, r8);
+                }
+                if build.upper_cursor == build.vertical_center {
+                    build.completed = true;
+                    return;
+                }
+                build.upper_cursor = build.upper_cursor.wrapping_add(1);
+                build.lower_cursor = build.lower_cursor.wrapping_sub(1);
+                continue;
+            }
             let mut r8 = 0x00ff;
-            if build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper() {
+            if let Some(t) = build.pending_circle_input.take() {
+                r8 = self.iris_spotlight_calculate_circle_value(t);
+            } else if build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper() {
                 let t = self
                     .game_state
                     .display
@@ -3561,8 +3668,14 @@ impl ZeldaState {
         self.advance_iris_spotlight_configure_table(&mut build, usize::MAX);
         debug_assert!(build.completed);
 
-        self.clear_spotlight_hdma_table_dynamic_range(224, 16);
-        self.project_spotlight_dynamic_hdma_table_to_reserved(224);
+        if !build.projection_tail_cleared {
+            self.clear_spotlight_hdma_table_dynamic_range(224, 16);
+        }
+        let copied_words = usize::from(build.projection_words_copied);
+        self.project_spotlight_dynamic_hdma_table_range_to_reserved(
+            copied_words,
+            224 - copied_words,
+        );
     }
 
     /// Resume the C routine immediately after its table copy.

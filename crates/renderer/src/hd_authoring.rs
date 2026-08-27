@@ -173,6 +173,7 @@ mod tests {
             cgram,
             oam,
             mode: 1,
+            mode1_bg3_priority: false,
             bg: Default::default(),
             obj: Default::default(),
             mosaic_enabled: 0,

@@ -4901,6 +4901,22 @@ impl<'a> NativeSpotlightHdmaBridgeMut<'a> {
     pub(crate) fn project_dynamic_table_to_reserved_hdma_table(&mut self, count: usize) {
         self.project_dynamic_table_words_to_ram(RESERVED_HDMA_TABLE, count);
     }
+
+    pub(crate) fn project_dynamic_table_range_to_reserved_hdma_table(
+        &mut self,
+        start: usize,
+        count: usize,
+    ) {
+        let start = start.min(SPOTLIGHT_HDMA_WORD_COUNT);
+        let end = start.saturating_add(count).min(SPOTLIGHT_HDMA_WORD_COUNT);
+        for index in start..end {
+            write_le_u16(
+                self.ram,
+                RESERVED_HDMA_TABLE + index * 2,
+                self.state.hdma_table_dynamic_entry(index),
+            );
+        }
+    }
 }
 
 macro_rules! ppu_scroll_bridge_methods {

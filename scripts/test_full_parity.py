@@ -43,6 +43,7 @@ class Snes9xParityGateTests(unittest.TestCase):
             no_install_snes9x=True,
             snes9x_url="unused",
             work_dir=pathlib.Path("/tmp/parity"),
+            scan_all=False,
         )
         result = module.CommandResult([], 0, "passed", "")
         with (
@@ -62,6 +63,35 @@ class Snes9xParityGateTests(unittest.TestCase):
         self.assertEqual(command[command.index("--audio-comparison") + 1], "exact")
         self.assertNotIn("--audio-timing-tolerance-ms", command)
         self.assertNotIn("--auto-align-video", command)
+        self.assertNotIn("--scan-all", command)
+
+    def test_snes9x_gate_only_scans_all_when_explicitly_requested(self):
+        module = load_module()
+        args = argparse.Namespace(
+            rom=pathlib.Path("/tmp/zelda3.sfc"),
+            frames=321,
+            release=False,
+            input_script=None,
+            load_sram=None,
+            snes9x_skip=0,
+            snes9x_core="/tmp/snes9x_libretro.dylib",
+            no_install_snes9x=True,
+            snes9x_url="unused",
+            work_dir=pathlib.Path("/tmp/parity"),
+            scan_all=True,
+        )
+        result = module.CommandResult([], 0, "passed", "")
+        with (
+            mock.patch.object(
+                module,
+                "resolve_snes9x_core",
+                return_value=pathlib.Path(args.snes9x_core),
+            ),
+            mock.patch.object(module, "run_command", return_value=result) as run,
+        ):
+            module.run_snes9x_gate(args)
+
+        self.assertIn("--scan-all", run.call_args.args[0])
 
     def test_main_rejects_an_empty_gate_set(self):
         module = load_module()

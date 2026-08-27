@@ -11975,6 +11975,8 @@ impl ZeldaState {
 
     pub(super) fn Module07_0F_LandingWipe(&mut self) {
         let cpu_advance = self.take_dungeon_landing_cpu_advance();
+        let authoritative_link_oam_suspension =
+            self.take_original_timing_main_loop_interruption(crate::MainLoopInterruption::LinkOam);
         if self.game_state.frame.subsubmodule == 0 {
             let entry_started_after_leading_nmi = self
                 .game_execution_scheduler
@@ -11988,6 +11990,21 @@ impl ZeldaState {
         }
         self.link_handle_moving_animation_full_long_entry();
         self.link_oam_main();
+        if authoritative_link_oam_suspension {
+            // The temporary Live authority observed the host return while the
+            // source was still inside this landing submodule's LinkOam_Main
+            // call. Resume the existing semantic caller continuation on the
+            // following host; do not enter Module 7's shared Sprite_Main
+            // suffix early. CPU addresses remain private to the replaceable
+            // oracle adapter.
+            self.latch_nmi_update();
+            self.game_execution_scheduler
+                .schedule_cpu_timed_work_returning_on_later_host(
+                    GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+                    1,
+                );
+            return;
+        }
         if let Some(advance) = cpu_advance {
             debug_assert_eq!(advance.subsubmodule, self.game_state.frame.subsubmodule);
             debug_assert_eq!(
@@ -12765,6 +12782,14 @@ impl ZeldaState {
         self.module_pre_dungeon_after_sprite_reset_with_song_bank_timing(true);
     }
 
+    /// Complete the `Module_PreDungeon` suffix after a continuous timing
+    /// authority has observed the original C caller return. The source call
+    /// already includes `Dungeon_LoadSongBankIfNeeded`, so scheduling a second
+    /// translated song-bank wait here would replay that synchronous work.
+    pub(super) fn complete_module_pre_dungeon_authoritative_return(&mut self) {
+        self.module_pre_dungeon_after_sprite_reset_with_song_bank_timing(false);
+    }
+
     pub(super) fn complete_module_pre_dungeon_after_selected_game_load(&mut self) {
         // The selected-game continuation already spans the complete load,
         // including LoadSongBank. Reuse the semantic state mutations without
@@ -12775,6 +12800,20 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module_pre_dungeon_before_return_suffix(&mut self) {
+        self.complete_module_pre_dungeon_before_sprite_reset();
+        self.sprite_reset_all();
+    }
+
+    pub(super) fn complete_module_pre_dungeon_through_sprite_disable_all(&mut self) {
+        self.complete_module_pre_dungeon_before_sprite_reset();
+        self.sprite_disable_all();
+    }
+
+    pub(super) fn complete_module_pre_dungeon_after_sprite_disable_all(&mut self) {
+        self.sprite_reset_all_no_disable();
+    }
+
+    fn complete_module_pre_dungeon_before_sprite_reset(&mut self) {
         self.Dungeon_LoadAndDrawRoom();
         self.Dungeon_LoadCustomTileAttr();
 
@@ -12837,7 +12876,6 @@ impl ZeldaState {
         }
         self.set_bg_mode(9);
         self.follower_initialize();
-        self.sprite_reset_all();
     }
 
     fn module_pre_dungeon_after_sprite_reset_with_song_bank_timing(
@@ -13028,7 +13066,9 @@ impl ZeldaState {
         if std::mem::take(&mut self.dungeon_nmi_prepare_sprites_return_pending) {
             debug_assert!(self.game_execution_scheduler.is_idle());
             self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn,
+                GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+                    caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
+                },
                 1,
             );
             return;

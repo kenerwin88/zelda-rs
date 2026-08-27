@@ -11,9 +11,12 @@ pub(crate) struct PreparedMode1EffectDrawWork<'frame> {
 }
 
 impl<'frame> PreparedMode1EffectDrawWork<'frame> {
-    pub(crate) fn from_plan(plan: &crate::modern_variant_draw::VariantDrawPlan<'frame>) -> Self {
+    pub(crate) fn from_plan(
+        plan: &crate::modern_variant_draw::VariantDrawPlan<'frame>,
+        bg3_priority: bool,
+    ) -> Self {
         Self {
-            rank_dispatches: mode1_effect_rank_dispatches(plan),
+            rank_dispatches: mode1_effect_rank_dispatches(plan, bg3_priority),
         }
     }
 

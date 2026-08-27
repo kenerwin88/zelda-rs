@@ -167,22 +167,21 @@ def run_snes9x_gate(args: argparse.Namespace) -> None:
             "--snes9x-core /path/to/snes9x_libretro.dylib. Live A/V parity cannot run without it."
         )
     session_dir = args.work_dir / "snes9x-session"
-    command = cargo_zelda(
-        [
-            "--compare-snes9x-oracle",
-            str(core),
-            str(args.rom),
-            str(args.frames),
-            "--skip-oracle-frames",
-            str(args.snes9x_skip),
-            "--audio-comparison",
-            "exact",
-            "--session-dir",
-            str(session_dir),
-            "--scan-all",
-        ],
-        args.release,
-    )
+    compare_args = [
+        "--compare-snes9x-oracle",
+        str(core),
+        str(args.rom),
+        str(args.frames),
+        "--skip-oracle-frames",
+        str(args.snes9x_skip),
+        "--audio-comparison",
+        "exact",
+        "--session-dir",
+        str(session_dir),
+    ]
+    if args.scan_all:
+        compare_args.append("--scan-all")
+    command = cargo_zelda(compare_args, args.release)
     if args.input_script:
         command.extend(["--input-script", args.input_script])
     if args.load_sram:
@@ -307,6 +306,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--release", action="store_true")
     parser.add_argument("--no-snes9x", action="store_true")
     parser.add_argument("--with-snes9x", action="store_true")
+    parser.add_argument(
+        "--scan-all",
+        action="store_true",
+        help="continue after the first Snes9x A/V mismatch for diagnostic reports",
+    )
     parser.add_argument("--no-install-snes9x", action="store_true")
     parser.add_argument("--no-mesen", action="store_true")
     parser.add_argument("--with-mesen", action="store_true")

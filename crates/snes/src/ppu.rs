@@ -106,6 +106,9 @@ pub struct PpuState {
     /// than a live PPU register.
     #[serde(skip)]
     pub scanout_top_crop: u8,
+    /// Raw low nibble of BGMODE/$2105. Bits 0..2 select the background mode;
+    /// the exact value $09 raises BG3 priority in Mode 1. Retaining bit 3 in
+    /// this existing byte preserves positional save-state compatibility.
     pub mode: u8,
 
     pub vram_pointer: u16,
@@ -314,6 +317,16 @@ impl PpuState {
 
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Hardware background mode selected by BGMODE bits 0..2.
+    pub fn bg_mode(&self) -> u8 {
+        self.mode & 0x07
+    }
+
+    /// Snes9x raises BG3 priority only for the exact BGMODE low nibble `$09`.
+    pub fn mode1_bg3_priority(&self) -> bool {
+        self.mode == 0x09
     }
 
     /// `ppu_reset` — zero VRAM/CGRAM/OAM, set objTileAdrs, force blank.
@@ -540,7 +553,7 @@ impl PpuState {
             }
             0x05 => {
                 // BGMODE
-                self.mode = val & 0x7;
+                self.mode = val & 0x0f;
                 // The title route begins in the reset-time mode 0 before it
                 // switches to the game modes. All 3-bit hardware modes are
                 // valid register values; rendering chooses the supported
@@ -710,7 +723,7 @@ impl PpuState {
     }
 
     pub fn current_render_scale(&self, render_flags: PpuRenderFlags) -> i32 {
-        let hq = self.mode == 7
+        let hq = self.bg_mode() == 7
             && !self.forced_blank
             && render_flags.contains(PpuRenderFlags::MODE7_4X4 | PpuRenderFlags::NEW_RENDERER);
         if hq {
@@ -1367,7 +1380,7 @@ impl PpuState {
     }
 
     fn draw_backgrounds(&mut self, y: u16, sub: bool) {
-        if self.mode == 1 {
+        if self.bg_mode() == 1 {
             if self.line_has_sprites {
                 self.draw_sprites(sub, true);
             }
@@ -1381,10 +1394,15 @@ impl PpuState {
             } else {
                 self.draw_background_4bpp_mosaic(y, sub, 1, 0xb100, 0x7100);
             }
-            if self.mosaic_enabled & 4 == 0 {
-                self.draw_background_2bpp(y, sub, 2, 0xf200, 0x1200);
+            let bg3_high = if self.mode1_bg3_priority() {
+                0xf200
             } else {
-                self.draw_background_2bpp_mosaic(y, sub, 2, 0xf200, 0x1200);
+                0x7200
+            };
+            if self.mosaic_enabled & 4 == 0 {
+                self.draw_background_2bpp(y, sub, 2, bg3_high, 0x1200);
+            } else {
+                self.draw_background_2bpp_mosaic(y, sub, 2, bg3_high, 0x1200);
             }
         } else {
             self.draw_background_mode7(y, sub, 0xc000);
@@ -1839,7 +1857,8 @@ impl PpuState {
 
     fn pixel_for_bg_layer_old(&self, x: i32, y: i32, layer: usize, priority: usize) -> u16 {
         let bg = self.bg_layer[layer];
-        let wide_tiles = self.mode == 5 || self.mode == 6;
+        let mode = self.bg_mode();
+        let wide_tiles = mode == 5 || mode == 6;
         let tile_bits_x = if wide_tiles { 4 } else { 3 };
         let tile_high_bit_x = if wide_tiles { 0x200 } else { 0x100 };
         let tile_bits_y = 3;
@@ -1871,8 +1890,8 @@ impl PpuState {
         if wide_tiles && ((x & 8 != 0) != (tile & 0x4000 != 0)) {
             tile_num = tile_num.wrapping_add(1);
         }
-        let bit_depth = BIT_DEPTHS_PER_MODE[self.mode as usize][layer];
-        if self.mode == 0 {
+        let bit_depth = BIT_DEPTHS_PER_MODE[mode as usize][layer];
+        if mode == 0 {
             palette_num += 8 * layer as u16;
         }
         let tile_base = bg
@@ -1904,12 +1923,9 @@ impl PpuState {
     }
 
     fn get_pixel_old(&self, x: i32, y: i32, sub: bool) -> (usize, u16) {
-        let mut act_mode = if self.mode == 1 {
-            8
-        } else {
-            self.mode as usize
-        };
-        if self.mode == 7 && self.m7_ext_bg_always_zero {
+        let mode = self.bg_mode();
+        let mut act_mode = if mode == 1 { 8 } else { mode as usize };
+        if mode == 7 && self.m7_ext_bg_always_zero {
             act_mode = 9;
         }
         let mut layer = 5usize;
@@ -1934,7 +1950,7 @@ impl PpuState {
                         lx -= lx % self.mosaic_size as i32;
                         ly -= (ly - 1) % self.mosaic_size as i32;
                     }
-                    if self.mode == 7 {
+                    if mode == 7 {
                         pixel = self.pixel_for_mode7_old(lx, cur_layer, cur_priority);
                     } else {
                         lx += self.bg_layer[cur_layer].h_scroll as i32;
@@ -2017,7 +2033,8 @@ impl PpuState {
                     || (self.prevent_math_mode == 1 && !color_window_state));
             let mut second_layer = 5usize;
             let mut color2 = 0u16;
-            if (math_enabled && self.add_subscreen) || self.mode == 5 || self.mode == 6 {
+            let mode = self.bg_mode();
+            if (math_enabled && self.add_subscreen) || mode == 5 || mode == 6 {
                 let (layer2, sub_color) = self.get_pixel_old(x, y, true);
                 second_layer = layer2;
                 color2 = sub_color;
@@ -2106,7 +2123,7 @@ impl PpuState {
 
         self.bg_buffers[0].data.fill(0x0500);
 
-        if self.mode == 7 && self.render_flags.contains(PpuRenderFlags::MODE7_4X4) {
+        if self.bg_mode() == 7 && self.render_flags.contains(PpuRenderFlags::MODE7_4X4) {
             self.draw_mode7_upsampled(line);
             return;
         }
@@ -2451,7 +2468,7 @@ impl PpuState {
                 self.line_has_sprites = has_sprites;
                 self.obj_buffer = buffer;
             }
-            if self.mode == 7 {
+            if self.bg_mode() == 7 {
                 self.calculate_mode7_starts(line);
             }
             for x in 0..256 {
@@ -2706,6 +2723,26 @@ mod tests {
         assert_eq!(ppu.obj_tile_adr1, 0x4000);
         assert_eq!(ppu.obj_tile_adr2, 0x5000);
         assert_eq!(ppu.obj_size, 0);
+    }
+
+    #[test]
+    fn bgmode_tracks_snes9x_mode1_bg3_priority_bit() {
+        let mut ppu = PpuState::new();
+
+        ppu.write(0x05, 0x01);
+        assert_eq!(ppu.mode, 1);
+        assert_eq!(ppu.bg_mode(), 1);
+        assert!(!ppu.mode1_bg3_priority());
+
+        ppu.write(0x05, 0x09);
+        assert_eq!(ppu.mode, 9);
+        assert_eq!(ppu.bg_mode(), 1);
+        assert!(ppu.mode1_bg3_priority());
+
+        ppu.write(0x05, 0x0a);
+        assert_eq!(ppu.mode, 10);
+        assert_eq!(ppu.bg_mode(), 2);
+        assert!(!ppu.mode1_bg3_priority());
     }
 
     #[test]

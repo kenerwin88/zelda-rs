@@ -1509,14 +1509,23 @@ def command_cached_av(args: argparse.Namespace) -> int:
         )
     output = output.resolve()
     started = time.monotonic()
-    replay = subprocess.run(
-        [
+    replay_command = [
             str(binary),
             "--replay-cached-snes9x-av",
             str(cache),
             str(args.rom.resolve()),
             str(output),
-        ],
+        ]
+    if args.resume_paired is not None:
+        replay_command.extend(["--resume-paired", str(args.resume_paired.resolve())])
+    if args.compare_from_frame is not None:
+        replay_command.extend(["--compare-from-frame", str(args.compare_from_frame)])
+    if args.ignore_video:
+        replay_command.append("--ignore-video")
+    if args.ignore_audio:
+        replay_command.append("--ignore-audio")
+    replay = subprocess.run(
+        replay_command,
         cwd=ROOT,
         check=False,
     )
@@ -1525,6 +1534,9 @@ def command_cached_av(args: argparse.Namespace) -> int:
     candidate = output / "av_hashes.jsonl"
     if not candidate.is_file():
         raise SystemExit(f"parity microscope: Rust replay wrote no candidate ledger: {candidate}")
+    oracle_slice = output / "oracle-av-hashes-slice.jsonl"
+    if oracle_slice.is_file():
+        oracle = oracle_slice
     comparison = subprocess.run(
         [
             str(engine),
@@ -1551,30 +1563,105 @@ def command_oracle_av_capture(args: argparse.Namespace) -> int:
             f"parity microscope: missing {binary}; run cargo build --profile parity -p zelda3-bin"
         )
     source = args.source_session.resolve()
-    source_identity = evidence.session_identity(source)
-    if args.frames <= 0 or args.frames > source_identity["frames_completed"]:
-        raise SystemExit(
-            f"parity microscope: --frames must be within source coverage "
-            f"1..{source_identity['frames_completed']}"
-        )
     manifest = evidence.load_json(source / "manifest.json")
+    if (source / "result.json").is_file():
+        source_identity = evidence.session_identity(source)
+    else:
+        frames_completed = int(manifest.get("timing", {}).get("frames_requested", 0))
+        source_core_sha = manifest.get("core", {}).get("sha256")
+        source_rom_sha = manifest.get("rom", {}).get("sha256")
+        if (
+            frames_completed <= 0
+            or not isinstance(source_core_sha, str)
+            or not isinstance(source_rom_sha, str)
+        ):
+            raise SystemExit(
+                "parity microscope: manifest-only source has no bounded route/core/ROM identity"
+            )
+        source_identity = {
+            "frames_completed": frames_completed,
+            "core_sha256": source_core_sha,
+            "rom_sha256": source_rom_sha,
+        }
     core_record = manifest.get("core")
     rom_record = manifest.get("rom")
     if not isinstance(core_record, dict) or not isinstance(rom_record, dict):
         raise SystemExit("parity microscope: source session has no core/ROM identity")
-    core_sha = source_identity["core_sha256"]
-    rom_sha = source_identity["rom_sha256"]
     core_value = args.core if args.core is not None else core_record.get("path")
     rom_value = args.rom if args.rom is not None else rom_record.get("path")
-    if not isinstance(core_sha, str) or not isinstance(rom_sha, str):
-        raise SystemExit("parity microscope: source session has no core/ROM hashes")
     if not isinstance(core_value, (str, Path)) or not isinstance(rom_value, (str, Path)):
         raise SystemExit("parity microscope: source session has no usable core/ROM paths")
     core = Path(core_value).resolve()
     rom = Path(rom_value).resolve()
+    resume_frame = 0
+    resume_oracle_state: Path | None = None
+    resume_initial_sram: Path | None = None
+    resume_core_sha: str | None = None
+    resume_rom_sha: str | None = None
+    if args.resume_paired is not None:
+        paired = args.resume_paired.resolve()
+        if not (paired / "manifest.json").is_file():
+            latest = evidence.load_json(paired / "latest.json")
+            paired = paired / latest["checkpoint"]
+        paired_manifest_path = paired / "manifest.json"
+        paired_manifest = evidence.load_json(paired_manifest_path)
+        if paired_manifest.get("schema") != 1 or paired_manifest.get("boundary") != "pre-frame":
+            raise SystemExit(f"parity microscope: unsupported paired checkpoint: {paired_manifest_path}")
+        resume_frame = int(paired_manifest["frame"])
+        resume_oracle_state = paired / paired_manifest["oracle_state"]
+        if not resume_oracle_state.is_file():
+            raise SystemExit(f"parity microscope: paired oracle state is missing: {resume_oracle_state}")
+        for manifest_key, selected_path in (("core", core), ("rom", rom)):
+            expected = paired_manifest.get(manifest_key, {}).get("sha256")
+            actual = evidence.sha256_file(selected_path)
+            if expected != actual:
+                raise SystemExit(
+                    f"parity microscope: paired {manifest_key} hash {expected} does not match selected {actual}"
+                )
+        resume_core_sha = paired_manifest.get("core", {}).get("sha256")
+        resume_rom_sha = paired_manifest.get("rom", {}).get("sha256")
+        for manifest_key, source_name in (
+            ("input_script", "input.txt"),
+            ("rom_random_script", "rom-random.txt"),
+        ):
+            expected = paired_manifest.get(manifest_key, {}).get("sha256")
+            actual = evidence.sha256_file(source / source_name)
+            if expected != actual:
+                raise SystemExit(
+                    f"parity microscope: paired {manifest_key} hash {expected} does not match source {actual}"
+                )
+        paired_sram = paired_manifest.get("initial_sram", {})
+        paired_sram_artifact = paired_sram.get("artifact")
+        paired_sram_sha = paired_sram.get("sha256")
+        if not isinstance(paired_sram_artifact, str) or Path(paired_sram_artifact).name != paired_sram_artifact:
+            raise SystemExit("parity microscope: paired checkpoint has no safe initial-SRAM artifact")
+        resume_initial_sram = paired / paired_sram_artifact
+        if not resume_initial_sram.is_file():
+            raise SystemExit(
+                f"parity microscope: paired initial SRAM is missing: {resume_initial_sram}"
+            )
+        actual_sram_sha = evidence.sha256_file(resume_initial_sram)
+        if paired_sram_sha != actual_sram_sha:
+            raise SystemExit(
+                f"parity microscope: paired initial_sram hash {paired_sram_sha} does not match artifact {actual_sram_sha}"
+            )
+        source_limit = int(source_identity["frames_completed"])
+        if args.frames <= resume_frame or args.frames > source_limit:
+            raise SystemExit(
+                f"parity microscope: resumed --frames must be within {resume_frame + 1}..{source_limit}"
+            )
+    elif args.frames <= 0 or args.frames > source_identity["frames_completed"]:
+        raise SystemExit(
+            f"parity microscope: --frames must be within source coverage "
+            f"1..{source_identity['frames_completed']}"
+        )
+    core_sha = resume_core_sha or source_identity["core_sha256"]
+    rom_sha = resume_rom_sha or source_identity["rom_sha256"]
+    if not isinstance(core_sha, str) or not isinstance(rom_sha, str):
+        raise SystemExit("parity microscope: source session has no core/ROM hashes")
     input_path = source / "input.txt"
     rng_path = source / "rom-random.txt"
-    sram_path = source / "initial.srm"
+    sram_path = resume_initial_sram or source / "initial.srm"
     missing = [path for path in (core, rom, input_path, sram_path) if not path.is_file()]
     if missing:
         raise SystemExit(
@@ -1635,6 +1722,15 @@ def command_oracle_av_capture(args: argparse.Namespace) -> int:
         core_sha,
         rom_sha,
     ]
+    if resume_oracle_state is not None:
+        command.extend(
+            [
+                "--resume-oracle-state",
+                str(resume_oracle_state),
+                "--start-frame",
+                str(resume_frame),
+            ]
+        )
     started = time.monotonic()
     try:
         completed = subprocess.run(command, cwd=ROOT, check=False)
@@ -2242,6 +2338,18 @@ def parser() -> argparse.ArgumentParser:
     cached_av.add_argument("--rom", type=Path, default=ROOT / "saves" / "zelda3.sfc")
     cached_av.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
     cached_av.add_argument("--output", type=Path)
+    cached_av.add_argument(
+        "--resume-paired",
+        type=Path,
+        help="resume Rust at a verified pre-frame paired checkpoint and compare only that cache suffix",
+    )
+    cached_av.add_argument(
+        "--compare-from-frame",
+        type=int,
+        help="run restored Rust warmup frames but emit and compare evidence only from this frame",
+    )
+    cached_av.add_argument("--ignore-video", action="store_true")
+    cached_av.add_argument("--ignore-audio", action="store_true")
     cached_av.add_argument("--max-differing-frames", type=int, default=16)
     cached_av.set_defaults(handler=command_cached_av)
 
@@ -2256,6 +2364,11 @@ def parser() -> argparse.ArgumentParser:
     oracle_av_capture.add_argument("--binary", type=Path, default=DEFAULT_BINARY)
     oracle_av_capture.add_argument("--output", type=Path)
     oracle_av_capture.add_argument("--cache-root", type=Path, default=evidence.ORACLE_CACHE_ROOT)
+    oracle_av_capture.add_argument(
+        "--resume-paired",
+        type=Path,
+        help="capture a development-only A/V suffix from a provenance-bound paired oracle state",
+    )
     oracle_av_capture.set_defaults(handler=command_oracle_av_capture)
 
     pc = subcommands.add_parser("pc", help="show canonical and mirrored trace addresses")

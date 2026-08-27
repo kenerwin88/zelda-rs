@@ -322,6 +322,10 @@ enum VwfCpuSliceOutcome {
     InterruptedMidGlyph {
         retain_incomplete_click: bool,
     },
+    /// The temporary source authority returned from this host interval after
+    /// the native C decoder reached the same semantic message endpoint. The
+    /// handler remains suspended; no caller suffix has executed yet.
+    AuthorityBoundaryReached,
     HandlerComplete {
         master_cycles_before_vblank: u32,
         caller_suffix_master_cycles: u32,
@@ -733,6 +737,19 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0E_0B_SaveMenu(&mut self) {
+        if self.rom_startup_timing()
+            && self.game_state.messaging.runtime.module() == 0
+            && matches!(
+                self.original_timing_owner(),
+                crate::zelda_rtl::OriginalTimingOwner::Live
+            )
+        {
+            match self.take_original_timing_save_menu_initialization_progress() {
+                Some(crate::SaveMenuInitializationProgress::Completed) => {}
+                Some(crate::SaveMenuInitializationProgress::InProgress) => return,
+                None => panic!("live timing authority omitted save-menu initialization progress"),
+            }
+        }
         if self.game_state.world.location.is_outdoors() {
             self.Overworld_DwDeathMountainPaletteAnimation();
         }
@@ -3950,10 +3967,14 @@ impl ZeldaState {
             VwfCpuSliceOutcome::InterruptedMidGlyph {
                 retain_incomplete_click,
             } => retain_incomplete_click,
+            VwfCpuSliceOutcome::AuthorityBoundaryReached => false,
             VwfCpuSliceOutcome::HandlerComplete { .. } => false,
         };
         let yielded_midline = matches!(outcome, VwfCpuSliceOutcome::InterruptedMidGlyph { .. });
+        let yielded_to_authority = matches!(outcome, VwfCpuSliceOutcome::AuthorityBoundaryReached);
+        let yielded = yielded_midline || yielded_to_authority;
         let caller_suffix_crosses_vblank = !yielded_midline
+            && !yielded_to_authority
             && self.dialogue_scroll_cpu_is_idle()
             && outcome.caller_suffix_crosses_vblank();
         if yielded_midline
@@ -3969,11 +3990,11 @@ impl ZeldaState {
         // handler epilogue yet, so $17/$0710 remain zero: NMI performs normal
         // core maintenance and does not publish the unfinished text buffer.
         // The next host slice resumes only this interrupted main-thread work.
-        self.dialogue_fast_forward_hold_pending = yielded_midline || caller_suffix_crosses_vblank;
+        self.dialogue_fast_forward_hold_pending = yielded || caller_suffix_crosses_vblank;
         // A long scroll remains inside RenderText_Draw_Scroll; its dedicated
         // pre-main scheduler owns both the preceding NMI publication and the
         // eventual handler epilogue. Ordinary commands still finish here.
-        if !yielded_midline && self.dialogue_scroll_cpu_is_idle() {
+        if !yielded && self.dialogue_scroll_cpu_is_idle() {
             self.finish_dialogue_character_render_call();
             if caller_suffix_crosses_vblank {
                 self.schedule_pre_main_caller_continuation(
@@ -4012,6 +4033,7 @@ impl ZeldaState {
         let mut cycles_left = vwf_render_loop_cycle_budget(resuming, current_line, entry_phase);
         let mut frame_advance: u16 = 0;
         let mut midline_yield = false;
+        let mut authority_boundary_reached = false;
         let mut retain_incomplete_click = false;
         loop {
             let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos() as usize;
@@ -4171,6 +4193,12 @@ impl ZeldaState {
                 self.messaging_state_mut().set_dialogue_msg_read_pos(
                     (read_pos as u16).wrapping_add(1 + u16::from(multibyte)),
                 );
+                if self.dialogue_live_message_read_position_target
+                    == Some(self.game_state.messaging.runtime.dialogue_msg_read_pos())
+                {
+                    authority_boundary_reached = true;
+                    break;
+                }
             }
             if !restart_if_zero_speed {
                 break;
@@ -4203,6 +4231,8 @@ impl ZeldaState {
             VwfCpuSliceOutcome::InterruptedMidGlyph {
                 retain_incomplete_click,
             }
+        } else if authority_boundary_reached {
+            VwfCpuSliceOutcome::AuthorityBoundaryReached
         } else {
             VwfCpuSliceOutcome::HandlerComplete {
                 master_cycles_before_vblank: cycles_left,

@@ -90,12 +90,12 @@ impl<'a> VariantBgDrawPacket<'a> {
         material_for_draw(self.draw)
     }
 
-    pub fn mode1_rank(&self) -> Option<u8> {
+    pub fn mode1_rank(&self, bg3_priority: bool) -> Option<u8> {
         VariantDrawPacket::Bg {
             packet_index: 0,
             packet: self,
         }
-        .mode1_rank()
+        .mode1_rank(bg3_priority)
     }
 }
 
@@ -109,7 +109,7 @@ impl<'a> VariantSpriteDrawPacket<'a> {
             packet_index: 0,
             packet: self,
         }
-        .mode1_rank()
+        .mode1_rank(false)
     }
 }
 
@@ -206,17 +206,24 @@ impl<'plan, 'frame> VariantDrawPacket<'plan, 'frame> {
         }
     }
 
-    pub fn mode1_rank(self) -> Option<u8> {
+    pub fn mode1_rank(self, bg3_priority: bool) -> Option<u8> {
         match self {
-            Self::Bg { packet, .. } => match (packet.layer_index, packet.inst.priority) {
-                (2, false) => Some(0), // BG3-lo
-                (1, false) => Some(3), // BG2-lo
-                (0, false) => Some(4), // BG1-lo
-                (1, true) => Some(6),  // BG2-hi
-                (0, true) => Some(7),  // BG1-hi
-                (2, true) => Some(9),  // BG3-hi
-                _ => None,
-            },
+            Self::Bg { packet, .. } => {
+                match (bg3_priority, packet.layer_index, packet.inst.priority) {
+                    (_, 2, false) => Some(0),     // BG3-lo
+                    (false, 2, true) => Some(2),  // BG3-hi
+                    (false, 1, false) => Some(4), // BG2-lo
+                    (false, 0, false) => Some(5), // BG1-lo
+                    (false, 1, true) => Some(7),  // BG2-hi
+                    (false, 0, true) => Some(8),  // BG1-hi
+                    (true, 1, false) => Some(3),  // BG2-lo
+                    (true, 0, false) => Some(4),  // BG1-lo
+                    (true, 1, true) => Some(6),   // BG2-hi
+                    (true, 0, true) => Some(7),   // BG1-hi
+                    (true, 2, true) => Some(9),   // BG3-hi
+                    _ => None,
+                }
+            }
             Self::Sprite { packet, .. } => match packet.inst.priority {
                 0 => Some(1), // OBJ0
                 1 => Some(2), // OBJ1
@@ -692,7 +699,7 @@ fn trace_bg_packet_pixel(
         palette_row: packet.inst.palette,
         palette_index,
         priority: u8::from(packet.inst.priority),
-        mode1_rank: packet.mode1_rank(),
+        mode1_rank: packet.mode1_rank(frame.mode1_bg3_priority),
         output_rgba,
         live_cgram_rgba: bg_live_cgram_rgba(frame, packet, palette_index),
         main_screen_enabled,
@@ -1413,14 +1420,14 @@ mod tests {
         assert_eq!(packets[0].screen_origin(), (4, 8));
         assert_eq!(packets[0].palette_row(), 2);
         assert_eq!(packets[0].material(), ModernDrawMaterial::PaletteEffect);
-        assert_eq!(packets[0].mode1_rank(), Some(4));
+        assert_eq!(packets[0].mode1_rank(true), Some(4));
         assert_eq!(packets[0].local_xy(6, 11), Some((2, 3)));
 
         assert_eq!(packets[1].surface(), VariantDrawSurface::Bg);
         assert_eq!(packets[1].packet_index(), 1);
         assert_eq!(packets[1].cell_id(), 1);
         assert_eq!(packets[1].material(), ModernDrawMaterial::MissingArt);
-        assert_eq!(packets[1].mode1_rank(), Some(4));
+        assert_eq!(packets[1].mode1_rank(true), Some(4));
 
         assert_eq!(packets[2].surface(), VariantDrawSurface::Sprite);
         assert_eq!(packets[2].packet_index(), 0);
@@ -1429,7 +1436,47 @@ mod tests {
         assert_eq!(packets[2].screen_origin(), (20, 24));
         assert_eq!(packets[2].palette_row(), 0);
         assert_eq!(packets[2].material(), ModernDrawMaterial::LiveIndex);
-        assert_eq!(packets[2].mode1_rank(), Some(1));
+        assert_eq!(packets[2].mode1_rank(true), Some(1));
+    }
+
+    #[test]
+    fn mode1_bg3_high_rank_follows_the_presented_bgmode_priority_bit() {
+        let cell = index_cell(0, NO_SOURCE_KEY);
+        let bg3_instance = ModernIndexTileInstance {
+            cell_id: 0,
+            source_key: NO_SOURCE_KEY,
+            screen_x: 0,
+            screen_y: 0,
+            palette: 0,
+            hflip: false,
+            vflip: false,
+            priority: true,
+        };
+        let bg2_instance = ModernIndexTileInstance {
+            priority: false,
+            ..bg3_instance
+        };
+        let bg3 = VariantBgDrawPacket {
+            layer_index: 2,
+            cell: &cell,
+            inst: &bg3_instance,
+            key: None,
+            draw: VariantAtlasDraw::MissingArt,
+        };
+        let bg2 = VariantBgDrawPacket {
+            layer_index: 1,
+            cell: &cell,
+            inst: &bg2_instance,
+            key: None,
+            draw: VariantAtlasDraw::MissingArt,
+        };
+
+        assert_eq!(bg3.mode1_rank(false), Some(2));
+        assert_eq!(bg2.mode1_rank(false), Some(4));
+        assert!(bg3.mode1_rank(false) < bg2.mode1_rank(false));
+        assert_eq!(bg3.mode1_rank(true), Some(9));
+        assert_eq!(bg2.mode1_rank(true), Some(3));
+        assert!(bg3.mode1_rank(true) > bg2.mode1_rank(true));
     }
 
     #[test]
@@ -1486,10 +1533,10 @@ mod tests {
         );
         let packets: Vec<_> = plan.material_packets().collect();
 
-        assert_eq!(packets[0].mode1_rank(), Some(7));
+        assert_eq!(packets[0].mode1_rank(true), Some(7));
         assert_eq!(packets[0].overlap_index_at_screen(6, 11), Some(5));
         assert_eq!(packets[0].overlap_index_at_screen(3, 11), None);
-        assert_eq!(packets[1].mode1_rank(), Some(5));
+        assert_eq!(packets[1].mode1_rank(true), Some(5));
         assert_eq!(packets[1].overlap_index_at_screen(22, 25), Some(7));
         assert_eq!(packets[1].overlap_index_at_screen(22, 24), None);
     }
@@ -1862,10 +1909,10 @@ mod tests {
         assert_eq!(trace.local_y, 2);
         assert_eq!(trace.palette_index, 4);
         assert_eq!(trace.priority, 0);
-        assert_eq!(trace.mode1_rank, Some(4));
+        assert_eq!(trace.mode1_rank, Some(5));
         assert_eq!(trace.output_rgba, Some([40, 50, 60, 0xff]));
         assert!(trace.describe().contains("material=palette_effect cell=0"));
-        assert!(trace.describe().contains("priority=0 mode1_rank=4"));
+        assert!(trace.describe().contains("priority=0 mode1_rank=5"));
     }
 
     #[test]

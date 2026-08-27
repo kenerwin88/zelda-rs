@@ -53,6 +53,8 @@ pub struct GpuFrame<'a> {
     pub oam: &'a [u16],
     /// PPU background mode (0–7).
     pub mode: u8,
+    /// Semantic Mode-1 BG3 priority generation selected by BGMODE bit 3.
+    pub mode1_bg3_priority: bool,
     /// Per-layer scroll, tilemap address, and tile CHR base address.
     pub bg: [BgLayerRegs; 4],
     /// Sprite (OBJ) register state.
@@ -165,6 +167,7 @@ pub struct GpuFrameRegisterSnapshot<'a> {
     pub vram: &'a [u16],
     pub oam: &'a [u16],
     pub mode: u8,
+    pub mode1_bg3_priority: bool,
     pub bg: [BgLayerRegs; 4],
     pub obj: ObjRegs,
     pub mosaic_enabled: u8,
@@ -269,6 +272,7 @@ impl<'a> GpuFrame<'a> {
             cgram: input.cgram,
             oam: registers.oam,
             mode: registers.mode,
+            mode1_bg3_priority: registers.mode1_bg3_priority,
             bg: registers.bg,
             obj: registers.obj,
             mosaic_enabled: registers.mosaic_enabled,
@@ -344,6 +348,7 @@ impl<'a> GpuFrame<'a> {
             cgram,
             oam: source.oam(),
             mode: source.mode(),
+            mode1_bg3_priority: source.mode1_bg3_priority(),
             bg: std::array::from_fn(|layer| BgLayerRegs {
                 h_scroll: source.bg_h_scroll(layer),
                 v_scroll: source.bg_v_scroll(layer),
@@ -407,6 +412,9 @@ pub trait GpuFrameSource<'a> {
     fn vram(&self) -> &'a [u16];
     fn oam(&self) -> &'a [u16];
     fn mode(&self) -> u8;
+    fn mode1_bg3_priority(&self) -> bool {
+        false
+    }
     fn bg_h_scroll(&self, layer: usize) -> u16;
     fn bg_v_scroll(&self, layer: usize) -> u16;
     fn bg_tilemap_wider(&self, layer: usize) -> bool;
@@ -759,6 +767,7 @@ mod tests {
             vram: &vram,
             oam: &oam,
             mode: 7,
+            mode1_bg3_priority: true,
             bg: [
                 BgLayerRegs {
                     h_scroll: 1,
@@ -827,6 +836,7 @@ mod tests {
         assert_eq!(frame.vram, &vram);
         assert_eq!(frame.cgram, &cgram);
         assert_eq!(frame.oam, &oam);
+        assert!(frame.mode1_bg3_priority);
         assert_eq!(frame.mode, 7);
         assert_eq!(frame.bg[0].tilemap_adr, 0x0400);
         assert_eq!(frame.obj.tile_adr2, 0x3000);

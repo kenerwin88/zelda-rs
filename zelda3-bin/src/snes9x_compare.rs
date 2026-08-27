@@ -5,7 +5,7 @@ use crate::*;
 
 use std::env;
 use std::error::Error;
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process;
@@ -22,6 +22,8 @@ use crate::libretro_timeline::{
 use crate::render_diagnostics::format_render_ppu_summary;
 use crate::snes9x_presented_bg_scroll::snes9x_presented_bg_scroll;
 use crate::snes9x_presented_bg_tilemaps::{snes9x_presented_bg_tilemaps, PresentedBgTilemapCache};
+use crate::snes9x_presented_dialogue_text::snes9x_presented_dialogue_text;
+use crate::snes9x_presented_window_mask::snes9x_presented_window_mask;
 use crate::snes9x_semantic_receipts::Snes9xOracleSemanticTrace;
 use serde::{Deserialize, Serialize};
 use zelda3::{
@@ -119,6 +121,97 @@ struct SmpPostHandoffAnchor {
 struct FirstNmiApuAnchor {
     access: FramedApuPortAccess,
     completed_timing_transaction: FramedCpuTimingTransaction,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Snes9xRetroRunTrace {
+    entry: serde_json::Value,
+    return_event: serde_json::Value,
+    hdma_events: Vec<serde_json::Value>,
+    video_events: Vec<serde_json::Value>,
+    raw_sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OrdinalApuPortAccess {
+    cpu_transaction_ordinal: usize,
+    access: crate::libretro_core::LibretroApuPortWrite,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OrdinalSmpOutputPortWrite {
+    cpu_transaction_ordinal: usize,
+    write: crate::libretro_core::LibretroSmpOutputPortWrite,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+struct CpuTimingGapReceipt {
+    previous_transaction_ordinal: usize,
+    next_transaction_ordinal: usize,
+    previous_end_v_counter: i32,
+    previous_end_cpu_cycle: i32,
+    next_start_v_counter: i32,
+    next_start_cpu_cycle: i32,
+    elapsed_master_cycles: i64,
+}
+
+const FIRST_NMI_RETURN_RECEIPT_FRAME: u32 = 81;
+const FIRST_NMI_RETURN_HOST_FRAME: u32 = 81;
+const FIRST_NMI_RETURN_RETRO_RUN: u32 = 81;
+const FIRST_NMI_RETURN_START_PC: i32 = 0x008a38;
+
+struct PendingFirstNmiReturnFixture {
+    final_path: PathBuf,
+    temporary_path: PathBuf,
+    writer: BufWriter<fs::File>,
+    installed: bool,
+}
+
+impl PendingFirstNmiReturnFixture {
+    fn create(path: impl AsRef<Path>) -> Result<Self, String> {
+        let final_path = path.as_ref().to_path_buf();
+        let temporary_path =
+            PathBuf::from(format!("{}.tmp-{}", final_path.display(), process::id()));
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)
+            .map_err(|error| {
+                format!(
+                    "failed to create temporary first-NMI return fixture {}: {error}",
+                    temporary_path.display()
+                )
+            })?;
+        Ok(Self {
+            final_path,
+            temporary_path,
+            writer: BufWriter::new(file),
+            installed: false,
+        })
+    }
+
+    fn install(&mut self) -> Result<(), String> {
+        self.writer.flush().map_err(|error| {
+            format!(
+                "failed to flush temporary first-NMI return fixture {}: {error}",
+                self.temporary_path.display()
+            )
+        })?;
+        self.writer.get_ref().sync_all().map_err(|error| {
+            format!(
+                "failed to sync temporary first-NMI return fixture {}: {error}",
+                self.temporary_path.display()
+            )
+        })?;
+        fs::rename(&self.temporary_path, &self.final_path).map_err(|error| {
+            format!(
+                "failed to atomically install first-NMI return fixture {}: {error}",
+                self.final_path.display()
+            )
+        })?;
+        self.installed = true;
+        Ok(())
+    }
 }
 
 const DMA_LEDGER_FIELDS: [&str; crate::libretro_core::LIBRETRO_DMA_LEDGER_FIELDS] = [
@@ -377,7 +470,8 @@ struct OracleTraceEventKind {
 
 fn oracle_rng_sample_from_trace_line(
     line: &str,
-    expected_run: u32,
+    expected_trace_run: u32,
+    execution_frame: u32,
 ) -> Result<Option<RomRandomSample>, String> {
     let kind: OracleTraceEventKind = serde_json::from_str(line)
         .map_err(|error| format!("invalid live oracle trace event: {error}"))?;
@@ -389,20 +483,20 @@ fn oracle_rng_sample_from_trace_line(
     if event.pc & 0xffff != CARTRIDGE_RNG_STORE_PC_LOW16 {
         return Ok(None);
     }
-    if event.run != expected_run {
+    if event.run != expected_trace_run {
         return Err(format!(
-            "live oracle RNG trace run {} arrived while preparing Rust execution frame {expected_run}",
-            event.run
+            "live oracle RNG trace run {} arrived while expecting trace run {expected_trace_run} for Rust execution frame {execution_frame}",
+            event.run,
         ));
     }
     if event.carry > 1 {
         return Err(format!(
-            "live oracle RNG trace run {expected_run} has invalid carry {}",
+            "live oracle RNG trace run {expected_trace_run} for execution frame {execution_frame} has invalid carry {}",
             event.carry
         ));
     }
     Ok(Some(RomRandomSample::with_carry(
-        expected_run,
+        execution_frame,
         event.value,
         event.carry != 0,
     )))
@@ -437,7 +531,11 @@ impl LiveOracleRngTrace {
         }
     }
 
-    fn samples_for_run(&mut self, run: u32) -> Result<Vec<RomRandomSample>, String> {
+    fn samples_for_run(
+        &mut self,
+        trace_run: u32,
+        execution_frame: u32,
+    ) -> Result<Vec<RomRandomSample>, String> {
         if self.reader.is_none() {
             match fs::File::open(&self.path) {
                 Ok(file) => self.reader = Some(BufReader::new(file)),
@@ -465,12 +563,45 @@ impl LiveOracleRngTrace {
             if bytes == 0 {
                 break;
             }
-            if let Some(sample) = oracle_rng_sample_from_trace_line(&self.line, run)? {
+            if let Some(sample) =
+                oracle_rng_sample_from_trace_line(&self.line, trace_run, execution_frame)?
+            {
                 samples.push(sample);
             }
         }
         Ok(samples)
     }
+}
+
+fn validate_oracle_rng_samples_for_run(
+    expected: &[RomRandomSample],
+    cursor: &mut usize,
+    run: u32,
+    actual: &[RomRandomSample],
+) -> Result<(), String> {
+    if expected
+        .get(*cursor)
+        .is_some_and(|sample| sample.execution_frame < run)
+    {
+        return Err(format!(
+            "RNG script expected an unobserved cartridge call at frame {} before source run {run}",
+            expected[*cursor].execution_frame
+        ));
+    }
+    let start = *cursor;
+    while expected
+        .get(*cursor)
+        .is_some_and(|sample| sample.execution_frame == run)
+    {
+        *cursor += 1;
+    }
+    let expected_run = &expected[start..*cursor];
+    if expected_run == actual {
+        return Ok(());
+    }
+    Err(format!(
+        "RNG script/source mismatch at frame {run}: script={expected_run:?}, source={actual:?}"
+    ))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1168,7 +1299,7 @@ fn capture_rust_ppu_probe_from_presented(
         capture_source,
         comparison_frame,
         host_frame: Some(host_frame),
-        mode: i32::from(ppu.mode),
+        mode: i32::from(ppu.bg_mode()),
         brightness: i32::from(ppu.brightness),
         scanout_brightness_override: ppu.scanout_brightness_override,
         forced_blank: ppu.forced_blank,
@@ -1579,18 +1710,34 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         );
         process::exit(2);
     };
-    if args.len() != 9 {
-        eprintln!(
-            "usage: zelda3 --capture-snes9x-av CORE ROM FRAMES INPUT RNG SRAM OUTPUT EXPECTED_CORE_SHA256 EXPECTED_ROM_SHA256"
-        );
-        process::exit(2);
-    }
+    let (resume_oracle_state, start_frame) = match args.get(9).map(String::as_str) {
+        None if args.len() == 9 => (None, 0),
+        Some("--resume-oracle-state")
+            if args.get(11).map(String::as_str) == Some("--start-frame") && args.len() == 13 =>
+        {
+            let start_frame = args[12].parse::<u32>().unwrap_or_else(|error| {
+                eprintln!("invalid --start-frame `{}`: {error}", args[12]);
+                process::exit(2);
+            });
+            (Some(PathBuf::from(&args[10])), start_frame)
+        }
+        _ => {
+            eprintln!(
+                "usage: zelda3 --capture-snes9x-av CORE ROM FRAMES INPUT RNG SRAM OUTPUT EXPECTED_CORE_SHA256 EXPECTED_ROM_SHA256 [--resume-oracle-state STATE --start-frame N]"
+            );
+            process::exit(2);
+        }
+    };
     let frames = frames.parse::<u32>().unwrap_or_else(|error| {
         eprintln!("invalid oracle A/V capture frame count {frames}: {error}");
         process::exit(2);
     });
     if frames == 0 {
         eprintln!("oracle A/V capture frame count must be greater than zero");
+        process::exit(2);
+    }
+    if start_frame >= frames {
+        eprintln!("oracle A/V capture start frame {start_frame} must precede final frame {frames}");
         process::exit(2);
     }
     verify_expected_sha256(core_path, "libretro core", Some(expected_core_sha256));
@@ -1634,7 +1781,7 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         eprintln!("RNG script {} is not UTF-8: {error}", rng_path.display());
         process::exit(2);
     });
-    zelda3::parse_rom_random_script(rng_text).unwrap_or_else(|error| {
+    let rng_samples = zelda3::parse_rom_random_script(rng_text).unwrap_or_else(|error| {
         eprintln!("failed to parse RNG script {}: {error}", rng_path.display());
         process::exit(2);
     });
@@ -1661,12 +1808,35 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         eprintln!("failed to persist oracle capture SRAM: {error}");
         process::exit(1);
     });
+    let mut semantic_trace =
+        Snes9xOracleSemanticTrace::configure(Some(output_dir)).unwrap_or_else(|error| {
+            eprintln!("failed to configure Snes9x semantic receipt capture: {error}");
+            process::exit(1);
+        });
+    let mut oracle_rng_trace = LiveOracleRngTrace::new(semantic_trace.backing_path().to_path_buf());
+    let mut rng_cursor = rng_samples.partition_point(|sample| sample.execution_frame < start_frame);
     let _compare_lock = acquire_snes9x_compare_lock();
     let mut oracle = LibretroCore::load_with_sram(core_path, rom_path, Some(&initial_sram))
         .unwrap_or_else(|error| {
             eprintln!("failed to initialize Snes9x for A/V capture: {error}");
             process::exit(1);
         });
+    if let Some(path) = resume_oracle_state.as_deref() {
+        let state = fs::read(path).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to read paired oracle state {}: {error}",
+                path.display()
+            );
+            process::exit(2);
+        });
+        oracle.unserialize_state(&state).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to restore paired oracle state {}: {error}",
+                path.display()
+            );
+            process::exit(2);
+        });
+    }
     validate_required_libretro_core(
         Some(("Snes9x", "1.63")),
         &oracle.library_name,
@@ -1702,7 +1872,7 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         },
         "rom": {"path": rom_path, "sha256": rom_sha256},
         "rom_random_replay": {
-            "mode": "replay_script_provenance",
+            "mode": "source_trace_verified_replay_script",
             "artifact": "rom-random.txt",
             "sha256": parity::evidence::sha256_bytes(&rng_bytes),
         },
@@ -1710,12 +1880,17 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
             "fps": oracle.av_info.timing.fps,
             "sample_rate": oracle.av_info.timing.sample_rate,
             "frames_requested": frames,
-            "start_frame": 0,
-            "compare_from_frame": 0,
+            "start_frame": start_frame,
+            "compare_from_frame": start_frame,
             "fixed_oracle_startup_skip_frames": 0,
             "dynamic_alignment": false,
         },
         "comparison_lanes": {"video": true, "audio": true},
+        "resume_oracle_state": resume_oracle_state.as_ref().map(|path| serde_json::json!({
+            "path": path,
+            "sha256": parity::evidence::sha256_file(path).unwrap(),
+            "frame": start_frame,
+        })),
         "av_hash_ledger": {
             "schema": 1,
             "evidence_schema": 2,
@@ -1723,9 +1898,15 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
             "video_canonicalization": "visible row-major RGB bytes; alpha and libretro row padding excluded",
             "audio_canonicalization": "interleaved stereo signed 16-bit little-endian samples",
         },
+        "original_timing_host_receipts": {
+            "schema": 8,
+            "artifact": "original-timing-host-receipts.jsonl.zst",
+            "coverage": "one backend-neutral source receipt for every captured host frame",
+        },
         "artifacts": [
             "input.txt", "rom-random.txt", "initial.srm", "oracle_initial.state",
             "oracle_last_before.state", "oracle_final.state", "av_hashes.jsonl",
+            "original-timing-host-receipts.jsonl.zst",
             "result.json"
         ],
     });
@@ -1743,8 +1924,20 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
             process::exit(1);
         }),
     );
+    let receipt_file = fs::File::create(output_dir.join("original-timing-host-receipts.jsonl.zst"))
+        .unwrap_or_else(|error| {
+            eprintln!("failed to create source timing receipt ledger: {error}");
+            process::exit(1);
+        });
+    let mut receipt_writer =
+        zstd::stream::write::Encoder::new(receipt_file, 3).unwrap_or_else(|error| {
+            eprintln!("failed to initialize source timing receipt compression: {error}");
+            process::exit(1);
+        });
+    let mut presented_bg_tilemap_cache = PresentedBgTilemapCache::default();
+    let mut previous_oracle_video = None;
     let mut oracle_last_before = initial_oracle_state;
-    for frame in 0..frames {
+    for frame in start_frame..frames {
         if frame.saturating_add(1) == frames {
             oracle
                 .serialize_state_into(&mut oracle_last_before)
@@ -1755,6 +1948,62 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         }
         let input = input_script.input_for_frame(frame);
         let capture = oracle.run_frame_with_input(input);
+        let oracle_wram = oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM);
+        let dialogue_message_read_position = oracle_wram
+            .and_then(|ram| ram.get(0x1cd9..0x1cdb))
+            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]));
+        let spotlight_var4_low_at_return = oracle_wram
+            .and_then(|ram| ram.get(crate::snes9x_semantic_receipts::SPOTLIGHT_VAR4_LOW_ADDRESS))
+            .copied();
+        let mut semantic = semantic_trace
+            .read_after_host_call(dialogue_message_read_position, spotlight_var4_low_at_return)
+            .unwrap_or_else(|error| {
+                eprintln!(
+                    "failed to read Snes9x semantic receipts at capture frame {frame}: {error}"
+                );
+                process::exit(1);
+            });
+        let actual_rng = oracle_rng_trace
+            .samples_for_run(frame - start_frame, frame)
+            .unwrap_or_else(|error| {
+                eprintln!("failed to read source RNG receipts at capture frame {frame}: {error}");
+                process::exit(1);
+            });
+        validate_oracle_rng_samples_for_run(&rng_samples, &mut rng_cursor, frame, &actual_rng)
+            .unwrap_or_else(|error| {
+                eprintln!("oracle A/V capture rejected stale RNG provenance: {error}");
+                process::exit(2);
+            });
+        semantic.extend(
+            snes9x_oracle_semantic_receipts(&oracle).unwrap_or_else(|error| {
+                eprintln!(
+                    "failed to decode Snes9x semantic receipts at capture frame {frame}: {error}"
+                );
+                process::exit(1);
+            }),
+        );
+        let receipts = snes9x_original_timing_host_receipts(
+            &oracle,
+            &capture,
+            previous_oracle_video.as_ref(),
+            &mut presented_bg_tilemap_cache,
+            frame,
+            input,
+            semantic,
+        )
+        .unwrap_or_else(|error| {
+            eprintln!("failed to decode Snes9x host receipts at capture frame {frame}: {error}");
+            process::exit(1);
+        });
+        serde_json::to_writer(&mut receipt_writer, &receipts).unwrap_or_else(|error| {
+            eprintln!("failed to write source timing receipt at frame {frame}: {error}");
+            process::exit(1);
+        });
+        receipt_writer.write_all(b"\n").unwrap_or_else(|error| {
+            eprintln!("failed to terminate source timing receipt at frame {frame}: {error}");
+            process::exit(1);
+        });
+        previous_oracle_video = Some(PresentedOracleVideo::from(&capture));
         let video = canonical_oracle_video_digest(&capture).unwrap_or_else(|error| {
             eprintln!("failed to hash oracle video at frame {frame}: {error}");
             process::exit(1);
@@ -1771,6 +2020,10 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
     }
     writer.flush().unwrap_or_else(|error| {
         eprintln!("failed to flush oracle A/V hash ledger: {error}");
+        process::exit(1);
+    });
+    receipt_writer.finish().unwrap_or_else(|error| {
+        eprintln!("failed to finish source timing receipt compression: {error}");
         process::exit(1);
     });
     fs::write(
@@ -1805,6 +2058,12 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         eprintln!("failed to write oracle A/V capture result: {error}");
         process::exit(1);
     });
+    semantic_trace
+        .remove_backing_file()
+        .unwrap_or_else(|error| {
+            eprintln!("failed to discard completed raw semantic trace: {error}");
+            process::exit(1);
+        });
     let mut finalized_manifest = manifest;
     finalized_manifest["status"] = serde_json::json!("oracle_captured");
     finalized_manifest["frames_completed"] = serde_json::json!(frames);
@@ -1816,10 +2075,13 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         eprintln!("failed to finalize oracle A/V capture manifest: {error}");
         process::exit(1);
     });
-    println!("captured {frames} oracle-only Snes9x A/V frame(s)");
+    println!(
+        "captured {} oracle-only Snes9x A/V frame(s) from frame {start_frame}",
+        frames - start_frame
+    );
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct CachedOracleAvRecord {
     schema: u32,
     frame: u32,
@@ -1838,14 +2100,182 @@ fn cached_ledger_input(value: &str) -> Result<u16, String> {
         .map_err(|error| format!("invalid cached input {value}: {error}"))
 }
 
+fn write_cached_av_final_paired_resume(
+    cache: &Path,
+    output: &Path,
+    cache_manifest: &serde_json::Value,
+    cache_manifest_bytes: &[u8],
+    rom: &Path,
+    rom_sha256: &str,
+    frame: u32,
+    game: &ZeldaState,
+) -> Result<PathBuf, String> {
+    if !game.paired_resume_cpu_boundary_is_quiescent() {
+        return Err(
+            "cached A/V replay ended inside an unserialized ROM-call continuation".to_string(),
+        );
+    }
+    let oracle_source = cache.join("oracle_final.state");
+    let initial_sram_source = cache.join("initial.srm");
+    let expected_oracle_sha256 = cache_manifest
+        .get("artifact_sha256")
+        .and_then(|artifacts| artifacts.get("oracle_final.state"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "cached A/V manifest has no final oracle-state hash".to_string())?;
+    let actual_oracle_sha256 = parity::evidence::sha256_file(&oracle_source)
+        .map_err(|error| format!("failed to hash {}: {error}", oracle_source.display()))?;
+    if actual_oracle_sha256 != expected_oracle_sha256 {
+        return Err(format!(
+            "cached final oracle state hash mismatch: expected {expected_oracle_sha256}, got {actual_oracle_sha256}"
+        ));
+    }
+    let cache_identity = cache_manifest
+        .get("cache_identity")
+        .ok_or_else(|| "cached A/V manifest has no cache identity".to_string())?;
+    let core_sha256 = cache_identity
+        .get("core_sha256")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "cached A/V identity has no core hash".to_string())?;
+    let source_artifacts = cache_identity
+        .get("source_artifact_sha256")
+        .ok_or_else(|| "cached A/V identity has no source artifact hashes".to_string())?;
+    let input_sha256 = source_artifacts
+        .get("input.txt")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "cached A/V identity has no input-script hash".to_string())?;
+    let rom_random_sha256 = source_artifacts
+        .get("rom-random.txt")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "cached A/V identity has no ROM-random-script hash".to_string())?;
+    let initial_sram_sha256 = source_artifacts
+        .get("initial.srm")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "cached A/V identity has no initial-SRAM hash".to_string())?;
+
+    let final_dir = output.join("paired-final");
+    if final_dir.exists() {
+        return Err(format!(
+            "refusing to replace existing paired frontier {}",
+            final_dir.display()
+        ));
+    }
+    let temporary_dir = output.join(format!(".paired-final.tmp-{}", process::id()));
+    if temporary_dir.exists() {
+        return Err(format!(
+            "stale paired-frontier temporary directory exists: {}",
+            temporary_dir.display()
+        ));
+    }
+
+    let result = (|| -> Result<(), String> {
+        fs::create_dir(&temporary_dir).map_err(|error| {
+            format!(
+                "failed to create paired frontier {}: {error}",
+                temporary_dir.display()
+            )
+        })?;
+        let rust_state = PlayCrashCheckpoint {
+            magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
+            host_frame: frame,
+            input: 0,
+            run_what: select_run_what(&game.ram),
+            game: game.clone(),
+        };
+        let rust_bytes = bincode::serialize(&rust_state)
+            .map_err(|error| format!("failed to serialize cached Rust frontier: {error}"))?;
+        fs::write(temporary_dir.join("rust.z3state"), &rust_bytes)
+            .map_err(|error| format!("failed to write cached Rust frontier: {error}"))?;
+        fs::copy(&oracle_source, temporary_dir.join("oracle.state"))
+            .map_err(|error| format!("failed to copy cached final oracle state: {error}"))?;
+        fs::copy(&initial_sram_source, temporary_dir.join("initial.srm"))
+            .map_err(|error| format!("failed to copy cached initial SRAM: {error}"))?;
+        let manifest = serde_json::json!({
+            "schema": 1,
+            "boundary": "pre-frame",
+            "frame": frame,
+            "cpu_boundary": "quiescent",
+            "renderer_warmup_required": true,
+            "rust_state": "rust.z3state",
+            "oracle_state": "oracle.state",
+            "source": {
+                "kind": "matched-rust-only-cached-snes9x-av-replay",
+                "cache": cache,
+                "cache_key": cache_manifest.get("cache_key"),
+                "cache_manifest_sha256": parity::evidence::sha256_bytes(cache_manifest_bytes),
+            },
+            "core": {"sha256": core_sha256},
+            "rom": {"path": rom, "sha256": rom_sha256},
+            "input_script": {"sha256": input_sha256},
+            "rom_random_script": {"sha256": rom_random_sha256},
+            "initial_sram": {"artifact": "initial.srm", "sha256": initial_sram_sha256},
+            "rust_state_sha256": parity::evidence::sha256_bytes(&rust_bytes),
+            "oracle_state_sha256": actual_oracle_sha256,
+        });
+        fs::write(
+            temporary_dir.join("manifest.json"),
+            serde_json::to_vec_pretty(&manifest)
+                .map_err(|error| format!("failed to encode paired frontier manifest: {error}"))?,
+        )
+        .map_err(|error| format!("failed to write paired frontier manifest: {error}"))?;
+        fs::rename(&temporary_dir, &final_dir).map_err(|error| {
+            format!(
+                "failed to install paired frontier {}: {error}",
+                final_dir.display()
+            )
+        })?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&temporary_dir);
+    }
+    result?;
+    Ok(final_dir)
+}
+
 pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     let (Some(cache), Some(rom), Some(output)) = (args.first(), args.get(1), args.get(2)) else {
-        eprintln!("usage: zelda3 --replay-cached-snes9x-av CACHE_DIR ROM_PATH OUTPUT_DIR");
+        eprintln!("usage: zelda3 --replay-cached-snes9x-av CACHE_DIR ROM_PATH OUTPUT_DIR [--resume-paired DIR] [--compare-from-frame N] [--ignore-video] [--ignore-audio]");
         process::exit(2);
     };
-    if args.len() != 3 {
-        eprintln!("usage: zelda3 --replay-cached-snes9x-av CACHE_DIR ROM_PATH OUTPUT_DIR");
-        process::exit(2);
+    let mut resume_paired = None;
+    let mut requested_compare_from_frame = None;
+    let mut ignore_video = false;
+    let mut ignore_audio = false;
+    let mut argument = 3;
+    while argument < args.len() {
+        match args[argument].as_str() {
+            "--resume-paired" if resume_paired.is_none() => {
+                let Some(value) = args.get(argument + 1) else {
+                    eprintln!("--resume-paired requires a directory");
+                    process::exit(2);
+                };
+                resume_paired = Some(PathBuf::from(value));
+                argument += 2;
+            }
+            "--compare-from-frame" if requested_compare_from_frame.is_none() => {
+                let Some(value) = args.get(argument + 1) else {
+                    eprintln!("--compare-from-frame requires a frame");
+                    process::exit(2);
+                };
+                requested_compare_from_frame = Some(value.parse::<u32>().unwrap_or_else(|error| {
+                    eprintln!("invalid --compare-from-frame `{value}`: {error}");
+                    process::exit(2);
+                }));
+                argument += 2;
+            }
+            "--ignore-video" if !ignore_video => {
+                ignore_video = true;
+                argument += 1;
+            }
+            "--ignore-audio" if !ignore_audio => {
+                ignore_audio = true;
+                argument += 1;
+            }
+            _ => {
+                eprintln!("usage: zelda3 --replay-cached-snes9x-av CACHE_DIR ROM_PATH OUTPUT_DIR [--resume-paired DIR] [--compare-from-frame N] [--ignore-video] [--ignore-audio]");
+                process::exit(2);
+            }
+        }
     }
     let cache = Path::new(cache);
     let rom = Path::new(rom);
@@ -1868,17 +2298,28 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         eprintln!("{} has no cache identity", manifest_path.display());
         process::exit(2);
     });
-    let start_frame = identity
-        .get("start_frame")
+    let timing_receipts_schema = identity
+        .get("oracle_evidence")
+        .and_then(|evidence| evidence.get("timing_host_receipts_schema"))
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
+    if timing_receipts_schema != 8 {
+        eprintln!(
+            "cached Rust-only A/V replay requires timing-host receipt schema 8, got {timing_receipts_schema}"
+        );
+        process::exit(2);
+    }
+    let cache_start_frame = identity
+        .get("start_frame")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as u32;
     let compare_from_frame = identity
         .get("compare_from_frame")
         .and_then(serde_json::Value::as_u64)
-        .unwrap_or(0);
-    if start_frame != 0 || compare_from_frame != 0 {
+        .unwrap_or(0) as u32;
+    if compare_from_frame != cache_start_frame {
         eprintln!(
-            "cached Rust-only A/V replay currently requires a cold cache with start_frame=0 and compare_from_frame=0; got {start_frame}/{compare_from_frame}"
+            "cached Rust-only A/V replay requires one contiguous cache boundary; got start/compare {cache_start_frame}/{compare_from_frame}"
         );
         process::exit(2);
     }
@@ -1909,11 +2350,13 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     let compare_video = lanes
         .get("video")
         .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
+        .unwrap_or(false)
+        && !ignore_video;
     let compare_audio = lanes
         .get("audio")
         .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
+        .unwrap_or(false)
+        && !ignore_audio;
     if !compare_video && !compare_audio {
         eprintln!("cached Rust-only A/V replay requires at least one enabled lane");
         process::exit(2);
@@ -1922,6 +2365,14 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     let rng_path = cache.join("rom-random.txt");
     let sram_path = cache.join("initial.srm");
     let ledger_path = cache.join("oracle-av-hashes.jsonl");
+    let timing_receipts_path = cache.join("original-timing-host-receipts.jsonl.zst");
+    if !timing_receipts_path.is_file() {
+        eprintln!(
+            "cached Rust-only A/V replay requires backend-neutral source receipts: {}",
+            timing_receipts_path.display()
+        );
+        process::exit(2);
+    }
     let input_script = InputScript::from_path(&input_path).unwrap_or_else(|error| {
         eprintln!(
             "failed to parse cached input {}: {error}",
@@ -1948,10 +2399,69 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         eprintln!("failed to read ROM {}: {error}", rom.display());
         process::exit(2);
     });
-    let mut game = load_default_play_state();
+    let (mut game, start_frame) = if let Some(path) = resume_paired.as_deref() {
+        let (rust_state, oracle_state) = paired_resume_paths(path).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to resolve paired resume {}: {error}",
+                path.display()
+            );
+            process::exit(2);
+        });
+        let expected_oracle_state_sha256 = identity
+            .get("oracle_initial_state_sha256")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_else(|| {
+                eprintln!(
+                    "{} resumed cache identity has no oracle initial-state hash",
+                    manifest_path.display()
+                );
+                process::exit(2);
+            });
+        let actual_oracle_state_sha256 = parity::evidence::sha256_file(&oracle_state)
+            .unwrap_or_else(|error| {
+                eprintln!(
+                    "failed to hash paired oracle state {}: {error}",
+                    oracle_state.display()
+                );
+                process::exit(2);
+            });
+        if actual_oracle_state_sha256 != expected_oracle_state_sha256 {
+            eprintln!(
+                "cached A/V oracle state does not match the paired Rust checkpoint: expected {expected_oracle_state_sha256}, got {actual_oracle_state_sha256}"
+            );
+            process::exit(2);
+        }
+        let checkpoint = load_play_crash_checkpoint(&rust_state).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to load Rust resume state {}: {error}",
+                rust_state.display()
+            );
+            process::exit(2);
+        });
+        let mut game = checkpoint.game;
+        game.restore_live_rom_timing_after_checkpoint();
+        (game, checkpoint.host_frame)
+    } else {
+        (load_default_play_state(), 0)
+    };
+    if start_frame != cache_start_frame {
+        eprintln!(
+            "cached A/V start frame {cache_start_frame} does not match Rust replay boundary {start_frame}"
+        );
+        process::exit(2);
+    }
     game.set_rom(&rom_bytes);
-    apply_sram_to_game_or_exit(&mut game, &sram_path, &sram);
-    game.install_rom_random_replay(rng_samples, 0);
+    if start_frame == 0 {
+        apply_sram_to_game_or_exit(&mut game, &sram_path, &sram);
+    }
+    game.install_rom_random_replay(rng_samples, start_frame);
+    let compare_from_frame = requested_compare_from_frame.unwrap_or(start_frame);
+    if compare_from_frame < start_frame {
+        eprintln!(
+            "cached A/V comparison frame {compare_from_frame} precedes resumed frame {start_frame}"
+        );
+        process::exit(2);
+    }
     let _compare_lock = acquire_snes9x_compare_lock();
     let mut renderer = compare_video.then(|| {
         NativeWindowOracleRenderer::load_from_env().unwrap_or_else(|error| {
@@ -1973,14 +2483,38 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         );
         process::exit(2);
     });
+    let timing_receipts_file = fs::File::open(&timing_receipts_path).unwrap_or_else(|error| {
+        eprintln!(
+            "failed to open cached source receipts {}: {error}",
+            timing_receipts_path.display()
+        );
+        process::exit(2);
+    });
+    let timing_receipts_decoder = zstd::stream::read::Decoder::new(timing_receipts_file)
+        .unwrap_or_else(|error| {
+            eprintln!(
+                "failed to decode cached source receipts {}: {error}",
+                timing_receipts_path.display()
+            );
+            process::exit(2);
+        });
+    let mut timing_receipt_lines = BufReader::new(timing_receipts_decoder).lines();
     let mut candidate_writer = BufWriter::new(
         fs::File::create(output.join("av_hashes.jsonl")).unwrap_or_else(|error| {
             eprintln!("failed to create Rust A/V candidate ledger: {error}");
             process::exit(1);
         }),
     );
+    let mut oracle_slice_writer = BufWriter::new(
+        fs::File::create(output.join("oracle-av-hashes-slice.jsonl")).unwrap_or_else(|error| {
+            eprintln!("failed to create cached oracle A/V slice: {error}");
+            process::exit(1);
+        }),
+    );
     let mut audio_buffer = Vec::<i16>::new();
-    let mut frames_completed = 0_u32;
+    let mut ledger_frames_seen = cache_start_frame;
+    let mut frames_completed = start_frame;
+    let mut frames_compared = 0_u32;
     let mut matched = true;
     let mut first_rng_drift = None;
     for (line_index, line) in BufReader::new(ledger_file).lines().enumerate() {
@@ -1996,16 +2530,17 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             );
             process::exit(2);
         });
-        if record.schema != 1 || record.frame != frames_completed {
+        if record.schema != 1 || record.frame != ledger_frames_seen {
             eprintln!(
-                "cached A/V ledger must be schema 1 and contiguous from frame zero; line {} has schema {} frame {}, expected {}",
+                "cached A/V ledger must be schema 1 and contiguous from cache frame {cache_start_frame}; line {} has schema {} frame {}, expected {}",
                 line_index + 1,
                 record.schema,
                 record.frame,
-                frames_completed
+                ledger_frames_seen
             );
             process::exit(2);
         }
+        ledger_frames_seen = ledger_frames_seen.saturating_add(1);
         let cached_input = cached_ledger_input(&record.input).unwrap_or_else(|error| {
             eprintln!("{error}");
             process::exit(2);
@@ -2018,6 +2553,50 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             );
             process::exit(2);
         }
+        if record.frame < start_frame {
+            continue;
+        }
+        let timing_receipt_line = timing_receipt_lines
+            .next()
+            .unwrap_or_else(|| {
+                eprintln!(
+                    "cached source receipt ledger ended before frame {}",
+                    record.frame
+                );
+                process::exit(2);
+            })
+            .unwrap_or_else(|error| {
+                eprintln!(
+                    "failed to read cached source receipt at frame {}: {error}",
+                    record.frame
+                );
+                process::exit(2);
+            });
+        let timing_receipts: OriginalTimingHostReceipts =
+            serde_json::from_str(&timing_receipt_line).unwrap_or_else(|error| {
+                eprintln!(
+                    "invalid cached source receipt at frame {}: {error}",
+                    record.frame
+                );
+                process::exit(2);
+            });
+        if !timing_receipts.matches_host_call(u64::from(record.frame), replay_input) {
+            eprintln!(
+                "cached source receipt provenance mismatch at frame {}: host_call={} canonical_input={:04x} raw_input={replay_input:04x}",
+                record.frame,
+                timing_receipts.host_call(),
+                timing_receipts.input_state()
+            );
+            process::exit(2);
+        }
+        game.install_original_timing_host_receipts(timing_receipts)
+            .unwrap_or_else(|error| {
+                eprintln!(
+                    "failed to install cached source receipt at frame {}: {error:?}",
+                    record.frame
+                );
+                process::exit(1);
+            });
         game.zelda_run_frame(replay_input as i32);
         let rust_video = renderer.as_mut().map(|renderer| {
             let rgba = renderer
@@ -2051,28 +2630,22 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         game.zelda_render_audio(&mut audio_buffer, sample_frames as i32, 2);
         game.zelda_discard_unused_audio_frames();
         let rust_audio = compare_audio.then(|| canonical_audio_digest(&audio_buffer));
-        let video_matches = match (&rust_video, &record.video) {
-            (Some(rust), Some(oracle)) => {
-                rust == &serde_json::to_value(oracle).expect("serialize cached video digest")
-            }
-            (None, None) => true,
-            _ => false,
-        };
-        let audio_matches = match (&rust_audio, &record.audio) {
-            (Some(rust), Some(oracle)) => {
-                rust == &serde_json::to_value(oracle).expect("serialize cached audio digest")
-            }
-            (None, None) => true,
-            _ => false,
-        };
-        write_av_hash_record(
-            Some(&mut candidate_writer),
-            record.frame,
-            replay_input,
-            sample_frames,
-            rust_video.map(|rust| serde_json::json!({"rust": rust})),
-            rust_audio.map(|rust| serde_json::json!({"rust": rust})),
-        );
+        let video_matches = !compare_video
+            || match (&rust_video, &record.video) {
+                (Some(rust), Some(oracle)) => {
+                    rust == &serde_json::to_value(oracle).expect("serialize cached video digest")
+                }
+                (None, None) => true,
+                _ => false,
+            };
+        let audio_matches = !compare_audio
+            || match (&rust_audio, &record.audio) {
+                (Some(rust), Some(oracle)) => {
+                    rust == &serde_json::to_value(oracle).expect("serialize cached audio digest")
+                }
+                (None, None) => true,
+                _ => false,
+            };
         frames_completed = frames_completed.saturating_add(1);
         if first_rng_drift.is_none() {
             if let Err(error) = game.finish_rom_random_replay_through(frames_completed) {
@@ -2086,6 +2659,39 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 }));
             }
         }
+        if record.frame < compare_from_frame {
+            continue;
+        }
+        serde_json::to_writer(
+            &mut oracle_slice_writer,
+            &serde_json::json!({
+                "schema": record.schema,
+                "frame": record.frame,
+                "input": record.input,
+                "oracle_audio_sample_frames": record.oracle_audio_sample_frames,
+                "video": if compare_video { record.video.as_ref() } else { None },
+                "audio": if compare_audio { record.audio.as_ref() } else { None },
+            }),
+        )
+        .unwrap_or_else(|error| {
+            eprintln!("failed to write cached oracle A/V slice: {error}");
+            process::exit(1);
+        });
+        oracle_slice_writer
+            .write_all(b"\n")
+            .unwrap_or_else(|error| {
+                eprintln!("failed to terminate cached oracle A/V slice row: {error}");
+                process::exit(1);
+            });
+        write_av_hash_record(
+            Some(&mut candidate_writer),
+            record.frame,
+            replay_input,
+            sample_frames,
+            rust_video.map(|rust| serde_json::json!({"rust": rust})),
+            rust_audio.map(|rust| serde_json::json!({"rust": rust})),
+        );
+        frames_compared = frames_compared.saturating_add(1);
         if !video_matches || !audio_matches {
             eprintln!(
                 "cached Snes9x A/V divergence at frame {}: video_match={video_matches} audio_match={audio_matches}",
@@ -2106,6 +2712,14 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         eprintln!("failed to flush Rust A/V candidate ledger: {error}");
         process::exit(1);
     });
+    oracle_slice_writer.flush().unwrap_or_else(|error| {
+        eprintln!("failed to flush cached oracle A/V slice: {error}");
+        process::exit(1);
+    });
+    if frames_compared == 0 {
+        eprintln!("comparison frame {compare_from_frame} is not covered by the cached A/V ledger");
+        process::exit(2);
+    }
     if matched {
         game.finish_rom_random_replay_through(frames_completed)
             .unwrap_or_else(|error| {
@@ -2117,6 +2731,22 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             "cached A/V diagnostic: ROM random consumption had already drifted by the first A/V mismatch: {error}"
         );
     }
+    let paired_frontier = (matched && compare_video && compare_audio).then(|| {
+        write_cached_av_final_paired_resume(
+            cache,
+            output,
+            &manifest,
+            &manifest_bytes,
+            rom,
+            &actual_rom_sha256,
+            frames_completed,
+            &game,
+        )
+        .unwrap_or_else(|error| {
+            eprintln!("failed to write cached A/V paired frontier: {error}");
+            process::exit(1);
+        })
+    });
     let candidate_manifest = serde_json::json!({
         "schema": 1,
         "kind": "zelda3-rust-only-cached-snes9x-av-replay",
@@ -2124,10 +2754,16 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         "oracle_cache_key": manifest.get("cache_key"),
         "oracle_cache_manifest_sha256": parity::evidence::sha256_bytes(&manifest_bytes),
         "rom": {"path": rom, "sha256": actual_rom_sha256},
+        "start_frame": start_frame,
+        "compare_from_frame": compare_from_frame,
         "frames_completed": frames_completed,
+        "frames_compared": frames_compared,
+        "resume_paired": resume_paired,
+        "comparison_lanes": {"video": compare_video, "audio": compare_audio},
         "matched": matched,
         "first_rng_drift": first_rng_drift,
         "candidate_ledger": "av_hashes.jsonl",
+        "paired_frontier": paired_frontier.as_ref().map(|path| path.strip_prefix(output).unwrap_or(path)),
     });
     fs::write(
         output.join("manifest.json"),
@@ -2139,6 +2775,9 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     });
     if matched {
         println!("Rust-only cached Snes9x A/V replay matched {frames_completed} frame(s)");
+        if let Some(path) = paired_frontier {
+            println!("paired frontier: {}", path.display());
+        }
     } else {
         process::exit(1);
     }
@@ -3107,9 +3746,17 @@ pub(crate) fn run_compare_libretro_oracle(
     let debug_smp_first_nmi_path = env::var_os("ZELDA3_DEBUG_SNES9X_SMP_FIRST_NMI");
     let debug_first_nmi_dma_setup_path = env::var_os("ZELDA3_DEBUG_SNES9X_FIRST_NMI_DMA_SETUP");
     let debug_first_nmi_dma_path = env::var_os("ZELDA3_DEBUG_SNES9X_FIRST_NMI_DMA");
+    let debug_first_nmi_return_path = env::var_os("ZELDA3_DEBUG_SNES9X_FIRST_NMI_RETURN");
+    let debug_first_nmi_return_core_trace_path = debug_first_nmi_return_path.as_ref().map(|path| {
+        PathBuf::from(format!(
+            "{}.core-trace.tmp.jsonl",
+            Path::new(path).display()
+        ))
+    });
     if (debug_smp_first_nmi_path.is_some()
         || debug_first_nmi_dma_setup_path.is_some()
-        || debug_first_nmi_dma_path.is_some())
+        || debug_first_nmi_dma_path.is_some()
+        || debug_first_nmi_return_path.is_some())
         && debug_smp_bootstrap_path.is_none()
     {
         // The pinned core's existing timing buffer is enabled by the original
@@ -3123,18 +3770,38 @@ pub(crate) fn run_compare_libretro_oracle(
             );
         }
     }
-    if debug_first_nmi_dma_path.is_some() {
+    if debug_first_nmi_dma_path.is_some() || debug_first_nmi_return_path.is_some() {
         // The pinned core owns a generic per-retro_run DMA ledger. Route
         // selection remains below in this host-only fixture writer.
         unsafe {
             env::set_var("ZELDA3_DEBUG_SNES9X_DMA_LEDGER", "1");
         }
     }
+    if let Some(path) = debug_first_nmi_return_core_trace_path.as_deref() {
+        if live_oracle_rng {
+            eprintln!(
+                "first-NMI retro_run-return fixture capture cannot share the generic trace stream with --live-oracle-rng"
+            );
+            process::exit(2);
+        }
+        fs::File::create(path).unwrap_or_else(|error| {
+            eprintln!(
+                "failed to initialize first-NMI retro_run-return core trace {}: {error}",
+                path.display()
+            );
+            process::exit(1);
+        });
+        unsafe {
+            env::set_var("ZELDA3_SNES9X_TRACE", path);
+            env::set_var("ZELDA3_SNES9X_TRACE_EVENTS", "frame,hdma");
+        }
+    }
     let semantic_trace_available = replay_save.is_none()
         && debug_smp_bootstrap_path.is_none()
         && debug_smp_first_nmi_path.is_none()
         && debug_first_nmi_dma_setup_path.is_none()
-        && debug_first_nmi_dma_path.is_none();
+        && debug_first_nmi_dma_path.is_none()
+        && debug_first_nmi_return_path.is_none();
     if !audio_window_ms.is_finite()
         || audio_window_ms <= 0.0
         || !audio_timing_tolerance_ms.is_finite()
@@ -3320,7 +3987,7 @@ pub(crate) fn run_compare_libretro_oracle(
     };
     if !semantic_trace_authority_available(
         oracle_semantic_trace.is_some(),
-        oracle.debug_trace_count.is_some(),
+        oracle.debug_ppu_value.is_some(),
     ) {
         // An empty trace interval is authoritative only when the loaded core
         // actually exports the maintained generic trace API. The stock core
@@ -3595,6 +4262,26 @@ pub(crate) fn run_compare_libretro_oracle(
         writer
     });
     let mut debug_first_nmi_dma_complete = false;
+    let mut debug_first_nmi_return = debug_first_nmi_return_path.map(|path| {
+        let mut pending = PendingFirstNmiReturnFixture::create(path).unwrap_or_else(|error| {
+            eprintln!("failed to create Snes9x first-NMI return trace: {error}");
+            process::exit(1);
+        });
+        write_snes9x_first_nmi_return_header(
+            &mut pending.writer,
+            core_path,
+            rom_path,
+            &oracle,
+            load_sram.as_deref(),
+            &initial_sram,
+        )
+        .unwrap_or_else(|error| {
+            eprintln!("failed to write Snes9x first-NMI return header: {error}");
+            process::exit(1);
+        });
+        pending
+    });
+    let mut debug_first_nmi_return_complete = false;
     let mut debug_native_apu_dsp_writes = native_apu_trace_path.map(|path| {
         BufWriter::new(fs::File::create(path).unwrap_or_else(|error| {
             eprintln!("failed to create native APU DSP-write trace: {error}");
@@ -3815,137 +4502,51 @@ pub(crate) fn run_compare_libretro_oracle(
             }
             early_oracle_capture = Some(oracle.run_frame_with_input(requested_input));
             if let Some(trace) = oracle_semantic_trace.as_mut() {
-                let mut semantic = trace.read_after_host_call().unwrap_or_else(|error| {
+                let oracle_wram = oracle.memory_bytes(RETRO_MEMORY_SYSTEM_RAM);
+                let dialogue_message_read_position = oracle_wram
+                    .and_then(|ram| ram.get(0x1cd9..0x1cdb))
+                    .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]));
+                let spotlight_var4_low_at_return = oracle_wram
+                    .and_then(|ram| {
+                        ram.get(crate::snes9x_semantic_receipts::SPOTLIGHT_VAR4_LOW_ADDRESS)
+                    })
+                    .copied();
+                let mut semantic = trace
+                    .read_after_host_call(
+                        dialogue_message_read_position,
+                        spotlight_var4_low_at_return,
+                    )
+                    .unwrap_or_else(|error| {
                     eprintln!(
                         "failed to read pinned-Snes9x semantic receipts at frame {frame_index}: {error}"
                     );
                     process::exit(1);
-                });
-                semantic.extend(snes9x_oracle_semantic_receipts(&oracle).unwrap_or_else(|error| {
+                    });
+                semantic.extend(snes9x_oracle_semantic_receipts(&oracle).unwrap_or_else(
+                    |error| {
                     eprintln!(
                         "failed to decode pinned-Snes9x semantic receipts at frame {frame_index}: {error}"
                     );
                     process::exit(1);
-                }));
-                let mut receipts = OriginalTimingHostReceipts::new(
-                    u64::from(frame_index),
-                    requested_input,
-                    semantic,
-                );
-                let presented_audio = PresentedAudio::new(
-                    early_oracle_capture
-                        .as_ref()
-                        .expect("Snes9x host capture precedes semantic receipt decoding")
-                        .audio
-                        .clone(),
-                )
-                .unwrap_or_else(|| {
-                    eprintln!(
-                        "pinned-Snes9x returned an invalid stereo audio receipt at frame {frame_index}"
-                    );
-                    process::exit(1);
-                });
-                receipts = receipts.with_presented_audio(presented_audio);
-                if let Some(presented_animated_bg_tiles) =
-                    snes9x_presented_animated_bg_tiles(&oracle).unwrap_or_else(|error| {
-                        eprintln!(
-                            "failed to decode pinned-Snes9x presented animated-BG receipt at frame {frame_index}: {error}"
-                        );
-                        process::exit(1);
-                    })
-                {
-                    receipts = receipts
-                        .with_presented_animated_bg_tiles(presented_animated_bg_tiles);
-                }
-                let presented_scanout_geometry =
-                    snes9x_presented_scanout_geometry(&oracle).unwrap_or_else(|error| {
-                        eprintln!(
-                            "failed to decode pinned-Snes9x presented scanout geometry at frame {frame_index}: {error}"
-                        );
-                        process::exit(1);
-                    });
-                if let Some(presented_inidisp) = snes9x_presented_inidisp(
+                    },
+                ));
+                let receipts = snes9x_original_timing_host_receipts(
                     &oracle,
-                    presented_scanout_geometry,
                     early_oracle_capture
                         .as_ref()
                         .expect("Snes9x host capture precedes semantic receipt decoding"),
                     previous_oracle_video.as_ref(),
-                )
-                .unwrap_or_else(|error| {
-                        eprintln!(
-                            "failed to decode pinned-Snes9x presented INIDISP receipt at frame {frame_index}: {error}"
-                        );
-                        process::exit(1);
-                    })
-                {
-                    receipts = receipts.with_presented_inidisp(presented_inidisp);
-                }
-                if let Some(presented_scanout_geometry) = presented_scanout_geometry {
-                    receipts = receipts.with_presented_scanout_geometry(presented_scanout_geometry);
-                }
-                if let Some(presented_hud_tilemap) =
-                    snes9x_presented_hud_tilemap(&oracle).unwrap_or_else(|error| {
-                        eprintln!(
-                            "failed to decode pinned-Snes9x presented HUD receipt at frame {frame_index}: {error}"
-                        );
-                        process::exit(1);
-                    })
-                {
-                    receipts = receipts.with_presented_hud_tilemap(presented_hud_tilemap);
-                }
-                if let Some(presented_bg_tilemaps) = snes9x_presented_bg_tilemaps(
-                    &oracle,
                     &mut presented_bg_tilemap_cache,
+                    frame_index,
+                    requested_input,
+                    semantic,
                 )
                 .unwrap_or_else(|error| {
                     eprintln!(
-                        "failed to decode pinned-Snes9x presented BG tilemaps at frame {frame_index}: {error}"
+                        "failed to decode pinned-Snes9x host receipts at frame {frame_index}: {error}"
                     );
                     process::exit(1);
-                }) {
-                    receipts = receipts.with_presented_bg_tilemaps(presented_bg_tilemaps);
-                }
-                if let Some(presented_bg_scroll) =
-                    snes9x_presented_bg_scroll(&oracle).unwrap_or_else(|error| {
-                        eprintln!(
-                            "failed to decode pinned-Snes9x presented BG scroll at frame {frame_index}: {error}"
-                        );
-                        process::exit(1);
-                    })
-                {
-                    receipts = receipts.with_presented_bg_scroll(presented_bg_scroll);
-                }
-                if let Some(presented_cgram) =
-                    snes9x_presented_cgram(&oracle).unwrap_or_else(|error| {
-                        eprintln!(
-                            "failed to decode pinned-Snes9x presented CGRAM receipt at frame {frame_index}: {error}"
-                        );
-                        process::exit(1);
-                    })
-                {
-                    receipts = receipts.with_presented_cgram(presented_cgram);
-                }
-                if let Some(presented_oam) =
-                    snes9x_presented_oam(&oracle).unwrap_or_else(|error| {
-                        eprintln!(
-                            "failed to decode pinned-Snes9x presented OAM receipt at frame {frame_index}: {error}"
-                        );
-                        process::exit(1);
-                    })
-                {
-                    receipts = receipts.with_presented_oam(presented_oam);
-                }
-                if let Some(presented_obj_tiles) =
-                    snes9x_presented_obj_tiles(&oracle).unwrap_or_else(|error| {
-                        eprintln!(
-                            "failed to decode pinned-Snes9x presented OBJ receipt at frame {frame_index}: {error}"
-                        );
-                        process::exit(1);
-                    })
-                {
-                    receipts = receipts.with_presented_obj_tiles(presented_obj_tiles);
-                }
+                });
                 game.install_original_timing_host_receipts(receipts)
                 .unwrap_or_else(|error| {
                     eprintln!(
@@ -3958,10 +4559,14 @@ pub(crate) fn run_compare_libretro_oracle(
                     .map(PresentedOracleVideo::from);
             }
             if let Some(trace) = live_oracle_rng_trace.as_mut() {
-                let samples = trace.samples_for_run(frame_index).unwrap_or_else(|error| {
-                    eprintln!("live oracle RNG authority failed at frame {frame_index}: {error}");
-                    process::exit(1);
-                });
+                let samples = trace
+                    .samples_for_run(frame_index - start_frame, frame_index)
+                    .unwrap_or_else(|error| {
+                        eprintln!(
+                            "live oracle RNG authority failed at frame {frame_index}: {error}"
+                        );
+                        process::exit(1);
+                    });
                 game.install_rom_random_replay(samples, frame_index);
             }
         }
@@ -5580,6 +6185,240 @@ pub(crate) fn run_compare_libretro_oracle(
                 }
             }
         }
+        if !debug_first_nmi_return_complete {
+            if let Some(pending) = debug_first_nmi_return.as_mut() {
+                let cpu_transactions = oracle
+                    .debug_cpu_timing_transactions()
+                    .unwrap_or_else(|error| {
+                        eprintln!("failed to capture first-NMI return CPU timing: {error}");
+                        process::exit(2);
+                    })
+                    .unwrap_or_else(|| {
+                        eprintln!("first-NMI return trace requires CPU timing instrumentation");
+                        process::exit(2);
+                    });
+                let start =
+                    first_nmi_return_start_index(&cpu_transactions).unwrap_or_else(|error| {
+                        eprintln!("invalid first-NMI return start anchor: {error}");
+                        process::exit(1);
+                    });
+                if let Some(start) = start {
+                    if frame_index != FIRST_NMI_RETURN_HOST_FRAME {
+                        eprintln!(
+                            "exact $008a38 continuation appeared on host frame {frame_index}, expected {FIRST_NMI_RETURN_HOST_FRAME}"
+                        );
+                        process::exit(1);
+                    }
+                    let trace_path = debug_first_nmi_return_core_trace_path
+                        .as_deref()
+                        .expect("first-NMI return capture configured its core trace path");
+                    let trace = read_snes9x_retro_run_trace(trace_path, FIRST_NMI_RETURN_RETRO_RUN)
+                        .unwrap_or_else(|error| {
+                            eprintln!("invalid first-NMI return core trace: {error}");
+                            process::exit(1);
+                        })
+                        .unwrap_or_else(|| {
+                            eprintln!(
+                                "first-NMI return core trace has no run {FIRST_NMI_RETURN_RETRO_RUN}"
+                            );
+                            process::exit(1);
+                        });
+                    let transaction_slice = &cpu_transactions[start..];
+                    let scheduler_gaps =
+                        validate_first_nmi_return_cpu_slice(&trace, transaction_slice)
+                            .unwrap_or_else(|error| {
+                                eprintln!("invalid first-NMI return CPU slice: {error}");
+                                process::exit(1);
+                            });
+                    let terminal = transaction_slice.last().unwrap();
+                    let return_v = trace.return_event["v"].as_i64().unwrap_or(-1) as i32;
+                    let return_h = trace.return_event["cycles"].as_i64().unwrap_or(-1) as i32;
+                    if terminal.end_v_counter != return_v || terminal.end_cpu_cycle != return_h {
+                        eprintln!(
+                            "first-NMI continuation terminal CPU transaction does not reach the direct retro_run return: terminal={terminal:?}; return=V{return_v}:H{return_h}"
+                        );
+                        process::exit(1);
+                    }
+
+                    let cpu_apui = oracle
+                        .debug_apu_port_writes_exact()
+                        .unwrap_or_else(|error| {
+                            eprintln!(
+                                "failed to capture exact first-NMI return APUI receipts: {error}"
+                            );
+                            process::exit(2);
+                        })
+                        .unwrap_or_else(|| {
+                            eprintln!("first-NMI return trace requires CPU APUI instrumentation");
+                            process::exit(2);
+                        });
+                    let mut ordinal_apui = Vec::new();
+                    for access in cpu_apui {
+                        let ordinal = cpu_transaction_ordinal_at_start(
+                            &cpu_transactions,
+                            access.v_counter,
+                            access.cpu_cycle,
+                            access.program_counter,
+                        )
+                        .unwrap_or_else(|error| {
+                            eprintln!("ambiguous first-NMI return APUI receipt: {error}");
+                            process::exit(1);
+                        })
+                        .unwrap_or_else(|| {
+                            eprintln!(
+                                "CPU APUI receipt has no source timing transaction: {access:?}"
+                            );
+                            process::exit(1);
+                        });
+                        if ordinal >= start {
+                            ordinal_apui.push(OrdinalApuPortAccess {
+                                cpu_transaction_ordinal: ordinal - start,
+                                access,
+                            });
+                        }
+                    }
+
+                    let smp_output_writes = oracle
+                        .debug_smp_output_port_writes_exact()
+                        .unwrap_or_else(|error| {
+                            eprintln!("failed to capture exact first-NMI return SMP output receipts: {error}");
+                            process::exit(2);
+                        })
+                        .unwrap_or_else(|| {
+                            eprintln!("first-NMI return trace requires SMP output-port instrumentation");
+                            process::exit(2);
+                        });
+                    let mut ordinal_smp_outputs = Vec::new();
+                    for write in smp_output_writes {
+                        let ordinal = cpu_transaction_ordinal_containing(
+                            &cpu_transactions,
+                            write.v_counter,
+                            write.cpu_cycle,
+                            write.cpu_program_counter,
+                        )
+                        .unwrap_or_else(|error| {
+                            eprintln!("ambiguous first-NMI return SMP output receipt: {error}");
+                            process::exit(1);
+                        })
+                        .unwrap_or_else(|| {
+                            eprintln!(
+                                "SMP output-port receipt has no containing source timing transaction: {write:?}"
+                            );
+                            process::exit(1);
+                        });
+                        if ordinal >= start {
+                            ordinal_smp_outputs.push(OrdinalSmpOutputPortWrite {
+                                cpu_transaction_ordinal: ordinal - start,
+                                write,
+                            });
+                        }
+                    }
+
+                    let dma_events = oracle
+                        .debug_dma_ledger()
+                        .unwrap_or_else(|error| {
+                            eprintln!("failed to capture first-NMI return DMA ledger: {error}");
+                            process::exit(2);
+                        })
+                        .unwrap_or_else(|| {
+                            eprintln!("first-NMI return trace requires DMA ledger instrumentation");
+                            process::exit(2);
+                        });
+                    let trailing_dma = trailing_dma_events_after_first_nmi(&dma_events)
+                        .unwrap_or_else(|error| {
+                            eprintln!("invalid first-NMI return DMA continuation: {error}");
+                            process::exit(1);
+                        });
+                    let mut dma_snapshots = Vec::new();
+                    for outer in trailing_dma
+                        .iter()
+                        .filter(|event| event.fields[0] == 0)
+                        .map(|event| event.fields[1])
+                    {
+                        let before = oracle
+                            .debug_dma_vram_snapshot(outer, 0)
+                            .unwrap_or_else(|error| {
+                                eprintln!(
+                                    "failed to read DMA outer {outer} pre-VRAM snapshot: {error}"
+                                );
+                                process::exit(2);
+                            })
+                            .unwrap_or_else(|| {
+                                eprintln!("DMA outer {outer} has no pre-VRAM snapshot");
+                                process::exit(2);
+                            });
+                        let after = oracle
+                            .debug_dma_vram_snapshot(outer, 1)
+                            .unwrap_or_else(|error| {
+                                eprintln!(
+                                    "failed to read DMA outer {outer} post-VRAM snapshot: {error}"
+                                );
+                                process::exit(2);
+                            })
+                            .unwrap_or_else(|| {
+                                eprintln!("DMA outer {outer} has no post-VRAM snapshot");
+                                process::exit(2);
+                            });
+                        dma_snapshots.push(serde_json::json!({
+                            "outer": outer,
+                            "before_sha256": parity::evidence::sha256_bytes(&before),
+                            "after_sha256": parity::evidence::sha256_bytes(&after),
+                            "before_sequence": compact_byte_snapshot(&before),
+                            "after_sequence": compact_byte_snapshot(&after),
+                        }));
+                    }
+                    let framed_transactions = transaction_slice
+                        .iter()
+                        .copied()
+                        .map(|transaction| FramedCpuTimingTransaction {
+                            frame: FIRST_NMI_RETURN_RECEIPT_FRAME,
+                            transaction,
+                        })
+                        .collect::<Vec<_>>();
+                    serde_json::to_writer(
+                        &mut pending.writer,
+                        &serde_json::json!({
+                            "kind": "first-nmi-retro-run-return",
+                            "run": FIRST_NMI_RETURN_RETRO_RUN,
+                            "host_frame": FIRST_NMI_RETURN_HOST_FRAME,
+                            "receipt_frame": FIRST_NMI_RETURN_RECEIPT_FRAME,
+                            "start_anchor": transaction_slice[0],
+                            "direct_core_trace": {
+                                "entry": trace.entry,
+                                "return": trace.return_event,
+                                "hdma_events": trace.hdma_events,
+                                "video_events": trace.video_events,
+                                "raw_prefix_sha256": trace.raw_sha256,
+                            },
+                            "cpu_timing_transaction_sequence": compact_cpu_timing_transactions(&framed_transactions),
+                            "cpu_timing_gap_receipts": scheduler_gaps,
+                            "cpu_apui_sequence": compact_ordinal_cpu_apu_accesses(&ordinal_apui),
+                            "smp_output_port_sequence": compact_ordinal_smp_output_port_writes(&ordinal_smp_outputs),
+                            "trailing_dma": {
+                                "ordered_event_sequence": compact_dma_ledger(&trailing_dma),
+                                "vram_snapshots": dma_snapshots,
+                            },
+                            "terminal_transaction": terminal,
+                            "stop_reason": "direct_pinned_core_retro_run_81_return_after_$008a38_successor",
+                        }),
+                    )
+                    .unwrap();
+                    pending.writer.write_all(b"\n").unwrap();
+                    pending.install().unwrap_or_else(|error| {
+                        eprintln!("failed to install first-NMI return fixture: {error}");
+                        process::exit(1);
+                    });
+                    if let Err(error) = fs::remove_file(trace_path) {
+                        eprintln!(
+                            "failed to remove temporary first-NMI return core trace {}: {error}",
+                            trace_path.display()
+                        );
+                        process::exit(1);
+                    }
+                    debug_first_nmi_return_complete = true;
+                }
+            }
+        }
         if let (Some(writer), Some(trace)) = (debug_dsp_globals.as_mut(), oracle.debug_dsp_trace())
         {
             for (sample, values) in trace.iter().take(trace.len().saturating_sub(1)).enumerate() {
@@ -6365,6 +7204,12 @@ pub(crate) fn run_compare_libretro_oracle(
     if debug_first_nmi_dma.is_some() && !debug_first_nmi_dma_complete {
         eprintln!(
             "first-NMI DMA capture ended before the exact $008a35 H714->H722 anchor, complete mask-$07 ledger, and $008a38 successor receipt were observed"
+        );
+        process::exit(1);
+    }
+    if debug_first_nmi_return.is_some() && !debug_first_nmi_return_complete {
+        eprintln!(
+            "first-NMI return capture ended before the exact $008a38 V227:H742->H750 successor and direct run-81 retro_run return were both observed"
         );
         process::exit(1);
     }
@@ -8713,6 +9558,120 @@ fn compact_cpu_apu_accesses(accesses: &[FramedApuPortAccess]) -> SmpBootstrapDel
     )
 }
 
+fn compact_ordinal_cpu_apu_accesses(
+    accesses: &[OrdinalApuPortAccess],
+) -> SmpBootstrapDeltaSequence {
+    compact_delta_integer_sequence_with_zstd(
+        [
+            "cpu_transaction_ordinal",
+            "port",
+            "value",
+            "output_sample",
+            "v_counter",
+            "cpu_cycle",
+            "program_counter",
+            "apu_cycle_before",
+            "apu_cycle_after",
+            "smp_clock_before",
+            "smp_clock_after",
+            "dsp_clock_before",
+            "dsp_clock_after",
+            "dsp_phase_before",
+            "dsp_phase_after",
+            "smp_pc_before",
+            "smp_pc_after",
+            "smp_opcode_before",
+            "smp_opcode_after",
+            "smp_opcode_cycle_before",
+            "smp_opcode_cycle_after",
+            "is_read",
+            "cpu_model_5a22",
+            "wram_refresh_position",
+            "cpu_model_identity",
+        ],
+        accesses.iter().map(|ordinal| {
+            let access = &ordinal.access;
+            [
+                ordinal.cpu_transaction_ordinal as i64,
+                i64::from(access.port),
+                i64::from(access.value),
+                i64::from(access.output_sample),
+                i64::from(access.v_counter),
+                i64::from(access.cpu_cycle),
+                i64::from(access.program_counter),
+                i64::from(access.apu_cycle_before),
+                i64::from(access.apu_cycle_after),
+                i64::from(access.smp_clock_before),
+                i64::from(access.smp_clock_after),
+                i64::from(access.dsp_clock_before),
+                i64::from(access.dsp_clock_after),
+                i64::from(access.dsp_phase_before),
+                i64::from(access.dsp_phase_after),
+                i64::from(access.smp_pc_before),
+                i64::from(access.smp_pc_after),
+                i64::from(access.smp_opcode_before),
+                i64::from(access.smp_opcode_after),
+                i64::from(access.smp_opcode_cycle_before),
+                i64::from(access.smp_opcode_cycle_after),
+                i64::from(access.is_read),
+                i64::from(access.cpu_model_5a22),
+                i64::from(access.wram_refresh_position),
+                i64::from(access.cpu_model_identity),
+            ]
+        }),
+        true,
+    )
+}
+
+fn compact_ordinal_smp_output_port_writes(
+    writes: &[OrdinalSmpOutputPortWrite],
+) -> SmpBootstrapDeltaSequence {
+    compact_delta_integer_sequence_with_zstd(
+        [
+            "cpu_transaction_ordinal",
+            "absolute_cycle",
+            "port",
+            "value",
+            "origin_pc",
+            "opcode",
+            "opcode_cycle",
+            "v_counter",
+            "cpu_cycle",
+            "cpu_program_counter",
+            "cpu_reference_time",
+            "cpu_remainder",
+            "smp_clock",
+            "next_pc",
+            "dsp_clock",
+            "dsp_phase",
+            "output_sample",
+        ],
+        writes.iter().map(|ordinal| {
+            let write = ordinal.write;
+            [
+                ordinal.cpu_transaction_ordinal as i64,
+                write.absolute_cycle as i64,
+                i64::from(write.port),
+                i64::from(write.value),
+                i64::from(write.origin_pc),
+                i64::from(write.opcode),
+                i64::from(write.opcode_cycle),
+                i64::from(write.v_counter),
+                i64::from(write.cpu_cycle),
+                i64::from(write.cpu_program_counter),
+                i64::from(write.cpu_reference_time),
+                i64::from(write.cpu_remainder),
+                i64::from(write.smp_clock),
+                i64::from(write.next_pc),
+                i64::from(write.dsp_clock),
+                i64::from(write.dsp_phase),
+                i64::from(write.output_sample),
+            ]
+        }),
+        true,
+    )
+}
+
 fn compact_cpu_timing_transactions(
     transactions: &[FramedCpuTimingTransaction],
 ) -> SmpBootstrapDeltaSequence {
@@ -8840,6 +9799,308 @@ fn first_nmi_dma_transaction_slice(
     Ok(Some((fetch_index, completion_index, successor_index)))
 }
 
+fn first_nmi_return_start_index(
+    transactions: &[crate::libretro_core::LibretroCpuTimingTransaction],
+) -> Result<Option<usize>, String> {
+    let candidates = transactions
+        .iter()
+        .enumerate()
+        .filter(|(_, transaction)| {
+            transaction.kind == 0
+                && (transaction.origin_pc & 0x00ff_ffff) == FIRST_NMI_RETURN_START_PC
+        })
+        .collect::<Vec<_>>();
+    let Some((index, transaction)) = candidates.first().copied() else {
+        return Ok(None);
+    };
+    if candidates.len() != 1 {
+        return Err(format!(
+            "expected one $008a38 successor fetch, observed {}",
+            candidates.len()
+        ));
+    }
+    if transaction.opcode != 0x8c
+        || transaction.start_v_counter != 227
+        || transaction.start_cpu_cycle != 742
+        || transaction.end_v_counter != 227
+        || transaction.end_cpu_cycle != 750
+        || transaction.cpu_model_5a22 != 2
+        || transaction.start_wram_refresh_position != 534
+        || transaction.end_wram_refresh_position != 534
+    {
+        return Err(format!(
+            "$008a38 successor fetch does not match the committed V227:H742->H750 M2 receipt: {transaction:?}"
+        ));
+    }
+    Ok(Some(index))
+}
+
+fn cpu_transaction_ordinal_at_start(
+    transactions: &[crate::libretro_core::LibretroCpuTimingTransaction],
+    v_counter: i32,
+    cpu_cycle: i32,
+    cpu_program_counter: i32,
+) -> Result<Option<usize>, String> {
+    let candidates = transactions
+        .iter()
+        .enumerate()
+        .filter(|(_, transaction)| {
+            transaction.kind == 2
+                && transaction.start_v_counter == v_counter
+                && transaction.start_cpu_cycle == cpu_cycle
+                && transaction.origin_pc >> 16 == cpu_program_counter >> 16
+                && (0..=4)
+                    .contains(&((cpu_program_counter & 0xffff) - (transaction.origin_pc & 0xffff)))
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [] => Ok(None),
+        [index] => Ok(Some(*index)),
+        _ => Err(format!(
+            "APUI receipt at V{v_counter}:H{cpu_cycle} PC ${cpu_program_counter:06x} matches multiple CPU transactions: {candidates:?}"
+        )),
+    }
+}
+
+fn cpu_transaction_ordinal_containing(
+    transactions: &[crate::libretro_core::LibretroCpuTimingTransaction],
+    v_counter: i32,
+    cpu_cycle: i32,
+    cpu_program_counter: i32,
+) -> Result<Option<usize>, String> {
+    if transactions.is_empty() {
+        return Err("cannot join a receipt to an empty CPU transaction sequence".into());
+    }
+    let candidates = transactions
+        .iter()
+        .enumerate()
+        .filter(|(_, transaction)| {
+            let pc_delta = (cpu_program_counter & 0xffff) - (transaction.origin_pc & 0xffff);
+            let contains_raster = if transaction.start_v_counter == transaction.end_v_counter {
+                v_counter == transaction.start_v_counter
+                    && transaction.start_cpu_cycle <= cpu_cycle
+                    && cpu_cycle < transaction.end_cpu_cycle
+            } else {
+                (v_counter == transaction.start_v_counter
+                    && transaction.start_cpu_cycle <= cpu_cycle)
+                    || (v_counter == transaction.end_v_counter
+                        && cpu_cycle < transaction.end_cpu_cycle)
+            };
+            contains_raster
+                && transaction.origin_pc >> 16 == cpu_program_counter >> 16
+                && (0..=4).contains(&pc_delta)
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [] => Ok(None),
+        [index] => Ok(Some(*index)),
+        _ => Err(format!(
+            "SMP output receipt at V{v_counter}:H{cpu_cycle} PC ${cpu_program_counter:06x} matches multiple CPU transactions: {candidates:?}"
+        )),
+    }
+}
+
+fn read_snes9x_retro_run_trace(
+    path: &Path,
+    expected_run: u32,
+) -> Result<Option<Snes9xRetroRunTrace>, String> {
+    let bytes = fs::read(path).map_err(|error| {
+        format!(
+            "failed to read Snes9x core trace {}: {error}",
+            path.display()
+        )
+    })?;
+    let mut entry = None;
+    let mut return_event = None;
+    let mut hdma_events = Vec::new();
+    let mut video_events = Vec::new();
+    let mut saw_run = false;
+    for (line_index, line) in bytes.split(|byte| *byte == b'\n').enumerate() {
+        if line.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        let event: serde_json::Value = serde_json::from_slice(line).map_err(|error| {
+            format!(
+                "invalid Snes9x core trace line {} in {}: {error}",
+                line_index + 1,
+                path.display()
+            )
+        })?;
+        if event["run"].as_u64() != Some(u64::from(expected_run)) {
+            continue;
+        }
+        saw_run = true;
+        match (event["event"].as_str(), event["stage"].as_str()) {
+            (Some("frame"), Some("entry")) => {
+                if entry.replace(event).is_some() {
+                    return Err(format!("run {expected_run} has duplicate frame-entry rows"));
+                }
+            }
+            (Some("frame"), Some("return")) => {
+                if return_event.replace(event).is_some() {
+                    return Err(format!(
+                        "run {expected_run} has duplicate frame-return rows"
+                    ));
+                }
+            }
+            (Some("hdma"), Some("start" | "end")) => hdma_events.push(event),
+            // The maintained trace core always publishes this direct
+            // retro_run scanout milestone; it is not controlled by the
+            // optional event-domain mask. Retain it rather than pretending
+            // `frame,hdma` suppresses a source-owned receipt.
+            (Some("video"), Some("presented")) => video_events.push(event),
+            (event, stage) => {
+                return Err(format!(
+                    "run {expected_run} has unexpected trace domain/stage {event:?}/{stage:?}"
+                ));
+            }
+        }
+    }
+    if !saw_run {
+        return Ok(None);
+    }
+    let entry = entry.ok_or_else(|| format!("run {expected_run} has no frame-entry row"))?;
+    let return_event =
+        return_event.ok_or_else(|| format!("run {expected_run} has no frame-return row"))?;
+    if video_events.len() != 1 {
+        return Err(format!(
+            "run {expected_run} has {} video/presented rows, expected exactly one",
+            video_events.len()
+        ));
+    }
+    for (pair_index, pair) in hdma_events.chunks(2).enumerate() {
+        if pair.len() != 2 || pair[0]["stage"] != "start" || pair[1]["stage"] != "end" {
+            return Err(format!(
+                "run {expected_run} HDMA pair {pair_index} is not an ordered start/end bracket"
+            ));
+        }
+    }
+    Ok(Some(Snes9xRetroRunTrace {
+        entry,
+        return_event,
+        hdma_events,
+        video_events,
+        raw_sha256: parity::evidence::sha256_bytes(&bytes),
+    }))
+}
+
+fn validate_first_nmi_return_cpu_slice(
+    trace: &Snes9xRetroRunTrace,
+    transactions: &[crate::libretro_core::LibretroCpuTimingTransaction],
+) -> Result<Vec<CpuTimingGapReceipt>, String> {
+    if trace.entry["v"].as_i64() != Some(225)
+        || trace.entry["cycles"].as_i64() != Some(6)
+        || trace.entry["pc"].as_i64() != Some(0x008036)
+    {
+        return Err(format!(
+            "run-81 continuation has the wrong direct entry receipt, expected V225:H6 PC $008036: {}",
+            trace.entry
+        ));
+    }
+    if trace.return_event["v"].as_i64() != Some(225)
+        || trace.return_event["cycles"].as_i64() != Some(94)
+        || trace.return_event["pc"].as_i64() != Some(0x0080c9)
+    {
+        return Err(format!(
+            "run-81 continuation has the wrong direct return receipt, expected V225:H94 PC $0080c9: {}",
+            trace.return_event
+        ));
+    }
+    let first = transactions
+        .first()
+        .ok_or("run-81 continuation CPU slice is empty")?;
+    let terminal = transactions.last().unwrap();
+    if first.start_v_counter != 227 || first.start_cpu_cycle != 742 {
+        return Err(format!(
+            "run-81 continuation CPU slice does not start at V227:H742: {first:?}"
+        ));
+    }
+    if terminal.end_v_counter != 225 || terminal.end_cpu_cycle != 94 {
+        return Err(format!(
+            "run-81 continuation CPU slice does not end at the direct V225:H94 return: {terminal:?}"
+        ));
+    }
+    let mut rollovers = 0;
+    let mut gaps = Vec::new();
+    for (index, transaction) in transactions.iter().enumerate() {
+        if transaction.start_v_counter == 261 && transaction.end_v_counter == 0 {
+            rollovers += 1;
+        } else if transaction.end_v_counter < transaction.start_v_counter {
+            return Err(format!(
+                "CPU transaction {index} has an unexpected raster reversal: {transaction:?}"
+            ));
+        }
+        if let Some(next) = transactions.get(index + 1) {
+            let mut end_position =
+                i64::from(transaction.end_v_counter) * 1364 + i64::from(transaction.end_cpu_cycle);
+            let mut next_position =
+                i64::from(next.start_v_counter) * 1364 + i64::from(next.start_cpu_cycle);
+            if next.start_v_counter < transaction.end_v_counter {
+                if transaction.end_v_counter != 261 || next.start_v_counter != 0 {
+                    return Err(format!(
+                        "CPU transaction {index} has an unexpected raster reversal before its successor: current={transaction:?}; next={next:?}"
+                    ));
+                }
+                rollovers += 1;
+                next_position += 262 * 1364;
+            }
+            if transaction.end_v_counter == 0 && transaction.start_v_counter == 261 {
+                end_position += 262 * 1364;
+                next_position += 262 * 1364;
+            }
+            if next_position < end_position {
+                return Err(format!(
+                    "CPU transaction {index} overlaps or reorders its successor: current={transaction:?}; next={next:?}"
+                ));
+            }
+            if next_position > end_position {
+                gaps.push(CpuTimingGapReceipt {
+                    previous_transaction_ordinal: index,
+                    next_transaction_ordinal: index + 1,
+                    previous_end_v_counter: transaction.end_v_counter,
+                    previous_end_cpu_cycle: transaction.end_cpu_cycle,
+                    next_start_v_counter: next.start_v_counter,
+                    next_start_cpu_cycle: next.start_cpu_cycle,
+                    elapsed_master_cycles: next_position - end_position,
+                });
+            }
+        }
+    }
+    if rollovers != 1 {
+        return Err(format!(
+            "run-81 continuation CPU slice has {rollovers} V261->V0 rollovers, expected exactly one"
+        ));
+    }
+    Ok(gaps)
+}
+
+fn trailing_dma_events_after_first_nmi(
+    events: &[crate::libretro_core::LibretroDmaLedgerEvent],
+) -> Result<Vec<crate::libretro_core::LibretroDmaLedgerEvent>, String> {
+    let Some((outer, selected)) = first_nmi_dma_ledger_slice(events)? else {
+        return Err(
+            "same-retro_run continuation is missing the committed first-NMI DMA prefix".into(),
+        );
+    };
+    let last = events
+        .iter()
+        .rposition(|event| event.fields[1] == outer)
+        .ok_or("selected first-NMI DMA outer vanished from the complete ledger")?;
+    if events[..=last]
+        .iter()
+        .filter(|event| event.fields[1] == outer)
+        .count()
+        != selected.len()
+    {
+        return Err("first-NMI DMA outer is interleaved with later ledger ownership".into());
+    }
+    let trailing = events[last + 1..].to_vec();
+    validate_complete_dma_outers(&trailing)?;
+    Ok(trailing)
+}
+
 fn validate_complete_dma_outers(
     events: &[crate::libretro_core::LibretroDmaLedgerEvent],
 ) -> Result<(), String> {
@@ -8913,10 +10174,9 @@ fn validate_complete_dma_outers(
 fn snes9x_oracle_semantic_receipts(
     oracle: &LibretroCore,
 ) -> Result<Vec<OriginalTimingSemanticReceipt>, String> {
-    // Detailed DMA chronology is a fixture/debug capability, not part of the
-    // continuous Live cadence contract. Until Zelda consumes this semantic
-    // domain, leave it disabled so large transfers cannot make an unrelated
-    // sprite-reset authority fail.
+    // The detailed DMA chronology is an opt-in fixture capability. Continuous
+    // presentation authority uses bounded scanout-domain receipts below and
+    // never retains the emulator's per-byte DMA history.
     if env::var_os("ZELDA3_DEBUG_SNES9X_DMA_LEDGER").is_none() {
         return Ok(Vec::new());
     }
@@ -8929,58 +10189,73 @@ fn snes9x_oracle_semantic_receipts(
 fn snes9x_presented_animated_bg_tiles(
     oracle: &LibretroCore,
 ) -> Result<Option<PresentedAnimatedBgTiles>, String> {
-    // Zelda owns this as the 0x200-word animated BG upload destination. The
-    // adapter may inspect WRAM/cache provenance, but the typed receipt exposes
-    // only the 32 decoded tiles consumed by the completed scanout.
-    // The destination belongs to the beginning of the completed scanout.
-    // Reading live WRAM here would cross the following NMI publication and
-    // pair the right cache pixels with the wrong tile range.
-    let destination = match oracle.debug_ppu_value(40, 0) {
-        None | Some(-1) => return Ok(None),
-        Some(value) => usize::try_from(value)
-            .map_err(|_| format!("presented animated-BG destination is invalid: {value}"))?,
+    // Zelda's leading NMI publishes this complete 0x400-byte domain before the
+    // active field, and Snes9x returns at the following VBlank before another
+    // NMI can replace it. Decode the exact post-host VRAM generation instead
+    // of consulting TileCached: a tile consumed only through H-flip has no
+    // entry in the unflipped cache even though it was visibly presented.
+    let Some(destination) =
+        decode_presented_animated_bg_destination(oracle.debug_ppu_value(40, 0))?
+    else {
+        return Ok(None);
     };
-    // Zelda leaves this operand at Snes9x's 0x55 reset fill until graphics
-    // setup. That represents absence of a publication, not a corrupt receipt.
-    if !destination.is_multiple_of(16) {
-        return Ok(None);
-    }
-    let first_tile = destination / 16;
-    if first_tile + PresentedAnimatedBgTiles::TILE_COUNT > 1024 {
-        return Ok(None);
-    }
-    if oracle.debug_ppu_value(32, first_tile as i32).is_none() {
-        return Ok(None);
-    }
+    let vram = oracle
+        .memory_bytes(RETRO_MEMORY_VIDEO_RAM)
+        .ok_or_else(|| "Snes9x video RAM is unavailable".to_string())?;
+    decode_presented_animated_bg_tiles(destination, vram).map(Some)
+}
 
-    let mut tile_pixels = vec![0; PresentedAnimatedBgTiles::TILE_COUNT * 64];
-    let mut valid_tiles = vec![false; PresentedAnimatedBgTiles::TILE_COUNT];
+fn decode_presented_animated_bg_destination(
+    value: Option<i32>,
+) -> Result<Option<zelda3::PresentedAnimatedBgDestination>, String> {
+    match value {
+        None | Some(-1) => return Ok(None),
+        Some(0x3b00) => Ok(Some(zelda3::PresentedAnimatedBgDestination::Dungeon)),
+        Some(0x3c00) => Ok(Some(zelda3::PresentedAnimatedBgDestination::Overworld)),
+        // Zelda leaves this operand at Snes9x's 0x55 reset fill until graphics
+        // setup. Cold initialization then clears WRAM to zero before either
+        // DecompressAnimated* routine publishes the first real destination.
+        // Both values therefore mean that no animated-BG generation exists.
+        Some(0 | 0x5555) => Ok(None),
+        Some(value) => Err(format!(
+            "presented animated-BG destination is invalid: {value}"
+        )),
+    }
+}
+
+fn decode_presented_animated_bg_tiles(
+    destination: zelda3::PresentedAnimatedBgDestination,
+    vram: &[u8],
+) -> Result<PresentedAnimatedBgTiles, String> {
+    let word_address = match destination {
+        zelda3::PresentedAnimatedBgDestination::Dungeon => 0x3b00,
+        zelda3::PresentedAnimatedBgDestination::Overworld => 0x3c00,
+    };
+    let byte_address = word_address * 2;
+    let byte_count = PresentedAnimatedBgTiles::TILE_COUNT * 32;
+    let bytes = vram
+        .get(byte_address..byte_address + byte_count)
+        .ok_or_else(|| "Snes9x video RAM omits the animated-BG publication".to_string())?;
+    let mut pixels = vec![0; PresentedAnimatedBgTiles::TILE_COUNT * 64];
     for tile in 0..PresentedAnimatedBgTiles::TILE_COUNT {
-        let cache_tile = first_tile + tile;
-        let valid = oracle
-            .debug_ppu_value(32, cache_tile as i32)
-            .ok_or_else(|| format!("presented animated-BG validity {tile} is unavailable"))?
-            != 0;
-        valid_tiles[tile] = valid;
-        if !valid {
-            continue;
-        }
-        for pixel in 0..PresentedAnimatedBgTiles::PIXELS_PER_TILE {
-            let value = oracle
-                .debug_ppu_value(31, (cache_tile * 64 + pixel) as i32)
-                .ok_or_else(|| {
-                    format!("presented animated-BG tile {tile} pixel {pixel} is unavailable")
-                })?;
-            tile_pixels[tile * 64 + pixel] = u8::try_from(value)
-                .ok()
-                .filter(|&index| index < 16)
-                .ok_or_else(|| {
-                format!("presented animated-BG tile {tile} pixel {pixel} is invalid: {value}")
-            })?;
+        let packed = &bytes[tile * 32..tile * 32 + 32];
+        for y in 0..8 {
+            let planes = [
+                packed[y * 2],
+                packed[y * 2 + 1],
+                packed[16 + y * 2],
+                packed[16 + y * 2 + 1],
+            ];
+            for x in 0..8 {
+                let mask = 1 << (7 - x);
+                pixels[tile * 64 + y * 8 + x] =
+                    planes.iter().enumerate().fold(0, |pixel, (plane, value)| {
+                        pixel | u8::from(value & mask != 0) << plane
+                    });
+            }
         }
     }
-    PresentedAnimatedBgTiles::new(tile_pixels, valid_tiles)
-        .map(Some)
+    PresentedAnimatedBgTiles::new(destination, pixels)
         .ok_or_else(|| "presented animated-BG receipt has an invalid shape".to_string())
 }
 
@@ -9247,6 +10522,55 @@ fn snes9x_presented_cgram(oracle: &LibretroCore) -> Result<Option<PresentedCgram
     PresentedCgram::new(colors)
         .map(Some)
         .ok_or_else(|| "presented CGRAM receipt has an invalid shape".to_string())
+}
+
+fn snes9x_original_timing_host_receipts(
+    oracle: &LibretroCore,
+    capture: &LibretroFrame,
+    previous_video: Option<&PresentedOracleVideo>,
+    presented_bg_tilemap_cache: &mut PresentedBgTilemapCache,
+    frame: u32,
+    input: u16,
+    semantic: Vec<OriginalTimingSemanticReceipt>,
+) -> Result<OriginalTimingHostReceipts, String> {
+    let mut receipts = OriginalTimingHostReceipts::new(u64::from(frame), input, semantic);
+    receipts = receipts.with_presented_audio(
+        PresentedAudio::new(capture.audio.clone())
+            .ok_or_else(|| "Snes9x returned an invalid stereo audio receipt".to_string())?,
+    );
+    if let Some(receipt) = snes9x_presented_animated_bg_tiles(oracle)? {
+        receipts = receipts.with_presented_animated_bg_tiles(receipt);
+    }
+    let geometry = snes9x_presented_scanout_geometry(oracle)?;
+    if let Some(receipt) = snes9x_presented_inidisp(oracle, geometry, capture, previous_video)? {
+        receipts = receipts.with_presented_inidisp(receipt);
+    }
+    if let Some(receipt) = geometry {
+        receipts = receipts.with_presented_scanout_geometry(receipt);
+    }
+    if let Some(receipt) = snes9x_presented_hud_tilemap(oracle)? {
+        receipts = receipts.with_presented_hud_tilemap(receipt);
+    }
+    receipts = receipts.with_presented_dialogue_text(snes9x_presented_dialogue_text(oracle)?);
+    if let Some(receipt) = snes9x_presented_bg_tilemaps(oracle, presented_bg_tilemap_cache)? {
+        receipts = receipts.with_presented_bg_tilemaps(receipt);
+    }
+    if let Some(receipt) = snes9x_presented_bg_scroll(oracle)? {
+        receipts = receipts.with_presented_bg_scroll(receipt);
+    }
+    if let Some(receipt) = snes9x_presented_window_mask(oracle)? {
+        receipts = receipts.with_presented_window_mask(receipt);
+    }
+    if let Some(receipt) = snes9x_presented_cgram(oracle)? {
+        receipts = receipts.with_presented_cgram(receipt);
+    }
+    if let Some(receipt) = snes9x_presented_oam(oracle)? {
+        receipts = receipts.with_presented_oam(receipt);
+    }
+    if let Some(receipt) = snes9x_presented_obj_tiles(oracle)? {
+        receipts = receipts.with_presented_obj_tiles(receipt);
+    }
+    Ok(receipts)
 }
 
 fn semantic_receipts_from_dma_ledger(
@@ -10035,6 +11359,81 @@ fn write_snes9x_first_nmi_dma_header<W: Write>(
     Ok(())
 }
 
+fn write_snes9x_first_nmi_return_header<W: Write>(
+    writer: &mut W,
+    core_path: &str,
+    rom_path: &str,
+    oracle: &LibretroCore,
+    load_sram_path: Option<&Path>,
+    initial_sram: &[u8],
+) -> Result<(), Box<dyn Error>> {
+    let mut provenance = snes9x_smp_trace_provenance(core_path, rom_path, oracle)?;
+    let core_receipt_path = PathBuf::from(format!("{core_path}.json"));
+    let core_receipt: serde_json::Value = serde_json::from_slice(&fs::read(&core_receipt_path)?)?;
+    let dma_patch_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../external/snes9x-libretro/patches/zelda3-dma-ledger.patch");
+    let dma_patch_sha256 = parity::evidence::sha256_file(&dma_patch_path)?;
+    let patch_sha256s = core_receipt["patch_sha256s"]
+        .as_array()
+        .ok_or("first-NMI return core receipt has no patch_sha256s")?;
+    if core_receipt["variant"] != "trace"
+        || core_receipt["source_revision"] != provenance["source"]["revision"]
+        || core_receipt["core_sha256"] != provenance["core"]["sha256"]
+        || patch_sha256s.len() != 5
+        || patch_sha256s.last().and_then(serde_json::Value::as_str)
+            != Some(dma_patch_sha256.as_str())
+    {
+        return Err(
+            "first-NMI return capture requires the pinned five-patch DMA-ledger trace core".into(),
+        );
+    }
+    let prefix_fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../external/snes9x-libretro/fixtures/zelda3-cold-first-nmi-dma.jsonl");
+    let provenance = provenance
+        .as_object_mut()
+        .ok_or("Snes9x trace provenance is not a JSON object")?;
+    provenance.insert(
+        "prefix_fixture".to_string(),
+        serde_json::json!({
+            "path": "external/snes9x-libretro/fixtures/zelda3-cold-first-nmi-dma.jsonl",
+            "sha256": parity::evidence::sha256_file(&prefix_fixture)?,
+            "terminal_event": "completed_$008a35_sta_$420b_07_and_observed_$008a38_raw_fetch",
+        }),
+    );
+    provenance.insert(
+        "core_build_receipt".to_string(),
+        serde_json::json!({
+            "schema": core_receipt["schema"],
+            "variant": core_receipt["variant"],
+            "source_revision": core_receipt["source_revision"],
+            "patch_sha256": core_receipt["patch_sha256"],
+            "patch_sha256s": core_receipt["patch_sha256s"],
+            "sha256": parity::evidence::sha256_file(&core_receipt_path)?,
+        }),
+    );
+    provenance.insert(
+        "initial_sram".to_string(),
+        first_nmi_dma_setup_initial_sram_provenance(load_sram_path, initial_sram)?,
+    );
+    provenance.insert(
+        "trace_domains".to_string(),
+        serde_json::json!({
+            "generic_text": ["frame", "hdma"],
+            "implicit_generic_text": ["video/presented"],
+            "cpu_timing": "all_source_transactions_in_one_retro_run",
+            "dma": "all_complete_outers_after_committed_prefix",
+            "cpu_apui": "all_joined_post_anchor_accesses_with_dsp_before_after",
+            "smp_output_ports": "all_joined_post_anchor_writes",
+            "capacity_policy": "fail_closed",
+            "core_route_selector": false,
+        }),
+    );
+    serde_json::to_writer(&mut *writer, &provenance)?;
+    writer.write_all(b"\n")?;
+    writer.flush()?;
+    Ok(())
+}
+
 const FIRST_NMI_DMA_SETUP_INITIAL_SRAM_SHA256: &str =
     "d8a02e6e08a22377f919c7350e5bfa6117c6408db9a728815af7ad6e4e6b83bc";
 const FIRST_NMI_DMA_SETUP_INITIAL_SRAM_BYTES: usize = 8_192;
@@ -10182,19 +11581,24 @@ pub(crate) mod tests {
         compact_byte_snapshot, compact_delta_integer_sequence,
         compact_delta_integer_sequence_with_zstd, compact_dma_ledger,
         compact_engine_state_mismatches, compact_framed_smp_instructions,
-        first_dsp_write_timing_mismatch, first_nmi_apui_anchor_indices, first_nmi_dma_ledger_slice,
+        compact_ordinal_cpu_apu_accesses, first_dsp_write_timing_mismatch,
+        first_nmi_apui_anchor_indices, first_nmi_dma_ledger_slice,
         first_nmi_dma_setup_initial_sram_provenance, first_nmi_dma_setup_stop_index,
-        first_nmi_dma_transaction_slice, fnv1a32, last_spc_clock_witness,
-        libretro_engine_state_receipt, oracle_preframe_snapshot_required,
+        first_nmi_dma_transaction_slice, first_nmi_return_start_index, fnv1a32,
+        last_spc_clock_witness, libretro_engine_state_receipt, oracle_preframe_snapshot_required,
         oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
         parse_paired_resume_capture, parse_rolling_paired_resume_capture,
-        prune_rolling_paired_resume_captures, replayable_input_artifact, resolve_replay_bundle,
-        rolling_capture_frame_after, scan_all_policy, semantic_trace_authority_available,
-        should_render_video_frame, should_stop_after_first_mismatch, should_write_frame_receipt,
-        smp_bootstrap_handoff_index, snes9x_presented_scanline_for_video_y,
-        summarize_presented_obj_cache, summarize_value_domain, trace_events_with_rom_rng,
-        validate_replay_source_parents, vram_domain_receipt, BootBoundaryState,
-        FramedApuPortAccess, FramedCpuTimingTransaction, FramedSmpInstruction, PairedResumeCapture,
+        presented_video_rows_match_prior_surface, prune_rolling_paired_resume_captures,
+        read_snes9x_retro_run_trace, replayable_input_artifact, resolve_replay_bundle,
+        rolling_capture_frame_after, scan_all_policy, semantic_receipts_from_dma_ledger,
+        semantic_trace_authority_available, should_render_video_frame,
+        should_stop_after_first_mismatch, should_write_frame_receipt, smp_bootstrap_handoff_index,
+        snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
+        summarize_value_domain, trace_events_with_rom_rng, validate_first_nmi_return_cpu_slice,
+        validate_oracle_rng_samples_for_run, validate_replay_source_parents, vram_domain_receipt,
+        write_cached_av_final_paired_resume, BootBoundaryState, FramedApuPortAccess,
+        FramedCpuTimingTransaction, FramedSmpInstruction, OrdinalApuPortAccess,
+        PairedResumeCapture, PendingFirstNmiReturnFixture, PresentedOracleVideo,
         RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt,
     };
     use crate::libretro_core::{
@@ -10202,8 +11606,131 @@ pub(crate) mod tests {
         LibretroDspRegisterWrite, LibretroFrame, LibretroSmpInstruction,
     };
     use std::fs;
+    use std::io::Write;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+    use zelda3::{game_output::DspWriteEvent, OriginalTimingSemanticReceipt, RomRandomSample};
+
+    #[test]
+    fn matched_cached_av_replay_writes_a_quiescent_paired_frontier() {
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-cached-av-paired-frontier-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let cache = root.join("cache");
+        let output = root.join("output");
+        fs::create_dir_all(&cache).unwrap();
+        fs::create_dir_all(&output).unwrap();
+        let oracle = b"canonical final oracle state";
+        fs::write(cache.join("oracle_final.state"), oracle).unwrap();
+        fs::write(cache.join("initial.srm"), b"canonical startup SRAM").unwrap();
+        let manifest = serde_json::json!({
+            "cache_key": "fixture-key",
+            "cache_identity": {
+                "core_sha256": "core-sha",
+                "source_artifact_sha256": {
+                    "input.txt": "input-sha",
+                    "rom-random.txt": "rng-sha",
+                    "initial.srm": "sram-sha",
+                },
+            },
+            "artifact_sha256": {
+                "oracle_final.state": parity::evidence::sha256_bytes(oracle),
+            },
+        });
+        let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+        let game = super::load_default_play_state();
+
+        let frontier = write_cached_av_final_paired_resume(
+            &cache,
+            &output,
+            &manifest,
+            &manifest_bytes,
+            Path::new("zelda3.sfc"),
+            "rom-sha",
+            52_000,
+            &game,
+        )
+        .unwrap();
+        let (rust_state, oracle_state) = paired_resume_paths(&frontier).unwrap();
+        let checkpoint: crate::PlayCrashCheckpoint =
+            bincode::deserialize(&fs::read(rust_state).unwrap()).unwrap();
+        assert_eq!(checkpoint.host_frame, 52_000);
+        assert_eq!(checkpoint.run_what, super::select_run_what(&game.ram));
+        assert_eq!(fs::read(oracle_state).unwrap(), oracle);
+        let paired_manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(frontier.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(paired_manifest["boundary"], "pre-frame");
+        assert_eq!(paired_manifest["frame"], 52_000);
+        assert_eq!(paired_manifest["source"]["cache_key"], "fixture-key");
+        assert_eq!(paired_manifest["core"]["sha256"], "core-sha");
+        assert_eq!(paired_manifest["input_script"]["sha256"], "input-sha");
+        assert_eq!(paired_manifest["rom_random_script"]["sha256"], "rng-sha");
+        assert_eq!(paired_manifest["initial_sram"]["sha256"], "sram-sha");
+        assert_eq!(
+            fs::read(frontier.join("initial.srm")).unwrap(),
+            b"canonical startup SRAM"
+        );
+        assert!(!output.join(".paired-final.tmp").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn animated_bg_receipt_decodes_complete_post_nmi_vram_without_cache_validity() {
+        let mut vram = vec![0; 0x10000];
+        let base = 0x3b00 * 2;
+        vram[base] = 0x80;
+        vram[base + 1] = 0x40;
+        vram[base + 16] = 0x20;
+        vram[base + 17] = 0x10;
+
+        let actual = super::decode_presented_animated_bg_tiles(
+            zelda3::PresentedAnimatedBgDestination::Dungeon,
+            &vram,
+        )
+        .unwrap();
+        let mut pixels = vec![0; zelda3::PresentedAnimatedBgTiles::TILE_COUNT * 64];
+        pixels[..4].copy_from_slice(&[1, 2, 4, 8]);
+        let expected = zelda3::PresentedAnimatedBgTiles::new(
+            zelda3::PresentedAnimatedBgDestination::Dungeon,
+            pixels,
+        )
+        .unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn animated_bg_receipt_rejects_incomplete_post_nmi_vram() {
+        let error = super::decode_presented_animated_bg_tiles(
+            zelda3::PresentedAnimatedBgDestination::Overworld,
+            &[0; 0x7800],
+        )
+        .unwrap_err();
+        assert!(error.contains("omits the animated-BG publication"));
+    }
+
+    #[test]
+    fn animated_bg_destination_is_absent_until_source_graphics_setup() {
+        for value in [None, Some(-1), Some(0), Some(0x5555)] {
+            assert_eq!(
+                super::decode_presented_animated_bg_destination(value).unwrap(),
+                None,
+            );
+        }
+        assert_eq!(
+            super::decode_presented_animated_bg_destination(Some(0x3b00)).unwrap(),
+            Some(zelda3::PresentedAnimatedBgDestination::Dungeon),
+        );
+        assert_eq!(
+            super::decode_presented_animated_bg_destination(Some(0x3c00)).unwrap(),
+            Some(zelda3::PresentedAnimatedBgDestination::Overworld),
+        );
+        assert!(super::decode_presented_animated_bg_destination(Some(1)).is_err());
+    }
 
     #[test]
     fn semantic_receipts_require_a_loaded_generic_trace_authority() {
@@ -10212,7 +11739,6 @@ pub(crate) mod tests {
         assert!(!semantic_trace_authority_available(false, true));
         assert!(!semantic_trace_authority_available(false, false));
     }
-    use zelda3::{game_output::DspWriteEvent, RomRandomSample};
 
     fn decode_base64_bytes(encoded: &str) -> Vec<u8> {
         assert_eq!(encoded.len() % 4, 0);
@@ -10328,6 +11854,217 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn presented_video_history_receipt_requires_byte_exact_consecutive_rows() {
+        let previous_frame = LibretroFrame {
+            audio: Vec::new(),
+            video: vec![1, 2, 3, 4, 5, 6, 7, 8],
+            video_width: 2,
+            video_height: 2,
+            video_pitch: 4,
+            pixel_format: 2,
+        };
+        let previous = PresentedOracleVideo::from(&previous_frame);
+        let current = LibretroFrame {
+            audio: Vec::new(),
+            video: vec![1, 2, 3, 4, 5, 6, 7, 9],
+            video_width: 2,
+            video_height: 2,
+            video_pitch: 4,
+            pixel_format: 2,
+        };
+
+        assert!(
+            presented_video_rows_match_prior_surface(&current, Some(&previous), 0, 1,).unwrap()
+        );
+        assert!(
+            !presented_video_rows_match_prior_surface(&current, Some(&previous), 0, 2,).unwrap()
+        );
+        assert!(!presented_video_rows_match_prior_surface(&current, None, 0, 1).unwrap());
+    }
+
+    #[test]
+    fn first_nmi_return_selector_requires_exact_committed_successor() {
+        let mut transaction = LibretroCpuTimingTransaction {
+            kind: 0,
+            duration: 8,
+            origin_pc: 0x008a38,
+            opcode: 0x8c,
+            start_v_counter: 227,
+            start_cpu_cycle: 742,
+            end_v_counter: 227,
+            end_cpu_cycle: 750,
+            cpu_model_identity: 1,
+            cpu_model_5a22: 2,
+            start_wram_refresh_position: 534,
+            end_wram_refresh_position: 534,
+        };
+        assert_eq!(
+            first_nmi_return_start_index(&[transaction]).unwrap(),
+            Some(0)
+        );
+        transaction.start_cpu_cycle = 740;
+        assert!(first_nmi_return_start_index(&[transaction])
+            .unwrap_err()
+            .contains("committed V227:H742->H750"));
+    }
+
+    #[test]
+    fn first_nmi_return_core_trace_requires_direct_entry_return_and_paired_hdma() {
+        let path = std::env::temp_dir().join(format!(
+            "zelda3-first-nmi-return-trace-{}-{}.jsonl",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(
+            &path,
+            concat!(
+                "{\"event\":\"frame\",\"stage\":\"entry\",\"run\":81,\"v\":225,\"cycles\":6,\"pc\":32822}\n",
+                "{\"event\":\"video\",\"stage\":\"presented\",\"run\":81,\"v\":225,\"cycles\":16,\"pc\":836060}\n",
+                "{\"event\":\"hdma\",\"stage\":\"start\",\"run\":81,\"v\":0,\"cycles\":1112,\"pc\":34000}\n",
+                "{\"event\":\"hdma\",\"stage\":\"end\",\"run\":81,\"v\":0,\"cycles\":1140,\"pc\":34000}\n",
+                "{\"event\":\"frame\",\"stage\":\"return\",\"run\":81,\"v\":225,\"cycles\":94,\"pc\":32969}\n",
+            ),
+        )
+        .unwrap();
+        let trace = read_snes9x_retro_run_trace(&path, 81).unwrap().unwrap();
+        let transaction = |start_v, start_h, end_v, end_h| LibretroCpuTimingTransaction {
+            kind: 1,
+            duration: 8,
+            origin_pc: 0x008a38,
+            opcode: 0x8c,
+            start_v_counter: start_v,
+            start_cpu_cycle: start_h,
+            end_v_counter: end_v,
+            end_cpu_cycle: end_h,
+            cpu_model_identity: 1,
+            cpu_model_5a22: 2,
+            start_wram_refresh_position: 534,
+            end_wram_refresh_position: 534,
+        };
+        let transactions = [
+            transaction(227, 742, 227, 750),
+            transaction(227, 750, 227, 1162),
+            // `$008a59 STA $420b`: the memory operand receipt ends before
+            // source-owned DMA/event processing, and the semantic receipt
+            // resumes on the following scanline. The CPU timing ledger is
+            // ordered evidence, not an exhaustive partition of raster time.
+            transaction(228, 1160, 261, 1360),
+            transaction(261, 1360, 0, 4),
+            transaction(0, 4, 225, 94),
+        ];
+        let gaps = validate_first_nmi_return_cpu_slice(&trace, &transactions).unwrap();
+        assert_eq!(gaps.len(), 1);
+        assert_eq!(gaps[0].previous_transaction_ordinal, 1);
+        assert_eq!(gaps[0].next_transaction_ordinal, 2);
+        assert_eq!(gaps[0].previous_end_v_counter, 227);
+        assert_eq!(gaps[0].previous_end_cpu_cycle, 1162);
+        assert_eq!(gaps[0].next_start_v_counter, 228);
+        assert_eq!(gaps[0].next_start_cpu_cycle, 1160);
+        assert_eq!(gaps[0].elapsed_master_cycles, 1362);
+        assert_eq!(trace.hdma_events.len(), 2);
+        assert_eq!(trace.video_events.len(), 1);
+        assert_eq!(trace.return_event["cycles"], 94);
+        assert_eq!(
+            trace.raw_sha256,
+            parity::evidence::sha256_file(&path).unwrap()
+        );
+        fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn first_nmi_return_fixture_is_installed_only_after_explicit_success() {
+        let path = std::env::temp_dir().join(format!(
+            "zelda3-first-nmi-return-fixture-{}-{}.jsonl",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut pending = PendingFirstNmiReturnFixture::create(&path).unwrap();
+        pending
+            .writer
+            .write_all(b"{\"kind\":\"synthetic\"}\n")
+            .unwrap();
+        assert!(!path.exists());
+        assert!(pending.temporary_path.exists());
+        pending.install().unwrap();
+        assert!(pending.installed);
+        assert!(!pending.temporary_path.exists());
+        assert_eq!(fs::read(&path).unwrap(), b"{\"kind\":\"synthetic\"}\n");
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn continuation_apui_compaction_preserves_all_four_dsp_fields() {
+        let access = OrdinalApuPortAccess {
+            cpu_transaction_ordinal: 7,
+            access: LibretroApuPortWrite {
+                port: 2,
+                value: 0x55,
+                output_sample: 3,
+                v_counter: 4,
+                cpu_cycle: 5,
+                program_counter: 0x008123,
+                apu_cycle_before: 6,
+                apu_cycle_after: 7,
+                smp_clock_before: 8,
+                smp_clock_after: 9,
+                dsp_clock_before: 10,
+                dsp_clock_after: 11,
+                dsp_phase_before: 12,
+                dsp_phase_after: 13,
+                smp_pc_before: 14,
+                smp_pc_after: 15,
+                smp_opcode_before: 16,
+                smp_opcode_after: 17,
+                smp_opcode_cycle_before: 18,
+                smp_opcode_cycle_after: 19,
+                is_read: true,
+                cpu_model_5a22: 2,
+                wram_refresh_position: 534,
+                cpu_model_identity: 1,
+            },
+        };
+        let sequence = serde_json::to_value(compact_ordinal_cpu_apu_accesses(&[access])).unwrap();
+        assert_eq!(
+            sequence["fields"],
+            serde_json::json!([
+                "cpu_transaction_ordinal",
+                "port",
+                "value",
+                "output_sample",
+                "v_counter",
+                "cpu_cycle",
+                "program_counter",
+                "apu_cycle_before",
+                "apu_cycle_after",
+                "smp_clock_before",
+                "smp_clock_after",
+                "dsp_clock_before",
+                "dsp_clock_after",
+                "dsp_phase_before",
+                "dsp_phase_after",
+                "smp_pc_before",
+                "smp_pc_after",
+                "smp_opcode_before",
+                "smp_opcode_after",
+                "smp_opcode_cycle_before",
+                "smp_opcode_cycle_after",
+                "is_read",
+                "cpu_model_5a22",
+                "wram_refresh_position",
+                "cpu_model_identity"
+            ])
+        );
+        let rows = expand_delta_sequence(&sequence);
+        assert_eq!(&rows[0][11..15], &[10, 11, 12, 13]);
+    }
+
+    #[test]
     fn first_nmi_dma_setup_slice_starts_after_apui_completion_and_excludes_dma_start() {
         let apui = FramedApuPortAccess {
             frame: 81,
@@ -10342,6 +12079,10 @@ pub(crate) mod tests {
                 apu_cycle_after: 43,
                 smp_clock_before: 0,
                 smp_clock_after: 1,
+                dsp_clock_before: 12,
+                dsp_clock_after: 13,
+                dsp_phase_before: 14,
+                dsp_phase_after: 15,
                 smp_pc_before: 0x0873,
                 smp_pc_after: 0x0873,
                 smp_opcode_before: 0xf0,
@@ -11144,6 +12885,16 @@ pub(crate) mod tests {
         let (outer, selected) = first_nmi_dma_ledger_slice(&events).unwrap().unwrap();
         assert_eq!(outer, 3);
         assert_eq!(selected, events);
+        assert_eq!(
+            semantic_receipts_from_dma_ledger(&events).unwrap(),
+            vec![OriginalTimingSemanticReceipt::DmaPublicationCompleted { channel_mask: 7 }],
+        );
+
+        let zero_mask_events = vec![event(0, 0, -1, -1), event(4, 0, -1, -1)];
+        assert_eq!(
+            semantic_receipts_from_dma_ledger(&zero_mask_events).unwrap(),
+            Vec::<OriginalTimingSemanticReceipt>::new(),
+        );
 
         let compact = serde_json::to_value(compact_dma_ledger(&selected)).unwrap();
         assert_eq!(expand_delta_sequence(&compact).len(), selected.len());
@@ -11376,6 +13127,7 @@ pub(crate) mod tests {
         let sample = oracle_rng_sample_from_trace_line(
             r#"{"event":"rng-write","run":24377,"pc":899711,"value":134,"carry":1}"#,
             24377,
+            24377,
         )
         .unwrap()
         .unwrap();
@@ -11384,17 +13136,20 @@ pub(crate) mod tests {
         assert!(oracle_rng_sample_from_trace_line(
             r#"{"event":"rng-write","run":24377,"pc":57291,"value":36,"carry":0}"#,
             24377,
+            24377,
         )
         .unwrap()
         .is_none());
         assert!(oracle_rng_sample_from_trace_line(
             r#"{"event":"rng-ppu-read","run":24377,"pc":899700,"value":1,"carry":0}"#,
             24377,
+            24377,
         )
         .unwrap()
         .is_none());
         assert!(oracle_rng_sample_from_trace_line(
             r#"{"event":"dma","run":24377,"frame":24377,"v":228,"cycles":24}"#,
+            24377,
             24377,
         )
         .unwrap()
@@ -11419,10 +13174,52 @@ pub(crate) mod tests {
         let error = oracle_rng_sample_from_trace_line(
             r#"{"event":"rng-write","run":24486,"pc":899711,"value":125,"carry":0}"#,
             24458,
+            24458,
         )
         .unwrap_err();
         assert!(error.contains("run 24486"));
         assert!(error.contains("frame 24458"));
+    }
+
+    #[test]
+    fn live_oracle_rng_maps_resumed_trace_run_to_absolute_execution_frame() {
+        let sample = oracle_rng_sample_from_trace_line(
+            r#"{"event":"rng-write","run":119,"pc":899711,"value":32,"carry":1}"#,
+            119,
+            56_119,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(sample, RomRandomSample::with_carry(56_119, 32, true));
+    }
+
+    #[test]
+    fn oracle_capture_rejects_stale_or_mismatched_rng_scripts() {
+        let expected = [
+            RomRandomSample::with_carry(7, 0x22, false),
+            RomRandomSample::with_carry(7, 0x45, true),
+            RomRandomSample::with_carry(9, 0x88, false),
+        ];
+        let mut cursor = 0;
+        assert!(validate_oracle_rng_samples_for_run(&expected, &mut cursor, 6, &[]).is_ok());
+        assert!(
+            validate_oracle_rng_samples_for_run(&expected, &mut cursor, 7, &expected[..2],).is_ok()
+        );
+        assert_eq!(cursor, 2);
+        let mismatch = validate_oracle_rng_samples_for_run(
+            &expected,
+            &mut cursor,
+            9,
+            &[RomRandomSample::with_carry(9, 0x89, false)],
+        )
+        .unwrap_err();
+        assert!(mismatch.contains("frame 9"));
+
+        let mut stale_cursor = 0;
+        let stale =
+            validate_oracle_rng_samples_for_run(&expected, &mut stale_cursor, 8, &[]).unwrap_err();
+        assert!(stale.contains("frame 7"));
     }
 
     #[test]

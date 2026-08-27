@@ -1,0 +1,86 @@
+diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
+index 649678ae..5619b71f 100644
+--- a/libretro/libretro.cpp
++++ b/libretro/libretro.cpp
+@@ -940,6 +940,10 @@ extern "C" int zelda3_snes9x_debug_ppu_value(int field, int index)
+         // raster internals to Zelda gameplay.
+         case 41: return Zelda3TracePresentedBgTilemapMetaValue(index);
+         case 42: return Zelda3TracePresentedBgTilemapWordValue(index);
++        // Per-line main/sub layer masks captured at each rendered range,
++        // before the register write that flushed that range can change TMW/TSW.
++        case 43: return Zelda3TracePresentedScreenWindowedValue(index);
++        // Backend-neutral per-layer window predicates used by that range.
++        case 44: return Zelda3TracePresentedWindowPredicateValue(index);
+         default: return -1;
+     }
+ }
+diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
+index 2a436367..e82c2c41 100644
+--- a/zelda3_trace.cpp
++++ b/zelda3_trace.cpp
+@@ -126,6 +126,8 @@ SLineMatrixData presented_mode7[240] = {};
+ int scanline_windows[240][4] = {};
+ int presented_windows[240][4] = {};
+ ClipData presented_clip[2][6] = {};
++uint8 presented_screen_windowed[240][2] = {};
++uint8 presented_window_predicates[240][6] = {};
+ int trace_pixel_x = -1;
+ int trace_pixel_y = -1;
+ constexpr int presented_pixel_field_count = 10;
+@@ -646,8 +648,33 @@ void Zelda3TraceCaptureRenderedPpuRange(int start_line, int end_line)
+ 				scanout_bg_tilemap_size[layer] == PPU.BG[layer].SCSize;
+ 	}
+-	for (int line = start_line; line <= end_line; line++)
++	for (int line = start_line; line <= end_line; line++)
++	{
+ 		scanout_inidisp[line] = inidisp;
++		presented_screen_windowed[line][0] = Memory.FillRAM[0x212e];
++		presented_screen_windowed[line][1] = Memory.FillRAM[0x212f];
++		for (int layer = 0; layer < 6; layer++)
++		{
++			// Semantic bits: W1 enabled/outside, W2 enabled/outside,
++			// followed by the overlap operation. The host adapter rejects
++			// overlap modes its native renderer cannot yet express.
++			presented_window_predicates[line][layer] =
++				(PPU.ClipWindow1Enable[layer] ? 0x01 : 0) |
++				(!PPU.ClipWindow1Inside[layer] ? 0x02 : 0) |
++				(PPU.ClipWindow2Enable[layer] ? 0x04 : 0) |
++				(!PPU.ClipWindow2Inside[layer] ? 0x08 : 0) |
++				((PPU.ClipWindowOverlapLogic[layer] & 0x03) << 4);
++		}
++	}
+ 	if (!scanout_hud_tilemap_valid && !(inidisp & 0x80) &&
+ 		start_line < presented_hud_end_line && end_line >= presented_hud_first_line)
+ 	{
+@@ -656,6 +669,13 @@ void Zelda3TraceCaptureRenderedPpuRange(int start_line, int end_line)
+ 	}
+ }
+ 
++int Zelda3TracePresentedScreenWindowedValue(int index)
++{
++	return index >= 0 && index < 240 * 2
++		? presented_screen_windowed[index / 2][index % 2] : -1;
++}
++
++int Zelda3TracePresentedWindowPredicateValue(int index)
++{
++	return index >= 0 && index < 240 * 6
++		? presented_window_predicates[index / 6][index % 6] : -1;
++}
++
+ void Zelda3TraceCaptureScanlinePpuState(int line)
+ {
+ 	if (line < 0 || line >= 240)
+diff --git a/zelda3_trace.h b/zelda3_trace.h
+index a0668999..3dd578a2 100644
+--- a/zelda3_trace.h
++++ b/zelda3_trace.h
+@@ -54,6 +54,8 @@ int Zelda3TracePresentedBgTilemapWordValue(int index);
+ void Zelda3TraceCaptureRenderedPpuRange(int start_line, int end_line);
+ int Zelda3TracePresentedMode7Value(int line, int field);
+ int Zelda3TracePresentedClipValue(int index);
++int Zelda3TracePresentedScreenWindowedValue(int index);
++int Zelda3TracePresentedWindowPredicateValue(int index);
+ void Zelda3TraceCapturePresentedPixel(int offset, int palette_index, int main_color,
+ 	int sub_color, int sub_depth, int result, int z1, int z2);
+ void Zelda3TraceSetPresentedObjTile(int tile, int tile_line, int x, int y);

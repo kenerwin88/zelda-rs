@@ -771,7 +771,13 @@ impl ZeldaState {
             return;
         }
 
-        if self.game_state.player.follower_link.joypad1h_last() & JOYPAD_HIGH_SELECT != 0
+        // The pinned ROM's Hud_NormalMenu at $8d:df15 has no Select branch.
+        // The C port added this path with its secondary-item/SwitchLR feature so
+        // the original save menu remains reachable after Select is repurposed
+        // for the map. Keep that extension behind the feature that owns it;
+        // otherwise a vanilla Select press must follow the ROM routine.
+        if self.game_state.enhanced_features.has(FEATURE_SWITCH_LR)
+            && self.game_state.player.follower_link.joypad1h_last() & JOYPAD_HIGH_SELECT != 0
             && self.game_state.inventory.save_progress.progress_indicator() != 0
         {
             self.set_bg3_v_copy2(0xfff8);
@@ -2074,3 +2080,48 @@ const HUD_TILEMAP_RIGHT_PART: [u16; 12 * 5] = [
     0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f,
     0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f, 0x207f,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn normal_menu_with_select(switch_lr: bool) -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.set_main_module(14);
+        state.set_submodule(1);
+        state.set_overworld_map_state(4);
+        state.save_progress_mut().set_progress_indicator(1);
+        state
+            .follower_link_state_mut()
+            .set_joypad1h_last(JOYPAD_HIGH_SELECT);
+        if switch_lr {
+            state.enhanced_features_mut().set_bits(FEATURE_SWITCH_LR);
+        }
+        state
+    }
+
+    #[test]
+    fn vanilla_normal_menu_ignores_select_like_the_pinned_rom() {
+        let mut state = normal_menu_with_select(false);
+
+        state.hud_normal_menu();
+
+        assert_eq!(state.game_state.frame.main_module, 14);
+        assert_eq!(state.game_state.frame.submodule, 1);
+        assert_eq!(state.overworld_map_state(), 4);
+    }
+
+    #[test]
+    fn switch_lr_extension_retains_the_c_select_save_menu() {
+        let mut state = normal_menu_with_select(true);
+
+        state.hud_normal_menu();
+
+        assert_eq!(state.game_state.frame.main_module, 14);
+        assert_eq!(state.game_state.frame.submodule, 11);
+        assert_eq!(
+            state.game_state.messaging.dialogue_message_index.value(),
+            0x0186
+        );
+    }
+}

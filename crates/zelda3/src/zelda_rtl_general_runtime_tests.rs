@@ -1204,6 +1204,227 @@ fn pinned_snes9x_receipts_are_typed_input_bound_and_consumed_once() {
 }
 
 #[test]
+fn live_overworld_sprite_receipts_advance_the_suspended_native_c_caller() {
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishPreOverworldProperties {
+            overworld_screen: 0,
+            sprite_presence_published: false,
+        },
+        3,
+    );
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                crate::OverworldSpriteReloadProgress::PresencePublished,
+            ),
+        ],
+    ));
+
+    let progress = state.take_original_timing_overworld_sprite_reload_progress();
+    state.apply_original_timing_overworld_sprite_reload_progress(progress);
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishPreOverworldProperties {
+            sprite_presence_published: true,
+            ..
+        })
+    ));
+
+    state.set_overworld_sprite_presence_marker(0x0198, 0xad);
+    state.sprite_slot_view_mut(15).set_state(1);
+    state.sprite_slot_view_mut(14).set_state(1);
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        1,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                crate::OverworldSpriteReloadProgress::SpriteActivated {
+                    block: 0x0198,
+                    slot: 13,
+                    sprite_type: 0xac,
+                },
+            ),
+        ],
+    ));
+
+    let progress = state.take_original_timing_overworld_sprite_reload_progress();
+    state.apply_original_timing_overworld_sprite_reload_progress(progress);
+    assert_eq!(state.sprite_slot_view(13).n_word(), 0x0198);
+    assert_eq!(state.sprite_slot_view(13).sprite_type(), 0xac);
+    assert_eq!(state.sprite_slot_view(13).state(), 8);
+}
+
+#[test]
+fn overworld_sprite_progress_is_shadow_only_without_its_native_c_continuation() {
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    let receipt = OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+        crate::OverworldSpriteReloadProgress::PresencePublished,
+    );
+    state.original_timing_semantic_receipts =
+        Some(OriginalTimingHostReceipts::new(0, 0, vec![receipt]));
+
+    assert!(state
+        .take_original_timing_overworld_sprite_reload_progress()
+        .is_empty());
+    assert_eq!(
+        state
+            .original_timing_semantic_receipts
+            .as_ref()
+            .unwrap()
+            .semantic(),
+        &[receipt],
+        "an inactive native domain must not consume or apply the authority receipt",
+    );
+}
+
+#[test]
+fn live_overworld_sprite_return_receipt_owns_native_reload_completion() {
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.set_main_module(9);
+    state.set_submodule(4);
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishOverworldSpriteReloadTail {
+            post_return_hold_nmi_slices: 0,
+            return_phase: NmiPhase::BeforeNmi,
+            epilogue_phase: NmiPhase::BeforeNmi,
+            resume_scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(NmiPhase::BeforeNmi),
+        },
+        4,
+    );
+
+    // The native estimate advances in shadow but cannot publish completion
+    // while the authoritative source call is still running.
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .advance_work_one_nmi_slice_with_authoritative_completion(false),
+        Some(GameWorkStep::Waiting),
+    );
+    assert_eq!(state.game_state.frame.submodule, 4);
+
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                crate::OverworldSpriteReloadProgress::ReloadReturned,
+            ),
+        ],
+    ));
+    let progress = state.take_original_timing_overworld_sprite_reload_progress();
+    let returned = state.apply_original_timing_overworld_sprite_reload_progress(progress);
+    let step = state
+        .game_execution_scheduler
+        .advance_work_one_nmi_slice_with_authoritative_completion(returned);
+    assert!(matches!(
+        step,
+        Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishOverworldSpriteReloadTail { .. }
+        ))
+    ));
+
+    // This is the source-ordered tail owned by that semantic receipt. It
+    // reaches Overworld_StartScrollTransition once and publishes submodule 5.
+    state.complete_module09_load_new_sprites_after_reload();
+    assert_eq!(state.game_state.frame.submodule, 5);
+    assert!(state.game_execution_scheduler.is_idle());
+}
+
+#[test]
+fn live_map_quadrant_receipt_prevents_early_native_submodule_publication() {
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.set_main_module(9);
+    state.set_submodule(3);
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishOverworldMapQuadrants {
+            scroll_map_and_sprite_gfx_tail_nmi_slices: 4,
+        },
+        2,
+    );
+
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .advance_work_one_nmi_slice_with_authoritative_completion(false),
+        Some(GameWorkStep::Waiting),
+    );
+    assert_eq!(state.game_state.frame.submodule, 3);
+
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::OverworldMapQuadrantsPublished],
+    ));
+    let published = state.take_original_timing_overworld_map_quadrants_published();
+    let step = state
+        .game_execution_scheduler
+        .advance_work_one_nmi_slice_with_authoritative_completion(published);
+    assert!(matches!(
+        step,
+        Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishOverworldMapQuadrants {
+                scroll_map_and_sprite_gfx_tail_nmi_slices: 4,
+            }
+        ))
+    ));
+
+    // The production completion arm now has authority to invoke the existing
+    // source-order `complete_module09_load_new_map_quadrants`; this unit keeps
+    // the asset-heavy map decompressor out of the scheduler proof.
+    assert_eq!(state.game_state.frame.submodule, 3);
+    assert!(state.game_execution_scheduler.is_idle());
+}
+
+#[test]
+fn live_spotlight_entry_return_receipt_prevents_early_native_completion() {
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.set_main_module(15);
+    state.set_submodule(0);
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishDungeonExitSpotlightEntry {
+            table_build: SpotlightTableBuildContinuation::default(),
+            iteration: SpotlightIteration::closing(
+                SpotlightIterationPhase::CloseEntryBeforeTablePublication,
+            ),
+        },
+        1,
+    );
+
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .advance_work_one_nmi_slice_with_authoritative_completion(false),
+        Some(GameWorkStep::Waiting),
+    );
+    assert_eq!(state.game_state.frame.submodule, 0);
+
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned],
+    ));
+    let returned = state.take_original_timing_dungeon_exit_spotlight_entry_returned();
+    assert!(matches!(
+        state
+            .game_execution_scheduler
+            .advance_work_one_nmi_slice_with_authoritative_completion(returned),
+        Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. }
+        ))
+    ));
+    assert_eq!(state.game_state.frame.submodule, 0);
+    assert!(state.game_execution_scheduler.is_idle());
+}
+
+#[test]
 fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1217,11 +1438,14 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     state.ppu.bg_layer[0].h_scroll = 0x0100;
     state.ppu.bg_layer[0].v_scroll = 0x0200;
     state.ppu.vram[0x0750] = 0x19e1;
+    state.ppu.vram[0x3c00] = 0x4444;
+    state.ppu.vram[0x7c00] = 0x1111;
     write_le_u16(&mut state.ram, ANIMATED_TILE_VRAM_ADDR, 0x3c00);
     state.capture_display_snapshot_with_publication(DisplaySnapshotPublication::PublishCaptured);
     // Native NMI reaches the correct following name-table generation, while
     // the already-captured outgoing surface still holds the preceding word.
     state.ppu.vram[0x0750] = 0x19e2;
+    state.ppu.vram[0x7c00] = 0x2222;
     state.ppu.bg_layer[0].h_scroll = 0x0102;
 
     let mut pixels = vec![0; crate::PresentedObjTiles::TILE_COUNT * 64];
@@ -1231,10 +1455,11 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     let presentation = crate::PresentedObjTiles::new(pixels, valid).unwrap();
     let mut animated_bg_pixels = vec![0; crate::PresentedAnimatedBgTiles::TILE_COUNT * 64];
     animated_bg_pixels[..64].fill(1);
-    let mut animated_bg_valid = vec![false; crate::PresentedAnimatedBgTiles::TILE_COUNT];
-    animated_bg_valid[0] = true;
-    let presented_animated_bg =
-        crate::PresentedAnimatedBgTiles::new(animated_bg_pixels, animated_bg_valid).unwrap();
+    let presented_animated_bg = crate::PresentedAnimatedBgTiles::new(
+        crate::PresentedAnimatedBgDestination::Overworld,
+        animated_bg_pixels,
+    )
+    .unwrap();
     let mut colors = vec![0; crate::PresentedCgram::COLOR_COUNT];
     colors[33] = 0x0421;
     let presented_cgram = crate::PresentedCgram::new(colors).unwrap();
@@ -1245,6 +1470,9 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     let mut hud = vec![0; crate::PresentedHudTilemap::WORD_COUNT];
     hud[0x79] = 0x2508;
     let presented_hud = crate::PresentedHudTilemap::new(hud).unwrap();
+    let mut dialogue_text = vec![0; crate::PresentedDialogueText::WORD_COUNT];
+    dialogue_text[0] = 0x3333;
+    let presented_dialogue_text = crate::PresentedDialogueText::new(dialogue_text).unwrap();
     let presented_bg_tilemaps = crate::PresentedBgTilemaps::new(
         (0..crate::PresentedBgTilemaps::LAYER_COUNT)
             .map(|layer| {
@@ -1269,6 +1497,12 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
         crate::PresentedBgScroll::VISIBLE_LINES
     ])
     .unwrap();
+    let presented_window_mask = crate::PresentedWindowMask::new(
+        vec![[[8, 248], [1, 0]]; crate::PresentedWindowMask::VISIBLE_LINES],
+        [0x16, 0],
+        [0, 0x03, 0x03, 0, 0x03, 0],
+    )
+    .unwrap();
     let presented_inidisp = crate::PresentedInidisp::new(1, 0, Some(48))
         .unwrap()
         .with_retained_prior_surface(true);
@@ -1284,8 +1518,10 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
             .with_presented_inidisp(presented_inidisp)
             .with_presented_scanout_geometry(presented_scanout_geometry)
             .with_presented_hud_tilemap(presented_hud)
+            .with_presented_dialogue_text(presented_dialogue_text)
             .with_presented_bg_tilemaps(presented_bg_tilemaps)
             .with_presented_bg_scroll(presented_bg_scroll.clone())
+            .with_presented_window_mask(presented_window_mask.clone())
             .with_presented_oam(presented_oam)
             .with_presented_obj_tiles(presentation),
     );
@@ -1310,6 +1546,22 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
         0x2508,
         "live VRAM stays private",
     );
+    assert_eq!(
+        display
+            .presented_dialogue_text_override
+            .as_ref()
+            .unwrap()
+            .words()[0],
+        0x3333,
+    );
+    assert_eq!(
+        state.ppu.vram[0x7c00], 0x2222,
+        "live dialogue character VRAM stays private",
+    );
+    assert_eq!(
+        state.last_original_timing_dialogue_text_shadow_result(),
+        None
+    );
     assert_eq!(display.ppu.vram[0x0750], 0x19e2);
     assert_eq!(display.ppu.bg_layer[1].tilemap_adr, 0x0400);
     assert_eq!(display.ppu.bg_layer[0].h_scroll, 0x0100);
@@ -1317,6 +1569,10 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     assert_eq!(
         display.presented_bg_scroll_override,
         Some(presented_bg_scroll.clone())
+    );
+    assert_eq!(
+        display.presented_window_mask_override,
+        Some(presented_window_mask)
     );
     assert_eq!(state.ppu.bg_layer[0].h_scroll, 0x0102);
     assert_eq!(state.ppu.vram[0x0750], 0x19e2, "live VRAM stays private");
@@ -1366,7 +1622,11 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
         rendered_retain_prior_surface,
         rendered_top_crop,
         rendered_animated_bg_word,
+        rendered_dialogue_text_word,
+        rendered_obj_word,
         rendered_bg1_scroll,
+        rendered_window1,
+        rendered_windowsel,
     ) = state.with_display_snapshot(|display| {
         let scanlines = display.ppu_scanline_windows();
         (
@@ -1384,7 +1644,19 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
                 .bg_vram_latch
                 .as_deref()
                 .unwrap_or(&display.ppu.vram)[0x3c00],
+            display
+                .ppu
+                .bg_vram_latch
+                .as_deref()
+                .unwrap_or(&display.ppu.vram)[0x7c00],
+            display
+                .ppu
+                .obj_vram_latch
+                .as_deref()
+                .unwrap_or(&display.ppu.vram)[0x4000],
             [scanlines[0].5[0], scanlines[0].6[0]],
+            [scanlines[0].0, scanlines[0].1],
+            display.ppu.windowsel,
         )
     });
     assert_eq!(
@@ -1405,8 +1677,18 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
     assert_eq!(rendered_blank_suffix, Some(48));
     assert!(rendered_retain_prior_surface);
     assert_eq!(rendered_top_crop, 7);
-    assert_eq!(rendered_animated_bg_word, 0x00ff);
+    assert_eq!(
+        rendered_animated_bg_word, 0x00ff,
+        "the decoded semantic receipt must replace the stale 0x4444 animated generation",
+    );
+    assert_eq!(rendered_dialogue_text_word, 0x3333);
+    assert_eq!(
+        rendered_obj_word, 0x8080,
+        "native OAM composition must not replace an authoritative decoded OBJ cache",
+    );
     assert_eq!(rendered_bg1_scroll, [0x00fe, 0x0200]);
+    assert_eq!(rendered_window1, [8, 248]);
+    assert_eq!(rendered_windowsel, 0x0003_0330);
     assert_eq!(
         state.last_original_timing_bg_scroll_shadow_result(),
         Some(crate::OriginalTimingBgScrollShadowResult {
@@ -1414,6 +1696,24 @@ fn live_presentation_receipt_publishes_scanout_domains_after_translated_capture(
                 * crate::PresentedBgScroll::LAYER_COUNT,
             mismatched_scanline_layers: crate::PresentedBgScroll::VISIBLE_LINES,
             first_mismatch: Some((0, 0)),
+        }),
+    );
+    assert_eq!(
+        state.last_original_timing_window_mask_shadow_result(),
+        Some(crate::OriginalTimingWindowMaskShadowResult {
+            compared_scanline_windows: crate::PresentedWindowMask::VISIBLE_LINES
+                * crate::PresentedWindowMask::WINDOW_COUNT,
+            mismatched_scanline_windows: crate::PresentedWindowMask::VISIBLE_LINES,
+            mismatched_screen_masks: 1,
+            first_mismatch: Some((0, 0)),
+        }),
+    );
+    assert_eq!(
+        state.last_original_timing_dialogue_text_shadow_result(),
+        Some(crate::OriginalTimingDialogueTextShadowResult {
+            compared_words: crate::PresentedDialogueText::WORD_COUNT,
+            mismatched_words: 1,
+            first_mismatch: Some(0),
         }),
     );
     assert_eq!(
@@ -1546,6 +1846,159 @@ fn pinned_snes9x_reset_progress_is_unique_and_unclaimed_facts_expire_in_their_ho
         )),
         Err(OriginalTimingReceiptInstallError::DuplicateCachedSpriteExecutionProgress),
     );
+    assert_eq!(
+        duplicate.install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::PreOverworldStageCompleted(
+                    crate::PreOverworldStageCompletion::OverlaysReturned,
+                ),
+                OriginalTimingSemanticReceipt::PreOverworldStageCompleted(
+                    crate::PreOverworldStageCompletion::OverlaysReturned,
+                ),
+            ],
+        )),
+        Err(OriginalTimingReceiptInstallError::DuplicatePreOverworldStageCompletion),
+    );
+    assert_eq!(
+        duplicate.install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    crate::MainLoopProgress::IterationStarted,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    crate::MainLoopProgress::CallStackContinued,
+                ),
+            ],
+        )),
+        Err(OriginalTimingReceiptInstallError::DuplicateMainLoopProgress),
+    );
+    let spotlight_progress = crate::SpotlightTableBuildProgressReceipt {
+        progress: crate::SpotlightTableBuildProgress {
+            completed_iterations: 209,
+            checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
+                pending_circle_input: 30,
+            },
+        },
+        boundary: OriginalTimingBoundary::NmiAccepted,
+    };
+    assert_eq!(
+        duplicate.install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(spotlight_progress),
+                OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(spotlight_progress),
+            ],
+        )),
+        Err(OriginalTimingReceiptInstallError::DuplicateSpotlightTableBuildProgress),
+    );
+    assert_eq!(
+        duplicate.install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait,
+                OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait,
+            ],
+        )),
+        Err(OriginalTimingReceiptInstallError::DuplicateDungeonExitSpotlightCallerReturn),
+    );
+    assert_eq!(
+        duplicate.install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+                crate::SpotlightTableBuildProgressReceipt {
+                    progress: crate::SpotlightTableBuildProgress {
+                        completed_iterations: 209,
+                        checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
+                            pending_circle_input: 0,
+                        },
+                    },
+                    boundary: OriginalTimingBoundary::HostReturn,
+                },
+            )],
+        )),
+        Err(OriginalTimingReceiptInstallError::InvalidSpotlightTableBuildProgress),
+    );
+    for checkpoint in [
+        crate::SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
+            pending_circle_input: 1,
+        },
+        crate::SpotlightTableBuildCheckpoint::BeforeLowerTableWrite {
+            lower_cursor: 0,
+            circle_value: 0,
+        },
+    ] {
+        assert_eq!(
+            duplicate.install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+                0,
+                0,
+                vec![OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+                    crate::SpotlightTableBuildProgressReceipt {
+                        progress: crate::SpotlightTableBuildProgress {
+                            completed_iterations: 240,
+                            checkpoint,
+                        },
+                        boundary: OriginalTimingBoundary::NmiAccepted,
+                    },
+                )],
+            )),
+            Err(OriginalTimingReceiptInstallError::InvalidSpotlightTableBuildProgress),
+            "a build checkpoint cannot follow all 240 C loop iterations",
+        );
+    }
+    assert_eq!(
+        duplicate.install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+                crate::SpotlightTableBuildProgressReceipt {
+                    progress: crate::SpotlightTableBuildProgress {
+                        completed_iterations: 241,
+                        checkpoint: crate::SpotlightTableBuildCheckpoint::ProjectionCopy {
+                            copied_words: 0,
+                        },
+                    },
+                    boundary: OriginalTimingBoundary::NmiAccepted,
+                },
+            )],
+        )),
+        Err(OriginalTimingReceiptInstallError::InvalidSpotlightTableBuildProgress),
+        "a projection checkpoint cannot exceed the 240-iteration C loop",
+    );
+    let sprite_reset = crate::SpriteResetAllProgressReceipt {
+        progress: crate::SpriteResetAllProgress::SpriteDisableAllCompleted,
+        boundary: OriginalTimingBoundary::HostReturn,
+    };
+    assert_eq!(
+        duplicate.install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::SpriteResetAllProgress(sprite_reset),
+                OriginalTimingSemanticReceipt::SpriteResetAllProgress(sprite_reset),
+            ],
+        )),
+        Err(OriginalTimingReceiptInstallError::DuplicateSpriteResetAllProgress),
+    );
+    assert_eq!(
+        duplicate.install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![OriginalTimingSemanticReceipt::SpriteResetAllProgress(
+                crate::SpriteResetAllProgressReceipt {
+                    boundary: OriginalTimingBoundary::NmiAccepted,
+                    ..sprite_reset
+                },
+            )],
+        )),
+        Err(OriginalTimingReceiptInstallError::InvalidSpriteResetAllProgress),
+    );
 
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -1599,6 +2052,114 @@ fn live_cached_sprite_progress_is_taken_once_without_cpu_provenance() {
 }
 
 #[test]
+fn continued_source_call_stack_does_not_reenter_module_routing() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(8);
+    state.set_submodule(1);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+            crate::MainLoopProgress::CallStackContinued,
+        )],
+    ));
+    state.game_execution_scheduler.begin_host_frame();
+    let entry_frame = state.game_state.frame;
+
+    state.zelda_run_game_loop();
+
+    assert_eq!(state.game_state.frame, entry_frame);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
+fn live_spotlight_progress_suspends_module0f_before_submodule_advance() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(0x0f);
+    state.set_submodule(0);
+    state.set_subsubmodule(0);
+    state.set_indoor_flag(0);
+    state.follower_link_state_mut().set_x(1272);
+    state.follower_link_state_mut().set_y(1012);
+    state.set_bg2_h_copy2(1152);
+    state.set_bg2_v_copy2(786);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::MainLoopProgress(
+                crate::MainLoopProgress::IterationStarted,
+            ),
+            OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+                crate::SpotlightTableBuildProgressReceipt {
+                    progress: crate::SpotlightTableBuildProgress {
+                        completed_iterations: 209,
+                        checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
+                            pending_circle_input: 30,
+                        },
+                    },
+                    boundary: OriginalTimingBoundary::NmiAccepted,
+                },
+            ),
+        ],
+    ));
+    state.game_execution_scheduler.begin_host_frame();
+
+    state.zelda_run_game_loop();
+
+    assert_eq!(state.game_state.frame.main_module, 0x0f);
+    assert_eq!(state.game_state.frame.submodule, 0);
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. })
+    ));
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
+fn live_dialogue_close_uses_the_native_saved_module_transition() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.game_state.frame.set_saved_module_for_menu(9);
+    state.messaging_state_mut().set_module(1);
+    state.messaging_state_mut().set_text_render_state(3);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::MainLoopProgress(
+                crate::MainLoopProgress::IterationStarted,
+            ),
+            OriginalTimingSemanticReceipt::DialogueClosed,
+        ],
+    ));
+    state.game_execution_scheduler.begin_host_frame();
+
+    state.zelda_run_game_loop();
+
+    assert_eq!(state.game_state.frame.main_module, 9);
+    assert_eq!(state.game_state.frame.submodule, 0);
+    assert_eq!(state.game_state.messaging.runtime.module(), 0);
+    assert_eq!(state.game_state.messaging.runtime.text_render_state(), 4);
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
 fn live_main_loop_preparation_receipt_suspends_the_completed_dungeon_caller() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1621,7 +2182,9 @@ fn live_main_loop_preparation_receipt_suspends_the_completed_dungeon_caller() {
     assert_eq!(state.game_state.frame.subsubmodule, 6);
     assert_eq!(
         state.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn),
+        Some(GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+            caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
+        }),
     );
     assert!(state
         .game_execution_scheduler
@@ -1688,6 +2251,201 @@ fn live_link_oam_receipt_suspends_the_completed_dungeon_caller() {
         .original_timing_semantic_receipts
         .as_ref()
         .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
+fn live_link_oam_receipt_suspends_landing_before_shared_sprite_preparation() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(7);
+    state.set_submodule(15);
+    state.set_subsubmodule(0);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(
+            crate::MainLoopInterruption::LinkOam,
+        )],
+    ));
+    state.game_execution_scheduler.begin_host_frame();
+    state.game_execution_scheduler.begin_main_loop_iteration();
+
+    state.module07_dungeon();
+
+    assert_eq!(state.game_state.frame.subsubmodule, 1);
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn),
+    );
+    assert!(state
+        .game_execution_scheduler
+        .work_suspends_translated_call_stack());
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .scheduled_work_slices_remaining(),
+        Some(1),
+        "an oracle host return must survive this host's trailing NMI",
+    );
+    assert!(state.active_dungeon_sprite_main_return.is_none());
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
+fn live_module09_caller_phase_comes_from_the_typed_interruption_receipt() {
+    for (receipt, phase) in [
+        (
+            crate::MainLoopInterruption::LinkOam,
+            ModuleCpuPhase::InterruptedInLinkOam,
+        ),
+        (
+            crate::MainLoopInterruption::SpritePreparation,
+            ModuleCpuPhase::InterruptedInNmiPrepareSprites,
+        ),
+    ] {
+        let mut state = ZeldaState::new();
+        state.original_timing_owner = OriginalTimingOwnerState::Live;
+        state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+            14_680,
+            0x20,
+            vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(receipt)],
+        ));
+
+        assert_eq!(
+            state.take_authoritative_module09_caller_phase(Some(phase)),
+            phase,
+        );
+        assert!(state
+            .original_timing_semantic_receipts
+            .as_ref()
+            .is_some_and(|receipts| receipts.semantic().is_empty()));
+    }
+
+    let mut unclaimed = ZeldaState::new();
+    unclaimed.original_timing_owner = OriginalTimingOwnerState::Live;
+    unclaimed.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        17_790,
+        0x10,
+        vec![OriginalTimingSemanticReceipt::NmiAccepted],
+    ));
+    assert_eq!(
+        unclaimed
+            .take_authoritative_module09_caller_phase(Some(ModuleCpuPhase::InterruptedInLinkOam,)),
+        ModuleCpuPhase::InterruptedInLinkOam,
+        "an unclaimed phase remains owned by the native timing backend",
+    );
+    assert_eq!(
+        unclaimed
+            .original_timing_semantic_receipts
+            .as_ref()
+            .unwrap()
+            .semantic(),
+        &[OriginalTimingSemanticReceipt::NmiAccepted],
+    );
+}
+
+#[test]
+fn live_dialogue_resume_receipt_suppresses_only_an_already_completed_native_prefix() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(14);
+    state.messaging_state_mut().set_dialogue_msg_read_pos(0x37);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::DialogueExecutionProgress(
+            crate::DialogueExecutionProgress::ResumedRenderingWithoutMainIteration {
+                message_read_position: 0x37,
+            },
+        )],
+    ));
+
+    assert_eq!(
+        state.take_original_timing_dialogue_message_endpoint(),
+        Some(0x37),
+    );
+
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+
+    // A semantic endpoint the native owner has not reached remains shadow
+    // evidence only; it cannot force or overwrite translated state.
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        1,
+        0,
+        vec![OriginalTimingSemanticReceipt::DialogueExecutionProgress(
+            crate::DialogueExecutionProgress::ResumedRenderingWithoutMainIteration {
+                message_read_position: 0x39,
+            },
+        )],
+    ));
+    assert_eq!(
+        state.take_original_timing_dialogue_message_endpoint(),
+        Some(0x39),
+    );
+}
+
+#[test]
+fn live_save_menu_initialization_holds_then_executes_the_c_endpoint_once() {
+    let mut held = ZeldaState::new();
+    held.restore_live_rom_timing_after_checkpoint();
+    held.set_main_module(14);
+    held.set_submodule(11);
+    held.set_subsubmodule(0);
+    held.original_timing_owner = OriginalTimingOwnerState::Live;
+    held.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::SaveMenuInitializationProgress(
+                crate::SaveMenuInitializationProgress::InProgress,
+            ),
+        ],
+    ));
+    let ram_before = held.ram.to_vec();
+
+    held.Module0E_0B_SaveMenu();
+
+    assert_eq!(held.ram.as_slice(), ram_before.as_slice());
+    assert!(held
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+
+    let mut expected = ZeldaState::new();
+    expected.set_main_module(14);
+    expected.set_submodule(11);
+    expected.set_subsubmodule(0);
+    expected.Module0E_0B_SaveMenu();
+
+    held.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        1,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::SaveMenuInitializationProgress(
+                crate::SaveMenuInitializationProgress::Completed,
+            ),
+        ],
+    ));
+    held.Module0E_0B_SaveMenu();
+
+    assert_eq!(held.ram.as_slice(), expected.ram.as_slice());
+    assert_eq!(held.game_state.frame, expected.game_state.frame);
+    assert_eq!(
+        held.game_state.messaging.runtime,
+        expected.game_state.messaging.runtime,
+    );
+    assert_eq!(
+        held.game_state.messaging.render_buffer,
+        expected.game_state.messaging.render_buffer,
+    );
 }
 
 #[test]
@@ -4833,6 +5591,38 @@ fn straight_interroom_sprite_graphics_cross_four_nmi_slices() {
 }
 
 #[test]
+fn sprite_reset_all_semantic_split_resumes_without_replaying_disable() {
+    let mut state = ZeldaState::new();
+    state.set_indoor_flag(1);
+    for slot in 0..16 {
+        let mut sprite = state.sprite_slot_view_mut(slot);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x40 + slot as u8);
+    }
+    state.sprite_system_mut().set_limit_instance(7);
+    state.oam_state_mut().set_sprite_sorting_setting(5);
+
+    let mut atomic = state.clone();
+    atomic.sprite_reset_all();
+
+    state.sprite_disable_all();
+    assert!(
+        (0..16).all(|slot| state.sprite_slot_view(slot).state() == 0),
+        "the semantic checkpoint must include every completed C disable",
+    );
+    assert_eq!(
+        state.ram[crate::game_state::constants::SORT_SPRITES_SETTING],
+        5,
+        "Sprite_ResetAll_noDisable must remain pending at the checkpoint",
+    );
+
+    state.sprite_reset_all_no_disable();
+
+    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+}
+
+#[test]
 fn straight_interroom_sprite_reset_uses_the_live_semantic_progress_token() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -5795,7 +6585,9 @@ fn state_12_nmi_inside_sprite_preparation_resumes_only_that_caller() {
     assert!(!state.dungeon_nmi_prepare_sprites_return_pending);
     assert_eq!(
         state.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn),
+        Some(GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+            caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
+        }),
     );
 }
 
@@ -6162,7 +6954,9 @@ fn pre_dungeon_work_resumes_at_room_and_song_bank_transfer_boundaries() {
     assert_eq!(PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES, 58);
     let stages = [
         (
-            GameWorkContinuation::FinishPreDungeonEntranceLoad,
+            GameWorkContinuation::FinishPreDungeonEntranceLoad {
+                sprite_reset: PreDungeonSpriteResetContinuation::Pending,
+            },
             PRE_DUNGEON_ENTRANCE_LOAD_NMI_SLICES,
         ),
         (
@@ -6189,11 +6983,37 @@ fn pre_dungeon_return_leaves_the_landing_cpu_trace_to_own_the_first_boundary() {
     let mut state = ZeldaState::new();
     state.game_execution_scheduler.begin_host_frame();
 
-    state.finish_pre_dungeon_caller_at_main_wait();
+    assert_eq!(state.finish_pre_dungeon_caller_at_main_wait(), None);
 
     assert_eq!(state.sprite_main_cpu_boundary, None);
     assert_eq!(state.sprite_main_cpu_nmi_slices, 0);
     assert!(state
+        .game_execution_scheduler
+        .returned_main_is_waiting_for_nmi());
+}
+
+#[test]
+fn pre_dungeon_return_consumes_same_host_main_iteration_receipt() {
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+            crate::MainLoopProgress::IterationStarted,
+        )],
+    ));
+    state.game_execution_scheduler.begin_host_frame();
+
+    assert_eq!(
+        state.finish_pre_dungeon_caller_at_main_wait(),
+        Some(crate::MainLoopProgress::IterationStarted)
+    );
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+    assert!(!state
         .game_execution_scheduler
         .returned_main_is_waiting_for_nmi());
 }
@@ -6230,7 +7050,9 @@ fn pre_dungeon_publishes_entrance_before_scheduled_room_construction() {
     assert_eq!(state.game_state.player.follower_link.y(), expected_y);
     assert_eq!(
         state.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishPreDungeonEntranceLoad)
+        Some(GameWorkContinuation::FinishPreDungeonEntranceLoad {
+            sprite_reset: PreDungeonSpriteResetContinuation::Pending,
+        })
     );
 }
 
@@ -6971,6 +7793,421 @@ fn interrupted_spotlight_suffix_matches_c_writes_and_stages_the_rom_receipt() {
 }
 
 #[test]
+fn semantic_spotlight_circle_checkpoint_resumes_to_the_atomic_c_endpoint() {
+    fn source_state() -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.follower_link_state_mut().set_x(1272);
+        state.follower_link_state_mut().set_y(1012);
+        state.set_bg2_h_copy2(1152);
+        state.set_bg2_v_copy2(786);
+        state.set_spotlight_window_radius(126);
+        state.set_spotlight_window_state(0);
+        state
+    }
+
+    let mut atomic = source_state();
+    assert!(!atomic.iris_spotlight_configure_table());
+
+    let mut resumed = source_state();
+    let build = resumed.begin_iris_spotlight_configure_table_at_progress(
+        crate::SpotlightTableBuildProgress {
+            completed_iterations: 209,
+            checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
+                pending_circle_input: 30,
+            },
+        },
+    );
+    assert_eq!(
+        resumed.game_state.display.spotlight_hdma.window_y_buffer(),
+        29,
+        "the interrupted C iteration decrements spotlight_var4 before its circle call",
+    );
+    assert!(!resumed.complete_iris_spotlight_configure_table(build));
+
+    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(resumed.game_state, atomic.game_state);
+}
+
+#[test]
+fn semantic_spotlight_lower_write_checkpoint_resumes_without_replaying_the_upper_write() {
+    fn source_state() -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.follower_link_state_mut().set_x(1880);
+        state.follower_link_state_mut().set_y(1044);
+        state.set_bg2_h_copy2(1758);
+        state.set_bg2_v_copy2(1024);
+        state.set_spotlight_window_radius(119);
+        state.set_spotlight_window_state(2);
+        state
+    }
+
+    let mut atomic = source_state();
+    assert!(atomic.iris_spotlight_configure_table());
+
+    let mut resumed = source_state();
+    resumed.set_spotlight_hdma_table_dynamic_entry(39, 0x1234);
+    let build = resumed.begin_iris_spotlight_configure_table_at_progress(
+        crate::SpotlightTableBuildProgress {
+            completed_iterations: 185,
+            checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeLowerTableWrite {
+                lower_cursor: 39,
+                circle_value: 0xff00,
+            },
+        },
+    );
+    assert_eq!(
+        resumed
+            .game_state
+            .display
+            .spotlight_hdma
+            .hdma_table_dynamic_entry(25),
+        0xff00,
+        "the source upper write is already published at this checkpoint",
+    );
+    assert_eq!(
+        resumed
+            .game_state
+            .display
+            .spotlight_hdma
+            .hdma_table_dynamic_entry(39),
+        0x1234,
+        "the interrupted lower write must remain pending",
+    );
+    assert!(resumed.complete_iris_spotlight_configure_table(build));
+
+    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(resumed.game_state, atomic.game_state);
+}
+
+#[test]
+fn semantic_spotlight_projection_checkpoint_resumes_without_replaying_its_prefix() {
+    fn source_state() -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.follower_link_state_mut().set_x(680);
+        state.follower_link_state_mut().set_y(1704);
+        state.set_bg2_h_copy2(554);
+        state.set_bg2_v_copy2(1610);
+        state.set_spotlight_window_radius(126);
+        state.set_spotlight_window_state(0);
+        for index in 0..224 {
+            write_le_u16(&mut state.ram, RESERVED_HDMA_TABLE + index * 2, 0x5a5a);
+        }
+        state
+    }
+
+    let mut atomic = source_state();
+    assert!(!atomic.iris_spotlight_configure_table());
+
+    let mut resumed = source_state();
+    let build = resumed.begin_iris_spotlight_configure_table_at_progress(
+        crate::SpotlightTableBuildProgress {
+            completed_iterations: 119,
+            checkpoint: crate::SpotlightTableBuildCheckpoint::ProjectionCopy { copied_words: 157 },
+        },
+    );
+    assert_eq!(
+        read_le_u16(&resumed.ram, RESERVED_HDMA_TABLE + 156 * 2),
+        resumed.spotlight_hdma_table_dynamic_entry(156),
+        "the last source-published projection word is visible at the checkpoint",
+    );
+    assert_eq!(
+        read_le_u16(&resumed.ram, RESERVED_HDMA_TABLE + 157 * 2),
+        0x5a5a,
+        "the first unexecuted projection word remains pending",
+    );
+    assert!(!resumed.complete_iris_spotlight_configure_table(build));
+
+    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(resumed.game_state, atomic.game_state);
+}
+
+#[test]
+fn live_dungeon_exit_projection_receipt_suspends_the_entry_suffix() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_indoor_flag(0);
+    state.set_main_module(0x0f);
+    state.set_submodule(0);
+    state.follower_link_state_mut().set_x(680);
+    state.follower_link_state_mut().set_y(1704);
+    state.set_bg2_h_copy2(554);
+    state.set_bg2_v_copy2(1610);
+    state.set_spotlight_window_radius(126);
+    state.set_spotlight_window_state(0);
+    for index in 0..224 {
+        write_le_u16(&mut state.ram, RESERVED_HDMA_TABLE + index * 2, 0x5a5a);
+    }
+    let iteration =
+        SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryBeforeTablePublication);
+
+    assert!(state.begin_dungeon_exit_spotlight_entry(
+        None,
+        Some(crate::SpotlightTableBuildProgress {
+            completed_iterations: 119,
+            checkpoint: crate::SpotlightTableBuildCheckpoint::ProjectionCopy { copied_words: 157 },
+        }),
+        iteration,
+    ));
+
+    assert_eq!(state.game_state.frame.submodule, 0);
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 126);
+    assert_eq!(
+        read_le_u16(&state.ram, RESERVED_HDMA_TABLE + 156 * 2),
+        state.spotlight_hdma_table_dynamic_entry(156),
+    );
+    assert_eq!(
+        read_le_u16(&state.ram, RESERVED_HDMA_TABLE + 157 * 2),
+        0x5a5a,
+    );
+    let Some(GameWorkContinuation::FinishDungeonExitSpotlightEntry {
+        table_build,
+        iteration: pending,
+    }) = state.game_execution_scheduler.current_work()
+    else {
+        panic!("projection receipt did not retain the entry continuation");
+    };
+    assert_eq!(pending, iteration);
+
+    state.game_execution_scheduler.finish_work();
+    state.complete_dungeon_exit_spotlight_entry(table_build, iteration);
+
+    assert_eq!(state.game_state.frame.submodule, 1);
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 119);
+    for index in 0..224 {
+        assert_eq!(
+            read_le_u16(&state.ram, RESERVED_HDMA_TABLE + index * 2),
+            state.spotlight_hdma_table_dynamic_entry(index),
+        );
+    }
+}
+
+#[test]
+fn live_recurring_close_projection_receipt_suspends_link_movement() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_indoor_flag(0);
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.follower_link_state_mut().set_x(680);
+    state.follower_link_state_mut().set_y(1703);
+    state.set_bg2_h_copy2(554);
+    state.set_bg2_v_copy2(1610);
+    state.set_spotlight_window_radius(119);
+    state.set_spotlight_window_state(0);
+    let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
+
+    assert!(state.begin_dungeon_exit_spotlight_build(
+        None,
+        Some(crate::SpotlightTableBuildProgress {
+            completed_iterations: 120,
+            checkpoint: crate::SpotlightTableBuildCheckpoint::ProjectionCopy { copied_words: 143 },
+        }),
+        iteration,
+    ));
+
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 119);
+    assert_eq!(state.game_state.player.follower_link.y(), 1703);
+    let Some(GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+        table_build,
+        iteration: pending,
+        projection_completed: false,
+    }) = state.game_execution_scheduler.current_work()
+    else {
+        panic!("projection receipt did not retain the recurring close continuation");
+    };
+    assert!(pending.prepares_main_loop_sprites_before_second_nmi());
+
+    state.game_execution_scheduler.finish_work();
+    state.complete_dungeon_exit_spotlight_build(table_build, false, pending, false);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 112);
+}
+
+#[test]
+fn authoritative_recurring_spotlight_return_finishes_the_existing_c_caller_once() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_indoor_flag(0);
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.follower_link_state_mut().set_x(680);
+    state.follower_link_state_mut().set_y(1703);
+    state
+        .follower_link_state_mut()
+        .set_direction_and_last_direction(8);
+    state.set_bg2_h_copy2(554);
+    state.set_bg2_v_copy2(1610);
+    state.set_spotlight_window_radius(112);
+    state.set_spotlight_window_state(0);
+    write_le_u16(&mut state.ram, LINK_DMA_COUNTDOWN, 9);
+    state.set_bg_tile_animation_countdown(7);
+    let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
+
+    assert!(state.begin_dungeon_exit_spotlight_build(
+        None,
+        Some(crate::SpotlightTableBuildProgress {
+            completed_iterations: 105,
+            checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
+                pending_circle_input: 15,
+            },
+        }),
+        iteration,
+    ));
+    assert!(!state
+        .game_execution_scheduler
+        .spotlight_iteration()
+        .expect("table continuation must retain its iteration")
+        .prepares_main_loop_sprites_before_second_nmi());
+
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait],
+    ));
+    let caller_returned = state.take_original_timing_dungeon_exit_spotlight_caller_returned();
+    assert!(caller_returned);
+    let step = state
+        .game_execution_scheduler
+        .advance_work_one_nmi_slice_with_authoritative_completion(caller_returned);
+    let Some(GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+        table_build,
+        projection_completed,
+        iteration,
+    })) = step
+    else {
+        panic!("authoritative caller return did not complete its existing table continuation");
+    };
+    state.complete_dungeon_exit_spotlight_build(
+        table_build,
+        projection_completed,
+        iteration,
+        caller_returned,
+    );
+
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.player.follower_link.y(), 1702);
+    assert_eq!(state.game_state.player.follower_link.y_velocity(), 0);
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 105);
+    assert_eq!(read_le_u16(&state.ram, LINK_DMA_COUNTDOWN), 8);
+    assert_eq!(state.game_state.display.bg_tile_animation_countdown, 6);
+}
+
+#[test]
+fn authoritative_spotlight_return_then_new_iteration_runs_both_in_source_order() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.initialized = true;
+    state.rom_reset_frame_delay = 0;
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.set_subsubmodule(0);
+    state.set_saved_module_for_menu(8);
+    state.set_indoor_flag(0);
+    state.follower_link_state_mut().set_x(680);
+    state.follower_link_state_mut().set_y(1703);
+    state.set_bg2_h_copy2(554);
+    state.set_bg2_v_copy2(1610);
+    state.set_spotlight_window_radius(7);
+    state.set_spotlight_window_state(0);
+    state.set_frame_counter(0xba);
+    state.set_animated_tile_data_source_address(1);
+    state.project_native_game_state_to_ram();
+    let prior_iteration =
+        SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn);
+    state.schedule_spotlight_iteration_return(prior_iteration);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+            crate::MainLoopProgress::IterationStarted,
+        )],
+    ));
+    assert_eq!(state.game_state.frame.frame_counter, 0xba);
+    assert_eq!(state.ram[crate::game_state::constants::FRAME_COUNTER], 0xba);
+    assert!(state.initialized);
+
+    state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
+
+    // The fresh source iteration proves the old suspended caller returned
+    // first. It must not be discarded merely because both events occurred in
+    // one host call: the final close iteration ticks once, reaches radius zero,
+    // and restores the saved overworld module.
+    assert_eq!(state.game_state.frame.frame_counter, 0xbb);
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 0);
+    assert_eq!(state.game_state.frame.main_module, 8);
+    assert_eq!(state.game_state.frame.submodule, 0);
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishSpotlightIteration { .. })
+    ));
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
+fn live_module10_lower_write_receipt_defers_the_goal_transition_to_the_next_host() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(0x10);
+    state.set_submodule(1);
+    state.set_saved_module_for_menu(9);
+    state.set_indoor_flag(0);
+    state.follower_link_state_mut().set_x(1880);
+    state.follower_link_state_mut().set_y(1044);
+    state.set_bg2_h_copy2(1758);
+    state.set_bg2_v_copy2(1024);
+    state.set_spotlight_window_radius(119);
+    state.set_spotlight_window_state(2);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+            crate::SpotlightTableBuildProgressReceipt {
+                progress: crate::SpotlightTableBuildProgress {
+                    completed_iterations: 185,
+                    checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeLowerTableWrite {
+                        lower_cursor: 39,
+                        circle_value: 0xff00,
+                    },
+                },
+                boundary: OriginalTimingBoundary::NmiAccepted,
+            },
+        )],
+    ));
+    state.game_execution_scheduler.begin_host_frame();
+
+    state.Module10_SpotlightOpen();
+
+    assert_eq!(state.game_state.frame.main_module, 0x10);
+    assert_eq!(state.game_state.frame.submodule, 1);
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 119,);
+    let step = state
+        .game_execution_scheduler
+        .advance_work_one_nmi_slice()
+        .expect("the interrupted table build owns one resumable host slice");
+    let GameWorkStep::Complete(GameWorkContinuation::FinishOverworldSpotlightBuild {
+        table_build,
+        phase,
+        projection_completed,
+        ..
+    }) = step
+    else {
+        panic!("unexpected spotlight continuation: {step:?}");
+    };
+    assert_eq!(phase, OverworldSpotlightBuildPhase::Recurring);
+    assert!(!projection_completed);
+    state.complete_overworld_spotlight_build(table_build, phase, projection_completed);
+
+    assert_eq!(state.game_state.frame.main_module, 9);
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 126,);
+}
+
+#[test]
 fn module10_opening_goal_completes_before_its_caller_returns() {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -7175,6 +8412,7 @@ fn interrupted_dungeon_exit_spotlight_publishes_the_rom_prefix_before_waiting() 
             next_entry_earliest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST),
             next_entry_latest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST),
         }),
+        None,
         SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryBeforeTablePublication,),
     ));
 
@@ -7231,6 +8469,7 @@ fn interrupted_dungeon_exit_build_retains_the_c_suffix() {
             next_entry_earliest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST),
             next_entry_latest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST),
         }),
+        None,
         iteration,
     ));
 
@@ -7262,6 +8501,7 @@ fn interrupted_dungeon_exit_build_retains_the_c_suffix() {
         SpotlightTableBuildContinuation::default(),
         true,
         iteration,
+        false,
     );
     assert_eq!(
         state.game_state.display.spotlight_hdma.window_radius(),
@@ -7297,6 +8537,7 @@ fn interrupted_dungeon_exit_table_build_defers_the_radius_write_until_return() {
             next_entry_earliest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST),
             next_entry_latest: Some(DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_LATEST),
         }),
+        None,
         iteration,
     ));
 
@@ -7316,7 +8557,12 @@ fn interrupted_dungeon_exit_table_build_defers_the_radius_write_until_return() {
     assert_eq!(pending, iteration);
 
     state.game_execution_scheduler.finish_work();
-    state.complete_dungeon_exit_spotlight_build(table_build, projection_completed, iteration);
+    state.complete_dungeon_exit_spotlight_build(
+        table_build,
+        projection_completed,
+        iteration,
+        false,
+    );
     assert_eq!(
         state.game_state.display.spotlight_hdma.window_radius(),
         0x70
@@ -7340,6 +8586,7 @@ fn interrupted_dungeon_exit_build_runs_the_unfinished_c_main_loop_sprite_prep() 
         true,
         SpotlightIteration::closing(SpotlightIterationPhase::WholeTableAfterTablePublication)
             .with_main_loop_sprite_preparation_before_second_nmi(),
+        false,
     );
 
     assert_eq!(
@@ -7959,6 +9206,7 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
         (
             GameWorkContinuation::FinishPreOverworldProperties {
                 overworld_screen: 0x00,
+                sprite_presence_published: false,
             },
             PRE_OVERWORLD_PROPERTIES_AFTER_SPRITE_RESET_NMI_SLICES,
         ),
@@ -7993,6 +9241,108 @@ fn pre_overworld_load_models_measured_snes9x_nmi_boundaries() {
         work.advance_one_nmi_slice(),
         GameWorkStep::Complete(continuation)
     );
+}
+
+#[test]
+fn overworld_sprite_activation_receipt_executes_the_native_c_leaf() {
+    let mut state = ZeldaState::new();
+    state.garnish_state_mut().set_sprcoll_x_base(0x0600);
+    state.garnish_state_mut().set_sprcoll_y_base(0x0400);
+    state.set_overworld_sprite_presence_marker(0x0198, 0xad);
+    state.sprite_slot_view_mut(15).set_state(1);
+    state.sprite_slot_view_mut(14).set_state(1);
+
+    state.overworld_load_proxima_sprite_if_alive(0x0198);
+
+    let sprite = state.sprite_slot_view(13);
+    assert_eq!(sprite.n_word(), 0x0198);
+    assert_eq!(sprite.sprite_type(), 0xac);
+    assert_eq!(sprite.state(), 8);
+    assert_eq!(sprite.x(), 0x0780);
+    assert_eq!(sprite.y(), 0x0490);
+}
+
+#[test]
+fn pre_overworld_live_authority_holds_and_completes_scheduled_work_exactly_once() {
+    let continuation = GameWorkContinuation::FinishPreOverworldOverlays;
+    let mut scheduler = GameExecutionScheduler::default();
+    scheduler.schedule_work(continuation, 2);
+
+    // The native estimate remains a shadow while Live owns completion. Even
+    // after it reaches zero, gameplay must wait for the semantic C-call
+    // receipt instead of completing from the old fixed envelope.
+    assert_eq!(
+        scheduler.advance_work_one_nmi_slice_with_authoritative_completion(false),
+        Some(GameWorkStep::Waiting)
+    );
+    assert_eq!(
+        scheduler.advance_work_one_nmi_slice_with_authoritative_completion(false),
+        Some(GameWorkStep::Waiting)
+    );
+    assert_eq!(
+        scheduler.advance_work_one_nmi_slice_with_authoritative_completion(false),
+        Some(GameWorkStep::Waiting)
+    );
+
+    assert_eq!(
+        scheduler.advance_work_one_nmi_slice_with_authoritative_completion(true),
+        Some(GameWorkStep::Complete(continuation))
+    );
+    assert_eq!(
+        scheduler.advance_work_one_nmi_slice_with_authoritative_completion(true),
+        None
+    );
+
+    // Authority may also prove a source call returned before the native
+    // estimate expires. That receipt is the completion fact, not the estimate.
+    scheduler.schedule_work(continuation, 5);
+    assert_eq!(
+        scheduler.advance_work_one_nmi_slice_with_authoritative_completion(true),
+        Some(GameWorkStep::Complete(continuation))
+    );
+    assert_eq!(
+        scheduler.advance_work_one_nmi_slice_with_authoritative_completion(false),
+        None
+    );
+}
+
+#[test]
+fn pre_overworld_live_stage_receipt_is_consumed_once_without_oracle_provenance() {
+    let stage = crate::PreOverworldStageCompletion::OverlaysReturned;
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::PreOverworldStageCompleted(
+            stage,
+        )],
+    ));
+
+    assert!(state.take_original_timing_pre_overworld_stage_completion(stage));
+    assert!(!state.take_original_timing_pre_overworld_stage_completion(stage));
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
+fn live_main_loop_progress_is_consumed_once_without_counter_or_pc_provenance() {
+    let progress = crate::MainLoopProgress::CallStackContinued;
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::MainLoopProgress(progress)],
+    ));
+
+    assert_eq!(
+        state.take_original_timing_main_loop_progress(),
+        Some(progress)
+    );
+    assert_eq!(state.take_original_timing_main_loop_progress(), None);
 }
 
 #[test]
@@ -8454,7 +9804,9 @@ fn nmi_inside_sprite_preparation_resumes_without_replaying_dungeon_main() {
     assert_eq!(state.game_state.display.palette_filter.countdown(), 18);
     assert_eq!(
         state.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn)
+        Some(GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+            caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
+        })
     );
     assert!(state
         .game_execution_scheduler
@@ -8596,7 +9948,9 @@ fn faded_filter_preserves_nmi_prepare_sprites_caller_phase() {
     assert!(!state.dungeon_nmi_prepare_sprites_return_pending);
     assert_eq!(
         state.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishDungeonNmiPrepareSpritesCallerReturn),
+        Some(GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+            caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
+        }),
     );
     assert!(state
         .game_execution_scheduler
@@ -9844,6 +11198,70 @@ fn dialogue_scroll_completion_timing_follows_measured_vblank_headroom() {
     assert_eq!(
         state.dialogue_scroll_phase(),
         DialogueScrollPhase::CompletionStagedAfterFrozenScanout
+    );
+}
+
+#[test]
+fn dialogue_scroll_completion_uses_live_main_loop_receipt_over_entry_estimate() {
+    let mut source_completed_before_vblank = ZeldaState::new();
+    source_completed_before_vblank.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
+    assert_eq!(
+        source_completed_before_vblank
+            .finish_dialogue_scroll_remaining_pixels_with_main_loop_receipt(
+                crate::MainLoopProgress::IterationStarted,
+            ),
+        DialogueScrollCompletionTiming::BeforeNextVblank,
+    );
+    assert_eq!(
+        source_completed_before_vblank.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletionPendingPublication,
+    );
+
+    let mut source_returned_after_vblank = ZeldaState::new();
+    source_returned_after_vblank.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::BeforeNextVblank,
+    );
+    assert_eq!(
+        source_returned_after_vblank
+            .finish_dialogue_scroll_remaining_pixels_with_main_loop_receipt(
+                crate::MainLoopProgress::CallStackContinued,
+            ),
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
+    assert_eq!(
+        source_returned_after_vblank.dialogue_scroll_phase(),
+        DialogueScrollPhase::ReturnOnly,
+    );
+}
+
+#[test]
+fn completed_scroll_can_start_the_source_next_iteration_after_its_captured_boundary() {
+    let mut state = ZeldaState::new();
+    state.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::BeforeNextVblank,
+    );
+    state.finish_dialogue_scroll_remaining_pixels();
+    state.stage_early_dialogue_scroll_completion(DialogueTextScanout::default());
+    state.advance_dialogue_scroll_display_boundary();
+
+    assert_eq!(
+        state.dialogue_scroll_phase(),
+        DialogueScrollPhase::CompletedScroll,
+    );
+    state.begin_dialogue_scroll(
+        DialogueTextGeneration::CurrentRenderBuffer,
+        DialogueScrollCompletionTiming::BeforeNextVblank,
+    );
+    assert_eq!(
+        state.dialogue_scroll_phase(),
+        DialogueScrollPhase::CopyingRemainingPixels {
+            completion_timing: DialogueScrollCompletionTiming::BeforeNextVblank,
+        },
     );
 }
 

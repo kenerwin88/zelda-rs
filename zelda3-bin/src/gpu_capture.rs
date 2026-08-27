@@ -2600,7 +2600,8 @@ fn gpu_frame_register_snapshot_from_ppu<'a>(
     renderer::GpuFrameRegisterSnapshot {
         vram: &ppu.vram,
         oam: &ppu.oam,
-        mode: ppu.mode,
+        mode: ppu.bg_mode(),
+        mode1_bg3_priority: ppu.mode1_bg3_priority(),
         bg: std::array::from_fn(|layer| renderer::BgLayerRegs {
             h_scroll: ppu.bg_layer[layer].h_scroll,
             v_scroll: ppu.bg_layer[layer].v_scroll,

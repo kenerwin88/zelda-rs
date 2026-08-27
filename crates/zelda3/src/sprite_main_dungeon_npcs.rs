@@ -2294,7 +2294,10 @@ impl ZeldaState {
                 .set_x_velocity(CUCCO_CALM_CIRCLE_X_VELOCITIES[j] as u8);
             self.sprite_slot_view_mut(k)
                 .set_y_velocity(CUCCO_CALM_CIRCLE_Y_VELOCITIES[j] as u8);
-            let delay = (self.get_random_number() & 0x1f).wrapping_add(0x10);
+            // ROM $06:a69d calls GetRandomNumber, then executes AND #$1f;
+            // ADC #$10 without clearing carry. AND preserves the carry left by
+            // the RNG routine, so consume the full typed RNG result here.
+            let delay = self.get_random_number_with_carry().masked_adc(0x1f, 0x10);
             self.sprite_slot_view_mut(k).set_delay_main(delay);
             self.sprite_slot_view_mut(k).increment_ai_state();
         }

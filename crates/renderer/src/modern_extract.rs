@@ -1066,6 +1066,7 @@ pub fn extract_modern_frame(frame: &GpuFrame<'_>) -> ModernFrame {
     let mut modern = ModernFrame::empty();
     modern.hardware_startup_transient = frame.hardware_startup_transient.clone();
     modern.cgram_provenance = frame.cgram_provenance.cloned();
+    modern.mode1_bg3_priority = frame.mode1_bg3_priority;
     if forbid_live_cgram_compare_enabled() {
         if let Some(snapshot) = frame.cgram_provenance {
             report_cgram_provenance_compare(snapshot, frame.cgram);
@@ -4675,6 +4676,7 @@ mod tests {
             cgram,
             oam,
             mode: 1,
+            mode1_bg3_priority: false,
             bg: Default::default(),
             obj: Default::default(),
             mosaic_enabled: 0,

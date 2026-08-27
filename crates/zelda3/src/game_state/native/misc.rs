@@ -2,11 +2,15 @@ use super::ram_byte;
 use crate::game_state::constants::*;
 use crate::types::{read_le_u16, write_le_u16};
 
-// C memorized_tile_value is 0x40 bytes wide (0xfa00..0xfa40) = 0x20 u16 slots, and
-// num_memorized_tiles is bounded by it. Modeling 0x80 slots made write_to_ram project
-// 0x00 over 0xfa40..0xfb00 (word_7EFA40, dung_torch_data 0xfb40, ...), clobbering real
-// data on every frame. Match the C value-table size so those bytes keep their owners.
-const MEMORIZED_TILE_ENTRY_SLOTS: usize = 0x20;
+// The address table has an explicit source-owned 0x100-byte clear in
+// Dungeon_LoadAndDrawRoom, so it owns at least 0x80 words. The value table is
+// contextually aliased beginning at $7efa40, but Overworld_Memorize_Map16_Change
+// has no 0x20-entry bound and valid overworld runs write beyond that alias. Keep
+// the first 0x20 words as the stable baseline and grow only as source writes or
+// num_memorized_tiles require. This avoids the old bug where projecting a fixed
+// oversized value table zeroed inactive aliased WRAM every frame.
+const MEMORIZED_TILE_ADDRESS_BASELINE_SLOTS: usize = 0x80;
+const MEMORIZED_TILE_VALUE_BASELINE_SLOTS: usize = 0x20;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ScratchCounterState {
@@ -91,6 +95,10 @@ pub(crate) struct MemorizedTileState {
 }
 
 impl MemorizedTileState {
+    fn active_slots(count: u16) -> usize {
+        usize::from(count >> 1)
+    }
+
     pub(crate) fn load_from_ram(ram: &[u8]) -> Self {
         // memorized_tile_value (0xfa00..0xfa3f) is an OVERWORLD-only transient; while
         // INDOORS those same bytes are movable_block_datas records 48..63 (0xf940 +
@@ -100,12 +108,16 @@ impl MemorizedTileState {
         // dungeon→overworld transition until the overworld redraw repopulates it
         // (matches the legacy baseline behavior, which leaves those bytes untouched
         // on exit).
-        // (memorized_tile_addr 0xf800..0xf83f and count 0x4ac sit below
-        // movable_block_datas@0xf940 and never overlap, so they are always owned here.)
-        let mut addresses = vec![0; MEMORIZED_TILE_ENTRY_SLOTS];
-        let mut values = vec![0; MEMORIZED_TILE_ENTRY_SLOTS];
-        for slot in 0..MEMORIZED_TILE_ENTRY_SLOTS {
+        // (memorized_tile_addr 0xf800..0xf8ff is explicitly cleared as a 0x100-byte
+        // source buffer and count 0x4ac sits below movable_block_datas@0xf940, so
+        // those addresses are always owned here.)
+        let active_slots = Self::active_slots(read_le_u16(ram, NUM_MEMORIZED_TILES));
+        let mut addresses = vec![0; active_slots.max(MEMORIZED_TILE_ADDRESS_BASELINE_SLOTS)];
+        let mut values = vec![0; active_slots.max(MEMORIZED_TILE_VALUE_BASELINE_SLOTS)];
+        for slot in 0..addresses.len() {
             addresses[slot] = read_le_u16(ram, MEMORIZED_TILE_ADDR + slot * 2);
+        }
+        for slot in 0..values.len() {
             values[slot] = read_le_u16(ram, MEMORIZED_TILE_VALUE + slot * 2);
         }
         Self {
@@ -118,9 +130,11 @@ impl MemorizedTileState {
     pub(crate) fn write_to_ram(&self, ram: &mut [u8]) {
         write_le_u16(ram, NUM_MEMORIZED_TILES, self.count);
         let outdoors = ram.get(PLAYER_IS_INDOORS).copied().unwrap_or(0) == 0;
-        for slot in 0..MEMORIZED_TILE_ENTRY_SLOTS {
+        for slot in 0..self.addresses.len() {
             write_le_u16(ram, MEMORIZED_TILE_ADDR + slot * 2, self.addresses[slot]);
-            if outdoors {
+        }
+        if outdoors {
+            for slot in 0..self.values.len() {
                 write_le_u16(ram, MEMORIZED_TILE_VALUE + slot * 2, self.values[slot]);
             }
         }
@@ -140,25 +154,38 @@ impl MemorizedTileState {
 
     pub(crate) fn set_count(&mut self, value: u16) {
         self.count = value;
+        let active_slots = Self::active_slots(value);
+        self.addresses
+            .resize(active_slots.max(MEMORIZED_TILE_ADDRESS_BASELINE_SLOTS), 0);
+        self.values
+            .resize(active_slots.max(MEMORIZED_TILE_VALUE_BASELINE_SLOTS), 0);
     }
 
     pub(crate) fn clear_count(&mut self) {
-        self.count = 0;
+        self.set_count(0);
     }
 
     pub(crate) fn set_entry_addr(&mut self, byte_offset: usize, pos: u16) {
-        self.addresses[byte_offset / 2] = pos;
+        let slot = byte_offset / 2;
+        if slot >= self.addresses.len() {
+            self.addresses.resize(slot + 1, 0);
+        }
+        self.addresses[slot] = pos;
     }
 
     pub(crate) fn set_entry_value(&mut self, byte_offset: usize, tile: u16) {
-        self.values[byte_offset / 2] = tile;
+        let slot = byte_offset / 2;
+        if slot >= self.values.len() {
+            self.values.resize(slot + 1, 0);
+        }
+        self.values[slot] = tile;
     }
 
     pub(crate) fn append_entry(&mut self, pos: u16, tile: u16) {
         let byte_offset = usize::from(self.count);
         self.set_entry_value(byte_offset, tile);
         self.set_entry_addr(byte_offset, pos);
-        self.set_count(byte_offset as u16 + 2);
+        self.set_count((byte_offset as u16).wrapping_add(2));
     }
 
     pub(crate) fn clear_entry_addresses(&mut self) {
@@ -170,8 +197,8 @@ impl Default for MemorizedTileState {
     fn default() -> Self {
         Self {
             count: 0,
-            addresses: vec![0; MEMORIZED_TILE_ENTRY_SLOTS],
-            values: vec![0; MEMORIZED_TILE_ENTRY_SLOTS],
+            addresses: vec![0; MEMORIZED_TILE_ADDRESS_BASELINE_SLOTS],
+            values: vec![0; MEMORIZED_TILE_VALUE_BASELINE_SLOTS],
         }
     }
 }

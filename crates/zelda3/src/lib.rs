@@ -37,13 +37,19 @@ pub use game_state::{
 };
 pub use rom_random::{parse_rom_random_script, RomRandomSample};
 pub use timing_receipts::{
-    CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt,
-    DungeonResetSpritesProgressReceipt, MainLoopInterruption, OriginalTimingAudioShadowResult,
-    OriginalTimingBgScrollShadowResult, OriginalTimingBgTilemapShadowResult,
-    OriginalTimingBoundary, OriginalTimingHostReceipts, OriginalTimingReceiptInstallError,
-    OriginalTimingSemanticReceipt, PresentedAnimatedBgTiles, PresentedAudio, PresentedBgScroll,
-    PresentedBgTilemapLayer, PresentedBgTilemaps, PresentedCgram, PresentedHudTilemap,
-    PresentedInidisp, PresentedOam, PresentedObjTiles, PresentedScanoutGeometry,
+    CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt, DialogueExecutionProgress,
+    DungeonResetSpritesProgressReceipt, MainLoopInterruption, MainLoopProgress,
+    OriginalTimingAudioShadowResult, OriginalTimingBgScrollShadowResult,
+    OriginalTimingBgTilemapShadowResult, OriginalTimingBoundary,
+    OriginalTimingDialogueTextShadowResult, OriginalTimingHostReceipts,
+    OriginalTimingReceiptInstallError, OriginalTimingSemanticReceipt,
+    OriginalTimingWindowMaskShadowResult, OverworldSpriteReloadProgress,
+    PreOverworldStageCompletion, PresentedAnimatedBgDestination, PresentedAnimatedBgTiles,
+    PresentedAudio, PresentedBgScroll, PresentedBgTilemapLayer, PresentedBgTilemaps,
+    PresentedCgram, PresentedDialogueText, PresentedHudTilemap, PresentedInidisp, PresentedOam,
+    PresentedObjTiles, PresentedScanoutGeometry, PresentedWindowMask,
+    SaveMenuInitializationProgress, SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress,
+    SpotlightTableBuildProgressReceipt, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
 };
 pub use zelda3_dialogue as dialogue_ir;
 pub use zelda_rtl::{

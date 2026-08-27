@@ -186,15 +186,36 @@ class ParityMicroscopeTests(unittest.TestCase):
         self.assertEqual(av_compare.session, Path("/tmp/session"))
         self.assertEqual(av_compare.max_differing_frames, 4)
         cached_av = microscope.parser().parse_args(
-            ["cached-av", "/tmp/cache", "--rom", "/tmp/zelda3.sfc"]
+            [
+                "cached-av",
+                "/tmp/cache",
+                "--rom",
+                "/tmp/zelda3.sfc",
+                "--resume-paired",
+                "/tmp/paired",
+                "--compare-from-frame",
+                "49060",
+                "--ignore-audio",
+            ]
         )
         self.assertEqual(cached_av.cache, Path("/tmp/cache"))
         self.assertEqual(cached_av.rom, Path("/tmp/zelda3.sfc"))
+        self.assertEqual(cached_av.resume_paired, Path("/tmp/paired"))
+        self.assertEqual(cached_av.compare_from_frame, 49060)
+        self.assertTrue(cached_av.ignore_audio)
         oracle_capture = microscope.parser().parse_args(
-            ["oracle-av-capture", "/tmp/session", "--frames", "29505"]
+            [
+                "oracle-av-capture",
+                "/tmp/session",
+                "--frames",
+                "29505",
+                "--resume-paired",
+                "/tmp/paired",
+            ]
         )
         self.assertEqual(oracle_capture.source_session, Path("/tmp/session"))
         self.assertEqual(oracle_capture.frames, 29505)
+        self.assertEqual(oracle_capture.resume_paired, Path("/tmp/paired"))
 
     def test_timeline_uses_retro_run_not_internal_frame(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -528,6 +549,39 @@ class ParityMicroscopeTests(unittest.TestCase):
 
             self.assertNotEqual(both_cache, video_cache)
 
+    def test_oracle_cache_identity_includes_initial_oracle_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self.write_session(root, "first")
+            second = self.write_session(root, "second")
+            (second / "oracle_initial.state").write_bytes(b"different initial state")
+
+            first_cache, _ = evidence.cache_oracle_session(first, cache_root=root / "cache")
+            second_cache, _ = evidence.cache_oracle_session(second, cache_root=root / "cache")
+
+            self.assertNotEqual(first_cache, second_cache)
+
+    def test_oracle_cache_identity_includes_timing_host_receipt_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self.write_session(root, "receipt-v1")
+            second = self.write_session(root, "receipt-v2")
+            for session, schema in ((first, 1), (second, 2)):
+                (session / "original-timing-host-receipts.jsonl.zst").write_bytes(
+                    b"same receipt bytes"
+                )
+                manifest = json.loads((session / "manifest.json").read_text())
+                manifest["original_timing_host_receipts"] = {
+                    "schema": schema,
+                    "artifact": "original-timing-host-receipts.jsonl.zst",
+                }
+                (session / "manifest.json").write_text(json.dumps(manifest))
+
+            first_cache, _ = evidence.cache_oracle_session(first, cache_root=root / "cache")
+            second_cache, _ = evidence.cache_oracle_session(second, cache_root=root / "cache")
+
+            self.assertNotEqual(first_cache, second_cache)
+
     def test_live_rng_is_materialized_and_bound_to_the_diagnostic_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -640,6 +694,129 @@ class ParityMicroscopeTests(unittest.TestCase):
 
             self.assertIsNotNone(captured_rng_path)
             self.assertFalse(captured_rng_path.is_file())
+
+    def test_resumed_oracle_capture_uses_pair_core_and_route_artifact_authorities(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self.write_session(root, "source", frames=100)
+            (source / "result.json").unlink()
+            binary = root / "zelda3"
+            selected_core = root / "paired-core.dylib"
+            selected_rom = root / "zelda3.sfc"
+            for path in (binary, selected_core, selected_rom):
+                path.write_bytes(path.name.encode())
+            pair = root / "paired"
+            pair.mkdir()
+            (pair / "oracle.state").write_bytes(b"paired oracle")
+            (pair / "initial.srm").write_bytes((source / "initial.srm").read_bytes())
+            paired_manifest = {
+                "schema": 1,
+                "boundary": "pre-frame",
+                "frame": 50,
+                "oracle_state": "oracle.state",
+                "rust_state": "rust.z3state",
+                "core": {"sha256": evidence.sha256_file(selected_core)},
+                "rom": {"sha256": evidence.sha256_file(selected_rom)},
+                "input_script": {"sha256": evidence.sha256_file(source / "input.txt")},
+                "rom_random_script": {
+                    "sha256": evidence.sha256_file(source / "rom-random.txt")
+                },
+                "initial_sram": {
+                    "artifact": "initial.srm",
+                    "sha256": evidence.sha256_file(source / "initial.srm")
+                },
+            }
+            (pair / "manifest.json").write_text(json.dumps(paired_manifest))
+
+            def inspect_capture(command: list[str], **_kwargs: object) -> mock.Mock:
+                self.assertEqual(Path(command[2]), selected_core.resolve())
+                self.assertEqual(Path(command[3]), selected_rom.resolve())
+                self.assertEqual(command[9], paired_manifest["core"]["sha256"])
+                self.assertEqual(command[10], paired_manifest["rom"]["sha256"])
+                self.assertEqual(command[-4], "--resume-oracle-state")
+                self.assertEqual(Path(command[-3]), (pair / "oracle.state").resolve())
+                self.assertEqual(command[-2:], ["--start-frame", "50"])
+                return mock.Mock(returncode=0)
+
+            args = microscope.parser().parse_args(
+                [
+                    "oracle-av-capture",
+                    str(source),
+                    "--frames",
+                    "100",
+                    "--core",
+                    str(selected_core),
+                    "--rom",
+                    str(selected_rom),
+                    "--binary",
+                    str(binary),
+                    "--output",
+                    str(root / "capture"),
+                    "--cache-root",
+                    str(root / "cache"),
+                    "--resume-paired",
+                    str(pair),
+                ]
+            )
+            with mock.patch.object(
+                microscope.subprocess, "run", side_effect=inspect_capture
+            ), mock.patch.object(
+                microscope.evidence,
+                "cache_oracle_session",
+                return_value=(root / "cache" / "entry", False),
+            ):
+                self.assertEqual(microscope.command_oracle_av_capture(args), 0)
+
+    def test_reset_origin_oracle_capture_accepts_manifest_bounded_failed_rust_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self.write_session(root, "source", frames=64000)
+            (source / "result.json").unlink()
+            binary = root / "zelda3"
+            core = root / "snes9x.dylib"
+            rom = root / "zelda3.sfc"
+            for path in (binary, core, rom):
+                path.write_bytes(path.name.encode())
+            manifest = json.loads((source / "manifest.json").read_text())
+            manifest["core"] = {
+                "path": str(core),
+                "sha256": evidence.sha256_file(core),
+            }
+            manifest["rom"] = {
+                "path": str(rom),
+                "sha256": evidence.sha256_file(rom),
+            }
+            (source / "manifest.json").write_text(json.dumps(manifest))
+
+            def inspect_capture(command: list[str], **_kwargs: object) -> mock.Mock:
+                self.assertEqual(command[4], "64000")
+                self.assertNotIn("--resume-oracle-state", command)
+                self.assertEqual(command[9], manifest["core"]["sha256"])
+                self.assertEqual(command[10], manifest["rom"]["sha256"])
+                return mock.Mock(returncode=0)
+
+            args = microscope.parser().parse_args(
+                [
+                    "oracle-av-capture",
+                    str(source),
+                    "--frames",
+                    "64000",
+                    "--binary",
+                    str(binary),
+                    "--output",
+                    str(root / "capture"),
+                    "--cache-root",
+                    str(root / "cache"),
+                ]
+            )
+            with mock.patch.object(
+                microscope.subprocess, "run", side_effect=inspect_capture
+            ), mock.patch.object(
+                microscope.evidence,
+                "cache_oracle_session",
+                return_value=(root / "cache" / "entry", False),
+            ):
+                self.assertEqual(microscope.command_oracle_av_capture(args), 0)
 
     def test_microscope_rng_is_materialized_from_its_selected_source(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

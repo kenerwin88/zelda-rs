@@ -438,13 +438,20 @@ impl ZeldaState {
                 && (self.dialogue_fast_forward_hold_active || dialogue_scroll_holds_registers));
         if trace_nmi {
             eprintln!(
-                "nmi_register_publication host={} main={main_module:02x} held={thread_holds_registers} thread={} dialogue_fast={} dialogue_scroll={} ppu_bg1v={:04x} mirror_bg1v={:04x}",
+                "nmi_register_publication host={} main={main_module:02x} held={thread_holds_registers} thread={} dialogue_fast={} dialogue_scroll={} ppu_bg1v={:04x} mirror_bg1v={:04x} ppu_cgwsel={:02x} mirror_cgwsel={:02x}",
                 self.frame_ctr_dbg,
                 self.game_state.display.nmi_thread_active,
                 self.dialogue_fast_forward_hold_active,
                 dialogue_scroll_holds_registers,
                 self.ppu.bg_layer[0].v_scroll,
                 self.game_state.display.ppu_scroll_copy.bg1_v_copy(),
+                (self.ppu.clip_mode << 6)
+                    | (self.ppu.prevent_math_mode << 4)
+                    | (u8::from(self.ppu.add_subscreen) << 1),
+                self.game_state
+                    .display
+                    .palette_filter
+                    .color_window_selection(),
             );
         }
         if !thread_holds_registers {

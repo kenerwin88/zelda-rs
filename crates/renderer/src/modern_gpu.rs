@@ -66,7 +66,10 @@ impl<'p, 'frame> PreparedModernVariantExecution<'p, 'frame> {
         Self {
             prepared,
             render_path: prepared.render_path(output),
-            mode1_effect_draw_work: PreparedMode1EffectDrawWork::from_plan(prepared.plan()),
+            mode1_effect_draw_work: PreparedMode1EffectDrawWork::from_plan(
+                prepared.plan(),
+                prepared.frame().mode1_bg3_priority,
+            ),
             stats: PreparedModernVariantStats::new(prepared),
         }
     }
@@ -419,6 +422,7 @@ impl ModernGpuVariantRenderer {
         out.forced_blank_scanlines = frame.forced_blank_scanlines;
         out.forced_blank_from_scanline = frame.forced_blank_from_scanline;
         out.retain_active_display_history = frame.retain_active_display_history;
+        out.mode1_bg3_priority = frame.mode1_bg3_priority;
         if frame.forced_blank {
             return out;
         }
@@ -704,12 +708,13 @@ impl<'a> Mode1EffectRankDispatch<'a> {
 
 pub(crate) fn mode1_effect_rank_dispatches<'a>(
     plan: &crate::modern_variant_draw::VariantDrawPlan<'a>,
+    bg3_priority: bool,
 ) -> Vec<Mode1EffectRankDispatch<'a>> {
     let mut ranks = (0..=9)
         .map(|_| Mode1EffectRankDispatch::empty())
         .collect::<Vec<_>>();
     for packet in plan.material_packets() {
-        let Some(rank) = packet.mode1_rank() else {
+        let Some(rank) = packet.mode1_rank(bg3_priority) else {
             continue;
         };
         match packet {
@@ -1834,7 +1839,7 @@ fn overlay_mixed_variant_bg_packet_on_main_screen(
     let Some(entry) = packet.draw.entry() else {
         return;
     };
-    let Some(bg_rank) = packet.mode1_rank() else {
+    let Some(bg_rank) = packet.mode1_rank(frame.mode1_bg3_priority) else {
         return;
     };
     let Ok(math_bit) = u8::try_from(packet.layer_index) else {
@@ -1884,7 +1889,7 @@ fn overlay_mixed_variant_live_cgram_bg_packet_on_main_screen(
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     bg_overlay_ranks: &mut [u8],
 ) {
-    let Some(bg_rank) = packet.mode1_rank() else {
+    let Some(bg_rank) = packet.mode1_rank(frame.mode1_bg3_priority) else {
         return;
     };
     let Ok(math_bit) = u8::try_from(packet.layer_index) else {
@@ -2192,6 +2197,7 @@ fn bg_effect_packet_index_at_local(
 }
 
 fn front_or_same_bg_packet_has_opaque_pixel(
+    bg3_priority: bool,
     packet_index: usize,
     packet: &crate::modern_variant_draw::VariantBgDrawPacket<'_>,
     plan: &crate::modern_variant_draw::VariantDrawPlan<'_>,
@@ -2199,7 +2205,7 @@ fn front_or_same_bg_packet_has_opaque_pixel(
     screen_x: i16,
     screen_y: i16,
 ) -> bool {
-    let Some(packet_rank) = packet.mode1_rank() else {
+    let Some(packet_rank) = packet.mode1_rank(bg3_priority) else {
         return true;
     };
     for &other_index in index.bg_bucket(screen_x, screen_y) {
@@ -2211,7 +2217,7 @@ fn front_or_same_bg_packet_has_opaque_pixel(
             packet_index: other_index,
             packet: &plan.bg[other_index],
         };
-        let Some(other_rank) = other_packet.mode1_rank() else {
+        let Some(other_rank) = other_packet.mode1_rank(bg3_priority) else {
             continue;
         };
         if other_rank < packet_rank || (other_rank == packet_rank && other_index < packet_index) {
@@ -2236,7 +2242,7 @@ fn front_or_same_bg_packet_blocks_prefinal_group(
     screen_x: i16,
     screen_y: i16,
 ) -> Option<MixedOverlayOverlapRejectReason> {
-    let Some(packet_rank) = packet.mode1_rank() else {
+    let Some(packet_rank) = packet.mode1_rank(frame.mode1_bg3_priority) else {
         return Some(MixedOverlayOverlapRejectReason::BgUnrepresentableFront);
     };
     let packet_material = index.bg_material_for(frame, plan, packet_index).ok();
@@ -2250,7 +2256,7 @@ fn front_or_same_bg_packet_blocks_prefinal_group(
             packet_index: other_index,
             packet: other,
         };
-        let Some(other_rank) = other_packet.mode1_rank() else {
+        let Some(other_rank) = other_packet.mode1_rank(frame.mode1_bg3_priority) else {
             continue;
         };
         if other_rank < packet_rank || (other_rank == packet_rank && other_index < packet_index) {
@@ -2266,6 +2272,7 @@ fn front_or_same_bg_packet_blocks_prefinal_group(
             continue;
         }
         if front_or_same_bg_packet_has_opaque_pixel(
+            frame.mode1_bg3_priority,
             other_index,
             other,
             plan,
@@ -2545,7 +2552,7 @@ fn front_sprite_packet_blocks_bg_packet(
     screen_x: i16,
     screen_y: i16,
 ) -> bool {
-    let Some(bg_rank) = packet.mode1_rank() else {
+    let Some(bg_rank) = packet.mode1_rank(frame.mode1_bg3_priority) else {
         return true;
     };
     if frame.screen_enabled_main != 0 && frame.screen_enabled_main & 0x10 == 0 {
@@ -2562,7 +2569,7 @@ fn front_sprite_packet_blocks_bg_packet(
             packet_index: other_index,
             packet: &plan.sprites[other_index],
         };
-        let Some(sprite_rank) = other_packet.mode1_rank() else {
+        let Some(sprite_rank) = other_packet.mode1_rank(false) else {
             return true;
         };
         if sprite_rank < bg_rank {
@@ -3629,7 +3636,7 @@ fn modern_prefinal_overlay_data_words(
         data.extend_from_slice(&modern_prefinal_overlay_bg_packet_pixels(
             atlas, frame, bg_packet,
         ));
-        if let Some(rank) = packet.mode1_rank() {
+        if let Some(rank) = packet.mode1_rank(frame.mode1_bg3_priority) {
             bg_packet_words.extend_from_slice(&[
                 i32::from(packet.inst.screen_x) as u32,
                 i32::from(packet.inst.screen_y) as u32,
@@ -7083,7 +7090,7 @@ mod tests {
             stats: Default::default(),
         };
 
-        let ranks = mode1_effect_rank_dispatches(&plan);
+        let ranks = mode1_effect_rank_dispatches(&plan, true);
         let frame = ModernFrame::empty();
         let rank0_bg_groups = ranks[0].bg_material_groups(&frame);
         let rank7_bg_groups = ranks[7].bg_material_groups(&frame);
@@ -8739,11 +8746,11 @@ mod tests {
         );
         assert_eq!(
             &data_words[params[4] as usize..params[4] as usize + 8],
-            &[0, 0, 4, 0, 0, 0, 0, 0]
+            &[0, 0, 5, 0, 0, 0, 0, 0]
         );
         assert_eq!(
             &data_words[params[4] as usize + 8..params[4] as usize + 16],
-            &[8, 0, 3, 64, 1, 0, 0, 0]
+            &[8, 0, 4, 64, 1, 0, 0, 0]
         );
         assert_eq!(data_words[params[5] as usize], 0);
     }
@@ -12634,6 +12641,7 @@ mod tests {
             cgram,
             oam,
             mode: 1,
+            mode1_bg3_priority: false,
             bg: Default::default(),
             obj: Default::default(),
             mosaic_enabled: 0,

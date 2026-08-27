@@ -160,6 +160,48 @@ fn native_memorized_tile_bridge_syncs_seeded_ram_and_dual_writes_changes() {
 }
 
 #[test]
+fn memorized_tile_state_projects_only_source_owned_value_extent() {
+    let mut ram = vec![0; WRAM_SIZE];
+    write_le_u16(&mut ram, NUM_MEMORIZED_TILES, 0x40);
+    write_le_u16(&mut ram, MEMORIZED_TILE_VALUE + 0x40, 0xaaaa);
+    write_le_u16(&mut ram, MEMORIZED_TILE_VALUE + 0x42, 0xbbbb);
+
+    let mut memorized_tiles = MemorizedTileState::load_from_ram(&ram);
+    memorized_tiles.write_to_ram(&mut ram);
+
+    // count=0x40 owns slots 0..31. The contextual aliases beginning at
+    // $7efa40 are untouched until the source actually appends slot 32.
+    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 0x40), 0xaaaa);
+    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 0x42), 0xbbbb);
+
+    {
+        let mut bridge = NativeMemorizedTileBridgeMut::new(&mut memorized_tiles, &mut ram);
+        bridge.append_entry(0x1234, 0x5678);
+    }
+
+    assert_eq!(read_le_u16(&ram, NUM_MEMORIZED_TILES), 0x42);
+    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR + 0x40), 0x1234);
+    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 0x40), 0x5678);
+    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_VALUE + 0x42), 0xbbbb);
+}
+
+#[test]
+fn memorized_tile_address_clear_matches_the_source_0x100_byte_memset() {
+    let mut ram = vec![0xff; WRAM_SIZE];
+    write_le_u16(&mut ram, NUM_MEMORIZED_TILES, 0);
+    let mut memorized_tiles = MemorizedTileState::load_from_ram(&ram);
+
+    {
+        let mut bridge = NativeMemorizedTileBridgeMut::new(&mut memorized_tiles, &mut ram);
+        bridge.clear_entry_addresses();
+    }
+
+    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR), 0);
+    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR + 0xfe), 0);
+    assert_eq!(read_le_u16(&ram, MEMORIZED_TILE_ADDR + 0x100), 0xffff);
+}
+
+#[test]
 fn native_memorized_tile_bridge_projects_native_state_over_stale_ram() {
     let mut ram = vec![0; WRAM_SIZE];
     write_le_u16(&mut ram, NUM_MEMORIZED_TILES, 2);

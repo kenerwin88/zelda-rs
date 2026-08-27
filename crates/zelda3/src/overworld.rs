@@ -201,7 +201,22 @@ impl ZeldaState {
         &mut self,
         overworld_screen: u8,
     ) {
-        self.sprite_finish_reload_all_overworld();
+        self.complete_pre_overworld_load_properties_after_sprite_reset_with_presence(
+            overworld_screen,
+            false,
+        );
+    }
+
+    pub(super) fn complete_pre_overworld_load_properties_after_sprite_reset_with_presence(
+        &mut self,
+        overworld_screen: u8,
+        sprite_presence_published: bool,
+    ) {
+        if sprite_presence_published {
+            self.sprite_activate_all_proxima();
+        } else {
+            self.sprite_finish_reload_all_overworld();
+        }
         if overworld_screen & 0x40 == 0 {
             self.sprite_initialize_mirror_portal();
         }
@@ -892,13 +907,13 @@ impl ZeldaState {
         self.replay_trace_submodule("module09-exit");
     }
 
-    fn complete_module09_sprite_and_hud_suffix(&mut self) {
+    pub(super) fn complete_module09_sprite_and_hud_suffix(&mut self) {
         let caller = self.begin_module09_sprite_main();
         self.sprite_main();
         self.complete_module09_after_sprite_main(caller);
     }
 
-    fn begin_module09_sprite_main(&mut self) -> Module09SpriteMainReturn {
+    pub(super) fn begin_module09_sprite_main(&mut self) -> Module09SpriteMainReturn {
         let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         let bg1x = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
@@ -2604,7 +2619,12 @@ impl ZeldaState {
     }
 
     pub(super) fn Module10_SpotlightOpen(&mut self) {
-        let cpu_plan = if self.rom_startup_timing() {
+        let live_table_progress = self.take_original_timing_spotlight_table_build_progress();
+        let cpu_plan = if self.rom_startup_timing()
+            && !matches!(
+                self.original_timing_owner(),
+                crate::zelda_rtl::OriginalTimingOwner::Live
+            ) {
             let (entry_earliest, entry_latest) = if self.game_state.frame.submodule == 0 {
                 (
                     OVERWORLD_SPOTLIGHT_CPU_ENTRY_EARLIEST,
@@ -2619,10 +2639,29 @@ impl ZeldaState {
                 plan.and_then(|plan| plan.next_entry_earliest.zip(plan.next_entry_latest));
             plan
         } else {
+            // A continuous Live owner publishes the completed window raster
+            // and main-loop progress directly. Re-running the old isolated
+            // CPU/raster envelope here would make translated gameplay depend
+            // on a guessed entry range and can disagree about which side of
+            // one NMI a C statement occupied. In Live mode the native C
+            // iteration remains the shadow implementation while the typed
+            // presentation receipt owns the outgoing scanout.
             None
         };
         let iteration = SpotlightIteration::opening_from_rom_cpu_plan(cpu_plan);
         self.sprite_main();
+        if let Some(receipt) = live_table_progress {
+            let phase = if self.game_state.frame.submodule == 0 {
+                self.spotlight_internal_before_table(0, 2);
+                OverworldSpotlightBuildPhase::Entry
+            } else {
+                OverworldSpotlightBuildPhase::Recurring
+            };
+            let table_build =
+                self.begin_iris_spotlight_configure_table_at_progress(receipt.progress);
+            self.schedule_overworld_spotlight_build(table_build, phase, false, iteration);
+            return;
+        }
         if let Some(plan) = cpu_plan.filter(|plan| plan.interrupted_during_table_build_or_copy()) {
             let phase = if self.game_state.frame.submodule == 0 {
                 self.spotlight_internal_before_table(0, 2);
@@ -2689,7 +2728,22 @@ impl ZeldaState {
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {
-        let cpu_plan = if self.rom_startup_timing() {
+        let live_table_progress = self.take_original_timing_spotlight_table_build_progress();
+        if let Some(receipt) = live_table_progress {
+            assert!(
+                matches!(
+                    receipt.boundary,
+                    crate::OriginalTimingBoundary::NmiAccepted
+                        | crate::OriginalTimingBoundary::HostReturn
+                ),
+                "Module0F spotlight table progress must be exposed by an interrupting NMI or direct host return",
+            );
+        }
+        let cpu_plan = if self.rom_startup_timing()
+            && !matches!(
+                self.original_timing_owner(),
+                crate::zelda_rtl::OriginalTimingOwner::Live
+            ) {
             let (entry_earliest, entry_latest) = if self.game_state.frame.submodule == 0 {
                 (
                     DUNGEON_EXIT_SPOTLIGHT_CPU_ENTRY_EARLIEST,
@@ -2704,6 +2758,10 @@ impl ZeldaState {
                 plan.and_then(|plan| plan.next_entry_earliest.zip(plan.next_entry_latest));
             plan
         } else {
+            // The continuous authority supplies the completed scanout and
+            // main-loop progress as typed receipts. Keep the isolated CPU
+            // envelope only as the non-Live fallback; consulting it here
+            // would make native gameplay depend on a guessed raster entry.
             None
         };
         let vertical_center = spotlight_vertical_center(
@@ -2776,7 +2834,11 @@ impl ZeldaState {
         self.sprite_main();
         if self.game_state.frame.submodule == 0 {
             self.Dungeon_PrepExitWithSpotlight_before_table();
-            if self.begin_dungeon_exit_spotlight_entry(cpu_plan, iteration) {
+            if self.begin_dungeon_exit_spotlight_entry(
+                cpu_plan,
+                live_table_progress.map(|receipt| receipt.progress),
+                iteration,
+            ) {
                 // vblank interrupts the first IrisSpotlight_ConfigureTable
                 // build; the table copy, radius write, submodule advance, and
                 // Link/OAM suffix complete on the next host frame.
@@ -2784,7 +2846,11 @@ impl ZeldaState {
             }
             self.Dungeon_PrepExitWithSpotlight_table_and_advance();
         } else {
-            if self.begin_dungeon_exit_spotlight_build(cpu_plan, iteration) {
+            if self.begin_dungeon_exit_spotlight_build(
+                cpu_plan,
+                live_table_progress.map(|receipt| receipt.progress),
+                iteration,
+            ) {
                 return;
             }
             let (caller_interrupted, _) = self.spotlight_configure_table_and_control(true);
@@ -2924,7 +2990,17 @@ impl ZeldaState {
         table_build: SpotlightTableBuildContinuation,
         projection_completed: bool,
         iteration: SpotlightIteration,
+        caller_returned_to_main_wait: bool,
     ) {
+        let iteration = if caller_returned_to_main_wait {
+            // The replaceable authority observed the resumed C caller return
+            // through LinkOam_Main and Main_PrepSpritesForNmi before this host
+            // ended. Do not schedule an estimated extra suffix host after the
+            // source call has already completed it.
+            iteration.with_main_loop_sprite_preparation_before_second_nmi()
+        } else {
+            iteration
+        };
         if projection_completed {
             self.complete_iris_spotlight_configure_table_after_projection();
         } else {

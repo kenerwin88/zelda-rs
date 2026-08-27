@@ -695,6 +695,10 @@ impl LibretroCore {
                     apu_cycle_after: unsafe { value(write, 7) },
                     smp_clock_before: unsafe { value(write, 8) },
                     smp_clock_after: unsafe { value(write, 9) },
+                    dsp_clock_before: unsafe { value(write, 10) },
+                    dsp_clock_after: unsafe { value(write, 11) },
+                    dsp_phase_before: unsafe { value(write, 12) },
+                    dsp_phase_after: unsafe { value(write, 13) },
                     smp_pc_before: unsafe { value(write, 14) },
                     smp_pc_after: unsafe { value(write, 15) },
                     smp_opcode_before: unsafe { value(write, 16) },
@@ -708,6 +712,18 @@ impl LibretroCore {
                 })
                 .collect(),
         )
+    }
+
+    pub(crate) fn debug_apu_port_writes_exact(
+        &self,
+    ) -> Result<Option<Vec<LibretroApuPortWrite>>, String> {
+        let writes = self.debug_apu_port_writes();
+        reject_silent_trace_capacity(
+            "CPU APUI",
+            writes.as_ref().map(Vec::len),
+            LIBRETRO_APU_PORT_WRITE_CAPACITY,
+        )?;
+        Ok(writes)
     }
 
     pub(crate) fn debug_cpu_timing_model(&self) -> Option<(i32, i32, i32)> {
@@ -869,6 +885,18 @@ impl LibretroCore {
         )
     }
 
+    pub(crate) fn debug_smp_output_port_writes_exact(
+        &self,
+    ) -> Result<Option<Vec<LibretroSmpOutputPortWrite>>, String> {
+        let writes = self.debug_smp_output_port_writes();
+        reject_silent_trace_capacity(
+            "SMP output-port",
+            writes.as_ref().map(Vec::len),
+            LIBRETRO_SMP_OUTPUT_PORT_WRITE_CAPACITY,
+        )?;
+        Ok(writes)
+    }
+
     pub(crate) fn debug_ppu_value(&self, field: i32, index: i32) -> Option<i32> {
         self.debug_ppu_value
             .map(|probe| unsafe { probe(field, index) })
@@ -971,6 +999,10 @@ pub(crate) struct LibretroApuPortWrite {
     pub(crate) apu_cycle_after: i32,
     pub(crate) smp_clock_before: i32,
     pub(crate) smp_clock_after: i32,
+    pub(crate) dsp_clock_before: i32,
+    pub(crate) dsp_clock_after: i32,
+    pub(crate) dsp_phase_before: i32,
+    pub(crate) dsp_phase_after: i32,
     pub(crate) smp_pc_before: i32,
     pub(crate) smp_pc_after: i32,
     pub(crate) smp_opcode_before: i32,
@@ -981,6 +1013,25 @@ pub(crate) struct LibretroApuPortWrite {
     pub(crate) cpu_model_5a22: i32,
     pub(crate) wram_refresh_position: i32,
     pub(crate) cpu_model_identity: i32,
+}
+
+// These two maintained trace buffers predate explicit overflow exports. The
+// core clamps their reported count to capacity, so an exact fixture must reject
+// a full buffer rather than treating an ambiguous truncation as complete.
+pub(crate) const LIBRETRO_APU_PORT_WRITE_CAPACITY: usize = 65_536;
+pub(crate) const LIBRETRO_SMP_OUTPUT_PORT_WRITE_CAPACITY: usize = 65_536;
+
+fn reject_silent_trace_capacity(
+    name: &str,
+    count: Option<usize>,
+    capacity: usize,
+) -> Result<(), String> {
+    if count.is_some_and(|count| count >= capacity) {
+        return Err(format!(
+            "Snes9x {name} receipt reached its silent {capacity}-row capacity"
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
@@ -1120,5 +1171,20 @@ pub(crate) fn libretro_memory_name(id: c_uint) -> &'static str {
         RETRO_MEMORY_SYSTEM_RAM => "SYSTEM_RAM",
         RETRO_MEMORY_VIDEO_RAM => "VIDEO_RAM",
         _ => "UNKNOWN",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reject_silent_trace_capacity;
+
+    #[test]
+    fn exact_trace_receipts_reject_the_ambiguous_full_capacity() {
+        assert!(reject_silent_trace_capacity("test", Some(65_535), 65_536).is_ok());
+        assert_eq!(
+            reject_silent_trace_capacity("test", Some(65_536), 65_536).unwrap_err(),
+            "Snes9x test receipt reached its silent 65536-row capacity"
+        );
+        assert!(reject_silent_trace_capacity("test", None, 65_536).is_ok());
     }
 }

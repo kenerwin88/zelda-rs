@@ -3709,56 +3709,26 @@ fn link_cache_changes_only_from_a_completed_dma_receipt() {
         source_generation: GraphicsDmaGeneration::HostBoundaryBeforeMain,
     };
 
+    assert_eq!(link_obj_cache_sources_for_publication(None, false,), None,);
     assert_eq!(
-        link_obj_cache_sources_for_publication(GraphicsDmaGeneration::LiveAfterMain, None, false,),
-        None,
+        link_obj_cache_sources_for_publication(Some(completed_live), false,),
+        Some(completed),
     );
+    assert_eq!(link_obj_cache_sources_for_publication(None, false,), None,);
     assert_eq!(
-        link_obj_cache_sources_for_publication(
-            GraphicsDmaGeneration::LiveAfterMain,
-            Some(completed_live),
-            false,
-        ),
+        link_obj_cache_sources_for_publication(Some(completed_live), false,),
         Some(completed),
     );
     assert_eq!(
-        link_obj_cache_sources_for_publication(
-            GraphicsDmaGeneration::HostBoundaryBeforeMain,
-            None,
-            false,
-        ),
+        link_obj_cache_sources_for_publication(Some(completed_live), true,),
         None,
     );
     assert_eq!(
-        link_obj_cache_sources_for_publication(
-            GraphicsDmaGeneration::HostBoundaryBeforeMain,
-            Some(completed_live),
-            false,
-        ),
-        Some(completed),
-    );
-    assert_eq!(
-        link_obj_cache_sources_for_publication(
-            GraphicsDmaGeneration::HostBoundaryBeforeMain,
-            Some(completed_live),
-            true,
-        ),
+        link_obj_cache_sources_for_publication(Some(completed_live), true,),
         None,
     );
     assert_eq!(
-        link_obj_cache_sources_for_publication(
-            GraphicsDmaGeneration::LiveAfterMain,
-            Some(completed_live),
-            true,
-        ),
-        Some(completed),
-    );
-    assert_eq!(
-        link_obj_cache_sources_for_publication(
-            GraphicsDmaGeneration::LiveAfterMain,
-            Some(completed_host),
-            false,
-        ),
+        link_obj_cache_sources_for_publication(Some(completed_host), false,),
         None,
     );
 }

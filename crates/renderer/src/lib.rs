@@ -1326,6 +1326,7 @@ fn modern_source_extraction_fingerprint<S: modern_extract::SourceTableView + ?Si
     frame.cgram.hash(&mut hasher);
     frame.oam.hash(&mut hasher);
     frame.mode.hash(&mut hasher);
+    frame.mode1_bg3_priority.hash(&mut hasher);
     for bg in frame.bg {
         bg.h_scroll.hash(&mut hasher);
         bg.v_scroll.hash(&mut hasher);
@@ -3554,6 +3555,7 @@ mod tests {
             vram: &vram,
             oam: &oam,
             mode: 1,
+            mode1_bg3_priority: false,
             bg: [BgLayerRegs::default(); 4],
             obj: ObjRegs::default(),
             mosaic_enabled: 0,
@@ -3620,6 +3622,7 @@ mod tests {
             vram: &vram,
             oam: &oam,
             mode: 1,
+            mode1_bg3_priority: false,
             bg: [BgLayerRegs::default(); 4],
             obj: ObjRegs::default(),
             mosaic_enabled: 0,
@@ -3899,6 +3902,7 @@ mod tests {
             cgram: &cgram,
             oam: &oam,
             mode: 1,
+            mode1_bg3_priority: false,
             bg: Default::default(),
             obj: Default::default(),
             mosaic_enabled: 0,
@@ -3968,6 +3972,7 @@ mod tests {
             cgram: &cgram,
             oam: &oam,
             mode: 1,
+            mode1_bg3_priority: false,
             bg: Default::default(),
             obj: Default::default(),
             mosaic_enabled: 0,

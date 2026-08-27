@@ -641,7 +641,7 @@ impl ZeldaState {
                 inidisp: self.ram[INIDISP_COPY],
             },
             render: RenderOutputFacts {
-                mode: self.ppu.mode,
+                mode: self.ppu.bg_mode(),
                 forced_blank: self.ppu.forced_blank,
                 brightness: self.ppu.brightness,
                 screen_enabled: self.ppu.screen_enabled,
