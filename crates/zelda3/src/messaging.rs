@@ -569,15 +569,35 @@ impl ZeldaState {
                 }
             }
             self.sprite_main();
-            self.link_oam_main();
-            if self.game_state.world.location.is_outdoors() {
-                self.OverworldOverlay_HandleRain();
+            if self
+                .game_execution_scheduler
+                .work_suspends_translated_call_stack()
+            {
+                return;
             }
-            self.hud_refill_logic();
-            if self.game_state.frame.submodule != 2 {
-                self.orient_lamp_light_cone();
-            }
+            self.complete_module0e_after_sprite_main();
+            return;
         }
+        self.complete_module0e_run_interface();
+    }
+
+    /// Resume `Module0E_Interface` immediately after `Sprite_Main` returns.
+    /// A synchronous sprite item receipt can suspend at that call boundary;
+    /// this method preserves the exact remaining C statement order without
+    /// replaying Sprite_Main or publishing the caller suffix early.
+    pub(super) fn complete_module0e_after_sprite_main(&mut self) {
+        self.link_oam_main();
+        if self.game_state.world.location.is_outdoors() {
+            self.OverworldOverlay_HandleRain();
+        }
+        self.hud_refill_logic();
+        if self.game_state.frame.submodule != 2 {
+            self.orient_lamp_light_cone();
+        }
+        self.complete_module0e_run_interface();
+    }
+
+    fn complete_module0e_run_interface(&mut self) {
         self.replay_trace_ram_watch("module0e-before-run-interface");
         self.RunInterface();
         self.replay_trace_ram_watch("module0e-after-run-interface");
@@ -2611,20 +2631,13 @@ impl ZeldaState {
 
     pub(super) fn Module0E_03_01_03_DrawRooms(&mut self) {
         if self.rom_startup_timing() {
-            if self.game_state.world.location.dungeon_room_index() == 0x41 {
-                // The crystal-4 room-$41 map returns after this host frame's
-                // trailing NMI. Other measured map openings, including room
-                // $72, remain suspended through the next host boundary.
-                debug_assert_eq!(DUNGEON_MAP_ROOM_DRAWING_NMI_SLICES, 1);
-                self.game_execution_scheduler
-                    .schedule_post_trailing_nmi(GameWorkContinuation::FinishDungeonMapRoomDrawing);
-            } else {
+            if !self.take_original_timing_main_loop_iteration_returned_to_wait() {
                 self.game_execution_scheduler.schedule_work(
                     GameWorkContinuation::FinishDungeonMapRoomDrawing,
                     DUNGEON_MAP_ROOM_DRAWING_NMI_SLICES,
                 );
+                return;
             }
-            return;
         }
         self.complete_dungeon_map_room_drawing();
     }

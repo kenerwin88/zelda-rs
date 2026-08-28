@@ -12613,31 +12613,143 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_ignore_projectile(value);
             return;
         }
+        let mut helper_ordinal = 0;
         if self.sprite_slot_view(k).state() == 10 {
             let value = 3;
             self.sprite_slot_view_mut(k).set_ai_state(value);
             if self.game_state.frame.submodule == 0 {
-                self.chicken_incr_subtype2_for_draw(k, 3);
+                if self.chicken_incr_subtype2_for_draw(k, 3, 0, CuccoSubtypeContinuation::State10) {
+                    return;
+                }
                 self.cucco_draw_panic(k);
                 if (self.game_state.frame.frame_counter & 0x0f) == 0 {
                     self.bawk_bawk_for_draw(k);
                 }
+                helper_ordinal = 1;
             }
         }
+        self.complete_cucco_after_state10_branch(k, helper_ordinal);
+    }
+
+    /// Resume the state-10 Cucco immediately after its initial `subtype2 += 3`
+    /// publication. This is the exact remaining C suffix; neither the slot
+    /// timers/OAM prefix nor the three subtype stores are replayed.
+    pub(super) fn complete_cucco_after_subtype_increments(
+        &mut self,
+        k: usize,
+        completed: u8,
+        total: u8,
+        continuation: CuccoSubtypeContinuation,
+    ) {
+        assert!(completed <= total);
+        for _ in completed..total {
+            self.chicken_add_subtype2_for_draw(k, 1);
+        }
+        self.chicken_publish_graphics_for_draw(k);
+        self.chicken_finish_subtype2_for_draw(k);
+        self.complete_cucco_helper_caller(k, continuation);
+    }
+
+    /// Advance an already-suspended `Chicken_IncrSubtype2` call to a later
+    /// source-observed increment without publishing graphics or running its
+    /// caller suffix. This is used when consecutive live-owner host receipts
+    /// refine the same semantic helper invocation.
+    pub(super) fn advance_cucco_subtype_increment_checkpoint(
+        &mut self,
+        k: usize,
+        completed: u8,
+        refined_completed: u8,
+        total: u8,
+    ) {
+        assert!(completed <= refined_completed);
+        assert!(refined_completed <= total);
+        for _ in completed..refined_completed {
+            self.chicken_add_subtype2_for_draw(k, 1);
+        }
+    }
+
+    /// Advance the same suspended helper through its remaining increments and
+    /// graphics publication, stopping before `Sprite_ReturnIfLifted` and the
+    /// caller-specific suffix.
+    pub(super) fn advance_cucco_subtype_checkpoint_to_graphics(
+        &mut self,
+        k: usize,
+        completed: u8,
+        total: u8,
+    ) {
+        self.advance_cucco_subtype_increment_checkpoint(k, completed, total, total);
+        self.chicken_publish_graphics_for_draw(k);
+    }
+
+    pub(super) fn complete_cucco_after_graphics_publication(
+        &mut self,
+        k: usize,
+        continuation: CuccoSubtypeContinuation,
+    ) {
+        self.chicken_finish_subtype2_for_draw(k);
+        self.complete_cucco_helper_caller(k, continuation);
+    }
+
+    fn complete_cucco_helper_caller(&mut self, k: usize, continuation: CuccoSubtypeContinuation) {
+        match continuation {
+            CuccoSubtypeContinuation::State10 => {
+                self.cucco_draw_panic(k);
+                if (self.game_state.frame.frame_counter & 0x0f) == 0 {
+                    self.bawk_bawk_for_draw(k);
+                }
+                self.complete_cucco_after_state10_branch(k, 1);
+            }
+            CuccoSubtypeContinuation::Flee | CuccoSubtypeContinuation::CarriedLanding => {
+                self.cucco_draw_panic(k);
+            }
+            CuccoSubtypeContinuation::ActiveC
+            | CuccoSubtypeContinuation::Hopping
+            | CuccoSubtypeContinuation::CarriedAirborne => {}
+        }
+    }
+
+    fn complete_cucco_after_state10_branch(&mut self, k: usize, helper_ordinal: u8) {
         if self.sprite_return_if_inactive(k) {
             return;
         }
         if self.sprite_slot_view(k).c() != 0 {
             self.sprite_slot_view_mut(k).or_oam_flags(0x10);
-            self.sprite_move_xy(k);
-            let value = 12;
-            self.sprite_slot_view_mut(k).set_z(value);
-            let value = 12;
-            self.sprite_slot_view_mut(k).set_ignore_projectile(value);
-            if (((k as u8) ^ self.game_state.frame.frame_counter) & 7) == 0 {
-                self.sprite_check_damage_to_link(k);
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterActiveCuccoX {
+                    slot,
+                    helper_ordinal: expected_ordinal,
+                }) if slot == k as u8 && expected_ordinal == helper_ordinal
+            ) {
+                assert_ne!(
+                    self.sprite_slot_view(k).x_velocity(),
+                    0,
+                    "an active-Cucco X publication requires Sprite_MoveX to enter its source body",
+                );
+                self.sprite_move_x(k);
+                return;
             }
-            self.chicken_incr_subtype2_for_draw(k, 4);
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel {
+                    slot,
+                    helper_ordinal: expected_ordinal,
+                    y_low: None,
+                    y_high: None,
+                }) if slot == k as u8 && expected_ordinal == helper_ordinal
+            ) {
+                let (y_low, y_high) = self.sprite_move_xy_through_y_subpixel(k);
+                self.sprite_main_cpu_boundary =
+                    Some(SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel {
+                        slot: k as u8,
+                        helper_ordinal,
+                        y_low: Some(y_low),
+                        y_high: Some(y_high),
+                    });
+                return;
+            }
+            self.sprite_move_xy(k);
+            self.complete_active_cucco_after_movement(k, helper_ordinal);
         } else {
             let value = 255;
             self.sprite_slot_view_mut(k).set_health(value);
@@ -12657,20 +12769,153 @@ impl ZeldaState {
             self.sprite_check_damage_from_link(k);
             match self.sprite_slot_view(k).ai_state() {
                 0 => self.cucco_calm(k),
-                1 => self.chicken_hopping(k),
-                2 => self.cucco_flee(k),
-                3 => self.cucco_carried(k),
+                1 => {
+                    self.chicken_hopping(k, helper_ordinal);
+                }
+                2 => {
+                    self.cucco_flee(k, helper_ordinal);
+                }
+                3 => {
+                    self.cucco_carried(k, helper_ordinal);
+                }
                 _ => {}
             }
         }
     }
 
+    fn complete_active_cucco_after_movement(&mut self, k: usize, helper_ordinal: u8) {
+        self.advance_active_cucco_after_movement_to_helper(k);
+        self.chicken_incr_subtype2_for_draw(
+            k,
+            4,
+            helper_ordinal,
+            CuccoSubtypeContinuation::ActiveC,
+        );
+    }
+
+    pub(super) fn complete_active_cucco_after_x(&mut self, k: usize, helper_ordinal: u8) {
+        self.sprite_move_y(k);
+        self.complete_active_cucco_after_movement(k, helper_ordinal);
+    }
+
+    pub(super) fn advance_active_cucco_x_to_y_subpixel(&mut self, k: usize) -> (u8, u8) {
+        self.sprite_move_y_through_subpixel(k)
+    }
+
+    pub(super) fn advance_active_cucco_x_to_helper(&mut self, k: usize) {
+        self.sprite_move_y(k);
+        self.advance_active_cucco_after_movement_to_helper(k);
+    }
+
+    fn advance_active_cucco_after_movement_to_helper(&mut self, k: usize) {
+        self.sprite_slot_view_mut(k).set_z(12);
+        self.sprite_slot_view_mut(k).set_ignore_projectile(12);
+        if (((k as u8) ^ self.game_state.frame.frame_counter) & 7) == 0 {
+            self.sprite_check_damage_to_link(k);
+        }
+    }
+
+    pub(super) fn complete_active_cucco_after_y_subpixel(
+        &mut self,
+        k: usize,
+        helper_ordinal: u8,
+        y_low: u8,
+        y_high: u8,
+    ) {
+        self.complete_sprite_move_y_after_subpixel(k, y_low, y_high);
+        self.complete_active_cucco_after_movement(k, helper_ordinal);
+    }
+
+    pub(super) fn advance_active_cucco_y_subpixel_to_helper(
+        &mut self,
+        k: usize,
+        y_low: u8,
+        y_high: u8,
+    ) {
+        self.complete_sprite_move_y_after_subpixel(k, y_low, y_high);
+        self.advance_active_cucco_after_movement_to_helper(k);
+    }
+
     // Local duplicate of private dungeon NPC helper used by the original
     // top-level Cucco actor.
-    fn chicken_incr_subtype2_for_draw(&mut self, k: usize, j: u8) {
+    pub(super) fn chicken_incr_subtype2_for_draw(
+        &mut self,
+        k: usize,
+        increments: u8,
+        helper_ordinal: u8,
+        continuation: CuccoSubtypeContinuation,
+    ) -> bool {
+        if let Some(SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements {
+            slot,
+            helper_ordinal: expected_ordinal,
+            completed,
+            total: 0,
+            continuation: None,
+        }) = self.sprite_main_cpu_boundary
+        {
+            if slot == k as u8 && expected_ordinal == helper_ordinal {
+                assert!(
+                    completed <= increments,
+                    "source Cucco helper published increment {completed}, but native call has only {increments}",
+                );
+            }
+        }
+        for completed in 1..=increments {
+            self.chicken_add_subtype2_for_draw(k, 1);
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements {
+                    slot,
+                    helper_ordinal: expected_ordinal,
+                    completed: expected_completed,
+                    total: 0,
+                    continuation: None,
+                }) if slot == k as u8
+                    && expected_ordinal == helper_ordinal
+                    && expected_completed == completed
+            ) {
+                self.sprite_main_cpu_boundary =
+                    Some(SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements {
+                        slot: k as u8,
+                        helper_ordinal,
+                        completed,
+                        total: increments,
+                        continuation: Some(continuation),
+                    });
+                return true;
+            }
+        }
+        self.chicken_publish_graphics_for_draw(k);
+        if matches!(
+            self.sprite_main_cpu_boundary,
+            Some(SpriteMainCpuBoundary::AfterCuccoGraphicsPublication {
+                slot,
+                helper_ordinal: expected_ordinal,
+                continuation: None,
+            }) if slot == k as u8 && expected_ordinal == helper_ordinal
+        ) {
+            self.sprite_main_cpu_boundary =
+                Some(SpriteMainCpuBoundary::AfterCuccoGraphicsPublication {
+                    slot: k as u8,
+                    helper_ordinal,
+                    continuation: Some(continuation),
+                });
+            return true;
+        }
+        self.chicken_finish_subtype2_for_draw(k);
+        false
+    }
+
+    pub(super) fn chicken_add_subtype2_for_draw(&mut self, k: usize, j: u8) {
         self.sprite_slot_view_mut(k).add_subtype2(j);
+    }
+
+    pub(super) fn chicken_publish_graphics_for_draw(&mut self, k: usize) {
         let value = (self.sprite_slot_view(k).subtype2() >> 4) & 1;
         self.sprite_slot_view_mut(k).set_graphics(value);
+    }
+
+    pub(super) fn chicken_finish_subtype2_for_draw(&mut self, k: usize) {
         self.sprite_return_if_lifted(k);
     }
 
@@ -13175,10 +13420,20 @@ impl ZeldaState {
             }
             2 => {
                 self.follower_link_state_mut().set_item_receipt_method(0);
-                self.link_receive_item(0x21, 0);
-                self.follower_link_state_mut().clear_immobilized();
-                let value = 3;
-                self.sprite_slot_view_mut(k).set_ai_state(value);
+                if self
+                    .link_receive_item_from(
+                        0x21,
+                        0,
+                        ItemReceiptCaller::SpriteMain {
+                            sprite_slot: k as u8,
+                            suffix: SpriteMainItemReceiptSuffix::SickKid,
+                        },
+                    )
+                    .is_suspended()
+                {
+                    return;
+                }
+                self.complete_sick_kid_item_receipt(k);
             }
             3 => {
                 let value = 1;
@@ -13187,6 +13442,16 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    /// Source suffix after SickKid's synchronous `Link_ReceiveItem` call.
+    ///
+    /// ROM $06:b9d0 restores X, increments the sprite AI state, then clears
+    /// Link's immobilized flag. Keeping the suffix typed lets a live timing
+    /// authority suspend the decompressor without publishing either write.
+    pub(super) fn complete_sick_kid_item_receipt(&mut self, k: usize) {
+        self.sprite_slot_view_mut(k).increment_ai_state();
+        self.follower_link_state_mut().clear_immobilized();
     }
 
     // -----------------------------------------------------------------------

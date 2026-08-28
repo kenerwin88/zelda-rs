@@ -38,24 +38,27 @@ pub use game_state::{
 pub use rom_random::{parse_rom_random_script, RomRandomSample};
 pub use timing_receipts::{
     CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt, DialogueExecutionProgress,
-    DungeonResetSpritesProgressReceipt, MainLoopInterruption, MainLoopProgress,
+    DungeonResetSpritesProgressReceipt, ItemReceiptGraphicsCaller,
+    ItemReceiptGraphicsProgressReceipt, JoypadPublication, MainLoopInterruption, MainLoopProgress,
     OriginalTimingAudioShadowResult, OriginalTimingBgScrollShadowResult,
     OriginalTimingBgTilemapShadowResult, OriginalTimingBoundary,
     OriginalTimingDialogueTextShadowResult, OriginalTimingHostReceipts,
-    OriginalTimingReceiptInstallError, OriginalTimingSemanticReceipt,
+    OriginalTimingMode7TransformShadowResult, OriginalTimingReceiptInstallError,
+    OriginalTimingResumeCheckpoint, OriginalTimingSemanticReceipt,
     OriginalTimingWindowMaskShadowResult, OverworldSpriteReloadProgress,
     PreOverworldStageCompletion, PresentedAnimatedBgDestination, PresentedAnimatedBgTiles,
     PresentedAudio, PresentedBgScroll, PresentedBgTilemapLayer, PresentedBgTilemaps,
-    PresentedCgram, PresentedDialogueText, PresentedHudTilemap, PresentedInidisp, PresentedOam,
-    PresentedObjTiles, PresentedScanoutGeometry, PresentedWindowMask,
-    SaveMenuInitializationProgress, SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress,
-    SpotlightTableBuildProgressReceipt, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
+    PresentedCgram, PresentedDialogueText, PresentedHudTilemap, PresentedInidisp,
+    PresentedMode7Transform, PresentedOam, PresentedObjTiles, PresentedScanoutGeometry,
+    PresentedWindowMask, SaveMenuInitializationProgress, SourceCallProgress,
+    SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt,
+    SpriteMainProgress, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
 };
 pub use zelda3_dialogue as dialogue_ir;
 pub use zelda_rtl::{
     Bg3VwfGlyphRun, DungeonLoadSpritesCpuProgress, DungeonResetSpritesCpuProgress,
-    DungeonSpriteDisableCpuProgress, DungeonSpriteLoadCheckpoint, ZeldaState, SRAM_SIZE,
-    VRAM_WORDS,
+    DungeonSpriteDisableCpuProgress, DungeonSpriteLoadCheckpoint,
+    OriginalTimingResumeCheckpointError, ZeldaState, SRAM_SIZE, VRAM_WORDS,
 };
 
 /// Which engine thread(s) a frame step should run (`run_frame_internal`'s

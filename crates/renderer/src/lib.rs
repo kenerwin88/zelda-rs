@@ -1759,7 +1759,105 @@ pub struct FrameRenderer {
     /// Offscreen Rgba8Unorm 256x224 target the compositor renders into before
     /// it is sampled directly by the presentation blit.
     modern_gpu_target: Option<ModernGpuTarget>,
+    /// Reusable transfer buffers for development A/V replay. Keeping
+    /// copies in flight lets the CPU prepare subsequent frames while the GPU
+    /// transfers earlier compositor results. The authoritative cold path does
+    /// not use this pool.
+    modern_gpu_readbacks: Option<ModernGpuReadbackPool>,
     modern_source_extraction_cache: Option<ModernSourceExtractionCache>,
+    modern_source_extract_nanos: u128,
+    modern_compositor_submit_nanos: u128,
+    modern_history_submit_nanos: u128,
+    modern_surface_present_nanos: u128,
+}
+
+const MODERN_GPU_READBACK_WIDTH: u32 = 256;
+const MODERN_GPU_READBACK_HEIGHT: u32 = 224;
+pub const MODERN_GPU_READBACK_PIPELINE_DEPTH: usize = 3;
+const MODERN_GPU_READBACK_SLOTS: usize = MODERN_GPU_READBACK_PIPELINE_DEPTH;
+
+/// Opaque, single-use ownership of one queued modern compositor readback.
+#[derive(Debug)]
+pub struct ModernGpuReadbackTicket {
+    slot: usize,
+    sequence: u64,
+}
+
+/// Borrowed view of a completed GPU readback. Consumers can hash the visible
+/// rows directly without first allocating and copying a contiguous image.
+pub struct ModernGpuReadbackView<'a> {
+    bytes: &'a [u8],
+    bytes_per_row: usize,
+    visible_bytes_per_row: usize,
+    width: u32,
+    height: u32,
+}
+
+impl<'a> ModernGpuReadbackView<'a> {
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn rows(&self) -> impl ExactSizeIterator<Item = &[u8]> + '_ {
+        self.bytes
+            .chunks_exact(self.bytes_per_row)
+            .take(self.height as usize)
+            .map(move |row| &row[..self.visible_bytes_per_row])
+    }
+}
+
+struct ModernGpuReadbackPool {
+    slots: Vec<ModernGpuReadbackSlot>,
+    next_sequence: u64,
+    bytes_per_row: u32,
+}
+
+struct ModernGpuReadbackSlot {
+    buffer: wgpu::Buffer,
+    state: ModernGpuReadbackSlotState,
+}
+
+enum ModernGpuReadbackSlotState {
+    Available,
+    Pending {
+        sequence: u64,
+        submission: wgpu::SubmissionIndex,
+        completion: std::sync::mpsc::Receiver<Result<(), wgpu::BufferAsyncError>>,
+    },
+    Finishing,
+}
+
+impl ModernGpuReadbackPool {
+    fn new(device: &wgpu::Device) -> Self {
+        let visible_bytes_per_row = MODERN_GPU_READBACK_WIDTH * 4;
+        let bytes_per_row =
+            visible_bytes_per_row.next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+        let size = u64::from(bytes_per_row * MODERN_GPU_READBACK_HEIGHT);
+        let slots = (0..MODERN_GPU_READBACK_SLOTS)
+            .map(|slot| ModernGpuReadbackSlot {
+                buffer: device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some(match slot {
+                        0 => "modern_gpu_readback_0",
+                        1 => "modern_gpu_readback_1",
+                        _ => "modern_gpu_readback_2",
+                    }),
+                    size,
+                    usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                }),
+                state: ModernGpuReadbackSlotState::Available,
+            })
+            .collect();
+        Self {
+            slots,
+            next_sequence: 0,
+            bytes_per_row,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -2508,6 +2606,11 @@ fn modern_asset_frame_present_route(
 }
 
 impl FrameRenderer {
+    fn snes9x_timings_enabled() -> bool {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var_os("ZELDA3_SNES9X_TIMING").is_some())
+    }
+
     pub async fn new(window: Arc<Window>, game_width: u32, game_height: u32) -> Self {
         let instance = create_wgpu_instance();
         let surface = instance.create_surface(Arc::clone(&window)).unwrap();
@@ -2584,8 +2687,22 @@ impl FrameRenderer {
             modern_gpu: None,
             modern_variant_gpu: None,
             modern_gpu_target: None,
+            modern_gpu_readbacks: None,
             modern_source_extraction_cache: None,
+            modern_source_extract_nanos: 0,
+            modern_compositor_submit_nanos: 0,
+            modern_history_submit_nanos: 0,
+            modern_surface_present_nanos: 0,
         }
+    }
+
+    pub fn modern_source_gpu_timing_millis(&self) -> (u128, u128, u128, u128) {
+        (
+            self.modern_source_extract_nanos / 1_000_000,
+            self.modern_compositor_submit_nanos / 1_000_000,
+            self.modern_history_submit_nanos / 1_000_000,
+            self.modern_surface_present_nanos / 1_000_000,
+        )
     }
 
     /// Current live HD scale (`ZELDA3_HD_SCALE`, default 2), cached at
@@ -2782,6 +2899,137 @@ impl FrameRenderer {
         Some(out)
     }
 
+    /// Queue a copy of the current modern compositor target into one of three
+    /// persistent readback buffers. The returned ticket must be finished in
+    /// submission order before its slot can be reused.
+    pub fn queue_modern_gpu_target_readback(&mut self) -> Result<ModernGpuReadbackTicket, String> {
+        let target = self
+            .modern_gpu_target
+            .as_ref()
+            .ok_or_else(|| "modern GPU target has not been rendered".to_string())?;
+        let pool = self
+            .modern_gpu_readbacks
+            .get_or_insert_with(|| ModernGpuReadbackPool::new(&self.device));
+        let slot_index = pool
+            .slots
+            .iter()
+            .position(|slot| matches!(slot.state, ModernGpuReadbackSlotState::Available))
+            .ok_or_else(|| {
+                format!("all {MODERN_GPU_READBACK_SLOTS} modern GPU readback slots are in flight")
+            })?;
+        let sequence = pool.next_sequence;
+        pool.next_sequence = pool.next_sequence.wrapping_add(1);
+        let slot = &mut pool.slots[slot_index];
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("modern_gpu_pipelined_readback"),
+            });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &target.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &slot.buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(pool.bytes_per_row),
+                    rows_per_image: None,
+                },
+            },
+            wgpu::Extent3d {
+                width: MODERN_GPU_READBACK_WIDTH,
+                height: MODERN_GPU_READBACK_HEIGHT,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = self.queue.submit([encoder.finish()]);
+        let (sender, completion) = std::sync::mpsc::sync_channel(1);
+        slot.buffer
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                let _ = sender.send(result);
+            });
+        slot.state = ModernGpuReadbackSlotState::Pending {
+            sequence,
+            submission,
+            completion,
+        };
+        Ok(ModernGpuReadbackTicket {
+            slot: slot_index,
+            sequence,
+        })
+    }
+
+    /// Wait only for `ticket`'s GPU submission, then expose its mapped rows to
+    /// `consume`. The slot is unmapped and returned to the pool afterwards.
+    pub fn finish_modern_gpu_target_readback<R>(
+        &mut self,
+        ticket: ModernGpuReadbackTicket,
+        consume: impl FnOnce(ModernGpuReadbackView<'_>) -> R,
+    ) -> Result<R, String> {
+        let pool = self
+            .modern_gpu_readbacks
+            .as_mut()
+            .ok_or_else(|| "modern GPU readback pool was not initialized".to_string())?;
+        let slot = pool
+            .slots
+            .get_mut(ticket.slot)
+            .ok_or_else(|| format!("invalid modern GPU readback slot {}", ticket.slot))?;
+        let (submission, completion) =
+            match std::mem::replace(&mut slot.state, ModernGpuReadbackSlotState::Finishing) {
+                ModernGpuReadbackSlotState::Pending {
+                    sequence,
+                    submission,
+                    completion,
+                } if sequence == ticket.sequence => (submission, completion),
+                state => {
+                    slot.state = state;
+                    return Err(format!(
+                        "modern GPU readback ticket {} does not own slot {}",
+                        ticket.sequence, ticket.slot
+                    ));
+                }
+            };
+        if let Err(error) = self.device.poll(wgpu::PollType::Wait {
+            submission_index: Some(submission),
+            timeout: None,
+        }) {
+            slot.state = ModernGpuReadbackSlotState::Available;
+            return Err(format!(
+                "GPU poll failed during pipelined readback: {error}"
+            ));
+        }
+        match completion.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                slot.state = ModernGpuReadbackSlotState::Available;
+                return Err(format!("GPU map failed during pipelined readback: {error}"));
+            }
+            Err(error) => {
+                slot.state = ModernGpuReadbackSlotState::Available;
+                return Err(format!(
+                    "GPU map callback closed during pipelined readback: {error}"
+                ));
+            }
+        }
+        let mapped = slot.buffer.slice(..).get_mapped_range();
+        let result = consume(ModernGpuReadbackView {
+            bytes: &mapped,
+            bytes_per_row: pool.bytes_per_row as usize,
+            visible_bytes_per_row: (MODERN_GPU_READBACK_WIDTH * 4) as usize,
+            width: MODERN_GPU_READBACK_WIDTH,
+            height: MODERN_GPU_READBACK_HEIGHT,
+        });
+        drop(mapped);
+        slot.buffer.unmap();
+        slot.state = ModernGpuReadbackSlotState::Available;
+        Ok(result)
+    }
+
     pub fn read_modern_gpu_screen_pixel(&self, x: u32, y: u32) -> Option<(u32, u32)> {
         self.modern_gpu
             .as_ref()?
@@ -2918,7 +3166,34 @@ impl FrameRenderer {
         frame: &GpuFrame<'_>,
         src_table: Option<&S>,
         resources: &ModernAssetFrameResources,
+        scene: ModernAssetFrameScene,
+    ) -> Result<ModernAssetFramePresentResult, RenderError> {
+        self.render_modern_asset_frame(frame, src_table, resources, scene, true)
+    }
+
+    /// Render the production modern-asset route into its persistent 256x224
+    /// GPU target without acquiring or presenting a native-window surface.
+    /// This shares the exact scene builder, compositor, scanout history, and
+    /// final target used by [`Self::present_modern_asset_frame`]; only the
+    /// presentation blit is omitted so headless parity work is not paced by a
+    /// display surface.
+    pub fn render_modern_asset_frame_offscreen<S: modern_extract::SourceTableView + ?Sized>(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: Option<&S>,
+        resources: &ModernAssetFrameResources,
+        scene: ModernAssetFrameScene,
+    ) -> Result<ModernAssetFramePresentResult, RenderError> {
+        self.render_modern_asset_frame(frame, src_table, resources, scene, false)
+    }
+
+    fn render_modern_asset_frame<S: modern_extract::SourceTableView + ?Sized>(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        src_table: Option<&S>,
+        resources: &ModernAssetFrameResources,
         _scene: ModernAssetFrameScene,
+        present_surface: bool,
     ) -> Result<ModernAssetFramePresentResult, RenderError> {
         // Reset/startup material is an explicit modern-frame input, not Mode-7
         // game art.  The dedicated Mode-7 route uploads its own CPU result and
@@ -2933,6 +3208,7 @@ impl FrameRenderer {
                     .source_atlas()
                     .expect("startup material requires source atlas"),
                 resources.variant_atlas(),
+                present_surface,
             )?;
             return Ok(ModernAssetFramePresentResult::Presented {
                 via: "source-gpu-startup-material",
@@ -2951,9 +3227,10 @@ impl FrameRenderer {
             resources.variant_gpu_mode(),
         ) {
             ModernAssetFramePresentRoute::Mode7SourceGpu => {
-                self.present_modern_mode7_source_gpu(
+                self.render_modern_mode7_source_gpu(
                     frame,
                     mode7_source_chars.expect("route requires Mode 7 source chars"),
+                    present_surface,
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
                     via: "mode7-source-gpu",
@@ -2968,6 +3245,7 @@ impl FrameRenderer {
                         .source_atlas()
                         .expect("route requires source atlas"),
                     resources.variant_atlas(),
+                    present_surface,
                 )?;
                 Ok(ModernAssetFramePresentResult::Presented {
                     // Native window and oracle readback deliberately share
@@ -2999,6 +3277,27 @@ impl FrameRenderer {
         })
     }
 
+    pub fn render_modern_asset_frame_offscreen_from_entries<T>(
+        &mut self,
+        input: ModernAssetFramePresentInput<'_, '_, T>,
+    ) -> Result<ModernAssetFramePresentOutput, RenderError>
+    where
+        T: Copy + Into<(u8, u16, u16)>,
+    {
+        let src_table = source_table_from_entries(input.source_entries);
+        let scene = ModernAssetFrameScene::from_player_indoors_flag(input.player_indoors);
+        let result = self.render_modern_asset_frame_offscreen(
+            input.frame,
+            Some(&src_table),
+            input.resources,
+            scene,
+        )?;
+        Ok(ModernAssetFramePresentOutput {
+            result,
+            in_dungeon: scene.in_dungeon(),
+        })
+    }
+
     /// Present the semantic source atlas through the production GPU compositor.
     /// This is the single live route used both by the native window and by
     /// oracle readback; it does not decode a classic PPU frame or use a
@@ -3009,7 +3308,9 @@ impl FrameRenderer {
         src_table: &S,
         atlas: &modern_source_atlas::ModernSourceAtlas,
         variant_atlas: Option<&modern_variant_atlas::ModernVariantAtlas>,
+        present_surface: bool,
     ) -> Result<(), RenderError> {
+        let timing_started = Self::snes9x_timings_enabled().then(std::time::Instant::now);
         let (mut modern, mut bg_cells) =
             modern_extract::extract_modern_frame_from_sources(frame, src_table, atlas);
         if let Some(glyph_atlas) =
@@ -3026,7 +3327,10 @@ impl FrameRenderer {
         let (sprite_cells, sprites) =
             modern_extract::extract_modern_sprites_from_sources(frame, src_table, atlas);
         modern.index_sprites = sprites;
-        self.present_modern_gpu(&modern, &bg_cells, &sprite_cells)
+        if let Some(started) = timing_started {
+            self.modern_source_extract_nanos += started.elapsed().as_nanos();
+        }
+        self.render_modern_gpu(&modern, &bg_cells, &sprite_cells, present_surface)
     }
 
     /// Diagnostic GPU present of the indexed source-atlas path
@@ -3039,6 +3343,18 @@ impl FrameRenderer {
         bg_cells: &[modern_index_atlas::ModernIndexTile],
         sprite_cells: &[modern_index_atlas::ModernIndexTile],
     ) -> Result<(), RenderError> {
+        self.render_modern_gpu(frame, bg_cells, sprite_cells, true)
+    }
+
+    fn render_modern_gpu(
+        &mut self,
+        frame: &modern_frame::ModernFrame,
+        bg_cells: &[modern_index_atlas::ModernIndexTile],
+        sprite_cells: &[modern_index_atlas::ModernIndexTile],
+        present_surface: bool,
+    ) -> Result<(), RenderError> {
+        let timing_enabled = Self::snes9x_timings_enabled();
+        let mut history_nanos = 0;
         let format = wgpu::TextureFormat::Rgba8Unorm;
         if self.modern_gpu.is_none() {
             self.modern_gpu = Some(ModernGpuCompositor::new(&self.device, &self.queue, format));
@@ -3051,6 +3367,7 @@ impl FrameRenderer {
                 .is_some_and(|target| target.has_scanout_history)
         });
         if let Some((start_row, row_count)) = history_rows {
+            let started = timing_enabled.then(std::time::Instant::now);
             let target = self.modern_gpu_target.as_ref().expect("target built above");
             copy_modern_gpu_target_rows(
                 &self.device,
@@ -3061,10 +3378,12 @@ impl FrameRenderer {
                 row_count,
                 "modern_gpu_save_active_scanout",
             );
+            history_nanos += started.map_or(0, |started| started.elapsed().as_nanos());
         }
 
         let compositor = self.modern_gpu.as_ref().expect("compositor built above");
         let target = self.modern_gpu_target.as_ref().expect("target built above");
+        let compositor_started = timing_enabled.then(std::time::Instant::now);
         compositor.render(
             &self.device,
             &self.queue,
@@ -3073,7 +3392,9 @@ impl FrameRenderer {
             sprite_cells,
             &target.texture,
         );
+        let compositor_nanos = compositor_started.map_or(0, |started| started.elapsed().as_nanos());
         if let Some((start_row, row_count)) = history_rows {
+            let started = timing_enabled.then(std::time::Instant::now);
             copy_modern_gpu_target_rows(
                 &self.device,
                 &self.queue,
@@ -3083,13 +3404,23 @@ impl FrameRenderer {
                 row_count,
                 "modern_gpu_restore_active_scanout",
             );
+            history_nanos += started.map_or(0, |started| started.elapsed().as_nanos());
         }
         self.modern_gpu_target
             .as_mut()
             .expect("target rendered above")
             .has_scanout_history = true;
 
-        self.present_modern_gpu_target_to_surface()
+        let surface_started = (timing_enabled && present_surface).then(std::time::Instant::now);
+        let present_result = present_surface
+            .then(|| self.present_modern_gpu_target_to_surface())
+            .transpose();
+        self.modern_compositor_submit_nanos += compositor_nanos;
+        self.modern_history_submit_nanos += history_nanos;
+        self.modern_surface_present_nanos +=
+            surface_started.map_or(0, |started| started.elapsed().as_nanos());
+        present_result?;
+        Ok(())
     }
 
     /// Diagnostic GPU present of a VRAM-decoded modern frame. The default
@@ -3406,10 +3737,20 @@ impl FrameRenderer {
         frame: &GpuFrame<'_>,
         mode7_source_chars: &[u8],
     ) -> Result<(), RenderError> {
+        self.render_modern_mode7_source_gpu(frame, mode7_source_chars, true)
+    }
+
+    fn render_modern_mode7_source_gpu(
+        &mut self,
+        frame: &GpuFrame<'_>,
+        mode7_source_chars: &[u8],
+        present_surface: bool,
+    ) -> Result<(), RenderError> {
         self.present_modern_mode7_gpu_inner(
             frame,
             Some(mode7_source_chars),
             "modern_gpu_mode7_source_live",
+            present_surface,
         )
     }
 
@@ -3418,7 +3759,7 @@ impl FrameRenderer {
     /// used by GPU atlas modes because Mode 7 is not a Mode-1 source-atlas
     /// tilemap, but it still has a real GPU renderer.
     pub fn present_modern_mode7_gpu(&mut self, frame: &GpuFrame<'_>) -> Result<(), RenderError> {
-        self.present_modern_mode7_gpu_inner(frame, None, "modern_gpu_mode7_live")
+        self.present_modern_mode7_gpu_inner(frame, None, "modern_gpu_mode7_live", true)
     }
 
     fn present_modern_mode7_gpu_inner(
@@ -3426,6 +3767,7 @@ impl FrameRenderer {
         frame: &GpuFrame<'_>,
         mode7_source_chars: Option<&[u8]>,
         _encoder_label: &'static str,
+        present_surface: bool,
     ) -> Result<(), RenderError> {
         debug_assert_eq!(frame.mode, 7);
         // Mode 7 is finalized before presentation, so publish its exact RGBA
@@ -3463,7 +3805,10 @@ impl FrameRenderer {
             .as_mut()
             .expect("target rendered above")
             .has_scanout_history = true;
-        self.present_modern_gpu_target_to_surface()
+        if present_surface {
+            self.present_modern_gpu_target_to_surface()?;
+        }
+        Ok(())
     }
 
     pub fn render(&mut self) -> Result<(), RenderError> {

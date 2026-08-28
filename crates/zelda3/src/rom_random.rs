@@ -39,6 +39,10 @@ impl RomRandomResult {
         self.value
     }
 
+    pub(crate) const fn carry(self) -> bool {
+        self.carry
+    }
+
     /// Models the common ROM sequence `AND #mask; ADC #operand`: `AND`
     /// changes the accumulator but deliberately leaves RNG's carry intact.
     pub(crate) const fn masked_adc(self, mask: u8, operand: u8) -> u8 {

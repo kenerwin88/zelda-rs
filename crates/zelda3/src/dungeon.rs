@@ -12745,6 +12745,16 @@ impl ZeldaState {
     pub(super) fn module_pre_dungeon(&mut self) {
         self.module_pre_dungeon_audio_prefix();
         self.module_pre_dungeon_entrance_prefix();
+        if let Some(progress) = self.take_deferred_original_timing_pre_dungeon_return() {
+            assert_eq!(
+                progress,
+                crate::MainLoopProgress::CallStackContinued,
+                "deferred Module_PreDungeon completion lost its source caller phase",
+            );
+            self.complete_module_pre_dungeon_before_return_suffix();
+            self.complete_module_pre_dungeon_authoritative_return();
+            return;
+        }
         if self.begin_pre_dungeon_entrance_load_work() {
             return;
         }
@@ -13209,7 +13219,40 @@ impl ZeldaState {
             bg1_x: bg1x_restore,
             bg1_y: bg1y_restore,
         };
+        self.run_module07_sprite_main_caller(sprite_return);
+    }
+
+    /// Resume the existing Module 7 caller at its `Sprite_Main` statement.
+    ///
+    /// A continuous source host can remain inside the same C call stack for
+    /// more than one vblank. In that case the translated submodule and the
+    /// common dungeon prefix have already run; the source interruption receipt
+    pub(super) fn run_module07_sprite_main_caller(
+        &mut self,
+        sprite_return: DungeonSpriteMainReturn,
+    ) {
         self.active_dungeon_sprite_main_return = Some(sprite_return);
+        if let Some((boundary, resume_boundary)) =
+            self.take_original_timing_sprite_main_boundary_for_fresh_caller()
+        {
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                boundary,
+                SpriteMainCpuCaller::DungeonModule07Live {
+                    boundary: resume_boundary,
+                },
+            );
+        } else if let Some(boundary) = self.take_original_timing_sprite_main_progress() {
+            // SCAN_KEYS may return the host while the source remains inside
+            // Sprite_Main without accepting an NMI. The typed host-boundary
+            // receipt owns the same C continuation as an NMI interruption;
+            // no CPU address, frame, or room identity enters gameplay.
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                boundary,
+                SpriteMainCpuCaller::DungeonModule07Live {
+                    boundary: OriginalTimingBoundary::HostReturn,
+                },
+            );
+        }
         self.sprite_main();
         if self
             .game_execution_scheduler

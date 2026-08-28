@@ -31,6 +31,7 @@ ORACLE_SESSION_FILES = (
     "oracle_initial.state",
     "oracle_last_before.state",
     "oracle_final.state",
+    "semantic-trace-final.checkpoint.json",
     "snes9x-trace.jsonl",
     "display_oracle.jsonl",
     "obj_state_ledger.jsonl",
@@ -413,8 +414,26 @@ def verify_oracle_cache_entry(cache: Path, manifest: dict[str, Any] | None = Non
     if manifest is None:
         manifest = load_json(cache / "cache-manifest.json")
     for name, expected in manifest.get("artifact_sha256", {}).items():
+        relative = Path(name)
+        if relative.is_absolute() or not relative.parts or any(
+            part in {"", ".", ".."} for part in relative.parts
+        ):
+            raise SystemExit(f"parity evidence: unsafe artifact name {name!r}")
         path = cache / name
-        if not path.is_file() or sha256_file(path) != expected:
+        current = cache
+        safe = True
+        for index, part in enumerate(relative.parts):
+            current = current / part
+            if current.is_symlink():
+                safe = False
+                break
+            if index + 1 == len(relative.parts):
+                safe = current.is_file()
+            else:
+                safe = current.is_dir()
+            if not safe:
+                break
+        if not safe or sha256_file(path) != expected:
             raise SystemExit(f"parity evidence: immutable oracle cache is corrupt: {path}")
 
 
@@ -458,6 +477,8 @@ def cache_oracle_session(
     frame_receipts = session / "frame_receipts.jsonl"
     av_hashes = session / "av_hashes.jsonl"
     timing_host_receipts = session / "original-timing-host-receipts.jsonl.zst"
+    semantic_trace_checkpoint = session / "semantic-trace-final.checkpoint.json"
+    oracle_checkpoints = session / "oracle-checkpoints"
     session_manifest = load_json(session / "manifest.json")
     timing_host_receipts_schema = 0
     if timing_host_receipts.is_file():
@@ -468,6 +489,21 @@ def cache_oracle_session(
             raise SystemExit(
                 "parity evidence: source timing receipts require a positive manifest schema"
             )
+    semantic_trace_checkpoint_schema = 0
+    if semantic_trace_checkpoint.is_file():
+        semantic_trace_checkpoint_schema = load_json(semantic_trace_checkpoint).get("schema")
+        if (
+            not isinstance(semantic_trace_checkpoint_schema, int)
+            or semantic_trace_checkpoint_schema <= 0
+        ):
+            raise SystemExit(
+                "parity evidence: semantic trace checkpoint requires a positive schema"
+            )
+    oracle_checkpoint_artifacts = {
+        str(path.relative_to(session)): sha256_file(path)
+        for path in sorted(oracle_checkpoints.rglob("*"))
+        if path.is_file()
+    } if oracle_checkpoints.is_dir() else {}
     cache_identity = {
         "schema": CACHE_SCHEMA,
         "core_sha256": identity["core_sha256"],
@@ -486,7 +522,15 @@ def cache_oracle_session(
         "oracle_evidence": {
             "semantic_receipts_schema": 1 if frame_receipts.is_file() else 0,
             "timing_host_receipts_schema": timing_host_receipts_schema,
+            "semantic_trace_checkpoint_schema": semantic_trace_checkpoint_schema,
             "canonical_av_hash_ledger_schema": _av_hash_evidence_schema(av_hashes),
+            "oracle_checkpoint_schema": (
+                session_manifest.get("oracle_checkpoints", {}).get("schema", 0)
+            ),
+            "oracle_checkpoint_interval": (
+                session_manifest.get("oracle_checkpoints", {}).get("interval")
+            ),
+            "oracle_checkpoint_artifact_sha256": oracle_checkpoint_artifacts,
         },
     }
     key = stable_hash(cache_identity)
@@ -505,6 +549,8 @@ def cache_oracle_session(
             source = session / name
             if source.is_file():
                 shutil.copy2(source, temporary / name)
+        if oracle_checkpoints.is_dir():
+            shutil.copytree(oracle_checkpoints, temporary / "oracle-checkpoints")
         receipt_count = 0
         if frame_receipts.is_file():
             receipt_count = _extract_oracle_frame_receipts(
@@ -515,7 +561,11 @@ def cache_oracle_session(
             av_hash_count = _extract_oracle_av_hashes(
                 av_hashes, temporary / "oracle-av-hashes.jsonl"
             )
-        copied = sorted(path.name for path in temporary.iterdir() if path.is_file())
+        copied = sorted(
+            str(path.relative_to(temporary))
+            for path in temporary.rglob("*")
+            if path.is_file()
+        )
         if not any(name.startswith("oracle_") or name.startswith("oracle-") or name == "snes9x-trace.jsonl" for name in copied):
             raise SystemExit(f"parity evidence: {session} contains no reusable oracle artifacts")
         manifest = {

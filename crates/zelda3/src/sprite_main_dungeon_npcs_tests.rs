@@ -243,13 +243,55 @@ fn chicken_hopping_bounces_when_z_wraps_negative() {
     s.sprite_slot_view_mut(k).set_z_velocity((-16i8) as u8);
     s.sprite_slot_view_mut(k).set_delay_main(0);
     s.sprite_slot_view_mut(k).set_subtype2(0x0f);
-    s.chicken_hopping(k);
+    s.chicken_hopping(k, 0);
     assert_eq!(s.sprite_slot_view(k).z(), 0);
     assert_eq!(s.sprite_slot_view(k).z_velocity(), 10);
     assert_eq!(s.sprite_slot_view(k).delay_main(), 32);
     assert_eq!(s.sprite_slot_view(k).ai_state(), 0);
     assert_eq!(s.sprite_slot_view(k).subtype2(), 0x13);
     assert_eq!(s.sprite_slot_view(k).graphics(), 1);
+}
+
+#[test]
+fn cucco_avenger_coordinates_preserve_the_rng_carry_across_rom_adc_chain() {
+    // Cold-route frame 56,373 reaches ROM $06:a7f5 with RNG=$5a and carry set.
+    // $06:a7ff-$06:a80a adds that byte and carry to BG2HOFS, producing $00fb;
+    // the decompiled `x += t` expression alone would incorrectly produce $00fa.
+    assert_eq!(
+        cucco_avenger_spawn_coordinates(
+            crate::rom_random::RomRandomResult::new(0x5a, true),
+            0x00a0,
+            0x08a7,
+        ),
+        (0x00fb, 0x08a7),
+    );
+    assert_eq!(
+        cucco_avenger_spawn_coordinates(
+            crate::rom_random::RomRandomResult::new(0x5a, false),
+            0x00a0,
+            0x08a7,
+        ),
+        (0x00fa, 0x08a7),
+    );
+
+    // The high-byte ADC carry-out from the first coordinate is the carry-in
+    // for the second coordinate in both ROM branches.
+    assert_eq!(
+        cucco_avenger_spawn_coordinates(
+            crate::rom_random::RomRandomResult::new(0x02, true),
+            0xfffe,
+            0x1234,
+        ),
+        (0x0001, 0x1235),
+    );
+    assert_eq!(
+        cucco_avenger_spawn_coordinates(
+            crate::rom_random::RomRandomResult::new(0x01, true),
+            0x1234,
+            0xfffe,
+        ),
+        (0x1334, 0x0000),
+    );
 }
 
 #[test]

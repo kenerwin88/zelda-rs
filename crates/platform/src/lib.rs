@@ -379,6 +379,36 @@ impl NativeFrontend {
         report
     }
 
+    /// Render one live modern-asset frame into the production renderer's
+    /// persistent offscreen target. Unlike the interactive presentation path,
+    /// this does not acquire a surface texture, submit a presentation blit, or
+    /// call `present`, so parity/readback workloads cannot be display-paced.
+    pub fn render_modern_asset_live_frame_offscreen_from_entries<T>(
+        &mut self,
+        input: renderer::ModernAssetFrameLivePresentInput<'_, '_, T>,
+    ) -> Result<renderer::ModernAssetLiveFrameReport, RenderError>
+    where
+        T: Copy + Into<(u8, u16, u16)>,
+    {
+        let gpu_frame = renderer::GpuFrame::from_capture_input(input.frame);
+        let output = if let Some(renderer) = &mut self.handler.renderer {
+            renderer.render_modern_asset_frame_offscreen_from_entries(
+                renderer::ModernAssetFramePresentInput {
+                    frame: &gpu_frame,
+                    source_entries: input.source_entries,
+                    resources: input.resources,
+                    player_indoors: input.player_indoors,
+                },
+            )?
+        } else {
+            renderer::ModernAssetFramePresentOutput {
+                result: renderer::ModernAssetFramePresentResult::Unhandled,
+                in_dungeon: input.player_indoors != 0,
+            }
+        };
+        Ok(input.stats.record_present_output(&output, input.resources))
+    }
+
     pub fn set_menu_open(&mut self, open: bool) {
         self.handler.menu_open = open;
         if open {
@@ -445,6 +475,36 @@ impl NativeFrontend {
             .renderer
             .as_ref()
             .and_then(FrameRenderer::read_modern_gpu_target_rgba)
+    }
+
+    pub fn queue_modern_gpu_target_readback(
+        &mut self,
+    ) -> Result<renderer::ModernGpuReadbackTicket, String> {
+        self.handler
+            .renderer
+            .as_mut()
+            .ok_or_else(|| "native frontend renderer is not initialized".to_string())?
+            .queue_modern_gpu_target_readback()
+    }
+
+    pub fn finish_modern_gpu_target_readback<R>(
+        &mut self,
+        ticket: renderer::ModernGpuReadbackTicket,
+        consume: impl FnOnce(renderer::ModernGpuReadbackView<'_>) -> R,
+    ) -> Result<R, String> {
+        self.handler
+            .renderer
+            .as_mut()
+            .ok_or_else(|| "native frontend renderer is not initialized".to_string())?
+            .finish_modern_gpu_target_readback(ticket, consume)
+    }
+
+    pub fn modern_source_gpu_timing_millis(&self) -> (u128, u128, u128, u128) {
+        self.handler
+            .renderer
+            .as_ref()
+            .map(FrameRenderer::modern_source_gpu_timing_millis)
+            .unwrap_or_default()
     }
 
     pub fn read_modern_gpu_screen_pixel(&self, x: u32, y: u32) -> Option<(u32, u32)> {

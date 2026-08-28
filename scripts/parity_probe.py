@@ -70,11 +70,25 @@ TRACE_PATCHES = (
     / "snes9x-libretro"
     / "patches"
     / "zelda3-trace-presented-window-mask.patch",
+    ROOT
+    / "external"
+    / "snes9x-libretro"
+    / "patches"
+    / "zelda3-trace-joypad-publication.patch",
 )
 ORACLE_LOCK = ROOT / "external" / "snes9x-libretro" / "oracle-lock.json"
 IDENTITY_NAME = "probe-identity.json"
 INSTRUMENTED_SYMBOL = b"zelda3_snes9x_debug_ppu_value"
 SOURCE_DIRS = ("crates", "zelda3-bin")
+PAIRED_RESUME_SCHEMA = 2
+SHA256_RE = re.compile(r"[0-9a-f]{64}")
+PAIRED_RESUME_ARTIFACTS = (
+    ("rust_state", "Rust state"),
+    ("oracle_state", "oracle state"),
+    ("original_timing_resume_checkpoint", "original-timing checkpoint"),
+    ("semantic_trace_checkpoint", "semantic-trace checkpoint"),
+    ("initial_sram", "initial SRAM"),
+)
 
 # `display_register_values` in zelda3-bin/src/snes9x_compare.rs flattens the
 # register domain in this order.
@@ -116,6 +130,13 @@ class FailureFocus(NamedTuple):
     directory: Path
     frame: int
     pixel: tuple[int, int] | None
+
+
+class ValidatedCheckpointGeneration(NamedTuple):
+    frame: int
+    directory: Path
+    manifest: dict[str, object]
+    identity: dict[str, object] | None
 
 
 def parse_frame_range(value: str) -> tuple[int, int]:
@@ -471,6 +492,11 @@ def option_value(argv: list[str], name: str) -> str | None:
     return None
 
 
+def replay_path(value: str) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else ROOT / path
+
+
 def source_start_arguments(replay_argv: list[str], binary: Path) -> list[str]:
     load_sram = option_value(replay_argv, "--load-sram")
     rust_state = option_value(replay_argv, "--resume-rust-state")
@@ -620,9 +646,10 @@ def checkpoint_identity(
     rom_sha: str | None,
     input_path: Path,
     rom_random_path: Path | None,
+    initial_sram_path: Path | None,
 ) -> dict[str, object]:
     return {
-        "schema": 1,
+        "schema": PAIRED_RESUME_SCHEMA,
         "requested_frame": frame,
         "binary": binary_identity(binary),
         "git": working_tree_identity(),
@@ -630,8 +657,138 @@ def checkpoint_identity(
         "rom_sha256": rom_sha,
         "input_sha256": sha256_file(input_path),
         "rom_random_sha256": sha256_file(rom_random_path) if rom_random_path else None,
+        "initial_sram_sha256": (
+            sha256_file(initial_sram_path) if initial_sram_path else None
+        ),
         "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
+
+
+def _safe_checkpoint_member(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    member = Path(value)
+    return value if member.name == value and not member.is_absolute() else None
+
+
+def _checkpoint_sha256(value: object) -> str | None:
+    return value if isinstance(value, str) and SHA256_RE.fullmatch(value) else None
+
+
+def _load_json_object(path: Path) -> tuple[dict[str, object] | None, str | None]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        return None, f"cannot read {path.name}: {error}"
+    if not isinstance(value, dict):
+        return None, f"{path.name} is not a JSON object"
+    return value, None
+
+
+def _schema2_checkpoint_generation(
+    checkpoint_dir: Path,
+) -> tuple[ValidatedCheckpointGeneration | None, str | None]:
+    """Resolve and fully validate one schema-2 paired-resume generation."""
+    latest_frame: int | None = None
+    manifest_path = checkpoint_dir / "manifest.json"
+    generation = checkpoint_dir
+    if not manifest_path.is_file():
+        latest_path = checkpoint_dir / "latest.json"
+        if not latest_path.is_file():
+            return None, "no saved checkpoint generation"
+        latest, problem = _load_json_object(latest_path)
+        if problem is not None:
+            return None, f"invalid paired checkpoint latest receipt: {problem}"
+        assert latest is not None
+        schema = latest.get("schema")
+        if schema != PAIRED_RESUME_SCHEMA:
+            return None, (
+                f"unsupported paired checkpoint schema {schema!r} in latest.json; "
+                f"schema {PAIRED_RESUME_SCHEMA} is required"
+            )
+        latest_frame_value = latest.get("frame")
+        if (
+            not isinstance(latest_frame_value, int)
+            or isinstance(latest_frame_value, bool)
+            or latest_frame_value < 0
+        ):
+            return None, "paired checkpoint latest receipt has an invalid frame"
+        checkpoint = _safe_checkpoint_member(latest.get("checkpoint"))
+        if checkpoint is None:
+            return None, "paired checkpoint latest receipt has an unsafe checkpoint path"
+        latest_frame = latest_frame_value
+        generation = checkpoint_dir / checkpoint
+        manifest_path = generation / "manifest.json"
+        if not manifest_path.is_file():
+            return None, "paired checkpoint latest receipt names a missing generation"
+
+    manifest, problem = _load_json_object(manifest_path)
+    if problem is not None:
+        return None, f"invalid paired checkpoint manifest: {problem}"
+    assert manifest is not None
+    schema = manifest.get("schema")
+    if schema != PAIRED_RESUME_SCHEMA:
+        return None, (
+            f"unsupported paired checkpoint schema {schema!r}; "
+            f"schema {PAIRED_RESUME_SCHEMA} is required"
+        )
+    if manifest.get("boundary") != "pre-frame":
+        return None, "paired checkpoint is not a pre-frame boundary"
+    if manifest.get("cpu_boundary") != "quiescent":
+        return None, "paired checkpoint is not a quiescent CPU boundary"
+    frame = manifest.get("frame")
+    if not isinstance(frame, int) or isinstance(frame, bool) or frame < 0:
+        return None, "paired checkpoint manifest has an invalid frame"
+    if latest_frame is not None and latest_frame != frame:
+        return None, (
+            f"paired checkpoint latest frame {latest_frame} does not match "
+            f"generation frame {frame}"
+        )
+
+    for key, label in PAIRED_RESUME_ARTIFACTS:
+        record = manifest.get(key)
+        if not isinstance(record, dict):
+            return None, f"paired checkpoint {label} is not a typed artifact receipt"
+        artifact = _safe_checkpoint_member(record.get("artifact"))
+        expected_sha = _checkpoint_sha256(record.get("sha256"))
+        if artifact is None:
+            return None, f"paired checkpoint {label} has an unsafe artifact path"
+        if expected_sha is None:
+            return None, f"paired checkpoint {label} has an invalid SHA-256 receipt"
+        artifact_path = generation / artifact
+        if not artifact_path.is_file():
+            return None, f"paired checkpoint is missing its {label} artifact"
+        if sha256_file(artifact_path) != expected_sha:
+            return None, f"paired checkpoint {label} hash does not match its receipt"
+
+    identity: dict[str, object] | None = None
+    identity_path = checkpoint_dir / IDENTITY_NAME
+    if identity_path.is_file():
+        identity, problem = _load_json_object(identity_path)
+        if problem is not None:
+            return None, f"unreadable probe identity: {problem}"
+        assert identity is not None
+        if identity.get("schema") != PAIRED_RESUME_SCHEMA:
+            return None, "probe identity schema changed"
+        saved_frame = identity.get("saved_frame")
+        if saved_frame is not None and saved_frame != frame:
+            return None, "probe identity frame does not match paired checkpoint manifest"
+
+    return ValidatedCheckpointGeneration(frame, generation, manifest, identity), None
+
+
+def _manifest_provenance_sha(
+    manifest: dict[str, object], key: str
+) -> tuple[str | None, str | None]:
+    record = manifest.get(key)
+    if record is None:
+        return None, None
+    if not isinstance(record, dict):
+        return None, f"paired checkpoint {key} provenance is not a typed receipt"
+    value = _checkpoint_sha256(record.get("sha256"))
+    if value is None:
+        return None, f"paired checkpoint {key} provenance has an invalid SHA-256"
+    return value, None
 
 
 def checkpoint_reuse_problem(
@@ -641,61 +798,36 @@ def checkpoint_reuse_problem(
     trust_cross_build: bool = False,
 ) -> str | None:
     """Return why `checkpoint_dir` cannot be resumed, or None when it can."""
+    validated, problem = _schema2_checkpoint_generation(checkpoint_dir)
+    if problem is not None:
+        return problem
+    assert validated is not None
+
+    # Cross-build mode permits only a different Rust executable. The schema-2
+    # manifest remains the sole replay authority: a mutable probe identity may
+    # never fill in or override source provenance.
+    for wanted_key, manifest_key, label in (
+        ("core_sha256", "core", "core"),
+        ("rom_sha256", "rom", "rom"),
+        ("input_sha256", "input_script", "input"),
+        ("rom_random_sha256", "rom_random_script", "rom_random"),
+        ("initial_sram_sha256", "initial_sram", "initial_sram"),
+    ):
+        if wanted_key not in wanted:
+            return f"current probe has no {label} provenance"
+        recorded, provenance_problem = _manifest_provenance_sha(
+            validated.manifest, manifest_key
+        )
+        if provenance_problem is not None:
+            return provenance_problem
+        if recorded != wanted[wanted_key]:
+            return f"{label} changed since the checkpoint was saved"
+
     if trust_cross_build:
-        saved = checkpoint_generation(checkpoint_dir)
-        if saved is None:
-            return "no saved checkpoint generation"
-        _, generation = saved
-        try:
-            manifest = json.loads((generation / "manifest.json").read_text(encoding="utf-8"))
-            members = [str(manifest[name]) for name in ("rust_state", "oracle_state")]
-        except (OSError, json.JSONDecodeError, KeyError, TypeError):
-            return "invalid paired checkpoint manifest"
-        if any(Path(member).name != member for member in members):
-            return "paired checkpoint manifest contains an unsafe state path"
-        if not all((generation / member).is_file() for member in members):
-            return "paired checkpoint is missing a state file"
-        # Cross-build trust permits a different Rust binary, not a different
-        # replay. Input and recorded cartridge RNG are part of the savestate's
-        # causal history; mixing them can look like a parity regression many
-        # frames after the resume point. Exact precommit checkpoints record
-        # those hashes in their own manifest, while rolling probe checkpoints
-        # also have an identity sidecar.
-        identity: dict[str, object] = {}
-        identity_path = checkpoint_dir / IDENTITY_NAME
-        if identity_path.is_file():
-            try:
-                identity = json.loads(identity_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                return "unreadable probe identity"
-        provenance = {
-            "rom_sha256": (manifest.get("rom") or {}).get("sha256"),
-            "input_sha256": (manifest.get("input_script") or {}).get("sha256"),
-            "rom_random_sha256": (manifest.get("rom_random_script") or {}).get("sha256"),
-        }
-        for key, label in (
-            ("rom_sha256", "rom"),
-            ("input_sha256", "input"),
-            ("rom_random_sha256", "rom_random"),
-        ):
-            if key not in wanted:
-                continue
-            has_identity_value = key in identity
-            recorded = identity.get(key) if has_identity_value else provenance[key]
-            if recorded is None and not has_identity_value:
-                return f"paired checkpoint has no recorded {label} provenance"
-            if recorded != wanted[key]:
-                return f"{label} changed since the checkpoint was saved"
         return None
-    identity_path = checkpoint_dir / IDENTITY_NAME
-    if not identity_path.is_file():
+    if validated.identity is None:
         return "no probe identity recorded"
-    if latest_generation(checkpoint_dir) is None:
-        return "no saved checkpoint generation"
-    try:
-        stored = json.loads(identity_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return "unreadable probe identity"
+    stored = validated.identity
     if stored.get("schema") != wanted["schema"]:
         return "probe identity schema changed"
     stored_binary = stored.get("binary") or {}
@@ -703,7 +835,13 @@ def checkpoint_reuse_problem(
     assert isinstance(wanted_binary, dict)
     if stored_binary.get("sha256") != wanted_binary["sha256"]:
         return "zelda3 binary changed since the checkpoint was saved"
-    for key in ("core_sha256", "rom_sha256", "input_sha256", "rom_random_sha256"):
+    for key in (
+        "core_sha256",
+        "rom_sha256",
+        "input_sha256",
+        "rom_random_sha256",
+        "initial_sram_sha256",
+    ):
         if stored.get(key) != wanted[key]:
             return f"{key.removesuffix('_sha256')} changed since the checkpoint was saved"
     return None
@@ -1490,7 +1628,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--trust-cross-build-checkpoint",
         action="store_true",
-        help="reuse a paired checkpoint after code changes for diagnostics only; cold proof is still required",
+        help=(
+            "reuse a schema-2 paired checkpoint after code changes for diagnostics only; "
+            "all artifact hashes and replay provenance remain mandatory"
+        ),
     )
     parser.add_argument(
         "--no-checkpoint",
@@ -1699,9 +1840,17 @@ def main(argv: list[str] | None = None) -> int:
                 frame=checkpoint_frame,
                 binary=binary,
                 core_sha=core_sha or "",
-                rom_sha=option_value(replay_argv, "--expected-rom-sha256"),
+                rom_sha=(
+                    option_value(replay_argv, "--expected-rom-sha256")
+                    or sha256_file(replay_path(rom))
+                ),
                 input_path=input_path,
                 rom_random_path=rom_random,
+                initial_sram_path=(
+                    replay_path(load_sram)
+                    if (load_sram := option_value(replay_argv, "--load-sram"))
+                    else None
+                ),
             )
             problem = checkpoint_reuse_problem(
                 checkpoint_dir,
@@ -1716,8 +1865,9 @@ def main(argv: list[str] | None = None) -> int:
             if problem is None:
                 if args.trust_cross_build_checkpoint:
                     print(
-                        "parity-probe: TRUSTED CROSS-BUILD CHECKPOINT; this can mask earlier "
-                        "state changes and is never authoritative proof"
+                        "parity-probe: SCHEMA-2 VALIDATED CROSS-BUILD CHECKPOINT; only the "
+                        "Rust binary hash differs, so this remains diagnostic and can mask "
+                        "earlier state changes"
                     )
                 saved = saved_checkpoint_frame(checkpoint_dir)
                 if (

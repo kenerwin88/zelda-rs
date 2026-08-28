@@ -1301,6 +1301,28 @@ fn faded_filter_caller_return_retains_every_previously_presented_display_memory_
 }
 
 #[test]
+fn authoritative_presented_cgram_outranks_a_native_retained_generation() {
+    let mut state = ZeldaState::new();
+    state.ppu.cgram[35] = 0x1111;
+    let mut following = captured_display_snapshot();
+    let mut authority = following.ppu.cgram.clone();
+    authority[35] = 0x2222;
+    following.cgram_scanout_override = Some(authority.clone());
+    let plan = DisplayPublicationPlan::resolve(
+        &following,
+        DisplayPublicationSignals {
+            retain_previous_nmi_display_memory: true,
+            ..DisplayPublicationSignals::default()
+        },
+    );
+    assert!(!plan.compose_live_cgram);
+
+    state.compose_display_cgram(&following, &plan);
+
+    assert_eq!(state.ppu.cgram, authority);
+}
+
+#[test]
 fn spiral_stair_landing_decodes_live_link_obj_cache_without_advancing_raw_vram() {
     let mut state = ZeldaState::new();
     state.ppu.vram[0x4000] = 0x1111;

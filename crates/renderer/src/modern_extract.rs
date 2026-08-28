@@ -1242,6 +1242,34 @@ fn content_hash32_slot(vram: &[u16], slot: usize) -> u32 {
     h
 }
 
+/// Per-extraction memoization for immutable 4bpp CHR input. Tilemaps and OAM
+/// routinely reference the same CHR slot many times in one frame; recomputing
+/// its content hash and decoded pixels for every instance is redundant. The
+/// cache is deliberately frame-local, so it cannot hide a later VRAM upload or
+/// turn source provenance into cross-frame state.
+#[derive(Default)]
+struct FourBppFrameCache {
+    content_hashes: HashMap<usize, u32>,
+    decoded_tiles: HashMap<(usize, u16), [u8; 64]>,
+}
+
+impl FourBppFrameCache {
+    fn content_hash(&mut self, vram: &[u16], slot: usize) -> u32 {
+        *self
+            .content_hashes
+            .entry(slot)
+            .or_insert_with(|| content_hash32_slot(vram, slot))
+    }
+
+    fn decode(&mut self, vram: &[u16], chr_base_words: usize, tilemap_entry: u16) -> [u8; 64] {
+        let key = (chr_base_words, tilemap_entry & 0xc3ff);
+        *self
+            .decoded_tiles
+            .entry(key)
+            .or_insert_with(|| decode_snes_4bpp_tile_indices(vram, chr_base_words, tilemap_entry))
+    }
+}
+
 fn index_pattern_hash32(indices: &[u8; 64]) -> u32 {
     let mut h: u32 = 0x811c_9dc5;
     for &b in indices {
@@ -1410,6 +1438,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
     // injective BG3 keys and drops ambiguous ones. Use kept source cells as PNG-backed
     // art; keep live decode for the dropped dynamic glyph slots.
     let mut bg3_cell_ids: HashMap<(usize, u16), u32> = HashMap::new();
+    let mut four_bpp_cache = FourBppFrameCache::default();
 
     for layer_index in 0..3usize {
         let enabled_main = frame.screen_enabled[0] & (1 << layer_index) != 0;
@@ -1587,7 +1616,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                     if kind == CHR_KIND_BG_STREAM {
                         // Re-derive the content-hash key from the FRAME-END pixels (see
                         // `content_hash32_slot`) so it matches how the assets dump keys.
-                        let h = content_hash32_slot(bg_vram, slot);
+                        let h = four_bpp_cache.content_hash(bg_vram, slot);
                         pack = (h >> 16) as u16;
                         tile_off = (h & 0xffff) as u16;
                     }
@@ -1606,7 +1635,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                     // fallback.
                     let injective = kind == CHR_KIND_BG_STREAM;
                     if !injective {
-                        let h = content_hash32_slot(bg_vram, slot);
+                        let h = four_bpp_cache.content_hash(bg_vram, slot);
                         kind = CHR_KIND_BG_STREAM;
                         pack = (h >> 16) as u16;
                         tile_off = (h & 0xffff) as u16;
@@ -1618,7 +1647,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                         )
                     });
                     if kind == CHR_KIND_BG_STREAM {
-                        let live = decode_snes_4bpp_tile_indices(
+                        let live = four_bpp_cache.decode(
                             bg_vram,
                             frame.bg[layer_index].tile_adr as usize,
                             tile_number as u16,
@@ -1630,7 +1659,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                     if injective || source_hit.is_some() {
                         if dbg && layer_index < 2 {
                             dbg_total += 1;
-                            let live = decode_snes_4bpp_tile_indices(
+                            let live = four_bpp_cache.decode(
                                 bg_vram,
                                 frame.bg[layer_index].tile_adr as usize,
                                 tile_number as u16,
@@ -1693,8 +1722,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                                 let pal = ((entry_word >> 10) & 7) as u8;
                                 let chr_base = frame.bg[layer_index].tile_adr as usize;
                                 let pattern_key = entry_word & 0xC3FF;
-                                let indices =
-                                    decode_snes_4bpp_tile_indices(bg_vram, chr_base, pattern_key);
+                                let indices = four_bpp_cache.decode(bg_vram, chr_base, pattern_key);
                                 if let Some((source_key, src)) =
                                     source_cell_by_indices(atlas, &indices)
                                 {
@@ -1750,7 +1778,7 @@ fn extract_modern_frame_from_sources_with_missing_sources<S: SourceTableView + ?
                         let pal = ((entry_word >> 10) & 7) as u8;
                         let chr_base = frame.bg[layer_index].tile_adr as usize;
                         let pattern_key = entry_word & 0xC3FF;
-                        let indices = decode_snes_4bpp_tile_indices(
+                        let indices = four_bpp_cache.decode(
                             frame.bg_vram.unwrap_or(frame.vram),
                             chr_base,
                             pattern_key,
@@ -2155,6 +2183,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
     let obj = &frame.obj;
     let obj_vram = frame.obj_vram();
     let drawn = compute_obj_drawn_tiles(frame);
+    let mut four_bpp_cache = FourBppFrameCache::default();
     let mut cells: Vec<ModernIndexTile> = Vec::new();
     // atlas cell id -> local dense cell id
     let mut cell_ids: HashMap<u32, u32> = HashMap::new();
@@ -2243,7 +2272,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                     // from the FRAME-END pixels so it matches the assets dump (the tag the
                     // game wrote at rehash time can desync from the drawn pixels because
                     // sprite CHR uploads incrementally). See `content_hash32_slot`.
-                    let h = content_hash32_slot(obj_vram, slot);
+                    let h = four_bpp_cache.content_hash(obj_vram, slot);
                     pack = (h >> 16) as u16;
                     tile_off = (h & 0xffff) as u16;
                 }
@@ -2251,14 +2280,14 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                 // pose DMA offsets are reused across poses, but the frame-end tile pixels
                 // are injective enough to select the exact PNG/source cell.
                 let content_key = if kind == CHR_KIND_LINK {
-                    let h = content_hash32_slot(obj_vram, slot);
+                    let h = four_bpp_cache.content_hash(obj_vram, slot);
                     Some((CHR_KIND_LINK_CONTENT, (h >> 16) as u16, (h & 0xffff) as u16))
                 } else if kind == 0 {
                     // Reset-time OBJ has no logical upload record yet. Its
                     // pattern still has a deterministic PNG asset identity;
                     // use a content-addressed sprite key so the renderer
                     // selects canonical art instead of rendering VRAM bytes.
-                    let h = content_hash32_slot(obj_vram, slot);
+                    let h = four_bpp_cache.content_hash(obj_vram, slot);
                     Some((2, (h >> 16) as u16, (h & 0xffff) as u16))
                 } else {
                     None
@@ -2296,7 +2325,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                     // considering it unresolved. This is asset selection, not
                     // a VRAM render fallback: the emitted cell and source key
                     // both come from the source atlas.
-                    let indices = decode_snes_4bpp_tile_indices(obj_vram, slot * 16, 0);
+                    let indices = four_bpp_cache.decode(obj_vram, slot * 16, 0);
                     if indices.iter().all(|index| *index == 0) {
                         continue;
                     }
@@ -2320,7 +2349,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                         if std::env::var_os("ZELDA3_DEBUG_ASSET_COVERAGE").is_some() {
                             eprintln!(
                                 "unresolved_sprite_source slot={slot:04x} source=({kind},{pack:04x},{tile_off:04x}) content_key={:08x} indices={}",
-                                content_hash32_slot(obj_vram, slot),
+                                four_bpp_cache.content_hash(obj_vram, slot),
                                 indices
                                     .iter()
                                     .map(|index| format!("{index:x}"))
@@ -2349,7 +2378,7 @@ pub fn extract_modern_sprites_from_sources<S: SourceTableView + ?Sized>(
                         && debug_y >= screen_y
                         && debug_y < screen_y + 8
                 }) {
-                    let raw_indices = decode_snes_4bpp_tile_indices(obj_vram, slot * 16, 0);
+                    let raw_indices = four_bpp_cache.decode(obj_vram, slot * 16, 0);
                     let resolved_cell = &cells[cell_id as usize];
                     let palette_start = 0x80 + usize::from(palette) * 16;
                     eprintln!(
@@ -4052,6 +4081,41 @@ mod tests {
         );
         assert_eq!(sprites[0].cell_id, 0);
         assert_eq!(sprites[0].palette, 4);
+    }
+
+    #[test]
+    fn four_bpp_frame_cache_matches_direct_decode_and_does_not_cross_frames() {
+        const BASE: usize = 0x2000;
+        const TILE: u16 = 4;
+        let mut vram = vec![0u16; 0x8000];
+        let tile_base = BASE + usize::from(TILE) * 16;
+        vram[tile_base] = 0x00ff;
+        vram[tile_base + 8] = 0xff00;
+
+        let slot = BASE / 16 + usize::from(TILE);
+        let mut first_frame = FourBppFrameCache::default();
+        assert_eq!(
+            first_frame.content_hash(&vram, slot),
+            content_hash32_slot(&vram, slot)
+        );
+        for entry in [TILE, TILE | 0x4000, TILE | 0x8000, TILE | 0xc000] {
+            assert_eq!(
+                first_frame.decode(&vram, BASE, entry),
+                decode_snes_4bpp_tile_indices(&vram, BASE, entry)
+            );
+        }
+
+        vram[tile_base] ^= 0xffff;
+        let mut next_frame = FourBppFrameCache::default();
+        assert_eq!(
+            next_frame.content_hash(&vram, slot),
+            content_hash32_slot(&vram, slot)
+        );
+        assert_ne!(
+            next_frame.content_hash(&vram, slot),
+            first_frame.content_hash(&vram, slot),
+            "a new frame derives its cache from the new immutable VRAM snapshot"
+        );
     }
 
     #[test]

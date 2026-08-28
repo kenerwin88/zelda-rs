@@ -1,0 +1,22 @@
+diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
+--- a/zelda3_trace.cpp
++++ b/zelda3_trace.cpp
+@@ -359,6 +359,9 @@ void write_machine_state(const char *event)
+ 		"\"spotlight_radius\":%u,\"spotlight_state\":%u,"
++		"\"spotlight_var4_low\":%u,\"spotlight_lower_cursor\":%u,"
+ 		"\"rng_seed\":%u,\"nmi_latch\":%u,\"nmi_disable\":%u,\"nmi_pending\":%u,"
++		"\"joypad_high\":%u,\"joypad_low\":%u,"
++		"\"joypad_high_filtered\":%u,\"joypad_low_filtered\":%u,"
+ 		"\"return_address\":%u,"
+ 		"\"stack1\":%u,\"stack2\":%u,\"stack3\":%u,\"stack4\":%u",
+ 		event, (unsigned long long) retro_run_index, IPPU.TotalEmulatedFrames,
+@@ -381,5 +384,9 @@ void write_machine_state(const char *event)
+ 		Memory.RAM[0x067e] | (Memory.RAM[0x067f] << 8),
++		Memory.RAM[0x067a],
++		Memory.RAM[0x0006] | (Memory.RAM[0x0007] << 8),
+ 		Memory.RAM[0x0fa1], Memory.RAM[0x12],
+-		Memory.RAM[0x0710], Memory.RAM[0x17], return_address,
++		Memory.RAM[0x0710], Memory.RAM[0x17],
++		Memory.RAM[0x00f0], Memory.RAM[0x00f2],
++		Memory.RAM[0x00f4], Memory.RAM[0x00f6], return_address,
+ 		Memory.RAM[(Registers.S.W + 1) & 0xffff],

@@ -103,6 +103,51 @@ impl Sha256Digest {
         self.0.update(bytes);
     }
 
+    /// Feed canonical RGB bytes from one or more tightly packed RGBA chunks.
+    /// Packing a bounded block before updating SHA-256 preserves the exact byte
+    /// stream while avoiding one digest call per pixel. The scratch storage is
+    /// stack-owned and independent of frame size.
+    pub fn update_rgb_from_rgba<'a, I>(&mut self, chunks: I)
+    where
+        I: IntoIterator<Item = &'a [u8]>,
+    {
+        const PACKED_BYTES: usize = 12 * 1024;
+        let mut packed = [0u8; PACKED_BYTES];
+        let mut used = 0usize;
+        for chunk in chunks {
+            for pixel in chunk.chunks_exact(4) {
+                if used + 3 > packed.len() {
+                    self.update(&packed[..used]);
+                    used = 0;
+                }
+                packed[used..used + 3].copy_from_slice(&pixel[..3]);
+                used += 3;
+            }
+        }
+        if used != 0 {
+            self.update(&packed[..used]);
+        }
+    }
+
+    /// Feed signed samples in the canonical little-endian interleaved format
+    /// without issuing one digest update per sample.
+    pub fn update_i16_le(&mut self, samples: &[i16]) {
+        const PACKED_BYTES: usize = 8 * 1024;
+        let mut packed = [0u8; PACKED_BYTES];
+        let mut used = 0usize;
+        for sample in samples {
+            if used + 2 > packed.len() {
+                self.update(&packed[..used]);
+                used = 0;
+            }
+            packed[used..used + 2].copy_from_slice(&sample.to_le_bytes());
+            used += 2;
+        }
+        if used != 0 {
+            self.update(&packed[..used]);
+        }
+    }
+
     pub fn finish(self) -> String {
         format!("{:x}", self.0.finalize())
     }
@@ -600,8 +645,10 @@ fn stable_hash(value: &Value) -> Result<String, String> {
 fn safe_artifact_name(name: &str) -> bool {
     let path = Path::new(name);
     !path.is_absolute()
-        && path.components().count() == 1
-        && matches!(path.components().next(), Some(Component::Normal(_)))
+        && path.components().count() != 0
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
 }
 
 pub fn verify_oracle_cache_entry(cache: &Path) -> Result<CacheInventory, String> {
@@ -676,9 +723,30 @@ pub fn verify_oracle_cache_entry(cache: &Path) -> Result<CacheInventory, String>
             ));
         }
         let path = cache.join(&name);
-        let metadata = fs::symlink_metadata(&path)
-            .map_err(|_| format!("immutable oracle cache is corrupt: {}", path.display()))?;
-        if !metadata.file_type().is_file() || sha256_file(&path)? != expected {
+        let mut current = cache.to_path_buf();
+        let components = Path::new(&name).components().collect::<Vec<_>>();
+        let mut metadata = None;
+        for (index, component) in components.iter().enumerate() {
+            let Component::Normal(component) = component else {
+                unreachable!("safe_artifact_name accepted only normal components")
+            };
+            current.push(component);
+            let current_metadata = fs::symlink_metadata(&current)
+                .map_err(|_| format!("immutable oracle cache is corrupt: {}", current.display()))?;
+            let final_component = index + 1 == components.len();
+            if current_metadata.file_type().is_symlink()
+                || (final_component && !current_metadata.file_type().is_file())
+                || (!final_component && !current_metadata.file_type().is_dir())
+            {
+                return Err(format!(
+                    "immutable oracle cache is corrupt: {}",
+                    current.display()
+                ));
+            }
+            metadata = Some(current_metadata);
+        }
+        let metadata = metadata.expect("safe artifact path has at least one component");
+        if sha256_file(&path)? != expected {
             return Err(format!(
                 "immutable oracle cache is corrupt: {}",
                 path.display()
@@ -738,6 +806,36 @@ pub fn verify_oracle_cache_root(root: &Path) -> Result<CacheInventory, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn packed_rgba_rgb_updates_match_the_canonical_per_pixel_stream() {
+        let rows = [
+            [1u8, 2, 3, 4, 5, 6, 7, 8],
+            [9u8, 10, 11, 12, 13, 14, 15, 16],
+        ];
+        let mut canonical = Sha256Digest::new();
+        for row in &rows {
+            for pixel in row.chunks_exact(4) {
+                canonical.update(&pixel[..3]);
+            }
+        }
+        let mut packed = Sha256Digest::new();
+        packed.update_rgb_from_rgba(rows.iter().map(<[u8; 8]>::as_slice));
+        assert_eq!(packed.finish(), canonical.finish());
+    }
+
+    #[test]
+    fn packed_i16_updates_match_the_canonical_little_endian_stream() {
+        let samples = [i16::MIN, -1, 0, 1, i16::MAX];
+        let mut canonical = Sha256Digest::new();
+        for sample in samples {
+            canonical.update(&sample.to_le_bytes());
+        }
+        let mut packed = Sha256Digest::new();
+        packed.update_i16_le(&samples);
+        assert_eq!(packed.finish(), canonical.finish());
+    }
+
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -894,5 +992,38 @@ mod tests {
         assert!(verify_oracle_cache_root(&temporary.0)
             .unwrap_err()
             .contains("corrupt"));
+    }
+
+    #[test]
+    fn cache_verifier_accepts_nested_files_but_rejects_path_escape() {
+        assert!(safe_artifact_name(
+            "oracle-checkpoints/frame-00005000/oracle.state"
+        ));
+        assert!(!safe_artifact_name("../oracle.state"));
+        assert!(!safe_artifact_name("/tmp/oracle.state"));
+
+        let temporary = TestDirectory::new();
+        let identity = serde_json::json!({"schema": 1, "nested": true});
+        let key = stable_hash(&identity).unwrap();
+        let cache = temporary.0.join(&key);
+        let checkpoint = cache.join("oracle-checkpoints/frame-00005000");
+        fs::create_dir_all(&checkpoint).unwrap();
+        let artifact = checkpoint.join("oracle.state");
+        fs::write(&artifact, b"oracle").unwrap();
+        let name = "oracle-checkpoints/frame-00005000/oracle.state";
+        let manifest = serde_json::json!({
+            "schema": 1,
+            "kind": CACHE_KIND,
+            "cache_key": key,
+            "cache_identity": identity,
+            "artifact_sha256": {name: sha256_file(&artifact).unwrap()}
+        });
+        fs::write(
+            cache.join("cache-manifest.json"),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(verify_oracle_cache_entry(&cache).unwrap().artifacts, 1);
     }
 }

@@ -110,14 +110,25 @@ pub(crate) struct ModernAssetGpuReadbackRenderer {
     validation_stats_nanos: u128,
 }
 
-/// Snes9x oracle video renderer which exercises the same native window route
-/// as `cargo run`.  The readback comes from that window renderer's production
-/// compositor target after it has been presented to the surface; it is not an
-/// offscreen/headless substitute.
+/// Snes9x oracle video renderer which exercises the same native-window route
+/// as `cargo run`. The cold authority path presents before reading the shared
+/// production compositor target; cached development replay has a separate
+/// pipelined offscreen entry point.
 pub(crate) struct NativeWindowOracleRenderer {
     frontend: NativeFrontend,
     resources: renderer::ModernAssetFrameResources,
     live_stats: renderer::ModernAssetLiveStats,
+    capture_nanos: u128,
+    render_nanos: u128,
+    readback_submit_nanos: u128,
+    readback_nanos: u128,
+    video_hash_nanos: u128,
+}
+
+/// Single-use handle for a cached-development frame whose GPU transfer is in
+/// flight. Cold live-Snes9x comparison continues to use immediate readback.
+pub(crate) struct QueuedGpuVideoDigest {
+    ticket: renderer::ModernGpuReadbackTicket,
 }
 
 impl LiveGpuFrameCapture {
@@ -750,16 +761,101 @@ impl NativeWindowOracleRenderer {
             frontend,
             resources,
             live_stats: renderer::ModernAssetLiveStats::from_env(),
+            capture_nanos: 0,
+            render_nanos: 0,
+            readback_submit_nanos: 0,
+            readback_nanos: 0,
+            video_hash_nanos: 0,
         })
     }
 
-    pub(crate) fn render_game_rgba(
+    pub(crate) fn timing_millis(&self) -> (u128, u128, u128, u128, u128, u128, u128, u128, u128) {
+        let (source_extract, compositor_submit, history_submit, surface_present) =
+            self.frontend.modern_source_gpu_timing_millis();
+        (
+            self.capture_nanos / 1_000_000,
+            self.render_nanos / 1_000_000,
+            self.readback_submit_nanos / 1_000_000,
+            self.readback_nanos / 1_000_000,
+            self.video_hash_nanos / 1_000_000,
+            source_extract,
+            compositor_submit,
+            history_submit,
+            surface_present,
+        )
+    }
+
+    /// Render a cached-development frame offscreen and queue its transfer.
+    /// Keeping the renderer-owned pipeline depth in flight overlaps game
+    /// execution and GPU work;
+    /// no full-frame CPU allocation is made on the success path.
+    pub(crate) fn queue_game_video_digest(
         &mut self,
         game: &mut ZeldaState,
         comparison_frame: u32,
-    ) -> Result<GpuRgbaReadbackFrame, String> {
-        self.render_game_rgba_with_capture(game, comparison_frame)
-            .map(|(frame, _)| frame)
+    ) -> Result<QueuedGpuVideoDigest, String> {
+        if std::env::var_os("ZELDA3_DEBUG_DISPLAY_VRAM_PIXEL").is_some() {
+            return Err(
+                "pipelined cached readback is incompatible with per-pixel GPU diagnostics"
+                    .to_string(),
+            );
+        }
+        let timing_enabled = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
+        let capture_started = Instant::now();
+        let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(game, comparison_frame);
+        if timing_enabled {
+            self.capture_nanos += capture_started.elapsed().as_nanos();
+        }
+        let render_started = Instant::now();
+        let report = self
+            .frontend
+            .render_modern_asset_live_frame_offscreen_from_entries(
+                capture.modern_asset_present_input(&self.resources, &mut self.live_stats),
+            )
+            .map_err(|error| format!("native offscreen renderer failed: {error:?}"))?;
+        if timing_enabled {
+            self.render_nanos += render_started.elapsed().as_nanos();
+        }
+        if let Some(reason) = report.failure_line() {
+            return Err(format!(
+                "native offscreen renderer rejected frame: {reason}"
+            ));
+        }
+        let submit_started = Instant::now();
+        let ticket = self.frontend.queue_modern_gpu_target_readback()?;
+        if timing_enabled {
+            self.readback_submit_nanos += submit_started.elapsed().as_nanos();
+        }
+        Ok(QueuedGpuVideoDigest { ticket })
+    }
+
+    pub(crate) fn finish_game_video_digest(
+        &mut self,
+        queued: QueuedGpuVideoDigest,
+    ) -> Result<parity::av::VideoDigest, String> {
+        let timing_enabled = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
+        let readback_started = Instant::now();
+        let (digest, video_hash_nanos) =
+            self.frontend
+                .finish_modern_gpu_target_readback(queued.ticket, |readback| {
+                    let hash_started = Instant::now();
+                    let mut digest = parity::evidence::Sha256Digest::new();
+                    digest.update_rgb_from_rgba(readback.rows());
+                    (
+                        parity::av::VideoDigest {
+                            width: readback.width(),
+                            height: readback.height(),
+                            sha256: digest.finish(),
+                        },
+                        hash_started.elapsed().as_nanos(),
+                    )
+                })?;
+        if timing_enabled {
+            let finish_nanos = readback_started.elapsed().as_nanos();
+            self.video_hash_nanos += video_hash_nanos;
+            self.readback_nanos += finish_nanos.saturating_sub(video_hash_nanos);
+        }
+        Ok(digest)
     }
 
     pub(crate) fn render_game_rgba_with_capture(
@@ -767,7 +863,12 @@ impl NativeWindowOracleRenderer {
         game: &mut ZeldaState,
         comparison_frame: u32,
     ) -> Result<(GpuRgbaReadbackFrame, LiveGpuFrameCapture), String> {
+        let timing_enabled = std::env::var_os("ZELDA3_SNES9X_TIMING").is_some();
+        let capture_started = Instant::now();
         let capture = LiveGpuFrameCapture::from_game_at_comparison_frame(game, comparison_frame);
+        if timing_enabled {
+            self.capture_nanos += capture_started.elapsed().as_nanos();
+        }
         let debug_vram_frame = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_FRAME")
             .ok()
             .and_then(|frame| frame.parse::<u32>().ok());
@@ -845,16 +946,24 @@ impl NativeWindowOracleRenderer {
                 }
             }
         }
+        let render_started = Instant::now();
         let report = self.frontend.present_modern_asset_live_frame_from_entries(
             capture.modern_asset_present_input(&self.resources, &mut self.live_stats),
         );
+        if timing_enabled {
+            self.render_nanos += render_started.elapsed().as_nanos();
+        }
         if let Some(reason) = report.failure_line() {
             return Err(format!("native window renderer rejected frame: {reason}"));
         }
         drop(report);
+        let readback_started = Instant::now();
         let frame = self.frontend.read_modern_gpu_target_rgba().ok_or_else(|| {
             "native window renderer did not produce a modern GPU target".to_string()
         })?;
+        if timing_enabled {
+            self.readback_nanos += readback_started.elapsed().as_nanos();
+        }
         if debug_vram_frame.is_none_or(|target| target == comparison_frame) {
             if let Ok(pixel) = std::env::var("ZELDA3_DEBUG_DISPLAY_VRAM_PIXEL") {
                 if let Some((x, y)) = pixel

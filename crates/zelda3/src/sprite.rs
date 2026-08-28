@@ -2321,7 +2321,8 @@ impl ZeldaState {
         self.overlord_main();
         self.replay_trace_ram_watch("sprite-after-overlord");
         self.archery_game_mut().clear_out_of_arrows();
-        let trace_sprite_slots = std::env::var_os("ZELDA3_REPLAY_RAM_WATCH_FRAME").is_some();
+        let trace_sprite_slots = ZeldaState::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_FRAME")
+            .is_some_and(|frame| self.trace_frame_matches(frame));
 
         for k in (0..16).rev() {
             self.sprite_system_mut().set_cur_object_index(k as u8);
@@ -2355,8 +2356,80 @@ impl ZeldaState {
                 );
                 return;
             }
+            let enters_big_key_graphics = self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(k as u8));
+            if enters_big_key_graphics {
+                self.sprite_main_cpu_boundary = None;
+                assert_ne!(
+                    std::mem::take(&mut self.sprite_main_cpu_nmi_slices),
+                    0,
+                    "big-key graphics continuation requires a source timing boundary",
+                );
+                assert!(matches!(
+                    std::mem::take(&mut self.sprite_main_cpu_caller),
+                    SpriteMainCpuCaller::DungeonModule07Live { .. }
+                ));
+            }
+            let enters_item_receipt_graphics = self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(k as u8));
+            if enters_item_receipt_graphics {
+                self.sprite_main_cpu_boundary = None;
+                assert_ne!(
+                    std::mem::take(&mut self.sprite_main_cpu_nmi_slices),
+                    0,
+                    "item-receipt graphics continuation requires a source timing boundary",
+                );
+                assert!(matches!(
+                    std::mem::take(&mut self.sprite_main_cpu_caller),
+                    SpriteMainCpuCaller::DungeonModule07Live { .. }
+                        | SpriteMainCpuCaller::Module09 { .. }
+                ));
+            }
             self.sprite_execute_single(k);
-            if self.sprite_main_cpu_boundary == Some(SpriteMainCpuBoundary::AfterSlot(k as u8)) {
+            if enters_big_key_graphics {
+                assert!(
+                    matches!(
+                        self.game_execution_scheduler.current_work(),
+                        Some(GameWorkContinuation::FinishBigKeyDropGraphics {
+                            sprite_slot,
+                            ..
+                        }) if sprite_slot == k as u8
+                    ),
+                    "source big-key boundary did not enter the native graphics continuation"
+                );
+                return;
+            }
+            if enters_item_receipt_graphics {
+                assert!(
+                    matches!(
+                        self.game_execution_scheduler.current_work(),
+                        Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                            continuation:
+                                ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt {
+                                    sprite_slot,
+                                    ..
+                                }
+                                | ItemReceiptGraphicsContinuation::ResumeUnclePassage {
+                                    sprite_slot,
+                                    ..
+                                },
+                        }) if sprite_slot == k as u8
+                    ),
+                    "source item-receipt boundary did not enter the native graphics continuation",
+                );
+                return;
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(
+                    SpriteMainCpuBoundary::AfterSlot(slot)
+                        | SpriteMainCpuBoundary::AfterActiveCuccoX { slot, .. }
+                        | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel { slot, .. }
+                        | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }
+                        | SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements { slot, .. }
+                        | SpriteMainCpuBoundary::AfterCuccoGraphicsPublication { slot, .. }
+                ) if slot == k as u8
+            ) {
                 let boundary = self
                     .sprite_main_cpu_boundary
                     .take()
@@ -2411,6 +2484,31 @@ impl ZeldaState {
         self.sprite_main_cpu_caller = caller;
     }
 
+    /// Replace an unconsumed reconstructed Sprite_Main checkpoint with the
+    /// boundary published by the continuous semantic authority.
+    ///
+    /// Legacy CPU plans populate these three fields before the translated
+    /// caller reaches Sprite_Main. No C work has executed at that checkpoint,
+    /// so replacing it is an ownership transfer, not a replay or rollback.
+    /// Once scheduled work exists the call is already in flight and must be
+    /// refined through the scheduler instead.
+    pub(super) fn arm_authoritative_sprite_main_cpu_continuation(
+        &mut self,
+        boundary: SpriteMainCpuBoundary,
+        caller: SpriteMainCpuCaller,
+    ) {
+        assert!(
+            !self
+                .game_execution_scheduler
+                .work_suspends_translated_call_stack(),
+            "source Sprite_Main entry receipt cannot replace in-flight work",
+        );
+        self.sprite_main_cpu_boundary = None;
+        self.sprite_main_cpu_nmi_slices = 0;
+        self.sprite_main_cpu_caller = SpriteMainCpuCaller::default();
+        self.arm_sprite_main_cpu_continuation(boundary, 1, caller);
+    }
+
     fn schedule_sprite_main_cpu_continuation(
         &mut self,
         boundary: SpriteMainCpuBoundary,
@@ -2423,12 +2521,34 @@ impl ZeldaState {
             SpriteMainCpuCaller::DungeonModule07 => {
                 self.dungeon_quadrant_cpu_continuation_active && nmi_slices == 1
             }
+            SpriteMainCpuCaller::DungeonModule07Live { boundary } => {
+                match boundary {
+                    OriginalTimingBoundary::HostReturn => self
+                        .game_execution_scheduler
+                        .schedule_work(continuation, nmi_slices),
+                    OriginalTimingBoundary::NmiAccepted => self
+                        .game_execution_scheduler
+                        .schedule_after_current_trailing_nmi(continuation),
+                }
+                return;
+            }
             SpriteMainCpuCaller::WorldMapOverlayReload { .. } => {
                 self.game_execution_scheduler
                     .schedule_cpu_timed_work_resuming_after_current_trailing_nmi(
                         continuation,
                         nmi_slices,
                     );
+                return;
+            }
+            SpriteMainCpuCaller::Module09 { boundary } => {
+                match boundary {
+                    OriginalTimingBoundary::HostReturn => self
+                        .game_execution_scheduler
+                        .schedule_work(continuation, nmi_slices),
+                    OriginalTimingBoundary::NmiAccepted => self
+                        .game_execution_scheduler
+                        .schedule_after_current_trailing_nmi(continuation),
+                }
                 return;
             }
         };
@@ -2461,6 +2581,25 @@ impl ZeldaState {
         }
     }
 
+    /// Advance an already-suspended descending `Sprite_Main` slot loop to a
+    /// later source statement without replaying its prefix or completing its
+    /// caller.  Both boundaries name calls which have returned, so the exact
+    /// semantic delta is the intervening descending slot range.
+    pub(super) fn advance_sprite_main_after_slot_boundary(
+        &mut self,
+        completed_slot: u8,
+        newly_completed_slot: u8,
+    ) {
+        assert!(
+            newly_completed_slot < completed_slot,
+            "Sprite_Main source boundary did not advance: {completed_slot} -> {newly_completed_slot}",
+        );
+        for slot in (newly_completed_slot..completed_slot).rev() {
+            self.sprite_system_mut().set_cur_object_index(slot);
+            self.sprite_execute_single(usize::from(slot));
+        }
+    }
+
     pub(super) fn complete_sprite_main_after_cpu_boundary(
         &mut self,
         boundary: SpriteMainCpuBoundary,
@@ -2469,6 +2608,79 @@ impl ZeldaState {
             SpriteMainCpuBoundary::BeforeFirstSlot => self.sprite_main(),
             SpriteMainCpuBoundary::AfterSlot(interrupted_slot) => {
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot as usize)
+            }
+            SpriteMainCpuBoundary::AfterActiveCuccoX {
+                slot,
+                helper_ordinal,
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.complete_active_cucco_after_x(interrupted_slot, helper_ordinal);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel {
+                slot,
+                helper_ordinal,
+                y_low: Some(y_low),
+                y_high: Some(y_high),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.complete_active_cucco_after_y_subpixel(
+                    interrupted_slot,
+                    helper_ordinal,
+                    y_low,
+                    y_high,
+                );
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterCuccoFleeMovement {
+                slot,
+                helper_ordinal,
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.complete_cucco_flee_after_movement(interrupted_slot, helper_ordinal);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements {
+                slot,
+                completed,
+                total,
+                continuation: Some(continuation),
+                ..
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.complete_cucco_after_subtype_increments(
+                    interrupted_slot,
+                    completed,
+                    total,
+                    continuation,
+                );
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterCuccoGraphicsPublication {
+                slot,
+                helper_ordinal: _,
+                continuation: Some(continuation),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.complete_cucco_after_graphics_publication(interrupted_slot, continuation);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements {
+                continuation: None, ..
+            }
+            | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel { .. }
+            | SpriteMainCpuBoundary::AfterCuccoGraphicsPublication {
+                continuation: None, ..
+            } => unreachable!("source Cucco boundary did not bind to a native C call site"),
+            SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(_) => {
+                unreachable!(
+                    "big-key graphics boundary transfers directly to its typed continuation"
+                )
+            }
+            SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(_) => {
+                unreachable!(
+                    "item-receipt graphics boundary transfers directly to its typed continuation"
+                )
             }
             SpriteMainCpuBoundary::AfterZeldaFollowerGraphics {
                 slot,
@@ -2862,6 +3074,46 @@ impl ZeldaState {
     pub(super) fn sprite_move_xy(&mut self, k: usize) {
         self.sprite_move_x(k);
         self.sprite_move_y(k);
+    }
+
+    /// Execute `Sprite_MoveXY` through the first assignment in
+    /// `Sprite_MoveY`. The original C helper publishes X completely, then
+    /// writes Y subpixel, low, and high in that order. Returning the already
+    /// computed low/high bytes lets a host-boundary continuation finish those
+    /// assignments without evaluating the velocity twice.
+    pub(super) fn sprite_move_xy_through_y_subpixel(&mut self, k: usize) -> (u8, u8) {
+        self.sprite_move_x(k);
+        self.sprite_move_y_through_subpixel(k)
+    }
+
+    /// Execute `Sprite_MoveY` through its first source assignment. This is the
+    /// exact suffix of `Sprite_MoveXY` after `Sprite_MoveX` has returned.
+    pub(super) fn sprite_move_y_through_subpixel(&mut self, k: usize) -> (u8, u8) {
+        let sprite = self.sprite_slot_view(k);
+        let velocity = sprite.y_velocity();
+        assert_ne!(
+            velocity, 0,
+            "a Y-subpixel publication boundary requires Sprite_MoveY to enter its source body",
+        );
+        let position = u32::from(sprite.y_subpixel())
+            | (u32::from(sprite.y_low()) << 8)
+            | (u32::from(sprite.y_high()) << 16);
+        let delta = ((velocity as i8 as i32) << 4) as u32;
+        let moved = position.wrapping_add(delta);
+        self.sprite_slot_view_mut(k).set_y_subpixel(moved as u8);
+        ((moved >> 8) as u8, (moved >> 16) as u8)
+    }
+
+    /// Finish the two pending assignments from
+    /// [`Self::sprite_move_xy_through_y_subpixel`].
+    pub(super) fn complete_sprite_move_y_after_subpixel(
+        &mut self,
+        k: usize,
+        y_low: u8,
+        y_high: u8,
+    ) {
+        self.sprite_slot_view_mut(k).set_y_low(y_low);
+        self.sprite_slot_view_mut(k).set_y_high(y_high);
     }
 
     // void Sprite_MoveXYZ(int k) {
@@ -4518,12 +4770,13 @@ impl ZeldaState {
                     self.force_prize_drop(k, prize, 1);
                     return;
                 }
-            } else if (self.get_random_number()
-                & SPRITE_DO_THE_DEATH_PRIZE_MASKS[usize::from(prize)])
-                == 0
-            {
-                self.force_prize_drop(k, prize, prize);
-                return;
+            } else {
+                if (self.get_random_number() & SPRITE_DO_THE_DEATH_PRIZE_MASKS[usize::from(prize)])
+                    == 0
+                {
+                    self.force_prize_drop(k, prize, prize);
+                    return;
+                }
             }
         }
         let value = 0;

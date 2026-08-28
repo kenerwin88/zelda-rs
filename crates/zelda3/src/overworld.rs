@@ -894,7 +894,13 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module09_overworld_after_submodule(&mut self) {
-        self.complete_module09_sprite_and_hud_suffix();
+        self.complete_module09_sprite_and_hud_suffix_with_rain_state(false);
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
+            return;
+        }
         self.OverworldOverlay_HandleRain();
         self.replay_trace_ram_watch("module09-after-rain");
         self.replay_trace_submodule("module09-exit");
@@ -903,14 +909,78 @@ impl ZeldaState {
     /// Finish the caller suffix after an interrupted sprite load whose
     /// provisional display generation already advanced the rain overlay.
     pub(super) fn complete_module09_overworld_after_prepublished_rain(&mut self) {
-        self.complete_module09_sprite_and_hud_suffix();
+        self.complete_module09_sprite_and_hud_suffix_with_rain_state(true);
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
+            return;
+        }
         self.replay_trace_submodule("module09-exit");
     }
 
     pub(super) fn complete_module09_sprite_and_hud_suffix(&mut self) {
+        self.complete_module09_sprite_and_hud_suffix_with_rain_state(false);
+    }
+
+    fn complete_module09_sprite_and_hud_suffix_with_rain_state(
+        &mut self,
+        rain_already_published: bool,
+    ) {
         let caller = self.begin_module09_sprite_main();
+        assert!(
+            self.active_module09_sprite_main_return
+                .replace(Module09ItemReceiptCallerReturn {
+                    scroll: caller,
+                    rain_already_published,
+                    after_sprite_main: Module09AfterSpriteMain::Ordinary,
+                })
+                .is_none(),
+            "Module 9 entered a second Sprite_Main caller before the first returned",
+        );
+        if let Some((boundary, resume_boundary)) =
+            self.take_original_timing_sprite_main_boundary_for_fresh_caller()
+        {
+            self.arm_sprite_main_cpu_continuation(
+                boundary,
+                1,
+                SpriteMainCpuCaller::Module09 {
+                    boundary: resume_boundary,
+                },
+            );
+        }
         self.sprite_main();
-        self.complete_module09_after_sprite_main(caller);
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
+            return;
+        }
+        let caller = self
+            .active_module09_sprite_main_return
+            .take()
+            .expect("Module 9 Sprite_Main return frame was lost");
+        if let Some(boundary) = self.take_forwarded_original_timing_main_loop_interruption(
+            crate::MainLoopInterruption::LinkOam,
+        ) {
+            // C has restored none of Module09's four stack-local scroll values
+            // yet: the next call is LinkOam_Main, where the source accepted
+            // the host's trailing NMI. Preserve that caller frame and resume
+            // the whole LinkOam/HUD/rain suffix after the interrupt. This is
+            // the same semantic continuation used by the longer world-map
+            // callers; no module, room, frame, or CPU address selects it.
+            let continuation = GameWorkContinuation::FinishModule09LinkOamCallerReturn { caller };
+            match boundary {
+                OriginalTimingBoundary::HostReturn => {
+                    self.game_execution_scheduler.schedule_work(continuation, 1)
+                }
+                OriginalTimingBoundary::NmiAccepted => self
+                    .game_execution_scheduler
+                    .schedule_after_current_trailing_nmi(continuation),
+            }
+            return;
+        }
+        self.complete_module09_after_sprite_main(caller.scroll);
     }
 
     pub(super) fn begin_module09_sprite_main(&mut self) -> Module09SpriteMainReturn {
@@ -955,6 +1025,21 @@ impl ZeldaState {
         self.replay_trace_ram_watch("module09-after-refill");
     }
 
+    /// Resume the ordinary Module09 caller immediately after an interrupted
+    /// `Sprite_Main` returns, preserving the C statement order and its four
+    /// stack-local scroll values without replaying the submodule or sprite loop.
+    pub(super) fn complete_module09_overworld_after_resumed_sprite_main(
+        &mut self,
+        caller: Module09ItemReceiptCallerReturn,
+    ) {
+        self.complete_module09_after_sprite_main(caller.scroll);
+        if !caller.rain_already_published {
+            self.OverworldOverlay_HandleRain();
+            self.replay_trace_ram_watch("module09-after-rain");
+        }
+        self.replay_trace_submodule("module09-exit");
+    }
+
     /// Resume `Overworld_LoadOverlays2` through the exact first caller NMI.
     /// The original ROM reaches Sprite_Main slot 8 before that boundary and
     /// resumes at slot 7 on the following host; the four scroll locals remain
@@ -976,14 +1061,11 @@ impl ZeldaState {
             .work_suspends_translated_call_stack());
     }
 
-    pub(super) fn complete_world_map_overlay_module09_sprite_return(
+    pub(super) fn complete_module09_link_oam_caller_return(
         &mut self,
-        module09: Module09SpriteMainReturn,
+        caller: Module09ItemReceiptCallerReturn,
     ) {
-        self.complete_module09_after_sprite_main(module09);
-        self.OverworldOverlay_HandleRain();
-        self.replay_trace_ram_watch("module09-after-rain");
-        self.replay_trace_submodule("module09-exit");
+        self.complete_module09_overworld_after_resumed_sprite_main(caller);
     }
 
     fn publish_module09_transition_sprites_without_scroll(&mut self) {
@@ -2620,6 +2702,22 @@ impl ZeldaState {
 
     pub(super) fn Module10_SpotlightOpen(&mut self) {
         let live_table_progress = self.take_original_timing_spotlight_table_build_progress();
+        let live_goal_caller_returned =
+            self.take_original_timing_overworld_spotlight_goal_caller_returned();
+        if live_goal_caller_returned {
+            assert_eq!(
+                (
+                    self.game_state.frame.main_module,
+                    self.game_state.frame.submodule
+                ),
+                (0x10, 1),
+                "overworld spotlight goal return belongs to recurring Module10",
+            );
+            assert!(
+                live_table_progress.is_none(),
+                "a completed overworld spotlight goal cannot also expose stale table progress",
+            );
+        }
         let cpu_plan = if self.rom_startup_timing()
             && !matches!(
                 self.original_timing_owner(),
@@ -2688,10 +2786,27 @@ impl ZeldaState {
             let (caller_interrupted, _) = self.spotlight_configure_table_and_control(false);
             debug_assert!(!caller_interrupted);
         }
+        let authoritative_link_oam_interruption =
+            self.take_original_timing_main_loop_interruption(crate::MainLoopInterruption::LinkOam);
         self.link_oam_main();
+        if live_goal_caller_returned {
+            assert_ne!(
+                self.game_state.frame.main_module, 0x10,
+                "authoritative overworld spotlight goal returned before the native C shadow",
+            );
+        }
         if cpu_plan.is_some() {
+            assert!(
+                !authoritative_link_oam_interruption,
+                "the isolated overworld spotlight CPU plan and Live LinkOam receipt cannot both own one interruption",
+            );
             self.schedule_overworld_spotlight_link_oam(iteration);
         } else {
+            // LinkOam_Main is an atomic translated leaf. A replaceable timing
+            // authority may stop the enclosing C call at that semantic phase;
+            // consuming the receipt here proves the leaf ran once while the
+            // existing FinishSpotlightIteration continuation retains only the
+            // shared ZeldaRunGameLoop suffix.
             self.schedule_spotlight_iteration_return(iteration);
         }
     }
@@ -2867,15 +2982,48 @@ impl ZeldaState {
         }
     }
 
-    fn begin_module0f_spotlight_close_link_and_oam(
+    pub(super) fn begin_module0f_spotlight_close_link_and_oam(
         &mut self,
         cpu_plan: Option<DungeonExitSpotlightCpuPlan>,
         iteration: SpotlightIteration,
     ) -> bool {
+        let authoritative_before_coordinates = self.take_original_timing_main_loop_interruption(
+            crate::MainLoopInterruption::LinkPositionBeforeCoordinates,
+        );
+        let authoritative_link_oam_interruption =
+            self.take_original_timing_main_loop_interruption(crate::MainLoopInterruption::LinkOam);
+        assert!(
+            !(authoritative_before_coordinates && authoritative_link_oam_interruption),
+            "one Module0F source call cannot stop before Link coordinates and in LinkOam",
+        );
+        if authoritative_before_coordinates {
+            assert!(
+                cpu_plan.is_none(),
+                "the isolated spotlight CPU plan and Live Link-position receipt cannot both own one interruption",
+            );
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration },
+                1,
+            );
+            return true;
+        }
         if !cpu_plan.is_some_and(|plan| plan.link_position_integrated_before_first_nmi) {
             self.module0f_spotlight_close_link_and_oam();
+            if authoritative_link_oam_interruption {
+                // LinkOam_Main is the replaceable authority's semantic stop
+                // boundary. The translated Link/OAM leaf is atomic, so run it
+                // once and retain only ZeldaRunGameLoop's post-Link suffix for
+                // the following host. This consumes no CPU/raster provenance
+                // and is the same continuation used by the native timing path.
+                self.schedule_spotlight_iteration_return(iteration);
+                return true;
+            }
             return false;
         }
+        assert!(
+            !authoritative_link_oam_interruption,
+            "the isolated spotlight CPU plan and Live LinkOam receipt cannot both own one interruption",
+        );
         let position_return = self
             .module0f_spotlight_close_velocity_until_position_integrated()
             .expect("Player_MovePosition1_ interruption requires Module0F's outdoor velocity path");
@@ -2889,7 +3037,7 @@ impl ZeldaState {
         true
     }
 
-    fn module0f_spotlight_close_link_and_oam(&mut self) {
+    pub(super) fn module0f_spotlight_close_link_and_oam(&mut self) {
         if let Some(position_return) =
             self.module0f_spotlight_close_velocity_until_position_integrated()
         {
@@ -2948,6 +3096,19 @@ impl ZeldaState {
         }
     }
 
+    pub(super) fn complete_dungeon_exit_spotlight_link_movement(
+        &mut self,
+        iteration: SpotlightIteration,
+    ) {
+        self.module0f_spotlight_close_link_and_oam();
+        if iteration.prepares_main_loop_sprites_before_second_nmi() {
+            self.nmi_prepare_sprites_for_main_loop_once();
+            self.clear_nmi_update_latch();
+        } else {
+            self.schedule_spotlight_iteration_return(iteration);
+        }
+    }
+
     pub(super) fn complete_dungeon_exit_spotlight_entry(
         &mut self,
         table_build: SpotlightTableBuildContinuation,
@@ -2991,7 +3152,12 @@ impl ZeldaState {
         projection_completed: bool,
         iteration: SpotlightIteration,
         caller_returned_to_main_wait: bool,
+        caller_interrupted_in_link_oam: bool,
     ) {
+        assert!(
+            !(caller_returned_to_main_wait && caller_interrupted_in_link_oam),
+            "one Module0F caller cannot both remain in LinkOam and reach main wait",
+        );
         let iteration = if caller_returned_to_main_wait {
             // The replaceable authority observed the resumed C caller return
             // through LinkOam_Main and Main_PrepSpritesForNmi before this host
@@ -3012,6 +3178,15 @@ impl ZeldaState {
         );
         debug_assert!(!caller_interrupted);
         self.module0f_spotlight_close_link_and_oam();
+        if caller_interrupted_in_link_oam {
+            // The replaceable timing authority observed the resumed C call
+            // inside LinkOam_Main. Execute the source prefix once, then retain
+            // the shared post-Link-OAM/main-loop suffix for the following
+            // host instead of replaying the spotlight table or pretending the
+            // caller already reached main wait.
+            self.schedule_dungeon_exit_spotlight_link_oam(iteration);
+            return;
+        }
         if iteration.prepares_main_loop_sprites_before_second_nmi() {
             self.nmi_prepare_sprites_for_main_loop_once();
             self.clear_nmi_update_latch();

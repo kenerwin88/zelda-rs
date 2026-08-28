@@ -44,6 +44,12 @@ Snes9x, marks the session as oracle capture rather than parity proof, and then
 places the oracle-only ledger in the immutable cache. This prevents a Rust
 mismatch from truncating the reusable reference.
 
+Set `ZELDA3_SNES9X_TIMING=1` on a live-oracle comparison or `cached-av` replay
+to print an opt-in stage profile. The report separates engine execution,
+source extraction, GPU submission, surface presentation, asynchronous readback,
+video hashing, audio hashing, and serialization. It is diagnostic only, is off
+by default, and does not weaken the cold live-Snes9x promotion gate.
+
 ## Retired workflow (historical)
 
 The legacy `capture`, `check`, and `drill` subcommands below were retired with

@@ -60,6 +60,34 @@ const CUCCO_CALM_CIRCLE_Y_VELOCITIES: [i8; 16] = [
 // sprite_main.c:9445.
 const CHICKEN_AVENGER: [u8; 2] = [0, 0xff];
 
+/// Replays the two chained 16-bit `ADC` sequences at ROM $06:a7ff-$06:a843.
+///
+/// `GetRandomNumber` returns with a meaningful carry. The intervening STA,
+/// AND, branch, and loads preserve it, so the first coordinate addition must
+/// consume that carry. Its 16-bit carry-out then feeds the other coordinate,
+/// exactly as the low-byte/high-byte ADC pairs do in the ROM.
+fn cucco_avenger_spawn_coordinates(
+    random: crate::rom_random::RomRandomResult,
+    bg2_h: u16,
+    bg2_v: u16,
+) -> (u16, u16) {
+    fn adc_u8(value: u16, addend: u8, carry: bool) -> (u16, bool) {
+        let sum = u32::from(value) + u32::from(addend) + u32::from(carry);
+        (sum as u16, sum > u32::from(u16::MAX))
+    }
+
+    let t = random.value();
+    if t & 2 != 0 {
+        let (x, carry) = adc_u8(bg2_h, t, random.carry());
+        let (y, _) = adc_u8(bg2_v, CHICKEN_AVENGER[(t & 1) as usize], carry);
+        (x, y)
+    } else {
+        let (y, carry) = adc_u8(bg2_v, t, random.carry());
+        let (x, _) = adc_u8(bg2_h, CHICKEN_AVENGER[(t & 1) as usize], carry);
+        (x, y)
+    }
+}
+
 // sprite.c:507.
 const ABSORPTION_SFX: [u8; 15] = [
     0xb, 0xa, 0xa, 0xa, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb, 0x2f, 0x2f, 0xb,
@@ -2320,7 +2348,7 @@ impl ZeldaState {
     //   }
     //   Chicken_IncrSubtype2(k, 4);
     // }
-    pub(super) fn chicken_hopping(&mut self, k: usize) {
+    pub(super) fn chicken_hopping(&mut self, k: usize, helper_ordinal: u8) {
         if ((k as u8) ^ self.game_state.frame.frame_counter) & 1 != 0
             && self.cucco_do_movement_xy(k) != 0
         {
@@ -2336,7 +2364,12 @@ impl ZeldaState {
             }
             self.sprite_slot_view_mut(k).set_z_velocity(10);
         }
-        self.chicken_incr_subtype2(k, 4);
+        self.chicken_incr_subtype2_for_draw(
+            k,
+            4,
+            helper_ordinal,
+            CuccoSubtypeContinuation::Hopping,
+        );
     }
 
     // void Cucco_Flee(int k) {  // sprite_main.c:9395
@@ -2350,9 +2383,16 @@ impl ZeldaState {
     //   Chicken_IncrSubtype2(k, 5);
     //   Cucco_DrawPANIC(k);
     // }
-    pub(super) fn cucco_flee(&mut self, k: usize) {
+    pub(super) fn cucco_flee(&mut self, k: usize, helper_ordinal: u8) {
         self.sprite_return_if_lifted(k);
         self.cucco_do_movement_xy(k);
+        self.complete_cucco_flee_after_move_xy(k, helper_ordinal);
+    }
+
+    /// Complete `Cucco_Flee` after `Cucco_DoMovement_XY` has returned. This
+    /// owns the source statements between movement and the shared subtype
+    /// helper.
+    pub(super) fn complete_cucco_flee_after_move_xy(&mut self, k: usize, helper_ordinal: u8) {
         self.sprite_slot_view_mut(k).set_z(0);
         let fc = self.game_state.frame.frame_counter as usize;
         if (k ^ fc) & 0x1f == 0 {
@@ -2362,8 +2402,37 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k)
                 .set_y_velocity((pt.y as u8).wrapping_neg());
         }
-        self.chicken_incr_subtype2(k, 5);
+        if self.sprite_main_cpu_boundary
+            == Some(SpriteMainCpuBoundary::AfterCuccoFleeMovement {
+                slot: k as u8,
+                helper_ordinal,
+            })
+        {
+            return;
+        }
+        self.complete_cucco_flee_after_movement(k, helper_ordinal);
+    }
+
+    /// Resume `Cucco_Flee` after its movement/Z/retarget prefix. This begins
+    /// at the pending shared helper call and therefore cannot replay motion.
+    pub(super) fn complete_cucco_flee_after_movement(&mut self, k: usize, helper_ordinal: u8) {
+        if self.chicken_incr_subtype2_for_draw(k, 5, helper_ordinal, CuccoSubtypeContinuation::Flee)
+        {
+            return;
+        }
         self.cucco_draw_panic(k);
+    }
+
+    pub(super) fn advance_cucco_helper_to_subtype_checkpoint(&mut self, k: usize, completed: u8) {
+        assert!((1..=5).contains(&completed));
+        for _ in 0..completed {
+            self.chicken_add_subtype2_for_draw(k, 1);
+        }
+    }
+
+    pub(super) fn advance_cucco_helper_to_graphics(&mut self, k: usize, increments: u8) {
+        self.advance_cucco_helper_to_subtype_checkpoint(k, increments);
+        self.chicken_publish_graphics_for_draw(k);
     }
 
     // void Cucco_Carried(int k) {  // sprite_main.c:9415
@@ -2388,7 +2457,7 @@ impl ZeldaState {
     //     Chicken_IncrSubtype2(k, 4);
     //   }
     // }
-    pub(super) fn cucco_carried(&mut self, k: usize) {
+    pub(super) fn cucco_carried(&mut self, k: usize, helper_ordinal: u8) {
         self.sprite_move_z(k);
         if self.cucco_do_movement_xy(k) != 0 {
             self.sprite_slot_view_mut(k).negate_x_velocity();
@@ -2407,10 +2476,22 @@ impl ZeldaState {
                 .set_x_velocity((pt.x as u8).wrapping_neg());
             self.sprite_slot_view_mut(k)
                 .set_y_velocity((pt.y as u8).wrapping_neg());
-            self.chicken_incr_subtype2(k, 5);
+            if self.chicken_incr_subtype2_for_draw(
+                k,
+                5,
+                helper_ordinal,
+                CuccoSubtypeContinuation::CarriedLanding,
+            ) {
+                return;
+            }
             self.cucco_draw_panic(k);
         } else {
-            self.chicken_incr_subtype2(k, 4);
+            self.chicken_incr_subtype2_for_draw(
+                k,
+                4,
+                helper_ordinal,
+                CuccoSubtypeContinuation::CarriedAirborne,
+            );
         }
     }
 
@@ -2441,32 +2522,16 @@ impl ZeldaState {
         };
         self.sprite_sfx_queue_sfx3_with_pan(j, 0x1e);
         self.sprite_slot_view_mut(j).set_c(1);
-        let t = self.get_random_number();
-        let mut x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
-        let mut y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
-        if t & 2 != 0 {
-            x = x.wrapping_add(t as u16);
-            y = y.wrapping_add(CHICKEN_AVENGER[(t & 1) as usize] as u16);
-        } else {
-            y = y.wrapping_add(t as u16);
-            x = x.wrapping_add(CHICKEN_AVENGER[(t & 1) as usize] as u16);
-        }
+        let random = self.get_random_number_with_carry();
+        let (x, y) = cucco_avenger_spawn_coordinates(
+            random,
+            self.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
+            self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+        );
         self.sprite_set_x(j, x);
         self.sprite_set_y(j, y);
         self.sprite_apply_speed_towards_link(j, 32);
         self.bawk_bawk(k);
-    }
-
-    // Helper: void Chicken_IncrSubtype2(int k, int j) {  // sprite_main.c:996
-    //   sprite_subtype2[k] += j;
-    //   sprite_graphics[k] = (sprite_subtype2[k] >> 4) & 1;
-    //   Sprite_ReturnIfLifted(k);
-    // }
-    fn chicken_incr_subtype2(&mut self, k: usize, j: u8) {
-        self.sprite_slot_view_mut(k).add_subtype2(j);
-        let graphics = (self.sprite_slot_view(k).subtype2() >> 4) & 1;
-        self.sprite_slot_view_mut(k).set_graphics(graphics);
-        self.sprite_return_if_lifted(k);
     }
 
     // Helper: void BawkBawk(int k) {  // sprite_main.c:9466

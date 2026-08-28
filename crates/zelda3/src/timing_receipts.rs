@@ -206,6 +206,52 @@ impl PresentedBgScroll {
     }
 }
 
+/// Per-scanline Mode 7 transform used by one completed host scanout.
+///
+/// These are renderer-domain values: matrix A/B/C/D, center X/Y, and the
+/// horizontal/vertical Mode 7 offsets after the source PPU/HDMA pipeline has
+/// selected the generation for each visible row. The temporary oracle may
+/// derive them from private PPU state, while translated gameplay sees only
+/// the completed transform and can later replace the backend unchanged.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct PresentedMode7Transform {
+    pub(crate) scanlines: Vec<[i16; 8]>,
+}
+
+impl PresentedMode7Transform {
+    pub const FIELD_COUNT: usize = 8;
+    pub const VISIBLE_LINES: usize = 224;
+
+    pub fn new(scanlines: Vec<[i16; Self::FIELD_COUNT]>) -> Option<Self> {
+        (scanlines.len() == Self::VISIBLE_LINES).then_some(Self { scanlines })
+    }
+
+    pub fn scanlines(&self) -> &[[i16; Self::FIELD_COUNT]] {
+        &self.scanlines
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PresentedMode7Transform {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        struct SerializedPresentedMode7Transform {
+            scanlines: Vec<[i16; PresentedMode7Transform::FIELD_COUNT]>,
+        }
+
+        let serialized = SerializedPresentedMode7Transform::deserialize(deserializer)?;
+        let actual_lines = serialized.scanlines.len();
+        Self::new(serialized.scanlines).ok_or_else(|| {
+            <D::Error as serde::de::Error>::custom(format_args!(
+                "expected exactly {} Mode 7 scanlines, received {actual_lines}",
+                Self::VISIBLE_LINES,
+            ))
+        })
+    }
+}
+
 /// Per-scanline window boundaries that produced one completed host scanout.
 ///
 /// This is presentation state rather than Zelda's live `$2126..$2129`
@@ -407,6 +453,15 @@ pub struct OriginalTimingBgScrollShadowResult {
     pub first_mismatch: Option<(u16, u8)>,
 }
 
+/// Result of shadowing one authoritative Mode 7 scanout transform with the
+/// native PPU/HDMA resolver. Authority remains with the typed receipt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OriginalTimingMode7TransformShadowResult {
+    pub compared_scanline_fields: usize,
+    pub mismatched_scanline_fields: usize,
+    pub first_mismatch: Option<(u16, u8)>,
+}
+
 /// Result of shadowing one authoritative window-mask presentation with the
 /// native HDMA publication resolver. Authority remains with the typed receipt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -443,6 +498,127 @@ impl PresentedCgram {
 pub enum MainLoopInterruption {
     LinkOam,
     SpritePreparation,
+    /// `Sprite_Main` was interrupted before its descending slot loop completed.
+    /// `BeforeFirstSlot` means the common prefix returned but slot 15 did not;
+    /// `AfterSlot` names the last source slot whose call returned. The timing
+    /// backend may derive this from private execution state, but gameplay sees
+    /// only the resumable C-loop boundary.
+    SpriteMainBeforeFirstSlot,
+    SpriteMainAfterSlot(u8),
+    /// The active-Cucco branch completed all three source assignments in
+    /// `Sprite_MoveX`, but has not entered `Sprite_MoveY`. The timing backend
+    /// keeps the instruction boundary private; gameplay resumes at the next
+    /// source call in `Sprite_MoveXY`.
+    SpriteMainAfterActiveCuccoX {
+        slot: u8,
+        helper_ordinal: u8,
+    },
+    /// The active-Cucco branch completed `Sprite_MoveX` and published the
+    /// first C assignment in `Sprite_MoveY` (`sprite_y_subpixel = t`). The
+    /// matching low/high coordinate assignments and caller suffix remain
+    /// pending. The timing backend keeps the instruction boundary private;
+    /// gameplay sees only this resumable source statement.
+    SpriteMainAfterActiveCuccoYSubpixel {
+        slot: u8,
+        helper_ordinal: u8,
+    },
+    /// `Cucco_Flee` completed its movement, Z publication, and optional
+    /// velocity retarget, but has not entered `Chicken_IncrSubtype2`. The
+    /// temporary timing backend keeps the source call site private; native
+    /// gameplay resumes at the pending helper call.
+    SpriteMainAfterCuccoFleeMovement {
+        slot: u8,
+        helper_ordinal: u8,
+    },
+    /// A Cucco's shared `Chicken_IncrSubtype2` helper published this many of
+    /// its byte increments, but not the following graphics store. The helper
+    /// has call sites with increments of three, four, and five; exposing the
+    /// completed source statements avoids inferring a caller from a shared ROM
+    /// instruction address.
+    SpriteMainAfterCuccoSubtypeIncrements {
+        slot: u8,
+        helper_ordinal: u8,
+        completed: u8,
+    },
+    /// A Cucco's shared `Chicken_IncrSubtype2` helper published its graphics
+    /// generation, then the accepted NMI interrupted the source
+    /// `Sprite_ReturnIfLifted` tail. The timing backend keeps the ROM
+    /// instruction boundary private; gameplay resumes the unfinished semantic
+    /// tail before advancing to the next slot.
+    SpriteMainAfterCuccoGraphicsPublication {
+        slot: u8,
+        helper_ordinal: u8,
+    },
+    /// `PrepareEnemyDrop` published the big-key sprite type, then entered the
+    /// synchronous graphics loader. The source slot and every lower slot are
+    /// still pending; the timing backend keeps the instruction address
+    /// private and exposes only this resumable C statement.
+    SpriteMainBigKeyDropGraphicsStarted(u8),
+    /// A sprite slot completed its ordinary prefix and entered
+    /// `Link_ReceiveItem`'s synchronous graphics loader. The caller-specific
+    /// item receipt owns the suspended suffix; this boundary tells native
+    /// `Sprite_Main` to execute the current slot through that semantic call
+    /// instead of stopping at the preceding returned slot.
+    SpriteMainItemReceiptGraphicsStarted(u8),
+    /// The main-loop module reached Link's movement call, but the accepted NMI
+    /// preceded the first coordinate publication. The timing authority keeps
+    /// the backend instruction address private; translated gameplay resumes
+    /// the source call from this semantic boundary on the following host.
+    LinkPositionBeforeCoordinates,
+}
+
+impl MainLoopInterruption {
+    /// Whether this receipt names a resumable statement inside the shared
+    /// descending `Sprite_Main` call. Keep this classification beside the
+    /// receipt authority so host-timeline routing cannot omit a newly added
+    /// source-level Sprite_Main checkpoint.
+    pub const fn is_sprite_main(self) -> bool {
+        matches!(
+            self,
+            Self::SpriteMainBeforeFirstSlot
+                | Self::SpriteMainAfterSlot(_)
+                | Self::SpriteMainAfterActiveCuccoX { .. }
+                | Self::SpriteMainAfterActiveCuccoYSubpixel { .. }
+                | Self::SpriteMainAfterCuccoFleeMovement { .. }
+                | Self::SpriteMainAfterCuccoSubtypeIncrements { .. }
+                | Self::SpriteMainAfterCuccoGraphicsPublication { .. }
+                | Self::SpriteMainBigKeyDropGraphicsStarted(_)
+                | Self::SpriteMainItemReceiptGraphicsStarted(_)
+        )
+    }
+}
+
+/// The furthest returned statement in one still-active `Sprite_Main` call.
+///
+/// Unlike [`MainLoopInterruption`], this receipt does not imply that an NMI is
+/// currently suspending the call. It survives when an entry NMI resumes and
+/// the same source call continues until the libretro host boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SpriteMainProgress {
+    BeforeFirstSlot,
+    AfterSlot(u8),
+    AfterActiveCuccoX {
+        slot: u8,
+        helper_ordinal: u8,
+    },
+    AfterActiveCuccoYSubpixel {
+        slot: u8,
+        helper_ordinal: u8,
+    },
+    AfterCuccoFleeMovement {
+        slot: u8,
+        helper_ordinal: u8,
+    },
+    AfterCuccoSubtypeIncrements {
+        slot: u8,
+        helper_ordinal: u8,
+        completed: u8,
+    },
+    AfterCuccoGraphicsPublication {
+        slot: u8,
+        helper_ordinal: u8,
+    },
+    BigKeyDropGraphicsStarted(u8),
 }
 
 /// Source-level dialogue work completed by one host interval.
@@ -536,6 +712,31 @@ pub enum MainLoopProgress {
     CallStackContinued,
 }
 
+/// Backend-neutral execution state which may legitimately span one host-frame
+/// boundary while exact original timing is active.
+///
+/// This is deliberately a separate, versioned sidecar rather than another
+/// field in positional `ZeldaState` serialization. It contains Zelda-level
+/// semantic continuations only: no CPU registers, program counters, raster
+/// positions, or emulator implementation details cross the boundary.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OriginalTimingResumeCheckpoint {
+    pub(crate) schema: u32,
+    pub(crate) last_consumed_host_call: Option<u64>,
+    pub(crate) nmi_publication_pending: bool,
+    pub(crate) dungeon_exit_spotlight_entry_return_pending: bool,
+    pub(crate) pre_dungeon_return_pending: Option<MainLoopProgress>,
+    pub(crate) item_receipt_live_link_dma_host: Option<u32>,
+}
+
+impl OriginalTimingResumeCheckpoint {
+    pub const SCHEMA: u32 = 1;
+
+    pub const fn schema(&self) -> u32 {
+        self.schema
+    }
+}
+
 /// Source-level checkpoint inside one `IrisSpotlight_ConfigureTable` build or
 /// its following table projection.
 ///
@@ -543,6 +744,10 @@ pub enum MainLoopProgress {
 /// receives only the resumable C statement boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SpotlightTableBuildCheckpoint {
+    /// The current loop iteration has not yet initialized its local circle
+    /// value or published either table word. `completed_iterations` identifies
+    /// the exact C loop cursor; all work for this iteration remains pending.
+    BeforeIterationInitialization,
     /// The circle input has been loaded and `spotlight_var4` has been
     /// conditionally decremented, but the circle value and both table words
     /// are still pending.
@@ -557,6 +762,20 @@ pub enum SpotlightTableBuildCheckpoint {
     /// of the 224-word dynamic table have been copied to the reserved HDMA
     /// table; the remaining projection and caller suffix are still pending.
     ProjectionCopy { copied_words: u16 },
+    /// Both table words for the current iteration are published. The source
+    /// loop's completion test and, when it continues, its cursor update remain
+    /// pending. The cursors are source-level loop values, not CPU registers.
+    BeforeLoopCompletionTest {
+        upper_cursor: u16,
+        lower_cursor: u16,
+    },
+    /// The loop's completion test was false and the upper cursor was already
+    /// incremented. The paired lower-cursor decrement is the only statement
+    /// still pending before the next iteration begins.
+    BeforeLowerCursorDecrement {
+        upper_cursor: u16,
+        lower_cursor: u16,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -609,10 +828,79 @@ pub enum SaveMenuInitializationProgress {
     Completed,
 }
 
+/// Source-level progress of the synchronous item-receipt graphics call.
+///
+/// The temporary timing backend may use CPU call/return evidence internally,
+/// but translated gameplay sees only which semantic C caller owns the call
+/// and whether that call is still suspended.  This keeps the receipt usable by
+/// a future native timing authority without exposing emulator provenance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ItemReceiptGraphicsCaller {
+    SpriteMain {
+        slot: u8,
+    },
+    /// A sprite slot called `Link_ReceiveItem` directly. The receipt covers
+    /// the nested synchronous graphics call, while the existing
+    /// `SpriteMainProgress` receipt owns the surrounding descending loop.
+    SpriteMainDirect {
+        slot: u8,
+    },
+    /// `Uncle_InPassage` is suspended inside its synchronous
+    /// `Link_ReceiveItem` call. The sprite slot is the only caller identity
+    /// translated gameplay needs in order to resume the C suffix.
+    UnclePassage {
+        slot: u8,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SourceCallProgress {
+    Suspended,
+    Returned,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ItemReceiptGraphicsProgressReceipt {
+    pub caller: ItemReceiptGraphicsCaller,
+    pub progress: SourceCallProgress,
+}
+
+/// Zelda-visible controller bytes published by one completed NMI handler.
+///
+/// This is deliberately not the host call's raw controller input. On original
+/// hardware, auto-joy refreshes `$4218` later in VBlank, so an NMI may publish
+/// the preceding sample even though the host has already supplied new buttons.
+/// A native input/timing owner can emit the same four semantic bytes without
+/// exposing PPU counters, CPU locations, or emulator state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct JoypadPublication {
+    pub high: u8,
+    pub low: u8,
+    pub high_filtered: u8,
+    pub low_filtered: u8,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OriginalTimingSemanticReceipt {
     NmiAccepted,
+    /// The accepted NMI published its Zelda-visible updates: DMA/PPU state,
+    /// joypad state, and the optional IRQ/poly-thread handoff are complete.
+    /// This deliberately does not mean that the interrupted CPU context has
+    /// resumed; Zelda can switch stacks and run its main thread first.
+    NmiPublicationCompleted,
+    JoypadPublication(JoypadPublication),
     MainLoopProgress(MainLoopProgress),
+    SpriteMainProgressed(SpriteMainProgress),
+    /// The active `Sprite_Main` call completed its descending loop and common
+    /// suffix. A temporary backend may observe a private return address;
+    /// gameplay consumes only this source-call completion fact.
+    SpriteMainReturned,
+    /// The `ZeldaRunGameLoop` iteration begun during this host call returned
+    /// through `Module_MainRouting`, `NMI_PrepareSprites`, and the `$12 = 0`
+    /// suffix to Zelda's main wait before the host call ended. The temporary
+    /// backend may identify the wait from private CPU state; translated
+    /// gameplay consumes only this source-level call-completion fact.
+    MainLoopIterationReturnedToWait,
     /// `Module_PreDungeon` returned to its caller and published the module-7
     /// landing state. This is deliberately separate from `MainLoopProgress`:
     /// the source call can return at a host boundary without beginning the
@@ -620,6 +908,7 @@ pub enum OriginalTimingSemanticReceipt {
     PreDungeonModuleReturned,
     DialogueExecutionProgress(DialogueExecutionProgress),
     SaveMenuInitializationProgress(SaveMenuInitializationProgress),
+    ItemReceiptGraphicsProgress(ItemReceiptGraphicsProgressReceipt),
     /// The active dialogue returned through RenderText_Draw_Finish to Zelda's
     /// already-saved gameplay module. The receipt deliberately omits that
     /// module number: the native C state owns and applies its saved target.
@@ -640,11 +929,26 @@ pub enum OriginalTimingSemanticReceipt {
     /// address private; translated gameplay consumes only this C-call
     /// completion fact.
     DungeonExitSpotlightCallerReturnedToMainWait,
+    /// A suspended recurring `Module10_SpotlightOpen` goal call completed
+    /// `IrisSpotlight_ConfigureTable`, restored the source-owned saved gameplay
+    /// module, and returned through `OpenSpotlight_Next2`. The temporary
+    /// backend keeps the restored module and CPU return address private; the
+    /// native C state owns the same saved target.
+    OverworldSpotlightGoalCallerReturned,
     /// `Module09_LoadNewMapAndGFX` completed `SomeTileMapChange`, publishing
     /// the rebuilt map quadrants and entering the remaining screen-map/sprite-
     /// graphics tail. The timing backend owns only this source-call boundary;
     /// translated gameplay owns the submodule mutation and map state.
     OverworldMapQuadrantsPublished,
+    /// `Overworld_LoadOverlays2` completed its overlay decode and returned to
+    /// Module09. The temporary backend keeps its CPU location private;
+    /// translated gameplay consumes only the source-call completion fact.
+    WorldMapOverlayReloadReturned,
+    /// `Overworld_LoadAmbientOverlay(false)` completed its main-page Map16 to
+    /// Map8 conversion and returned to Module09. The temporary backend may
+    /// identify that return from private execution state; gameplay consumes
+    /// only this source-call completion fact.
+    WorldMapAmbientMap8Returned,
     OverworldSpriteReloadProgress(OverworldSpriteReloadProgress),
     CachedSpriteExecutionProgress(CachedSpriteExecutionProgressReceipt),
     DungeonResetSpritesProgress(DungeonResetSpritesProgressReceipt),
@@ -655,12 +959,52 @@ pub enum OriginalTimingSemanticReceipt {
     },
 }
 
+/// One source interruption temporarily owned by a translated C caller during
+/// the current host dispatch.
+///
+/// This is derived from the ordered semantic receipt stream after the outer
+/// host-timeline owner has consumed that stream. It is deliberately excluded
+/// from serialization: only one in-memory owner may forward or consume it,
+/// and a later host cannot inherit the transient boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ForwardedMainLoopInterruption {
+    interruption: MainLoopInterruption,
+    boundary: OriginalTimingBoundary,
+}
+
+impl ForwardedMainLoopInterruption {
+    pub(crate) const fn interruption(self) -> MainLoopInterruption {
+        self.interruption
+    }
+
+    pub(crate) const fn boundary(self) -> OriginalTimingBoundary {
+        self.boundary
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ForwardMainLoopInterruptionError {
+    existing: ForwardedMainLoopInterruption,
+}
+
+impl ForwardMainLoopInterruptionError {
+    pub(crate) const fn existing(self) -> ForwardedMainLoopInterruption {
+        self.existing
+    }
+}
+
 /// One timing-authority result for exactly one upcoming host call.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OriginalTimingHostReceipts {
     pub(crate) host_call: u64,
     pub(crate) input_state: u16,
     pub(crate) semantic: Vec<OriginalTimingSemanticReceipt>,
+    /// One interruption temporarily forwarded by the host-timeline owner to
+    /// the translated C caller during this same dispatch. The serialized
+    /// oracle stream remains the ordered `NmiAccepted`/`MainLoopInterrupted`
+    /// authority; this derived boundary is backend-neutral and transient.
+    #[serde(skip)]
+    forwarded_main_loop_interruption: Option<ForwardedMainLoopInterruption>,
     pub(crate) presented_animated_bg_tiles: Option<PresentedAnimatedBgTiles>,
     pub(crate) presented_cgram: Option<PresentedCgram>,
     pub(crate) presented_inidisp: Option<PresentedInidisp>,
@@ -669,6 +1013,8 @@ pub struct OriginalTimingHostReceipts {
     pub(crate) presented_dialogue_text: Option<PresentedDialogueText>,
     pub(crate) presented_bg_tilemaps: Option<PresentedBgTilemaps>,
     pub(crate) presented_bg_scroll: Option<PresentedBgScroll>,
+    #[serde(default)]
+    pub(crate) presented_mode7_transform: Option<PresentedMode7Transform>,
     pub(crate) presented_window_mask: Option<PresentedWindowMask>,
     pub(crate) presented_oam: Option<PresentedOam>,
     pub(crate) presented_obj_tiles: Option<PresentedObjTiles>,
@@ -685,6 +1031,7 @@ impl OriginalTimingHostReceipts {
             host_call,
             input_state: sanitize_original_timing_input(input_state),
             semantic,
+            forwarded_main_loop_interruption: None,
             presented_animated_bg_tiles: None,
             presented_cgram: None,
             presented_inidisp: None,
@@ -693,6 +1040,7 @@ impl OriginalTimingHostReceipts {
             presented_dialogue_text: None,
             presented_bg_tilemaps: None,
             presented_bg_scroll: None,
+            presented_mode7_transform: None,
             presented_window_mask: None,
             presented_oam: None,
             presented_obj_tiles: None,
@@ -740,6 +1088,11 @@ impl OriginalTimingHostReceipts {
         self
     }
 
+    pub fn with_presented_mode7_transform(mut self, receipt: PresentedMode7Transform) -> Self {
+        self.presented_mode7_transform = Some(receipt);
+        self
+    }
+
     pub fn with_presented_window_mask(mut self, receipt: PresentedWindowMask) -> Self {
         self.presented_window_mask = Some(receipt);
         self
@@ -762,6 +1115,55 @@ impl OriginalTimingHostReceipts {
 
     pub fn semantic(&self) -> &[OriginalTimingSemanticReceipt] {
         &self.semantic
+    }
+
+    pub(crate) fn forward_main_loop_interruption(
+        &mut self,
+        interruption: MainLoopInterruption,
+        boundary: OriginalTimingBoundary,
+    ) -> Result<(), ForwardMainLoopInterruptionError> {
+        if let Some(existing) = self.forwarded_main_loop_interruption {
+            return Err(ForwardMainLoopInterruptionError { existing });
+        }
+        self.forwarded_main_loop_interruption = Some(ForwardedMainLoopInterruption {
+            interruption,
+            boundary,
+        });
+        Ok(())
+    }
+
+    pub(crate) const fn forwarded_main_loop_interruption(
+        &self,
+    ) -> Option<ForwardedMainLoopInterruption> {
+        self.forwarded_main_loop_interruption
+    }
+
+    pub(crate) fn take_forwarded_main_loop_interruption(
+        &mut self,
+        expected: MainLoopInterruption,
+    ) -> Option<OriginalTimingBoundary> {
+        let forwarded = self.forwarded_main_loop_interruption?;
+        assert_eq!(
+            forwarded.interruption, expected,
+            "translated caller requested a different forwarded interruption phase",
+        );
+        self.forwarded_main_loop_interruption = None;
+        Some(forwarded.boundary)
+    }
+
+    pub(crate) fn discard_forwarded_main_loop_interruption(
+        &mut self,
+        expected: MainLoopInterruption,
+    ) -> bool {
+        if self
+            .forwarded_main_loop_interruption
+            .is_some_and(|forwarded| forwarded.interruption == expected)
+        {
+            self.forwarded_main_loop_interruption = None;
+            true
+        } else {
+            false
+        }
     }
 
     pub const fn host_call(&self) -> u64 {
@@ -792,15 +1194,25 @@ pub enum OriginalTimingReceiptInstallError {
     InvalidCachedSpriteExecutionProgress,
     DuplicateDialogueExecutionProgress,
     DuplicateSaveMenuInitializationProgress,
+    DuplicateItemReceiptGraphicsProgress,
+    InvalidItemReceiptGraphicsProgress,
     DuplicateDialogueClosed,
     DuplicateMainLoopProgress,
+    DuplicateSpriteMainProgress,
+    InvalidSpriteMainProgress,
+    DuplicateSpriteMainReturn,
+    DuplicateMainLoopIterationReturn,
     DuplicatePreDungeonModuleReturn,
     DuplicateMainLoopInterruption,
+    InvalidMainLoopInterruption,
     DuplicateSpotlightTableBuildProgress,
     InvalidSpotlightTableBuildProgress,
     DuplicateDungeonExitSpotlightEntryReturn,
     DuplicateDungeonExitSpotlightCallerReturn,
+    DuplicateOverworldSpotlightGoalCallerReturn,
     DuplicateOverworldMapQuadrantsPublished,
+    DuplicateWorldMapOverlayReloadReturn,
+    DuplicateWorldMapAmbientMap8Return,
     DuplicateOverworldSpritePresencePublished,
     InvalidOverworldSpriteReloadProgress,
     DuplicatePreOverworldStageCompletion,
@@ -818,4 +1230,114 @@ pub(crate) const fn sanitize_original_timing_input(inputs: u16) -> u16 {
         directions &= !0x0040;
     }
     (inputs & !0x00f0) | directions
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(serde::Serialize)]
+    struct UncheckedMode7Transform {
+        scanlines: Vec<[i16; PresentedMode7Transform::FIELD_COUNT]>,
+    }
+
+    fn serialized_mode7_transform(lines: usize) -> Vec<u8> {
+        bincode::serialize(&UncheckedMode7Transform {
+            scanlines: vec![[0; PresentedMode7Transform::FIELD_COUNT]; lines],
+        })
+        .unwrap()
+    }
+
+    fn assert_mode7_transform_deserialization_rejects(invalid_lines: usize) {
+        let error = bincode::deserialize::<PresentedMode7Transform>(&serialized_mode7_transform(
+            invalid_lines,
+        ))
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("expected exactly 224 Mode 7 scanlines"),
+            "unexpected shape error for {invalid_lines} lines: {error}",
+        );
+    }
+
+    #[test]
+    fn presented_mode7_transform_deserialization_rejects_223_scanlines() {
+        assert_mode7_transform_deserialization_rejects(223);
+    }
+
+    #[test]
+    fn presented_mode7_transform_deserialization_rejects_225_scanlines() {
+        assert_mode7_transform_deserialization_rejects(225);
+    }
+
+    #[test]
+    fn presented_mode7_transform_roundtrip_preserves_exact_visible_height() {
+        let receipt = PresentedMode7Transform::new(vec![
+            [0; PresentedMode7Transform::FIELD_COUNT];
+            PresentedMode7Transform::VISIBLE_LINES
+        ])
+        .unwrap();
+        let encoded = bincode::serialize(&receipt).unwrap();
+        let decoded: PresentedMode7Transform = bincode::deserialize(&encoded).unwrap();
+        assert_eq!(decoded, receipt);
+        assert_eq!(
+            decoded.scanlines().len(),
+            PresentedMode7Transform::VISIBLE_LINES
+        );
+    }
+
+    #[test]
+    fn forwarded_main_loop_interruption_has_one_transient_owner() {
+        let mut receipts = OriginalTimingHostReceipts::new(7, 0, Vec::new());
+        receipts
+            .forward_main_loop_interruption(
+                MainLoopInterruption::LinkOam,
+                OriginalTimingBoundary::HostReturn,
+            )
+            .unwrap();
+
+        let error = receipts
+            .forward_main_loop_interruption(
+                MainLoopInterruption::SpritePreparation,
+                OriginalTimingBoundary::NmiAccepted,
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.existing().interruption(),
+            MainLoopInterruption::LinkOam
+        );
+        assert_eq!(
+            error.existing().boundary(),
+            OriginalTimingBoundary::HostReturn
+        );
+        assert_eq!(
+            receipts.forwarded_main_loop_interruption(),
+            Some(error.existing()),
+        );
+        assert!(!receipts
+            .discard_forwarded_main_loop_interruption(MainLoopInterruption::SpritePreparation));
+        assert_eq!(
+            receipts.take_forwarded_main_loop_interruption(MainLoopInterruption::LinkOam),
+            Some(OriginalTimingBoundary::HostReturn),
+        );
+        assert_eq!(receipts.forwarded_main_loop_interruption(), None);
+    }
+
+    #[test]
+    fn forwarded_main_loop_interruption_is_not_serialized_authority() {
+        let mut receipts = OriginalTimingHostReceipts::new(7, 0, Vec::new());
+        let serialized_without_forward = bincode::serialize(&receipts).unwrap();
+        receipts
+            .forward_main_loop_interruption(
+                MainLoopInterruption::LinkOam,
+                OriginalTimingBoundary::NmiAccepted,
+            )
+            .unwrap();
+
+        let encoded = bincode::serialize(&receipts).unwrap();
+        assert_eq!(encoded, serialized_without_forward);
+        let decoded: OriginalTimingHostReceipts = bincode::deserialize(&encoded).unwrap();
+        assert_eq!(decoded.forwarded_main_loop_interruption(), None);
+    }
 }

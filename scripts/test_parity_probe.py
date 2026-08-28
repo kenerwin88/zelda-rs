@@ -153,6 +153,75 @@ class ParityProbeTest(unittest.TestCase):
         os.utime(run_dir, (mtime, mtime))
         return run_dir
 
+    def write_schema2_checkpoint(
+        self,
+        root: Path,
+        frame: int,
+        *,
+        rolling: bool = False,
+        rom_random_sha256: str | None = None,
+    ) -> tuple[Path, dict[str, object]]:
+        generation = root / f"frame-{frame:08}" if rolling else root
+        generation.mkdir(parents=True, exist_ok=True)
+        artifact_bytes = {
+            "rust_state": ("rust.z3state", b"rust"),
+            "oracle_state": ("oracle.state", b"oracle"),
+            "original_timing_resume_checkpoint": (
+                "original-timing.resume.json",
+                b"timing",
+            ),
+            "semantic_trace_checkpoint": (
+                "semantic-trace.checkpoint.json",
+                b"semantic",
+            ),
+            "initial_sram": ("initial.srm", b"sram"),
+        }
+        artifacts: dict[str, dict[str, str]] = {}
+        for key, (name, contents) in artifact_bytes.items():
+            path = generation / name
+            path.write_bytes(contents)
+            artifacts[key] = {
+                "artifact": name,
+                "sha256": hashlib.sha256(contents).hexdigest(),
+            }
+        provenance = {
+            "core_sha256": hashlib.sha256(b"core").hexdigest(),
+            "rom_sha256": hashlib.sha256(b"rom").hexdigest(),
+            "input_sha256": hashlib.sha256(b"input").hexdigest(),
+            "rom_random_sha256": rom_random_sha256,
+            "initial_sram_sha256": artifacts["initial_sram"]["sha256"],
+        }
+        manifest = {
+            "schema": parity_probe.PAIRED_RESUME_SCHEMA,
+            "boundary": "pre-frame",
+            "cpu_boundary": "quiescent",
+            "frame": frame,
+            **artifacts,
+            "core": {"sha256": provenance["core_sha256"]},
+            "rom": {"sha256": provenance["rom_sha256"]},
+            "input_script": {"sha256": provenance["input_sha256"]},
+            "rom_random_script": (
+                None
+                if rom_random_sha256 is None
+                else {"sha256": rom_random_sha256}
+            ),
+        }
+        (generation / "manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        if rolling:
+            (root / "latest.json").write_text(
+                json.dumps(
+                    {
+                        "schema": parity_probe.PAIRED_RESUME_SCHEMA,
+                        "frame": frame,
+                        "checkpoint": generation.name,
+                    }
+                ),
+                encoding="utf-8",
+            )
+        return generation, provenance
+
     def test_resolve_run_dir_prefers_coverage_over_newest_mtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             project = Path(directory)
@@ -527,7 +596,10 @@ class ParityProbeTest(unittest.TestCase):
             (checkpoint / "untrusted.txt").write_text("old", encoding="utf-8")
 
             saved, quarantined = parity_probe.promote_checkpoint_candidate(
-                candidate, checkpoint, {"schema": 1}, "stamp"
+                candidate,
+                checkpoint,
+                {"schema": parity_probe.PAIRED_RESUME_SCHEMA},
+                "stamp",
             )
 
             self.assertEqual(saved, 120)
@@ -536,7 +608,7 @@ class ParityProbeTest(unittest.TestCase):
             self.assertTrue((quarantined / "untrusted.txt").is_file())
             self.assertEqual(
                 json.loads((checkpoint / parity_probe.IDENTITY_NAME).read_text()),
-                {"saved_frame": 120, "schema": 1},
+                {"saved_frame": 120, "schema": parity_probe.PAIRED_RESUME_SCHEMA},
             )
 
     def test_failure_focus_extracts_frontier_frame_and_first_bad_pixel(self) -> None:
@@ -765,26 +837,14 @@ class ParityProbeTest(unittest.TestCase):
     def test_cross_build_checkpoint_trust_still_requires_a_complete_generation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory)
-            wanted: dict[str, object] = {}
             self.assertEqual(
                 parity_probe.checkpoint_reuse_problem(
-                    checkpoint, wanted, trust_cross_build=True
+                    checkpoint, {}, trust_cross_build=True
                 ),
                 "no saved checkpoint generation",
             )
-            generation = checkpoint / "frame-00023012"
-            generation.mkdir()
-            (generation / "manifest.json").write_text(
-                json.dumps(
-                    {"rust_state": "rust.z3state", "oracle_state": "oracle.state"}
-                ),
-                encoding="utf-8",
-            )
-            (generation / "rust.z3state").write_bytes(b"rust")
-            (generation / "oracle.state").write_bytes(b"oracle")
-            (checkpoint / "latest.json").write_text(
-                json.dumps({"frame": 23012, "checkpoint": generation.name}),
-                encoding="utf-8",
+            _, wanted = self.write_schema2_checkpoint(
+                checkpoint, 23_012, rolling=True
             )
 
             self.assertIsNone(
@@ -796,49 +856,94 @@ class ParityProbeTest(unittest.TestCase):
     def test_cross_build_checkpoint_trust_accepts_an_exact_generation_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory)
-            (checkpoint / "manifest.json").write_text(
-                json.dumps(
-                    {
-                        "frame": 13586,
-                        "rust_state": "rust.z3state",
-                        "oracle_state": "oracle.state",
-                    }
-                ),
-                encoding="utf-8",
-            )
-            (checkpoint / "rust.z3state").write_bytes(b"rust")
-            (checkpoint / "oracle.state").write_bytes(b"oracle")
+            _, wanted = self.write_schema2_checkpoint(checkpoint, 13_586)
 
             self.assertIsNone(
                 parity_probe.checkpoint_reuse_problem(
-                    checkpoint, {}, trust_cross_build=True
+                    checkpoint, wanted, trust_cross_build=True
                 )
             )
             self.assertEqual(parity_probe.saved_checkpoint_frame(checkpoint), 13586)
 
-    def test_cross_build_checkpoint_trust_rejects_different_replay_streams(self) -> None:
+    def test_cross_build_checkpoint_explicitly_rejects_schema_one(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory)
             (checkpoint / "manifest.json").write_text(
                 json.dumps(
                     {
-                        "frame": 29010,
+                        "schema": 1,
+                        "boundary": "pre-frame",
+                        "frame": 13_586,
                         "rust_state": "rust.z3state",
                         "oracle_state": "oracle.state",
-                        "rom": {"sha256": "rom"},
-                        "input_script": {"sha256": "checkpoint-input"},
-                        "rom_random_script": {"sha256": "checkpoint-rng"},
                     }
                 ),
                 encoding="utf-8",
             )
-            (checkpoint / "rust.z3state").write_bytes(b"rust")
-            (checkpoint / "oracle.state").write_bytes(b"oracle")
-            wanted = {
-                "rom_sha256": "rom",
-                "input_sha256": "newer-run-input",
-                "rom_random_sha256": "checkpoint-rng",
-            }
+
+            self.assertRegex(
+                parity_probe.checkpoint_reuse_problem(
+                    checkpoint, {}, trust_cross_build=True
+                )
+                or "",
+                r"unsupported paired checkpoint schema 1.*schema 2 is required",
+            )
+
+    def test_cross_build_checkpoint_rejects_string_state_members(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory)
+            _, wanted = self.write_schema2_checkpoint(checkpoint, 13_586)
+            manifest_path = checkpoint / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["rust_state"] = "rust.z3state"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            self.assertEqual(
+                parity_probe.checkpoint_reuse_problem(
+                    checkpoint, wanted, trust_cross_build=True
+                ),
+                "paired checkpoint Rust state is not a typed artifact receipt",
+            )
+
+    def test_cross_build_checkpoint_rejects_artifact_hash_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory)
+            _, wanted = self.write_schema2_checkpoint(checkpoint, 13_586)
+            (checkpoint / "oracle.state").write_bytes(b"tampered")
+
+            self.assertEqual(
+                parity_probe.checkpoint_reuse_problem(
+                    checkpoint, wanted, trust_cross_build=True
+                ),
+                "paired checkpoint oracle state hash does not match its receipt",
+            )
+
+    def test_cross_build_checkpoint_rejects_latest_frame_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory)
+            _, wanted = self.write_schema2_checkpoint(
+                checkpoint, 13_586, rolling=True
+            )
+            latest_path = checkpoint / "latest.json"
+            latest = json.loads(latest_path.read_text(encoding="utf-8"))
+            latest["frame"] = 13_585
+            latest_path.write_text(json.dumps(latest), encoding="utf-8")
+
+            self.assertEqual(
+                parity_probe.checkpoint_reuse_problem(
+                    checkpoint, wanted, trust_cross_build=True
+                ),
+                "paired checkpoint latest frame 13585 does not match generation frame 13586",
+            )
+
+    def test_cross_build_checkpoint_trust_rejects_different_replay_streams(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory)
+            rng_sha = hashlib.sha256(b"rng").hexdigest()
+            _, wanted = self.write_schema2_checkpoint(
+                checkpoint, 29_010, rom_random_sha256=rng_sha
+            )
+            wanted["input_sha256"] = hashlib.sha256(b"newer-run-input").hexdigest()
 
             self.assertEqual(
                 parity_probe.checkpoint_reuse_problem(
@@ -850,30 +955,12 @@ class ParityProbeTest(unittest.TestCase):
     def test_cross_build_checkpoint_accepts_explicit_live_rng_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory)
-            generation = checkpoint / "frame-00000100"
-            generation.mkdir()
-            (generation / "rust.z3state").write_bytes(b"rust")
-            (generation / "oracle.state").write_bytes(b"oracle")
-            (generation / "manifest.json").write_text(
-                json.dumps(
-                    {
-                        "frame": 100,
-                        "rust_state": "rust.z3state",
-                        "oracle_state": "oracle.state",
-                        "rom": {"sha256": "rom"},
-                        "input_script": {"sha256": "input"},
-                    }
-                )
-            )
-            (checkpoint / "latest.json").write_text(
-                json.dumps({"frame": 100, "checkpoint": generation.name})
-            )
+            _, wanted = self.write_schema2_checkpoint(checkpoint, 100, rolling=True)
             (checkpoint / parity_probe.IDENTITY_NAME).write_text(
                 json.dumps(
                     {
-                        "rom_sha256": "rom",
-                        "input_sha256": "input",
-                        "rom_random_sha256": None,
+                        "schema": parity_probe.PAIRED_RESUME_SCHEMA,
+                        "saved_frame": 100,
                     }
                 )
             )
@@ -881,13 +968,32 @@ class ParityProbeTest(unittest.TestCase):
             self.assertIsNone(
                 parity_probe.checkpoint_reuse_problem(
                     checkpoint,
-                    {
-                        "rom_sha256": "rom",
-                        "input_sha256": "input",
-                        "rom_random_sha256": None,
-                    },
+                    wanted,
                     trust_cross_build=True,
                 )
+            )
+
+    def test_cross_build_identity_cannot_override_manifest_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory)
+            _, wanted = self.write_schema2_checkpoint(checkpoint, 100, rolling=True)
+            changed_input = hashlib.sha256(b"changed-input").hexdigest()
+            wanted["input_sha256"] = changed_input
+            (checkpoint / parity_probe.IDENTITY_NAME).write_text(
+                json.dumps(
+                    {
+                        "schema": parity_probe.PAIRED_RESUME_SCHEMA,
+                        "saved_frame": 100,
+                        "input_sha256": changed_input,
+                    }
+                )
+            )
+
+            self.assertEqual(
+                parity_probe.checkpoint_reuse_problem(
+                    checkpoint, wanted, trust_cross_build=True
+                ),
+                "input changed since the checkpoint was saved",
             )
 
     def test_cold_probe_uses_only_a_complete_atomic_replay_bundle(self) -> None:

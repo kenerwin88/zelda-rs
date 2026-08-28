@@ -36,6 +36,7 @@ mod snes9x_compare;
 mod snes9x_presented_bg_scroll;
 mod snes9x_presented_bg_tilemaps;
 mod snes9x_presented_dialogue_text;
+mod snes9x_presented_mode7;
 mod snes9x_presented_window_mask;
 mod snes9x_record_commands;
 mod snes9x_route_recorder;

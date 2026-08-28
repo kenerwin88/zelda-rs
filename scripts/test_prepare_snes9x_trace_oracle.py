@@ -17,31 +17,31 @@ SPEC.loader.exec_module(MODULE)
 class PrepareSnes9xTraceOracleTests(unittest.TestCase):
     def test_trace_patch_stack_keeps_ledgers_before_presentation_receipts(self) -> None:
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-6].name,
+            MODULE.TRACE_PATCHES[-7].name,
             "zelda3-dsp-phase-ledger.patch",
         )
-        patch = MODULE.TRACE_PATCHES[-6].read_text()
+        patch = MODULE.TRACE_PATCHES[-7].read_text()
         self.assertIn("zelda3_snes9x_debug_dsp_ledger_abi_version", patch)
         self.assertIn("zelda3_ledger_copy_state", patch)
         self.assertIn("Zelda3TraceDspLedgerBranch", patch)
-        self.assertEqual(MODULE.TRACE_PATCHES[-5].name, "zelda3-dma-ledger.patch")
-        dma_patch = MODULE.TRACE_PATCHES[-5].read_text()
+        self.assertEqual(MODULE.TRACE_PATCHES[-6].name, "zelda3-dma-ledger.patch")
+        dma_patch = MODULE.TRACE_PATCHES[-6].read_text()
         self.assertIn("zelda3_snes9x_debug_dma_ledger_count", dma_patch)
         self.assertIn("Zelda3TraceDmaByteBegin", dma_patch)
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-4].name,
+            MODULE.TRACE_PATCHES[-5].name,
             "zelda3-trace-presented-cgram.patch",
         )
-        cgram_patch = MODULE.TRACE_PATCHES[-4].read_text()
+        cgram_patch = MODULE.TRACE_PATCHES[-5].read_text()
         self.assertIn("Zelda3TraceBeginPresentedPpuState", cgram_patch)
         self.assertIn("Zelda3TracePresentedCgramValue", cgram_patch)
         self.assertIn("std::memcmp(scanout_cgram, PPU.CGDATA", cgram_patch)
         self.assertIn("case 36: return Zelda3TracePresentedCgramValue", cgram_patch)
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-3].name,
+            MODULE.TRACE_PATCHES[-4].name,
             "zelda3-trace-presented-hud.patch",
         )
-        hud_patch = MODULE.TRACE_PATCHES[-3].read_text()
+        hud_patch = MODULE.TRACE_PATCHES[-4].read_text()
         self.assertIn("Zelda3TracePresentedHudTilemapValue", hud_patch)
         self.assertIn("presented_hud_word_address = 0x6040", hud_patch)
         self.assertIn("case 37: return Zelda3TracePresentedHudTilemapValue", hud_patch)
@@ -52,25 +52,38 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
         self.assertIn("Zelda3TraceSetPresentedTopCrop(overscan_offset)", hud_patch)
         self.assertIn("case 40: return Zelda3TracePresentedAnimatedBgDestination", hud_patch)
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-2].name,
+            MODULE.TRACE_PATCHES[-3].name,
             "zelda3-trace-presented-bg-tilemaps.patch",
         )
-        bg_patch = MODULE.TRACE_PATCHES[-2].read_text()
+        bg_patch = MODULE.TRACE_PATCHES[-3].read_text()
         self.assertIn("Zelda3TracePresentedBgTilemapMetaValue", bg_patch)
         self.assertIn("Zelda3TracePresentedBgTilemapWordValue", bg_patch)
         self.assertIn("std::memcmp(scanout_vram, Memory.VRAM", bg_patch)
         self.assertIn("case 41: return Zelda3TracePresentedBgTilemapMetaValue", bg_patch)
         self.assertEqual(
-            MODULE.TRACE_PATCHES[-1].name,
+            MODULE.TRACE_PATCHES[-2].name,
             "zelda3-trace-presented-window-mask.patch",
         )
-        window_patch = MODULE.TRACE_PATCHES[-1].read_text()
+        window_patch = MODULE.TRACE_PATCHES[-2].read_text()
         self.assertIn("Zelda3TracePresentedScreenWindowedValue", window_patch)
         self.assertIn("Zelda3TracePresentedWindowPredicateValue", window_patch)
         self.assertIn("Memory.FillRAM[0x212e]", window_patch)
         self.assertIn("case 43: return Zelda3TracePresentedScreenWindowedValue", window_patch)
         self.assertIn("case 44: return Zelda3TracePresentedWindowPredicateValue", window_patch)
         self.assertIn("PPU.ClipWindowOverlapLogic[layer]", window_patch)
+        self.assertEqual(
+            MODULE.TRACE_PATCHES[-1].name,
+            "zelda3-trace-joypad-publication.patch",
+        )
+        joypad_patch = MODULE.TRACE_PATCHES[-1].read_text()
+        self.assertIn("joypad_high", joypad_patch)
+        self.assertIn("joypad_low_filtered", joypad_patch)
+        self.assertIn("Memory.RAM[0x00f0]", joypad_patch)
+        self.assertIn("Memory.RAM[0x00f6]", joypad_patch)
+        self.assertIn("spotlight_var4_low", joypad_patch)
+        self.assertIn("spotlight_lower_cursor", joypad_patch)
+        self.assertIn("Memory.RAM[0x067a]", joypad_patch)
+        self.assertIn("Memory.RAM[0x0006]", joypad_patch)
 
     def test_lock_pins_the_official_snes9x_1_63_release(self) -> None:
         lock = json.loads(MODULE.LOCK_PATH.read_text())

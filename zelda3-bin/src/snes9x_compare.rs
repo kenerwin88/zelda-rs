@@ -3,6 +3,7 @@
 
 use crate::*;
 
+use std::collections::VecDeque;
 use std::env;
 use std::error::Error;
 use std::fs::{self, OpenOptions};
@@ -10,7 +11,7 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process;
 use std::sync::atomic::Ordering;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::audio_trace::AudioFrameStats;
 use crate::gpu_capture::NativeWindowOracleRenderer;
@@ -23,8 +24,11 @@ use crate::render_diagnostics::format_render_ppu_summary;
 use crate::snes9x_presented_bg_scroll::snes9x_presented_bg_scroll;
 use crate::snes9x_presented_bg_tilemaps::{snes9x_presented_bg_tilemaps, PresentedBgTilemapCache};
 use crate::snes9x_presented_dialogue_text::snes9x_presented_dialogue_text;
+use crate::snes9x_presented_mode7::snes9x_presented_mode7_transform;
 use crate::snes9x_presented_window_mask::snes9x_presented_window_mask;
-use crate::snes9x_semantic_receipts::Snes9xOracleSemanticTrace;
+use crate::snes9x_semantic_receipts::{
+    Snes9xOracleSemanticTrace, Snes9xOracleSemanticTraceCheckpoint,
+};
 use serde::{Deserialize, Serialize};
 use zelda3::{
     game_output::DspWriteEvent, OriginalTimingHostReceipts, OriginalTimingSemanticReceipt,
@@ -42,6 +46,10 @@ const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.s
 // provenance for a replay sample.
 const CARTRIDGE_RNG_STORE_PC_LOW16: u64 = 0xba7f;
 const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
+// Schema 16 adds the Zelda-visible joypad bytes published at authoritative
+// NMI completion. Older caches cannot reproduce the V225-before-V228 input
+// cadence and must not be accepted as equivalent timing authority.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 20;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SmpBootstrapInstructionStep {
@@ -660,13 +668,33 @@ const fn semantic_trace_authority_available(
     trace_configured && generic_trace_api_exported
 }
 
+const PAIRED_RESUME_SCHEMA: u32 = 2;
+
 #[derive(Debug, Deserialize)]
 struct PairedResumeManifest {
     schema: u32,
     boundary: String,
     frame: u32,
-    rust_state: String,
-    oracle_state: String,
+    rust_state: PairedResumeArtifact,
+    oracle_state: PairedResumeArtifact,
+    original_timing_resume_checkpoint: PairedResumeArtifact,
+    semantic_trace_checkpoint: PairedResumeArtifact,
+    core: PairedResumeProvenance,
+    rom: PairedResumeProvenance,
+    input_script: Option<PairedResumeProvenance>,
+    rom_random_script: Option<PairedResumeProvenance>,
+    initial_sram: PairedResumeArtifact,
+}
+
+#[derive(Debug, Deserialize)]
+struct PairedResumeArtifact {
+    artifact: String,
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct PairedResumeProvenance {
+    sha256: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -697,26 +725,40 @@ fn resolve_paired_resume_dir(path: &Path) -> Result<(PathBuf, Option<u32>), Stri
             .map_err(|error| format!("failed to read {}: {error}", latest_path.display()))?,
     )
     .map_err(|error| format!("failed to parse {}: {error}", latest_path.display()))?;
-    if latest.schema != 1 {
+    if latest.schema != PAIRED_RESUME_SCHEMA {
         return Err(format!(
-            "{} has unsupported schema {}",
+            "{} has unsupported paired-resume schema {}; schema {} is required",
             latest_path.display(),
-            latest.schema
+            latest.schema,
+            PAIRED_RESUME_SCHEMA,
         ));
     }
     let checkpoint = checkpoint_member(path, &latest.checkpoint)?;
     Ok((checkpoint, Some(latest.frame)))
 }
 
-fn paired_resume_paths(path: &Path) -> Result<(PathBuf, PathBuf), String> {
+fn paired_resume_paths(path: &Path) -> Result<(PathBuf, PathBuf, PathBuf, PathBuf), String> {
     let (dir, expected_frame) = resolve_paired_resume_dir(path)?;
     let manifest_path = dir.join("manifest.json");
-    let manifest: PairedResumeManifest = serde_json::from_slice(
-        &fs::read(&manifest_path)
-            .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?,
-    )
-    .map_err(|error| format!("failed to parse {}: {error}", manifest_path.display()))?;
-    if manifest.schema != 1 || manifest.boundary != "pre-frame" {
+    let manifest_bytes = fs::read(&manifest_path)
+        .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?;
+    let manifest_value: serde_json::Value = serde_json::from_slice(&manifest_bytes)
+        .map_err(|error| format!("failed to parse {}: {error}", manifest_path.display()))?;
+    let schema = manifest_value
+        .get("schema")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| format!("{} has no paired-resume schema", manifest_path.display()))?;
+    if schema != u64::from(PAIRED_RESUME_SCHEMA) {
+        return Err(format!(
+            "{} has unsupported paired-resume schema {schema}; schema {} is required",
+            manifest_path.display(),
+            PAIRED_RESUME_SCHEMA,
+        ));
+    }
+    let manifest: PairedResumeManifest = serde_json::from_value(manifest_value)
+        .map_err(|error| format!("failed to parse {}: {error}", manifest_path.display()))?;
+    debug_assert_eq!(manifest.schema, PAIRED_RESUME_SCHEMA);
+    if manifest.boundary != "pre-frame" {
         return Err(format!(
             "{} is not a supported pre-frame paired resume",
             manifest_path.display()
@@ -731,15 +773,145 @@ fn paired_resume_paths(path: &Path) -> Result<(PathBuf, PathBuf), String> {
             ));
         }
     }
-    let rust_state = checkpoint_member(&dir, &manifest.rust_state)?;
-    let oracle_state = checkpoint_member(&dir, &manifest.oracle_state)?;
-    if !rust_state.is_file() || !oracle_state.is_file() {
+    let verify_artifact =
+        |label: &str, artifact: &PairedResumeArtifact| -> Result<PathBuf, String> {
+            let artifact_path = checkpoint_member(&dir, &artifact.artifact)?;
+            if !artifact_path.is_file() {
+                return Err(format!(
+                    "{} paired-resume {label} artifact is missing",
+                    artifact_path.display()
+                ));
+            }
+            let actual_sha256 = parity::evidence::sha256_file(&artifact_path)
+                .map_err(|error| format!("failed to hash {}: {error}", artifact_path.display()))?;
+            if actual_sha256 != artifact.sha256 {
+                return Err(format!(
+                    "{} paired-resume {label} hash mismatch: expected {}, got {}",
+                    artifact_path.display(),
+                    artifact.sha256,
+                    actual_sha256,
+                ));
+            }
+            Ok(artifact_path)
+        };
+    let rust_state = verify_artifact("Rust state", &manifest.rust_state)?;
+    let oracle_state = verify_artifact("oracle state", &manifest.oracle_state)?;
+    let original_timing_resume = verify_artifact(
+        "original-timing checkpoint",
+        &manifest.original_timing_resume_checkpoint,
+    )?;
+    let semantic_trace = verify_artifact(
+        "semantic-trace checkpoint",
+        &manifest.semantic_trace_checkpoint,
+    )?;
+    verify_artifact("initial SRAM", &manifest.initial_sram)?;
+    let rust_checkpoint = load_play_crash_checkpoint(&rust_state)
+        .map_err(|error| format!("failed to validate {}: {error}", rust_state.display()))?;
+    if rust_checkpoint.host_frame != manifest.frame {
         return Err(format!(
-            "{} does not contain both paired state files",
-            dir.display()
+            "{} records frame {}, but its Rust checkpoint records frame {}",
+            manifest_path.display(),
+            manifest.frame,
+            rust_checkpoint.host_frame,
         ));
     }
-    Ok((rust_state, oracle_state))
+    Ok((
+        rust_state,
+        oracle_state,
+        original_timing_resume,
+        semantic_trace,
+    ))
+}
+
+fn validate_paired_resume_provenance(
+    path: &Path,
+    core: &Path,
+    rom: &Path,
+    input_script: Option<&Path>,
+    rom_random_script: Option<&Path>,
+) -> Result<(), String> {
+    let (dir, _) = resolve_paired_resume_dir(path)?;
+    let manifest_path = dir.join("manifest.json");
+    let manifest: PairedResumeManifest = serde_json::from_slice(
+        &fs::read(&manifest_path)
+            .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?,
+    )
+    .map_err(|error| format!("failed to parse {}: {error}", manifest_path.display()))?;
+    if manifest.schema != PAIRED_RESUME_SCHEMA {
+        return Err(format!(
+            "{} has unsupported paired-resume schema {}; schema {} is required",
+            manifest_path.display(),
+            manifest.schema,
+            PAIRED_RESUME_SCHEMA,
+        ));
+    }
+
+    let verify_required =
+        |label: &str, selected: &Path, expected: &PairedResumeProvenance| -> Result<(), String> {
+            let actual = parity::evidence::sha256_file(selected).map_err(|error| {
+                format!(
+                    "failed to hash selected {label} {}: {error}",
+                    selected.display()
+                )
+            })?;
+            if actual != expected.sha256 {
+                return Err(format!(
+                    "paired-resume {label} provenance mismatch: manifest={}, selected={actual}",
+                    expected.sha256,
+                ));
+            }
+            Ok(())
+        };
+    let verify_optional = |label: &str,
+                           selected: Option<&Path>,
+                           expected: Option<&PairedResumeProvenance>|
+     -> Result<(), String> {
+        match (selected, expected) {
+            (None, None) => Ok(()),
+            (Some(selected), Some(expected)) => verify_required(label, selected, expected),
+            (Some(_), None) => Err(format!(
+                "paired-resume {label} provenance is absent, but a source was selected"
+            )),
+            (None, Some(_)) => Err(format!(
+                "paired-resume {label} provenance requires the recorded source"
+            )),
+        }
+    };
+
+    verify_required("core", core, &manifest.core)?;
+    verify_required("ROM", rom, &manifest.rom)?;
+    verify_optional("input script", input_script, manifest.input_script.as_ref())?;
+    verify_optional(
+        "ROM-random script",
+        rom_random_script,
+        manifest.rom_random_script.as_ref(),
+    )?;
+    Ok(())
+}
+
+fn validate_paired_resume_sram_selection(
+    resume_paired: bool,
+    load_sram: bool,
+) -> Result<(), String> {
+    if resume_paired && load_sram {
+        return Err(
+            "--resume-paired is self-contained and cannot be combined with --load-sram; the paired initial.srm is provenance, not a progressed-state replacement"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn restore_original_timing_resume_checkpoint(
+    game: &mut ZeldaState,
+    path: &Path,
+) -> Result<(), String> {
+    let bytes =
+        fs::read(path).map_err(|error| format!("failed to read {}: {error}", path.display()))?;
+    let checkpoint: zelda3::OriginalTimingResumeCheckpoint = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("failed to decode {}: {error}", path.display()))?;
+    game.restore_original_timing_resume_checkpoint(checkpoint)
+        .map_err(|error| format!("failed to restore {}: {error}", path.display()))
 }
 
 /// Display-domain receipt captured from the Snes9x PPU and the immutable Rust
@@ -1682,6 +1854,16 @@ pub(crate) fn run_compare_snes9x_oracle(args: &[String]) {
     run_compare_libretro_oracle(args, Some("snes9x"), Some("Snes9x"));
 }
 
+fn validate_oracle_av_checkpoint_interval(interval: Option<u32>) -> Result<(), String> {
+    if interval.is_some() {
+        return Err(
+            "oracle A/V checkpoints are unavailable: pinned Snes9x serialization mutates live DSP state; capture from reset without in-run checkpoints"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn run_capture_snes9x_av(args: &[String]) {
     let (
         Some(core_path),
@@ -1706,28 +1888,78 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
     )
     else {
         eprintln!(
-            "usage: zelda3 --capture-snes9x-av CORE ROM FRAMES INPUT RNG SRAM OUTPUT EXPECTED_CORE_SHA256 EXPECTED_ROM_SHA256"
+            "usage: zelda3 --capture-snes9x-av CORE ROM FRAMES INPUT RNG SRAM OUTPUT EXPECTED_CORE_SHA256 EXPECTED_ROM_SHA256 [--resume-oracle-state STATE --resume-semantic-trace-checkpoint CHECKPOINT --start-frame N] [--checkpoint-interval N]"
         );
         process::exit(2);
     };
-    let (resume_oracle_state, start_frame) = match args.get(9).map(String::as_str) {
-        None if args.len() == 9 => (None, 0),
-        Some("--resume-oracle-state")
-            if args.get(11).map(String::as_str) == Some("--start-frame") && args.len() == 13 =>
-        {
-            let start_frame = args[12].parse::<u32>().unwrap_or_else(|error| {
-                eprintln!("invalid --start-frame `{}`: {error}", args[12]);
+    let mut resume_oracle_state = None;
+    let mut resume_semantic_trace_checkpoint = None;
+    let mut start_frame = 0;
+    let mut checkpoint_interval = None;
+    let mut argument = 9;
+    while argument < args.len() {
+        match args[argument].as_str() {
+            "--resume-oracle-state" if resume_oracle_state.is_none() => {
+                let Some(value) = args.get(argument + 1) else {
+                    eprintln!("--resume-oracle-state requires a path");
+                    process::exit(2);
+                };
+                resume_oracle_state = Some(PathBuf::from(value));
+                argument += 2;
+            }
+            "--resume-semantic-trace-checkpoint" if resume_semantic_trace_checkpoint.is_none() => {
+                let Some(value) = args.get(argument + 1) else {
+                    eprintln!("--resume-semantic-trace-checkpoint requires a path");
+                    process::exit(2);
+                };
+                resume_semantic_trace_checkpoint = Some(PathBuf::from(value));
+                argument += 2;
+            }
+            "--start-frame" if start_frame == 0 => {
+                let Some(value) = args.get(argument + 1) else {
+                    eprintln!("--start-frame requires a frame");
+                    process::exit(2);
+                };
+                start_frame = value.parse::<u32>().unwrap_or_else(|error| {
+                    eprintln!("invalid --start-frame `{value}`: {error}");
+                    process::exit(2);
+                });
+                argument += 2;
+            }
+            "--checkpoint-interval" if checkpoint_interval.is_none() => {
+                let Some(value) = args.get(argument + 1) else {
+                    eprintln!("--checkpoint-interval requires a nonzero frame count");
+                    process::exit(2);
+                };
+                let interval = value.parse::<u32>().unwrap_or_else(|error| {
+                    eprintln!("invalid --checkpoint-interval `{value}`: {error}");
+                    process::exit(2);
+                });
+                if interval == 0 {
+                    eprintln!("--checkpoint-interval requires a nonzero frame count");
+                    process::exit(2);
+                }
+                checkpoint_interval = Some(interval);
+                argument += 2;
+            }
+            option => {
+                eprintln!("unknown oracle A/V capture option: {option}");
                 process::exit(2);
-            });
-            (Some(PathBuf::from(&args[10])), start_frame)
+            }
         }
-        _ => {
-            eprintln!(
-                "usage: zelda3 --capture-snes9x-av CORE ROM FRAMES INPUT RNG SRAM OUTPUT EXPECTED_CORE_SHA256 EXPECTED_ROM_SHA256 [--resume-oracle-state STATE --start-frame N]"
-            );
-            process::exit(2);
-        }
-    };
+    }
+    validate_oracle_av_checkpoint_interval(checkpoint_interval).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        process::exit(2);
+    });
+    if resume_oracle_state.is_some() != resume_semantic_trace_checkpoint.is_some()
+        || (resume_oracle_state.is_some() != (start_frame != 0))
+    {
+        eprintln!(
+            "oracle A/V resume requires --resume-oracle-state, --resume-semantic-trace-checkpoint, and nonzero --start-frame together"
+        );
+        process::exit(2);
+    }
     let frames = frames.parse::<u32>().unwrap_or_else(|error| {
         eprintln!("invalid oracle A/V capture frame count {frames}: {error}");
         process::exit(2);
@@ -1813,6 +2045,24 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
             eprintln!("failed to configure Snes9x semantic receipt capture: {error}");
             process::exit(1);
         });
+    if let Some(path) = resume_semantic_trace_checkpoint.as_deref() {
+        let checkpoint: Snes9xOracleSemanticTraceCheckpoint = fs::read(path)
+            .map_err(|error| format!("read {}: {error}", path.display()))
+            .and_then(|bytes| {
+                serde_json::from_slice(&bytes)
+                    .map_err(|error| format!("decode {}: {error}", path.display()))
+            })
+            .unwrap_or_else(|error| {
+                eprintln!("failed to read Snes9x semantic trace checkpoint: {error}");
+                process::exit(2);
+            });
+        semantic_trace
+            .restore_checkpoint(checkpoint)
+            .unwrap_or_else(|error| {
+                eprintln!("failed to restore Snes9x semantic trace checkpoint: {error}");
+                process::exit(2);
+            });
+    }
     let mut oracle_rng_trace = LiveOracleRngTrace::new(semantic_trace.backing_path().to_path_buf());
     let mut rng_cursor = rng_samples.partition_point(|sample| sample.execution_frame < start_frame);
     let _compare_lock = acquire_snes9x_compare_lock();
@@ -1891,6 +2141,11 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
             "sha256": parity::evidence::sha256_file(path).unwrap(),
             "frame": start_frame,
         })),
+        "resume_semantic_trace_checkpoint": resume_semantic_trace_checkpoint.as_ref().map(|path| serde_json::json!({
+            "path": path,
+            "sha256": parity::evidence::sha256_file(path).unwrap(),
+            "frame": start_frame,
+        })),
         "av_hash_ledger": {
             "schema": 1,
             "evidence_schema": 2,
@@ -1899,7 +2154,7 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
             "audio_canonicalization": "interleaved stereo signed 16-bit little-endian samples",
         },
         "original_timing_host_receipts": {
-            "schema": 8,
+            "schema": ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA,
             "artifact": "original-timing-host-receipts.jsonl.zst",
             "coverage": "one backend-neutral source receipt for every captured host frame",
         },
@@ -1907,6 +2162,7 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
             "input.txt", "rom-random.txt", "initial.srm", "oracle_initial.state",
             "oracle_last_before.state", "oracle_final.state", "av_hashes.jsonl",
             "original-timing-host-receipts.jsonl.zst",
+            "semantic-trace-final.checkpoint.json",
             "result.json"
         ],
     });
@@ -1955,8 +2211,20 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         let spotlight_var4_low_at_return = oracle_wram
             .and_then(|ram| ram.get(crate::snes9x_semantic_receipts::SPOTLIGHT_VAR4_LOW_ADDRESS))
             .copied();
+        let spotlight_lower_cursor_at_return = oracle_wram
+            .and_then(|ram| {
+                ram.get(
+                    crate::snes9x_semantic_receipts::SPOTLIGHT_LOWER_CURSOR_ADDRESS
+                        ..crate::snes9x_semantic_receipts::SPOTLIGHT_LOWER_CURSOR_ADDRESS + 2,
+                )
+            })
+            .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]));
         let mut semantic = semantic_trace
-            .read_after_host_call(dialogue_message_read_position, spotlight_var4_low_at_return)
+            .read_after_host_call(
+                dialogue_message_read_position,
+                spotlight_var4_low_at_return,
+                spotlight_lower_cursor_at_return,
+            )
             .unwrap_or_else(|error| {
                 eprintln!(
                     "failed to read Snes9x semantic receipts at capture frame {frame}: {error}"
@@ -2042,6 +2310,14 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         eprintln!("failed to write final Snes9x state: {error}");
         process::exit(1);
     });
+    fs::write(
+        output_dir.join("semantic-trace-final.checkpoint.json"),
+        serde_json::to_vec_pretty(&semantic_trace.checkpoint()).unwrap(),
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("failed to write final Snes9x semantic trace checkpoint: {error}");
+        process::exit(1);
+    });
     let result = serde_json::json!({
         "status": "oracle_captured",
         "parity_eligible": false,
@@ -2091,6 +2367,81 @@ struct CachedOracleAvRecord {
     audio: Option<parity::av::AudioDigest>,
 }
 
+struct PendingCachedAvFrame {
+    record: CachedOracleAvRecord,
+    replay_input: u16,
+    sample_frames: usize,
+    rust_audio: Option<serde_json::Value>,
+    rust_video: Option<crate::gpu_capture::QueuedGpuVideoDigest>,
+    paired_boundary: Option<(u32, Box<ZeldaState>)>,
+    compare: bool,
+}
+
+fn finish_pending_cached_av_frame(
+    pending: PendingCachedAvFrame,
+    renderer: Option<&mut NativeWindowOracleRenderer>,
+    compare_video: bool,
+    compare_audio: bool,
+    candidate_writer: &mut BufWriter<fs::File>,
+    oracle_slice_writer: &mut BufWriter<fs::File>,
+    serialization_nanos: &mut u128,
+) -> Result<Option<(u32, bool, bool, Option<(u32, Box<ZeldaState>)>)>, String> {
+    let rust_video = match pending.rust_video {
+        Some(queued) => Some(
+            renderer
+                .ok_or_else(|| "queued cached video has no renderer owner".to_string())?
+                .finish_game_video_digest(queued)?,
+        ),
+        None => None,
+    };
+    if !pending.compare {
+        return Ok(None);
+    }
+    let serialization_started = Instant::now();
+    let video_matches = !compare_video || rust_video.as_ref() == pending.record.video.as_ref();
+    let audio_matches = !compare_audio
+        || match (&pending.rust_audio, &pending.record.audio) {
+            (Some(rust), Some(oracle)) => {
+                rust == &serde_json::to_value(oracle)
+                    .expect("serialize cached audio digest for comparison")
+            }
+            (None, None) => true,
+            _ => false,
+        };
+    serde_json::to_writer(
+        &mut *oracle_slice_writer,
+        &serde_json::json!({
+            "schema": pending.record.schema,
+            "frame": pending.record.frame,
+            "input": pending.record.input,
+            "oracle_audio_sample_frames": pending.record.oracle_audio_sample_frames,
+            "video": if compare_video { pending.record.video.as_ref() } else { None },
+            "audio": if compare_audio { pending.record.audio.as_ref() } else { None },
+        }),
+    )
+    .map_err(|error| format!("failed to write cached oracle A/V slice: {error}"))?;
+    oracle_slice_writer
+        .write_all(b"\n")
+        .map_err(|error| format!("failed to terminate cached oracle A/V slice row: {error}"))?;
+    write_av_hash_record(
+        Some(candidate_writer),
+        pending.record.frame,
+        pending.replay_input,
+        pending.sample_frames,
+        rust_video.map(|rust| serde_json::json!({"rust": rust})),
+        pending
+            .rust_audio
+            .map(|rust| serde_json::json!({"rust": rust})),
+    );
+    *serialization_nanos += serialization_started.elapsed().as_nanos();
+    Ok(Some((
+        pending.record.frame,
+        video_matches,
+        audio_matches,
+        pending.paired_boundary,
+    )))
+}
+
 fn cached_ledger_input(value: &str) -> Result<u16, String> {
     let digits = value
         .strip_prefix("0x")
@@ -2100,33 +2451,78 @@ fn cached_ledger_input(value: &str) -> Result<u16, String> {
         .map_err(|error| format!("invalid cached input {value}: {error}"))
 }
 
-fn write_cached_av_final_paired_resume(
+fn write_cached_av_paired_resume_from_sources(
     cache: &Path,
-    output: &Path,
     cache_manifest: &serde_json::Value,
     cache_manifest_bytes: &[u8],
     rom: &Path,
     rom_sha256: &str,
     frame: u32,
     game: &ZeldaState,
+    oracle_source: &Path,
+    semantic_trace_source: &Path,
+    final_dir: &Path,
 ) -> Result<PathBuf, String> {
     if !game.paired_resume_cpu_boundary_is_quiescent() {
         return Err(
             "cached A/V replay ended inside an unserialized ROM-call continuation".to_string(),
         );
     }
-    let oracle_source = cache.join("oracle_final.state");
     let initial_sram_source = cache.join("initial.srm");
+    let oracle_relative = oracle_source.strip_prefix(cache).map_err(|_| {
+        format!(
+            "oracle checkpoint {} is outside cache {}",
+            oracle_source.display(),
+            cache.display()
+        )
+    })?;
+    let semantic_relative = semantic_trace_source.strip_prefix(cache).map_err(|_| {
+        format!(
+            "semantic checkpoint {} is outside cache {}",
+            semantic_trace_source.display(),
+            cache.display()
+        )
+    })?;
     let expected_oracle_sha256 = cache_manifest
         .get("artifact_sha256")
-        .and_then(|artifacts| artifacts.get("oracle_final.state"))
+        .and_then(|artifacts| artifacts.get(oracle_relative.to_string_lossy().as_ref()))
         .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| "cached A/V manifest has no final oracle-state hash".to_string())?;
+        .ok_or_else(|| {
+            format!(
+                "cached A/V manifest has no oracle-state hash for {}",
+                oracle_relative.display()
+            )
+        })?;
     let actual_oracle_sha256 = parity::evidence::sha256_file(&oracle_source)
         .map_err(|error| format!("failed to hash {}: {error}", oracle_source.display()))?;
     if actual_oracle_sha256 != expected_oracle_sha256 {
         return Err(format!(
             "cached final oracle state hash mismatch: expected {expected_oracle_sha256}, got {actual_oracle_sha256}"
+        ));
+    }
+    if !semantic_trace_source.is_file() {
+        return Err(format!(
+            "cached A/V frontier has no semantic trace checkpoint: {}",
+            semantic_trace_source.display()
+        ));
+    }
+    let expected_semantic_trace_sha256 = cache_manifest
+        .get("artifact_sha256")
+        .and_then(|artifacts| artifacts.get(semantic_relative.to_string_lossy().as_ref()))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            "cached semantic trace checkpoint is absent from the artifact inventory".to_string()
+        })?;
+    let semantic_trace_sha256 =
+        parity::evidence::sha256_file(&semantic_trace_source).map_err(|error| {
+            format!(
+                "failed to hash {}: {error}",
+                semantic_trace_source.display()
+            )
+        })?;
+    if semantic_trace_sha256 != expected_semantic_trace_sha256 {
+        return Err(format!(
+            "cached semantic trace checkpoint hash mismatch: expected {expected_semantic_trace_sha256}, got {semantic_trace_sha256}"
         ));
     }
     let cache_identity = cache_manifest
@@ -2152,14 +2548,26 @@ fn write_cached_av_final_paired_resume(
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "cached A/V identity has no initial-SRAM hash".to_string())?;
 
-    let final_dir = output.join("paired-final");
     if final_dir.exists() {
         return Err(format!(
             "refusing to replace existing paired frontier {}",
             final_dir.display()
         ));
     }
-    let temporary_dir = output.join(format!(".paired-final.tmp-{}", process::id()));
+    fs::create_dir_all(
+        final_dir
+            .parent()
+            .ok_or_else(|| format!("paired frontier has no parent: {}", final_dir.display()))?,
+    )
+    .map_err(|error| format!("create paired frontier parent: {error}"))?;
+    let temporary_dir = final_dir.with_file_name(format!(
+        ".{}.tmp-{}",
+        final_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("paired"),
+        process::id()
+    ));
     if temporary_dir.exists() {
         return Err(format!(
             "stale paired-frontier temporary directory exists: {}",
@@ -2174,6 +2582,15 @@ fn write_cached_av_final_paired_resume(
                 temporary_dir.display()
             )
         })?;
+        let original_timing_resume =
+            game.capture_original_timing_resume_checkpoint()
+                .map_err(|error| {
+                    format!("cached Rust frontier is not an exact timing boundary: {error}")
+                })?;
+        let original_timing_resume_bytes = serde_json::to_vec_pretty(&original_timing_resume)
+            .map_err(|error| {
+                format!("failed to encode original-timing resume checkpoint: {error}")
+            })?;
         let rust_state = PlayCrashCheckpoint {
             magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
             host_frame: frame,
@@ -2185,18 +2602,42 @@ fn write_cached_av_final_paired_resume(
             .map_err(|error| format!("failed to serialize cached Rust frontier: {error}"))?;
         fs::write(temporary_dir.join("rust.z3state"), &rust_bytes)
             .map_err(|error| format!("failed to write cached Rust frontier: {error}"))?;
-        fs::copy(&oracle_source, temporary_dir.join("oracle.state"))
+        fs::write(
+            temporary_dir.join("original-timing.resume.json"),
+            &original_timing_resume_bytes,
+        )
+        .map_err(|error| format!("failed to write original-timing resume checkpoint: {error}"))?;
+        fs::copy(oracle_source, temporary_dir.join("oracle.state"))
             .map_err(|error| format!("failed to copy cached final oracle state: {error}"))?;
         fs::copy(&initial_sram_source, temporary_dir.join("initial.srm"))
             .map_err(|error| format!("failed to copy cached initial SRAM: {error}"))?;
+        fs::copy(
+            semantic_trace_source,
+            temporary_dir.join("semantic-trace.checkpoint.json"),
+        )
+        .map_err(|error| format!("failed to copy cached semantic trace checkpoint: {error}"))?;
         let manifest = serde_json::json!({
-            "schema": 1,
+            "schema": PAIRED_RESUME_SCHEMA,
             "boundary": "pre-frame",
             "frame": frame,
             "cpu_boundary": "quiescent",
             "renderer_warmup_required": true,
-            "rust_state": "rust.z3state",
-            "oracle_state": "oracle.state",
+            "rust_state": {
+                "artifact": "rust.z3state",
+                "sha256": parity::evidence::sha256_bytes(&rust_bytes),
+            },
+            "oracle_state": {
+                "artifact": "oracle.state",
+                "sha256": actual_oracle_sha256,
+            },
+            "original_timing_resume_checkpoint": {
+                "artifact": "original-timing.resume.json",
+                "sha256": parity::evidence::sha256_bytes(&original_timing_resume_bytes),
+            },
+            "semantic_trace_checkpoint": {
+                "artifact": "semantic-trace.checkpoint.json",
+                "sha256": semantic_trace_sha256,
+            },
             "source": {
                 "kind": "matched-rust-only-cached-snes9x-av-replay",
                 "cache": cache,
@@ -2208,8 +2649,6 @@ fn write_cached_av_final_paired_resume(
             "input_script": {"sha256": input_sha256},
             "rom_random_script": {"sha256": rom_random_sha256},
             "initial_sram": {"artifact": "initial.srm", "sha256": initial_sram_sha256},
-            "rust_state_sha256": parity::evidence::sha256_bytes(&rust_bytes),
-            "oracle_state_sha256": actual_oracle_sha256,
         });
         fs::write(
             temporary_dir.join("manifest.json"),
@@ -2229,16 +2668,186 @@ fn write_cached_av_final_paired_resume(
         let _ = fs::remove_dir_all(&temporary_dir);
     }
     result?;
-    Ok(final_dir)
+    Ok(final_dir.to_path_buf())
+}
+
+fn write_cached_av_final_paired_resume(
+    cache: &Path,
+    output: &Path,
+    cache_manifest: &serde_json::Value,
+    cache_manifest_bytes: &[u8],
+    rom: &Path,
+    rom_sha256: &str,
+    frame: u32,
+    game: &ZeldaState,
+) -> Result<PathBuf, String> {
+    let oracle_source = cache.join("oracle_final.state");
+    let semantic_trace_source = cache.join("semantic-trace-final.checkpoint.json");
+    let final_dir = output.join("paired-final");
+    write_cached_av_paired_resume_from_sources(
+        cache,
+        cache_manifest,
+        cache_manifest_bytes,
+        rom,
+        rom_sha256,
+        frame,
+        game,
+        &oracle_source,
+        &semantic_trace_source,
+        &final_dir,
+    )
+}
+
+fn cached_oracle_checkpoint_sources(
+    cache: &Path,
+    cache_manifest: &serde_json::Value,
+    frame: u32,
+) -> Result<(PathBuf, PathBuf), String> {
+    let relative_dir = PathBuf::from(format!("oracle-checkpoints/frame-{frame:08}"));
+    let checkpoint_dir = cache.join(&relative_dir);
+    let manifest_path = checkpoint_dir.join("manifest.json");
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &fs::read(&manifest_path)
+            .map_err(|error| format!("read {}: {error}", manifest_path.display()))?,
+    )
+    .map_err(|error| format!("decode {}: {error}", manifest_path.display()))?;
+    if manifest.get("schema").and_then(serde_json::Value::as_u64) != Some(1)
+        || manifest.get("boundary").and_then(serde_json::Value::as_str) != Some("pre-frame")
+        || manifest.get("frame").and_then(serde_json::Value::as_u64) != Some(u64::from(frame))
+    {
+        return Err(format!(
+            "unsupported oracle checkpoint boundary: {}",
+            manifest_path.display()
+        ));
+    }
+    let resolve = |key: &str, expected_name: &str| -> Result<PathBuf, String> {
+        let record = manifest
+            .get(key)
+            .ok_or_else(|| format!("oracle checkpoint has no {key}"))?;
+        let artifact = record
+            .get("artifact")
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| *value == expected_name)
+            .ok_or_else(|| format!("oracle checkpoint has unsafe {key} artifact"))?;
+        let path = checkpoint_dir.join(artifact);
+        let actual = parity::evidence::sha256_file(&path)
+            .map_err(|error| format!("hash {}: {error}", path.display()))?;
+        let expected = record
+            .get("sha256")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| format!("oracle checkpoint has no {key} hash"))?;
+        if actual != expected {
+            return Err(format!(
+                "oracle checkpoint {key} hash mismatch: expected {expected}, got {actual}"
+            ));
+        }
+        let relative = path
+            .strip_prefix(cache)
+            .expect("checkpoint path was constructed beneath cache")
+            .to_string_lossy();
+        let inventory = cache_manifest
+            .get("artifact_sha256")
+            .and_then(|artifacts| artifacts.get(relative.as_ref()))
+            .and_then(serde_json::Value::as_str);
+        if inventory != Some(actual.as_str()) {
+            return Err(format!(
+                "oracle checkpoint {key} is not bound by the immutable cache inventory"
+            ));
+        }
+        Ok(path)
+    };
+    let oracle = resolve("oracle_state", "oracle.state")?;
+    let semantic = resolve(
+        "semantic_trace_checkpoint",
+        "semantic-trace.checkpoint.json",
+    )?;
+    let cache_identity = cache_manifest
+        .get("cache_identity")
+        .ok_or_else(|| "cached A/V manifest has no cache identity".to_string())?;
+    let provenance = manifest
+        .get("provenance")
+        .ok_or_else(|| "oracle checkpoint has no source provenance".to_string())?;
+    for (checkpoint_key, cache_key) in
+        [("core_sha256", "core_sha256"), ("rom_sha256", "rom_sha256")]
+    {
+        if provenance.get(checkpoint_key) != cache_identity.get(cache_key) {
+            return Err(format!(
+                "oracle checkpoint {checkpoint_key} does not match cache identity"
+            ));
+        }
+    }
+    let cache_sources = cache_identity
+        .get("source_artifact_sha256")
+        .ok_or_else(|| "cached A/V identity has no source artifacts".to_string())?;
+    for (checkpoint_key, cache_name) in [
+        ("input_sha256", "input.txt"),
+        ("rom_random_sha256", "rom-random.txt"),
+        ("initial_sram_sha256", "initial.srm"),
+    ] {
+        if provenance.get(checkpoint_key) != cache_sources.get(cache_name) {
+            return Err(format!(
+                "oracle checkpoint {checkpoint_key} does not match cache source identity"
+            ));
+        }
+    }
+    Ok((oracle, semantic))
+}
+
+fn write_cached_av_periodic_paired_resume(
+    cache: &Path,
+    output: &Path,
+    cache_manifest: &serde_json::Value,
+    cache_manifest_bytes: &[u8],
+    rom: &Path,
+    rom_sha256: &str,
+    frame: u32,
+    game: &ZeldaState,
+) -> Result<PathBuf, String> {
+    let (oracle, semantic) = cached_oracle_checkpoint_sources(cache, cache_manifest, frame)?;
+    let paired_root = output.join("paired");
+    let final_dir = paired_root.join(format!("frame-{frame:08}"));
+    let checkpoint = write_cached_av_paired_resume_from_sources(
+        cache,
+        cache_manifest,
+        cache_manifest_bytes,
+        rom,
+        rom_sha256,
+        frame,
+        game,
+        &oracle,
+        &semantic,
+        &final_dir,
+    )?;
+    let latest = serde_json::json!({
+        "schema": PAIRED_RESUME_SCHEMA,
+        "frame": frame,
+        "checkpoint": checkpoint
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| format!("invalid paired checkpoint path: {}", checkpoint.display()))?,
+    });
+    let latest_path = paired_root.join("latest.json");
+    let temporary = paired_root.join(format!(".latest.tmp-{}", process::id()));
+    fs::write(
+        &temporary,
+        serde_json::to_vec_pretty(&latest)
+            .map_err(|error| format!("encode paired latest manifest: {error}"))?,
+    )
+    .map_err(|error| format!("write paired latest manifest: {error}"))?;
+    fs::rename(&temporary, &latest_path)
+        .map_err(|error| format!("install paired latest manifest: {error}"))?;
+    Ok(checkpoint)
 }
 
 pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     let (Some(cache), Some(rom), Some(output)) = (args.first(), args.get(1), args.get(2)) else {
-        eprintln!("usage: zelda3 --replay-cached-snes9x-av CACHE_DIR ROM_PATH OUTPUT_DIR [--resume-paired DIR] [--compare-from-frame N] [--ignore-video] [--ignore-audio]");
+        eprintln!("usage: zelda3 --replay-cached-snes9x-av CACHE_DIR ROM_PATH OUTPUT_DIR [--resume-paired DIR] [--compare-from-frame N] [--frames N] [--paired-checkpoint-interval N] [--ignore-video] [--ignore-audio]");
         process::exit(2);
     };
     let mut resume_paired = None;
     let mut requested_compare_from_frame = None;
+    let mut requested_frames = None;
+    let mut requested_paired_checkpoint_interval = None;
     let mut ignore_video = false;
     let mut ignore_audio = false;
     let mut argument = 3;
@@ -2263,6 +2872,38 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 }));
                 argument += 2;
             }
+            "--frames" if requested_frames.is_none() => {
+                let Some(value) = args.get(argument + 1) else {
+                    eprintln!("--frames requires a nonzero frame count");
+                    process::exit(2);
+                };
+                let frames = value.parse::<u32>().unwrap_or_else(|error| {
+                    eprintln!("invalid --frames `{value}`: {error}");
+                    process::exit(2);
+                });
+                if frames == 0 {
+                    eprintln!("--frames requires a nonzero frame count");
+                    process::exit(2);
+                }
+                requested_frames = Some(frames);
+                argument += 2;
+            }
+            "--paired-checkpoint-interval" if requested_paired_checkpoint_interval.is_none() => {
+                let Some(value) = args.get(argument + 1) else {
+                    eprintln!("--paired-checkpoint-interval requires a nonzero frame count");
+                    process::exit(2);
+                };
+                let interval = value.parse::<u32>().unwrap_or_else(|error| {
+                    eprintln!("invalid --paired-checkpoint-interval `{value}`: {error}");
+                    process::exit(2);
+                });
+                if interval == 0 {
+                    eprintln!("--paired-checkpoint-interval requires a nonzero frame count");
+                    process::exit(2);
+                }
+                requested_paired_checkpoint_interval = Some(interval);
+                argument += 2;
+            }
             "--ignore-video" if !ignore_video => {
                 ignore_video = true;
                 argument += 1;
@@ -2272,7 +2913,7 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 argument += 1;
             }
             _ => {
-                eprintln!("usage: zelda3 --replay-cached-snes9x-av CACHE_DIR ROM_PATH OUTPUT_DIR [--resume-paired DIR] [--compare-from-frame N] [--ignore-video] [--ignore-audio]");
+                eprintln!("usage: zelda3 --replay-cached-snes9x-av CACHE_DIR ROM_PATH OUTPUT_DIR [--resume-paired DIR] [--compare-from-frame N] [--frames N] [--paired-checkpoint-interval N] [--ignore-video] [--ignore-audio]");
                 process::exit(2);
             }
         }
@@ -2298,17 +2939,33 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         eprintln!("{} has no cache identity", manifest_path.display());
         process::exit(2);
     });
+    let source_artifacts = identity.get("source_artifact_sha256").unwrap_or_else(|| {
+        eprintln!(
+            "{} has no source artifact identity",
+            manifest_path.display()
+        );
+        process::exit(2);
+    });
     let timing_receipts_schema = identity
         .get("oracle_evidence")
         .and_then(|evidence| evidence.get("timing_host_receipts_schema"))
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(0);
-    if timing_receipts_schema != 8 {
+    if timing_receipts_schema != u64::from(ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA) {
         eprintln!(
-            "cached Rust-only A/V replay requires timing-host receipt schema 8, got {timing_receipts_schema}"
+            "cached Rust-only A/V replay requires timing-host receipt schema {}, got {timing_receipts_schema}",
+            ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA,
         );
         process::exit(2);
     }
+    let paired_checkpoint_interval = requested_paired_checkpoint_interval.or_else(|| {
+        identity
+            .get("oracle_evidence")
+            .and_then(|evidence| evidence.get("oracle_checkpoint_interval"))
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value != 0)
+    });
     let cache_start_frame = identity
         .get("start_frame")
         .and_then(serde_json::Value::as_u64)
@@ -2400,36 +3057,77 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         process::exit(2);
     });
     let (mut game, start_frame) = if let Some(path) = resume_paired.as_deref() {
-        let (rust_state, oracle_state) = paired_resume_paths(path).unwrap_or_else(|error| {
+        let (rust_state, _oracle_state, original_timing_resume, _semantic_trace) =
+            paired_resume_paths(path).unwrap_or_else(|error| {
+                eprintln!(
+                    "failed to resolve paired resume {}: {error}",
+                    path.display()
+                );
+                process::exit(2);
+            });
+        let (paired_dir, _) = resolve_paired_resume_dir(path).unwrap_or_else(|error| {
             eprintln!(
                 "failed to resolve paired resume {}: {error}",
                 path.display()
             );
             process::exit(2);
         });
-        let expected_oracle_state_sha256 = identity
-            .get("oracle_initial_state_sha256")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or_else(|| {
-                eprintln!(
-                    "{} resumed cache identity has no oracle initial-state hash",
-                    manifest_path.display()
-                );
+        let paired_manifest_path = paired_dir.join("manifest.json");
+        let paired_manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&paired_manifest_path).unwrap_or_else(|error| {
+                eprintln!("failed to read {}: {error}", paired_manifest_path.display());
                 process::exit(2);
-            });
-        let actual_oracle_state_sha256 = parity::evidence::sha256_file(&oracle_state)
+            }))
             .unwrap_or_else(|error| {
                 eprintln!(
-                    "failed to hash paired oracle state {}: {error}",
-                    oracle_state.display()
+                    "failed to parse {}: {error}",
+                    paired_manifest_path.display()
                 );
                 process::exit(2);
             });
-        if actual_oracle_state_sha256 != expected_oracle_state_sha256 {
-            eprintln!(
-                "cached A/V oracle state does not match the paired Rust checkpoint: expected {expected_oracle_state_sha256}, got {actual_oracle_state_sha256}"
-            );
-            process::exit(2);
+        for (name, expected) in [
+            (
+                "core",
+                identity
+                    .get("core_sha256")
+                    .and_then(serde_json::Value::as_str),
+            ),
+            (
+                "rom",
+                identity
+                    .get("rom_sha256")
+                    .and_then(serde_json::Value::as_str),
+            ),
+            (
+                "input_script",
+                source_artifacts
+                    .get("input.txt")
+                    .and_then(serde_json::Value::as_str),
+            ),
+            (
+                "rom_random_script",
+                source_artifacts
+                    .get("rom-random.txt")
+                    .and_then(serde_json::Value::as_str),
+            ),
+            (
+                "initial_sram",
+                source_artifacts
+                    .get("initial.srm")
+                    .and_then(serde_json::Value::as_str),
+            ),
+        ] {
+            let actual = paired_manifest
+                .get(name)
+                .and_then(|record| record.get("sha256"))
+                .and_then(serde_json::Value::as_str);
+            if actual != expected {
+                eprintln!(
+                    "paired A/V {name} identity {:?} does not match cache {:?}",
+                    actual, expected
+                );
+                process::exit(2);
+            }
         }
         let checkpoint = load_play_crash_checkpoint(&rust_state).unwrap_or_else(|error| {
             eprintln!(
@@ -2440,16 +3138,34 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         });
         let mut game = checkpoint.game;
         game.restore_live_rom_timing_after_checkpoint();
+        restore_original_timing_resume_checkpoint(&mut game, &original_timing_resume)
+            .unwrap_or_else(|error| {
+                eprintln!("{error}");
+                process::exit(2);
+            });
         (game, checkpoint.host_frame)
     } else {
         (load_default_play_state(), 0)
     };
-    if start_frame != cache_start_frame {
+    let cache_end_frame = identity
+        .get("frames_requested")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(0) as u32;
+    if start_frame < cache_start_frame || start_frame >= cache_end_frame {
         eprintln!(
-            "cached A/V start frame {cache_start_frame} does not match Rust replay boundary {start_frame}"
+            "cached A/V replay boundary {start_frame} is outside cache coverage {cache_start_frame}..{cache_end_frame}"
         );
         process::exit(2);
     }
+    let stop_before_frame = requested_frames.map(|frames| {
+        start_frame
+            .checked_add(frames)
+            .unwrap_or_else(|| {
+                eprintln!("cached A/V requested frame range overflows u32");
+                process::exit(2);
+            })
+            .min(cache_end_frame)
+    });
     game.set_rom(&rom_bytes);
     if start_frame == 0 {
         apply_sram_to_game_or_exit(&mut game, &sram_path, &sram);
@@ -2517,7 +3233,15 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
     let mut frames_compared = 0_u32;
     let mut matched = true;
     let mut first_rng_drift = None;
+    let mut pending_frames = VecDeque::<PendingCachedAvFrame>::new();
+    let timing_enabled = env::var_os("ZELDA3_SNES9X_TIMING").is_some();
+    let replay_started = Instant::now();
+    let mut receipt_nanos = 0_u128;
+    let mut engine_nanos = 0_u128;
+    let mut audio_nanos = 0_u128;
+    let mut serialization_nanos = 0_u128;
     for (line_index, line) in BufReader::new(ledger_file).lines().enumerate() {
+        let receipt_started = Instant::now();
         let line = line.unwrap_or_else(|error| {
             eprintln!("failed to read {}: {error}", ledger_path.display());
             process::exit(2);
@@ -2553,9 +3277,6 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             );
             process::exit(2);
         }
-        if record.frame < start_frame {
-            continue;
-        }
         let timing_receipt_line = timing_receipt_lines
             .next()
             .unwrap_or_else(|| {
@@ -2589,6 +3310,16 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             );
             process::exit(2);
         }
+        if record.frame < start_frame {
+            continue;
+        }
+        if stop_before_frame.is_some_and(|end| record.frame >= end) {
+            break;
+        }
+        if timing_enabled {
+            receipt_nanos += receipt_started.elapsed().as_nanos();
+        }
+        let engine_started = Instant::now();
         game.install_original_timing_host_receipts(timing_receipts)
             .unwrap_or_else(|error| {
                 eprintln!(
@@ -2598,24 +3329,21 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 process::exit(1);
             });
         game.zelda_run_frame(replay_input as i32);
+        if timing_enabled {
+            engine_nanos += engine_started.elapsed().as_nanos();
+        }
         let rust_video = renderer.as_mut().map(|renderer| {
-            let rgba = renderer
-                .render_game_rgba(&mut game, record.frame)
+            renderer
+                .queue_game_video_digest(&mut game, record.frame)
                 .unwrap_or_else(|error| {
                     eprintln!(
-                        "cached A/V video render failed at frame {}: {error}",
+                        "cached A/V video render submission failed at frame {}: {error}",
                         record.frame
                     );
                     process::exit(1);
-                });
-            canonical_rust_video_digest(rgba.as_slice(), 256, 224).unwrap_or_else(|error| {
-                eprintln!(
-                    "cached A/V video hash failed at frame {}: {error}",
-                    record.frame
-                );
-                process::exit(1);
-            })
+                })
         });
+        let audio_started = Instant::now();
         let sample_frames = record
             .oracle_audio_sample_frames
             .or_else(|| record.audio.as_ref().map(|audio| audio.sample_frames as usize))
@@ -2630,22 +3358,9 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         game.zelda_render_audio(&mut audio_buffer, sample_frames as i32, 2);
         game.zelda_discard_unused_audio_frames();
         let rust_audio = compare_audio.then(|| canonical_audio_digest(&audio_buffer));
-        let video_matches = !compare_video
-            || match (&rust_video, &record.video) {
-                (Some(rust), Some(oracle)) => {
-                    rust == &serde_json::to_value(oracle).expect("serialize cached video digest")
-                }
-                (None, None) => true,
-                _ => false,
-            };
-        let audio_matches = !compare_audio
-            || match (&rust_audio, &record.audio) {
-                (Some(rust), Some(oracle)) => {
-                    rust == &serde_json::to_value(oracle).expect("serialize cached audio digest")
-                }
-                (None, None) => true,
-                _ => false,
-            };
+        if timing_enabled {
+            audio_nanos += audio_started.elapsed().as_nanos();
+        }
         frames_completed = frames_completed.saturating_add(1);
         if first_rng_drift.is_none() {
             if let Err(error) = game.finish_rom_random_replay_through(frames_completed) {
@@ -2659,52 +3374,114 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
                 }));
             }
         }
-        if record.frame < compare_from_frame {
-            continue;
-        }
-        serde_json::to_writer(
-            &mut oracle_slice_writer,
-            &serde_json::json!({
-                "schema": record.schema,
-                "frame": record.frame,
-                "input": record.input,
-                "oracle_audio_sample_frames": record.oracle_audio_sample_frames,
-                "video": if compare_video { record.video.as_ref() } else { None },
-                "audio": if compare_audio { record.audio.as_ref() } else { None },
-            }),
-        )
-        .unwrap_or_else(|error| {
-            eprintln!("failed to write cached oracle A/V slice: {error}");
-            process::exit(1);
-        });
-        oracle_slice_writer
-            .write_all(b"\n")
-            .unwrap_or_else(|error| {
-                eprintln!("failed to terminate cached oracle A/V slice row: {error}");
-                process::exit(1);
-            });
-        write_av_hash_record(
-            Some(&mut candidate_writer),
-            record.frame,
+        let paired_boundary = paired_checkpoint_interval
+            .filter(|interval| frames_completed % interval == 0)
+            .map(|_| (frames_completed, Box::new(game.clone())));
+        pending_frames.push_back(PendingCachedAvFrame {
+            compare: record.frame >= compare_from_frame,
+            record,
             replay_input,
             sample_frames,
-            rust_video.map(|rust| serde_json::json!({"rust": rust})),
-            rust_audio.map(|rust| serde_json::json!({"rust": rust})),
-        );
-        frames_compared = frames_compared.saturating_add(1);
-        if !video_matches || !audio_matches {
-            eprintln!(
-                "cached Snes9x A/V divergence at frame {}: video_match={video_matches} audio_match={audio_matches}",
-                record.frame
-            );
-            matched = false;
-            // ZELDA3_CACHED_AV_CONTINUE keeps replaying past the first divergence. The A/V
-            // verdict is unchanged (still a failure, and the ledger is no longer a parity
-            // receipt beyond this frame), but it lets an instrumentation pass — e.g.
-            // ZELDA3_ASSERT_SCRATCH_CONFLICTS — reach the later parts of a recorded route
-            // instead of stopping at the current frontier. Diagnostic use only.
-            if std::env::var_os("ZELDA3_CACHED_AV_CONTINUE").is_none() {
-                break;
+            rust_audio,
+            rust_video,
+            paired_boundary,
+        });
+        if pending_frames.len() == renderer::MODERN_GPU_READBACK_PIPELINE_DEPTH {
+            let pending = pending_frames
+                .pop_front()
+                .expect("GPU readback pipeline is non-empty at capacity");
+            if let Some((frame, video_matches, audio_matches, paired_boundary)) =
+                finish_pending_cached_av_frame(
+                    pending,
+                    renderer.as_mut(),
+                    compare_video,
+                    compare_audio,
+                    &mut candidate_writer,
+                    &mut oracle_slice_writer,
+                    &mut serialization_nanos,
+                )
+                .unwrap_or_else(|error| {
+                    eprintln!("cached A/V readback failed: {error}");
+                    process::exit(1);
+                })
+            {
+                frames_compared = frames_compared.saturating_add(1);
+                if !video_matches || !audio_matches {
+                    eprintln!(
+                        "cached Snes9x A/V divergence at frame {frame}: video_match={video_matches} audio_match={audio_matches}"
+                    );
+                    matched = false;
+                    // Explicit diagnostic continuation keeps replaying past the
+                    // first divergence. Development runs fail fast by default.
+                    if std::env::var_os("ZELDA3_CACHED_AV_CONTINUE").is_none() {
+                        break;
+                    }
+                } else if let Some((boundary, checkpoint_game)) = paired_boundary {
+                    write_cached_av_periodic_paired_resume(
+                        cache,
+                        output,
+                        &manifest,
+                        &manifest_bytes,
+                        rom,
+                        &actual_rom_sha256,
+                        boundary,
+                        &checkpoint_game,
+                    )
+                    .unwrap_or_else(|error| {
+                        eprintln!(
+                            "failed to write cached A/V paired checkpoint at {boundary}: {error}"
+                        );
+                        process::exit(1);
+                    });
+                }
+            }
+        }
+    }
+    while matched || std::env::var_os("ZELDA3_CACHED_AV_CONTINUE").is_some() {
+        let Some(pending) = pending_frames.pop_front() else {
+            break;
+        };
+        if let Some((frame, video_matches, audio_matches, paired_boundary)) =
+            finish_pending_cached_av_frame(
+                pending,
+                renderer.as_mut(),
+                compare_video,
+                compare_audio,
+                &mut candidate_writer,
+                &mut oracle_slice_writer,
+                &mut serialization_nanos,
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("cached A/V readback failed: {error}");
+                process::exit(1);
+            })
+        {
+            frames_compared = frames_compared.saturating_add(1);
+            if !video_matches || !audio_matches {
+                eprintln!(
+                    "cached Snes9x A/V divergence at frame {frame}: video_match={video_matches} audio_match={audio_matches}"
+                );
+                matched = false;
+                if std::env::var_os("ZELDA3_CACHED_AV_CONTINUE").is_none() {
+                    break;
+                }
+            } else if let Some((boundary, checkpoint_game)) = paired_boundary {
+                write_cached_av_periodic_paired_resume(
+                    cache,
+                    output,
+                    &manifest,
+                    &manifest_bytes,
+                    rom,
+                    &actual_rom_sha256,
+                    boundary,
+                    &checkpoint_game,
+                )
+                .unwrap_or_else(|error| {
+                    eprintln!(
+                        "failed to write cached A/V paired checkpoint at {boundary}: {error}"
+                    );
+                    process::exit(1);
+                });
             }
         }
     }
@@ -2716,6 +3493,48 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         eprintln!("failed to flush cached oracle A/V slice: {error}");
         process::exit(1);
     });
+    if timing_enabled {
+        let total_nanos = replay_started.elapsed().as_nanos();
+        let (
+            capture_ms,
+            gpu_render_ms,
+            gpu_submit_ms,
+            gpu_readback_ms,
+            video_hash_ms,
+            source_extract_ms,
+            compositor_submit_ms,
+            history_submit_ms,
+            surface_present_ms,
+        ) = renderer
+            .as_ref()
+            .map(NativeWindowOracleRenderer::timing_millis)
+            .unwrap_or_default();
+        let accounted_nanos = receipt_nanos
+            + engine_nanos
+            + audio_nanos
+            + serialization_nanos
+            + (capture_ms + gpu_render_ms + gpu_submit_ms + gpu_readback_ms + video_hash_ms)
+                * 1_000_000;
+        eprintln!(
+            "cached_av_timing frames={} total_ms={} receipts_ms={} engine_ms={} video_capture_ms={} render_total_ms={} source_extract_ms={} compositor_submit_ms={} history_submit_ms={} surface_present_ms={} gpu_copy_submit_ms={} gpu_readback_ms={} video_hash_ms={} audio_hash_ms={} serialization_ms={} residual_ms={}",
+            frames_completed.saturating_sub(start_frame),
+            total_nanos / 1_000_000,
+            receipt_nanos / 1_000_000,
+            engine_nanos / 1_000_000,
+            capture_ms,
+            gpu_render_ms,
+            source_extract_ms,
+            compositor_submit_ms,
+            history_submit_ms,
+            surface_present_ms,
+            gpu_submit_ms,
+            gpu_readback_ms,
+            video_hash_ms,
+            audio_nanos / 1_000_000,
+            serialization_nanos / 1_000_000,
+            total_nanos.saturating_sub(accounted_nanos) / 1_000_000,
+        );
+    }
     if frames_compared == 0 {
         eprintln!("comparison frame {compare_from_frame} is not covered by the cached A/V ledger");
         process::exit(2);
@@ -2731,22 +3550,25 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
             "cached A/V diagnostic: ROM random consumption had already drifted by the first A/V mismatch: {error}"
         );
     }
-    let paired_frontier = (matched && compare_video && compare_audio).then(|| {
-        write_cached_av_final_paired_resume(
-            cache,
-            output,
-            &manifest,
-            &manifest_bytes,
-            rom,
-            &actual_rom_sha256,
-            frames_completed,
-            &game,
-        )
-        .unwrap_or_else(|error| {
-            eprintln!("failed to write cached A/V paired frontier: {error}");
-            process::exit(1);
-        })
-    });
+    let paired_frontier =
+        (matched && compare_video && compare_audio && frames_completed == cache_end_frame).then(
+            || {
+                write_cached_av_final_paired_resume(
+                    cache,
+                    output,
+                    &manifest,
+                    &manifest_bytes,
+                    rom,
+                    &actual_rom_sha256,
+                    frames_completed,
+                    &game,
+                )
+                .unwrap_or_else(|error| {
+                    eprintln!("failed to write cached A/V paired frontier: {error}");
+                    process::exit(1);
+                })
+            },
+        );
     let candidate_manifest = serde_json::json!({
         "schema": 1,
         "kind": "zelda3-rust-only-cached-snes9x-av-replay",
@@ -2757,6 +3579,8 @@ pub(crate) fn run_replay_cached_snes9x_av(args: &[String]) {
         "start_frame": start_frame,
         "compare_from_frame": compare_from_frame,
         "frames_completed": frames_completed,
+        "stop_before_frame": stop_before_frame,
+        "paired_checkpoint_interval": paired_checkpoint_interval,
         "frames_compared": frames_compared,
         "resume_paired": resume_paired,
         "comparison_lanes": {"video": compare_video, "audio": compare_audio},
@@ -3227,6 +4051,8 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut load_sram = None::<PathBuf>;
     let mut resume_rust_state = None::<PathBuf>;
     let mut resume_oracle_state = None::<PathBuf>;
+    let mut resume_original_timing_checkpoint = None::<PathBuf>;
+    let mut resume_semantic_trace_checkpoint = None::<PathBuf>;
     let mut resume_oracle_sram = None::<PathBuf>;
     let mut resume_paired = None::<PathBuf>;
     let mut paired_resume_captures = Vec::<PairedResumeCapture>::new();
@@ -3604,6 +4430,11 @@ pub(crate) fn run_compare_libretro_oracle(
             }
         }
     }
+    validate_paired_resume_sram_selection(resume_paired.is_some(), load_sram.is_some())
+        .unwrap_or_else(|error| {
+            eprintln!("{error}");
+            process::exit(2);
+        });
     if let Some(dir) = replay_bundle_dir.as_deref() {
         if input_script_path.is_some() || rom_random_script.is_some() || load_sram.is_some() {
             eprintln!(
@@ -3662,15 +4493,32 @@ pub(crate) fn run_compare_libretro_oracle(
         process::exit(2);
     }
     if let Some(path) = resume_paired.as_deref() {
-        let (rust_state, oracle_state) = paired_resume_paths(path).unwrap_or_else(|error| {
+        let (rust_state, oracle_state, original_timing_resume, semantic_trace) =
+            paired_resume_paths(path).unwrap_or_else(|error| {
+                eprintln!(
+                    "failed to resolve paired resume {}: {error}",
+                    path.display()
+                );
+                process::exit(2);
+            });
+        validate_paired_resume_provenance(
+            path,
+            Path::new(core_path),
+            Path::new(rom_path),
+            input_script_path.as_deref(),
+            rom_random_script.as_deref(),
+        )
+        .unwrap_or_else(|error| {
             eprintln!(
-                "failed to resolve paired resume {}: {error}",
+                "failed to bind paired resume {} to the selected replay sources: {error}",
                 path.display()
             );
             process::exit(2);
         });
         resume_rust_state = Some(rust_state);
         resume_oracle_state = Some(oracle_state);
+        resume_original_timing_checkpoint = Some(original_timing_resume);
+        resume_semantic_trace_checkpoint = Some(semantic_trace);
     }
     if resume_rust_state.is_some() != resume_oracle_state.is_some() {
         eprintln!(
@@ -3694,10 +4542,12 @@ pub(crate) fn run_compare_libretro_oracle(
         eprintln!("--live-oracle-rng requires a direct input script, not --replay-save");
         process::exit(2);
     }
-    if compare_engine_state_from_frame.is_some() && !live_oracle_rng {
-        eprintln!("--compare-engine-state-from-frame requires --live-oracle-rng");
-        process::exit(2);
-    }
+    // Engine-state comparison is independent of how cartridge RNG values are
+    // supplied.  Live RNG is required by the cold calibration which creates a
+    // replay script, but a manifest-bound recorded script is the exact input
+    // needed by checkpoint diagnostics after that calibration.  Keeping this
+    // lane available for both sources lets a short paired replay reproduce the
+    // same Zelda-state divergence without changing promotion authority.
     if live_oracle_rng && resume_rust_state.is_some() {
         eprintln!(
             "--live-oracle-rng is a cold-oracle authority mode and cannot use paired resume states"
@@ -3893,6 +4743,12 @@ pub(crate) fn run_compare_libretro_oracle(
         });
         let mut game = checkpoint.game;
         game.restore_live_rom_timing_after_checkpoint();
+        if let Some(path) = resume_original_timing_checkpoint.as_deref() {
+            restore_original_timing_resume_checkpoint(&mut game, path).unwrap_or_else(|error| {
+                eprintln!("{error}");
+                process::exit(2);
+            });
+        }
         (game, checkpoint.host_frame)
     } else {
         // Start from the same embedded asset pack as plain `cargo run`.
@@ -3996,6 +4852,34 @@ pub(crate) fn run_compare_libretro_oracle(
         // activate Live timing and suppress the legacy fallback without any
         // observation from the authority.
         oracle_semantic_trace = None;
+    }
+    if let Some(path) = resume_semantic_trace_checkpoint.as_deref() {
+        let trace = oracle_semantic_trace.as_mut().unwrap_or_else(|| {
+            eprintln!(
+                "paired resume requires the maintained Snes9x semantic trace API to restore {}",
+                path.display()
+            );
+            process::exit(2);
+        });
+        let checkpoint: Snes9xOracleSemanticTraceCheckpoint = fs::read(path)
+            .map_err(|error| format!("read {}: {error}", path.display()))
+            .and_then(|bytes| {
+                serde_json::from_slice(&bytes)
+                    .map_err(|error| format!("decode {}: {error}", path.display()))
+            })
+            .unwrap_or_else(|error| {
+                eprintln!("failed to read paired Snes9x semantic checkpoint: {error}");
+                process::exit(2);
+            });
+        trace
+            .restore_checkpoint(checkpoint)
+            .unwrap_or_else(|error| {
+                eprintln!(
+                    "failed to restore paired Snes9x semantic checkpoint {}: {error}",
+                    path.display()
+                );
+                process::exit(2);
+            });
     }
     if let Some(path) = resume_oracle_state.as_deref() {
         let state = read_file_or_exit(path, "libretro resume state");
@@ -4107,6 +4991,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let engine_state_scan_all = env::var_os("ZELDA3_ENGINE_STATE_SCAN_ALL").is_some();
     let mut engine_state_divergences: Vec<(u32, Vec<String>)> = Vec::new();
     let mut oracle_before_state = initial_oracle_state.clone();
+    let oracle_before_state_frame = start_frame;
     let mut video_mismatch_ranges = Vec::<(u32, u32)>::new();
     let mut first_video_mismatch = None::<String>;
     let mut live_oracle_rng_trace = live_oracle_rng_trace_path.map(LiveOracleRngTrace::new);
@@ -4416,8 +5301,10 @@ pub(crate) fn run_compare_libretro_oracle(
                 rom_path,
                 input_script_path.as_deref(),
                 rom_random_script.as_deref(),
+                &initial_sram,
                 &game,
                 &oracle,
+                oracle_semantic_trace.as_ref(),
             )
             .unwrap_or_else(|error| {
                 eprintln!(
@@ -4447,8 +5334,10 @@ pub(crate) fn run_compare_libretro_oracle(
                 rom_path,
                 input_script_path.as_deref(),
                 rom_random_script.as_deref(),
+                &initial_sram,
                 &game,
                 &oracle,
+                oracle_semantic_trace.as_ref(),
             )
             .unwrap_or_else(|error| {
                 eprintln!(
@@ -4511,10 +5400,20 @@ pub(crate) fn run_compare_libretro_oracle(
                         ram.get(crate::snes9x_semantic_receipts::SPOTLIGHT_VAR4_LOW_ADDRESS)
                     })
                     .copied();
+                let spotlight_lower_cursor_at_return = oracle_wram
+                    .and_then(|ram| {
+                        ram.get(
+                            crate::snes9x_semantic_receipts::SPOTLIGHT_LOWER_CURSOR_ADDRESS
+                                ..crate::snes9x_semantic_receipts::SPOTLIGHT_LOWER_CURSOR_ADDRESS
+                                    + 2,
+                        )
+                    })
+                    .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]));
                 let mut semantic = trace
                     .read_after_host_call(
                         dialogue_message_read_position,
                         spotlight_var4_low_at_return,
+                        spotlight_lower_cursor_at_return,
                     )
                     .unwrap_or_else(|error| {
                     eprintln!(
@@ -6756,8 +7655,22 @@ pub(crate) fn run_compare_libretro_oracle(
         stage(6, &mut stage_ns, &mut stage_mark);
         if stage_timing && frame_index % 2000 == 1999 {
             let total: u128 = stage_ns.iter().sum();
+            let (
+                capture_ms,
+                gpu_render_ms,
+                gpu_submit_ms,
+                gpu_readback_ms,
+                video_hash_ms,
+                source_extract_ms,
+                compositor_submit_ms,
+                history_submit_ms,
+                surface_present_ms,
+            ) = native_window_video
+                .as_ref()
+                .map(gpu_capture::NativeWindowOracleRenderer::timing_millis)
+                .unwrap_or_default();
             eprintln!(
-                "snes9x_timing frames={} total_ms={} pre_state_ms={} poly_ms={} run_frame_ms={} video_ms={} oracle_ms={} audio_ms={} receipts_ms={}",
+                "snes9x_timing frames={} total_ms={} pre_state_ms={} poly_ms={} run_frame_ms={} video_ms={} oracle_ms={} audio_ms={} receipts_ms={} video_capture_ms={} render_total_ms={} source_extract_ms={} compositor_submit_ms={} history_submit_ms={} surface_present_ms={} gpu_copy_submit_ms={} gpu_readback_ms={} video_hash_ms={}",
                 frame_index + 1,
                 total / 1_000_000,
                 stage_ns[0] / 1_000_000,
@@ -6767,6 +7680,15 @@ pub(crate) fn run_compare_libretro_oracle(
                 stage_ns[4] / 1_000_000,
                 stage_ns[5] / 1_000_000,
                 stage_ns[6] / 1_000_000,
+                capture_ms,
+                gpu_render_ms,
+                source_extract_ms,
+                compositor_submit_ms,
+                history_submit_ms,
+                surface_present_ms,
+                gpu_submit_ms,
+                gpu_readback_ms,
+                video_hash_ms,
             );
         }
         if let Some((x, y)) = trace_video_pixel.filter(|_| compare_this_frame) {
@@ -7090,19 +8012,28 @@ pub(crate) fn run_compare_libretro_oracle(
                 append_u32_range(&mut video_mismatch_ranges, frame_index);
                 if first_video_mismatch.is_none() {
                     first_video_mismatch = Some(video_diff.clone());
-                    let oracle_system_ram = oracle
-                        .memory_bytes(RETRO_MEMORY_SYSTEM_RAM)
-                        .map(<[u8]>::to_vec);
-                    let mut oracle_after_state = vec![0; oracle_before_state.len()];
-                    oracle
-                        .serialize_state_into(&mut oracle_after_state)
-                        .unwrap_or_else(|e| {
-                            eprintln!(
+                    if oracle_before_state_frame != frame_index {
+                        eprintln!(
+                            "{oracle_name} video divergence at frame {frame_index}: {video_diff}; input={input:04x}; ports={ports:02x?}; main={:02x} sub={:02x} subsub={:02x}",
+                            game.ram[0x10], game.ram[0x11], game.ram[0xb0],
+                        );
+                        eprintln!(
+                            "detailed pre-frame artifacts require a focused replay beginning at frame {frame_index}; the authoritative cold run does not serialize Snes9x in flight"
+                        );
+                    } else {
+                        let oracle_system_ram = oracle
+                            .memory_bytes(RETRO_MEMORY_SYSTEM_RAM)
+                            .map(<[u8]>::to_vec);
+                        let mut oracle_after_state = vec![0; oracle_before_state.len()];
+                        oracle
+                            .serialize_state_into(&mut oracle_after_state)
+                            .unwrap_or_else(|e| {
+                                eprintln!(
                                 "failed to serialize {oracle_name} after frame {frame_index}: {e}"
                             );
-                            process::exit(1);
-                        });
-                    let oracle_before_vram = oracle
+                                process::exit(1);
+                            });
+                        let oracle_before_vram = oracle
                         .unserialize_state(&oracle_before_state)
                         .and_then(|()| {
                             oracle
@@ -7123,54 +8054,66 @@ pub(crate) fn run_compare_libretro_oracle(
                             );
                             process::exit(1);
                         });
-                    let display_oracle_receipt =
-                        capture_oracle_ppu_probe(&oracle).map(|oracle_ppu| {
-                            let (rust, mut rust_candidates, rust_context) = rust_rendered_display
-                                .map(|rendered| capture_rendered_rust_ppu_probe(&game, rendered))
-                                .unwrap_or_else(|| capture_rust_ppu_probe(&mut game));
-                            annotate_display_candidate_differences(
-                                &oracle_ppu,
-                                &mut rust_candidates,
+                        let display_oracle_receipt =
+                            capture_oracle_ppu_probe(&oracle).map(|oracle_ppu| {
+                                let (rust, mut rust_candidates, rust_context) =
+                                    rust_rendered_display
+                                        .map(|rendered| {
+                                            capture_rendered_rust_ppu_probe(&game, rendered)
+                                        })
+                                        .unwrap_or_else(|| capture_rust_ppu_probe(&mut game));
+                                annotate_display_candidate_differences(
+                                    &oracle_ppu,
+                                    &mut rust_candidates,
+                                );
+                                DisplayOracleReceipt {
+                                    frame: frame_index,
+                                    stage: "after",
+                                    oracle: oracle_ppu,
+                                    rust,
+                                    rust_candidates,
+                                    rust_context,
+                                }
+                            });
+                        let oracle_presented_oam = snes9x_presented_oam_bytes(&oracle)
+                        .unwrap_or_else(|error| {
+                            eprintln!(
+                                "failed to capture pinned-Snes9x presented OAM at frame {frame_index}: {error}"
                             );
-                            DisplayOracleReceipt {
-                                frame: frame_index,
-                                stage: "after",
-                                oracle: oracle_ppu,
-                                rust,
-                                rust_candidates,
-                                rust_context,
-                            }
+                            process::exit(1);
                         });
-                    let artifact_dir = write_libretro_parity_failure_artifacts(
-                        pre_game.as_ref(),
-                        &game,
-                        rust_video_frame,
-                        &rust_audio,
-                        &capture,
-                        &oracle_before_state,
-                        &oracle_after_state,
-                        &pre_ram,
-                        &input_history,
-                        frame_index,
-                        input,
-                        oracle.av_info.timing.sample_rate.round() as u32,
-                        oracle_name.as_str(),
-                        oracle_system_ram.as_deref(),
-                        Some(&oracle_before_vram),
-                        rust_rendered_display,
-                        display_oracle_receipt.as_ref(),
-                        format!("{oracle_name} video divergence: {video_diff}"),
-                    )
-                    .ok();
-                    eprintln!(
+                        let artifact_dir = write_libretro_parity_failure_artifacts(
+                            pre_game.as_ref(),
+                            &game,
+                            rust_video_frame,
+                            &rust_audio,
+                            &capture,
+                            &oracle_before_state,
+                            &oracle_after_state,
+                            &pre_ram,
+                            &input_history,
+                            frame_index,
+                            input,
+                            oracle.av_info.timing.sample_rate.round() as u32,
+                            oracle_name.as_str(),
+                            oracle_system_ram.as_deref(),
+                            Some(&oracle_before_vram),
+                            rust_rendered_display,
+                            display_oracle_receipt.as_ref(),
+                            oracle_presented_oam.as_deref(),
+                            format!("{oracle_name} video divergence: {video_diff}"),
+                        )
+                        .ok();
+                        eprintln!(
                         "{oracle_name} video divergence at frame {frame_index}: {video_diff}; input={input:04x}; ports={ports:02x?}; main={:02x} sub={:02x} subsub={:02x}",
                         game.ram[0x10], game.ram[0x11], game.ram[0xb0],
                     );
-                    eprintln!("rust audio:  {:?}", rust_stats);
-                    eprintln!("{oracle_name} audio: {:?}", oracle_stats);
-                    eprintln!("rust audio debug: {}", game.zelda_audio_debug_summary());
-                    if let Some(dir) = artifact_dir {
-                        eprintln!("parity failure artifacts: {}", dir.display());
+                        eprintln!("rust audio:  {:?}", rust_stats);
+                        eprintln!("{oracle_name} audio: {:?}", oracle_stats);
+                        eprintln!("rust audio debug: {}", game.zelda_audio_debug_summary());
+                        if let Some(dir) = artifact_dir {
+                            eprintln!("parity failure artifacts: {}", dir.display());
+                        }
                     }
                 }
             }
@@ -7268,6 +8211,7 @@ pub(crate) fn run_compare_libretro_oracle(
         audio_report.as_ref(),
         &audio_frame_ends,
         &oracle_before_state,
+        oracle_before_state_frame,
         &oracle,
         &game,
         completed_frames,
@@ -7668,13 +8612,97 @@ pub(crate) fn format_u32_ranges(ranges: &[(u32, u32)]) -> String {
         .join(", ")
 }
 
-fn oracle_preframe_snapshot_required(frame: u32, frames: u32, compare_this_frame: bool) -> bool {
-    // Failure artifacts only consume the pre-frame state inside the comparison
-    // window. The final session receipt also retains the last pre-frame state.
-    // Avoid serializing the ~800 KiB oracle state on every warm-up frame: long
-    // checkpoint-based probes otherwise spend most of their time copying data
-    // that can never be observed.
-    compare_this_frame || frame.saturating_add(1) == frames
+fn oracle_preframe_snapshot_required(_frame: u32, _frames: u32, _compare_this_frame: bool) -> bool {
+    // Pinned Snes9x's save path is not observationally pure: SPC_DSP::copy_state
+    // canonicalizes live BRR and echo-history storage while serializing. Calling
+    // retro_serialize in the authoritative loop can therefore change later APU
+    // handshakes and, eventually, the CPU instruction that crosses vblank.
+    //
+    // Keep the cold/live oracle execution free of in-run save-state calls. The
+    // session's initial state and complete input stream remain replayable, and
+    // the final state is captured only after comparison has ended. Focused
+    // diagnostics that need a pre-frame state must replay with that frame as
+    // their start boundary instead of perturbing every preceding host call.
+    false
+}
+
+fn install_directory_atomically(
+    final_dir: &Path,
+    write_contents: impl FnOnce(&Path) -> Result<(), Box<dyn Error>>,
+) -> Result<(), Box<dyn Error>> {
+    if final_dir.exists() {
+        return Err(format!(
+            "refusing to replace existing paired-resume generation {}",
+            final_dir.display()
+        )
+        .into());
+    }
+    let parent = final_dir
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let name = final_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            format!(
+                "paired-resume generation has no file name: {}",
+                final_dir.display()
+            )
+        })?;
+    let temporary = parent.join(format!(".{name}.tmp-{}", process::id()));
+    if temporary.exists() {
+        return Err(format!(
+            "stale paired-resume temporary generation exists: {}",
+            temporary.display()
+        )
+        .into());
+    }
+    fs::create_dir(&temporary)?;
+    let result = write_contents(&temporary).and_then(|()| {
+        fs::rename(&temporary, final_dir).map_err(|error| {
+            format!(
+                "install paired-resume generation {}: {error}",
+                final_dir.display()
+            )
+            .into()
+        })
+    });
+    if result.is_err() {
+        let _ = fs::remove_dir_all(&temporary);
+    }
+    result
+}
+
+fn write_file_atomically(path: &Path, bytes: &[u8]) -> Result<(), Box<dyn Error>> {
+    let parent = path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("atomic file has no file name: {}", path.display()))?;
+    let temporary = parent.join(format!(".{name}.tmp-{}", process::id()));
+    if temporary.exists() {
+        return Err(format!(
+            "stale atomic temporary file exists: {}",
+            temporary.display()
+        )
+        .into());
+    }
+    let result = fs::write(&temporary, bytes)
+        .map_err(|error| -> Box<dyn Error> { Box::new(error) })
+        .and_then(|()| {
+            fs::rename(&temporary, path)
+                .map_err(|error| format!("install atomic file {}: {error}", path.display()).into())
+        });
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
 }
 
 fn write_paired_resume_capture(
@@ -7683,8 +8711,10 @@ fn write_paired_resume_capture(
     rom_path: &str,
     input_script_path: Option<&Path>,
     rom_random_script: Option<&Path>,
+    initial_sram: &[u8],
     game: &ZeldaState,
     oracle: &LibretroCore,
+    semantic_trace: Option<&Snes9xOracleSemanticTrace>,
 ) -> Result<(), Box<dyn Error>> {
     if !game.paired_resume_cpu_boundary_is_quiescent() {
         return Err(
@@ -7692,7 +8722,8 @@ fn write_paired_resume_capture(
                 .into(),
         );
     }
-    fs::create_dir_all(&capture.dir)?;
+    let original_timing_resume = game.capture_original_timing_resume_checkpoint()?;
+    let original_timing_resume_bytes = serde_json::to_vec_pretty(&original_timing_resume)?;
     let rust_state = PlayCrashCheckpoint {
         magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
         host_frame: capture.frame,
@@ -7700,11 +8731,10 @@ fn write_paired_resume_capture(
         run_what: select_run_what(&game.ram),
         game: game.clone(),
     };
-    let rust_path = capture.dir.join("rust.z3state");
-    let oracle_path = capture.dir.join("oracle.state");
-    fs::write(&rust_path, bincode::serialize(&rust_state)?)?;
-    fs::write(&oracle_path, oracle.serialize_state()?)?;
-
+    let rust_bytes = bincode::serialize(&rust_state)?;
+    let trace = semantic_trace
+        .ok_or("paired resume requires an authoritative Snes9x semantic trace checkpoint")?;
+    let semantic_trace_bytes = serde_json::to_vec_pretty(&trace.checkpoint())?;
     let source_manifest = |path: Option<&Path>| -> Result<serde_json::Value, Box<dyn Error>> {
         Ok(match path {
             Some(path) => serde_json::json!({
@@ -7714,30 +8744,61 @@ fn write_paired_resume_capture(
             None => serde_json::Value::Null,
         })
     };
-    let manifest = serde_json::json!({
-        "schema": 1,
-        "boundary": "pre-frame",
-        "frame": capture.frame,
-        "cpu_boundary": "quiescent",
-        "renderer_warmup_required": true,
-        "rust_state": "rust.z3state",
-        "oracle_state": "oracle.state",
-        "core": {
-            "path": core_path,
-            "sha256": parity::runner::sha256_file(Path::new(core_path))?,
-        },
-        "rom": {
-            "path": rom_path,
-            "sha256": parity::runner::sha256_file(Path::new(rom_path))?,
-        },
-        "input_script": source_manifest(input_script_path)?,
-        "rom_random_script": source_manifest(rom_random_script)?,
-    });
-    fs::write(
-        capture.dir.join("manifest.json"),
-        serde_json::to_vec_pretty(&manifest)?,
-    )?;
-    Ok(())
+    let core_sha256 = parity::runner::sha256_file(Path::new(core_path))?;
+    let rom_sha256 = parity::runner::sha256_file(Path::new(rom_path))?;
+    let input_script = source_manifest(input_script_path)?;
+    let rom_random_script = source_manifest(rom_random_script)?;
+
+    install_directory_atomically(&capture.dir, |temporary| {
+        let oracle_bytes = oracle.serialize_state()?;
+        fs::write(temporary.join("rust.z3state"), &rust_bytes)?;
+        fs::write(temporary.join("oracle.state"), &oracle_bytes)?;
+        fs::write(temporary.join("initial.srm"), initial_sram)?;
+        fs::write(
+            temporary.join("original-timing.resume.json"),
+            &original_timing_resume_bytes,
+        )?;
+        fs::write(
+            temporary.join("semantic-trace.checkpoint.json"),
+            &semantic_trace_bytes,
+        )?;
+        let manifest = serde_json::json!({
+            "schema": PAIRED_RESUME_SCHEMA,
+            "boundary": "pre-frame",
+            "frame": capture.frame,
+            "cpu_boundary": "quiescent",
+            "renderer_warmup_required": true,
+            "rust_state": {
+                "artifact": "rust.z3state",
+                "sha256": parity::evidence::sha256_bytes(&rust_bytes),
+            },
+            "oracle_state": {
+                "artifact": "oracle.state",
+                "sha256": parity::evidence::sha256_bytes(&oracle_bytes),
+            },
+            "original_timing_resume_checkpoint": {
+                "artifact": "original-timing.resume.json",
+                "sha256": parity::evidence::sha256_bytes(&original_timing_resume_bytes),
+            },
+            "semantic_trace_checkpoint": {
+                "artifact": "semantic-trace.checkpoint.json",
+                "sha256": parity::evidence::sha256_bytes(&semantic_trace_bytes),
+            },
+            "core": {"path": core_path, "sha256": core_sha256},
+            "rom": {"path": rom_path, "sha256": rom_sha256},
+            "input_script": input_script,
+            "rom_random_script": rom_random_script,
+            "initial_sram": {
+                "artifact": "initial.srm",
+                "sha256": parity::evidence::sha256_bytes(initial_sram),
+            },
+        });
+        fs::write(
+            temporary.join("manifest.json"),
+            serde_json::to_vec_pretty(&manifest)?,
+        )?;
+        Ok(())
+    })
 }
 
 fn write_rolling_paired_resume_capture(
@@ -7747,8 +8808,10 @@ fn write_rolling_paired_resume_capture(
     rom_path: &str,
     input_script_path: Option<&Path>,
     rom_random_script: Option<&Path>,
+    initial_sram: &[u8],
     game: &ZeldaState,
     oracle: &LibretroCore,
+    semantic_trace: Option<&Snes9xOracleSemanticTrace>,
 ) -> Result<PathBuf, Box<dyn Error>> {
     fs::create_dir_all(&rolling.root)?;
     let checkpoint_name = format!("frame-{frame:08}");
@@ -7762,13 +8825,15 @@ fn write_rolling_paired_resume_capture(
         rom_path,
         input_script_path,
         rom_random_script,
+        initial_sram,
         game,
         oracle,
+        semantic_trace,
     )?;
-    fs::write(
-        rolling.root.join("latest.json"),
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "schema": 1,
+    write_file_atomically(
+        &rolling.root.join("latest.json"),
+        &serde_json::to_vec_pretty(&serde_json::json!({
+            "schema": PAIRED_RESUME_SCHEMA,
             "frame": frame,
             "checkpoint": checkpoint_name,
         }))?,
@@ -8490,6 +9555,7 @@ pub(crate) fn finalize_libretro_session(
     audio_report: Option<&libretro_timeline::AudioComparisonReport>,
     audio_frame_ends: &[u64],
     oracle_last_before: &[u8],
+    oracle_last_before_frame: u32,
     oracle: &LibretroCore,
     game: &ZeldaState,
     frames: u32,
@@ -8631,6 +9697,11 @@ pub(crate) fn finalize_libretro_session(
     manifest["status"] = serde_json::Value::String(status.to_string());
     manifest["parity_eligible"] = serde_json::Value::Bool(parity_eligible);
     manifest["frames_completed"] = serde_json::Value::from(frames);
+    manifest["oracle_last_before"] = serde_json::json!({
+        "artifact": "oracle_last_before.state",
+        "frame": oracle_last_before_frame,
+        "policy": "initial checkpoint only; authoritative execution performs no in-run serialization",
+    });
     manifest["input_replay"] = serde_json::json!({
         "artifact": "input.txt",
         "mode": if source_input_script.is_some() {
@@ -8673,9 +9744,7 @@ pub(crate) fn compare_snes9x_video_frame(
 
 fn canonical_audio_digest(samples: &[i16]) -> serde_json::Value {
     let mut digest = parity::evidence::Sha256Digest::new();
-    for sample in samples {
-        digest.update(&sample.to_le_bytes());
-    }
+    digest.update_i16_le(samples);
     serde_json::json!({
         "sample_frames": samples.len() / 2,
         "channels": 2,
@@ -8699,9 +9768,7 @@ fn canonical_rust_video_digest(
         ));
     }
     let mut digest = parity::evidence::Sha256Digest::new();
-    for pixel in rgba.chunks_exact(4) {
-        digest.update(&pixel[..3]);
-    }
+    digest.update_rgb_from_rgba(std::iter::once(rgba));
     Ok(serde_json::json!({
         "width": width,
         "height": height,
@@ -9133,6 +10200,7 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
     oracle_before_vram: Option<&[u8]>,
     rendered_display: Option<&crate::gpu_capture::LiveGpuFrameCapture>,
     display_oracle_receipt: Option<&DisplayOracleReceipt>,
+    oracle_presented_oam: Option<&[u8]>,
     message: String,
 ) -> Result<PathBuf, Box<dyn Error>> {
     let dir = create_parity_failure_dir()?;
@@ -9234,6 +10302,15 @@ pub(crate) fn write_libretro_parity_failure_artifacts(
         };
     fs::write(dir.join("rust_visible_vram.bin"), &visible_vram)?;
     fs::write(dir.join("rust_visible_oam.bin"), &visible_oam)?;
+    if let Some(oracle_presented_oam) = oracle_presented_oam {
+        fs::write(dir.join("oracle_presented_oam.bin"), oracle_presented_oam)?;
+        fs::write(
+            dir.join("oam_generations.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "visible_scanout": summarize_value_domain(&visible_oam, oracle_presented_oam),
+            }))?,
+        )?;
+    }
     fs::write(dir.join("rust_visible_cgram.bin"), &visible_cgram)?;
     if let Some(receipt) = display_oracle_receipt {
         fs::write(
@@ -10486,7 +11563,7 @@ fn snes9x_presented_obj_tiles(oracle: &LibretroCore) -> Result<Option<PresentedO
         .ok_or_else(|| "presented OBJ tile receipt has an invalid shape".to_string())
 }
 
-fn snes9x_presented_oam(oracle: &LibretroCore) -> Result<Option<PresentedOam>, String> {
+fn snes9x_presented_oam_bytes(oracle: &LibretroCore) -> Result<Option<Vec<u8>>, String> {
     if oracle.debug_ppu_value(20, 0).is_none() {
         return Ok(None);
     }
@@ -10499,6 +11576,13 @@ fn snes9x_presented_oam(oracle: &LibretroCore) -> Result<Option<PresentedOam>, S
                 .map_err(|_| format!("presented OAM byte {index} is invalid: {value}"))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(bytes))
+}
+
+fn snes9x_presented_oam(oracle: &LibretroCore) -> Result<Option<PresentedOam>, String> {
+    let Some(bytes) = snes9x_presented_oam_bytes(oracle)? else {
+        return Ok(None);
+    };
     PresentedOam::new(bytes)
         .map(Some)
         .ok_or_else(|| "presented OAM receipt has an invalid shape".to_string())
@@ -10557,6 +11641,9 @@ fn snes9x_original_timing_host_receipts(
     }
     if let Some(receipt) = snes9x_presented_bg_scroll(oracle)? {
         receipts = receipts.with_presented_bg_scroll(receipt);
+    }
+    if let Some(receipt) = snes9x_presented_mode7_transform(oracle)? {
+        receipts = receipts.with_presented_mode7_transform(receipt);
     }
     if let Some(receipt) = snes9x_presented_window_mask(oracle)? {
         receipts = receipts.with_presented_window_mask(receipt);
@@ -11576,30 +12663,33 @@ fn write_snes9x_smp_bootstrap_header<W: Write>(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{
-        append_smp_instruction_frame, cached_ledger_input, canonical_audio_digest,
-        canonical_oracle_video_digest, canonical_rust_video_digest, checkpoint_member,
-        compact_byte_snapshot, compact_delta_integer_sequence,
+        append_smp_instruction_frame, cached_ledger_input, cached_oracle_checkpoint_sources,
+        canonical_audio_digest, canonical_oracle_video_digest, canonical_rust_video_digest,
+        checkpoint_member, compact_byte_snapshot, compact_delta_integer_sequence,
         compact_delta_integer_sequence_with_zstd, compact_dma_ledger,
         compact_engine_state_mismatches, compact_framed_smp_instructions,
         compact_ordinal_cpu_apu_accesses, first_dsp_write_timing_mismatch,
         first_nmi_apui_anchor_indices, first_nmi_dma_ledger_slice,
         first_nmi_dma_setup_initial_sram_provenance, first_nmi_dma_setup_stop_index,
         first_nmi_dma_transaction_slice, first_nmi_return_start_index, fnv1a32,
-        last_spc_clock_witness, libretro_engine_state_receipt, oracle_preframe_snapshot_required,
-        oracle_rng_sample_from_trace_line, paired_resume_paths, parse_debug_frame_selection,
-        parse_paired_resume_capture, parse_rolling_paired_resume_capture,
-        presented_video_rows_match_prior_surface, prune_rolling_paired_resume_captures,
-        read_snes9x_retro_run_trace, replayable_input_artifact, resolve_replay_bundle,
-        rolling_capture_frame_after, scan_all_policy, semantic_receipts_from_dma_ledger,
-        semantic_trace_authority_available, should_render_video_frame,
-        should_stop_after_first_mismatch, should_write_frame_receipt, smp_bootstrap_handoff_index,
-        snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
-        summarize_value_domain, trace_events_with_rom_rng, validate_first_nmi_return_cpu_slice,
-        validate_oracle_rng_samples_for_run, validate_replay_source_parents, vram_domain_receipt,
-        write_cached_av_final_paired_resume, BootBoundaryState, FramedApuPortAccess,
-        FramedCpuTimingTransaction, FramedSmpInstruction, OrdinalApuPortAccess,
-        PairedResumeCapture, PendingFirstNmiReturnFixture, PresentedOracleVideo,
-        RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt,
+        install_directory_atomically, last_spc_clock_witness, libretro_engine_state_receipt,
+        oracle_preframe_snapshot_required, oracle_rng_sample_from_trace_line, paired_resume_paths,
+        parse_debug_frame_selection, parse_paired_resume_capture,
+        parse_rolling_paired_resume_capture, presented_video_rows_match_prior_surface,
+        prune_rolling_paired_resume_captures, read_snes9x_retro_run_trace,
+        replayable_input_artifact, resolve_replay_bundle, rolling_capture_frame_after,
+        scan_all_policy, semantic_receipts_from_dma_ledger, semantic_trace_authority_available,
+        should_render_video_frame, should_stop_after_first_mismatch, should_write_frame_receipt,
+        smp_bootstrap_handoff_index, snes9x_presented_scanline_for_video_y,
+        summarize_presented_obj_cache, summarize_value_domain, trace_events_with_rom_rng,
+        validate_first_nmi_return_cpu_slice, validate_oracle_av_checkpoint_interval,
+        validate_oracle_rng_samples_for_run, validate_paired_resume_provenance,
+        validate_paired_resume_sram_selection, validate_replay_source_parents, vram_domain_receipt,
+        write_cached_av_final_paired_resume, write_file_atomically, BootBoundaryState,
+        FramedApuPortAccess, FramedCpuTimingTransaction, FramedSmpInstruction,
+        OrdinalApuPortAccess, PairedResumeCapture, PendingFirstNmiReturnFixture,
+        PlayCrashCheckpoint, PresentedOracleVideo, RollingPairedResumeCapture, ValueDomainDiff,
+        VramDomainReceipt, PAIRED_RESUME_SCHEMA, PLAY_CRASH_CHECKPOINT_MAGIC,
     };
     use crate::libretro_core::{
         LibretroApuPortWrite, LibretroCpuTimingTransaction, LibretroDmaLedgerEvent,
@@ -11610,6 +12700,72 @@ pub(crate) mod tests {
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
     use zelda3::{game_output::DspWriteEvent, OriginalTimingSemanticReceipt, RomRandomSample};
+
+    fn write_paired_resume_test_generation(
+        root: &Path,
+        directory: &str,
+        manifest_frame: u32,
+        rust_checkpoint_frame: u32,
+    ) -> PathBuf {
+        let checkpoint_dir = root.join(directory);
+        fs::create_dir_all(&checkpoint_dir).unwrap();
+        let rust_checkpoint = PlayCrashCheckpoint {
+            magic: *PLAY_CRASH_CHECKPOINT_MAGIC,
+            host_frame: rust_checkpoint_frame,
+            input: 0,
+            run_what: 0,
+            game: zelda3::ZeldaState::new(),
+        };
+        let rust_state = bincode::serialize(&rust_checkpoint).unwrap();
+        let oracle_state = b"oracle state";
+        let original_timing = b"original timing sidecar";
+        let semantic_trace = b"semantic trace sidecar";
+        let initial_sram = b"initial SRAM";
+        for (name, bytes) in [
+            ("rust.z3state", rust_state.as_slice()),
+            ("oracle.state", oracle_state.as_slice()),
+            ("original-timing.resume.json", original_timing.as_slice()),
+            ("semantic-trace.checkpoint.json", semantic_trace.as_slice()),
+            ("initial.srm", initial_sram.as_slice()),
+        ] {
+            fs::write(checkpoint_dir.join(name), bytes).unwrap();
+        }
+        let manifest = serde_json::json!({
+            "schema": PAIRED_RESUME_SCHEMA,
+            "boundary": "pre-frame",
+            "frame": manifest_frame,
+            "rust_state": {
+                "artifact": "rust.z3state",
+                "sha256": parity::evidence::sha256_bytes(&rust_state),
+            },
+            "oracle_state": {
+                "artifact": "oracle.state",
+                "sha256": parity::evidence::sha256_bytes(oracle_state),
+            },
+            "original_timing_resume_checkpoint": {
+                "artifact": "original-timing.resume.json",
+                "sha256": parity::evidence::sha256_bytes(original_timing),
+            },
+            "semantic_trace_checkpoint": {
+                "artifact": "semantic-trace.checkpoint.json",
+                "sha256": parity::evidence::sha256_bytes(semantic_trace),
+            },
+            "core": {"sha256": "core-sha"},
+            "rom": {"sha256": "rom-sha"},
+            "input_script": null,
+            "rom_random_script": null,
+            "initial_sram": {
+                "artifact": "initial.srm",
+                "sha256": parity::evidence::sha256_bytes(initial_sram),
+            },
+        });
+        fs::write(
+            checkpoint_dir.join("manifest.json"),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        checkpoint_dir
+    }
 
     #[test]
     fn matched_cached_av_replay_writes_a_quiescent_paired_frontier() {
@@ -11626,8 +12782,16 @@ pub(crate) mod tests {
         fs::create_dir_all(&cache).unwrap();
         fs::create_dir_all(&output).unwrap();
         let oracle = b"canonical final oracle state";
+        let semantic_trace = b"canonical semantic trace checkpoint";
         fs::write(cache.join("oracle_final.state"), oracle).unwrap();
-        fs::write(cache.join("initial.srm"), b"canonical startup SRAM").unwrap();
+        fs::write(
+            cache.join("semantic-trace-final.checkpoint.json"),
+            semantic_trace,
+        )
+        .unwrap();
+        let initial_sram = b"canonical startup SRAM";
+        let initial_sram_sha256 = parity::evidence::sha256_bytes(initial_sram);
+        fs::write(cache.join("initial.srm"), initial_sram).unwrap();
         let manifest = serde_json::json!({
             "cache_key": "fixture-key",
             "cache_identity": {
@@ -11635,11 +12799,12 @@ pub(crate) mod tests {
                 "source_artifact_sha256": {
                     "input.txt": "input-sha",
                     "rom-random.txt": "rng-sha",
-                    "initial.srm": "sram-sha",
+                    "initial.srm": initial_sram_sha256.clone(),
                 },
             },
             "artifact_sha256": {
                 "oracle_final.state": parity::evidence::sha256_bytes(oracle),
+                "semantic-trace-final.checkpoint.json": parity::evidence::sha256_bytes(semantic_trace),
             },
         });
         let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
@@ -11656,26 +12821,109 @@ pub(crate) mod tests {
             &game,
         )
         .unwrap();
-        let (rust_state, oracle_state) = paired_resume_paths(&frontier).unwrap();
+        let (rust_state, oracle_state, original_timing_resume, semantic_trace_checkpoint) =
+            paired_resume_paths(&frontier).unwrap();
         let checkpoint: crate::PlayCrashCheckpoint =
             bincode::deserialize(&fs::read(rust_state).unwrap()).unwrap();
         assert_eq!(checkpoint.host_frame, 52_000);
         assert_eq!(checkpoint.run_what, super::select_run_what(&game.ram));
         assert_eq!(fs::read(oracle_state).unwrap(), oracle);
+        assert_eq!(fs::read(semantic_trace_checkpoint).unwrap(), semantic_trace);
+        let original_timing: zelda3::OriginalTimingResumeCheckpoint =
+            serde_json::from_slice(&fs::read(original_timing_resume).unwrap()).unwrap();
+        assert_eq!(original_timing.schema(), 1);
         let paired_manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(frontier.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(paired_manifest["schema"], PAIRED_RESUME_SCHEMA);
         assert_eq!(paired_manifest["boundary"], "pre-frame");
         assert_eq!(paired_manifest["frame"], 52_000);
+        assert_eq!(paired_manifest["rust_state"]["artifact"], "rust.z3state");
+        assert_eq!(paired_manifest["oracle_state"]["artifact"], "oracle.state");
+        assert!(paired_manifest["rust_state"]["sha256"].is_string());
+        assert_eq!(
+            paired_manifest["oracle_state"]["sha256"],
+            parity::evidence::sha256_bytes(oracle)
+        );
         assert_eq!(paired_manifest["source"]["cache_key"], "fixture-key");
         assert_eq!(paired_manifest["core"]["sha256"], "core-sha");
         assert_eq!(paired_manifest["input_script"]["sha256"], "input-sha");
         assert_eq!(paired_manifest["rom_random_script"]["sha256"], "rng-sha");
-        assert_eq!(paired_manifest["initial_sram"]["sha256"], "sram-sha");
+        assert_eq!(
+            paired_manifest["initial_sram"]["sha256"],
+            initial_sram_sha256
+        );
         assert_eq!(
             fs::read(frontier.join("initial.srm")).unwrap(),
             b"canonical startup SRAM"
         );
         assert!(!output.join(".paired-final.tmp").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cached_oracle_checkpoint_is_bound_to_nested_artifacts_and_route_sources() {
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-cached-oracle-checkpoint-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let checkpoint = root.join("oracle-checkpoints/frame-00002500");
+        fs::create_dir_all(&checkpoint).unwrap();
+        let oracle = b"oracle at frame 2500";
+        let semantic = b"semantic trace at frame 2500";
+        fs::write(checkpoint.join("oracle.state"), oracle).unwrap();
+        fs::write(checkpoint.join("semantic-trace.checkpoint.json"), semantic).unwrap();
+        let checkpoint_manifest = serde_json::json!({
+            "schema": 1,
+            "boundary": "pre-frame",
+            "frame": 2500,
+            "oracle_state": {
+                "artifact": "oracle.state",
+                "sha256": parity::evidence::sha256_bytes(oracle),
+            },
+            "semantic_trace_checkpoint": {
+                "artifact": "semantic-trace.checkpoint.json",
+                "sha256": parity::evidence::sha256_bytes(semantic),
+            },
+            "provenance": {
+                "core_sha256": "core",
+                "rom_sha256": "rom",
+                "input_sha256": "input",
+                "rom_random_sha256": "rng",
+                "initial_sram_sha256": "sram",
+            },
+        });
+        fs::write(
+            checkpoint.join("manifest.json"),
+            serde_json::to_vec_pretty(&checkpoint_manifest).unwrap(),
+        )
+        .unwrap();
+        let cache_manifest = serde_json::json!({
+            "cache_identity": {
+                "core_sha256": "core",
+                "rom_sha256": "rom",
+                "source_artifact_sha256": {
+                    "input.txt": "input",
+                    "rom-random.txt": "rng",
+                    "initial.srm": "sram",
+                },
+            },
+            "artifact_sha256": {
+                "oracle-checkpoints/frame-00002500/oracle.state": parity::evidence::sha256_bytes(oracle),
+                "oracle-checkpoints/frame-00002500/semantic-trace.checkpoint.json": parity::evidence::sha256_bytes(semantic),
+            },
+        });
+
+        let (actual_oracle, actual_semantic) =
+            cached_oracle_checkpoint_sources(&root, &cache_manifest, 2500).unwrap();
+        assert_eq!(actual_oracle, checkpoint.join("oracle.state"));
+        assert_eq!(
+            actual_semantic,
+            checkpoint.join("semantic-trace.checkpoint.json")
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -13399,10 +14647,10 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn oracle_preframe_snapshots_skip_unobservable_warmup_frames() {
+    fn authoritative_oracle_never_serializes_during_frame_execution() {
         assert!(!oracle_preframe_snapshot_required(10_000, 23_005, false));
-        assert!(oracle_preframe_snapshot_required(23_000, 23_005, true));
-        assert!(oracle_preframe_snapshot_required(23_004, 23_005, false));
+        assert!(!oracle_preframe_snapshot_required(23_000, 23_005, true));
+        assert!(!oracle_preframe_snapshot_required(23_004, 23_005, false));
     }
 
     #[test]
@@ -13526,28 +14774,15 @@ pub(crate) mod tests {
             "zelda3-paired-resume-{}-{unique}",
             std::process::id()
         ));
-        let checkpoint = root.join("frame-00003700");
-        fs::create_dir_all(&checkpoint).unwrap();
-        fs::write(checkpoint.join("rust.z3state"), b"rust").unwrap();
-        fs::write(checkpoint.join("oracle.state"), b"oracle").unwrap();
-        fs::write(
-            checkpoint.join("manifest.json"),
-            br#"{
-                "schema": 1,
-                "boundary": "pre-frame",
-                "frame": 3700,
-                "rust_state": "rust.z3state",
-                "oracle_state": "oracle.state"
-            }"#,
-        )
-        .unwrap();
+        let checkpoint = write_paired_resume_test_generation(&root, "frame-00003700", 3700, 3700);
         fs::write(
             root.join("latest.json"),
-            br#"{
-                "schema": 1,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "schema": PAIRED_RESUME_SCHEMA,
                 "frame": 3700,
-                "checkpoint": "frame-00003700"
-            }"#,
+                "checkpoint": "frame-00003700",
+            }))
+            .unwrap(),
         )
         .unwrap();
 
@@ -13555,10 +14790,273 @@ pub(crate) mod tests {
             paired_resume_paths(&root).unwrap(),
             (
                 checkpoint.join("rust.z3state"),
-                checkpoint.join("oracle.state")
+                checkpoint.join("oracle.state"),
+                checkpoint.join("original-timing.resume.json"),
+                checkpoint.join("semantic-trace.checkpoint.json")
             )
         );
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn paired_resume_v2_verifies_every_bound_artifact() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-paired-resume-hashes-{}-{unique}",
+            std::process::id()
+        ));
+        let checkpoint = write_paired_resume_test_generation(&root, "checkpoint", 3700, 3700);
+        for (artifact, expected_label) in [
+            ("rust.z3state", "Rust state"),
+            ("oracle.state", "oracle state"),
+            ("original-timing.resume.json", "original-timing checkpoint"),
+            (
+                "semantic-trace.checkpoint.json",
+                "semantic-trace checkpoint",
+            ),
+            ("initial.srm", "initial SRAM"),
+        ] {
+            let path = checkpoint.join(artifact);
+            let original = fs::read(&path).unwrap();
+            fs::write(&path, b"mixed checkpoint artifact").unwrap();
+            let error = paired_resume_paths(&checkpoint).unwrap_err();
+            assert!(
+                error.contains(expected_label) && error.contains("hash mismatch"),
+                "unexpected {artifact} validation error: {error}"
+            );
+            fs::write(path, original).unwrap();
+        }
+        assert!(paired_resume_paths(&checkpoint).is_ok());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn paired_resume_provenance_binds_every_selected_causal_source() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-paired-resume-provenance-{}-{unique}",
+            std::process::id()
+        ));
+        let checkpoint = write_paired_resume_test_generation(&root, "checkpoint", 3700, 3700);
+        let core = root.join("core.dylib");
+        let rom = root.join("zelda3.sfc");
+        let input = root.join("input.txt");
+        let rng = root.join("rom-random.txt");
+        for (path, bytes) in [
+            (&core, b"core".as_slice()),
+            (&rom, b"rom".as_slice()),
+            (&input, b"input".as_slice()),
+            (&rng, b"rng".as_slice()),
+        ] {
+            fs::write(path, bytes).unwrap();
+        }
+        let manifest_path = checkpoint.join("manifest.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        for (key, path) in [
+            ("core", core.as_path()),
+            ("rom", rom.as_path()),
+            ("input_script", input.as_path()),
+            ("rom_random_script", rng.as_path()),
+        ] {
+            manifest[key] = serde_json::json!({
+                "sha256": parity::evidence::sha256_file(path).unwrap(),
+            });
+        }
+        fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+
+        assert!(validate_paired_resume_provenance(
+            &checkpoint,
+            &core,
+            &rom,
+            Some(&input),
+            Some(&rng),
+        )
+        .is_ok());
+        for (path, label) in [
+            (&core, "core"),
+            (&rom, "ROM"),
+            (&input, "input script"),
+            (&rng, "ROM-random script"),
+        ] {
+            let original = fs::read(path).unwrap();
+            fs::write(path, b"different selected source").unwrap();
+            let error = validate_paired_resume_provenance(
+                &checkpoint,
+                &core,
+                &rom,
+                Some(&input),
+                Some(&rng),
+            )
+            .unwrap_err();
+            assert!(
+                error.contains(label) && error.contains("mismatch"),
+                "{error}"
+            );
+            fs::write(path, original).unwrap();
+        }
+        let error = validate_paired_resume_provenance(&checkpoint, &core, &rom, None, Some(&rng))
+            .unwrap_err();
+        assert!(
+            error.contains("input script provenance requires"),
+            "{error}"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn paired_resume_rejects_progressed_state_sram_replacement() {
+        assert!(validate_paired_resume_sram_selection(false, false).is_ok());
+        assert!(validate_paired_resume_sram_selection(false, true).is_ok());
+        assert!(validate_paired_resume_sram_selection(true, false).is_ok());
+        let error = validate_paired_resume_sram_selection(true, true).unwrap_err();
+        assert!(
+            error.contains("cannot be combined with --load-sram"),
+            "{error}"
+        );
+        assert!(error.contains("provenance"), "{error}");
+    }
+
+    #[test]
+    fn paired_generation_install_is_atomic_and_never_replaces_same_frame() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-paired-atomic-{}-{unique}",
+            std::process::id()
+        ));
+        let generation = root.join("frame-00003700");
+        install_directory_atomically(&generation, |temporary| {
+            fs::write(temporary.join("manifest.json"), b"first")?;
+            Ok(())
+        })
+        .unwrap();
+        let error = install_directory_atomically(&generation, |temporary| {
+            fs::write(temporary.join("manifest.json"), b"replacement")?;
+            Ok(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("refusing to replace"), "{error}");
+        assert_eq!(
+            fs::read(generation.join("manifest.json")).unwrap(),
+            b"first"
+        );
+
+        let failed = root.join("frame-00003800");
+        let error = install_directory_atomically(&failed, |temporary| {
+            fs::write(temporary.join("partial"), b"partial")?;
+            Err("injected write failure".into())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("injected write failure"));
+        assert!(!failed.exists());
+        assert!(!root
+            .join(format!(".frame-00003800.tmp-{}", std::process::id()))
+            .exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rolling_latest_pointer_is_replaced_as_one_complete_file() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-paired-latest-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let latest = root.join("latest.json");
+        fs::write(&latest, br#"{"schema":2,"frame":100}"#).unwrap();
+        let replacement = br#"{"schema":2,"frame":200}"#;
+        write_file_atomically(&latest, replacement).unwrap();
+        assert_eq!(fs::read(&latest).unwrap(), replacement);
+        assert!(!root
+            .join(format!(".latest.json.tmp-{}", std::process::id()))
+            .exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn oracle_av_capture_rejects_every_mid_run_checkpoint_interval() {
+        assert!(validate_oracle_av_checkpoint_interval(None).is_ok());
+        for interval in [1, 5_000, u32::MAX] {
+            let error = validate_oracle_av_checkpoint_interval(Some(interval)).unwrap_err();
+            assert!(
+                error.contains("serialization mutates live DSP state"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn paired_resume_direct_directory_rejects_host_frame_mismatch_before_restore() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-paired-resume-frame-{}-{unique}",
+            std::process::id()
+        ));
+        let checkpoint = write_paired_resume_test_generation(&root, "checkpoint", 3700, 3699);
+        let rust_state_before = fs::read(checkpoint.join("rust.z3state")).unwrap();
+        let timing_sidecar_before =
+            fs::read(checkpoint.join("original-timing.resume.json")).unwrap();
+        let error = paired_resume_paths(&checkpoint).unwrap_err();
+        assert!(error.contains("records frame 3700"), "{error}");
+        assert!(
+            error.contains("Rust checkpoint records frame 3699"),
+            "{error}"
+        );
+        assert_eq!(
+            fs::read(checkpoint.join("rust.z3state")).unwrap(),
+            rust_state_before,
+            "validation must not rewrite the restored Rust state"
+        );
+        assert_eq!(
+            fs::read(checkpoint.join("original-timing.resume.json")).unwrap(),
+            timing_sidecar_before,
+            "validation must fail before any sidecar restoration or rewrite"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn paired_resume_schema_one_is_rejected_before_artifact_access() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "zelda3-paired-resume-v1-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        fs::write(
+            root.join("manifest.json"),
+            br#"{"schema":1,"boundary":"pre-frame","frame":3700}"#,
+        )
+        .unwrap();
+        let error = paired_resume_paths(&root).unwrap_err();
+        assert!(
+            error.contains("unsupported paired-resume schema 1"),
+            "{error}"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

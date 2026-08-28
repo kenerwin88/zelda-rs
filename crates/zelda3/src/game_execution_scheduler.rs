@@ -393,11 +393,13 @@ impl ScheduledGameWork {
                 continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
                     ground_apress_tail: Some(_),
                     ..
-                } | ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
+                } | ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. }
+                    | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
                 | GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
                 | GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
                 | GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn { .. }
+                | GameWorkContinuation::FinishModule09LinkOamCallerReturn { .. }
                 | GameWorkContinuation::FinishDialogueInitializationPrefix { .. }
                 | GameWorkContinuation::FinishDialogueInitializationCallerReturn
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
@@ -411,7 +413,10 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
+                | GameWorkContinuation::FinishSpotlightIteration { .. }
                 | GameWorkContinuation::FinishOverworldSpotlightBuild { .. }
                 | GameWorkContinuation::FinishOverworldSpotlightLinkOam { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. }
@@ -431,7 +436,9 @@ impl ScheduledGameWork {
             | GameWorkContinuation::FinishGameOverSpotlightBuild { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightEntry { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration }
             | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration } => {
@@ -458,7 +465,9 @@ impl ScheduledGameWork {
             | GameWorkContinuation::FinishGameOverSpotlightBuild { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightEntry { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration }
             | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration } => {
@@ -1157,6 +1166,24 @@ impl GameExecutionScheduler {
         Some(GameWorkStep::Complete(continuation))
     }
 
+    /// Replace the semantic checkpoint carried by an active source-owned call.
+    ///
+    /// The timing authority can observe a later C statement while the same
+    /// call stack remains suspended.  Updating that checkpoint must not
+    /// complete the scheduled caller or reset its host-phase ownership.
+    pub(super) fn refine_scheduled_work(
+        &mut self,
+        expected: GameWorkContinuation,
+        refined: GameWorkContinuation,
+    ) {
+        let Some(GameExecutionContinuation::ScheduledWork(work)) = self.continuation.as_mut()
+        else {
+            panic!("cannot refine {expected:?} without active scheduled work");
+        };
+        assert_eq!(work.continuation, expected);
+        work.continuation = refined;
+    }
+
     pub(super) fn finish_work(&mut self) {
         if matches!(
             self.continuation,
@@ -1849,6 +1876,17 @@ mod cpu_timing_tests {
                 iteration: crate::zelda_rtl::SpotlightIteration::closing(
                     crate::zelda_rtl::SpotlightIterationPhase::CloseEntryBeforeTablePublication,
                 ),
+            },
+            1,
+        );
+        assert!(work.suspends_translated_call_stack());
+    }
+
+    #[test]
+    fn deferred_spotlight_iteration_return_suspends_the_translated_call_stack() {
+        let work = ScheduledGameWork::schedule(
+            GameWorkContinuation::FinishSpotlightIteration {
+                iteration: crate::zelda_rtl::SpotlightIteration::opening(),
             },
             1,
         );

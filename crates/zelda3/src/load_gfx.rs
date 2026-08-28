@@ -3504,6 +3504,8 @@ impl ZeldaState {
             completed: false,
             pending_circle_input: None,
             pending_lower_value: None,
+            pending_loop_completion_test: false,
+            pending_lower_cursor_decrement: false,
             projection_tail_cleared: false,
             projection_words_copied: 0,
         };
@@ -3522,6 +3524,12 @@ impl ZeldaState {
         let mut build =
             self.begin_iris_spotlight_configure_table(usize::from(progress.completed_iterations));
         match progress.checkpoint {
+            crate::SpotlightTableBuildCheckpoint::BeforeIterationInitialization => {
+                assert!(
+                    !build.completed,
+                    "spotlight iteration-start progress cannot point beyond the completed C table loop",
+                );
+            }
             crate::SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
                 pending_circle_input,
             } => {
@@ -3596,6 +3604,89 @@ impl ZeldaState {
                 build.projection_tail_cleared = true;
                 build.projection_words_copied = copied_words;
             }
+            crate::SpotlightTableBuildCheckpoint::BeforeLoopCompletionTest {
+                upper_cursor,
+                lower_cursor,
+            } => {
+                assert!(
+                    !build.completed,
+                    "spotlight loop-test progress cannot point beyond the completed C table loop",
+                );
+                assert_eq!(
+                    (build.upper_cursor, build.lower_cursor),
+                    (upper_cursor, lower_cursor),
+                    "spotlight loop-test receipt disagrees with the native C loop cursors",
+                );
+                let mut circle_value = 0x00ff;
+                if build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper() {
+                    let pending_circle_input = self
+                        .game_state
+                        .display
+                        .spotlight_hdma
+                        .window_y_buffer_byte();
+                    if pending_circle_input != 0 {
+                        self.decrement_spotlight_window_y_buffer();
+                    }
+                    circle_value = self.iris_spotlight_calculate_circle_value(pending_circle_input);
+                }
+                if build.upper_cursor < 240 {
+                    self.set_spotlight_hdma_table_dynamic_entry(
+                        build.upper_cursor as usize,
+                        circle_value,
+                    );
+                }
+                if build.lower_cursor < 240 {
+                    self.set_spotlight_hdma_table_dynamic_entry(
+                        build.lower_cursor as usize,
+                        circle_value,
+                    );
+                }
+                build.pending_loop_completion_test = true;
+            }
+            crate::SpotlightTableBuildCheckpoint::BeforeLowerCursorDecrement {
+                upper_cursor,
+                lower_cursor,
+            } => {
+                assert!(
+                    !build.completed,
+                    "spotlight lower-cursor progress cannot point beyond the completed C table loop",
+                );
+                assert_eq!(
+                    (build.upper_cursor.wrapping_add(1), build.lower_cursor),
+                    (upper_cursor, lower_cursor),
+                    "spotlight lower-cursor receipt disagrees with the native C loop cursors",
+                );
+                assert_ne!(
+                    build.upper_cursor, build.vertical_center,
+                    "the source increments its upper cursor only after a false loop-completion test",
+                );
+                let mut circle_value = 0x00ff;
+                if build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper() {
+                    let pending_circle_input = self
+                        .game_state
+                        .display
+                        .spotlight_hdma
+                        .window_y_buffer_byte();
+                    if pending_circle_input != 0 {
+                        self.decrement_spotlight_window_y_buffer();
+                    }
+                    circle_value = self.iris_spotlight_calculate_circle_value(pending_circle_input);
+                }
+                if build.upper_cursor < 240 {
+                    self.set_spotlight_hdma_table_dynamic_entry(
+                        build.upper_cursor as usize,
+                        circle_value,
+                    );
+                }
+                if build.lower_cursor < 240 {
+                    self.set_spotlight_hdma_table_dynamic_entry(
+                        build.lower_cursor as usize,
+                        circle_value,
+                    );
+                }
+                build.upper_cursor = upper_cursor;
+                build.pending_lower_cursor_decrement = true;
+            }
         }
         build
     }
@@ -3608,6 +3699,21 @@ impl ZeldaState {
         for _ in 0..max_iterations {
             if build.completed {
                 return;
+            }
+            if build.pending_lower_cursor_decrement {
+                build.pending_lower_cursor_decrement = false;
+                build.lower_cursor = build.lower_cursor.wrapping_sub(1);
+                continue;
+            }
+            if build.pending_loop_completion_test {
+                build.pending_loop_completion_test = false;
+                if build.upper_cursor == build.vertical_center {
+                    build.completed = true;
+                    return;
+                }
+                build.upper_cursor = build.upper_cursor.wrapping_add(1);
+                build.lower_cursor = build.lower_cursor.wrapping_sub(1);
+                continue;
             }
             if let Some(r8) = build.pending_lower_value.take() {
                 if build.lower_cursor < 240 {
