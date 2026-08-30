@@ -1,5 +1,6 @@
 use super::*;
 use crate::dialogue_ir::{DialogueIrKind, TEXT_COMMAND_START_US};
+use crate::JoypadPublication;
 
 #[test]
 fn bg3_vwf_glyph_runs_track_unaligned_glyphs_and_scroll() {
@@ -108,6 +109,10 @@ fn dialogue_return_only_boundary_publishes_nmi_scroll_scanout() {
         DialogueScrollCompletionTiming::AfterReturnBoundary,
     );
     state.finish_dialogue_scroll_remaining_pixels();
+    // RenderText's caller is still inside ZeldaRunGameLoop here. The pending
+    // hardware NMI must observe the source `$12` latch before the common
+    // NMI_PrepareSprites suffix clears it after the handler returns.
+    state.latch_nmi_update();
     state.audio_nmi_processed_before_main = true;
 
     let current_scanout = [
@@ -154,7 +159,7 @@ fn dialogue_return_only_boundary_publishes_nmi_scroll_scanout() {
 }
 
 #[test]
-fn dialogue_return_only_receipt_continues_into_the_source_next_iteration() {
+fn dialogue_return_only_receipt_returns_through_the_source_common_suffix() {
     let mut state = ZeldaState::new();
     state.initialized = true;
     state.restore_live_rom_timing_after_checkpoint();
@@ -166,15 +171,28 @@ fn dialogue_return_only_receipt_continues_into_the_source_next_iteration() {
         DialogueScrollCompletionTiming::AfterReturnBoundary,
     );
     state.finish_dialogue_scroll_remaining_pixels();
+    // RenderText's caller is still inside ZeldaRunGameLoop. Mirror the source
+    // `$12` write in both native state and RAM so entry synchronization cannot
+    // turn this interrupted NMI into an open-gate publication.
+    state.latch_nmi_update();
     state.audio_nmi_processed_before_main = true;
     state.original_timing_owner = OriginalTimingOwnerState::Live;
-    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
-        0,
-        0,
-        vec![OriginalTimingSemanticReceipt::MainLoopProgress(
-            crate::MainLoopProgress::IterationStarted,
-        )],
-    ));
+    state.pending_main_loop_common_suffix =
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+    state
+        .install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    crate::MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+            ],
+        ))
+        .unwrap();
     // The assertion targets the shared ZeldaRunGameLoop boundary rather than
     // another dialogue command. Keep Module0E active but choose its C no-op
     // text-render dispatch state so the unit test needs no external ROM asset.
@@ -185,14 +203,14 @@ fn dialogue_return_only_receipt_continues_into_the_source_next_iteration() {
     state.run_frame_internal(0, crate::RUN_MAIN);
 
     assert_eq!(
-        state.game_state.frame.frame_counter,
-        frame_counter.wrapping_add(1),
-        "the source-started C iteration must not be dropped behind ReturnOnly",
+        state.game_state.frame.frame_counter, frame_counter,
+        "the return-only source host cannot invent a fresh main-loop iteration",
     );
     assert_eq!(
         state.dialogue_scroll_phase(),
-        DialogueScrollPhase::CompletedScroll,
+        DialogueScrollPhase::CompletionStagedAfterSnapshot,
     );
+    assert!(!state.game_state.display.nmi_update_is_latched());
     assert!(state.original_timing_semantic_receipts.is_none());
 }
 
@@ -233,7 +251,7 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
 }
 
 #[test]
-fn dialogue_vwf_return_receipt_continues_into_the_source_next_iteration() {
+fn dialogue_vwf_return_rejects_an_unowned_nmi_lifecycle_at_host_close() {
     let mut state = ZeldaState::new();
     state.initialized = true;
     state.restore_live_rom_timing_after_checkpoint();
@@ -246,13 +264,25 @@ fn dialogue_vwf_return_receipt_continues_into_the_source_next_iteration() {
     state.set_pending_nmi_subroutine(2);
     state.set_core_update_disable_flag(2);
     state.original_timing_owner = OriginalTimingOwnerState::Live;
-    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
-        48_105,
-        0,
-        vec![OriginalTimingSemanticReceipt::MainLoopProgress(
-            crate::MainLoopProgress::IterationStarted,
-        )],
-    ));
+    state
+        .install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+                    high: 0,
+                    low: 0,
+                    high_filtered: 0,
+                    low_filtered: 0,
+                }),
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    crate::MainLoopProgress::IterationStarted,
+                ),
+            ],
+        ))
+        .unwrap();
     // ZeldaRunGameLoop increments the frame counter before Module_MainRouting.
     // Keep Module0E's dispatch on a source-valid no-op state so the test proves
     // the caller/NMI/main-loop order without requiring an external dialogue ROM.
@@ -260,14 +290,37 @@ fn dialogue_vwf_return_receipt_continues_into_the_source_next_iteration() {
     state.messaging_state_mut().set_text_render_state(5);
     state.set_frame_counter(0xe0);
 
-    state.run_frame_internal(0, crate::RUN_MAIN);
+    // DialogueVwfReturn does not yet own the leading NMI lifecycle. Keep the
+    // exact receipt shape fail-closed until that caller family is migrated to
+    // a typed handler path; host close must not silently expire it.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        state.run_frame_internal(0, crate::RUN_MAIN);
+    }));
 
+    assert!(result.is_err());
     assert_eq!(state.game_state.frame.frame_counter, 0xe1);
     assert!(state
         .game_execution_scheduler
         .pre_main_caller_continuation()
         .is_none());
-    assert!(state.original_timing_semantic_receipts.is_none());
+    assert_eq!(
+        state
+            .original_timing_semantic_receipts
+            .as_ref()
+            .unwrap()
+            .semantic(),
+        &[
+            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+            OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+            OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+                high: 0,
+                low: 0,
+                high_filtered: 0,
+                low_filtered: 0,
+            }),
+        ],
+    );
+    assert!(state.original_timing_host_dispatch_active);
 }
 
 #[test]

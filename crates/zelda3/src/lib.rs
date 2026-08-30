@@ -40,7 +40,7 @@ pub use timing_receipts::{
     CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt, DialogueExecutionProgress,
     DungeonResetSpritesProgressReceipt, ItemReceiptGraphicsCaller,
     ItemReceiptGraphicsProgressReceipt, JoypadPublication, MainLoopInterruption, MainLoopProgress,
-    OriginalTimingAudioShadowResult, OriginalTimingBgScrollShadowResult,
+    NmiUpdateGate, OriginalTimingAudioShadowResult, OriginalTimingBgScrollShadowResult,
     OriginalTimingBgTilemapShadowResult, OriginalTimingBoundary,
     OriginalTimingDialogueTextShadowResult, OriginalTimingHostReceipts,
     OriginalTimingMode7TransformShadowResult, OriginalTimingReceiptInstallError,

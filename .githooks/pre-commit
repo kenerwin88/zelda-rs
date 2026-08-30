@@ -37,8 +37,8 @@ restore_sram() {
 }
 trap restore_sram EXIT HUP INT TERM
 
-echo "pre-commit: building parity replay binary"
-cargo build --profile parity -p zelda3-bin
+echo "pre-commit: building parity replay binary and evidence verifier"
+cargo build --profile parity -p zelda3-bin -p parity
 
 echo "pre-commit: running standalone smoke"
 target/parity/zelda3 --standalone-smoke "${ZELDA3_STANDALONE_SMOKE_FRAMES:-500}"

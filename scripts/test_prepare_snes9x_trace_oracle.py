@@ -15,6 +15,32 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PrepareSnes9xTraceOracleTests(unittest.TestCase):
+    def test_obj_cache_patch_exports_addressed_active_name_pages(self) -> None:
+        patch = MODULE.TRACE_PATCHES[1].read_text()
+
+        self.assertIn("presented_obj_tile_slot_count = 512", patch)
+        self.assertIn("presented_obj_tile_pixels = 64", patch)
+        self.assertIn("case 29:", patch)
+        self.assertIn("case 30:", patch)
+        self.assertIn("case 45:", patch)
+        self.assertIn("Zelda3TracePresentedObjTileCacheValue(2, index)", patch)
+        self.assertIn("case 46:", patch)
+        self.assertIn("Zelda3TracePresentedObjTileCacheValue(3, index)", patch)
+        self.assertNotIn("case 47:", patch)
+        self.assertNotIn("case 48:", patch)
+        self.assertIn("PPU.OBJNameBase + 0x2000 + PPU.OBJNameSelect", patch)
+        self.assertIn("& 0x7fff", patch)
+        self.assertIn(
+            "std::fill_n(presented_obj_tile_word_address,", patch
+        )
+        self.assertIn("captured_obj_tile[tile_number]", patch)
+        self.assertIn("const int slot = page * 256 + tile", patch)
+        self.assertIn("presented_obj_tile_word_address[slot] = word_address", patch)
+        self.assertIn("case 0: return 1; // Addressed OBJ cache ABI version.", patch)
+        self.assertIn("case 3: return presented_obj_tile_page_base[0]", patch)
+        self.assertIn("case 4: return presented_obj_tile_page_base[1]", patch)
+        self.assertNotIn("presented_obj_tile_count", patch)
+
     def test_trace_patch_stack_keeps_ledgers_before_presentation_receipts(self) -> None:
         self.assertEqual(
             MODULE.TRACE_PATCHES[-7].name,

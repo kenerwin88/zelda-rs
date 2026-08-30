@@ -332,6 +332,47 @@ enum VwfCpuSliceOutcome {
     },
 }
 
+/// Deterministic native work needed to bring one already-suspended VWF caller
+/// to the decoder endpoint published by the temporary Live timing authority.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct SuspendedVwfEndpointTransition {
+    start_read_position: u16,
+    target_read_position: u16,
+    slice_count: u32,
+}
+
+/// Deterministic native work needed to finish one already-suspended VWF
+/// character handler after its last source-published decoder endpoint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct SuspendedVwfCompletionTransition {
+    start_read_position: u16,
+    end_read_position: u16,
+    slice_count: u32,
+    caller_suffix_crossed_vblank: bool,
+}
+
+impl SuspendedVwfCompletionTransition {
+    pub(super) const fn caller_suffix_crossed_vblank(self) -> bool {
+        self.caller_suffix_crossed_vblank
+    }
+
+    #[cfg(test)]
+    pub(super) const fn slice_count(self) -> u32 {
+        self.slice_count
+    }
+}
+
+impl SuspendedVwfEndpointTransition {
+    pub(super) const fn advanced_native_vwf(self) -> bool {
+        self.slice_count != 0
+    }
+
+    #[cfg(test)]
+    pub(super) const fn slice_count(self) -> u32 {
+        self.slice_count
+    }
+}
+
 impl VwfCpuSliceOutcome {
     const fn caller_suffix_crosses_vblank(self) -> bool {
         matches!(
@@ -3975,6 +4016,28 @@ impl ZeldaState {
         // text path does not split a glyph across synthetic host work slices.
         // Keeping that artificial budget delayed the first story glyph by one
         // display boundary, leaving the Triforce caption partially absent.
+        let outcome = self.render_text_draw_message_characters_slice();
+        let yielded_midline = matches!(outcome, VwfCpuSliceOutcome::InterruptedMidGlyph { .. });
+        let yielded_to_authority = matches!(outcome, VwfCpuSliceOutcome::AuthorityBoundaryReached);
+        let yielded = yielded_midline || yielded_to_authority;
+        let caller_suffix_crosses_vblank = !yielded_midline
+            && !yielded_to_authority
+            && self.dialogue_scroll_cpu_is_idle()
+            && outcome.caller_suffix_crosses_vblank();
+        // A long scroll remains inside RenderText_Draw_Scroll; its dedicated
+        // pre-main scheduler owns both the preceding NMI publication and the
+        // eventual handler epilogue. Ordinary commands still finish here.
+        if !yielded && self.dialogue_scroll_cpu_is_idle() {
+            self.finish_dialogue_character_render_call();
+            if caller_suffix_crosses_vblank {
+                self.schedule_pre_main_caller_continuation(
+                    PreMainCallerContinuation::DialogueVwfReturn,
+                );
+            }
+        }
+    }
+
+    fn render_text_draw_message_characters_slice(&mut self) -> VwfCpuSliceOutcome {
         let outcome = self.render_text_draw_message_characters();
         let retain_incomplete_click = match outcome {
             VwfCpuSliceOutcome::InterruptedMidGlyph {
@@ -4004,15 +4067,320 @@ impl ZeldaState {
         // core maintenance and does not publish the unfinished text buffer.
         // The next host slice resumes only this interrupted main-thread work.
         self.dialogue_fast_forward_hold_pending = yielded || caller_suffix_crosses_vblank;
-        // A long scroll remains inside RenderText_Draw_Scroll; its dedicated
-        // pre-main scheduler owns both the preceding NMI publication and the
-        // eventual handler epilogue. Ordinary commands still finish here.
-        if !yielded && self.dialogue_scroll_cpu_is_idle() {
-            self.finish_dialogue_character_render_call();
-            if caller_suffix_crosses_vblank {
-                self.schedule_pre_main_caller_continuation(
-                    PreMainCallerContinuation::DialogueVwfReturn,
-                );
+        outcome
+    }
+
+    /// Run only the interruptible character handler to one authoritative
+    /// decoder endpoint. Character epilogue, Module0E scroll copies, and the
+    /// ZeldaRunGameLoop common suffix remain owned by the eventual terminal
+    /// source host.
+    pub(super) fn advance_suspended_vwf_to_authoritative_endpoint(
+        &mut self,
+        target_read_position: u16,
+    ) -> SuspendedVwfEndpointTransition {
+        let start_read_position = self.game_state.messaging.runtime.dialogue_msg_read_pos();
+        let decoded_text_len = self.game_state.messaging.decoded_text.as_slice().len();
+        assert!(
+            usize::from(start_read_position) < decoded_text_len
+                && usize::from(target_read_position) < decoded_text_len,
+            "a suspended VWF endpoint transition escaped the decoded message buffer",
+        );
+        assert_eq!(
+            (
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule
+            ),
+            (14, 2),
+            "a suspended VWF endpoint transition escaped Module0E RenderText",
+        );
+        assert_eq!(
+            self.game_state.messaging.runtime.module(),
+            1,
+            "a suspended VWF endpoint transition lost the active Text_Render module",
+        );
+        assert_eq!(
+            self.game_state.messaging.runtime.text_render_state(),
+            3,
+            "a suspended VWF endpoint transition lost its character-render handler",
+        );
+        assert!(
+            !self.dialogue_fast_forward_hold_pending,
+            "a suspended VWF endpoint transition overlapped another pending hold",
+        );
+        let scheduler_before = self.game_execution_scheduler;
+        let suffix_before = self.pending_main_loop_common_suffix;
+        let expected_gates_before = self.original_timing_expected_nmi_update_gates.clone();
+        let nmi_ownership_before = (
+            self.original_timing_nmi_publication_pending,
+            self.original_timing_pending_nmi_update_gate,
+            self.game_state.display.nmi_update_is_latched(),
+            self.game_state.display.pending_nmi_subroutine,
+            self.game_state.display.core_update_disable_flag,
+            self.main_loop_sprite_preparation_completed,
+        );
+        let assert_architectural_ownership_unchanged = |state: &ZeldaState| {
+            assert_eq!(
+                state.game_execution_scheduler, scheduler_before,
+                "a VWF endpoint transition cannot schedule translated work",
+            );
+            assert_eq!(
+                state.pending_main_loop_common_suffix, suffix_before,
+                "a VWF endpoint transition cannot consume its caller suffix",
+            );
+            assert_eq!(
+                state.original_timing_expected_nmi_update_gates, expected_gates_before,
+                "a VWF endpoint transition cannot consume external NMI gate authority",
+            );
+            assert_eq!(
+                (
+                    state.original_timing_nmi_publication_pending,
+                    state.original_timing_pending_nmi_update_gate,
+                    state.game_state.display.nmi_update_is_latched(),
+                    state.game_state.display.pending_nmi_subroutine,
+                    state.game_state.display.core_update_disable_flag,
+                    state.main_loop_sprite_preparation_completed,
+                ),
+                nmi_ownership_before,
+                "a VWF endpoint transition cannot publish architectural NMI or suffix state",
+            );
+        };
+        if start_read_position == target_read_position {
+            // Translated bookkeeping is not source authority. Normalize an
+            // obsolete target without replaying any native VWF command.
+            self.dialogue_live_message_read_position_target = None;
+            assert_architectural_ownership_unchanged(self);
+            return SuspendedVwfEndpointTransition {
+                start_read_position,
+                target_read_position,
+                slice_count: 0,
+            };
+        }
+        assert!(
+            target_read_position > start_read_position,
+            "a suspended VWF endpoint transition cannot rewind the native decoder",
+        );
+
+        self.dialogue_fast_forward_hold_active = true;
+        self.dialogue_live_message_read_position_target = Some(target_read_position);
+        let mut slice_count = 0u32;
+        loop {
+            let cursor_before = self.game_state.messaging.runtime.dialogue_msg_read_pos();
+            assert!(
+                cursor_before < target_read_position,
+                "native VWF execution skipped its authoritative decoder endpoint",
+            );
+            let phase_before = self.dialogue_vwf_glyph_cpu_phase;
+            let progress_before = (
+                target_read_position - cursor_before,
+                if phase_before.is_ready() {
+                    u64::MAX
+                } else {
+                    u64::from(phase_before.remaining_master_cycles())
+                },
+            );
+            slice_count = slice_count
+                .checked_add(1)
+                .expect("native VWF endpoint transition exceeded its structural progress bound");
+            let outcome = self.render_text_draw_message_characters_slice();
+            let cursor_after = self.game_state.messaging.runtime.dialogue_msg_read_pos();
+            match outcome {
+                VwfCpuSliceOutcome::InterruptedMidGlyph { .. } => {
+                    // These raster-budget yields are translated timing shadows
+                    // inside the source endpoint receipt. Fold them without
+                    // publishing an NMI, handler epilogue, or caller suffix;
+                    // the strictly decreasing measure below proves progress.
+                    assert!(
+                        self.dialogue_fast_forward_hold_pending,
+                        "an interrupted VWF endpoint slice omitted its pending hold",
+                    );
+                    let phase_after = self.dialogue_vwf_glyph_cpu_phase;
+                    let progress_after = (
+                        target_read_position.checked_sub(cursor_after).expect(
+                            "native VWF execution skipped past its authoritative decoder endpoint",
+                        ),
+                        if phase_after.is_ready() {
+                            u64::MAX
+                        } else {
+                            u64::from(phase_after.remaining_master_cycles())
+                        },
+                    );
+                    assert!(
+                        progress_after < progress_before,
+                        "an interrupted VWF endpoint slice did not decrease its decoder/glyph progress measure",
+                    );
+                    self.dialogue_fast_forward_hold_pending = false;
+                }
+                VwfCpuSliceOutcome::AuthorityBoundaryReached => {
+                    assert_eq!(
+                        cursor_after, target_read_position,
+                        "native VWF execution stopped at the wrong authoritative endpoint",
+                    );
+                    assert!(
+                        self.dialogue_fast_forward_hold_pending,
+                        "the authoritative VWF endpoint omitted its suspended hold marker",
+                    );
+                    assert_architectural_ownership_unchanged(self);
+                    return SuspendedVwfEndpointTransition {
+                        start_read_position,
+                        target_read_position,
+                        slice_count,
+                    };
+                }
+                VwfCpuSliceOutcome::HandlerComplete { .. } => panic!(
+                    "native VWF handler returned before authoritative endpoint {target_read_position:#x}"
+                ),
+            }
+        }
+    }
+
+    /// Finish only the interruptible character handler which remains live
+    /// after a source endpoint host returned. Any translated mid-glyph raster
+    /// budgets are timing shadows inside the later typed caller-return
+    /// authority; caller epilogue, Module0E scroll writes, and the outer
+    /// ZeldaRunGameLoop suffix remain outside this transition.
+    pub(super) fn advance_suspended_vwf_to_handler_completion(
+        &mut self,
+    ) -> SuspendedVwfCompletionTransition {
+        let start_read_position = self.game_state.messaging.runtime.dialogue_msg_read_pos();
+        let decoded_text_len = self.game_state.messaging.decoded_text.as_slice().len();
+        assert!(
+            usize::from(start_read_position) < decoded_text_len,
+            "a suspended VWF completion escaped the decoded message buffer",
+        );
+        assert_eq!(
+            (
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule
+            ),
+            (14, 2),
+            "a suspended VWF completion escaped Module0E RenderText",
+        );
+        assert_eq!(
+            self.game_state.messaging.runtime.module(),
+            1,
+            "a suspended VWF completion lost the active Text_Render module",
+        );
+        assert_eq!(
+            self.game_state.messaging.runtime.text_render_state(),
+            3,
+            "a suspended VWF completion lost its character-render handler",
+        );
+        assert!(
+            self.dialogue_fast_forward_hold_active,
+            "a suspended VWF completion lost its translated caller hold",
+        );
+        assert!(
+            !self.dialogue_fast_forward_hold_pending,
+            "a suspended VWF completion overlapped another pending hold",
+        );
+        assert_eq!(
+            self.dialogue_live_message_read_position_target, None,
+            "a suspended VWF completion retained an unconsumed endpoint target",
+        );
+
+        let scheduler_before = self.game_execution_scheduler;
+        let suffix_before = self.pending_main_loop_common_suffix;
+        let expected_gates_before = self.original_timing_expected_nmi_update_gates.clone();
+        let nmi_ownership_before = (
+            self.original_timing_nmi_publication_pending,
+            self.original_timing_pending_nmi_update_gate,
+            self.game_state.display.nmi_update_is_latched(),
+            self.game_state.display.pending_nmi_subroutine,
+            self.game_state.display.core_update_disable_flag,
+            self.main_loop_sprite_preparation_completed,
+        );
+        let assert_architectural_ownership_unchanged = |state: &ZeldaState| {
+            assert_eq!(
+                state.game_execution_scheduler, scheduler_before,
+                "a suspended VWF completion cannot schedule translated work",
+            );
+            assert_eq!(
+                state.pending_main_loop_common_suffix, suffix_before,
+                "a suspended VWF completion cannot consume its caller suffix",
+            );
+            assert_eq!(
+                state.original_timing_expected_nmi_update_gates, expected_gates_before,
+                "a suspended VWF completion cannot consume external NMI gate authority",
+            );
+            assert_eq!(
+                (
+                    state.original_timing_nmi_publication_pending,
+                    state.original_timing_pending_nmi_update_gate,
+                    state.game_state.display.nmi_update_is_latched(),
+                    state.game_state.display.pending_nmi_subroutine,
+                    state.game_state.display.core_update_disable_flag,
+                    state.main_loop_sprite_preparation_completed,
+                ),
+                nmi_ownership_before,
+                "a suspended VWF completion cannot publish architectural NMI or suffix state",
+            );
+        };
+
+        let mut slice_count = 0u32;
+        loop {
+            let cursor_before = self.game_state.messaging.runtime.dialogue_msg_read_pos();
+            assert!(
+                usize::from(cursor_before) < decoded_text_len,
+                "a suspended VWF completion advanced beyond the decoded message buffer",
+            );
+            let phase_before = self.dialogue_vwf_glyph_cpu_phase;
+            let progress_before = (
+                decoded_text_len - usize::from(cursor_before),
+                if phase_before.is_ready() {
+                    u64::MAX
+                } else {
+                    u64::from(phase_before.remaining_master_cycles())
+                },
+            );
+            slice_count = slice_count
+                .checked_add(1)
+                .expect("a suspended VWF completion exceeded its structural progress bound");
+            let outcome = self.render_text_draw_message_characters_slice();
+            let cursor_after = self.game_state.messaging.runtime.dialogue_msg_read_pos();
+            match outcome {
+                VwfCpuSliceOutcome::InterruptedMidGlyph { .. } => {
+                    assert!(
+                        self.dialogue_fast_forward_hold_pending,
+                        "an interrupted VWF completion slice omitted its pending hold",
+                    );
+                    let phase_after = self.dialogue_vwf_glyph_cpu_phase;
+                    let progress_after = (
+                        decoded_text_len
+                            .checked_sub(usize::from(cursor_after))
+                            .expect(
+                            "a suspended VWF completion skipped beyond its decoded message buffer",
+                        ),
+                        if phase_after.is_ready() {
+                            u64::MAX
+                        } else {
+                            u64::from(phase_after.remaining_master_cycles())
+                        },
+                    );
+                    assert!(
+                        usize::from(cursor_after) < decoded_text_len
+                            && progress_after < progress_before,
+                        "an interrupted VWF completion slice did not advance its decoder/glyph progress measure",
+                    );
+                    self.dialogue_fast_forward_hold_pending = false;
+                }
+                VwfCpuSliceOutcome::AuthorityBoundaryReached => {
+                    panic!("a suspended VWF completion reached an unclaimed decoder endpoint")
+                }
+                outcome @ VwfCpuSliceOutcome::HandlerComplete { .. } => {
+                    let caller_suffix_crossed_vblank = outcome.caller_suffix_crosses_vblank();
+                    assert_eq!(
+                        self.dialogue_fast_forward_hold_pending,
+                        caller_suffix_crossed_vblank,
+                        "a suspended VWF completion disagreed with its translated caller-suffix hold",
+                    );
+                    assert_architectural_ownership_unchanged(self);
+                    return SuspendedVwfCompletionTransition {
+                        start_read_position,
+                        end_read_position: cursor_after,
+                        slice_count,
+                        caller_suffix_crossed_vblank,
+                    };
+                }
             }
         }
     }

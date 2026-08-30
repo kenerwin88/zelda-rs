@@ -1,8 +1,8 @@
 use super::{
     DisplaySnapshotPublication, GameWorkContinuation, ItemReceiptGraphicsContinuation,
     PreDungeonSpriteResetContinuation, PreMainCallerContinuation, PreMainNmiResume,
-    SpotlightIteration, SpriteResetAllProgress, FILE_SELECT_GRAPHICS_NMI_SLICES,
-    SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
+    SelectedGameLoadDestination, SpotlightIteration, SpriteResetAllProgress,
+    FILE_SELECT_GRAPHICS_NMI_SLICES, SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
     SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES,
 };
 pub(super) use snes::{CpuBusEvent, CpuBusWorkload, CpuFieldTiming, CpuRasterPosition};
@@ -518,18 +518,43 @@ impl FileSelectGraphicsContinuation {
             Self::ResumeModule => StartupSequenceStep::ResumeFileSelectModule,
         }
     }
+
+    /// Advance from source authority rather than the translated host-count
+    /// estimate. A continued-call receipt proves that the decompressor is
+    /// still suspended; only its main-loop return proves completion.
+    fn advance_with_authoritative_completion(
+        &mut self,
+        completes_caller: bool,
+    ) -> StartupSequenceStep {
+        match self {
+            Self::Loading { .. } if completes_caller => {
+                *self = Self::ResumeModule;
+                StartupSequenceStep::CompleteFileSelectGraphics
+            }
+            Self::Loading { .. } => StartupSequenceStep::FileSelectWaiting,
+            Self::ResumeModule => StartupSequenceStep::ResumeFileSelectModule,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SelectedGameLoadContinuation {
-    BeforePreDungeonAudio { nmi_slices_remaining: u8 },
-    AfterPreDungeonAudio { nmi_slices_remaining: u8 },
+    BeforePreDungeonAudio {
+        nmi_slices_remaining: u8,
+        destination: SelectedGameLoadDestination,
+    },
+    AfterPreDungeonAudio {
+        nmi_slices_remaining: u8,
+        destination: SelectedGameLoadDestination,
+        sprite_reset: PreDungeonSpriteResetContinuation,
+    },
 }
 
 impl SelectedGameLoadContinuation {
-    fn begin() -> Self {
+    fn begin(destination: SelectedGameLoadDestination) -> Self {
         Self::BeforePreDungeonAudio {
             nmi_slices_remaining: SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES,
+            destination,
         }
     }
 
@@ -537,9 +562,11 @@ impl SelectedGameLoadContinuation {
         match self {
             Self::BeforePreDungeonAudio {
                 nmi_slices_remaining,
+                ..
             } => nmi_slices_remaining + SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
             Self::AfterPreDungeonAudio {
                 nmi_slices_remaining,
+                ..
             } => nmi_slices_remaining,
         }
     }
@@ -548,12 +575,19 @@ impl SelectedGameLoadContinuation {
         match self {
             Self::BeforePreDungeonAudio {
                 nmi_slices_remaining,
+                destination,
             } => {
                 debug_assert_ne!(*nmi_slices_remaining, 0);
                 *nmi_slices_remaining = nmi_slices_remaining.saturating_sub(1);
                 if *nmi_slices_remaining == 0 {
                     *self = Self::AfterPreDungeonAudio {
                         nmi_slices_remaining: SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
+                        destination: *destination,
+                        sprite_reset: if *destination == SelectedGameLoadDestination::Dungeon {
+                            PreDungeonSpriteResetContinuation::Pending
+                        } else {
+                            PreDungeonSpriteResetContinuation::NotApplicable
+                        },
                     };
                     StartupSequenceStep::BeginPreDungeonAudio
                 } else {
@@ -562,6 +596,7 @@ impl SelectedGameLoadContinuation {
             }
             Self::AfterPreDungeonAudio {
                 nmi_slices_remaining,
+                ..
             } => {
                 debug_assert_ne!(*nmi_slices_remaining, 0);
                 *nmi_slices_remaining = nmi_slices_remaining.saturating_sub(1);
@@ -571,6 +606,65 @@ impl SelectedGameLoadContinuation {
                     StartupSequenceStep::SelectedGameLoadWaiting
                 }
             }
+        }
+    }
+
+    fn after_pre_dungeon_audio_sprite_reset(self) -> Option<PreDungeonSpriteResetContinuation> {
+        match self {
+            Self::AfterPreDungeonAudio { sprite_reset, .. } => Some(sprite_reset),
+            Self::BeforePreDungeonAudio { .. } => None,
+        }
+    }
+
+    fn destination(self) -> SelectedGameLoadDestination {
+        match self {
+            Self::BeforePreDungeonAudio { destination, .. }
+            | Self::AfterPreDungeonAudio { destination, .. } => destination,
+        }
+    }
+
+    /// Advance the post-audio selected-load caller from exact source facts.
+    /// The caller only invokes this for a source-proven route. The earlier
+    /// pre-dungeon-audio boundary remains count-backed until the timing adapter
+    /// exposes a typed entry fact; post-audio numeric counts are compatibility
+    /// state only.
+    fn advance_after_pre_dungeon_audio_from_source(
+        &mut self,
+        progress: Option<SpriteResetAllProgress>,
+        completes_caller: bool,
+    ) -> StartupSequenceStep {
+        let Self::AfterPreDungeonAudio { sprite_reset, .. } = self else {
+            panic!("selected-game source authority reached the wrong pre-dungeon-audio phase");
+        };
+        assert!(
+            !(progress.is_some() && completes_caller),
+            "selected-game Sprite_ResetAll progress and caller return cannot share one source host",
+        );
+        if let Some(progress) = progress {
+            assert_eq!(
+                *sprite_reset,
+                PreDungeonSpriteResetContinuation::Pending,
+                "selected-game Sprite_ResetAll checkpoint was duplicated or reached an inapplicable destination",
+            );
+            *sprite_reset = match progress {
+                SpriteResetAllProgress::SpriteDisableAllCompleted => {
+                    PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted
+                }
+            };
+            return StartupSequenceStep::SelectedGameLoadWaiting;
+        }
+        if completes_caller {
+            assert!(
+                matches!(
+                    *sprite_reset,
+                    PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted
+                        | PreDungeonSpriteResetContinuation::NotApplicable
+                ),
+                "selected-game caller returned before its destination-specific Sprite_ResetAll owner completed",
+            );
+            StartupSequenceStep::CompleteSelectedGameLoad
+        } else {
+            StartupSequenceStep::SelectedGameLoadWaiting
         }
     }
 }
@@ -918,10 +1012,77 @@ impl GameExecutionScheduler {
         ));
     }
 
-    pub(super) fn schedule_selected_game_load(&mut self) {
+    pub(super) fn schedule_selected_game_load(&mut self, destination: SelectedGameLoadDestination) {
         self.schedule_continuation(GameExecutionContinuation::SelectedGameLoad(
-            SelectedGameLoadContinuation::begin(),
+            SelectedGameLoadContinuation::begin(destination),
         ));
+    }
+
+    pub(super) fn file_select_graphics_is_loading(self) -> Option<bool> {
+        match self.continuation {
+            Some(GameExecutionContinuation::FileSelectGraphics(
+                FileSelectGraphicsContinuation::Loading { .. },
+            )) => Some(true),
+            Some(GameExecutionContinuation::FileSelectGraphics(
+                FileSelectGraphicsContinuation::ResumeModule,
+            )) => Some(false),
+            _ => None,
+        }
+    }
+
+    pub(super) fn advance_file_select_graphics_with_authoritative_completion(
+        &mut self,
+        completes_caller: bool,
+    ) -> Option<StartupSequenceStep> {
+        let step = match self.continuation.as_mut()? {
+            GameExecutionContinuation::FileSelectGraphics(
+                continuation @ FileSelectGraphicsContinuation::Loading { .. },
+            ) => continuation.advance_with_authoritative_completion(completes_caller),
+            // ResumeModule is a distinct CPU boundary, not another observed
+            // decompressor slice. Do not let a nonterminal receipt retire it.
+            GameExecutionContinuation::FileSelectGraphics(
+                FileSelectGraphicsContinuation::ResumeModule,
+            ) => return None,
+            _ => return None,
+        };
+        Some(step)
+    }
+
+    pub(super) fn selected_game_load_after_pre_dungeon_audio_sprite_reset(
+        self,
+    ) -> Option<PreDungeonSpriteResetContinuation> {
+        match self.continuation {
+            Some(GameExecutionContinuation::SelectedGameLoad(continuation)) => {
+                continuation.after_pre_dungeon_audio_sprite_reset()
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn selected_game_load_destination(self) -> Option<SelectedGameLoadDestination> {
+        match self.continuation {
+            Some(GameExecutionContinuation::SelectedGameLoad(continuation)) => {
+                Some(continuation.destination())
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn advance_selected_game_load_after_pre_dungeon_audio_from_source(
+        &mut self,
+        progress: Option<SpriteResetAllProgress>,
+        completes_caller: bool,
+    ) -> Option<StartupSequenceStep> {
+        let step = match self.continuation.as_mut()? {
+            GameExecutionContinuation::SelectedGameLoad(continuation) => {
+                continuation.advance_after_pre_dungeon_audio_from_source(progress, completes_caller)
+            }
+            _ => return None,
+        };
+        if step == StartupSequenceStep::CompleteSelectedGameLoad {
+            self.continuation = None;
+        }
+        Some(step)
     }
 
     pub(super) fn advance_startup_sequence(&mut self) -> Option<StartupSequenceStep> {

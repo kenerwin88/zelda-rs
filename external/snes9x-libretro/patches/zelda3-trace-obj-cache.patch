@@ -36,6 +36,13 @@ diff --git a/libretro/libretro.cpp b/libretro/libretro.cpp
 +            return Zelda3TracePresentedObjTileCacheValue(0, index);
 +        case 30:
 +            return Zelda3TracePresentedObjTileCacheValue(1, index);
++        // Addressed decoded OBJ cache for both active OBSEL name pages.
++        // Keep the historical pixel/valid selectors at 29/30; 31..44 are
++        // already assigned to other presentation-domain receipts.
++        case 45:
++            return Zelda3TracePresentedObjTileCacheValue(2, index);
++        case 46:
++            return Zelda3TracePresentedObjTileCacheValue(3, index);
 +        // Full decoded 4bpp BG/OBJ cache at the completed-screen boundary.
 +        // This distinguishes raw-VRAM parity from tile-cache invalidation lag.
 +        case 31:
@@ -116,8 +123,12 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
  uint8 presented_obj_flags[SNES_HEIGHT_EXTENDED] = {};
  uint8 presented_obj_visible_tiles[128] = {};
  uint8 presented_obj_widths[128] = {};
-+uint8 presented_obj_tile_cache[64 * 64] = {};
-+uint8 presented_obj_tile_cache_valid[64] = {};
++constexpr int presented_obj_tile_slot_count = 512;
++constexpr int presented_obj_tile_pixels = 64;
++uint8 presented_obj_tile_cache[presented_obj_tile_slot_count * presented_obj_tile_pixels] = {};
++uint8 presented_obj_tile_cache_valid[presented_obj_tile_slot_count] = {};
++int presented_obj_tile_word_address[presented_obj_tile_slot_count] = {};
++uint16 presented_obj_tile_page_base[2] = {};
 +uint8 presented_bg_tile_cache[1024 * 64] = {};
 +uint8 presented_bg_tile_cache_valid[1024] = {};
 +uint16 presented_bg_h_scroll[SNES_HEIGHT_EXTENDED][4] = {};
@@ -166,12 +177,40 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
  	std::memcpy(presented_obj_visible_tiles, GFX.OBJVisibleTiles,
  		sizeof(presented_obj_visible_tiles));
  	std::memcpy(presented_obj_widths, GFX.OBJWidths, sizeof(presented_obj_widths));
-+	std::memcpy(presented_obj_tile_cache,
-+		IPPU.TileCache[TILE_4BIT] + (0x400 << 6),
++	std::memset(presented_obj_tile_cache, 0,
 +		sizeof(presented_obj_tile_cache));
-+	std::memcpy(presented_obj_tile_cache_valid,
-+		IPPU.TileCached[TILE_4BIT] + 0x400,
++	std::memset(presented_obj_tile_cache_valid, 0,
 +		sizeof(presented_obj_tile_cache_valid));
++	std::fill_n(presented_obj_tile_word_address,
++		presented_obj_tile_slot_count, -1);
++	// CachedTile forms the second OBJ name page from the implicit tile-$100
++	// byte offset plus OBJNameSelect, then wraps the result to 16-bit VRAM.
++	// Export semantic 15-bit word addresses rather than Snes9x cache indices.
++	presented_obj_tile_page_base[0] =
++		(PPU.OBJNameBase & 0xffff) >> 1;
++	presented_obj_tile_page_base[1] =
++		((PPU.OBJNameBase + 0x2000 + PPU.OBJNameSelect) & 0xffff) >> 1;
++	bool captured_obj_tile[2048] = {};
++	for (int page = 0; page < 2; page++)
++		for (int tile = 0; tile < 256; tile++)
++		{
++			const int word_address =
++				(presented_obj_tile_page_base[page] + tile * 16) & 0x7fff;
++			const int tile_number = word_address >> 4;
++			const uint8 cache_valid =
++				IPPU.TileCached[TILE_4BIT][tile_number];
++			if (!cache_valid || captured_obj_tile[tile_number])
++				continue;
++			captured_obj_tile[tile_number] = true;
++			const int slot = page * 256 + tile;
++			presented_obj_tile_word_address[slot] = word_address;
++			presented_obj_tile_cache_valid[slot] = cache_valid;
++			std::memcpy(
++				presented_obj_tile_cache + slot * presented_obj_tile_pixels,
++				IPPU.TileCache[TILE_4BIT] +
++					(tile_number * presented_obj_tile_pixels),
++				presented_obj_tile_pixels);
++		}
 +	std::memcpy(presented_bg_tile_cache,
 +		IPPU.TileCache[TILE_4BIT], sizeof(presented_bg_tile_cache));
 +	std::memcpy(presented_bg_tile_cache_valid,
@@ -287,6 +326,21 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 +	if (field == 1)
 +		return index >= 0 && index < (int) sizeof(presented_obj_tile_cache_valid)
 +			? presented_obj_tile_cache_valid[index] : -1;
++	if (field == 2)
++		return index >= 0 && index < presented_obj_tile_slot_count
++			? presented_obj_tile_word_address[index] : -1;
++	if (field == 3)
++	{
++		switch (index)
++		{
++			case 0: return 1; // Addressed OBJ cache ABI version.
++			case 1: return presented_obj_tile_slot_count;
++			case 2: return presented_obj_tile_pixels;
++			case 3: return presented_obj_tile_page_base[0];
++			case 4: return presented_obj_tile_page_base[1];
++			default: return -1;
++		}
++	}
 +	return -1;
 +}
 +

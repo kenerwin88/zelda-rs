@@ -14,11 +14,11 @@ use zelda3::{
     DialogueExecutionProgress, DungeonLoadSpritesCpuProgress, DungeonResetSpritesCpuProgress,
     DungeonResetSpritesProgressReceipt, DungeonSpriteDisableCpuProgress,
     DungeonSpriteLoadCheckpoint, ItemReceiptGraphicsCaller, ItemReceiptGraphicsProgressReceipt,
-    JoypadPublication, MainLoopInterruption, MainLoopProgress, OriginalTimingBoundary,
-    OriginalTimingSemanticReceipt, OverworldSpriteReloadProgress, PreOverworldStageCompletion,
-    SaveMenuInitializationProgress, SourceCallProgress, SpotlightTableBuildCheckpoint,
-    SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt, SpriteMainProgress,
-    SpriteResetAllProgress, SpriteResetAllProgressReceipt,
+    JoypadPublication, MainLoopInterruption, MainLoopProgress, NmiUpdateGate,
+    OriginalTimingBoundary, OriginalTimingSemanticReceipt, OverworldSpriteReloadProgress,
+    PreOverworldStageCompletion, SaveMenuInitializationProgress, SourceCallProgress,
+    SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt,
+    SpriteMainProgress, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
 };
 
 const TRACE_PATH_ENV: &str = "ZELDA3_SNES9X_TRACE";
@@ -28,17 +28,25 @@ const TRACE_PCS_ENV: &str = "ZELDA3_SNES9X_TRACE_PCS";
 const REQUIRED_TRACE_EVENTS: &[&str] = &["frame", "nmi", "nmi-resume", "wram", "rom-rng", "pc"];
 
 const FRAME_COUNTER: u16 = 0x001a;
+const NMI_UPDATE_LATCH: u16 = 0x0012;
 // The pinned ROM has two source paths through `Interrupt_NMI`. The ordinary
 // path finishes its final PPU write at $00:8221 and reaches REP at $00:8225;
 // the active IRQ/poly-thread path jumps through `NMI_SwitchThread`, finishes
 // its final PPU write at $00:82c4, and reaches REP at $00:82c7. At either REP
 // all Zelda-visible NMI work is complete and only register/stack restoration
 // remains. These addresses are private adapter provenance;
-// gameplay sees only `NmiPublicationCompleted`.
-const NMI_PUBLICATION_COMPLETE_PCS: [u32; 2] = [0x0000_8225, 0x0000_82c7];
+// gameplay sees only `NmiHandlerCompleted`.
+const NMI_HANDLER_COMPLETE_PCS: [u32; 2] = [0x0000_8225, 0x0000_82c7];
 // ROM $00:8051 is `INC $1a`, the first statement of ZeldaRunGameLoop.
 // The generic WRAM hook observes the instruction's post-write PC.
 const ZELDA_RUN_GAME_LOOP_FRAME_COUNTER_WRITE_PC: u32 = 0x008053;
+// ROM $00:805d is `STZ $12`, the final semantic operation in
+// ZeldaRunGameLoop's unconditional `NMI_PrepareSprites(); nmi_boolean = 0`
+// suffix. The generic WRAM hook observes the instruction's post-write PC.
+// This exact publication remains valid when the CPU immediately switches to
+// Zelda's poly stack, where neither a main-wait PC nor a host-return PC can
+// prove the completed source call.
+const ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC: u32 = 0x00805f;
 // In pinned ROM source, $00:f375 is the JSR to
 // IrisSpotlight_CalculateCircleValue. The current loop iteration has loaded
 // its input and conditionally decremented spotlight_var4, but has not yet
@@ -122,6 +130,15 @@ const NMI_PREPARE_SPRITES_START_PC: u32 = 0x0085fc;
 // stacks, so classifying through the next C symbol would turn a private PC
 // overlap into a false `NMI_PrepareSprites` receipt.
 const NMI_PREPARE_SPRITES_END_PC: u32 = 0x008781;
+// Before the first store for one unrolled four-byte group, every previously
+// visited extended-OAM group is complete and the current group is still
+// unpublished. The backend-private Y register identifies that resumable
+// source cursor; translated gameplay never sees the register or PC.
+const NMI_PREPARE_EXTENDED_OAM_GROUP_BEFORE_STORE_START_PC: u32 = 0x008602;
+// `$8614` is the first STA opcode. NMI acceptance is instruction-boundary
+// atomic, so observing this PC still proves the current group is unpublished;
+// `$8615/$8616` are operand bytes and cannot be acceptance PCs.
+const NMI_PREPARE_EXTENDED_OAM_GROUP_BEFORE_STORE_END_PC: u32 = 0x008615;
 const LINK_OAM_START_PC: u32 = 0x0da18e;
 const LINK_OAM_END_PC: u32 = 0x0dadb6;
 // The generic PC trace uses these private pinned-ROM boundaries to translate
@@ -503,12 +520,14 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     pending_spotlight_helper_nmi: Option<RawTraceEvent>,
     item_receipt_caller: Option<ItemReceiptGraphicsCaller>,
     sprite_main_execution: Option<SpriteMainExecutionTracker>,
+    zelda_run_game_loop_call_active: bool,
     nmi_publication_pending: bool,
+    pending_nmi_update_gate: Option<NmiUpdateGate>,
     nmi_resume_targets: Vec<(u32, u16)>,
     synthesized_nmi_resume: Option<(u32, u16)>,
 }
 
-const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 6;
+const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 9;
 
 /// Emulator-private continuation state for the typed semantic adapter.
 ///
@@ -529,7 +548,11 @@ pub(crate) struct Snes9xOracleSemanticTraceCheckpoint {
     item_receipt_caller: Option<ItemReceiptGraphicsCaller>,
     #[serde(default)]
     sprite_main_execution: Option<SpriteMainExecutionTracker>,
+    #[serde(default)]
+    zelda_run_game_loop_call_active: bool,
     nmi_publication_pending: bool,
+    #[serde(default)]
+    pending_nmi_update_gate: Option<NmiUpdateGate>,
     nmi_resume_targets: Vec<(u32, u16)>,
     synthesized_nmi_resume: Option<(u32, u16)>,
 }
@@ -579,6 +602,8 @@ struct RawTraceEvent {
     joypad_low_filtered: Option<u8>,
     #[serde(default)]
     x: Option<u16>,
+    #[serde(default)]
+    y: Option<u16>,
     #[serde(default)]
     address: Option<u16>,
     #[serde(default)]
@@ -646,7 +671,12 @@ struct HostFrameWindow {
     returned: Option<HostFrameState>,
     vwf_nmi_observed: bool,
     main_loop_starts: u8,
-    main_wait_nmi_after_main_loop_start: bool,
+    main_loop_common_suffix_completed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MainLoopCompletionProof {
+    CommonSuffixCompleted,
 }
 
 fn main_loop_started_by_event(event: &RawTraceEvent) -> bool {
@@ -751,21 +781,36 @@ impl HostFrameWindow {
         None
     }
 
-    fn observe(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+    /// Observe one raw source event and report an exact source-call completion
+    /// at the event's ordered position. The caller preserves that boundary
+    /// relative to NMI acceptance without exporting CPU or WRAM provenance.
+    fn observe(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<Option<MainLoopCompletionProof>, String> {
         if main_loop_started_by_event(event) {
             self.main_loop_starts = self
                 .main_loop_starts
                 .checked_add(1)
                 .ok_or("Snes9x host call overflowed its ZeldaRunGameLoop start count")?;
         }
-        if event.event == "nmi"
-            && self.main_loop_starts == 1
-            && event
-                .pc
-                .map(|pc| pc & 0x00ff_ffff)
-                .is_some_and(zelda_main_wait_pc)
-        {
-            self.main_wait_nmi_after_main_loop_start = true;
+        let common_suffix_completed = event.event == "wram-write"
+            && event.address == Some(NMI_UPDATE_LATCH)
+            && event.pc.map(|pc| pc & 0x00ff_ffff)
+                == Some(ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC);
+        if common_suffix_completed {
+            if event.value != Some(0) {
+                return Err(format!(
+                    "Snes9x ZeldaRunGameLoop common suffix published invalid $12 value {:?}",
+                    event.value,
+                ));
+            }
+            if self.main_loop_common_suffix_completed {
+                return Err(
+                    "Snes9x host call completed ZeldaRunGameLoop's common suffix twice".to_string(),
+                );
+            }
+            self.main_loop_common_suffix_completed = true;
         }
         if event.event == "nmi"
             && event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
@@ -775,7 +820,11 @@ impl HostFrameWindow {
             self.vwf_nmi_observed = true;
         }
         if event.event != "frame" {
-            return Ok(());
+            return Ok(if common_suffix_completed {
+                Some(MainLoopCompletionProof::CommonSuffixCompleted)
+            } else {
+                None
+            });
         }
         let stage = event
             .stage
@@ -804,19 +853,21 @@ impl HostFrameWindow {
                 .ok_or("Snes9x frame receipt omitted Zelda NMI latch")?,
         };
         match stage {
-            "entry" if self.entry.replace(state).is_none() => Ok(()),
-            "return" if self.returned.replace(state).is_none() => Ok(()),
+            "entry" if self.entry.replace(state).is_none() => {}
+            "return" if self.returned.replace(state).is_none() => {}
             "entry" | "return" => Err(format!(
                 "Snes9x host call published duplicate frame/{stage} receipts"
-            )),
-            _ => Ok(()),
+            ))?,
+            _ => {}
         }
+        Ok(None)
     }
 
     fn finish(
         self,
         receipts: &mut Vec<OriginalTimingSemanticReceipt>,
         dialogue_message_read_position: Option<u16>,
+        zelda_run_game_loop_call_active_at_entry: bool,
     ) -> Result<(), String> {
         let entry = self
             .entry
@@ -831,29 +882,26 @@ impl HostFrameWindow {
             ));
         }
         let main_loop_progress = match self.main_loop_starts {
-            0 => MainLoopProgress::CallStackContinued,
-            1 => MainLoopProgress::IterationStarted,
+            0 if zelda_run_game_loop_call_active_at_entry => {
+                Some(MainLoopProgress::CallStackContinued)
+            }
+            0 => None,
+            1 => Some(MainLoopProgress::IterationStarted),
             starts => {
                 return Err(format!(
                     "Snes9x host call started ZeldaRunGameLoop {starts} times; expected zero or one"
                 ));
             }
         };
-        let progress_already_emitted = receipts.iter().any(|receipt| {
-            *receipt == OriginalTimingSemanticReceipt::MainLoopProgress(main_loop_progress)
-        });
-        if !progress_already_emitted {
-            receipts.push(OriginalTimingSemanticReceipt::MainLoopProgress(
-                main_loop_progress,
-            ));
-        }
-        if main_loop_progress == MainLoopProgress::IterationStarted
-            && (zelda_main_wait_pc(returned.pc) || self.main_wait_nmi_after_main_loop_start)
-        {
-            // The private return PC proves that this same C iteration returned
-            // through Module_MainRouting, NMI_PrepareSprites, and `$12 = 0`.
-            // Export only the replaceable Zelda-level completion fact.
-            receipts.push(OriginalTimingSemanticReceipt::MainLoopIterationReturnedToWait);
+        if let Some(main_loop_progress) = main_loop_progress {
+            let progress_already_emitted = receipts.iter().any(|receipt| {
+                *receipt == OriginalTimingSemanticReceipt::MainLoopProgress(main_loop_progress)
+            });
+            if !progress_already_emitted {
+                receipts.push(OriginalTimingSemanticReceipt::MainLoopProgress(
+                    main_loop_progress,
+                ));
+            }
         }
         let spotlight_call_completion = self.spotlight_call_completion();
         if spotlight_call_completion
@@ -1031,6 +1079,7 @@ impl Snes9xOracleSemanticTrace {
                 append_csv(
                     env::var(TRACE_WRAM_ENV).ok().as_deref(),
                     &[
+                        "0012",
                         "001a",
                         "0020-002f",
                         "02ec",
@@ -1074,7 +1123,9 @@ impl Snes9xOracleSemanticTrace {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         })
@@ -1096,7 +1147,9 @@ impl Snes9xOracleSemanticTrace {
             pending_spotlight_helper_nmi: self.pending_spotlight_helper_nmi.clone(),
             item_receipt_caller: self.item_receipt_caller,
             sprite_main_execution: self.sprite_main_execution,
+            zelda_run_game_loop_call_active: self.zelda_run_game_loop_call_active,
             nmi_publication_pending: self.nmi_publication_pending,
+            pending_nmi_update_gate: self.pending_nmi_update_gate,
             nmi_resume_targets: self.nmi_resume_targets.clone(),
             synthesized_nmi_resume: self.synthesized_nmi_resume,
         }
@@ -1111,6 +1164,12 @@ impl Snes9xOracleSemanticTrace {
                 "unsupported Snes9x semantic trace checkpoint schema {}",
                 checkpoint.schema
             ));
+        }
+        if checkpoint.nmi_publication_pending != checkpoint.pending_nmi_update_gate.is_some() {
+            return Err(
+                "Snes9x semantic checkpoint NMI pending marker disagrees with its update gate"
+                    .to_string(),
+            );
         }
         if checkpoint.nmi_publication_pending && checkpoint.nmi_resume_targets.is_empty() {
             return Err(
@@ -1148,7 +1207,9 @@ impl Snes9xOracleSemanticTrace {
         self.pending_spotlight_helper_nmi = checkpoint.pending_spotlight_helper_nmi;
         self.item_receipt_caller = checkpoint.item_receipt_caller;
         self.sprite_main_execution = checkpoint.sprite_main_execution;
+        self.zelda_run_game_loop_call_active = checkpoint.zelda_run_game_loop_call_active;
         self.nmi_publication_pending = checkpoint.nmi_publication_pending;
+        self.pending_nmi_update_gate = checkpoint.pending_nmi_update_gate;
         self.nmi_resume_targets = checkpoint.nmi_resume_targets;
         self.synthesized_nmi_resume = checkpoint.synthesized_nmi_resume;
         Ok(())
@@ -1176,6 +1237,7 @@ impl Snes9xOracleSemanticTrace {
         let mut line = String::new();
         let mut receipts = Vec::new();
         let mut host_frame = HostFrameWindow::default();
+        let zelda_run_game_loop_call_active_at_entry = self.zelda_run_game_loop_call_active;
         let mut returned_event = None;
         loop {
             line.clear();
@@ -1198,7 +1260,24 @@ impl Snes9xOracleSemanticTrace {
             if event.event == "frame" && event.stage.as_deref() == Some("return") {
                 returned_event = Some(event.clone());
             }
-            if main_loop_started_by_event(&event) {
+            let main_loop_started = main_loop_started_by_event(&event);
+            if main_loop_started && self.zelda_run_game_loop_call_active {
+                return Err(
+                    "Snes9x started ZeldaRunGameLoop before the prior call completed its common suffix"
+                        .to_string(),
+                );
+            }
+            let main_loop_common_suffix_completed = event.event == "wram-write"
+                && event.address == Some(NMI_UPDATE_LATCH)
+                && event.pc.map(|pc| pc & 0x00ff_ffff)
+                    == Some(ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC);
+            if main_loop_common_suffix_completed && !self.zelda_run_game_loop_call_active {
+                return Err(
+                    "Snes9x completed ZeldaRunGameLoop's common suffix without an active source call"
+                        .to_string(),
+                );
+            }
+            if main_loop_started {
                 // Preserve the source write's exact position relative to NMI
                 // acceptance/completion. HostFrameWindow still proves there
                 // is at most one such write and supplies CallStackContinued
@@ -1207,7 +1286,29 @@ impl Snes9xOracleSemanticTrace {
                     MainLoopProgress::IterationStarted,
                 ));
             }
-            host_frame.observe(&event)?;
+            if let Some(completion) = host_frame.observe(&event)? {
+                if host_frame.main_loop_starts == 0
+                    && !receipts.iter().any(|receipt| {
+                        matches!(receipt, OriginalTimingSemanticReceipt::MainLoopProgress(_))
+                    })
+                {
+                    // A resumed ZeldaRunGameLoop has no frame-counter write in
+                    // this host. Publish its progress immediately before the
+                    // exact common-suffix/return fact so later NMI phases stay
+                    // on the correct side of the source boundary.
+                    receipts.push(OriginalTimingSemanticReceipt::MainLoopProgress(
+                        MainLoopProgress::CallStackContinued,
+                    ));
+                }
+                let MainLoopCompletionProof::CommonSuffixCompleted = completion;
+                receipts.push(OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted);
+            }
+            if main_loop_started {
+                self.zelda_run_game_loop_call_active = true;
+            }
+            if main_loop_common_suffix_completed {
+                self.zelda_run_game_loop_call_active = false;
+            }
             self.consume_event(event, &mut receipts)?;
         }
         if let Some(returned_event) = returned_event.as_ref() {
@@ -1244,7 +1345,11 @@ impl Snes9xOracleSemanticTrace {
         // adapter.
         self.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
         self.flush_item_receipt_progress(&mut receipts);
-        host_frame.finish(&mut receipts, dialogue_message_read_position)?;
+        host_frame.finish(
+            &mut receipts,
+            dialogue_message_read_position,
+            zelda_run_game_loop_call_active_at_entry,
+        )?;
         if receipts.iter().any(|receipt| {
             matches!(
                 receipt,
@@ -1274,6 +1379,33 @@ impl Snes9xOracleSemanticTrace {
             .pc
             .ok_or("Snes9x helper-interrupted host return omitted PC")?
             & 0x00ff_ffff;
+        // An enclosing typed source completion supersedes the helper's
+        // earlier timing checkpoint even when a later NMI leaves the final
+        // host PC inside the handler. Decide that ownership before using the
+        // final private PC to validate a genuinely suspended helper.
+        let superseded = matches!(
+            (spotlight_call_completion, helper_nmi.main, helper_nmi.sub),
+            (
+                Some(SpotlightCallCompletion::EntryReturned),
+                Some(0x0f),
+                Some(0)
+            ) | (
+                Some(SpotlightCallCompletion::RecurringCallerReachedLinkOam),
+                Some(0x0f),
+                Some(1)
+            ) | (
+                Some(SpotlightCallCompletion::RecurringCallerReturnedToMainWait),
+                Some(0x0f),
+                Some(1)
+            ) | (
+                Some(SpotlightCallCompletion::OverworldGoalCallerReturned),
+                Some(0x10),
+                Some(1)
+            )
+        );
+        if superseded {
+            return Ok(());
+        }
         if returned_pc != NMI_HANDLER_ENTRY_PC {
             // `Dungeon_PrepExitWithSpotlight` increments submodule 0 -> 1
             // only after `IrisSpotlight_close` returns. On recurring calls,
@@ -1282,29 +1414,6 @@ impl Snes9xOracleSemanticTrace {
             // enclosing source completion is published in this same host
             // call, the intermediate table checkpoint has been superseded by
             // the stronger receipt emitted by `HostFrameWindow::finish`.
-            let superseded = matches!(
-                (spotlight_call_completion, helper_nmi.main, helper_nmi.sub),
-                (
-                    Some(SpotlightCallCompletion::EntryReturned),
-                    Some(0x0f),
-                    Some(0)
-                ) | (
-                    Some(SpotlightCallCompletion::RecurringCallerReachedLinkOam),
-                    Some(0x0f),
-                    Some(1)
-                ) | (
-                    Some(SpotlightCallCompletion::RecurringCallerReturnedToMainWait),
-                    Some(0x0f),
-                    Some(1)
-                ) | (
-                    Some(SpotlightCallCompletion::OverworldGoalCallerReturned),
-                    Some(0x10),
-                    Some(1)
-                )
-            );
-            if superseded {
-                return Ok(());
-            }
             return Err(format!(
                 "Snes9x spotlight helper NMI did not return at the source NMI entry: ${returned_pc:06x}"
             ));
@@ -1575,16 +1684,26 @@ impl Snes9xOracleSemanticTrace {
                     _ => {}
                 }
                 match pc {
-                    pc if NMI_PUBLICATION_COMPLETE_PCS.contains(&pc) => {
+                    pc if NMI_HANDLER_COMPLETE_PCS.contains(&pc) => {
                         if !self.nmi_publication_pending {
                             return Err(
                                 "Snes9x reached NMI publication completion without an accepted NMI"
                                     .to_string(),
                             );
                         }
-                        let joypad_publication = event.joypad_publication()?;
+                        let update_gate = self.pending_nmi_update_gate.ok_or(
+                            "Snes9x NMI completion lost its accepted update-gate disposition",
+                        )?;
+                        let joypad_publication = if update_gate == NmiUpdateGate::Open {
+                            Some(event.joypad_publication()?.ok_or(
+                                "open Snes9x NMI completion omitted Zelda joypad publication",
+                            )?)
+                        } else {
+                            None
+                        };
+                        self.pending_nmi_update_gate = None;
                         self.nmi_publication_pending = false;
-                        receipts.push(OriginalTimingSemanticReceipt::NmiPublicationCompleted);
+                        receipts.push(OriginalTimingSemanticReceipt::NmiHandlerCompleted);
                         if let Some(publication) = joypad_publication {
                             receipts.push(OriginalTimingSemanticReceipt::JoypadPublication(
                                 publication,
@@ -1990,7 +2109,28 @@ impl Snes9xOracleSemanticTrace {
             }
             "nmi" => {
                 let target = nmi_resume_target(&event)?;
+                let update_gate = match event
+                    .nmi_latch
+                    .ok_or("Snes9x NMI receipt omitted Zelda's software update latch")?
+                {
+                    0 => NmiUpdateGate::Open,
+                    _ => NmiUpdateGate::LatchHeld,
+                };
+                // Validate the source-stage cursor before changing any
+                // cross-host NMI ownership or publishing partial receipts.
+                let main_loop_interruption = main_loop_interruption_for_event(&event)?;
+                if matches!(
+                    main_loop_interruption,
+                    Some(MainLoopInterruption::SpritePreparationExtendedOamPacking { .. })
+                ) && update_gate != NmiUpdateGate::LatchHeld
+                {
+                    return Err(
+                        "Snes9x extended-OAM packing interruption observed an open Zelda NMI latch"
+                            .to_string(),
+                    );
+                }
                 self.nmi_publication_pending = true;
+                self.pending_nmi_update_gate = Some(update_gate);
                 self.nmi_resume_targets.push(target);
                 if publish_pre_dungeon_sprite_reset_progress(
                     &event,
@@ -2013,7 +2153,7 @@ impl Snes9xOracleSemanticTrace {
                     self.publish_overworld_presence(receipts);
                 }
                 self.flush_host_boundary_progress(receipts, OriginalTimingBoundary::NmiAccepted);
-                receipts.push(OriginalTimingSemanticReceipt::NmiAccepted);
+                receipts.push(OriginalTimingSemanticReceipt::NmiAccepted(update_gate));
                 if let Some(execution) = self.sprite_main_execution {
                     let interruption = match self.item_receipt_caller {
                         Some(
@@ -2061,12 +2201,8 @@ impl Snes9xOracleSemanticTrace {
                         },
                     ));
                 }
-                if let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) {
-                    if let Some(phase) =
-                        main_loop_interruption_for_source_state(pc, event.main, event.sub)
-                    {
-                        receipts.push(OriginalTimingSemanticReceipt::MainLoopInterrupted(phase));
-                    }
+                if let Some(phase) = main_loop_interruption {
+                    receipts.push(OriginalTimingSemanticReceipt::MainLoopInterrupted(phase));
                 }
             }
             "nmi-resume" => {
@@ -2689,6 +2825,44 @@ fn main_loop_interruption_for_source_state(
     }
 }
 
+fn main_loop_interruption_for_event(
+    event: &RawTraceEvent,
+) -> Result<Option<MainLoopInterruption>, String> {
+    let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+        return Ok(None);
+    };
+    if (NMI_PREPARE_EXTENDED_OAM_GROUP_BEFORE_STORE_START_PC
+        ..NMI_PREPARE_EXTENDED_OAM_GROUP_BEFORE_STORE_END_PC)
+        .contains(&pc)
+    {
+        let next_group_start = u8::try_from(
+            event
+                .y
+                .ok_or("Snes9x extended-OAM packing interruption omitted source cursor Y")?,
+        )
+        .map_err(|_| "Snes9x extended-OAM packing cursor exceeded one byte")?;
+        if next_group_start > 28 || next_group_start & 3 != 0 {
+            return Err(format!(
+                "Snes9x extended-OAM packing interruption used invalid group cursor {next_group_start}",
+            ));
+        }
+        let source_x = event
+            .x
+            .ok_or("Snes9x extended-OAM packing interruption omitted source cursor X")?;
+        if source_x != u16::from(next_group_start) * 4 {
+            return Err(format!(
+                "Snes9x extended-OAM packing cursors disagreed: y={next_group_start}, x={source_x}",
+            ));
+        }
+        return Ok(Some(
+            MainLoopInterruption::SpritePreparationExtendedOamPacking { next_group_start },
+        ));
+    }
+    Ok(main_loop_interruption_for_source_state(
+        pc, event.main, event.sub,
+    ))
+}
+
 /// Remove the source-call interruption belonging to an NMI whose exact
 /// stack-qualified context resumed within this same host interval.
 ///
@@ -2703,7 +2877,7 @@ fn retire_resumed_main_loop_interruption(
 ) -> Result<(), String> {
     let Some(last_acceptance) = receipts
         .iter()
-        .rposition(|receipt| matches!(receipt, OriginalTimingSemanticReceipt::NmiAccepted))
+        .rposition(|receipt| matches!(receipt, OriginalTimingSemanticReceipt::NmiAccepted(_)))
     else {
         if let Some(progress) = resumed_sprite_progress {
             receipts.push(OriginalTimingSemanticReceipt::SpriteMainProgressed(
@@ -2858,13 +3032,15 @@ fn append_csv(existing: Option<&str>, required: &[&str]) -> String {
 mod tests {
     use super::*;
 
-    const NMI_PUBLICATION_COMPLETE_PC: u32 = NMI_PUBLICATION_COMPLETE_PCS[0];
+    const NMI_HANDLER_COMPLETE_PC: u32 = NMI_HANDLER_COMPLETE_PCS[0];
 
     #[test]
     fn semantic_trace_configuration_observes_acceptance_publication_and_context_resume() {
         assert!(REQUIRED_TRACE_EVENTS.contains(&"nmi"));
         assert!(REQUIRED_TRACE_EVENTS.contains(&"nmi-resume"));
-        assert_eq!(NMI_PUBLICATION_COMPLETE_PCS, [0x0000_8225, 0x0000_82c7]);
+        assert_eq!(NMI_UPDATE_LATCH, 0x0012);
+        assert_eq!(ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC, 0x00805f);
+        assert_eq!(NMI_HANDLER_COMPLETE_PCS, [0x0000_8225, 0x0000_82c7]);
         assert_eq!(
             append_csv(Some("dma,nmi"), REQUIRED_TRACE_EVENTS),
             "dma,nmi,frame,nmi-resume,wram,rom-rng,pc",
@@ -2878,7 +3054,7 @@ mod tests {
         source
             .consume_event(raw("nmi", Some(0x008036), None, None), &mut receipts)
             .unwrap();
-        let mut completion = raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f8);
+        let mut completion = raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f8);
         completion.joypad_high = Some(0x05);
         completion.joypad_low = Some(0x80);
         completion.joypad_high_filtered = Some(0x04);
@@ -2888,8 +3064,8 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
                 OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
                     high: 0x05,
                     low: 0x80,
@@ -2907,15 +3083,23 @@ mod tests {
         source
             .consume_event(raw("nmi", Some(0x008036), None, None), &mut receipts)
             .unwrap();
-        let mut completion = raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f8);
+        let mut completion = raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f8);
         completion.joypad_high = Some(0x05);
+        completion.joypad_low = None;
+        completion.joypad_high_filtered = None;
+        completion.joypad_low_filtered = None;
 
         assert!(source
             .consume_event(completion, &mut receipts)
             .unwrap_err()
             .contains("omitted part"));
         assert!(source.nmi_publication_pending);
-        assert_eq!(receipts, vec![OriginalTimingSemanticReceipt::NmiAccepted]);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )]
+        );
     }
 
     #[test]
@@ -2925,7 +3109,12 @@ mod tests {
         source
             .consume_event(raw("nmi", Some(0x008036), None, None), &mut receipts)
             .unwrap();
-        assert_eq!(receipts, vec![OriginalTimingSemanticReceipt::NmiAccepted]);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )]
+        );
 
         let bytes = serde_json::to_vec(&source.checkpoint()).unwrap();
         let checkpoint = serde_json::from_slice(&bytes).unwrap();
@@ -2936,10 +3125,56 @@ mod tests {
 
         assert_eq!(
             resumed_receipts,
-            vec![OriginalTimingSemanticReceipt::NmiPublicationCompleted]
+            vec![
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+                    high: 0,
+                    low: 0,
+                    high_filtered: 0,
+                    low_filtered: 0,
+                }),
+            ]
         );
         assert!(!resumed.nmi_publication_pending);
         assert_eq!(resumed.nmi_resume_targets, source.nmi_resume_targets);
+    }
+
+    #[test]
+    fn cross_host_latch_held_nmi_completes_without_joypad_publication() {
+        let mut source = empty_semantic_tracker();
+        let mut accepted = raw("nmi", Some(0x0c_ce3c), None, None);
+        accepted.nmi_latch = Some(1);
+        let mut receipts = Vec::new();
+        source.consume_event(accepted, &mut receipts).unwrap();
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::LatchHeld,
+            )],
+        );
+
+        let checkpoint =
+            serde_json::from_slice(&serde_json::to_vec(&source.checkpoint()).unwrap()).unwrap();
+        let mut resumed = empty_semantic_tracker();
+        resumed.restore_checkpoint(checkpoint).unwrap();
+        let mut completion = raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f8);
+        // The trace event still carries Zelda's unchanged joypad bytes. A held
+        // `$12` gate proves NMI_ReadJoypads did not publish them this handler.
+        completion.joypad_high = Some(0xa5);
+        completion.joypad_low = Some(0x5a);
+        completion.joypad_high_filtered = Some(0x81);
+        completion.joypad_low_filtered = Some(0x42);
+        let mut resumed_receipts = Vec::new();
+        resumed
+            .consume_event(completion, &mut resumed_receipts)
+            .unwrap();
+
+        assert_eq!(
+            resumed_receipts,
+            vec![OriginalTimingSemanticReceipt::NmiHandlerCompleted],
+        );
+        assert!(!resumed.nmi_publication_pending);
+        assert!(resumed.pending_nmi_update_gate.is_none());
     }
 
     #[test]
@@ -2949,7 +3184,12 @@ mod tests {
         source
             .consume_event(raw_at("nmi", 0x09fe65, 0x1f34), &mut receipts)
             .unwrap();
-        assert_eq!(receipts, vec![OriginalTimingSemanticReceipt::NmiAccepted]);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )]
+        );
 
         let bytes = serde_json::to_vec(&source.checkpoint()).unwrap();
         let checkpoint = serde_json::from_slice(&bytes).unwrap();
@@ -2967,7 +3207,15 @@ mod tests {
 
         assert_eq!(
             resumed_receipts,
-            vec![OriginalTimingSemanticReceipt::NmiPublicationCompleted]
+            vec![
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+                    high: 0,
+                    low: 0,
+                    high_filtered: 0,
+                    low_filtered: 0,
+                }),
+            ]
         );
         assert!(resumed.nmi_resume_targets.is_empty());
     }
@@ -3015,7 +3263,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     MainLoopInterruption::SpriteMainAfterSlot(15),
                 ),
@@ -3042,10 +3290,7 @@ mod tests {
             .consume_event(raw_at("nmi", 0x06_f80f, 0x01ff), &mut receipts)
             .unwrap();
         source
-            .consume_event(
-                raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f3),
-                &mut receipts,
-            )
+            .consume_event(raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f3), &mut receipts)
             .unwrap();
         source
             .consume_event(raw_at("nmi-resume", 0x06_f80f, 0x01ff), &mut receipts)
@@ -3070,12 +3315,13 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpriteMainProgressed(SpriteMainProgress::AfterSlot(
                     15
                 ),),
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     MainLoopInterruption::SpriteMainAfterSlot(14),
                 ),
@@ -3120,7 +3366,7 @@ mod tests {
         let mut current_host = Vec::new();
         resumed
             .consume_event(
-                raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f3),
+                raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f3),
                 &mut current_host,
             )
             .unwrap();
@@ -3139,7 +3385,8 @@ mod tests {
         assert_eq!(
             current_host,
             vec![
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
                 OriginalTimingSemanticReceipt::SpriteMainProgressed(SpriteMainProgress::AfterSlot(
                     15
                 ),),
@@ -3411,7 +3658,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     MainLoopInterruption::SpriteMainAfterCuccoGraphicsPublication {
                         slot: 6,
@@ -3452,7 +3699,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     MainLoopInterruption::SpriteMainAfterCuccoFleeMovement {
                         slot: 2,
@@ -3602,7 +3849,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     MainLoopInterruption::SpriteMainAfterCuccoSubtypeIncrements {
                         slot: 5,
@@ -3632,7 +3879,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     MainLoopInterruption::SpriteMainBeforeFirstSlot,
                 ),
@@ -3654,7 +3901,7 @@ mod tests {
             sub: None,
             subsub: None,
             frame_counter: None,
-            nmi_latch: None,
+            nmi_latch: matches!(event, "nmi").then_some(0),
             link_y: None,
             bg2_v: None,
             spotlight_radius: None,
@@ -3665,6 +3912,7 @@ mod tests {
             joypad_high_filtered: None,
             joypad_low_filtered: None,
             x,
+            y: None,
             address,
             value: address.map(|_| 0),
         }
@@ -3673,6 +3921,12 @@ mod tests {
     fn raw_at(event: &str, pc: u32, s: u16) -> RawTraceEvent {
         let mut event = raw(event, Some(pc), None, None);
         event.s = Some(s);
+        if event.event == "pc" && NMI_HANDLER_COMPLETE_PCS.contains(&(pc & 0x00ff_ffff)) {
+            event.joypad_high = Some(0);
+            event.joypad_low = Some(0);
+            event.joypad_high_filtered = Some(0);
+            event.joypad_low_filtered = Some(0);
+        }
         event
     }
 
@@ -3689,7 +3943,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         }
@@ -3699,12 +3955,21 @@ mod tests {
         tracker: &mut Snes9xOracleSemanticTrace,
         receipts: &mut Vec<OriginalTimingSemanticReceipt>,
     ) {
-        tracker
-            .consume_event(
-                raw_at("pc", NMI_PUBLICATION_COMPLETE_PCS[0], 0x01f3),
-                receipts,
-            )
-            .unwrap();
+        let mut completion = raw_at("pc", NMI_HANDLER_COMPLETE_PCS[0], 0x01f3);
+        completion.joypad_high = Some(0);
+        completion.joypad_low = Some(0);
+        completion.joypad_high_filtered = Some(0);
+        completion.joypad_low_filtered = Some(0);
+        tracker.consume_event(completion, receipts).unwrap();
+    }
+
+    fn zero_joypad_publication() -> OriginalTimingSemanticReceipt {
+        OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+            high: 0,
+            low: 0,
+            high_filtered: 0,
+            low_filtered: 0,
+        })
     }
 
     fn frame(stage: &str, run: u64, main: u8, frame_counter: u8) -> RawTraceEvent {
@@ -3731,6 +3996,7 @@ mod tests {
             joypad_high_filtered: None,
             joypad_low_filtered: None,
             x: None,
+            y: None,
             address: None,
             value: None,
         }
@@ -3751,6 +4017,239 @@ mod tests {
         )
     }
 
+    fn main_loop_common_suffix_completion() -> RawTraceEvent {
+        let mut event = raw(
+            "wram-write",
+            Some(ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC),
+            None,
+            Some(NMI_UPDATE_LATCH),
+        );
+        event.value = Some(0);
+        event
+    }
+
+    fn write_semantic_trace(path: &Path, events: &[serde_json::Value]) {
+        fs::write(
+            path,
+            events
+                .iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn cold_boot_without_a_zelda_run_game_loop_start_emits_no_progress() {
+        let path = env::temp_dir().join(format!(
+            "zelda3-snes9x-cold-bootstrap-no-main-progress-{}.jsonl",
+            std::process::id()
+        ));
+        write_semantic_trace(
+            &path,
+            &[
+                serde_json::json!({
+                    "event": "frame", "stage": "entry", "run": 0,
+                    "pc": 0x008000, "s": 0x01ff, "main": 0x55,
+                    "sub": 0x55, "subsub": 0x55, "frame_counter": 0x55,
+                    "nmi_latch": 0x55
+                }),
+                serde_json::json!({
+                    "event": "frame", "stage": "return", "run": 0,
+                    "pc": 0x0088b3, "s": 0x01fa, "main": 0x55,
+                    "sub": 0x55, "subsub": 0x55, "frame_counter": 0x55,
+                    "nmi_latch": 0x55
+                }),
+            ],
+        );
+        let mut tracker = empty_semantic_tracker();
+        tracker.path = path.clone();
+
+        let receipts = tracker.read_after_host_call(None, None, None).unwrap();
+        fs::remove_file(path).unwrap();
+
+        assert!(receipts.is_empty());
+        assert!(!tracker.zelda_run_game_loop_call_active);
+    }
+
+    #[test]
+    fn main_loop_call_ownership_survives_checkpoint_into_continued_suffix_host() {
+        let start_path = env::temp_dir().join(format!(
+            "zelda3-snes9x-main-start-before-checkpoint-{}.jsonl",
+            std::process::id()
+        ));
+        write_semantic_trace(
+            &start_path,
+            &[
+                serde_json::json!({
+                    "event": "frame", "stage": "entry", "run": 81,
+                    "pc": 0x008034, "s": 0x01ff, "main": 0,
+                    "sub": 0, "subsub": 0, "frame_counter": 0,
+                    "nmi_latch": 0
+                }),
+                serde_json::json!({
+                    "event": "wram-write", "run": 81,
+                    "pc": ZELDA_RUN_GAME_LOOP_FRAME_COUNTER_WRITE_PC,
+                    "s": 0x01ff, "address": FRAME_COUNTER, "value": 1
+                }),
+                serde_json::json!({
+                    "event": "frame", "stage": "return", "run": 81,
+                    "pc": 0x0c_c1db, "s": 0x01f4, "main": 0,
+                    "sub": 1, "subsub": 0, "frame_counter": 1,
+                    "nmi_latch": 1
+                }),
+            ],
+        );
+        let mut source = empty_semantic_tracker();
+        source.path = start_path.clone();
+        assert_eq!(
+            source.read_after_host_call(None, None, None).unwrap(),
+            vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+                MainLoopProgress::IterationStarted,
+            )],
+        );
+        fs::remove_file(start_path).unwrap();
+        assert!(source.zelda_run_game_loop_call_active);
+
+        let checkpoint: Snes9xOracleSemanticTraceCheckpoint =
+            serde_json::from_slice(&serde_json::to_vec(&source.checkpoint()).unwrap()).unwrap();
+        let suffix_path = env::temp_dir().join(format!(
+            "zelda3-snes9x-main-suffix-after-checkpoint-{}.jsonl",
+            std::process::id()
+        ));
+        write_semantic_trace(
+            &suffix_path,
+            &[
+                serde_json::json!({
+                    "event": "frame", "stage": "entry", "run": 82,
+                    "pc": 0x0c_c1db, "s": 0x01f4, "main": 0,
+                    "sub": 1, "subsub": 0, "frame_counter": 1,
+                    "nmi_latch": 1
+                }),
+                serde_json::json!({
+                    "event": "nmi", "run": 82, "pc": 0x0c_c1df,
+                    "s": 0x01f4, "main": 0, "sub": 1, "nmi_latch": 1
+                }),
+                serde_json::json!({
+                    "event": "pc", "run": 82,
+                    "pc": NMI_HANDLER_COMPLETE_PCS[0], "s": 0x01e8
+                }),
+                serde_json::json!({
+                    "event": "nmi-resume", "run": 82,
+                    "pc": 0x0c_c1df, "s": 0x01f4
+                }),
+                serde_json::json!({
+                    "event": "wram-write", "run": 82,
+                    "pc": ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC,
+                    "s": 0x01ff, "address": NMI_UPDATE_LATCH, "value": 0
+                }),
+                serde_json::json!({
+                    "event": "frame", "stage": "return", "run": 82,
+                    "pc": 0x008034, "s": 0x01ff, "main": 0,
+                    "sub": 1, "subsub": 0, "frame_counter": 1,
+                    "nmi_latch": 0
+                }),
+            ],
+        );
+        let mut resumed = empty_semantic_tracker();
+        resumed.path = suffix_path.clone();
+        resumed.restore_checkpoint(checkpoint).unwrap();
+
+        let receipts = resumed.read_after_host_call(None, None, None).unwrap();
+        fs::remove_file(suffix_path).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+            ],
+        );
+        assert!(!resumed.zelda_run_game_loop_call_active);
+    }
+
+    #[test]
+    fn main_loop_call_ownership_rejects_double_start_and_orphan_suffix() {
+        for (active, event, message) in [
+            (
+                true,
+                main_loop_start(),
+                "before the prior call completed its common suffix",
+            ),
+            (
+                false,
+                main_loop_common_suffix_completion(),
+                "without an active source call",
+            ),
+        ] {
+            let path = env::temp_dir().join(format!(
+                "zelda3-snes9x-invalid-main-loop-transition-{}-{active}.jsonl",
+                std::process::id()
+            ));
+            let mut entry = frame("entry", 1, 0, 0);
+            entry.pc = Some(0x008034);
+            let mut returned = frame("return", 1, 0, 0);
+            returned.pc = Some(0x008034);
+            write_semantic_trace(
+                &path,
+                &[
+                    serde_json::to_value(entry).unwrap(),
+                    serde_json::to_value(event).unwrap(),
+                    serde_json::to_value(returned).unwrap(),
+                ],
+            );
+            let mut tracker = empty_semantic_tracker();
+            tracker.path = path.clone();
+            tracker.zelda_run_game_loop_call_active = active;
+
+            let error = tracker.read_after_host_call(None, None, None).unwrap_err();
+            fs::remove_file(path).unwrap();
+
+            assert!(error.contains(message), "unexpected error: {error}");
+        }
+    }
+
+    #[test]
+    fn completed_old_call_then_new_start_preserves_both_ordered_progress_facts() {
+        let path = env::temp_dir().join(format!(
+            "zelda3-snes9x-main-suffix-then-new-start-{}.jsonl",
+            std::process::id()
+        ));
+        write_semantic_trace(
+            &path,
+            &[
+                serde_json::to_value(frame("entry", 3, 0, 1)).unwrap(),
+                serde_json::to_value(main_loop_common_suffix_completion()).unwrap(),
+                serde_json::to_value(main_loop_start()).unwrap(),
+                serde_json::to_value(frame("return", 3, 0, 2)).unwrap(),
+            ],
+        );
+        let mut tracker = empty_semantic_tracker();
+        tracker.path = path.clone();
+        tracker.zelda_run_game_loop_call_active = true;
+
+        let receipts = tracker.read_after_host_call(None, None, None).unwrap();
+        fs::remove_file(path).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+                OriginalTimingSemanticReceipt::MainLoopProgress(MainLoopProgress::IterationStarted),
+            ],
+        );
+        assert!(tracker.zelda_run_game_loop_call_active);
+    }
+
     #[test]
     fn sprite_item_receipt_call_progress_hides_cpu_provenance_and_preserves_call_order() {
         let path = env::temp_dir().join("unused-snes9x-item-receipt-progress-test.jsonl");
@@ -3766,7 +4265,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -4000,7 +4501,12 @@ mod tests {
             }
             host.observe(&returned).unwrap();
             let mut receipts = Vec::new();
-            host.finish(&mut receipts, None).unwrap();
+            host.finish(
+                &mut receipts,
+                None,
+                main_progress == MainLoopProgress::CallStackContinued,
+            )
+            .unwrap();
             assert_eq!(
                 receipts,
                 vec![
@@ -4012,7 +4518,7 @@ mod tests {
     }
 
     #[test]
-    fn iteration_return_to_main_wait_becomes_a_backend_neutral_completion() {
+    fn main_wait_return_without_exact_common_suffix_does_not_claim_completion() {
         let mut host = HostFrameWindow::default();
         let mut entry = frame_with_sub("entry", 1923, 14, 3);
         entry.pc = Some(0x00_8034);
@@ -4025,19 +4531,18 @@ mod tests {
         host.observe(&main_loop_start()).unwrap();
         host.observe(&returned).unwrap();
         let mut receipts = Vec::new();
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, false).unwrap();
 
         assert_eq!(
             receipts,
-            vec![
-                OriginalTimingSemanticReceipt::MainLoopProgress(MainLoopProgress::IterationStarted,),
-                OriginalTimingSemanticReceipt::MainLoopIterationReturnedToWait,
-            ],
+            vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+                MainLoopProgress::IterationStarted,
+            )],
         );
     }
 
     #[test]
-    fn iteration_nmi_at_main_wait_proves_completion_before_handler_return() {
+    fn main_wait_nmi_without_exact_common_suffix_does_not_claim_completion() {
         let mut host = HostFrameWindow::default();
         let mut entry = frame_with_sub("entry", 326, 14, 3);
         entry.pc = Some(0x00_80c9);
@@ -4053,14 +4558,104 @@ mod tests {
         host.observe(&accepted).unwrap();
         host.observe(&returned).unwrap();
         let mut receipts = Vec::new();
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, false).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+                MainLoopProgress::IterationStarted,
+            )],
+        );
+    }
+
+    #[test]
+    fn continued_wait_return_without_exact_common_suffix_does_not_claim_completion() {
+        let mut host = HostFrameWindow::default();
+        let mut entry = frame_with_sub("entry", 1059, 4, 1);
+        entry.pc = Some(0x0c_ce3a);
+        entry.nmi_latch = Some(1);
+        let mut accepted = raw("nmi", Some(0x0c_ce3c), None, None);
+        accepted.run = Some(1059);
+        let mut returned = frame_with_sub("return", 1059, 4, 2);
+        returned.pc = Some(0x00_8034);
+        returned.nmi_latch = Some(0);
+
+        host.observe(&entry).unwrap();
+        host.observe(&accepted).unwrap();
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, None, true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+                MainLoopProgress::CallStackContinued,
+            )],
+        );
+    }
+
+    #[test]
+    fn continued_wait_nmi_without_exact_common_suffix_does_not_claim_completion() {
+        let mut host = HostFrameWindow::default();
+        let mut entry = frame_with_sub("entry", 84, 0, 1);
+        entry.pc = Some(0x0c_c1d3);
+        entry.nmi_latch = Some(1);
+        let mut interrupted = raw("nmi", Some(0x0c_c1d7), None, None);
+        interrupted.run = Some(84);
+        interrupted.nmi_latch = Some(1);
+        let mut following = raw("nmi", Some(0x00_8034), None, None);
+        following.run = Some(84);
+        following.nmi_latch = Some(0);
+        let mut returned = frame_with_sub("return", 84, 0, 1);
+        returned.pc = Some(0x00_80c9);
+        returned.nmi_latch = Some(0);
+
+        assert_eq!(host.observe(&entry).unwrap(), None);
+        assert_eq!(host.observe(&interrupted).unwrap(), None);
+        let mut receipts = vec![
+            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+            OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+        ];
+        assert_eq!(host.observe(&following).unwrap(), None);
+        receipts.push(OriginalTimingSemanticReceipt::NmiAccepted(
+            NmiUpdateGate::Open,
+        ));
+        assert_eq!(host.observe(&returned).unwrap(), None);
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::MainLoopProgress(MainLoopProgress::IterationStarted,),
-                OriginalTimingSemanticReceipt::MainLoopIterationReturnedToWait,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
             ],
+        );
+    }
+
+    #[test]
+    fn continued_iteration_still_inside_module_omits_terminal_completion() {
+        let mut host = HostFrameWindow::default();
+        let mut entry = frame_with_sub("entry", 1058, 4, 1);
+        entry.pc = Some(0x0c_ce38);
+        entry.nmi_latch = Some(1);
+        let mut returned = frame_with_sub("return", 1058, 4, 1);
+        returned.pc = Some(0x0c_ce3a);
+        returned.nmi_latch = Some(1);
+
+        host.observe(&entry).unwrap();
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, None, true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+                MainLoopProgress::CallStackContinued,
+            )],
         );
     }
 
@@ -4078,7 +4673,7 @@ mod tests {
         host.observe(&main_loop_start()).unwrap();
         host.observe(&returned).unwrap();
         let mut receipts = Vec::new();
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, false).unwrap();
 
         assert!(
             !receipts.contains(&OriginalTimingSemanticReceipt::MainLoopIterationReturnedToWait,)
@@ -4098,7 +4693,7 @@ mod tests {
         .unwrap();
         host.observe(&frame("return", 36018, 14, 0x35)).unwrap();
         let mut receipts = Vec::new();
-        host.finish(&mut receipts, Some(0x0037)).unwrap();
+        host.finish(&mut receipts, Some(0x0037), true).unwrap();
 
         assert_eq!(
             receipts,
@@ -4113,6 +4708,94 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn dialogue_caller_return_pc_outside_vwf_range_omits_semantic_hold() {
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame("entry", 2333, 14, 0x8f)).unwrap();
+        host.observe(&raw("nmi", Some(0x0e_c58b), None, None))
+            .unwrap();
+        host.observe(&frame("return", 2333, 14, 0x8f)).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, Some(0x0037), true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+                MainLoopProgress::CallStackContinued,
+            )],
+            "$0e:c58b is Text_LoadCharacterBuffer's caller, not the VWF render loop",
+        );
+    }
+
+    #[test]
+    fn dialogue_terminal_common_suffix_keeps_progress_without_vwf_endpoint() {
+        let path = env::temp_dir().join(format!(
+            "zelda3-snes9x-dialogue-terminal-common-suffix-{}.jsonl",
+            std::process::id()
+        ));
+        let events = [
+            serde_json::json!({
+                "event": "frame", "stage": "entry", "run": 2334,
+                "pc": NMI_HANDLER_ENTRY_PC, "s": 0x01ee, "main": 14,
+                "sub": 2, "subsub": 0, "frame_counter": 0x8f,
+                "nmi_latch": 1
+            }),
+            serde_json::json!({
+                "event": "pc", "run": 2334,
+                "pc": NMI_HANDLER_COMPLETE_PCS[0], "s": 0x01e5
+            }),
+            serde_json::json!({
+                "event": "nmi-resume", "run": 2334,
+                "pc": 0x0e_c58b, "s": 0x01f2
+            }),
+            serde_json::json!({
+                "event": "wram-write", "run": 2334,
+                "pc": ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC,
+                "s": 0x01ff, "address": NMI_UPDATE_LATCH, "value": 0
+            }),
+            serde_json::json!({
+                "event": "frame", "stage": "return", "run": 2334,
+                "pc": 0x00_8034, "s": 0x01ff, "main": 14, "sub": 2,
+                "subsub": 0, "frame_counter": 0x8f, "nmi_latch": 0
+            }),
+        ];
+        fs::write(
+            &path,
+            events
+                .iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n",
+        )
+        .unwrap();
+        let mut tracker = empty_semantic_tracker();
+        tracker.path = path.clone();
+        tracker.zelda_run_game_loop_call_active = true;
+        tracker.nmi_publication_pending = true;
+        tracker.pending_nmi_update_gate = Some(NmiUpdateGate::LatchHeld);
+        tracker.nmi_resume_targets.push((0x0e_c58b, 0x01f2));
+
+        let receipts = tracker
+            .read_after_host_call(Some(0x0037), None, None)
+            .unwrap();
+        fs::remove_file(path).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+            ],
+        );
+        assert!(!tracker.nmi_publication_pending);
+        assert!(tracker.pending_nmi_update_gate.is_none());
+        assert!(tracker.nmi_resume_targets.is_empty());
     }
 
     #[test]
@@ -4135,7 +4818,7 @@ mod tests {
             host.observe(&frame_with_sub("return", 7, return_main, return_sub))
                 .unwrap();
             let mut receipts = Vec::new();
-            host.finish(&mut receipts, None).unwrap();
+            host.finish(&mut receipts, None, true).unwrap();
             assert_eq!(
                 receipts,
                 vec![
@@ -4156,7 +4839,7 @@ mod tests {
             .unwrap();
         let mut receipts = Vec::new();
 
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
@@ -4179,7 +4862,7 @@ mod tests {
             .unwrap();
         let mut receipts = Vec::new();
 
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
@@ -4201,7 +4884,7 @@ mod tests {
             .unwrap();
         let mut receipts = Vec::new();
 
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
@@ -4223,7 +4906,7 @@ mod tests {
             .unwrap();
         let mut receipts = Vec::new();
 
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
@@ -4245,7 +4928,7 @@ mod tests {
             .unwrap();
         let mut receipts = Vec::new();
 
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
@@ -4269,7 +4952,7 @@ mod tests {
         host.observe(&returned).unwrap();
         let mut receipts = Vec::new();
 
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
@@ -4289,13 +4972,10 @@ mod tests {
         idle.observe(&idle_entry).unwrap();
         idle.observe(&idle_return).unwrap();
         let mut idle_receipts = Vec::new();
-        idle.finish(&mut idle_receipts, None).unwrap();
-        assert_eq!(
-            idle_receipts,
-            vec![OriginalTimingSemanticReceipt::MainLoopProgress(
-                MainLoopProgress::CallStackContinued,
-            )],
-            "an idle main-wait host did not resume a suspended C caller",
+        idle.finish(&mut idle_receipts, None, false).unwrap();
+        assert!(
+            idle_receipts.is_empty(),
+            "an idle main-wait host invented a suspended C caller",
         );
     }
 
@@ -4312,7 +4992,7 @@ mod tests {
         host.observe(&returned).unwrap();
         let mut receipts = Vec::new();
 
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
@@ -4335,7 +5015,9 @@ mod tests {
         interrupted.observe(&interrupted_entry).unwrap();
         interrupted.observe(&interrupted_return).unwrap();
         let mut interrupted_receipts = Vec::new();
-        interrupted.finish(&mut interrupted_receipts, None).unwrap();
+        interrupted
+            .finish(&mut interrupted_receipts, None, true)
+            .unwrap();
         assert_eq!(
             interrupted_receipts,
             vec![OriginalTimingSemanticReceipt::MainLoopProgress(
@@ -4359,7 +5041,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -4420,7 +5104,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -4448,7 +5134,10 @@ mod tests {
         assert_eq!(
             receipts
                 .iter()
-                .filter(|receipt| matches!(receipt, OriginalTimingSemanticReceipt::NmiAccepted))
+                .filter(|receipt| matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open)
+                ))
                 .count(),
             2,
         );
@@ -4465,7 +5154,7 @@ mod tests {
         host.observe(&returned).unwrap();
         let mut receipts = Vec::new();
 
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
@@ -4487,7 +5176,7 @@ mod tests {
             .unwrap();
         host.observe(&frame("return", 36014, 14, 0x35)).unwrap();
         let mut receipts = Vec::new();
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, false).unwrap();
 
         assert_eq!(
             receipts,
@@ -4507,7 +5196,7 @@ mod tests {
         host.observe(&returned).unwrap();
         let mut receipts = Vec::new();
 
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, false).unwrap();
 
         assert_eq!(
             receipts,
@@ -4528,7 +5217,7 @@ mod tests {
         let mut receipts = Vec::new();
 
         assert_eq!(
-            host.finish(&mut receipts, None).unwrap_err(),
+            host.finish(&mut receipts, None, false).unwrap_err(),
             "Snes9x host call started ZeldaRunGameLoop 2 times; expected zero or one",
         );
         assert!(receipts.is_empty());
@@ -4537,7 +5226,10 @@ mod tests {
     #[test]
     fn cold_initialization_frame_counter_clear_is_not_a_main_loop_start() {
         let mut host = HostFrameWindow::default();
-        host.observe(&frame("entry", 80, 0x55, 0x55)).unwrap();
+        let mut entry = frame("entry", 80, 0x55, 0x55);
+        entry.pc = Some(0x0087cb);
+        entry.nmi_latch = Some(0x55);
+        host.observe(&entry).unwrap();
         host.observe(&raw(
             "wram-write",
             Some(0x0087ce),
@@ -4545,17 +5237,15 @@ mod tests {
             Some(FRAME_COUNTER),
         ))
         .unwrap();
-        host.observe(&frame("return", 80, 0, 0)).unwrap();
+        let mut returned = frame("return", 80, 0, 0);
+        returned.pc = Some(0x008034);
+        returned.nmi_latch = Some(0);
+        host.observe(&returned).unwrap();
         let mut receipts = Vec::new();
 
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, false).unwrap();
 
-        assert_eq!(
-            receipts,
-            vec![OriginalTimingSemanticReceipt::MainLoopProgress(
-                MainLoopProgress::CallStackContinued,
-            )],
-        );
+        assert!(receipts.is_empty());
     }
 
     #[test]
@@ -4572,7 +5262,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -4585,12 +5277,131 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     MainLoopInterruption::SpritePreparation,
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn nmi_inside_extended_oam_pack_exports_only_the_resumable_source_cursor() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw("nmi", Some(0x00_860f), None, None);
+        event.y = Some(4);
+        event.x = Some(16);
+        event.nmi_latch = Some(1);
+
+        tracker.consume_event(event, &mut receipts).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpritePreparationExtendedOamPacking {
+                        next_group_start: 4,
+                    },
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn extended_oam_first_store_opcode_is_still_an_unpublished_group_boundary() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw("nmi", Some(0x00_8614), None, None);
+        event.y = Some(4);
+        event.x = Some(16);
+        event.nmi_latch = Some(1);
+
+        tracker.consume_event(event, &mut receipts).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpritePreparationExtendedOamPacking {
+                        next_group_start: 4,
+                    },
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn extended_oam_pack_receipt_rejects_a_missing_cursor_before_mutation() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw("nmi", Some(0x00_860f), None, None);
+        event.x = Some(16);
+        event.nmi_latch = Some(1);
+
+        let error = tracker.consume_event(event, &mut receipts).unwrap_err();
+
+        assert!(error.contains("omitted source cursor Y"));
+        assert!(receipts.is_empty());
+        assert!(!tracker.nmi_publication_pending);
+        assert_eq!(tracker.pending_nmi_update_gate, None);
+        assert!(tracker.nmi_resume_targets.is_empty());
+    }
+
+    #[test]
+    fn extended_oam_pack_receipt_rejects_an_invalid_cursor_before_mutation() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw("nmi", Some(0x00_860f), None, None);
+        event.y = Some(6);
+        event.x = Some(24);
+        event.nmi_latch = Some(1);
+
+        let error = tracker.consume_event(event, &mut receipts).unwrap_err();
+
+        assert!(error.contains("invalid group cursor 6"));
+        assert!(receipts.is_empty());
+        assert!(!tracker.nmi_publication_pending);
+        assert_eq!(tracker.pending_nmi_update_gate, None);
+        assert!(tracker.nmi_resume_targets.is_empty());
+    }
+
+    #[test]
+    fn extended_oam_pack_receipt_rejects_disagreeing_source_cursors_before_mutation() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw("nmi", Some(0x00_860f), None, None);
+        event.y = Some(4);
+        event.x = Some(12);
+        event.nmi_latch = Some(1);
+
+        let error = tracker.consume_event(event, &mut receipts).unwrap_err();
+
+        assert!(error.contains("cursors disagreed: y=4, x=12"));
+        assert!(receipts.is_empty());
+        assert!(!tracker.nmi_publication_pending);
+        assert_eq!(tracker.pending_nmi_update_gate, None);
+        assert!(tracker.nmi_resume_targets.is_empty());
+    }
+
+    #[test]
+    fn extended_oam_pack_receipt_requires_a_held_latch_before_mutation() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw("nmi", Some(0x00_860f), None, None);
+        event.y = Some(4);
+        event.x = Some(16);
+        event.nmi_latch = Some(0);
+
+        let error = tracker.consume_event(event, &mut receipts).unwrap_err();
+
+        assert!(error.contains("observed an open Zelda NMI latch"));
+        assert!(receipts.is_empty());
+        assert!(!tracker.nmi_publication_pending);
+        assert_eq!(tracker.pending_nmi_update_gate, None);
+        assert!(tracker.nmi_resume_targets.is_empty());
     }
 
     #[test]
@@ -4617,7 +5428,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     MainLoopInterruption::SpriteMainAfterSlot(1),
                 ),
@@ -4651,7 +5462,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(12),
                 ),
@@ -4679,7 +5490,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -4692,7 +5505,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(MainLoopInterruption::LinkOam,),
             ],
         );
@@ -4713,7 +5526,9 @@ mod tests {
                 pending_spotlight_helper_nmi: None,
                 item_receipt_caller: None,
                 sprite_main_execution: None,
+                zelda_run_game_loop_call_active: false,
                 nmi_publication_pending: false,
+                pending_nmi_update_gate: None,
                 nmi_resume_targets: Vec::new(),
                 synthesized_nmi_resume: None,
             };
@@ -4727,7 +5542,7 @@ mod tests {
             assert_eq!(
                 receipts,
                 vec![
-                    OriginalTimingSemanticReceipt::NmiAccepted,
+                    OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                     OriginalTimingSemanticReceipt::MainLoopInterrupted(
                         MainLoopInterruption::LinkPositionBeforeCoordinates,
                     ),
@@ -4751,7 +5566,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -4769,7 +5586,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                     SpotlightTableBuildProgressReceipt {
                         progress: SpotlightTableBuildProgress {
@@ -4803,7 +5620,12 @@ mod tests {
         let mut receipts = Vec::new();
 
         tracker.consume_event(interrupted, &mut receipts).unwrap();
-        assert_eq!(receipts, vec![OriginalTimingSemanticReceipt::NmiAccepted]);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )]
+        );
 
         let mut returned = frame_with_sub("return", 49_001, 0x0f, 0);
         returned.pc = Some(NMI_HANDLER_ENTRY_PC);
@@ -4814,7 +5636,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                     SpotlightTableBuildProgressReceipt {
                         progress: SpotlightTableBuildProgress {
@@ -4843,7 +5665,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -4864,7 +5688,12 @@ mod tests {
         let mut receipts = Vec::new();
 
         tracker.consume_event(interrupted, &mut receipts).unwrap();
-        assert_eq!(receipts, vec![OriginalTimingSemanticReceipt::NmiAccepted],);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )],
+        );
         let mut returned = frame("return", 40977, 0x0f, 253);
         returned.pc = Some(NMI_HANDLER_ENTRY_PC);
         tracker
@@ -4874,7 +5703,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                     SpotlightTableBuildProgressReceipt {
                         progress: SpotlightTableBuildProgress {
@@ -4911,7 +5740,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -4945,12 +5776,12 @@ mod tests {
                 &mut receipts,
             )
             .unwrap();
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopProgress(
                     MainLoopProgress::CallStackContinued,
                 ),
@@ -4980,7 +5811,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5016,16 +5849,149 @@ mod tests {
                 &mut receipts,
             )
             .unwrap();
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopProgress(
                     MainLoopProgress::CallStackContinued,
                 ),
                 OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait,
+            ],
+        );
+    }
+
+    #[test]
+    fn terminal_recurring_spotlight_double_nmi_suppresses_the_deferred_helper_checkpoint() {
+        // Pinned run4791 accepts its leading Held NMI inside the circle helper,
+        // completes that handler and the whole recurring Module0F caller, then
+        // accepts one trailing Open NMI before the host returns inside its
+        // handler. The deferred helper checkpoint belongs to the leading Held
+        // boundary and is superseded by the stronger caller-return fact.
+        let mut tracker = empty_semantic_tracker();
+        let mut host = HostFrameWindow::default();
+        let mut entry = frame_with_sub("entry", 4_791, 0x0f, 1);
+        entry.pc = Some(0x00_f4d4);
+        entry.nmi_latch = Some(1);
+        host.observe(&entry).unwrap();
+
+        let mut leading = raw("nmi", Some(0x00_f4d7), Some(0x01f0), None);
+        leading.main = Some(0x0f);
+        leading.sub = Some(1);
+        leading.nmi_latch = Some(1);
+        leading.a = Some(105);
+        leading.link_y = Some(8692);
+        leading.bg2_v = Some(8466);
+        leading.spotlight_radius = Some(105);
+        let mut receipts = Vec::new();
+        tracker
+            .consume_event(leading.clone(), &mut receipts)
+            .unwrap();
+        host.observe(&leading).unwrap();
+        publish_nmi(&mut tracker, &mut receipts);
+
+        receipts.push(OriginalTimingSemanticReceipt::MainLoopProgress(
+            MainLoopProgress::CallStackContinued,
+        ));
+        let suffix = main_loop_common_suffix_completion();
+        assert_eq!(
+            host.observe(&suffix).unwrap(),
+            Some(MainLoopCompletionProof::CommonSuffixCompleted),
+        );
+        receipts.push(OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted);
+
+        let mut trailing = raw("nmi", Some(0x00_8034), Some(0x01ff), None);
+        trailing.main = Some(0x0f);
+        trailing.sub = Some(1);
+        trailing.nmi_latch = Some(0);
+        tracker
+            .consume_event(trailing.clone(), &mut receipts)
+            .unwrap();
+        host.observe(&trailing).unwrap();
+
+        let mut returned = frame_with_sub("return", 4_791, 0x0f, 1);
+        returned.pc = Some(NMI_HANDLER_ENTRY_PC);
+        returned.nmi_latch = Some(0);
+        host.observe(&returned).unwrap();
+        assert_eq!(
+            host.spotlight_call_completion(),
+            Some(SpotlightCallCompletion::RecurringCallerReturnedToMainWait),
+        );
+        tracker
+            .finish_pending_spotlight_helper_nmi(
+                &returned,
+                Some(9),
+                Some(247),
+                host.spotlight_call_completion(),
+                &mut receipts,
+            )
+            .unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait,
+            ],
+        );
+    }
+
+    #[test]
+    fn nonterminal_final_handler_return_preserves_acceptance_then_deferred_helper_progress() {
+        let mut tracker = empty_semantic_tracker();
+        let mut host = HostFrameWindow::default();
+        let mut entry = frame_with_sub("entry", 4_790, 0x0f, 1);
+        entry.pc = Some(0x00_f4d4);
+        entry.nmi_latch = Some(1);
+        host.observe(&entry).unwrap();
+
+        let mut interrupted = raw("nmi", Some(0x00_f4d7), Some(0x01f0), None);
+        interrupted.main = Some(0x0f);
+        interrupted.sub = Some(1);
+        interrupted.nmi_latch = Some(1);
+        interrupted.a = Some(105);
+        interrupted.link_y = Some(8692);
+        interrupted.bg2_v = Some(8466);
+        interrupted.spotlight_radius = Some(105);
+        let mut receipts = Vec::new();
+        tracker
+            .consume_event(interrupted.clone(), &mut receipts)
+            .unwrap();
+        host.observe(&interrupted).unwrap();
+
+        let mut returned = frame_with_sub("return", 4_790, 0x0f, 1);
+        returned.pc = Some(NMI_HANDLER_ENTRY_PC);
+        returned.nmi_latch = Some(1);
+        host.observe(&returned).unwrap();
+        assert_eq!(host.spotlight_call_completion(), None);
+        tracker
+            .finish_pending_spotlight_helper_nmi(&returned, Some(9), Some(247), None, &mut receipts)
+            .unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+                    SpotlightTableBuildProgressReceipt {
+                        progress: SpotlightTableBuildProgress {
+                            completed_iterations: 229,
+                            checkpoint: SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
+                                pending_circle_input: 10,
+                            },
+                        },
+                        boundary: OriginalTimingBoundary::NmiAccepted,
+                    },
+                ),
             ],
         );
     }
@@ -5050,7 +6016,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5087,12 +6055,12 @@ mod tests {
                 &mut receipts,
             )
             .unwrap();
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopProgress(
                     MainLoopProgress::CallStackContinued,
                 ),
@@ -5119,7 +6087,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5155,12 +6125,12 @@ mod tests {
                 &mut receipts,
             )
             .unwrap();
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, true).unwrap();
 
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopProgress(
                     MainLoopProgress::CallStackContinued,
                 ),
@@ -5188,7 +6158,9 @@ mod tests {
             }),
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5297,7 +6269,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5320,7 +6294,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                     SpotlightTableBuildProgressReceipt {
                         progress: SpotlightTableBuildProgress {
@@ -5350,7 +6324,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5373,7 +6349,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                     SpotlightTableBuildProgressReceipt {
                         progress: SpotlightTableBuildProgress {
@@ -5404,7 +6380,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5423,7 +6401,12 @@ mod tests {
 
         tracker.consume_event(interrupted, &mut receipts).unwrap();
 
-        assert_eq!(receipts, vec![OriginalTimingSemanticReceipt::NmiAccepted],);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )],
+        );
         assert!(tracker.pending_spotlight_helper_nmi.is_none());
     }
 
@@ -5441,7 +6424,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5465,7 +6450,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                     SpotlightTableBuildProgressReceipt {
                         progress: SpotlightTableBuildProgress {
@@ -5499,7 +6484,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5521,7 +6508,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                     SpotlightTableBuildProgressReceipt {
                         progress: SpotlightTableBuildProgress {
@@ -5555,7 +6542,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5577,7 +6566,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                     SpotlightTableBuildProgressReceipt {
                         progress: SpotlightTableBuildProgress {
@@ -5650,7 +6639,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5666,7 +6657,12 @@ mod tests {
 
         tracker.consume_event(event, &mut receipts).unwrap();
 
-        assert_eq!(receipts, vec![OriginalTimingSemanticReceipt::NmiAccepted]);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )]
+        );
     }
 
     #[test]
@@ -5683,7 +6679,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5707,7 +6705,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                     SpotlightTableBuildProgressReceipt {
                         progress: SpotlightTableBuildProgress {
@@ -5740,7 +6738,7 @@ mod tests {
         returned.bg2_v = Some(1610);
         returned.spotlight_radius = Some(112);
         let mut receipts = vec![
-            OriginalTimingSemanticReceipt::NmiAccepted,
+            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
             OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                 SpotlightTableBuildProgressReceipt {
                     progress: SpotlightTableBuildProgress {
@@ -5759,7 +6757,7 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                     SpotlightTableBuildProgressReceipt {
                         progress: SpotlightTableBuildProgress {
@@ -5850,7 +6848,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5874,7 +6874,7 @@ mod tests {
                         boundary: OriginalTimingBoundary::NmiAccepted,
                     },
                 ),
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
             ],
         );
         assert_eq!(tracker.pending_reset_progress, None);
@@ -5896,7 +6896,7 @@ mod tests {
         host.observe(&main_loop_start()).unwrap();
         host.observe(&returned).unwrap();
         let mut receipts = Vec::new();
-        host.finish(&mut receipts, None).unwrap();
+        host.finish(&mut receipts, None, false).unwrap();
 
         assert_eq!(
             receipts,
@@ -5921,7 +6921,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5931,10 +6933,7 @@ mod tests {
             .consume_event(raw("nmi", None, None, None), &mut receipts)
             .unwrap();
         tracker
-            .consume_event(
-                raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f3),
-                &mut receipts,
-            )
+            .consume_event(raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f3), &mut receipts)
             .unwrap();
         tracker
             .consume_event(raw_at("nmi", 0x008010, 0x01f0), &mut receipts)
@@ -5943,16 +6942,17 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
             ],
         );
     }
 
     #[test]
     fn ordinary_and_threaded_nmi_paths_share_one_publication_receipt() {
-        for &publication_pc in &NMI_PUBLICATION_COMPLETE_PCS {
+        for &publication_pc in &NMI_HANDLER_COMPLETE_PCS {
             let mut tracker = empty_semantic_tracker();
             let mut receipts = Vec::new();
 
@@ -5966,8 +6966,9 @@ mod tests {
             assert_eq!(
                 receipts,
                 vec![
-                    OriginalTimingSemanticReceipt::NmiAccepted,
-                    OriginalTimingSemanticReceipt::NmiPublicationCompleted,
+                    OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                    OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                    zero_joypad_publication(),
                 ],
             );
             assert!(!tracker.nmi_publication_pending);
@@ -5988,7 +6989,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -5998,10 +7001,7 @@ mod tests {
             .consume_event(raw_at("nmi", 0x008123, 0x01f8), &mut receipts)
             .unwrap();
         tracker
-            .consume_event(
-                raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f3),
-                &mut receipts,
-            )
+            .consume_event(raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f3), &mut receipts)
             .unwrap();
         tracker
             .consume_event(raw_at("frame", 0x008123, 0x01f8), &mut receipts)
@@ -6013,8 +7013,9 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
             ]
         );
         assert!(tracker.nmi_resume_targets.is_empty());
@@ -6035,7 +7036,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6045,10 +7048,7 @@ mod tests {
             .consume_event(raw_at("nmi", 0x008123, 0x01f8), &mut receipts)
             .unwrap();
         tracker
-            .consume_event(
-                raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f3),
-                &mut receipts,
-            )
+            .consume_event(raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f3), &mut receipts)
             .unwrap();
         tracker
             .consume_event(raw_at("nmi", 0x008123, 0x01f8), &mut receipts)
@@ -6057,9 +7057,10 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
             ]
         );
         assert_eq!(tracker.nmi_resume_targets, vec![(0x008123, 0x01f8)]);
@@ -6079,7 +7080,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6089,19 +7092,13 @@ mod tests {
             .consume_event(raw_at("nmi", 0x008123, 0x01f8), &mut receipts)
             .unwrap();
         tracker
-            .consume_event(
-                raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f3),
-                &mut receipts,
-            )
+            .consume_event(raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f3), &mut receipts)
             .unwrap();
         tracker
             .consume_event(raw_at("nmi", 0x0080d0, 0x01f0), &mut receipts)
             .unwrap();
         tracker
-            .consume_event(
-                raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f3),
-                &mut receipts,
-            )
+            .consume_event(raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f3), &mut receipts)
             .unwrap();
         tracker
             .consume_event(raw_at("nmi-resume", 0x0080d0, 0x01f0), &mut receipts)
@@ -6113,10 +7110,12 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
-                OriginalTimingSemanticReceipt::NmiAccepted,
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
             ]
         );
         assert!(tracker.nmi_resume_targets.is_empty());
@@ -6136,7 +7135,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6146,10 +7147,7 @@ mod tests {
             .consume_event(raw_at("nmi", 0x008123, 0x01f8), &mut receipts)
             .unwrap();
         tracker
-            .consume_event(
-                raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f3),
-                &mut receipts,
-            )
+            .consume_event(raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f3), &mut receipts)
             .unwrap();
         let error = tracker
             .consume_event(raw_at("nmi-resume", 0x008124, 0x01f8), &mut receipts)
@@ -6160,8 +7158,9 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
             ]
         );
     }
@@ -6172,10 +7171,7 @@ mod tests {
         let mut receipts = Vec::new();
 
         let error = tracker
-            .consume_event(
-                raw_at("pc", NMI_PUBLICATION_COMPLETE_PC, 0x01f3),
-                &mut receipts,
-            )
+            .consume_event(raw_at("pc", NMI_HANDLER_COMPLETE_PC, 0x01f3), &mut receipts)
             .unwrap_err();
 
         assert!(error.contains("without an accepted NMI"));
@@ -6198,7 +7194,12 @@ mod tests {
         assert!(error.contains("before the first published"));
         assert_eq!(tracker.nmi_resume_targets, vec![(0x008123, 0x01f8)]);
         assert!(tracker.nmi_publication_pending);
-        assert_eq!(receipts, vec![OriginalTimingSemanticReceipt::NmiAccepted]);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )]
+        );
     }
 
     #[test]
@@ -6215,11 +7216,13 @@ mod tests {
             }),
             serde_json::json!({
                 "event": "nmi", "run": 7, "pc": 0x008123, "s": 0x01f8,
-                "main": 15, "sub": 1
+                "main": 15, "sub": 1, "nmi_latch": 0
             }),
             serde_json::json!({
-                "event": "pc", "run": 7, "pc": NMI_PUBLICATION_COMPLETE_PC,
-                "s": 0x01f3
+                "event": "pc", "run": 7, "pc": NMI_HANDLER_COMPLETE_PC,
+                "s": 0x01f3,
+                "joypad_high": 0, "joypad_low": 0,
+                "joypad_high_filtered": 0, "joypad_low_filtered": 0
             }),
             serde_json::json!({
                 "event": "wram-write", "run": 7,
@@ -6231,7 +7234,7 @@ mod tests {
             }),
             serde_json::json!({
                 "event": "nmi", "run": 7, "pc": 0x009000, "s": 0x01f7,
-                "main": 15, "sub": 1
+                "main": 15, "sub": 1, "nmi_latch": 1
             }),
             serde_json::json!({
                 "event": "frame", "stage": "return", "run": 7,
@@ -6258,7 +7261,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6269,12 +7274,269 @@ mod tests {
         assert_eq!(
             receipts,
             vec![
-                OriginalTimingSemanticReceipt::NmiAccepted,
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
                 OriginalTimingSemanticReceipt::MainLoopProgress(MainLoopProgress::IterationStarted,),
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
             ]
         );
+    }
+
+    #[test]
+    fn live_trace_publishes_exact_common_suffix_before_poly_nmi_and_across_next_host() {
+        let path = env::temp_dir().join(format!(
+            "zelda3-snes9x-poly-common-suffix-receipt-{}.jsonl",
+            std::process::id()
+        ));
+        let first_host = [
+            serde_json::json!({
+                "event": "frame", "stage": "entry", "run": 889,
+                "pc": 0x008034, "s": 0x01ff, "main": 0, "sub": 7,
+                "subsub": 0, "frame_counter": 147, "nmi_latch": 0
+            }),
+            serde_json::json!({
+                "event": "nmi", "run": 889, "pc": 0x008036, "s": 0x01ff,
+                "main": 0, "sub": 7, "nmi_latch": 0
+            }),
+            serde_json::json!({
+                "event": "pc", "run": 889, "pc": NMI_HANDLER_COMPLETE_PC,
+                "s": 0x01f2,
+                "joypad_high": 0, "joypad_low": 0,
+                "joypad_high_filtered": 0, "joypad_low_filtered": 0
+            }),
+            serde_json::json!({
+                "event": "nmi-resume", "run": 889, "pc": 0x008036, "s": 0x01ff
+            }),
+            serde_json::json!({
+                "event": "wram-write", "run": 889,
+                "pc": ZELDA_RUN_GAME_LOOP_FRAME_COUNTER_WRITE_PC,
+                "s": 0x01ff, "address": FRAME_COUNTER, "value": 148
+            }),
+            serde_json::json!({
+                "event": "wram-write", "run": 889,
+                "pc": ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC,
+                "s": 0x01ff, "address": NMI_UPDATE_LATCH, "value": 0
+            }),
+            serde_json::json!({
+                "event": "nmi", "run": 889, "pc": 0x09fd18, "s": 0x1f39,
+                "main": 0, "sub": 7, "nmi_latch": 0
+            }),
+            serde_json::json!({
+                "event": "frame", "stage": "return", "run": 889,
+                "pc": NMI_HANDLER_ENTRY_PC, "s": 0x1f35, "main": 0, "sub": 7,
+                "subsub": 0, "frame_counter": 148, "nmi_latch": 0
+            }),
+        ];
+        fs::write(
+            &path,
+            first_host
+                .iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n",
+        )
+        .unwrap();
+        let mut tracker = Snes9xOracleSemanticTrace {
+            path: path.clone(),
+            offset: 0,
+            cache_write_progress: None,
+            normal_load_ordinal: None,
+            pending_reset_progress: None,
+            cached_sprite_execution: None,
+            overworld_presence_published: false,
+            overworld_sprite_activation: None,
+            pending_spotlight_helper_nmi: None,
+            item_receipt_caller: None,
+            sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
+            nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
+            nmi_resume_targets: Vec::new(),
+            synthesized_nmi_resume: None,
+        };
+
+        let receipts = tracker.read_after_host_call(None, None, None).unwrap();
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
+                OriginalTimingSemanticReceipt::MainLoopProgress(MainLoopProgress::IterationStarted,),
+                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+            ],
+        );
+        assert!(tracker.nmi_publication_pending);
+
+        let second_host = [
+            serde_json::json!({
+                "event": "frame", "stage": "entry", "run": 890,
+                "pc": NMI_HANDLER_ENTRY_PC, "s": 0x1f35, "main": 0, "sub": 7,
+                "subsub": 0, "frame_counter": 148, "nmi_latch": 0
+            }),
+            serde_json::json!({
+                "event": "pc", "run": 890, "pc": NMI_HANDLER_COMPLETE_PCS[1],
+                "s": 0x1f2c,
+                "joypad_high": 0, "joypad_low": 0,
+                "joypad_high_filtered": 0, "joypad_low_filtered": 0
+            }),
+            serde_json::json!({
+                "event": "wram-write", "run": 890,
+                "pc": ZELDA_RUN_GAME_LOOP_FRAME_COUNTER_WRITE_PC,
+                "s": 0x01ff, "address": FRAME_COUNTER, "value": 149
+            }),
+            serde_json::json!({
+                "event": "wram-write", "run": 890,
+                "pc": ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC,
+                "s": 0x01ff, "address": NMI_UPDATE_LATCH, "value": 0
+            }),
+            serde_json::json!({
+                "event": "nmi-resume", "run": 890, "pc": 0x09fd18, "s": 0x1f39
+            }),
+            serde_json::json!({
+                "event": "frame", "stage": "return", "run": 890,
+                "pc": 0x09fe63, "s": 0x1f34, "main": 0, "sub": 7,
+                "subsub": 0, "frame_counter": 149, "nmi_latch": 0
+            }),
+        ];
+        use std::io::Write as _;
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        for event in second_host {
+            writeln!(file, "{}", event).unwrap();
+        }
+        drop(file);
+
+        let receipts = tracker.read_after_host_call(None, None, None).unwrap();
+        fs::remove_file(path).unwrap();
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                zero_joypad_publication(),
+                OriginalTimingSemanticReceipt::MainLoopProgress(MainLoopProgress::IterationStarted,),
+                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+            ],
+        );
+        assert!(!tracker.nmi_publication_pending);
+        assert!(tracker.nmi_resume_targets.is_empty());
+    }
+
+    #[test]
+    fn continued_trace_publishes_progress_and_exact_suffix_before_following_open_nmi() {
+        let path = env::temp_dir().join(format!(
+            "zelda3-snes9x-continued-common-suffix-receipt-{}.jsonl",
+            std::process::id()
+        ));
+        let events = [
+            serde_json::json!({
+                "event": "frame", "stage": "entry", "run": 1059,
+                "pc": 0x0cce3a, "s": 0x01f3, "main": 4, "sub": 1,
+                "subsub": 0, "frame_counter": 1, "nmi_latch": 1
+            }),
+            serde_json::json!({
+                "event": "nmi", "run": 1059, "pc": 0x0cce3c,
+                "s": 0x01f3, "main": 4, "sub": 1, "nmi_latch": 1
+            }),
+            serde_json::json!({
+                "event": "pc", "run": 1059, "pc": NMI_HANDLER_COMPLETE_PC,
+                "s": 0x01f2
+            }),
+            serde_json::json!({
+                "event": "nmi-resume", "run": 1059, "pc": 0x0cce3c,
+                "s": 0x01f3
+            }),
+            serde_json::json!({
+                "event": "wram-write", "run": 1059,
+                "pc": ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC,
+                "s": 0x01ff, "address": NMI_UPDATE_LATCH, "value": 0
+            }),
+            serde_json::json!({
+                "event": "nmi", "run": 1059, "pc": 0x008034,
+                "s": 0x01ff, "main": 4, "sub": 2, "nmi_latch": 0
+            }),
+            serde_json::json!({
+                "event": "frame", "stage": "return", "run": 1059,
+                "pc": NMI_HANDLER_ENTRY_PC, "s": 0x01fb, "main": 4,
+                "sub": 2, "subsub": 0, "frame_counter": 1, "nmi_latch": 0
+            }),
+        ];
+        fs::write(
+            &path,
+            events
+                .iter()
+                .map(serde_json::Value::to_string)
+                .collect::<Vec<_>>()
+                .join("\n")
+                + "\n",
+        )
+        .unwrap();
+        let mut tracker = Snes9xOracleSemanticTrace {
+            path: path.clone(),
+            offset: 0,
+            cache_write_progress: None,
+            normal_load_ordinal: None,
+            pending_reset_progress: None,
+            cached_sprite_execution: None,
+            overworld_presence_published: false,
+            overworld_sprite_activation: None,
+            pending_spotlight_helper_nmi: None,
+            item_receipt_caller: None,
+            sprite_main_execution: None,
+            zelda_run_game_loop_call_active: true,
+            nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
+            nmi_resume_targets: Vec::new(),
+            synthesized_nmi_resume: None,
+        };
+
+        let receipts = tracker.read_after_host_call(None, None, None).unwrap();
+        fs::remove_file(path).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+            ],
+        );
+        assert!(tracker.nmi_publication_pending);
+        assert_eq!(tracker.pending_nmi_update_gate, Some(NmiUpdateGate::Open));
+    }
+
+    #[test]
+    fn common_suffix_receipt_requires_exact_post_write_pc_value_and_is_unique() {
+        let mut host = HostFrameWindow::default();
+        let mut wrong_pc = main_loop_common_suffix_completion();
+        wrong_pc.pc = Some(ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC - 1);
+        assert_eq!(host.observe(&wrong_pc).unwrap(), None);
+
+        let mut wrong_value = main_loop_common_suffix_completion();
+        wrong_value.value = Some(1);
+        assert!(host
+            .observe(&wrong_value)
+            .unwrap_err()
+            .contains("invalid $12 value"));
+        assert!(!host.main_loop_common_suffix_completed);
+
+        assert_eq!(
+            host.observe(&main_loop_common_suffix_completion()).unwrap(),
+            Some(MainLoopCompletionProof::CommonSuffixCompleted),
+        );
+        assert!(host
+            .observe(&main_loop_common_suffix_completion())
+            .unwrap_err()
+            .contains("common suffix twice"));
     }
 
     #[test]
@@ -6291,7 +7553,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6343,8 +7607,14 @@ mod tests {
                         boundary: OriginalTimingBoundary::NmiAccepted,
                     },
                 ),
-                OriginalTimingSemanticReceipt::NmiAccepted,
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+                    high: 0,
+                    low: 0,
+                    high_filtered: 0,
+                    low_filtered: 0,
+                }),
                 OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(
                     CachedSpriteExecutionProgressReceipt {
                         progress: CachedSpriteExecutionProgress::Restoring {
@@ -6354,7 +7624,7 @@ mod tests {
                         boundary: OriginalTimingBoundary::NmiAccepted,
                     },
                 ),
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
             ],
         );
     }
@@ -6373,7 +7643,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6424,7 +7696,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6496,7 +7770,7 @@ mod tests {
                         boundary: OriginalTimingBoundary::NmiAccepted,
                     },
                 ),
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
             ],
         );
     }
@@ -6515,7 +7789,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6564,8 +7840,14 @@ mod tests {
                         boundary: OriginalTimingBoundary::NmiAccepted,
                     },
                 ),
-                OriginalTimingSemanticReceipt::NmiAccepted,
-                OriginalTimingSemanticReceipt::NmiPublicationCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+                    high: 0,
+                    low: 0,
+                    high_filtered: 0,
+                    low_filtered: 0,
+                }),
                 OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(
                     DungeonResetSpritesProgressReceipt {
                         progress: DungeonResetSpritesCpuProgress::Cache {
@@ -6575,7 +7857,7 @@ mod tests {
                         boundary: OriginalTimingBoundary::NmiAccepted,
                     },
                 ),
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
             ],
         );
     }
@@ -6594,7 +7876,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6642,7 +7926,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6721,7 +8007,7 @@ mod tests {
                         boundary: OriginalTimingBoundary::NmiAccepted,
                     },
                 ),
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
             ],
         );
     }
@@ -6740,7 +8026,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6753,11 +8041,14 @@ mod tests {
             let mut event: RawTraceEvent = serde_json::from_str(line).unwrap();
             if event.event == "nmi" && event.s.is_none() {
                 // This older reduced fixture ends at acceptance and predates
-                // preservation of the already-present source stack field. It
-                // cannot exercise completion ownership; supply an inert value
-                // only to drive its terminal acceptance through the stricter
-                // live-trace adapter.
-                event.s = Some(0);
+                // preservation of the already-present source stack and update-
+                // gate fields. A later full trace of this same route boundary
+                // independently preserves the omitted source values: S=$01f2
+                // and Zelda's `$12` latch held. This fixture cannot exercise
+                // completion ownership; restore only those corroborated fields
+                // to drive its terminal acceptance through the stricter adapter.
+                event.s = Some(0x01f2);
+                event.nmi_latch = Some(1);
             }
             trace.consume_event(event, &mut receipts).unwrap();
         }
@@ -6777,7 +8068,7 @@ mod tests {
                         boundary: OriginalTimingBoundary::NmiAccepted,
                     },
                 ),
-                OriginalTimingSemanticReceipt::NmiAccepted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
             ],
         );
     }
@@ -6797,7 +8088,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6822,7 +8115,12 @@ mod tests {
         tracker
             .consume_event(raw("nmi", None, None, None), &mut receipts)
             .unwrap();
-        assert_eq!(receipts, vec![OriginalTimingSemanticReceipt::NmiAccepted]);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )]
+        );
     }
 
     #[test]
@@ -6839,7 +8137,9 @@ mod tests {
             pending_spotlight_helper_nmi: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
             nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         };
@@ -6867,7 +8167,12 @@ mod tests {
             .consume_event(raw("nmi", None, None, None), &mut receipts)
             .unwrap();
 
-        assert_eq!(receipts, vec![OriginalTimingSemanticReceipt::NmiAccepted]);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::Open
+            )]
+        );
     }
 
     #[test]

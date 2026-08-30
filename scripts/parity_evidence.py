@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -23,9 +24,25 @@ DEFAULT_PROJECT = ROOT / "routes" / "full_run"
 DEFAULT_LEDGER = DEFAULT_PROJECT / "parity-frontier.json"
 PASS_ROOT = ROOT / ".git" / "parity-cold-passes"
 ORACLE_CACHE_ROOT = ROOT / ".git" / "parity-oracle-cache"
-PASS_SCHEMA = 1
+ZPARITY = ROOT / "target" / "parity" / "zparity"
+LEGACY_PASS_SCHEMA = 1
+PASS_SCHEMA = 2
+COLD_EVIDENCE_KIND = "zelda3-cold-parity-pass"
+COLD_EVIDENCE_REQUEST_KIND = "zelda3-cold-parity-reuse-request"
+CLEAN_ENV_EXECUTION_POLICY = "clean_env_v1"
+EMPTY_RUNTIME_CONFIG_SHA256 = hashlib.sha256(b"").hexdigest()
 CACHE_SCHEMA = 1
 FRONTIER_SCHEMA = 1
+PARITY_BUILD_COMMAND = (
+    "cargo",
+    "build",
+    "--profile",
+    "parity",
+    "-p",
+    "zelda3-bin",
+    "-p",
+    "parity",
+)
 
 ORACLE_SESSION_FILES = (
     "oracle_initial.state",
@@ -107,6 +124,133 @@ def git_identity() -> dict[str, Any]:
     }
 
 
+def _command_bytes(command: list[str], label: str) -> bytes:
+    process = subprocess.run(command, cwd=ROOT, capture_output=True, check=False)
+    if process.returncode != 0:
+        detail = process.stderr.decode("utf-8", errors="replace").strip()
+        raise SystemExit(f"parity evidence: {label} failed: {detail}")
+    return process.stdout
+
+
+def _workspace_content_identity() -> dict[str, Any]:
+    """Hash every tracked or nonignored untracked build/runtime input."""
+    paths = _command_bytes(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        "git source inventory",
+    ).split(b"\0")
+    paths = sorted(path for path in paths if path)
+    digest = hashlib.sha256()
+    root_bytes = os.fsencode(ROOT)
+    for relative in paths:
+        absolute = os.path.join(root_bytes, relative)
+        try:
+            metadata = os.lstat(absolute)
+        except OSError as error:
+            raise SystemExit(
+                "parity evidence: source inventory changed while hashing "
+                f"{os.fsdecode(relative)}: {error}"
+            ) from error
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        digest.update((metadata.st_mode & 0o177777).to_bytes(4, "big"))
+        if stat.S_ISREG(metadata.st_mode):
+            content = hashlib.sha256()
+            with open(absolute, "rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    content.update(chunk)
+            current = os.lstat(absolute)
+            if (
+                metadata.st_dev,
+                metadata.st_ino,
+                metadata.st_size,
+                metadata.st_mtime_ns,
+            ) != (
+                current.st_dev,
+                current.st_ino,
+                current.st_size,
+                current.st_mtime_ns,
+            ):
+                raise SystemExit(
+                    "parity evidence: source inventory changed while hashing "
+                    f"{os.fsdecode(relative)}"
+                )
+            payload_hash = content.digest()
+        elif stat.S_ISLNK(metadata.st_mode):
+            target = os.readlink(absolute)
+            payload_hash = hashlib.sha256(os.fsencode(target)).digest()
+        elif stat.S_ISDIR(metadata.st_mode):
+            # Gitlinks appear as directory entries in the worktree. Their exact
+            # staged object is separately bound by the index inventory below.
+            payload_hash = hashlib.sha256(b"gitlink-directory").digest()
+        else:
+            raise SystemExit(
+                "parity evidence: unsupported source input type: "
+                f"{os.fsdecode(relative)}"
+            )
+        digest.update(payload_hash)
+    return {
+        "schema": 1,
+        "head": git_output("rev-parse", "HEAD"),
+        "file_count": len(paths),
+        "content_inventory_sha256": digest.hexdigest(),
+        "index_inventory_sha256": hashlib.sha256(
+            _command_bytes(["git", "ls-files", "--stage", "-z"], "git index inventory")
+        ).hexdigest(),
+        "status_sha256": hashlib.sha256(
+            _command_bytes(
+                ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+                "git status inventory",
+            )
+        ).hexdigest(),
+    }
+
+
+def staged_source_authority() -> dict[str, Any]:
+    identity = _workspace_content_identity()
+    build_environment_names = (
+        "AR",
+        "CC",
+        "CFLAGS",
+        "CXX",
+        "CXXFLAGS",
+        "CARGO_ENCODED_RUSTFLAGS",
+        "MACOSX_DEPLOYMENT_TARGET",
+        "RUSTC",
+        "RUSTC_WRAPPER",
+        "RUSTFLAGS",
+        "SDKROOT",
+        "ZELDA3_EMBEDDED_ASSETS",
+    )
+    build_binding = {
+        "schema": 1,
+        "profile": "parity",
+        "command": list(PARITY_BUILD_COMMAND),
+        "rustc_verbose_version": _command_bytes(
+            ["rustc", "-vV"], "rustc version"
+        ).decode("utf-8", errors="strict").strip(),
+        "cargo_version": _command_bytes(
+            ["cargo", "--version", "--verbose"], "cargo version"
+        ).decode("utf-8", errors="strict").strip(),
+        "build_environment": {
+            name: {
+                "present": name in os.environ,
+                "value_sha256": hashlib.sha256(
+                    os.environ.get(name, "").encode("utf-8", errors="surrogateescape")
+                ).hexdigest()
+                if name in os.environ
+                else None,
+            }
+            for name in build_environment_names
+        },
+    }
+    return {
+        "identity": identity,
+        "identity_sha256": stable_hash(identity),
+        "build_binding": build_binding,
+        "build_binding_sha256": stable_hash(build_binding),
+    }
+
+
 def artifact_hashes(directory: Path, names: Iterable[str]) -> dict[str, str]:
     return {
         name: sha256_file(directory / name)
@@ -169,12 +313,24 @@ def _lane_matched(value: object) -> bool:
     return isinstance(value, dict) and value.get("matched") is True
 
 
+def schema2_session_identity(session: Path) -> dict[str, Any]:
+    return {
+        "manifest_sha256": _required_hash(session, "manifest.json"),
+        "result_sha256": _required_hash(session, "result.json"),
+        "source_artifact_sha256": {
+            name: _required_hash(session, name) for name in REPLAY_SOURCE_FILES
+        },
+    }
+
+
 def record_cold_pass(
     *,
     session: Path,
     route_signature: dict[str, Any],
     binary: Path,
     output_root: Path = PASS_ROOT,
+    authority: dict[str, Any] | None = None,
+    invocation_id: str | None = None,
 ) -> Path:
     """Record one exact cold A/V pass after the gate has accepted it."""
     identity = session_identity(session)
@@ -187,9 +343,49 @@ def record_cold_pass(
     if not binary.is_file():
         raise SystemExit(f"parity evidence: parity binary is missing: {binary}")
     created_ns = time.time_ns()
+    if authority is not None:
+        if not invocation_id:
+            raise SystemExit("parity evidence: schema 2 receipt requires an invocation ID")
+        manifest = load_json(session / "manifest.json")
+        if manifest.get("cold_evidence_invocation_id") != invocation_id:
+            raise SystemExit(
+                "parity evidence: session invocation ID does not match the receipt"
+            )
+        run_nonce = manifest.get("cold_evidence_run_nonce")
+        if (
+            not isinstance(run_nonce, str)
+            or len(run_nonce) != 64
+            or any(character not in "0123456789abcdef" for character in run_nonce)
+        ):
+            raise SystemExit(
+                "parity evidence: session has no valid runner-authored cold run nonce"
+            )
+        if authority.get("target_frames") != identity["frames_completed"]:
+            raise SystemExit(
+                "parity evidence: schema 2 authority target does not match the session"
+            )
+        receipt = {
+            "schema": PASS_SCHEMA,
+            "kind": COLD_EVIDENCE_KIND,
+            "created_unix_ns": created_ns,
+            "invocation_id": invocation_id,
+            "run_nonce": run_nonce,
+            "authority": authority,
+            "session": str(session.resolve()),
+            "session_identity": schema2_session_identity(session),
+        }
+        receipt_hash = stable_hash(receipt)
+        output = output_root / (
+            f"{created_ns}-{identity['frames_completed']}-{receipt_hash[:12]}.json"
+        )
+        atomic_write_json(output, receipt)
+        return output
+
+    # Historical callers can still write their legacy diagnostic receipts.
+    # Rust's schema-2 verifier rejects these for both reuse and promotion.
     receipt: dict[str, Any] = {
-        "schema": PASS_SCHEMA,
-        "kind": "zelda3-cold-parity-pass",
+        "schema": LEGACY_PASS_SCHEMA,
+        "kind": COLD_EVIDENCE_KIND,
         "created_unix_ns": created_ns,
         "route_signature": route_signature,
         "route_signature_sha256": stable_hash(route_signature),
@@ -222,15 +418,152 @@ def load_cold_passes(root: Path = PASS_ROOT) -> list[tuple[Path, dict[str, Any]]
         return receipts
     for path in sorted(root.glob("*.json")):
         receipt = load_json(path)
-        if receipt.get("schema") == PASS_SCHEMA and receipt.get("kind") == "zelda3-cold-parity-pass":
+        if receipt.get("schema") in (LEGACY_PASS_SCHEMA, PASS_SCHEMA) and receipt.get(
+            "kind"
+        ) == COLD_EVIDENCE_KIND:
             receipts.append((path, receipt))
     return receipts
 
 
-def _proof_group(receipt: dict[str, Any]) -> tuple[str, str]:
+def _run_zparity_cold_evidence(
+    arguments: list[str], *, zparity: Path = ZPARITY
+) -> dict[str, Any]:
+    if not zparity.is_file():
+        raise SystemExit(
+            f"parity evidence: verifier missing ({zparity}); build target/parity/zparity first"
+        )
+    process = subprocess.run(
+        [str(zparity), "cold-evidence", *arguments],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if process.returncode != 0:
+        raise SystemExit(
+            "parity evidence: zparity cold-evidence verification failed: "
+            f"{process.stderr.strip()}"
+        )
+    try:
+        output = json.loads(process.stdout)
+    except json.JSONDecodeError as error:
+        raise SystemExit(
+            f"parity evidence: invalid zparity cold-evidence output: {error}"
+        ) from error
+    if not isinstance(output, dict) or output.get("schema") != PASS_SCHEMA:
+        raise SystemExit("parity evidence: zparity returned an invalid schema")
+    return output
+
+
+def find_reusable_cold_pass(
+    authority: dict[str, Any],
+    *,
+    pass_root: Path = PASS_ROOT,
+    zparity: Path = ZPARITY,
+) -> dict[str, Any] | None:
+    request = {
+        "schema": PASS_SCHEMA,
+        "kind": COLD_EVIDENCE_REQUEST_KIND,
+        "authority": authority,
+    }
+    with tempfile.TemporaryDirectory(prefix="zparity-cold-request-") as directory:
+        request_path = Path(directory) / "request.json"
+        atomic_write_json(request_path, request)
+        output = _run_zparity_cold_evidence(
+            ["find", str(pass_root), str(request_path)], zparity=zparity
+        )
+    if output.get("mode") != "find" or not isinstance(output.get("receipts"), list):
+        raise SystemExit("parity evidence: zparity returned an invalid find response")
+    receipts = output["receipts"]
+    if output.get("reusable") is not bool(receipts):
+        raise SystemExit("parity evidence: zparity returned an inconsistent find response")
+    return receipts[-1] if receipts else None
+
+
+def list_verified_cold_passes(
+    *,
+    pass_root: Path = PASS_ROOT,
+    zparity: Path = ZPARITY,
+) -> list[dict[str, Any]]:
+    output = _run_zparity_cold_evidence(["list", str(pass_root)], zparity=zparity)
+    if output.get("mode") != "list" or not isinstance(output.get("receipts"), list):
+        raise SystemExit("parity evidence: zparity returned an invalid list response")
+    return output["receipts"]
+
+
+def _proof_fingerprint(authority: dict[str, Any]) -> str:
+    return stable_hash(
+        {
+            "authority": authority,
+            "proof": {
+                "cold": True,
+                "exact_video": True,
+                "exact_audio": True,
+                "engine_state": False,
+                "frames": authority.get("target_frames"),
+            },
+        }
+    )
+
+
+def _committed_source_projection(identity: object) -> dict[str, object] | None:
+    """Return source facts which survive the pre-commit -> commit transition.
+
+    A successful pre-commit run necessarily records the old HEAD plus a dirty
+    index/status.  After that exact content is committed, HEAD/index/status
+    change even though every build/runtime input is byte-identical.  The
+    content inventory and its cardinality are the stable authority across that
+    transition; all other source-identity fields remain receipt provenance.
+    """
+    if not isinstance(identity, dict):
+        return None
+    schema = identity.get("schema")
+    file_count = identity.get("file_count")
+    content_hash = identity.get("content_inventory_sha256")
+    if (
+        schema != 1
+        or not isinstance(file_count, int)
+        or file_count < 0
+        or not isinstance(content_hash, str)
+        or len(content_hash) != 64
+    ):
+        return None
+    return {
+        "schema": schema,
+        "file_count": file_count,
+        "content_inventory_sha256": content_hash,
+    }
+
+
+def _authority_matches_current_build(
+    authority: object,
+    current_source: dict[str, Any],
+    binary: Path,
+) -> bool:
+    if not isinstance(authority, dict):
+        return False
+    receipt_binary = authority.get("binary")
+    receipt_source = authority.get("staged_source")
+    if not isinstance(receipt_binary, dict) or not isinstance(receipt_source, dict):
+        return False
+    current_identity = _committed_source_projection(current_source.get("identity"))
+    receipt_identity = _committed_source_projection(receipt_source.get("identity"))
     return (
-        str(receipt.get("route_signature_sha256", "")),
-        str(receipt.get("binary", {}).get("sha256", "")),
+        receipt_binary.get("sha256") == sha256_file(binary)
+        and receipt_binary.get("size") == binary.stat().st_size
+        and receipt_identity is not None
+        and receipt_identity == current_identity
+        and receipt_source.get("build_binding") == current_source.get("build_binding")
+        and receipt_source.get("build_binding_sha256")
+        == current_source.get("build_binding_sha256")
+    )
+
+
+def _valid_run_nonce(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
     )
 
 
@@ -239,6 +572,7 @@ def promote_frontier(
     ledger_path: Path = DEFAULT_LEDGER,
     binary: Path = ROOT / "target" / "parity" / "zelda3",
     pass_root: Path = PASS_ROOT,
+    zparity: Path = ZPARITY,
 ) -> dict[str, Any]:
     """Promote the newest twice-proven binary into the tracked frontier ledger."""
     git = git_identity()
@@ -250,30 +584,62 @@ def promote_frontier(
     if not binary.is_file():
         raise SystemExit(f"parity evidence: parity binary is missing: {binary}")
     binary_sha = sha256_file(binary)
+    current_source = staged_source_authority()
     compatible = [
-        (path, receipt)
-        for path, receipt in load_cold_passes(pass_root)
-        if receipt.get("binary", {}).get("sha256") == binary_sha
+        receipt
+        for receipt in list_verified_cold_passes(pass_root=pass_root, zparity=zparity)
+        if _authority_matches_current_build(
+            receipt.get("authority"), current_source, binary
+        )
     ]
-    grouped: dict[tuple[str, str], list[tuple[Path, dict[str, Any]]]] = {}
-    for item in compatible:
-        grouped.setdefault(_proof_group(item[1]), []).append(item)
-    candidates = [items for items in grouped.values() if len(items) >= 2]
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for receipt in compatible:
+        authority = receipt.get("authority")
+        if not isinstance(authority, dict):
+            continue
+        grouped.setdefault(_proof_fingerprint(authority), []).append(receipt)
+    candidates: list[list[dict[str, Any]]] = []
+    for receipts in grouped.values():
+        ordered = sorted(
+            receipts, key=lambda item: str(item.get("receipt_path", "")), reverse=True
+        )
+        invocation_counts: dict[str, int] = {}
+        session_counts: dict[str, int] = {}
+        run_nonce_counts: dict[str, int] = {}
+        for receipt in ordered:
+            invocation = receipt.get("invocation_id")
+            session = receipt.get("session_path")
+            run_nonce = receipt.get("run_nonce")
+            if (
+                isinstance(invocation, str)
+                and isinstance(session, str)
+                and _valid_run_nonce(run_nonce)
+            ):
+                invocation_counts[invocation] = invocation_counts.get(invocation, 0) + 1
+                session_counts[session] = session_counts.get(session, 0) + 1
+                run_nonce_counts[run_nonce] = run_nonce_counts.get(run_nonce, 0) + 1
+        independent = [
+            receipt
+            for receipt in ordered
+            if isinstance(receipt.get("invocation_id"), str)
+            and isinstance(receipt.get("session_path"), str)
+            and _valid_run_nonce(receipt.get("run_nonce"))
+            and invocation_counts[receipt["invocation_id"]] == 1
+            and session_counts[receipt["session_path"]] == 1
+            and run_nonce_counts[receipt["run_nonce"]] == 1
+        ]
+        if len(independent) >= 2:
+            candidates.append(independent)
     if not candidates:
         raise SystemExit(
             "parity evidence: this binary has fewer than two independent cold exact A/V passes"
         )
     selected = max(
         candidates,
-        key=lambda items: max(int(item[1]["created_unix_ns"]) for item in items),
+        key=lambda items: int(items[0]["authority"]["target_frames"]),
     )
-    selected.sort(key=lambda item: int(item[1]["created_unix_ns"]), reverse=True)
     first, second = selected[:2]
-    if first[1].get("session") == second[1].get("session"):
-        raise SystemExit("parity evidence: duplicate receipts for one session do not count as two cold runs")
-    promoted_frame = min(
-        int(first[1]["proof"]["frames"]), int(second[1]["proof"]["frames"])
-    )
+    promoted_frame = min(int(item["target_frames"]) for item in (first, second))
     ledger = load_json(ledger_path) if ledger_path.is_file() else {
         "schema": FRONTIER_SCHEMA,
         "project": "routes/full_run",
@@ -281,22 +647,35 @@ def promote_frontier(
     }
     if ledger.get("schema") != FRONTIER_SCHEMA:
         raise SystemExit(f"parity evidence: unsupported frontier ledger: {ledger_path}")
+    previous_engine_state = (
+        ledger.get("promoted", {}).get("last_exact_engine_state_frame", 0)
+        if isinstance(ledger.get("promoted"), dict)
+        else 0
+    )
+    authority = first["authority"]
     ledger["promoted"] = {
         "commit": git["head"],
         "binary_sha256": binary_sha,
-        "route_signature": first[1]["route_signature"],
-        "route_signature_sha256": first[1]["route_signature_sha256"],
-        "last_exact_engine_state_frame": promoted_frame,
+        "route_signature": authority["route_signature"],
+        "route_signature_sha256": authority["route_signature_sha256"],
+        "authority_sha256": stable_hash(authority),
+        "proof_fingerprint": _proof_fingerprint(authority),
+        "last_exact_engine_state_frame": previous_engine_state,
         "last_exact_video_frame": promoted_frame,
         "last_exact_audio_frame": promoted_frame,
         "cold_confirmation_receipts": [
             {
-                "path": str(path.relative_to(ROOT) if path.is_relative_to(ROOT) else path),
-                "sha256": sha256_file(path),
-                "session_result_sha256": receipt["session_identity"]["result_sha256"],
-                "frames": receipt["proof"]["frames"],
+                "path": item["receipt_path"],
+                "sha256": item["receipt_sha256"],
+                "invocation_id": item["invocation_id"],
+                "run_nonce": item["run_nonce"],
+                "session": item["session_path"],
+                "session_result_sha256": sha256_file(
+                    Path(item["session_path"]) / "result.json"
+                ),
+                "frames": item["target_frames"],
             }
-            for path, receipt in (first, second)
+            for item in (first, second)
         ],
     }
     atomic_write_json(ledger_path, ledger)

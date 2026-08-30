@@ -39,17 +39,28 @@ use zelda3::{
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
 pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
-const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-bundle <session-dir> | --input-script <path> --rom-random-script <path> --load-sram <path>] [--allow-mixed-replay-provenance] [--replay-save <path>] [--rom-random-script <path> | --live-oracle-rng] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--compare-engine-state-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--scan-all] (pass both --ignore-video and --ignore-audio for trace-only replay)";
+const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-bundle <session-dir> | --input-script <path> --rom-random-script <path> --load-sram <path>] [--allow-mixed-replay-provenance] [--replay-save <path>] [--rom-random-script <path> | --live-oracle-rng] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--compare-engine-state-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--cold-evidence-invocation-id <id>] [--scan-all] (pass both --ignore-video and --ignore-audio for trace-only replay)";
 
 // The cartridge RNG routine stores its return byte at mapped PC $0d:ba7f.
 // Other game code also writes $0fa1, so the address alone is not sufficient
 // provenance for a replay sample.
 const CARTRIDGE_RNG_STORE_PC_LOW16: u64 = 0xba7f;
 const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
-// Schema 16 adds the Zelda-visible joypad bytes published at authoritative
-// NMI completion. Older caches cannot reproduce the V225-before-V228 input
-// cadence and must not be accepted as equivalent timing authority.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 20;
+// Schema 26 suppresses a deferred spotlight-helper checkpoint when a stronger
+// enclosing caller completion is present, including hosts whose later NMI
+// returns inside the handler. Schema 25 already required source-proven
+// ZeldaRunGameLoop call ownership for `CallStackContinued`; older caches
+// synthesize that progress during reset/bootstrap hosts which never entered
+// the source call.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 26;
+
+const PRESENTED_OBJ_CACHE_ABI: i32 = 1;
+const PRESENTED_OBJ_CACHE_SLOT_COUNT: usize = 512;
+const PRESENTED_OBJ_CACHE_PAGE_TILE_COUNT: usize = 256;
+const PRESENTED_OBJ_CACHE_PIXELS_FIELD: i32 = 29;
+const PRESENTED_OBJ_CACHE_VALID_FIELD: i32 = 30;
+const PRESENTED_OBJ_CACHE_WORD_ADDRESS_FIELD: i32 = 45;
+const PRESENTED_OBJ_CACHE_META_FIELD: i32 = 46;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct SmpBootstrapInstructionStep {
@@ -1862,6 +1873,37 @@ fn validate_oracle_av_checkpoint_interval(interval: Option<u32>) -> Result<(), S
         );
     }
     Ok(())
+}
+
+fn validate_cold_evidence_invocation_id(value: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err(
+            "cold-evidence invocation ID must be 1..=128 ASCII letters, digits, '-', '_', or '.'"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn cold_evidence_run_nonce(
+    session_dir: &Path,
+    invocation_id: &str,
+    unix_time_ns: u128,
+    process_id: u32,
+) -> String {
+    let session_dir = fs::canonicalize(session_dir).unwrap_or_else(|_| session_dir.to_path_buf());
+    parity::evidence::sha256_bytes(
+        format!(
+            "zelda3-cold-run-v1\0{unix_time_ns}\0{process_id}\0{}\0{invocation_id}",
+            session_dir.to_string_lossy()
+        )
+        .as_bytes(),
+    )
 }
 
 pub(crate) fn run_capture_snes9x_av(args: &[String]) {
@@ -4074,6 +4116,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut audio_timing_tolerance_ms = 2.0f64;
     let mut audio_envelope_tolerance = 0.05f64;
     let mut session_dir = None::<PathBuf>;
+    let mut cold_evidence_invocation_id = None::<String>;
     let mut scan_all = false;
     let mut expected_core_sha256 = None::<String>;
     let mut expected_rom_sha256 = None::<String>;
@@ -4403,6 +4446,22 @@ pub(crate) fn run_compare_libretro_oracle(
                 };
                 session_dir = Some(PathBuf::from(value));
                 i += 2;
+            }
+            "--cold-evidence-invocation-id" if cold_evidence_invocation_id.is_none() => {
+                let Some(value) = args.get(i + 1) else {
+                    eprintln!("--cold-evidence-invocation-id requires an ID");
+                    process::exit(2);
+                };
+                validate_cold_evidence_invocation_id(value).unwrap_or_else(|error| {
+                    eprintln!("invalid --cold-evidence-invocation-id: {error}");
+                    process::exit(2);
+                });
+                cold_evidence_invocation_id = Some(value.clone());
+                i += 2;
+            }
+            "--cold-evidence-invocation-id" => {
+                eprintln!("--cold-evidence-invocation-id may be specified only once");
+                process::exit(2);
             }
             "--expected-core-sha256" => {
                 let Some(value) = args.get(i + 1) else {
@@ -5028,6 +5087,7 @@ pub(crate) fn run_compare_libretro_oracle(
         rom_random_script.as_deref(),
         live_oracle_rng,
         scan_all,
+        cold_evidence_invocation_id.as_deref(),
     );
     let mut av_hashes = session_dir.as_deref().map(|dir| {
         BufWriter::new(
@@ -8901,11 +8961,19 @@ pub(crate) fn initialize_libretro_session(
     rom_random_script: Option<&Path>,
     live_oracle_rng: bool,
     scan_all: bool,
+    cold_evidence_invocation_id: Option<&str>,
 ) -> Option<BufWriter<fs::File>> {
     let dir = session_dir?;
     fs::create_dir_all(dir).unwrap_or_else(|e| {
         eprintln!("failed to create libretro session {}: {e}", dir.display());
         process::exit(1);
+    });
+    let cold_evidence_run_nonce = cold_evidence_invocation_id.map(|invocation_id| {
+        let unix_time_ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        cold_evidence_run_nonce(dir, invocation_id, unix_time_ns, process::id())
     });
     for stale in [
         "input.txt",
@@ -9054,6 +9122,8 @@ pub(crate) fn initialize_libretro_session(
     let manifest = serde_json::json!({
         "schema": 1,
         "status": "running",
+        "cold_evidence_invocation_id": cold_evidence_invocation_id,
+        "cold_evidence_run_nonce": cold_evidence_run_nonce,
         "core": {
             "path": core_path,
             "sha256": core_sha256,
@@ -11531,36 +11601,132 @@ fn snes9x_presented_inidisp(
     Ok(Some(receipt))
 }
 
-/// Capture the presentation-domain OBJ tiles retained by the pinned oracle
-/// for the host surface it just returned. The patch exposes unflipped palette
-/// indices and validity only; emulator cache addresses and CPU/raster state do
-/// not cross the replaceable receipt boundary.
-fn snes9x_presented_obj_tiles(oracle: &LibretroCore) -> Result<Option<PresentedObjTiles>, String> {
-    if oracle.debug_ppu_value(29, 0).is_none() {
+/// Decode the address-bearing OBJ cache exposed by the pinned oracle.
+///
+/// Slots 0..256 name the first OBSEL page and slots 256..512 name the second.
+/// The address probe remains authoritative rather than being reconstructed by
+/// this adapter, while the page metadata proves that every slot belongs to the
+/// expected hardware page. `TileCached` uses 0 for invalid, 1 for decoded, and
+/// `BLANK_TILE` (2) for a decoded all-zero tile.
+fn decode_snes9x_presented_obj_tiles(
+    mut read: impl FnMut(i32, i32) -> Option<i32>,
+) -> Result<Option<PresentedObjTiles>, String> {
+    let Some(abi) = read(PRESENTED_OBJ_CACHE_META_FIELD, 0) else {
         return Ok(None);
+    };
+    if abi != PRESENTED_OBJ_CACHE_ABI {
+        return Err(format!(
+            "unsupported presented OBJ cache ABI {abi}; expected {PRESENTED_OBJ_CACHE_ABI}"
+        ));
     }
-    let tile_pixels = (0..PresentedObjTiles::TILE_COUNT * PresentedObjTiles::PIXELS_PER_TILE)
-        .map(|index| {
-            let value = oracle
-                .debug_ppu_value(29, index as i32)
-                .ok_or_else(|| format!("presented OBJ tile pixel {index} is unavailable"))?;
-            u8::try_from(value)
+
+    let metadata = |read: &mut dyn FnMut(i32, i32) -> Option<i32>, index, name| {
+        read(PRESENTED_OBJ_CACHE_META_FIELD, index)
+            .ok_or_else(|| format!("presented OBJ cache metadata {name} is unavailable"))
+    };
+    let slot_count = metadata(&mut read, 1, "slot count")?;
+    if slot_count != PRESENTED_OBJ_CACHE_SLOT_COUNT as i32 {
+        return Err(format!(
+            "presented OBJ cache slot count is invalid: {slot_count}"
+        ));
+    }
+    let pixels_per_tile = metadata(&mut read, 2, "pixels per tile")?;
+    if pixels_per_tile != PresentedObjTiles::PIXELS_PER_TILE as i32 {
+        return Err(format!(
+            "presented OBJ cache pixels per tile is invalid: {pixels_per_tile}"
+        ));
+    }
+    let page_bases = [
+        metadata(&mut read, 3, "page 0 word base")?,
+        metadata(&mut read, 4, "page 1 word base")?,
+    ]
+    .map(|value| {
+        u16::try_from(value)
+            .ok()
+            .filter(|&address| {
+                usize::from(address) < 0x8000
+                    && usize::from(address) % PresentedObjTiles::WORDS_PER_TILE == 0
+            })
+            .ok_or_else(|| format!("presented OBJ cache page base is invalid: {value}"))
+    });
+    let [page_0_base, page_1_base] = [page_bases[0].clone()?, page_bases[1].clone()?];
+
+    let mut tile_word_addresses = Vec::new();
+    let mut tile_pixels = Vec::new();
+    let mut seen_addresses = [false; PresentedObjTiles::MAX_TILE_COUNT];
+    for slot in 0..PRESENTED_OBJ_CACHE_SLOT_COUNT {
+        let slot_index = i32::try_from(slot).expect("OBJ cache slot count fits i32");
+        let validity = read(PRESENTED_OBJ_CACHE_VALID_FIELD, slot_index)
+            .ok_or_else(|| format!("presented OBJ cache validity {slot} is unavailable"))?;
+        if !(0..=2).contains(&validity) {
+            return Err(format!(
+                "presented OBJ cache validity {slot} is invalid: {validity}"
+            ));
+        }
+
+        let value = read(PRESENTED_OBJ_CACHE_WORD_ADDRESS_FIELD, slot_index)
+            .ok_or_else(|| format!("presented OBJ cache word address {slot} is unavailable"))?;
+        if validity == 0 {
+            if value != -1 {
+                return Err(format!(
+                    "invalid presented OBJ cache slot {slot} has word address {value}"
+                ));
+            }
+            continue;
+        }
+        let address = u16::try_from(value)
+            .ok()
+            .filter(|&address| {
+                usize::from(address) < 0x8000
+                    && usize::from(address) % PresentedObjTiles::WORDS_PER_TILE == 0
+            })
+            .ok_or_else(|| {
+                format!("presented OBJ cache word address {slot} is invalid: {value}")
+            })?;
+        let (page_base, page_slot) = if slot < PRESENTED_OBJ_CACHE_PAGE_TILE_COUNT {
+            (page_0_base, slot)
+        } else {
+            (page_1_base, slot - PRESENTED_OBJ_CACHE_PAGE_TILE_COUNT)
+        };
+        let expected_address =
+            (usize::from(page_base) + page_slot * PresentedObjTiles::WORDS_PER_TILE) & 0x7fff;
+        if usize::from(address) != expected_address {
+            return Err(format!(
+                "presented OBJ cache word address {slot} is {address:#06x}, expected {expected_address:#06x}"
+            ));
+        }
+        let tile_index = usize::from(address) / PresentedObjTiles::WORDS_PER_TILE;
+        if std::mem::replace(&mut seen_addresses[tile_index], true) {
+            return Err(format!(
+                "presented OBJ cache repeats physical word address {address:#06x}"
+            ));
+        }
+        tile_word_addresses.push(address);
+        let pixel_base = slot
+            .checked_mul(PresentedObjTiles::PIXELS_PER_TILE)
+            .expect("fixed OBJ cache dimensions cannot overflow");
+        for pixel in 0..PresentedObjTiles::PIXELS_PER_TILE {
+            let index = pixel_base + pixel;
+            let value = read(
+                PRESENTED_OBJ_CACHE_PIXELS_FIELD,
+                i32::try_from(index).expect("OBJ cache pixel index fits i32"),
+            )
+            .ok_or_else(|| format!("presented OBJ cache pixel {index} is unavailable"))?;
+            let pixel = u8::try_from(value)
                 .ok()
                 .filter(|&pixel| pixel < 16)
-                .ok_or_else(|| format!("presented OBJ tile pixel {index} is invalid: {value}"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let valid_tiles = (0..PresentedObjTiles::TILE_COUNT)
-        .map(|tile| {
-            oracle
-                .debug_ppu_value(30, tile as i32)
-                .map(|valid| valid != 0)
-                .ok_or_else(|| format!("presented OBJ tile validity {tile} is unavailable"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    PresentedObjTiles::new(tile_pixels, valid_tiles)
+                .ok_or_else(|| format!("presented OBJ cache pixel {index} is invalid: {value}"))?;
+            tile_pixels.push(pixel);
+        }
+    }
+
+    PresentedObjTiles::new(tile_word_addresses, tile_pixels)
         .map(Some)
         .ok_or_else(|| "presented OBJ tile receipt has an invalid shape".to_string())
+}
+
+fn snes9x_presented_obj_tiles(oracle: &LibretroCore) -> Result<Option<PresentedObjTiles>, String> {
+    decode_snes9x_presented_obj_tiles(|field, index| oracle.debug_ppu_value(field, index))
 }
 
 fn snes9x_presented_oam_bytes(oracle: &LibretroCore) -> Result<Option<Vec<u8>>, String> {
@@ -12665,11 +12831,11 @@ pub(crate) mod tests {
     use super::{
         append_smp_instruction_frame, cached_ledger_input, cached_oracle_checkpoint_sources,
         canonical_audio_digest, canonical_oracle_video_digest, canonical_rust_video_digest,
-        checkpoint_member, compact_byte_snapshot, compact_delta_integer_sequence,
-        compact_delta_integer_sequence_with_zstd, compact_dma_ledger,
-        compact_engine_state_mismatches, compact_framed_smp_instructions,
-        compact_ordinal_cpu_apu_accesses, first_dsp_write_timing_mismatch,
-        first_nmi_apui_anchor_indices, first_nmi_dma_ledger_slice,
+        checkpoint_member, cold_evidence_run_nonce, compact_byte_snapshot,
+        compact_delta_integer_sequence, compact_delta_integer_sequence_with_zstd,
+        compact_dma_ledger, compact_engine_state_mismatches, compact_framed_smp_instructions,
+        compact_ordinal_cpu_apu_accesses, decode_snes9x_presented_obj_tiles,
+        first_dsp_write_timing_mismatch, first_nmi_apui_anchor_indices, first_nmi_dma_ledger_slice,
         first_nmi_dma_setup_initial_sram_provenance, first_nmi_dma_setup_stop_index,
         first_nmi_dma_transaction_slice, first_nmi_return_start_index, fnv1a32,
         install_directory_atomically, last_spc_clock_witness, libretro_engine_state_receipt,
@@ -12682,14 +12848,15 @@ pub(crate) mod tests {
         should_render_video_frame, should_stop_after_first_mismatch, should_write_frame_receipt,
         smp_bootstrap_handoff_index, snes9x_presented_scanline_for_video_y,
         summarize_presented_obj_cache, summarize_value_domain, trace_events_with_rom_rng,
-        validate_first_nmi_return_cpu_slice, validate_oracle_av_checkpoint_interval,
-        validate_oracle_rng_samples_for_run, validate_paired_resume_provenance,
-        validate_paired_resume_sram_selection, validate_replay_source_parents, vram_domain_receipt,
-        write_cached_av_final_paired_resume, write_file_atomically, BootBoundaryState,
-        FramedApuPortAccess, FramedCpuTimingTransaction, FramedSmpInstruction,
-        OrdinalApuPortAccess, PairedResumeCapture, PendingFirstNmiReturnFixture,
-        PlayCrashCheckpoint, PresentedOracleVideo, RollingPairedResumeCapture, ValueDomainDiff,
-        VramDomainReceipt, PAIRED_RESUME_SCHEMA, PLAY_CRASH_CHECKPOINT_MAGIC,
+        validate_cold_evidence_invocation_id, validate_first_nmi_return_cpu_slice,
+        validate_oracle_av_checkpoint_interval, validate_oracle_rng_samples_for_run,
+        validate_paired_resume_provenance, validate_paired_resume_sram_selection,
+        validate_replay_source_parents, vram_domain_receipt, write_cached_av_final_paired_resume,
+        write_file_atomically, BootBoundaryState, FramedApuPortAccess, FramedCpuTimingTransaction,
+        FramedSmpInstruction, OrdinalApuPortAccess, PairedResumeCapture,
+        PendingFirstNmiReturnFixture, PlayCrashCheckpoint, PresentedOracleVideo,
+        RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt, PAIRED_RESUME_SCHEMA,
+        PLAY_CRASH_CHECKPOINT_MAGIC,
     };
     use crate::libretro_core::{
         LibretroApuPortWrite, LibretroCpuTimingTransaction, LibretroDmaLedgerEvent,
@@ -12831,7 +12998,7 @@ pub(crate) mod tests {
         assert_eq!(fs::read(semantic_trace_checkpoint).unwrap(), semantic_trace);
         let original_timing: zelda3::OriginalTimingResumeCheckpoint =
             serde_json::from_slice(&fs::read(original_timing_resume).unwrap()).unwrap();
-        assert_eq!(original_timing.schema(), 1);
+        assert_eq!(original_timing.schema(), 2);
         let paired_manifest: serde_json::Value =
             serde_json::from_slice(&fs::read(frontier.join("manifest.json")).unwrap()).unwrap();
         assert_eq!(paired_manifest["schema"], PAIRED_RESUME_SCHEMA);
@@ -14315,6 +14482,125 @@ pub(crate) mod tests {
         assert_eq!(snes9x_presented_scanline_for_video_y(239, 133), 133);
     }
 
+    struct PresentedObjCacheFixture {
+        meta: [i32; 5],
+        validity: Vec<i32>,
+        word_addresses: Vec<i32>,
+        pixels: Vec<i32>,
+    }
+
+    impl PresentedObjCacheFixture {
+        fn new(page_0_base: i32, page_1_base: i32) -> Self {
+            Self {
+                meta: [1, 512, 64, page_0_base, page_1_base],
+                validity: vec![0; 512],
+                word_addresses: vec![-1; 512],
+                pixels: vec![0; 512 * 64],
+            }
+        }
+
+        fn publish(&mut self, slot: usize) {
+            let (page_base, page_slot) = if slot < 256 {
+                (self.meta[3], slot)
+            } else {
+                (self.meta[4], slot - 256)
+            };
+            self.validity[slot] = 1;
+            self.word_addresses[slot] = (page_base + (page_slot * 16) as i32) & 0x7fff;
+            for pixel in 0..64 {
+                self.pixels[slot * 64 + pixel] = (pixel & 0x0f) as i32;
+            }
+        }
+
+        fn decode(&self) -> Result<Option<zelda3::PresentedObjTiles>, String> {
+            decode_snes9x_presented_obj_tiles(|field, index| {
+                let index = usize::try_from(index).ok()?;
+                match field {
+                    29 => self.pixels.get(index).copied(),
+                    30 => self.validity.get(index).copied(),
+                    45 => self.word_addresses.get(index).copied(),
+                    46 => self.meta.get(index).copied(),
+                    _ => None,
+                }
+            })
+        }
+    }
+
+    #[test]
+    fn address_bearing_obj_cache_maps_the_second_obsel_page() {
+        let mut fixture = PresentedObjCacheFixture::new(0x4000, 0x5800);
+        fixture.publish(256);
+
+        let receipt = fixture.decode().unwrap().unwrap();
+        let receipt = serde_json::to_value(receipt).unwrap();
+        assert_eq!(receipt["tile_word_addresses"], serde_json::json!([0x5800]));
+        assert_eq!(receipt["tile_pixels"].as_array().unwrap().len(), 64);
+        assert_eq!(receipt["tile_pixels"][0], 0);
+        assert_eq!(receipt["tile_pixels"][15], 15);
+        assert_eq!(receipt["tile_pixels"][63], 15);
+    }
+
+    #[test]
+    fn address_bearing_obj_cache_rejects_duplicate_physical_tiles() {
+        let mut fixture = PresentedObjCacheFixture::new(0x4000, 0x4000);
+        fixture.publish(0);
+        fixture.publish(256);
+
+        let error = fixture.decode().unwrap_err();
+        assert!(
+            error.contains("repeats physical word address 0x4000"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn address_bearing_obj_cache_requires_exact_validity_and_address_shape() {
+        let mut fixture = PresentedObjCacheFixture::new(0x4000, 0x5800);
+        fixture.validity[0] = 3;
+        assert!(fixture
+            .decode()
+            .unwrap_err()
+            .contains("validity 0 is invalid: 3"));
+
+        fixture.validity[0] = 0;
+        fixture.word_addresses[0] = 0x4000;
+        assert!(fixture
+            .decode()
+            .unwrap_err()
+            .contains("invalid presented OBJ cache slot 0 has word address 16384"));
+
+        fixture.word_addresses[0] = -1;
+        fixture.publish(256);
+        fixture.word_addresses[256] = 0x5801;
+        assert!(fixture
+            .decode()
+            .unwrap_err()
+            .contains("word address 256 is invalid: 22529"));
+    }
+
+    #[test]
+    fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 26);
+        assert_eq!(
+            decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
+            None
+        );
+
+        let mut fixture = PresentedObjCacheFixture::new(0x4000, 0x5800);
+        fixture.meta[0] = -1;
+        assert!(fixture
+            .decode()
+            .unwrap_err()
+            .contains("unsupported presented OBJ cache ABI -1"));
+
+        fixture.meta[0] = 1;
+        fixture.meta[1] = 64;
+        assert!(fixture
+            .decode()
+            .unwrap_err()
+            .contains("slot count is invalid: 64"));
+    }
+
     #[test]
     fn obj_cache_comparison_ignores_invalid_snes9x_tiles() {
         let mut rust = vec![0; 64 * 64];
@@ -15001,6 +15287,40 @@ pub(crate) mod tests {
                 "{error}"
             );
         }
+    }
+
+    #[test]
+    fn cold_evidence_invocation_id_has_the_receipt_safe_grammar() {
+        for value in ["run-10000-123.abc", "A_b-9"] {
+            assert!(validate_cold_evidence_invocation_id(value).is_ok());
+        }
+        for value in ["", "contains/slash", "contains space", "contains:colon"] {
+            assert!(
+                validate_cold_evidence_invocation_id(value).is_err(),
+                "{value:?}"
+            );
+        }
+        assert!(validate_cold_evidence_invocation_id(&"a".repeat(129)).is_err());
+    }
+
+    #[test]
+    fn cold_evidence_run_nonce_is_runner_authored_and_source_bound() {
+        let session = Path::new("/tmp/zelda3-cold-session");
+        let nonce = cold_evidence_run_nonce(session, "invocation-1", 42, 7);
+        assert_eq!(nonce.len(), 64);
+        assert!(nonce.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(
+            nonce,
+            cold_evidence_run_nonce(session, "invocation-1", 42, 7)
+        );
+        assert_ne!(
+            nonce,
+            cold_evidence_run_nonce(session, "invocation-1", 43, 7)
+        );
+        assert_ne!(
+            nonce,
+            cold_evidence_run_nonce(session, "invocation-2", 42, 7)
+        );
     }
 
     #[test]

@@ -24,28 +24,63 @@ impl PresentedOam {
     }
 }
 
-/// Palette-index pixels for the 64 OBJ tiles actually published by one host
-/// scanout. This is a presentation-domain receipt: it exposes neither an
-/// emulator cache nor CPU/raster provenance, and a native PPU owner can emit
-/// the same 64 unflipped 8x8 tiles when that domain transfers authority.
+/// Sparse palette-index pixels for the OBJ tiles actually published by one
+/// host scanout. Each entry names its aligned 15-bit VRAM word address; tiles
+/// absent from the receipt retain the preceding decoded-cache generation.
+/// This is a presentation-domain receipt: it exposes neither an emulator cache
+/// nor CPU/raster provenance, and a native PPU owner can emit the same entries
+/// when that domain transfers authority.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "PresentedObjTilesUnchecked")]
 pub struct PresentedObjTiles {
+    pub(crate) tile_word_addresses: Vec<u16>,
     pub(crate) tile_pixels: Vec<u8>,
-    pub(crate) valid_tiles: Vec<bool>,
 }
 
 impl PresentedObjTiles {
-    pub const TILE_COUNT: usize = 64;
+    pub const WORDS_PER_TILE: usize = 16;
     pub const PIXELS_PER_TILE: usize = 64;
+    pub const MAX_TILE_COUNT: usize = 0x800;
 
-    pub fn new(tile_pixels: Vec<u8>, valid_tiles: Vec<bool>) -> Option<Self> {
-        (tile_pixels.len() == Self::TILE_COUNT * Self::PIXELS_PER_TILE
-            && valid_tiles.len() == Self::TILE_COUNT
-            && tile_pixels.iter().all(|&pixel| pixel < 16))
-        .then_some(Self {
+    pub fn new(tile_word_addresses: Vec<u16>, tile_pixels: Vec<u8>) -> Option<Self> {
+        let receipt = Self {
+            tile_word_addresses,
             tile_pixels,
-            valid_tiles,
+        };
+        receipt.is_valid().then_some(receipt)
+    }
+
+    fn is_valid(&self) -> bool {
+        if self.tile_word_addresses.len() > Self::MAX_TILE_COUNT
+            || self.tile_pixels.len() != self.tile_word_addresses.len() * Self::PIXELS_PER_TILE
+            || self.tile_pixels.iter().any(|&pixel| pixel >= 16)
+        {
+            return false;
+        }
+        let mut addresses = [false; Self::MAX_TILE_COUNT];
+        self.tile_word_addresses.iter().all(|&address| {
+            let address = usize::from(address);
+            if address >= 0x8000 || address % Self::WORDS_PER_TILE != 0 {
+                return false;
+            }
+            let tile = address / Self::WORDS_PER_TILE;
+            !std::mem::replace(&mut addresses[tile], true)
         })
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct PresentedObjTilesUnchecked {
+    tile_word_addresses: Vec<u16>,
+    tile_pixels: Vec<u8>,
+}
+
+impl TryFrom<PresentedObjTilesUnchecked> for PresentedObjTiles {
+    type Error = &'static str;
+
+    fn try_from(value: PresentedObjTilesUnchecked) -> Result<Self, Self::Error> {
+        Self::new(value.tile_word_addresses, value.tile_pixels)
+            .ok_or("invalid sparse presented OBJ tile receipt")
     }
 }
 
@@ -498,6 +533,15 @@ impl PresentedCgram {
 pub enum MainLoopInterruption {
     LinkOam,
     SpritePreparation,
+    /// `NMI_PrepareSprites` completed every four-byte extended-OAM packing
+    /// group above `next_group_start`, then was interrupted while computing
+    /// that still-unpublished group. The original loop visits group starts
+    /// `28, 24, ..., 0`; exposing that source cursor lets native gameplay
+    /// resume the pure packing prefix without replaying the later countdown
+    /// and DMA-source publications.
+    SpritePreparationExtendedOamPacking {
+        next_group_start: u8,
+    },
     /// `Sprite_Main` was interrupted before its descending slot loop completed.
     /// `BeforeFirstSlot` means the common prefix returned but slot 15 did not;
     /// `AfterSlot` names the last source slot whose call returned. The timing
@@ -724,13 +768,15 @@ pub struct OriginalTimingResumeCheckpoint {
     pub(crate) schema: u32,
     pub(crate) last_consumed_host_call: Option<u64>,
     pub(crate) nmi_publication_pending: bool,
+    #[serde(default)]
+    pub(crate) pending_nmi_update_gate: Option<NmiUpdateGate>,
     pub(crate) dungeon_exit_spotlight_entry_return_pending: bool,
     pub(crate) pre_dungeon_return_pending: Option<MainLoopProgress>,
     pub(crate) item_receipt_live_link_dma_host: Option<u32>,
 }
 
 impl OriginalTimingResumeCheckpoint {
-    pub const SCHEMA: u32 = 1;
+    pub const SCHEMA: u32 = 2;
 
     pub const fn schema(&self) -> u32 {
         self.schema
@@ -880,14 +926,25 @@ pub struct JoypadPublication {
     pub low_filtered: u8,
 }
 
+/// Zelda's software update gate sampled when the hardware accepts an NMI.
+///
+/// `Interrupt_NMI_AudioParts_Locked` and the final PPU-register writes run in
+/// both cases. Only an open gate runs `NMI_DoUpdates` and `NMI_ReadJoypads`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum NmiUpdateGate {
+    Open,
+    LatchHeld,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OriginalTimingSemanticReceipt {
-    NmiAccepted,
-    /// The accepted NMI published its Zelda-visible updates: DMA/PPU state,
-    /// joypad state, and the optional IRQ/poly-thread handoff are complete.
+    NmiAccepted(NmiUpdateGate),
+    /// The accepted NMI handler reached its common completion point.
+    /// An open update gate has published DMA/joypad work; a held gate has run
+    /// only the unconditional audio and PPU-register portions.
     /// This deliberately does not mean that the interrupted CPU context has
     /// resumed; Zelda can switch stacks and run its main thread first.
-    NmiPublicationCompleted,
+    NmiHandlerCompleted,
     JoypadPublication(JoypadPublication),
     MainLoopProgress(MainLoopProgress),
     SpriteMainProgressed(SpriteMainProgress),
@@ -895,12 +952,19 @@ pub enum OriginalTimingSemanticReceipt {
     /// suffix. A temporary backend may observe a private return address;
     /// gameplay consumes only this source-call completion fact.
     SpriteMainReturned,
-    /// The `ZeldaRunGameLoop` iteration begun during this host call returned
+    /// The active `ZeldaRunGameLoop` iteration returned
     /// through `Module_MainRouting`, `NMI_PrepareSprites`, and the `$12 = 0`
     /// suffix to Zelda's main wait before the host call ended. The temporary
     /// backend may identify the wait from private CPU state; translated
     /// gameplay consumes only this source-level call-completion fact.
     MainLoopIterationReturnedToWait,
+    /// The active `ZeldaRunGameLoop` iteration completed its unconditional
+    /// `NMI_PrepareSprites(); $12 = 0` suffix. Unlike
+    /// `MainLoopIterationReturnedToWait`, the source CPU may immediately run
+    /// another cooperative thread and accept an NMI there before the host call
+    /// returns. This fact therefore owns the C suffix, not a particular wait
+    /// PC or host-return location.
+    MainLoopCommonSuffixCompleted,
     /// `Module_PreDungeon` returned to its caller and published the module-7
     /// landing state. This is deliberately separate from `MainLoopProgress`:
     /// the source call can return at a host boundary without beginning the
@@ -1184,6 +1248,7 @@ impl OriginalTimingHostReceipts {
 pub enum OriginalTimingReceiptInstallError {
     TimingDisabled,
     ActiveHostDispatch,
+    ActiveSpriteMainReturnClaim,
     ReceiptAlreadyInstalled,
     UnconsumedPresentedAudio,
     DuplicateDungeonResetProgress,
@@ -1202,6 +1267,7 @@ pub enum OriginalTimingReceiptInstallError {
     InvalidSpriteMainProgress,
     DuplicateSpriteMainReturn,
     DuplicateMainLoopIterationReturn,
+    InvalidMainLoopIterationReturn,
     DuplicatePreDungeonModuleReturn,
     DuplicateMainLoopInterruption,
     InvalidMainLoopInterruption,
@@ -1216,6 +1282,7 @@ pub enum OriginalTimingReceiptInstallError {
     DuplicateOverworldSpritePresencePublished,
     InvalidOverworldSpriteReloadProgress,
     DuplicatePreOverworldStageCompletion,
+    InvalidNmiLifecycle,
     OutOfSequence { expected: u64, actual: u64 },
 }
 
@@ -1235,6 +1302,44 @@ pub(crate) const fn sanitize_original_timing_input(inputs: u16) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(serde::Serialize)]
+    struct UncheckedObjTiles {
+        tile_word_addresses: Vec<u16>,
+        tile_pixels: Vec<u8>,
+    }
+
+    fn assert_obj_tiles_deserialization_rejects(
+        tile_word_addresses: Vec<u16>,
+        tile_pixels: Vec<u8>,
+    ) {
+        let encoded = bincode::serialize(&UncheckedObjTiles {
+            tile_word_addresses,
+            tile_pixels,
+        })
+        .unwrap();
+        assert!(bincode::deserialize::<PresentedObjTiles>(&encoded).is_err());
+    }
+
+    #[test]
+    fn presented_obj_tiles_roundtrip_preserves_sparse_word_addresses() {
+        let receipt =
+            PresentedObjTiles::new(vec![0x0000, 0x5a20, 0x7ff0], vec![3; 3 * 64]).unwrap();
+        let encoded = bincode::serialize(&receipt).unwrap();
+        let decoded: PresentedObjTiles = bincode::deserialize(&encoded).unwrap();
+        assert_eq!(decoded, receipt);
+    }
+
+    #[test]
+    fn presented_obj_tiles_reject_invalid_addresses_and_pixels_on_deserialization() {
+        assert_obj_tiles_deserialization_rejects(vec![0x4001], vec![0; 64]);
+        assert_obj_tiles_deserialization_rejects(vec![0x8000], vec![0; 64]);
+        assert_obj_tiles_deserialization_rejects(vec![0x5a20, 0x5a20], vec![0; 128]);
+        assert_obj_tiles_deserialization_rejects(vec![0x5a20], vec![0; 63]);
+        let mut invalid_pixel = vec![0; 64];
+        invalid_pixel[17] = 16;
+        assert_obj_tiles_deserialization_rejects(vec![0x5a20], invalid_pixel);
+    }
 
     #[derive(serde::Serialize)]
     struct UncheckedMode7Transform {

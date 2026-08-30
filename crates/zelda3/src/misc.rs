@@ -5,13 +5,6 @@ fn calculate_sfx_pan(x: u16) -> u8 {
     ZeldaState::calculate_sfx_pan_with_scroll(x, 0)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum SelectedGameLoadDestination {
-    Dungeon,
-    DarkWorldOverworld,
-    Message,
-}
-
 // Source pointers selected by the ROM's three LoadSongBank entry points at
 // $80:8901, $80:8913, and $80:8925. The extracted sound-bank assets describe
 // the final SPC RAM image and may normalize block order or trailing zeroes;
@@ -621,42 +614,106 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module05_load_file(&mut self) {
-        self.complete_module05_load_file_inner(false);
+        self.complete_module05_load_file_inner();
     }
 
-    pub(super) fn complete_module05_load_file_after_resumption(&mut self) {
-        self.complete_module05_load_file_inner(true);
-    }
-
-    pub(super) fn begin_selected_game_load_pre_dungeon_audio(&mut self) {
-        if self.selected_game_load_destination() == SelectedGameLoadDestination::Dungeon {
+    pub(super) fn begin_selected_game_load_pre_dungeon_audio(
+        &mut self,
+        destination: SelectedGameLoadDestination,
+    ) {
+        if destination == SelectedGameLoadDestination::Dungeon {
+            self.complete_module05_load_file_common_after_force_blank();
+            self.selected_game_load_dungeon_hud_prefix();
             self.module_pre_dungeon_audio_prefix();
+        }
+    }
+
+    /// Resume the selected-game caller at the exact source checkpoint emitted
+    /// after `Sprite_DisableAll`. The Module05/common and HUD/room prefixes ran
+    /// at the pre-dungeon-audio boundary and must not be replayed here.
+    pub(super) fn complete_selected_game_load_through_sprite_disable_all(
+        &mut self,
+        destination: SelectedGameLoadDestination,
+    ) {
+        assert!(
+            destination == SelectedGameLoadDestination::Dungeon,
+            "only a dungeon selected-game destination owns Sprite_ResetAll progress",
+        );
+        self.module_pre_dungeon_after_entrance_prefix();
+        self.complete_module_pre_dungeon_through_sprite_disable_all();
+    }
+
+    /// Finish the selected-game caller after the source has proved that its
+    /// nested Sprite_ResetAll prefix already completed. This resumes at
+    /// `Sprite_ResetAll_noDisable` and never replays the one-time load prefix.
+    pub(super) fn complete_selected_game_load_after_sprite_disable_all(
+        &mut self,
+        destination: SelectedGameLoadDestination,
+    ) {
+        assert!(
+            destination == SelectedGameLoadDestination::Dungeon,
+            "a non-dungeon selected-game destination has no Sprite_ResetAll suffix",
+        );
+        self.complete_module_pre_dungeon_after_sprite_disable_all();
+        self.complete_module_pre_dungeon_authoritative_return();
+    }
+
+    pub(super) fn complete_selected_game_load_without_pre_dungeon_sprite_reset(
+        &mut self,
+        destination: SelectedGameLoadDestination,
+    ) {
+        assert_ne!(
+            destination,
+            SelectedGameLoadDestination::Dungeon,
+            "a dungeon selected-game destination cannot skip Sprite_ResetAll",
+        );
+        self.complete_module05_load_file_common_after_force_blank();
+        self.complete_module05_load_file_destination(destination);
+    }
+
+    pub(super) fn complete_selected_game_load_from_frozen_continuation(
+        &mut self,
+        destination: SelectedGameLoadDestination,
+        sprite_reset: PreDungeonSpriteResetContinuation,
+    ) {
+        match (destination, sprite_reset) {
+            (SelectedGameLoadDestination::Dungeon, PreDungeonSpriteResetContinuation::Pending) => {
+                self.module_pre_dungeon_after_entrance_prefix();
+                self.complete_module_pre_dungeon_before_return_suffix();
+                self.complete_module_pre_dungeon_authoritative_return();
+            }
+            (
+                SelectedGameLoadDestination::Dungeon,
+                PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted,
+            ) => self.complete_selected_game_load_after_sprite_disable_all(destination),
+            (
+                SelectedGameLoadDestination::DarkWorldOverworld
+                | SelectedGameLoadDestination::Message,
+                PreDungeonSpriteResetContinuation::NotApplicable,
+            ) => self.complete_selected_game_load_without_pre_dungeon_sprite_reset(destination),
+            _ => {
+                panic!("selected-game destination and nested Sprite_ResetAll continuation diverged")
+            }
         }
     }
 
     /// Selected-game-load pre-dungeon-audio frame: run the ROM's entry room-load so
     /// DUNGEON_ROOM ($A0) is set at the ROM's frame rather than the completion
     /// boundary (bug class 5). Mirrors the pre-draw prefix of
-    /// `module_pre_dungeon_after_audio_prefix_with_song_bank_timing`; that
-    /// completion then skips its room-load (via `selected_game_load_room_preloaded`)
-    /// so it runs exactly once, while the room DRAW still happens at completion.
-    /// Only the Dungeon destination loads a room here.
-    pub(super) fn selected_game_load_entry_room_load(&mut self) {
-        if self.selected_game_load_destination() != SelectedGameLoadDestination::Dungeon {
+    /// `module_pre_dungeon_after_audio_prefix_with_song_bank_timing`. The
+    /// selected-load continuation resumes at the post-entrance prefix, so the
+    /// entrance call runs exactly once while the room draw remains pending.
+    pub(super) fn selected_game_load_entry_room_load(
+        &mut self,
+        destination: SelectedGameLoadDestination,
+    ) {
+        if destination != SelectedGameLoadDestination::Dungeon {
             return;
         }
-        self.set_dungeon_room(0);
-        self.dungeon_room_tracking_mut()
-            .set_previous_room_index_word(0);
-        self.dungeon_savegame_state_mut().clear_savegame_state_low();
-        self.dungeon_savegame_state_mut()
-            .clear_savegame_state_high();
-        self.clear_agahnim_palette_settings(12);
-        self.Dungeon_LoadEntrance();
-        self.selected_game_load_room_preloaded = true;
+        self.module_pre_dungeon_initial_entrance();
     }
 
-    fn selected_game_load_destination(&self) -> SelectedGameLoadDestination {
+    pub(super) fn selected_game_load_destination(&self) -> SelectedGameLoadDestination {
         if self.game_state.inventory.save_progress.dark_world_state() != 0 {
             if self.game_state.world.location.is_indoors() {
                 SelectedGameLoadDestination::Dungeon
@@ -680,9 +737,14 @@ impl ZeldaState {
         }
     }
 
-    fn complete_module05_load_file_inner(&mut self, pre_dungeon_audio_already_started: bool) {
+    fn complete_module05_load_file_inner(&mut self) {
         let destination = self.selected_game_load_destination();
         self.enable_force_blank();
+        self.complete_module05_load_file_common_after_force_blank();
+        self.complete_module05_load_file_destination(destination);
+    }
+
+    fn complete_module05_load_file_common_after_force_blank(&mut self) {
         self.set_overworld_map_state(0);
         self.dungeon_environment_mut()
             .clear_somaria_block_bg_check_flag();
@@ -707,10 +769,15 @@ impl ZeldaState {
         self.sprite_workspace_mut().set_graphics_subset(3, 70);
         self.start_shared_message_timer(0x0200);
         self.set_vertical_irq_trigger(48);
+    }
 
+    fn complete_module05_load_file_destination(
+        &mut self,
+        destination: SelectedGameLoadDestination,
+    ) {
         match destination {
             SelectedGameLoadDestination::Dungeon => {
-                self.load_dungeon_room_rebuild_hud_inner(pre_dungeon_audio_already_started);
+                self.load_dungeon_room_rebuild_hud();
             }
             SelectedGameLoadDestination::DarkWorldOverworld => {
                 self.hud_search_for_equipped_item();
@@ -741,20 +808,16 @@ impl ZeldaState {
     }
 
     pub(super) fn load_dungeon_room_rebuild_hud(&mut self) {
-        self.load_dungeon_room_rebuild_hud_inner(false);
+        self.selected_game_load_dungeon_hud_prefix();
+        self.module_pre_dungeon();
     }
 
-    fn load_dungeon_room_rebuild_hud_inner(&mut self, pre_dungeon_audio_already_started: bool) {
+    fn selected_game_load_dungeon_hud_prefix(&mut self) {
         self.clear_mosaic_level();
         self.set_mosaic_copy(7);
         self.hud_search_for_equipped_item();
         self.hud_rebuild();
         self.hud_update_equipped_item();
-        if pre_dungeon_audio_already_started {
-            self.complete_module_pre_dungeon_after_selected_game_load();
-        } else {
-            self.module_pre_dungeon();
-        }
     }
 
     pub(super) fn patch_new_game_entrance_state(&mut self) {
@@ -1454,6 +1517,52 @@ impl ZeldaState {
                 eprintln!("{}", std::backtrace::Backtrace::force_capture());
             }
         }
+        for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0] {
+            self.nmi_prepare_sprites_pack_extended_oam_group(group_start);
+        }
+        self.nmi_prepare_sprites_after_extended_oam();
+    }
+
+    fn nmi_prepare_sprites_pack_extended_oam_group(&mut self, group_start: usize) {
+        debug_assert!(group_start <= 28 && group_start & 3 == 0);
+        for i in group_start..group_start + 4 {
+            let value = self.game_state.oam.packed_extended_oam_byte(i);
+            self.oam_state_mut().set_packed_extended_oam_byte(i, value);
+        }
+    }
+
+    /// Execute the original 65816 extended-OAM packing groups which completed
+    /// before `next_group_start`. The 65816 loop visits `28, 24, ..., 0`.
+    pub(super) fn nmi_prepare_sprites_through_extended_oam_packing(
+        &mut self,
+        next_group_start: u8,
+    ) {
+        assert!(next_group_start <= 28 && next_group_start & 3 == 0);
+        for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0] {
+            if group_start == usize::from(next_group_start) {
+                break;
+            }
+            self.nmi_prepare_sprites_pack_extended_oam_group(group_start);
+        }
+    }
+
+    /// Resume the remaining pure packing groups, then execute the stateful
+    /// `NMI_PrepareSprites` suffix exactly once.
+    pub(super) fn nmi_prepare_sprites_resume_after_extended_oam_packing(
+        &mut self,
+        next_group_start: u8,
+    ) {
+        assert!(next_group_start <= 28 && next_group_start & 3 == 0);
+        for group_start in [28usize, 24, 20, 16, 12, 8, 4, 0]
+            .into_iter()
+            .skip_while(|&group_start| group_start > usize::from(next_group_start))
+        {
+            self.nmi_prepare_sprites_pack_extended_oam_group(group_start);
+        }
+        self.nmi_prepare_sprites_after_extended_oam();
+    }
+
+    fn nmi_prepare_sprites_after_extended_oam(&mut self) {
         fn link_dma_table_value(table: &[u16], index: usize, table_name: &str) -> u16 {
             // C indexes these static DMA tables directly; this keeps an invalid
             // translated index from becoming a silent wrong DMA source.
@@ -1463,11 +1572,6 @@ impl ZeldaState {
                     table.len()
                 )
             })
-        }
-
-        for i in 0..32 {
-            let value = self.game_state.oam.packed_extended_oam_byte(i);
-            self.oam_state_mut().set_packed_extended_oam_byte(i, value);
         }
 
         let link_dma_graphics_index = (self

@@ -2452,6 +2452,17 @@ impl ZeldaState {
                 self.replay_trace_ram_watch(&format!("sprite-after-execute-single slot={k}"));
             }
         }
+        if let Some(claims_remaining) = self.original_timing_sprite_main_return_claims_remaining {
+            assert_ne!(
+                claims_remaining, 0,
+                "the native body returned from more Sprite_Main loops than its immutable host plan claimed",
+            );
+            assert!(
+                self.take_original_timing_sprite_main_returned(),
+                "the native Sprite_Main slot-zero boundary lost its claimed source return receipt",
+            );
+            self.original_timing_sprite_main_return_claims_remaining = Some(claims_remaining - 1);
+        }
         self.complete_sprite_main_after_all_slots();
         let suffix_nmi_slices =
             std::mem::take(&mut self.dungeon_room_load_module_suffix_nmi_slices);

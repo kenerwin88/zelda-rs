@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,298 @@ class _PrecommitSessionPaths(NamedTuple):
     rng_calibration: Path
 
 
+FIXED_CHILD_ENV = {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "LANG": "C",
+    "LC_ALL": "C",
+    "TZ": "UTC",
+}
+GRAPHICAL_CHILD_ENV = (
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XDG_RUNTIME_DIR",
+    "XAUTHORITY",
+    "DBUS_SESSION_BUS_ADDRESS",
+)
+EPHEMERAL_CHILD_ENV = {
+    "HOME": "home",
+    "TMPDIR": "tmp",
+    "XDG_CACHE_HOME": "cache",
+    "XDG_CONFIG_HOME": "config",
+    "XDG_DATA_HOME": "data",
+}
+COLD_EVIDENCE_INVOCATION_ID_PLACEHOLDER = "__cold_evidence_invocation_id__"
+
+
+def _clean_child_environment(sandbox: Path) -> tuple[dict[str, str], dict[str, object]]:
+    """Create one fresh fail-closed environment for a parity child process."""
+    sandbox.mkdir(parents=True, exist_ok=False)
+    child = dict(FIXED_CHILD_ENV)
+    ephemeral_roles = {}
+    for name, relative in EPHEMERAL_CHILD_ENV.items():
+        path = sandbox / relative
+        path.mkdir()
+        child[name] = str(path)
+        ephemeral_roles[name] = relative
+    runtime_config = sandbox / "empty-parity-runtime.toml"
+    runtime_config.write_bytes(b"")
+    if recorder.sha256(runtime_config) != parity_evidence.EMPTY_RUNTIME_CONFIG_SHA256:
+        raise SystemExit("pre-commit gate: empty parity runtime configuration is corrupt")
+    runtime_config.chmod(0o444)
+    child["ZELDA3_PARITY_RUNTIME_CONFIG"] = str(runtime_config)
+
+    forwarded = {}
+    for name in GRAPHICAL_CHILD_ENV:
+        value = os.environ.get(name)
+        forwarded[name] = {
+            "present": value is not None,
+            "value_sha256": hashlib.sha256(
+                value.encode("utf-8", errors="surrogateescape")
+            ).hexdigest()
+            if value is not None
+            else None,
+        }
+        if value is not None:
+            child[name] = value
+
+    unexpected = [
+        name
+        for name in child
+        if (name.startswith("ZELDA3_") or name.startswith("SNES9X_"))
+        and name != "ZELDA3_PARITY_RUNTIME_CONFIG"
+    ]
+    if unexpected:
+        raise SystemExit(
+            "pre-commit gate: semantic overrides escaped clean_env_v1: "
+            + ", ".join(sorted(unexpected))
+        )
+    normalized = {
+        "schema": 1,
+        "contract": parity_evidence.CLEAN_ENV_EXECUTION_POLICY,
+        "fixed": FIXED_CHILD_ENV,
+        "ephemeral_roles": ephemeral_roles,
+        "runtime_config": {
+            "environment": "ZELDA3_PARITY_RUNTIME_CONFIG",
+            "role": "empty_runtime_config",
+            "sha256": parity_evidence.EMPTY_RUNTIME_CONFIG_SHA256,
+            "mode": "read_only",
+        },
+        "forwarded": forwarded,
+    }
+    return child, normalized
+
+
+def _normalized_authoritative_policy(
+    command: list[str],
+    *,
+    binary: Path,
+    core: Path,
+    rom: Path,
+    input_path: Path,
+    rom_random_path: Path,
+    initial_sram_path: Path,
+    session_path: Path,
+    requested_frames: int,
+) -> dict[str, object]:
+    """Parse the one allowed cold exact command into typed path roles."""
+    path_roles = {
+        "rust_binary": binary,
+        "snes9x_core": core,
+        "rom": rom,
+        "input.txt": input_path,
+        "rom-random.txt": rom_random_path,
+        "initial.srm": initial_sram_path,
+        "session_output": session_path,
+    }
+    unnormalized = [
+        role
+        for role, path in path_roles.items()
+        if not path.is_absolute() or path != Path(os.path.normpath(path))
+    ]
+    if unnormalized:
+        raise SystemExit(
+            "pre-commit gate: authoritative command paths are not normalized: "
+            + ", ".join(unnormalized)
+        )
+    if command[:5] != [
+        str(binary),
+        "--compare-snes9x-oracle",
+        str(core),
+        str(rom),
+        str(requested_frames),
+    ]:
+        raise SystemExit("pre-commit gate: authoritative command has invalid positionals")
+    if (len(command) - 5) % 2:
+        raise SystemExit("pre-commit gate: authoritative command contains a switch option")
+    options: dict[str, str] = {}
+    for index in range(5, len(command), 2):
+        option, value = command[index : index + 2]
+        if option in options:
+            raise SystemExit(f"pre-commit gate: duplicate authoritative option {option}")
+        options[option] = value
+    required = {
+        "--expected-core-sha256",
+        "--expected-rom-sha256",
+        "--input-script",
+        "--rom-random-script",
+        "--load-sram",
+        "--audio-comparison",
+        "--session-dir",
+        "--cold-evidence-invocation-id",
+    }
+    if set(options) != required:
+        rejected = sorted(set(options) - required)
+        missing = sorted(required - set(options))
+        raise SystemExit(
+            "pre-commit gate: authoritative command policy mismatch: "
+            f"forbidden={rejected} missing={missing}"
+        )
+    expected_values = {
+        "--expected-core-sha256": recorder.sha256(core),
+        "--expected-rom-sha256": recorder.sha256(rom),
+        "--input-script": str(input_path),
+        "--rom-random-script": str(rom_random_path),
+        "--load-sram": str(initial_sram_path),
+        "--audio-comparison": "exact",
+        "--session-dir": str(session_path),
+        "--cold-evidence-invocation-id": COLD_EVIDENCE_INVOCATION_ID_PLACEHOLDER,
+    }
+    if options != expected_values:
+        raise SystemExit("pre-commit gate: authoritative command values are not source-bound")
+    return {
+        "schema": 1,
+        "cwd": {"role": "workspace_root"},
+        "argv": [
+            {"role": "rust_binary"},
+            "--compare-snes9x-oracle",
+            {"role": "snes9x_core"},
+            {"role": "rom"},
+            {"target_frames": requested_frames},
+            "--expected-core-sha256",
+            {"sha256_role": "snes9x_core"},
+            "--expected-rom-sha256",
+            {"sha256_role": "rom"},
+            "--input-script",
+            {"role": "input.txt"},
+            "--rom-random-script",
+            {"role": "rom-random.txt"},
+            "--load-sram",
+            {"role": "initial.srm"},
+            "--audio-comparison",
+            "exact",
+            "--session-dir",
+            {"role": "session_output"},
+            "--cold-evidence-invocation-id",
+            {"role": "cold_evidence_invocation_id"},
+        ],
+        "comparison": {
+            "cold": True,
+            "start_frame": 0,
+            "compare_from_frame": 0,
+            "fixed_oracle_startup_skip_frames": 0,
+            "dynamic_alignment": False,
+            "video": {
+                "enabled": True,
+                "color_tolerance": 0,
+                "max_mismatched_pixels": 0,
+            },
+            "audio": {"enabled": True, "mode": "exact", "lead_rust_blocks": 0},
+            "scan_all": False,
+            "resume": None,
+            "live_oracle_rng": False,
+            "engine_state": False,
+        },
+    }
+
+
+def _replace_option_value(
+    command: list[str], option: str, value: str | Path
+) -> list[str]:
+    result = command.copy()
+    index = result.index(option) + 1
+    result[index] = str(value)
+    return result
+
+
+def _cold_evidence_authority(
+    *,
+    route_signature: dict[str, object],
+    binary: Path,
+    core: Path,
+    rom: Path,
+    input_path: Path,
+    rom_random_path: Path,
+    initial_sram_path: Path,
+    requested_frames: int,
+    staged_source: dict[str, object],
+    normalized_command: dict[str, object],
+    normalized_environment: dict[str, object],
+) -> dict[str, object]:
+    policy = {
+        "schema": 1,
+        "command": normalized_command,
+        "environment_contract": {
+            "name": parity_evidence.CLEAN_ENV_EXECUTION_POLICY,
+            "fixed_names": sorted(FIXED_CHILD_ENV),
+            "ephemeral_names": sorted(EPHEMERAL_CHILD_ENV),
+            "forwarded_names": list(GRAPHICAL_CHILD_ENV),
+            "sole_semantic_override": "ZELDA3_PARITY_RUNTIME_CONFIG",
+        },
+    }
+    return {
+        "target_frames": requested_frames,
+        "route_signature": route_signature,
+        "route_signature_sha256": parity_evidence.stable_hash(route_signature),
+        "binary": {
+            "sha256": recorder.sha256(binary),
+            "size": binary.stat().st_size,
+        },
+        "staged_source": staged_source,
+        "invocation": {
+            "execution_policy": parity_evidence.CLEAN_ENV_EXECUTION_POLICY,
+            "policy": policy,
+            "policy_sha256": parity_evidence.stable_hash(policy),
+            "environment_sha256": parity_evidence.stable_hash(
+                normalized_environment
+            ),
+            "runtime_config_sha256": parity_evidence.EMPTY_RUNTIME_CONFIG_SHA256,
+        },
+        "core_sha256": recorder.sha256(core),
+        "rom_sha256": recorder.sha256(rom),
+        "source_artifact_sha256": {
+            "input.txt": recorder.sha256(input_path),
+            "rom-random.txt": recorder.sha256(rom_random_path),
+            "initial.srm": recorder.sha256(initial_sram_path),
+        },
+    }
+
+
+def _require_rust_verified_cold_receipt(
+    receipt_path: Path, invocation_id: str
+) -> dict[str, object]:
+    """Fail immediately unless Rust verifies the exact receipt just written."""
+    expected_path = receipt_path.resolve()
+    expected_sha256 = parity_evidence.sha256_file(receipt_path)
+    matches = [
+        receipt
+        for receipt in parity_evidence.list_verified_cold_passes()
+        if Path(str(receipt.get("receipt_path", ""))).resolve() == expected_path
+    ]
+    if len(matches) != 1:
+        raise SystemExit(
+            "pre-commit gate: Rust did not verify the newly written cold receipt"
+        )
+    verified = matches[0]
+    if (
+        verified.get("invocation_id") != invocation_id
+        or verified.get("receipt_sha256") != expected_sha256
+    ):
+        raise SystemExit(
+            "pre-commit gate: Rust verified cold receipt identity does not match this invocation"
+        )
+    return verified
+
+
 def _reserve_precommit_session_paths(
     project: Path,
     requested_frames: int,
@@ -82,6 +375,33 @@ def _reserve_precommit_session_paths(
     )
 
 
+def _remove_empty_reserved_exact_session(path: Path) -> None:
+    """Remove a reservation made before late authority became reusable."""
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise SystemExit(
+            f"pre-commit gate: cannot inspect reserved exact session {path}: {error}"
+        ) from error
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+        raise SystemExit(
+            f"pre-commit gate: reserved exact session is not a real directory: {path}"
+        )
+    try:
+        if any(path.iterdir()):
+            raise SystemExit(
+                "pre-commit gate: refusing to remove nonempty reserved exact session "
+                f"{path}"
+            )
+        path.rmdir()
+    except SystemExit:
+        raise
+    except OSError as error:
+        raise SystemExit(
+            f"pre-commit gate: cannot remove empty reserved exact session {path}: {error}"
+        ) from error
+
+
 def env_int(name: str, default: int | None = None) -> int | None:
     if name not in os.environ:
         return default
@@ -98,9 +418,24 @@ def env_int(name: str, default: int | None = None) -> int | None:
         raise SystemExit(2) from error
 
 
+def env_flag(name: str, default: bool = False) -> bool:
+    if name not in os.environ:
+        return default
+    value = os.environ[name].strip()
+    if value == "0":
+        return False
+    if value == "1":
+        return True
+    print(
+        f"pre-commit gate: invalid {name}={value!r}; expected exactly 0 or 1",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
 def _abs_path(value: str) -> Path:
     path = Path(os.path.expanduser(value))
-    return path if path.is_absolute() else ROOT / path
+    return (path if path.is_absolute() else ROOT / path).resolve()
 
 
 def _load_json(path: Path, default: object | None = None) -> object | None:
@@ -330,10 +665,10 @@ def _build_check_command(
     live_oracle_rng: bool = False,
     engine_state_from_frame: int | None = None,
     expected_core_sha256: str | None = None,
+    cold_evidence_invocation_id: str | None = None,
 ) -> list[str]:
     manifest = recorder.load_manifest(project)
     identity = recorder.oracle_generations(manifest)[-1]["identity"]
-    takes_by_id = {int(take["id"]): take for take in manifest.get("takes", [])}
     command = recorder.compare_input_command(
         binary=binary,
         core=core,
@@ -368,6 +703,10 @@ def _build_check_command(
             raise ValueError("engine-state comparison requires live oracle RNG")
         command.extend(
             ["--compare-engine-state-from-frame", str(engine_state_from_frame)]
+        )
+    if cold_evidence_invocation_id is not None:
+        command.extend(
+            ["--cold-evidence-invocation-id", cold_evidence_invocation_id]
         )
     # Paired checkpoints are an optimization aid, not parity authority: they
     # intentionally do not yet serialize every presentation/scheduler
@@ -461,6 +800,9 @@ def _extract_identity(manifest: dict) -> tuple[Path, dict]:
 
 
 def run_snes9x_gate() -> int:
+    force_cold_confirmation = env_flag(
+        "ZELDA3_PRECOMMIT_FORCE_COLD_CONFIRMATION"
+    )
     project = _resolve_project(os.environ.get("ZELDA3_PRECOMMIT_PROJECT", str(DEFAULT_PROJECT)))
     binary = _abs_path(os.environ.get("ZELDA3_PRECOMMIT_BINARY", str(ROOT / "target" / "parity" / "zelda3")))
     if not binary.is_file():
@@ -472,7 +814,7 @@ def run_snes9x_gate() -> int:
     if stale_source := _stale_binary_source(binary):
         print(
             f"pre-commit gate: {binary} is older than {stale_source}; "
-            "run `cargo build --profile parity -p zelda3-bin` first",
+            "run `cargo build --profile parity -p zelda3-bin -p parity` first",
             file=sys.stderr,
         )
         return 1
@@ -579,9 +921,6 @@ def run_snes9x_gate() -> int:
         if input_frames < requested:
             requested = input_frames
 
-        sessions = _reserve_precommit_session_paths(project, requested)
-        session_dir = sessions.exact
-
         rom_random_path = temp_dir / "rom-random.txt"
         rom_random_count = 0
 
@@ -606,6 +945,7 @@ def run_snes9x_gate() -> int:
             if resume_dir is not None:
                 print(f"pre-commit: resuming from paired checkpoint {resume_dir}")
 
+        sessions: _PrecommitSessionPaths | None = None
         if _video_preflight_enabled():
             trace_core = authority_core
             trace_core_sha256 = authority_core_sha256
@@ -627,6 +967,10 @@ def run_snes9x_gate() -> int:
             if cached_rng_count is not None:
                 rom_random_count = cached_rng_count
             if using_live_rng:
+                # No exact authority can be reconstructed before its RNG source
+                # exists. This invocation is necessarily a miss, so reserve its
+                # diagnostic generation before calibration.
+                sessions = _reserve_precommit_session_paths(project, requested)
                 rng_session_dir = sessions.rng_calibration
                 rng_command = _build_check_command(
                     binary=binary,
@@ -652,11 +996,15 @@ def run_snes9x_gate() -> int:
                     "calibration"
                 )
                 rng_started = time.monotonic()
+                rng_environment, _ = _clean_child_environment(
+                    temp_dir / "rng-calibration-environment"
+                )
                 rng_process = subprocess.run(
                     [str(item) for item in rng_command],
                     cwd=ROOT,
                     text=True,
                     capture_output=True,
+                    env=rng_environment,
                 )
                 print(
                     "pre-commit: RNG calibration elapsed "
@@ -714,6 +1062,112 @@ def run_snes9x_gate() -> int:
                     "pre-commit: RNG cache hit "
                     f"({rom_random_count} cartridge sample(s))"
                 )
+        else:
+            rom_random_count = recorder.write_continuous_rom_random(
+                project,
+                take_ids,
+                rom_random_path,
+                takes_by_id=takes_by_id,
+            )
+        if not rom_random_path.is_file():
+            rom_random_path.write_bytes(b"")
+
+        # Materialize and validate the exact command before reserving a new
+        # comparison generation. Incidental output paths are represented by a
+        # typed placeholder in schema-2 authority.
+        session_placeholder = temp_dir / "exact-session-output"
+        command_template = _build_check_command(
+            binary=binary,
+            core=authority_core,
+            rom=rom,
+            project=project,
+            session_dir=session_placeholder,
+            take_ids=take_ids,
+            start_boundary=start_boundary,
+            requested_frames=requested,
+            input_path=input_path,
+            rom_random_path=rom_random_path,
+            resume_dir=resume_dir,
+            rolling=rolling,
+            authoritative=True,
+            expected_core_sha256=authority_core_sha256,
+            cold_evidence_invocation_id=COLD_EVIDENCE_INVOCATION_ID_PLACEHOLDER,
+        )
+        initial_sram_path = Path(
+            command_template[command_template.index("--load-sram") + 1]
+        )
+        exact_environment, normalized_environment = _clean_child_environment(
+            temp_dir / "exact-environment"
+        )
+        normalized_command = _normalized_authoritative_policy(
+            command_template,
+            binary=binary,
+            core=authority_core,
+            rom=rom,
+            input_path=input_path,
+            rom_random_path=rom_random_path,
+            initial_sram_path=initial_sram_path,
+            session_path=session_placeholder,
+            requested_frames=requested,
+        )
+        staged_source = parity_evidence.staged_source_authority()
+        authority = _cold_evidence_authority(
+            route_signature=signature,
+            binary=binary,
+            core=authority_core,
+            rom=rom,
+            input_path=input_path,
+            rom_random_path=rom_random_path,
+            initial_sram_path=initial_sram_path,
+            requested_frames=requested,
+            staged_source=staged_source,
+            normalized_command=normalized_command,
+            normalized_environment=normalized_environment,
+        )
+        if not force_cold_confirmation:
+            reusable = parity_evidence.find_reusable_cold_pass(authority)
+            if reusable is not None:
+                if sessions is not None:
+                    _remove_empty_reserved_exact_session(sessions.exact)
+                state.update(
+                    {
+                        "schema": STATE_SCHEMA,
+                        "route_signature": signature,
+                        "last_checked_frame": max(prior_frame, requested),
+                        "last_checked_total_frames": max_frames,
+                        "binary": str(binary),
+                        "core": str(required_core),
+                        "rom": str(rom),
+                        "route_project": str(project),
+                        "last_cold_receipt_path": reusable["receipt_path"],
+                        "last_cold_receipt_sha256": reusable["receipt_sha256"],
+                    }
+                )
+                _write_json(STATE_PATH, state)
+                print(
+                    "pre-commit: reusing Rust-verified immutable cold proof "
+                    f"{reusable['receipt_path']}"
+                )
+                return 0
+        elif force_cold_confirmation:
+            print(
+                "pre-commit: forcing one independent cold confirmation; "
+                "existing reusable evidence will not skip this run"
+            )
+
+        if sessions is None:
+            sessions = _reserve_precommit_session_paths(project, requested)
+        session_dir = sessions.exact
+        command = _replace_option_value(
+            command_template, "--session-dir", session_dir
+        )
+        command = _replace_option_value(
+            command,
+            "--cold-evidence-invocation-id",
+            sessions.invocation_id,
+        )
+
+        if _video_preflight_enabled():
             preflight_session_dir = sessions.video_preflight
             preflight_command = _build_check_command(
                 binary=binary,
@@ -725,7 +1179,7 @@ def run_snes9x_gate() -> int:
                 start_boundary=start_boundary,
                 requested_frames=requested,
                 input_path=input_path,
-                rom_random_path=rom_random_path if rom_random_count else None,
+                rom_random_path=rom_random_path,
                 resume_dir=resume_dir,
                 rolling=(interval, CHECKPOINT_PATH) if resume_enabled else None,
                 ignore_audio=True,
@@ -736,11 +1190,15 @@ def run_snes9x_gate() -> int:
                 "before exact A/V certification"
             )
             preflight_started = time.monotonic()
+            preflight_environment, _ = _clean_child_environment(
+                temp_dir / "video-preflight-environment"
+            )
             preflight_process = subprocess.run(
                 [str(item) for item in preflight_command],
                 cwd=ROOT,
                 text=True,
                 capture_output=True,
+                env=preflight_environment,
             )
             print(
                 "pre-commit: video preflight elapsed "
@@ -786,32 +1244,6 @@ def run_snes9x_gate() -> int:
                 f"({rom_random_count} cartridge sample(s)); "
                 "running cold timing-authority exact A/V certification"
             )
-        else:
-            rom_random_count = recorder.write_continuous_rom_random(
-                project,
-                take_ids,
-                rom_random_path,
-                takes_by_id=takes_by_id,
-            )
-            if rom_random_count == 0 and rom_random_path.exists():
-                rom_random_path.unlink()
-
-        command = _build_check_command(
-            binary=binary,
-            core=authority_core,
-            rom=rom,
-            project=project,
-            session_dir=session_dir,
-            take_ids=take_ids,
-            start_boundary=start_boundary,
-            requested_frames=requested,
-            input_path=input_path,
-            rom_random_path=rom_random_path if rom_random_count else None,
-            resume_dir=resume_dir,
-            rolling=rolling,
-            authoritative=True,
-            expected_core_sha256=authority_core_sha256,
-        )
 
         exact_started = time.monotonic()
         process = subprocess.run(
@@ -819,6 +1251,7 @@ def run_snes9x_gate() -> int:
             cwd=ROOT,
             text=True,
             capture_output=True,
+            env=exact_environment,
         )
         print(
             "pre-commit: cold exact A/V elapsed "
@@ -842,7 +1275,7 @@ def run_snes9x_gate() -> int:
         and result.get("status") == "passed"
         and bool(result.get("parity_eligible"))
         and video.get("matched") is True
-        and audio.get("matched") is not False
+        and audio.get("matched") is True
     )
 
     if not matched:
@@ -891,6 +1324,18 @@ def run_snes9x_gate() -> int:
         session=session_dir,
         route_signature=signature,
         binary=binary,
+        authority=authority,
+        invocation_id=sessions.invocation_id,
+    )
+    verified_pass_receipt = _require_rust_verified_cold_receipt(
+        pass_receipt,
+        sessions.invocation_id,
+    )
+    state.update(
+        {
+            "last_cold_receipt_path": verified_pass_receipt["receipt_path"],
+            "last_cold_receipt_sha256": verified_pass_receipt["receipt_sha256"],
+        }
     )
     _write_json(STATE_PATH, state)
     print(f"pre-commit: cold proof receipt {pass_receipt}")

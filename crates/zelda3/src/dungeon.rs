@@ -12767,21 +12767,26 @@ impl ZeldaState {
         self.set_sound_effect_1(0);
     }
 
-    fn module_pre_dungeon_entrance_prefix(&mut self) {
+    pub(super) fn module_pre_dungeon_entrance_prefix(&mut self) {
         // Module_PreDungeon commits the entrance selection and Link placement
         // before Dungeon_LoadAndDrawRoom enters its interruptible construction
         // stack. Keep those visible mutations on the initiating host call.
-        if !std::mem::take(&mut self.selected_game_load_room_preloaded) {
-            self.set_dungeon_room(0);
-            self.dungeon_room_tracking_mut()
-                .set_previous_room_index_word(0);
-            self.dungeon_savegame_state_mut().clear_savegame_state_low();
-            self.dungeon_savegame_state_mut()
-                .clear_savegame_state_high();
-            self.clear_agahnim_palette_settings(12);
+        self.module_pre_dungeon_initial_entrance();
+        self.module_pre_dungeon_after_entrance_prefix();
+    }
 
-            self.Dungeon_LoadEntrance();
-        }
+    pub(super) fn module_pre_dungeon_initial_entrance(&mut self) {
+        self.set_dungeon_room(0);
+        self.dungeon_room_tracking_mut()
+            .set_previous_room_index_word(0);
+        self.dungeon_savegame_state_mut().clear_savegame_state_low();
+        self.dungeon_savegame_state_mut()
+            .clear_savegame_state_high();
+        self.clear_agahnim_palette_settings(12);
+        self.Dungeon_LoadEntrance();
+    }
+
+    pub(super) fn module_pre_dungeon_after_entrance_prefix(&mut self) {
         self.load_pre_dungeon_keys();
         self.hud_rebuild();
         self.dungeon_torch_mut().clear_lit_torches();
@@ -12797,15 +12802,6 @@ impl ZeldaState {
     /// already includes `Dungeon_LoadSongBankIfNeeded`, so scheduling a second
     /// translated song-bank wait here would replay that synchronous work.
     pub(super) fn complete_module_pre_dungeon_authoritative_return(&mut self) {
-        self.module_pre_dungeon_after_sprite_reset_with_song_bank_timing(false);
-    }
-
-    pub(super) fn complete_module_pre_dungeon_after_selected_game_load(&mut self) {
-        // The selected-game continuation already spans the complete load,
-        // including LoadSongBank. Reuse the semantic state mutations without
-        // scheduling the ordinary module-6 song-bank continuation twice.
-        self.module_pre_dungeon_entrance_prefix();
-        self.complete_module_pre_dungeon_before_return_suffix();
         self.module_pre_dungeon_after_sprite_reset_with_song_bank_timing(false);
     }
 

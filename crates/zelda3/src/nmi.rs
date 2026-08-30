@@ -194,17 +194,6 @@ impl ZeldaState {
         }
     }
 
-    /// Optional hot-reloaded parity experiment for NMI publication timing.
-    ///
-    /// `config/parity-runtime.toml` is read at each NMI (or the path named by
-    /// `ZELDA3_PARITY_RUNTIME_CONFIG`). A rule only holds the NMI at one host
-    /// frame and must also match the live module/submodule/pending work, so it
-    /// cannot mask an unrelated rendering mismatch. This is deliberately a
-    /// scheduler control point; it never edits PPU pixels or state.
-    fn parity_runtime_hold_nmi_this_frame(&self) -> bool {
-        self.parity_runtime_nmi_rule_matches("hold_nmi")
-    }
-
     /// Match an exact NMI state against a hot-reloaded parity-policy rule.
     /// Prefixes keep independent experiments from being combined accidentally.
     pub(crate) fn parity_runtime_nmi_rule_matches(&self, prefix: &str) -> bool {
@@ -271,7 +260,7 @@ impl ZeldaState {
         input: u16,
         oam_dma_source: Option<&[u8]>,
         defer_bg_vram_upload: bool,
-    ) {
+    ) -> Option<super::DialogueTextDmaPublicationToken> {
         self.begin_effective_presented_dma();
         self.interrupt_nmi_with_animated_bg_operands(
             input,
@@ -279,12 +268,40 @@ impl ZeldaState {
             defer_bg_vram_upload,
             Some(GraphicsDmaGeneration::HostBoundaryBeforeMain),
         );
-        self.record_effective_presented_dma_for_active_scanout();
+        let dialogue_text_dma = self.record_effective_presented_dma_for_active_scanout();
+        let dialogue_text_dma =
+            self.consume_staged_dialogue_text_dma_publication(dialogue_text_dma);
         // OAM-law clause: a leading NMI's transfer completes before this
         // frame's visible scanlines, so it is visible immediately.
         if let Some(pending) = self.oam_law_pending.take() {
             self.oam_law_visible = Some(pending);
         }
+        dialogue_text_dma
+    }
+
+    /// Run an active-scanout NMI for an owner which cannot immediately stage
+    /// dialogue text. Reject a dialogue lifecycle conflict before the handler
+    /// mutates hardware or consumes its one-shot DMA evidence.
+    pub(super) fn interrupt_nmi_for_active_scanout_without_dialogue_owner(
+        &mut self,
+        input: u16,
+        oam_dma_source: Option<&[u8]>,
+        defer_bg_vram_upload: bool,
+    ) {
+        assert!(
+            matches!(
+                self.dialogue_scroll_phase(),
+                super::DialogueScrollPhase::Idle
+                    | super::DialogueScrollPhase::CompletedScroll
+                    | super::DialogueScrollPhase::RetiredTextDma
+            ),
+            "an active-scanout NMI without a dialogue owner overlaps an in-flight text publication",
+        );
+        assert!(
+            self.interrupt_nmi_for_active_scanout(input, oam_dma_source, defer_bg_vram_upload,)
+                .is_none(),
+            "a non-dialogue NMI produced unclaimed text-DMA evidence",
+        );
     }
 
     pub(super) fn interrupt_nmi_with_animated_bg_operands(
@@ -294,6 +311,7 @@ impl ZeldaState {
         defer_bg_vram_upload: bool,
         animated_bg_operands: Option<GraphicsDmaGeneration>,
     ) {
+        self.validate_next_original_timing_nmi_update_gate();
         // Ordinary NMI writes cannot re-enter the active field, but an
         // AdvanceStaged publication may already have materialized the next
         // field. Record exact destinations so that staged owner can be refined.
@@ -344,12 +362,6 @@ impl ZeldaState {
             self.interrupt_nmi_audio_parts();
         }
 
-        if self.parity_runtime_hold_nmi_this_frame() {
-            self.latch_nmi_update();
-            if trace_nmi {
-                eprintln!("nmi_runtime_policy held host={}", self.frame_ctr_dbg);
-            }
-        }
         if !self.game_state.display.nmi_update_is_latched() {
             let bg_vram_load_mode = self.game_state.display.bg_vram_load_mode;
             let stripe_work = match bg_vram_load_mode {

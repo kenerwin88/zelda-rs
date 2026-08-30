@@ -3167,17 +3167,7 @@ impl ZeldaState {
         } else {
             iteration
         };
-        if projection_completed {
-            self.complete_iris_spotlight_configure_table_after_projection();
-        } else {
-            self.complete_iris_spotlight_configure_table(table_build);
-        }
-        let caller_interrupted = self.complete_spotlight_configure_table_and_control_after_table(
-            self.game_state.frame.main_module,
-            false,
-        );
-        debug_assert!(!caller_interrupted);
-        self.module0f_spotlight_close_link_and_oam();
+        self.complete_dungeon_exit_spotlight_build_cpu(table_build, projection_completed);
         if caller_interrupted_in_link_oam {
             // The replaceable timing authority observed the resumed C call
             // inside LinkOam_Main. Execute the source prefix once, then retain
@@ -3198,6 +3188,31 @@ impl ZeldaState {
                 iteration.after_rom_following_field_was_staged(),
             );
         }
+    }
+
+    /// Finish only the CPU body saved by `FinishDungeonExitSpotlightBuild`.
+    ///
+    /// This deliberately excludes scheduler ownership and ZeldaRunGameLoop's
+    /// common suffix. Live terminal-return authority can therefore run the
+    /// table/control/Module0F Link-OAM body after its carried NMI handler and
+    /// let the shared terminal executor consume the ordinary suffix exactly
+    /// once.
+    pub(super) fn complete_dungeon_exit_spotlight_build_cpu(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        projection_completed: bool,
+    ) {
+        if projection_completed {
+            self.complete_iris_spotlight_configure_table_after_projection();
+        } else {
+            self.complete_iris_spotlight_configure_table(table_build);
+        }
+        let caller_interrupted = self.complete_spotlight_configure_table_and_control_after_table(
+            self.game_state.frame.main_module,
+            false,
+        );
+        debug_assert!(!caller_interrupted);
+        self.module0f_spotlight_close_link_and_oam();
     }
 
     pub(super) fn complete_dungeon_exit_spotlight_goal_caller(&mut self) {

@@ -2613,8 +2613,22 @@ impl ZeldaState {
                 if self.game_state.display.screen_brightness == 0 {
                     if self.rom_startup_timing() {
                         self.enable_force_blank();
-                        let delay = configured_intro_memory_initialization_frames();
-                        if delay != 0 {
+                        let live_source_owner = matches!(
+                            self.original_timing_owner,
+                            super::OriginalTimingOwnerState::Live
+                        );
+                        let configured_fallback = if live_source_owner {
+                            0
+                        } else {
+                            configured_intro_memory_initialization_frames()
+                        };
+                        if let Some(delay) = intro_memory_initialization_delay_for_owner(
+                            live_source_owner,
+                            configured_fallback,
+                        ) {
+                            // Live source receipts, not a guessed host count,
+                            // prove when this suspended caller reaches its
+                            // terminal ZeldaRunGameLoop suffix.
                             self.intro_memory_darken_frame_delay = delay;
                             return;
                         }
@@ -2667,13 +2681,10 @@ impl ZeldaState {
         self.load_default_graphics();
         self.initialize_tilesets();
         self.decompress_animated_dungeon_tiles(0x5d);
-        // ROM sets $C00D=2 here, but on this intro tileset-init frame the ROM's
-        // NMI is FULL and decrements it the same frame (Snes9x: post-init value
-        // is 1). Rust runs this frame as a held/partial poly-init frame (no
-        // core-update decrement), so seed 1 to net-match the oracle and keep the
-        // BG-tile animation countdown phase-aligned through the intro (part of
-        // the 14661 dungeon animated-tile cascade fix).
-        self.set_bg_tile_animation_countdown(1);
+        // The source caller seeds $C00D=2. Its terminal ZeldaRunGameLoop
+        // suffix performs NMI_PrepareSprites exactly once before returning to
+        // the wait, which decrements the visible value to 1.
+        self.set_bg_tile_animation_countdown(2);
         self.set_overworld_screen(0);
         self.set_palette_main_indoors(0);
         self.set_overworld_palette_aux3_lo(0);

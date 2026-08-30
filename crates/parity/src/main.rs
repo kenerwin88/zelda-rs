@@ -2,6 +2,7 @@ use std::process::exit;
 use std::{collections::BTreeSet, path::PathBuf, str::FromStr};
 
 use parity::av;
+use parity::cold_evidence;
 use parity::evidence::{self, TraceQuery};
 use parity::receipts;
 
@@ -343,6 +344,52 @@ fn av_compare(args: &[String]) {
     }
 }
 
+fn cold_evidence(args: &[String]) {
+    let Some(mode) = args.first().map(String::as_str) else {
+        eprintln!("usage: zparity cold-evidence <find|list> PASS_ROOT [REQUEST_JSON]");
+        exit(2);
+    };
+    match mode {
+        "find" => {
+            validate_options(&args[1..], 2, &[], &[], &[]);
+            let pass_root = required_path(
+                &args[1..],
+                0,
+                "zparity cold-evidence find PASS_ROOT REQUEST_JSON",
+            );
+            let request_path = required_path(
+                &args[1..],
+                1,
+                "zparity cold-evidence find PASS_ROOT REQUEST_JSON",
+            );
+            let request = cold_evidence::load_request(&request_path).unwrap_or_else(|error| {
+                eprintln!("zparity cold-evidence find: {error}");
+                exit(1);
+            });
+            let output = cold_evidence::find_reusable_cold_evidence(&pass_root, &request)
+                .unwrap_or_else(|error| {
+                    eprintln!("zparity cold-evidence find: {error}");
+                    exit(1);
+                });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        "list" => {
+            validate_options(&args[1..], 1, &[], &[], &[]);
+            let pass_root = required_path(&args[1..], 0, "zparity cold-evidence list PASS_ROOT");
+            let output =
+                cold_evidence::list_verified_cold_evidence(&pass_root).unwrap_or_else(|error| {
+                    eprintln!("zparity cold-evidence list: {error}");
+                    exit(1);
+                });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        _ => {
+            eprintln!("usage: zparity cold-evidence <find|list> PASS_ROOT [REQUEST_JSON]");
+            exit(2);
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
@@ -352,9 +399,10 @@ fn main() {
         Some("cache-verify") => cache_verify(&args[1..]),
         Some("receipt-compare") => receipt_compare(&args[1..]),
         Some("av-compare") => av_compare(&args[1..]),
+        Some("cold-evidence") => cold_evidence(&args[1..]),
         _ => {
             eprintln!(
-                "usage: zparity <coverage|trace-index|trace-query|cache-verify|receipt-compare|av-compare> [options]"
+                "usage: zparity <coverage|trace-index|trace-query|cache-verify|receipt-compare|av-compare|cold-evidence> [options]"
             );
             eprintln!("(capture/check/drill parity subcommands were retired with legacy parity)");
             exit(2);

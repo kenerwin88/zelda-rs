@@ -1510,16 +1510,23 @@ fn effective_presented_dma_advances_only_written_vram_words_and_obj_cache() {
     // independently, while CGRAM still requires its own transfer receipt.
     state.ppu.vram[0x1234] = 0x4444;
     state.ppu.vram[0x4009] = 0x5555;
-    state.ppu.vram[0x59a7] = 0x6666;
+    state.ppu.vram[0x5a20] = 0x6666;
+    state.ppu.vram[0x5a40] = 0x7777;
     state.ppu.cgram[7] = 0x5555;
     let mut writes = EffectiveDmaWriteSet::new(state.ppu.vram.len(), true);
     writes.vram_words[0x1234] = true;
     writes.vram_words[0x4009] = true;
-    writes.vram_words[0x59a7] = true;
+    writes.vram_words[0x5a20] = true;
+    writes.vram_words[0x5a40] = true;
     let receipt = EffectivePresentedDma::from_write_set(writes.clone(), &state);
     assert_eq!(
         receipt.vram_writes,
-        vec![(0x1234, 0x4444), (0x4009, 0x5555), (0x59a7, 0x6666)]
+        vec![
+            (0x1234, 0x4444),
+            (0x4009, 0x5555),
+            (0x5a20, 0x6666),
+            (0x5a40, 0x7777),
+        ]
     );
 
     state.active_effective_dma_writes = Some(writes);
@@ -1558,6 +1565,15 @@ fn effective_presented_dma_advances_only_written_vram_words_and_obj_cache() {
     state.last_presented_obj_vram = Some(vec![0xdddd; state.ppu.vram.len()]);
 
     state.ppu.vram.fill(0xeeee);
+    // Direct helper calls model the state after `with_display_snapshot` has
+    // swapped the captured scanout into `self.ppu`.
+    state.ppu.obj_tile_adr1 = 0x4000;
+    state.ppu.obj_tile_adr2 = 0x5000;
+    let mut preserved_obj_cache = vec![0xaaaa; state.ppu.vram.len()];
+    preserved_obj_cache[0x4008] = 0x7777;
+    preserved_obj_cache[0x5a21] = 0x8888;
+    preserved_obj_cache[0x1234] = 0x9999;
+    state.ppu.obj_vram_latch = Some(preserved_obj_cache);
     state.ppu.oam.fill(0xeeee);
     state.ppu.cgram.fill(0xeeee);
     state.compose_effective_presented_vram(&active);
@@ -1568,10 +1584,167 @@ fn effective_presented_dma_advances_only_written_vram_words_and_obj_cache() {
     assert_eq!(state.ppu.cgram[7], 0xeeee);
     assert_eq!(state.ppu.oam[0], 0xeeee);
     let obj = state.ppu.obj_vram_latch.as_ref().unwrap();
-    assert_eq!(obj[0x4008], 0xdddd);
+    assert_eq!(obj[0x4008], 0x7777);
     assert_eq!(obj[0x4009], 0x5555);
-    assert_eq!(obj[0x59a6], 0xdddd);
-    assert_eq!(obj[0x59a7], 0x6666);
+    assert_eq!(obj[0x5a20], 0x6666);
+    assert_eq!(obj[0x5a40], 0x7777);
+    assert_eq!(obj[0x5a21], 0x8888);
+    assert_eq!(obj[0x1234], 0x9999);
+}
+
+#[test]
+fn sparse_presented_obj_tiles_replace_only_their_addressed_tiles() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(0);
+    state.set_submodule(5);
+    state.ppu.obj_tile_adr1 = 0x4000;
+    state.ppu.obj_tile_adr2 = 0x5000;
+    state.ppu.vram.fill(0x1111);
+    state.ppu.vram[0x5a20] = 0xcccc;
+    state.ppu.vram[0x5a40] = 0xdddd;
+    let mut preserved_obj_cache = vec![0xaaaa; state.ppu.vram.len()];
+    preserved_obj_cache[0x5a20] = 0x2020;
+    preserved_obj_cache[0x5a21] = 0x2121;
+    preserved_obj_cache[0x5a40] = 0x4040;
+    preserved_obj_cache[0x1234] = 0x3434;
+    state.ppu.obj_vram_latch = Some(preserved_obj_cache.clone());
+    state.capture_display_snapshot();
+    state
+        .display_snapshot
+        .as_mut()
+        .unwrap()
+        .effective_presented_dma = Some(EffectivePresentedDma {
+        vram_writes: vec![(0x1234, 0xbbbb)],
+        decoded_bg_vram_writes: Vec::new(),
+        completed_oam: None,
+        completed_link_obj_dma: None,
+        completed_cgram: None,
+        completed_ppu_registers: None,
+        completed_dialogue_metadata: None,
+    });
+    let mut presented_pixels = vec![0; 2 * crate::PresentedObjTiles::PIXELS_PER_TILE];
+    presented_pixels[0] = 0x0f;
+    presented_pixels[crate::PresentedObjTiles::PIXELS_PER_TILE] = 0x04;
+    state
+        .display_snapshot
+        .as_mut()
+        .unwrap()
+        .presented_obj_tiles_override =
+        Some(crate::PresentedObjTiles::new(vec![0x4000, 0x5a20], presented_pixels).unwrap());
+
+    state.with_display_snapshot(|presented| {
+        assert_eq!(presented.ppu.vram[0x1234], 0xbbbb);
+        let obj = presented.ppu.obj_vram_latch.as_ref().unwrap();
+        assert_eq!(obj[0x5a20], 0x0000);
+        assert_eq!(obj[0x5a28], 0x0080);
+        assert_eq!(obj[0x5a40], 0x4040);
+        assert_eq!(obj[0x5a21], 0x0000);
+        assert_eq!(obj[0x4000], 0x8080);
+        assert_eq!(obj[0x4008], 0x8080);
+    });
+
+    let stored = state
+        .display_snapshot
+        .as_ref()
+        .unwrap()
+        .ppu
+        .obj_vram_latch
+        .as_ref()
+        .unwrap();
+    assert_eq!(stored, &preserved_obj_cache);
+}
+
+#[test]
+fn sparse_presented_obj_tiles_preserve_unmentioned_prior_presented_cache_without_a_captured_latch()
+{
+    let mut state = ZeldaState::new();
+    state.set_main_module(0);
+    state.set_submodule(5);
+    state.ppu.obj_tile_adr1 = 0x4000;
+    state.ppu.obj_tile_adr2 = 0x5000;
+    state.ppu.vram.fill(0x1111);
+    state.ppu.vram[0x5a20] = 0xcccc;
+    state.ppu.vram[0x5a40] = 0xdddd;
+    let mut prior_presented_cache = vec![0xaaaa; state.ppu.vram.len()];
+    prior_presented_cache[0x5a20] = 0x2020;
+    prior_presented_cache[0x5a40] = 0x4040;
+    prior_presented_cache[0x1234] = 0x3434;
+    state.last_presented_obj_vram = Some(prior_presented_cache);
+    state.ppu.obj_vram_latch = None;
+    state
+        .vram_chr_source
+        .record_tiles(0x5a40, 1, crate::chr_source::CHR_KIND_LINK, 0x1234);
+    state.capture_display_snapshot();
+
+    let mut presented_pixels = vec![0; crate::PresentedObjTiles::PIXELS_PER_TILE];
+    presented_pixels[0] = 0x04;
+    state
+        .display_snapshot
+        .as_mut()
+        .unwrap()
+        .presented_obj_tiles_override =
+        Some(crate::PresentedObjTiles::new(vec![0x5a20], presented_pixels).unwrap());
+
+    state.with_display_snapshot(|presented| {
+        let obj = presented.ppu.obj_vram_latch.as_ref().unwrap();
+        assert_eq!(obj[0x5a20], 0x0000);
+        assert_eq!(obj[0x5a28], 0x0080);
+        assert_eq!(obj[0x5a40], 0x4040);
+        assert_eq!(obj[0x1234], 0x3434);
+        let exact = presented.vram_chr_source.get(0x5a20 / 16);
+        assert_eq!(exact.kind, crate::chr_source::CHR_KIND_BG_STREAM);
+        assert_eq!(
+            (u32::from(exact.pack) << 16) | u32::from(exact.tile_off),
+            crate::chr_source::chr_content_hash32(&obj[0x5a20..0x5a30])
+        );
+        assert_eq!(
+            presented.vram_chr_source.get(0x5a40 / 16).kind,
+            crate::chr_source::CHR_KIND_LINK
+        );
+    });
+
+    assert!(state.ppu.obj_vram_latch.is_none());
+    assert!(state
+        .display_snapshot
+        .as_ref()
+        .is_some_and(|snapshot| snapshot.ppu.obj_vram_latch.is_none()));
+}
+
+#[test]
+fn same_value_effective_obj_write_retains_an_explicit_cache_owner() {
+    let mut state = ZeldaState::new();
+    state.ppu.obj_tile_adr1 = 0x4000;
+    state.ppu.obj_tile_adr2 = 0x5000;
+    state.ppu.vram.fill(0x1111);
+    let mut last_presented = state.ppu.vram.clone();
+    last_presented[0x5a20] = 0x2222;
+    state.last_presented_obj_vram = Some(last_presented);
+    state.ppu.obj_vram_latch = None;
+    let mut active = captured_display_snapshot();
+    active.effective_presented_dma = Some(EffectivePresentedDma {
+        vram_writes: vec![(0x5a20, 0x1111)],
+        decoded_bg_vram_writes: Vec::new(),
+        completed_oam: None,
+        completed_link_obj_dma: None,
+        completed_cgram: None,
+        completed_ppu_registers: None,
+        completed_dialogue_metadata: None,
+    });
+
+    state.compose_effective_presented_obj(&active);
+    let mut sparse_pixels = vec![0; crate::PresentedObjTiles::PIXELS_PER_TILE];
+    sparse_pixels[0] = 4;
+    state.apply_original_timing_presented_obj_tiles(
+        &crate::PresentedObjTiles::new(vec![0x5a40], sparse_pixels).unwrap(),
+    );
+
+    let composed = state.ppu.obj_vram_latch.as_ref().unwrap();
+    assert_eq!(
+        composed[0x5a20], 0x1111,
+        "the sparse overlay must not resurrect the stale last-presented word which the effective write restored to raw VRAM",
+    );
+    assert_eq!(composed[0x5a40], 0x0000);
+    assert_eq!(composed[0x5a48], 0x0080);
 }
 
 #[test]
@@ -1618,6 +1791,7 @@ fn explicit_obj_cache_owner_is_not_replaced_by_a_bulk_nmi_receipt() {
         completed_ppu_registers: None,
         completed_dialogue_metadata: None,
     });
+    active.explicit_obj_cache_vram = Some(vec![0x4444; state.ppu.vram.len()]);
     state.last_presented_obj_vram = Some(vec![0x3333; state.ppu.vram.len()]);
     state.ppu.obj_vram_latch = Some(vec![0x4444; state.ppu.vram.len()]);
 
@@ -2070,7 +2244,7 @@ fn room_72_state_7_retains_the_exact_dma_latched_oam() {
 }
 
 #[test]
-fn effective_presented_obj_dma_empty_receipt_retains_last_decoded_page() {
+fn effective_presented_obj_dma_empty_receipt_does_not_synthesize_a_cache() {
     let mut state = ZeldaState::new();
     state.ppu.vram.fill(0x1111);
     state.capture_display_snapshot();
@@ -2092,10 +2266,98 @@ fn effective_presented_obj_dma_empty_receipt_retains_last_decoded_page() {
         .is_empty());
     state.compose_effective_presented_obj(&active);
 
-    assert_eq!(
-        &state.ppu.obj_vram_latch.as_ref().unwrap()[0x4000..0x4400],
-        &[0x2222; 0x400]
-    );
+    assert!(state.ppu.obj_vram_latch.is_none());
+}
+
+#[test]
+fn unrelated_effective_dma_does_not_replace_or_synthesize_an_obj_cache() {
+    let mut state = ZeldaState::new();
+    let mut active = captured_display_snapshot();
+    active.ppu.obj_tile_adr1 = 0x4000;
+    active.ppu.obj_tile_adr2 = 0x5000;
+    active.effective_presented_dma = Some(EffectivePresentedDma {
+        vram_writes: vec![(0x1234, 0xbbbb)],
+        decoded_bg_vram_writes: Vec::new(),
+        completed_oam: None,
+        completed_link_obj_dma: None,
+        completed_cgram: None,
+        completed_ppu_registers: None,
+        completed_dialogue_metadata: None,
+    });
+    let preserved = vec![0xaaaa; state.ppu.vram.len()];
+    state.ppu.obj_vram_latch = Some(preserved.clone());
+
+    state.compose_effective_presented_obj(&active);
+
+    assert_eq!(state.ppu.obj_vram_latch.as_ref(), Some(&preserved));
+}
+
+#[test]
+fn effective_presented_obj_dma_wraps_name_pages_in_15_bit_vram_space() {
+    let mut state = ZeldaState::new();
+    let mut active = captured_display_snapshot();
+    state.ppu.obj_tile_adr1 = 0x4000;
+    state.ppu.obj_tile_adr2 = 0x8000;
+    active.effective_presented_dma = Some(EffectivePresentedDma {
+        vram_writes: vec![(0x0000, 0xaaaa), (0x0fff, 0xbbbb), (0x1000, 0xcccc)],
+        decoded_bg_vram_writes: Vec::new(),
+        completed_oam: None,
+        completed_link_obj_dma: None,
+        completed_cgram: None,
+        completed_ppu_registers: None,
+        completed_dialogue_metadata: None,
+    });
+    let preserved = vec![0x1111; state.ppu.vram.len()];
+    state.ppu.obj_vram_latch = Some(preserved);
+
+    state.compose_effective_presented_obj(&active);
+
+    let composed = state.ppu.obj_vram_latch.as_ref().unwrap();
+    assert_eq!(composed[0x0000], 0xaaaa);
+    assert_eq!(composed[0x0fff], 0xbbbb);
+    assert_eq!(composed[0x1000], 0x1111);
+}
+
+#[test]
+fn display_composition_patches_captured_obj_page_and_restores_live_ppu() {
+    let mut state = ZeldaState::new();
+    state.ppu.obj_tile_adr1 = 0x4000;
+    state.ppu.obj_tile_adr2 = 0x5000;
+    let mut captured_cache = vec![0x1111; state.ppu.vram.len()];
+    captured_cache[0x5a20] = 0x2222;
+    state.ppu.obj_vram_latch = Some(captured_cache);
+    state.capture_display_snapshot();
+    state
+        .display_snapshot
+        .as_deref_mut()
+        .unwrap()
+        .effective_presented_dma = Some(EffectivePresentedDma {
+        vram_writes: vec![(0x5a20, 0xaaaa)],
+        decoded_bg_vram_writes: Vec::new(),
+        completed_oam: None,
+        completed_link_obj_dma: None,
+        completed_cgram: None,
+        completed_ppu_registers: None,
+        completed_dialogue_metadata: None,
+    });
+
+    state.ppu.obj_tile_adr1 = 0;
+    state.ppu.obj_tile_adr2 = 0x1000;
+    let mut live_cache = vec![0x3333; state.ppu.vram.len()];
+    live_cache[0x5a20] = 0x4444;
+    state.ppu.obj_vram_latch = Some(live_cache.clone());
+
+    state.with_display_snapshot(|presented| {
+        assert_eq!(presented.ppu.obj_tile_adr1, 0x4000);
+        assert_eq!(presented.ppu.obj_tile_adr2, 0x5000);
+        let composed = presented.ppu.obj_vram_latch.as_ref().unwrap();
+        assert_eq!(composed[0x5a20], 0xaaaa);
+        assert_eq!(composed[0x5a21], 0x1111);
+    });
+
+    assert_eq!(state.ppu.obj_tile_adr1, 0);
+    assert_eq!(state.ppu.obj_tile_adr2, 0x1000);
+    assert_eq!(state.ppu.obj_vram_latch.as_ref(), Some(&live_cache));
 }
 
 #[test]

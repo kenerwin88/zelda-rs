@@ -1103,37 +1103,99 @@ class ParityMicroscopeTests(unittest.TestCase):
             binary.write_bytes(b"binary")
             passes = root / "passes"
             route_signature = {"project": "routes/full_run", "core_sha256": "c" * 64}
-            first_session = self.write_session(root, "first", frames=120)
+            first_session = self.write_session(root, "first", frames=140)
             second_session = self.write_session(root, "second", frames=140)
-            with mock.patch.object(
-                evidence,
-                "git_identity",
-                return_value={
-                    "head": "a" * 40,
-                    "describe": "test",
-                    "clean": True,
-                    "status_sha256": "s",
-                    "tracked_diff_sha256": "d",
-                },
+            for session, invocation in (
+                (first_session, "invocation-a"),
+                (second_session, "invocation-b"),
             ):
-                evidence.record_cold_pass(
-                    session=first_session,
-                    route_signature=route_signature,
-                    binary=binary,
-                    output_root=passes,
+                manifest_path = session / "manifest.json"
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest["cold_evidence_invocation_id"] = invocation
+                manifest["cold_evidence_run_nonce"] = (
+                    "a" * 64 if invocation == "invocation-a" else "b" * 64
                 )
-                evidence.record_cold_pass(
-                    session=second_session,
-                    route_signature=route_signature,
-                    binary=binary,
-                    output_root=passes,
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            recorded_identity = {
+                "schema": 1,
+                "head": "0" * 40,
+                "file_count": 17,
+                "content_inventory_sha256": "9" * 64,
+                "index_inventory_sha256": "8" * 64,
+                "status_sha256": "7" * 64,
+            }
+            build_binding = {"schema": 1, "profile": "parity"}
+            authority = {
+                "target_frames": 140,
+                "route_signature": route_signature,
+                "route_signature_sha256": evidence.stable_hash(route_signature),
+                "binary": {
+                    "sha256": evidence.sha256_file(binary),
+                    "size": binary.stat().st_size,
+                },
+                "staged_source": {
+                    "identity": recorded_identity,
+                    "identity_sha256": evidence.stable_hash(recorded_identity),
+                    "build_binding": build_binding,
+                    "build_binding_sha256": evidence.stable_hash(build_binding),
+                },
+            }
+            verified = [
+                {
+                    "invocation_id": invocation,
+                    "run_nonce": digest * 64,
+                    "receipt_path": str(passes / f"{invocation}.json"),
+                    "receipt_sha256": digest * 64,
+                    "session_path": str(session),
+                    "target_frames": 140,
+                    "authority": authority,
+                }
+                for invocation, digest, session in (
+                    ("invocation-a", "1", first_session),
+                    ("invocation-b", "2", second_session),
                 )
+            ]
+            with (
+                mock.patch.object(
+                    evidence,
+                    "git_identity",
+                    return_value={
+                        "head": "a" * 40,
+                        "describe": "test",
+                        "clean": True,
+                        "status_sha256": "s",
+                        "tracked_diff_sha256": "d",
+                    },
+                ),
+                mock.patch.object(
+                    evidence,
+                    "list_verified_cold_passes",
+                    return_value=verified,
+                ),
+                mock.patch.object(
+                    evidence,
+                    "staged_source_authority",
+                    return_value={
+                        "identity": {
+                            **recorded_identity,
+                            "head": "a" * 40,
+                            "index_inventory_sha256": "0" * 64,
+                            "status_sha256": "0" * 64,
+                        },
+                        "build_binding": build_binding,
+                        "build_binding_sha256": evidence.stable_hash(build_binding),
+                    },
+                ),
+            ):
                 ledger_path = root / "frontier.json"
                 ledger = evidence.promote_frontier(
-                    ledger_path=ledger_path, binary=binary, pass_root=passes
+                    ledger_path=ledger_path,
+                    binary=binary,
+                    pass_root=passes,
                 )
 
-            self.assertEqual(ledger["promoted"]["last_exact_video_frame"], 120)
+            self.assertEqual(ledger["promoted"]["last_exact_video_frame"], 140)
+            self.assertEqual(ledger["promoted"]["last_exact_engine_state_frame"], 0)
             self.assertEqual(ledger["promoted"]["commit"], "a" * 40)
             self.assertEqual(len(ledger["promoted"]["cold_confirmation_receipts"]), 2)
 
