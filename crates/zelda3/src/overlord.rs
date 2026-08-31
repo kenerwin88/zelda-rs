@@ -816,7 +816,10 @@ impl ZeldaState {
             let mut sprite = self.sprite_slot_view_mut(j);
             sprite.set_z(224);
             sprite.set_floor(floor);
-            sprite.set_direction(0);
+            // The vanilla ROM leaves sprite_D uninitialized here: the spawn
+            // already copied sprite_D[k] with the OVERLORD index aliased into
+            // the sprite table (oracle D=0x24 at route frame 90920). The C
+            // port's `sprite_D[j] = 0` bug-fix is not ROM behavior.
             self.sprite_overlord_play_falling_sfx(j);
         }
     }

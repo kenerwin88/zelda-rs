@@ -11919,7 +11919,10 @@ impl ZeldaState {
         self.sprite_zero_velocity_xy(k);
         if self.sprite_slot_view(k).delay_main() == 0 {
             self.sprite_slot_view_mut(k).add_ai_state(1);
-            let value = (self.get_random_number() & 0x3f).wrapping_add(48);
+            // ROM $86D416: `AND #$3F : ADC #$30` inherits the RNG routine's
+            // final LSR carry (oracle sample 0x8D/C=1 wrote 0x3E at route
+            // frame 71350).
+            let value = self.get_random_number_with_carry().masked_adc(0x3f, 48);
             self.sprite_slot_view_mut(k).set_delay_main(value);
             let value = self.sprite_slot_view(k).delay_main() & 3;
             self.sprite_slot_view_mut(k).set_direction(value);
@@ -14287,7 +14290,10 @@ impl ZeldaState {
             1 => {
                 self.sprite_slot_view_mut(k).add_subtype2(1);
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    let value = (self.get_random_number() & 63).wrapping_add(128);
+                    // ROM $85B84B: `AND #$3F : ADC #$80` inherits the RNG
+                    // routine's final LSR carry (oracle sample 0x43/C=1 wrote
+                    // 0x84 at route frame 84855).
+                    let value = self.get_random_number_with_carry().masked_adc(63, 128);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                     let j = usize::from(self.get_random_number() & 15);

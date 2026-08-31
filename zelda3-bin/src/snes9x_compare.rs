@@ -5066,6 +5066,12 @@ pub(crate) fn run_compare_libretro_oracle(
             let (lo, hi) = raw.split_once('-')?;
             Some((lo.trim().parse::<u32>().ok()?, hi.trim().parse::<u32>().ok()?))
         });
+    // ZELDA3_ENGINE_STATE_DUMP_SPRITE=<slot> adds that sprite slot's
+    // state/delay_main/ai_state to each dumped line.
+    let engine_state_dump_sprite = env::var("ZELDA3_ENGINE_STATE_DUMP_SPRITE")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<usize>().ok())
+        .filter(|slot| *slot < 16);
     let mut engine_state_divergences: Vec<(u32, Vec<String>)> = Vec::new();
     let mut oracle_before_state = initial_oracle_state.clone();
     let oracle_before_state_frame = start_frame;
@@ -5598,6 +5604,17 @@ pub(crate) fn run_compare_libretro_oracle(
                     byte(oracle_ram, 0x2a),
                     byte(oracle_ram, 0x27),
                 );
+                if let Some(slot) = engine_state_dump_sprite {
+                    eprintln!(
+                        "[ENGINE-SPR] f={frame_index} slot={slot} rust st={:02x} delay={:02x} ai={:02x} | oracle st={:02x} delay={:02x} ai={:02x}",
+                        byte(&game.ram, 0x0dd0 + slot),
+                        byte(&game.ram, 0x0df0 + slot),
+                        byte(&game.ram, 0x0d80 + slot),
+                        byte(oracle_ram, 0x0dd0 + slot),
+                        byte(oracle_ram, 0x0df0 + slot),
+                        byte(oracle_ram, 0x0d80 + slot),
+                    );
+                }
             }
             let mismatches = compact_engine_state_mismatches(&game.ram, oracle_ram);
             if !mismatches.is_empty() {

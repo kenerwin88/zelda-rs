@@ -1290,7 +1290,10 @@ impl ZeldaState {
                 self.sprite_zero_velocity_xy(k);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).increment_ai_state();
-                    let delay = 0x50u8.wrapping_add(self.get_random_number() & 0x7f);
+                    // ROM $85CE6E: `AND #$7F : ADC #$50` inherits the RNG
+                    // routine's final LSR carry (oracle sample 0x86/C=1 wrote
+                    // 0x57 at route frame 68627).
+                    let delay = self.get_random_number_with_carry().masked_adc(0x7f, 0x50);
                     self.sprite_slot_view_mut(k).set_delay_main(delay);
                     let jbak = self.sprite_slot_view(k).direction();
                     let direction = self.get_random_number() & 3;

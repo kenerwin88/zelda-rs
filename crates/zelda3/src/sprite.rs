@@ -2739,7 +2739,10 @@ impl ZeldaState {
         if let Some(claims_remaining) = self.original_timing_sprite_main_return_claims_remaining {
             assert_ne!(
                 claims_remaining, 0,
-                "the native body returned from more Sprite_Main loops than its immutable host plan claimed",
+                "the native body returned from more Sprite_Main loops than its immutable host plan claimed: host={} frame={:?} scheduler={:?}",
+                self.frame_ctr_dbg,
+                self.game_state.frame,
+                self.game_execution_scheduler,
             );
             assert!(
                 self.take_original_timing_sprite_main_returned(),

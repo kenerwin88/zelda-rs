@@ -3049,8 +3049,15 @@ impl DisplayState {
         }
     }
 
+    #[track_caller]
     pub(crate) fn write_core_to_ram(&self, ram: &mut [u8]) {
         ram[INIDISP_COPY] = self.screen_brightness;
+        crate::types::ww_check(
+            NMI_BOOLEAN,
+            1,
+            "display-core-projection",
+            self.nmi_update_latch.into(),
+        );
         ram[NMI_BOOLEAN] = self.nmi_update_latch;
         ram[NMI_DISABLE_CORE_UPDATES] = self.core_update_disable_flag;
         ram[NMI_SUBROUTINE_INDEX] = self.pending_nmi_subroutine;
@@ -5305,19 +5312,25 @@ impl<'a> NativeDisplayStateBridgeMut<'a> {
         value
     }
 
+    #[track_caller]
     pub(crate) fn set_nmi_update_latch(&mut self, value: u8) {
+        crate::types::ww_check(NMI_BOOLEAN, 1, "nmi-latch-set-value", value.into());
         self.display.set_nmi_update_latch(value);
         self.ram[NMI_BOOLEAN] = value;
         self.debug_assert_nmi_update_latch_matches_ram();
     }
 
+    #[track_caller]
     pub(crate) fn latch_nmi_update(&mut self) {
+        crate::types::ww_check(NMI_BOOLEAN, 1, "nmi-latch-set", 1);
         self.display.latch_nmi_update();
         self.ram[NMI_BOOLEAN] = 1;
         self.debug_assert_nmi_update_latch_matches_ram();
     }
 
+    #[track_caller]
     pub(crate) fn clear_nmi_update_latch(&mut self) {
+        crate::types::ww_check(NMI_BOOLEAN, 1, "nmi-latch-clear", 0);
         self.display.clear_nmi_update_latch();
         self.ram[NMI_BOOLEAN] = 0;
         self.debug_assert_nmi_update_latch_matches_ram();

@@ -1840,9 +1840,22 @@ impl ZeldaState {
     //   sprite_flags3[k] &= ~0x40;
     // }
     pub(super) fn yellow_stalfos_animate(&mut self, k: usize) {
-        let d = (self.sprite_slot_view(k).direction() & 3) as usize;
-        self.sprite_slot_view_mut(k)
-            .set_graphics(YELLOW_STALFOS_IDLE_GRAPHICS_BY_DIRECTION[d]);
+        let d = usize::from(self.sprite_slot_view(k).direction());
+        // ROM $9E:C50C: `LDA $C4F7,y` with Y = raw sprite_D. A falling
+        // stalfos spawned with the vanilla uninitialized-D bug indexes past
+        // the 4-entry table into the following ROM bytes (oracle graphics
+        // 0xB0 from D=0x24 at route frame 91107). Replicate the exact ROM
+        // read instead of masking the index.
+        let value = if d < YELLOW_STALFOS_IDLE_GRAPHICS_BY_DIRECTION.len() {
+            YELLOW_STALFOS_IDLE_GRAPHICS_BY_DIRECTION[d]
+        } else {
+            const YELLOW_STALFOS_GFX2_ROM_OFFSET: usize = 0xF0000 + (0xC4F7 - 0x8000);
+            self.rom
+                .get(YELLOW_STALFOS_GFX2_ROM_OFFSET + d)
+                .copied()
+                .unwrap_or(0)
+        };
+        self.sprite_slot_view_mut(k).set_graphics(value);
         self.sprite_slot_view_mut(k).clear_flags3_bits(0x40);
     }
 
