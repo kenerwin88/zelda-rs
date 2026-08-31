@@ -6226,6 +6226,9 @@ pub(super) enum SpriteMainItemReceiptSuffix {
     /// `Link_ReceiveItem(0x4b)` then the AI-state and map-icon tail (route
     /// host 106127).
     SahasrahlaBoots,
+    /// ROM `$85fc04` Sprite_BookOfMudora's pickup: `Link_ReceiveItem(0x1d)`
+    /// then the sprite-kill tail (route host 111518).
+    BookOfMudora,
 }
 
 impl SpriteMainItemReceiptSuffix {
@@ -6241,6 +6244,7 @@ impl SpriteMainItemReceiptSuffix {
                 | Self::HeartContainerFull
                 | Self::HeartContainerUpgrade
                 | Self::SahasrahlaBoots
+                | Self::BookOfMudora
         )
     }
 }
@@ -22160,7 +22164,10 @@ impl ZeldaState {
         }
         assert_eq!(
             semantic, expected_semantic,
-            "an idle terminal continued caller published an unsupported or reordered semantic vector",
+            "an idle terminal continued caller published an unsupported or reordered semantic vector: host={} frame={:?} scheduler={:?}",
+            self.frame_ctr_dbg,
+            self.game_state.frame,
+            self.game_execution_scheduler,
         );
 
         Some(OriginalTimingUninterruptedIdleContinuedReturnPlan {
@@ -31826,32 +31833,38 @@ impl ZeldaState {
         self.complete_module07_dungeon_after_submodule();
     }
 
+    /// Whether the live wire keeps this host's shared `ZeldaRunGameLoop`
+    /// suffix outstanding: neither a suffix-completion receipt nor an Open
+    /// trailing acceptance (nor its consumed installed gate) exists, so the
+    /// suspended caller cannot have reached the suffix within this host.
+    fn original_timing_live_suffix_outstanding(&self) -> bool {
+        matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && self
+                .original_timing_semantic_receipts
+                .as_ref()
+                .is_some_and(|receipts| {
+                    !receipts.semantic().iter().any(|receipt| {
+                        matches!(
+                            receipt,
+                            OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted
+                                // An Open trailing acceptance proves the
+                                // suffix's latch clear already ran even
+                                // when the suffix receipt is elided.
+                                | OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open)
+                        )
+                    })
+                })
+            // The trailing Open acceptance may already have been consumed
+            // into the staged host-return carry; its installed gate still
+            // proves the suffix's latch clear ran on the wire.
+            && !self
+                .original_timing_expected_nmi_update_gates
+                .contains(&NmiUpdateGate::Open)
+    }
+
     fn complete_dungeon_after_submodule_caller_return(&mut self) {
         self.complete_dungeon_after_submodule_cpu_caller_return();
-        let live_suffix_outstanding = matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-                && self
-                    .original_timing_semantic_receipts
-                    .as_ref()
-                    .is_some_and(|receipts| {
-                        !receipts.semantic().iter().any(|receipt| {
-                            matches!(
-                                receipt,
-                                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted
-                                    // An Open trailing acceptance proves the
-                                    // suffix's latch clear already ran even
-                                    // when the suffix receipt is elided.
-                                    | OriginalTimingSemanticReceipt::NmiAccepted(
-                                        NmiUpdateGate::Open,
-                                    )
-                            )
-                        })
-                    })
-                // The trailing Open acceptance may already have been consumed
-                // into the staged host-return carry; its installed gate still
-                // proves the suffix's latch clear ran on the wire.
-                && !self
-                    .original_timing_expected_nmi_update_gates
-                    .contains(&NmiUpdateGate::Open);
+        let live_suffix_outstanding = self.original_timing_live_suffix_outstanding();
         if live_suffix_outstanding {
             // A live host whose wire holds the update latch through its
             // trailing boundary keeps the shared ZeldaRunGameLoop suffix
@@ -33191,6 +33204,69 @@ impl ZeldaState {
             return;
         }
         if let Some(continuation) = self.game_execution_scheduler.take_post_trailing_nmi() {
+            if continuation == GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
+                && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.original_timing_semantic_receipts.is_some()
+                && self.original_timing_main_loop_interruption().is_none()
+                && !self.original_timing_owes_sprite_main_return()
+                && !self.original_timing_owes_sprite_main_progress()
+                && self.original_timing_main_loop_return_timeline().is_none()
+                && self
+                    .original_timing_semantic_receipts
+                    .as_ref()
+                    .is_some_and(|receipts| {
+                        !receipts.semantic().iter().any(|receipt| {
+                            matches!(
+                                receipt,
+                                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted
+                                    | OriginalTimingSemanticReceipt::NmiAccepted(
+                                        NmiUpdateGate::Open
+                                    )
+                                    | OriginalTimingSemanticReceipt::JoypadPublication(_)
+                                    | OriginalTimingSemanticReceipt::MainLoopProgress(
+                                        crate::MainLoopProgress::IterationStarted
+                                    )
+                            )
+                        })
+                    })
+            {
+                // The suspended after-submodule caller stays held through this
+                // whole host: another held vblank lands before its resumed
+                // suffix reaches the shared suffix (route host 111181, the
+                // landing-spotlight iteration). Complete the handler and stay
+                // held.
+                let phases = self.take_original_timing_nmi_phases();
+                let before = classify_original_timing_nmi_phases_with_ownership(
+                    self.original_timing_nmi_publication_pending,
+                    &phases,
+                );
+                self.complete_original_timing_nmi_handler_for_active_scanout(
+                    before.handler_completion,
+                    input,
+                    oam_dma_source.as_deref(),
+                )
+                .assert_no_unclaimed_dialogue_text_dma();
+                assert_eq!(
+                    self.take_original_timing_main_loop_progress(),
+                    Some(crate::MainLoopProgress::CallStackContinued),
+                    "a held after-submodule caller host must continue its suspended stack",
+                );
+                assert!(
+                    self.original_timing_semantic_receipts
+                        .as_ref()
+                        .is_none_or(|receipts| receipts.semantic().is_empty()),
+                    "a held after-submodule caller host left unconsumed semantic authority",
+                );
+                self.game_execution_scheduler
+                    .schedule_post_trailing_nmi(continuation);
+                if before.publication_pending_at_exit {
+                    self.capture_and_carry_original_timing_nmi_publication_at_host_return();
+                }
+                self.assert_native_frame_state_matches_ram();
+                self.assert_native_world_location_state_matches_ram();
+                self.assert_native_display_state_matches_ram();
+                return;
+            }
             if continuation == GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
                 && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             {
@@ -36323,6 +36399,22 @@ impl ZeldaState {
                     .advance_work_one_nmi_slice_with_authoritative_completion(
                         authoritative_pre_dungeon_returned,
                     )
+            } else if self.game_execution_scheduler.current_work()
+                == Some(GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn)
+                && self.original_timing_live_suffix_outstanding()
+                && !self.original_timing_hosts_fresh_iteration()
+                && !self.original_timing_owes_sprite_main_return()
+                && !self.original_timing_owes_sprite_main_progress()
+                && self.original_timing_main_loop_interruption().is_none()
+                && self.original_timing_main_loop_return_timeline().is_none()
+            {
+                // The wire keeps this host's shared ZeldaRunGameLoop suffix
+                // outstanding with no refining receipt: the suspended
+                // dispatcher caller has not resumed, however the slice
+                // estimate counted (route host 111181, the landing-spotlight
+                // final iris crossing a second held vblank).
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(false)
             } else {
                 self.game_execution_scheduler.advance_work_one_nmi_slice()
             }
@@ -37802,6 +37894,9 @@ impl ZeldaState {
                             }
                             SpriteMainItemReceiptSuffix::SahasrahlaBoots => {
                                 self.complete_sahasrahla_boots_item_receipt(sprite_slot)
+                            }
+                            SpriteMainItemReceiptSuffix::BookOfMudora => {
+                                self.complete_book_of_mudora_item_receipt(sprite_slot)
                             }
                         }
                         self.complete_sprite_main_after_interrupted_slot(sprite_slot);
@@ -39509,7 +39604,8 @@ impl ZeldaState {
                     // Spotlight_open began after the leading NMI but its ROM
                     // instruction stream reaches the following vblank before
                     // returning. Consume that measured second boundary in this
-                    // same host interval. The held latch suppresses OAM/VRAM
+                    // same host interval.
+                    // The held latch suppresses OAM/VRAM
                     // DMA while WritePpuRegisters still publishes the new iris
                     // controls and INIDISP value.
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
@@ -39521,13 +39617,24 @@ impl ZeldaState {
                             continuation,
                             GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
                         );
-                        self.complete_dungeon_after_submodule_caller_return();
-                        if !self
-                            .game_execution_scheduler
-                            .work_suspends_translated_call_stack()
-                        {
+                        if self.original_timing_live_suffix_outstanding() {
+                            // The wire keeps the shared suffix outstanding
+                            // past this host: the spotlight caller has not
+                            // resumed yet, so the measured second-boundary
+                            // completion stands down and the suspension
+                            // continues (route host 111180; the resume holds
+                            // through 111181 and returns at 111182).
                             self.game_execution_scheduler
-                                .finish_call_stack_at_main_wait_before_nmi();
+                                .schedule_post_trailing_nmi(continuation);
+                        } else {
+                            self.complete_dungeon_after_submodule_caller_return();
+                            if !self
+                                .game_execution_scheduler
+                                .work_suspends_translated_call_stack()
+                            {
+                                self.game_execution_scheduler
+                                    .finish_call_stack_at_main_wait_before_nmi();
+                            }
                         }
                     } else {
                         // A larger circle build can cross more than one NMI.
@@ -39682,7 +39789,20 @@ impl ZeldaState {
             self.game_execution_scheduler
                 .finish_trailing_nmi_after_main_return();
             if let Some(continuation) = self.game_execution_scheduler.take_post_trailing_nmi() {
-                self.complete_post_trailing_nmi_continuation(continuation, input, false, false);
+                if continuation == GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
+                    && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                    && self.pending_main_loop_common_suffix.is_some()
+                {
+                    // The wire kept this host's shared ZeldaRunGameLoop
+                    // suffix outstanding: the interrupted caller does not
+                    // resume within this host. Stay suspended across the
+                    // trailing NMI instead (route host 111180; the resume
+                    // holds through 111181 and returns at 111182).
+                    self.game_execution_scheduler
+                        .schedule_post_trailing_nmi(continuation);
+                } else {
+                    self.complete_post_trailing_nmi_continuation(continuation, input, false, false);
+                }
             }
             if let Some(resident_oam) = resident_oam {
                 // This deferred vblank still publishes Link/BG/CGRAM work, but

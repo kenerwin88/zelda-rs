@@ -11476,12 +11476,31 @@ impl ZeldaState {
             3 => {
                 self.link_cancel_dash();
                 self.follower_link_state_mut().set_item_receipt_method(0);
-                self.link_receive_item(0x1d, 0);
-                let value = 0;
-                self.sprite_slot_view_mut(k).set_state(value);
+                if self
+                    .link_receive_item_from(
+                        0x1d,
+                        0,
+                        ItemReceiptCaller::SpriteMainDirect {
+                            sprite_slot: k as u8,
+                            suffix: SpriteMainItemReceiptSuffix::BookOfMudora,
+                        },
+                    )
+                    .is_suspended()
+                {
+                    return;
+                }
+                self.complete_book_of_mudora_item_receipt(k);
             }
             _ => {}
         }
+    }
+
+    /// Source suffix after Sprite_BookOfMudora's `Link_ReceiveItem(0x1d)`
+    /// call (ROM `$85fc04`). A live timing authority suspends the
+    /// decompressor there; only the sprite-kill tail remains.
+    pub(super) fn complete_book_of_mudora_item_receipt(&mut self, k: usize) {
+        let value = 0;
+        self.sprite_slot_view_mut(k).set_state(value);
     }
 
     fn dash_item_move_and_bounce(&mut self, k: usize, sfx3: bool) {

@@ -2677,7 +2677,8 @@ fn spotlight_table_build_progress(
             .ok_or("Snes9x spotlight loop-test checkpoint omitted X")?;
         if observed_x & 1 != 0 {
             return Err(format!(
-                "Snes9x spotlight loop-test cursor encoded an odd table byte offset {observed_x}",
+                "Snes9x spotlight loop-test cursor encoded an odd table byte offset {observed_x} (pc={pc:06x?} a={:?} y={:?})",
+                event.a, event.y,
             ));
         }
         let initial_upper_cursor = vertical_center
