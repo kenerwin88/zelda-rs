@@ -18279,7 +18279,17 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
         rom_item_receipt_graphics_nmi_slices(0x24),
         ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES
     );
-    assert_eq!(rom_item_receipt_graphics_nmi_slices(0x23), 0);
+    // The separately packed $5d sheet crosses the same four boundaries: the
+    // heart-container receipt (gfx $3e) held the live wire across them at
+    // route host 102905.
+    assert_eq!(
+        rom_item_receipt_graphics_nmi_slices(0x23),
+        ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES
+    );
+    assert_eq!(
+        rom_item_receipt_graphics_nmi_slices(0x3e),
+        ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES
+    );
     // The fourth slice completes gfx $14's OBJ upload and the caller prepares
     // player OAM before scanout; keep this receipt aligned with the observed
     // live/live boundary instead of an older retained-CHR assumption.

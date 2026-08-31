@@ -5530,10 +5530,11 @@ pub(crate) fn run_compare_libretro_oracle(
                     );
                     process::exit(1);
                 });
+                let semantic_debug = format!("{:?}", receipts.semantic());
                 game.install_original_timing_host_receipts(receipts)
                 .unwrap_or_else(|error| {
                     eprintln!(
-                        "failed to install pinned-Snes9x host receipt at frame {frame_index}: {error:?}"
+                        "failed to install pinned-Snes9x host receipt at frame {frame_index}: {error:?} semantic={semantic_debug}"
                     );
                     process::exit(1);
                 });

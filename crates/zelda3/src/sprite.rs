@@ -2415,7 +2415,13 @@ impl ZeldaState {
                                 },
                         }) if sprite_slot == k as u8
                     ),
-                    "source item-receipt boundary did not enter the native graphics continuation",
+                    "source item-receipt boundary did not enter the native graphics continuation: host={} slot={} sprite_type={:#04x} sprite_state={:#04x} item_receipt_method={} work={:?}",
+                    self.frame_ctr_dbg,
+                    k,
+                    self.sprite_slot_view(k).sprite_type(),
+                    self.sprite_slot_view(k).state(),
+                    self.game_state.player.follower_link.item_receipt_method(),
+                    self.game_execution_scheduler.current_work(),
                 );
                 return;
             }

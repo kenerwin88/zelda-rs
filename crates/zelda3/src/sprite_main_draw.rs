@@ -7038,15 +7038,52 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_state(value);
         if self.sprite_slot_view(k).a() != 0 {
             self.follower_link_state_mut().set_item_receipt_method(2);
-            self.link_receive_item(0x3e, 0);
-            let bits = self.game_state.dungeon.savegame_state.savegame_state_bits() | 0x8000;
-            self.dungeon_savegame_state_mut()
-                .set_savegame_state_bits(bits);
+            if self
+                .link_receive_item_from(
+                    0x3e,
+                    0,
+                    ItemReceiptCaller::SpriteMainDirect {
+                        sprite_slot: k as u8,
+                        suffix: SpriteMainItemReceiptSuffix::HeartContainerFull,
+                    },
+                )
+                .is_suspended()
+            {
+                return;
+            }
+            self.complete_heart_container_full_item_receipt();
             return;
         }
         self.link_cancel_dash();
         self.follower_link_state_mut().set_item_receipt_method(0);
-        self.link_receive_item(0x26, 0);
+        if self
+            .link_receive_item_from(
+                0x26,
+                0,
+                ItemReceiptCaller::SpriteMainDirect {
+                    sprite_slot: k as u8,
+                    suffix: SpriteMainItemReceiptSuffix::HeartContainerUpgrade,
+                },
+            )
+            .is_suspended()
+        {
+            return;
+        }
+        self.complete_heart_container_upgrade_item_receipt(k);
+    }
+
+    /// Source suffix after Sprite_HeartContainer's crystal-branch
+    /// `Link_ReceiveItem(0x3e)` call (ROM `$85ef47`). A live timing authority
+    /// suspends the decompressor there; only the savegame-state bit remains.
+    pub(super) fn complete_heart_container_full_item_receipt(&mut self) {
+        let bits = self.game_state.dungeon.savegame_state.savegame_state_bits() | 0x8000;
+        self.dungeon_savegame_state_mut()
+            .set_savegame_state_bits(bits);
+    }
+
+    /// Source suffix after Sprite_HeartContainer's piece-upgrade
+    /// `Link_ReceiveItem(0x26)` call (ROM `$85ef47`).
+    pub(super) fn complete_heart_container_upgrade_item_receipt(&mut self, k: usize) {
         self.heart_upgrade_set_obtained_flag(k);
     }
 

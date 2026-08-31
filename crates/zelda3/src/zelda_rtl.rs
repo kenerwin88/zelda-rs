@@ -2507,9 +2507,10 @@ const fn rom_attract_story_render_nmi_slices(sequence: u8) -> u8 {
 const fn rom_item_receipt_graphics_nmi_slices(gfx: u8) -> u8 {
     match load_gfx::animated_sprite_tile_secondary_sheet(gfx) {
         // Timing belongs to the compressed sheets, not an individual route's
-        // item ID. Both $5b and $5c cross four NMI boundaries; keep the
-        // separately packed $5d path immediate until its ROM cost is measured.
-        0x5b | 0x5c => ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
+        // item ID. $5b, $5c, and the separately packed $5d (the
+        // heart-container receipt, route host 102905) all cross four NMI
+        // boundaries.
+        0x5b | 0x5c | 0x5d => ITEM_RECEIPT_STANDARD_ANIMATED_GFX_NMI_SLICES,
         _ => 0,
     }
 }
@@ -4676,6 +4677,21 @@ fn sprite_main_cpu_interruption_boundary(
     }
 }
 
+/// Whether a suspended direct item-receipt graphics call from `slot` sits at
+/// the C statement a `Sprite_Main` walk checkpoint names: the walk runs slots
+/// 15 down to 0, so slot 15's suspension pairs with `BeforeFirstSlot` and
+/// slot `k`'s with `AfterSlot(k + 1)`.
+fn direct_item_receipt_slot_pairs_with_boundary(
+    slot: u8,
+    boundary: SpriteMainCpuBoundary,
+) -> bool {
+    match boundary {
+        SpriteMainCpuBoundary::BeforeFirstSlot => slot == 15,
+        SpriteMainCpuBoundary::AfterSlot(after_slot) => slot.checked_add(1) == Some(after_slot),
+        _ => false,
+    }
+}
+
 fn sprite_main_cpu_boundary_from_interruption(
     interruption: crate::MainLoopInterruption,
 ) -> Option<SpriteMainCpuBoundary> {
@@ -6194,6 +6210,13 @@ pub(super) enum SpriteMainItemReceiptSuffix {
     /// ROM `$86d13c` absorption case 13: `Link_ReceiveItem(0x32)` then the
     /// shared key/big-key savegame-bit tail.
     BigKeyAbsorption,
+    /// ROM `$85ef47` Sprite_HeartContainer's crystal branch:
+    /// `Link_ReceiveItem(0x3e)` then the savegame-state bit tail (route host
+    /// 102905).
+    HeartContainerFull,
+    /// ROM `$85ef47` Sprite_HeartContainer's piece-upgrade branch:
+    /// `Link_ReceiveItem(0x26)` then the obtained-flag tail.
+    HeartContainerUpgrade,
 }
 
 impl SpriteMainItemReceiptSuffix {
@@ -6203,7 +6226,10 @@ impl SpriteMainItemReceiptSuffix {
     /// Each suffix names one fixed C callsite, so its directness is a
     /// property of the callsite itself.
     pub(super) const fn caller_is_direct(self) -> bool {
-        matches!(self, Self::BigKeyAbsorption)
+        matches!(
+            self,
+            Self::BigKeyAbsorption | Self::HeartContainerFull | Self::HeartContainerUpgrade
+        )
     }
 }
 
@@ -17516,6 +17542,14 @@ impl ZeldaState {
                 || pending_at_completion
                 || after_completion.is_none()
             {
+                eprintln!(
+                    "[RCPT-REJECT] host={} valid_owner={valid_owner} incompatible_interruption={incompatible_interruption} pending_at_completion={pending_at_completion} after_completion_none={} pending_suffix={:?} publication_pending={} scheduler={:?}",
+                    self.frame_ctr_dbg,
+                    after_completion.is_none(),
+                    self.pending_main_loop_common_suffix,
+                    self.original_timing_nmi_publication_pending,
+                    self.game_execution_scheduler,
+                );
                 return Err(OriginalTimingReceiptInstallError::InvalidMainLoopIterationReturn);
             }
         }
@@ -18407,6 +18441,35 @@ impl ZeldaState {
                     "paired Sprite_Main checkpoint changed boundary before consumption",
                 );
             }
+            // When the host also restates a suspended item-receipt graphics
+            // call started directly by the interrupted slot, the pair names
+            // one C statement inside that call: the native body must enter
+            // it and suspend there; the begin site consumes the claim.
+            let suspended_direct_slot =
+                self.original_timing_semantic_receipts
+                    .as_ref()
+                    .and_then(|receipts| {
+                        receipts.semantic.iter().find_map(|receipt| match receipt {
+                            OriginalTimingSemanticReceipt::ItemReceiptGraphicsProgress(progress)
+                                if progress.progress == crate::SourceCallProgress::Suspended =>
+                            {
+                                match progress.caller {
+                                    ItemReceiptGraphicsCaller::SpriteMainDirect { slot } => {
+                                        Some(slot)
+                                    }
+                                    _ => None,
+                                }
+                            }
+                            _ => None,
+                        })
+                    });
+            if let Some(slot) = suspended_direct_slot {
+                assert!(
+                    direct_item_receipt_slot_pairs_with_boundary(slot, sprite_boundary),
+                    "a suspended direct item-receipt claim disagrees with its interrupted Sprite_Main statement: slot={slot} boundary={sprite_boundary:?}",
+                );
+                return Some((SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot), boundary));
+            }
             return Some((sprite_boundary, boundary));
         }
 
@@ -18546,6 +18609,27 @@ impl ZeldaState {
                             receipt,
                             OriginalTimingSemanticReceipt::SpriteMainProgressed(_)
                         )
+                    })
+                })
+    }
+
+    /// Whether the live wire's unconsumed `SpriteMainProgressed` checkpoint
+    /// (if any) names exactly the given suspended boundary — a re-statement
+    /// of a held suspension rather than a new refinement.
+    pub(super) fn original_timing_restates_sprite_main_checkpoint(
+        &self,
+        boundary: SpriteMainCpuBoundary,
+    ) -> bool {
+        matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && self
+                .original_timing_semantic_receipts
+                .as_ref()
+                .is_some_and(|receipts| {
+                    receipts.semantic().iter().any(|receipt| match receipt {
+                        OriginalTimingSemanticReceipt::SpriteMainProgressed(progress) => {
+                            sprite_main_cpu_boundary_from_progress(*progress) == boundary
+                        }
+                        _ => false,
                     })
                 })
     }
@@ -18987,13 +19071,43 @@ impl ZeldaState {
                 // resumed caller consume it. (The item-receipt interruption's
                 // AfterSlot restatement is validated by its own block above.)
                 for receipt in &semantic {
-                    if let OriginalTimingSemanticReceipt::SpriteMainProgressed(boundary) = receipt {
-                        assert_eq!(
-                            sprite_main_cpu_boundary_from_progress(*boundary),
-                            expected_boundary,
-                            "a paired Sprite_Main checkpoint disagrees with its interruption statement",
-                        );
-                        expected_semantic.push(*receipt);
+                    match receipt {
+                        OriginalTimingSemanticReceipt::SpriteMainProgressed(boundary) => {
+                            assert_eq!(
+                                sprite_main_cpu_boundary_from_progress(*boundary),
+                                expected_boundary,
+                                "a paired Sprite_Main checkpoint disagrees with its interruption statement",
+                            );
+                            expected_semantic.push(*receipt);
+                        }
+                        OriginalTimingSemanticReceipt::ItemReceiptGraphicsProgress(progress) => {
+                            // The interrupted statement can sit inside the
+                            // slot's direct item-receipt graphics call; the
+                            // adapter then restates that suspended source
+                            // call beside the slot checkpoint (route: slot
+                            // 15 suspends before any slot returns).
+                            assert_eq!(
+                                progress.progress,
+                                crate::SourceCallProgress::Suspended,
+                                "an interrupted item-receipt claim must report its suspended source call",
+                            );
+                            let ItemReceiptGraphicsCaller::SpriteMainDirect { slot } =
+                                progress.caller
+                            else {
+                                panic!(
+                                    "an interrupted main-loop host restated a non-direct item-receipt caller: {progress:?}"
+                                );
+                            };
+                            assert!(
+                                direct_item_receipt_slot_pairs_with_boundary(
+                                    slot,
+                                    expected_boundary,
+                                ),
+                                "a suspended direct item-receipt claim disagrees with its interruption statement: slot={slot} boundary={expected_boundary:?}",
+                            );
+                            expected_semantic.push(*receipt);
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -21872,7 +21986,10 @@ impl ZeldaState {
                     // A character DMA queued by the final rendered glyph may
                     // still be pending when the caller's terminal return
                     // crosses its NMI; that handler consumes the subroutine
-                    // (route host 92200).
+                    // (route host 92200). A (2,2) entry epilogue is NOT this
+                    // shape: at route host 103733 it marked a host whose ROM
+                    // had already finished the message while the native VWF
+                    // decoder was still mid-render (see memory notes).
                     (0, 0) | (2, 0)
                 ),
                 "a suspended VWF terminal return cannot overwrite an existing character epilogue: host={} frame={:?} subroutine={} disable={}",
@@ -23963,6 +24080,12 @@ impl ZeldaState {
             // measured. Their different entry boundaries are scheduled by
             // their semantic callers, not stored on the continuation.
             0 | 1 => {}
+            // A sprite's own state machine can hand out an item with method
+            // 2 (the heart-container pickup); its entry boundary is the
+            // direct slot caller's Sprite_Main statement and the wire's
+            // suspended claim proves the same measured decompression crosses
+            // NMIs (route host 102905).
+            2 if matches!(caller, ItemReceiptCaller::SpriteMainDirect { .. }) => {}
             // Other entry paths remain atomic until their ROM boundary is
             // measured.
             _ => return GameCallStatus::Returned,
@@ -32778,12 +32901,34 @@ impl ZeldaState {
             .game_execution_scheduler
             .take_after_current_trailing_nmi()
         {
-            if matches!(continuation, GameWorkContinuation::FinishSpriteMain { .. })
+            let held_sprite_main_boundary = match continuation {
+                GameWorkContinuation::FinishSpriteMain { boundary, .. } => Some(boundary),
+                _ => None,
+            };
+            if held_sprite_main_boundary.is_some()
                 && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                 && self.original_timing_semantic_receipts.is_some()
-                && self.original_timing_main_loop_interruption().is_none()
+                && match self.original_timing_main_loop_interruption() {
+                    None => true,
+                    // A held host can be re-interrupted at the SAME suspended
+                    // statement: another held vblank lands while the ROM has
+                    // not moved past the checkpoint (route host 102850). Any
+                    // other interruption keeps its refining owner.
+                    Some(interruption) => {
+                        sprite_main_cpu_boundary_from_interruption(interruption)
+                            == held_sprite_main_boundary
+                    }
+                }
                 && !self.original_timing_owes_sprite_main_return()
-                && !self.original_timing_owes_sprite_main_progress()
+                && (!self.original_timing_owes_sprite_main_progress()
+                    // The wire may re-checkpoint the SAME suspended boundary
+                    // at the host's end: the ROM stayed at that statement
+                    // through this whole host (route host 102849). A NEW
+                    // boundary stays on the bus for its refining owner.
+                    || self.original_timing_restates_sprite_main_checkpoint(
+                        held_sprite_main_boundary
+                            .expect("held Sprite_Main continuation lost its boundary"),
+                    ))
                 && self.original_timing_main_loop_return_timeline().is_none()
                 && self
                     .original_timing_semantic_receipts
@@ -32825,6 +32970,30 @@ impl ZeldaState {
                     Some(crate::MainLoopProgress::CallStackContinued),
                     "an un-named held Sprite_Main host must continue its suspended stack",
                 );
+                if self.original_timing_owes_sprite_main_progress() {
+                    // Retire the wire's same-boundary re-checkpoint; the
+                    // suspension continues from the identical statement
+                    // (route host 102849).
+                    let restated = self
+                        .take_original_timing_sprite_main_progress()
+                        .expect("restated Sprite_Main checkpoint disappeared");
+                    assert_eq!(
+                        Some(restated),
+                        held_sprite_main_boundary,
+                        "a held Sprite_Main host restated a different checkpoint than its suspension",
+                    );
+                }
+                if let Some(reinterrupted) = self.take_original_timing_main_loop_interruption_any()
+                {
+                    // The re-interruption names the same suspended statement
+                    // (validated above); retire it with the re-checkpoint
+                    // (route host 102850).
+                    assert_eq!(
+                        sprite_main_cpu_boundary_from_interruption(reinterrupted),
+                        held_sprite_main_boundary,
+                        "a held Sprite_Main host was re-interrupted at a different checkpoint",
+                    );
+                }
                 assert!(
                     self.original_timing_semantic_receipts
                         .as_ref()
@@ -33956,10 +34125,15 @@ impl ZeldaState {
                 if let Some(restated_slot_boundary) =
                     self.take_original_timing_sprite_main_progress()
                 {
-                    assert_eq!(
-                        restated_slot_boundary,
-                        SpriteMainCpuBoundary::AfterSlot(slot + 1),
-                        "an item-receipt claim disagrees with its restated Sprite_Main checkpoint",
+                    // Slot 15 suspends before any slot boundary is recorded,
+                    // so its restatement is BeforeFirstSlot (route host
+                    // 102905); lower slots restate AfterSlot(slot + 1).
+                    assert!(
+                        direct_item_receipt_slot_pairs_with_boundary(
+                            slot,
+                            restated_slot_boundary,
+                        ),
+                        "an item-receipt claim disagrees with its restated Sprite_Main checkpoint: slot={slot} restated={restated_slot_boundary:?}",
                     );
                 }
             }
@@ -37015,8 +37189,12 @@ impl ZeldaState {
                             } else if schedule.caller_suffix_nmis == 0 {
                                 assert_eq!(schedule.caller_nmis, 0);
                                 self.complete_module07_dungeon_after_submodule();
-                                self.nmi_prepare_sprites();
-                                self.clear_nmi_update_latch();
+                                // The suspended iteration's shared suffix owner
+                                // (armed when the conversion held the fresh
+                                // iteration) retires here; running the prep
+                                // directly would strand it and reject the next
+                                // host's install (route host 101340).
+                                self.retire_or_run_main_loop_common_suffix_after_module_return();
                             } else {
                                 assert_eq!(
                                     schedule.caller_nmis, schedule.caller_suffix_nmis,
@@ -37544,6 +37722,12 @@ impl ZeldaState {
                             }
                             SpriteMainItemReceiptSuffix::BigKeyAbsorption => {
                                 self.complete_big_key_absorption_item_receipt(sprite_slot)
+                            }
+                            SpriteMainItemReceiptSuffix::HeartContainerFull => {
+                                self.complete_heart_container_full_item_receipt()
+                            }
+                            SpriteMainItemReceiptSuffix::HeartContainerUpgrade => {
+                                self.complete_heart_container_upgrade_item_receipt(sprite_slot)
                             }
                         }
                         self.complete_sprite_main_after_interrupted_slot(sprite_slot);
