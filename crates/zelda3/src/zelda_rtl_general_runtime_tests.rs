@@ -4081,9 +4081,10 @@ fn run4789_terminal_spotlight_build_preflight_is_failure_atomic() {
         .accepts_nmi_dma_receipts = false;
     assert_rejected("nonreceptive carried snapshot", nonreceptive);
 
-    let mut stale_deferred = run4789_terminal_spotlight_build_state();
-    stale_deferred.deferred_display_snapshot = stale_deferred.display_snapshot.clone();
-    assert_rejected("stale deferred display generation", stale_deferred);
+    // A deferred display generation is no longer a rejection: a wire-held
+    // close entry publishes `AdvanceStaged` one host before a Build terminal
+    // (route host 76634), so the Build promotes the staged generation through
+    // the ordinary pipeline instead of failing the preflight.
 
     let mut specialized_suffix = run4789_terminal_spotlight_build_state();
     specialized_suffix.pending_main_loop_common_suffix = Some(
