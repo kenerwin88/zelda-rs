@@ -6222,6 +6222,10 @@ pub(super) enum SpriteMainItemReceiptSuffix {
     /// ROM `$85ef47` Sprite_HeartContainer's piece-upgrade branch:
     /// `Link_ReceiveItem(0x26)` then the obtained-flag tail.
     HeartContainerUpgrade,
+    /// ROM `$85f14d` Sprite_Sahasrahla's boots handout:
+    /// `Link_ReceiveItem(0x4b)` then the AI-state and map-icon tail (route
+    /// host 106127).
+    SahasrahlaBoots,
 }
 
 impl SpriteMainItemReceiptSuffix {
@@ -6233,7 +6237,10 @@ impl SpriteMainItemReceiptSuffix {
     pub(super) const fn caller_is_direct(self) -> bool {
         matches!(
             self,
-            Self::BigKeyAbsorption | Self::HeartContainerFull | Self::HeartContainerUpgrade
+            Self::BigKeyAbsorption
+                | Self::HeartContainerFull
+                | Self::HeartContainerUpgrade
+                | Self::SahasrahlaBoots
         )
     }
 }
@@ -21992,12 +21999,16 @@ impl ZeldaState {
                     // A character DMA queued by the final rendered glyph may
                     // still be pending when the caller's terminal return
                     // crosses its NMI; that handler consumes the subroutine
-                    // (route host 92200). A (2,2) entry epilogue is NOT this
-                    // shape: at route host 103733 it marked a host whose ROM
-                    // had already finished the message while the native VWF
-                    // decoder was still mid-render (see memory notes).
+                    // (route host 92200), and when every recent NMI was held
+                    // its paired disable flag survives too (route host
+                    // 105948). A (2,2) epilogue with the decoder still at
+                    // position zero is NOT this shape: it is the message
+                    // initialization's own epilogue, whose caller-return host
+                    // a different owner completes (route host 103733).
                     (0, 0) | (2, 0)
-                ),
+                ) || (self.game_state.display.pending_nmi_subroutine == 2
+                    && self.game_state.display.core_update_disable_flag == 2
+                    && self.game_state.messaging.runtime.dialogue_msg_read_pos() != 0),
                 "a suspended VWF terminal return cannot overwrite an existing character epilogue: host={} frame={:?} subroutine={} disable={}",
                 self.frame_ctr_dbg,
                 self.game_state.frame,
@@ -24147,7 +24158,16 @@ impl ZeldaState {
             assert_ne!(
                 caller,
                 ItemReceiptCaller::AtomicCaller,
-                "native Sprite_Main reached a direct item call before the source call returned",
+                "native Sprite_Main reached a direct item call before the source call returned: host={} slot={} sprite_type={:#04x} gfx={:#04x} method={} frame={:?}",
+                self.frame_ctr_dbg,
+                self.game_state.sprites.system.cur_object_index(),
+                self.sprite_slot_view(usize::from(
+                    self.game_state.sprites.system.cur_object_index()
+                ))
+                .sprite_type(),
+                gfx,
+                self.game_state.player.follower_link.item_receipt_method(),
+                self.game_state.frame,
             );
         }
         let continuation = match caller {
@@ -34931,7 +34951,8 @@ impl ZeldaState {
                     GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. }
                         | GameWorkContinuation::FinishPreDungeonEntranceLoad {
                             sprite_reset:
-                                PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted,
+                                PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted
+                                    | PreDungeonSpriteResetContinuation::Completed,
                         }
                 )
             )
@@ -34939,7 +34960,8 @@ impl ZeldaState {
             // The resumed caller's pre-dungeon sprite reset can be restated
             // at the interrupting acceptance or the host return; the native
             // body runs the same reset inside its own slices (route hosts
-            // 41278, 48537, 50718).
+            // 41278, 48537, 50718, and once more after the whole reset
+            // continuation completed at route host 104273).
             let _ = self.take_original_timing_dungeon_reset_sprites_progress();
             if let Some(receipt) = self.take_original_timing_sprite_reset_all_progress() {
                 assert_eq!(
@@ -37748,6 +37770,9 @@ impl ZeldaState {
                             }
                             SpriteMainItemReceiptSuffix::HeartContainerUpgrade => {
                                 self.complete_heart_container_upgrade_item_receipt(sprite_slot)
+                            }
+                            SpriteMainItemReceiptSuffix::SahasrahlaBoots => {
+                                self.complete_sahasrahla_boots_item_receipt(sprite_slot)
                             }
                         }
                         self.complete_sprite_main_after_interrupted_slot(sprite_slot);

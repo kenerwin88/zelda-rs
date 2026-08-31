@@ -5719,10 +5719,20 @@ impl ZeldaState {
             }
             2 => {
                 self.follower_link_state_mut().set_item_receipt_method(0);
-                self.link_receive_item(0x4b, 0);
-                let value = 3;
-                self.sprite_slot_view_mut(k).set_ai_state(value);
-                self.save_progress_mut().set_map_icons_indicator(3);
+                if self
+                    .link_receive_item_from(
+                        0x4b,
+                        0,
+                        ItemReceiptCaller::SpriteMainDirect {
+                            sprite_slot: k as u8,
+                            suffix: SpriteMainItemReceiptSuffix::SahasrahlaBoots,
+                        },
+                    )
+                    .is_suspended()
+                {
+                    return;
+                }
+                self.complete_sahasrahla_boots_item_receipt(k);
             }
             3 => {
                 self.sprite_show_message_unconditional(0x37);
@@ -5731,6 +5741,16 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    /// Source suffix after Sprite_Sahasrahla's boots handout
+    /// `Link_ReceiveItem(0x4b)` call (ROM `$85f14d`). A live timing authority
+    /// suspends the decompressor there; only the AI-state advance and the
+    /// map-icon indicator remain.
+    pub(super) fn complete_sahasrahla_boots_item_receipt(&mut self, k: usize) {
+        let value = 3;
+        self.sprite_slot_view_mut(k).set_ai_state(value);
+        self.save_progress_mut().set_map_icons_indicator(3);
     }
 
     // -----------------------------------------------------------------------
