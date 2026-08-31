@@ -3021,10 +3021,7 @@ impl ZeldaState {
                 "the isolated spotlight CPU plan and Live Link-position receipt cannot both own one interruption",
             );
             self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
-                    iteration,
-                    suffix_already_completed: false,
-                },
+                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration },
                 1,
             );
             return true;
@@ -3121,14 +3118,8 @@ impl ZeldaState {
     pub(super) fn complete_dungeon_exit_spotlight_link_movement(
         &mut self,
         iteration: SpotlightIteration,
-        suffix_already_completed: bool,
     ) {
         self.module0f_spotlight_close_link_and_oam();
-        if suffix_already_completed {
-            // The mid-copy Build host already ran the shared suffix; this
-            // continuation owns only the crossed Link movement/OAM leaf.
-            return;
-        }
         if iteration.prepares_main_loop_sprites_before_second_nmi() {
             self.nmi_prepare_sprites_for_main_loop_once();
             self.clear_nmi_update_latch();
@@ -3230,18 +3221,6 @@ impl ZeldaState {
         table_build: SpotlightTableBuildContinuation,
         projection_completed: bool,
     ) {
-        self.complete_dungeon_exit_spotlight_build_cpu_before_link(
-            table_build,
-            projection_completed,
-        );
-        self.module0f_spotlight_close_link_and_oam();
-    }
-
-    pub(super) fn complete_dungeon_exit_spotlight_build_cpu_before_link(
-        &mut self,
-        table_build: SpotlightTableBuildContinuation,
-        projection_completed: bool,
-    ) {
         if projection_completed {
             self.complete_iris_spotlight_configure_table_after_projection();
         } else {
@@ -3252,6 +3231,7 @@ impl ZeldaState {
             false,
         );
         debug_assert!(!caller_interrupted);
+        self.module0f_spotlight_close_link_and_oam();
     }
 
     pub(super) fn complete_dungeon_exit_spotlight_goal_caller(&mut self) {

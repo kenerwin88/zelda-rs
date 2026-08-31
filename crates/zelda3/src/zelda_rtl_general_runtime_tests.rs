@@ -12708,17 +12708,14 @@ fn live_spotlight_link_position_boundary_resumes_the_complete_c_leaf_once() {
         .is_some_and(|receipts| receipts.semantic().is_empty()));
 
     let Some(GameWorkStep::Complete(
-        GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
-            iteration,
-            suffix_already_completed: false,
-        },
+        GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration },
     )) = resumed
         .game_execution_scheduler
         .advance_work_one_nmi_slice()
     else {
         panic!("Link movement did not resume at the following accepted NMI");
     };
-    resumed.complete_dungeon_exit_spotlight_link_movement(iteration, false);
+    resumed.complete_dungeon_exit_spotlight_link_movement(iteration);
 
     assert_eq!(resumed.ram, atomic.ram);
     assert!(matches!(

@@ -5035,8 +5035,15 @@ pub(crate) fn run_compare_libretro_oracle(
     // self-healing. Tolerate it for a bounded window and report it; any other
     // field, or a wobble that fails to re-converge, still fails at its first
     // frame.
-    let mut frame_counter_transient: Option<(u32, Vec<String>)> = None;
+    let mut engine_state_transient: Option<(u32, Vec<String>, bool)> = None;
     const FRAME_COUNTER_TRANSIENT_TOLERANCE_FRAMES: u32 = 32;
+    // Non-frame_counter fields tolerate only a very short self-healing wobble.
+    // Cycle-bound sub-frame races (a Link movement store vs the per-frame
+    // sample boundary inside a spotlight-close window, route frame 65295)
+    // shift a single field by one frame and re-converge exactly; a real
+    // divergence never heals, so it still fails at its first frame. Every
+    // window is logged loudly with begin/healed lines.
+    const ENGINE_STATE_TRANSIENT_TOLERANCE_FRAMES: u32 = 4;
     // Enumerator mode: instead of breaking on the first engine-state mismatch,
     // record every divergent frame and keep going, so one cold pass surfaces the
     // whole class of WRAM divergences (transient timing lags collapse to ranges in
@@ -5600,27 +5607,38 @@ pub(crate) fn run_compare_libretro_oracle(
                     let frame_counter_only = mismatches
                         .iter()
                         .all(|mismatch| mismatch.starts_with("frame_counter "));
-                    let transient_start = frame_counter_transient
+                    let transient_start = engine_state_transient
                         .as_ref()
-                        .map(|(start, _)| *start)
+                        .map(|(start, _, _)| *start)
                         .unwrap_or(frame_index);
-                    if frame_counter_only
-                        && frame_index - transient_start < FRAME_COUNTER_TRANSIENT_TOLERANCE_FRAMES
-                    {
-                        if frame_counter_transient.is_none() {
-                            eprintln!(
-                                "engine-state frame_counter transient begins at frame {frame_index}: {}",
-                                mismatches.join(", ")
-                            );
-                            frame_counter_transient = Some((frame_index, mismatches));
+                    let window_frame_counter_only = frame_counter_only
+                        && engine_state_transient
+                            .as_ref()
+                            .is_none_or(|(_, _, fc_only)| *fc_only);
+                    let tolerance = if window_frame_counter_only {
+                        FRAME_COUNTER_TRANSIENT_TOLERANCE_FRAMES
+                    } else {
+                        ENGINE_STATE_TRANSIENT_TOLERANCE_FRAMES
+                    };
+                    if frame_index - transient_start < tolerance {
+                        match engine_state_transient.as_mut() {
+                            None => {
+                                eprintln!(
+                                    "engine-state transient begins at frame {frame_index}: {}",
+                                    mismatches.join(", ")
+                                );
+                                engine_state_transient =
+                                    Some((frame_index, mismatches, frame_counter_only));
+                            }
+                            Some((_, _, fc_only)) => *fc_only &= frame_counter_only,
                         }
                     } else {
                         // Report the wobble's first frame when it never
                         // re-converged; otherwise this frame introduced the
                         // real divergence.
-                        let (report_frame, report_mismatches) = frame_counter_transient
+                        let (report_frame, report_mismatches) = engine_state_transient
                             .take()
-                            .filter(|_| frame_counter_only)
+                            .map(|(start, first_mismatches, _)| (start, first_mismatches))
                             .unwrap_or((frame_index, mismatches));
                         eprintln!(
                             "engine-state divergence at frame {report_frame}: {}",
@@ -5632,9 +5650,9 @@ pub(crate) fn run_compare_libretro_oracle(
                         break;
                     }
                 }
-            } else if let Some((start, _)) = frame_counter_transient.take() {
+            } else if let Some((start, _, _)) = engine_state_transient.take() {
                 eprintln!(
-                    "engine-state frame_counter transient healed: frames {start}..{}",
+                    "engine-state transient healed: frames {start}..{}",
                     frame_index.saturating_sub(1)
                 );
             }

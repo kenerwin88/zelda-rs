@@ -6363,13 +6363,8 @@ enum GameWorkContinuation {
     /// Module0F reached vblank in `Link_MovePosition` before either coordinate
     /// integration store. The following host owns the complete movement and
     /// Link/OAM suffix, so no partially executed native leaf is replayed.
-    /// `suffix_already_completed` marks the mid-copy Build variant whose
-    /// `MainLoopCommonSuffixCompleted` already ran in the completing host:
-    /// the deferred leaf then owns only Link movement/OAM, never a second
-    /// suffix or scheduled return (route host 65295).
     FinishDungeonExitSpotlightLinkMovement {
         iteration: SpotlightIteration,
-        suffix_already_completed: bool,
     },
     /// Module10's Sprite_Main prefix returned, but vblank interrupted the
     /// opening-iris table build or copy before its radius/control suffix.
@@ -6603,10 +6598,6 @@ impl GameWorkContinuation {
         matches!(
             self,
             Self::FinishSpotlightIteration { .. }
-                | Self::FinishDungeonExitSpotlightLinkMovement {
-                    suffix_already_completed: true,
-                    ..
-                }
                 | Self::FinishDungeonSupertileTransition {
                     work: DungeonSupertileTransitionWork::State13CallerReturn,
                 }
@@ -18607,18 +18598,7 @@ impl ZeldaState {
                         interruption,
                         crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }
                     )
-                    || interruption.is_sprite_main()
-                    // A deferred Module0F movement leaf can precede a fresh
-                    // close iteration whose own Link movement is interrupted
-                    // before its coordinate stores (route hosts after 65295).
-                    || (interruption == crate::MainLoopInterruption::LinkPositionBeforeCoordinates
-                        && matches!(
-                            work,
-                            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
-                                suffix_already_completed: true,
-                                ..
-                            }
-                        )),
+                    || interruption.is_sprite_main(),
                 "a scheduled caller has no native same-host fresh-iteration owner for {interruption:?}: {work:?}",
             );
             assert!(
@@ -31640,17 +31620,11 @@ impl ZeldaState {
                 )));
                 self.complete_dungeon_exit_spotlight_link_velocity(position_return, iteration);
             }
-            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
-                iteration,
-                suffix_already_completed,
-            } => {
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration } => {
                 self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                     GraphicsDmaGeneration::HostBoundaryBeforeMain,
                 )));
-                self.complete_dungeon_exit_spotlight_link_movement(
-                    iteration,
-                    suffix_already_completed,
-                );
+                self.complete_dungeon_exit_spotlight_link_movement(iteration);
             }
             GameWorkContinuation::FinishDungeonCachedSpriteMain {
                 boundary,
@@ -33744,51 +33718,14 @@ impl ZeldaState {
                         projection_completed,
                     } = plan.cpu_action
                     {
-                        // A resumed Build tail long enough crosses this
-                        // host's boundary before Link's coordinate stores:
-                        // the oracle published link_y one host later with 51
-                        // copy words remaining (route host 65294, copied 173)
-                        // and with the copy not yet begun (route host 65296),
-                        // but in-host with 32 remaining (route host 63178,
-                        // copied 192). The threshold sits between the proven
-                        // points. A caller that returned before any trailing
-                        // NMI (route host 4790), a completed projection, or a
-                        // returns-before-next-vblank iteration (the
-                        // @HostReturn ProjectionCopy shape, route host 65292)
-                        // publishes in-host.
-                        const COPY_TAIL_CROSSES_SAMPLE_BOUNDARY_WORDS: u16 = 42;
-                        let remaining_copy_words = (SPOTLIGHT_VISIBLE_SCANLINES as u16)
-                            .saturating_sub(table_build.projection_words_copied);
-                        if plan.timeline.nmi_phases_after_return.is_empty()
-                            || projection_completed
-                            || plan
-                                .iteration
-                                .prepares_main_loop_sprites_before_second_nmi()
-                            || remaining_copy_words <= COPY_TAIL_CROSSES_SAMPLE_BOUNDARY_WORDS
-                        {
-                            state.complete_dungeon_exit_spotlight_build_cpu(
-                                table_build,
-                                projection_completed,
-                            );
-                            assert!(
-                                state.game_execution_scheduler.is_idle(),
-                                "terminal spotlight Build CPU completion scheduled successor work",
-                            );
-                        } else {
-                            // The suffix still belongs to this host; only the
-                            // movement leaf defers past the crossed NMI.
-                            state.complete_dungeon_exit_spotlight_build_cpu_before_link(
-                                table_build,
-                                projection_completed,
-                            );
-                            state.game_execution_scheduler.schedule_work(
-                                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
-                                    iteration: plan.iteration,
-                                    suffix_already_completed: true,
-                                },
-                                1,
-                            );
-                        }
+                        state.complete_dungeon_exit_spotlight_build_cpu(
+                            table_build,
+                            projection_completed,
+                        );
+                        assert!(
+                            state.game_execution_scheduler.is_idle(),
+                            "terminal spotlight Build CPU completion scheduled successor work",
+                        );
                     }
                     state.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                         GraphicsDmaGeneration::HostBoundaryBeforeMain,
@@ -35164,18 +35101,6 @@ impl ZeldaState {
                             crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }
                         )
                         || timeline.interruption.is_sprite_main()
-                        // The deferred Module0F movement leaf's same-host
-                        // fresh iteration can suspend before Link's
-                        // coordinate stores (route hosts after 65295).
-                        || (timeline.interruption
-                            == crate::MainLoopInterruption::LinkPositionBeforeCoordinates
-                            && matches!(
-                                self.game_execution_scheduler.current_work(),
-                                Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
-                                    suffix_already_completed: true,
-                                    ..
-                                })
-                            ))
                 );
             }
             // A same-host acceptance owns the ordinary capture boundary. A
@@ -37456,10 +37381,7 @@ impl ZeldaState {
                     self.complete_dungeon_exit_spotlight_link_velocity(position_return, iteration);
                 }
                 GameWorkStep::Complete(
-                    GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
-                        iteration,
-                        suffix_already_completed,
-                    },
+                    GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration },
                 ) => {
                     // The accepted NMI preceded Link_MovePosition's first
                     // coordinate publication. Resume the complete source leaf
@@ -37468,76 +37390,8 @@ impl ZeldaState {
                     self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                         GraphicsDmaGeneration::HostBoundaryBeforeMain,
                     )));
-                    self.complete_dungeon_exit_spotlight_link_movement(
-                        iteration,
-                        suffix_already_completed,
-                    );
-                    if suffix_already_completed {
-                        // The deferred movement leaf finished before this
-                        // host's own main-loop entry; the wire's fresh
-                        // iteration still belongs to this host and consumes
-                        // its Sprite_Main and spotlight receipts. When an
-                        // interrupted-idle plan owns this host, it already
-                        // carries this work as its scheduled predecessor and
-                        // runs the iteration itself.
-                        let plan_owns_iteration = prospective_interrupted_idle_main_loop_plan
-                            .as_ref()
-                            .is_some_and(|plan| plan.scheduled_predecessor.is_some());
-                        let taken = if plan_owns_iteration {
-                            None
-                        } else {
-                            authoritative_scheduled_caller_nmi_timeline
-                                .map(|timeline| timeline.progress)
-                                .or_else(|| {
-                                    authoritative_uninterrupted_scheduled_caller_nmi_timeline
-                                        .as_ref()
-                                        .map(|timeline| timeline.progress)
-                                })
-                                .or_else(|| self.take_original_timing_main_loop_progress())
-                        };
-                        match taken {
-                            _ if plan_owns_iteration => {}
-                            Some(progress @ crate::MainLoopProgress::IterationStarted) => {
-                                self.game_execution_scheduler
-                                    .prepare_same_host_main_iteration_after_authoritative_return();
-                                let same_host_sprite_main_claims = self
-                                    .original_timing_semantic_receipts
-                                    .as_ref()
-                                    .map(|receipts| {
-                                        receipts
-                                            .semantic()
-                                            .iter()
-                                            .filter(|receipt| {
-                                                **receipt
-                                                    == OriginalTimingSemanticReceipt::SpriteMainReturned
-                                            })
-                                            .count()
-                                    })
-                                    .unwrap_or(0);
-                                if same_host_sprite_main_claims != 0 {
-                                    self.begin_original_timing_sprite_main_return_claim_scope(
-                                        same_host_sprite_main_claims,
-                                    );
-                                }
-                                self.zelda_run_game_loop_with_progress(Some(progress));
-                                if same_host_sprite_main_claims != 0
-                                    && self
-                                        .original_timing_sprite_main_return_claims_remaining
-                                        .is_some()
-                                {
-                                    self.finish_original_timing_sprite_main_return_claim_scope();
-                                }
-                                self.stage_pending_dialogue_scroll_completion_after_captured_boundary();
-                            }
-                            Some(other) => panic!(
-                                "a deferred spotlight movement host cannot continue a suspended caller: {other:?}",
-                            ),
-                            None => {}
-                        }
-                        if !plan_owns_iteration {
-                            return;
-                        }
-                    } else if authoritative_scheduled_caller_return_timeline.is_some() {
+                    self.complete_dungeon_exit_spotlight_link_movement(iteration);
+                    if authoritative_scheduled_caller_return_timeline.is_some() {
                         // The wire's terminal return proves the shared
                         // ZeldaRunGameLoop suffix completes inside this host
                         // (route host 50636).
