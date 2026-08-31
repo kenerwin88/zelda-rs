@@ -6313,6 +6313,11 @@ enum GameWorkContinuation {
     FinishDungeonFallingEntrance {
         work: DungeonFallingEntranceWork,
     },
+    /// `Module07_07`'s subsub-2 `Dungeon_InitializeRoomFromSpecial` room
+    /// load runs suspended across many held vblanks (route hosts
+    /// 91639-91656); the wire's terminal return owns its completion and the
+    /// `subsubmodule += 1` advance.
+    FinishDungeonFallingRoomInitialization,
     FinishDungeonSupertileTransition {
         work: DungeonSupertileTransitionWork,
     },
@@ -6526,6 +6531,7 @@ impl GameWorkContinuation {
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
                 | Self::FinishOverworldSpriteReloadTail { .. }
                 | Self::FinishDungeonFallingEntrance { .. }
+                | Self::FinishDungeonFallingRoomInitialization
                 | Self::FinishPreDungeonEntranceLoad { .. }
                 | Self::FinishPreDungeonSongBankTransfer
                 | Self::FinishDungeonMapGraphicsPreparation
@@ -6553,6 +6559,7 @@ impl GameWorkContinuation {
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
                 | Self::FinishOverworldSpriteReloadTail { .. }
                 | Self::FinishDungeonFallingEntrance { .. }
+                | Self::FinishDungeonFallingRoomInitialization
                 | Self::FinishItemReceiptGraphics {
                     continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. }
                         | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. },
@@ -6602,6 +6609,10 @@ impl GameWorkContinuation {
             | Self::FinishStraightInterroomSpriteReset { .. }
             | Self::FinishWorldMapOverlayReload => Some(1),
             Self::FinishDungeonSupertileTransition { .. } => None,
+            // The falling room-init caller resumes through Module07_07 and
+            // the module tail's unconditional Sprite_Main before returning
+            // to main wait (route host 91656).
+            Self::FinishDungeonFallingRoomInitialization => Some(1),
             // A resumed Sprite_Main body crosses its native slot-zero return
             // during this completion, but the wire may have published the
             // matching SpriteMainReturned on the acceptance host instead of
@@ -21852,13 +21863,23 @@ impl ZeldaState {
                 self.dialogue_live_message_read_position_target, None,
                 "a suspended VWF terminal return retained an unconsumed endpoint target",
             );
-            assert_eq!(
-                (
-                    self.game_state.display.pending_nmi_subroutine,
-                    self.game_state.display.core_update_disable_flag,
+            assert!(
+                matches!(
+                    (
+                        self.game_state.display.pending_nmi_subroutine,
+                        self.game_state.display.core_update_disable_flag,
+                    ),
+                    // A character DMA queued by the final rendered glyph may
+                    // still be pending when the caller's terminal return
+                    // crosses its NMI; that handler consumes the subroutine
+                    // (route host 92200).
+                    (0, 0) | (2, 0)
                 ),
-                (0, 0),
-                "a suspended VWF terminal return cannot overwrite an existing character epilogue",
+                "a suspended VWF terminal return cannot overwrite an existing character epilogue: host={} frame={:?} subroutine={} disable={}",
+                self.frame_ctr_dbg,
+                self.game_state.frame,
+                self.game_state.display.pending_nmi_subroutine,
+                self.game_state.display.core_update_disable_flag,
             );
             // The suffix-completing Held NMI is either carried in from the
             // preceding host's return boundary or accepted and completed
@@ -23522,7 +23543,8 @@ impl ZeldaState {
         assert_eq!(
             self.original_timing_sprite_main_return_claims_remaining,
             Some(0),
-            "the native caller did not consume every claimed Sprite_Main return: frame={:?} scheduler={:?}",
+            "the native caller did not consume every claimed Sprite_Main return: host={} frame={:?} scheduler={:?}",
+            self.frame_ctr_dbg,
             self.game_state.frame,
             self.game_execution_scheduler,
         );
@@ -24154,13 +24176,16 @@ impl ZeldaState {
             return false;
         }
         debug_assert_eq!(self.game_state.frame.main_module, 7);
-        if matches!(
+        if work == DungeonSupertileTransitionWork::SpiralSpriteGraphics {
+            // The sprite-graphics reload lane is shared by the spiral-stairs
+            // ($0e) and warp-pad ($15) transitions.
+            debug_assert!(matches!(self.game_state.frame.submodule, 0x0e | 0x15));
+        } else if matches!(
             work,
             DungeonSupertileTransitionWork::SpiralRoomInitialization
                 | DungeonSupertileTransitionWork::SpiralBackgroundSync
                 | DungeonSupertileTransitionWork::SpiralRoomCallerResume
                 | DungeonSupertileTransitionWork::SpiralBgCharacters34
-                | DungeonSupertileTransitionWork::SpiralSpriteGraphics
         ) {
             debug_assert_eq!(self.game_state.frame.submodule, 0x0e);
         } else if matches!(
@@ -24482,6 +24507,18 @@ impl ZeldaState {
         self.finish_dungeon_room_load_caller_at_main_wait();
     }
 
+    /// The live wire's own Sprite_Main activity in a continuation host (no
+    /// fresh iteration owns those receipts) proves the resumed Module 7
+    /// caller already reached Sprite_Main within this host; the completion
+    /// arm must run that caller now instead of deferring it a slice (route
+    /// host 95851, the spiral-stairs caller interrupted at slot 1).
+    fn wire_spiral_caller_resumed_this_host(&self) -> bool {
+        matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && !self.original_timing_hosts_fresh_iteration()
+            && (self.original_timing_owes_sprite_main_return()
+                || self.original_timing_owes_sprite_main_progress())
+    }
+
     fn complete_dungeon_supertile_caller_return_host(
         &mut self,
         work: DungeonSupertileTransitionWork,
@@ -24625,6 +24662,72 @@ impl ZeldaState {
             link_obj: GraphicsDmaGeneration::HostBoundaryBeforeMain,
             link_obj_sources: GraphicsDmaGeneration::HostBoundaryBeforeMain,
         }));
+    }
+
+    /// Schedule the falling-transition room initialization when the live
+    /// wire proves the C call crosses this host: a trailing mid-call Held
+    /// acceptance remains with neither a suffix completion nor its return.
+    pub(super) fn begin_dungeon_falling_room_initialization_work(&mut self) -> bool {
+        if !self.rom_startup_timing()
+            || !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            || self.original_timing_semantic_receipts.is_none()
+        {
+            return false;
+        }
+        let trailing_held = self
+            .original_timing_expected_nmi_update_gates
+            .contains(&NmiUpdateGate::LatchHeld)
+            || self
+                .original_timing_semantic_receipts
+                .as_ref()
+                .is_some_and(|receipts| {
+                    receipts.semantic().iter().any(|receipt| {
+                        matches!(
+                            receipt,
+                            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld)
+                        )
+                    })
+                });
+        let suffix_completed = self
+            .original_timing_semantic_receipts
+            .as_ref()
+            .is_some_and(|receipts| {
+                receipts.semantic().iter().any(|receipt| {
+                    matches!(
+                        receipt,
+                        OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted
+                    )
+                })
+            });
+        // A second wire shape holds the caller past the host boundary without
+        // any trailing acceptance: the iteration starts, enters the room
+        // initialization, and the host ends mid-call — the interrupting NMI
+        // arrives as the next host's leading acceptance (route host 92533,
+        // the warp-pad transition). At this call site every leading receipt
+        // has been consumed, so the wire's remainder is empty; the zero-claim
+        // plan proves Sprite_Main never returns this host, and no owed
+        // progress or return timeline points the interruption anywhere else.
+        let open_ended_hold = self
+            .original_timing_semantic_receipts
+            .as_ref()
+            .is_some_and(|receipts| receipts.semantic().is_empty())
+            && self.original_timing_expected_nmi_update_gates.is_empty()
+            && self.original_timing_sprite_main_return_claims_remaining == Some(0)
+            && !self.original_timing_owes_sprite_main_return()
+            && !self.original_timing_owes_sprite_main_progress()
+            && self.original_timing_main_loop_return_timeline().is_none();
+        if !(trailing_held || open_ended_hold) || suffix_completed {
+            return false;
+        }
+        // The C call's spiral-stairs adjust publishes Link's coordinates,
+        // camera, and room bounds before the first held vblank; only the
+        // room-load tail waits for the terminal return.
+        self.Dungeon_AdjustAfterSpiralStairs();
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonFallingRoomInitialization,
+            1,
+        );
+        true
     }
 
     pub(super) fn begin_pre_dungeon_entrance_load_work(&mut self) -> bool {
@@ -35949,7 +36052,10 @@ impl ZeldaState {
                     )
             } else if matches!(
                 self.game_execution_scheduler.current_work(),
-                Some(GameWorkContinuation::FinishDungeonFallingEntrance { .. })
+                Some(
+                    GameWorkContinuation::FinishDungeonFallingEntrance { .. }
+                        | GameWorkContinuation::FinishDungeonFallingRoomInitialization
+                )
             ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             {
                 // The wire's terminal return, not the slice estimate, decides
@@ -36685,6 +36791,40 @@ impl ZeldaState {
                     return;
                 }
                 GameWorkStep::Complete(
+                    GameWorkContinuation::FinishDungeonFallingRoomInitialization,
+                ) => {
+                    // Dungeon_InitializeRoomFromSpecial returns through
+                    // Module07_07 and the ordinary game-loop suffix at the
+                    // wire's terminal host; the subsubmodule advance is the
+                    // call's own final statement (route host 91656).
+                    if authoritative_scheduled_caller_accepts_nmi_at_return.is_none() {
+                        self.capture_display_snapshot();
+                        self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    }
+                    if let Some((_, _, sprite_main_return_claims)) =
+                        authoritative_scheduled_caller_return_timeline.as_ref()
+                    {
+                        self.begin_original_timing_sprite_main_return_claim_scope(
+                            *sprite_main_return_claims,
+                        );
+                    }
+                    self.dungeon_initialize_room_from_special_after_adjust();
+                    // The resumed caller falls out of Module07_07 into the
+                    // module tail: Sprite_Main, LinkOam, and the HUD suffix
+                    // run before the main-wait return.
+                    self.complete_module07_dungeon_after_submodule();
+                    if authoritative_scheduled_caller_return_timeline.is_some() {
+                        self.finish_original_timing_sprite_main_return_claim_scope();
+                    }
+                    if self.pending_main_loop_common_suffix.is_some() {
+                        self.complete_pending_main_loop_common_suffix_after_module_return();
+                    } else {
+                        self.nmi_prepare_sprites();
+                        self.clear_nmi_update_latch();
+                    }
+                    return;
+                }
+                GameWorkStep::Complete(
                     GameWorkContinuation::FinishDungeonSupertileTransition { work },
                 ) => {
                     // A wire-proven caller return names how many shared
@@ -36983,9 +37123,16 @@ impl ZeldaState {
                                 .dungeon_submodule_cpu_schedule
                                 .take()
                                 .expect("spiral-room completion requires its CPU schedule");
-                            if schedule.caller_nmis == 0 {
+                            if schedule.caller_nmis == 0
+                                || self.wire_spiral_caller_resumed_this_host()
+                            {
                                 self.complete_module07_dungeon_after_submodule();
-                                self.retire_or_run_main_loop_common_suffix_after_module_return();
+                                if !self
+                                    .game_execution_scheduler
+                                    .work_suspends_translated_call_stack()
+                                {
+                                    self.retire_or_run_main_loop_common_suffix_after_module_return();
+                                }
                             } else {
                                 self.game_execution_scheduler.schedule_work(
                                     GameWorkContinuation::FinishDungeonSupertileTransition {
@@ -37001,9 +37148,16 @@ impl ZeldaState {
                                 .dungeon_submodule_cpu_schedule
                                 .take()
                                 .expect("spiral background completion requires its CPU schedule");
-                            if schedule.caller_nmis == 0 {
+                            if schedule.caller_nmis == 0
+                                || self.wire_spiral_caller_resumed_this_host()
+                            {
                                 self.complete_module07_dungeon_after_submodule();
-                                self.retire_or_run_main_loop_common_suffix_after_module_return();
+                                if !self
+                                    .game_execution_scheduler
+                                    .work_suspends_translated_call_stack()
+                                {
+                                    self.retire_or_run_main_loop_common_suffix_after_module_return();
+                                }
                             } else {
                                 self.game_execution_scheduler.schedule_work(
                                     GameWorkContinuation::FinishDungeonSupertileTransition {

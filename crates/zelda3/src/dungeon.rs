@@ -10074,7 +10074,15 @@ impl ZeldaState {
         match self.game_state.frame.subsubmodule {
             0 => self.reset_transition_props_and_advance_reset_interface(),
             1 => self.Module07_15_01_ApplyMosaicAndFilter(),
-            2 => self.Dungeon_InitializeRoomFromSpecial(),
+            2 => {
+                // The warp-pad room initialization is the same long
+                // Dungeon_InitializeRoomFromSpecial call as the falling
+                // entrance's; it can hold the translated caller across the
+                // wire-held vblank (route host 92533).
+                if !self.begin_dungeon_falling_room_initialization_work() {
+                    self.Dungeon_InitializeRoomFromSpecial();
+                }
+            }
             3 => self.DungeonTransition_LoadSpriteGFX(),
             4 => self.Module07_15_04_SyncRoomPropsAndBuildOverlay(),
             5 => self.Dungeon_InterRoomTrans_State4(),
@@ -10171,8 +10179,17 @@ impl ZeldaState {
                 }
                 ModuleCpuPhase::InterruptedBeforeSpriteMain
                 | ModuleCpuPhase::InterruptedInSpriteMain => {
-                    let armed = self.arm_dungeon_sprite_main_cpu_continuation(advance);
-                    debug_assert!(armed);
+                    if self.original_timing_owes_sprite_main_return() {
+                        // The live wire proves this host's Sprite_Main return
+                        // crossed before the held acceptance; the estimate's
+                        // raster phase drifted into the body. Run the body
+                        // whole and suspend at the post-return boundary
+                        // instead (route host 92969).
+                        self.dungeon_post_sprite_main_return_pending = true;
+                    } else {
+                        let armed = self.arm_dungeon_sprite_main_cpu_continuation(advance);
+                        debug_assert!(armed);
+                    }
                 }
                 ModuleCpuPhase::InterruptedAfterSpriteMain
                 | ModuleCpuPhase::InterruptedInLinkOam => {
@@ -10305,15 +10322,27 @@ impl ZeldaState {
                             false
                         }
                         Some(
+                            ModuleCpuPhase::InterruptedAfterSpriteMain
+                            | ModuleCpuPhase::InterruptedInLinkOam,
+                        ) => {
+                            // As in state 13: the translated common suffix
+                            // executes Sprite_Main exactly once, then suspends
+                            // at the measured post-sprite boundary before
+                            // resuming Link/OAM work after NMI (route: the
+                            // warp-pad landing following host 92533).
+                            self.dungeon_post_sprite_main_return_pending = true;
+                            false
+                        }
+                        Some(
                             phase @ (ModuleCpuPhase::InterruptedBeforeSubmodule
                             | ModuleCpuPhase::InterruptedInSubmodule
                             | ModuleCpuPhase::InterruptedBeforeSpriteMain
                             | ModuleCpuPhase::InterruptedInSpriteMain
-                            | ModuleCpuPhase::InterruptedAfterSpriteMain
-                            | ModuleCpuPhase::InterruptedInLinkOam
                             | ModuleCpuPhase::InterruptedAfterModule),
                         ) => panic!(
-                            "state-12 vblank reached {phase:?}; a semantic continuation is required"
+                            "state-12 vblank reached {phase:?}; a semantic continuation is required (host={} room={:04x})",
+                            self.frame_ctr_dbg,
+                            self.game_state.world.location.dungeon_room(),
                         ),
                         Some(ModuleCpuPhase::CompleteBeforeNmi) | None => false,
                     };
@@ -10418,7 +10447,11 @@ impl ZeldaState {
         match self.game_state.frame.subsubmodule {
             0 => self.Module07_07_00_HandleMusicAndResetRoom(),
             1 => self.ApplyPaletteFilter_bounce(),
-            2 => self.Dungeon_InitializeRoomFromSpecial(),
+            2 => {
+                if !self.begin_dungeon_falling_room_initialization_work() {
+                    self.Dungeon_InitializeRoomFromSpecial();
+                }
+            }
             3 => self.DungeonTransition_TriggerBGC34UpdateAndAdvance(),
             4 => self.DungeonTransition_TriggerBGC56UpdateAndAdvance(),
             5 => self.DungeonTransition_LoadSpriteGFX(),
@@ -11278,8 +11311,11 @@ impl ZeldaState {
 
     pub(super) fn DungeonTransition_LoadSpriteGFX(&mut self) {
         self.LoadNewSpriteGFXSet();
+        // The warp-pad transition ($15) shares this exact sprite-graphics
+        // reload with the spiral-stairs transition ($0e); both can hold the
+        // translated caller across measured NMI slices (route host 92533).
         if self.game_state.frame.main_module == 7
-            && self.game_state.frame.submodule == 0x0e
+            && matches!(self.game_state.frame.submodule, 0x0e | 0x15)
             && self.begin_dungeon_supertile_transition_work(
                 DungeonSupertileTransitionWork::SpiralSpriteGraphics,
             )
@@ -11412,6 +11448,15 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_InitializeRoomFromSpecial(&mut self) {
         self.Dungeon_AdjustAfterSpiralStairs();
+        self.dungeon_initialize_room_from_special_after_adjust();
+    }
+
+    /// The room load and tileset tail of `Dungeon_InitializeRoomFromSpecial`.
+    /// Under ROM timing the falling transition's wire-held work runs the
+    /// spiral-stairs adjust at the scheduling host (Link's coordinates and
+    /// camera land immediately, route host 91638) and only this tail at the
+    /// terminal completion.
+    pub(super) fn dungeon_initialize_room_from_special_after_adjust(&mut self) {
         self.Dungeon_LoadRoom();
         self.ResetStarTileGraphics();
         self.LoadTransAuxGFX();

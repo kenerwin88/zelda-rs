@@ -404,6 +404,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDialogueInitializationCallerReturn
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
+                | GameWorkContinuation::FinishDungeonFallingRoomInitialization
                 | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
                 | GameWorkContinuation::FinishStraightInterroomSpriteReset { .. }
                 | GameWorkContinuation::FinishSpriteMain { .. }
