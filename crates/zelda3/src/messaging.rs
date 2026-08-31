@@ -3751,6 +3751,13 @@ impl ZeldaState {
             .init_msgbox_state_from(&TEXT_INITIALIZATION_DATA);
         self.clear_bg3_vwf_glyph_runs();
         self.Text_InitVwfState();
+        // A fresh message's render machine cannot inherit the previous
+        // message's suspended-glyph CPU model: the C main thread is inside
+        // Text_Initialize here, not the VWF glyph loop. A stale hold routed
+        // the initialization's caller-return host into the VWF terminal
+        // branch (route host 103733).
+        self.dialogue_fast_forward_hold_active = false;
+        self.dialogue_fast_forward_hold_pending = false;
         self.RenderText_SetDefaultWindowPosition();
         self.messaging_state_mut().set_text_tilemap_cur(0x3980);
     }

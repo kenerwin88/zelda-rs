@@ -869,6 +869,31 @@ impl ZeldaState {
         self.game_state.system_signals.apui00()
     }
 
+    /// The APUI00 value the ROM's mid-frame song-end poll observes.
+    ///
+    /// The modern driver clock advances only when the host renders audio at
+    /// the END of a game frame, so a fanfare-end port-0 clear that the real
+    /// SPC emits mid-frame reaches the `apui00` snapshot one host late. The
+    /// crystal and pendant ceremony gates poll that edge exactly (route host
+    /// 103727); peek one native frame ahead on a clone of the deterministic
+    /// driver clock to read the value the mid-frame poll sees.
+    pub(crate) fn zelda_read_apui00_for_song_end_poll(&self) -> u8 {
+        let current = self.game_state.system_signals.apui00();
+        if current == 0 {
+            return 0;
+        }
+        let Some(clock) = self.audio.modern.driver_clock.as_ref() else {
+            return current;
+        };
+        let mut peek = clock.clone();
+        peek.advance(
+            self.audio.modern.queue.input_commands,
+            crate::game_output::AUDIO_INTERNAL_SAMPLES_PER_FRAME as u32,
+            self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_input,
+        );
+        peek.host_acknowledgements()[0]
+    }
+
     /// Legacy APUI acknowledgement projection used by compatibility tests.
     #[cfg(test)]
     pub fn zelda_apu_read(&self, adr: u32) -> u8 {

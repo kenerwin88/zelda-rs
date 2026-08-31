@@ -2572,7 +2572,8 @@ impl ZeldaState {
                     );
                 return;
             }
-            SpriteMainCpuCaller::Module09 { boundary } => {
+            SpriteMainCpuCaller::Module09 { boundary }
+            | SpriteMainCpuCaller::BossVictory { boundary } => {
                 match boundary {
                     OriginalTimingBoundary::HostReturn => self
                         .game_execution_scheduler

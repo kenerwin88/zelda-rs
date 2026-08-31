@@ -883,7 +883,65 @@ impl ZeldaState {
             5 => self.Spotlight_ConfigureTableAndControl(),
             _ => {}
         }
+        if let Some((boundary, resume_boundary)) =
+            self.take_original_timing_sprite_main_boundary_for_fresh_caller()
+        {
+            // The spotlight/victory submodule can consume the frame so that
+            // vblank interrupts the shared Sprite_Main at a source-named
+            // boundary; the Link/OAM suffix resumes across the accepted NMI
+            // (route host 103998).
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                boundary,
+                SpriteMainCpuCaller::BossVictory {
+                    boundary: resume_boundary,
+                },
+            );
+        } else if let Some(boundary) = self.take_original_timing_sprite_main_progress() {
+            // SCAN_KEYS returned the host while the source was inside
+            // Sprite_Main without accepting an NMI (route host 104004). The
+            // interrupting NMI arrives as the NEXT host's leading one; the
+            // scheduled-work resume publishes that handler before the
+            // resumed body.
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                boundary,
+                SpriteMainCpuCaller::BossVictory {
+                    boundary: crate::zelda_rtl::OriginalTimingBoundary::HostReturn,
+                },
+            );
+        } else if matches!(
+            self.original_timing_owner,
+            crate::zelda_rtl::OriginalTimingOwnerState::Live
+        ) && self
+            .original_timing_semantic_receipts
+            .as_ref()
+            .is_some_and(|receipts| receipts.semantic().is_empty())
+            && self.original_timing_expected_nmi_update_gates.is_empty()
+            && self.original_timing_sprite_main_return_claims_remaining == Some(0)
+            && !self.original_timing_owes_sprite_main_return()
+            && !self.original_timing_owes_sprite_main_progress()
+            && self.original_timing_main_loop_return_timeline().is_none()
+        {
+            // An open-ended wire hold: the fresh iteration enters the
+            // spotlight build and the host ends mid-call with no trailing
+            // acceptance — the interrupting NMI arrives as the next host's
+            // leading one, and the zero-claim plan proves Sprite_Main never
+            // runs this host (route host 104000; the warp-pad analogue is
+            // route host 92533). The suspension resumes across that
+            // acceptance, not at this host's return.
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                crate::zelda_rtl::SpriteMainCpuBoundary::BeforeFirstSlot,
+                SpriteMainCpuCaller::BossVictory {
+                    boundary: crate::zelda_rtl::OriginalTimingBoundary::NmiAccepted,
+                },
+            );
+        }
         self.sprite_main();
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
+            return;
+        }
         self.link_oam_main();
     }
 

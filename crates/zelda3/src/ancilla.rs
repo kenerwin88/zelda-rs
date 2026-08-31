@@ -6855,7 +6855,7 @@ impl ZeldaState {
                     if a == 1 {
                         let item = self.ancilla_slot_view(k).item_to_link();
                         if (item == 0x37 || item == 0x38 || item == 0x39)
-                            && self.zelda_read_apui00() != 0
+                            && self.zelda_read_apui00_for_song_end_poll() != 0
                         {
                             let value = self.ancilla_slot_view(k).aux_timer().wrapping_add(1);
                             self.ancilla_slot_view_mut(k).set_aux_timer(value);
@@ -6996,7 +6996,7 @@ impl ZeldaState {
             let value = 0;
             self.ancilla_slot_view_mut(k).set_z(value);
             self.ancilla_add_occasional_sparkle(k);
-            if self.zelda_read_apui00() == 0 {
+            if self.zelda_read_apui00_for_song_end_poll() == 0 {
                 self.set_music_control(0x1a);
                 self.item_receipt_transmute_to_rising_crystal(k);
                 return;

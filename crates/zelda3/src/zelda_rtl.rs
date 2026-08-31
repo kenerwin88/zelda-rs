@@ -4648,6 +4648,11 @@ enum SpriteMainCpuCaller {
     WorldMapOverlayReload {
         module09: Module09SpriteMainReturn,
     },
+    /// The Module13 boss-victory caller whose Link/OAM suffix remains
+    /// pending after the interrupted slot loop (route host 103998).
+    BossVictory {
+        boundary: OriginalTimingBoundary,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -6598,7 +6603,8 @@ impl GameWorkContinuation {
                 | Self::FinishSpriteMain {
                     caller: SpriteMainCpuCaller::DungeonModule07
                         | SpriteMainCpuCaller::DungeonModule07Live { .. }
-                        | SpriteMainCpuCaller::Module09 { .. },
+                        | SpriteMainCpuCaller::Module09 { .. }
+                        | SpriteMainCpuCaller::BossVictory { .. },
                     ..
                 }
                 | Self::FinishBigKeyDropGraphics { .. }
@@ -31985,6 +31991,18 @@ impl ZeldaState {
                             self.nmi_prepare_sprites();
                             self.clear_nmi_update_latch();
                         }
+                        SpriteMainCpuCaller::BossVictory { .. } => {
+                            // Module13's caller runs only LinkOam and the
+                            // shared game-loop suffix after Sprite_Main
+                            // (route host 103998).
+                            self.link_oam_main();
+                            if self.pending_main_loop_common_suffix.is_some() {
+                                self.complete_pending_main_loop_common_suffix_after_module_return();
+                            } else {
+                                self.nmi_prepare_sprites();
+                                self.clear_nmi_update_latch();
+                            }
+                        }
                     }
                 }
             }
@@ -35073,7 +35091,9 @@ impl ZeldaState {
                 if matches!(caller, SpriteMainCpuCaller::DungeonModule07Live { .. })
                     || (matches!(
                         caller,
-                        SpriteMainCpuCaller::DungeonModule07 | SpriteMainCpuCaller::Module09 { .. }
+                        SpriteMainCpuCaller::DungeonModule07
+                            | SpriteMainCpuCaller::Module09 { .. }
+                            | SpriteMainCpuCaller::BossVictory { .. }
                     ) && (authoritative_scheduled_caller_nmi_timeline.is_some()
                         || authoritative_sprite_main_progress.is_some()
                         || authoritative_sprite_main_returned)) =>
@@ -37984,6 +38004,7 @@ impl ZeldaState {
                         SpriteMainCpuCaller::DungeonModule07
                             | SpriteMainCpuCaller::DungeonModule07Live { .. }
                             | SpriteMainCpuCaller::Module09 { .. }
+                            | SpriteMainCpuCaller::BossVictory { .. }
                     ));
                     if std::env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                         eprintln!(
@@ -38058,8 +38079,16 @@ impl ZeldaState {
                                     return;
                                 }
                             }
+                            SpriteMainCpuCaller::BossVictory { .. } => {
+                                // The wire-proven terminal return owns the
+                                // leading handler and trailing publication
+                                // through the shared lane; only Module13's
+                                // Link/OAM suffix runs here (route host
+                                // 104004).
+                                self.link_oam_main();
+                            }
                             _ => unreachable!(
-                                "this completion arm accepts dungeon and ordinary Module09 callers"
+                                "this completion arm accepts dungeon, Module09, and boss-victory callers"
                             ),
                         }
                         if scheduled_return_sprite_main_claims.is_some() {
