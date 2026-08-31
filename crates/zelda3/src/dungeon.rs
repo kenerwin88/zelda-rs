@@ -10153,12 +10153,21 @@ impl ZeldaState {
             match advance.phase {
                 ModuleCpuPhase::InterruptedInNmiPrepareSprites
                 | ModuleCpuPhase::InterruptedAfterModule => {
-                    let scheduled = self.begin_dungeon_supertile_transition_work(
-                        DungeonSupertileTransitionWork::State13CallerReturn,
-                    );
-                    debug_assert!(scheduled);
-                    self.dungeon_state_13_recurring_main_publication_host_frame =
-                        Some(self.frame_ctr_dbg);
+                    if self.original_timing_owes_sprite_main_return() {
+                        // The live wire still owes this host its Sprite_Main
+                        // return, so the caller cannot suspend before that
+                        // body. Its typed interruption receipt (for host
+                        // 27210, SpritePreparation) names the real suspension
+                        // point and owns it through its own consumer; the
+                        // estimate advance stands down entirely.
+                    } else {
+                        let scheduled = self.begin_dungeon_supertile_transition_work(
+                            DungeonSupertileTransitionWork::State13CallerReturn,
+                        );
+                        debug_assert!(scheduled);
+                        self.dungeon_state_13_recurring_main_publication_host_frame =
+                            Some(self.frame_ctr_dbg);
+                    }
                 }
                 ModuleCpuPhase::InterruptedBeforeSpriteMain
                 | ModuleCpuPhase::InterruptedInSpriteMain => {
@@ -10175,6 +10184,18 @@ impl ZeldaState {
                 ModuleCpuPhase::CompleteBeforeNmi => {
                     self.dungeon_state_13_atomic_caller_return_publication_host_frame =
                         Some(self.frame_ctr_dbg);
+                }
+                ModuleCpuPhase::InterruptedBeforeNmiPrepareSprites
+                    if matches!(
+                        self.original_timing_owner,
+                        crate::zelda_rtl::OriginalTimingOwnerState::Live
+                    ) =>
+                {
+                    // The interrupt landed after the module body and its
+                    // Sprite_Main but before NMI_PrepareSprites began. The
+                    // live host plan's armed pending common suffix owns the
+                    // deferred prep; no scheduled work is needed (route host
+                    // 33322).
                 }
                 phase => panic!(
                     "state-13 vblank reached {phase:?}; a semantic continuation is required \

@@ -1207,10 +1207,15 @@ impl OriginalTimingHostReceipts {
         expected: MainLoopInterruption,
     ) -> Option<OriginalTimingBoundary> {
         let forwarded = self.forwarded_main_loop_interruption?;
-        assert_eq!(
-            forwarded.interruption, expected,
-            "translated caller requested a different forwarded interruption phase",
-        );
+        if forwarded.interruption != expected {
+            // A translated caller probing for its own phase is not the owner
+            // of a differently-phased forwarded interruption; leave it for
+            // its real consumer (route host 56395: the module's LinkOam
+            // probe must not consume a forwarded extended-OAM-packing
+            // boundary owned by the game-loop suffix). The host close still
+            // fails if no owner ever consumes it.
+            return None;
+        }
         self.forwarded_main_loop_interruption = None;
         Some(forwarded.boundary)
     }

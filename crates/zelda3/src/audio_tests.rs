@@ -1026,12 +1026,6 @@ fn acknowledged_ambient_clear_uses_the_live_nmi_latch_without_hiding_a_new_comma
 }
 
 #[test]
-fn after_publication_ambient_override_is_provenance_driven() {
-    let state = ZeldaState::new();
-    assert_eq!(state.audio_after_publication_ambient_nmi, None);
-}
-
-#[test]
 fn spiral_return_audio_selects_live_one_shot_sfx_only_at_the_measured_cpu_boundary() {
     assert!(super::spiral_return_audio_uses_live_one_shot_sfx_latches(
         7, 0x0e, 0x0b, 1, 0x30

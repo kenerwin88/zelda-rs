@@ -1572,7 +1572,10 @@ fn overworld_reload_tail_waits_for_its_nested_module09_sprite_main_return() {
     state.set_main_module(9);
     state.set_submodule(4);
     state.original_timing_owner = OriginalTimingOwnerState::Live;
-    state.original_timing_nmi_publication_pending = true;
+    // A carried Held handler always leaves its acceptance host's receptive
+    // snapshot behind; the uninterrupted scheduled-caller timeline now
+    // validates that pairing for reload-tail hosts.
+    state.capture_and_carry_original_timing_nmi_publication_at_host_return();
     state.game_execution_scheduler.schedule_work(
         GameWorkContinuation::FinishOverworldSpriteReloadTail {
             post_return_hold_nmi_slices: 0,
@@ -2380,11 +2383,11 @@ fn terminal_spotlight_caller_preflight_is_failure_atomic() {
         assert_rejected(label, wrong_work);
     }
 
+    // The Link-movement CPU owner is no longer a rejected shape: route host
+    // 50636 proved its wire-owned terminal return, so the scheduled-caller
+    // return lane now consumes it (with the Module0F caller-return token)
+    // instead of failing closed.
     for (label, work) in [
-        (
-            "Link-movement CPU owner",
-            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration: closing },
-        ),
         (
             "Link-velocity CPU owner",
             GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity {
@@ -3076,6 +3079,839 @@ fn run4790_checkpoint_then_run4791_terminal_build_carries_its_trailing_open_once
     assert_eq!(state.next_display_obj_scanout_generation, None);
 }
 
+/// One spotlight-close fresh-iteration host from the run4792..run4818 window:
+/// an optional leading Open acceptance, the shared handler/joypad/iteration
+/// prefix, then the host-specific tail (a table checkpoint, a LinkOam
+/// interruption, or nothing when the module body finished inside the host).
+fn run48xx_spotlight_close_fresh_semantic(
+    leading_open_acceptance: bool,
+    tail: &[OriginalTimingSemanticReceipt],
+) -> Vec<OriginalTimingSemanticReceipt> {
+    let mut semantic = Vec::new();
+    if leading_open_acceptance {
+        semantic.push(OriginalTimingSemanticReceipt::NmiAccepted(
+            NmiUpdateGate::Open,
+        ));
+    }
+    semantic.extend([
+        OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+        OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+            high: 4,
+            low: 0,
+            high_filtered: 0,
+            low_filtered: 0,
+        }),
+        OriginalTimingSemanticReceipt::MainLoopProgress(crate::MainLoopProgress::IterationStarted),
+        OriginalTimingSemanticReceipt::SpriteMainReturned,
+    ]);
+    semantic.extend_from_slice(tail);
+    semantic
+}
+
+fn run48xx_spotlight_projection_claim(
+    copied_words: u16,
+    boundary: OriginalTimingBoundary,
+) -> OriginalTimingSemanticReceipt {
+    OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+        crate::SpotlightTableBuildProgressReceipt {
+            progress: crate::SpotlightTableBuildProgress {
+                completed_iterations: 239,
+                checkpoint: crate::SpotlightTableBuildCheckpoint::ProjectionCopy { copied_words },
+            },
+            boundary,
+        },
+    )
+}
+
+/// One module-qualified spotlight-close terminal return from the
+/// run4793..run4817 window: a carried or same-host Held handler, the shared
+/// continued-return/suffix pair, an optional trailing Open acceptance, and
+/// the wire-last caller-return token.
+fn run48xx_spotlight_terminal_semantic(
+    same_host_held: bool,
+    trailing_open: bool,
+) -> Vec<OriginalTimingSemanticReceipt> {
+    let mut semantic = Vec::new();
+    if same_host_held {
+        semantic.push(OriginalTimingSemanticReceipt::NmiAccepted(
+            NmiUpdateGate::LatchHeld,
+        ));
+    }
+    semantic.extend([
+        OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+        OriginalTimingSemanticReceipt::MainLoopProgress(
+            crate::MainLoopProgress::CallStackContinued,
+        ),
+        OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+    ]);
+    if trailing_open {
+        semantic.push(OriginalTimingSemanticReceipt::NmiAccepted(
+            NmiUpdateGate::Open,
+        ));
+    }
+    semantic.push(OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait);
+    semantic
+}
+
+/// run4799: the leading vblank re-checkpoints the saved ProjectionCopy at its
+/// acceptance boundary, then the resumed copy completes and returns.
+fn run4799_recheckpointed_terminal_semantic() -> Vec<OriginalTimingSemanticReceipt> {
+    vec![
+        OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+        run48xx_spotlight_projection_claim(117, OriginalTimingBoundary::NmiAccepted),
+        OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+        OriginalTimingSemanticReceipt::MainLoopProgress(
+            crate::MainLoopProgress::CallStackContinued,
+        ),
+        OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+        OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+        OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait,
+    ]
+}
+
+/// run4819: the final suffix-only continuation returns after its module body
+/// already advanced the frame out of Module0F, so the adapter proves the
+/// return without the module-qualified caller-return token.
+fn run4819_tokenless_final_semantic() -> Vec<OriginalTimingSemanticReceipt> {
+    vec![
+        OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+        OriginalTimingSemanticReceipt::MainLoopProgress(
+            crate::MainLoopProgress::CallStackContinued,
+        ),
+        OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+        OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+    ]
+}
+
+fn install_run48xx_host(
+    state: &mut ZeldaState,
+    host_call: u64,
+    semantic: Vec<OriginalTimingSemanticReceipt>,
+) {
+    let receipts = OriginalTimingHostReceipts::new(host_call, 0, semantic.clone());
+    let wire_receipts: OriginalTimingHostReceipts = bincode::deserialize(
+        &bincode::serialize(&receipts).expect("serialize run48xx source receipts"),
+    )
+    .expect("deserialize run48xx source receipts");
+    assert_eq!(
+        wire_receipts.semantic(),
+        semantic,
+        "run{host_call} wire order must survive serialization unchanged",
+    );
+    state
+        .install_original_timing_host_receipts(wire_receipts)
+        .unwrap();
+}
+
+fn assert_run48xx_scheduled_flagged_projection_build(
+    state: &ZeldaState,
+    copied_words: u16,
+    label: &str,
+) {
+    let Some(GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+        table_build,
+        projection_completed,
+        iteration,
+    }) = state.game_execution_scheduler.current_work()
+    else {
+        panic!("{label} lost its suspended ProjectionCopy spotlight Build")
+    };
+    assert_eq!(
+        table_build,
+        SpotlightTableBuildContinuation {
+            vertical_center: 238,
+            upper_cursor: 238,
+            lower_cursor: 238,
+            completed: true,
+            pending_circle_input: None,
+            pending_lower_value: None,
+            pending_loop_completion_test: false,
+            pending_lower_cursor_decrement: false,
+            projection_tail_cleared: true,
+            projection_words_copied: copied_words,
+        },
+        "{label}",
+    );
+    assert!(!projection_completed, "{label}");
+    assert_eq!(
+        iteration,
+        SpotlightIteration::closing(SpotlightIterationPhase::WholeTable)
+            .with_main_loop_sprite_preparation_before_second_nmi(),
+        "{label}: an interrupted ProjectionCopy predicts its same-host suffix on the saved call",
+    );
+}
+
+/// The live trace holds the follower and BG2 scroll fixed through the whole
+/// close window (the exit walk is already over), so every fresh host enters
+/// its module body from the same retained pair. Re-pin them where the
+/// synthesized lineage would otherwise let the module body drift the iris
+/// vertical center away from the trace.
+fn pin_live_spotlight_follower(state: &mut ZeldaState) {
+    state.follower_link_state_mut().set_y(8692);
+    state.set_bg2_v_copy2(8466);
+}
+
+/// A synthesized fresh-host entry into the run-67132 calibration lineage's
+/// ProjectionCopy window, mirroring `terminal_recurring_spotlight_state`'s
+/// idiom: the frame, follower, scroll, and radius values retained from the
+/// live trace (the shared follower/scroll pair keeps the iris vertical
+/// center at 238 for every remaining close iteration), with the previous
+/// terminal's completed common suffix and released latch.
+fn spotlight_close_projection_window_state(radius: u16, frame_counter: u8) -> ZeldaState {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(0x0f);
+    state.set_submodule(1);
+    state.set_subsubmodule(0);
+    state.set_frame_counter(frame_counter);
+    state.set_indoor_flag(0);
+    state.follower_link_state_mut().set_y(8692);
+    state.set_bg2_v_copy2(8466);
+    state.set_spotlight_window_radius(radius);
+    state.set_spotlight_window_state(0);
+    state.set_animated_tile_data_source_address(1);
+    state.main_loop_sprite_preparation_completed = true;
+    state
+}
+
+/// Enter the ProjectionCopy window at run4794 and prove its
+/// mid-ProjectionCopy interrupt schedules the sprite-preparation estimate,
+/// then install run4795's carried-Held terminal return without consuming it.
+fn run4795_flagged_terminal_spotlight_build_state() -> ZeldaState {
+    let mut state = spotlight_close_projection_window_state(91, 180);
+
+    install_run48xx_host(
+        &mut state,
+        4_794,
+        run48xx_spotlight_close_fresh_semantic(
+            true,
+            &[
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                run48xx_spotlight_projection_claim(2, OriginalTimingBoundary::NmiAccepted),
+            ],
+        ),
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_run48xx_scheduled_flagged_projection_build(&state, 2, "run4794");
+    assert!(state.original_timing_nmi_publication_pending);
+    assert_eq!(
+        state.original_timing_pending_nmi_update_gate,
+        Some(NmiUpdateGate::LatchHeld),
+    );
+    assert!(state
+        .display_snapshot
+        .as_ref()
+        .is_some_and(|snapshot| snapshot.accepts_nmi_dma_receipts));
+    assert_eq!(
+        state.pending_main_loop_common_suffix,
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch),
+    );
+    assert!(!state.main_loop_sprite_preparation_completed);
+
+    install_run48xx_host(
+        &mut state,
+        4_795,
+        run48xx_spotlight_terminal_semantic(false, false),
+    );
+    state
+}
+
+/// Execute run4795's flagged terminal Build, then run4796's second
+/// mid-ProjectionCopy interrupt, and install run4797's flagged terminal with
+/// its trailing Open acceptance.
+fn run4797_flagged_trailing_open_spotlight_build_state() -> ZeldaState {
+    let mut state = run4795_flagged_terminal_spotlight_build_state();
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 84);
+
+    pin_live_spotlight_follower(&mut state);
+    install_run48xx_host(
+        &mut state,
+        4_796,
+        run48xx_spotlight_close_fresh_semantic(
+            true,
+            &[
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                run48xx_spotlight_projection_claim(60, OriginalTimingBoundary::NmiAccepted),
+            ],
+        ),
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_run48xx_scheduled_flagged_projection_build(&state, 60, "run4796");
+
+    install_run48xx_host(
+        &mut state,
+        4_797,
+        run48xx_spotlight_terminal_semantic(false, true),
+    );
+    state
+}
+
+/// Execute run4797, then run4798's HostReturn ProjectionCopy checkpoint (the
+/// host budget expires inside the memcpy with no vblank), and install
+/// run4799's re-checkpointed terminal return.
+fn run4799_recheckpointed_terminal_spotlight_build_state() -> ZeldaState {
+    let mut state = run4797_flagged_trailing_open_spotlight_build_state();
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 77);
+    assert!(state.original_timing_nmi_publication_pending);
+
+    pin_live_spotlight_follower(&mut state);
+    install_run48xx_host(
+        &mut state,
+        4_798,
+        run48xx_spotlight_close_fresh_semantic(
+            false,
+            &[run48xx_spotlight_projection_claim(
+                117,
+                OriginalTimingBoundary::HostReturn,
+            )],
+        ),
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_run48xx_scheduled_flagged_projection_build(&state, 117, "run4798");
+    assert!(
+        !state.original_timing_nmi_publication_pending,
+        "run4798 ends inside the ProjectionCopy without accepting a vblank",
+    );
+
+    install_run48xx_host(
+        &mut state,
+        4_799,
+        run4799_recheckpointed_terminal_semantic(),
+    );
+    state
+}
+
+/// Execute run4799..run4804 (the final table upload and the first LinkOam
+/// interruptions of the tail phase), and install run4805's carried-Held
+/// suffix-only terminal return.
+fn run4805_carried_suffix_only_spotlight_state() -> ZeldaState {
+    let mut state = run4799_recheckpointed_terminal_spotlight_build_state();
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 70);
+
+    pin_live_spotlight_follower(&mut state);
+    install_run48xx_host(
+        &mut state,
+        4_800,
+        run48xx_spotlight_close_fresh_semantic(
+            false,
+            &[
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                run48xx_spotlight_projection_claim(174, OriginalTimingBoundary::NmiAccepted),
+            ],
+        ),
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_run48xx_scheduled_flagged_projection_build(&state, 174, "run4800");
+
+    install_run48xx_host(
+        &mut state,
+        4_801,
+        run48xx_spotlight_terminal_semantic(false, false),
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 63);
+
+    pin_live_spotlight_follower(&mut state);
+    install_run48xx_host(
+        &mut state,
+        4_802,
+        run48xx_spotlight_close_fresh_semantic(true, &[]),
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishSpotlightIteration { .. })
+    ));
+
+    install_run48xx_host(
+        &mut state,
+        4_803,
+        run48xx_spotlight_terminal_semantic(true, false),
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.game_execution_scheduler.is_idle());
+
+    pin_live_spotlight_follower(&mut state);
+    install_run48xx_host(
+        &mut state,
+        4_804,
+        run48xx_spotlight_close_fresh_semantic(
+            true,
+            &[
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    crate::MainLoopInterruption::LinkOam,
+                ),
+            ],
+        ),
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    let Some(GameWorkContinuation::FinishSpotlightIteration { iteration }) =
+        state.game_execution_scheduler.current_work()
+    else {
+        panic!("run4804 lost its suspended LinkOam spotlight suffix")
+    };
+    assert_eq!(
+        iteration,
+        SpotlightIteration::closing(SpotlightIterationPhase::MixedTailAfterReturn),
+    );
+    assert!(
+        state.original_timing_nmi_publication_pending,
+        "run4804's LinkOam interruption carries its Held handler into run4805",
+    );
+    assert!(state
+        .display_snapshot
+        .as_ref()
+        .is_some_and(|snapshot| snapshot.accepts_nmi_dma_receipts));
+
+    install_run48xx_host(
+        &mut state,
+        4_805,
+        run48xx_spotlight_terminal_semantic(false, false),
+    );
+    state
+}
+
+/// Execute run4805, then run4806's budget-expiry LinkOam interruption, and
+/// install run4807's same-host suffix-only terminal with its trailing Open.
+fn run4807_trailing_open_suffix_only_spotlight_state() -> ZeldaState {
+    let mut state = run4805_carried_suffix_only_spotlight_state();
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 49);
+
+    pin_live_spotlight_follower(&mut state);
+    install_run48xx_host(
+        &mut state,
+        4_806,
+        run48xx_spotlight_close_fresh_semantic(
+            true,
+            &[OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                crate::MainLoopInterruption::LinkOam,
+            )],
+        ),
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishSpotlightIteration { .. })
+    ));
+    assert!(
+        !state.original_timing_nmi_publication_pending,
+        "run4806 expires inside LinkOam without accepting a vblank",
+    );
+
+    install_run48xx_host(
+        &mut state,
+        4_807,
+        run48xx_spotlight_terminal_semantic(true, true),
+    );
+    state
+}
+
+/// Execute run4807..run4818 (the remaining LinkOam tail iterations, whose
+/// final module body advances the frame out of Module0F), and install
+/// run4819's tokenless final suffix-only return.
+fn run4819_tokenless_final_spotlight_state() -> ZeldaState {
+    let mut state = run4807_trailing_open_suffix_only_spotlight_state();
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 42);
+
+    for (host_call, fresh, terminal) in [
+        (4_808u64, (false, true), (false, false)),
+        (4_810, (true, true), (false, false)),
+        (4_812, (true, false), (true, true)),
+        (4_814, (false, true), (false, true)),
+        (4_816, (false, false), (true, true)),
+    ] {
+        let (leading_open, latch_before_interruption) = fresh;
+        let mut tail = Vec::new();
+        if latch_before_interruption {
+            tail.push(OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::LatchHeld,
+            ));
+        }
+        tail.push(OriginalTimingSemanticReceipt::MainLoopInterrupted(
+            crate::MainLoopInterruption::LinkOam,
+        ));
+        pin_live_spotlight_follower(&mut state);
+        install_run48xx_host(
+            &mut state,
+            host_call,
+            run48xx_spotlight_close_fresh_semantic(leading_open, &tail),
+        );
+        state.run_frame_internal(0, crate::RUN_MAIN);
+        assert!(
+            matches!(
+                state.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishSpotlightIteration { .. })
+            ),
+            "run{host_call} lost its suspended LinkOam spotlight suffix",
+        );
+
+        let (same_host_held, trailing_open) = terminal;
+        install_run48xx_host(
+            &mut state,
+            host_call + 1,
+            run48xx_spotlight_terminal_semantic(same_host_held, trailing_open),
+        );
+        state.run_frame_internal(0, crate::RUN_MAIN);
+        assert!(
+            state.game_execution_scheduler.is_idle(),
+            "run{} left successor scheduled work",
+            host_call + 1,
+        );
+    }
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 7);
+    assert_eq!(state.game_state.frame.main_module, 0x0f);
+    assert_eq!(state.game_state.frame.submodule, 1);
+
+    pin_live_spotlight_follower(&mut state);
+    install_run48xx_host(
+        &mut state,
+        4_818,
+        run48xx_spotlight_close_fresh_semantic(
+            false,
+            &[
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    crate::MainLoopInterruption::LinkOam,
+                ),
+            ],
+        ),
+    );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishSpotlightIteration { .. })
+    ));
+    assert_eq!(
+        state.game_state.display.spotlight_hdma.window_radius(),
+        0,
+        "run4818's module body writes the final zero radius",
+    );
+    assert_ne!(
+        (
+            state.game_state.frame.main_module,
+            state.game_state.frame.submodule,
+        ),
+        (0x0f, 1),
+        "run4818's module body advances the frame out of Module0F before its caller returns",
+    );
+    assert!(state.original_timing_nmi_publication_pending);
+
+    install_run48xx_host(&mut state, 4_819, run4819_tokenless_final_semantic());
+    state
+}
+
+#[test]
+fn run4794_projection_interrupt_then_run4795_flagged_terminal_build_completes_cpu_and_suffix_once()
+{
+    let mut state = run4795_flagged_terminal_spotlight_build_state();
+    let epoch_before = state.display_snapshot_epoch;
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 84);
+    assert_eq!(
+        state.display_snapshot_epoch,
+        epoch_before + 1,
+        "run4795 owns exactly its carried Held handler's publication",
+    );
+    let retained = state
+        .display_snapshot
+        .as_ref()
+        .expect("run4795 lost its retained active display snapshot");
+    assert_eq!(
+        read_le_u16(&retained.ram, SPOTLIGHT_WINDOW_RADIUS),
+        91,
+        "RetainPublished must keep run4794's active table generation",
+    );
+    assert!(!retained.accepts_nmi_dma_receipts);
+    assert!(matches!(
+        retained.hdma_table_generation,
+        DisplayHdmaTableGeneration::SpotlightProjectionDuringScanout { .. },
+    ));
+    assert!(state.deferred_display_snapshot.is_none());
+    assert_eq!(state.pending_main_loop_common_suffix, None);
+    assert!(state.main_loop_sprite_preparation_completed);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert!(!state.original_timing_nmi_publication_pending);
+    assert_eq!(state.original_timing_pending_nmi_update_gate, None);
+    assert!(state.original_timing_expected_nmi_update_gates.is_empty());
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
+fn run4797_flagged_terminal_build_carries_its_trailing_open_once() {
+    let mut state = run4797_flagged_trailing_open_spotlight_build_state();
+    let epoch_before = state.display_snapshot_epoch;
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 77);
+    assert_eq!(
+        state.display_snapshot_epoch,
+        epoch_before + 2,
+        "run4797 owns its carried Held publication and one trailing Open acceptance",
+    );
+    let carried = state
+        .display_snapshot
+        .as_ref()
+        .expect("run4797 lost its receptive trailing-Open generation");
+    assert_eq!(
+        read_le_u16(&carried.ram, SPOTLIGHT_WINDOW_RADIUS),
+        77,
+        "the trailing Open acceptance must capture the completed live Build",
+    );
+    assert!(carried.accepts_nmi_dma_receipts);
+    assert!(state.deferred_display_snapshot.is_none());
+    assert_eq!(state.pending_main_loop_common_suffix, None);
+    assert!(state.main_loop_sprite_preparation_completed);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert!(state.original_timing_nmi_publication_pending);
+    assert_eq!(
+        state.original_timing_pending_nmi_update_gate,
+        Some(NmiUpdateGate::Open),
+    );
+    assert!(state.original_timing_expected_nmi_update_gates.is_empty());
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
+fn run4799_terminal_build_consumes_its_projection_recheckpoint_once() {
+    let mut state = run4799_recheckpointed_terminal_spotlight_build_state();
+    let epoch_before = state.display_snapshot_epoch;
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 70);
+    assert_eq!(
+        state.display_snapshot_epoch,
+        epoch_before + 3,
+        "run4799 owns its same-host Held publication, its typed RetainPublished completion, and one trailing Open acceptance",
+    );
+    assert_eq!(state.pending_main_loop_common_suffix, None);
+    assert!(state.main_loop_sprite_preparation_completed);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert!(state.original_timing_nmi_publication_pending);
+    assert_eq!(
+        state.original_timing_pending_nmi_update_gate,
+        Some(NmiUpdateGate::Open),
+    );
+    assert!(state.original_timing_expected_nmi_update_gates.is_empty());
+    assert!(
+        state.original_timing_semantic_receipts.is_none(),
+        "run4799 must consume its re-checkpoint claim with its terminal return",
+    );
+}
+
+#[test]
+fn run4805_carried_suffix_only_terminal_completes_held_handler_and_suffix_once() {
+    let mut state = run4805_carried_suffix_only_spotlight_state();
+    let epoch_before = state.display_snapshot_epoch;
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 49);
+    assert_eq!(
+        state.display_snapshot_epoch, epoch_before,
+        "run4805's carried handler published at run4804's acceptance; its suffix-only completion projects into the retained generation",
+    );
+    assert_eq!(state.pending_main_loop_common_suffix, None);
+    assert!(state.main_loop_sprite_preparation_completed);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert!(!state.original_timing_nmi_publication_pending);
+    assert_eq!(state.original_timing_pending_nmi_update_gate, None);
+    assert!(state.original_timing_expected_nmi_update_gates.is_empty());
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
+fn run4807_suffix_only_terminal_carries_its_trailing_open_once() {
+    let mut state = run4807_trailing_open_suffix_only_spotlight_state();
+    let epoch_before = state.display_snapshot_epoch;
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 42);
+    assert_eq!(
+        state.display_snapshot_epoch,
+        epoch_before + 2,
+        "run4807 owns its same-host Held publication and one trailing Open acceptance",
+    );
+    assert_eq!(state.pending_main_loop_common_suffix, None);
+    assert!(state.main_loop_sprite_preparation_completed);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert!(state.original_timing_nmi_publication_pending);
+    assert_eq!(
+        state.original_timing_pending_nmi_update_gate,
+        Some(NmiUpdateGate::Open),
+    );
+    assert!(state.original_timing_expected_nmi_update_gates.is_empty());
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
+fn run4819_final_suffix_only_terminal_returns_without_module_qualified_token() {
+    let mut state = run4819_tokenless_final_spotlight_state();
+    let epoch_before = state.display_snapshot_epoch;
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert!(state.game_execution_scheduler.is_idle());
+    assert_eq!(state.pending_main_loop_common_suffix, None);
+    assert!(state.main_loop_sprite_preparation_completed);
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert!(state.original_timing_nmi_publication_pending);
+    assert_eq!(
+        state.original_timing_pending_nmi_update_gate,
+        Some(NmiUpdateGate::Open),
+    );
+    assert!(state.original_timing_expected_nmi_update_gates.is_empty());
+    assert!(state.original_timing_semantic_receipts.is_none());
+    assert_eq!(
+        state.display_snapshot_epoch,
+        epoch_before + 1,
+        "run4819's carried handler published at run4818's acceptance; only its trailing Open acceptance publishes here",
+    );
+    assert_ne!(
+        (
+            state.game_state.frame.main_module,
+            state.game_state.frame.submodule,
+        ),
+        (0x0f, 1),
+        "the final spotlight caller returns outside Module0F",
+    );
+}
+
+#[test]
+fn run4799_and_run4819_terminal_preflight_is_failure_atomic() {
+    fn assert_rejected(label: &str, mut state: ZeldaState) {
+        let receipts_before = state.original_timing_semantic_receipts.clone();
+        let scheduler_before = state.game_execution_scheduler;
+        let suffix_before = state.pending_main_loop_common_suffix;
+        let game_before = state.game_state.clone();
+        let ram_before = state.ram.clone();
+        let sidecars_before = (
+            state.original_timing_nmi_publication_pending,
+            state.original_timing_pending_nmi_update_gate,
+            state.original_timing_expected_nmi_update_gates.clone(),
+            state.original_timing_sprite_main_return_claims_remaining,
+            state.main_loop_sprite_preparation_completed,
+            state.display_snapshot_epoch,
+        );
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            state.run_frame_internal(0, crate::RUN_MAIN);
+        }));
+        assert!(result.is_err(), "{label} unexpectedly reached execution");
+        assert_eq!(
+            state.original_timing_semantic_receipts, receipts_before,
+            "{label}"
+        );
+        assert_eq!(state.game_execution_scheduler, scheduler_before, "{label}");
+        assert_eq!(
+            state.pending_main_loop_common_suffix, suffix_before,
+            "{label}"
+        );
+        assert_eq!(state.game_state, game_before, "{label}");
+        assert_eq!(state.ram, ram_before, "{label}");
+        assert_eq!(
+            (
+                state.original_timing_nmi_publication_pending,
+                state.original_timing_pending_nmi_update_gate,
+                state.original_timing_expected_nmi_update_gates.clone(),
+                state.original_timing_sprite_main_return_claims_remaining,
+                state.main_loop_sprite_preparation_completed,
+                state.display_snapshot_epoch,
+            ),
+            sidecars_before,
+            "{label}"
+        );
+    }
+
+    // A re-checkpoint may refine the scheduled ProjectionCopy forward (the
+    // exact interrupting acceptance supersedes the estimate, route host
+    // 50632) but can never rewind it.
+    let mut wrong_copied_words = run4799_recheckpointed_terminal_spotlight_build_state();
+    wrong_copied_words
+        .original_timing_semantic_receipts
+        .as_mut()
+        .unwrap()
+        .semantic[1] = run48xx_spotlight_projection_claim(116, OriginalTimingBoundary::NmiAccepted);
+    assert_rejected(
+        "re-checkpoint rewinding the copy position",
+        wrong_copied_words,
+    );
+
+    // The re-checkpoint is only published at its interrupting acceptance.
+    let mut wrong_boundary = run4799_recheckpointed_terminal_spotlight_build_state();
+    wrong_boundary
+        .original_timing_semantic_receipts
+        .as_mut()
+        .unwrap()
+        .semantic[1] = run48xx_spotlight_projection_claim(117, OriginalTimingBoundary::HostReturn);
+    assert_rejected("re-checkpoint at a HostReturn boundary", wrong_boundary);
+
+    // A suffix-only terminal carrying an acceptance-boundary re-checkpoint is
+    // no longer a rejected shape: route host 40982 proved the interrupting
+    // acceptance can restate the separately-suspended recurring build's
+    // state, which the plan validates and consumes as corroboration.
+
+    // A caller still inside Module0F must publish its qualified return token.
+    let mut missing_token = run4807_trailing_open_suffix_only_spotlight_state();
+    missing_token
+        .original_timing_semantic_receipts
+        .as_mut()
+        .unwrap()
+        .semantic
+        .pop();
+    assert_rejected("Module0F return without its qualified token", missing_token);
+
+    // A caller that already left Module0F cannot also publish the token.
+    let mut stale_token = run4819_tokenless_final_spotlight_state();
+    stale_token
+        .original_timing_semantic_receipts
+        .as_mut()
+        .unwrap()
+        .semantic
+        .push(OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait);
+    assert_rejected("token after the module body left Module0F", stale_token);
+
+    // The sprite-preparation estimate stays fail-closed for suffix-only work.
+    let mut flagged_suffix_only = run4805_carried_suffix_only_spotlight_state();
+    let Some(GameWorkContinuation::FinishSpotlightIteration { iteration }) =
+        flagged_suffix_only.game_execution_scheduler.current_work()
+    else {
+        panic!("run4805 fixture lost its suffix-only owner")
+    };
+    flagged_suffix_only.game_execution_scheduler.finish_work();
+    flagged_suffix_only.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishSpotlightIteration {
+            iteration: iteration.with_main_loop_sprite_preparation_before_second_nmi(),
+        },
+        1,
+    );
+    assert_rejected(
+        "sprite-preparation estimate on suffix-only work",
+        flagged_suffix_only,
+    );
+}
+
 #[test]
 fn run4789_terminal_spotlight_build_preflight_is_failure_atomic() {
     fn replace_work(
@@ -3367,19 +4203,54 @@ fn run4789_terminal_spotlight_build_preflight_is_failure_atomic() {
     );
     assert_rejected("noncanonical closing display policy", noncanonical);
 
+    // A carried-Held suffix-only continuation is a valid terminal lifecycle
+    // of its own (run4805), so downgrading the Build owner to LinkOam is no
+    // longer distinguishable at preflight. An Entry owner still has no
+    // terminal grammar and must stay fail-closed.
     let mut wrong_owner = run4789_terminal_spotlight_build_state();
     replace_work(
         &mut wrong_owner,
         |work| {
-            let GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. } = work
+            let GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+                table_build,
+                iteration,
+                ..
+            } = work
             else {
                 unreachable!()
             };
-            GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
+            GameWorkContinuation::FinishDungeonExitSpotlightEntry {
+                table_build,
+                iteration,
+            }
         },
         1,
     );
-    assert_rejected("suffix-only owner with carried Build grammar", wrong_owner);
+    // FinishDungeonExitSpotlightEntry became a scheduled-return-lane owner at
+    // route host 39630, so this rejection now happens inside the lane's
+    // vector validation — after the ordinary per-host normalizations
+    // (RAM-to-native sync, audio-NMI staging). The atomicity contract for
+    // this case therefore covers the lane's own authority: receipts,
+    // scheduler, and the pending suffix stay untouched on rejection.
+    {
+        let mut wrong_owner = wrong_owner;
+        let receipts_before = wrong_owner.original_timing_semantic_receipts.clone();
+        let scheduler_before = wrong_owner.game_execution_scheduler;
+        let suffix_before = wrong_owner.pending_main_loop_common_suffix;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            wrong_owner.run_frame_internal(0, crate::RUN_MAIN);
+        }));
+        assert!(
+            result.is_err(),
+            "entry owner with carried Build grammar unexpectedly reached execution"
+        );
+        assert_eq!(
+            wrong_owner.original_timing_semantic_receipts,
+            receipts_before
+        );
+        assert_eq!(wrong_owner.game_execution_scheduler, scheduler_before);
+        assert_eq!(wrong_owner.pending_main_loop_common_suffix, suffix_before);
+    }
 
     let mut invalid_table = run4789_terminal_spotlight_build_state();
     replace_work(
@@ -6722,28 +7593,11 @@ fn terminal_dungeon_spotlight_caller_preflight_is_failure_atomic() {
         .unwrap();
     assert_rejected_without_mutation(wrong_gate);
 
-    let mut retained = live_dungeon_spotlight_caller_before_terminal_return(1);
-    retained.dungeon_landing_goal_display_handoff =
-        DungeonLandingGoalDisplayHandoff::RetainCallerReturn;
-    retained.capture_display_snapshot_with_publication(DisplaySnapshotPublication::RetainPublished);
-    retained
-        .install_original_timing_host_receipts(dungeon_spotlight_terminal_return_receipts(2294))
-        .unwrap();
-    assert_rejected_without_mutation(retained);
-
-    // The terminal completion promotes this pending transition to
-    // RetainCallerReturn. Reject it before consuming the typed return or
-    // advancing the scheduler, even though the current handoff is still None.
-    let mut future_retained = live_dungeon_spotlight_caller_before_terminal_return(1);
-    assert_eq!(
-        future_retained.dungeon_landing_goal_display_handoff,
-        DungeonLandingGoalDisplayHandoff::None,
-    );
-    future_retained.dungeon_landing_goal_transition_pending = true;
-    future_retained
-        .install_original_timing_host_receipts(dungeon_spotlight_terminal_return_receipts(2294))
-        .unwrap();
-    assert_rejected_without_mutation(future_retained);
+    // A retained landing-goal caller-return image combined with a trailing
+    // acceptance is no longer a rejected shape: route host 39759 proved it on
+    // the wire, and the carried acceptance now takes a fresh receptive
+    // capture when the retained image is non-receptive
+    // (`carry_original_timing_scheduled_caller_host_return_from_active_capture`).
 }
 
 #[test]
@@ -9030,13 +9884,12 @@ fn dless_suspended_vwf_terminal_preflight_is_failure_atomic() {
         );
     }
 
-    let mut specialized_suffix = live_idle_terminal_suspended_vwf_state();
-    specialized_suffix.pending_main_loop_common_suffix = Some(
-        MainLoopCommonSuffixContinuation::ResumeSpritePreparationExtendedOamPackingAndClearNmiLatch {
-            next_group_start: 4,
-        },
-    );
-    assert_rejected(specialized_suffix);
+    // A fast-forward hold paired with the resumed extended-OAM-packing
+    // suffix is no longer malformed: the run-67132 calibration proved that
+    // lifecycle at host 7323 (the interrupted suffix resumes and returns
+    // while the source keeps rendering at its own endpoint pace), and the
+    // suffix variant now routes such a host to the ordinary continued-return
+    // action instead of the D-less VWF completion.
 
     let mut missing_suffix = live_idle_terminal_suspended_vwf_state();
     missing_suffix.pending_main_loop_common_suffix = None;
@@ -9311,15 +10164,10 @@ fn terminal_idle_dialogue_endpoint_preflight_is_failure_atomic() {
         .semantic()
         .to_vec();
 
-    let rewound_endpoint = live_idle_terminal_dialogue_endpoint_state(25);
-    let mut rewound_endpoint_semantic = exact.clone();
-    *rewound_endpoint_semantic.last_mut().unwrap() =
-        OriginalTimingSemanticReceipt::DialogueExecutionProgress(
-            crate::DialogueExecutionProgress::ResumedRenderingWithoutMainIteration {
-                message_read_position: 24,
-            },
-        );
-    assert_rejected(rewound_endpoint, rewound_endpoint_semantic);
+    // An endpoint at or behind the native decoder cursor is no longer a
+    // rejected shape: fresh iterations render natively at their own budget
+    // and may legitimately lead the wire, so such an endpoint is an
+    // already-satisfied no-op (route host 37226).
 
     let mut out_of_buffer_semantic = idle_terminal_dialogue_endpoint_receipts(3_818, 25)
         .semantic()
@@ -10296,18 +11144,11 @@ fn idle_main_loop_plan_rejects_malformed_authority_before_mutation() {
     wrong_spotlight_native_latch.latch_nmi_update();
     assert_rejected(wrong_spotlight_native_latch, run4782_spotlight_semantic());
 
-    let unsupported_interruption = live_idle_dialogue_main_loop_state();
-    assert_rejected(
-        unsupported_interruption,
-        vec![
-            OriginalTimingSemanticReceipt::MainLoopProgress(
-                crate::MainLoopProgress::IterationStarted,
-            ),
-            OriginalTimingSemanticReceipt::MainLoopInterrupted(
-                crate::MainLoopInterruption::LinkPositionBeforeCoordinates,
-            ),
-        ],
-    );
+    // A LinkPositionBeforeCoordinates interruption on a fresh idle iteration
+    // is no longer a rejected shape: route host 50635 proved it on the wire
+    // (Module0F's spotlight-close Link movement consumes the boundary inside
+    // the module body), so the interrupted-idle plan forwards it instead of
+    // failing closed.
 
     let reordered_interrupted_sprite_return = live_idle_dialogue_main_loop_state();
     assert_rejected(
@@ -11858,6 +12699,7 @@ fn live_spotlight_link_position_boundary_resumes_the_complete_c_leaf_once() {
         resumed.game_execution_scheduler.current_work(),
         Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
             iteration: pending,
+            ..
         }) if pending == iteration
     ));
     assert!(resumed
@@ -11866,14 +12708,17 @@ fn live_spotlight_link_position_boundary_resumes_the_complete_c_leaf_once() {
         .is_some_and(|receipts| receipts.semantic().is_empty()));
 
     let Some(GameWorkStep::Complete(
-        GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration },
+        GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
+            iteration,
+            suffix_already_completed: false,
+        },
     )) = resumed
         .game_execution_scheduler
         .advance_work_one_nmi_slice()
     else {
         panic!("Link movement did not resume at the following accepted NMI");
     };
-    resumed.complete_dungeon_exit_spotlight_link_movement(iteration);
+    resumed.complete_dungeon_exit_spotlight_link_movement(iteration, false);
 
     assert_eq!(resumed.ram, atomic.ram);
     assert!(matches!(
@@ -17866,8 +18711,10 @@ fn terminal_ground_item_receipt_preflight_is_failure_atomic() {
         );
     assert_rejected("unsupported item continuation", unsupported_continuation);
 
-    let ordinary_gfx21 = live_terminal_ground_item_receipt_state_with_gfx(0x21);
-    assert_rejected("ordinary gfx21 item epilogue", ordinary_gfx21);
+    // A gfx-$21 ground-item terminal outside handler 21 is no longer a
+    // rejected shape: route host 14076 proved its ordinary module epilogue
+    // on the wire, so the terminal plan now accepts it with the plain
+    // capture-and-interrupt publication instead of failing closed.
 
     let mut stale_enemy_drop_sound = live_terminal_ground_item_receipt_state();
     stale_enemy_drop_sound.enemy_drop_item_graphics_deferred_sound_effect_2 = Some(0x0f);

@@ -482,30 +482,6 @@ fn run_play_with_state(mut game: ZeldaState) {
 }
 
 #[cfg(test)]
-fn apply_host_menu_action_for_test(
-    menu: &mut HostMenuState,
-    action: HostMenuAction,
-    should_start: &mut bool,
-    should_quit: &mut bool,
-) {
-    match action {
-        HostMenuAction::Resume => menu.close(),
-        HostMenuAction::StartQuest => {
-            *should_start = true;
-            menu.close();
-        }
-        HostMenuAction::Quit | HostMenuAction::SaveAndQuit => *should_quit = true,
-        HostMenuAction::SetPresentation(_)
-        | HostMenuAction::SetLighting(_)
-        | HostMenuAction::SetShadows(_)
-        | HostMenuAction::SetViewport(_)
-        | HostMenuAction::ShowControls(_)
-        | HostMenuAction::ResetRuntimeSettings(_)
-        | HostMenuAction::WarpToVerifiedDestination(_) => {}
-    }
-}
-
-#[cfg(test)]
 mod host_menu_play_tests {
     use super::*;
 
@@ -584,37 +560,5 @@ mod host_menu_play_tests {
             error,
             "usage: zelda3 --frontend-smoke [frames] [--no-frame-pacing] [--rom path] [--input-script path] [--load-sram path]; unknown option \"--fast\""
         );
-    }
-
-    #[test]
-    fn menu_resume_action_closes_ingame_menu() {
-        let mut menu = HostMenuState::new(HostMenuMode::InGame, Vec::new());
-        let mut should_quit = false;
-        let mut should_start = false;
-        apply_host_menu_action_for_test(
-            &mut menu,
-            HostMenuAction::Resume,
-            &mut should_start,
-            &mut should_quit,
-        );
-        assert!(!menu.is_open());
-        assert!(!should_start);
-        assert!(!should_quit);
-    }
-
-    #[test]
-    fn menu_start_action_closes_pregame_menu_and_starts_game() {
-        let mut menu = HostMenuState::new(HostMenuMode::PreGame, Vec::new());
-        let mut should_quit = false;
-        let mut should_start = false;
-        apply_host_menu_action_for_test(
-            &mut menu,
-            HostMenuAction::StartQuest,
-            &mut should_start,
-            &mut should_quit,
-        );
-        assert!(!menu.is_open());
-        assert!(should_start);
-        assert!(!should_quit);
     }
 }

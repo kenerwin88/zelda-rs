@@ -349,11 +349,19 @@ pub(super) struct SuspendedVwfCompletionTransition {
     end_read_position: u16,
     slice_count: u32,
     caller_suffix_crossed_vblank: bool,
+    /// The completed handler consumed a line-feed command and armed the
+    /// message-line scroll continuation; the following hosts own its
+    /// per-frame pixel cadence.
+    begins_message_line_scroll: bool,
 }
 
 impl SuspendedVwfCompletionTransition {
     pub(super) const fn caller_suffix_crossed_vblank(self) -> bool {
         self.caller_suffix_crossed_vblank
+    }
+
+    pub(super) const fn begins_message_line_scroll(self) -> bool {
+        self.begins_message_line_scroll
     }
 
     #[cfg(test)]
@@ -808,7 +816,12 @@ impl ZeldaState {
             match self.take_original_timing_save_menu_initialization_progress() {
                 Some(crate::SaveMenuInitializationProgress::Completed) => {}
                 Some(crate::SaveMenuInitializationProgress::InProgress) => return,
-                None => panic!("live timing authority omitted save-menu initialization progress"),
+                None => {
+                    assert!(
+                        std::mem::take(&mut self.save_menu_initialization_completed_pending),
+                        "live timing authority omitted save-menu initialization progress",
+                    );
+                }
             }
         }
         if self.game_state.world.location.is_outdoors() {
@@ -4085,13 +4098,11 @@ impl ZeldaState {
                 && usize::from(target_read_position) < decoded_text_len,
             "a suspended VWF endpoint transition escaped the decoded message buffer",
         );
-        assert_eq!(
-            (
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule
-            ),
-            (14, 2),
-            "a suspended VWF endpoint transition escaped Module0E RenderText",
+        assert!(
+            self.game_state.frame.main_module == 14
+                && matches!(self.game_state.frame.submodule, 2 | 11),
+            "a suspended VWF endpoint transition escaped Module0E RenderText: {:?}",
+            self.game_state.frame,
         );
         assert_eq!(
             self.game_state.messaging.runtime.module(),
@@ -4144,9 +4155,13 @@ impl ZeldaState {
                 "a VWF endpoint transition cannot publish architectural NMI or suffix state",
             );
         };
-        if start_read_position == target_read_position {
-            // Translated bookkeeping is not source authority. Normalize an
-            // obsolete target without replaying any native VWF command.
+        if start_read_position >= target_read_position {
+            // A fresh module iteration renders natively at its own budget and
+            // may legitimately lead the wire's decoder; an endpoint at or
+            // behind the native cursor is therefore an already-satisfied
+            // source statement (route host 37226). Translated bookkeeping is
+            // not source authority either way: normalize the target without
+            // replaying or rewinding any native VWF command.
             self.dialogue_live_message_read_position_target = None;
             assert_architectural_ownership_unchanged(self);
             return SuspendedVwfEndpointTransition {
@@ -4155,10 +4170,6 @@ impl ZeldaState {
                 slice_count: 0,
             };
         }
-        assert!(
-            target_read_position > start_read_position,
-            "a suspended VWF endpoint transition cannot rewind the native decoder",
-        );
 
         self.dialogue_fast_forward_hold_active = true;
         self.dialogue_live_message_read_position_target = Some(target_read_position);
@@ -4170,6 +4181,12 @@ impl ZeldaState {
                 "native VWF execution skipped its authoritative decoder endpoint",
             );
             let phase_before = self.dialogue_vwf_glyph_cpu_phase;
+            let wait_before = self.game_state.messaging.runtime.text_wait_countdown();
+            let scroll_nibble_before = self
+                .game_state
+                .messaging
+                .dialogue_source_offset
+                .bank_offset_low_nibble();
             let progress_before = (
                 target_read_position - cursor_before,
                 if phase_before.is_ready() {
@@ -4226,9 +4243,33 @@ impl ZeldaState {
                         slice_count,
                     };
                 }
-                VwfCpuSliceOutcome::HandlerComplete { .. } => panic!(
-                    "native VWF handler returned before authoritative endpoint {target_read_position:#x}"
-                ),
+                VwfCpuSliceOutcome::HandlerComplete { .. } => {
+                    // A multi-frame command (a WAIT countdown, line pacing)
+                    // returns the handler between hardware frames; the ROM
+                    // crossed those frames before publishing this endpoint.
+                    // Re-enter the handler as the following frame's call,
+                    // requiring decoder or countdown progress so a stuck
+                    // command cannot loop forever (route host 46822).
+                    let wait_after = self.game_state.messaging.runtime.text_wait_countdown();
+                    let scroll_nibble_after = self
+                        .game_state
+                        .messaging
+                        .dialogue_source_offset
+                        .bank_offset_low_nibble();
+                    assert!(
+                        cursor_after > cursor_before
+                            || wait_after != wait_before
+                            || scroll_nibble_after != scroll_nibble_before,
+                        "native VWF handler stalled before authoritative endpoint {target_read_position:#x}: cursor={cursor_after:#x} byte={:#x} next={:?} wait={wait_after} line_speed={} scroll_idle={} stops_flag={} scroll_speed={} host={}",
+                        self.game_state.messaging.decoded_text.byte(usize::from(cursor_after)),
+                        self.game_state.messaging.decoded_text.next_byte(usize::from(cursor_after)),
+                        self.game_state.messaging.runtime.vwf_line_speed_cur(),
+                        self.dialogue_scroll_cpu_is_idle(),
+                        self.dialogue_vwf_completion_stops_before_scroll,
+                        self.game_state.messaging.runtime.dialogue_scroll_speed(),
+                        self.frame_ctr_dbg,
+                    );
+                }
             }
         }
     }
@@ -4247,13 +4288,11 @@ impl ZeldaState {
             usize::from(start_read_position) < decoded_text_len,
             "a suspended VWF completion escaped the decoded message buffer",
         );
-        assert_eq!(
-            (
-                self.game_state.frame.main_module,
-                self.game_state.frame.submodule
-            ),
-            (14, 2),
-            "a suspended VWF completion escaped Module0E RenderText",
+        assert!(
+            self.game_state.frame.main_module == 14
+                && matches!(self.game_state.frame.submodule, 2 | 11),
+            "a suspended VWF completion escaped Module0E RenderText: {:?}",
+            self.game_state.frame,
         );
         assert_eq!(
             self.game_state.messaging.runtime.module(),
@@ -4317,6 +4356,7 @@ impl ZeldaState {
         };
 
         let mut slice_count = 0u32;
+        self.dialogue_vwf_completion_stops_before_scroll = true;
         loop {
             let cursor_before = self.game_state.messaging.runtime.dialogue_msg_read_pos();
             assert!(
@@ -4374,11 +4414,13 @@ impl ZeldaState {
                         "a suspended VWF completion disagreed with its translated caller-suffix hold",
                     );
                     assert_architectural_ownership_unchanged(self);
+                    self.dialogue_vwf_completion_stops_before_scroll = false;
                     return SuspendedVwfCompletionTransition {
                         start_read_position,
                         end_read_position: cursor_after,
                         slice_count,
                         caller_suffix_crossed_vblank,
+                        begins_message_line_scroll: !self.dialogue_scroll_cpu_is_idle(),
                     };
                 }
             }
@@ -4423,6 +4465,14 @@ impl ZeldaState {
                 c,
                 self.game_state.messaging.decoded_text.next_byte(read_pos),
             );
+            if cmd == TEXT_CMD_SCROLL && self.dialogue_vwf_completion_stops_before_scroll {
+                // The typed suffix-completed terminal proves the RenderText
+                // caller returned to ZeldaRunGameLoop; a begun scroll copy
+                // cannot return. Yield with the scroll command unconsumed —
+                // the next module iteration owns the scroll start (route
+                // host 20765).
+                break;
+            }
             let mut command_done = false;
             let mut restart_if_zero_speed = false;
             match cmd {
@@ -4549,7 +4599,20 @@ impl ZeldaState {
                 TEXT_CMD_CHOOSE3 => self.RenderText_Draw_Choose3(),
                 TEXT_CMD_CHOOSE2 => self.RenderText_Draw_Choose1Or2(),
                 TEXT_CMD_WAITKEY | TEXT_CMD_END_MESSAGE => {
-                    if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
+                    if self
+                        .dialogue_live_message_read_position_target
+                        .is_some_and(|target| usize::from(target) > read_pos)
+                    {
+                        // Endpoint catch-up: the published decoder endpoint
+                        // past this command proves the ROM's countdown and
+                        // keypress already elapsed on the preceding hosts
+                        // (route host 46822).
+                        self.messaging_state_mut().set_text_wait_countdown2(28);
+                        command_done = cmd == TEXT_CMD_WAITKEY;
+                        if cmd == TEXT_CMD_END_MESSAGE {
+                            self.messaging_state_mut().set_text_render_state(4);
+                        }
+                    } else if self.game_state.messaging.runtime.text_wait_countdown2() != 0 {
                         self.messaging_state_mut().decrement_text_wait_countdown2();
                         if self.game_state.messaging.runtime.text_wait_countdown2() == 1 {
                             self.set_sound_effect_2(36);
@@ -4960,6 +5023,33 @@ impl ZeldaState {
             // Cheap completing call: the last pixel(s) of the line fit in a
             // normal frame with no lag.
             return self.render_text_scroll_pixels(remaining_in_line);
+        }
+        if self.dialogue_live_message_read_position_target.is_some() {
+            // Endpoint catch-up: the wire's decoder already crossed this
+            // scroll's lag frames on the preceding hosts; drain the whole
+            // remaining line synchronously so the native cursor can reach
+            // the published endpoint (route host 46822).
+            return self.render_text_scroll_pixels(remaining_in_line);
+        }
+        if matches!(
+            self.original_timing_owner,
+            crate::zelda_rtl::OriginalTimingOwnerState::Live
+        ) && self
+            .original_timing_semantic_receipts
+            .as_ref()
+            .is_some_and(|receipts| {
+                receipts.semantic().iter().any(|receipt| {
+                    *receipt
+                        == crate::zelda_rtl::OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted
+                })
+            })
+        {
+            // The live host's wire proves the shared ZeldaRunGameLoop suffix
+            // completes inside this host, which a blocked multi-frame copy
+            // cannot allow: this scroll call drains its group and returns
+            // in-frame (route host 20771). The wire receipt supersedes the
+            // entry-time lag estimate.
+            return self.render_text_scroll_pixels(group.min(remaining_in_line));
         }
         // Copy slices retain the published display. CPU/vblank headroom only
         // decides whether the caller finishes before the next boundary or

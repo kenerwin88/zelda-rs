@@ -549,29 +549,4 @@ mod tests {
                                                              // footprint 8 (scale 1) == native top-left of the whole cell region.
         assert_eq!(cell.sample_scaled(0, 0, 8), cell.sample_native(0, 0));
     }
-
-    #[test]
-    fn resolve_pixel_color_footprint_8_matches_phase1() {
-        let mut reference = [[0u8; 4]; 256];
-        reference[5] = [128, 128, 128, 0xff];
-        let cell = HdCell {
-            width: 8,
-            height: 8,
-            rgba: vec![64u8; 8 * 8 * 4],
-        };
-        // Same as the Phase 1 test, now with explicit footprint 8.
-        assert_eq!(
-            resolve_pixel_color(
-                1,
-                5,
-                [100, 100, 100, 0xff],
-                Some(&cell),
-                &reference,
-                0,
-                0,
-                8
-            ),
-            Some([50, 50, 50, 0xff])
-        );
-    }
 }

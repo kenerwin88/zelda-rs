@@ -5048,6 +5048,17 @@ pub(crate) fn run_compare_libretro_oracle(
     // divergences BEFORE that point are exact and later ones are degraded (Rust is
     // on a drifted path). Read the summary up to the first sprite/AI fork.
     let engine_state_scan_all = env::var_os("ZELDA3_ENGINE_STATE_SCAN_ALL").is_some();
+    // ZELDA3_ENGINE_STATE_DUMP_FRAMES=<lo>-<hi> prints both sides' module and
+    // Link-coordinate boundary values for every compared frame in the range,
+    // straight from the same RAM reads the mismatch check uses. This is the
+    // ambiguity-free readout of per-frame chronology (trace event frame labels
+    // drift when the game frame counter is held).
+    let engine_state_dump_frames = env::var("ZELDA3_ENGINE_STATE_DUMP_FRAMES")
+        .ok()
+        .and_then(|raw| {
+            let (lo, hi) = raw.split_once('-')?;
+            Some((lo.trim().parse::<u32>().ok()?, hi.trim().parse::<u32>().ok()?))
+        });
     let mut engine_state_divergences: Vec<(u32, Vec<String>)> = Vec::new();
     let mut oracle_before_state = initial_oracle_state.clone();
     let oracle_before_state_frame = start_frame;
@@ -5552,6 +5563,35 @@ pub(crate) fn run_compare_libretro_oracle(
             let oracle_ram = oracle
                 .memory_bytes(RETRO_MEMORY_SYSTEM_RAM)
                 .unwrap_or_default();
+            if engine_state_dump_frames.is_some_and(|(lo, hi)| (lo..=hi).contains(&frame_index)) {
+                let word = |ram: &[u8], address: usize| {
+                    u16::from_le_bytes([
+                        ram.get(address).copied().unwrap_or_default(),
+                        ram.get(address + 1).copied().unwrap_or_default(),
+                    ])
+                };
+                let byte =
+                    |ram: &[u8], address: usize| ram.get(address).copied().unwrap_or_default();
+                eprintln!(
+                    "[ENGINE] f={frame_index} rust main={:02x} sub={:02x} subsub={:02x} fc={:02x} y={:04x} x={:04x} ysub={:02x} yvel={:02x} | oracle main={:02x} sub={:02x} subsub={:02x} fc={:02x} y={:04x} x={:04x} ysub={:02x} yvel={:02x}",
+                    byte(&game.ram, 0x10),
+                    byte(&game.ram, 0x11),
+                    byte(&game.ram, 0xb0),
+                    byte(&game.ram, 0x1a),
+                    word(&game.ram, 0x20),
+                    word(&game.ram, 0x22),
+                    byte(&game.ram, 0x2a),
+                    byte(&game.ram, 0x27),
+                    byte(oracle_ram, 0x10),
+                    byte(oracle_ram, 0x11),
+                    byte(oracle_ram, 0xb0),
+                    byte(oracle_ram, 0x1a),
+                    word(oracle_ram, 0x20),
+                    word(oracle_ram, 0x22),
+                    byte(oracle_ram, 0x2a),
+                    byte(oracle_ram, 0x27),
+                );
+            }
             let mismatches = compact_engine_state_mismatches(&game.ram, oracle_ram);
             if !mismatches.is_empty() {
                 if engine_state_scan_all {

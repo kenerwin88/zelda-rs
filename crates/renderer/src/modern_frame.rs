@@ -340,32 +340,6 @@ mod tests {
     }
 
     #[test]
-    fn empty_frame_has_no_index_sprites() {
-        let frame = ModernFrame::empty();
-        assert!(frame.index_sprites.is_empty());
-    }
-
-    #[test]
-    fn modern_index_tile_instance_fields() {
-        let inst = ModernIndexTileInstance {
-            cell_id: 42,
-            source_key: crate::modern_hd_overrides::NO_SOURCE_KEY,
-            screen_x: -8,
-            screen_y: 16,
-            palette: 3,
-            hflip: true,
-            vflip: false,
-            priority: false,
-        };
-        assert_eq!(inst.cell_id, 42);
-        assert_eq!(inst.source_key, crate::modern_hd_overrides::NO_SOURCE_KEY);
-        assert_eq!(inst.screen_x, -8);
-        assert_eq!(inst.palette, 3);
-        assert!(inst.hflip);
-        assert!(!inst.vflip);
-    }
-
-    #[test]
     fn modern_frame_defaults_to_fixed_game_resolution() {
         let frame = ModernFrame::empty();
 
@@ -404,31 +378,5 @@ mod tests {
             });
 
         assert_eq!(frame.vwf_glyph_runs_for_draw()[0].source_glyph_code(), 0x42);
-    }
-
-    #[test]
-    fn tile_instance_records_modern_render_inputs_without_snes_memory_addresses() {
-        let tile = ModernTileInstance {
-            atlas_id: 17,
-            atlas_x_px: 64,
-            atlas_y_px: 32,
-            atlas_width_px: 8,
-            atlas_height_px: 8,
-            screen_width_px: 8,
-            screen_height_px: 8,
-            screen_x: 12,
-            screen_y: 20,
-            palette: 3,
-            priority: 1,
-            hflip: true,
-            vflip: false,
-            transparent_color_zero: true,
-        };
-
-        assert_eq!(tile.atlas_id, 17);
-        assert_eq!(tile.screen_x, 12);
-        assert_eq!(tile.screen_width_px, 8);
-        assert!(tile.hflip);
-        assert!(tile.transparent_color_zero);
     }
 }

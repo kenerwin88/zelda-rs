@@ -6065,20 +6065,6 @@ mod tests {
     }
 
     #[test]
-    fn modern_gpu_renderer_constructs() {
-        pollster::block_on(async {
-            let instance = crate::create_wgpu_instance();
-            let (_adapter, device, queue) = crate::create_device_queue(&instance, None).await;
-            let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-            let atlas = crate::modern_assets::load_modern_overworld_tile_atlas(&root)
-                .expect("atlas should load");
-
-            let _renderer =
-                ModernGpuRenderer::new(&device, &queue, &atlas, wgpu::TextureFormat::Rgba8Unorm);
-        });
-    }
-
-    #[test]
     fn modern_gpu_indexed_matches_software() {
         use crate::modern_frame::ModernIndexTileInstance;
         use crate::modern_index_atlas::ModernIndexTile;

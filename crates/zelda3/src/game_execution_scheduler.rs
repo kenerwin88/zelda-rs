@@ -438,7 +438,7 @@ impl ScheduledGameWork {
             | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
-            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
             | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration } => {
@@ -467,7 +467,7 @@ impl ScheduledGameWork {
             | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
-            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
             | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration } => {

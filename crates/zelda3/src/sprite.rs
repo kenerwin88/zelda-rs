@@ -2440,6 +2440,32 @@ impl ZeldaState {
                     "Sprite_Main continuation requires a measured NMI phase",
                 );
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                let boundary = if boundary == SpriteMainCpuBoundary::AfterSlot(k as u8)
+                    && k >= 1
+                    && self.sprite_slot_view(k - 1).state() == 8
+                    && self.sprite_slot_view(k - 1).sprite_type() == 0x3b
+                    && !self.game_state.world.location.is_outdoors()
+                    && self.game_state.world.location.dungeon_room() == 0x0107
+                    && self.game_state.inventory.items.book() == 0
+                {
+                    // The ROM's NMI landed inside the bonk item's synchronous
+                    // sheet decode, not between the slots: after the previous
+                    // slot returns, SpritePrep_BonkItem reaches
+                    // DecodeAnimatedSpriteTile_variable($0e) within the same
+                    // host, so the initialize prefix (timers, properties,
+                    // state 9, and the floor assignment) is already visible
+                    // in WRAM when the suspension begins (oracle sprite[0]
+                    // state receipt at route frame 63268; the wire names only
+                    // the last returned slot).
+                    let entered = k - 1;
+                    self.sprite_system_mut().set_cur_object_index(entered as u8);
+                    self.sprite_timers_and_oam(entered);
+                    self.sprite_module_initialize_properties(entered);
+                    self.sprite_slot_view_mut(entered).set_floor(2);
+                    SpriteMainCpuBoundary::BonkItemGraphicsEntered(entered as u8)
+                } else {
+                    boundary
+                };
                 self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
             }
             if self
@@ -2451,17 +2477,6 @@ impl ZeldaState {
             if trace_sprite_slots {
                 self.replay_trace_ram_watch(&format!("sprite-after-execute-single slot={k}"));
             }
-        }
-        if let Some(claims_remaining) = self.original_timing_sprite_main_return_claims_remaining {
-            assert_ne!(
-                claims_remaining, 0,
-                "the native body returned from more Sprite_Main loops than its immutable host plan claimed",
-            );
-            assert!(
-                self.take_original_timing_sprite_main_returned(),
-                "the native Sprite_Main slot-zero boundary lost its claimed source return receipt",
-            );
-            self.original_timing_sprite_main_return_claims_remaining = Some(claims_remaining - 1);
         }
         self.complete_sprite_main_after_all_slots();
         let suffix_nmi_slices =
@@ -2705,10 +2720,33 @@ impl ZeldaState {
             SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(_) => {
                 unreachable!("unstarted Zelda prep boundary cannot complete scheduled work")
             }
+            SpriteMainCpuBoundary::BonkItemGraphicsEntered(slot) => {
+                // The initialize prefix already ran at suspension time; only
+                // the interrupted sheet decode and the loop below this slot
+                // remain (SpritePrep_BonkItem's room-$107 branch has no
+                // statements after the decode).
+                let slot = usize::from(slot);
+                self.DecodeAnimatedSpriteTile_variable(0x0e);
+                self.complete_sprite_main_after_interrupted_slot(slot);
+            }
         }
     }
 
     fn complete_sprite_main_after_all_slots(&mut self) {
+        // Every Sprite_Main body reaching its slot-zero return crosses this
+        // boundary, whether it ran whole or resumed from a saved CPU slot, so
+        // the one claimed source return is consumed here exactly once.
+        if let Some(claims_remaining) = self.original_timing_sprite_main_return_claims_remaining {
+            assert_ne!(
+                claims_remaining, 0,
+                "the native body returned from more Sprite_Main loops than its immutable host plan claimed",
+            );
+            assert!(
+                self.take_original_timing_sprite_main_returned(),
+                "the native Sprite_Main slot-zero boundary lost its claimed source return receipt",
+            );
+            self.original_timing_sprite_main_return_claims_remaining = Some(claims_remaining - 1);
+        }
         self.garnish_execute_lower_slots();
         self.clear_overworld_vertical_scroll_delta_low();
         self.set_overworld_horizontal_scroll_delta_low(0);
@@ -5782,7 +5820,19 @@ impl ZeldaState {
             }
             13 => {
                 self.follower_link_state_mut().set_item_receipt_method(0);
-                self.link_receive_item(0x32, 0);
+                if self
+                    .link_receive_item_from(
+                        0x32,
+                        0,
+                        ItemReceiptCaller::SpriteMainDirect {
+                            sprite_slot: k as u8,
+                            suffix: SpriteMainItemReceiptSuffix::BigKeyAbsorption,
+                        },
+                    )
+                    .is_suspended()
+                {
+                    return;
+                }
                 self.finish_absorbed_key_or_big_key(
                     k,
                     &SPRITE_HANDLE_ABSORPTION_BY_PLAYER_ABSORB_BIG_KEY,
@@ -5797,6 +5847,14 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    /// Source suffix after the absorption handler's synchronous
+    /// `Link_ReceiveItem(0x32)` call (ROM `$86d13c` case 13). A live timing
+    /// authority suspends the decompressor there; only the shared
+    /// key/big-key savegame-bit tail remains.
+    pub(super) fn complete_big_key_absorption_item_receipt(&mut self, k: usize) {
+        self.finish_absorbed_key_or_big_key(k, &SPRITE_HANDLE_ABSORPTION_BY_PLAYER_ABSORB_BIG_KEY);
     }
 
     fn finish_absorbed_key_or_big_key(&mut self, k: usize, absorb_big_key: &[u16; 2]) {

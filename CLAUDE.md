@@ -358,6 +358,25 @@ parity pass. A Rust regression therefore cannot truncate the reusable oracle.
   `link_obj_operands_across_main`'s decision; renderless replays reproduce it
   faithfully, so pair it with `--ignore-video --ignore-audio` for a ~50s probe.
   Remember `host = comparator frame + 1`.
+- `ZELDA3_DEBUG_INSTALL_RECEIPTS=<lo>-<hi>` — one line per installed
+  original-timing host receipt with `host_call` in the inclusive range: the
+  full semantic vector in wire order plus the pre-install gate queue,
+  publication-pending flag, spotlight radius, follower y / BG2 v-scroll,
+  frame counter, and the current scheduled work. The fastest way to read what
+  the trace core actually published around a live-oracle-RNG calibration
+  panic, and the direct source for `run<host_call>` test fixtures (the
+  spotlight-close family in `zelda_rtl_general_runtime_tests.rs` was written
+  from these lines). Renderless `--ignore-video --ignore-audio` replays
+  reproduce it in ~15s to f5000.
+- `ZELDA3_DEBUG_LATCH=<lo>-<hi>` — one line per software NMI-latch set/clear
+  (`latch_nmi_update` / `clear_nmi_update_latch`) with `#[track_caller]`
+  provenance for hosts in the inclusive range. The direct probe for "native
+  Zelda NMI latch disagreed with the source acceptance disposition" panics:
+  the extra or missing clear names its call site in one run.
+- `ZELDA3_DEBUG_SCROLL_STAGE=1` — traces the dialogue message-line scroll
+  machine's stage/publish handoffs (staged completion words vs the actual
+  BG3 text-DMA token) plus `ZELDA3_DEBUG_SCROLL_RETAIN=1` for the scroll
+  scheduler's per-call lag/timing decision.
 
 ## The debugging loop that works
 

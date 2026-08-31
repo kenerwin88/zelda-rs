@@ -1083,7 +1083,19 @@ impl ZeldaState {
         self.set_bg2_y(bg2y.wrapping_add(offy));
         self.set_bg1_x(bg1x.wrapping_add(offx));
         self.set_bg1_y(bg1y.wrapping_add(offy));
+        // This Sprite_Main run only stages the provisional display
+        // generation; the ROM's own Sprite_Main return happens when the
+        // scheduled loader continuation completes. Keep the host's
+        // source-return claim accounting owned by that real return.
+        let source_claim_scope = self
+            .original_timing_sprite_main_return_claims_remaining
+            .take();
         self.sprite_main();
+        assert_eq!(
+            self.original_timing_sprite_main_return_claims_remaining, None,
+            "the provisional transition sprite build cannot open its own Sprite_Main claim scope",
+        );
+        self.original_timing_sprite_main_return_claims_remaining = source_claim_scope;
         self.set_bg2_x(bg2x);
         self.set_bg2_y(bg2y);
         self.set_bg1_x(bg1x);
@@ -2838,8 +2850,15 @@ impl ZeldaState {
             }
         }
         self.link_oam_main();
-        self.nmi_prepare_sprites_for_main_loop_once();
-        self.clear_nmi_update_latch();
+        if self.pending_main_loop_common_suffix.is_some() {
+            // A source-proven caller return carries the shared
+            // ZeldaRunGameLoop suffix with it; retire the pending owner once
+            // instead of leaving it to collide with the next fresh iteration.
+            self.complete_pending_main_loop_common_suffix_after_module_return();
+        } else {
+            self.nmi_prepare_sprites_for_main_loop_once();
+            self.clear_nmi_update_latch();
+        }
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {
@@ -3002,7 +3021,10 @@ impl ZeldaState {
                 "the isolated spotlight CPU plan and Live Link-position receipt cannot both own one interruption",
             );
             self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration },
+                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
+                    iteration,
+                    suffix_already_completed: false,
+                },
                 1,
             );
             return true;
@@ -3099,8 +3121,14 @@ impl ZeldaState {
     pub(super) fn complete_dungeon_exit_spotlight_link_movement(
         &mut self,
         iteration: SpotlightIteration,
+        suffix_already_completed: bool,
     ) {
         self.module0f_spotlight_close_link_and_oam();
+        if suffix_already_completed {
+            // The mid-copy Build host already ran the shared suffix; this
+            // continuation owns only the crossed Link movement/OAM leaf.
+            return;
+        }
         if iteration.prepares_main_loop_sprites_before_second_nmi() {
             self.nmi_prepare_sprites_for_main_loop_once();
             self.clear_nmi_update_latch();
@@ -3202,6 +3230,18 @@ impl ZeldaState {
         table_build: SpotlightTableBuildContinuation,
         projection_completed: bool,
     ) {
+        self.complete_dungeon_exit_spotlight_build_cpu_before_link(
+            table_build,
+            projection_completed,
+        );
+        self.module0f_spotlight_close_link_and_oam();
+    }
+
+    pub(super) fn complete_dungeon_exit_spotlight_build_cpu_before_link(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        projection_completed: bool,
+    ) {
         if projection_completed {
             self.complete_iris_spotlight_configure_table_after_projection();
         } else {
@@ -3212,7 +3252,6 @@ impl ZeldaState {
             false,
         );
         debug_assert!(!caller_interrupted);
-        self.module0f_spotlight_close_link_and_oam();
     }
 
     pub(super) fn complete_dungeon_exit_spotlight_goal_caller(&mut self) {
@@ -3222,8 +3261,14 @@ impl ZeldaState {
         // The C caller does not return directly to the host after Module0F:
         // it still packs/sorts the completed sprite shadow before clearing the
         // NMI latch. That full shadow is the operand of the following OAM DMA.
-        self.nmi_prepare_sprites();
-        self.clear_nmi_update_latch();
+        if self.pending_main_loop_common_suffix.is_some() {
+            // A source-proven caller return carries the shared
+            // ZeldaRunGameLoop suffix; retire its one owner.
+            self.complete_pending_main_loop_common_suffix_after_module_return();
+        } else {
+            self.nmi_prepare_sprites();
+            self.clear_nmi_update_latch();
+        }
     }
 
     pub(super) fn Dungeon_PrepExitWithSpotlight(&mut self) {

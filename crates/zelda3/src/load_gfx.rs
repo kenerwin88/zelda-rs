@@ -3778,6 +3778,10 @@ impl ZeldaState {
             self.clear_spotlight_hdma_table_dynamic_range(224, 16);
         }
         let copied_words = usize::from(build.projection_words_copied);
+        assert!(
+            copied_words <= 224,
+            "a saved ProjectionCopy continuation cannot exceed the 224-word C memcpy",
+        );
         self.project_spotlight_dynamic_hdma_table_range_to_reserved(
             copied_words,
             224 - copied_words,
