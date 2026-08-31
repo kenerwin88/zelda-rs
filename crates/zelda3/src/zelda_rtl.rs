@@ -32328,8 +32328,11 @@ impl ZeldaState {
             self.interrupt_nmi(input, oam_dma_source, false);
         }
         if epilogue_phase == NmiPhase::AfterNmi {
-            self.nmi_prepare_sprites();
-            self.clear_nmi_update_latch();
+            // The suspended iteration's shared suffix owner (armed while the
+            // reload held the fresh iteration) retires here; running the
+            // prep/latch pair directly would strand it and reject the next
+            // host's install (route host 108684).
+            self.retire_or_run_main_loop_common_suffix_after_module_return();
         }
         if post_return_hold_nmi_slices != 0 {
             self.game_execution_scheduler.schedule_work(
@@ -32420,6 +32423,32 @@ impl ZeldaState {
     }
 
     fn run_frame_internal_after_original_timing_body(&mut self, input: u16, run_what: u8) {
+        if matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::HoldOverworldSpriteReloadReturn)
+        ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && self.original_timing_hosts_fresh_iteration()
+        {
+            // The estimate held the reload's next main-loop iteration one
+            // scanout, but the live wire begins that fresh iteration in this
+            // very host: the ROM did not linger in submodule 5. Refute the
+            // hold and let the iteration run after the ordinary pre-main
+            // resume (route host 108685).
+            let step = self
+                .game_execution_scheduler
+                .advance_work_one_nmi_slice_with_authoritative_completion(true);
+            debug_assert_eq!(
+                step,
+                Some(GameWorkStep::Complete(
+                    GameWorkContinuation::HoldOverworldSpriteReloadReturn
+                )),
+            );
+            self.game_execution_scheduler.schedule_pre_main_nmi_resume(
+                PreMainNmiResume::OverworldSpriteReloadReturn {
+                    scanout: OverworldSpriteReloadResumeScanout::ByReturnPhase(NmiPhase::BeforeNmi),
+                },
+            );
+        }
         // This long C caller spans many host calls.  Select and fully validate
         // its source lifecycle before ordinary host setup, audio preparation,
         // or scheduler normalization can mutate state.  A sentinel first
