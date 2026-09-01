@@ -1402,6 +1402,22 @@ impl ZeldaState {
             if self.game_state.display.screen_brightness == 0 {
                 self.set_mosaic_copy(15);
                 self.set_subsubmodule(1);
+                if self.rom_startup_timing()
+                    && matches!(
+                        self.original_timing_owner,
+                        crate::zelda_rtl::OriginalTimingOwnerState::Live
+                    )
+                {
+                    // The ROM's Death_Func15 save-quit tail (the intro WRAM
+                    // clear inside Death_Func31 plus the overworld song-bank
+                    // upload) holds the wire for tens of latch-held slices
+                    // before Module17's Sprite_Main/LinkOam suffix runs
+                    // (route hosts 159333-159401). Defer the whole call to
+                    // the wire's terminal return; the held hosts are
+                    // consumed by the save-quit reset plan.
+                    self.save_quit_reset_hold = true;
+                    return;
+                }
                 self.Death_Func15(false);
             }
         }

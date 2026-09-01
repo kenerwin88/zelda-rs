@@ -1341,6 +1341,16 @@ enum OriginalTimingIntroMemoryDarkenPlan {
     Terminal(OriginalTimingMainLoopReturnTimeline),
 }
 
+/// The Module17 save-quit reset (`Death_Func15`'s save-quit tail: the intro
+/// WRAM clear plus the overworld song-bank upload) holds the wire for tens of
+/// slices before its caller returns through Sprite_Main/LinkOam and the
+/// shared suffix (route hosts 159333-159401).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum OriginalTimingSaveQuitResetPlan {
+    Nonterminal(OriginalTimingNonterminalContinuationPlan),
+    Terminal(OriginalTimingMainLoopReturnTimeline),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum OriginalTimingIntroPolyPlan {
     AwaitingIterationStart(OriginalTimingIterationStartedContinuationPlan),
@@ -10326,6 +10336,7 @@ pub struct ZeldaState {
     rom_reset_frame_delay: u8,
     #[serde(skip)]
     intro_memory_darken_frame_delay: u8,
+    save_quit_reset_hold: bool,
     #[serde(skip)]
     intro_poly_thread_initialization_phase: u8,
     #[serde(skip)]
@@ -16867,6 +16878,7 @@ impl ZeldaState {
             intro_initialization_reset_obj_control_pending: false,
             rom_reset_frame_delay: 0,
             intro_memory_darken_frame_delay: 0,
+            save_quit_reset_hold: false,
             intro_poly_thread_initialization_phase: 0,
             attract_init_graphics_phase: 0,
             attract_first_story_render_delay: 0,
@@ -17066,6 +17078,7 @@ impl ZeldaState {
             0
         };
         self.intro_memory_darken_frame_delay = 0;
+        self.save_quit_reset_hold = false;
         self.intro_poly_thread_initialization_phase = 0;
         self.attract_init_graphics_phase = 0;
         self.attract_first_story_render_delay = 0;
@@ -17158,6 +17171,7 @@ impl ZeldaState {
             self.intro_initialization_work_frames_pending = 0;
             self.intro_initialization_reset_obj_control_pending = false;
             self.intro_memory_darken_frame_delay = 0;
+            self.save_quit_reset_hold = false;
             self.intro_poly_thread_initialization_phase = 0;
             self.attract_init_graphics_phase = 0;
             self.attract_first_story_render_delay = 0;
@@ -20782,6 +20796,37 @@ impl ZeldaState {
         }
         self.original_timing_nonterminal_continuation_plan()
             .map(OriginalTimingIntroMemoryDarkenPlan::Nonterminal)
+    }
+
+    fn original_timing_save_quit_reset_plan(&self) -> Option<OriginalTimingSaveQuitResetPlan> {
+        if !self.rom_startup_timing()
+            || !self.save_quit_reset_hold
+            || !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+        {
+            return None;
+        }
+        assert!(
+            self.game_execution_scheduler.is_idle(),
+            "the suspended save-quit reset caller overlaps translated scheduled work",
+        );
+        assert_eq!(
+            self.intro_memory_darken_frame_delay, 0,
+            "the save-quit reset caller overlaps the suspended intro memory-darken caller",
+        );
+        assert_eq!(
+            self.intro_poly_thread_initialization_phase, 0,
+            "the save-quit reset caller overlaps the suspended intro poly thread",
+        );
+        if let Some(timeline) = self.original_timing_main_loop_return_timeline() {
+            assert_eq!(
+                timeline.progress,
+                crate::MainLoopProgress::CallStackContinued,
+                "the terminal save-quit reset cannot begin another main-loop iteration",
+            );
+            return Some(OriginalTimingSaveQuitResetPlan::Terminal(timeline));
+        }
+        self.original_timing_nonterminal_continuation_plan()
+            .map(OriginalTimingSaveQuitResetPlan::Nonterminal)
     }
 
     /// Take the ordered hardware phases around the source proof that an
@@ -32629,6 +32674,7 @@ impl ZeldaState {
         // armed during this host intentionally has no plan and remains owned
         // by the ordinary IterationStarted path.
         let intro_memory_darken_plan = self.original_timing_intro_memory_darken_plan();
+        let save_quit_reset_plan = self.original_timing_save_quit_reset_plan();
         let intro_poly_plan = self.original_timing_intro_poly_plan(run_what);
         let mut selected_game_load_plan = self.original_timing_selected_game_load_plan();
         let mut begin_selected_game_load_plan =
@@ -34224,6 +34270,64 @@ impl ZeldaState {
                         self.game_state.display.bg_tile_animation_countdown, 1,
                         "the source seed 2 must be decremented exactly once by the terminal common suffix",
                     );
+                }
+            }
+            return;
+        }
+        if let Some(plan) = save_quit_reset_plan {
+            match plan {
+                OriginalTimingSaveQuitResetPlan::Nonterminal(plan) => {
+                    // Each held host stays inside Death_Func15's save-quit
+                    // tail; the exact terminal suffix below is the only
+                    // authority which retires the hold.
+                    self.execute_original_timing_nonterminal_continuation(
+                        plan,
+                        input,
+                        oam_dma_source.as_deref(),
+                        |_| {},
+                    );
+                }
+                OriginalTimingSaveQuitResetPlan::Terminal(expected) => {
+                    let timeline = self
+                        .take_original_timing_main_loop_return_timeline()
+                        .expect("validated terminal save-quit reset timeline disappeared");
+                    assert_eq!(timeline, expected);
+                    let sprite_main_claims = self
+                        .original_timing_semantic_receipts
+                        .as_ref()
+                        .map(|receipts| {
+                            receipts
+                                .semantic
+                                .iter()
+                                .filter(|receipt| {
+                                    **receipt == OriginalTimingSemanticReceipt::SpriteMainReturned
+                                })
+                                .count()
+                        })
+                        .unwrap_or(0);
+                    if sprite_main_claims != 0 {
+                        self.begin_original_timing_sprite_main_return_claim_scope(
+                            sprite_main_claims,
+                        );
+                    }
+                    self.complete_original_timing_main_loop_return(
+                        timeline,
+                        input,
+                        oam_dma_source.as_deref(),
+                        |state| {
+                            // The whole Death_Func15 save-quit tail returns
+                            // to Module17 within this terminal host; the
+                            // caller then runs its Sprite_Main/LinkOam
+                            // suffix before the shared game-loop suffix.
+                            state.Death_Func15(false);
+                            state.sprite_main();
+                            state.link_oam_main();
+                            state.save_quit_reset_hold = false;
+                        },
+                    );
+                    if sprite_main_claims != 0 {
+                        self.finish_original_timing_sprite_main_return_claim_scope();
+                    }
                 }
             }
             return;

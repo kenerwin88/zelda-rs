@@ -4758,7 +4758,8 @@ pub(crate) fn run_compare_libretro_oracle(
     scan_all = scan_all_policy(scan_all, session_dir.is_some());
     verify_expected_sha256(core_path, "libretro core", expected_core_sha256.as_deref());
     verify_expected_sha256(rom_path, "ROM", expected_rom_sha256.as_deref());
-    let _compare_lock = acquire_snes9x_compare_lock();
+    let _compare_lock =
+        acquire_snes9x_compare_lock_mode(compare_video || trace_video_pixel.is_some());
 
     let live_oracle_rng_trace_path = live_oracle_rng.then(|| {
         let dir = session_dir
@@ -10321,6 +10322,16 @@ pub(crate) struct ParityFailureReport {
 /// runs are covered too. The returned handle must stay alive for the whole
 /// oracle session.
 pub(crate) fn acquire_snes9x_compare_lock() -> fs::File {
+    acquire_snes9x_compare_lock_mode(true)
+}
+
+/// `exclusive: false` takes a SHARED lock: a renderless run (no GPU work, its
+/// own session dir) can coexist with other renderless runs, while any
+/// GPU-rendering run still takes the exclusive lock and is refused while
+/// shared holders are active (and vice versa). The two documented hazards —
+/// concurrent offscreen GPU flakes and the shared comparison session
+/// directory — only exist for rendering runs.
+pub(crate) fn acquire_snes9x_compare_lock_mode(exclusive: bool) -> fs::File {
     use std::os::unix::io::AsRawFd;
     let path = Path::new("/tmp/zelda3-snes9x-compare.lock");
     let file = fs::OpenOptions::new()
@@ -10331,10 +10342,11 @@ pub(crate) fn acquire_snes9x_compare_lock() -> fs::File {
             eprintln!("failed to open {}: {error}", path.display());
             process::exit(2);
         });
-    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    let op = if exclusive { libc::LOCK_EX } else { libc::LOCK_SH };
+    let rc = unsafe { libc::flock(file.as_raw_fd(), op | libc::LOCK_NB) };
     if rc != 0 {
         eprintln!(
-            "another Snes9x comparison is already running (lock: {}); GPU comparisons must run serially",
+            "another Snes9x comparison is already running (lock: {}); GPU comparisons must run serially (renderless runs share the lock)",
             path.display()
         );
         process::exit(2);
