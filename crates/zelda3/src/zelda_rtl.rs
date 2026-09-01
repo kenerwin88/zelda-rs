@@ -4043,6 +4043,33 @@ fn dungeon_room_load_cpu_schedule(state: &ZeldaState) -> DungeonRoomLoadCpuSched
 /// than a room or staircase identity. Later NMIs are divided at Sprite_Main's
 /// stable slot/return and cached-sprite checkpoints so caller execution is
 /// resumed, not delayed as an opaque lump.
+/// Ring buffer of the most recent installed host receipt vectors, so a
+/// fail-closed panic anywhere in the timing machinery can print the wire
+/// window without a dedicated `ZELDA3_DEBUG_INSTALL_RECEIPTS` re-run. Written
+/// once per host at install; read only by the compare binary's panic hook.
+static RECENT_HOST_RECEIPT_VECTORS: std::sync::Mutex<Option<std::collections::VecDeque<String>>> =
+    std::sync::Mutex::new(None);
+
+fn record_recent_host_receipt_vector(line: String) {
+    if let Ok(mut ring) = RECENT_HOST_RECEIPT_VECTORS.lock() {
+        let ring = ring.get_or_insert_with(std::collections::VecDeque::new);
+        if ring.len() >= 12 {
+            ring.pop_front();
+        }
+        ring.push_back(line);
+    }
+}
+
+/// The most recent installed host receipt vectors, oldest first. Used by the
+/// compare binary's panic hook to make timing failures self-describing.
+pub fn recent_host_receipt_vectors() -> Vec<String> {
+    RECENT_HOST_RECEIPT_VECTORS
+        .lock()
+        .ok()
+        .and_then(|ring| ring.as_ref().map(|ring| ring.iter().cloned().collect()))
+        .unwrap_or_default()
+}
+
 fn dungeon_submodule_cpu_schedule(state: &ZeldaState) -> DungeonSubmoduleCpuSchedule {
     if state.game_state.frame.main_module == 7
         && state.game_state.frame.submodule == 2
@@ -17421,6 +17448,18 @@ impl ZeldaState {
         if !self.rom_startup_timing {
             return Err(OriginalTimingReceiptInstallError::TimingDisabled);
         }
+        record_recent_host_receipt_vector(format!(
+            "host_call={} gates={:?} pub_pending={} fc={:02x} frame={:02x}/{:02x}/{:02x} work={:?} semantic={:?}",
+            receipts.host_call,
+            self.original_timing_expected_nmi_update_gates,
+            self.original_timing_nmi_publication_pending,
+            self.game_state.frame.frame_counter,
+            self.game_state.frame.main_module,
+            self.game_state.frame.submodule,
+            self.game_state.frame.subsubmodule,
+            self.game_execution_scheduler.current_work(),
+            receipts.semantic,
+        ));
         if let Some(range) = std::env::var("ZELDA3_DEBUG_INSTALL_RECEIPTS").ok() {
             let mut parts = range.split('-');
             let lo: u64 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);

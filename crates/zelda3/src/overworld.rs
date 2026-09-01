@@ -1090,12 +1090,24 @@ impl ZeldaState {
         let source_claim_scope = self
             .original_timing_sprite_main_return_claims_remaining
             .take();
+        // The ROM is inside Sprite_OverworldReloadAll_justLoad here and runs
+        // no sprite logic: this staging walk must not leak any CPU-visible
+        // mutation (a walking soldier stepped one extra time at route host
+        // 115867). Keep only the staged OAM shadow; restore everything else.
+        let ram_before_provisional_walk = self.ram.clone();
+        let game_state_before_provisional_walk = self.game_state.clone();
         self.sprite_main();
         assert_eq!(
             self.original_timing_sprite_main_return_claims_remaining, None,
             "the provisional transition sprite build cannot open its own Sprite_Main claim scope",
         );
         self.original_timing_sprite_main_return_claims_remaining = source_claim_scope;
+        let staged_oam =
+            self.ram[crate::game_state::constants::OAM_BUF..][..0x220].to_vec();
+        self.ram.copy_from_slice(&ram_before_provisional_walk);
+        self.game_state = game_state_before_provisional_walk;
+        self.ram[crate::game_state::constants::OAM_BUF..][..0x220]
+            .copy_from_slice(&staged_oam);
         self.set_bg2_x(bg2x);
         self.set_bg2_y(bg2y);
         self.set_bg1_x(bg1x);

@@ -4066,6 +4066,20 @@ pub(crate) fn run_compare_libretro_oracle(
     default_oracle_name: Option<&str>,
     required_library_name: Option<&str>,
 ) {
+    // A fail-closed panic anywhere in the timing machinery should carry the
+    // wire window with it: print the most recent installed host receipt
+    // vectors after the default panic report.
+    let previous_panic_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        previous_panic_hook(info);
+        let vectors = zelda3::zelda_rtl::recent_host_receipt_vectors();
+        if !vectors.is_empty() {
+            eprintln!("--- recent installed host receipt vectors (oldest first) ---");
+            for line in vectors {
+                eprintln!("[RCPT-RING] {line}");
+            }
+        }
+    }));
     let operation = "--compare-snes9x-oracle";
     let core_path = match args.first() {
         Some(p) => p,
@@ -5411,7 +5425,7 @@ pub(crate) fn run_compare_libretro_oracle(
             let rolling = rolling_paired_resume
                 .as_ref()
                 .expect("rolling resume schedule requires a configuration");
-            let capture_dir = write_rolling_paired_resume_capture(
+            match write_rolling_paired_resume_capture(
                 rolling,
                 frame_index,
                 core_path,
@@ -5422,20 +5436,34 @@ pub(crate) fn run_compare_libretro_oracle(
                 &game,
                 &oracle,
                 oracle_semantic_trace.as_ref(),
-            )
-            .unwrap_or_else(|error| {
-                eprintln!(
-                    "failed to save rolling paired resume at frame {frame_index} in {}: {error}",
-                    rolling.root.display()
-                );
-                process::exit(1);
-            });
-            println!(
-                "saved rolling paired pre-frame resume at frame {frame_index}: {}",
-                capture_dir.display()
-            );
-            next_rolling_resume_frame =
-                Some(rolling_capture_frame_after(frame_index, rolling.interval));
+            ) {
+                Ok(capture_dir) => {
+                    println!(
+                        "saved rolling paired pre-frame resume at frame {frame_index}: {}",
+                        capture_dir.display()
+                    );
+                    next_rolling_resume_frame =
+                        Some(rolling_capture_frame_after(frame_index, rolling.interval));
+                }
+                Err(error)
+                    if error
+                        .to_string()
+                        .contains("inside a translated call continuation") =>
+                {
+                    // Rolling captures are best-effort: a frame inside a
+                    // suspended original-timing continuation cannot be
+                    // checkpointed; retry on the next frame and keep the
+                    // last successful capture.
+                    next_rolling_resume_frame = Some(frame_index.wrapping_add(1));
+                }
+                Err(error) => {
+                    eprintln!(
+                        "failed to save rolling paired resume at frame {frame_index} in {}: {error}",
+                        rolling.root.display()
+                    );
+                    process::exit(1);
+                }
+            }
         }
         let requested_input = input_script.input_for_frame(frame_index);
         let compare_this_frame = frame_index >= effective_compare_from_frame;
@@ -5587,7 +5615,7 @@ pub(crate) fn run_compare_libretro_oracle(
                 let byte =
                     |ram: &[u8], address: usize| ram.get(address).copied().unwrap_or_default();
                 eprintln!(
-                    "[ENGINE] f={frame_index} rust main={:02x} sub={:02x} subsub={:02x} fc={:02x} y={:04x} x={:04x} ysub={:02x} yvel={:02x} | oracle main={:02x} sub={:02x} subsub={:02x} fc={:02x} y={:04x} x={:04x} ysub={:02x} yvel={:02x}",
+                    "[ENGINE] f={frame_index} rust main={:02x} sub={:02x} subsub={:02x} fc={:02x} y={:04x} x={:04x} ysub={:02x} yvel={:02x} bg2={:04x},{:04x} | oracle main={:02x} sub={:02x} subsub={:02x} fc={:02x} y={:04x} x={:04x} ysub={:02x} yvel={:02x} bg2={:04x},{:04x}",
                     byte(&game.ram, 0x10),
                     byte(&game.ram, 0x11),
                     byte(&game.ram, 0xb0),
@@ -5596,6 +5624,8 @@ pub(crate) fn run_compare_libretro_oracle(
                     word(&game.ram, 0x22),
                     byte(&game.ram, 0x2a),
                     byte(&game.ram, 0x27),
+                    word(&game.ram, 0xe2),
+                    word(&game.ram, 0xe8),
                     byte(oracle_ram, 0x10),
                     byte(oracle_ram, 0x11),
                     byte(oracle_ram, 0xb0),
@@ -5604,16 +5634,28 @@ pub(crate) fn run_compare_libretro_oracle(
                     word(oracle_ram, 0x22),
                     byte(oracle_ram, 0x2a),
                     byte(oracle_ram, 0x27),
+                    word(oracle_ram, 0xe2),
+                    word(oracle_ram, 0xe8),
                 );
                 if let Some(slot) = engine_state_dump_sprite {
                     eprintln!(
-                        "[ENGINE-SPR] f={frame_index} slot={slot} rust st={:02x} delay={:02x} ai={:02x} | oracle st={:02x} delay={:02x} ai={:02x}",
+                        "[ENGINE-SPR] f={frame_index} slot={slot} rust st={:02x} ty={:02x} delay={:02x} ai={:02x} x={:02x}{:02x} y={:02x}{:02x} | oracle st={:02x} ty={:02x} delay={:02x} ai={:02x} x={:02x}{:02x} y={:02x}{:02x}",
                         byte(&game.ram, 0x0dd0 + slot),
+                        byte(&game.ram, 0x0e20 + slot),
                         byte(&game.ram, 0x0df0 + slot),
                         byte(&game.ram, 0x0d80 + slot),
+                        byte(&game.ram, 0x0d30 + slot),
+                        byte(&game.ram, 0x0d10 + slot),
+                        byte(&game.ram, 0x0d20 + slot),
+                        byte(&game.ram, 0x0d00 + slot),
                         byte(oracle_ram, 0x0dd0 + slot),
+                        byte(oracle_ram, 0x0e20 + slot),
                         byte(oracle_ram, 0x0df0 + slot),
                         byte(oracle_ram, 0x0d80 + slot),
+                        byte(oracle_ram, 0x0d30 + slot),
+                        byte(oracle_ram, 0x0d10 + slot),
+                        byte(oracle_ram, 0x0d20 + slot),
+                        byte(oracle_ram, 0x0d00 + slot),
                     );
                 }
             }

@@ -2675,28 +2675,31 @@ fn spotlight_table_build_progress(
         let observed_x = event
             .x
             .ok_or("Snes9x spotlight loop-test checkpoint omitted X")?;
-        if observed_x & 1 != 0 {
-            return Err(format!(
-                "Snes9x spotlight loop-test cursor encoded an odd table byte offset {observed_x} (pc={pc:06x?} a={:?} y={:?})",
-                event.a, event.y,
-            ));
-        }
         let initial_upper_cursor = vertical_center
             .wrapping_mul(2)
             .wrapping_sub(initial_lower_cursor);
         // The assembly uses X for each visible long-indexed table store. The
         // lower store follows the upper store, so X contains 2*r6 when the
         // lower cursor is visible, otherwise 2*r4 when only the upper cursor
-        // is visible. Reconstruct the unique C loop iteration whose source
-        // store order leaves the observed value; do not assume X always owns
-        // one particular local cursor.
+        // is visible. When BOTH rows are clipped (`r4 >= 240 && r6 >= 240`,
+        // the off-screen head of a large iris), no store reloads X and it
+        // retains `IrisSpotlight_CalculateCircleValue`'s helper-table index
+        // `t = ((input << 8) / radius) >> 1` from `$00:F4CC`'s TAX — an
+        // odd value is legal there (route frame 111852, X=13). Reconstruct
+        // the unique C loop iteration whose source register trace leaves
+        // the observed value; do not assume X always owns one particular
+        // local cursor.
         let mut matched = None;
+        // Pass 1: store-retained values. The ROM's store guard compares the
+        // DOUBLED cursor against #$01C0: rows at index 224..239 are skipped
+        // by the loop (the epilogue clears them separately), so X is
+        // reloaded only for cursors below 224.
         for completed_iterations in 0..total_iterations {
             let upper_cursor = initial_upper_cursor.wrapping_add(completed_iterations);
             let lower_cursor = initial_lower_cursor.wrapping_sub(completed_iterations);
-            let retained_x = if lower_cursor < 240 {
+            let retained_x = if lower_cursor < 224 {
                 Some(lower_cursor * 2)
-            } else if upper_cursor < 240 {
+            } else if upper_cursor < 224 {
                 Some(upper_cursor * 2)
             } else {
                 None
@@ -2712,9 +2715,38 @@ fn spotlight_table_build_progress(
                 }
             }
         }
+        // Pass 2: when no visible store reloaded X for the observed value,
+        // both rows were clipped and X retains the circle helper's
+        // quantized table index `t = ((input << 8) / radius) >> 1` from
+        // `$00:F4CC`'s TAX (route frame 111852, X = 13 at input 11 of
+        // radius 105).
+        if matched.is_none() && radius != 0 {
+            for completed_iterations in iterations_before_iris..total_iterations {
+                let upper_cursor = initial_upper_cursor.wrapping_add(completed_iterations);
+                let lower_cursor = initial_lower_cursor.wrapping_sub(completed_iterations);
+                if lower_cursor < 224 || upper_cursor < 224 {
+                    continue;
+                }
+                let active_iterations = completed_iterations - iterations_before_iris;
+                let pending_circle_input = radius.saturating_sub(active_iterations);
+                let helper_index =
+                    (u32::from(pending_circle_input) << 8) / u32::from(radius) >> 1;
+                if helper_index as u16 == observed_x {
+                    if matched
+                        .replace((completed_iterations, upper_cursor, lower_cursor))
+                        .is_some()
+                    {
+                        return Err(format!(
+                            "Snes9x spotlight loop-test helper index {observed_x} maps to multiple clipped source iterations",
+                        ));
+                    }
+                }
+            }
+        }
         let (completed_iterations, upper_cursor, lower_cursor) = matched.ok_or_else(|| {
             format!(
-                "Snes9x spotlight loop-test X {observed_x} is not produced by a visible source table store",
+                "Snes9x spotlight loop-test X {observed_x} is not produced by a visible source table store (radius={radius} vc={vertical_center} init_lower={initial_lower_cursor} before_iris={iterations_before_iris} total={total_iterations} a={:?} y={:?})",
+                event.a, event.y,
             )
         })?;
         let (completed_iterations, checkpoint) =
