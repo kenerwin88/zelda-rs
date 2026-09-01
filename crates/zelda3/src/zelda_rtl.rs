@@ -4680,6 +4680,12 @@ enum SpriteMainCpuCaller {
     BossVictory {
         boundary: OriginalTimingBoundary,
     },
+    /// The Module17 save-and-quit caller whose Link/OAM suffix remains
+    /// pending after the interrupted slot loop (route host 159333, the
+    /// post-save reset into the intro).
+    SaveAndQuit {
+        boundary: OriginalTimingBoundary,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -6643,7 +6649,8 @@ impl GameWorkContinuation {
                     caller: SpriteMainCpuCaller::DungeonModule07
                         | SpriteMainCpuCaller::DungeonModule07Live { .. }
                         | SpriteMainCpuCaller::Module09 { .. }
-                        | SpriteMainCpuCaller::BossVictory { .. },
+                        | SpriteMainCpuCaller::BossVictory { .. }
+                        | SpriteMainCpuCaller::SaveAndQuit { .. },
                     ..
                 }
                 | Self::FinishBigKeyDropGraphics { .. }
@@ -20602,6 +20609,19 @@ impl ZeldaState {
             ),
             "live intro-poly continuation escaped its source module owner",
         );
+        if matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishSpriteMain {
+                caller: SpriteMainCpuCaller::SaveAndQuit { .. },
+                ..
+            })
+        ) {
+            // The save-quit reset's suspended Module17 caller still owns the
+            // continued stack: its Sprite_Main/LinkOam suffix returns before
+            // the ROM enters the intro-poly initialization (route host
+            // 159334).
+            return None;
+        }
         assert!(
             self.game_execution_scheduler.is_idle(),
             "the suspended intro-poly caller overlaps translated scheduled work",
@@ -32112,10 +32132,11 @@ impl ZeldaState {
                             self.nmi_prepare_sprites();
                             self.clear_nmi_update_latch();
                         }
-                        SpriteMainCpuCaller::BossVictory { .. } => {
-                            // Module13's caller runs only LinkOam and the
-                            // shared game-loop suffix after Sprite_Main
-                            // (route host 103998).
+                        SpriteMainCpuCaller::BossVictory { .. }
+                        | SpriteMainCpuCaller::SaveAndQuit { .. } => {
+                            // Module13's and Module17's callers run only
+                            // LinkOam and the shared game-loop suffix after
+                            // Sprite_Main (route hosts 103998, 159333).
                             self.link_oam_main();
                             if self.pending_main_loop_common_suffix.is_some() {
                                 self.complete_pending_main_loop_common_suffix_after_module_return();
@@ -35369,6 +35390,7 @@ impl ZeldaState {
                         SpriteMainCpuCaller::DungeonModule07
                             | SpriteMainCpuCaller::Module09 { .. }
                             | SpriteMainCpuCaller::BossVictory { .. }
+                            | SpriteMainCpuCaller::SaveAndQuit { .. }
                     ) && (authoritative_scheduled_caller_nmi_timeline.is_some()
                         || authoritative_sprite_main_progress.is_some()
                         || authoritative_sprite_main_returned)) =>
@@ -38314,6 +38336,7 @@ impl ZeldaState {
                             | SpriteMainCpuCaller::DungeonModule07Live { .. }
                             | SpriteMainCpuCaller::Module09 { .. }
                             | SpriteMainCpuCaller::BossVictory { .. }
+                            | SpriteMainCpuCaller::SaveAndQuit { .. }
                     ));
                     if std::env::var_os("ZELDA3_DEBUG_DUNGEON_CPU_SCHEDULE").is_some() {
                         eprintln!(
@@ -38388,12 +38411,13 @@ impl ZeldaState {
                                     return;
                                 }
                             }
-                            SpriteMainCpuCaller::BossVictory { .. } => {
+                            SpriteMainCpuCaller::BossVictory { .. }
+                            | SpriteMainCpuCaller::SaveAndQuit { .. } => {
                                 // The wire-proven terminal return owns the
                                 // leading handler and trailing publication
-                                // through the shared lane; only Module13's
-                                // Link/OAM suffix runs here (route host
-                                // 104004).
+                                // through the shared lane; only the
+                                // Module13/Module17 Link/OAM suffix runs
+                                // here (route hosts 104004, 159333).
                                 self.link_oam_main();
                             }
                             _ => unreachable!(

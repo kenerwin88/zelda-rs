@@ -1405,7 +1405,55 @@ impl ZeldaState {
                 self.Death_Func15(false);
             }
         }
+        if let Some((boundary, resume_boundary)) =
+            self.take_original_timing_sprite_main_boundary_for_fresh_caller()
+        {
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                boundary,
+                SpriteMainCpuCaller::SaveAndQuit {
+                    boundary: resume_boundary,
+                },
+            );
+        } else if let Some(boundary) = self.take_original_timing_sprite_main_progress() {
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                boundary,
+                SpriteMainCpuCaller::SaveAndQuit {
+                    boundary: crate::zelda_rtl::OriginalTimingBoundary::HostReturn,
+                },
+            );
+        } else if matches!(
+            self.original_timing_owner,
+            crate::zelda_rtl::OriginalTimingOwnerState::Live
+        ) && self
+            .original_timing_semantic_receipts
+            .as_ref()
+            .is_some_and(|receipts| receipts.semantic().is_empty())
+            && self.original_timing_expected_nmi_update_gates.is_empty()
+            && self.original_timing_sprite_main_return_claims_remaining == Some(0)
+            && !self.original_timing_owes_sprite_main_return()
+            && !self.original_timing_owes_sprite_main_progress()
+            && self.original_timing_main_loop_return_timeline().is_none()
+        {
+            // An open-ended wire hold: the Death_Func15 save-quit reset
+            // consumes the whole host with no trailing acceptance — the
+            // interrupting NMI arrives as the next host's leading one, and
+            // the zero-claim plan proves Sprite_Main never runs this host
+            // (route host 159333; the boss-victory analogue is route host
+            // 104000). The suspension resumes across that acceptance.
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                crate::zelda_rtl::SpriteMainCpuBoundary::BeforeFirstSlot,
+                SpriteMainCpuCaller::SaveAndQuit {
+                    boundary: crate::zelda_rtl::OriginalTimingBoundary::NmiAccepted,
+                },
+            );
+        }
         self.sprite_main();
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
+            return;
+        }
         self.link_oam_main();
     }
 
