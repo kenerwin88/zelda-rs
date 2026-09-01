@@ -1126,6 +1126,17 @@ impl ZeldaState {
         self.zelda_reset_apu_queue();
     }
 
+    /// Seed the legacy music-port restore source from a foreign (Snes9x)
+    /// WRAM image: the ROM's music-control byte ($0130) is the last music
+    /// command the game issued to APU port 0; sound-effect ports are left
+    /// idle. `zelda_restore_music_after_load_locked` then rebuilds the
+    /// modern sequencer around that song.
+    pub(crate) fn seed_saved_music_ports_from_wram(&mut self, wram: &[u8]) {
+        let music = wram.get(0x130).copied().unwrap_or(0);
+        self.audio.legacy_compatibility.saved_music_ports = [music, 0, 0, 0];
+        self.audio.legacy_compatibility.startup_sfx_timer_accum = 0;
+    }
+
     pub fn zelda_save_music_state_to_ram_locked(&mut self) {
         self.audio.legacy_compatibility.saved_music_ports =
             self.audio.modern.queue.pending_write.legacy_ports();

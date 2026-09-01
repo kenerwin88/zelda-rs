@@ -1603,6 +1603,14 @@ impl ZeldaState {
     }
 
     pub(super) fn Death_Func15(&mut self, count_as_death: bool) {
+        self.death_func15_common_prefix(count_as_death);
+        self.death_func15_after_common_prefix();
+    }
+
+    /// `Death_Func15`'s shared fast prefix through `Sprite_ResetAll` and the
+    /// death counters — the ROM completes this before the save-quit reset
+    /// hold begins (route host 159333).
+    pub(super) fn death_func15_common_prefix(&mut self, count_as_death: bool) {
         self.set_music_control(0xf1);
         if self.game_state.world.location.is_indoors() {
             self.Dungeon_FlagRoomData_Quadrants();
@@ -1649,6 +1657,9 @@ impl ZeldaState {
                 .increment_pending_death_save_counter();
         }
         self.increment_game_over_check_flag();
+    }
+
+    fn death_func15_after_common_prefix(&mut self) {
         if self.game_state.frame.subsubmodule != 1 {
             if self.game_state.world.location.is_indoors() {
                 if self.game_state.sprites.follower_runtime.indicator() != 1
@@ -1680,29 +1691,59 @@ impl ZeldaState {
                 self.CopySaveToWRAM();
             }
         } else {
-            if self.game_state.inventory.save_progress.progress_indicator() != 0 {
-                self.SaveGameFile();
-            }
-            self.set_main_screen_layers(16);
-            self.set_indoor_flag(0);
-            self.death_func31();
-            self.clear_restart_check_flag();
-            self.clear_game_over_check_flag();
-            self.set_queued_music_control(0);
-            self.set_bg1_x(0);
-            self.set_bg2_x(0);
-            self.set_bg3_h_copy2(0);
-            self.set_bg1_y(0);
-            self.set_bg2_y(0);
-            self.set_bg3_v_copy2(0);
-            self.set_bg1_h_copy(0);
-            self.set_bg2_h_copy(0);
-            self.set_bg1_v_copy(0);
-            self.set_bg2_v_copy(0);
-            self.save_progress_mut().clear_dungeon_info();
-            self.select_overworld_song_bank();
-            self.load_overworld_songs();
+            self.death_func15_save_quit_pre_hold();
+            self.death_func15_save_quit_post_hold();
         }
+    }
+
+    /// The fast statements of `Death_Func15`'s save-quit branch which the ROM
+    /// completes before its long reset hold begins (route host 159333: the
+    /// oracle's sprite slots are already cleared at the hold's first
+    /// boundary while the module byte and scroll registers are not).
+    pub(super) fn death_func15_save_quit_pre_hold(&mut self) {
+        if self.game_state.inventory.save_progress.progress_indicator() != 0 {
+            self.SaveGameFile();
+        }
+        self.set_main_screen_layers(16);
+        self.set_indoor_flag(0);
+    }
+
+    /// The slow remainder of the save-quit branch: `Death_Func31` (whose
+    /// `Intro_InitializeMemory_darken` WRAM clear plus the overworld
+    /// song-bank upload hold the wire for tens of slices) and the register
+    /// resets the ROM performs only after that hold completes.
+    pub(super) fn death_func15_save_quit_post_hold(&mut self) {
+        self.death_func15_save_quit_reset_writes();
+        self.death_func15_save_quit_song_upload();
+    }
+
+    /// The reset's WRAM-observable writes (`Death_Func31`'s module/scroll
+    /// stores and the intro WRAM clear) — the oracle completes these as the
+    /// reset's NMI masking begins, before the song upload (route run
+    /// 159378).
+    pub(super) fn death_func15_save_quit_reset_writes(&mut self) {
+        self.death_func31();
+        self.clear_restart_check_flag();
+        self.clear_game_over_check_flag();
+        self.set_queued_music_control(0);
+        self.set_bg1_x(0);
+        self.set_bg2_x(0);
+        self.set_bg3_h_copy2(0);
+        self.set_bg1_y(0);
+        self.set_bg2_y(0);
+        self.set_bg3_v_copy2(0);
+        self.set_bg1_h_copy(0);
+        self.set_bg2_h_copy(0);
+        self.set_bg1_v_copy(0);
+        self.set_bg2_v_copy(0);
+        self.save_progress_mut().clear_dungeon_info();
+    }
+
+    /// The overworld song-bank upload — the ROM's NMI-masked tail of the
+    /// save-quit reset.
+    pub(super) fn death_func15_save_quit_song_upload(&mut self) {
+        self.select_overworld_song_bank();
+        self.load_overworld_songs();
     }
 
     pub(super) fn GameOver_AnimateChoiceFairy(&mut self) {

@@ -1326,6 +1326,19 @@ struct OriginalTimingSelectedGameLoadPlan {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// The Message-destination selected-game load (save-quit re-entry to the
+/// "where to start" prompt) has no pre-dungeon audio: the host where the
+/// dungeon route would begin it is one more ordinary held decompression
+/// slice (route host 160302), and Module05 returns on the following host
+/// (160303: [NmiHandlerCompleted, CallStackContinued, CommonSuffixCompleted,
+/// NmiAccepted(Open), DialogueClosed]) through the post-audio plan.
+struct OriginalTimingMessageSelectedGameLoadPreAudioBoundaryPlan {
+    continuation: OriginalTimingNonterminalContinuationPlan,
+    scheduler_before_transition: GameExecutionScheduler,
+    scheduler_after_transition: GameExecutionScheduler,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct OriginalTimingBeginSelectedGameLoadPlan {
     semantic: Vec<OriginalTimingSemanticReceipt>,
     timeline: OriginalTimingMainLoopTimeline,
@@ -1348,6 +1361,14 @@ enum OriginalTimingIntroMemoryDarkenPlan {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum OriginalTimingSaveQuitResetPlan {
     Nonterminal(OriginalTimingNonterminalContinuationPlan),
+    /// The ROM masks NMI during the reset's song-bank upload: the host
+    /// carries a bare `CallStackContinued` with no NMI lifecycle at all
+    /// (route host 159380).
+    NmiMaskedHold,
+    /// The upload finishes mid-host: Module17's Sprite_Main returns, then
+    /// the shared NMI_PrepareSprites suffix is interrupted by a Held
+    /// acceptance and resumes on a later host (route host 159403).
+    TerminalInterruptedSuffix,
     Terminal(OriginalTimingMainLoopReturnTimeline),
 }
 
@@ -10337,6 +10358,7 @@ pub struct ZeldaState {
     #[serde(skip)]
     intro_memory_darken_frame_delay: u8,
     save_quit_reset_hold: bool,
+    save_quit_reset_writes_applied: bool,
     #[serde(skip)]
     intro_poly_thread_initialization_phase: u8,
     #[serde(skip)]
@@ -16879,6 +16901,7 @@ impl ZeldaState {
             rom_reset_frame_delay: 0,
             intro_memory_darken_frame_delay: 0,
             save_quit_reset_hold: false,
+            save_quit_reset_writes_applied: false,
             intro_poly_thread_initialization_phase: 0,
             attract_init_graphics_phase: 0,
             attract_first_story_render_delay: 0,
@@ -17079,6 +17102,7 @@ impl ZeldaState {
         };
         self.intro_memory_darken_frame_delay = 0;
         self.save_quit_reset_hold = false;
+        self.save_quit_reset_writes_applied = false;
         self.intro_poly_thread_initialization_phase = 0;
         self.attract_init_graphics_phase = 0;
         self.attract_first_story_render_delay = 0;
@@ -17172,6 +17196,7 @@ impl ZeldaState {
             self.intro_initialization_reset_obj_control_pending = false;
             self.intro_memory_darken_frame_delay = 0;
             self.save_quit_reset_hold = false;
+            self.save_quit_reset_writes_applied = false;
             self.intro_poly_thread_initialization_phase = 0;
             self.attract_init_graphics_phase = 0;
             self.attract_first_story_render_delay = 0;
@@ -17290,6 +17315,9 @@ impl ZeldaState {
                 .is_none()
             && self.interrupted_nmi_prepare_obj_cache_vram.is_none()
             && self.pending_main_loop_common_suffix.is_none()
+            // The save-quit reset hold is a suspended Death_Func15 call stack
+            // spanning tens of hosts; never checkpoint inside it.
+            && !self.save_quit_reset_hold
     }
 
     /// Capture the Zelda-level semantic continuation owned at one exact
@@ -19540,9 +19568,9 @@ impl ZeldaState {
                     crate::MainLoopProgress::CallStackContinued,
                     "a resumed dialogue endpoint cannot begin a fresh main-loop iteration",
                 );
-                assert_eq!(
-                    self.game_state.frame.main_module, 14,
-                    "a resumed dialogue endpoint escaped Module0E",
+                assert!(
+                    self.frame_module_hosts_dialogue(),
+                    "a resumed dialogue endpoint escaped Module0E/Module1B",
                 );
                 let transition = self
                     .original_timing_suspended_vwf_endpoint_transition_plan(message_read_position);
@@ -19557,9 +19585,9 @@ impl ZeldaState {
                     crate::MainLoopProgress::IterationStarted,
                     "dialogue close must be owned by the fresh main iteration which observes it",
                 );
-                assert_eq!(
-                    self.game_state.frame.main_module, 14,
-                    "dialogue-close authority escaped Module0E",
+                assert!(
+                    self.frame_module_hosts_dialogue(),
+                    "dialogue-close authority escaped Module0E/Module1B",
                 );
                 OriginalTimingIdleMainLoopDialogueClaim::DialogueClosed
             }
@@ -20124,10 +20152,16 @@ impl ZeldaState {
             .game_execution_scheduler
             .selected_game_load_destination()
             .expect("selected-game reset phase lost its frozen destination");
-        assert_eq!(
-            destination,
-            SelectedGameLoadDestination::Dungeon,
-            "live post-audio selected-game timing is only proven for the dungeon source route",
+        assert!(
+            matches!(
+                (destination, sprite_reset),
+                (SelectedGameLoadDestination::Dungeon, _)
+                    | (
+                        SelectedGameLoadDestination::Message,
+                        PreDungeonSpriteResetContinuation::NotApplicable
+                    )
+            ),
+            "live post-audio selected-game timing is only proven for the dungeon and Message source routes",
         );
         assert!(
             matches!(
@@ -20191,10 +20225,21 @@ impl ZeldaState {
                 [OriginalTimingNmiPhase::HandlerCompleted],
                 "terminal selected-game load must first complete its carried source NMI: {timeline:?}",
             );
-            assert!(
-                timeline.nmi_phases_after_return.is_empty(),
-                "terminal selected-game load cannot execute a post-return NMI: {timeline:?}",
-            );
+            if destination == SelectedGameLoadDestination::Message {
+                // Module05's Message tail returns to the main wait and the
+                // following Open NMI is accepted before the host ends
+                // (route host 160303).
+                assert_eq!(
+                    timeline.nmi_phases_after_return,
+                    [OriginalTimingNmiPhase::Accepted(NmiUpdateGate::Open)],
+                    "terminal Message selected-game load carries exactly the following Open acceptance: {timeline:?}",
+                );
+            } else {
+                assert!(
+                    timeline.nmi_phases_after_return.is_empty(),
+                    "terminal selected-game load cannot execute a post-return NMI: {timeline:?}",
+                );
+            }
             assert_eq!(
                 self.pending_main_loop_common_suffix,
                 Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch),
@@ -20214,17 +20259,28 @@ impl ZeldaState {
                     .is_some_and(|snapshot| snapshot.accepts_nmi_dma_receipts),
                 "terminal selected-game load lost its carried acceptance snapshot",
             );
-            assert_eq!(
-                self.original_timing_expected_nmi_update_gates.as_slice(),
-                [NmiUpdateGate::LatchHeld],
-            );
-            let expected = vec![
+            let mut expected = vec![
                 OriginalTimingSemanticReceipt::NmiHandlerCompleted,
                 OriginalTimingSemanticReceipt::MainLoopProgress(
                     crate::MainLoopProgress::CallStackContinued,
                 ),
                 OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
             ];
+            if destination == SelectedGameLoadDestination::Message {
+                assert_eq!(
+                    self.original_timing_expected_nmi_update_gates.as_slice(),
+                    [NmiUpdateGate::LatchHeld, NmiUpdateGate::Open],
+                );
+                // Main_ShowTextMessage clears the messaging module inside the
+                // Module05 tail; the decoder publishes that as DialogueClosed.
+                expected.push(OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open));
+                expected.push(OriginalTimingSemanticReceipt::DialogueClosed);
+            } else {
+                assert_eq!(
+                    self.original_timing_expected_nmi_update_gates.as_slice(),
+                    [NmiUpdateGate::LatchHeld],
+                );
+            }
             assert_eq!(
                 semantic, expected,
                 "terminal selected-game load published an unsupported or reordered semantic vector",
@@ -20323,6 +20379,52 @@ impl ZeldaState {
         })
     }
 
+    /// Build the Message-destination host at the exhausted shared
+    /// decompression count: no pre-dungeon audio exists on this route, so it
+    /// is one more nonterminal held slice (route host 160302) and the
+    /// scheduler merely crosses into its post-audio phase with no nested
+    /// Sprite_ResetAll owner.
+    fn original_timing_message_selected_game_load_pre_audio_boundary_plan(
+        &self,
+    ) -> Option<OriginalTimingMessageSelectedGameLoadPreAudioBoundaryPlan> {
+        if !self.rom_startup_timing()
+            || !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            || self.game_execution_scheduler.selected_game_load_destination()
+                != Some(SelectedGameLoadDestination::Message)
+            || self
+                .game_execution_scheduler
+                .selected_game_load_after_pre_dungeon_audio_sprite_reset()
+                .is_some()
+        {
+            return None;
+        }
+        let mut scheduler_before_transition = self.game_execution_scheduler;
+        scheduler_before_transition.begin_host_frame();
+        let mut scheduler_after_transition = scheduler_before_transition;
+        if scheduler_after_transition.advance_startup_sequence()
+            != Some(StartupSequenceStep::BeginPreDungeonAudio)
+        {
+            return None;
+        }
+        assert_eq!(
+            scheduler_after_transition.selected_game_load_after_pre_dungeon_audio_sprite_reset(),
+            Some(PreDungeonSpriteResetContinuation::NotApplicable),
+            "the Message selected-game load cannot own a nested Sprite_ResetAll continuation",
+        );
+        assert!(
+            self.original_timing_main_loop_return_timeline().is_none(),
+            "the Message selected-game load returns one host after its exhausted decompression count (route host 160303), not at it",
+        );
+        let continuation = self
+            .original_timing_nonterminal_continuation_plan()
+            .expect("live Message selected-game load lost its continued-call owner at the exhausted decompression count");
+        Some(OriginalTimingMessageSelectedGameLoadPreAudioBoundaryPlan {
+            continuation,
+            scheduler_before_transition,
+            scheduler_after_transition,
+        })
+    }
+
     /// Build the exact source boundary which leaves the selected-load
     /// decompressor and enters Module_PreDungeon. This probe includes host
     /// normalization and the numeric pre-audio scheduler transition, but it
@@ -20357,6 +20459,11 @@ impl ZeldaState {
             .game_execution_scheduler
             .selected_game_load_destination()
             .expect("pre-dungeon-audio boundary lost its frozen destination");
+        if destination == SelectedGameLoadDestination::Message {
+            // No pre-dungeon audio exists on this route: Module05 returns at
+            // this boundary (`original_timing_message_selected_game_load_terminal_plan`).
+            return None;
+        }
         assert_eq!(
             destination,
             SelectedGameLoadDestination::Dungeon,
@@ -20461,11 +20568,27 @@ impl ZeldaState {
                 crate::MainLoopProgress::IterationStarted,
             )
             .expect("live suspended caller omitted its iteration-start timeline");
-        assert_eq!(
-            timeline.nmi_phases_before_progress,
-            [OriginalTimingNmiPhase::HandlerCompleted],
-            "a suspended fresh iteration requires exactly its carried Open handler before the main-loop prefix",
-        );
+        // The preceding main wait either carried its Open acceptance into
+        // this host (boot: [HandlerCompleted]) or cleared the latch in its
+        // own host so the Open NMI is accepted here (save-quit reset re-entry,
+        // route host 159405: [Accepted(Open), HandlerCompleted]).
+        let carried_open = self.original_timing_nmi_publication_pending;
+        if carried_open {
+            assert_eq!(
+                timeline.nmi_phases_before_progress,
+                [OriginalTimingNmiPhase::HandlerCompleted],
+                "a suspended fresh iteration requires exactly its carried Open handler before the main-loop prefix",
+            );
+        } else {
+            assert_eq!(
+                timeline.nmi_phases_before_progress,
+                [
+                    OriginalTimingNmiPhase::Accepted(NmiUpdateGate::Open),
+                    OriginalTimingNmiPhase::HandlerCompleted,
+                ],
+                "a suspended fresh iteration without a carried publication must accept and complete its Open NMI in-host before the main-loop prefix",
+            );
+        }
         assert_eq!(
             timeline.nmi_phases_after_progress,
             [OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld)],
@@ -20487,21 +20610,27 @@ impl ZeldaState {
             self.original_timing_main_loop_interruption().is_none(),
             "an uninterrupted fresh suspended iteration cannot also publish a main-loop interruption",
         );
-        assert!(self.original_timing_nmi_publication_pending);
-        assert_eq!(
-            self.original_timing_pending_nmi_update_gate,
-            Some(NmiUpdateGate::Open),
-            "a fresh suspended iteration requires the carried Open acceptance from the preceding main wait",
-        );
+        if carried_open {
+            assert_eq!(
+                self.original_timing_pending_nmi_update_gate,
+                Some(NmiUpdateGate::Open),
+                "a fresh suspended iteration requires the carried Open acceptance from the preceding main wait",
+            );
+            assert!(
+                self.display_snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot.accepts_nmi_dma_receipts),
+                "a fresh suspended iteration lost its carried Open acceptance snapshot",
+            );
+        } else {
+            assert_eq!(
+                self.original_timing_pending_nmi_update_gate, None,
+                "a fresh suspended iteration accepting its Open NMI in-host cannot also carry a pending gate",
+            );
+        }
         assert!(
             !self.game_state.display.nmi_update_is_latched(),
-            "a fresh suspended iteration's carried Open handler disagrees with the native NMI latch",
-        );
-        assert!(
-            self.display_snapshot
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.accepts_nmi_dma_receipts),
-            "a fresh suspended iteration lost its carried Open acceptance snapshot",
+            "a fresh suspended iteration's Open handler disagrees with the native NMI latch",
         );
         assert_eq!(
             self.original_timing_expected_nmi_update_gates.as_slice(),
@@ -20510,13 +20639,17 @@ impl ZeldaState {
         );
 
         let before_progress = classify_original_timing_nmi_phases_with_ownership(
-            true,
+            carried_open,
             &timeline.nmi_phases_before_progress,
         );
         assert_eq!(
             before_progress,
             OriginalTimingNmiPhaseClassification {
-                handler_completion: OriginalTimingNmiHandlerCompletionOwner::PendingAtSequenceEntry,
+                handler_completion: if carried_open {
+                    OriginalTimingNmiHandlerCompletionOwner::PendingAtSequenceEntry
+                } else {
+                    OriginalTimingNmiHandlerCompletionOwner::AcceptedInThisSequence
+                },
                 publication_pending_at_exit: false,
             },
         );
@@ -20538,9 +20671,21 @@ impl ZeldaState {
             .expect("live fresh suspended iteration lost its semantic authority")
             .semantic
             .clone();
+        let body = if carried_open {
+            semantic.as_slice()
+        } else {
+            let [OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open), rest @ ..] =
+                semantic.as_slice()
+            else {
+                panic!(
+                    "a fresh suspended iteration accepting its Open NMI in-host must publish that acceptance first: {semantic:?}"
+                );
+            };
+            rest
+        };
         assert!(
             matches!(
-                semantic.as_slice(),
+                body,
                 [
                     OriginalTimingSemanticReceipt::NmiHandlerCompleted,
                     OriginalTimingSemanticReceipt::JoypadPublication(_),
@@ -20610,6 +20755,10 @@ impl ZeldaState {
         if !self.rom_startup_timing()
             || self.intro_poly_thread_initialization_phase == 0
             || !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            // The save-quit reset hold owns the CPU until its terminal
+            // return; the poly phase armed by its reset writes begins only
+            // afterward (route hosts 159380-159401).
+            || self.save_quit_reset_hold
         {
             return None;
         }
@@ -20651,6 +20800,22 @@ impl ZeldaState {
         );
 
         match self.intro_poly_thread_initialization_phase {
+            3 if self.original_timing_main_loop_progress()
+                == Some(crate::MainLoopProgress::CallStackContinued) =>
+            {
+                // The iteration which armed the poly thread is still
+                // finishing its interrupted common suffix (the save-quit
+                // reset's terminal host left NMI_PrepareSprites pending);
+                // the ordinary continued-return owner completes it and the
+                // poly thread waits for the next fresh iteration (route host
+                // 159404).
+                assert_eq!(
+                    self.pending_main_loop_common_suffix,
+                    Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch),
+                    "an intro-poly arming iteration continued without its pending common suffix",
+                );
+                None
+            }
             3 => self
                 .original_timing_iteration_started_continuation_plan()
                 .map(OriginalTimingIntroPolyPlan::AwaitingIterationStart),
@@ -20661,14 +20826,25 @@ impl ZeldaState {
                         crate::MainLoopProgress::CallStackContinued,
                         "terminal intro-poly caller cannot begin another main-loop iteration",
                     );
-                    assert_eq!(
-                        timeline.nmi_phases_before_return,
-                        [
-                            OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld),
-                            OriginalTimingNmiPhase::HandlerCompleted,
-                        ],
-                        "terminal intro-poly caller requires its same-host Held handler before returning",
-                    );
+                    if self.original_timing_nmi_publication_pending {
+                        // The Held acceptance was carried in from the
+                        // preceding suspended host (save-quit reset
+                        // re-entry, route host 159407).
+                        assert_eq!(
+                            timeline.nmi_phases_before_return,
+                            [OriginalTimingNmiPhase::HandlerCompleted],
+                            "terminal intro-poly caller with a carried Held acceptance completes exactly that handler before returning",
+                        );
+                    } else {
+                        assert_eq!(
+                            timeline.nmi_phases_before_return,
+                            [
+                                OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld),
+                                OriginalTimingNmiPhase::HandlerCompleted,
+                            ],
+                            "terminal intro-poly caller requires its same-host Held handler before returning",
+                        );
+                    }
                     assert_eq!(
                         timeline.nmi_phases_after_return,
                         [OriginalTimingNmiPhase::Accepted(NmiUpdateGate::Open)],
@@ -20680,30 +20856,55 @@ impl ZeldaState {
                         "terminal intro-poly caller lost its ordinary main-loop suffix",
                     );
                     assert!(!self.main_loop_sprite_preparation_completed);
-                    assert!(!self.original_timing_nmi_publication_pending);
-                    assert_eq!(self.original_timing_pending_nmi_update_gate, None);
                     assert!(self.game_state.display.nmi_update_is_latched());
-                    assert_eq!(
-                        self.original_timing_expected_nmi_update_gates.as_slice(),
-                        [NmiUpdateGate::LatchHeld, NmiUpdateGate::Open],
-                    );
                     assert!(self.original_timing_main_loop_interruption().is_none());
-                    assert_eq!(
-                        self.original_timing_semantic_receipts
-                            .as_ref()
-                            .expect("terminal intro-poly caller lost its semantic authority")
-                            .semantic,
-                        [
-                            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
-                            OriginalTimingSemanticReceipt::NmiHandlerCompleted,
-                            OriginalTimingSemanticReceipt::MainLoopProgress(
-                                crate::MainLoopProgress::CallStackContinued,
-                            ),
-                            OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
-                            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
-                        ],
-                        "terminal intro-poly caller published an unsupported or reordered semantic vector",
-                    );
+                    let semantic = &self
+                        .original_timing_semantic_receipts
+                        .as_ref()
+                        .expect("terminal intro-poly caller lost its semantic authority")
+                        .semantic;
+                    if self.original_timing_nmi_publication_pending {
+                        assert_eq!(
+                            self.original_timing_pending_nmi_update_gate,
+                            Some(NmiUpdateGate::LatchHeld),
+                            "terminal intro-poly caller with a carried publication must carry the Held acceptance",
+                        );
+                        assert_eq!(
+                            self.original_timing_expected_nmi_update_gates.as_slice(),
+                            [NmiUpdateGate::LatchHeld, NmiUpdateGate::Open],
+                        );
+                        assert_eq!(
+                            *semantic,
+                            [
+                                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                                OriginalTimingSemanticReceipt::MainLoopProgress(
+                                    crate::MainLoopProgress::CallStackContinued,
+                                ),
+                                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+                                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                            ],
+                            "terminal intro-poly caller (carried Held) published an unsupported or reordered semantic vector",
+                        );
+                    } else {
+                        assert_eq!(self.original_timing_pending_nmi_update_gate, None);
+                        assert_eq!(
+                            self.original_timing_expected_nmi_update_gates.as_slice(),
+                            [NmiUpdateGate::LatchHeld, NmiUpdateGate::Open],
+                        );
+                        assert_eq!(
+                            *semantic,
+                            [
+                                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                                OriginalTimingSemanticReceipt::MainLoopProgress(
+                                    crate::MainLoopProgress::CallStackContinued,
+                                ),
+                                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+                                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                            ],
+                            "terminal intro-poly caller published an unsupported or reordered semantic vector",
+                        );
+                    }
                     Some(OriginalTimingIntroPolyPlan::Terminal(timeline))
                 } else {
                     self.original_timing_nonterminal_continuation_plan()
@@ -20813,8 +21014,8 @@ impl ZeldaState {
             self.intro_memory_darken_frame_delay, 0,
             "the save-quit reset caller overlaps the suspended intro memory-darken caller",
         );
-        assert_eq!(
-            self.intro_poly_thread_initialization_phase, 0,
+        assert!(
+            self.intro_poly_thread_initialization_phase == 0 || self.save_quit_reset_writes_applied,
             "the save-quit reset caller overlaps the suspended intro poly thread",
         );
         if let Some(timeline) = self.original_timing_main_loop_return_timeline() {
@@ -20824,6 +21025,32 @@ impl ZeldaState {
                 "the terminal save-quit reset cannot begin another main-loop iteration",
             );
             return Some(OriginalTimingSaveQuitResetPlan::Terminal(timeline));
+        }
+        if self.original_timing_owes_sprite_main_return()
+            && self.original_timing_main_loop_interruption()
+                == Some(crate::MainLoopInterruption::SpritePreparation)
+        {
+            // The upload finished mid-host: Module17's Sprite_Main returned
+            // and the shared suffix was interrupted by a Held acceptance
+            // (route host 159403: [SpriteMainReturned, NmiAccepted(LatchHeld),
+            // MainLoopInterrupted(SpritePreparation), CallStackContinued]).
+            return Some(OriginalTimingSaveQuitResetPlan::TerminalInterruptedSuffix);
+        }
+        if !self.original_timing_nmi_publication_pending
+            && self
+                .original_timing_uninterrupted_main_loop_timeline(
+                    crate::MainLoopProgress::CallStackContinued,
+                )
+                .is_some_and(|timeline| {
+                    timeline.nmi_phases_before_progress.is_empty()
+                        && timeline.nmi_phases_after_progress.is_empty()
+                })
+        {
+            assert!(
+                !self.original_timing_owes_sprite_main_return(),
+                "an NMI-masked save-quit hold cannot own a Sprite_Main return",
+            );
+            return Some(OriginalTimingSaveQuitResetPlan::NmiMaskedHold);
         }
         self.original_timing_nonterminal_continuation_plan()
             .map(OriginalTimingSaveQuitResetPlan::Nonterminal)
@@ -22020,9 +22247,8 @@ impl ZeldaState {
                 "a terminal dialogue endpoint requires its typed common-suffix completion",
             );
             assert!(
-                self.game_state.frame.main_module == 14
-                    && matches!(self.game_state.frame.submodule, 2 | 11),
-                "a resumed terminal dialogue endpoint escaped Module0E RenderText: {:?}",
+                self.frame_hosts_resident_render_text(),
+                "a resumed terminal dialogue endpoint escaped Module0E/Module1B RenderText: {:?}",
                 self.game_state.frame,
             );
             assert!(
@@ -22097,8 +22323,7 @@ impl ZeldaState {
                 "a suspended VWF terminal return requires its typed common-suffix completion",
             );
             assert!(
-                self.game_state.frame.main_module == 14
-                    && matches!(self.game_state.frame.submodule, 2 | 11)
+                self.frame_hosts_resident_render_text()
                     && self.game_state.messaging.runtime.module() == 1
                     && self.game_state.messaging.runtime.text_render_state() == 3,
                 "a suspended VWF terminal return lost its resident Module0E caller: {:?}",
@@ -32679,6 +32904,8 @@ impl ZeldaState {
         let mut selected_game_load_plan = self.original_timing_selected_game_load_plan();
         let mut begin_selected_game_load_plan =
             self.original_timing_begin_selected_game_load_plan();
+        let mut message_selected_game_load_pre_audio_plan =
+            self.original_timing_message_selected_game_load_pre_audio_boundary_plan();
         let pre_audio_selected_game_waiting_plan = if self.rom_startup_timing()
             && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && selected_game_load_plan.is_none()
@@ -32884,6 +33111,10 @@ impl ZeldaState {
             .flatten();
         let prospective_uninterrupted_idle_main_loop_plan =
             (matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                // The suspended save-quit reset caller owns every host of its
+                // hold, including the one carrying Module17's Sprite_Main
+                // return (route host 159403).
+                && !self.save_quit_reset_hold
                 && (run_what & crate::RUN_MAIN != 0
                     || self.original_timing_main_loop_progress().is_some())
                 && (self.game_execution_scheduler.is_idle()
@@ -33773,6 +34004,16 @@ impl ZeldaState {
                         plan.scheduler_after_transition,
                         true,
                     )
+                } else if let Some(plan) = message_selected_game_load_pre_audio_plan.as_ref() {
+                    assert_eq!(
+                        self.game_execution_scheduler, plan.scheduler_before_transition,
+                        "validated Message selected-game scheduler owner changed before its source transition",
+                    );
+                    (
+                        Some(StartupSequenceStep::BeginPreDungeonAudio),
+                        plan.scheduler_after_transition,
+                        true,
+                    )
                 } else {
                     let mut scheduler_probe = self.game_execution_scheduler;
                     let step = scheduler_probe.advance_startup_sequence();
@@ -33994,6 +34235,19 @@ impl ZeldaState {
                     true
                 }
                 Some(StartupSequenceStep::BeginPreDungeonAudio) => {
+                    if let Some(plan) = message_selected_game_load_pre_audio_plan.take() {
+                        // One more held decompression slice; Module05's
+                        // Message tail runs at the post-audio terminal return.
+                        self.execute_original_timing_nonterminal_continuation(
+                            plan.continuation,
+                            input,
+                            oam_dma_source.as_deref(),
+                            |state| {
+                                state.game_execution_scheduler = plan.scheduler_after_transition;
+                            },
+                        );
+                        return;
+                    }
                     if let Some(plan) = begin_selected_game_load_plan.take() {
                         assert_eq!(
                             self.original_timing_semantic_receipts
@@ -34096,6 +34350,18 @@ impl ZeldaState {
                         assert!(
                             self.game_execution_scheduler.is_idle(),
                             "the source-proven selected-game return must retire its scheduler continuation",
+                        );
+                        if plan.destination == SelectedGameLoadDestination::Message {
+                            assert!(
+                                self.take_original_timing_dialogue_closed(),
+                                "the Message selected-game return lost its DialogueClosed fact",
+                            );
+                        }
+                        assert!(
+                            self.original_timing_semantic_receipts
+                                .as_ref()
+                                .is_some_and(|receipts| receipts.semantic.is_empty()),
+                            "selected-game terminal return left unowned semantic receipts",
                         );
                         self.assert_native_frame_state_matches_ram();
                         self.assert_native_world_location_state_matches_ram();
@@ -34287,6 +34553,78 @@ impl ZeldaState {
                         |_| {},
                     );
                 }
+                OriginalTimingSaveQuitResetPlan::NmiMaskedHold => {
+                    let timeline = self
+                        .take_original_timing_uninterrupted_main_loop_timeline(
+                            crate::MainLoopProgress::CallStackContinued,
+                        )
+                        .expect("validated NMI-masked save-quit hold timeline disappeared");
+                    assert!(
+                        timeline.nmi_phases_before_progress.is_empty()
+                            && timeline.nmi_phases_after_progress.is_empty(),
+                        "an NMI-masked save-quit hold cannot carry NMI phases: {timeline:?}",
+                    );
+                    assert!(
+                        self.original_timing_semantic_receipts
+                            .as_ref()
+                            .is_some_and(|receipts| receipts.semantic().is_empty()),
+                        "an NMI-masked save-quit hold left unconsumed semantic authority",
+                    );
+                    if !self.save_quit_reset_writes_applied {
+                        // The ROM's reset writes complete as its NMI masking
+                        // begins; only the song upload remains for the
+                        // terminal return (route run 159378).
+                        self.death_func15_save_quit_reset_writes();
+                        self.save_quit_reset_writes_applied = true;
+                    }
+                }
+                OriginalTimingSaveQuitResetPlan::TerminalInterruptedSuffix => {
+                    let claims = self
+                        .original_timing_semantic_receipts
+                        .as_ref()
+                        .map(|receipts| {
+                            receipts
+                                .semantic
+                                .iter()
+                                .filter(|receipt| {
+                                    **receipt == OriginalTimingSemanticReceipt::SpriteMainReturned
+                                })
+                                .count()
+                        })
+                        .unwrap_or(0);
+                    // The common suffix has been pending since the hold's
+                    // first host (Death_Func15 was deferred inside its
+                    // iteration), so the wire's SpritePreparation
+                    // interruption restates that armed owner. The generic
+                    // re-interruption path may already have retired it.
+                    let _ = self.take_original_timing_main_loop_interruption(
+                        crate::MainLoopInterruption::SpritePreparation,
+                    );
+                    assert_eq!(
+                        self.pending_main_loop_common_suffix,
+                        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch),
+                        "the save-quit terminal lost its pending common suffix",
+                    );
+                    self.begin_original_timing_sprite_main_return_claim_scope(claims);
+                    if !self.save_quit_reset_writes_applied {
+                        self.death_func15_save_quit_reset_writes();
+                    }
+                    self.save_quit_reset_writes_applied = false;
+                    self.death_func15_save_quit_song_upload();
+                    self.sprite_main();
+                    self.link_oam_main();
+                    self.save_quit_reset_hold = false;
+                    self.finish_original_timing_sprite_main_return_claim_scope();
+                    assert_eq!(
+                        self.pending_main_loop_common_suffix,
+                        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch),
+                        "the save-quit terminal's caller body disturbed the pending common suffix",
+                    );
+                    let _ = self.take_original_timing_uninterrupted_main_loop_timeline(
+                        crate::MainLoopProgress::CallStackContinued,
+                    );
+                    self.capture_and_carry_original_timing_nmi_publication_at_host_return();
+                }
                 OriginalTimingSaveQuitResetPlan::Terminal(expected) => {
                     let timeline = self
                         .take_original_timing_main_loop_return_timeline()
@@ -34315,11 +34653,17 @@ impl ZeldaState {
                         input,
                         oam_dma_source.as_deref(),
                         |state| {
-                            // The whole Death_Func15 save-quit tail returns
-                            // to Module17 within this terminal host; the
-                            // caller then runs its Sprite_Main/LinkOam
-                            // suffix before the shared game-loop suffix.
-                            state.Death_Func15(false);
+                            // Death_Func15's slow save-quit remainder
+                            // returns to Module17 within this terminal host
+                            // (the fast prefix already ran at the hold's
+                            // entry); the caller then runs its
+                            // Sprite_Main/LinkOam suffix before the shared
+                            // game-loop suffix.
+                            if !state.save_quit_reset_writes_applied {
+                                state.death_func15_save_quit_reset_writes();
+                            }
+                            state.save_quit_reset_writes_applied = false;
+                            state.death_func15_save_quit_song_upload();
                             state.sprite_main();
                             state.link_oam_main();
                             state.save_quit_reset_hold = false;
@@ -35275,9 +35619,9 @@ impl ZeldaState {
                         self.take_original_timing_dialogue_closed(),
                         "a world-map exit return lost its dialogue-close receipt",
                     );
-                    assert_eq!(
-                        self.game_state.frame.main_module, 14,
-                        "dialogue-close receipt reached native gameplay outside Module0E",
+                    assert!(
+                        self.frame_module_hosts_dialogue(),
+                        "dialogue-close receipt reached native gameplay outside Module0E/Module1B",
                     );
                     // Match the idle Module0E consumer: mark the semantic
                     // branch and let the existing C translation own every
@@ -35719,7 +36063,7 @@ impl ZeldaState {
             // sequence). Match the idle Module0E consumer: mark the semantic
             // branch and let the C translation own every mutation.
             if self.take_original_timing_dialogue_closed() {
-                if self.game_state.frame.main_module == 14 {
+                if self.frame_module_hosts_dialogue() {
                     self.messaging_state_mut().set_text_render_state(4);
                 }
                 // Outside Module0E the native continued caller already
@@ -41077,6 +41421,93 @@ impl ZeldaState {
         mirror.reconstitute_cgram(&cgram);
     }
 
+    /// Seed this state from a foreign emulator's memory image (the pinned
+    /// Snes9x oracle at a route boundary): WRAM, VRAM, SRAM, CGRAM and OAM
+    /// replace ours, the native game-state mirrors are rebuilt from WRAM, the
+    /// modern audio engine restarts on the WRAM music-control song, and the
+    /// live original-timing machine restarts cold at `host_frame`.
+    ///
+    /// This is the oracle-seeded segment start: it lets a route segment run
+    /// against the oracle independently of every earlier segment's Rust
+    /// behavior. It is development evidence, never parity authority — the
+    /// seeded APU, PPU register mirror and presentation provenance are not
+    /// the oracle's exact state.
+    pub fn seed_from_snes9x_oracle_memory(
+        &mut self,
+        wram: &[u8],
+        vram: &[u8],
+        sram: &[u8],
+        cgram: &[u16],
+        oam: &[u8],
+        host_frame: u32,
+    ) -> Result<(), String> {
+        if wram.len() != self.ram.len() {
+            return Err(format!(
+                "seed WRAM has {} bytes, expected {}",
+                wram.len(),
+                self.ram.len()
+            ));
+        }
+        if vram.len() != 0x1_0000 {
+            return Err(format!("seed VRAM has {} bytes, expected 65536", vram.len()));
+        }
+        if cgram.len() != 0x100 {
+            return Err(format!("seed CGRAM has {} colors, expected 256", cgram.len()));
+        }
+        if oam.len() != 0x220 {
+            return Err(format!("seed OAM has {} bytes, expected 544", oam.len()));
+        }
+        if sram.is_empty() || sram.len() > self.sram.len() {
+            return Err(format!(
+                "seed SRAM has {} bytes, expected 1..={}",
+                sram.len(),
+                self.sram.len()
+            ));
+        }
+        self.ram.copy_from_slice(wram);
+        self.sram[..sram.len()].copy_from_slice(sram);
+        self.ppu.vram = vram
+            .chunks_exact(2)
+            .map(|w| u16::from_le_bytes([w[0], w[1]]))
+            .collect();
+        self.ppu.cgram = cgram.to_vec();
+        self.ppu.oam = oam
+            .chunks_exact(2)
+            .map(|w| u16::from_le_bytes([w[0], w[1]]))
+            .collect();
+        // Drop every boot-only/transient live-timing field a fresh state
+        // carries (reset delay, SPC startup phase, intro thread phases, ...),
+        // then re-enable live timing as a progressed (non-cold) state.
+        self.set_rom_startup_timing(false);
+        self.frame_ctr_dbg = host_frame;
+        self.state_recorder.replay_frame_counter = host_frame;
+        self.set_rom_startup_timing(true);
+        // The spotlight HDMA dynamic table lives in WRAM ($1B00 scratch is a
+        // C save-time projection which a foreign WRAM image never holds), so
+        // the native table is rebuilt from WRAM below; no saveload copy.
+        self.seed_saved_music_ports_from_wram(wram);
+        self.zelda_restore_music_after_load_locked(false);
+        self.sync_native_game_state_from_ram();
+        self.reconstitute_palette_mirror_from_shadow();
+        self.assert_native_world_location_state_matches_ram();
+        self.assert_native_display_state_matches_ram();
+        self.sync_overworld_map16_state_from_ram();
+        self.emu_synchronize_whole_state();
+        // Re-arm the live original-timing owner cold at this host: the first
+        // installed receipts belong to host `host_frame`, nothing is carried.
+        self.restore_original_timing_resume_checkpoint(crate::OriginalTimingResumeCheckpoint {
+            schema: crate::OriginalTimingResumeCheckpoint::SCHEMA,
+            last_consumed_host_call: Some(u64::from(host_frame).saturating_sub(1)),
+            nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
+            dungeon_exit_spotlight_entry_return_pending: false,
+            pre_dungeon_return_pending: None,
+            item_receipt_live_link_dma_host: None,
+        })
+        .map_err(|error| format!("seeded state could not re-arm live timing: {error:?}"))?;
+        Ok(())
+    }
+
     fn save_snes_state(&mut self, func: &mut SaveLoadFunc<'_, '_>) {
         self.backup_spotlight_hdma_to_saveload_buffer();
         self.zelda_save_music_state_to_ram_locked();
@@ -42038,8 +42469,28 @@ impl ZeldaState {
         self.stage_pending_dialogue_scroll_completion_after_captured_boundary();
     }
 
+    /// Modules whose main routine hosts the shared RenderText dialogue
+    /// machinery: Module0E (submodules 2/11) and Module1B_SpawnSelect
+    /// (submodule 2 — the save-quit "where to start" prompt, route hosts
+    /// 160304-160319).
+    fn frame_hosts_resident_render_text(&self) -> bool {
+        matches!(
+            (
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            ),
+            (14, 2 | 11) | (27, 2)
+        )
+    }
+
+    /// Modules whose iteration can own live dialogue receipts (see
+    /// `frame_hosts_resident_render_text`).
+    fn frame_module_hosts_dialogue(&self) -> bool {
+        matches!(self.game_state.frame.main_module, 14 | 27)
+    }
+
     fn original_timing_dialogue_message_endpoint(&self) -> Option<u16> {
-        if self.game_state.frame.main_module != 14
+        if !self.frame_module_hosts_dialogue()
             || !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
         {
             return None;
@@ -42532,7 +42983,7 @@ impl ZeldaState {
         &mut self,
     ) -> Option<OriginalTimingMainLoopReturnTimeline> {
         if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-            || self.game_state.frame.main_module != 14
+            || !self.frame_module_hosts_dialogue()
             || self.original_timing_main_loop_progress()
                 != Some(crate::MainLoopProgress::CallStackContinued)
             || self.original_timing_main_loop_return_timeline().is_none()
@@ -42756,9 +43207,9 @@ impl ZeldaState {
             "a cloned VWF endpoint transition lost its source dialogue receipt",
         );
         if self.take_original_timing_dialogue_closed() {
-            assert_eq!(
-                self.game_state.frame.main_module, 14,
-                "dialogue-close receipt reached native gameplay outside Module0E",
+            assert!(
+                self.frame_module_hosts_dialogue(),
+                "dialogue-close receipt reached native gameplay outside Module0E/Module1B",
             );
             // Let the existing C translation own every mutation: the border
             // clear packet, messaging-module reset, submodule reset, and the
@@ -42769,7 +43220,7 @@ impl ZeldaState {
         if matches!(
             authoritative_main_loop_progress,
             Some(crate::MainLoopProgress::CallStackContinued)
-        ) && self.game_state.frame.main_module != 14
+        ) && !self.frame_module_hosts_dialogue()
         {
             // ZeldaRunGameLoop calls Module_MainRouting exactly once, after
             // incrementing frame_counter. A source host interval which stayed
@@ -42788,7 +43239,7 @@ impl ZeldaState {
         if matches!(
             authoritative_main_loop_progress,
             Some(crate::MainLoopProgress::CallStackContinued)
-        ) && self.game_state.frame.main_module == 14
+        ) && self.frame_module_hosts_dialogue()
         {
             if self.game_state.frame.submodule == 2 {
                 // The source remained inside Module0E's existing VWF call

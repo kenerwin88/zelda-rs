@@ -2107,7 +2107,14 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
     }
     let mut oracle_rng_trace = LiveOracleRngTrace::new(semantic_trace.backing_path().to_path_buf());
     let mut rng_cursor = rng_samples.partition_point(|sample| sample.execution_frame < start_frame);
-    let _compare_lock = acquire_snes9x_compare_lock();
+    // ZELDA3_ORACLE_CAPTURE_RECORD_RNG=1: run the pinned oracle past any
+    // recorded RNG coverage and write the cartridge RNG it produces as the
+    // capture's rom-random.txt (a wire/RNG recorder for frames Rust has not
+    // reached yet). The result is development evidence, not a parity cache.
+    let record_rng = env::var_os("ZELDA3_ORACLE_CAPTURE_RECORD_RNG").is_some_and(|v| v == "1");
+    let mut recorded_rng: Vec<zelda3::RomRandomSample> = Vec::new();
+    // Oracle-only capture performs no GPU work; it needs no lock.
+    let _compare_lock = acquire_snes9x_compare_lock_mode(false);
     let mut oracle = LibretroCore::load_with_sram(core_path, rom_path, Some(&initial_sram))
         .unwrap_or_else(|error| {
             eprintln!("failed to initialize Snes9x for A/V capture: {error}");
@@ -2279,11 +2286,18 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
                 eprintln!("failed to read source RNG receipts at capture frame {frame}: {error}");
                 process::exit(1);
             });
-        validate_oracle_rng_samples_for_run(&rng_samples, &mut rng_cursor, frame, &actual_rng)
-            .unwrap_or_else(|error| {
-                eprintln!("oracle A/V capture rejected stale RNG provenance: {error}");
-                process::exit(2);
-            });
+        if record_rng {
+            // Recorder mode: the oracle IS the RNG authority for frames no
+            // recorded script covers yet; persist its samples instead of
+            // validating them.
+            recorded_rng.extend(actual_rng.iter().copied());
+        } else {
+            validate_oracle_rng_samples_for_run(&rng_samples, &mut rng_cursor, frame, &actual_rng)
+                .unwrap_or_else(|error| {
+                    eprintln!("oracle A/V capture rejected stale RNG provenance: {error}");
+                    process::exit(2);
+                });
+        }
         semantic.extend(
             snes9x_oracle_semantic_receipts(&oracle).unwrap_or_else(|error| {
                 eprintln!(
@@ -2336,6 +2350,28 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         eprintln!("failed to finish source timing receipt compression: {error}");
         process::exit(1);
     });
+    if record_rng {
+        let mut text = String::from(
+            "# Cartridge RNG outputs RECORDED by an oracle-only capture (ZELDA3_ORACLE_CAPTURE_RECORD_RNG=1); development evidence only.\n",
+        );
+        for sample in &recorded_rng {
+            text.push_str(&format!(
+                "{} {} carry={}\n",
+                sample.execution_frame,
+                sample.value,
+                sample.carry as u8
+            ));
+        }
+        fs::write(output_dir.join("rom-random.txt"), text).unwrap_or_else(|error| {
+            eprintln!("failed to persist recorded oracle RNG: {error}");
+            process::exit(1);
+        });
+        println!(
+            "recorded {} cartridge RNG sample(s) into {}",
+            recorded_rng.len(),
+            output_dir.join("rom-random.txt").display()
+        );
+    }
     fs::write(
         output_dir.join("oracle_last_before.state"),
         oracle_last_before,
@@ -4111,6 +4147,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut resume_semantic_trace_checkpoint = None::<PathBuf>;
     let mut resume_oracle_sram = None::<PathBuf>;
     let mut resume_paired = None::<PathBuf>;
+    let mut seed_rust_from_oracle = None::<u32>;
     let mut paired_resume_captures = Vec::<PairedResumeCapture>::new();
     let mut rolling_paired_resume = None::<RollingPairedResumeCapture>;
     let mut native_apu_bootstrap = None::<PathBuf>;
@@ -4239,6 +4276,14 @@ pub(crate) fn run_compare_libretro_oracle(
                     process::exit(2);
                 };
                 resume_paired = Some(PathBuf::from(path));
+                i += 2;
+            }
+            "--seed-rust-from-oracle-state" => {
+                let Some(frame) = args.get(i + 1).and_then(|v| v.parse::<u32>().ok()) else {
+                    eprintln!("--seed-rust-from-oracle-state requires the oracle state's route frame");
+                    process::exit(2);
+                };
+                seed_rust_from_oracle = Some(frame);
                 i += 2;
             }
             "--save-paired-resume-at" => {
@@ -4593,7 +4638,14 @@ pub(crate) fn run_compare_libretro_oracle(
         resume_original_timing_checkpoint = Some(original_timing_resume);
         resume_semantic_trace_checkpoint = Some(semantic_trace);
     }
-    if resume_rust_state.is_some() != resume_oracle_state.is_some() {
+    if seed_rust_from_oracle.is_some() {
+        if resume_oracle_state.is_none() || resume_rust_state.is_some() || resume_paired.is_some() {
+            eprintln!(
+                "--seed-rust-from-oracle-state requires --resume-oracle-state (plus optional --resume-oracle-sram) and no Rust resume state"
+            );
+            process::exit(2);
+        }
+    } else if resume_rust_state.is_some() != resume_oracle_state.is_some() {
         eprintln!(
             "--resume-rust-state and --resume-oracle-state must be provided together so both engines resume at one boundary"
         );
@@ -4621,9 +4673,15 @@ pub(crate) fn run_compare_libretro_oracle(
     // needed by checkpoint diagnostics after that calibration.  Keeping this
     // lane available for both sources lets a short paired replay reproduce the
     // same Zelda-state divergence without changing promotion authority.
-    if live_oracle_rng && resume_rust_state.is_some() {
+    // ZELDA3_LIVE_RNG_DIAGNOSTIC_RESUME=1 opts a live-RNG run into a paired
+    // resume for the fix loop (a ~1400-frame resumed probe instead of a cold
+    // replay to the frontier). Such a run is diagnostic only: its session is
+    // never parity-eligible and its RNG stream is never a calibration source.
+    let live_rng_diagnostic_resume =
+        std::env::var_os("ZELDA3_LIVE_RNG_DIAGNOSTIC_RESUME").is_some_and(|v| v == "1");
+    if live_oracle_rng && resume_rust_state.is_some() && !live_rng_diagnostic_resume {
         eprintln!(
-            "--live-oracle-rng is a cold-oracle authority mode and cannot use paired resume states"
+            "--live-oracle-rng is a cold-oracle authority mode and cannot use paired resume states (set ZELDA3_LIVE_RNG_DIAGNOSTIC_RESUME=1 for a diagnostic-only resumed probe)"
         );
         process::exit(2);
     }
@@ -4824,6 +4882,10 @@ pub(crate) fn run_compare_libretro_oracle(
             });
         }
         (game, checkpoint.host_frame)
+    } else if let Some(frame) = seed_rust_from_oracle {
+        // Seeded from the oracle's memory once the oracle state is loaded
+        // below; the translated state starts as a fresh boot until then.
+        (load_default_play_state(), frame)
     } else {
         // Start from the same embedded asset pack as plain `cargo run`.
         (load_default_play_state(), 0)
@@ -4976,9 +5038,19 @@ pub(crate) fn run_compare_libretro_oracle(
                     process::exit(2);
                 });
         }
-        println!(
-            "resumed Rust and {oracle_name} from paired pre-frame states at frame {start_frame}"
-        );
+        if let Some(frame) = seed_rust_from_oracle {
+            seed_rust_game_from_oracle_memory(&mut game, &oracle, frame).unwrap_or_else(|error| {
+                eprintln!("failed to seed Rust from the oracle state: {error}");
+                process::exit(2);
+            });
+            println!(
+                "seeded Rust from the {oracle_name} state's memory at frame {frame} (development evidence, not parity authority)"
+            );
+        } else {
+            println!(
+                "resumed Rust and {oracle_name} from paired pre-frame states at frame {start_frame}"
+            );
+        }
     }
     let required_core = required_library_name.map(|name| {
         if name == "Snes9x" {
@@ -8439,6 +8511,7 @@ pub(crate) fn run_compare_libretro_oracle(
         &video_mismatch_ranges,
         first_video_mismatch.as_deref(),
         first_engine_state_mismatch.as_ref(),
+        (live_oracle_rng && resume_paired.is_some()) || seed_rust_from_oracle.is_some(),
     );
     if first_engine_state_mismatch.is_some() {
         if let Some(dir) = session_dir.as_deref() {
@@ -9793,6 +9866,7 @@ pub(crate) fn finalize_libretro_session(
     video_mismatch_ranges: &[(u32, u32)],
     first_video_mismatch: Option<&str>,
     first_engine_state_mismatch: Option<&(u32, Vec<String>)>,
+    diagnostic_probe: bool,
 ) {
     let Some(dir) = session_dir else {
         return;
@@ -9874,7 +9948,9 @@ pub(crate) fn finalize_libretro_session(
         && first_engine_state_mismatch.is_none();
     let parity_eligible = audio_report
         .map(|report| report.mode == AudioComparisonMode::Exact.as_str())
-        .unwrap_or(true);
+        .unwrap_or(true)
+        // A live-RNG run resumed from a paired checkpoint is a fix-loop probe.
+        && !diagnostic_probe;
     let status = if !matched {
         "failed"
     } else if parity_eligible {
@@ -10325,12 +10401,14 @@ pub(crate) fn acquire_snes9x_compare_lock() -> fs::File {
     acquire_snes9x_compare_lock_mode(true)
 }
 
-/// `exclusive: false` takes a SHARED lock: a renderless run (no GPU work, its
-/// own session dir) can coexist with other renderless runs, while any
-/// GPU-rendering run still takes the exclusive lock and is refused while
-/// shared holders are active (and vice versa). The two documented hazards —
-/// concurrent offscreen GPU flakes and the shared comparison session
-/// directory — only exist for rendering runs.
+/// `exclusive: false` is a renderless run (no GPU work, its own session dir):
+/// it takes NO lock at all, so renderless probes, oracle-only captures, and a
+/// long-running exclusive (rendering) gate all coexist. The two documented
+/// hazards — concurrent offscreen GPU flakes and the shared comparison session
+/// directory — only exist between rendering runs, which still serialize on the
+/// exclusive lock. (An earlier design gave renderless runs a shared flock; that
+/// made a 1-2 h cold A/V gate refuse every renderless fix-loop probe and vice
+/// versa for no safety gain.)
 pub(crate) fn acquire_snes9x_compare_lock_mode(exclusive: bool) -> fs::File {
     use std::os::unix::io::AsRawFd;
     let path = Path::new("/tmp/zelda3-snes9x-compare.lock");
@@ -10342,16 +10420,61 @@ pub(crate) fn acquire_snes9x_compare_lock_mode(exclusive: bool) -> fs::File {
             eprintln!("failed to open {}: {error}", path.display());
             process::exit(2);
         });
-    let op = if exclusive { libc::LOCK_EX } else { libc::LOCK_SH };
-    let rc = unsafe { libc::flock(file.as_raw_fd(), op | libc::LOCK_NB) };
+    if !exclusive {
+        return file;
+    }
+    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
     if rc != 0 {
         eprintln!(
-            "another Snes9x comparison is already running (lock: {}); GPU comparisons must run serially (renderless runs share the lock)",
+            "another rendering Snes9x comparison is already running (lock: {}); GPU comparisons must run serially (renderless runs take no lock)",
             path.display()
         );
         process::exit(2);
     }
     file
+}
+
+/// Seed a fresh translated state from the loaded oracle core's memory (WRAM,
+/// VRAM, SRAM via the libretro memory map; CGRAM and OAM via the trace core's
+/// debug PPU accessor). Used by `--seed-rust-from-oracle-state` to start a
+/// route segment at a Snes9x boundary state without any Rust checkpoint.
+fn seed_rust_game_from_oracle_memory(
+    game: &mut ZeldaState,
+    oracle: &LibretroCore,
+    frame: u32,
+) -> Result<(), String> {
+    let wram = oracle
+        .memory_bytes(RETRO_MEMORY_SYSTEM_RAM)
+        .ok_or("oracle exposes no SYSTEM_RAM")?
+        .to_vec();
+    let vram = oracle
+        .memory_bytes(RETRO_MEMORY_VIDEO_RAM)
+        .ok_or("oracle exposes no VIDEO_RAM")?
+        .to_vec();
+    let sram = oracle
+        .memory_bytes(RETRO_MEMORY_SAVE_RAM)
+        .ok_or("oracle exposes no SAVE_RAM")?
+        .to_vec();
+    let cgram = (0..256)
+        .map(|index| {
+            oracle
+                .debug_ppu_value(2, index)
+                .and_then(|value| u16::try_from(value).ok())
+                .ok_or_else(|| format!("oracle CGRAM color {index} is unavailable (trace core required)"))
+        })
+        .collect::<Result<Vec<u16>, String>>()?;
+    let oam = (0..544)
+        .map(|index| {
+            oracle
+                .debug_ppu_value(15, index)
+                .and_then(|value| u8::try_from(value).ok())
+                .ok_or_else(|| format!("oracle OAM byte {index} is unavailable (trace core required)"))
+        })
+        .collect::<Result<Vec<u8>, String>>()?;
+    // `seed_from_snes9x_oracle_memory` re-arms the live timing owner itself;
+    // `restore_live_rom_timing_after_checkpoint` would invalidate it again.
+    game.seed_from_snes9x_oracle_memory(&wram, &vram, &sram, &cgram, &oam, frame)?;
+    Ok(())
 }
 
 /// Failure artifacts accumulate ~5-10MB per diverging run; keep only the most

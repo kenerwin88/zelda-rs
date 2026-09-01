@@ -22615,9 +22615,11 @@ fn pre_dungeon_audio_boundary_rejects_malformed_nmi_order_before_mutation() {
 fn live_pre_dungeon_audio_rejects_an_unproven_nondungeon_destination_before_mutation() {
     let mut state = live_selected_game_load_state_before_pre_dungeon_audio();
     state.game_execution_scheduler.reset();
+    // The Message destination is source-proven (route hosts 160282-160303);
+    // the dark-world overworld destination remains unproven.
     state
         .game_execution_scheduler
-        .schedule_selected_game_load(SelectedGameLoadDestination::Message);
+        .schedule_selected_game_load(SelectedGameLoadDestination::DarkWorldOverworld);
     for _ in 0..SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES - 1 {
         assert_eq!(
             state.game_execution_scheduler.advance_startup_sequence(),

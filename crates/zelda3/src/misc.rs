@@ -1408,13 +1408,17 @@ impl ZeldaState {
                         crate::zelda_rtl::OriginalTimingOwnerState::Live
                     )
                 {
-                    // The ROM's Death_Func15 save-quit tail (the intro WRAM
-                    // clear inside Death_Func31 plus the overworld song-bank
-                    // upload) holds the wire for tens of latch-held slices
-                    // before Module17's Sprite_Main/LinkOam suffix runs
-                    // (route hosts 159333-159401). Defer the whole call to
-                    // the wire's terminal return; the held hosts are
-                    // consumed by the save-quit reset plan.
+                    // The ROM completes Death_Func15's fast prefix (through
+                    // Sprite_ResetAll and the save write) before the long
+                    // reset hold — the intro WRAM clear inside Death_Func31
+                    // plus the overworld song-bank upload — which holds the
+                    // wire for tens of latch-held slices before Module17's
+                    // Sprite_Main/LinkOam suffix runs (route hosts
+                    // 159333-159401). Run the prefix now and defer the slow
+                    // remainder to the wire's terminal return; the held
+                    // hosts are consumed by the save-quit reset plan.
+                    self.death_func15_common_prefix(false);
+                    self.death_func15_save_quit_pre_hold();
                     self.save_quit_reset_hold = true;
                     return;
                 }
