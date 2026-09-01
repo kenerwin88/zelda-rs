@@ -15140,7 +15140,9 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ignore_projectile(value);
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_slot_view_mut(k).add_ai_state(1);
-                    let value = (self.get_random_number() & 63).wrapping_add(160);
+                    // ROM `AND #63 : ADC #160` inherits GetRandomInt's
+                    // final-LSR carry (route frame 125288).
+                    let value = self.get_random_number_with_carry().masked_adc(63, 160);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     self.sprite_zero_velocity_xy(k);
                 } else {
@@ -15183,7 +15185,9 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
-                    let value = (self.get_random_number() & 31).wrapping_add(64);
+                    // ROM `AND #31 : ADC #64` inherits GetRandomInt's
+                    // final-LSR carry.
+                    let value = self.get_random_number_with_carry().masked_adc(31, 64);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                 } else {
                     let value = SPRITE_71_LEEVER_SUBMERGE_GFX

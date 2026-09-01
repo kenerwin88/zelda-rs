@@ -24748,15 +24748,38 @@ impl ZeldaState {
             // main-wait return belong to the scheduled continuation.
             return;
         }
+        let mut suffix_retired_before_trailing_nmi = false;
         if !wire_owns_return {
-            self.capture_display_snapshot();
-            self.interrupt_nmi(input, oam_dma_source, false);
+            if self.pending_main_loop_common_suffix.is_some()
+                && !self.original_timing_live_suffix_outstanding()
+            {
+                // The wire completes the shared suffix BEFORE its trailing
+                // acceptance (the vector holds the suffix receipt and the
+                // trailing Open): the latch must clear before that NMI runs
+                // (route host 124700).
+                self.complete_pending_main_loop_common_suffix_after_module_return();
+                suffix_retired_before_trailing_nmi = true;
+            }
+            if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && !self.original_timing_expected_nmi_update_gates.is_empty()
+            {
+                // The wire accepted the trailing NMI at this return
+                // boundary; its handler belongs to the next host and the
+                // generic scheduled-caller host-return staging carries it
+                // (route host 124700). Synthesizing the NMI here would run
+                // that handler one host early.
+            } else {
+                self.capture_display_snapshot();
+                self.interrupt_nmi(input, oam_dma_source, false);
+            }
         }
         self.restore_room_61_sprite_conversion_resident_oam();
         if work == DungeonSupertileTransitionWork::RoomLoadCallerResume {
             self.stage_live_animated_bg_scanout();
         }
-        if self.pending_main_loop_common_suffix.is_some() {
+        if suffix_retired_before_trailing_nmi {
+            // Already retired above, in wire order.
+        } else if self.pending_main_loop_common_suffix.is_some() {
             // The source-proven caller return already carries the shared
             // ZeldaRunGameLoop suffix; retire its one owner.
             self.complete_pending_main_loop_common_suffix_after_module_return();
