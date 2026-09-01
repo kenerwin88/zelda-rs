@@ -24761,13 +24761,19 @@ impl ZeldaState {
                 suffix_retired_before_trailing_nmi = true;
             }
             if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-                && !self.original_timing_expected_nmi_update_gates.is_empty()
+                && (!self.original_timing_expected_nmi_update_gates.is_empty()
+                    || self.original_timing_host_dispatch_active)
             {
-                // The wire accepted the trailing NMI at this return
-                // boundary; its handler belongs to the next host and the
-                // generic scheduled-caller host-return staging carries it
-                // (route host 124700). Synthesizing the NMI here would run
-                // that handler one host early.
+                // The wire owns any trailing acceptance at this return
+                // boundary. With a gate remaining, the trailing NMI was
+                // accepted here but its handler belongs to the next host and
+                // the generic scheduled-caller host-return staging carries it
+                // (route host 124700). With no gate remaining under active
+                // dispatch, the wire accepted no NMI at all this host — the
+                // caller return ends at the main wait and the next host's
+                // receipt owns the following acceptance (route host 132388).
+                // Synthesizing the NMI here would run a handler the typed
+                // authority never granted.
             } else {
                 self.capture_display_snapshot();
                 self.interrupt_nmi(input, oam_dma_source, false);

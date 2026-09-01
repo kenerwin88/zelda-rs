@@ -1834,8 +1834,9 @@ impl ZeldaState {
     }
 
     /// Advance an already-applied source prefix to a later receipt from the
-    /// next timing-authority host call. This is deliberately narrow: today the
-    /// only cross-host refinement is within `Sprite_DisableAll` itself.
+    /// next timing-authority host call. This is deliberately narrow: the only
+    /// cross-host refinements are within `Sprite_DisableAll` itself and
+    /// within `Dungeon_CacheTransSprites`' slot/field walk.
     pub(super) fn dungeon_advance_reset_sprites_cpu_progress(
         &mut self,
         completed: DungeonResetSpritesCpuProgress,
@@ -1848,6 +1849,53 @@ impl ZeldaState {
             ) if completed.source_ordinal() <= target.source_ordinal() => {
                 if completed != target {
                     self.apply_sprite_disable_actions_through(Some(completed), target);
+                }
+                true
+            }
+            (
+                DungeonResetSpritesCpuProgress::Cache {
+                    slot: completed_slot,
+                    field: completed_field,
+                },
+                DungeonResetSpritesCpuProgress::Cache {
+                    slot: target_slot,
+                    field: target_field,
+                },
+            ) if target_slot < completed_slot
+                || (target_slot == completed_slot && completed_field <= target_field) =>
+            {
+                // The C caching loop walks slots 15..0 with the fields of
+                // each slot in source order; apply only the delta between
+                // the two checkpoints (route host 133571 refined slot 15's
+                // `I` to `IgnoreProjectile` at its accepting NMI).
+                assert!(target_field <= self.dungeon_cache_last_field(usize::from(target_slot)));
+                if target_slot == completed_slot {
+                    if completed_field != target_field {
+                        self.dungeon_cache_trans_sprite_fields(
+                            usize::from(target_slot),
+                            Some(completed_field),
+                            target_field,
+                        );
+                    }
+                } else {
+                    let completed_slot = usize::from(completed_slot);
+                    self.dungeon_cache_trans_sprite_fields(
+                        completed_slot,
+                        Some(completed_field),
+                        self.dungeon_cache_last_field(completed_slot),
+                    );
+                    for k in (usize::from(target_slot) + 1..completed_slot).rev() {
+                        self.dungeon_cache_trans_sprite_fields(
+                            k,
+                            None,
+                            self.dungeon_cache_last_field(k),
+                        );
+                    }
+                    self.dungeon_cache_trans_sprite_fields(
+                        usize::from(target_slot),
+                        None,
+                        target_field,
+                    );
                 }
                 true
             }

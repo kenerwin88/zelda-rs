@@ -11266,6 +11266,18 @@ impl ZeldaState {
             ModuleCpuPhase::CompleteBeforeNmi | ModuleCpuPhase::InterruptedAfterModule => {}
             ModuleCpuPhase::InterruptedBeforeSpriteMain
             | ModuleCpuPhase::InterruptedInSpriteMain => {
+                if self.original_timing_owes_sprite_main_return()
+                    && !self.original_timing_owes_sprite_main_progress()
+                {
+                    // The live wire still owes this fresh iteration's
+                    // `SpriteMainReturned` claim with no suspension
+                    // checkpoint: the ROM ran Sprite_Main to completion
+                    // within this host, so the legacy quadrant timing
+                    // reconstruction's interruption estimate is superseded
+                    // (route host 132399, the post-room-load quadrant
+                    // upload's slot-0 estimate).
+                    return;
+                }
                 self.dungeon_quadrant_cpu_continuation_active = true;
                 let armed = self.arm_dungeon_sprite_main_cpu_continuation(advance);
                 assert!(armed, "Sprite_Main interruption has no semantic boundary");
