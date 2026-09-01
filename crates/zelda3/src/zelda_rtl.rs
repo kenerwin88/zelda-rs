@@ -22189,14 +22189,16 @@ impl ZeldaState {
                 "an idle terminal continued caller's leading handler disagrees with the native NMI latch",
             );
         }
-        // A save-menu initialization claim or deferred spotlight caller-return
-        // token is consumed by its own machinery; this plan only pins it at
-        // its exact wire position (route hosts 47624, 53926).
+        // A save-menu initialization claim, deferred spotlight caller-return
+        // token, or dialogue-close fact is consumed by its own machinery;
+        // this plan only pins it at its exact wire position (route hosts
+        // 47624, 53926, and the caller-return dialogue close at 123210).
         for (index, receipt) in semantic.iter().enumerate() {
             if matches!(
                 receipt,
                 OriginalTimingSemanticReceipt::SaveMenuInitializationProgress(_)
                     | OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait
+                    | OriginalTimingSemanticReceipt::DialogueClosed
             ) {
                 expected_semantic.insert(index.min(expected_semantic.len()), *receipt);
             }
@@ -31572,12 +31574,17 @@ impl ZeldaState {
                     | PreMainNmiResume::DungeonSupertileQuadrantUploadsAfterHeldNmi
                     | PreMainNmiResume::DungeonSupertileNextIterationAfterLeadingNmi
                     | PreMainNmiResume::DungeonSupertileCallerReturnNmi
+                    | PreMainNmiResume::OverworldSpriteReloadReturn { .. }
             ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                 && self.original_timing_semantic_receipts.is_some())
             .then(|| self.take_original_timing_main_loop_return_timeline())
             .flatten();
         if let Some(timeline) = live_terminal_timeline {
-            let caller_return_resume = resume == PreMainNmiResume::DungeonSupertileCallerReturnNmi;
+            let caller_return_resume = resume == PreMainNmiResume::DungeonSupertileCallerReturnNmi
+                // The reload-return caller completed on the preceding host;
+                // this resume owns only the carried handler and the deferred
+                // shared suffix (route host 117639).
+                || matches!(resume, PreMainNmiResume::OverworldSpriteReloadReturn { .. });
             if caller_return_resume {
                 // The carried handler interrupted NMI_PrepareSprites before
                 // its final latch-clear store; restore that call-stack-local
@@ -32369,12 +32376,30 @@ impl ZeldaState {
         let returned_scroll = self.bg_scroll_scanout_from_nmi_register_mirrors();
         let resume_scanout = resume_scanout.complete_transition_return(returned_scroll);
         if epilogue_phase == NmiPhase::BeforeNmi {
-            self.retire_or_run_main_loop_common_suffix_after_module_return();
+            if wire_owns_return {
+                // The terminal-return timeline already consumed the suffix
+                // receipt; it proves the suffix belongs to this host.
+                self.retire_or_run_main_loop_common_suffix_after_module_return();
+            } else {
+                // Without a terminal return the wire can hold the caller's
+                // shared suffix past this host (route host 117638: the
+                // reload returns, Sprite_Main runs, and the trailing
+                // acceptance stays held).
+                self.retire_or_defer_main_loop_common_suffix_by_wire();
+            }
         }
         if wire_owns_return {
             // The wire's terminal return owns any trailing acceptance; the
             // staged host-return carry publishes it to the next host (route
             // host 38518).
+        } else if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && !self.original_timing_expected_nmi_update_gates.is_empty()
+        {
+            // The wire accepted the trailing NMI at this return boundary;
+            // its handler belongs to the next host and the generic
+            // scheduled-caller host-return staging carries it (route host
+            // 117638). Synthesizing an NMI here would run that handler one
+            // host early.
         } else {
             self.capture_display_snapshot();
             self.interrupt_nmi(input, oam_dma_source, false);
@@ -32383,8 +32408,14 @@ impl ZeldaState {
             // The suspended iteration's shared suffix owner (armed while the
             // reload held the fresh iteration) retires here; running the
             // prep/latch pair directly would strand it and reject the next
-            // host's install (route host 108684).
-            self.retire_or_run_main_loop_common_suffix_after_module_return();
+            // host's install (route host 108684). Without a wire-proven
+            // terminal return the suffix can instead stay outstanding past
+            // this host entirely (route host 117638).
+            if wire_owns_return {
+                self.retire_or_run_main_loop_common_suffix_after_module_return();
+            } else {
+                self.retire_or_defer_main_loop_common_suffix_by_wire();
+            }
         }
         if post_return_hold_nmi_slices != 0 {
             self.game_execution_scheduler.schedule_work(
@@ -35450,6 +35481,18 @@ impl ZeldaState {
                     "a continued caller can only complete, not begin, the save-menu initialization",
                 );
                 self.save_menu_initialization_completed_pending = true;
+            }
+            // A Module0E interface sequence can close its dialogue inside
+            // this continued call (route host 123210, the desert-prayer
+            // sequence). Match the idle Module0E consumer: mark the semantic
+            // branch and let the C translation own every mutation.
+            if self.take_original_timing_dialogue_closed() {
+                if self.game_state.frame.main_module == 14 {
+                    self.messaging_state_mut().set_text_render_state(4);
+                }
+                // Outside Module0E the native continued caller already
+                // executed the close (the saved module is restored); the
+                // receipt corroborates that completed C branch.
             }
             let cpu_action = plan.cpu_action;
             self.complete_original_timing_main_loop_return(
@@ -39017,12 +39060,38 @@ impl ZeldaState {
                     // The long sprite reset/load loop is interrupted in the
                     // ROM. Workload-derived return phase owns publication and
                     // epilogue order independently from the host hold count.
+                    let untimed_sprite_main_return_claims =
+                        if authoritative_scheduled_caller_return_timeline.is_none() {
+                            // Without a wire-proven terminal return (the
+                            // suffix stays outstanding past this host), the
+                            // resumed caller's own Sprite_Main still crosses
+                            // its slot-zero return here; the host vector's
+                            // SpriteMainReturned facts bound those native
+                            // crossings (route host 117638).
+                            self.original_timing_semantic_receipts
+                                .as_ref()
+                                .map(|receipts| {
+                                    receipts
+                                        .semantic()
+                                        .iter()
+                                        .filter(|receipt| {
+                                            **receipt
+                                                == OriginalTimingSemanticReceipt::SpriteMainReturned
+                                        })
+                                        .count()
+                                })
+                                .filter(|count| *count != 0)
+                        } else {
+                            None
+                        };
                     if let Some((_, _, sprite_main_return_claims)) =
                         authoritative_scheduled_caller_return_timeline.as_ref()
                     {
                         self.begin_original_timing_sprite_main_return_claim_scope(
                             *sprite_main_return_claims,
                         );
+                    } else if let Some(claims) = untimed_sprite_main_return_claims {
+                        self.begin_original_timing_sprite_main_return_claim_scope(claims);
                     }
                     self.complete_module09_load_new_sprites_after_reload();
                     self.complete_module09_overworld_after_prepublished_rain();
@@ -39062,6 +39131,9 @@ impl ZeldaState {
                             self.clear_nmi_update_latch();
                         }
                         return;
+                    }
+                    if untimed_sprite_main_return_claims.is_some() {
+                        self.finish_original_timing_sprite_main_return_claim_scope();
                     }
                     self.finish_overworld_sprite_reload_return(
                         post_return_hold_nmi_slices,
@@ -42704,6 +42776,21 @@ impl ZeldaState {
     /// Run the shared `ZeldaRunGameLoop` suffix once at a module-caller
     /// return: retire the armed pending owner when the wire proved the
     /// suffix belongs to this host, otherwise run the raw translated pair.
+    /// Run the shared suffix at a caller return unless the live wire keeps
+    /// it outstanding (no suffix receipt and no Open trailing acceptance),
+    /// in which case arm its one pending owner for the later
+    /// suffix-completing host (the route-host-63268 pattern).
+    fn retire_or_defer_main_loop_common_suffix_by_wire(&mut self) {
+        if self.original_timing_live_suffix_outstanding() {
+            if self.pending_main_loop_common_suffix.is_none() {
+                self.pending_main_loop_common_suffix =
+                    Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+            }
+        } else {
+            self.retire_or_run_main_loop_common_suffix_after_module_return();
+        }
+    }
+
     fn retire_or_run_main_loop_common_suffix_after_module_return(&mut self) {
         if self.pending_main_loop_common_suffix.is_some() {
             self.complete_pending_main_loop_common_suffix_after_module_return();
