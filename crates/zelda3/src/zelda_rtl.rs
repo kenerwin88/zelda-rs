@@ -14067,8 +14067,9 @@ impl ZeldaState {
         let sum: u64 = page.iter().map(|&word| u64::from(word)).sum();
         let sample = |offset: usize| page.get(offset).copied().unwrap_or(0);
         eprintln!(
-            "objpipe host={} stage={stage} sum={sum:08x} w4020={:04x} w4030={:04x} w40b0={:04x} w4120={:04x}",
+            "objpipe host={} stage={stage} pack={:04x} sum={sum:08x} w4020={:04x} w4030={:04x} w40b0={:04x} w4120={:04x}",
             self.frame_ctr_dbg,
+            read_le_u16(&self.ram, 0x100),
             sample(0x20),
             sample(0x30),
             sample(0xb0),
@@ -23231,6 +23232,22 @@ impl ZeldaState {
         receipt: &crate::PresentedObjTiles,
         captured_obj_vram_latch: Option<&[u16]>,
     ) {
+        if self.debug_obj_pipe_enabled() {
+            eprintln!(
+                "objtiles host={} base={} tiles={:04x?}",
+                self.frame_ctr_dbg,
+                if self.ppu.obj_vram_latch.is_some() {
+                    "latch"
+                } else if captured_obj_vram_latch.is_some() {
+                    "captured_latch"
+                } else if self.last_presented_obj_vram.is_some() {
+                    "last_presented"
+                } else {
+                    "live"
+                },
+                receipt.tile_word_addresses,
+            );
+        }
         let mut obj_vram = self
             .ppu
             .obj_vram_latch
@@ -29796,6 +29813,17 @@ impl ZeldaState {
                 &format!("stage latch={}", self.ppu.obj_vram_latch.is_some()),
                 &presented_obj_vram[0x4000..0x4400],
             );
+            if let Some(snap) = &self.display_snapshot {
+                let a = &presented_obj_vram[0x4000..0x4400];
+                let b = &snap.ppu.vram[0x4000..0x4400];
+                let offs: Vec<usize> = (0..0x400).filter(|&i| a[i] != b[i]).collect();
+                eprintln!(
+                    "objstage_diff host={} n={} offs={:03x?}",
+                    self.frame_ctr_dbg,
+                    offs.len(),
+                    &offs[..offs.len().min(16)],
+                );
+            }
         }
         self.staged_presented_obj_vram = Some(presented_obj_vram.to_vec());
         self.compose_display_raster(

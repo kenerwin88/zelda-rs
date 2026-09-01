@@ -1635,7 +1635,37 @@ impl PpuState {
             }
         }
 
-        for sprite in &sprites {
+        // Snes9x/hardware time-over allocation: the per-line tile budget is
+        // consumed by ALL in-range sprites' visible tiles first; when it goes
+        // negative, whole sprites are skipped from the FRONT of the range
+        // list until the running total turns positive, and the boundary
+        // sprite draws only its first `running` visible tiles. A tile whose
+        // left edge sits exactly on the right screen edge consumes budget
+        // without drawing (gfx.cpp DrawOBJS; route frame 141125's crowded
+        // sword-swing line kept the LAST range sprite's tiles).
+        let consumes = |x: i32| x >= -7 - extra_left_right && x <= 256 + extra_left_right;
+        let visible_tile_count = |sprite: &SpriteLine| -> i32 {
+            let mut n = 0;
+            let mut col = 0;
+            while col < sprite.sprite_size {
+                if consumes(col + sprite.x) {
+                    n += 1;
+                }
+                col += 8;
+            }
+            n
+        };
+        let counts: Vec<i32> = sprites.iter().map(visible_tile_count).collect();
+        let total_tiles: i32 = counts.iter().sum();
+        let tiles_budget = tiles_left - 1;
+        let mut running = tiles_budget - total_tiles;
+
+        for (sprite_ordinal, sprite) in sprites.iter().enumerate() {
+            running += counts[sprite_ordinal];
+            if running <= 0 {
+                continue;
+            }
+            let mut tiles_for_sprite = running;
             let mut row = sprite.row;
             let oam1 = self.oam[sprite.index + 1];
             let obj_addr = if oam1 & 0x0100 != 0 {
@@ -1652,11 +1682,11 @@ impl PpuState {
 
             let mut col = 0i32;
             while col < sprite.sprite_size {
-                if col + sprite.x > -8 - extra_left_right && col + sprite.x < 256 + extra_left_right
-                {
-                    tiles_left -= 1;
-                    if tiles_left == 0 {
-                        return (true, buffer);
+                if consumes(col + sprite.x) {
+                    tiles_for_sprite -= 1;
+                    if tiles_for_sprite < 0 || col + sprite.x >= 256 + extra_left_right {
+                        col += 8;
+                        continue;
                     }
 
                     let used_col = if oam1 & 0x4000 != 0 {
@@ -1716,7 +1746,8 @@ impl PpuState {
             }
         }
 
-        (tiles_left != tiles_left_org, buffer)
+        let _ = tiles_left_org;
+        (total_tiles > 0, buffer)
     }
 
     fn fetch_sprites_for_line(&mut self, line: i32) {

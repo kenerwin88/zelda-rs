@@ -230,18 +230,45 @@ fn compute_obj_drawn_tiles(frame: &GpuFrame<'_>) -> Vec<Vec<(u8, i16)>> {
         }
 
         let out_y = (line - 1 - top_crop) as usize;
-        'tiles: for (sprite_num, sx, sprite_size) in sprites {
+        // Snes9x/hardware time-over allocation (gfx.cpp DrawOBJS): the tile
+        // budget is consumed by every in-range sprite's visible tiles first;
+        // when it overflows, whole sprites are skipped from the FRONT of the
+        // range list until the running total turns positive, the boundary
+        // sprite draws only its first `running` visible tiles, and a tile
+        // whose left edge sits exactly on the right screen edge consumes
+        // budget without drawing (route frame 141125's crowded sword-swing
+        // line keeps the LAST range sprites' tiles).
+        let consumes = |x: i32| x >= -7 - extra && x <= 256 + extra;
+        let counts: Vec<i32> = sprites
+            .iter()
+            .map(|&(_, sx, sprite_size)| {
+                let mut n = 0;
+                let mut col = 0;
+                while col < sprite_size {
+                    if consumes(col + sx) {
+                        n += 1;
+                    }
+                    col += 8;
+                }
+                n
+            })
+            .collect();
+        let total_tiles: i32 = counts.iter().sum();
+        let mut running = (tiles_left - 1) - total_tiles;
+        for (ordinal, (sprite_num, sx, sprite_size)) in sprites.into_iter().enumerate() {
+            running += counts[ordinal];
+            if running <= 0 {
+                continue;
+            }
+            let mut tiles_for_sprite = running;
             let mut col = 0;
             while col < sprite_size {
-                if col + sx <= -8 - extra || col + sx >= 256 + extra {
-                    col += 8;
-                    continue;
+                if consumes(col + sx) {
+                    tiles_for_sprite -= 1;
+                    if tiles_for_sprite >= 0 && col + sx < 256 + extra {
+                        drawn[out_y].push((sprite_num as u8, (sx + col) as i16));
+                    }
                 }
-                tiles_left -= 1;
-                if tiles_left == 0 {
-                    break 'tiles;
-                }
-                drawn[out_y].push((sprite_num as u8, (sx + col) as i16));
                 col += 8;
             }
         }
