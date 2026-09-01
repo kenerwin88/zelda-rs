@@ -42879,6 +42879,11 @@ impl ZeldaState {
         // partial-NMI marker. Keeping it beyond this C call would suppress an
         // unrelated later ZeldaRunGameLoop suffix.
         self.rom_load_partial_nmi_this_frame = false;
+        // A completed shared suffix proves the ROM returned to its main
+        // wait: a VWF fast-forward hold cannot survive that return, and a
+        // stale one would suppress the next fresh iteration's own suffix
+        // (route host 154795, the post-game-over dialogue).
+        self.dialogue_fast_forward_hold_active = false;
         match continuation {
             MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch => {
                 assert!(

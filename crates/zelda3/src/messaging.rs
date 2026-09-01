@@ -607,8 +607,10 @@ impl ZeldaState {
                 ));
                 if std::env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
                     eprintln!(
-                        "dialogue_cpu_plan host={} earliest={:?} latest={:?} prefix_crossings={} caller_crossings={} following_main_animated_bg={:?}",
+                        "dialogue_cpu_plan host={} msg={:#06x} speed={} earliest={:?} latest={:?} prefix_crossings={} caller_crossings={} following_main_animated_bg={:?}",
                         self.frame_ctr_dbg,
+                        self.game_state.messaging.dialogue_message_index.value(),
+                        self.game_state.messaging.runtime.vwf_line_speed(),
                         earliest.diagnostic(),
                         latest.diagnostic(),
                         earliest.prefix_nmi_crossings(),
@@ -3705,6 +3707,18 @@ impl ZeldaState {
     }
 
     pub(super) fn Text_Initialize(&mut self) {
+        if self.pending_dialogue_initialization_schedule.is_some()
+            && self.rom_startup_timing()
+            && self.original_timing_main_loop_iteration_returned_to_wait()
+        {
+            // The wire proves this Module0E iteration returns to its main
+            // wait with a completed suffix: the ROM's Text_Initialize ran
+            // only its cheap first incremental piece before returning, and
+            // the long suspension begins on the NEXT iteration. Keep the
+            // schedule armed for that iteration instead of suspending this
+            // one (route host 154788, the post-game-over dialogue).
+            return;
+        }
         if let Some((
             prefix_nmi_crossings,
             caller_nmi_crossings,
