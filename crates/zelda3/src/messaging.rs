@@ -3729,6 +3729,25 @@ impl ZeldaState {
             .filter(|_| self.rom_startup_timing())
         {
             assert_ne!(prefix_nmi_crossings, 0);
+            if let Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                continuation: continuation @ ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. },
+            }) = self.game_execution_scheduler.current_work()
+            {
+                // The atomic item-receipt decompression tail holds only the
+                // NMI latch — its caller already returned and its remaining
+                // held vblank uploads ride the dialogue-initialization
+                // window's own held slices (route host 158014, the pendant
+                // receipt's message). Retire the one scheduler slot for the
+                // dialogue suspension; the enemy-drop sound retire is the
+                // tail's only remaining semantic effect.
+                self.game_execution_scheduler.finish_work();
+                if matches!(
+                    continuation,
+                    ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { gfx: 0x22, .. }
+                ) {
+                    self.retire_enemy_drop_item_graphics_sound_effect_2();
+                }
+            }
             self.normal_dialogue_following_main_nmi_uses_host_animated_bg_operands =
                 following_main_nmi_uses_host_animated_bg_operands;
             self.game_execution_scheduler

@@ -19221,6 +19221,18 @@ impl ZeldaState {
         if self.game_execution_scheduler.is_idle() {
             return None;
         }
+        if matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. },
+            })
+        ) && self.game_execution_scheduler.pre_main_nmi_resume().is_none()
+        {
+            // Atomic item-receipt decompression slices do not suspend the
+            // translated call stack; a fresh iteration runs alongside them
+            // with no pre-main timing shadow to retire (route host 158014).
+            return None;
+        }
         let mut scheduler_probe = self.game_execution_scheduler;
         let resume = scheduler_probe
             .take_pre_main_nmi_resume()
@@ -32782,10 +32794,25 @@ impl ZeldaState {
                 && (self.game_execution_scheduler.is_idle()
                     || (self.original_timing_main_loop_progress()
                         == Some(crate::MainLoopProgress::IterationStarted)
-                        && self
+                        && (self
                             .game_execution_scheduler
                             .pre_main_nmi_resume()
-                            .is_some()))
+                            .is_some()
+                            // Atomic item-receipt graphics slices do not
+                            // suspend the translated call stack: the ROM's
+                            // main loop keeps iterating (the pendant
+                            // receipt's dialogue opens across them) while
+                            // the decompression holds only the NMI latch
+                            // (route host 158014).
+                            || matches!(
+                                self.game_execution_scheduler.current_work(),
+                                Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                                    continuation:
+                                        ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                                            ..
+                                        },
+                                })
+                            ))))
                 && self
                     .original_timing_main_loop_interruption()
                     .is_none_or(|interruption| {
