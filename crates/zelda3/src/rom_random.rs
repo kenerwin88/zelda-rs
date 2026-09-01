@@ -185,12 +185,14 @@ impl RomRandomReplay {
             if self.first_frame_drift.is_none() {
                 self.first_frame_drift = Some((sample.execution_frame, execution_frame));
                 eprintln!(
-                    "rom_random_frame_drift expected={} actual={} delta={} value={:02x} carry={}",
+                    "rom_random_frame_drift expected={} actual={} delta={} value={:02x} carry={} callsite={}:{}",
                     sample.execution_frame,
                     execution_frame,
                     i64::from(execution_frame) - i64::from(sample.execution_frame),
                     sample.value,
                     u8::from(sample.carry),
+                    caller.file(),
+                    caller.line(),
                 );
             }
         }

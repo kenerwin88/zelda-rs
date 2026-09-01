@@ -1235,8 +1235,17 @@ impl ZeldaState {
         if self.game_state.frame.submodule != 9 && !game_over_spotlight_build_suspended {
             self.link_oam_main();
         }
+        let link_oam_suspended = self
+            .take_forwarded_original_timing_main_loop_interruption(
+                crate::MainLoopInterruption::LinkOam,
+            )
+            .is_some();
+        // Consuming the wire's LinkOam interruption here (route host 150252)
+        // leaves the shared ZeldaRunGameLoop suffix to the generic body: the
+        // translated LinkOam_Main call already completed atomically, and the
+        // body arms the pending suffix for the resumed stack's next host.
         let entered_iris = entry_submodule == 2 && self.game_state.frame.submodule == 3;
-        if entered_iris {
+        if entered_iris && !link_oam_suspended {
             // IrisSpotlight_ConfigureTable is long enough for vblank to split
             // each circle build from its caller return. The initial build owns
             // the pre-iris scanout; subsequent builds use the same staged
@@ -1271,8 +1280,15 @@ impl ZeldaState {
             // normal game-loop suffix also return in this host slice. Folding
             // that suffix here lets the next host begin a fresh main iteration
             // instead of spending a synthetic third frame returning again.
-            self.nmi_prepare_sprites();
-            self.clear_nmi_update_latch();
+            if self.pending_main_loop_common_suffix.is_some() {
+                // The suspended iteration's shared suffix stayed pending
+                // while the build was scheduled; retire its one owner (route
+                // host 150261).
+                self.complete_pending_main_loop_common_suffix_after_module_return();
+            } else {
+                self.nmi_prepare_sprites();
+                self.clear_nmi_update_latch();
+            }
             self.next_display_obj_scanout_generation = Some(ObjScanoutGenerations::coherent(
                 GraphicsDmaGeneration::HostBoundaryBeforeMain,
             ));

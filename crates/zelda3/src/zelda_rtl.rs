@@ -6621,6 +6621,7 @@ impl GameWorkContinuation {
             self,
             Self::FinishDungeonAfterSubmoduleCallerReturn
                 | Self::FinishOverworldSpotlightBuild { .. }
+                | Self::FinishGameOverSpotlightBuild { .. }
                 | Self::FinishWorldMapLightLoad
                 | Self::FinishWorldMapExitTilesets
                 | Self::FinishWorldMapAmbientMap8
@@ -32803,6 +32804,27 @@ impl ZeldaState {
                 self.original_timing_uninterrupted_idle_main_loop_plan(progress)
             })
             .flatten();
+        if let Ok(range) = std::env::var("ZELDA3_DEBUG_IDLE_PLAN") {
+            let in_range = range
+                .split_once('-')
+                .and_then(|(lo, hi)| Some((lo.parse::<u32>().ok()?, hi.parse::<u32>().ok()?)))
+                .is_some_and(|(lo, hi)| (lo..=hi).contains(&self.frame_ctr_dbg));
+            if in_range {
+                eprintln!(
+                    "[PLAN] f={} progress={:?} interruption={:?} pending_suffix={:?} idle={} owner_live={} interrupted_plan={} uninterrupted_plan={} return_tl={} run_what={:x}",
+                    self.frame_ctr_dbg,
+                    self.original_timing_main_loop_progress(),
+                    self.original_timing_main_loop_interruption(),
+                    self.pending_main_loop_common_suffix,
+                    self.game_execution_scheduler.is_idle(),
+                    matches!(self.original_timing_owner, OriginalTimingOwnerState::Live),
+                    prospective_interrupted_idle_main_loop_plan.is_some(),
+                    prospective_uninterrupted_idle_main_loop_plan.is_some(),
+                    self.original_timing_main_loop_return_timeline().is_some(),
+                    run_what,
+                );
+            }
+        }
         self.sync_native_game_state_from_ram();
         self.oam_law_entry_frame_counter = Some(self.game_state.frame.frame_counter);
         if nmi::debug_frame_selection_env_matches("ZELDA3_DEBUG_LINK_FALL", self.frame_ctr_dbg) {
@@ -42585,10 +42607,30 @@ impl ZeldaState {
             Some(crate::MainLoopProgress::CallStackContinued)
         ) && self.game_state.frame.main_module == 14
         {
-            // The source remained inside Module0E's existing VWF call stack.
-            // Resume the translated semantic owner without running a second
-            // ZeldaRunGameLoop prefix or advancing Link/sprites.
-            self.dialogue_fast_forward_hold_active = true;
+            if self.game_state.frame.submodule == 2 {
+                // The source remained inside Module0E's existing VWF call
+                // stack. Resume the translated semantic owner without running
+                // a second ZeldaRunGameLoop prefix or advancing Link/sprites.
+                self.dialogue_fast_forward_hold_active = true;
+            } else if self.game_state.frame.submodule == 11 {
+                // The save menu resumes through the router as well, with the
+                // core update held so no unclaimed Sprite_Main runs: its
+                // initialization hold is receipt-guarded inside
+                // Module0E_0B_SaveMenu (an InProgress receipt returns before
+                // any state moves), so held re-entry is the mechanism that
+                // consumes the wire's SaveMenuInitializationProgress fact
+                // (route host 47621).
+                self.dialogue_fast_forward_hold_active = true;
+            } else {
+                // Only the VWF renderer resumes through the module router;
+                // every other Module0E submodule owns its continued stack
+                // inside the one Module_MainRouting call, exactly like the
+                // non-messaging modules above. Re-routing here re-ran the
+                // desert-prayer palette-filter tick once per continued host
+                // and finished the iris fade four frames early (route frame
+                // 123062, module 0e/05/03).
+                return;
+            }
         }
         let hold_core = self.dialogue_fast_forward_hold_active;
         let run_game_loop_prefix = authoritative_main_loop_progress

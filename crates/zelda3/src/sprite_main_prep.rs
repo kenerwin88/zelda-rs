@@ -1620,19 +1620,24 @@ impl ZeldaState {
     }
 
     pub(super) fn lanmola_spawn_shrapnel(&mut self, k: usize) {
-        let shrapnel_countdown = if self
+        let state_sum = self
             .sprite_slot_view(0)
             .state()
             .wrapping_add(self.sprite_slot_view(1).state())
-            .wrapping_add(self.sprite_slot_view(2).state())
-            < 10
-        {
-            7
-        } else {
-            3
-        };
+            .wrapping_add(self.sprite_slot_view(2).state());
+        let shrapnel_countdown = if state_sum < 10 { 7 } else { 3 };
         self.temp_counter_mut().set(shrapnel_countdown);
 
+        // The ROM's coordinate stores are `ADC #$04` with NO preceding CLC
+        // ($1A:F9A2/$1A:F9A8; the C port patches the ROM to hide this). The
+        // countdown selection's `CMP #$0A : BCS` leaves carry = (state sum
+        // >= 10), and nothing on the indoor spawn path
+        // (Sprite_SpawnDynamically, Sprite_SetSpawnedCoordinates,
+        // SpritePrep_LoadProperties) touches carry, so the first spawn adds
+        // it; every later spawn adds the previous GetRandomNumber's
+        // final-LSR carry, and y_lo chains the x_lo add's carry-out (route
+        // frame 148432).
+        let mut carry = state_sum >= 10;
         loop {
             let mut info = SpriteSpawnInfo::default();
             let j = self.sprite_spawn_dynamically(k, 0xc2, &mut info);
@@ -1640,10 +1645,10 @@ impl ZeldaState {
                 let j = j as usize;
                 let i = self.game_state.scratch_counter.value() as usize;
                 self.sprite_set_spawned_coordinates(j, &info);
-                self.sprite_slot_view_mut(j)
-                    .set_x_low((info.r0_x as u8).wrapping_add(4));
-                self.sprite_slot_view_mut(j)
-                    .set_y_low((info.r2_y as u8).wrapping_add(4));
+                let x_sum = u16::from(info.r0_x as u8) + 4 + u16::from(carry as u8);
+                self.sprite_slot_view_mut(j).set_x_low(x_sum as u8);
+                let y_sum = u16::from(info.r2_y as u8) + 4 + u16::from(x_sum > 0xff);
+                self.sprite_slot_view_mut(j).set_y_low(y_sum as u8);
                 self.sprite_slot_view_mut(j).set_ignore_projectile(1);
                 self.sprite_slot_view_mut(j).set_bump_damage(1);
                 self.sprite_slot_view_mut(j).set_flags4(1);
@@ -1653,8 +1658,10 @@ impl ZeldaState {
                     .set_x_velocity(LANMOLA_SPAWN_SHRAPNEL_X_VELOCITIES[i] as u8);
                 self.sprite_slot_view_mut(j)
                     .set_y_velocity(LANMOLA_SPAWN_SHRAPNEL_Y_VELOCITIES[i] as u8);
-                let graphics = self.get_random_number() & 1;
-                self.sprite_slot_view_mut(j).set_graphics(graphics);
+                let random = self.get_random_number_with_carry();
+                self.sprite_slot_view_mut(j)
+                    .set_graphics(random.value() & 1);
+                carry = random.carry();
             }
 
             self.temp_counter_mut().decrement();

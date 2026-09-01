@@ -5043,6 +5043,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut wrote_first_audio_mismatch = false;
     let mut completed_frames = start_frame;
     let mut first_engine_state_mismatch: Option<(u32, Vec<String>)> = None;
+    let mut rom_random_overdue_reported = false;
     // A frame_counter-only engine-state wobble is the documented
     // cycle-accuracy-bound transient class (spotlight/iris table builds racing
     // vblank, e.g. route frames 4790..4800 and 6169..): video-invisible and
@@ -5086,6 +5087,18 @@ pub(crate) fn run_compare_libretro_oracle(
         .ok()
         .and_then(|raw| raw.trim().parse::<usize>().ok())
         .filter(|slot| *slot < 16);
+    // ZELDA3_ENGINE_STATE_DUMP_BYTES=<hexaddr,hexaddr,...> adds both sides'
+    // values of arbitrary WRAM bytes to each dumped frame ([ENGINE-BYTES]).
+    let engine_state_dump_bytes: Vec<usize> = env::var("ZELDA3_ENGINE_STATE_DUMP_BYTES")
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .filter_map(|part| {
+                    usize::from_str_radix(part.trim().trim_start_matches("0x"), 16).ok()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     let mut engine_state_divergences: Vec<(u32, Vec<String>)> = Vec::new();
     let mut oracle_before_state = initial_oracle_state.clone();
     let oracle_before_state_frame = start_frame;
@@ -5658,6 +5671,22 @@ pub(crate) fn run_compare_libretro_oracle(
                         byte(oracle_ram, 0x0d00 + slot),
                     );
                 }
+                if !engine_state_dump_bytes.is_empty() {
+                    let cells: Vec<String> = engine_state_dump_bytes
+                        .iter()
+                        .map(|&address| {
+                            format!(
+                                "{address:05x}={:02x}|{:02x}",
+                                byte(&game.ram, address),
+                                byte(oracle_ram, address),
+                            )
+                        })
+                        .collect();
+                    eprintln!(
+                        "[ENGINE-BYTES] f={frame_index} rust|oracle {}",
+                        cells.join(" ")
+                    );
+                }
             }
             let mismatches = compact_engine_state_mismatches(&game.ram, oracle_ram);
             if !mismatches.is_empty() {
@@ -5718,13 +5747,26 @@ pub(crate) fn run_compare_libretro_oracle(
             }
         }
         if live_oracle_rng {
-            game.finish_rom_random_replay_through(frame_index.saturating_add(1))
-                .unwrap_or_else(|error| {
+            if let Err(error) =
+                game.finish_rom_random_replay_through(frame_index.saturating_add(1))
+            {
+                if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_FRAME_DRIFT").is_some() {
+                    // Diagnostic mode: report the first overdue frame and keep
+                    // replaying so the late consumer names its callsite in a
+                    // rom_random_frame_drift line.
+                    if !rom_random_overdue_reported {
+                        rom_random_overdue_reported = true;
+                        eprintln!(
+                            "live oracle RNG call-count divergence at frame {frame_index}: {error}"
+                        );
+                    }
+                } else {
                     eprintln!(
                         "live oracle RNG call-count divergence at frame {frame_index}: {error}"
                     );
                     process::exit(1);
-                });
+                }
+            }
         }
         input_history.push((frame_index, input));
         stage(2, &mut stage_ns, &mut stage_mark);
