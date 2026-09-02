@@ -38975,6 +38975,21 @@ impl ZeldaState {
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(true)
             } else if self.game_execution_scheduler.current_work()
+                == Some(GameWorkContinuation::FinishWorldMapExitTilesets)
+                && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.original_timing_semantic_receipts.is_some()
+            {
+                // The world-map exit's tileset reload returns through the
+                // shared suffix (or is interrupted inside it): a live host
+                // whose wire still holds the latch with no interruption or
+                // return proves the reload is still running (route host
+                // 529536).
+                let returned = !self.original_timing_live_suffix_outstanding()
+                    || self.original_timing_main_loop_interruption().is_some()
+                    || self.original_timing_main_loop_return_timeline().is_some();
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(returned)
+            } else if self.game_execution_scheduler.current_work()
                 == Some(GameWorkContinuation::FinishDungeonMapRecovery)
                 && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                 && self.original_timing_semantic_receipts.is_some()
