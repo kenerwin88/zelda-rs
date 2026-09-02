@@ -11228,6 +11228,11 @@ pub struct ZeldaState {
     /// Host that activated the dungeon poly thread.
     #[serde(skip)]
     poly_dungeon_activation_host: u32,
+    /// The installed host began inside the previous iteration's common
+    /// suffix; its leading completion retires the pending suffix before the
+    /// host's own iteration (route host 511525).
+    #[serde(skip)]
+    original_timing_carried_suffix_completion_pending: bool,
     /// Host slices of the crystal frame currently (or most recently) rendered.
     #[serde(skip)]
     poly_dungeon_current_frame_slices: u8,
@@ -17513,6 +17518,7 @@ impl ZeldaState {
             poly_dungeon_thread_startup_hold: None,
             poly_dungeon_frames_rendered: 0,
             poly_dungeon_activation_host: 0,
+            original_timing_carried_suffix_completion_pending: false,
             poly_dungeon_current_frame_slices: 0,
             poly_job_hold_frames: 0,
             intro_title_fade_poly_phase: 0,
@@ -18076,6 +18082,36 @@ impl ZeldaState {
                     actual: receipts.host_call,
                 });
             }
+        }
+        // A host that begins inside the previous iteration's common suffix
+        // (before its latch-clear store) publishes that carried completion
+        // as a leading [CallStackContinued, MainLoopCommonSuffixCompleted]
+        // pair before its own fresh iteration (route host 511525). Strip the
+        // pair into a retained fact; the host body retires the pending suffix
+        // before anything else runs.
+        let mut receipts = receipts;
+        if receipts.semantic.len() > 2
+            && receipts.semantic[0]
+                == OriginalTimingSemanticReceipt::MainLoopProgress(
+                    crate::MainLoopProgress::CallStackContinued,
+                )
+            && receipts.semantic[1] == OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted
+            && receipts.semantic[2..].iter().any(|receipt| {
+                matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::MainLoopProgress(
+                        crate::MainLoopProgress::IterationStarted
+                    )
+                )
+            })
+        {
+            // The atomic runtime may already have run that suffix at the end
+            // of the previous host (the latch cleared there, so the leading
+            // NMI is Open on both sides); only a still-pending suffix needs
+            // retiring first.
+            self.original_timing_carried_suffix_completion_pending =
+                self.pending_main_loop_common_suffix.is_some();
+            receipts.semantic.drain(0..2);
         }
         if receipts
             .semantic
@@ -34116,6 +34152,22 @@ impl ZeldaState {
         if dungeon_poly_thread_host {
             self.zelda_run_poly_loop();
         }
+        if std::mem::take(&mut self.original_timing_carried_suffix_completion_pending) {
+            // The previous host returned between NMI_PrepareSprites and the
+            // `$12` clear; this host's first source event is that clear, then
+            // the main wait accepts the leading Open NMI (route host 511525).
+            assert!(
+                self.pending_main_loop_common_suffix.is_some(),
+                "a carried suffix completion requires the suspended ZeldaRunGameLoop suffix",
+            );
+            self.complete_pending_main_loop_common_suffix_after_module_return();
+            if self.game_execution_scheduler.resumed_call_stack_is_before_nmi()
+                || self.game_execution_scheduler.is_idle()
+            {
+                self.game_execution_scheduler
+                    .finish_call_stack_at_main_wait_before_nmi();
+            }
+        }
         if std::env::var_os("ZELDA3_DEBUG_POLY").is_some()
             && (self.dungeon_poly_thread_is_active()
                 || (self.game_state.frame.main_module == 7
@@ -40400,6 +40452,7 @@ impl ZeldaState {
                                     .work_suspends_translated_call_stack());
                             } else if caller_suffix_nmis == 0 {
                                 self.complete_module07_dungeon_after_submodule();
+                                let mut suffix_deferred_by_wire = false;
                                 if authoritative_scheduled_caller_return_timeline.is_some() {
                                     // The terminal return already consumed its
                                     // suffix receipt into the retained timeline
@@ -40412,9 +40465,11 @@ impl ZeldaState {
                                 {
                                     // The wire may hold the shared suffix past
                                     // this host ([Handler, SpriteMainReturned,
-                                    // Continued] at route host 925558; the
-                                    // quadrant-upload resume then completes it
-                                    // behind the next held acceptance).
+                                    // Continued] at route host 925558); the
+                                    // caller then returns and clears the latch
+                                    // behind the next held acceptance.
+                                    suffix_deferred_by_wire =
+                                        self.original_timing_live_suffix_outstanding();
                                     self.retire_or_defer_main_loop_common_suffix_by_wire();
                                 } else if self.pending_main_loop_common_suffix.is_some() {
                                     self.complete_pending_main_loop_common_suffix_after_module_return();
@@ -40423,7 +40478,11 @@ impl ZeldaState {
                                     self.clear_nmi_update_latch();
                                 }
                                 self.game_execution_scheduler.schedule_pre_main_nmi_resume(
-                                    PreMainNmiResume::DungeonSupertileQuadrantUploads,
+                                    if suffix_deferred_by_wire {
+                                        PreMainNmiResume::DungeonSupertileCallerReturnNmi
+                                    } else {
+                                        PreMainNmiResume::DungeonSupertileQuadrantUploads
+                                    },
                                 );
                             } else {
                                 self.complete_module07_dungeon_after_submodule();
