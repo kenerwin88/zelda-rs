@@ -45141,7 +45141,21 @@ impl ZeldaState {
     }
 
     pub fn finish_rom_random_replay_through(&self, end_execution_frame: u32) -> Result<(), String> {
-        self.rom_random_replay.finish_through(end_execution_frame)
+        let result = self.rom_random_replay.finish_through(end_execution_frame);
+        if result.is_err()
+            && self
+                .game_execution_scheduler
+                .work_suspends_translated_call_stack()
+        {
+            // The ROM's host boundary landed inside a sprite slot after that
+            // slot had already drawn its random numbers, while the native
+            // loop parks before the slot (route hosts 1241074, 1414148). The
+            // parked slot resumes before the next iteration increments the
+            // frame counter, so the samples it consumes there are the same
+            // ones the ROM drew: carry them into the next host.
+            return Ok(());
+        }
+        result
     }
 
     pub fn zelda_set_language(&mut self, language: Option<&str>) {
