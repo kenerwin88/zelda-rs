@@ -149,7 +149,21 @@ impl ZeldaState {
     }
 
     fn ancilla_execute_all(&mut self) {
-        for i in (0..10).rev() {
+        self.ancilla_execute_slots_below(10);
+    }
+
+    /// Run the descending ancilla loop for slots below `from`, stopping when
+    /// a slot's synchronous item receipt suspended the translated call stack
+    /// (the falling milestone item, route host 1142850); the receipt's
+    /// completion resumes the remaining slots through this same helper.
+    pub(super) fn ancilla_execute_slots_below(&mut self, from: usize) {
+        for i in (0..from).rev() {
+            if self
+                .game_execution_scheduler
+                .work_suspends_translated_call_stack()
+            {
+                return;
+            }
             self.sprite_system_mut().set_cur_object_index(i as u8);
             let ty = self.ancilla_slot_view(i).ancilla_type();
             if ty != 0 {
@@ -7176,7 +7190,14 @@ impl ZeldaState {
                     self.follower_link_state_mut().clear_handler_state();
                 }
                 self.follower_link_state_mut().set_item_receipt_method(3);
-                self.link_receive_item(self.ancilla_slot_view(k).item_to_link(), 0);
+                let item = self.ancilla_slot_view(k).item_to_link();
+                let _ = self.link_receive_item_from(
+                    item,
+                    0,
+                    ItemReceiptCaller::AncillaMilestone {
+                        ancilla_slot: k as u8,
+                    },
+                );
                 return;
             }
 

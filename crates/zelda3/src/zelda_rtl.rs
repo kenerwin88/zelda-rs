@@ -796,7 +796,8 @@ const fn atomic_item_graphics_return_obj_scanout(
             OamScanoutSource::ComposePublishedShadowDma
         }
         ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. }
-        | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. } => {
+        | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. }
+        | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. } => {
             OamScanoutSource::ComposeLiveAfterNmi
         }
     };
@@ -6502,6 +6503,13 @@ pub(super) enum ItemReceiptCaller {
         sprite_slot: u8,
         suffix: SpriteMainItemReceiptSuffix,
     },
+    /// The falling milestone item (`Ancilla_MilestoneItemReceipt`, ancilla
+    /// type $29) called `Link_ReceiveItem` from Sprite_Main's prefix. The
+    /// suspension holds the remaining ancilla slots, the rest of the prefix,
+    /// the whole slot loop, and the module caller suffix (route host 1142850).
+    AncillaMilestone {
+        ancilla_slot: u8,
+    },
     /// A live sprite slot called `Link_ReceiveItem` directly from its own
     /// state machine (the source's `SpriteMainDirect` receipt caller). The
     /// suspension holds the same lower slots and module suffix as
@@ -6685,6 +6693,14 @@ enum ItemReceiptGraphicsContinuation {
         receipt: ItemReceiptReturn,
         sprite_slot: u8,
         suffix: SpriteMainItemReceiptSuffix,
+        caller: SpriteMainItemReceiptCallerReturn,
+    },
+    /// Resume the falling milestone item's receipt from Sprite_Main's prefix:
+    /// the remaining ancilla slots, the prefix tail, the whole slot loop, and
+    /// the module caller run after the graphics routine returns.
+    ResumeAncillaItemReceipt {
+        receipt: ItemReceiptReturn,
+        ancilla_slot: u8,
         caller: SpriteMainItemReceiptCallerReturn,
     },
 }
@@ -7008,7 +7024,8 @@ impl GameWorkContinuation {
                 | Self::FinishDungeonFallingRoomInitialization
                 | Self::FinishItemReceiptGraphics {
                     continuation: ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. }
-                        | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. },
+                        | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. }
+                        | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. },
                 }
                 | Self::FinishDungeonSubtilePaletteFilter
                 | Self::FinishNmiPrepareSpritesCallerReturn { .. }
@@ -11237,6 +11254,14 @@ pub struct ZeldaState {
     /// host's own iteration (route host 511525).
     #[serde(skip)]
     original_timing_carried_suffix_completion_pending: bool,
+    /// Diagnostic: where the active Sprite_Main return claim scope was opened.
+    #[serde(skip)]
+    original_timing_sprite_main_return_claim_scope_site: Option<&'static std::panic::Location<'static>>,
+    /// The installed host's wire completes ZeldaRunGameLoop's common suffix
+    /// with no held acceptance after its main-loop progress: every
+    /// synchronous call of the iteration returned without crossing an NMI.
+    #[serde(skip)]
+    original_timing_host_iteration_uninterrupted: bool,
     /// Host slices of the crystal frame currently (or most recently) rendered.
     #[serde(skip)]
     poly_dungeon_current_frame_slices: u8,
@@ -17523,6 +17548,8 @@ impl ZeldaState {
             poly_dungeon_frames_rendered: 0,
             poly_dungeon_activation_host: 0,
             original_timing_carried_suffix_completion_pending: false,
+            original_timing_sprite_main_return_claim_scope_site: None,
+            original_timing_host_iteration_uninterrupted: false,
             poly_dungeon_current_frame_slices: 0,
             poly_job_hold_frames: 0,
             intro_title_fade_poly_phase: 0,
@@ -18126,6 +18153,26 @@ impl ZeldaState {
         {
             return Err(OriginalTimingReceiptInstallError::DuplicateMainLoopProgress);
         }
+        self.original_timing_host_iteration_uninterrupted = {
+            let progress_index = receipts.semantic.iter().position(|receipt| {
+                matches!(receipt, OriginalTimingSemanticReceipt::MainLoopProgress(_))
+            });
+            let suffix_index = receipts.semantic.iter().position(|receipt| {
+                matches!(receipt, OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted)
+            });
+            match (progress_index, suffix_index) {
+                (Some(progress), Some(suffix)) if progress < suffix => {
+                    !receipts.semantic[progress..suffix].iter().any(|receipt| {
+                        matches!(
+                            receipt,
+                            OriginalTimingSemanticReceipt::NmiAccepted(_)
+                                | OriginalTimingSemanticReceipt::MainLoopInterrupted(_)
+                        )
+                    })
+                }
+                _ => false,
+            }
+        };
         let main_loop_common_suffix_completions = receipts
             .semantic
             .iter()
@@ -18398,6 +18445,7 @@ impl ZeldaState {
                 ItemReceiptGraphicsCaller::SpriteMain { slot }
                 | ItemReceiptGraphicsCaller::SpriteMainDirect { slot }
                 | ItemReceiptGraphicsCaller::UnclePassage { slot } => slot >= 16,
+                ItemReceiptGraphicsCaller::SpriteMainAncilla { slot } => slot >= 10,
             })
         {
             return Err(OriginalTimingReceiptInstallError::InvalidItemReceiptGraphicsProgress);
@@ -18762,6 +18810,30 @@ impl ZeldaState {
                     }
                 }
                 _ => None,
+            })
+    }
+
+    /// The wire suspended the falling milestone item's receipt inside
+    /// Sprite_Main's prefix (route host 1142850): the loop must run natively
+    /// so the ancilla's receipt call suspends at the exact statement.
+    pub(super) fn original_timing_ancilla_item_receipt_suspended(&self) -> bool {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return false;
+        }
+        self.original_timing_semantic_receipts
+            .as_ref()
+            .is_some_and(|receipts| {
+                receipts.semantic().iter().any(|receipt| {
+                    matches!(
+                        receipt,
+                        OriginalTimingSemanticReceipt::ItemReceiptGraphicsProgress(
+                            ItemReceiptGraphicsProgressReceipt {
+                                caller: ItemReceiptGraphicsCaller::SpriteMainAncilla { .. },
+                                progress: SourceCallProgress::Suspended,
+                            }
+                        )
+                    )
+                })
             })
     }
 
@@ -25065,13 +25137,17 @@ impl ZeldaState {
         // installation.
         self.original_timing_semantic_receipts = None;
         self.original_timing_host_dispatch_active = false;
+        self.original_timing_host_iteration_uninterrupted = false;
     }
 
+    #[track_caller]
     fn begin_original_timing_sprite_main_return_claim_scope(&mut self, claims: usize) {
         assert_eq!(
             self.original_timing_sprite_main_return_claims_remaining, None,
             "a Sprite_Main return claim scope overlapped an older native caller",
         );
+        self.original_timing_sprite_main_return_claim_scope_site =
+            Some(std::panic::Location::caller());
         self.original_timing_sprite_main_return_claims_remaining = Some(
             u8::try_from(claims).expect("one host published too many Sprite_Main return claims"),
         );
@@ -25081,7 +25157,8 @@ impl ZeldaState {
         assert_eq!(
             self.original_timing_sprite_main_return_claims_remaining,
             Some(0),
-            "the native caller did not consume every claimed Sprite_Main return: host={} frame={:?} scheduler={:?}",
+            "the native caller did not consume every claimed Sprite_Main return: scope opened at {:?} host={} frame={:?} scheduler={:?}",
+            self.original_timing_sprite_main_return_claim_scope_site,
             self.frame_ctr_dbg,
             self.game_state.frame,
             self.game_execution_scheduler,
@@ -25511,6 +25588,10 @@ impl ZeldaState {
             // suspended claim proves the same measured decompression crosses
             // NMIs (route host 102905).
             2 if matches!(caller, ItemReceiptCaller::SpriteMainDirect { .. }) => {}
+            // The falling milestone item hands out crystals/pendants with
+            // method 3; the wire's suspended claim proves the decompression
+            // crosses NMIs from Sprite_Main's prefix (route host 1142850).
+            3 if matches!(caller, ItemReceiptCaller::AncillaMilestone { .. }) => {}
             // Other entry paths remain atomic until their ROM boundary is
             // measured.
             _ => return GameCallStatus::Returned,
@@ -25530,6 +25611,11 @@ impl ZeldaState {
                 if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) =>
             {
                 Some(ItemReceiptGraphicsCaller::UnclePassage { slot: sprite_slot })
+            }
+            ItemReceiptCaller::AncillaMilestone { ancilla_slot }
+                if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) =>
+            {
+                Some(ItemReceiptGraphicsCaller::SpriteMainAncilla { slot: ancilla_slot })
             }
             _ => None,
         };
@@ -25559,6 +25645,17 @@ impl ZeldaState {
         } else {
             None
         };
+        if authoritative_progress.is_none()
+            && caller == ItemReceiptCaller::AtomicCaller
+            && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && self.original_timing_host_iteration_uninterrupted
+        {
+            // The wire returns this whole iteration inside the host with no
+            // NMI accepted between its progress and its common suffix, so the
+            // decompression did not cross an NMI here (route host 514803,
+            // the dug-up flute): no graphics work remains to schedule.
+            return GameCallStatus::Returned;
+        }
         if let Some(progress) = authoritative_progress {
             if progress.progress == SourceCallProgress::Returned {
                 return GameCallStatus::Returned;
@@ -25602,6 +25699,20 @@ impl ZeldaState {
                     dungeon,
                 }
             }
+            ItemReceiptCaller::AncillaMilestone { ancilla_slot } => {
+                let caller = if let Some(dungeon) = self.active_dungeon_sprite_main_return.take() {
+                    SpriteMainItemReceiptCallerReturn::Module07(dungeon)
+                } else if let Some(module09) = self.active_module09_sprite_main_return.take() {
+                    SpriteMainItemReceiptCallerReturn::Module09(module09)
+                } else {
+                    panic!("milestone ancilla item receipt lost its native module caller frame");
+                };
+                ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt {
+                    receipt,
+                    ancilla_slot,
+                    caller,
+                }
+            }
             ItemReceiptCaller::SpriteMain {
                 sprite_slot,
                 suffix,
@@ -25635,7 +25746,8 @@ impl ZeldaState {
                 ..
             }
             | ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. }
-            | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. } => {
+            | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. }
+            | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. } => {
                 GameCallStatus::Suspended
             }
         };
@@ -28044,7 +28156,8 @@ impl ZeldaState {
                     OamScanoutSource::ComposePublishedShadowDma
                 }
                 ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. }
-                | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. } => {
+                | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. }
+                | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. } => {
                     scanout.oam
                 }
             };
@@ -36519,7 +36632,8 @@ impl ZeldaState {
             self.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::FinishItemReceiptGraphics {
                 continuation: ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. }
-                    | ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
+                    | ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. }
+                    | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. },
             })
         ) && matches!(
             self.original_timing_owner,
@@ -36549,6 +36663,12 @@ impl ZeldaState {
                     continuation:
                         ItemReceiptGraphicsContinuation::ResumeUnclePassage { sprite_slot, .. },
                 } => ItemReceiptGraphicsCaller::UnclePassage { slot: sprite_slot },
+                GameWorkContinuation::FinishItemReceiptGraphics {
+                    continuation:
+                        ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt {
+                            ancilla_slot, ..
+                        },
+                } => ItemReceiptGraphicsCaller::SpriteMainAncilla { slot: ancilla_slot },
                 _ => unreachable!("item receipt work kind changed"),
             };
             let progress = self
@@ -40833,6 +40953,42 @@ impl ZeldaState {
                             return;
                         }
                         self.complete_sprite_main_after_interrupted_slot(sprite_slot);
+                        match caller {
+                            SpriteMainItemReceiptCallerReturn::Module07(dungeon) => {
+                                self.complete_module07_after_sprite_main(dungeon)
+                            }
+                            SpriteMainItemReceiptCallerReturn::Module09(module09) => {
+                                if self.complete_resumed_module09_sprite_main_caller(
+                                    module09,
+                                    input,
+                                    oam_dma_source.as_deref(),
+                                ) {
+                                    return;
+                                }
+                            }
+                        }
+                        if self
+                            .game_execution_scheduler
+                            .work_suspends_translated_call_stack()
+                        {
+                            return;
+                        }
+                    }
+                    if let ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt {
+                        receipt,
+                        ancilla_slot,
+                        caller,
+                    } = continuation
+                    {
+                        // The falling milestone item's receipt returned: the
+                        // remaining ancilla slots, the prefix tail, the whole
+                        // descending slot loop, and the module caller follow
+                        // (route host 1142850).
+                        self.complete_ancilla_add_item_receipt(receipt);
+                        self.complete_link_receive_item(receipt.item);
+                        self.ancilla_execute_slots_below(usize::from(ancilla_slot));
+                        self.complete_sprite_main_prefix_after_ancilla();
+                        self.complete_sprite_main_after_interrupted_slot(16);
                         match caller {
                             SpriteMainItemReceiptCallerReturn::Module07(dungeon) => {
                                 self.complete_module07_after_sprite_main(dungeon)

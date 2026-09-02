@@ -2353,6 +2353,18 @@ impl ZeldaState {
             self.sprite_system_mut().decrement_alert_flag();
         }
         self.ancilla_main();
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
+            // An ancilla's synchronous item receipt suspended the stack; the
+            // receipt's completion resumes the rest of this prefix.
+            return;
+        }
+        self.complete_sprite_main_prefix_after_ancilla();
+    }
+
+    pub(super) fn complete_sprite_main_prefix_after_ancilla(&mut self) {
         self.replay_trace_ram_watch("sprite-after-ancilla");
         self.overlord_main();
         self.replay_trace_ram_watch("sprite-after-overlord");
@@ -2394,6 +2406,14 @@ impl ZeldaState {
         }
 
         self.sprite_main_prefix();
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
+            // The prefix's ancilla item receipt suspended the stack; its
+            // completion runs the slot loop and suffix.
+            return;
+        }
         let trace_sprite_slots = ZeldaState::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_FRAME")
             .is_some_and(|frame| self.trace_frame_matches(frame));
 

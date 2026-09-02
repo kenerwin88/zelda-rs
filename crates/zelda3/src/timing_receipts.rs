@@ -914,6 +914,12 @@ pub enum ItemReceiptGraphicsCaller {
     UnclePassage {
         slot: u8,
     },
+    /// An ancilla (the falling milestone item, `Ancilla_MilestoneItemReceipt`)
+    /// called `Link_ReceiveItem` from Sprite_Main's prefix, before the
+    /// descending slot loop began. The ancilla slot identifies the caller.
+    SpriteMainAncilla {
+        slot: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

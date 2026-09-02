@@ -13484,7 +13484,20 @@ impl ZeldaState {
         sprite_return: DungeonSpriteMainReturn,
     ) {
         self.active_dungeon_sprite_main_return = Some(sprite_return);
-        if let Some(slot) = self.original_timing_direct_item_receipt_suspended_slot() {
+        if self.original_timing_ancilla_item_receipt_suspended() {
+            // The falling milestone item's receipt suspended inside
+            // Sprite_Main's prefix before any slot ran (route host 1142850:
+            // SpriteMainProgressed(BeforeFirstSlot) with the ancilla receipt
+            // suspended). Run natively; the receipt call suspends the stack,
+            // and the BeforeFirstSlot restatements belong to that suspension.
+            let _ = self.take_original_timing_sprite_main_progress();
+            let _ = self.take_forwarded_original_timing_main_loop_interruption(
+                crate::MainLoopInterruption::SpriteMainBeforeFirstSlot,
+            );
+            let _ = self.take_original_timing_main_loop_interruption(
+                crate::MainLoopInterruption::SpriteMainBeforeFirstSlot,
+            );
+        } else if let Some(slot) = self.original_timing_direct_item_receipt_suspended_slot() {
             // The wire's Sprite_Main checkpoint names the last completed slot,
             // but the host ended inside a lower slot's synchronous item
             // receipt (route host 968295: SpriteMainProgressed(BeforeFirstSlot)

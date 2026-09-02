@@ -1905,19 +1905,34 @@ impl Snes9xOracleSemanticTrace {
                         // graphics boundary and the active source slot is its
                         // semantic caller identity.
                         if self.item_receipt_caller.is_none() {
-                            if let Some(slot) = self
-                                .sprite_main_execution
-                                .and_then(|execution| execution.current_slot)
-                            {
-                                self.item_receipt_caller =
-                                    Some(ItemReceiptGraphicsCaller::SpriteMainDirect { slot });
+                            if let Some(execution) = self.sprite_main_execution {
+                                if let Some(slot) = execution.current_slot {
+                                    self.item_receipt_caller =
+                                        Some(ItemReceiptGraphicsCaller::SpriteMainDirect { slot });
+                                } else if execution.last_completed_slot.is_none() {
+                                    // Sprite_Main's prefix (Ancilla_Main) ran
+                                    // the falling milestone item's receipt
+                                    // before the slot loop began (route host
+                                    // 1142850); X is the ancilla slot.
+                                    let slot = u8::try_from(
+                                        event.x.ok_or(
+                                            "Snes9x ancilla item receipt omitted its slot X",
+                                        )?,
+                                    )
+                                    .map_err(|_| "Snes9x ancilla item receipt slot exceeded one byte")?;
+                                    self.item_receipt_caller =
+                                        Some(ItemReceiptGraphicsCaller::SpriteMainAncilla { slot });
+                                }
                             }
                         }
                     }
                     LINK_RECEIVE_ITEM_GRAPHICS_RETURN_PC => {
                         if matches!(
                             self.item_receipt_caller,
-                            Some(ItemReceiptGraphicsCaller::SpriteMainDirect { .. })
+                            Some(
+                                ItemReceiptGraphicsCaller::SpriteMainDirect { .. }
+                                    | ItemReceiptGraphicsCaller::SpriteMainAncilla { .. }
+                            )
                         ) {
                             let caller = self
                                 .item_receipt_caller
