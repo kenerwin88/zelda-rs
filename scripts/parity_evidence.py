@@ -145,6 +145,14 @@ def _workspace_content_identity() -> dict[str, Any]:
         absolute = os.path.join(root_bytes, relative)
         try:
             metadata = os.lstat(absolute)
+        except FileNotFoundError:
+            # A tracked file deleted in the working tree (an unstaged
+            # `git rm`) is part of the workspace identity as an absence, not
+            # a hashing race.
+            digest.update(len(relative).to_bytes(8, "big"))
+            digest.update(relative)
+            digest.update(b"\0deleted-in-worktree")
+            continue
         except OSError as error:
             raise SystemExit(
                 "parity evidence: source inventory changed while hashing "
