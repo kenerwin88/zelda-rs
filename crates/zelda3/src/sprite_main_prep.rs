@@ -2156,7 +2156,19 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_ai_state(2);
                     } else {
                         self.follower_link_state_mut().set_item_receipt_method(0);
-                        self.link_receive_item(0x16, 0);
+                        if self
+                            .link_receive_item_from(
+                                0x16,
+                                0,
+                                ItemReceiptCaller::SpriteMainDirect {
+                                    sprite_slot: k as u8,
+                                    suffix: SpriteMainItemReceiptSuffix::LocksmithChain,
+                                },
+                            )
+                            .is_suspended()
+                        {
+                            return;
+                        }
                         self.save_progress_mut().or_progress_indicator_3(0x10);
                         self.sprite_slot_view_mut(k).set_ai_state(4);
                         self.follower_state_mut().set_indicator(0);

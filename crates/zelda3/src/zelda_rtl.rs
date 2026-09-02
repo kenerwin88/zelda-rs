@@ -6583,6 +6583,10 @@ pub(super) enum SpriteMainItemReceiptSuffix {
     /// ROM FluteKid stumpy case 2: `Link_ReceiveItem(0x13, 0)` (the shovel)
     /// then `ai_state = 0` (route host 512301).
     FluteKidShovel,
+    /// ROM Locksmith case 3: `Link_ReceiveItem(0x16, 0)` (the chain) then the
+    /// progress-indicator-3 bit, `ai_state = 4`, and the follower indicator
+    /// clear (route host 1036281).
+    LocksmithChain,
 }
 
 impl SpriteMainItemReceiptSuffix {
@@ -6611,6 +6615,7 @@ impl SpriteMainItemReceiptSuffix {
                 | Self::SmithyTemperedSword
                 | Self::HeartPiece
                 | Self::FluteKidShovel
+                | Self::LocksmithChain
         )
     }
 }
@@ -38986,6 +38991,7 @@ impl ZeldaState {
                 // 529536).
                 let returned = !self.original_timing_live_suffix_outstanding()
                     || self.original_timing_main_loop_interruption().is_some()
+                    || authoritative_scheduled_caller_nmi_timeline.is_some()
                     || self.original_timing_main_loop_return_timeline().is_some();
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(returned)
@@ -40044,6 +40050,25 @@ impl ZeldaState {
                     } else if nonterminal_sprite_main_returned {
                         self.begin_original_timing_sprite_main_return_claim_scope(1);
                     }
+                    // The wire may suspend the module tail's Sprite_Main at a
+                    // slot boundary inside this host (route host 1449581:
+                    // MainLoopInterrupted(SpriteMainAfterSlot(11))); hand that
+                    // interruption to the Sprite_Main caller so the loop parks
+                    // there and the next host's return owns the remainder.
+                    if authoritative_scheduled_caller_return_timeline.is_none() {
+                        if let Some(interruption) = authoritative_scheduled_caller_nmi_timeline
+                            .map(|timeline| timeline.interruption)
+                            .filter(|interruption| interruption.is_sprite_main())
+                        {
+                            if self.original_timing_main_loop_interruption() == Some(interruption) {
+                                let _ = self.take_original_timing_main_loop_interruption_any();
+                            }
+                            self.forward_original_timing_main_loop_interruption_to_native_owner(
+                                interruption,
+                                OriginalTimingBoundary::NmiAccepted,
+                            );
+                        }
+                    }
                     self.dungeon_initialize_room_from_special_after_adjust();
                     // The resumed caller falls out of Module07_07 into the
                     // module tail: Sprite_Main, LinkOam, and the HUD suffix
@@ -40973,6 +40998,11 @@ impl ZeldaState {
                             }
                             SpriteMainItemReceiptSuffix::FluteKidShovel => {
                                 self.sprite_slot_view_mut(sprite_slot).set_ai_state(0);
+                            }
+                            SpriteMainItemReceiptSuffix::LocksmithChain => {
+                                self.save_progress_mut().or_progress_indicator_3(0x10);
+                                self.sprite_slot_view_mut(sprite_slot).set_ai_state(4);
+                                self.follower_state_mut().set_indicator(0);
                             }
                         }
                         // The receipt returned inside this host but the wire
