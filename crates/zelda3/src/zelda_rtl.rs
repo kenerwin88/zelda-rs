@@ -3250,7 +3250,10 @@ pub(super) fn dialogue_initialization_cpu_plan(
         // field to the poly thread.
         run.disable_nmi_thread_switch()
             .expect("dialogue CPU timing requires the ROM's NMI thread switch");
-        budget = budget.with_poly_thread_irq(POLY_THREAD_V_IRQ_SCANLINE);
+        budget = budget.with_poly_thread_irq(
+            POLY_THREAD_V_IRQ_SCANLINE,
+            state.dungeon_poly_thread_free_host_offsets(),
+        );
     }
     let mut nmi_crossings = 0u8;
     let mut final_interrupted_pc = 0;
@@ -11219,6 +11222,9 @@ pub struct ZeldaState {
     /// Host that activated the dungeon poly thread.
     #[serde(skip)]
     poly_dungeon_activation_host: u32,
+    /// Host slices of the crystal frame currently (or most recently) rendered.
+    #[serde(skip)]
+    poly_dungeon_current_frame_slices: u8,
     #[serde(skip)]
     poly_job_hold_frames: u8,
     #[serde(skip)]
@@ -17501,6 +17507,7 @@ impl ZeldaState {
             poly_dungeon_thread_startup_hold: None,
             poly_dungeon_frames_rendered: 0,
             poly_dungeon_activation_host: 0,
+            poly_dungeon_current_frame_slices: 0,
             poly_job_hold_frames: 0,
             intro_title_fade_poly_phase: 0,
             intro_title_fade_defer_suffix_this_frame: false,
@@ -32463,10 +32470,10 @@ impl ZeldaState {
                             self.original_timing_nmi_publication_pending,
                             &timeline.nmi_phases_before_interruption,
                         );
-                        assert!(
-                            !before.publication_pending_at_exit,
-                            "a held LinkOam faded-filter caller cannot end with an unfinished NMI handler: {timeline:?}",
-                        );
+                        // A trailing held acceptance whose handler completes
+                        // in the next host is carried (route host 1129666:
+                        // [Handler, SpriteMainReturned, Held, LinkOam]).
+                        let carry_trailing_acceptance = before.publication_pending_at_exit;
                         self.complete_original_timing_nmi_handler_for_active_scanout(
                             before.handler_completion,
                             input,
@@ -32501,6 +32508,9 @@ impl ZeldaState {
                             self.game_execution_scheduler.current_work(),
                             Some(GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn)
                         ));
+                        if carry_trailing_acceptance {
+                            self.capture_and_carry_original_timing_nmi_publication_at_host_return();
+                        }
                         return true;
                     }
                     self.dungeon_post_sprite_main_return_pending = true;
@@ -34064,16 +34074,15 @@ impl ZeldaState {
         // holds the completing slice (oracle `$1F0A` idles to `$1F31` on the
         // completing host, 413556/413560/…; the maiden steps the same host).
         // The atomic frontend's RUN_POLY alternation does not apply here.
-        let dungeon_poly_thread_host = self.rom_startup_timing()
-            && self.game_state.frame.main_module == 7
-            && self.game_state.display.nmi_thread_active;
+        let dungeon_poly_thread_host =
+            self.rom_startup_timing() && self.dungeon_poly_thread_is_active();
         if dungeon_poly_thread_host {
             self.zelda_run_poly_loop();
         }
-        if self.game_state.frame.main_module == 7
-            && std::env::var_os("ZELDA3_DEBUG_POLY").is_some()
-            && (self.game_state.display.nmi_thread_active
-                || self.sprite_slot_view(15).sprite_type() == 0xab)
+        if std::env::var_os("ZELDA3_DEBUG_POLY").is_some()
+            && (self.dungeon_poly_thread_is_active()
+                || (self.game_state.frame.main_module == 7
+                    && self.sprite_slot_view(15).sprite_type() == 0xab))
         {
             eprintln!(
                 "[POLY] host={} run_what={} thread_active={} stack={:#x} sub={:02x}/{:02x} maiden_ai={} e={} did_run_step={} pending={} sched={:?}",
@@ -44970,6 +44979,36 @@ impl ZeldaState {
         self.assert_native_display_state_matches_ram();
     }
 
+    /// The crystal maiden's IRQ poly thread: active from her Sprite_AB
+    /// activation through her dialogue (Module0E keeps calling Sprite_Main,
+    /// which re-arms the thread) until the cutscene deactivates it.
+    fn dungeon_poly_thread_is_active(&self) -> bool {
+        self.game_state.display.nmi_thread_active
+            && matches!(self.game_state.frame.main_module, 0x07 | 0x0e)
+    }
+
+    /// Field offsets (from the current host) of the hosts whose V-IRQ slice
+    /// the crystal poly thread does NOT take: the thread disables its IRQ when
+    /// a frame completes and the NMI re-enables it only after the maiden's
+    /// next iteration requests a frame, so the completion host's successor
+    /// runs the main thread whole (route host 415939: the second dialogue's
+    /// caller returned inside such a host).
+    pub(super) fn dungeon_poly_thread_free_host_offsets(&self) -> u64 {
+        let period = u32::from(self.poly_dungeon_current_frame_slices.max(1));
+        let first = if self.poly_job_in_flight {
+            u32::from(self.poly_job_hold_frames) + 1
+        } else {
+            period
+        };
+        let mut mask = 0u64;
+        let mut offset = first;
+        while offset < 64 {
+            mask |= 1 << offset;
+            offset += period;
+        }
+        mask
+    }
+
     fn zelda_run_poly_loop(&mut self) {
         /// Crystal scanlines the maiden's IRQ poly thread rasterizes per host.
         const DUNGEON_POLY_THREAD_SCANLINES_PER_HOST: u32 = 32;
@@ -44977,10 +45016,7 @@ impl ZeldaState {
         const DUNGEON_POLY_THREAD_SETUP_SCANLINES: u32 = 67;
         let can_run_poly = self.game_state.ending.attract_scene.intro_did_run_step() != 0
             && !self.game_state.display.has_pending_polyhedral_update();
-        if self.game_state.frame.main_module == 7
-            && self.game_state.display.nmi_thread_active
-            && std::env::var_os("ZELDA3_DEBUG_POLY").is_some()
-        {
+        if self.dungeon_poly_thread_is_active() && std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
             eprintln!(
                 "[POLY] host={} entry: did_run_step={} pending_update={} in_flight={} hold_frames={} startup_hold={:?} maiden_ai={}",
                 self.frame_ctr_dbg,
@@ -44998,8 +45034,7 @@ impl ZeldaState {
             // the same IRQ-driven poly worker as the title triforce; its
             // frame cost gates the cutscene sprite the same way (route host
             // 413549: the ROM's first poly frame held the maiden four hosts).
-            let dungeon_poly_thread =
-                frame.main_module == 7 && self.game_state.display.nmi_thread_active;
+            let dungeon_poly_thread = self.dungeon_poly_thread_is_active();
             if !self.game_state.display.nmi_thread_active {
                 self.poly_dungeon_thread_startup_hold = None;
                 self.poly_dungeon_frames_rendered = 0;
@@ -45045,10 +45080,11 @@ impl ZeldaState {
                         self.poly_dungeon_frames_rendered =
                             self.poly_dungeon_frames_rendered.saturating_add(1);
                         let scanlines = self.last_poly_work.scanlines;
-                        ((scanlines + DUNGEON_POLY_THREAD_SETUP_SCANLINES)
+                        let slices = (scanlines + DUNGEON_POLY_THREAD_SETUP_SCANLINES)
                             .div_ceil(DUNGEON_POLY_THREAD_SCANLINES_PER_HOST)
-                            .clamp(1, 16)
-                            - 1) as u8
+                            .clamp(1, 16) as u8;
+                        self.poly_dungeon_current_frame_slices = slices;
+                        slices - 1
                     } else {
                         self.last_poly_work.worker_frames() - 1
                     };

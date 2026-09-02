@@ -101,6 +101,12 @@ pub(super) struct CpuCycleBudget {
     /// master cycle of the next firing) hands the rest of every field to the
     /// poly thread; the simulated main thread resumes at the NMI acceptance.
     poly_thread_irq: Option<(u16, u64)>,
+    /// Field index of the budget's entry and a bitmask of field offsets from
+    /// it whose IRQ slice is NOT stolen: the poly thread disables its V-IRQ
+    /// when a frame completes and the NMI re-enables it only after the main
+    /// thread has requested the next frame, so the host after a completion
+    /// runs the main thread whole.
+    poly_thread_free_fields: (u64, u64),
 }
 
 impl CpuCycleBudget {
@@ -143,6 +149,7 @@ impl CpuCycleBudget {
             timeline,
             deadline,
             poly_thread_irq: None,
+            poly_thread_free_fields: (0, 0),
         }
     }
 
@@ -167,6 +174,7 @@ impl CpuCycleBudget {
             ),
             deadline,
             poly_thread_irq: None,
+            poly_thread_free_fields: (0, 0),
         }
     }
 
@@ -175,9 +183,10 @@ impl CpuCycleBudget {
     /// switches to the poly thread until the next NMI returns to the main
     /// thread, so the simulated main thread gets no cycles between the IRQ
     /// and the NMI acceptance of each field.
-    pub(super) fn with_poly_thread_irq(mut self, scanline: u16) -> Self {
+    pub(super) fn with_poly_thread_irq(mut self, scanline: u16, free_field_offsets: u64) -> Self {
         let clock = self.timeline.clock_master_cycles();
         let field = self.timeline.field_index();
+        self.poly_thread_free_fields = (field, free_field_offsets);
         let mut irq = self
             .timeline
             .master_cycles_at_raster(field, CpuRasterPosition::new(scanline, 0));
@@ -195,6 +204,11 @@ impl CpuCycleBudget {
             return;
         };
         let clock = self.timeline.clock_master_cycles();
+        let (entry_field, free_mask) = self.poly_thread_free_fields;
+        let offset = self.timeline.field_index().saturating_sub(entry_field);
+        if offset < 64 && (free_mask >> offset) & 1 == 1 {
+            return;
+        }
         if clock >= irq && clock < self.deadline.master_cycles {
             let stolen = self.deadline.master_cycles - clock;
             self.timeline
@@ -1588,6 +1602,7 @@ mod cpu_timing_tests {
                 ),
             },
             poly_thread_irq: None,
+            poly_thread_free_fields: (0, 0),
         }
     }
 
