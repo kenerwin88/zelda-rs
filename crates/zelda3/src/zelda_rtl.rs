@@ -1285,6 +1285,11 @@ struct OriginalTimingMainLoopReturnTimeline {
     progress: crate::MainLoopProgress,
     nmi_phases_before_return: Vec<OriginalTimingNmiPhase>,
     nmi_phases_after_return: Vec<OriginalTimingNmiPhase>,
+    /// The wire published its Sprite_Main return before the first NMI phase
+    /// which precedes the caller return: the slot loop finished before
+    /// vblank and the module tail ran after the held handler (route host
+    /// 1415870).
+    sprite_main_returned_before_nmi: bool,
 }
 
 /// One source host which resumes a suspended caller but does not yet reach the
@@ -4919,6 +4924,21 @@ fn direct_item_receipt_slot_pairs_with_boundary(
         SpriteMainCpuBoundary::AfterSlot(after_slot) => slot.checked_add(1) == Some(after_slot),
         _ => false,
     }
+}
+
+/// Whether a scheduled caller return may run its parked dungeon Sprite_Main
+/// remainder before the host's leading NMI handler (route host 1415870).
+fn scheduled_caller_return_runs_dungeon_sprite_main_before_leading_nmi(
+    work: GameWorkContinuation,
+) -> bool {
+    matches!(
+        work,
+        GameWorkContinuation::FinishSpriteMain {
+            caller: SpriteMainCpuCaller::DungeonModule07
+                | SpriteMainCpuCaller::DungeonModule07Live { .. },
+            ..
+        }
+    )
 }
 
 fn sprite_main_cpu_boundary_from_interruption(
@@ -22159,6 +22179,7 @@ impl ZeldaState {
         let (_, progress) = progress[0];
         let mut nmi_phases_before_return = Vec::new();
         let mut nmi_phases_after_return = Vec::new();
+        let mut first_nmi_phase_index = None;
         for (index, receipt) in receipts.semantic.iter().enumerate() {
             let phase = match receipt {
                 OriginalTimingSemanticReceipt::NmiAccepted(gate) => {
@@ -22170,15 +22191,25 @@ impl ZeldaState {
                 _ => continue,
             };
             if index < return_index {
+                first_nmi_phase_index.get_or_insert(index);
                 nmi_phases_before_return.push(phase);
             } else {
                 nmi_phases_after_return.push(phase);
             }
         }
+        let sprite_main_returned_before_nmi = receipts
+            .semantic
+            .iter()
+            .position(|receipt| *receipt == OriginalTimingSemanticReceipt::SpriteMainReturned)
+            .is_some_and(|sprite_main_index| {
+                sprite_main_index < return_index
+                    && first_nmi_phase_index.is_some_and(|nmi_index| sprite_main_index < nmi_index)
+            });
         Some(OriginalTimingMainLoopReturnTimeline {
             progress,
             nmi_phases_before_return,
             nmi_phases_after_return,
+            sprite_main_returned_before_nmi,
         })
     }
 
@@ -37301,10 +37332,30 @@ impl ZeldaState {
                         "a scheduled caller return cannot run Sprite_Main more than once",
                     ),
                 }
-                expected_semantic.extend(std::iter::repeat_n(
-                    OriginalTimingSemanticReceipt::SpriteMainReturned,
-                    sprite_main_return_claims,
-                ));
+                if expected_timeline.sprite_main_returned_before_nmi
+                    && scheduled_caller_return_runs_dungeon_sprite_main_before_leading_nmi(
+                        expected_work,
+                    )
+                {
+                    // The parked dungeon slot loop finished before this
+                    // host's held vblank; the Module 7 tail and the shared
+                    // suffix ran after the handler (route host 1415870:
+                    // [SpriteMainReturned, NmiAccepted(LatchHeld),
+                    // NmiHandlerCompleted, CallStackContinued,
+                    // MainLoopCommonSuffixCompleted, NmiAccepted(Open)]).
+                    expected_semantic.splice(
+                        0..0,
+                        std::iter::repeat_n(
+                            OriginalTimingSemanticReceipt::SpriteMainReturned,
+                            sprite_main_return_claims,
+                        ),
+                    );
+                } else {
+                    expected_semantic.extend(std::iter::repeat_n(
+                        OriginalTimingSemanticReceipt::SpriteMainReturned,
+                        sprite_main_return_claims,
+                    ));
+                }
                 expected_semantic.extend([
                     OriginalTimingSemanticReceipt::MainLoopProgress(
                         crate::MainLoopProgress::CallStackContinued,
@@ -38432,6 +38483,34 @@ impl ZeldaState {
                 .game_execution_scheduler
                 .mark_pre_dungeon_sprite_reset_completed());
         }
+        if let Some((boundary, caller)) = authoritative_live_sprite_main_work.filter(|_| {
+            authoritative_scheduled_caller_leading_nmi_completion.completed()
+                && authoritative_live_sprite_main_completed
+                && authoritative_scheduled_caller_return_timeline
+                    .as_ref()
+                    .is_some_and(|(timeline, _, _)| timeline.sprite_main_returned_before_nmi)
+        }) {
+            let work = GameWorkContinuation::FinishSpriteMain { boundary, caller };
+            assert!(
+                scheduled_caller_return_runs_dungeon_sprite_main_before_leading_nmi(work),
+                "only a parked dungeon Sprite_Main can return before this host's leading NMI: {work:?}",
+            );
+            assert!(
+                authoritative_live_sprite_main_refined_boundary
+                    .is_none_or(|refined| refined == boundary),
+                "a Sprite_Main return before the leading NMI cannot also refine its slot boundary",
+            );
+            // The wire returned from the parked slot loop before this
+            // host's held vblank (route host 1415870): the remaining slots
+            // run against the pre-NMI frame counter, then the handler
+            // completes, then the Module 7 tail and the shared suffix
+            // resume through the post-Sprite_Main continuation.
+            self.complete_sprite_main_after_cpu_boundary(boundary);
+            self.game_execution_scheduler.refine_scheduled_work(
+                work,
+                GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn,
+            );
+        }
         if authoritative_scheduled_caller_leading_nmi_completion.completed() {
             // Both scheduled timeline forms above proved that one accepted NMI
             // completed its Zelda-visible publication in this host. Retire
@@ -38996,15 +39075,22 @@ impl ZeldaState {
                     || self.original_timing_main_loop_return_timeline().is_some();
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(returned)
-            } else if self.game_execution_scheduler.current_work()
-                == Some(GameWorkContinuation::FinishDungeonMapRecovery)
-                && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            } else if matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(
+                    GameWorkContinuation::FinishDungeonMapRecovery
+                        | GameWorkContinuation::FinishDungeonMapGraphicsPreparation
+                )
+            ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                 && self.original_timing_semantic_receipts.is_some()
             {
                 // Module0E's dungeon-map recovery returns through the shared
                 // ZeldaRunGameLoop suffix; a live host whose wire still holds
                 // the update latch (Held acceptance, no suffix completion)
                 // proves the recovery is still running (route host 897354).
+                // The map graphics preparation (InitializeTilesets) returns
+                // the same way; its slice estimate ended one host before the
+                // wire's return at route host 1280082.
                 let returned = !self.original_timing_live_suffix_outstanding();
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(returned)
