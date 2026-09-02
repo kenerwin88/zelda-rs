@@ -18177,7 +18177,10 @@ impl ZeldaState {
                 }
                 [(progress_index, crate::MainLoopProgress::IterationStarted)] => {
                     *progress_index < completion_index
-                        && self.pending_main_loop_common_suffix.is_none()
+                        && (self.pending_main_loop_common_suffix.is_none()
+                            // The carried completion stripped above retires
+                            // that pending suffix before this iteration runs.
+                            || self.original_timing_carried_suffix_completion_pending)
                 }
                 _ => false,
             };
