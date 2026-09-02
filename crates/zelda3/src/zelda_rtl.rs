@@ -34592,17 +34592,44 @@ impl ZeldaState {
                     && self.game_execution_scheduler.current_work()
                         == Some(GameWorkContinuation::FinishDialogueInitializationCallerReturn);
             if live_dialogue_terminal_caller_is_active {
-                assert_eq!(
-                    after_current,
-                    Some(GameWorkContinuation::FinishDialogueInitializationCallerReturn),
-                    "a live terminal dialogue caller requires the exact AfterCurrent owner",
-                );
-                let terminal = self
-                    .take_original_timing_dialogue_terminal_return()
-                    .expect(
-                        "a live dialogue AfterCurrent caller return requires exact terminal source authority",
+                if after_current.is_none() {
+                    // A caller tail crossing two or more NMIs is scheduled
+                    // work (route host 414033: the crystal poly thread's
+                    // V-IRQ steals most of each field). It completes only on
+                    // the host whose wire returns to the main wait; earlier
+                    // hosts are waiting slices.
+                    if self.original_timing_main_loop_return_timeline().is_none() {
+                        None
+                    } else {
+                        let step = scheduler_probe
+                            .advance_work_one_nmi_slice_with_authoritative_completion(true);
+                        assert_eq!(
+                            step,
+                            Some(GameWorkStep::Complete(
+                                GameWorkContinuation::FinishDialogueInitializationCallerReturn
+                            )),
+                            "a scheduled dialogue caller return did not complete on its terminal host",
+                        );
+                        let terminal = self
+                            .take_original_timing_dialogue_terminal_return()
+                            .expect(
+                                "a live scheduled dialogue caller return requires exact terminal source authority",
+                            );
+                        Some((terminal, scheduler_probe))
+                    }
+                } else {
+                    assert_eq!(
+                        after_current,
+                        Some(GameWorkContinuation::FinishDialogueInitializationCallerReturn),
+                        "a live terminal dialogue caller requires the exact AfterCurrent owner",
                     );
-                Some((terminal, scheduler_probe))
+                    let terminal = self
+                        .take_original_timing_dialogue_terminal_return()
+                        .expect(
+                            "a live dialogue AfterCurrent caller return requires exact terminal source authority",
+                        );
+                    Some((terminal, scheduler_probe))
+                }
             } else {
                 None
             }
@@ -38657,6 +38684,25 @@ impl ZeldaState {
                 authoritative_scheduled_caller_return_timeline.as_ref()
             {
                 Some(GameWorkStep::Complete(*expected_work))
+            } else if matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishDungeonSupertileTransition {
+                    work: DungeonSupertileTransitionWork::SpiralRoomInitialization,
+                })
+            ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.original_timing_semantic_receipts.is_some()
+                && (self.original_timing_owes_sprite_main_progress()
+                    || self.original_timing_owes_sprite_main_return()
+                    || self.original_timing_main_loop_interruption().is_some()
+                    || self.original_timing_main_loop_return_timeline().is_some())
+            {
+                // The wire proves the spiral room initialization returned into
+                // its caller's Sprite_Main within this host (route host 907403:
+                // SpriteMainProgressed(AfterSlot(4)) with one estimated slice
+                // still outstanding); complete it now so the caller can park
+                // that Sprite_Main at the wire's boundary.
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(true)
             } else if self.game_execution_scheduler.current_work()
                 == Some(GameWorkContinuation::FinishDungeonMapRecovery)
                 && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
