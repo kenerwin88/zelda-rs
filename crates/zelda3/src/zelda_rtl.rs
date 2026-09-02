@@ -6571,6 +6571,9 @@ pub(super) enum SpriteMainItemReceiptSuffix {
     /// ROM `$85f020` Sprite_HeartPiece's fourth piece: `Link_ReceiveItem(0x26, 0)`
     /// then the sprite-kill and obtained-flag tail (route host 974819).
     HeartPiece,
+    /// ROM FluteKid stumpy case 2: `Link_ReceiveItem(0x13, 0)` (the shovel)
+    /// then `ai_state = 0` (route host 512301).
+    FluteKidShovel,
 }
 
 impl SpriteMainItemReceiptSuffix {
@@ -6598,6 +6601,7 @@ impl SpriteMainItemReceiptSuffix {
                 | Self::PotionCauldron
                 | Self::SmithyTemperedSword
                 | Self::HeartPiece
+                | Self::FluteKidShovel
         )
     }
 }
@@ -40785,6 +40789,9 @@ impl ZeldaState {
                             SpriteMainItemReceiptSuffix::HeartPiece => {
                                 self.sprite_slot_view_mut(sprite_slot).set_state(0);
                                 self.heart_upgrade_set_obtained_flag(sprite_slot);
+                            }
+                            SpriteMainItemReceiptSuffix::FluteKidShovel => {
+                                self.sprite_slot_view_mut(sprite_slot).set_ai_state(0);
                             }
                         }
                         // The receipt returned inside this host but the wire

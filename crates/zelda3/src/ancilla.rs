@@ -7087,6 +7087,24 @@ impl ZeldaState {
     }
 
     fn ancilla29_milestone_item_receipt(&mut self, k: usize) {
+        if std::env::var_os("ZELDA3_DEBUG_ANCILLA29").is_some() {
+            eprintln!(
+                "[ANC29] host={} k={} item={:#x} z={} g={} native_bits={:#06x} ram_bits={:#04x}{:02x} countdown={} work3={} link_aux={} hook={} sub={}",
+                self.frame_ctr_dbg,
+                k,
+                self.ancilla_slot_view(k).item_to_link(),
+                self.ancilla_slot_view(k).z(),
+                self.ancilla_slot_view(k).g(),
+                self.game_state.dungeon.savegame_state.savegame_state_bits(),
+                self.ram[0x403],
+                self.ram[0x402],
+                self.ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN],
+                self.ancilla_slot_view(k).work_byte_3(),
+                self.game_state.player.follower_link.has_auxiliary_state(),
+                self.game_state.player.follower_link.has_hookshot_interlock(),
+                self.game_state.frame.submodule,
+            );
+        }
         if self.ancilla_slot_view(k).item_to_link() != 0x10
             && self.ancilla_slot_view(k).item_to_link() != 0x0f
         {
