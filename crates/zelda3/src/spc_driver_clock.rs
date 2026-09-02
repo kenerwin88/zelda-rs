@@ -509,6 +509,14 @@ impl AbsoluteDspEventClock {
         let frame_start_cycle = self.absolute_apu_cycle;
         let apu_cycles = u64::from(samples_per_channel) * APU_CYCLES_PER_DSP_SAMPLE;
         let frame_end_cycle = frame_start_cycle.wrapping_add(apu_cycles);
+        // The SPC's local 32-bit cycle counter would wrap after ~250k host
+        // frames (route frame 251820), freezing the execution loop below.
+        // Move whole DSP-sample multiples into the 64-bit origin instead.
+        if self.apu.cycles >= 1 << 30 {
+            let shift = self.apu.cycles & !0x3f;
+            self.apu.rebase_cycles(shift);
+            self.apu_cycle_origin += u64::from(shift);
+        }
         if self.apu.debug_dsp_write_trace.is_none() {
             self.apu.debug_dsp_write_trace = Some(Vec::new());
         }

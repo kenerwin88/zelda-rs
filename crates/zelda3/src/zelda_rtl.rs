@@ -44699,6 +44699,7 @@ impl ZeldaState {
             // The long scroll copy has crossed vblank before the ROM reaches
             // Main_PrepSpritesForNmi or clears $12. Its continuation is resumed
             // by the dedicated scheduler in run_frame_internal.
+            if std::env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() { eprintln!("[HOSTPATH] host={} game-loop tail: dialogue scroll busy", self.frame_ctr_dbg); }
             return;
         }
         if self.rom_startup_timing()
@@ -44746,6 +44747,21 @@ impl ZeldaState {
         // the VWF loop, the main thread has not reached NMI_PrepareSprites yet;
         // the actual interrupt still runs separately below and observes $0710.
         let partial_nmi = std::mem::take(&mut self.rom_load_partial_nmi_this_frame);
+        if self.dialogue_fast_forward_hold_active
+            && idle_suffix_action == Some(OriginalTimingIdleMainLoopSuffixAction::CompleteInSequence)
+        {
+            // The native VWF budget predicted a fast-forward hold, but the
+            // wire's validated iteration completed its shared suffix in this
+            // host (route host 344410): the suffix, not the hold, is
+            // authoritative for the latch and sprite preparation.
+            self.dialogue_fast_forward_hold_active = false;
+        }
+        if std::env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
+            eprintln!(
+                "[HOSTPATH] host={} game-loop tail: fast_forward_hold={} partial_nmi={}",
+                self.frame_ctr_dbg, self.dialogue_fast_forward_hold_active, partial_nmi,
+            );
+        }
         if !self.dialogue_fast_forward_hold_active && !partial_nmi {
             self.nmi_prepare_sprites_for_main_loop();
             self.replay_trace_ram_watch("game-loop-after-prepare-sprites");
@@ -45063,6 +45079,10 @@ impl ZeldaState {
         iteration_started: bool,
     ) {
         if !iteration_started
+            // Module0E owns the BG3 text-DMA early-stage protocol; Module15's
+            // Agahnim dialogue (`KillAghanim_Func7` calling RenderText) drives
+            // the same text machine without it (route host 315663).
+            || self.game_state.frame.main_module != 0x0e
             || !matches!(
                 self.dialogue_scroll_phase(),
                 DialogueScrollPhase::CopyingRemainingPixels { .. }

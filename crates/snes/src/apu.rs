@@ -1755,6 +1755,19 @@ impl ApuState {
     }
 
     /// Schedule one host-port write on the SPC hardware clock.
+    /// Shift the local cycle counter (and every pending input-port event
+    /// scheduled against it) down by `shift` so the 32-bit counter never
+    /// wraps. Callers keep the removed cycles in their own 64-bit origin.
+    /// `shift` must be a multiple of 32 so the DSP sample phase (`cycles &
+    /// 0x1f`) is preserved.
+    pub fn rebase_cycles(&mut self, shift: u32) {
+        debug_assert_eq!(shift & 0x1f, 0, "APU cycle rebase must keep the DSP sample phase");
+        self.cycles = self.cycles.wrapping_sub(shift);
+        for event in &mut self.scheduled_input_port_writes {
+            event.0 = event.0.saturating_sub(shift);
+        }
+    }
+
     pub fn schedule_input_port_event(&mut self, local_cycle: u32, port: u8, value: u8) {
         self.scheduled_input_port_writes
             .push((local_cycle, port & 3, value));
