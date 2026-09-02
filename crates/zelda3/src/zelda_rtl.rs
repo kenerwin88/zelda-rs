@@ -34434,8 +34434,11 @@ impl ZeldaState {
         // holds the completing slice (oracle `$1F0A` idles to `$1F31` on the
         // completing host, 413556/413560/…; the maiden steps the same host).
         // The atomic frontend's RUN_POLY alternation does not apply here.
-        let dungeon_poly_thread_host =
-            self.rom_startup_timing() && self.dungeon_poly_thread_is_active();
+        // The dungeon and Triforce-room V-IRQ threads render a slice every
+        // host regardless of the frontend's poly/main alternation.
+        let dungeon_poly_thread_host = self.rom_startup_timing()
+            && (self.dungeon_poly_thread_is_active()
+                || self.triforce_room_poly_thread_is_active());
         if dungeon_poly_thread_host {
             self.zelda_run_poly_loop();
         }
@@ -45774,6 +45777,17 @@ impl ZeldaState {
     fn dungeon_poly_thread_is_active(&self) -> bool {
         self.game_state.display.nmi_thread_active
             && matches!(self.game_state.frame.main_module, 0x07 | 0x0e)
+            && !self.triforce_room_poly_thread_is_active()
+    }
+
+    /// `Module19_TriforceRoom`'s V-IRQ thread (and the same thread while
+    /// its Triforce message runs under module $0E with $19 saved as the
+    /// return module).
+    fn triforce_room_poly_thread_is_active(&self) -> bool {
+        self.game_state.display.nmi_thread_active
+            && (self.game_state.frame.main_module == 0x19
+                || (self.game_state.frame.main_module == 0x0e
+                    && self.game_state.frame.saved_module_for_menu == 0x19))
     }
 
     /// Field offsets (from the current host) of the hosts whose V-IRQ slice
@@ -45830,13 +45844,24 @@ impl ZeldaState {
             // frame cost gates the cutscene sprite the same way (route host
             // 413549: the ROM's first poly frame held the maiden four hosts).
             let dungeon_poly_thread = self.dungeon_poly_thread_is_active();
+            // The Triforce room's V-IRQ thread renders the zooming Triforce
+            // while Module19 runs the text, sprites, and LinkOam each frame:
+            // the oracle's zoom steps land every host whose render costs
+            // less than one host's thread share and every second host
+            // otherwise (route hosts 1557810-1558053: single-host steps at
+            // config1 $cf/$cd/$cb, $c1/$bf/$bd, $a1/$9f/$9d = the frames
+            // under ~25.2k estimated cycles; 44.9k-cycle frames still take
+            // two hosts).
+            let triforce_room_poly_thread = self.triforce_room_poly_thread_is_active();
+            const TRIFORCE_ROOM_POLY_THREAD_HOST_CYCLES: u32 = 25_200;
             if !self.game_state.display.nmi_thread_active {
                 self.poly_dungeon_thread_startup_hold = None;
                 self.poly_dungeon_frames_rendered = 0;
             }
             let use_timed_worker = self.rom_startup_timing
                 && (rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
-                    || dungeon_poly_thread);
+                    || dungeon_poly_thread
+                    || triforce_room_poly_thread);
             if use_timed_worker {
                 if dungeon_poly_thread && std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
                     eprintln!(
@@ -45910,6 +45935,12 @@ impl ZeldaState {
                         };
                         self.poly_dungeon_current_frame_slices = slices;
                         slices - 1
+                    } else if triforce_room_poly_thread {
+                        self.last_poly_work
+                            .estimated_65816_cycles()
+                            .div_ceil(TRIFORCE_ROOM_POLY_THREAD_HOST_CYCLES)
+                            .clamp(1, 16) as u8
+                            - 1
                     } else {
                         self.last_poly_work.worker_frames() - 1
                     };
@@ -45934,6 +45965,19 @@ impl ZeldaState {
                 self.poly_job_in_flight = false;
             } else {
                 self.poly_run_frame();
+                if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                    eprintln!(
+                        "[POLY] host={} untimed frame: module={:02x}/{:02x} config1={} scanlines={} cycles={} worker_frames={} work={:?}",
+                        self.frame_ctr_dbg,
+                        frame.main_module,
+                        frame.submodule,
+                        self.game_state.poly.runtime.config1(),
+                        self.last_poly_work.scanlines,
+                        self.last_poly_work.estimated_65816_cycles(),
+                        self.last_poly_work.worker_frames(),
+                        self.last_poly_work,
+                    );
+                }
             }
             self.attract_scene_mut().clear_intro_did_run_step();
             self.request_polyhedral_nmi_update();

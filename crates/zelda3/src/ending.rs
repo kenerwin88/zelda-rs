@@ -456,6 +456,37 @@ impl ZeldaState {
             self.link_handle_moving_animation_full_long_entry();
         }
         self.link_oam_main();
+        if !self.rom_startup_timing() {
+            return;
+        }
+        // Vblank may interrupt LinkOam_Main after the text render (route
+        // host 1558061): the shared suffix crosses to the next host. A fresh
+        // iteration's interruption reaches the module forwarded; a resumed
+        // one is still the raw receipt.
+        if let Some(boundary) = self.take_forwarded_original_timing_main_loop_interruption(
+            crate::MainLoopInterruption::LinkOam,
+        ) {
+            // The lane arms the shared suffix once the forwarded interruption
+            // is owned; this tail only parks the caller return.
+            let continuation = GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
+                caller: NmiPrepareSpritesCpuCaller::TriforceRoom,
+            };
+            match boundary {
+                OriginalTimingBoundary::HostReturn => {
+                    self.game_execution_scheduler.schedule_work(continuation, 1)
+                }
+                OriginalTimingBoundary::NmiAccepted => self
+                    .game_execution_scheduler
+                    .schedule_after_current_trailing_nmi(continuation),
+            }
+        } else if self.original_timing_main_loop_interruption()
+            == Some(crate::MainLoopInterruption::LinkOam)
+        {
+            let _ = self.take_original_timing_main_loop_interruption_any();
+            self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+                NmiPrepareSpritesCpuCaller::TriforceRoom,
+            );
+        }
     }
 
     /// Case 2 after the `LoadCreditsSongs` upload returns (the ROM runs
