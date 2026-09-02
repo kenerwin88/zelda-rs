@@ -21539,14 +21539,23 @@ impl ZeldaState {
             Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch),
             "pre-dungeon-audio boundary lost its suspended ZeldaRunGameLoop suffix",
         );
-        assert!(
-            !self.original_timing_nmi_publication_pending,
-            "pre-dungeon-audio boundary cannot enter with an unfinished NMI handler",
-        );
-        assert_eq!(
-            self.original_timing_pending_nmi_update_gate, None,
-            "pre-dungeon-audio boundary cannot retain an NMI disposition without a carried handler",
-        );
+        // The previous decompressor host may end with a trailing Held
+        // acceptance whose handler completes at the top of this boundary host
+        // (route host 1344254: [NmiHandlerCompleted, NmiAccepted(LatchHeld),
+        // CallStackContinued] after a double-acceptance host).
+        let carried_handler = self.original_timing_nmi_publication_pending;
+        if carried_handler {
+            assert_eq!(
+                self.original_timing_pending_nmi_update_gate,
+                Some(NmiUpdateGate::LatchHeld),
+                "pre-dungeon-audio boundary's carried handler must belong to a Held acceptance",
+            );
+        } else {
+            assert_eq!(
+                self.original_timing_pending_nmi_update_gate, None,
+                "pre-dungeon-audio boundary cannot retain an NMI disposition without a carried handler",
+            );
+        }
         assert!(
             self.game_state.display.nmi_update_is_latched(),
             "pre-dungeon-audio boundary source Held acceptances require the native NMI latch to be held",
@@ -21555,19 +21564,42 @@ impl ZeldaState {
         // handler completes in-host; whether a second held acceptance also
         // lands before the host returns depends only on where the ~60.1 Hz
         // hardware cadence falls (two at route host 160282, one at 638711).
-        let trailing_held = self.original_timing_expected_nmi_update_gates.len() == 2;
+        // With a carried handler the one acceptance of this host is the
+        // trailing one.
+        // The carried acceptance keeps its own installed disposition, so
+        // with a carried handler the gate list holds it plus this host's
+        // trailing acceptance when one lands (route host 1344254:
+        // [LatchHeld, LatchHeld]).
+        let trailing_held = if carried_handler {
+            timeline.nmi_phases_before_progress.last()
+                == Some(&OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld))
+        } else {
+            self.original_timing_expected_nmi_update_gates.len() == 2
+        };
         assert!(
-            matches!(
-                self.original_timing_expected_nmi_update_gates.as_slice(),
-                [NmiUpdateGate::LatchHeld] | [NmiUpdateGate::LatchHeld, NmiUpdateGate::LatchHeld]
-            ),
+            if carried_handler {
+                self.original_timing_expected_nmi_update_gates.len() == 1 + usize::from(trailing_held)
+                    && self
+                        .original_timing_expected_nmi_update_gates
+                        .iter()
+                        .all(|gate| *gate == NmiUpdateGate::LatchHeld)
+            } else {
+                matches!(
+                    self.original_timing_expected_nmi_update_gates.as_slice(),
+                    [NmiUpdateGate::LatchHeld] | [NmiUpdateGate::LatchHeld, NmiUpdateGate::LatchHeld]
+                )
+            },
             "pre-dungeon-audio boundary lost its installed source acceptance dispositions: {:?}",
             self.original_timing_expected_nmi_update_gates,
         );
-        let mut expected_phases = vec![
-            OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld),
-            OriginalTimingNmiPhase::HandlerCompleted,
-        ];
+        let mut expected_phases = if carried_handler {
+            vec![OriginalTimingNmiPhase::HandlerCompleted]
+        } else {
+            vec![
+                OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingNmiPhase::HandlerCompleted,
+            ]
+        };
         if trailing_held {
             expected_phases.push(OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld));
         }
@@ -21581,10 +21613,14 @@ impl ZeldaState {
             .expect("live pre-dungeon-audio boundary lost its semantic authority")
             .semantic
             .clone();
-        let mut expected_semantic = vec![
-            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
-            OriginalTimingSemanticReceipt::NmiHandlerCompleted,
-        ];
+        let mut expected_semantic = if carried_handler {
+            vec![OriginalTimingSemanticReceipt::NmiHandlerCompleted]
+        } else {
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+            ]
+        };
         if trailing_held {
             expected_semantic.push(OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld));
         }
@@ -21596,14 +21632,23 @@ impl ZeldaState {
             "pre-dungeon-audio boundary published an unsupported or reordered semantic vector",
         );
         let nmi = classify_original_timing_nmi_phases_with_ownership(
-            false,
+            carried_handler,
             &timeline.nmi_phases_before_progress,
         );
-        assert_eq!(
-            nmi.handler_completion,
-            OriginalTimingNmiHandlerCompletionOwner::AcceptedInThisSequence,
-            "pre-dungeon-audio boundary lost same-host handler ownership: {timeline:?}",
-        );
+        if carried_handler {
+            assert!(
+                nmi.handler_completion.completed()
+                    && nmi.handler_completion
+                        != OriginalTimingNmiHandlerCompletionOwner::AcceptedInThisSequence,
+                "pre-dungeon-audio boundary lost its carried handler ownership: {timeline:?}",
+            );
+        } else {
+            assert_eq!(
+                nmi.handler_completion,
+                OriginalTimingNmiHandlerCompletionOwner::AcceptedInThisSequence,
+                "pre-dungeon-audio boundary lost same-host handler ownership: {timeline:?}",
+            );
+        }
         assert_eq!(
             nmi.publication_pending_at_exit, trailing_held,
             "pre-dungeon-audio boundary must carry exactly its trailing source NMI: {timeline:?}",
@@ -39127,6 +39172,30 @@ impl ZeldaState {
                     .advance_work_one_nmi_slice_with_authoritative_completion(
                         authoritative_item_receipt_returned,
                     )
+            } else if matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                    continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. },
+                })
+            ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.original_timing_semantic_receipts.is_some()
+            {
+                // The atomic item-graphics decompression blocks the ROM
+                // iteration before Sprite_Main. A live host that only holds
+                // the update latch (Held acceptances, no main-loop progress
+                // past the receipt) proves the decompression is still
+                // running; the first host that reaches Sprite_Main, returns
+                // to the shared suffix, or interrupts later proves it
+                // returned (route host 1339570: the mirror-shield chest's
+                // sheet $5c ran two hosts past the standard estimate).
+                let returned = self.original_timing_owes_sprite_main_progress()
+                    || self.original_timing_owes_sprite_main_return()
+                    || !self.original_timing_live_suffix_outstanding()
+                    || self.original_timing_main_loop_interruption().is_some()
+                    || authoritative_scheduled_caller_nmi_timeline.is_some()
+                    || self.original_timing_main_loop_return_timeline().is_some();
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(returned)
             } else if authoritative_overworld_sprite_reload_is_active {
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(
