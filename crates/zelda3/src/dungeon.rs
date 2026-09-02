@@ -13301,9 +13301,9 @@ impl ZeldaState {
         if !self
             .game_execution_scheduler
             .work_suspends_translated_call_stack()
-            && self.take_original_timing_main_loop_interruption(
+            && (self.take_original_timing_main_loop_interruption(
                 crate::MainLoopInterruption::SpritePreparation,
-            )
+            ) || self.take_original_timing_extended_oam_packing_interruption_for_caller_return())
         {
             // The authority observed this completed submodule's shared
             // NMI_PrepareSprites caller suffix being interrupted. Reuse the

@@ -11185,6 +11185,14 @@ pub struct ZeldaState {
     last_poly_work: PolyWorkMetrics,
     #[serde(skip)]
     poly_job_in_flight: bool,
+    /// Hosts the crystal-maiden cutscene's IRQ poly thread takes to start its
+    /// first frame after activation (route host 413549: activation, config
+    /// writes at +4, first frame complete at +7; later frames every 4 hosts).
+    #[serde(skip)]
+    poly_dungeon_thread_startup_hold: Option<u8>,
+    /// Crystal frames the dungeon poly thread has rendered since activation.
+    #[serde(skip)]
+    poly_dungeon_frames_rendered: u8,
     #[serde(skip)]
     poly_job_hold_frames: u8,
     #[serde(skip)]
@@ -17458,6 +17466,8 @@ impl ZeldaState {
             snes9x_intro_step_hold_alternate: false,
             last_poly_work: PolyWorkMetrics::default(),
             poly_job_in_flight: false,
+            poly_dungeon_thread_startup_hold: None,
+            poly_dungeon_frames_rendered: 0,
             poly_job_hold_frames: 0,
             intro_title_fade_poly_phase: 0,
             intro_title_fade_defer_suffix_this_frame: false,
@@ -19009,6 +19019,22 @@ impl ZeldaState {
         }
         let receipts = self.original_timing_semantic_receipts.as_mut()?;
         receipts.take_forwarded_main_loop_interruption(phase)
+    }
+
+    /// A dungeon fresh iteration interrupted inside NMI_PrepareSprites'
+    /// extended OAM packing (route host 767104, group 28) resumes through
+    /// the same caller-return continuation as a whole-prep interruption:
+    /// the suspended stack's sprite state is unchanged when the packing
+    /// completes at the return, so the prep is re-run whole there.
+    pub(super) fn take_original_timing_extended_oam_packing_interruption_for_caller_return(
+        &mut self,
+    ) -> bool {
+        match self.original_timing_main_loop_interruption() {
+            Some(crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }) => {
+                self.take_original_timing_main_loop_interruption_any().is_some()
+            }
+            _ => false,
+        }
     }
 
     /// Consume a forwarded source-level `Sprite_Main` loop boundary without
@@ -21241,18 +21267,28 @@ impl ZeldaState {
             self.game_state.display.nmi_update_is_latched(),
             "pre-dungeon-audio boundary source Held acceptances require the native NMI latch to be held",
         );
-        assert_eq!(
-            self.original_timing_expected_nmi_update_gates.as_slice(),
-            [NmiUpdateGate::LatchHeld, NmiUpdateGate::LatchHeld],
-            "pre-dungeon-audio boundary lost its installed source acceptance dispositions",
+        // The Module05 decompressor's boundary host holds one NMI whose
+        // handler completes in-host; whether a second held acceptance also
+        // lands before the host returns depends only on where the ~60.1 Hz
+        // hardware cadence falls (two at route host 160282, one at 638711).
+        let trailing_held = self.original_timing_expected_nmi_update_gates.len() == 2;
+        assert!(
+            matches!(
+                self.original_timing_expected_nmi_update_gates.as_slice(),
+                [NmiUpdateGate::LatchHeld] | [NmiUpdateGate::LatchHeld, NmiUpdateGate::LatchHeld]
+            ),
+            "pre-dungeon-audio boundary lost its installed source acceptance dispositions: {:?}",
+            self.original_timing_expected_nmi_update_gates,
         );
+        let mut expected_phases = vec![
+            OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld),
+            OriginalTimingNmiPhase::HandlerCompleted,
+        ];
+        if trailing_held {
+            expected_phases.push(OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld));
+        }
         assert_eq!(
-            timeline.nmi_phases_before_progress,
-            [
-                OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld),
-                OriginalTimingNmiPhase::HandlerCompleted,
-                OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld),
-            ],
+            timeline.nmi_phases_before_progress, expected_phases,
             "pre-dungeon-audio boundary must complete its same-host held NMI before carrying the trailing held acceptance: {timeline:?}",
         );
         let semantic = self
@@ -21261,16 +21297,18 @@ impl ZeldaState {
             .expect("live pre-dungeon-audio boundary lost its semantic authority")
             .semantic
             .clone();
+        let mut expected_semantic = vec![
+            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+            OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+        ];
+        if trailing_held {
+            expected_semantic.push(OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld));
+        }
+        expected_semantic.push(OriginalTimingSemanticReceipt::MainLoopProgress(
+            crate::MainLoopProgress::CallStackContinued,
+        ));
         assert_eq!(
-            semantic,
-            [
-                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
-                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
-                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
-                OriginalTimingSemanticReceipt::MainLoopProgress(
-                    crate::MainLoopProgress::CallStackContinued,
-                ),
-            ],
+            semantic, expected_semantic,
             "pre-dungeon-audio boundary published an unsupported or reordered semantic vector",
         );
         let nmi = classify_original_timing_nmi_phases_with_ownership(
@@ -21282,9 +21320,9 @@ impl ZeldaState {
             OriginalTimingNmiHandlerCompletionOwner::AcceptedInThisSequence,
             "pre-dungeon-audio boundary lost same-host handler ownership: {timeline:?}",
         );
-        assert!(
-            nmi.publication_pending_at_exit,
-            "pre-dungeon-audio boundary must carry its trailing source NMI: {timeline:?}",
+        assert_eq!(
+            nmi.publication_pending_at_exit, trailing_held,
+            "pre-dungeon-audio boundary must carry exactly its trailing source NMI: {timeline:?}",
         );
 
         Some(OriginalTimingBeginSelectedGameLoadPlan {
@@ -34855,6 +34893,54 @@ impl ZeldaState {
                         if sprite_main_return_claims != 0 {
                             self.finish_original_timing_sprite_main_return_claim_scope();
                         }
+                    } else if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                        && self.original_timing_semantic_receipts.is_some()
+                        && self
+                            .original_timing_main_loop_interruption()
+                            .is_some_and(|interruption| interruption.is_sprite_main())
+                    {
+                        // The resumed sprite reset ran into the room-load
+                        // caller's Sprite_Main, which the wire suspends at a
+                        // slot boundary in this host (route host 729546,
+                        // AfterSlot(1) for three hosts). The body parks that
+                        // Sprite_Main; the host's lifecycle receipts — the
+                        // carried handler, the continued progress, and the
+                        // interrupting held acceptance — are owned here.
+                        let phases = self.take_original_timing_nmi_phases();
+                        let before = classify_original_timing_nmi_phases_with_ownership(
+                            self.original_timing_nmi_publication_pending,
+                            &phases,
+                        );
+                        self.complete_original_timing_nmi_handler_for_active_scanout(
+                            before.handler_completion,
+                            input,
+                            oam_dma_source.as_deref(),
+                        )
+                        .assert_no_unclaimed_dialogue_text_dma();
+                        assert_eq!(
+                            self.take_original_timing_main_loop_progress(),
+                            Some(crate::MainLoopProgress::CallStackContinued),
+                            "a resumed room-load sprite reset host must continue its suspended stack",
+                        );
+                        self.complete_room_load_sprite_reset_after_timing_boundary(
+                            progress,
+                            input,
+                            None,
+                        );
+                        if let Some(GameWorkContinuation::FinishSpriteMain { boundary, .. }) =
+                            self.game_execution_scheduler.current_work()
+                        {
+                            if self
+                                .original_timing_main_loop_interruption()
+                                .and_then(sprite_main_cpu_boundary_from_interruption)
+                                == Some(boundary)
+                            {
+                                let _ = self.take_original_timing_main_loop_interruption_any();
+                            }
+                        }
+                        if before.publication_pending_at_exit {
+                            self.capture_and_carry_original_timing_nmi_publication_at_host_return();
+                        }
                     } else {
                         self.complete_room_load_sprite_reset_after_timing_boundary(
                             progress,
@@ -38411,6 +38497,18 @@ impl ZeldaState {
                 authoritative_scheduled_caller_return_timeline.as_ref()
             {
                 Some(GameWorkStep::Complete(*expected_work))
+            } else if self.game_execution_scheduler.current_work()
+                == Some(GameWorkContinuation::FinishDungeonMapRecovery)
+                && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.original_timing_semantic_receipts.is_some()
+            {
+                // Module0E's dungeon-map recovery returns through the shared
+                // ZeldaRunGameLoop suffix; a live host whose wire still holds
+                // the update latch (Held acceptance, no suffix completion)
+                // proves the recovery is still running (route host 897354).
+                let returned = !self.original_timing_live_suffix_outstanding();
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(returned)
             } else if authoritative_big_key_drop_slot.is_some() {
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(
@@ -39655,10 +39753,27 @@ impl ZeldaState {
                         }
                         DungeonSupertileTransitionWork::SpriteConversion => {
                             self.complete_dungeon_inter_room_transition_state3_after_sprite_conversion();
-                            let schedule = self
+                            let mut schedule = self
                                 .dungeon_submodule_cpu_schedule
                                 .take()
                                 .expect("sprite conversion requires its ROM CPU schedule");
+                            // The estimated envelope may place the caller's one
+                            // NMI after Sprite_Main returned while the wire
+                            // names a slot boundary inside it (route host
+                            // 988054, AfterSlot(1)): the wire's checkpoint is
+                            // the caller's Sprite_Main suspension.
+                            if let Some(boundary) = self
+                                .original_timing_main_loop_interruption()
+                                .and_then(sprite_main_cpu_boundary_from_interruption)
+                            {
+                                if schedule.caller_nmis == 1 && schedule.caller_sprite_main_nmis == 0 {
+                                    schedule.caller_sprite_main_nmis = 1;
+                                    schedule.caller_suffix_nmis = 0;
+                                    schedule.sprite_main_boundary = Some(boundary);
+                                    schedule.caller_first_nmi_phase =
+                                        Some(ModuleCpuPhase::InterruptedInSpriteMain);
+                                }
+                            }
                             if schedule.caller_sprite_main_nmis != 0 {
                                 assert_eq!(
                                     schedule.caller_nmis,
@@ -42384,6 +42499,13 @@ impl ZeldaState {
                 if let Some(interruption) = forwarded.filter(|&interruption| owns(interruption)) {
                     let _ = self.take_forwarded_original_timing_main_loop_interruption(interruption);
                 }
+                // The fresh iteration is suspended inside the receipt: its
+                // shared ZeldaRunGameLoop suffix is still owed and completes
+                // with the continued return that follows (route host 753972).
+                if self.pending_main_loop_common_suffix.is_none() {
+                    self.pending_main_loop_common_suffix =
+                        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+                }
             }
             assert!(
                 !self.original_timing_main_loop_interruption_is_pending(),
@@ -44645,19 +44767,72 @@ impl ZeldaState {
     fn zelda_run_poly_loop(&mut self) {
         let can_run_poly = self.game_state.ending.attract_scene.intro_did_run_step() != 0
             && !self.game_state.display.has_pending_polyhedral_update();
+        if self.game_state.frame.main_module == 7
+            && self.game_state.display.nmi_thread_active
+            && std::env::var_os("ZELDA3_DEBUG_POLY").is_some()
+        {
+            eprintln!(
+                "[POLY] host={} entry: did_run_step={} pending_update={} in_flight={} hold_frames={} startup_hold={:?} maiden_ai={}",
+                self.frame_ctr_dbg,
+                self.game_state.ending.attract_scene.intro_did_run_step(),
+                self.game_state.display.has_pending_polyhedral_update(),
+                self.poly_job_in_flight,
+                self.poly_job_hold_frames,
+                self.poly_dungeon_thread_startup_hold,
+                self.sprite_slot_view(15).ai_state(),
+            );
+        }
         if can_run_poly {
             let frame = self.game_state.frame;
             // The crystal maiden's cutscene (Sprite_AB, dungeon module) runs
             // the same IRQ-driven poly worker as the title triforce; its
             // frame cost gates the cutscene sprite the same way (route host
             // 413549: the ROM's first poly frame held the maiden four hosts).
+            let dungeon_poly_thread =
+                frame.main_module == 7 && self.game_state.display.nmi_thread_active;
+            if !self.game_state.display.nmi_thread_active {
+                self.poly_dungeon_thread_startup_hold = None;
+                self.poly_dungeon_frames_rendered = 0;
+            }
             let use_timed_worker = self.rom_startup_timing
                 && (rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
-                    || (frame.main_module == 7 && self.game_state.display.nmi_thread_active));
+                    || dungeon_poly_thread);
             if use_timed_worker {
+                if dungeon_poly_thread && std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                    eprintln!(
+                        "[POLY] host={} dungeon thread: startup_hold={:?} in_flight={} hold_frames={} rendered={} pending_update={}",
+                        self.frame_ctr_dbg,
+                        self.poly_dungeon_thread_startup_hold,
+                        self.poly_job_in_flight,
+                        self.poly_job_hold_frames,
+                        self.poly_dungeon_frames_rendered,
+                        self.game_state.display.has_pending_polyhedral_update(),
+                    );
+                }
+                if dungeon_poly_thread && !self.poly_job_in_flight {
+                    // The maiden activates the thread inside Sprite_Main; the
+                    // IRQ scheduler starts its first frame four hosts later
+                    // (route host 413549: config writes at 413553).
+                    let hold = self.poly_dungeon_thread_startup_hold.get_or_insert(4);
+                    if *hold != 0 {
+                        *hold -= 1;
+                        return;
+                    }
+                }
                 if !self.poly_job_in_flight {
                     self.poly_run_frame();
-                    self.poly_job_hold_frames = self.last_poly_work.worker_frames() - 1;
+                    self.poly_job_hold_frames = if dungeon_poly_thread {
+                        // The IRQ thread's share of a host renders the first
+                        // crystal frame in three hosts (visible to the maiden
+                        // at 413556) and each later frame in four (413560,
+                        // 413564): the consuming main iterations cost more.
+                        let frames = if self.poly_dungeon_frames_rendered == 0 { 3 } else { 4 };
+                        self.poly_dungeon_frames_rendered =
+                            self.poly_dungeon_frames_rendered.saturating_add(1);
+                        frames - 1
+                    } else {
+                        self.last_poly_work.worker_frames() - 1
+                    };
                     self.poly_job_in_flight = true;
                     if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
                         eprintln!(
