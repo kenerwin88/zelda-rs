@@ -8254,8 +8254,20 @@ impl ZeldaState {
                 let screen = usize::from(self.game_state.world.location.overworld_screen_index());
                 self.set_overworld_event_bits(screen, 0x20);
                 self.follower_link_state_mut().set_item_receipt_method(0);
-                self.link_receive_item(0x16, 0);
-                self.save_progress_mut().or_progress_indicator_3(1);
+                if self
+                    .link_receive_item_from(
+                        0x16,
+                        0,
+                        ItemReceiptCaller::SpriteMainDirect {
+                            sprite_slot: k as u8,
+                            suffix: SpriteMainItemReceiptSuffix::HoboBottle,
+                        },
+                    )
+                    .is_suspended()
+                {
+                    return;
+                }
+                self.complete_hobo_bottle_item_receipt(k);
             }
             3 => {
                 self.follower_link_state_mut().clear_immobilized();
@@ -8269,6 +8281,12 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    /// Source suffix after Sprite_Hobo_Bum's `Link_ReceiveItem(0x16, 0)`
+    /// (ROM `$86bdd0` case 2): only the progress-indicator bit remains.
+    pub(super) fn complete_hobo_bottle_item_receipt(&mut self, _k: usize) {
+        self.save_progress_mut().or_progress_indicator_3(1);
     }
 
     // -----------------------------------------------------------------------

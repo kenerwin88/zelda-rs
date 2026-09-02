@@ -4774,6 +4774,9 @@ enum SpriteMainCpuCaller {
 enum NmiPrepareSpritesCpuCaller {
     DungeonModule07,
     WorldMapOverlayReload,
+    /// A resumed Module09 long-load caller (aux graphics or a whirlpool
+    /// step) whose NMI_PrepareSprites was interrupted at the host boundary.
+    Module09LongLoad,
 }
 
 // Return address immediately after SpritePrep_Zelda's JSL to the shared
@@ -4938,6 +4941,9 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpritePreparation
         | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
         | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. } => true,
+        crate::MainLoopInterruption::SpotlightGoalResetTable { completed_stores } => {
+            completed_stores <= 224
+        }
         crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { next_group_start } => {
             next_group_start <= 28 && next_group_start & 3 == 0
         }
@@ -5076,7 +5082,8 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(_) => unreachable!(),
         crate::MainLoopInterruption::LinkPositionBeforeCoordinates
-        | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. } => None,
+        | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+        | crate::MainLoopInterruption::SpotlightGoalResetTable { .. } => None,
     }
 }
 
@@ -6354,6 +6361,9 @@ pub(super) enum SpriteMainItemReceiptSuffix {
     /// then `Link_ReceiveItem(gfx, 0)` with nothing after it (route hosts
     /// 180723, 182366).
     HappinessPondReward,
+    /// ROM `$86bdd0` Sprite_Hobo_Bum case 2: `Link_ReceiveItem(0x16, 0)`
+    /// then the progress-indicator bit tail (route host 187034).
+    HoboBottle,
 }
 
 impl SpriteMainItemReceiptSuffix {
@@ -6372,6 +6382,7 @@ impl SpriteMainItemReceiptSuffix {
                 | Self::BookOfMudora
                 | Self::CatfishMedallion
                 | Self::HappinessPondReward
+                | Self::HoboBottle
         )
     }
 }
@@ -6626,6 +6637,22 @@ enum GameWorkContinuation {
     FinishOverworldSpotlightLinkOam {
         iteration: SpotlightIteration,
     },
+    /// Module10's resumed opening build reached its goal inside
+    /// `IrisSpotlight_ConfigureTable`, but vblank interrupted
+    /// `IrisSpotlight_ResetTable` after `completed_stores` of its 224 source-
+    /// order table stores. The remaining stores, the module/submodule and
+    /// music transition, `OpenSpotlight_Next2`, LinkOam, and the shared
+    /// suffix all belong to the following host (route host 182709).
+    FinishOverworldSpotlightGoalResetTable {
+        iteration: SpotlightIteration,
+        completed_stores: u8,
+    },
+    /// `Module09_2E_Whirlpool` entered one of its long loads; the load's
+    /// completion, the case tail, and Module09's Sprite_Main/HUD suffix belong
+    /// to the host where the wire returns the suspended caller.
+    FinishWhirlpoolLongStep {
+        step: WhirlpoolLongStep,
+    },
     /// The closing iris reached its goal inside `IrisSpotlight_ConfigureTable`,
     /// but vblank interrupts before `Spotlight_ConfigureTableAndControl` can
     /// restore Link's exit coordinate and call `OpenSpotlight_Next2`.
@@ -6723,6 +6750,7 @@ impl GameWorkContinuation {
                 | Self::FinishWorldMapLightLoad
                 | Self::FinishWorldMapExitTilesets
                 | Self::FinishOverworldAuxGraphics
+                | Self::FinishWhirlpoolLongStep { .. }
                 | Self::FinishOverworldMapQuadrants { .. }
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
                 | Self::FinishOverworldSpriteReloadTail { .. }
@@ -6748,11 +6776,13 @@ impl GameWorkContinuation {
             self,
             Self::FinishDungeonAfterSubmoduleCallerReturn
                 | Self::FinishOverworldSpotlightBuild { .. }
+                | Self::FinishOverworldSpotlightGoalResetTable { .. }
                 | Self::FinishGameOverSpotlightBuild { .. }
                 | Self::FinishWorldMapLightLoad
                 | Self::FinishWorldMapExitTilesets
                 | Self::FinishWorldMapAmbientMap8
                 | Self::FinishOverworldAuxGraphics
+                | Self::FinishWhirlpoolLongStep { .. }
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
                 | Self::FinishOverworldSpriteReloadTail { .. }
                 | Self::FinishDungeonFallingEntrance { .. }
@@ -6800,6 +6830,7 @@ impl GameWorkContinuation {
             Self::FinishDungeonAfterSubmoduleCallerReturn
             | Self::FinishWorldMapAmbientMap8
             | Self::FinishOverworldAuxGraphics
+            | Self::FinishWhirlpoolLongStep { .. }
             | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
             | Self::FinishOverworldSpriteReloadTail { .. }
             | Self::FinishItemReceiptGraphics { .. }
@@ -6974,6 +7005,23 @@ pub(super) struct SpotlightTableBuildContinuation {
     pending_lower_cursor_decrement: bool,
     projection_tail_cleared: bool,
     projection_words_copied: u16,
+}
+
+/// The four whirlpool-warp steps whose ROM call spans several held vblanks:
+/// `Module09_2E_Whirlpool` cases 3, 5, 7, and 9 (route hosts 183223,
+/// 183234, 183254, 183271).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum WhirlpoolLongStep {
+    /// Case 3: `Overworld_LoadOverlays2`'s overlay decode and Map16ToMap8.
+    LoadOverlays2,
+    /// Case 5: `Overworld_LoadOverlayAndMap`'s screen build.
+    LoadOverlayAndMap,
+    /// Case 7: `Module09_LoadAuxGFX`'s auxiliary decompression.
+    LoadAuxGraphics,
+    /// Case 9: `LoadNewSpriteGFXSet` after the synchronous palette loads.
+    SpritePalettesAndGraphics,
+    /// Case 12: `ReloadPreviouslyLoadedSheets`' seven-sheet decompression.
+    ReloadSheets,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35277,7 +35325,10 @@ impl ZeldaState {
             matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                 && matches!(
                     self.game_execution_scheduler.current_work(),
-                    Some(GameWorkContinuation::FinishOverworldSpotlightBuild { .. })
+                    Some(
+                        GameWorkContinuation::FinishOverworldSpotlightBuild { .. }
+                            | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { .. }
+                    )
                 );
         let authoritative_overworld_spotlight_goal_returned =
             authoritative_overworld_spotlight_goal_is_active
@@ -36228,7 +36279,20 @@ impl ZeldaState {
         let authoritative_overworld_spotlight_build_returned =
             authoritative_overworld_spotlight_goal_returned
                 || (authoritative_overworld_spotlight_goal_is_active
-                    && authoritative_uninterrupted_scheduled_caller_nmi_timeline.is_some());
+                    && authoritative_uninterrupted_scheduled_caller_nmi_timeline.is_some())
+                // The resumed build ran to its goal transition and was
+                // interrupted inside IrisSpotlight_ResetTable: the saved
+                // Build completes here and its partial reset schedules the
+                // remaining transition (route host 182709).
+                || (matches!(
+                    self.game_execution_scheduler.current_work(),
+                    Some(GameWorkContinuation::FinishOverworldSpotlightBuild { .. })
+                ) && authoritative_scheduled_caller_nmi_timeline.is_some_and(|timeline| {
+                    matches!(
+                        timeline.interruption,
+                        crate::MainLoopInterruption::SpotlightGoalResetTable { .. }
+                    )
+                }));
         let mut authoritative_scheduled_caller_leading_nmi_completion =
             OriginalTimingNmiHandlerCompletionOwner::None;
         let mut authoritative_scheduled_caller_completes_nmi_after_same_host_iteration = false;
@@ -36823,6 +36887,13 @@ impl ZeldaState {
                                 // inside Link_MovePosition (route host 179586).
                                 | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                         )
+                        || (matches!(
+                            timeline.interruption,
+                            crate::MainLoopInterruption::SpotlightGoalResetTable { .. }
+                        ) && matches!(
+                            self.game_execution_scheduler.current_work(),
+                            Some(GameWorkContinuation::FinishOverworldSpotlightBuild { .. })
+                        ))
                         || timeline.interruption.is_sprite_main()
                 );
             }
@@ -36872,6 +36943,18 @@ impl ZeldaState {
         ) {
             if current_boundary != refined_boundary {
                 let scheduled_refined_boundary = match (current_boundary, refined_boundary) {
+                    (
+                        SpriteMainCpuBoundary::BeforeFirstSlot,
+                        SpriteMainCpuBoundary::AfterSlot(newly_completed_slot),
+                    ) => {
+                        // The saved caller's Sprite_Main started in this host
+                        // and ran down to the wire's newly returned slot
+                        // before suspending again (route host 187518).
+                        self.advance_sprite_main_before_first_slot_to_after_slot(
+                            newly_completed_slot,
+                        );
+                        refined_boundary
+                    }
                     (
                         SpriteMainCpuBoundary::AfterActiveCuccoX {
                             slot,
@@ -37327,7 +37410,12 @@ impl ZeldaState {
                     )
             } else if matches!(
                 self.game_execution_scheduler.current_work(),
-                Some(GameWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail)
+                Some(
+                    GameWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail
+                        // The whirlpool's long loads return into the same
+                        // Module09 Sprite_Main suffix (route host 183230).
+                        | GameWorkContinuation::FinishWhirlpoolLongStep { .. }
+                )
             ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             {
                 // The wire's own Sprite_Main activity proves the screen-map
@@ -37928,6 +38016,12 @@ impl ZeldaState {
                     ) => Some(iteration.completion_publication()),
                     GameWorkStep::Complete(
                         GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. },
+                    ) => Some(iteration.completion_publication()),
+                    GameWorkStep::Complete(
+                        GameWorkContinuation::FinishOverworldSpotlightGoalResetTable {
+                            iteration,
+                            ..
+                        },
                     ) => Some(iteration.completion_publication()),
                     // The interrupted entry build finishes mid-frame; its first
                     // table generation belongs to the scanout already staged.
@@ -38884,6 +38978,9 @@ impl ZeldaState {
                             SpriteMainItemReceiptSuffix::HappinessPondReward => {
                                 self.complete_happiness_pond_item_receipt(sprite_slot)
                             }
+                            SpriteMainItemReceiptSuffix::HoboBottle => {
+                                self.complete_hobo_bottle_item_receipt(sprite_slot)
+                            }
                         }
                         self.complete_sprite_main_after_interrupted_slot(sprite_slot);
                         match caller {
@@ -38912,14 +39009,16 @@ impl ZeldaState {
                     // DMA sources and release the software NMI latch.
                     if authoritative_scheduled_caller_return_timeline.is_some() {
                         self.finish_original_timing_sprite_main_return_claim_scope();
-                    }
-                    if self.pending_main_loop_common_suffix.is_some() {
                         // The source-proven caller return already carries the
                         // shared ZeldaRunGameLoop suffix; retire its one owner.
-                        self.complete_pending_main_loop_common_suffix_after_module_return();
+                        self.retire_or_run_main_loop_common_suffix_after_module_return();
                     } else {
-                        self.nmi_prepare_sprites();
-                        self.clear_nmi_update_latch();
+                        // Without a terminal return the wire can hold the
+                        // caller's shared suffix past this host: the resumed
+                        // Module07 caller returns, the trailing acceptance
+                        // stays held, and the next host's continued return
+                        // completes the suffix (route host 182374).
+                        self.retire_or_defer_main_loop_common_suffix_by_wire();
                     }
                     if !ordinary_gfx_21_return
                         && authoritative_scheduled_caller_accepts_nmi_at_return.is_none()
@@ -39454,17 +39553,51 @@ impl ZeldaState {
                     table_build,
                     phase,
                     projection_completed,
-                    ..
+                    iteration,
                 }) => {
-                    self.complete_overworld_spotlight_build(
+                    // The wire may interrupt the resumed build's goal
+                    // transition inside IrisSpotlight_ResetTable (route host
+                    // 182709); the timeline above already consumed that
+                    // boundary, so hand its store cursor to the native body.
+                    let reset_table_interruption =
+                        authoritative_scheduled_caller_nmi_timeline.and_then(|timeline| {
+                            match timeline.interruption {
+                                crate::MainLoopInterruption::SpotlightGoalResetTable {
+                                    completed_stores,
+                                } => Some(completed_stores),
+                                _ => None,
+                            }
+                        });
+                    if reset_table_interruption.is_some() {
+                        // The interrupting acceptance at this host's entry
+                        // re-checkpointed the saved build; the continuation
+                        // already carries the same statement.
+                        if let Some(claim) =
+                            self.take_original_timing_spotlight_table_build_progress()
+                        {
+                            assert_eq!(
+                                claim.boundary,
+                                crate::OriginalTimingBoundary::NmiAccepted,
+                                "a spotlight build re-checkpoint must ride an accepting NMI",
+                            );
+                        }
+                    }
+                    let suspended = self.complete_overworld_spotlight_build(
                         table_build,
                         phase,
                         projection_completed,
+                        iteration,
+                        reset_table_interruption,
                     );
                     self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                         GraphicsDmaGeneration::HostBoundaryBeforeMain,
                     )));
-                    if authoritative_overworld_spotlight_same_host_iteration
+                    if suspended {
+                        assert!(
+                            !authoritative_overworld_spotlight_same_host_iteration,
+                            "a goal transition suspended inside IrisSpotlight_ResetTable cannot share its host with a fresh iteration",
+                        );
+                    } else if authoritative_overworld_spotlight_same_host_iteration
                         && !authoritative_scheduled_caller_interrupted_fresh_iteration
                     {
                         // A new ZeldaRunGameLoop entry proves that the saved
@@ -39600,6 +39733,17 @@ impl ZeldaState {
                     )));
                     self.nmi_prepare_sprites_for_main_loop_once();
                     self.clear_nmi_update_latch();
+                }
+                GameWorkStep::Complete(
+                    GameWorkContinuation::FinishOverworldSpotlightGoalResetTable {
+                        completed_stores,
+                        ..
+                    },
+                ) => {
+                    self.complete_overworld_spotlight_goal_reset_table(completed_stores);
+                    self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
+                        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    )));
                 }
                 GameWorkStep::Complete(
                     GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { .. },
@@ -39862,6 +40006,33 @@ impl ZeldaState {
                     {
                         self.finish_original_timing_sprite_main_return_claim_scope();
                     }
+                    if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                        && authoritative_scheduled_caller_nmi_timeline.is_some_and(|timeline| {
+                            timeline.interruption
+                                == crate::MainLoopInterruption::SpritePreparation
+                        })
+                    {
+                        // The host returned inside the resumed caller's
+                        // NMI_PrepareSprites (route host 187535).
+                        assert!(
+                            authoritative_scheduled_caller_return_timeline.is_none(),
+                            "an aux-graphics caller interrupted in NMI_PrepareSprites cannot own a terminal return",
+                        );
+                        self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+                            NmiPrepareSpritesCpuCaller::Module09LongLoad,
+                        );
+                        return;
+                    }
+                    if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                        && authoritative_scheduled_caller_return_timeline.is_none()
+                    {
+                        // Without a terminal return the wire can hold the
+                        // caller's shared suffix past this host behind a
+                        // trailing Held acceptance (route host 196969); the
+                        // next host's continued return completes it.
+                        self.retire_or_defer_main_loop_common_suffix_by_wire();
+                        return;
+                    }
                     if self.pending_main_loop_common_suffix.is_some() {
                         // The source-proven caller return already carries the
                         // shared ZeldaRunGameLoop suffix; retire its one owner.
@@ -39878,6 +40049,94 @@ impl ZeldaState {
                         self.game_execution_scheduler.schedule_pre_main_nmi_resume(
                             PreMainNmiResume::OverworldAuxGraphicsReturn,
                         );
+                    }
+                    return;
+                }
+                GameWorkStep::Complete(GameWorkContinuation::FinishWhirlpoolLongStep { step }) => {
+                    // The whirlpool's long load returns to Module09_2E_Whirlpool
+                    // immediately after this vblank; the case tail and the
+                    // Module09 Sprite_Main/HUD suffix follow in the same host.
+                    if authoritative_scheduled_caller_accepts_nmi_at_return.is_none() {
+                        self.capture_display_snapshot();
+                        self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    }
+                    let continued_sprite_main_claims =
+                        if authoritative_scheduled_caller_return_timeline.is_none() {
+                            self.original_timing_semantic_receipts
+                                .as_ref()
+                                .map(|receipts| {
+                                    receipts
+                                        .semantic()
+                                        .iter()
+                                        .filter(|receipt| {
+                                            **receipt
+                                                == OriginalTimingSemanticReceipt::SpriteMainReturned
+                                        })
+                                        .count()
+                                })
+                                .unwrap_or(0)
+                        } else {
+                            0
+                        };
+                    if let Some((_, _, sprite_main_return_claims)) =
+                        authoritative_scheduled_caller_return_timeline.as_ref()
+                    {
+                        self.begin_original_timing_sprite_main_return_claim_scope(
+                            *sprite_main_return_claims,
+                        );
+                    } else if continued_sprite_main_claims != 0 {
+                        self.begin_original_timing_sprite_main_return_claim_scope(
+                            continued_sprite_main_claims,
+                        );
+                    }
+                    self.complete_whirlpool_long_step(step);
+                    self.complete_module09_overworld_after_submodule();
+                    if self
+                        .game_execution_scheduler
+                        .work_suspends_translated_call_stack()
+                    {
+                        // The resumed caller's Sprite_Main suspended mid-loop
+                        // (route host 183230); the shared suffix belongs to
+                        // the resumed slice.
+                        assert!(
+                            authoritative_scheduled_caller_return_timeline.is_none(),
+                            "a suspended whirlpool caller cannot also own a terminal return",
+                        );
+                        if continued_sprite_main_claims != 0
+                            && self
+                                .original_timing_sprite_main_return_claims_remaining
+                                .is_some()
+                        {
+                            self.finish_original_timing_sprite_main_return_claim_scope();
+                        }
+                        return;
+                    }
+                    if authoritative_scheduled_caller_return_timeline.is_some()
+                        || continued_sprite_main_claims != 0
+                    {
+                        self.finish_original_timing_sprite_main_return_claim_scope();
+                    }
+                    if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                        && authoritative_scheduled_caller_nmi_timeline.is_some_and(|timeline| {
+                            timeline.interruption
+                                == crate::MainLoopInterruption::SpritePreparation
+                        })
+                    {
+                        assert!(
+                            authoritative_scheduled_caller_return_timeline.is_none(),
+                            "a whirlpool caller interrupted in NMI_PrepareSprites cannot own a terminal return",
+                        );
+                        self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+                            NmiPrepareSpritesCpuCaller::Module09LongLoad,
+                        );
+                        return;
+                    }
+                    if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                        && authoritative_scheduled_caller_return_timeline.is_none()
+                    {
+                        self.retire_or_defer_main_loop_common_suffix_by_wire();
+                    } else {
+                        self.retire_or_run_main_loop_common_suffix_after_module_return();
                     }
                     return;
                 }
@@ -40250,6 +40509,7 @@ impl ZeldaState {
                 GameWorkContinuation::FinishSpotlightIteration { iteration }
                 | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
                 | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
+                | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
@@ -40277,7 +40537,8 @@ impl ZeldaState {
             self.capture_display_snapshot_with_override(publication_override);
             if let GameWorkStep::Complete(
                 GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
-                | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration },
+                | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration }
+                | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { iteration, .. },
             ) = work_slice
             {
                 if iteration.completed_hdma_table_owns_active_scanout() {
@@ -40300,6 +40561,7 @@ impl ZeldaState {
                 GameWorkContinuation::FinishSpotlightIteration { iteration }
                 | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
                 | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
+                | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
@@ -43882,6 +44144,32 @@ impl ZeldaState {
     /// it outstanding (no suffix receipt and no Open trailing acceptance),
     /// in which case arm its one pending owner for the later
     /// suffix-completing host (the route-host-63268 pattern).
+    /// The wire interrupted a resumed Module09 caller's `NMI_PrepareSprites`
+    /// at the host boundary (route host 187535): the following host's leading
+    /// Held handler and continued return complete the shared suffix. Arm that
+    /// suffix's one owner and the typed prep continuation instead of running
+    /// the prep/latch pair here.
+    fn schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+        &mut self,
+        caller: NmiPrepareSpritesCpuCaller,
+    ) {
+        if self.pending_main_loop_common_suffix.is_none() {
+            self.pending_main_loop_common_suffix =
+                Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+        }
+        self.interrupted_nmi_prepare_obj_cache_vram = Some(
+            self.last_presented_obj_vram
+                .as_ref()
+                .cloned()
+                .or_else(|| self.ppu.obj_vram_latch.clone())
+                .unwrap_or_else(|| self.ppu.vram.clone()),
+        );
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn { caller },
+            1,
+        );
+    }
+
     fn retire_or_defer_main_loop_common_suffix_by_wire(&mut self) {
         if self.original_timing_live_suffix_outstanding() {
             if self.pending_main_loop_common_suffix.is_none() {

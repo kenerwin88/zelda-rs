@@ -547,6 +547,24 @@ impl ZeldaState {
     }
 
     pub(super) fn Module09_LoadAuxGFX(&mut self) {
+        self.module09_load_aux_gfx_prefix();
+        if self.rom_startup_timing() {
+            let timing = overworld_aux_graphics_timing(self.overworld_aux_graphics_workload());
+            // The ROM's decompression time follows the actual set of nonzero
+            // auxiliary packs. Carry the measured workload into the scheduler
+            // rather than assigning every tileset the light eleven-slice path.
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishOverworldAuxGraphics,
+                timing.load_nmi_slices,
+            );
+            return;
+        }
+        self.complete_module09_load_aux_gfx();
+    }
+
+    /// The synchronous writes `Module09_LoadAuxGFX` performs before its long
+    /// decompression.
+    fn module09_load_aux_gfx_prefix(&mut self) {
         self.clear_overworld_event_bits(0x3b, 0x20);
         self.clear_overworld_event_bits(0x7b, 0x20);
 
@@ -565,19 +583,6 @@ impl ZeldaState {
         self.save_progress_mut()
             .set_dungeon_info_word(267, saved267);
         self.save_progress_mut().set_dungeon_info_word(40, saved40);
-
-        if self.rom_startup_timing() {
-            let timing = overworld_aux_graphics_timing(self.overworld_aux_graphics_workload());
-            // The ROM's decompression time follows the actual set of nonzero
-            // auxiliary packs. Carry the measured workload into the scheduler
-            // rather than assigning every tileset the light eleven-slice path.
-            self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishOverworldAuxGraphics,
-                timing.load_nmi_slices,
-            );
-            return;
-        }
-        self.complete_module09_load_aux_gfx();
     }
 
     pub(super) fn complete_module09_load_aux_gfx(&mut self) {
@@ -2578,14 +2583,10 @@ impl ZeldaState {
                 self.set_hud_palette(0);
                 self.FindPartnerWhirlpoolExit();
                 self.dungeon_room_load_mut().set_draw_width_indicator(0);
-                self.Overworld_LoadOverlays2();
-                self.decrement_submodule();
-                self.set_pending_nmi_subroutine(12);
-                self.clear_cgram_update_flag();
-                self.set_fixed_color_blue(0x80);
-                self.set_screen_brightness(0x0f);
-                self.increment_core_update_disable_flag();
-                self.increment_subsubmodule();
+                // Overworld_LoadOverlays2's cheap prefix runs now; its overlay
+                // decode and Map16ToMap8 span the wire's held vblanks.
+                self.prepare_overworld_load_overlays();
+                self.run_or_schedule_whirlpool_long_step(WhirlpoolLongStep::LoadOverlays2, 8);
             }
             4 | 6 => {
                 self.set_pending_nmi_subroutine(13);
@@ -2593,16 +2594,17 @@ impl ZeldaState {
                 self.increment_subsubmodule();
             }
             5 => {
-                self.Overworld_LoadOverlayAndMap();
-                self.set_pending_nmi_subroutine(12);
-                self.set_screen_brightness(0x0f);
-                self.increment_core_update_disable_flag();
-                self.increment_subsubmodule();
+                self.run_or_schedule_whirlpool_long_step(WhirlpoolLongStep::LoadOverlayAndMap, 18);
             }
             7 => {
-                self.Module09_LoadAuxGFX();
-                self.decrement_submodule();
-                self.increment_subsubmodule();
+                self.module09_load_aux_gfx_prefix();
+                let slices =
+                    overworld_aux_graphics_timing(self.overworld_aux_graphics_workload())
+                        .load_nmi_slices;
+                self.run_or_schedule_whirlpool_long_step(
+                    WhirlpoolLongStep::LoadAuxGraphics,
+                    slices,
+                );
             }
             8 => {
                 self.Overworld_FinishTransGfx();
@@ -2625,11 +2627,10 @@ impl ZeldaState {
                 );
                 self.Palette_SetOwBgColor();
                 self.Overworld_SetFixedColAndScroll();
-                self.LoadNewSpriteGFXSet();
-                self.set_fixed_color_blue(0x80);
-                self.set_screen_brightness(0x0f);
-                self.increment_core_update_disable_flag();
-                self.increment_subsubmodule();
+                self.run_or_schedule_whirlpool_long_step(
+                    WhirlpoolLongStep::SpritePalettesAndGraphics,
+                    3,
+                );
             }
             10 => {
                 self.PaletteFilter_WhirlpoolRestoreRedGreen();
@@ -2643,6 +2644,64 @@ impl ZeldaState {
             }
             12 => {
                 self.follower_link_state_mut().set_blink_countdown(144);
+                self.run_or_schedule_whirlpool_long_step(WhirlpoolLongStep::ReloadSheets, 15);
+            }
+            _ => {}
+        }
+    }
+
+    /// Under ROM timing the whirlpool's long load suspends the Module09 call
+    /// stack for `estimate_nmi_slices` (the live wire's caller return decides
+    /// the actual host); otherwise the whole case completes atomically.
+    fn run_or_schedule_whirlpool_long_step(
+        &mut self,
+        step: WhirlpoolLongStep,
+        estimate_nmi_slices: u8,
+    ) {
+        if self.rom_startup_timing() {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishWhirlpoolLongStep { step },
+                estimate_nmi_slices,
+            );
+            return;
+        }
+        self.complete_whirlpool_long_step(step);
+    }
+
+    /// Finish one of `Module09_2E_Whirlpool`'s long loads and the case tail
+    /// that follows it in the source switch.
+    pub(super) fn complete_whirlpool_long_step(&mut self, step: WhirlpoolLongStep) {
+        match step {
+            WhirlpoolLongStep::LoadOverlays2 => {
+                self.finish_overworld_load_overlays();
+                self.decrement_submodule();
+                self.set_pending_nmi_subroutine(12);
+                self.clear_cgram_update_flag();
+                self.set_fixed_color_blue(0x80);
+                self.set_screen_brightness(0x0f);
+                self.increment_core_update_disable_flag();
+                self.increment_subsubmodule();
+            }
+            WhirlpoolLongStep::LoadOverlayAndMap => {
+                self.Overworld_LoadOverlayAndMap();
+                self.set_pending_nmi_subroutine(12);
+                self.set_screen_brightness(0x0f);
+                self.increment_core_update_disable_flag();
+                self.increment_subsubmodule();
+            }
+            WhirlpoolLongStep::LoadAuxGraphics => {
+                self.complete_module09_load_aux_gfx();
+                self.decrement_submodule();
+                self.increment_subsubmodule();
+            }
+            WhirlpoolLongStep::SpritePalettesAndGraphics => {
+                self.LoadNewSpriteGFXSet();
+                self.set_fixed_color_blue(0x80);
+                self.set_screen_brightness(0x0f);
+                self.increment_core_update_disable_flag();
+                self.increment_subsubmodule();
+            }
+            WhirlpoolLongStep::ReloadSheets => {
                 self.ReloadPreviouslyLoadedSheets();
                 self.set_hdma_enable_mask(0x80);
                 let music = self
@@ -2661,7 +2720,6 @@ impl ZeldaState {
                 self.set_overworld_map_state(0);
                 self.clear_core_update_disable_flag();
             }
-            _ => {}
         }
     }
 
@@ -2882,13 +2940,49 @@ impl ZeldaState {
         }
     }
 
+    /// Finish Module10's interrupted table build and its caller suffix.
+    /// Returns `true` when the wire interrupted the goal transition inside
+    /// `IrisSpotlight_ResetTable`: the partial reset is published and the
+    /// remaining transition and suffix are scheduled for the next host.
     pub(super) fn complete_overworld_spotlight_build(
         &mut self,
         table_build: SpotlightTableBuildContinuation,
         phase: OverworldSpotlightBuildPhase,
         projection_completed: bool,
-    ) {
+        iteration: SpotlightIteration,
+        reset_table_interruption: Option<u8>,
+    ) -> bool {
         let entry_main_module = self.game_state.frame.main_module;
+        if let Some(completed_stores) = reset_table_interruption {
+            assert_eq!(
+                phase,
+                OverworldSpotlightBuildPhase::Recurring,
+                "only a recurring Module10 build can reach the iris goal",
+            );
+            if !projection_completed {
+                self.complete_iris_spotlight_table_projection(table_build);
+            }
+            let reached_goal =
+                self.complete_iris_spotlight_configure_table_after_projection_deferring_goal(true);
+            assert!(
+                reached_goal,
+                "an IrisSpotlight_ResetTable interruption requires the opening iris to reach its goal",
+            );
+            assert_ne!(
+                self.game_state.display.spotlight_hdma.window_state(),
+                0,
+                "IrisSpotlight_ResetTable runs only for the opening iris goal",
+            );
+            self.iris_spotlight_reset_table_stores(0, usize::from(completed_stores));
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishOverworldSpotlightGoalResetTable {
+                    iteration,
+                    completed_stores,
+                },
+                1,
+            );
+            return true;
+        }
         if projection_completed {
             self.complete_iris_spotlight_configure_table_after_projection();
         } else {
@@ -2909,6 +3003,11 @@ impl ZeldaState {
             }
         }
         self.link_oam_main();
+        self.complete_overworld_spotlight_caller_common_suffix();
+        false
+    }
+
+    fn complete_overworld_spotlight_caller_common_suffix(&mut self) {
         if self.pending_main_loop_common_suffix.is_some() {
             // A source-proven caller return carries the shared
             // ZeldaRunGameLoop suffix with it; retire the pending owner once
@@ -2918,6 +3017,27 @@ impl ZeldaState {
             self.nmi_prepare_sprites_for_main_loop_once();
             self.clear_nmi_update_latch();
         }
+    }
+
+    /// Resume Module10's goal transition after vblank interrupted
+    /// `IrisSpotlight_ResetTable`: finish the table reset, publish the
+    /// module/music transition, return through `OpenSpotlight_Next2`, and run
+    /// the caller's LinkOam and shared suffix (route host 182709).
+    pub(super) fn complete_overworld_spotlight_goal_reset_table(&mut self, completed_stores: u8) {
+        let entry_main_module = self.game_state.frame.main_module;
+        assert_eq!(
+            (entry_main_module, self.game_state.frame.submodule),
+            (0x10, 1),
+            "a suspended IrisSpotlight_ResetTable belongs to recurring Module10",
+        );
+        self.iris_spotlight_reset_table_stores(usize::from(completed_stores), 224);
+        self.complete_iris_spotlight_reset_table_tail();
+        self.complete_iris_spotlight_goal_transition_after_reset();
+        let caller_interrupted = self
+            .complete_spotlight_configure_table_and_control_after_table(entry_main_module, false);
+        debug_assert!(!caller_interrupted);
+        self.link_oam_main();
+        self.complete_overworld_spotlight_caller_common_suffix();
     }
 
     pub(super) fn Module0F_SpotlightClose(&mut self) {

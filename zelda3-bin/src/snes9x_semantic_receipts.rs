@@ -99,6 +99,17 @@ const IRIS_SPOTLIGHT_COPY_COMPLETE_PC: u32 = 0x00f3c5;
 // helper returns a value or either table word is written. The adapter rewinds
 // that pure helper to its source-call boundary; gameplay receives only the
 // pending circle input, never this ROM range.
+/// `IrisSpotlight_ResetTable` ($00:F427) clears the 224-word dynamic HDMA
+/// table as seven interleaved `STA $1Bxx,X` stripes per iteration, X running
+/// from $3E down to 0 by two. The loop body spans the first store through the
+/// `BPL` back-branch; an NMI accepted inside it leaves the goal transition's
+/// remaining stores and the caller suffix pending.
+const IRIS_SPOTLIGHT_RESET_TABLE_FIRST_STORE_PC: u32 = 0x00f42f;
+const IRIS_SPOTLIGHT_RESET_TABLE_FIRST_DEX_PC: u32 = 0x00f444;
+const IRIS_SPOTLIGHT_RESET_TABLE_SECOND_DEX_PC: u32 = 0x00f445;
+const IRIS_SPOTLIGHT_RESET_TABLE_BRANCH_PC: u32 = 0x00f446;
+const IRIS_SPOTLIGHT_RESET_TABLE_INITIAL_X: u16 = 0x3e;
+const IRIS_SPOTLIGHT_RESET_TABLE_STORES_PER_ITERATION: u16 = 7;
 const IRIS_SPOTLIGHT_CIRCLE_VALUE_START_PC: u32 = 0x00f4cc;
 const IRIS_SPOTLIGHT_CIRCLE_VALUE_END_PC: u32 = 0x00f53e;
 pub(crate) const SPOTLIGHT_VAR4_LOW_ADDRESS: usize = 0x067a;
@@ -528,6 +539,9 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     overworld_presence_published: bool,
     overworld_sprite_activation: Option<OverworldSpriteActivationTracker>,
     pending_spotlight_helper_nmi: Option<RawTraceEvent>,
+    /// Index of the `NmiAccepted` receipt published for the pending helper
+    /// NMI in the current host vector; host-local, never checkpointed.
+    pending_spotlight_helper_nmi_acceptance_index: Option<usize>,
     item_receipt_caller: Option<ItemReceiptGraphicsCaller>,
     sprite_main_execution: Option<SpriteMainExecutionTracker>,
     zelda_run_game_loop_call_active: bool,
@@ -1018,7 +1032,13 @@ impl HostFrameWindow {
                 stage,
             ));
         }
-        if entry.main == 9 && entry.sub == 3 && returned.main == 9 && returned.sub == 4 {
+        // Module09_LoadNewMapAndGFX serves both transition lanes: submodule
+        // $03 -> $04 and its mosaic twin $11 -> $12 (route host 197641).
+        if entry.main == 9
+            && returned.main == 9
+            && matches!(entry.sub, 3 | 0x11)
+            && returned.sub == entry.sub + 1
+        {
             receipts.push(OriginalTimingSemanticReceipt::OverworldMapQuadrantsPublished);
         }
         if entry.main == 9 && entry.sub == 0x20 && returned.main == 9 && returned.sub == 0x21 {
@@ -1149,6 +1169,7 @@ impl Snes9xOracleSemanticTrace {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -1250,6 +1271,7 @@ impl Snes9xOracleSemanticTrace {
         self.overworld_presence_published = checkpoint.overworld_presence_published;
         self.overworld_sprite_activation = checkpoint.overworld_sprite_activation;
         self.pending_spotlight_helper_nmi = checkpoint.pending_spotlight_helper_nmi;
+        self.pending_spotlight_helper_nmi_acceptance_index = None;
         self.item_receipt_caller = checkpoint.item_receipt_caller;
         self.sprite_main_execution = checkpoint.sprite_main_execution;
         self.zelda_run_game_loop_call_active = checkpoint.zelda_run_game_loop_call_active;
@@ -1418,8 +1440,10 @@ impl Snes9xOracleSemanticTrace {
         receipts: &mut Vec<OriginalTimingSemanticReceipt>,
     ) -> Result<(), String> {
         let Some(helper_nmi) = self.pending_spotlight_helper_nmi.take() else {
+            self.pending_spotlight_helper_nmi_acceptance_index = None;
             return Ok(());
         };
+        let helper_acceptance_index = self.pending_spotlight_helper_nmi_acceptance_index.take();
         let returned_pc = returned_event
             .pc
             .ok_or("Snes9x helper-interrupted host return omitted PC")?
@@ -1470,7 +1494,40 @@ impl Snes9xOracleSemanticTrace {
             // 179586).
             return Ok(());
         }
+        // The helper NMI's own handler completed inside this host when a
+        // completion follows its acceptance: the interrupted table build
+        // resumed here and the recurring caller returned to the main wait
+        // (route host 182702, the recurring Module10 opening). The checkpoint
+        // then belongs directly after that acceptance, ahead of the handler
+        // completion, exactly as a projection-copy checkpoint accepted at the
+        // same position is published. A host that instead ends inside a later
+        // NMI's handler keeps the established trailing position (route hosts
+        // 37587 and 182709).
+        let resumed_acceptance = helper_acceptance_index.filter(|&index| {
+            receipts[index + 1..].iter().any(|receipt| {
+                matches!(receipt, OriginalTimingSemanticReceipt::NmiHandlerCompleted)
+            })
+        });
         if returned_pc != NMI_HANDLER_ENTRY_PC {
+            if let Some(acceptance) = resumed_acceptance.filter(|_| {
+                helper_nmi.spotlight_var4_low.is_some()
+                    && helper_nmi.spotlight_lower_cursor.is_some()
+            }) {
+                // The event binds its own scratch, so the checkpoint decodes
+                // without the host-return scratch.
+                let progress = spotlight_table_build_progress(&helper_nmi, None, None)?
+                    .ok_or("Snes9x spotlight helper NMI did not decode to table progress")?;
+                receipts.insert(
+                    acceptance + 1,
+                    OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+                        SpotlightTableBuildProgressReceipt {
+                            progress,
+                            boundary: OriginalTimingBoundary::NmiAccepted,
+                        },
+                    ),
+                );
+                return Ok(());
+            }
             // `Dungeon_PrepExitWithSpotlight` increments submodule 0 -> 1
             // only after `IrisSpotlight_close` returns. On recurring calls,
             // ZeldaRunGameLoop clears its NMI latch only after
@@ -2263,6 +2320,11 @@ impl Snes9xOracleSemanticTrace {
                                 .to_string(),
                         );
                     }
+                    self.pending_spotlight_helper_nmi_acceptance_index = receipts
+                        .iter()
+                        .rposition(|receipt| {
+                            matches!(receipt, OriginalTimingSemanticReceipt::NmiAccepted(_))
+                        });
                 } else if let Some(progress) = spotlight_table_build_progress(&event, None, None)? {
                     receipts.push(OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
                         SpotlightTableBuildProgressReceipt {
@@ -2656,12 +2718,17 @@ fn spotlight_table_build_progress(
                         "Snes9x spotlight upper cursor encoded an odd table byte offset {doubled_upper_cursor}",
                     ));
             }
-            let initial_upper_cursor = vertical_center
+            // Both cursors are signed source values: when the iris center
+            // sits in the upper half of the screen the initial r4 is
+            // negative and X carries its two's-complement doubling (route
+            // host 196210, center 84 -> r4 starts at -56).
+            let initial_upper_cursor = (vertical_center as i16)
                 .wrapping_mul(2)
-                .wrapping_sub(initial_lower_cursor);
-            let completed_iterations = (doubled_upper_cursor >> 1)
-                .checked_sub(initial_upper_cursor)
-                .ok_or("Snes9x spotlight upper cursor preceded its source initial value")?;
+                .wrapping_sub(initial_lower_cursor as i16);
+            let completed_iterations = u16::try_from(
+                ((doubled_upper_cursor as i16) >> 1).wrapping_sub(initial_upper_cursor),
+            )
+            .map_err(|_| "Snes9x spotlight upper cursor preceded its source initial value")?;
             let active_iris_iterations =
                 completed_iterations
                     .checked_sub(iterations_before_iris)
@@ -2931,9 +2998,49 @@ fn main_loop_interruption_for_source_state(
     {
         let pass = u8::try_from(x?).ok().filter(|pass| matches!(pass, 0 | 2 | 4))?;
         Some(MainLoopInterruption::LinkPositionAfterSubpixel { pass })
+    } else if matches!((main, sub), (Some(0x0f | 0x10), Some(0 | 1)))
+        && (IRIS_SPOTLIGHT_RESET_TABLE_FIRST_STORE_PC..=IRIS_SPOTLIGHT_RESET_TABLE_BRANCH_PC)
+            .contains(&pc)
+    {
+        let completed_stores = spotlight_reset_table_completed_stores(pc, x?)?;
+        Some(MainLoopInterruption::SpotlightGoalResetTable { completed_stores })
     } else {
         main_loop_interruption_for_pc(pc)
     }
+}
+
+/// Recover how many of `IrisSpotlight_ResetTable`'s 224 source-order stores
+/// completed before an interruption at `pc` with loop register `x`.
+fn spotlight_reset_table_completed_stores(pc: u32, x: u16) -> Option<u8> {
+    // Every store is three bytes long; the seven stores sit at consecutive
+    // three-byte offsets from the first one.
+    let (iteration_x, stores_in_iteration) = if pc < IRIS_SPOTLIGHT_RESET_TABLE_FIRST_DEX_PC {
+        let offset = pc - IRIS_SPOTLIGHT_RESET_TABLE_FIRST_STORE_PC;
+        if offset % 3 != 0 {
+            return None;
+        }
+        (x, offset / 3)
+    } else if pc == IRIS_SPOTLIGHT_RESET_TABLE_FIRST_DEX_PC {
+        (x, u32::from(IRIS_SPOTLIGHT_RESET_TABLE_STORES_PER_ITERATION))
+    } else if pc == IRIS_SPOTLIGHT_RESET_TABLE_SECOND_DEX_PC {
+        (
+            x.wrapping_add(1),
+            u32::from(IRIS_SPOTLIGHT_RESET_TABLE_STORES_PER_ITERATION),
+        )
+    } else {
+        (
+            x.wrapping_add(2),
+            u32::from(IRIS_SPOTLIGHT_RESET_TABLE_STORES_PER_ITERATION),
+        )
+    };
+    if iteration_x > IRIS_SPOTLIGHT_RESET_TABLE_INITIAL_X || iteration_x % 2 != 0 {
+        return None;
+    }
+    let completed_iterations = (IRIS_SPOTLIGHT_RESET_TABLE_INITIAL_X - iteration_x) / 2;
+    let completed = u32::from(completed_iterations)
+        * u32::from(IRIS_SPOTLIGHT_RESET_TABLE_STORES_PER_ITERATION)
+        + stores_in_iteration;
+    u8::try_from(completed).ok()
 }
 
 fn main_loop_interruption_for_event(
@@ -4052,6 +4159,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -4374,6 +4483,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -5150,6 +5261,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -5213,6 +5326,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -5371,6 +5486,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -5599,6 +5716,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -5635,6 +5754,8 @@ mod tests {
                 overworld_presence_published: false,
                 overworld_sprite_activation: None,
                 pending_spotlight_helper_nmi: None,
+                pending_spotlight_helper_nmi_acceptance_index: None,
+                seed_warmup_active: false,
                 item_receipt_caller: None,
                 sprite_main_execution: None,
                 zelda_run_game_loop_call_active: false,
@@ -5675,6 +5796,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -5774,6 +5897,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -5849,6 +5974,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -5920,6 +6047,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6125,6 +6254,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6196,6 +6327,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6267,6 +6400,8 @@ mod tests {
                 event.sub = Some(0);
                 event
             }),
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6378,6 +6513,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6433,6 +6570,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6489,6 +6628,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6533,6 +6674,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6593,6 +6736,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6651,6 +6796,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6748,6 +6895,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6788,6 +6937,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -6957,6 +7108,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7030,6 +7183,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7098,6 +7253,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7145,6 +7302,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7189,6 +7348,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7244,6 +7405,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7370,6 +7533,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7459,6 +7624,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7597,6 +7764,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: true,
@@ -7662,6 +7831,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7752,6 +7923,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7805,6 +7978,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7898,6 +8073,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -7985,6 +8162,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -8035,6 +8214,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -8135,6 +8316,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -8197,6 +8380,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
@@ -8246,6 +8431,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,

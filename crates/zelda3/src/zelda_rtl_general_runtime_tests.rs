@@ -20318,14 +20318,20 @@ fn live_module10_lower_write_receipt_defers_the_goal_transition_to_the_next_host
         table_build,
         phase,
         projection_completed,
-        ..
+        iteration,
     }) = step
     else {
         panic!("unexpected spotlight continuation: {step:?}");
     };
     assert_eq!(phase, OverworldSpotlightBuildPhase::Recurring);
     assert!(!projection_completed);
-    state.complete_overworld_spotlight_build(table_build, phase, projection_completed);
+    assert!(!state.complete_overworld_spotlight_build(
+        table_build,
+        phase,
+        projection_completed,
+        iteration,
+        None,
+    ));
 
     assert_eq!(state.game_state.frame.main_module, 9);
     assert_eq!(state.game_state.display.spotlight_hdma.window_radius(), 126,);

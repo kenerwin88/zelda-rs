@@ -3790,6 +3790,17 @@ impl ZeldaState {
 
     /// Resume the C routine immediately after its table copy.
     pub(super) fn complete_iris_spotlight_configure_table_after_projection(&mut self) -> bool {
+        self.complete_iris_spotlight_configure_table_after_projection_deferring_goal(false)
+    }
+
+    /// Resume the C routine after its table copy. With `defer_goal_transition`
+    /// the radius advances and the goal test runs, but a reached goal leaves
+    /// the transition (table reset or force blank, module writes, music) to
+    /// the caller, which owns an interruption inside it.
+    pub(super) fn complete_iris_spotlight_configure_table_after_projection_deferring_goal(
+        &mut self,
+        defer_goal_transition: bool,
+    ) -> bool {
         let idx = (self.game_state.display.spotlight_hdma.window_state() >> 1) as usize;
         let delta = SPOTLIGHT_DELTA_SIZE[idx] as i16 as u16;
         let next = self
@@ -3801,6 +3812,9 @@ impl ZeldaState {
         self.set_spotlight_window_radius(next);
         if next != SPOTLIGHT_GOAL[idx] {
             return false;
+        }
+        if defer_goal_transition {
+            return true;
         }
         if self.rom_startup_timing()
             && rom_dungeon_landing_goal_transition_waits_for_caller_return(
@@ -3821,6 +3835,11 @@ impl ZeldaState {
         } else {
             self.iris_spotlight_reset_table();
         }
+        self.complete_iris_spotlight_goal_transition_after_reset();
+    }
+
+    /// The goal transition's tail after the force-blank/table-reset branch.
+    pub(super) fn complete_iris_spotlight_goal_transition_after_reset(&mut self) {
         self.set_subsubmodule(0);
         self.set_submodule(0);
         let main_module = self.game_state.frame.main_module;
@@ -3871,7 +3890,29 @@ impl ZeldaState {
     }
 
     pub(super) fn iris_spotlight_reset_table(&mut self) {
-        for i in 0..240 {
+        self.iris_spotlight_reset_table_stores(0, 224);
+        self.complete_iris_spotlight_reset_table_tail();
+    }
+
+    /// The ROM's `IrisSpotlight_ResetTable` ($00:F427) clears the 224-word
+    /// dynamic table as 32 iterations of seven interleaved stores: iteration
+    /// `i` writes word `(31 - i)` of each 32-word stripe `k` (`k` in 0..7).
+    /// Publish stores `start..end` of that source order so an NMI accepted
+    /// mid-loop observes exactly the ROM's partial table.
+    pub(super) fn iris_spotlight_reset_table_stores(&mut self, start: usize, end: usize) {
+        debug_assert!(start <= end && end <= 224);
+        for store in start..end {
+            let iteration = store / 7;
+            let stripe = store % 7;
+            let index = stripe * 32 + (31 - iteration);
+            self.set_spotlight_hdma_table_dynamic_entry(index, 0xff00);
+        }
+    }
+
+    /// The source port also resets the off-screen words 224..240, which the
+    /// ROM loop never reaches; keep the native table's established shape.
+    pub(super) fn complete_iris_spotlight_reset_table_tail(&mut self) {
+        for i in 224..240 {
             self.set_spotlight_hdma_table_dynamic_entry(i, 0xff00);
         }
     }

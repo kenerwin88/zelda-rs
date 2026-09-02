@@ -617,6 +617,15 @@ pub enum MainLoopInterruption {
     LinkPositionAfterSubpixel {
         pass: u8,
     },
+    /// The opening or closing iris reached its goal inside
+    /// `IrisSpotlight_ConfigureTable` and entered `IrisSpotlight_ResetTable`,
+    /// whose 224 table-word stores were interrupted by the accepted NMI (or
+    /// the host boundary) after this many stores in source order. The module/
+    /// submodule transition, ambient/music publication, and caller suffix all
+    /// remain pending (route host 182709, Module10's opening iris).
+    SpotlightGoalResetTable {
+        completed_stores: u8,
+    },
 }
 
 impl MainLoopInterruption {

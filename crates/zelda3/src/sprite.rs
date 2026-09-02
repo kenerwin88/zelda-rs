@@ -2299,22 +2299,10 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn sprite_main(&mut self) {
-        if self.sprite_main_cpu_boundary == Some(SpriteMainCpuBoundary::BeforeFirstSlot) {
-            let boundary = self
-                .sprite_main_cpu_boundary
-                .take()
-                .expect("Sprite_Main boundary was checked above");
-            let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
-            assert_ne!(
-                nmi_slices, 0,
-                "Sprite_Main continuation requires a measured NMI phase",
-            );
-            let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
-            self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
-            return;
-        }
-
+    /// `Sprite_Main`'s work before its descending slot loop: the timing
+    /// workload census, proximity activation, region resets, garnish,
+    /// follower, ancilla, and overlord passes.
+    fn sprite_main_prefix(&mut self) {
         let mut timing_workload = SpriteMainTimingWorkload::default();
         for slot in 0..16 {
             let sprite = self.sprite_slot_view(slot);
@@ -2369,6 +2357,43 @@ impl ZeldaState {
         self.overlord_main();
         self.replay_trace_ram_watch("sprite-after-overlord");
         self.archery_game_mut().clear_out_of_arrows();
+    }
+
+    /// A saved `Sprite_Main` caller whose loop had not started (the
+    /// `BeforeFirstSlot` boundary) resumed in this host and ran its prefix
+    /// plus slots 15 down to `newly_completed_slot` before the wire suspended
+    /// it again (route host 187518). Execute exactly that semantic delta.
+    pub(super) fn advance_sprite_main_before_first_slot_to_after_slot(
+        &mut self,
+        newly_completed_slot: u8,
+    ) {
+        if let Some((main_module, submodule)) = self.pending_module09_frame_advance.take() {
+            // The suspended Module09 handler's deferred advance lands right
+            // before Sprite_Main, as the ROM writes it.
+            self.set_submodule(submodule);
+            self.set_main_module(main_module);
+        }
+        self.sprite_main_prefix();
+        self.advance_sprite_main_after_slot_boundary(16, newly_completed_slot);
+    }
+
+    pub(super) fn sprite_main(&mut self) {
+        if self.sprite_main_cpu_boundary == Some(SpriteMainCpuBoundary::BeforeFirstSlot) {
+            let boundary = self
+                .sprite_main_cpu_boundary
+                .take()
+                .expect("Sprite_Main boundary was checked above");
+            let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+            assert_ne!(
+                nmi_slices, 0,
+                "Sprite_Main continuation requires a measured NMI phase",
+            );
+            let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+            self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+            return;
+        }
+
+        self.sprite_main_prefix();
         let trace_sprite_slots = ZeldaState::parse_trace_env_u32("ZELDA3_REPLAY_RAM_WATCH_FRAME")
             .is_some_and(|frame| self.trace_frame_matches(frame));
 

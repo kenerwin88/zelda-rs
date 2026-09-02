@@ -421,7 +421,9 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishSpotlightIteration { .. }
                 | GameWorkContinuation::FinishOverworldSpotlightBuild { .. }
                 | GameWorkContinuation::FinishOverworldSpotlightLinkOam { .. }
+                | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. }
+                | GameWorkContinuation::FinishWhirlpoolLongStep { .. }
                 | GameWorkContinuation::FinishBigKeyDropGraphics { .. }
         )
     }
@@ -447,6 +449,7 @@ impl ScheduledGameWork {
             }
             | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
+            | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration } => {
                 Some(iteration.in_flight_publication())
             }
@@ -480,6 +483,7 @@ impl ScheduledGameWork {
             }
             | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
+            | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration } => {
                 Some(iteration)
             }
