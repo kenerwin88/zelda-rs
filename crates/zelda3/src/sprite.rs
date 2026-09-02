@@ -8866,10 +8866,13 @@ impl ZeldaState {
         if sign8(y) {
             y = y.wrapping_neg();
         }
+        // Both lookups index the contiguous ROM region: a magnitude past 31
+        // runs off its 8-entry quadrant block into the following bytes, as
+        // the ROM does (route host 1310660 read x-dominant index 39).
         if x >= y {
-            SPRITE_CONVERT_VELOCITY_TO_ANGLE_VELOCITY_TO_ANGLE_X_DOMINANT[((y >> 2) as usize) + s]
+            sprite_convert_velocity_to_angle_rom_byte(((y >> 2) as usize) + s)
         } else {
-            SPRITE_CONVERT_VELOCITY_TO_ANGLE_VELOCITY_TO_ANGLE_Y_DOMINANT[((x >> 2) as usize) + s]
+            sprite_convert_velocity_to_angle_rom_byte(32 + ((x >> 2) as usize) + s)
         }
     }
 

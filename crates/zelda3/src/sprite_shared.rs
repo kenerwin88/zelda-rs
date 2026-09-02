@@ -1057,3 +1057,25 @@ pub(super) const SPRITE_CONVERT_VELOCITY_TO_ANGLE_VELOCITY_TO_ANGLE_Y_DOMINANT: 
     4, 4, 3, 3, 3, 2, 2, 2, 12, 12, 13, 13, 13, 14, 14, 14, 4, 4, 5, 5, 5, 6, 6, 6, 12, 12, 11, 11,
     11, 10, 10, 10,
 ];
+
+/// ROM `$1D:F5D4` lays out the x-dominant table, the y-dominant table, and
+/// the `Sprite_ConvertVelocityToAngle` code contiguously. A velocity whose
+/// magnitude exceeds 31 indexes past its table's 8-entry quadrant block, so
+/// the ROM reads the following bytes: x-dominant index 39 is y-dominant
+/// entry 7, and the y-dominant table runs on into these code bytes (route
+/// host 1310660). Keep the same bytes so the read stays in-bounds and exact.
+pub(super) const SPRITE_CONVERT_VELOCITY_TO_ANGLE_BYTES_AFTER_TABLES: [u8; 64] = [
+    0x8b, 0x4b, 0xab, 0xa5, 0x00, 0x0a, 0x2a, 0x85, 0x08, 0xa5, 0x01, 0x0a, 0x2a, 0x0a, 0x05, 0x08,
+    0x29, 0x03, 0x0a, 0x0a, 0x0a, 0x85, 0x0a, 0xa5, 0x01, 0x10, 0x03, 0x49, 0xff, 0x1a, 0x85, 0x08,
+    0xa5, 0x00, 0x10, 0x03, 0x49, 0xff, 0x1a, 0x85, 0x09, 0xa5, 0x08, 0xc5, 0x09, 0x90, 0x0d, 0xa5,
+    0x09, 0x4a, 0x4a, 0x18, 0x65, 0x0a, 0xa8, 0xb9, 0xd4, 0xf5, 0x80, 0x0b, 0xa5, 0x08, 0x4a, 0x4a,
+];
+
+/// One byte of the contiguous ROM region starting at the x-dominant table.
+pub(super) fn sprite_convert_velocity_to_angle_rom_byte(index: usize) -> u8 {
+    match index {
+        0..=31 => SPRITE_CONVERT_VELOCITY_TO_ANGLE_VELOCITY_TO_ANGLE_X_DOMINANT[index],
+        32..=63 => SPRITE_CONVERT_VELOCITY_TO_ANGLE_VELOCITY_TO_ANGLE_Y_DOMINANT[index - 32],
+        _ => SPRITE_CONVERT_VELOCITY_TO_ANGLE_BYTES_AFTER_TABLES[index - 64],
+    }
+}
