@@ -1050,7 +1050,6 @@ fn hud_runtime_state_loads_from_and_projects_to_ram() {
     assert_eq!(runtime.heart_refill_countdown(), 6);
     assert_eq!(runtime.heart_refill_anim_subpos(), 0x80);
     assert_eq!(runtime.flashing_circle_timer(), 0x10);
-    assert_eq!(runtime.prev_joypad_h(), 0x40);
     assert_eq!(runtime.equipment_menu_exit_state(), 3);
     assert_eq!(runtime.bottle_menu_row(), 9);
     assert_eq!(runtime.tick_counter(), 0x33);
@@ -1064,7 +1063,8 @@ fn hud_runtime_state_loads_from_and_projects_to_ram() {
     assert_eq!(projected[HEART_REFILL_COUNTDOWN], 6);
     assert_eq!(projected[HEART_REFILL_ANIM_SUBPOS], 0x80);
     assert_eq!(projected[FLASHING_CIRCLE_TIMER], 0x10);
-    assert_eq!(projected[MENU_PREV_JOYPAD_H], 0x40);
+    // $BD is ROM scratch shared with tile detection: never projected.
+    assert_eq!(projected[MENU_PREV_JOYPAD_H], 0);
     assert_eq!(projected[EQUIPMENT_MENU_EXIT_STATE], 3);
     assert_eq!(projected[BOTTLE_MENU_ROW], 9);
     assert_eq!(projected[HUD_MODULE_TICK_COUNTER], 0x33);
@@ -1081,13 +1081,11 @@ fn hud_runtime_state_owns_runtime_counter_behavior() {
     runtime.set_heart_refill_countdown(7);
     runtime.set_heart_refill_animation_subpixel(0x20);
     runtime.set_flashing_circle_timer(0x10);
-    runtime.set_previous_menu_joypad_h(0x80);
     runtime.set_equipment_menu_exit_state(2);
     runtime.set_bottle_menu_row(5);
     assert_eq!(runtime.decrement_bottle_menu_row(), 4);
     runtime.set_tick_counter(0x44);
     runtime.clear_heart_animation_active();
-    runtime.clear_previous_menu_joypad_h();
 
     assert_eq!(runtime.super_bomb_indicator_timer(), 8);
     assert_eq!(runtime.super_bomb_indicator_counter(), 3);
@@ -1096,7 +1094,6 @@ fn hud_runtime_state_owns_runtime_counter_behavior() {
     assert_eq!(runtime.heart_refill_countdown(), 7);
     assert_eq!(runtime.heart_refill_anim_subpos(), 0x20);
     assert_eq!(runtime.flashing_circle_timer(), 0x10);
-    assert_eq!(runtime.prev_joypad_h(), 0);
     assert_eq!(runtime.equipment_menu_exit_state(), 2);
     assert_eq!(runtime.bottle_menu_row(), 4);
     assert_eq!(runtime.tick_counter(), 0x44);
@@ -1161,7 +1158,6 @@ fn native_hud_state_bridge_syncs_seeded_ram_and_dual_writes_changes() {
     assert_eq!(display.hud_runtime.heart_refill_countdown(), 7);
     assert_eq!(display.hud_runtime.heart_refill_anim_subpos(), 0x20);
     assert_eq!(display.hud_runtime.flashing_circle_timer(), 0x10);
-    assert_eq!(display.hud_runtime.prev_joypad_h(), 0);
     assert_eq!(display.hud_runtime.equipment_menu_exit_state(), 2);
     assert_eq!(display.hud_runtime.bottle_menu_row(), 4);
     assert_eq!(display.hud_runtime.tick_counter(), 0x44);

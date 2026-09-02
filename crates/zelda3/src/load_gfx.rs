@@ -1,6 +1,7 @@
 // Methods ported from zelda3/src/load_gfx.c and included inside ZeldaState.
 
 use super::*;
+use crate::game_state::constants::MENU_PREV_JOYPAD_H;
 
 use crate::chr_source;
 use crate::game_state::{PaletteSliceSource, PaletteTransform};
@@ -1375,6 +1376,10 @@ impl ZeldaState {
                 let lo = data.get(src + i * 2).copied().unwrap_or(0);
                 let hi = data.get(src + i * 2 + 1).copied().unwrap_or(0);
                 let u = data.get(src2 + i).copied().unwrap_or(0);
+                // Expand3To4High parks `(t | t >> 8) & 0xff` in the $BD
+                // scratch word ($00:D640) before merging the third plane.
+                self.ram[MENU_PREV_JOYPAD_H] = lo | hi;
+                self.ram[MENU_PREV_JOYPAD_H + 1] = 0;
                 self.write_expanded_graphics_tile_row(dst, lo, hi, u, lo | hi | u);
                 dst += 2;
             }
@@ -1452,6 +1457,13 @@ impl ZeldaState {
                 let hi = data.get(src + 1).copied().unwrap_or(0);
                 self.ppu.vram[dst] = lo as u16 | ((hi as u16) << 8);
                 tmp[i] = lo | hi;
+                // The ROM keeps this word's combined plane byte in the $BD
+                // scratch word (`AND #$00FF : STA $BD`, $00:E5E0) before
+                // copying it into the line-pointer table; the menu's
+                // first-frame d-pad gate later reads whatever the last
+                // conversion left there (route host 1042435).
+                self.ram[MENU_PREV_JOYPAD_H] = tmp[i];
+                self.ram[MENU_PREV_JOYPAD_H + 1] = 0;
                 self.set_dungeon_line_pointer_row0(i, tmp[i] as u16);
                 dst += 1;
                 src += 2;

@@ -3,6 +3,7 @@
 // Methods ported from zelda3/src/hud.c and included inside ZeldaState.
 
 use super::*;
+use crate::game_state::constants::MENU_PREV_JOYPAD_H;
 
 mod hud_shared;
 use hud_shared::*;
@@ -805,7 +806,7 @@ impl ZeldaState {
             {
                 self.hud_reorder_item(1);
             }
-        } else if self.hud_state().prev_joypad_h() == 0 {
+        } else if self.ram[MENU_PREV_JOYPAD_H] == 0 {
             let btn_index = self.get_current_item_button_index();
             let mut item = self
                 .game_state

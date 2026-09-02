@@ -1,6 +1,7 @@
 // Methods ported from zelda3/src/tile_detect.c and included inside ZeldaState.
 
 use super::*;
+use crate::game_state::constants::MENU_PREV_JOYPAD_H;
 
 const TILE_DETECT_CARDINAL_AXIS_OFFSETS: [u8; 4] = [8, 24, 0, 15];
 const TILE_DETECT_CARDINAL_LOW_SIDE_OFFSETS: [u8; 4] = [0, 0, 8, 8];
@@ -355,6 +356,11 @@ impl ZeldaState {
                 } else {
                     0
                 };
+            // TileDetection_Execute keeps the attribute offset in the $BD
+            // scratch word (`STX $BD`, $07:DA23); the item menu's first-frame
+            // d-pad gate reads that scratch byte (route host 1042435).
+            self.ram[MENU_PREV_JOYPAD_H] = offset as u8;
+            self.ram[MENU_PREV_JOYPAD_H + 1] = (offset >> 8) as u8;
             let mut tile = self.game_state.dungeon.bg2_attributes.bg2_attr(offset);
             if self
                 .game_state

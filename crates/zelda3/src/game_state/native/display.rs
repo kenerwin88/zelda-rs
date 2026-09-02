@@ -412,7 +412,6 @@ pub(crate) struct HudRuntimeState {
     heart_refill_countdown: u8,
     heart_refill_animation_subpixel: u8,
     flashing_circle_timer: u8,
-    previous_menu_joypad_h: u8,
     equipment_menu_exit_state: u8,
     bottle_menu_row: u8,
     module_tick_counter: u8,
@@ -428,7 +427,6 @@ impl HudRuntimeState {
             heart_refill_countdown: ram_byte(ram, HEART_REFILL_COUNTDOWN),
             heart_refill_animation_subpixel: ram_byte(ram, HEART_REFILL_ANIM_SUBPOS),
             flashing_circle_timer: ram_byte(ram, FLASHING_CIRCLE_TIMER),
-            previous_menu_joypad_h: ram_byte(ram, MENU_PREV_JOYPAD_H),
             equipment_menu_exit_state: ram_byte(ram, EQUIPMENT_MENU_EXIT_STATE),
             bottle_menu_row: ram_byte(ram, BOTTLE_MENU_ROW),
             module_tick_counter: ram_byte(ram, HUD_MODULE_TICK_COUNTER),
@@ -443,7 +441,9 @@ impl HudRuntimeState {
         ram[HEART_REFILL_COUNTDOWN] = self.heart_refill_countdown;
         ram[HEART_REFILL_ANIM_SUBPOS] = self.heart_refill_animation_subpixel;
         ram[FLASHING_CIRCLE_TIMER] = self.flashing_circle_timer;
-        ram[MENU_PREV_JOYPAD_H] = self.previous_menu_joypad_h;
+        // MENU_PREV_JOYPAD_H ($BD) is a ROM scratch word shared with
+        // TileDetection_Execute and the 3bpp->4bpp converters; the menu reads
+        // and writes it through RAM (see `ZeldaState::hud_normal_menu`).
         ram[EQUIPMENT_MENU_EXIT_STATE] = self.equipment_menu_exit_state;
         ram[BOTTLE_MENU_ROW] = self.bottle_menu_row;
         ram[HUD_MODULE_TICK_COUNTER] = self.module_tick_counter;
@@ -479,10 +479,6 @@ impl HudRuntimeState {
 
     pub(crate) fn flashing_circle_timer(&self) -> u8 {
         self.flashing_circle_timer
-    }
-
-    pub(crate) fn prev_joypad_h(&self) -> u8 {
-        self.previous_menu_joypad_h
     }
 
     pub(crate) fn equipment_menu_exit_state(&self) -> u8 {
@@ -527,14 +523,6 @@ impl HudRuntimeState {
 
     pub(crate) fn set_flashing_circle_timer(&mut self, value: u8) {
         self.flashing_circle_timer = value;
-    }
-
-    pub(crate) fn set_previous_menu_joypad_h(&mut self, value: u8) {
-        self.previous_menu_joypad_h = value;
-    }
-
-    pub(crate) fn clear_previous_menu_joypad_h(&mut self) {
-        self.set_previous_menu_joypad_h(0);
     }
 
     pub(crate) fn set_equipment_menu_exit_state(&mut self, value: u8) {
@@ -664,10 +652,6 @@ impl<'a> HudStateRead<'a> {
 
     pub(crate) fn flashing_circle_timer(&self) -> u8 {
         self.runtime.flashing_circle_timer()
-    }
-
-    pub(crate) fn prev_joypad_h(&self) -> u8 {
-        self.runtime.prev_joypad_h()
     }
 
     pub(crate) fn equipment_menu_exit_state(&self) -> u8 {
@@ -4381,14 +4365,16 @@ impl<'a> NativeHudStateBridgeMut<'a> {
         self.sync_runtime();
     }
 
+    /// `hud_tmp1` ($BD) is a ROM scratch byte that TileDetection_Execute and
+    /// the 3bpp->4bpp converters overwrite between menu sessions; it lives in
+    /// RAM only (route host 1042435: the ROM's menu accepted a first-frame
+    /// d-pad press because the overworld load had left $BD zero).
     pub(crate) fn set_prev_joypad_h(&mut self, value: u8) {
-        self.display.hud_runtime.set_previous_menu_joypad_h(value);
-        self.sync_runtime();
+        self.ram[MENU_PREV_JOYPAD_H] = value;
     }
 
     pub(crate) fn clear_prev_joypad_h(&mut self) {
-        self.display.hud_runtime.clear_previous_menu_joypad_h();
-        self.sync_runtime();
+        self.ram[MENU_PREV_JOYPAD_H] = 0;
     }
 
     pub(crate) fn set_equipment_menu_exit_state(&mut self, value: u8) {
