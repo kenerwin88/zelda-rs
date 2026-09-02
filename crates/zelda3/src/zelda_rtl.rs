@@ -20783,13 +20783,14 @@ impl ZeldaState {
                 "terminal selected-game load must first complete its carried source NMI: {timeline:?}",
             );
             if destination == SelectedGameLoadDestination::Message {
-                // Module05's Message tail returns to the main wait and the
-                // following Open NMI is accepted before the host ends
-                // (route host 160303).
-                assert_eq!(
-                    timeline.nmi_phases_after_return,
-                    [OriginalTimingNmiPhase::Accepted(NmiUpdateGate::Open)],
-                    "terminal Message selected-game load carries exactly the following Open acceptance: {timeline:?}",
+                // Module05's Message tail returns to the main wait; whether
+                // the following Open NMI is accepted before the host ends is
+                // a wire fact (route host 160303 carries it, 750107 does not).
+                assert!(
+                    timeline.nmi_phases_after_return.is_empty()
+                        || timeline.nmi_phases_after_return
+                            == [OriginalTimingNmiPhase::Accepted(NmiUpdateGate::Open)],
+                    "terminal Message selected-game load carries at most the following Open acceptance: {timeline:?}",
                 );
             } else if destination == SelectedGameLoadDestination::DarkWorldOverworld {
                 // The dark-world overworld reload's Module05 tail returns to
@@ -20857,13 +20858,20 @@ impl ZeldaState {
                 OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
             ]);
             if destination == SelectedGameLoadDestination::Message {
-                assert_eq!(
-                    self.original_timing_expected_nmi_update_gates.as_slice(),
-                    [NmiUpdateGate::LatchHeld, NmiUpdateGate::Open],
-                );
                 // Main_ShowTextMessage clears the messaging module inside the
                 // Module05 tail; the decoder publishes that as DialogueClosed.
-                expected.push(OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open));
+                if trailing_open_acceptance {
+                    assert_eq!(
+                        self.original_timing_expected_nmi_update_gates.as_slice(),
+                        [NmiUpdateGate::LatchHeld, NmiUpdateGate::Open],
+                    );
+                    expected.push(OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open));
+                } else {
+                    assert_eq!(
+                        self.original_timing_expected_nmi_update_gates.as_slice(),
+                        [NmiUpdateGate::LatchHeld],
+                    );
+                }
                 expected.push(OriginalTimingSemanticReceipt::DialogueClosed);
             } else if destination == SelectedGameLoadDestination::DarkWorldOverworld
                 && timeline.nmi_phases_after_return
@@ -21286,9 +21294,13 @@ impl ZeldaState {
                 "a suspended fresh iteration without a carried publication must accept and complete its Open NMI in-host before the main-loop prefix",
             );
         }
-        assert_eq!(
-            timeline.nmi_phases_after_progress,
-            [OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld)],
+        // The suspended iteration usually ends at its trailing held
+        // acceptance; the intro module's long triforce-thread initializer can
+        // also run the host out with no NMI at all (route host 965252).
+        let trailing_held = timeline.nmi_phases_after_progress
+            == [OriginalTimingNmiPhase::Accepted(NmiUpdateGate::LatchHeld)];
+        assert!(
+            trailing_held || timeline.nmi_phases_after_progress.is_empty(),
             "a suspended fresh iteration may only carry its trailing Held acceptance",
         );
         assert!(
@@ -21329,11 +21341,19 @@ impl ZeldaState {
             !self.game_state.display.nmi_update_is_latched(),
             "a fresh suspended iteration's Open handler disagrees with the native NMI latch",
         );
-        assert_eq!(
-            self.original_timing_expected_nmi_update_gates.as_slice(),
-            [NmiUpdateGate::Open, NmiUpdateGate::LatchHeld],
-            "a fresh suspended iteration lost its exact Open-then-Held gate authority",
-        );
+        if trailing_held {
+            assert_eq!(
+                self.original_timing_expected_nmi_update_gates.as_slice(),
+                [NmiUpdateGate::Open, NmiUpdateGate::LatchHeld],
+                "a fresh suspended iteration lost its exact Open-then-Held gate authority",
+            );
+        } else {
+            assert_eq!(
+                self.original_timing_expected_nmi_update_gates.as_slice(),
+                [NmiUpdateGate::Open],
+                "an open-ended fresh suspended iteration lost its exact Open gate authority",
+            );
+        }
 
         let before_progress = classify_original_timing_nmi_phases_with_ownership(
             carried_open,
@@ -21358,7 +21378,7 @@ impl ZeldaState {
             after_progress,
             OriginalTimingNmiPhaseClassification {
                 handler_completion: OriginalTimingNmiHandlerCompletionOwner::None,
-                publication_pending_at_exit: true,
+                publication_pending_at_exit: trailing_held,
             },
         );
 
@@ -21391,7 +21411,17 @@ impl ZeldaState {
                     ),
                     OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
                 ]
-            ),
+            ) || (!trailing_held
+                && matches!(
+                    body,
+                    [
+                        OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                        OriginalTimingSemanticReceipt::JoypadPublication(_),
+                        OriginalTimingSemanticReceipt::MainLoopProgress(
+                            crate::MainLoopProgress::IterationStarted
+                        ),
+                    ]
+                )),
             "a fresh suspended iteration published an unsupported or reordered semantic vector: {semantic:?}",
         );
 
@@ -21433,8 +21463,9 @@ impl ZeldaState {
         )
         .assert_no_unclaimed_dialogue_text_dma();
         complete_cpu_slice(self);
-        assert!(plan.after_progress.publication_pending_at_exit);
-        self.capture_and_carry_original_timing_nmi_publication_at_host_return();
+        if plan.after_progress.publication_pending_at_exit {
+            self.capture_and_carry_original_timing_nmi_publication_at_host_return();
+        }
         assert!(
             self.original_timing_semantic_receipts
                 .as_ref()
@@ -23257,6 +23288,14 @@ impl ZeldaState {
                     | OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait
                     | OriginalTimingSemanticReceipt::DialogueClosed
             ) {
+                expected_semantic.insert(index.min(expected_semantic.len()), *receipt);
+            }
+            // The intro module's long triforce-thread initializer returns
+            // through a Sprite_Main-shaped receipt without a native Sprite_Main
+            // body (route hosts 749955, 965252); the return executor drains it.
+            if *receipt == OriginalTimingSemanticReceipt::SpriteMainReturned
+                && self.game_state.frame.main_module == 0
+            {
                 expected_semantic.insert(index.min(expected_semantic.len()), *receipt);
             }
         }
@@ -37335,7 +37374,13 @@ impl ZeldaState {
                 input,
                 oam_dma_source.as_deref(),
                 |state| match cpu_action {
-                    OriginalTimingIdleContinuedReturnCpuAction::None => {}
+                    OriginalTimingIdleContinuedReturnCpuAction::None => {
+                        if state.game_state.frame.main_module == 0 {
+                            // Intro-module return-shaped Sprite_Main receipt
+                            // (see the idle terminal plan).
+                            let _ = state.take_original_timing_sprite_main_returned();
+                        }
+                    }
                     OriginalTimingIdleContinuedReturnCpuAction::DialogueEndpoint {
                         message_read_position,
                         transition,
@@ -38378,6 +38423,19 @@ impl ZeldaState {
             } else if let Some(completed) = authoritative_pre_overworld_completion {
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(completed)
+            } else if self.game_execution_scheduler.current_work()
+                == Some(GameWorkContinuation::FinishWorldMapExitTilesets)
+                && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && authoritative_scheduled_caller_nmi_timeline.is_some_and(|timeline| {
+                    timeline.progress == crate::MainLoopProgress::CallStackContinued
+                        && timeline.interruption == crate::MainLoopInterruption::SpritePreparation
+                })
+            {
+                // The wire interrupted NMI_PrepareSprites after WorldMap_ExitMap
+                // returned: the tileset load is complete regardless of the
+                // slice estimate (route host 1230513).
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(true)
             } else if matches!(
                 self.game_execution_scheduler.current_work(),
                 Some(GameWorkContinuation::FinishDungeonSupertileTransition {
@@ -40508,13 +40566,34 @@ impl ZeldaState {
                             .as_ref()
                             .map(|(_, _, claims)| *claims)
                             .filter(|claims| *claims > 0);
+                    // A scheduled dungeon Sprite_Main whose host is neither
+                    // terminal nor bare: the wire publishes the return inside
+                    // this host and then interrupts the module tail or holds
+                    // (route host 1206045: [LatchHeld, Completed,
+                    // SpriteMainReturned, LatchHeld,
+                    // MainLoopInterrupted(SpritePreparation), Continued]).
+                    let live_nonterminal_dungeon = matches!(
+                        caller,
+                        SpriteMainCpuCaller::DungeonModule07
+                            | SpriteMainCpuCaller::DungeonModule07Live { .. }
+                    ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                        && self.original_timing_semantic_receipts.is_some()
+                        && authoritative_scheduled_caller_return_timeline.is_none();
+                    let nonterminal_dungeon_sprite_main_claim = live_nonterminal_dungeon
+                        && scheduled_return_sprite_main_claims.is_none()
+                        && self.original_timing_owes_sprite_main_return();
                     if let Some(claims) = scheduled_return_sprite_main_claims {
                         self.begin_original_timing_sprite_main_return_claim_scope(claims);
+                    } else if nonterminal_dungeon_sprite_main_claim {
+                        self.begin_original_timing_sprite_main_return_claim_scope(1);
                     }
                     if matches!(caller, SpriteMainCpuCaller::BossVictory { .. }) {
                         self.complete_victory_module_dialogue_scroll_before_sprite_main();
                     }
                     self.complete_sprite_main_after_cpu_boundary(boundary);
+                    if nonterminal_dungeon_sprite_main_claim {
+                        self.finish_original_timing_sprite_main_return_claim_scope();
+                    }
                     if !self
                         .game_execution_scheduler
                         .work_suspends_translated_call_stack()
@@ -40533,6 +40612,13 @@ impl ZeldaState {
                                     "Sprite_Main continuation must retain Module 7 return state",
                                 );
                                 self.complete_module07_after_sprite_main(sprite_return);
+                                if live_nonterminal_dungeon {
+                                    self.complete_parked_dungeon_sprite_main_suffix_by_wire(true);
+                                    self.game_execution_scheduler
+                                        .finish_call_stack_at_main_wait_before_nmi();
+                                    self.stage_resumed_sprite_main_return_obj_scanout();
+                                    return;
+                                }
                             }
                             SpriteMainCpuCaller::DungeonModule07Live { .. } => {
                                 let sprite_return = self
@@ -40542,6 +40628,13 @@ impl ZeldaState {
                                         "live Sprite_Main continuation must retain Module 7 return state",
                                     );
                                 self.complete_module07_after_sprite_main(sprite_return);
+                                if live_nonterminal_dungeon {
+                                    self.complete_parked_dungeon_sprite_main_suffix_by_wire(true);
+                                    self.game_execution_scheduler
+                                        .finish_call_stack_at_main_wait_before_nmi();
+                                    self.stage_resumed_sprite_main_return_obj_scanout();
+                                    return;
+                                }
                             }
                             SpriteMainCpuCaller::Module09 { .. } => {
                                 let module09 = self
@@ -41102,7 +41195,23 @@ impl ZeldaState {
                     // that an uninterrupted game-loop iteration would reach.
                     self.complete_world_map_exit_after_tileset_load();
                     self.complete_module0e_interface_after_run();
-                    if self.pending_main_loop_common_suffix.is_some() {
+                    let wire_interrupts_sprite_preparation =
+                        matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                            && authoritative_scheduled_caller_return_timeline.is_none()
+                            && authoritative_scheduled_caller_nmi_timeline.is_some_and(|timeline| {
+                                timeline.progress == crate::MainLoopProgress::CallStackContinued
+                                    && timeline.interruption
+                                        == crate::MainLoopInterruption::SpritePreparation
+                            });
+                    if wire_interrupts_sprite_preparation {
+                        // The C translation above performed the dialogue close
+                        // the wire corroborates; the shared suffix (whose
+                        // NMI_PrepareSprites the wire interrupted) completes on
+                        // the next host (route host 1230513).
+                        let _ = self.take_original_timing_dialogue_closed();
+                        let _ = self.take_original_timing_main_loop_interruption_any();
+                        self.retire_or_defer_main_loop_common_suffix_by_wire();
+                    } else if self.pending_main_loop_common_suffix.is_some() {
                         // The source-proven caller return already carries the
                         // shared ZeldaRunGameLoop suffix; retire its one owner.
                         self.complete_pending_main_loop_common_suffix_after_module_return();
@@ -45743,6 +45852,18 @@ impl ZeldaState {
             self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
                 NmiPrepareSpritesCpuCaller::DungeonModule07,
             );
+            return;
+        }
+        if live_nonterminal
+            && self.original_timing_main_loop_interruption()
+                == Some(crate::MainLoopInterruption::LinkOam)
+        {
+            // The Module 7 tail's LinkOam_Main was interrupted at the host
+            // boundary (route host 413554). The native tail has already run
+            // it; the OAM image it authored is only visible after the next
+            // NMI, and the shared suffix stays with the wire.
+            let _ = self.take_original_timing_main_loop_interruption_any();
+            self.retire_or_defer_main_loop_common_suffix_by_wire();
             return;
         }
         if live_nonterminal {
