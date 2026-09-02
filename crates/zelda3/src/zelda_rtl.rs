@@ -36741,6 +36741,17 @@ impl ZeldaState {
                         "an item-receipt claim disagrees with its restated Sprite_Main checkpoint: slot={slot} restated={restated_slot_boundary:?}",
                     );
                 }
+            } else if let ItemReceiptGraphicsCaller::SpriteMainAncilla { .. } = expected_caller {
+                // The prefix's ancilla receipt restates the loop-entry
+                // checkpoint on every suspended host (route hosts 1142851,
+                // 514801).
+                if let Some(restated) = self.take_original_timing_sprite_main_progress() {
+                    assert_eq!(
+                        restated,
+                        SpriteMainCpuBoundary::BeforeFirstSlot,
+                        "an ancilla item-receipt claim disagrees with its restated Sprite_Main checkpoint: {restated:?}",
+                    );
+                }
             }
             progress.progress == SourceCallProgress::Returned
         } else {
