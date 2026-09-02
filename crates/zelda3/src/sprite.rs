@@ -2687,7 +2687,16 @@ impl ZeldaState {
         boundary: SpriteMainCpuBoundary,
     ) {
         match boundary {
-            SpriteMainCpuBoundary::BeforeFirstSlot => self.sprite_main(),
+            SpriteMainCpuBoundary::BeforeFirstSlot => {
+                if let Some((main_module, submodule)) = self.pending_module09_frame_advance.take()
+                {
+                    // The suspended Module09 handler's deferred advance lands
+                    // right before Sprite_Main, as the ROM writes it.
+                    self.set_submodule(submodule);
+                    self.set_main_module(main_module);
+                }
+                self.sprite_main()
+            }
             SpriteMainCpuBoundary::AfterSlot(interrupted_slot) => {
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot as usize)
             }

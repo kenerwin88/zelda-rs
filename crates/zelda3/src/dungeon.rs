@@ -13334,27 +13334,18 @@ impl ZeldaState {
                     boundary: OriginalTimingBoundary::HostReturn,
                 },
             );
-        } else if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-            && self.original_timing_semantic_receipts.is_some()
-            && self.sprite_main_cpu_boundary.is_none()
-            && self.original_timing_sprite_main_return_claims_remaining == Some(0)
-            && !self.original_timing_owes_sprite_main_return()
-            && self.original_timing_main_loop_return_timeline().is_none()
-            && self
-                .original_timing_expected_nmi_update_gates
-                .contains(&NmiUpdateGate::LatchHeld)
+        } else if let Some(boundary) =
+            self.original_timing_fresh_iteration_interrupted_before_sprite_main()
         {
-            // The wire holds a trailing mid-module Held acceptance with no
-            // Sprite_Main return or checkpoint for this host: the ROM's
-            // iteration was interrupted inside Sprite_Main's shared prefix
-            // before any slot returned (route host 91639, the falling
-            // transition's un-named boundary). Suspend at the loop entry and
-            // resume across the accepted NMI.
+            // The wire holds no Sprite_Main return or checkpoint for this
+            // fresh iteration: the ROM's iteration was interrupted inside
+            // Sprite_Main's shared prefix before any slot returned (route host
+            // 91639 with a trailing Held acceptance; route host 1409333's
+            // Module07/$16 host simply ends mid-iteration). Suspend at the loop
+            // entry and resume at that boundary.
             self.arm_authoritative_sprite_main_cpu_continuation(
                 crate::zelda_rtl::SpriteMainCpuBoundary::BeforeFirstSlot,
-                SpriteMainCpuCaller::DungeonModule07Live {
-                    boundary: OriginalTimingBoundary::NmiAccepted,
-                },
+                SpriteMainCpuCaller::DungeonModule07Live { boundary },
             );
         }
         self.sprite_main();

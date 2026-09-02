@@ -10413,6 +10413,13 @@ pub struct ZeldaState {
     intro_memory_darken_frame_delay: u8,
     save_quit_reset_hold: bool,
     save_quit_reset_writes_applied: bool,
+    /// A Module09/0B submodule handler's trailing module/submodule advance,
+    /// deferred while its fresh iteration is suspended before Sprite_Main's
+    /// first slot: the ROM writes the advance at the end of the long submodule
+    /// work, in the host where Sprite_Main then runs (Overworld_Func18/19 span
+    /// route hosts 165774-165777 and 165778-165793).
+    #[serde(skip)]
+    pending_module09_frame_advance: Option<(u8, u8)>,
     #[serde(skip)]
     intro_poly_thread_initialization_phase: u8,
     #[serde(skip)]
@@ -16957,6 +16964,7 @@ impl ZeldaState {
             intro_memory_darken_frame_delay: 0,
             save_quit_reset_hold: false,
             save_quit_reset_writes_applied: false,
+            pending_module09_frame_advance: None,
             intro_poly_thread_initialization_phase: 0,
             attract_init_graphics_phase: 0,
             attract_first_story_render_delay: 0,
@@ -17253,6 +17261,7 @@ impl ZeldaState {
             self.save_quit_reset_hold = false;
             self.save_quit_reset_writes_applied = false;
             self.dialogue_vwf_handler_completed_at_endpoint = false;
+            self.pending_module09_frame_advance = None;
             self.intro_poly_thread_initialization_phase = 0;
             self.attract_init_graphics_phase = 0;
             self.attract_first_story_render_delay = 0;
@@ -18723,6 +18732,40 @@ impl ZeldaState {
 
     /// Whether the live wire still owes this host an unconsumed
     /// `SpriteMainReturned` claim — proof the shared `Sprite_Main` body
+    /// The live wire began a fresh main-loop iteration in this host but owes
+    /// no Sprite_Main return, no Sprite_Main checkpoint and no main-loop
+    /// return: the ROM's iteration was interrupted inside Sprite_Main's shared
+    /// prefix before any slot returned (route host 91639 with a trailing Held
+    /// acceptance; route hosts 165775/186360 in Module0B and 508544/811514 in
+    /// Module09 with the host simply ending mid-iteration). Returns the
+    /// boundary the caller must suspend at: `NmiAccepted` when the host carries
+    /// a trailing Held acceptance, `HostReturn` otherwise.
+    pub(super) fn original_timing_fresh_iteration_interrupted_before_sprite_main(
+        &self,
+    ) -> Option<OriginalTimingBoundary> {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            || self.original_timing_semantic_receipts.is_none()
+            || self.sprite_main_cpu_boundary.is_some()
+            || self.original_timing_sprite_main_return_claims_remaining != Some(0)
+            || self.original_timing_owes_sprite_main_return()
+            || self.original_timing_owes_sprite_main_progress()
+            || self.original_timing_main_loop_return_timeline().is_some()
+            || self.original_timing_main_loop_iteration_returned_to_wait()
+        {
+            return None;
+        }
+        Some(
+            if self
+                .original_timing_expected_nmi_update_gates
+                .contains(&NmiUpdateGate::LatchHeld)
+            {
+                OriginalTimingBoundary::NmiAccepted
+            } else {
+                OriginalTimingBoundary::HostReturn
+            },
+        )
+    }
+
     /// returns later in this same host, so no native estimate may suspend
     /// the caller before that body runs.
     pub(super) fn original_timing_owes_sprite_main_return(&self) -> bool {
@@ -33515,6 +33558,103 @@ impl ZeldaState {
             self.assert_native_world_location_state_matches_ram();
             self.assert_native_display_state_matches_ram();
             return;
+        }
+        if let Some(GameWorkContinuation::FinishSpriteMain {
+            boundary: scheduled_sprite_main_boundary,
+            ..
+        }) = self.game_execution_scheduler.current_work()
+        {
+            // A host-return-scheduled Sprite_Main suspension (the caller was
+            // interrupted before its first slot, or a typed host-boundary
+            // checkpoint) whose next host carries no Sprite_Main return,
+            // progress or return timeline: the ROM's caller is still inside
+            // the long module work preceding Sprite_Main (Module0B/$18
+            // Overworld_Func18 spans route hosts 165774-165776; Sprite_Main
+            // returns at 165777). Complete the carried handler and stay held
+            // without advancing the scheduled slice.
+            if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.original_timing_semantic_receipts.is_some()
+                && match self.original_timing_main_loop_interruption() {
+                    None => true,
+                    Some(interruption) => {
+                        sprite_main_cpu_boundary_from_interruption(interruption)
+                            == Some(scheduled_sprite_main_boundary)
+                    }
+                }
+                && !self.original_timing_owes_sprite_main_return()
+                && (!self.original_timing_owes_sprite_main_progress()
+                    || self.original_timing_restates_sprite_main_checkpoint(
+                        scheduled_sprite_main_boundary,
+                    ))
+                && self.original_timing_main_loop_return_timeline().is_none()
+                && self.original_timing_main_loop_progress()
+                    == Some(crate::MainLoopProgress::CallStackContinued)
+                && self
+                    .original_timing_semantic_receipts
+                    .as_ref()
+                    .is_some_and(|receipts| {
+                        !receipts.semantic().iter().any(|receipt| {
+                            matches!(
+                                receipt,
+                                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted
+                                    | OriginalTimingSemanticReceipt::NmiAccepted(
+                                        NmiUpdateGate::Open
+                                    )
+                                    | OriginalTimingSemanticReceipt::JoypadPublication(_)
+                                    | OriginalTimingSemanticReceipt::MainLoopProgress(
+                                        crate::MainLoopProgress::IterationStarted
+                                    )
+                            )
+                        })
+                    })
+            {
+                let phases = self.take_original_timing_nmi_phases();
+                let before = classify_original_timing_nmi_phases_with_ownership(
+                    self.original_timing_nmi_publication_pending,
+                    &phases,
+                );
+                self.complete_original_timing_nmi_handler_for_active_scanout(
+                    before.handler_completion,
+                    input,
+                    oam_dma_source.as_deref(),
+                )
+                .assert_no_unclaimed_dialogue_text_dma();
+                assert_eq!(
+                    self.take_original_timing_main_loop_progress(),
+                    Some(crate::MainLoopProgress::CallStackContinued),
+                    "a held scheduled Sprite_Main host must continue its suspended stack",
+                );
+                if self.original_timing_owes_sprite_main_progress() {
+                    let restated = self
+                        .take_original_timing_sprite_main_progress()
+                        .expect("restated Sprite_Main checkpoint disappeared");
+                    assert_eq!(
+                        restated, scheduled_sprite_main_boundary,
+                        "a held scheduled Sprite_Main host restated a different checkpoint than its suspension",
+                    );
+                }
+                if let Some(reinterrupted) = self.take_original_timing_main_loop_interruption_any()
+                {
+                    assert_eq!(
+                        sprite_main_cpu_boundary_from_interruption(reinterrupted),
+                        Some(scheduled_sprite_main_boundary),
+                        "a held scheduled Sprite_Main host was re-interrupted at a different checkpoint",
+                    );
+                }
+                assert!(
+                    self.original_timing_semantic_receipts
+                        .as_ref()
+                        .is_none_or(|receipts| receipts.semantic().is_empty()),
+                    "a held scheduled Sprite_Main host left unconsumed semantic authority",
+                );
+                if before.publication_pending_at_exit {
+                    self.capture_and_carry_original_timing_nmi_publication_at_host_return();
+                }
+                self.assert_native_frame_state_matches_ram();
+                self.assert_native_world_location_state_matches_ram();
+                self.assert_native_display_state_matches_ram();
+                return;
+            }
         }
         if let Some(continuation) = self
             .game_execution_scheduler

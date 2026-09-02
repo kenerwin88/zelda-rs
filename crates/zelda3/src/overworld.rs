@@ -850,6 +850,10 @@ impl ZeldaState {
 
     pub(super) fn Module09_Overworld(&mut self) {
         self.replay_trace_submodule("module09-entry");
+        let entry_frame = (
+            self.game_state.frame.main_module,
+            self.game_state.frame.submodule,
+        );
         match self.game_state.frame.submodule {
             0 => self.Module09_00_PlayerControl(),
             1 | 15 | 26 | 38 => self.Module09_LoadAuxGFX(),
@@ -891,6 +895,26 @@ impl ZeldaState {
             return;
         }
         self.complete_module09_overworld_after_submodule();
+        if matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishSpriteMain {
+                boundary: crate::zelda_rtl::SpriteMainCpuBoundary::BeforeFirstSlot,
+                caller: SpriteMainCpuCaller::Module09 { .. },
+            })
+        ) {
+            let advanced = (
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            );
+            if advanced != entry_frame {
+                // The handler's trailing module/submodule advance belongs to
+                // the host where the ROM finishes its long work and enters
+                // Sprite_Main; keep the entry bytes until that resume.
+                self.set_submodule(entry_frame.1);
+                self.set_main_module(entry_frame.0);
+                self.pending_module09_frame_advance = Some(advanced);
+            }
+        }
     }
 
     pub(super) fn complete_module09_overworld_after_submodule(&mut self) {
@@ -947,6 +971,29 @@ impl ZeldaState {
                 SpriteMainCpuCaller::Module09 {
                     boundary: resume_boundary,
                 },
+            );
+        } else if let Some(boundary) = self.take_original_timing_sprite_main_progress() {
+            // The host returned while the source remained inside Sprite_Main
+            // without accepting an NMI (the Module07 lane's typed host-boundary
+            // checkpoint, here for the overworld caller).
+            self.arm_sprite_main_cpu_continuation(
+                boundary,
+                1,
+                SpriteMainCpuCaller::Module09 {
+                    boundary: OriginalTimingBoundary::HostReturn,
+                },
+            );
+        } else if let Some(boundary) =
+            self.original_timing_fresh_iteration_interrupted_before_sprite_main()
+        {
+            // The fresh Module09/Module0B iteration was interrupted inside
+            // Sprite_Main's shared prefix before any slot returned (route
+            // hosts 165775 and 186360 in Module0B/$18, 508544 and 811514 in
+            // Module09/$23). Suspend at the loop entry.
+            self.arm_sprite_main_cpu_continuation(
+                crate::zelda_rtl::SpriteMainCpuBoundary::BeforeFirstSlot,
+                1,
+                SpriteMainCpuCaller::Module09 { boundary },
             );
         }
         self.sprite_main();
