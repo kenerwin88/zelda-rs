@@ -18120,7 +18120,20 @@ impl ZeldaState {
                     self.pending_main_loop_common_suffix
                         == Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch)
                 }
-                _ => self.pending_main_loop_common_suffix.is_some(),
+                _ => {
+                    self.pending_main_loop_common_suffix.is_some()
+                        // A suspended dungeon quadrant-upload caller resumed
+                        // by the leading NMI owns its own suffix completion
+                        // (route host 925559: [Held, Handler, Continued,
+                        // SuffixCompleted, Open]).
+                        || matches!(
+                            self.game_execution_scheduler.pre_main_nmi_resume(),
+                            Some(
+                                PreMainNmiResume::DungeonSupertileQuadrantUploads
+                                    | PreMainNmiResume::DungeonSupertileQuadrantUploadsAfterHeldNmi
+                            )
+                        )
+                }
             };
             let valid_owner = match progress.as_slice() {
                 [(progress_index, crate::MainLoopProgress::CallStackContinued)] => {
@@ -32527,7 +32540,24 @@ impl ZeldaState {
                     ));
                     return true;
                 }
-                if resumed_phase == ModuleCpuPhase::InterruptedInNmiPrepareSprites {
+                // The estimate may place the interruption inside
+                // NMI_PrepareSprites while the wire returns Sprite_Main in the
+                // resumed host itself (route host 1129679: the fresh iteration
+                // was held before Sprite_Main, then [Handler, SpriteMainReturned,
+                // Continued, SuffixCompleted]); that host is a terminal return
+                // of the whole resumed module tail.
+                let live_terminal_with_sprite_main =
+                    matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                        && self.original_timing_semantic_receipts.as_ref().is_some_and(|receipts| {
+                            receipts
+                                .semantic()
+                                .contains(&OriginalTimingSemanticReceipt::SpriteMainReturned)
+                        })
+                        && self.original_timing_main_loop_interruption().is_none()
+                        && self.original_timing_main_loop_return_timeline().is_some();
+                if resumed_phase == ModuleCpuPhase::InterruptedInNmiPrepareSprites
+                    && !live_terminal_with_sprite_main
+                {
                     let live_held_timeline =
                         (matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                             && self.original_timing_semantic_receipts.is_some())
@@ -32610,9 +32640,10 @@ impl ZeldaState {
                     );
                     return true;
                 }
-                assert_eq!(
-                    resumed_phase,
-                    ModuleCpuPhase::CompleteBeforeNmi,
+                assert!(
+                    resumed_phase == ModuleCpuPhase::CompleteBeforeNmi
+                        || (resumed_phase == ModuleCpuPhase::InterruptedInNmiPrepareSprites
+                            && live_terminal_with_sprite_main),
                     "resumed faded-filter caller phase is not implemented: host={} module={:02x}/{:02x}/{:02x} room={:04x} countdown={}",
                     self.frame_ctr_dbg,
                     self.game_state.frame.main_module,
@@ -40358,7 +40389,16 @@ impl ZeldaState {
                                     .work_suspends_translated_call_stack());
                             } else if caller_suffix_nmis == 0 {
                                 self.complete_module07_dungeon_after_submodule();
-                                if self.pending_main_loop_common_suffix.is_some() {
+                                if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                                    && self.original_timing_semantic_receipts.is_some()
+                                {
+                                    // The wire may hold the shared suffix past
+                                    // this host ([Handler, SpriteMainReturned,
+                                    // Continued] at route host 925558; the
+                                    // quadrant-upload resume then completes it
+                                    // behind the next held acceptance).
+                                    self.retire_or_defer_main_loop_common_suffix_by_wire();
+                                } else if self.pending_main_loop_common_suffix.is_some() {
                                     self.complete_pending_main_loop_common_suffix_after_module_return();
                                 } else {
                                     self.nmi_prepare_sprites();
