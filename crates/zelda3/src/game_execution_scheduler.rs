@@ -1166,6 +1166,12 @@ impl GameExecutionScheduler {
 
     /// Remaining NMI slices of the currently scheduled work, if any. Lets
     /// measured mid-window side effects fire at their exact held boundary.
+    /// Whether the host began inside a source-owned call stack suspended by
+    /// vblank (scheduled work that models an interrupted long C call).
+    pub(super) fn call_stack_is_suspended(&self) -> bool {
+        self.cpu_host_phase == CpuHostPhase::SuspendedCallStack
+    }
+
     pub(super) fn scheduled_work_slices_remaining(&self) -> Option<u8> {
         self.scheduled_work().map(|work| work.nmi_slices_remaining)
     }

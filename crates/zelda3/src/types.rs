@@ -86,6 +86,16 @@ pub struct MemBlk<'a> {
     pub ptr: &'a [u8],
 }
 
+/// 65816 16-bit `SBC` with an explicit incoming carry: returns the result and
+/// the outgoing carry (set when no borrow occurred). ROM routines that omit
+/// `SEC` inherit whatever carry the previous compare left behind; port those
+/// sites through this helper instead of a plain subtraction.
+pub fn sbc_u16(a: u16, b: u16, carry_in: bool) -> (u16, bool) {
+    let subtrahend = u32::from(b) + u32::from(!carry_in);
+    let result = u32::from(a).wrapping_sub(subtrahend);
+    ((result & 0xffff) as u16, u32::from(a) >= subtrahend)
+}
+
 pub fn sign8(x: u8) -> bool {
     x & 0x80 != 0
 }
@@ -258,4 +268,29 @@ pub fn write_le_u16(bytes: &mut [u8], offset: usize, value: u16) {
 
 pub fn xy(x: usize, y: usize) -> usize {
     y * 64 + x
+}
+
+#[cfg(test)]
+mod sbc_tests {
+    use super::sbc_u16;
+
+    #[test]
+    fn sbc_u16_borrows_one_extra_when_carry_is_clear() {
+        // Sprite_Absorbable_Main splash offset (route host 450016): centered
+        // pan leaves the carry clear, so x loses 5; the x borrow-free result
+        // sets the carry so y loses exactly 4.
+        let (x, carry) = sbc_u16(0x1099, 4, false);
+        assert_eq!(x, 0x1094);
+        assert!(carry);
+        let (y, carry) = sbc_u16(0x04cb, 4, carry);
+        assert_eq!(y, 0x04c7);
+        assert!(carry);
+    }
+
+    #[test]
+    fn sbc_u16_reports_borrow_and_wraps() {
+        assert_eq!(sbc_u16(4, 4, true), (0, true));
+        assert_eq!(sbc_u16(4, 4, false), (0xffff, false));
+        assert_eq!(sbc_u16(0, 1, true), (0xffff, false));
+    }
 }

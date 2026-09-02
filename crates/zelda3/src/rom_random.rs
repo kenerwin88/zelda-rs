@@ -203,6 +203,18 @@ impl RomRandomReplay {
         self.enabled.then_some(self.samples.len())
     }
 
+    /// Whether the recorded ROM still has an unconsumed GetRandomNumber sample
+    /// for the current host frame (`None` while replay is disabled). A host
+    /// without samples proves the ROM ran no RNG consumer (sprite prep, drop
+    /// selection) inside it.
+    pub(crate) fn has_sample_for_current_frame(&self) -> Option<bool> {
+        self.enabled.then(|| {
+            self.samples
+                .front()
+                .is_some_and(|sample| Some(sample.execution_frame) == self.current_execution_frame)
+        })
+    }
+
     pub(crate) fn finish(&self) -> Result<(), String> {
         match self.remaining() {
             None | Some(0) => Ok(()),

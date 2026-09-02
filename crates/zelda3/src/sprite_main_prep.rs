@@ -3068,7 +3068,10 @@ impl ZeldaState {
         if self.game_state.dungeon.room_tracking.room_index2() == 206 {
             self.sprite_slot_view_mut(k).decrement_c();
         }
-        let delay_aux1 = (self.get_random_number() & 63).wrapping_add(128);
+        // ROM $86:8B1C: JSL GetRandomNumber / AND #$3F / ADC #$80 keeps the
+        // carry GetRandomNumber leaves set (route hosts 357284 and 583864:
+        // Blue/Red Bari aux1 0x90 vs a carry-dropped 0x8f).
+        let delay_aux1 = self.get_random_number_with_carry().masked_adc(63, 128);
         self.sprite_slot_view_mut(k).set_delay_aux1(delay_aux1);
     }
 

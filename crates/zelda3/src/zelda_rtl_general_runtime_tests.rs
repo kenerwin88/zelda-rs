@@ -22618,11 +22618,13 @@ fn pre_dungeon_audio_boundary_rejects_malformed_nmi_order_before_mutation() {
 }
 
 #[test]
-fn live_pre_dungeon_audio_rejects_an_unproven_nondungeon_destination_before_mutation() {
+fn live_pre_dungeon_audio_accepts_the_dark_world_overworld_destination_without_audio() {
     let mut state = live_selected_game_load_state_before_pre_dungeon_audio();
     state.game_execution_scheduler.reset();
     // The Message destination is source-proven (route hosts 160282-160303);
-    // the dark-world overworld destination remains unproven.
+    // the dark-world overworld reload after a dark-world death (route host
+    // 422632) shares its shape: Module05 has no pre-dungeon audio and crosses
+    // the scheduler's pre-audio phase with no nested Sprite_ResetAll owner.
     state
         .game_execution_scheduler
         .schedule_selected_game_load(SelectedGameLoadDestination::DarkWorldOverworld);
@@ -22649,31 +22651,15 @@ fn live_pre_dungeon_audio_rejects_an_unproven_nondungeon_destination_before_muta
         ))
         .unwrap();
 
-    let scheduler_before = state.game_execution_scheduler;
-    let receipts_before = state.original_timing_semantic_receipts.clone();
-    let gates_before = state.original_timing_expected_nmi_update_gates.clone();
-    let frame_before = state.game_state.frame;
+    state.run_frame_internal(0, crate::RUN_MAIN);
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        state.run_frame_internal(0, crate::RUN_MAIN);
-    }));
-
-    assert!(result.is_err());
-    assert_eq!(state.game_execution_scheduler, scheduler_before);
-    assert_eq!(state.original_timing_semantic_receipts, receipts_before);
     assert_eq!(
-        state.original_timing_expected_nmi_update_gates,
-        gates_before
+        state
+            .game_execution_scheduler
+            .selected_game_load_after_pre_dungeon_audio_sprite_reset(),
+        Some(PreDungeonSpriteResetContinuation::NotApplicable),
     );
-    assert_eq!(state.game_state.frame, frame_before);
-    assert_eq!(state.game_state.display.vertical_irq_trigger, 0x7b);
-    assert_eq!(state.game_state.system_signals.ambient_sound_effect(), 3);
-    assert_eq!(
-        state.game_state.system_signals.last_ambient_sound_effect(),
-        0
-    );
-    assert!(state.display_snapshot.is_none());
-    assert!(!state.original_timing_nmi_publication_pending);
+    assert_eq!(state.game_state.frame.main_module, 5);
 }
 
 #[test]

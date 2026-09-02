@@ -11328,6 +11328,14 @@ pub(super) const FORTUNE_TELLER_PERFORM_PSEUDO_SCIENCE_READINGS: [u8; 16] = [
 ];
 
 pub(super) const TALKING_TREE_MOUTH_SECONDARY_GRAPHICS: [u8; 4] = [0, 2, 3, 1];
+/// ROM $9D:F9B0: `kTalkingTree_Gfx2` followed by the state-2 code bytes. The
+/// ROM computes Y = delay>>1 but then loads the table with X, the sprite
+/// slot (`LDA $F9B0,X`), so slots 4..15 read the instruction stream that
+/// follows the four-entry table (route host 440910: slot 12 reads $9D).
+pub(super) const TALKING_TREE_MOUTH_SECONDARY_GRAPHICS_BY_SLOT: [u8; 16] = [
+    0x00, 0x02, 0x03, 0x01, 0xbd, 0xf0, 0x0d, 0x4a, 0xa8, 0xbd, 0xb0, 0xf9, 0x9d, 0xc0, 0x0d,
+    0xbd,
+];
 
 pub(super) const TALKING_TREE_MOUTH_MSGS_2: [u16; 2] = [0x0082, 0x007d];
 

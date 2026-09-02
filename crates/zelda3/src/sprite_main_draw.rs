@@ -7405,8 +7405,18 @@ impl ZeldaState {
                     let j = self.sprite_spawn_small_splash(k);
                     if j >= 0 && (self.sprite_slot_view(k).flags3() & 0x20) != 0 {
                         let j = j as usize;
-                        self.sprite_set_x(j, self.sprite_get_x(j).wrapping_sub(4));
-                        self.sprite_set_y(j, self.sprite_get_y(j).wrapping_sub(4));
+                        // The ROM subtracts with SBC and no SEC (the C port's
+                        // "wtf carry propagation"): the carry is whatever
+                        // Sprite_CalculateSfxPan's final compare left inside
+                        // SpriteSfx_QueueSfx2WithPan — clear for a centered
+                        // pan, set otherwise — and the y subtraction chains
+                        // from the x borrow (route host 450016: the splash
+                        // lands at x-5/y-4 where the C port placed x-4/y-4).
+                        let carry_in = self.sprite_calculate_sfx_pan(k) != 0;
+                        let (x, carry) = crate::types::sbc_u16(self.sprite_get_x(j), 4, carry_in);
+                        self.sprite_set_x(j, x);
+                        let (y, _) = crate::types::sbc_u16(self.sprite_get_y(j), 4, carry);
+                        self.sprite_set_y(j, y);
                     }
                 } else if self.sprite_slot_view(k).sprite_type() >= 0xe4
                     && self.game_state.world.location.is_indoors()
@@ -9405,8 +9415,11 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_graphics(value);
             }
             2 => {
-                let value = TALKING_TREE_MOUTH_SECONDARY_GRAPHICS
-                    [usize::from(self.sprite_slot_view(k).delay_main() >> 1)];
+                // The ROM indexes kTalkingTree_Gfx2 with the sprite slot, not
+                // the shifted delay it just computed (see
+                // TALKING_TREE_MOUTH_SECONDARY_GRAPHICS_BY_SLOT).
+                let _ = TALKING_TREE_MOUTH_SECONDARY_GRAPHICS;
+                let value = TALKING_TREE_MOUTH_SECONDARY_GRAPHICS_BY_SLOT[k];
                 self.sprite_slot_view_mut(k).set_graphics(value);
                 if self.sprite_slot_view(k).delay_main() == 7 {
                     self.talking_tree_spawn_bomb(k);
@@ -9463,6 +9476,14 @@ impl ZeldaState {
             return;
         }
         let base = usize::from(g) * 4;
+        if base + 4 > TALKING_TREE_DRAW_FRAMES.len() {
+            // Slots 6, 7, and 14 receive instruction bytes from the ROM's
+            // slot-indexed kTalkingTree_Gfx2 read
+            // (TALKING_TREE_MOUTH_SECONDARY_GRAPHICS_BY_SLOT); the ROM then
+            // draws from past the end of kTalkingTree_Dmd. That garbage is
+            // not modeled yet; skip the draw instead of indexing out of range.
+            return;
+        }
         self.sprite_draw_multiple_player_deferred(
             k,
             &TALKING_TREE_DRAW_FRAMES[base..base + 4],
