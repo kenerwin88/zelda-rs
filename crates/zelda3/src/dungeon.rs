@@ -10337,10 +10337,25 @@ impl ZeldaState {
                             false
                         }
                         Some(
+                            ModuleCpuPhase::InterruptedBeforeSpriteMain
+                            | ModuleCpuPhase::InterruptedInSpriteMain,
+                        ) => {
+                            // As in state 13 (route host 408408: the host ends
+                            // inside Sprite_Main after slot 1 with no NMI).
+                            if self.original_timing_owes_sprite_main_return() {
+                                self.dungeon_post_sprite_main_return_pending = true;
+                            } else {
+                                let armed = self.arm_dungeon_sprite_main_cpu_continuation(
+                                    state_12_cpu_advance
+                                        .expect("state-12 Sprite_Main phase requires its advance"),
+                                );
+                                debug_assert!(armed);
+                            }
+                            false
+                        }
+                        Some(
                             phase @ (ModuleCpuPhase::InterruptedBeforeSubmodule
                             | ModuleCpuPhase::InterruptedInSubmodule
-                            | ModuleCpuPhase::InterruptedBeforeSpriteMain
-                            | ModuleCpuPhase::InterruptedInSpriteMain
                             | ModuleCpuPhase::InterruptedAfterModule),
                         ) => panic!(
                             "state-12 vblank reached {phase:?}; a semantic continuation is required (host={} room={:04x})",
