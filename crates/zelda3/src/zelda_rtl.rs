@@ -3210,6 +3210,10 @@ impl DialogueInitializationCpuPlan {
     }
 }
 
+/// `Interrupt_NMI` programs the poly thread's V-IRQ at this scanline while
+/// the thread flag is set (`$00:820A`: `LDA #$80 : STA $4209`).
+const POLY_THREAD_V_IRQ_SCANLINE: u16 = 128;
+
 pub(super) fn dialogue_initialization_cpu_plan(
     state: &ZeldaState,
     entry: (u16, u16),
@@ -3237,6 +3241,17 @@ pub(super) fn dialogue_initialization_cpu_plan(
         CpuBusWorkload::with_dynamic_hdma(),
         CpuFieldTiming::non_interlace(state.frame_ctr_dbg & 1 == 0),
     );
+    if state.game_state.display.nmi_thread_active {
+        // The crystal maiden's dialogue opens while her poly thread runs
+        // (route hosts 414025, 793479); the Module0E frame's Sprite_Main
+        // keeps re-arming the thread flag inside the shadow. The shadow's
+        // NMI must not switch onto the poly stack (its contents are not
+        // modeled); the budget instead hands scanlines 128..225 of every
+        // field to the poly thread.
+        run.disable_nmi_thread_switch()
+            .expect("dialogue CPU timing requires the ROM's NMI thread switch");
+        budget = budget.with_poly_thread_irq(POLY_THREAD_V_IRQ_SCANLINE);
+    }
     let mut nmi_crossings = 0u8;
     let mut final_interrupted_pc = 0;
     let mut entered_text_initialize = false;
@@ -3474,9 +3489,17 @@ fn advance_rom_cpu_through_nmi(run: &mut RomCpuTimingRun, budget: &mut CpuCycleB
     budget.begin_nmi_handler();
     run.request_nmi();
 
-    for _ in 0..100_000 {
+    let trace = std::env::var_os("ZELDA3_DEBUG_ROM_CPU_NMI_TRACE").is_some();
+    for step in 0..100_000 {
         let (scanline, master_cycle) = budget.raster_position().coordinates();
         run.set_raster_position(scanline, master_cycle);
+        if trace {
+            eprintln!(
+                "[ROMCPU-NMI] step={step} pc={:06x} sp={:04x} v={scanline} h={master_cycle}",
+                run.pc(),
+                run.stack_pointer(),
+            );
+        }
         assert_eq!(
             advance_rom_cpu_step(run, budget),
             CpuWorkAdvance::Complete,

@@ -126,6 +126,27 @@ impl RomCpuTimingRun {
         })
     }
 
+    /// Keep the shadow's `Interrupt_NMI` on the main thread while the ROM's
+    /// poly thread is active. The handler's thread exit (`$00:82C7`: `REP #$30
+    /// : TSC : TAX : LDA $1F0A : TCS : STX $1F0A : PLB ...`) swaps stacks with
+    /// the poly thread, whose stack contents the shadow does not model; the
+    /// caller's cycle budget hands the thread its IRQ-to-NMI slice instead.
+    pub(crate) fn disable_nmi_thread_switch(&mut self) -> Result<(), String> {
+        const SWAP_OFFSET: usize = 0x02ce; // $00:82CE in LoROM bank 0
+        let rom = &mut self.shadow.cart.rom;
+        let swap = rom
+            .get(SWAP_OFFSET..SWAP_OFFSET + 4)
+            .ok_or_else(|| "ROM too short for the NMI thread switch".to_string())?;
+        if swap != [0x1b, 0x8e, 0x0a, 0x1f] {
+            return Err(format!(
+                "unexpected NMI thread-switch bytes at $00:82CE: {swap:02x?}"
+            ));
+        }
+        // TCS → NOP, STX $1F0A → NOP NOP NOP.
+        rom[SWAP_OFFSET..SWAP_OFFSET + 4].copy_from_slice(&[0xea, 0xea, 0xea, 0xea]);
+        Ok(())
+    }
+
     pub(crate) fn is_complete(&self) -> bool {
         self.pc() == self.stop_pc
     }

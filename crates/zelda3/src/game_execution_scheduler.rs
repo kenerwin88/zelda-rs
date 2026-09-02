@@ -97,6 +97,10 @@ impl CpuBoundaryDeadline {
 pub(super) struct CpuCycleBudget {
     timeline: CpuMasterTimeline,
     deadline: CpuBoundaryDeadline,
+    /// While the ROM's poly thread is active, its V-IRQ (scanline, absolute
+    /// master cycle of the next firing) hands the rest of every field to the
+    /// poly thread; the simulated main thread resumes at the NMI acceptance.
+    poly_thread_irq: Option<(u16, u64)>,
 }
 
 impl CpuCycleBudget {
@@ -135,7 +139,11 @@ impl CpuCycleBudget {
         let timeline = CpuMasterTimeline::at_raster(0, entry, bus, field_timing);
         let deadline = CpuBoundaryDeadline::next_after(entry, boundary, field_timing);
         debug_assert!(timeline.clock_master_cycles() < deadline.master_cycles);
-        Self { timeline, deadline }
+        Self {
+            timeline,
+            deadline,
+            poly_thread_irq: None,
+        }
     }
 
     /// Start at the pinned Snes9x core's earliest CPU NMI acceptance boundary
@@ -158,6 +166,39 @@ impl CpuCycleBudget {
                 field_timing,
             ),
             deadline,
+            poly_thread_irq: None,
+        }
+    }
+
+    /// Model the ROM's active poly thread: `Interrupt_NMI` programs a V-IRQ at
+    /// `scanline` (`$00:820A`, `LDA #$80 : STA $4209` → 128) and the IRQ
+    /// switches to the poly thread until the next NMI returns to the main
+    /// thread, so the simulated main thread gets no cycles between the IRQ
+    /// and the NMI acceptance of each field.
+    pub(super) fn with_poly_thread_irq(mut self, scanline: u16) -> Self {
+        let clock = self.timeline.clock_master_cycles();
+        let field = self.timeline.field_index();
+        let mut irq = self
+            .timeline
+            .master_cycles_at_raster(field, CpuRasterPosition::new(scanline, 0));
+        if irq <= clock {
+            irq = self
+                .timeline
+                .master_cycles_at_raster(field + 1, CpuRasterPosition::new(scanline, 0));
+        }
+        self.poly_thread_irq = Some((scanline, irq));
+        self
+    }
+
+    fn steal_poly_thread_slice(&mut self) {
+        let Some((_, irq)) = self.poly_thread_irq else {
+            return;
+        };
+        let clock = self.timeline.clock_master_cycles();
+        if clock >= irq && clock < self.deadline.master_cycles {
+            let stolen = self.deadline.master_cycles - clock;
+            self.timeline
+                .advance_work_unbounded(u32::try_from(stolen).expect("poly IRQ slice overflowed"));
         }
     }
 
@@ -217,6 +258,7 @@ impl CpuCycleBudget {
                     CpuTimelineEvent::ShortScanline => 0,
                 },
             );
+        self.steal_poly_thread_slice();
         if self.timeline.clock_master_cycles() >= self.deadline.master_cycles {
             CpuWorkAdvance::ReachedBoundary {
                 boundary: self.deadline.boundary,
@@ -248,6 +290,7 @@ impl CpuCycleBudget {
             "general-DMA NMI deferral requires a CPU acceptance deadline",
         );
         self.timeline.advance_work_unbounded(dma_master_cycles);
+        self.steal_poly_thread_slice();
         if self.timeline.clock_master_cycles() >= self.deadline.master_cycles {
             self.deadline.master_cycles = self
                 .timeline
@@ -295,6 +338,13 @@ impl CpuCycleBudget {
             next_field,
             CpuRasterBoundary::CpuNmiAcceptance.raster_position(),
         );
+        if let Some((scanline, _)) = self.poly_thread_irq {
+            self.poly_thread_irq = Some((
+                scanline,
+                self.timeline
+                    .master_cycles_at_raster(next_field, CpuRasterPosition::new(scanline, 0)),
+            ));
+        }
         debug_assert!(self.timeline.clock_master_cycles() < self.deadline.master_cycles);
     }
 
@@ -1537,6 +1587,7 @@ mod cpu_timing_tests {
                     CpuRasterBoundary::VblankPublication.raster_position(),
                 ),
             },
+            poly_thread_irq: None,
         }
     }
 
