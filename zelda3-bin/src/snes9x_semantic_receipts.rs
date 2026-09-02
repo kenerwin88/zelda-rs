@@ -1760,6 +1760,13 @@ impl Snes9xOracleSemanticTrace {
                             receipts.push(OriginalTimingSemanticReceipt::SpriteMainReturned);
                         }
                     }
+                    ACTIVE_CUCCO_MOVEMENT_CALL_PC | CUCCO_FLEE_SUBTYPE_HELPER_CALL_PC
+                        if self.sprite_main_execution.is_none() && event.main == Some(0x1a) =>
+                    {
+                        // Module1A credits scenes call `SpriteActive_Main`
+                        // directly (route host 1573154); those Cucco helpers
+                        // publish no Sprite_Main receipts.
+                    }
                     ACTIVE_CUCCO_MOVEMENT_CALL_PC => {
                         let execution = self
                             .sprite_main_execution
@@ -2031,9 +2038,12 @@ impl Snes9xOracleSemanticTrace {
                         }
                     }
                 }
+                let credits_direct_sprite_call =
+                    self.sprite_main_execution.is_none() && event.main == Some(0x1a);
                 if let Some(increment_index) = CUCCO_SUBTYPE_INCREMENT_PUBLICATION_PCS
                     .iter()
                     .position(|&increment_pc| pc == increment_pc)
+                    .filter(|_| !credits_direct_sprite_call)
                 {
                     let execution = self
                         .sprite_main_execution
@@ -2073,7 +2083,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.cucco_subtype_increments =
                         Some((slot, execution.cucco_helper_ordinal, completed));
                 }
-                if pc == CUCCO_ANIMATION_PUBLICATION_PC {
+                if pc == CUCCO_ANIMATION_PUBLICATION_PC && !credits_direct_sprite_call {
                     let execution = self
                         .sprite_main_execution
                         .as_mut()
