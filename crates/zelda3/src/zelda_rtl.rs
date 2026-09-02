@@ -40675,11 +40675,15 @@ impl ZeldaState {
                             // interruption to the Sprite_Main caller so the loop
                             // parks there and the next host's return owns the
                             // remainder and the shared suffix.
-                            if schedule.caller_sprite_main_nmis == 0 {
-                                if let Some(interruption) = authoritative_scheduled_caller_nmi_timeline
-                                    .map(|timeline| timeline.interruption)
-                                    .filter(|interruption| interruption.is_sprite_main())
-                                {
+                            let mut schedule = schedule;
+                            if let Some(interruption) = authoritative_scheduled_caller_nmi_timeline
+                                .map(|timeline| timeline.interruption)
+                                .filter(|interruption| interruption.is_sprite_main())
+                            {
+                                if schedule.caller_sprite_main_nmis == 0 {
+                                    // The estimate saw no Sprite_Main crossing:
+                                    // hand the wire's slot boundary to the fresh
+                                    // Sprite_Main caller.
                                     if self.original_timing_main_loop_interruption() == Some(interruption) {
                                         let _ = self.take_original_timing_main_loop_interruption_any();
                                     }
@@ -40687,8 +40691,17 @@ impl ZeldaState {
                                         interruption,
                                         OriginalTimingBoundary::NmiAccepted,
                                     );
-                                    caller_suffix_nmis = 0;
+                                } else if let Some(boundary) =
+                                    sprite_main_cpu_boundary_from_interruption(interruption)
+                                {
+                                    // The estimate predicted a crossing at a
+                                    // different slot; the wire's slot is the
+                                    // one the ROM suspended on (route host
+                                    // 1490403: AfterSlot(4) against an estimate
+                                    // that let a lower Bari slot prep its RNG).
+                                    schedule.sprite_main_boundary = Some(boundary);
                                 }
+                                caller_suffix_nmis = 0;
                             }
                             self.dungeon_room_load_module_suffix_nmi_slices = caller_suffix_nmis;
                             if schedule.caller_sprite_main_nmis != 0 {
