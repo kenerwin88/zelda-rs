@@ -44902,9 +44902,10 @@ impl ZeldaState {
     }
 
     fn zelda_run_poly_loop(&mut self) {
-        /// Estimated 65816 cycles the crystal maiden's poly thread renders per
-        /// poly host between two NMI thread switches (route hosts 413554-413670).
-        const DUNGEON_POLY_THREAD_SLICE_CYCLES: u32 = 9_700;
+        /// Crystal scanlines the maiden's IRQ poly thread rasterizes per host.
+        const DUNGEON_POLY_THREAD_SCANLINES_PER_HOST: u32 = 32;
+        /// Per-frame setup of the crystal thread, in scanline equivalents.
+        const DUNGEON_POLY_THREAD_SETUP_SCANLINES: u32 = 67;
         let can_run_poly = self.game_state.ending.attract_scene.intro_did_run_step() != 0
             && !self.game_state.display.has_pending_polyhedral_update();
         if self.game_state.frame.main_module == 7
@@ -44966,28 +44967,33 @@ impl ZeldaState {
                 if !self.poly_job_in_flight {
                     self.poly_run_frame();
                     self.poly_job_hold_frames = if dungeon_poly_thread {
-                        // The IRQ slice renders about 9.7k 65816 cycles per
-                        // host: crystal frames up to ~38k cycles span four
-                        // hosts (413554-413557, the maiden steps at 413557,
-                        // then 413561, 413565 … 413669) and the ~39.4k-cycle
-                        // frame five (413670-413674).
+                        // The IRQ slice rasterizes 32 crystal scanlines per
+                        // host after a fixed setup worth 67 scanlines: every
+                        // one of the 86 oracle-measured frames of the first
+                        // crystal (route hosts 413554-414023; 4 hosts at 38-60
+                        // scanlines, 5 at 64-92, 6 at 94-106, 7 at 130-138)
+                        // completes on host `ceil((scanlines + 67) / 32)`.
                         self.poly_dungeon_frames_rendered =
                             self.poly_dungeon_frames_rendered.saturating_add(1);
-                        let cycles = self.last_poly_work.estimated_65816_cycles();
-                        (cycles.div_ceil(DUNGEON_POLY_THREAD_SLICE_CYCLES).clamp(1, 8) - 1) as u8
+                        let scanlines = self.last_poly_work.scanlines;
+                        ((scanlines + DUNGEON_POLY_THREAD_SETUP_SCANLINES)
+                            .div_ceil(DUNGEON_POLY_THREAD_SCANLINES_PER_HOST)
+                            .clamp(1, 16)
+                            - 1) as u8
                     } else {
                         self.last_poly_work.worker_frames() - 1
                     };
                     self.poly_job_in_flight = true;
                     if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
                         eprintln!(
-                            "[POLY] host={} module={:02x}/{:02x} cycles={} worker_frames={} config1={:#x}",
+                            "[POLY] host={} module={:02x}/{:02x} cycles={} worker_frames={} config1={:#x} metrics={:?}",
                             self.frame_ctr_dbg,
                             frame.main_module,
                             frame.submodule,
                             self.last_poly_work.estimated_65816_cycles(),
                             self.last_poly_work.worker_frames(),
                             self.game_state.poly.runtime.config1(),
+                            self.last_poly_work,
                         );
                     }
                 }
