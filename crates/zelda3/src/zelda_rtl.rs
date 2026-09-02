@@ -25025,7 +25025,8 @@ impl ZeldaState {
         }
         assert_eq!(
             self.original_timing_sprite_main_return_claims_remaining, None,
-            "original-timing host close reached an active Sprite_Main return claim scope",
+            "original-timing host close reached an active Sprite_Main return claim scope (opened at {:?})",
+            self.original_timing_sprite_main_return_claim_scope_site,
         );
         let host_close_control = self.original_timing_host_close_control();
         if let OriginalTimingHostCloseControl::CarryTerminalAcceptance(gate) = host_close_control {
@@ -41423,6 +41424,13 @@ impl ZeldaState {
                     }
                     if matches!(caller, SpriteMainCpuCaller::BossVictory { .. }) {
                         self.complete_victory_module_dialogue_scroll_before_sprite_main();
+                    }
+                    if authoritative_scheduled_caller_return_timeline.is_some() {
+                        // The wire returns the parked loop, its module tail and
+                        // the shared suffix inside this host (route host
+                        // 1452888); an estimated room-load suffix slice would
+                        // suspend the tail again and strand the return claim.
+                        self.dungeon_room_load_module_suffix_nmi_slices = 0;
                     }
                     self.complete_sprite_main_after_cpu_boundary(boundary);
                     if nonterminal_dungeon_sprite_main_claim {
