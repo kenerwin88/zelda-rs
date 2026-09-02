@@ -4903,6 +4903,9 @@ enum SpriteMainCpuCaller {
 enum NmiPrepareSpritesCpuCaller {
     DungeonModule07,
     WorldMapOverlayReload,
+    /// `Module19_TriforceRoom`'s LinkOam_Main interrupted by vblank after
+    /// its case-2 loads (route host 1557676).
+    TriforceRoom,
     /// A resumed Module09 long-load caller (aux graphics or a whirlpool
     /// step) whose NMI_PrepareSprites was interrupted at the host boundary.
     Module09LongLoad,
@@ -6843,6 +6846,14 @@ enum GameWorkContinuation {
     FinishDungeonMapGraphicsPreparation,
     FinishDungeonMapRoomDrawing,
     FinishDungeonMapRecovery,
+    /// `Module19_TriforceRoom` cases 2-4 each block one ZeldaRunGameLoop
+    /// iteration for dozens of hosts (credits song-bank upload with NMI
+    /// masked, then the overlay/tileset/screen loads under held vblanks);
+    /// the case remainder and the module tail run where the wire returns
+    /// the iteration (route hosts 1557656-1557723).
+    FinishTriforceRoomLoad {
+        step: TriforceRoomLoadStep,
+    },
     /// `Text_Initialize` reached `Text_LoadCharacterBuffer` after the measured
     /// decompression crossings. The remaining count is measured independently
     /// because compressed message length decides whether that suffix crosses
@@ -7052,6 +7063,7 @@ impl GameWorkContinuation {
                 | Self::FinishDungeonMapGraphicsPreparation
                 | Self::FinishDungeonMapRoomDrawing
                 | Self::FinishDungeonMapRecovery
+                | Self::FinishTriforceRoomLoad { .. }
         )
     }
 
@@ -7110,6 +7122,7 @@ impl GameWorkContinuation {
                 | Self::FinishDungeonMapGraphicsPreparation
                 | Self::FinishDungeonMapRoomDrawing
                 | Self::FinishDungeonMapRecovery
+                | Self::FinishTriforceRoomLoad { .. }
         ) || self.pre_overworld_stage_completion().is_some()
     }
 
@@ -7304,6 +7317,32 @@ pub(super) struct SpotlightTableBuildContinuation {
     pending_lower_cursor_decrement: bool,
     projection_tail_cleared: bool,
     projection_words_copied: u16,
+}
+
+/// `Module19_TriforceRoom`'s blocking cases (route hosts 1557656-1557723).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TriforceRoomLoadStep {
+    /// Case 2's `LoadCreditsSongs` upload: NMI stays masked for a fixed 15
+    /// hosts after the iteration host (route hosts 1557657-1557671); the
+    /// room index, tilemap erase, and special-area entry run in the last
+    /// upload host.
+    Case2Upload,
+    /// Case 2's `Overworld_LoadOverlays2` under held vblanks, then the
+    /// subsubmodule advance and the module tail (route hosts
+    /// 1557672-1557676).
+    Case2Overlays,
+    /// Case 3: `InitializeTilesets` and the palette loads.
+    Case3Tilesets,
+    /// Case 4: `Module08_02_LoadAndAdvance` and the Triforce-room setup.
+    Case4Screen,
+    /// Case 7's `TriforceRoom_PrepGFXSlotForPoly`: a fixed two hosts after
+    /// the iteration host; the message index and `Main_ShowTextMessage`
+    /// (module $0E) run in its last host (route hosts 1557788-1557789).
+    Case7PolyGraphics,
+    /// Case 7's `RenderText` initialization under held vblanks, then the
+    /// case restores module $19 (route hosts 1557790-1557809, whose return
+    /// host also publishes the decoder's dialogue-close fact).
+    Case7TextInit,
 }
 
 /// The four whirlpool-warp steps whose ROM call spans several held vblanks:
@@ -37441,6 +37480,17 @@ impl ZeldaState {
                             stage,
                         ));
                 }
+                if matches!(
+                    expected_work,
+                    GameWorkContinuation::FinishTriforceRoomLoad {
+                        step: TriforceRoomLoadStep::Case7TextInit,
+                    }
+                ) {
+                    // Case 7 restores module $19 from the dialogue module as it
+                    // returns; the decoder reports that as a dialogue close in the
+                    // same host (route host 1557809).
+                    expected_semantic.push(OriginalTimingSemanticReceipt::DialogueClosed);
+                }
                 if expected_work == GameWorkContinuation::FinishWorldMapExitTilesets {
                     // WorldMap_ExitMap closes the Module0E map overlay as part
                     // of this same return, so the adapter appends its
@@ -39143,7 +39193,16 @@ impl ZeldaState {
                 Some(
                     GameWorkContinuation::FinishDungeonMapRecovery
                         | GameWorkContinuation::FinishDungeonMapGraphicsPreparation
+                        | GameWorkContinuation::FinishTriforceRoomLoad { .. }
                 )
+            ) && !matches!(
+                self.game_execution_scheduler.current_work(),
+                // The masked song-bank upload publishes no wire fact until it
+                // ends; its fixed slice count completes it.
+                Some(GameWorkContinuation::FinishTriforceRoomLoad {
+                    step: TriforceRoomLoadStep::Case2Upload
+                        | TriforceRoomLoadStep::Case7PolyGraphics,
+                })
             ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                 && self.original_timing_semantic_receipts.is_some()
             {
@@ -39154,7 +39213,17 @@ impl ZeldaState {
                 // The map graphics preparation (InitializeTilesets) returns
                 // the same way; its slice estimate ended one host before the
                 // wire's return at route host 1280082.
-                let returned = !self.original_timing_live_suffix_outstanding();
+                // The Triforce room's case-2 tail may also end its host inside
+                // LinkOam_Main (route host 1557676): the load itself returned.
+                let returned = !self.original_timing_live_suffix_outstanding()
+                    || (matches!(
+                        self.game_execution_scheduler.current_work(),
+                        Some(GameWorkContinuation::FinishTriforceRoomLoad { .. })
+                    ) && (self.original_timing_main_loop_interruption()
+                        == Some(crate::MainLoopInterruption::LinkOam)
+                        || authoritative_scheduled_caller_nmi_timeline.is_some_and(|timeline| {
+                            timeline.interruption == crate::MainLoopInterruption::LinkOam
+                        })));
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(returned)
             } else if authoritative_big_key_drop_slot.is_some() {
@@ -41461,6 +41530,49 @@ impl ZeldaState {
                     if self.pending_main_loop_common_suffix.is_some() {
                         // The source-proven caller return already carries the
                         // shared ZeldaRunGameLoop suffix; retire its one owner.
+                        self.complete_pending_main_loop_common_suffix_after_module_return();
+                    } else {
+                        self.nmi_prepare_sprites();
+                        self.clear_nmi_update_latch();
+                    }
+                    return;
+                }
+                GameWorkStep::Complete(GameWorkContinuation::FinishTriforceRoomLoad { step }) => {
+                    if authoritative_scheduled_caller_accepts_nmi_at_return.is_none()
+                        && !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                    {
+                        self.capture_display_snapshot();
+                        self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    }
+                    self.complete_triforce_room_load_step(step);
+                    if step == TriforceRoomLoadStep::Case7TextInit {
+                        // The decoder reports the module $0E -> $19 restore
+                        // inside case 7 as a dialogue close (route host
+                        // 1557809).
+                        let _ = self.take_original_timing_dialogue_closed();
+                    }
+                    if self.game_execution_scheduler.work_is_pending() {
+                        // A phased step scheduled its successor (the upload
+                        // handed over to the overlay load); the iteration
+                        // stays suspended.
+                        return;
+                    }
+                    if self.original_timing_main_loop_interruption()
+                        == Some(crate::MainLoopInterruption::LinkOam)
+                        || authoritative_scheduled_caller_nmi_timeline.is_some_and(|timeline| {
+                            timeline.interruption == crate::MainLoopInterruption::LinkOam
+                        })
+                    {
+                        // Vblank interrupted the module tail's LinkOam_Main
+                        // after the case-2 loads; the shared suffix crosses
+                        // to the next host (route host 1557676 -> 1557677).
+                        let _ = self.take_original_timing_main_loop_interruption_any();
+                        self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
+                            NmiPrepareSpritesCpuCaller::TriforceRoom,
+                        );
+                        return;
+                    }
+                    if self.pending_main_loop_common_suffix.is_some() {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
                         self.nmi_prepare_sprites();

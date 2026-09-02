@@ -5659,6 +5659,16 @@ pub(crate) fn run_compare_libretro_oracle(
                     // Warm-up run: the oracle advanced alone. Seed Rust at the
                     // first clean boundary; drain this run's RNG samples.
                     let semantic = receipts.semantic();
+                    // ZELDA3_DEBUG_WARMUP_RECEIPTS=1 prints every warm-up
+                    // host's semantic vector: the oracle-only wire for a
+                    // window Rust cannot reach yet (the Triforce-room load
+                    // at route hosts 1557656-1557724 was read this way).
+                    if env::var_os("ZELDA3_DEBUG_WARMUP_RECEIPTS").is_some() {
+                        eprintln!(
+                            "[WARMUP-RCPT] host_call={frame_index} pub_pending={} semantic={semantic:?}",
+                            trace.nmi_publication_pending()
+                        );
+                    }
                     let clean = !trace.nmi_publication_pending()
                         && semantic.last()
                             == Some(&OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted)

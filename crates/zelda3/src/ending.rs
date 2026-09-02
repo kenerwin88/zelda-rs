@@ -1,6 +1,16 @@
 // Methods ported from zelda3/src/ending.c and included inside ZeldaState.
 
 use super::sprite::{DrawMultipleData, PrepOamCoordsRet};
+
+/// Slice estimates for `Module19_TriforceRoom`'s blocking cases; the live
+/// wire's iteration return decides the actual host (route hosts 1557656-1557677,
+/// 1557678-1557708, 1557709-1557723).
+const TRIFORCE_ROOM_SONG_BANK_UPLOAD_NMI_SLICES: u8 = 15;
+const TRIFORCE_ROOM_CASE2_OVERLAYS_NMI_SLICES: u8 = 6;
+const TRIFORCE_ROOM_CASE3_NMI_SLICES: u8 = 30;
+const TRIFORCE_ROOM_CASE4_NMI_SLICES: u8 = 15;
+const TRIFORCE_ROOM_CASE7_POLY_GRAPHICS_NMI_SLICES: u8 = 2;
+const TRIFORCE_ROOM_CASE7_TEXT_INIT_NMI_SLICES: u8 = 20;
 use super::*;
 use crate::types::sign8;
 use crate::zelda_rtl::misc::DUNG_ANIMATED_TILES;
@@ -299,45 +309,45 @@ impl ZeldaState {
             2 => {
                 self.enable_force_blank();
                 self.load_credits_songs();
-                self.set_dungeon_room(0x189);
-                self.erase_tile_maps_normal();
-                self.Palette_RevertTranslucencySwap();
-                self.Overworld_EnterSpecialArea();
-                self.Overworld_LoadOverlays2();
-                self.increment_subsubmodule();
-                self.set_main_module(25);
-                self.set_submodule(0);
+                // The ROM blocks this iteration for the song-bank upload
+                // (NMI masked, 15 hosts) and the overlay loads (held
+                // vblanks); the case remainder and module tail run where the
+                // wire returns the iteration (route hosts 1557656-1557677).
+                if self.rom_startup_timing() {
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishTriforceRoomLoad {
+                            step: TriforceRoomLoadStep::Case2Upload,
+                        },
+                        TRIFORCE_ROOM_SONG_BANK_UPLOAD_NMI_SLICES,
+                    );
+                    return;
+                }
+                self.triforce_room_load_case2_after_upload();
+                self.triforce_room_load_case2_overlays();
             }
             3 => {
-                self.world_palette_theme_mut().set_main_tile_theme_index(36);
-                self.sprite_system_mut().set_graphics_index(125);
-                self.world_palette_theme_mut().set_aux_tile_theme_index(81);
-                self.initialize_tilesets();
-                self.Overworld_LoadAreaPalettesEx(4);
-                self.Overworld_LoadPalettes(14, 0);
-                self.SpecialOverworld_CopyPalettesToCache();
-                self.increment_subsubmodule();
+                if self.rom_startup_timing() {
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishTriforceRoomLoad {
+                            step: TriforceRoomLoadStep::Case3Tilesets,
+                        },
+                        TRIFORCE_ROOM_CASE3_NMI_SLICES,
+                    );
+                    return;
+                }
+                self.triforce_room_load_case3_tilesets();
             }
             4 => {
-                let bak0 = self.game_state.frame.subsubmodule;
-                self.Module08_02_LoadAndAdvance();
-                self.set_subsubmodule(bak0.wrapping_add(1));
-                self.set_screen_brightness(15);
-                self.set_countdown(31);
-                self.clear_mosaic_target_level();
-                self.set_bg1_h_high(1);
-                self.set_color_window_selection(2);
-                self.set_color_math_control(50);
-                self.set_mosaic_level(240);
-                {
-                    let mut player = self.follower_link_state_mut();
-                    player.set_y_low(236);
-                    player.set_x_low(120);
-                    player.set_lower_level_state(2);
+                if self.rom_startup_timing() {
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishTriforceRoomLoad {
+                            step: TriforceRoomLoadStep::Case4Screen,
+                        },
+                        TRIFORCE_ROOM_CASE4_NMI_SLICES,
+                    );
+                    return;
                 }
-                self.set_music_control(32);
-                self.set_main_module(25);
-                self.set_submodule(0);
+                self.triforce_room_load_case4_screen();
             }
             5 => {
                 self.follower_link_state_mut()
@@ -361,13 +371,17 @@ impl ZeldaState {
                 self.apply_palette_filter_bounce();
             }
             7 => {
-                self.triforce_room_prep_gfx_slot_for_poly();
-                self.dialogue_message_index_mut().set_value(0x173);
-                self.main_show_text_message();
-                self.RenderText();
-                self.ending_scratch_mut().set_primary_low(0x80);
-                self.set_main_module(25);
-                self.increment_subsubmodule();
+                if self.rom_startup_timing() {
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishTriforceRoomLoad {
+                            step: TriforceRoomLoadStep::Case7PolyGraphics,
+                        },
+                        TRIFORCE_ROOM_CASE7_POLY_GRAPHICS_NMI_SLICES,
+                    );
+                    return;
+                }
+                self.triforce_room_load_case7_before_text();
+                self.triforce_room_load_case7_text_init();
             }
             8 | 10 => {
                 self.advance_polyhedral();
@@ -430,12 +444,121 @@ impl ZeldaState {
             }
             _ => {}
         }
+        self.module19_triforce_room_tail();
+    }
+
+    /// The Module19 tail after the case switch: scroll copies, Link
+    /// velocity/animation outside the polyhedral window, and LinkOam_Main.
+    fn module19_triforce_room_tail(&mut self) {
         self.copy_live_to_ppu_copy();
         if self.game_state.frame.subsubmodule < 7 || self.game_state.frame.subsubmodule >= 11 {
             self.link_handle_velocity();
             self.link_handle_moving_animation_full_long_entry();
         }
         self.link_oam_main();
+    }
+
+    /// Case 2 after the `LoadCreditsSongs` upload returns (the ROM runs
+    /// these in the upload's last host, route host 1557671).
+    fn triforce_room_load_case2_after_upload(&mut self) {
+        self.set_dungeon_room(0x189);
+        self.erase_tile_maps_normal();
+        self.Palette_RevertTranslucencySwap();
+        self.Overworld_EnterSpecialArea();
+    }
+
+    /// Case 2's overlay load and case advance (route hosts 1557672-1557676).
+    fn triforce_room_load_case2_overlays(&mut self) {
+        self.Overworld_LoadOverlays2();
+        self.increment_subsubmodule();
+        self.set_main_module(25);
+        self.set_submodule(0);
+    }
+
+    /// Case 3.
+    fn triforce_room_load_case3_tilesets(&mut self) {
+        self.world_palette_theme_mut().set_main_tile_theme_index(36);
+        self.sprite_system_mut().set_graphics_index(125);
+        self.world_palette_theme_mut().set_aux_tile_theme_index(81);
+        self.initialize_tilesets();
+        self.Overworld_LoadAreaPalettesEx(4);
+        self.Overworld_LoadPalettes(14, 0);
+        self.SpecialOverworld_CopyPalettesToCache();
+        self.increment_subsubmodule();
+    }
+
+    /// Case 4.
+    fn triforce_room_load_case4_screen(&mut self) {
+        let bak0 = self.game_state.frame.subsubmodule;
+        self.Module08_02_LoadAndAdvance();
+        self.set_subsubmodule(bak0.wrapping_add(1));
+        self.set_screen_brightness(15);
+        self.set_countdown(31);
+        self.clear_mosaic_target_level();
+        self.set_bg1_h_high(1);
+        self.set_color_window_selection(2);
+        self.set_color_math_control(50);
+        self.set_mosaic_level(240);
+        {
+            let mut player = self.follower_link_state_mut();
+            player.set_y_low(236);
+            player.set_x_low(120);
+            player.set_lower_level_state(2);
+        }
+        self.set_music_control(32);
+        self.set_main_module(25);
+        self.set_submodule(0);
+    }
+
+    /// Case 7 through `Main_ShowTextMessage` (the ROM runs these in the
+    /// graphics prep's last host, route host 1557789).
+    fn triforce_room_load_case7_before_text(&mut self) {
+        self.triforce_room_prep_gfx_slot_for_poly();
+        self.dialogue_message_index_mut().set_value(0x173);
+        self.main_show_text_message();
+    }
+
+    /// Case 7's text initialization and module restore (route host 1557809).
+    fn triforce_room_load_case7_text_init(&mut self) {
+        self.RenderText();
+        self.ending_scratch_mut().set_primary_low(0x80);
+        self.set_main_module(25);
+        self.increment_subsubmodule();
+    }
+
+    /// Completion slice of a scheduled `FinishTriforceRoomLoad`: the case
+    /// remainder, then the module tail the ROM ran after the load.
+    pub(super) fn complete_triforce_room_load_step(&mut self, step: TriforceRoomLoadStep) {
+        match step {
+            TriforceRoomLoadStep::Case2Upload => {
+                self.triforce_room_load_case2_after_upload();
+                // The overlay load holds the iteration under held vblanks
+                // until the wire returns it (LinkOam interruption at route
+                // host 1557676).
+                self.game_execution_scheduler.schedule_work(
+                    GameWorkContinuation::FinishTriforceRoomLoad {
+                        step: TriforceRoomLoadStep::Case2Overlays,
+                    },
+                    TRIFORCE_ROOM_CASE2_OVERLAYS_NMI_SLICES,
+                );
+                return;
+            }
+            TriforceRoomLoadStep::Case2Overlays => self.triforce_room_load_case2_overlays(),
+            TriforceRoomLoadStep::Case3Tilesets => self.triforce_room_load_case3_tilesets(),
+            TriforceRoomLoadStep::Case4Screen => self.triforce_room_load_case4_screen(),
+            TriforceRoomLoadStep::Case7PolyGraphics => {
+                self.triforce_room_load_case7_before_text();
+                self.game_execution_scheduler.schedule_work(
+                    GameWorkContinuation::FinishTriforceRoomLoad {
+                        step: TriforceRoomLoadStep::Case7TextInit,
+                    },
+                    TRIFORCE_ROOM_CASE7_TEXT_INIT_NMI_SLICES,
+                );
+                return;
+            }
+            TriforceRoomLoadStep::Case7TextInit => self.triforce_room_load_case7_text_init(),
+        }
+        self.module19_triforce_room_tail();
     }
 
     pub(super) fn Intro_InitializeBackgroundSettings(&mut self) {
