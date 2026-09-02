@@ -1933,7 +1933,23 @@ impl ZeldaState {
                 self.increment_core_update_disable_flag();
             }
             8 => {
-                self.MirrorWarp_LoadSpritesAndColors();
+                self.follower_link_state_mut().set_blink_countdown(0x90);
+                if self.rom_startup_timing() {
+                    // The Map16ToMap8 conversion spans the wire's held
+                    // vblanks; the sprite reload and this step's NMI
+                    // subroutine follow at the load's completion.
+                    let step = if self.game_state.frame.main_module == 0x15 {
+                        crate::zelda_rtl::Module09LongLoadStep::Module15MirrorWarpSpriteLoadMap16
+                    } else {
+                        crate::zelda_rtl::Module09LongLoadStep::MirrorWarpSpriteLoadMap16
+                    };
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishModule09LongLoad { step },
+                        3,
+                    );
+                    return;
+                }
+                self.mirror_warp_load_sprites_and_colors_after_blink();
                 self.set_pending_nmi_subroutine(12);
                 self.set_core_update_disable_flag(12);
             }

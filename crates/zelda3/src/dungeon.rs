@@ -10157,7 +10157,10 @@ impl ZeldaState {
             self.ApplyPaletteFilter_bounce();
         }
         self.Dungeon_IntraRoomTrans_State5();
-        if let Some(advance) = self.take_dungeon_landing_cpu_advance() {
+        if let Some(advance) = self
+            .take_dungeon_landing_cpu_advance()
+            .map(|advance| self.supersede_dungeon_sprite_main_estimate_by_wire(advance))
+        {
             match advance.phase {
                 ModuleCpuPhase::InterruptedInNmiPrepareSprites
                 | ModuleCpuPhase::InterruptedAfterModule => {
@@ -11013,6 +11016,95 @@ impl ZeldaState {
         self.Dungeon_HandleTranslucencyAndPalette();
     }
 
+    /// The isolated ROM CPU estimate may place this host's vblank inside
+    /// Sprite_Main while the live wire has already published the iteration's
+    /// `SpriteMainReturned` with no suspension checkpoint: the raster phase
+    /// drifted into the body. The wire then also settles where the caller
+    /// stopped — a completed shared suffix means the iteration finished, and
+    /// an outstanding suffix means the trailing acceptance landed after
+    /// Sprite_Main returned (route host 205020, the state-14 faded filter).
+    fn supersede_dungeon_sprite_main_estimate_by_wire(
+        &self,
+        advance: DungeonModuleCpuAdvance,
+    ) -> DungeonModuleCpuAdvance {
+        let estimate_stops_in_sprite_main = matches!(
+            advance.phase,
+            ModuleCpuPhase::InterruptedBeforeSpriteMain | ModuleCpuPhase::InterruptedInSpriteMain
+        );
+        let estimate_stops_after_sprite_main = matches!(
+            advance.phase,
+            ModuleCpuPhase::InterruptedAfterSpriteMain
+                | ModuleCpuPhase::InterruptedInLinkOam
+                | ModuleCpuPhase::InterruptedBeforeNmiPrepareSprites
+                | ModuleCpuPhase::InterruptedInNmiPrepareSprites
+        );
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            || !(estimate_stops_in_sprite_main || estimate_stops_after_sprite_main)
+            || !self.original_timing_owes_sprite_main_return()
+            || self.original_timing_owes_sprite_main_progress()
+            // A cached-sprite execution checkpoint names the exact suspended
+            // statement inside the module body; that receipt owns the
+            // continuation through `arm_dungeon_sprite_main_cpu_continuation`
+            // (route host 27133).
+            || self.original_timing_semantic_receipts.as_ref().is_some_and(|receipts| {
+                receipts.semantic().iter().any(|receipt| {
+                    matches!(
+                        receipt,
+                        OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(_)
+                    )
+                })
+            })
+        {
+            return advance;
+        }
+        // The fresh iteration's return timeline may already have consumed
+        // its suffix receipts before the module body runs, so decide from the
+        // still-installed facts: a trailing Held acceptance with no completed
+        // suffix leaves the caller stopped after Sprite_Main; anything else
+        // proves the iteration finished in-host (route hosts 205020, 27139).
+        let semantic = self
+            .original_timing_semantic_receipts
+            .as_ref()
+            .map(|receipts| receipts.semantic().to_vec())
+            .unwrap_or_default();
+        let gates = &self.original_timing_expected_nmi_update_gates;
+        let trailing_held = gates.contains(&NmiUpdateGate::LatchHeld)
+            || semantic.iter().any(|receipt| {
+                matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld)
+                )
+            });
+        let completed = gates.contains(&NmiUpdateGate::Open)
+            || semantic.iter().any(|receipt| {
+                matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted
+                        | OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open)
+                )
+            });
+        let phase = if estimate_stops_after_sprite_main {
+            // A post-Sprite_Main estimate stands unless the wire proves the
+            // iteration completed in-host (route host 85259, the state-14
+            // faded filter's NMI_PrepareSprites estimate against a completed
+            // suffix and trailing Open acceptance).
+            if completed {
+                ModuleCpuPhase::CompleteBeforeNmi
+            } else {
+                return advance;
+            }
+        } else if trailing_held && !completed {
+            ModuleCpuPhase::InterruptedAfterSpriteMain
+        } else {
+            ModuleCpuPhase::CompleteBeforeNmi
+        };
+        DungeonModuleCpuAdvance {
+            phase,
+            sprite_main_boundary: None,
+            ..advance
+        }
+    }
+
     pub(super) fn Module07_02_FadedFilter(&mut self) {
         let entry_subsubmodule = self.game_state.frame.subsubmodule;
         if self.game_state.dungeon.torch.any_lights_out_request() != 0 {
@@ -11023,7 +11115,9 @@ impl ZeldaState {
                 self.retain_palette_filter_input_cgram_on_next_display_capture();
             }
             self.ApplyPaletteFilter_bounce();
-            let cpu_advance = self.take_dungeon_landing_cpu_advance();
+            let cpu_advance = self
+                .take_dungeon_landing_cpu_advance()
+                .map(|advance| self.supersede_dungeon_sprite_main_estimate_by_wire(advance));
             let sprite_main_continuation_armed = cpu_advance
                 .is_some_and(|advance| self.arm_dungeon_sprite_main_cpu_continuation(advance));
             if self.game_state.display.palette_filter.countdown() != 0 {
@@ -11093,6 +11187,12 @@ impl ZeldaState {
                 if entry_subsubmodule == 2
                     && !sprite_main_continuation_armed
                     && !self.dungeon_nmi_prepare_sprites_return_pending
+                    // A live host whose wire leaves the shared suffix
+                    // outstanding (Sprite_Main returned, no suffix, no
+                    // trailing acceptance; route host 256363) has not reached
+                    // the caller's return: the next host's continued return
+                    // owns the suffix, not a leading-NMI wait.
+                    && !self.original_timing_live_fresh_iteration_suffix_outstanding()
                 {
                     // The room-load walk returns immediately before a leading
                     // hardware NMI. Preserve that host boundary explicitly:
@@ -11124,7 +11224,9 @@ impl ZeldaState {
             }
         } else {
             self.increment_subsubmodule();
-            let cpu_advance = self.take_dungeon_landing_cpu_advance();
+            let cpu_advance = self
+                .take_dungeon_landing_cpu_advance()
+                .map(|advance| self.supersede_dungeon_sprite_main_estimate_by_wire(advance));
             if let Some(advance) = cpu_advance {
                 self.arm_dungeon_sprite_main_cpu_continuation(advance);
             }
@@ -11262,6 +11364,10 @@ impl ZeldaState {
         if self.arm_live_cached_sprite_main_cpu_continuation() {
             return;
         }
+        // The wire's Sprite_Main return and completed suffix supersede a
+        // post-Sprite_Main estimate as well (route host 97801, the state-7
+        // NMI_PrepareSprites estimate against a completed iteration).
+        let advance = self.supersede_dungeon_sprite_main_estimate_by_wire(advance);
         match advance.phase {
             ModuleCpuPhase::CompleteBeforeNmi | ModuleCpuPhase::InterruptedAfterModule => {}
             ModuleCpuPhase::InterruptedBeforeSpriteMain

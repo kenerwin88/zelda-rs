@@ -423,7 +423,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishOverworldSpotlightLinkOam { .. }
                 | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. }
-                | GameWorkContinuation::FinishWhirlpoolLongStep { .. }
+                | GameWorkContinuation::FinishModule09LongLoad { .. }
                 | GameWorkContinuation::FinishBigKeyDropGraphics { .. }
         )
     }

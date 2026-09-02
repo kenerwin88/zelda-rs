@@ -414,6 +414,18 @@ impl ZeldaState {
         self.set_darkening_or_lightening_screen(0);
         self.dialogue_message_index_mut().set_value(0x35);
         self.main_show_text_message();
+        if self.rom_startup_timing() {
+            // The seven-sheet reload spans the wire's held vblanks under the
+            // dialogue module the message call just entered (route host
+            // 315323); the HUD rebuild and the Module15/6 return follow.
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishModule09LongLoad {
+                    step: crate::zelda_rtl::Module09LongLoadStep::Module15ReloadSheetsAfterMessage,
+                },
+                15,
+            );
+            return;
+        }
         self.ReloadPreviouslyLoadedSheets();
         self.hud_rebuild_indoor();
         self.set_hdma_enable_mask(0x80);
@@ -1027,9 +1039,52 @@ impl ZeldaState {
             12 => self.kill_aghanim_func12(),
             _ => {}
         }
+        if self.rom_startup_timing() && self.game_execution_scheduler.work_is_pending() {
+            // A submodule's long load suspended the caller (KillAghanim_Func5).
+            return;
+        }
         if self.game_state.frame.submodule < 2 || self.game_state.frame.submodule >= 5 {
+            self.arm_live_victory_module_sprite_main_boundary();
             self.sprite_main();
+            if self
+                .game_execution_scheduler
+                .work_suspends_translated_call_stack()
+            {
+                return;
+            }
             self.link_oam_main();
+        }
+    }
+
+    /// The Agahnim-warp and crystal-victory modules share Module13's
+    /// Sprite_Main/LinkOam suffix. Under the live wire their long submodule
+    /// bodies can consume the host before Sprite_Main runs (route host
+    /// 315065), or vblank can name a mid-loop boundary; arm the same
+    /// BossVictory caller continuation Module13 uses.
+    pub(super) fn arm_live_victory_module_sprite_main_boundary(&mut self) {
+        if let Some((boundary, resume_boundary)) =
+            self.take_original_timing_sprite_main_boundary_for_fresh_caller()
+        {
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                boundary,
+                SpriteMainCpuCaller::BossVictory {
+                    boundary: resume_boundary,
+                },
+            );
+        } else if let Some(boundary) = self.take_original_timing_sprite_main_progress() {
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                boundary,
+                SpriteMainCpuCaller::BossVictory {
+                    boundary: crate::zelda_rtl::OriginalTimingBoundary::HostReturn,
+                },
+            );
+        } else if let Some(boundary) =
+            self.original_timing_fresh_iteration_interrupted_before_sprite_main()
+        {
+            self.arm_authoritative_sprite_main_cpu_continuation(
+                crate::zelda_rtl::SpriteMainCpuBoundary::BeforeFirstSlot,
+                SpriteMainCpuCaller::BossVictory { boundary },
+            );
         }
     }
 
@@ -1042,7 +1097,14 @@ impl ZeldaState {
             4 => self.module16_04_fade_and_end(),
             _ => {}
         }
+        self.arm_live_victory_module_sprite_main_boundary();
         self.sprite_main();
+        if self
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack()
+        {
+            return;
+        }
         self.link_oam_main();
     }
 

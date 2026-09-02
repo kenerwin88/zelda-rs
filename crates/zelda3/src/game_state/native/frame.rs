@@ -127,16 +127,19 @@ impl<'a> NativeFrameStateBridgeMut<'a> {
     }
 
     pub(crate) fn set_main_module(&mut self, value: u8) {
+        crate::types::ww_check(0x10, 1, "set_main_module", u32::from(value));
         self.frame.set_main_module(value);
         self.sync();
     }
 
     pub(crate) fn set_main_module_word(&mut self, value: u16) {
+        crate::types::ww_check(0x10, 2, "set_main_module_word", u32::from(value));
         self.frame.set_main_module_word(value);
         self.sync();
     }
 
     pub(crate) fn set_submodule(&mut self, value: u8) {
+        crate::types::ww_check(0x11, 1, "set_submodule", u32::from(value));
         self.frame.set_submodule(value);
         self.sync();
     }

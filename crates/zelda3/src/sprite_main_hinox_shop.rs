@@ -465,7 +465,9 @@ impl ZeldaState {
                 return;
             }
             self.sprite_slot_view_mut(k).clear();
-            self.shop_item_handle_receipt(k, 4);
+            if self.shop_item_handle_receipt_with_tail(k, 4, true) {
+                return;
+            }
         }
         self.sprite_slot_view_mut(k).set_flags4(0x1c);
     }
@@ -511,7 +513,9 @@ impl ZeldaState {
                 return;
             }
             self.sprite_slot_view_mut(k).clear();
-            self.shop_item_handle_receipt(k, 5);
+            if self.shop_item_handle_receipt_with_tail(k, 5, true) {
+                return;
+            }
         }
         self.sprite_slot_view_mut(k).set_flags4(0x1c);
     }
@@ -711,14 +715,47 @@ impl ZeldaState {
     //     ShopKeeper_RapidTerminateReceiveItem();
     //   }
     // }
-    pub(super) fn shop_item_handle_receipt(&mut self, k: usize, item: u8) {
+    pub(super) fn shop_item_handle_receipt(&mut self, k: usize, item: u8) -> bool {
+        self.shop_item_handle_receipt_with_tail(k, item, false)
+    }
+
+    /// `ShopItem_HandleReceipt`; `true` when the source item call suspended
+    /// the sprite (the typed suffix completes the tail, and the shield items'
+    /// `sprite_flags4 = 0x1c` store when `flags4` is set).
+    pub(super) fn shop_item_handle_receipt_with_tail(
+        &mut self,
+        k: usize,
+        item: u8,
+        flags4: bool,
+    ) -> bool {
         self.follower_link_state_mut().set_item_receipt_method(0);
-        self.link_receive_item(item, 0);
+        if self
+            .link_receive_item_from(
+                item,
+                0,
+                ItemReceiptCaller::SpriteMainDirect {
+                    sprite_slot: k as u8,
+                    suffix: SpriteMainItemReceiptSuffix::ShopItem { flags4 },
+                },
+            )
+            .is_suspended()
+        {
+            return true;
+        }
+        self.complete_shop_item_receipt(k, flags4);
+        false
+    }
+
+    /// Source suffix after ShopItem_HandleReceipt's `Link_ReceiveItem`.
+    pub(super) fn complete_shop_item_receipt(&mut self, k: usize, flags4: bool) {
         let j = self.sprite_slot_view(k).subtype2() as usize;
         if j >= 7 {
             let msg = SHOP_KEEPER_GIVE_ITEM_MESSAGES[j - 7];
             self.sprite_show_message_unconditional(msg);
             self.shop_keeper_rapid_terminate_receive_item_for_hinox_shop();
+        }
+        if flags4 {
+            self.sprite_slot_view_mut(k).set_flags4(0x1c);
         }
     }
 

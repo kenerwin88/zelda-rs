@@ -2345,7 +2345,45 @@ impl ZeldaState {
     }
 
     pub(super) fn MirrorWarp_BuildWavingHDMATable(&mut self) {
+        if self.mirror_warp_run_animation_submodules_suspends() {
+            return;
+        }
+        self.mirror_warp_build_waving_table_after_animation();
+    }
+
+    /// Run the animation step; `true` when it scheduled a long load that
+    /// suspends the Module09 call stack, so the table builder's remainder
+    /// belongs to the load's completion host.
+    fn mirror_warp_run_animation_submodules_suspends(&mut self) -> bool {
+        let was_pending = self.game_execution_scheduler.work_is_pending();
         self.MirrorWarp_RunAnimationSubmodules();
+        !was_pending && self.game_execution_scheduler.work_is_pending()
+    }
+
+    /// The waving or dewaving table remainder for the current subsubmodule,
+    /// resumed after a suspended animation step returned.
+    pub(super) fn mirror_warp_table_after_animation(&mut self) {
+        // Module09 selects the builder by subsubmodule (2 waving, 3 dewaving);
+        // Module15's Agahnim warp by submodule (3 waving, 4 dewaving).
+        let dewaving = if self.game_state.frame.main_module == 0x15 {
+            self.game_state.frame.submodule == 4
+        } else {
+            self.game_state.frame.subsubmodule == 3
+        };
+        if dewaving {
+            self.mirror_warp_build_dewaving_table_after_animation();
+        } else {
+            self.mirror_warp_build_waving_table_after_animation();
+        }
+        if self.game_state.frame.main_module == 0x15 && self.game_state.frame.subsubmodule != 0 {
+            // KillAghanim's waving/dewaving submodules advance once the table
+            // builder marks completion in the subsubmodule.
+            self.set_subsubmodule(0);
+            self.increment_submodule();
+        }
+    }
+
+    fn mirror_warp_build_waving_table_after_animation(&mut self) {
         if self.game_state.frame.frame_counter & 1 != 0 {
             return;
         }
@@ -2399,7 +2437,13 @@ impl ZeldaState {
     }
 
     pub(super) fn MirrorWarp_BuildDewavingHDMATable(&mut self) {
-        self.MirrorWarp_RunAnimationSubmodules();
+        if self.mirror_warp_run_animation_submodules_suspends() {
+            return;
+        }
+        self.mirror_warp_build_dewaving_table_after_animation();
+    }
+
+    fn mirror_warp_build_dewaving_table_after_animation(&mut self) {
         if self.game_state.frame.frame_counter & 1 != 0 {
             return;
         }
@@ -2442,7 +2486,12 @@ impl ZeldaState {
         self.IrisSpotlight_ResetTable();
         self.set_countdown_word(0);
         self.set_darkening_or_lightening_screen_word(0);
-        self.ReloadPreviouslyLoadedSheets();
+        // ReloadPreviouslyLoadedSheets spans the wire's held vblanks; the
+        // song list and module return follow it in the same source call.
+        self.run_or_schedule_module09_long_load(Module09LongLoadStep::MirrorWarpReloadSheets, 14);
+    }
+
+    fn complete_mirror_warp_finalize_after_reload(&mut self) {
         self.Overworld_SetSongList();
         self.set_hdma_enable_mask(0x80);
 
@@ -2523,6 +2572,20 @@ impl ZeldaState {
 
     pub(super) fn MirrorWarp_LoadSpritesAndColors(&mut self) {
         self.follower_link_state_mut().set_blink_countdown(0x90);
+        self.mirror_warp_load_sprites_and_colors_after_blink();
+    }
+
+    /// `MirrorWarp_LoadSpritesAndColors` after its blink-countdown store: the
+    /// Map16ToMap8 conversion, palette loads, sprite reset/reload, and portal.
+    pub(super) fn mirror_warp_load_sprites_and_colors_after_blink(&mut self) {
+        self.mirror_warp_load_sprites_map16_palettes_and_reset();
+        self.mirror_warp_load_sprites_reload_and_portal();
+    }
+
+    /// The first phase: the fixed-size main-page conversion, the palette
+    /// loads and colour constants, and `Sprite_ResetAll` (the wire clears the
+    /// sprite table three hosts into the call at route host 211560).
+    fn mirror_warp_load_sprites_map16_palettes_and_reset(&mut self) {
         let bak_src_off = self.overworld_map16_src_off();
         let bak_dst_off = self.overworld_map16_dst_off();
         let bak_y_unit = self.overworld_map16_y_unit();
@@ -2556,6 +2619,11 @@ impl ZeldaState {
             self.set_main_color_constant(32, 0);
         }
         self.sprite_reset_all();
+    }
+
+    /// The second phase: the overworld sprite reload, Link's item reset, the
+    /// torch/player reset, and the portal spawn.
+    fn mirror_warp_load_sprites_reload_and_portal(&mut self) {
         self.sprite_reload_all_overworld();
         self.link_item_reset_from_overworld_things();
         self.Dungeon_ResetTorchBackgroundAndPlayerInner();
@@ -2586,7 +2654,7 @@ impl ZeldaState {
                 // Overworld_LoadOverlays2's cheap prefix runs now; its overlay
                 // decode and Map16ToMap8 span the wire's held vblanks.
                 self.prepare_overworld_load_overlays();
-                self.run_or_schedule_whirlpool_long_step(WhirlpoolLongStep::LoadOverlays2, 8);
+                self.run_or_schedule_module09_long_load(Module09LongLoadStep::LoadOverlays2, 8);
             }
             4 | 6 => {
                 self.set_pending_nmi_subroutine(13);
@@ -2594,15 +2662,15 @@ impl ZeldaState {
                 self.increment_subsubmodule();
             }
             5 => {
-                self.run_or_schedule_whirlpool_long_step(WhirlpoolLongStep::LoadOverlayAndMap, 18);
+                self.run_or_schedule_module09_long_load(Module09LongLoadStep::LoadOverlayAndMap, 18);
             }
             7 => {
                 self.module09_load_aux_gfx_prefix();
                 let slices =
                     overworld_aux_graphics_timing(self.overworld_aux_graphics_workload())
                         .load_nmi_slices;
-                self.run_or_schedule_whirlpool_long_step(
-                    WhirlpoolLongStep::LoadAuxGraphics,
+                self.run_or_schedule_module09_long_load(
+                    Module09LongLoadStep::LoadAuxGraphics,
                     slices,
                 );
             }
@@ -2627,8 +2695,8 @@ impl ZeldaState {
                 );
                 self.Palette_SetOwBgColor();
                 self.Overworld_SetFixedColAndScroll();
-                self.run_or_schedule_whirlpool_long_step(
-                    WhirlpoolLongStep::SpritePalettesAndGraphics,
+                self.run_or_schedule_module09_long_load(
+                    Module09LongLoadStep::SpritePalettesAndGraphics,
                     3,
                 );
             }
@@ -2644,7 +2712,7 @@ impl ZeldaState {
             }
             12 => {
                 self.follower_link_state_mut().set_blink_countdown(144);
-                self.run_or_schedule_whirlpool_long_step(WhirlpoolLongStep::ReloadSheets, 15);
+                self.run_or_schedule_module09_long_load(Module09LongLoadStep::ReloadSheets, 15);
             }
             _ => {}
         }
@@ -2653,26 +2721,26 @@ impl ZeldaState {
     /// Under ROM timing the whirlpool's long load suspends the Module09 call
     /// stack for `estimate_nmi_slices` (the live wire's caller return decides
     /// the actual host); otherwise the whole case completes atomically.
-    fn run_or_schedule_whirlpool_long_step(
+    fn run_or_schedule_module09_long_load(
         &mut self,
-        step: WhirlpoolLongStep,
+        step: Module09LongLoadStep,
         estimate_nmi_slices: u8,
     ) {
         if self.rom_startup_timing() {
             self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishWhirlpoolLongStep { step },
+                GameWorkContinuation::FinishModule09LongLoad { step },
                 estimate_nmi_slices,
             );
             return;
         }
-        self.complete_whirlpool_long_step(step);
+        self.complete_module09_long_load_step(step);
     }
 
     /// Finish one of `Module09_2E_Whirlpool`'s long loads and the case tail
     /// that follows it in the source switch.
-    pub(super) fn complete_whirlpool_long_step(&mut self, step: WhirlpoolLongStep) {
+    pub(super) fn complete_module09_long_load_step(&mut self, step: Module09LongLoadStep) {
         match step {
-            WhirlpoolLongStep::LoadOverlays2 => {
+            Module09LongLoadStep::LoadOverlays2 => {
                 self.finish_overworld_load_overlays();
                 self.decrement_submodule();
                 self.set_pending_nmi_subroutine(12);
@@ -2682,26 +2750,58 @@ impl ZeldaState {
                 self.increment_core_update_disable_flag();
                 self.increment_subsubmodule();
             }
-            WhirlpoolLongStep::LoadOverlayAndMap => {
+            Module09LongLoadStep::LoadOverlayAndMap => {
                 self.Overworld_LoadOverlayAndMap();
                 self.set_pending_nmi_subroutine(12);
                 self.set_screen_brightness(0x0f);
                 self.increment_core_update_disable_flag();
                 self.increment_subsubmodule();
             }
-            WhirlpoolLongStep::LoadAuxGraphics => {
+            Module09LongLoadStep::LoadAuxGraphics => {
                 self.complete_module09_load_aux_gfx();
                 self.decrement_submodule();
                 self.increment_subsubmodule();
             }
-            WhirlpoolLongStep::SpritePalettesAndGraphics => {
+            Module09LongLoadStep::SpritePalettesAndGraphics => {
                 self.LoadNewSpriteGFXSet();
                 self.set_fixed_color_blue(0x80);
                 self.set_screen_brightness(0x0f);
                 self.increment_core_update_disable_flag();
                 self.increment_subsubmodule();
             }
-            WhirlpoolLongStep::ReloadSheets => {
+            Module09LongLoadStep::MirrorWarpReloadSheets => {
+                self.ReloadPreviouslyLoadedSheets();
+                self.complete_mirror_warp_finalize_after_reload();
+            }
+            Module09LongLoadStep::MirrorWarpSpriteLoadMap16
+            | Module09LongLoadStep::Module15MirrorWarpSpriteLoadMap16 => {
+                self.mirror_warp_load_sprites_map16_palettes_and_reset();
+                let reload = if step.caller_is_module15() {
+                    Module09LongLoadStep::Module15MirrorWarpSpriteLoadReload
+                } else {
+                    Module09LongLoadStep::MirrorWarpSpriteLoadReload
+                };
+                self.game_execution_scheduler.schedule_work(
+                    GameWorkContinuation::FinishModule09LongLoad { step: reload },
+                    5,
+                );
+            }
+            Module09LongLoadStep::Module15ReloadSheetsAfterMessage => {
+                self.ReloadPreviouslyLoadedSheets();
+                self.hud_rebuild_indoor();
+                self.set_hdma_enable_mask(0x80);
+                self.set_main_module(21);
+                self.set_submodule(6);
+                self.set_subsubmodule(24);
+            }
+            Module09LongLoadStep::MirrorWarpSpriteLoadReload
+            | Module09LongLoadStep::Module15MirrorWarpSpriteLoadReload => {
+                self.mirror_warp_load_sprites_reload_and_portal();
+                self.set_pending_nmi_subroutine(12);
+                self.set_core_update_disable_flag(12);
+                self.mirror_warp_table_after_animation();
+            }
+            Module09LongLoadStep::ReloadSheets => {
                 self.ReloadPreviouslyLoadedSheets();
                 self.set_hdma_enable_mask(0x80);
                 let music = self
@@ -3158,6 +3258,9 @@ impl ZeldaState {
                 return;
             }
             self.Dungeon_PrepExitWithSpotlight_table_and_advance();
+            // The entry returned inside this host; retire the wire's entry
+            // token (or its deferred form) here, as the atomic owner.
+            let _ = self.take_or_defer_original_timing_dungeon_exit_spotlight_entry_returned(true);
         } else {
             if self.begin_dungeon_exit_spotlight_build(
                 cpu_plan,

@@ -9042,7 +9042,7 @@ impl ZeldaState {
                 return;
             }
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(SPIN_ATTACK_DELAYS[frames as usize]);
+                .set_spin_attack_delay_timer(spin_attack_delay_for_frames(frames));
             let sword = self.game_state.inventory.items.sword_type();
             if frames == 5 {
                 if sword != 0 && sword != 1 && sword != 0xff {
@@ -9173,7 +9173,7 @@ impl ZeldaState {
             }
             self.follower_link_state_mut().set_button_b_frames(frames);
             self.follower_link_state_mut()
-                .set_spin_attack_delay_timer(SPIN_ATTACK_DELAYS[frames as usize]);
+                .set_spin_attack_delay_timer(spin_attack_delay_for_frames(frames));
         }
         self.calculate_sword_hit_box();
     }

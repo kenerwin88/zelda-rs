@@ -758,10 +758,20 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.set_overworld_event_bits(ow, 0x40);
                     self.follower_link_state_mut().set_item_receipt_method(0);
-                    self.link_receive_item(1, 0);
-                    self.save_progress_mut().set_map_icons_indicator(5);
-                    self.follower_link_state_mut().set_pull_action_state(0);
-                    self.sprite_slot_view_mut(k).set_ai_state(5);
+                    if self
+                        .link_receive_item_from(
+                            1,
+                            0,
+                            ItemReceiptCaller::SpriteMainDirect {
+                                sprite_slot: k as u8,
+                                suffix: SpriteMainItemReceiptSuffix::MasterSword,
+                            },
+                        )
+                        .is_suspended()
+                    {
+                        return;
+                    }
+                    self.complete_master_sword_item_receipt(k);
                 }
             }
             5 => {
@@ -770,6 +780,13 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    /// Source suffix after Sprite_MasterSword's `Link_ReceiveItem(1, 0)`.
+    pub(super) fn complete_master_sword_item_receipt(&mut self, k: usize) {
+        self.save_progress_mut().set_map_icons_indicator(5);
+        self.follower_link_state_mut().set_pull_action_state(0);
+        self.sprite_slot_view_mut(k).set_ai_state(5);
     }
 
     // void Sprite_MasterSword_LightFountain(int k) {  // 8589dc

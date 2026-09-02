@@ -5689,7 +5689,15 @@ impl ZeldaState {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             self.follower_link_state_mut().set_item_receipt_method(0);
-            self.link_receive_item(0x29, 0);
+            // Nothing follows the source call; the typed suffix is empty.
+            let _ = self.link_receive_item_from(
+                0x29,
+                0,
+                ItemReceiptCaller::SpriteMainDirect {
+                    sprite_slot: k as u8,
+                    suffix: SpriteMainItemReceiptSuffix::Mushroom,
+                },
+            );
         } else if (self.game_state.frame.frame_counter & 0x1f) == 0 {
             self.sprite_slot_view_mut(k).xor_oam_flags(0x40);
         }

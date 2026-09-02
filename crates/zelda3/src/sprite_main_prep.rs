@@ -1980,6 +1980,18 @@ impl ZeldaState {
             .set_sprite_damage_disable_timer(1);
     }
 
+    /// Source suffix after Sprite_OldMan's `Link_ReceiveItem(0x1a, 0)`:
+    /// the starting point, cutscene enable, and the shuffle-away velocities.
+    pub(super) fn complete_old_man_mirror_item_receipt(&mut self, k: usize) {
+        self.save_progress_mut().set_which_starting_point(1);
+        self.old_man_enable_cutscene();
+        self.sprite_slot_view_mut(k).set_delay_main(48);
+        self.sprite_slot_view_mut(k).set_x_velocity(8);
+        self.sprite_slot_view_mut(k).set_y_velocity(4);
+        self.sprite_slot_view_mut(k).set_direction(3);
+        self.sprite_slot_view_mut(k).set_head_direction(3);
+    }
+
     pub(super) fn sprite_ad_old_man(&mut self, k: usize) {
         self.old_mountain_man_draw(k);
         if self.sprite_return_if_inactive(k) {
@@ -2014,14 +2026,20 @@ impl ZeldaState {
                     0 => {
                         self.sprite_slot_view_mut(k).increment_ai_state();
                         self.follower_link_state_mut().set_item_receipt_method(0);
-                        self.link_receive_item(0x1a, 0);
-                        self.save_progress_mut().set_which_starting_point(1);
-                        self.old_man_enable_cutscene();
-                        self.sprite_slot_view_mut(k).set_delay_main(48);
-                        self.sprite_slot_view_mut(k).set_x_velocity(8);
-                        self.sprite_slot_view_mut(k).set_y_velocity(4);
-                        self.sprite_slot_view_mut(k).set_direction(3);
-                        self.sprite_slot_view_mut(k).set_head_direction(3);
+                        if self
+                            .link_receive_item_from(
+                                0x1a,
+                                0,
+                                ItemReceiptCaller::SpriteMainDirect {
+                                    sprite_slot: k as u8,
+                                    suffix: SpriteMainItemReceiptSuffix::OldManMirror,
+                                },
+                            )
+                            .is_suspended()
+                        {
+                            return;
+                        }
+                        self.complete_old_man_mirror_item_receipt(k);
                     }
                     1 => {
                         self.old_man_enable_cutscene();
