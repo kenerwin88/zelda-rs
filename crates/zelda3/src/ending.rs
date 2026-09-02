@@ -402,20 +402,6 @@ impl ZeldaState {
                     self.set_main_module(25);
                     self.increment_subsubmodule();
                 }
-                if std::mem::take(&mut self.triforce_room_scroll_this_iteration)
-                    && self.rom_startup_timing()
-                {
-                    // The scroll call ran atomically; the ROM's main thread
-                    // needs several 81-line slots for it, and the held latch
-                    // publishes nothing until the iteration returns.
-                    self.game_execution_scheduler.schedule_work(
-                        GameWorkContinuation::FinishTriforceRoomLoad {
-                            step: TriforceRoomLoadStep::Case9Scroll,
-                        },
-                        TRIFORCE_ROOM_CASE9_SCROLL_NMI_SLICES,
-                    );
-                    return;
-                }
             }
             11 => {
                 self.advance_polyhedral();
@@ -458,6 +444,40 @@ impl ZeldaState {
                 }
             }
             _ => {}
+        }
+        self.triforce_room_scroll_this_iteration = false;
+        if std::env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
+            eprintln!(
+                "[HOSTPATH] host={} module19 tail decision: timing={} fresh={} returned={} interruption={:?} pending={} receipts={:?}",
+                self.frame_ctr_dbg,
+                self.rom_startup_timing(),
+                self.original_timing_hosts_fresh_iteration(),
+                self.original_timing_main_loop_iteration_returned_to_wait(),
+                self.original_timing_main_loop_interruption(),
+                self.game_execution_scheduler.work_is_pending(),
+                self.original_timing_semantic_receipts.as_ref().map(|r| r.semantic().to_vec()),
+            );
+        }
+        if self.rom_startup_timing()
+            && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && self.original_timing_semantic_receipts.is_some()
+            && !self.original_timing_main_loop_iteration_returned_to_wait()
+            && self.original_timing_main_loop_interruption().is_none()
+            && !self.game_execution_scheduler.work_is_pending()
+        {
+            // Under the V-IRQ thread the main loop owns only the lines from
+            // the IRQ to vblank, so a text-rendering or scrolling iteration
+            // often spans several hosts; the held latch publishes nothing
+            // until it returns, and this host's wire shows no suffix. Run
+            // the module tail where the wire returns the iteration (route
+            // hosts 1558054-1558055, 1558261-1558267).
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishTriforceRoomLoad {
+                    step: TriforceRoomLoadStep::Case9Scroll,
+                },
+                TRIFORCE_ROOM_CASE9_SCROLL_NMI_SLICES,
+            );
+            return;
         }
         self.module19_triforce_room_tail();
     }

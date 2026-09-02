@@ -169,6 +169,11 @@ impl RomCpuTimingRun {
             | (u32::from(self.shadow.ram[(start + 2) & 0xffff]) << 16)
     }
 
+    /// The shadow machine's whole WRAM image after the run so far.
+    pub(crate) fn ram(&self) -> &[u8] {
+        &self.shadow.ram
+    }
+
     pub(crate) fn ram_byte(&self, address: usize) -> u8 {
         self.shadow.ram[address]
     }

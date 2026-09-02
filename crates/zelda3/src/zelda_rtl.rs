@@ -3168,6 +3168,35 @@ const MODULE0E_DIALOGUE_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
 /// `Module1B_SpawnSelect` ($02:8586, the save-quit "where to start" prompt)
 /// hosts the same RenderText/Text_Initialize call as Module0E_Interface and
 /// returns to ZeldaRunGameLoop through the same router tail-call.
+/// The polyhedral thread's per-frame render in the Triforce room: from the
+/// thread loop's `JSL $09:FD04` (after it observed `intro_did_run_step` set
+/// and no pending upload) to the `STA $0C` that publishes the frame. The
+/// thread was created by `Polyhedral_InitializeThread` with the RTI frame it
+/// copies from `$09:F810`: DB `$09`, DP `$1F00`, P `$30`, and its own stack
+/// below `$1F3F`.
+const TRIFORCE_ROOM_POLY_RENDER_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
+    entry_pc: 0x09_f825,
+    stop_pc: 0x09_f83b,
+    a: 0,
+    x: 0,
+    y: 0,
+    sp: 0x1f3e,
+    dp: 0x1f00,
+    db: 0x09,
+    carry: false,
+    zero: true,
+    overflow: false,
+    negative: false,
+    interrupt_disable: false,
+    decimal: false,
+    accumulator_is_8_bit: true,
+    index_is_8_bit: true,
+    emulation: false,
+    waiting: false,
+    stack_address: 0x1f3f,
+    stack_bytes: &[],
+};
+
 const MODULE1B_DIALOGUE_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
     entry_pc: 0x02_8586,
     ..MODULE0E_DIALOGUE_CPU_CHECKPOINT
@@ -11349,6 +11378,12 @@ pub struct ZeldaState {
     /// 81-line slot).
     #[serde(skip)]
     triforce_room_scroll_this_iteration: bool,
+    /// The ROM CPU shadow's WRAM after the last Triforce-room render: the
+    /// thread's own working state (fill-loop carry words, edge tables, the
+    /// bitmap buffer) that the next render reads, kept apart from the native
+    /// rasterizer's state so the shadow reproduces the ROM thread's paths.
+    #[serde(skip)]
+    triforce_poly_shadow_ram: Option<Vec<u8>>,
     /// Crystal frames the dungeon poly thread has rendered since activation.
     #[serde(skip)]
     poly_dungeon_frames_rendered: u8,
@@ -17652,6 +17687,7 @@ impl ZeldaState {
             poly_job_in_flight: false,
             poly_dungeon_thread_startup_hold: None,
             triforce_room_scroll_this_iteration: false,
+            triforce_poly_shadow_ram: None,
             poly_dungeon_frames_rendered: 0,
             poly_dungeon_activation_host: 0,
             original_timing_carried_suffix_completion_pending: false,
@@ -45792,6 +45828,167 @@ impl ZeldaState {
             && !self.triforce_room_poly_thread_is_active()
     }
 
+    /// How many hosts the ROM's polyhedral thread needs to render the next
+    /// frame from the current RAM, measured by executing the thread's render
+    /// call in the ROM CPU shadow across the thread's real slots. The NMI
+    /// and the V-IRQ each swap threads unconditionally, so the thread owns
+    /// the lines from the NMI handler's return to the IRQ at `virq_trigger`
+    /// (144 in the Triforce room): its first slot begins at line 0 after the
+    /// handler uploaded the previous frame, later slots at line ~249.8 of the
+    /// preceding field, and each ends at line 144. The budget charges the
+    /// DRAM refresh and the HDMA stalls the thread suffers on the way (route
+    /// hosts 1557812-1563400: shadow exact to 0.5% before HDMA, 5% short
+    /// without the stalls after host ~1558400). Returns the shadow's raw
+    /// master cycles too for diagnostics.
+    /// Master cycles from the NMI vector to the handler's thread swap at
+    /// `$00:82C7`, executing the ROM's NMI handler in the shadow over the
+    /// current RAM with the poly upload flag forced (the handler's uploads
+    /// decide when the poly thread resumes: line ~239.9 bare, later with the
+    /// BG3 text and poly-buffer DMAs; route hosts 1557815-1558362).
+    fn rom_triforce_nmi_swap_master_cycles(&self, poly_upload_pending: bool) -> Option<u64> {
+        const NMI_HANDLER_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
+            entry_pc: 0x00_80c9,
+            stop_pc: 0x00_82c7,
+            a: 0,
+            x: 0,
+            y: 0,
+            sp: 0x01f8,
+            dp: 0,
+            db: 0,
+            carry: false,
+            zero: true,
+            overflow: false,
+            negative: false,
+            interrupt_disable: false,
+            decimal: false,
+            accumulator_is_8_bit: true,
+            index_is_8_bit: true,
+            emulation: false,
+            waiting: false,
+            stack_address: 0x01f9,
+            stack_bytes: &[],
+        };
+        let timing_dma = self.dma_with_native_hdma_enable();
+        let mut ram_image = self.ram.to_vec();
+        ram_image[0x1f0c] = if poly_upload_pending { 0xff } else { 0 };
+        let mut run = RomCpuTimingRun::new(
+            &self.rom,
+            &ram_image,
+            &self.sram,
+            &self.ppu,
+            &timing_dma,
+            self.zelda_audio_apu_output_ports(),
+            NMI_HANDLER_CHECKPOINT,
+        )
+        .ok()?;
+        let mut master = 0u64;
+        for _ in 0..200_000 {
+            if run.is_complete() {
+                return Some(master);
+            }
+            master += u64::from(run.step().master_cycles);
+            master += u64::from(run.drain_started_dma_master_cycles());
+        }
+        None
+    }
+
+    fn rom_triforce_poly_render_hosts(&mut self) -> Option<(u8, u64)> {
+        const TRIFORCE_ROOM_VIRQ_SCANLINE: u16 = 144;
+        // The thread resumes when the NMI handler swaps stacks; slot 1's
+        // handler also uploads the frame the thread just finished.
+        let swap_with_upload = self.rom_triforce_nmi_swap_master_cycles(true)?;
+        let swap_without_upload = self.rom_triforce_nmi_swap_master_cycles(false)?;
+        let swap_entry = |master: u64| -> (u16, u16, bool) {
+            // Master cycles after the NMI acceptance at line 225 (plus refresh).
+            let master = master * 1364 / 1324;
+            let lines = 225 + (master / 1364) as u16;
+            let cycle = (master % 1364) as u16;
+            if lines >= 262 {
+                (lines - 262, cycle, true)
+            } else {
+                (lines, cycle, false)
+            }
+        };
+        // Thread-owned RAM: the poly work area past the main-written
+        // parameters ($1F00-$1F0F) and the bitmap buffer at $7E:E800.
+        const THREAD_WORK_RANGE: std::ops::Range<usize> = 0x1f10..0x2000;
+        const THREAD_BITMAP_RANGE: std::ops::Range<usize> = 0xe800..0xf000;
+        let timing_dma = self.dma_with_native_hdma_enable();
+        let mut ram_image = self.ram.to_vec();
+        if let Some(saved) = self.triforce_poly_shadow_ram.as_ref() {
+            ram_image[THREAD_WORK_RANGE].copy_from_slice(&saved[THREAD_WORK_RANGE]);
+            ram_image[THREAD_BITMAP_RANGE].copy_from_slice(&saved[THREAD_BITMAP_RANGE]);
+        }
+        let mut run = RomCpuTimingRun::new(
+            &self.rom,
+            &ram_image,
+            &self.sram,
+            &self.ppu,
+            &timing_dma,
+            self.zelda_audio_apu_output_ports(),
+            TRIFORCE_ROOM_POLY_RENDER_CPU_CHECKPOINT,
+        )
+        .ok()?;
+        let mut master = 0u64;
+        let mut hosts = 0u8;
+        let mut even_field = self.frame_ctr_dbg & 1 == 0;
+        let mut steps = 0u32;
+        while hosts < 16 {
+            hosts += 1;
+            // Slot 1 follows the upload NMI; later slots follow an NMI
+            // without the poly upload. Both are measured on the ROM's own
+            // handler so the swap line (239.9 bare, up to line 0 of the next
+            // field with the text and poly DMAs) is exact.
+            let (scanline, cycle, wrapped) = if hosts == 1 {
+                swap_entry(swap_with_upload)
+            } else {
+                swap_entry(swap_without_upload)
+            };
+            if wrapped {
+                even_field = !even_field;
+            }
+            let entry = CpuRasterPosition::new(scanline, cycle);
+            let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+                entry,
+                CpuBusWorkload::with_dynamic_hdma(),
+                CpuFieldTiming::non_interlace(even_field),
+            );
+            if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() && hosts == 1 {
+                eprintln!(
+                    "[POLY-NMI] host={} swap_upload_master={} swap_bare_master={} slot1_entry={}:{}",
+                    self.frame_ctr_dbg, swap_with_upload, swap_without_upload, scanline, cycle
+                );
+            }
+            loop {
+                if run.is_complete() {
+                    self.triforce_poly_shadow_ram = Some(run.ram().to_vec());
+                    return Some((hosts, master));
+                }
+                steps += 1;
+                if steps > 4_000_000 {
+                    return None;
+                }
+                let before = budget.raster_position();
+                let advance = advance_rom_cpu_step(&mut run, &mut budget);
+                let after = budget.raster_position();
+                let (s0, c0) = before.coordinates();
+                let (s1, c1) = after.coordinates();
+                let delta = (i64::from(s1) - i64::from(s0)) * 1364 + (i64::from(c1) - i64::from(c0));
+                if delta > 0 {
+                    master += delta as u64;
+                }
+                let (scanline, _) = after.coordinates();
+                if advance.reached_boundary().is_some()
+                    || (scanline >= TRIFORCE_ROOM_VIRQ_SCANLINE && scanline < 225)
+                {
+                    break;
+                }
+            }
+            even_field = !even_field;
+        }
+        None
+    }
+
     /// `Module19_TriforceRoom`'s V-IRQ thread (and the same thread while
     /// its Triforce message runs under module $0E with $19 saved as the
     /// return module).
@@ -45869,6 +46066,7 @@ impl ZeldaState {
             if !self.game_state.display.nmi_thread_active {
                 self.poly_dungeon_thread_startup_hold = None;
                 self.poly_dungeon_frames_rendered = 0;
+                self.triforce_poly_shadow_ram = None;
             }
             let use_timed_worker = self.rom_startup_timing
                 && (rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
@@ -45901,6 +46099,13 @@ impl ZeldaState {
                     *hold = 0;
                 }
                 if !self.poly_job_in_flight {
+                    // Measure the ROM thread's exact render cost before the
+                    // native rasterizer mutates the frame state.
+                    let triforce_render_hosts = if triforce_room_poly_thread {
+                        self.rom_triforce_poly_render_hosts()
+                    } else {
+                        None
+                    };
                     self.poly_run_frame();
                     self.poly_job_hold_frames = if dungeon_poly_thread {
                         // The thread rasterizes 32 crystal scanlines per host
@@ -45948,11 +46153,33 @@ impl ZeldaState {
                         self.poly_dungeon_current_frame_slices = slices;
                         slices - 1
                     } else if triforce_room_poly_thread {
-                        self.last_poly_work
-                            .estimated_65816_cycles()
-                            .div_ceil(TRIFORCE_ROOM_POLY_THREAD_HOST_CYCLES)
-                            .clamp(1, 16) as u8
-                            - 1
+                        // The thread owns the scanlines from the NMI's return
+                        // to the V-IRQ line each host; the exact render cost
+                        // decides how many of those slots the frame needs.
+                        // Calibrated on route hosts 1557810-1558053: the
+                        // oracle's single-host renders cost at most 188,016
+                        // master cycles in the shadow and its two-host ones
+                        // at least 190,392 (about 139 scanlines of thread time
+                        // between the NMI's return and the V-IRQ at line 144).
+                        let hosts = match triforce_render_hosts {
+                            Some((hosts, _)) => hosts.clamp(1, 16),
+                            None => self
+                                .last_poly_work
+                                .estimated_65816_cycles()
+                                .div_ceil(TRIFORCE_ROOM_POLY_THREAD_HOST_CYCLES)
+                                .clamp(1, 16) as u8,
+                        };
+                        if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                            eprintln!(
+                                "[POLY-TRI] host={} config1={} shadow_master={:?} estimate={} hosts={}",
+                                self.frame_ctr_dbg,
+                                self.game_state.poly.runtime.config1(),
+                                triforce_render_hosts.map(|(_, master)| master),
+                                self.last_poly_work.estimated_65816_cycles(),
+                                hosts,
+                            );
+                        }
+                        hosts - 1
                     } else {
                         self.last_poly_work.worker_frames() - 1
                     };
