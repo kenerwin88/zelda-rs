@@ -126,18 +126,39 @@ pub(crate) struct RomRandomReplay {
     current_execution_frame: Option<u32>,
     next_execution_frame: u32,
     samples: VecDeque<RomRandomSample>,
+    /// Leading samples carried from the previous host (see `install`): they
+    /// belong to an earlier execution frame by design.
+    carried: usize,
     first_frame_drift: Option<(u32, u32)>,
 }
 
 impl RomRandomReplay {
     pub(crate) fn install(&mut self, samples: Vec<RomRandomSample>, start_execution_frame: u32) {
+        // Samples the previous host left unconsumed were carried on purpose
+        // (`ZeldaState::finish_rom_random_replay_through` accepted them while
+        // the native loop was parked before the slot the ROM had already run
+        // partially): they are consumed first in this host. Any other
+        // leftover already failed the previous host's accounting.
+        let carried: Vec<RomRandomSample> = if self.enabled {
+            self.samples
+                .drain(..)
+                .filter(|sample| sample.execution_frame < start_execution_frame)
+                .collect()
+        } else {
+            Vec::new()
+        };
         self.enabled = true;
         self.current_execution_frame = None;
         self.next_execution_frame = start_execution_frame;
         self.first_frame_drift = None;
-        self.samples = samples
+        self.carried = carried.len();
+        self.samples = carried
             .into_iter()
-            .skip_while(|sample| sample.execution_frame < start_execution_frame)
+            .chain(
+                samples
+                    .into_iter()
+                    .skip_while(|sample| sample.execution_frame < start_execution_frame),
+            )
             .collect();
     }
 
@@ -183,7 +204,9 @@ impl RomRandomReplay {
                 caller.line(),
             );
         }
-        if sample.execution_frame != execution_frame {
+        let carried = self.carried > 0;
+        self.carried = self.carried.saturating_sub(1);
+        if sample.execution_frame != execution_frame && !carried {
             if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_FRAME_DRIFT").is_none() {
                 panic!(
                     "ROM random call order diverged: replay expected execution frame {}, Rust called during {execution_frame}; callsite={}:{}",
@@ -221,7 +244,12 @@ impl RomRandomReplay {
         self.enabled.then(|| {
             self.samples
                 .front()
-                .is_some_and(|sample| Some(sample.execution_frame) == self.current_execution_frame)
+                .is_some_and(|sample| {
+                    // A carried sample from the previous host counts as this
+                    // host's: the parked slot that draws it resumes here.
+                    self.current_execution_frame
+                        .is_some_and(|current| sample.execution_frame <= current)
+                })
         })
     }
 
