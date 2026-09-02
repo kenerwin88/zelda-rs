@@ -11,6 +11,7 @@ const TRIFORCE_ROOM_CASE3_NMI_SLICES: u8 = 30;
 const TRIFORCE_ROOM_CASE4_NMI_SLICES: u8 = 15;
 const TRIFORCE_ROOM_CASE7_POLY_GRAPHICS_NMI_SLICES: u8 = 2;
 const TRIFORCE_ROOM_CASE7_TEXT_INIT_NMI_SLICES: u8 = 20;
+const TRIFORCE_ROOM_CASE9_SCROLL_NMI_SLICES: u8 = 7;
 use super::*;
 use crate::types::sign8;
 use crate::zelda_rtl::misc::DUNG_ANIMATED_TILES;
@@ -401,6 +402,20 @@ impl ZeldaState {
                     self.set_main_module(25);
                     self.increment_subsubmodule();
                 }
+                if std::mem::take(&mut self.triforce_room_scroll_this_iteration)
+                    && self.rom_startup_timing()
+                {
+                    // The scroll call ran atomically; the ROM's main thread
+                    // needs several 81-line slots for it, and the held latch
+                    // publishes nothing until the iteration returns.
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishTriforceRoomLoad {
+                            step: TriforceRoomLoadStep::Case9Scroll,
+                        },
+                        TRIFORCE_ROOM_CASE9_SCROLL_NMI_SLICES,
+                    );
+                    return;
+                }
             }
             11 => {
                 self.advance_polyhedral();
@@ -588,6 +603,7 @@ impl ZeldaState {
                 return;
             }
             TriforceRoomLoadStep::Case7TextInit => self.triforce_room_load_case7_text_init(),
+            TriforceRoomLoadStep::Case9Scroll => {}
         }
         self.module19_triforce_room_tail();
     }

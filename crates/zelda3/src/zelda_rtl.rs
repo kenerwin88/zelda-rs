@@ -7343,6 +7343,10 @@ pub(super) enum TriforceRoomLoadStep {
     /// case restores module $19 (route hosts 1557790-1557809, whose return
     /// host also publishes the decoder's dialogue-close fact).
     Case7TextInit,
+    /// Case 9's text scroll: one `RenderText` scroll call (five passes)
+    /// holds the iteration across the main thread's 81-line slots until the
+    /// wire returns it (route hosts 1558261-1558267).
+    Case9Scroll,
 }
 
 /// The four whirlpool-warp steps whose ROM call spans several held vblanks:
@@ -11338,6 +11342,13 @@ pub struct ZeldaState {
     /// writes at +4, first frame complete at +7; later frames every 4 hosts).
     #[serde(skip)]
     poly_dungeon_thread_startup_hold: Option<u8>,
+    /// `RenderText_Draw_Scroll` ran a whole scroll call inside a Triforce-room
+    /// iteration; the ROM's main thread only owns the lines between the
+    /// V-IRQ and vblank there, so the iteration stays held for the hosts the
+    /// wire proves (route hosts 1558261-1558267: five 88.5-line passes in an
+    /// 81-line slot).
+    #[serde(skip)]
+    triforce_room_scroll_this_iteration: bool,
     /// Crystal frames the dungeon poly thread has rendered since activation.
     #[serde(skip)]
     poly_dungeon_frames_rendered: u8,
@@ -17640,6 +17651,7 @@ impl ZeldaState {
             last_poly_work: PolyWorkMetrics::default(),
             poly_job_in_flight: false,
             poly_dungeon_thread_startup_hold: None,
+            triforce_room_scroll_this_iteration: false,
             poly_dungeon_frames_rendered: 0,
             poly_dungeon_activation_host: 0,
             original_timing_carried_suffix_completion_pending: false,
@@ -45783,7 +45795,7 @@ impl ZeldaState {
     /// `Module19_TriforceRoom`'s V-IRQ thread (and the same thread while
     /// its Triforce message runs under module $0E with $19 saved as the
     /// return module).
-    fn triforce_room_poly_thread_is_active(&self) -> bool {
+    pub(crate) fn triforce_room_poly_thread_is_active(&self) -> bool {
         self.game_state.display.nmi_thread_active
             && (self.game_state.frame.main_module == 0x19
                 || (self.game_state.frame.main_module == 0x0e

@@ -5172,6 +5172,14 @@ impl ZeldaState {
                 & 0x0f,
         );
         let remaining_in_line = 16u16.saturating_sub(nibble_before);
+        if self.rom_startup_timing() && self.triforce_room_poly_thread_is_active() {
+            // Under the Triforce room's V-IRQ thread the main loop owns only
+            // the lines from the IRQ to vblank; the whole call runs here and
+            // Module19 holds the iteration by wire (see
+            // `TriforceRoomLoadStep::Case9Scroll`).
+            self.triforce_room_scroll_this_iteration = true;
+            return self.render_text_scroll_pixels(group.min(remaining_in_line));
+        }
         if group != 5 {
             // Only scroll speed 4 has oracle-verified lag timing; other
             // speeds keep the single-frame drain until ground truth is
