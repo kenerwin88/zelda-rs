@@ -1287,6 +1287,7 @@ impl ZeldaState {
         &mut self,
         iteration: SpotlightIteration,
         wire_defers_caller_return: bool,
+        wire_completes_caller_return: bool,
     ) {
         self.game_over_iris_wipe_after_table();
         self.link_oam_main();
@@ -1294,8 +1295,12 @@ impl ZeldaState {
         // whole-table build whose LinkOam_Main the ROM's held NMI still
         // interrupted returns on the next host (route host 589119:
         // [NmiAccepted(LatchHeld), NmiHandlerCompleted, NmiAccepted(LatchHeld),
-        // MainLoopInterrupted(LinkOam), CallStackContinued]).
-        if iteration.game_over_build_needs_deferred_caller_return() || wire_defers_caller_return {
+        // MainLoopInterrupted(LinkOam), CallStackContinued]); a terminal
+        // return in this host proves the caller and its suffix completed here
+        // even when the estimate wanted another slice (route host 943804).
+        if (iteration.game_over_build_needs_deferred_caller_return() || wire_defers_caller_return)
+            && !wire_completes_caller_return
+        {
             self.schedule_spotlight_iteration_return(iteration.after_game_over_build());
         } else {
             // Once the shrinking table finishes before vblank, its caller and

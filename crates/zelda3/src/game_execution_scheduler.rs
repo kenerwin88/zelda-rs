@@ -458,7 +458,8 @@ impl ScheduledGameWork {
                     ground_apress_tail: Some(_),
                     ..
                 } | ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. }
-                    | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. },
+                    | ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. }
+                    | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
                 | GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
                 | GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn

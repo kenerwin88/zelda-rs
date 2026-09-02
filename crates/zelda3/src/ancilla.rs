@@ -5198,7 +5198,14 @@ impl ZeldaState {
             {
                 self.ancilla_slot_view_mut(k).clear();
                 self.follower_link_state_mut().set_item_receipt_method(0);
-                self.link_receive_item(0x14, 0);
+                let _ = self.link_receive_item_from(
+                    0x14,
+                    0,
+                    ItemReceiptCaller::AncillaMilestone {
+                        ancilla_slot: k as u8,
+                        suffix: AncillaItemReceiptSuffix::None,
+                    },
+                );
                 return;
             }
         }
@@ -6908,7 +6915,19 @@ impl ZeldaState {
         self.follower_link_state_mut().set_item_receipt_method(0);
         let a = self.ancilla_slot_view(k).item_to_link();
         if a == 23 && self.game_state.inventory.player_resources.heart_pieces() == 0 {
-            self.link_receive_item(0x26, 0);
+            if self
+                .link_receive_item_from(
+                    0x26,
+                    0,
+                    ItemReceiptCaller::AncillaMilestone {
+                        ancilla_slot: k as u8,
+                        suffix: AncillaItemReceiptSuffix::ClearAncillaAndModalPause,
+                    },
+                )
+                .is_suspended()
+            {
+                return;
+            }
             let value = 0;
             self.ancilla_slot_view_mut(k).set_ancilla_type(value);
             self.clear_modal_pause_flag();
@@ -7196,6 +7215,7 @@ impl ZeldaState {
                     0,
                     ItemReceiptCaller::AncillaMilestone {
                         ancilla_slot: k as u8,
+                        suffix: AncillaItemReceiptSuffix::None,
                     },
                 );
                 return;

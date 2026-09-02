@@ -967,7 +967,19 @@ impl ZeldaState {
                 .is_none(),
             "Module 9 entered a second Sprite_Main caller before the first returned",
         );
-        if let Some((boundary, resume_boundary)) =
+        if self.original_timing_ancilla_item_receipt_suspended() {
+            // An ancilla's receipt (the dug-up flute, route host 514800)
+            // suspended inside Sprite_Main's prefix before any slot ran; run
+            // natively and let the receipt call suspend the stack. The
+            // BeforeFirstSlot restatements belong to that suspension.
+            let _ = self.take_original_timing_sprite_main_progress();
+            let _ = self.take_forwarded_original_timing_main_loop_interruption(
+                crate::MainLoopInterruption::SpriteMainBeforeFirstSlot,
+            );
+            let _ = self.take_original_timing_main_loop_interruption(
+                crate::MainLoopInterruption::SpriteMainBeforeFirstSlot,
+            );
+        } else if let Some((boundary, resume_boundary)) =
             self.take_original_timing_sprite_main_boundary_for_fresh_caller()
         {
             self.arm_sprite_main_cpu_continuation(

@@ -6509,6 +6509,7 @@ pub(super) enum ItemReceiptCaller {
     /// the whole slot loop, and the module caller suffix (route host 1142850).
     AncillaMilestone {
         ancilla_slot: u8,
+        suffix: AncillaItemReceiptSuffix,
     },
     /// A live sprite slot called `Link_ReceiveItem` directly from its own
     /// state machine (the source's `SpriteMainDirect` receipt caller). The
@@ -6701,8 +6702,20 @@ enum ItemReceiptGraphicsContinuation {
     ResumeAncillaItemReceipt {
         receipt: ItemReceiptReturn,
         ancilla_slot: u8,
+        suffix: AncillaItemReceiptSuffix,
         caller: SpriteMainItemReceiptCallerReturn,
     },
+}
+
+/// The C statements an ancilla runs after its synchronous `Link_ReceiveItem`
+/// call returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AncillaItemReceiptSuffix {
+    /// `Ancilla_MilestoneItemReceipt` and the dug-up flute return immediately.
+    None,
+    /// `Ancilla22_ItemReceipt` hands out the fourth heart piece as a heart
+    /// container, then clears its own slot and the modal pause flag.
+    ClearAncillaAndModalPause,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19969,20 +19982,31 @@ impl ZeldaState {
                                 crate::SourceCallProgress::Suspended,
                                 "an interrupted item-receipt claim must report its suspended source call",
                             );
-                            let ItemReceiptGraphicsCaller::SpriteMainDirect { slot } =
-                                progress.caller
-                            else {
-                                panic!(
-                                    "an interrupted main-loop host restated a non-direct item-receipt caller: {progress:?}"
-                                );
-                            };
-                            assert!(
-                                direct_item_receipt_slot_pairs_with_boundary(
-                                    slot,
-                                    expected_boundary,
+                            match progress.caller {
+                                ItemReceiptGraphicsCaller::SpriteMainDirect { slot } => {
+                                    assert!(
+                                        direct_item_receipt_slot_pairs_with_boundary(
+                                            slot,
+                                            expected_boundary,
+                                        ),
+                                        "a suspended direct item-receipt claim disagrees with its interruption statement: slot={slot} boundary={expected_boundary:?}",
+                                    );
+                                }
+                                ItemReceiptGraphicsCaller::SpriteMainAncilla { .. } => {
+                                    // Ancilla_Main runs in Sprite_Main's prefix,
+                                    // so its suspended receipt always pairs with
+                                    // the loop's entry statement (route hosts
+                                    // 1142850, 514800).
+                                    assert_eq!(
+                                        expected_boundary,
+                                        SpriteMainCpuBoundary::BeforeFirstSlot,
+                                        "a suspended ancilla item-receipt claim disagrees with its interruption statement: {expected_boundary:?}",
+                                    );
+                                }
+                                other => panic!(
+                                    "an interrupted main-loop host restated an unsupported item-receipt caller: {other:?}"
                                 ),
-                                "a suspended direct item-receipt claim disagrees with its interruption statement: slot={slot} boundary={expected_boundary:?}",
-                            );
+                            }
                             expected_semantic.push(*receipt);
                         }
                         _ => {}
@@ -25612,7 +25636,7 @@ impl ZeldaState {
             {
                 Some(ItemReceiptGraphicsCaller::UnclePassage { slot: sprite_slot })
             }
-            ItemReceiptCaller::AncillaMilestone { ancilla_slot }
+            ItemReceiptCaller::AncillaMilestone { ancilla_slot, .. }
                 if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) =>
             {
                 Some(ItemReceiptGraphicsCaller::SpriteMainAncilla { slot: ancilla_slot })
@@ -25699,7 +25723,10 @@ impl ZeldaState {
                     dungeon,
                 }
             }
-            ItemReceiptCaller::AncillaMilestone { ancilla_slot } => {
+            ItemReceiptCaller::AncillaMilestone {
+                ancilla_slot,
+                suffix,
+            } => {
                 let caller = if let Some(dungeon) = self.active_dungeon_sprite_main_return.take() {
                     SpriteMainItemReceiptCallerReturn::Module07(dungeon)
                 } else if let Some(module09) = self.active_module09_sprite_main_return.take() {
@@ -25710,6 +25737,7 @@ impl ZeldaState {
                 ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt {
                     receipt,
                     ancilla_slot,
+                    suffix,
                     caller,
                 }
             }
@@ -37651,7 +37679,8 @@ impl ZeldaState {
                         | GameWorkContinuation::FinishItemReceiptGraphics {
                             continuation:
                                 ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { .. }
-                                    | ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. },
+                                    | ItemReceiptGraphicsContinuation::ResumeUnclePassage { .. }
+                                    | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. },
                         }
                 )
             ))
@@ -40977,15 +41006,24 @@ impl ZeldaState {
                     if let ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt {
                         receipt,
                         ancilla_slot,
+                        suffix,
                         caller,
                     } = continuation
                     {
-                        // The falling milestone item's receipt returned: the
+                        // The ancilla's receipt returned: its own tail, the
                         // remaining ancilla slots, the prefix tail, the whole
                         // descending slot loop, and the module caller follow
-                        // (route host 1142850).
+                        // (route hosts 1142850, 514800).
                         self.complete_ancilla_add_item_receipt(receipt);
                         self.complete_link_receive_item(receipt.item);
+                        match suffix {
+                            AncillaItemReceiptSuffix::None => {}
+                            AncillaItemReceiptSuffix::ClearAncillaAndModalPause => {
+                                self.ancilla_slot_view_mut(usize::from(ancilla_slot))
+                                    .set_ancilla_type(0);
+                                self.clear_modal_pause_flag();
+                            }
+                        }
                         self.ancilla_execute_slots_below(usize::from(ancilla_slot));
                         self.complete_sprite_main_prefix_after_ancilla();
                         self.complete_sprite_main_after_interrupted_slot(16);
@@ -41779,7 +41817,11 @@ impl ZeldaState {
                                         | crate::MainLoopInterruption::SpritePreparation
                                 )
                         });
-                    self.complete_game_over_spotlight_build(iteration, wire_defers_caller_return);
+                    self.complete_game_over_spotlight_build(
+                        iteration,
+                        wire_defers_caller_return,
+                        authoritative_scheduled_caller_return_timeline.is_some(),
+                    );
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishSpotlightIteration {
                     ..
@@ -42986,6 +43028,34 @@ impl ZeldaState {
             // loop inside its slot; the wire's checkpoint then names the last
             // completed slot (BeforeFirstSlot for slot 15). The scheduled
             // receipt continuation owns that boundary (route host 753968).
+            if let Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                continuation:
+                    ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. },
+            }) = self.game_execution_scheduler.current_work()
+            {
+                // The ancilla receipt suspended inside Sprite_Main's prefix:
+                // the loop-entry restatements belong to that suspension
+                // (route hosts 1142850, 514800).
+                let owns = |interruption: crate::MainLoopInterruption| {
+                    interruption == crate::MainLoopInterruption::SpriteMainBeforeFirstSlot
+                };
+                if self.original_timing_main_loop_interruption().is_some_and(owns) {
+                    let _ = self.take_original_timing_main_loop_interruption_any();
+                }
+                let forwarded = self
+                    .original_timing_semantic_receipts
+                    .as_ref()
+                    .and_then(OriginalTimingHostReceipts::forwarded_main_loop_interruption)
+                    .map(|forwarded| forwarded.interruption());
+                if let Some(interruption) = forwarded.filter(|&interruption| owns(interruption)) {
+                    let _ = self.take_forwarded_original_timing_main_loop_interruption(interruption);
+                }
+                let _ = self.take_original_timing_sprite_main_progress();
+                if self.pending_main_loop_common_suffix.is_none() {
+                    self.pending_main_loop_common_suffix =
+                        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+                }
+            }
             if let Some(GameWorkContinuation::FinishItemReceiptGraphics {
                 continuation:
                     ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { sprite_slot, .. },
