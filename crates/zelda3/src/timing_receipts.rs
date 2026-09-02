@@ -609,6 +609,14 @@ pub enum MainLoopInterruption {
     /// the backend instruction address private; translated gameplay resumes
     /// the source call from this semantic boundary on the following host.
     LinkPositionBeforeCoordinates,
+    /// `Link_MovePosition`'s per-axis loop stored the current axis' subpixel
+    /// byte but the accepted NMI (or the host boundary) preceded that axis'
+    /// coordinate store. `pass` is the loop's X register: 4 = z (airborne
+    /// only), 2 = y, 0 = x; earlier passes are complete, later ones pending
+    /// (route host 179586, Module0F's dungeon-exit spotlight close).
+    LinkPositionAfterSubpixel {
+        pass: u8,
+    },
 }
 
 impl MainLoopInterruption {

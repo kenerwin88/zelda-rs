@@ -15,6 +15,16 @@ fn swim_axis_index(offset: usize) -> Option<usize> {
     }
 }
 
+/// `Link_MovePosition` loop pass (X register) -> (subpixel, coordinate) WRAM
+/// offsets: 4 = z ($2C/$24), 2 = x ($2B/$22), 0 = y ($2A/$20).
+fn link_move_position_axis_offsets(pass: u8) -> (usize, usize) {
+    match pass {
+        4 => (LINK_Z_SUBPIXEL, LINK_Z_COORD),
+        2 => (LINK_X_SUBPIXEL, LINK_X_COORD),
+        _ => (LINK_Y_SUBPIXEL, LINK_Y_COORD),
+    }
+}
+
 fn move_link_axis_by_velocity(
     ram: &mut [u8],
     subpixel_offset: usize,
@@ -4829,6 +4839,39 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         write_le_u16(self.ram, LINK_Z_COORD, value);
         write_le_u16(self.ram, LINK_Z_COORD_MIRROR, value);
         self.debug_assert_matches_ram();
+    }
+
+    /// First half of one `Link_MovePosition` axis pass (the loop's X
+    /// register: 4 = z, 2 = x, 0 = y): publish the subpixel byte and return
+    /// the coordinate delta the second half still owes.
+    pub(crate) fn move_axis_subpixel_only_by_velocity(&mut self, pass: u8, velocity: u8) -> u16 {
+        let (subpixel_offset, coord_offset) = link_move_position_axis_offsets(pass);
+        let moved = u32::from(self.ram[subpixel_offset])
+            .wrapping_add(((velocity as i8 as i32) << 4) as u32);
+        self.ram[subpixel_offset] = moved as u8;
+        let coord = read_le_u16(self.ram, coord_offset);
+        match pass {
+            2 => self.state.set_x_with_subpixel(coord, moved as u8),
+            0 => self.state.set_y_with_subpixel(coord, moved as u8),
+            _ => {}
+        }
+        self.debug_assert_matches_ram();
+        ((moved as i32) >> 8) as u16
+    }
+
+    /// Second half of one `Link_MovePosition` axis pass: add the pending
+    /// coordinate delta.
+    pub(crate) fn apply_axis_pixel_delta(&mut self, pass: u8, delta: u16) -> u16 {
+        let (subpixel_offset, coord_offset) = link_move_position_axis_offsets(pass);
+        let coord = read_le_u16(self.ram, coord_offset).wrapping_add(delta);
+        write_le_u16(self.ram, coord_offset, coord);
+        match pass {
+            2 => self.state.set_x_with_subpixel(coord, self.ram[subpixel_offset]),
+            0 => self.state.set_y_with_subpixel(coord, self.ram[subpixel_offset]),
+            _ => self.state.set_z(coord),
+        }
+        self.debug_assert_matches_ram();
+        coord
     }
 
     pub(crate) fn move_z_by_velocity(&mut self, velocity: u8) -> u16 {

@@ -187,6 +187,11 @@ const LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC: u32 = 0x07e27a;
 // Bank $07 is the executing LoROM mirror observed by the maintained core.
 const LINK_POSITION_BEFORE_COORDINATES_START_PC: u32 = 0x07e370;
 const LINK_POSITION_BEFORE_COORDINATES_END_PC: u32 = 0x07e3af;
+// Link_MovePosition's axis loop between `STA $2A,y` (the subpixel store) and
+// `ADC $20,x` (the coordinate add): the current axis' subpixel is published,
+// its coordinate is not. X names the pass (4 = z, 2 = y, 0 = x).
+const LINK_POSITION_AFTER_SUBPIXEL_START_PC: u32 = 0x07e3b2;
+const LINK_POSITION_AFTER_SUBPIXEL_END_PC: u32 = 0x07e3c6;
 const VWF_RENDER_SINGLE_START_PC: u32 = 0x0ecab8;
 const VWF_RENDER_SINGLE_END_PC: u32 = 0x0ecd1a;
 const UNCACHE_SPRITE_START_PC: u32 = 0x1dea00;
@@ -655,6 +660,7 @@ fn nmi_resume_target(event: &RawTraceEvent) -> Result<(u32, u16), String> {
 struct HostFrameState {
     run: u64,
     pc: u32,
+    x: Option<u16>,
     main: u8,
     sub: u8,
     subsub: u8,
@@ -754,6 +760,7 @@ impl HostFrameWindow {
                     returned_pc,
                     Some(0x0f),
                     Some(1),
+                    None,
                 )
                     == Some(MainLoopInterruption::LinkOam)
         ) {
@@ -841,6 +848,7 @@ impl HostFrameWindow {
                 .pc
                 .ok_or("Snes9x frame receipt omitted its program counter")?
                 & 0x00ff_ffff,
+            x: event.x,
             main: event
                 .main
                 .ok_or("Snes9x frame receipt omitted Zelda main module")?,
@@ -929,7 +937,18 @@ impl HostFrameWindow {
             returned.pc,
             Some(returned.main),
             Some(returned.sub),
-        ) {
+            returned.x,
+        )
+        .filter(|phase| {
+            // Module0F's ENTRY host (submodule 0 -> 1) is owned by the
+            // spotlight-iteration model, which already places the whole Link
+            // movement on the following host; only the recurring caller
+            // publishes the mid-loop Link position boundary (route hosts
+            // 179577 vs 179586).
+            !(matches!(phase, MainLoopInterruption::LinkPositionAfterSubpixel { .. })
+                && entry.main == 0x0f
+                && entry.sub == 0)
+        }) {
             let observed = receipts
                 .iter()
                 .filter_map(|receipt| match receipt {
@@ -1429,7 +1448,26 @@ impl Snes9xOracleSemanticTrace {
                 Some(1)
             )
         );
-        if superseded {
+        let link_position_interruption_at_return = matches!(
+            (helper_nmi.main, helper_nmi.sub),
+            (Some(0x0f), Some(1))
+        ) && matches!(
+            main_loop_interruption_for_source_state(
+                returned_pc,
+                Some(0x0f),
+                Some(1),
+                returned_event.x,
+            ),
+            Some(
+                MainLoopInterruption::LinkPositionBeforeCoordinates
+                    | MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+            )
+        );
+        if superseded || link_position_interruption_at_return {
+            // A host return inside Module0F's Link movement proves the
+            // recurring caller's table build completed after the helper NMI;
+            // the movement interruption receipt owns this host (route host
+            // 179586).
             return Ok(());
         }
         if returned_pc != NMI_HANDLER_ENTRY_PC {
@@ -2876,6 +2914,7 @@ fn main_loop_interruption_for_source_state(
     pc: u32,
     main: Option<u8>,
     sub: Option<u8>,
+    x: Option<u16>,
 ) -> Option<MainLoopInterruption> {
     if main == Some(0x0f)
         && sub == Some(1)
@@ -2885,6 +2924,13 @@ fn main_loop_interruption_for_source_state(
                 .contains(&pc))
     {
         Some(MainLoopInterruption::LinkPositionBeforeCoordinates)
+    } else if main == Some(0x0f)
+        && sub == Some(1)
+        && (LINK_POSITION_AFTER_SUBPIXEL_START_PC..LINK_POSITION_AFTER_SUBPIXEL_END_PC)
+            .contains(&pc)
+    {
+        let pass = u8::try_from(x?).ok().filter(|pass| matches!(pass, 0 | 2 | 4))?;
+        Some(MainLoopInterruption::LinkPositionAfterSubpixel { pass })
     } else {
         main_loop_interruption_for_pc(pc)
     }
@@ -2924,7 +2970,7 @@ fn main_loop_interruption_for_event(
         ));
     }
     Ok(main_loop_interruption_for_source_state(
-        pc, event.main, event.sub,
+        pc, event.main, event.sub, event.x,
     ))
 }
 

@@ -1800,6 +1800,30 @@ impl ZeldaState {
     pub(super) fn link_handle_velocity_until_position_integrated(
         &mut self,
     ) -> Option<LinkMovePositionReturn> {
+        if !self.link_handle_velocity_before_move_position() {
+            return None;
+        }
+        self.link_move_position_until_coordinates_integrated()
+    }
+
+    /// `Link_HandleVelocity` through `Link_MovePosition`'s axis loop, stopping
+    /// after the `pass` axis' subpixel store (the ROM's mid-loop interruption
+    /// at route host 179586). `None` when the velocity handler took an early
+    /// exit before `Link_MovePosition`.
+    pub(super) fn link_handle_velocity_until_position_partial(
+        &mut self,
+        pass: u8,
+    ) -> Option<LinkMovePositionPartialReturn> {
+        if !self.link_handle_velocity_before_move_position() {
+            return None;
+        }
+        Some(self.link_move_position_partial_after_subpixel(pass))
+    }
+
+    /// `Link_HandleVelocity` up to its `Link_MovePosition` call. `false` when
+    /// the ROM returned earlier (safe-return/sand-drag, swim, or the
+    /// all-blocked collision exit).
+    fn link_handle_velocity_before_move_position(&mut self) -> bool {
         let old_x = self.game_state.player.follower_link.x();
         let old_y = self.game_state.player.follower_link.y();
 
@@ -1812,18 +1836,18 @@ impl ZeldaState {
         {
             self.store_link_safe_return_position(old_x, old_y);
             self.link_handle_velocity_and_sand_drag(old_x, old_y);
-            return None;
+            return false;
         }
 
         if self.game_state.player.follower_link.handler_state() == 4 {
             self.handle_swim_stroke_and_subpixels();
-            return None;
+            return false;
         }
 
         let mut speed_index = if self.game_state.player.follower_link.flag_moving() != 0 {
             if !self.game_state.player.follower_link.is_running() {
                 self.handle_swim_stroke_and_subpixels();
-                return None;
+                return false;
             }
             24
         } else {
@@ -1843,7 +1867,7 @@ impl ZeldaState {
                     .tile_collision_bits_secondary())
                 == 0x0f
             {
-                return None;
+                return false;
             }
             if self
                 .game_state
@@ -1902,7 +1926,97 @@ impl ZeldaState {
         self.follower_link_state_mut()
             .set_actual_velocity_from_direction(direction, vel);
         self.follower_link_state_mut().prime_airborne_z_velocity();
-        self.link_move_position_until_coordinates_integrated()
+        true
+    }
+
+    /// `Link_MovePosition` up to and including the `pass` axis' subpixel
+    /// store: the ROM's loop runs z (airborne only), then x, then y; earlier
+    /// passes complete, the `pass` axis owes its coordinate delta.
+    fn link_move_position_partial_after_subpixel(&mut self, pass: u8) -> LinkMovePositionPartialReturn {
+        let x = self.game_state.player.follower_link.x();
+        let y = self.game_state.player.follower_link.y();
+        self.follower_link_state_mut()
+            .store_safe_return_position(x, y);
+        assert!(
+            !(self.game_state.player.follower_link.handler_state() != 10
+                && self.game_state.player.follower_link.on_somaria_platform() == 2),
+            "a mid-loop Link_MovePosition interruption cannot take the Somaria platform exit",
+        );
+        for candidate in self.link_move_position_passes() {
+            let velocity = self.link_move_position_pass_velocity(candidate);
+            if candidate == pass {
+                let pending_pixel_delta = self
+                    .follower_link_state_mut()
+                    .move_axis_subpixel_only_by_velocity(candidate, velocity);
+                return LinkMovePositionPartialReturn {
+                    old_x: x,
+                    old_y: y,
+                    partial: LinkMovePositionPartial {
+                        pass,
+                        pending_pixel_delta,
+                    },
+                };
+            }
+            self.link_move_position_full_pass(candidate, velocity);
+        }
+        panic!("Link_MovePosition interruption named pass {pass} outside the ROM's axis loop");
+    }
+
+    /// Resume `Link_MovePosition` after `link_move_position_partial_after_subpixel`.
+    pub(super) fn complete_link_move_position_from_partial(
+        &mut self,
+        position_return: LinkMovePositionPartialReturn,
+    ) {
+        let LinkMovePositionPartial {
+            pass,
+            pending_pixel_delta,
+        } = position_return.partial;
+        self.follower_link_state_mut()
+            .apply_axis_pixel_delta(pass, pending_pixel_delta);
+        let passes = self.link_move_position_passes();
+        let resume_at = passes
+            .iter()
+            .position(|candidate| *candidate == pass)
+            .expect("a suspended Link_MovePosition pass must belong to the ROM's axis loop");
+        for candidate in passes[resume_at + 1..].iter().copied() {
+            let velocity = self.link_move_position_pass_velocity(candidate);
+            self.link_move_position_full_pass(candidate, velocity);
+        }
+        self.complete_link_move_position_after_coordinates(LinkMovePositionReturn {
+            old_x: position_return.old_x,
+            old_y: position_return.old_y,
+        });
+    }
+
+    /// The ROM's `Link_MovePosition` loop passes (X register values) in order.
+    fn link_move_position_passes(&self) -> Vec<u8> {
+        if self.game_state.player.follower_link.auxiliary_state() != 0 {
+            vec![4, 2, 0]
+        } else {
+            vec![2, 0]
+        }
+    }
+
+    fn link_move_position_pass_velocity(&self, pass: u8) -> u8 {
+        match pass {
+            4 => self.game_state.player.follower_link.actual_z_velocity(),
+            2 => self.game_state.player.follower_link.actual_x_velocity(),
+            _ => self.game_state.player.follower_link.actual_y_velocity(),
+        }
+    }
+
+    fn link_move_position_full_pass(&mut self, pass: u8, velocity: u8) {
+        match pass {
+            4 => {
+                self.follower_link_state_mut().move_z_by_velocity(velocity);
+            }
+            2 => {
+                self.follower_link_state_mut().move_x_by_velocity(velocity);
+            }
+            _ => {
+                self.follower_link_state_mut().move_y_by_velocity(velocity);
+            }
+        }
     }
 
     pub(super) fn handle_swim_stroke_and_subpixels(&mut self) {

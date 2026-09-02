@@ -3068,12 +3068,42 @@ impl ZeldaState {
         let authoritative_before_coordinates = self.take_original_timing_main_loop_interruption(
             crate::MainLoopInterruption::LinkPositionBeforeCoordinates,
         );
+        let authoritative_after_subpixel = match self.original_timing_main_loop_interruption() {
+            Some(interruption @ crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }) => {
+                assert!(
+                    self.take_original_timing_main_loop_interruption(interruption),
+                    "the observed mid-loop Link position interruption disappeared",
+                );
+                Some(pass)
+            }
+            _ => None,
+        };
         let authoritative_link_oam_interruption =
             self.take_original_timing_main_loop_interruption(crate::MainLoopInterruption::LinkOam);
         assert!(
             !(authoritative_before_coordinates && authoritative_link_oam_interruption),
             "one Module0F source call cannot stop before Link coordinates and in LinkOam",
         );
+        if let Some(pass) = authoritative_after_subpixel {
+            assert!(
+                cpu_plan.is_none() && !authoritative_before_coordinates && !authoritative_link_oam_interruption,
+                "the mid-loop Link position receipt cannot share its host with another Module0F owner",
+            );
+            let position_return = self
+                .module0f_spotlight_close_velocity_until_position_partial(pass)
+                .expect("a mid-loop Link_MovePosition interruption requires Module0F's outdoor velocity path");
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                    iteration,
+                    pass: position_return.partial.pass,
+                    pending_pixel_delta: position_return.partial.pending_pixel_delta,
+                    old_x: position_return.old_x,
+                    old_y: position_return.old_y,
+                },
+                1,
+            );
+            return true;
+        }
         if authoritative_before_coordinates {
             assert!(
                 cpu_plan.is_none(),
@@ -3124,6 +3154,21 @@ impl ZeldaState {
         self.module0f_spotlight_close_after_velocity();
     }
 
+    fn module0f_spotlight_close_velocity_until_position_partial(
+        &mut self,
+        pass: u8,
+    ) -> Option<LinkMovePositionPartialReturn> {
+        if self.game_state.world.location.is_outdoors() {
+            if self.game_state.world.location.overworld_screen_index() == 0x0f {
+                self.follower_link_state_mut()
+                    .set_water_ripple_or_grass_state(1);
+            }
+            self.follower_link_state_mut().set_speed_setting(6);
+            return self.link_handle_velocity_until_position_partial(pass);
+        }
+        None
+    }
+
     fn module0f_spotlight_close_velocity_until_position_integrated(
         &mut self,
     ) -> Option<LinkMovePositionReturn> {
@@ -3166,6 +3211,30 @@ impl ZeldaState {
     ) {
         self.complete_link_move_position_after_coordinates(position_return);
         self.module0f_spotlight_close_after_velocity();
+        if iteration.prepares_main_loop_sprites_before_second_nmi() {
+            self.nmi_prepare_sprites_for_main_loop_once();
+            self.clear_nmi_update_latch();
+        } else {
+            self.schedule_spotlight_iteration_return(iteration);
+        }
+    }
+
+    /// Resume Module0F after a mid-loop `Link_MovePosition` interruption: the
+    /// pending coordinate delta, the remaining axes, the sand-drag/velocity
+    /// tail and the Link/OAM suffix (route host 179587).
+    pub(super) fn complete_dungeon_exit_spotlight_link_movement_after_subpixel(
+        &mut self,
+        iteration: SpotlightIteration,
+        position_return: LinkMovePositionPartialReturn,
+        caller_returned_in_host: bool,
+    ) {
+        self.complete_link_move_position_from_partial(position_return);
+        self.module0f_spotlight_close_after_velocity();
+        if caller_returned_in_host {
+            // The wire's terminal return owns the shared suffix in this same
+            // host (route host 179587); no deferred iteration return remains.
+            return;
+        }
         if iteration.prepares_main_loop_sprites_before_second_nmi() {
             self.nmi_prepare_sprites_for_main_loop_once();
             self.clear_nmi_update_latch();
@@ -3275,6 +3344,42 @@ impl ZeldaState {
     /// table/control/Module0F Link-OAM body after its carried NMI handler and
     /// let the shared terminal executor consume the ordinary suffix exactly
     /// once.
+    /// Complete the recurring spotlight build like
+    /// `complete_dungeon_exit_spotlight_build_cpu`, but the host ended inside
+    /// `Link_MovePosition`'s axis loop (route host 179586): run the movement
+    /// through the `pass` axis' subpixel store and suspend the rest.
+    pub(super) fn complete_dungeon_exit_spotlight_build_until_link_position_partial(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        projection_completed: bool,
+        iteration: SpotlightIteration,
+        pass: u8,
+    ) {
+        if projection_completed {
+            self.complete_iris_spotlight_configure_table_after_projection();
+        } else {
+            self.complete_iris_spotlight_configure_table(table_build);
+        }
+        let caller_interrupted = self.complete_spotlight_configure_table_and_control_after_table(
+            self.game_state.frame.main_module,
+            false,
+        );
+        debug_assert!(!caller_interrupted);
+        let position_return = self
+            .module0f_spotlight_close_velocity_until_position_partial(pass)
+            .expect("a mid-loop Link_MovePosition interruption requires Module0F's outdoor velocity path");
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                iteration,
+                pass: position_return.partial.pass,
+                pending_pixel_delta: position_return.partial.pending_pixel_delta,
+                old_x: position_return.old_x,
+                old_y: position_return.old_y,
+            },
+            1,
+        );
+    }
+
     pub(super) fn complete_dungeon_exit_spotlight_build_cpu(
         &mut self,
         table_build: SpotlightTableBuildContinuation,

@@ -4559,6 +4559,12 @@ impl ZeldaState {
     fn render_text_draw_message_characters(&mut self) -> VwfCpuSliceOutcome {
         let debug_vwf_budget = debug_vwf_budget_for_frame(self.frame_ctr_dbg);
         let resuming = self.dialogue_fast_forward_hold_active;
+        if !resuming {
+            // A fresh handler call starts a new ROM RenderText slice; an
+            // earlier endpoint's handler-complete mark cannot describe it
+            // (route host 180562 followed the 180560 endpoint).
+            self.dialogue_vwf_handler_completed_at_endpoint = false;
+        }
         let handler_entry_glyph_phase = self.dialogue_vwf_glyph_cpu_phase;
         let caller_suffix_master_cycles = if resuming
             && matches!(

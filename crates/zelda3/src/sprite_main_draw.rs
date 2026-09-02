@@ -652,7 +652,22 @@ impl ZeldaState {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_state(value);
                 self.follower_link_state_mut().set_item_receipt_method(0);
-                self.link_receive_item(self.sprite_slot_view(k).a(), 0);
+                let item = self.sprite_slot_view(k).a();
+                if self
+                    .link_receive_item_from(
+                        item,
+                        0,
+                        ItemReceiptCaller::SpriteMainDirect {
+                            sprite_slot: k as u8,
+                            suffix: SpriteMainItemReceiptSuffix::CatfishMedallion,
+                        },
+                    )
+                    .is_suspended()
+                {
+                    return;
+                }
+                self.complete_catfish_medallion_item_receipt(k);
+                return;
             }
         }
         if self.sprite_slot_view(k).delay_aux3() != 0 {
@@ -694,6 +709,18 @@ impl ZeldaState {
                 }
             }
         }
+    }
+
+    /// Source suffix after Sprite_Catfish_QuakeMedallion's
+    /// `Link_ReceiveItem(sprite_A, 0)` (ROM `$9ddf54`): the sprite was killed
+    /// before the call, so only the OAM-region allocation and the single large
+    /// draw run before `Sprite_ReturnIfInactive` returns.
+    pub(super) fn complete_catfish_medallion_item_receipt(&mut self, k: usize) {
+        if self.sprite_slot_view(k).delay_aux3() != 0 {
+            self.oam_allocate_from_region_c(8);
+        }
+        self.sprite_draw_single_large(k);
+        debug_assert!(self.sprite_slot_view(k).state() == 0);
     }
 
     // -----------------------------------------------------------------------

@@ -1269,6 +1269,10 @@ enum OriginalTimingTerminalSpotlightCpuAction {
 struct OriginalTimingSpotlightBuildLinkOamPlan {
     semantic: Vec<OriginalTimingSemanticReceipt>,
     timeline: OriginalTimingMainLoopInterruptionTimeline,
+    /// `LinkOam`, or the mid-loop Link position boundary when the host ended
+    /// inside `Link_MovePosition` after the completed build (route host
+    /// 179586).
+    interruption: crate::MainLoopInterruption,
     work: GameWorkContinuation,
     scheduler_before_completion: GameExecutionScheduler,
     scheduler_after_completion: GameExecutionScheduler,
@@ -4932,7 +4936,8 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         } => slot < 16 && completed >= 1 && completed <= 5,
         crate::MainLoopInterruption::LinkOam
         | crate::MainLoopInterruption::SpritePreparation
-        | crate::MainLoopInterruption::LinkPositionBeforeCoordinates => true,
+        | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
+        | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. } => true,
         crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { next_group_start } => {
             next_group_start <= 28 && next_group_start & 3 == 0
         }
@@ -5070,7 +5075,8 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterCuccoGraphicsPublication { .. }
         | crate::MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(_) => unreachable!(),
-        crate::MainLoopInterruption::LinkPositionBeforeCoordinates => None,
+        crate::MainLoopInterruption::LinkPositionBeforeCoordinates
+        | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. } => None,
     }
 }
 
@@ -6340,6 +6346,14 @@ pub(super) enum SpriteMainItemReceiptSuffix {
     /// ROM `$85fc04` Sprite_BookOfMudora's pickup: `Link_ReceiveItem(0x1d)`
     /// then the sprite-kill tail (route host 111518).
     BookOfMudora,
+    /// ROM `$9ddf54` Sprite_Catfish_QuakeMedallion's handout:
+    /// `Link_ReceiveItem(sprite_A, 0)` then the OAM-region/draw tail of the
+    /// now-inactive sprite (route host 177047).
+    CatfishMedallion,
+    /// ROM `$86c44c` Sprite_HappinessPond case 9: `sprite_ai_state = 10`
+    /// then `Link_ReceiveItem(gfx, 0)` with nothing after it (route hosts
+    /// 180723, 182366).
+    HappinessPondReward,
 }
 
 impl SpriteMainItemReceiptSuffix {
@@ -6356,6 +6370,8 @@ impl SpriteMainItemReceiptSuffix {
                 | Self::HeartContainerUpgrade
                 | Self::SahasrahlaBoots
                 | Self::BookOfMudora
+                | Self::CatfishMedallion
+                | Self::HappinessPondReward
         )
     }
 }
@@ -6391,6 +6407,22 @@ pub(super) struct DungeonSpriteMainReturn {
 pub(super) struct LinkMovePositionReturn {
     old_x: u16,
     old_y: u16,
+}
+
+/// `Link_MovePosition` suspended inside its axis loop: the `pass` axis (the
+/// loop's X register: 4 = z, 2 = y, 0 = x) has its subpixel stored and still
+/// owes `pending_pixel_delta` on its coordinate; later axes are untouched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LinkMovePositionPartial {
+    pass: u8,
+    pending_pixel_delta: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LinkMovePositionPartialReturn {
+    old_x: u16,
+    old_y: u16,
+    partial: LinkMovePositionPartial,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -6569,6 +6601,17 @@ enum GameWorkContinuation {
     FinishDungeonExitSpotlightLinkMovement {
         iteration: SpotlightIteration,
     },
+    /// Module0F's Link movement was interrupted inside `Link_MovePosition`'s
+    /// axis loop after the `pass` axis' subpixel store: that coordinate still
+    /// owes `pending_pixel_delta`, the later axes their whole move, and the
+    /// caller its sand-drag and Link/OAM suffix (route host 179586).
+    FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+        iteration: SpotlightIteration,
+        pass: u8,
+        pending_pixel_delta: u16,
+        old_x: u16,
+        old_y: u16,
+    },
     /// Module10's Sprite_Main prefix returned, but vblank interrupted the
     /// opening-iris table build or copy before its radius/control suffix.
     FinishOverworldSpotlightBuild {
@@ -6736,6 +6779,7 @@ impl GameWorkContinuation {
                 | Self::FinishDialogueInitializationPrefix { .. }
                 | Self::FinishDungeonExitSpotlightEntry { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovement { .. }
+                | Self::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                 | Self::FinishModule09LinkOamCallerReturn { .. }
                 | Self::FinishWorldMapOverlayReload
                 | Self::FinishPreDungeonEntranceLoad { .. }
@@ -19027,8 +19071,9 @@ impl ZeldaState {
                         crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }
                             // Module0F's spotlight-close Link movement
                             // consumes this boundary inside the module body
-                            // (route host 50635).
+                            // (route hosts 50635, 179586).
                             | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
+                            | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                     )
                     || interruption.is_sprite_main(),
                 "an interrupted idle main-loop plan has no native outer owner for {interruption:?}",
@@ -21425,11 +21470,13 @@ impl ZeldaState {
         let Some(interruption) = self.original_timing_main_loop_interruption() else {
             return None;
         };
-        assert_eq!(
-            interruption,
-            crate::MainLoopInterruption::LinkOam,
-            "a continued recurring spotlight Build requires its exact LinkOam boundary",
-        );
+        let link_position_pass = match interruption {
+            crate::MainLoopInterruption::LinkOam => None,
+            crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass } => Some(pass),
+            other => panic!(
+                "a continued recurring spotlight Build requires its LinkOam or mid-loop Link position boundary, not {other:?}"
+            ),
+        };
         assert!(
             iteration.is_closing(),
             "a recurring spotlight Build-LinkOam boundary requires a closing iteration",
@@ -21523,7 +21570,7 @@ impl ZeldaState {
                     OriginalTimingSemanticReceipt::NmiHandlerCompleted,
                     OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
                     OriginalTimingSemanticReceipt::MainLoopInterrupted(
-                        crate::MainLoopInterruption::LinkOam,
+                        interruption,
                     ),
                     OriginalTimingSemanticReceipt::MainLoopProgress(
                         crate::MainLoopProgress::CallStackContinued,
@@ -21539,7 +21586,7 @@ impl ZeldaState {
                         crate::MainLoopProgress::CallStackContinued,
                     ),
                     OriginalTimingSemanticReceipt::MainLoopInterrupted(
-                        crate::MainLoopInterruption::LinkOam,
+                        interruption,
                     ),
                 ]
             }
@@ -21558,7 +21605,7 @@ impl ZeldaState {
                 OriginalTimingSemanticReceipt::NmiHandlerCompleted,
                 OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
-                    crate::MainLoopInterruption::LinkOam,
+                    interruption,
                 ),
             ];
             if let Some(claim) = semantic.iter().find(|receipt| {
@@ -21588,7 +21635,7 @@ impl ZeldaState {
                     crate::MainLoopProgress::CallStackContinued,
                 ),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
-                    crate::MainLoopInterruption::LinkOam,
+                    interruption,
                 ),
             ]
         };
@@ -21604,7 +21651,7 @@ impl ZeldaState {
                 == 2;
         let timeline = OriginalTimingMainLoopInterruptionTimeline {
             progress: crate::MainLoopProgress::CallStackContinued,
-            interruption: crate::MainLoopInterruption::LinkOam,
+            interruption: interruption,
             nmi_phases_before_interruption: if publication_pending_at_entry {
                 if semantic
                     .iter()
@@ -21664,18 +21711,34 @@ impl ZeldaState {
             .original_timing_semantic_receipts
             .as_ref()
             .map(|receipts| receipts.semantic().to_vec());
-        cpu_probe.complete_dungeon_exit_spotlight_build(
-            table_build,
-            projection_completed,
-            iteration,
-            false,
-            true,
-        );
-        assert_eq!(
-            cpu_probe.game_execution_scheduler.current_work(),
-            Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }),
-            "the recurring spotlight Build probe did not retain exactly its LinkOam caller suffix",
-        );
+        if let Some(pass) = link_position_pass {
+            cpu_probe.complete_dungeon_exit_spotlight_build_until_link_position_partial(
+                table_build,
+                projection_completed,
+                iteration,
+                pass,
+            );
+            assert!(
+                matches!(
+                    cpu_probe.game_execution_scheduler.current_work(),
+                    Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. })
+                ),
+                "the recurring spotlight Build probe did not retain exactly its mid-loop Link movement suffix",
+            );
+        } else {
+            cpu_probe.complete_dungeon_exit_spotlight_build(
+                table_build,
+                projection_completed,
+                iteration,
+                false,
+                true,
+            );
+            assert_eq!(
+                cpu_probe.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }),
+                "the recurring spotlight Build probe did not retain exactly its LinkOam caller suffix",
+            );
+        }
         assert_eq!(
             cpu_probe.pending_main_loop_common_suffix, suffix_before,
             "the recurring spotlight Build probe consumed the following host's common suffix",
@@ -21706,6 +21769,7 @@ impl ZeldaState {
         Some(OriginalTimingSpotlightBuildLinkOamPlan {
             semantic,
             timeline,
+            interruption,
             work,
             scheduler_before_completion,
             scheduler_after_completion,
@@ -25925,6 +25989,10 @@ impl ZeldaState {
             Some(GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. })
             | Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration })
             | Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. })
+            | Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                iteration,
+                ..
+            })
             | Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity {
                 iteration,
                 ..
@@ -32569,6 +32637,29 @@ impl ZeldaState {
                 )));
                 self.complete_dungeon_exit_spotlight_link_movement(iteration);
             }
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                iteration,
+                pass,
+                pending_pixel_delta,
+                old_x,
+                old_y,
+            } => {
+                self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
+                    GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                )));
+                self.complete_dungeon_exit_spotlight_link_movement_after_subpixel(
+                    iteration,
+                    LinkMovePositionPartialReturn {
+                        old_x,
+                        old_y,
+                        partial: LinkMovePositionPartial {
+                            pass,
+                            pending_pixel_delta,
+                        },
+                    },
+                    false,
+                );
+            }
             GameWorkContinuation::FinishDungeonCachedSpriteMain {
                 boundary,
                 live_slot_backup,
@@ -33171,6 +33262,7 @@ impl ZeldaState {
                                             | GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. }
                                             | GameWorkContinuation::FinishWorldMapOverlayReload
                                             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
+                                            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                                             | GameWorkContinuation::FinishSpriteMain { .. }
                                             | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
                                     )
@@ -35231,6 +35323,7 @@ impl ZeldaState {
                         interruption,
                         crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }
                             | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
+                            | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                     )
                     || interruption.is_sprite_main()
             })
@@ -35438,7 +35531,15 @@ impl ZeldaState {
         }
         let authoritative_link_oam_timeline = authoritative_main_loop_interruption_timeline
             .as_ref()
-            .filter(|timeline| timeline.interruption == crate::MainLoopInterruption::LinkOam);
+            .filter(|timeline| {
+                timeline.interruption == crate::MainLoopInterruption::LinkOam
+                    // The recurring spotlight Build may instead end inside
+                    // Link_MovePosition's axis loop (route host 179586); the
+                    // Build plan owns that boundary through the same lane.
+                    || prospective_spotlight_build_link_oam_plan
+                        .as_ref()
+                        .is_some_and(|plan| plan.interruption == timeline.interruption)
+            });
         if let Some(plan) = prospective_spotlight_build_link_oam_plan.as_ref() {
             assert_eq!(
                 authoritative_link_oam_timeline,
@@ -35697,6 +35798,7 @@ impl ZeldaState {
                 if matches!(
                     expected_work,
                     GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                 ) {
                     // The resumed movement leaf returns through Module0F to
                     // the main wait alongside this same host return (route
@@ -35776,6 +35878,7 @@ impl ZeldaState {
                 if matches!(
                     expected_work,
                     GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                 ) {
                     assert!(
                         self.take_original_timing_dungeon_exit_spotlight_caller_returned(),
@@ -36591,8 +36694,10 @@ impl ZeldaState {
                         // ordered source stream can contain both facts in one
                         // host: LinkOam interruption, NMI publication, then
                         // caller return. In that case the later completion owns
-                        // the final source boundary.
-                        timeline.progress == crate::MainLoopProgress::CallStackContinued
+                        // the final source boundary. A mid-loop Link position
+                        // boundary is owned by the Build plan instead.
+                        timeline.interruption == crate::MainLoopInterruption::LinkOam
+                            && timeline.progress == crate::MainLoopProgress::CallStackContinued
                     }
                     None => self.take_original_timing_main_loop_interruption(
                         crate::MainLoopInterruption::LinkOam,
@@ -36714,6 +36819,9 @@ impl ZeldaState {
                         || matches!(
                             timeline.interruption,
                             crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }
+                                // The recurring spotlight Build's host may end
+                                // inside Link_MovePosition (route host 179586).
+                                | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                         )
                         || timeline.interruption.is_sprite_main()
                 );
@@ -37839,7 +37947,11 @@ impl ZeldaState {
                         },
                     ) => Some(iteration.completion_publication()),
                     GameWorkStep::Complete(
-                        GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. },
+                        GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                            iteration,
+                            ..
+                        },
                     ) => Some(iteration.completion_publication()),
                     GameWorkStep::Complete(
                         GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. },
@@ -38766,6 +38878,12 @@ impl ZeldaState {
                             SpriteMainItemReceiptSuffix::BookOfMudora => {
                                 self.complete_book_of_mudora_item_receipt(sprite_slot)
                             }
+                            SpriteMainItemReceiptSuffix::CatfishMedallion => {
+                                self.complete_catfish_medallion_item_receipt(sprite_slot)
+                            }
+                            SpriteMainItemReceiptSuffix::HappinessPondReward => {
+                                self.complete_happiness_pond_item_receipt(sprite_slot)
+                            }
                         }
                         self.complete_sprite_main_after_interrupted_slot(sprite_slot);
                         match caller {
@@ -39167,6 +39285,37 @@ impl ZeldaState {
                         self.retire_or_run_main_loop_common_suffix_after_module_return();
                     }
                 }
+                GameWorkStep::Complete(
+                    GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                        iteration,
+                        pass,
+                        pending_pixel_delta,
+                        old_x,
+                        old_y,
+                    },
+                ) => {
+                    // The host ended inside Link_MovePosition's axis loop after
+                    // one subpixel store (route host 179586). Finish that
+                    // coordinate, the remaining axes and the caller suffix.
+                    self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
+                        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    )));
+                    self.complete_dungeon_exit_spotlight_link_movement_after_subpixel(
+                        iteration,
+                        LinkMovePositionPartialReturn {
+                            old_x,
+                            old_y,
+                            partial: LinkMovePositionPartial {
+                                pass,
+                                pending_pixel_delta,
+                            },
+                        },
+                        authoritative_scheduled_caller_return_timeline.is_some(),
+                    );
+                    if authoritative_scheduled_caller_return_timeline.is_some() {
+                        self.retire_or_run_main_loop_common_suffix_after_module_return();
+                    }
+                }
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonCachedSpriteMain {
                     boundary,
                     live_slot_backup,
@@ -39236,13 +39385,43 @@ impl ZeldaState {
                     projection_completed,
                     iteration,
                 }) => {
-                    self.complete_dungeon_exit_spotlight_build(
-                        table_build,
-                        projection_completed,
-                        iteration,
-                        authoritative_dungeon_exit_spotlight_caller_returned,
-                        authoritative_dungeon_exit_spotlight_link_oam_interruption,
-                    );
+                    let link_position_pass = prospective_spotlight_build_link_oam_plan
+                        .as_ref()
+                        .and_then(|plan| match plan.interruption {
+                            crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass } => {
+                                Some(pass)
+                            }
+                            _ => None,
+                        });
+                    if let Some(pass) = link_position_pass {
+                        // The host ended inside Link_MovePosition after the
+                        // completed build (route host 179586): consume that
+                        // boundary and suspend the movement mid-loop.
+                        // The interruption timeline taken above already
+                        // consumed the receipt; retire any restatement.
+                        let _ = self.take_original_timing_main_loop_interruption(
+                            crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass },
+                        );
+                        assert!(
+                            !authoritative_dungeon_exit_spotlight_caller_returned
+                                && !authoritative_dungeon_exit_spotlight_link_oam_interruption,
+                            "a mid-loop Link position boundary cannot share its host with a caller return or LinkOam interruption",
+                        );
+                        self.complete_dungeon_exit_spotlight_build_until_link_position_partial(
+                            table_build,
+                            projection_completed,
+                            iteration,
+                            pass,
+                        );
+                    } else {
+                        self.complete_dungeon_exit_spotlight_build(
+                            table_build,
+                            projection_completed,
+                            iteration,
+                            authoritative_dungeon_exit_spotlight_caller_returned,
+                            authoritative_dungeon_exit_spotlight_link_oam_interruption,
+                        );
+                    }
                     if let Some(plan) = prospective_spotlight_build_link_oam_plan.as_ref() {
                         assert_eq!(
                             self.game_execution_scheduler, plan.scheduler_after_cpu,
@@ -40074,6 +40253,10 @@ impl ZeldaState {
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                    iteration,
+                    ..
+                }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. },
             ) = work_slice
             {
@@ -40120,6 +40303,10 @@ impl ZeldaState {
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                    iteration,
+                    ..
+                }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. },
             ) = work_slice
             {

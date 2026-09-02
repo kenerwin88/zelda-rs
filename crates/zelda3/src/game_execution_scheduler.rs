@@ -417,6 +417,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                 | GameWorkContinuation::FinishSpotlightIteration { .. }
                 | GameWorkContinuation::FinishOverworldSpotlightBuild { .. }
                 | GameWorkContinuation::FinishOverworldSpotlightLinkOam { .. }
@@ -440,6 +441,10 @@ impl ScheduledGameWork {
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                iteration,
+                ..
+            }
             | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration } => {
@@ -469,6 +474,10 @@ impl ScheduledGameWork {
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                iteration,
+                ..
+            }
             | GameWorkContinuation::FinishOverworldSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishOverworldSpotlightLinkOam { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { iteration } => {

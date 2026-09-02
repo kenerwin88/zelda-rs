@@ -2294,6 +2294,13 @@ impl ZeldaState {
         self.sprite_wish_pond2(k);
     }
 
+    /// Source suffix after Sprite_HappinessPond case 9's
+    /// `Link_ReceiveItem(gfx, 0)` (ROM `$86c44c`): nothing observable remains
+    /// (the AI-state advance precedes the call in the ROM).
+    pub(super) fn complete_happiness_pond_item_receipt(&mut self, k: usize) {
+        debug_assert_eq!(self.sprite_slot_view(k).ai_state(), 10);
+    }
+
     pub(super) fn sprite_wish_pond2(&mut self, k: usize) {
         self.wish_pond2_draw(k);
         if self.sprite_return_if_inactive(k) {
@@ -2476,8 +2483,26 @@ impl ZeldaState {
                 self.PaletteFilter_RestoreSP5F();
                 self.Palette_RevertTranslucencySwap();
                 self.follower_link_state_mut().set_item_receipt_method(2);
-                self.link_receive_item(self.sprite_slot_view(k).graphics(), 0);
+                // The ROM advances the pond's AI state BEFORE calling
+                // Link_ReceiveItem: the oracle already reads $0A while the
+                // item graphics decompression is suspended (route host
+                // 182366); the C port's statement order is a reordering.
                 self.sprite_slot_view_mut(k).set_ai_state(10);
+                let item = self.sprite_slot_view(k).graphics();
+                if self
+                    .link_receive_item_from(
+                        item,
+                        0,
+                        ItemReceiptCaller::SpriteMainDirect {
+                            sprite_slot: k as u8,
+                            suffix: SpriteMainItemReceiptSuffix::HappinessPondReward,
+                        },
+                    )
+                    .is_suspended()
+                {
+                    return;
+                }
+                self.complete_happiness_pond_item_receipt(k);
             }
             10 => {
                 let head = self.sprite_slot_view(k).head_direction();
