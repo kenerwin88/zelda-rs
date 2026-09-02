@@ -40644,13 +40644,34 @@ impl ZeldaState {
                             let wire_completes_caller_suffix = schedule.caller_sprite_main_nmis
                                 == 0
                                 && authoritative_scheduled_caller_return_timeline.is_some();
-                            let caller_suffix_nmis = if wire_interrupts_caller_suffix {
+                            let mut caller_suffix_nmis = if wire_interrupts_caller_suffix {
                                 schedule.caller_suffix_nmis.max(1)
                             } else if wire_completes_caller_suffix {
                                 0
                             } else {
                                 schedule.caller_suffix_nmis
                             };
+                            // The wire may suspend the module tail's Sprite_Main
+                            // at a slot boundary inside this host (route host
+                            // 1449586: SpriteMainAfterSlot(2)); hand that
+                            // interruption to the Sprite_Main caller so the loop
+                            // parks there and the next host's return owns the
+                            // remainder and the shared suffix.
+                            if schedule.caller_sprite_main_nmis == 0 {
+                                if let Some(interruption) = authoritative_scheduled_caller_nmi_timeline
+                                    .map(|timeline| timeline.interruption)
+                                    .filter(|interruption| interruption.is_sprite_main())
+                                {
+                                    if self.original_timing_main_loop_interruption() == Some(interruption) {
+                                        let _ = self.take_original_timing_main_loop_interruption_any();
+                                    }
+                                    self.forward_original_timing_main_loop_interruption_to_native_owner(
+                                        interruption,
+                                        OriginalTimingBoundary::NmiAccepted,
+                                    );
+                                    caller_suffix_nmis = 0;
+                                }
+                            }
                             self.dungeon_room_load_module_suffix_nmi_slices = caller_suffix_nmis;
                             if schedule.caller_sprite_main_nmis != 0 {
                                 let boundary = schedule
@@ -40665,6 +40686,16 @@ impl ZeldaState {
                                     .work_suspends_translated_call_stack());
                             } else if caller_suffix_nmis == 0 {
                                 self.complete_module07_dungeon_after_submodule();
+                                if self
+                                    .game_execution_scheduler
+                                    .work_suspends_translated_call_stack()
+                                {
+                                    // The wire parked the module tail's
+                                    // Sprite_Main at a slot boundary; its
+                                    // completion owns the suffix and the
+                                    // following resume (route host 1449586).
+                                    return;
+                                }
                                 let mut suffix_deferred_by_wire = false;
                                 if authoritative_scheduled_caller_return_timeline.is_some() {
                                     // The terminal return already consumed its

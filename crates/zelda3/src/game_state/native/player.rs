@@ -6132,7 +6132,15 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    #[track_caller]
     pub(crate) fn set_given_damage(&mut self, value: u8) {
+        if std::env::var_os("ZELDA3_DEBUG_LINK_DAMAGE").is_some() {
+            eprintln!(
+                "[LINKDMG] given_damage={value:#x} caller={} cur_sprite={:#x}",
+                std::panic::Location::caller(),
+                self.ram[0x0fa0],
+            );
+        }
         self.state.set_given_damage(value);
         self.ram[LINK_GIVE_DAMAGE] = value;
         self.debug_assert_matches_ram();
