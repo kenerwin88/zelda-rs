@@ -749,7 +749,12 @@ impl HostFrameWindow {
             ) if self.main_loop_starts == 0
                 && !zelda_main_wait_pc(entry_pc)
                 && (zelda_main_wait_pc(returned_pc)
-                    || (entry_nmi_latch != 0 && returned_nmi_latch == 0))
+                    || (entry_nmi_latch != 0 && returned_nmi_latch == 0)
+                    // The host can end inside the Open NMI handler that
+                    // follows the return, with the handler's own latch write
+                    // already visible (route host 597513); the observed
+                    // common-suffix $12 clear is the same return proof.
+                    || self.main_loop_common_suffix_completed)
         ) {
             return Some(SpotlightCallCompletion::RecurringCallerReturnedToMainWait);
         }
@@ -931,6 +936,16 @@ impl HostFrameWindow {
             }
         }
         let spotlight_call_completion = self.spotlight_call_completion();
+        if std::env::var_os("ZELDA3_DEBUG_SPOTLIGHT_DECODE").is_some() {
+            eprintln!(
+                "[SPOTLIGHT-DECODE] entry={:?} returned={:?} main_loop_starts={} suffix_completed={} completion={:?}",
+                self.entry,
+                self.returned,
+                self.main_loop_starts,
+                self.main_loop_common_suffix_completed,
+                spotlight_call_completion,
+            );
+        }
         if spotlight_call_completion
             == Some(SpotlightCallCompletion::RecurringCallerReturnedToMainWait)
         {

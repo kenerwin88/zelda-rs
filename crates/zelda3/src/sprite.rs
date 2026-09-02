@@ -6223,6 +6223,10 @@ impl ZeldaState {
             } else {
                 self.game_state.player.follower_link.facing()
             };
+            // ROM $06:F19F `LDY $0DE0,X`: the shield comparison indexes by the
+            // sprite's direction and leaves it in Y (see
+            // `rom_damage_check_y_register`).
+            self.rom_damage_check_y_register = Some(self.sprite_slot_view(k).direction());
             if t == SPRITE_CHECK_DAMAGE_TO_LINK_IGNORE_LAYER_SPRITE_DAMAGE_FACING_BY_DIRECTION
                 [usize::from(self.sprite_slot_view(k).direction() & 3)]
             {
@@ -6451,6 +6455,9 @@ impl ZeldaState {
         self.follower_link_state_mut().set_auxiliary_state(1);
         let idx = 3 * usize::from(self.sprite_slot_view(k).bump_damage() & 0x0f)
             + usize::from(self.game_state.inventory.items.armor());
+        // ROM $06:F3FF `TAY`: the damage table index stays in Y for callers
+        // that keep using Y afterwards (Sprite_C3_Gibo's pursuit target).
+        self.rom_damage_check_y_register = Some(idx as u8);
         self.follower_link_state_mut()
             .set_given_damage(SPRITE_ATTEMPT_DAMAGE_TO_LINK_PLUS_RECOIL_PLAYER_DAMAGES[idx]);
         if self.sprite_slot_view(k).sprite_type() == 0x61 && self.sprite_slot_view(k).c() != 0 {

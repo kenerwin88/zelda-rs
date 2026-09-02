@@ -1289,6 +1289,16 @@ impl GameExecutionScheduler {
         }
     }
 
+    /// The continuation parked behind the current trailing NMI, if any.
+    pub(super) fn peek_after_current_trailing_nmi(&self) -> Option<GameWorkContinuation> {
+        match self.continuation {
+            Some(GameExecutionContinuation::AfterCurrentTrailingNmi(continuation)) => {
+                Some(continuation)
+            }
+            _ => None,
+        }
+    }
+
     pub(super) fn take_after_current_trailing_nmi(&mut self) -> Option<GameWorkContinuation> {
         match self.continuation {
             Some(GameExecutionContinuation::AfterCurrentTrailingNmi(continuation)) => {

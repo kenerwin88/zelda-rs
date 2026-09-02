@@ -11533,7 +11533,14 @@ impl ZeldaState {
                     self.ApplyPaletteFilter_bounce();
                 }
             }
-            2 => self.Dungeon_InitializeRoomFromSpecial(),
+            2 => {
+                // The fat inter-room stairs share the long
+                // Dungeon_InitializeRoomFromSpecial call; the live wire can
+                // hold it across vblank the same way (route host 402660).
+                if !self.begin_dungeon_falling_room_initialization_work() {
+                    self.Dungeon_InitializeRoomFromSpecial();
+                }
+            }
             3 => self.DungeonTransition_TriggerBGC34UpdateAndAdvance(),
             4 => self.DungeonTransition_TriggerBGC56UpdateAndAdvance(),
             5 => self.DungeonTransition_LoadSpriteGFX(),

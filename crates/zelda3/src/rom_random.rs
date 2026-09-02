@@ -173,6 +173,16 @@ impl RomRandomReplay {
                 caller.line(),
             )
         };
+        if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_TRACE").is_some() {
+            eprintln!(
+                "rom_random_take frame={execution_frame} sample_frame={} value={:02x} carry={} callsite={}:{}",
+                sample.execution_frame,
+                sample.value,
+                u8::from(sample.carry),
+                caller.file(),
+                caller.line(),
+            );
+        }
         if sample.execution_frame != execution_frame {
             if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_FRAME_DRIFT").is_none() {
                 panic!(

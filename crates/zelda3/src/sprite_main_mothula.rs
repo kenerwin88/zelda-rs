@@ -1964,11 +1964,22 @@ impl ZeldaState {
         }
         let value = (self.game_state.frame.frame_counter >> 3) & 3;
         self.sprite_slot_view_mut(k).set_subtype2(value);
+        // ROM $9D:CD1B loads Y with the head slot and never reloads it before
+        // the state-2 target reads ($9D:CDF2 `LDA $0D10,Y` ...). Two calls in
+        // between overwrite Y: Sprite_IsRightOfPlayer every 64th frame
+        // (Y = its 0/1 result, route host 707202) and the damage check's
+        // table lookups. The C port's `j` hides this ("original destroys y").
+        let mut rom_y_register = self.sprite_slot_view(k).head_direction();
         if (self.game_state.frame.frame_counter & 63) == 0 {
-            let value = self.sprite_is_right_of_link(k).a << 2;
-            self.sprite_slot_view_mut(k).set_direction(value);
+            let right = self.sprite_is_right_of_link(k);
+            self.sprite_slot_view_mut(k).set_direction(right.a << 2);
+            rom_y_register = right.a;
         }
+        self.rom_damage_check_y_register = None;
         self.sprite_check_damage_to_link(k);
+        if let Some(y) = self.rom_damage_check_y_register.take() {
+            rom_y_register = y;
+        }
 
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -2014,8 +2025,7 @@ impl ZeldaState {
             }
             2 => {
                 if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0 {
-                    let x = self.sprite_get_x(j);
-                    let y = self.sprite_get_y(j);
+                    let (x, y) = self.gibo_rom_pursuit_target(rom_y_register);
                     if self
                         .game_state
                         .sprites
@@ -2052,6 +2062,29 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    /// The pursuit target Sprite_C3_Gibo reads through its stale Y register
+    /// ($9D:CDF2-CE04: `LDA $0D10,Y / $0D30,Y / $0D00,Y / $0D20,Y`). Indexes
+    /// past the sixteen slots alias the neighbouring sprite tables exactly as
+    /// the ROM's flat WRAM layout does.
+    fn gibo_rom_pursuit_target(&self, y_register: u8) -> (u16, u16) {
+        let j = usize::from(y_register);
+        if j < 16 {
+            return (self.sprite_get_x(j), self.sprite_get_y(j));
+        }
+        assert!(
+            j < 32,
+            "Sprite_C3_Gibo stale Y index {j} escapes the sprite coordinate tables"
+        );
+        let slot = j - 16;
+        // $0D10+j -> sprite_y_hi[slot]; $0D30+j -> sprite_y_vel[slot]
+        let x = u16::from(self.sprite_slot_view(slot).y_high())
+            | (u16::from(self.sprite_slot_view(slot).y_velocity()) << 8);
+        // $0D00+j -> sprite_x_lo[slot]; $0D20+j -> sprite_x_hi[slot]
+        let y = u16::from(self.sprite_slot_view(slot).x_low())
+            | (u16::from(self.sprite_slot_view(slot).x_high()) << 8);
+        (x, y)
     }
 
     // void Sprite_Tektite(int k) {  // 9dc293
