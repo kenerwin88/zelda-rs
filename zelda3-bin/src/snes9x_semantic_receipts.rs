@@ -697,6 +697,11 @@ struct HostFrameWindow {
     vwf_nmi_observed: bool,
     main_loop_starts: u8,
     main_loop_common_suffix_completed: bool,
+    /// The host began inside the previous iteration's common suffix, before
+    /// its `$12` clear (entry at `$00:805D`, route host 511525): that leading
+    /// completion belongs to the carried iteration and a fresh iteration may
+    /// complete its own suffix later in the same host.
+    leading_common_suffix_completed: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -836,10 +841,16 @@ impl HostFrameWindow {
                     event.value,
                 ));
             }
-            if self.main_loop_common_suffix_completed {
-                return Err(
-                    "Snes9x host call completed ZeldaRunGameLoop's common suffix twice".to_string(),
-                );
+            if self.main_loop_common_suffix_completed
+                && !(self.leading_common_suffix_completed && self.main_loop_starts == 1)
+            {
+                return Err(format!(
+                    "Snes9x host call completed ZeldaRunGameLoop's common suffix twice (main_loop_starts={}, entry={:?}, event pc={:?})",
+                    self.main_loop_starts, self.entry, event.pc,
+                ));
+            }
+            if self.main_loop_starts == 0 && !self.main_loop_common_suffix_completed {
+                self.leading_common_suffix_completed = true;
             }
             self.main_loop_common_suffix_completed = true;
         }

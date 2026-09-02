@@ -40026,6 +40026,17 @@ impl ZeldaState {
                                         Some(ModuleCpuPhase::InterruptedInSpriteMain);
                                 }
                             }
+                            // A terminal return in this host proves the whole
+                            // caller suffix ran here (route host 1136316:
+                            // [Handler, SpriteMainReturned, Continued,
+                            // SuffixCompleted] against an estimated
+                            // prep-interrupted split).
+                            if schedule.caller_sprite_main_nmis == 0
+                                && authoritative_scheduled_caller_return_timeline.is_some()
+                            {
+                                schedule.caller_suffix_nmis = 0;
+                                schedule.caller_nmis = 0;
+                            }
                             if schedule.caller_sprite_main_nmis != 0 {
                                 assert_eq!(
                                     schedule.caller_nmis,
@@ -40389,8 +40400,15 @@ impl ZeldaState {
                                     .work_suspends_translated_call_stack());
                             } else if caller_suffix_nmis == 0 {
                                 self.complete_module07_dungeon_after_submodule();
-                                if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-                                    && self.original_timing_semantic_receipts.is_some()
+                                if authoritative_scheduled_caller_return_timeline.is_some() {
+                                    // The terminal return already consumed its
+                                    // suffix receipt into the retained timeline
+                                    // (route host 898148); retire it here.
+                                    self.retire_or_run_main_loop_common_suffix_after_module_return();
+                                } else if matches!(
+                                    self.original_timing_owner,
+                                    OriginalTimingOwnerState::Live
+                                ) && self.original_timing_semantic_receipts.is_some()
                                 {
                                     // The wire may hold the shared suffix past
                                     // this host ([Handler, SpriteMainReturned,
