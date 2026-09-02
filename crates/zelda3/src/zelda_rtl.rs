@@ -34362,9 +34362,15 @@ impl ZeldaState {
             if matches!(
                 self.game_execution_scheduler.current_work(),
                 Some(GameWorkContinuation::FinishItemReceiptGraphics {
-                    continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. },
+                    continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
+                        ground_apress_tail: Some(_),
+                        ..
+                    },
                 })
             ) {
+                // A receipt whose caller already completed with no ground
+                // A-press tail (route host 514805) only loads graphics in
+                // later NMIs; its hosts run ordinary fresh iterations.
                 assert!(
                     prospective_terminal_ground_item_receipt_plan.is_some(),
                     "a terminal atomic item caller published unsupported ground-item ownership",

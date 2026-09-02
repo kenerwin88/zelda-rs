@@ -18702,22 +18702,9 @@ fn terminal_ground_item_receipt_preflight_is_failure_atomic() {
     );
     assert_rejected("specialized suffix", specialized_suffix);
 
-    let mut unsupported_continuation = live_terminal_ground_item_receipt_state();
-    unsupported_continuation
-        .game_execution_scheduler
-        .finish_work();
-    unsupported_continuation
-        .game_execution_scheduler
-        .schedule_work(
-            GameWorkContinuation::FinishItemReceiptGraphics {
-                continuation: ItemReceiptGraphicsContinuation::CallerAlreadyCompleted {
-                    gfx: 0x22,
-                    ground_apress_tail: None,
-                },
-            },
-            1,
-        );
-    assert_rejected("unsupported item continuation", unsupported_continuation);
+    // A completed caller with no ground A-press tail only loads graphics in
+    // later NMIs; its hosts are ordinary iterations (route host 514805), so
+    // that continuation is no longer rejected here.
 
     // A gfx-$21 ground-item terminal outside handler 21 is no longer a
     // rejected shape: route host 14076 proved its ordinary module epilogue
