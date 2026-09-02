@@ -3627,7 +3627,21 @@ impl ZeldaState {
     //     link_actual_vel_y ^= 255;
     //   }
     // }
-    pub(super) fn garnish_check_player_collision(&mut self, k: usize, x: i32, y: i32) {
+    /// `Garnish_CheckPlayerCollision` ($09:B459). The ROM chains 8-bit
+    /// `SBC`/`ADC` without resetting the carry: the x test starts from the
+    /// caller's carry (`carry_in`), each `SBC` borrows into the next, the
+    /// `ADC #$0C` adds the final borrow flag, and the y test starts from the
+    /// `CMP #$18` result (a passing x leaves the carry clear, so the y chain
+    /// begins one lower). Route host 1555077: Ganon's bat flame at screen
+    /// (0xa1, 0x7c) misses Link at (0xa3, 0x66) in the ROM (y chain yields
+    /// 0xff), while the carry-free `link_y - bg - y + 22 < 28` form hits.
+    pub(super) fn garnish_check_player_collision(
+        &mut self,
+        k: usize,
+        x: i32,
+        y: i32,
+        carry_in: bool,
+    ) {
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 7)
             | self.game_state.player.follower_link.blink_countdown()
             | self
@@ -3640,26 +3654,36 @@ impl ZeldaState {
             return;
         }
 
-        let link_x = self.game_state.player.follower_link.x();
-        let link_y = self.game_state.player.follower_link.y();
-        let bg_x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
-        let bg_y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
-        if (link_x
-            .wrapping_sub(bg_x)
-            .wrapping_sub(x as u16)
-            .wrapping_add(12) as u8)
-            < 24
-            && (link_y
-                .wrapping_sub(bg_y)
-                .wrapping_sub(y as u16)
-                .wrapping_add(22) as u8)
-                < 28
-        {
-            self.follower_link_state_mut().set_auxiliary_state(1);
-            self.follower_link_state_mut().set_incapacitated_timer(16);
-            self.follower_link_state_mut().set_given_damage(16);
-            self.follower_link_state_mut().xor_actual_velocity_xy(255);
+        fn sbc8(a: u8, b: u8, carry: bool) -> (u8, bool) {
+            let r = i32::from(a) - i32::from(b) - i32::from(!carry);
+            (r as u8, r >= 0)
         }
+        fn adc8(a: u8, b: u8, carry: bool) -> (u8, bool) {
+            let r = u32::from(a) + u32::from(b) + u32::from(carry);
+            (r as u8, r > 0xff)
+        }
+
+        let link_x = self.game_state.player.follower_link.x() as u8;
+        let link_y = self.game_state.player.follower_link.y() as u8;
+        let bg_x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2() as u8;
+        let bg_y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2() as u8;
+        let (dx, carry) = sbc8(link_x, bg_x, carry_in);
+        let (dx, carry) = sbc8(dx, x as u8, carry);
+        let (dx, _) = adc8(dx, 0x0c, carry);
+        if dx >= 0x18 {
+            return;
+        }
+        // `CMP #$18` with dx < 0x18 clears the carry for the y chain.
+        let (dy, carry) = sbc8(link_y, bg_y, false);
+        let (dy, carry) = sbc8(dy, y as u8, carry);
+        let (dy, _) = adc8(dy, 0x16, carry);
+        if dy >= 0x1c {
+            return;
+        }
+        self.follower_link_state_mut().set_auxiliary_state(1);
+        self.follower_link_state_mut().set_incapacitated_timer(16);
+        self.follower_link_state_mut().set_given_damage(16);
+        self.follower_link_state_mut().xor_actual_velocity_xy(255);
     }
 
     // void Garnish15_ArrghusSplash(int k) {  // 89b178
@@ -3788,7 +3812,10 @@ impl ZeldaState {
             GARNISH10_GANON_BAT_FLAME_GANON_BAT_FLAME_FLAGS[j] | 0x22,
             2,
         );
-        self.garnish_check_player_collision(k, i32::from(pt.x), i32::from(pt.y));
+        // The ROM reaches the collision check with the carry left by the
+        // `LSR A` x3 that indexed the frame table: bit 2 of the countdown.
+        let carry_in = self.garnish_slot_view(k).countdown() & 0x04 != 0;
+        self.garnish_check_player_collision(k, i32::from(pt.x), i32::from(pt.y), carry_in);
     }
 
     // void Garnish0A_CannonSmoke(int k) {  // 89b3ee
@@ -3866,7 +3893,10 @@ impl ZeldaState {
                 | GARNISH09_LIGHTNING_TRAIL_LIGHTNING_TRAIL_FLAGS[j],
             2,
         );
-        self.garnish_check_player_collision(k, i32::from(pt.x), i32::from(pt.y));
+        // The ROM reaches the collision check with the carry left by the
+        // `ASL A` on the frame counter: its bit 7.
+        let carry_in = self.game_state.frame.frame_counter & 0x80 != 0;
+        self.garnish_check_player_collision(k, i32::from(pt.x), i32::from(pt.y), carry_in);
     }
 
     // void Garnish03_FallingTile(int k) {  // 89b627
