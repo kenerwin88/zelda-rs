@@ -3210,9 +3210,15 @@ impl DialogueInitializationCpuPlan {
     }
 }
 
-/// `Interrupt_NMI` programs the poly thread's V-IRQ at this scanline while
-/// the thread flag is set (`$00:820A`: `LDA #$80 : STA $4209`).
-const POLY_THREAD_V_IRQ_SCANLINE: u16 = 128;
+/// Effective raster position from which the crystal poly thread owns the CPU
+/// up to the NMI acceptance in a rendering field, as seen by the main thread
+/// during the maiden's dialogue initialization (route hosts 414025-414033,
+/// 415930-415939). The ROM's V-IRQ trigger itself is `$FF` = 48, but the NMI
+/// and IRQ swap the two threads unconditionally, so which thread holds the
+/// IRQ-to-NMI slice alternates with every idle yield; the main thread's
+/// measured loss per rendering field is close to the vblank-plus-top slice
+/// (~97 scanlines), which this constant reproduces.
+const POLY_THREAD_EFFECTIVE_IRQ_SCANLINE: u16 = 128;
 
 pub(super) fn dialogue_initialization_cpu_plan(
     state: &ZeldaState,
@@ -3246,12 +3252,12 @@ pub(super) fn dialogue_initialization_cpu_plan(
         // (route hosts 414025, 793479); the Module0E frame's Sprite_Main
         // keeps re-arming the thread flag inside the shadow. The shadow's
         // NMI must not switch onto the poly stack (its contents are not
-        // modeled); the budget instead hands scanlines 128..225 of every
-        // field to the poly thread.
+        // modeled); the budget instead hands the effective IRQ-to-NMI slice
+        // of every rendering field to the poly thread.
         run.disable_nmi_thread_switch()
             .expect("dialogue CPU timing requires the ROM's NMI thread switch");
         budget = budget.with_poly_thread_irq(
-            POLY_THREAD_V_IRQ_SCANLINE,
+            POLY_THREAD_EFFECTIVE_IRQ_SCANLINE,
             state.dungeon_poly_thread_free_host_offsets(),
         );
     }
@@ -45012,8 +45018,14 @@ impl ZeldaState {
     fn zelda_run_poly_loop(&mut self) {
         /// Crystal scanlines the maiden's IRQ poly thread rasterizes per host.
         const DUNGEON_POLY_THREAD_SCANLINES_PER_HOST: u32 = 32;
-        /// Per-frame setup of the crystal thread, in scanline equivalents.
+        /// Per-frame setup of the crystal thread, in scanline equivalents,
+        /// while Module07 runs the cutscene.
         const DUNGEON_POLY_THREAD_SETUP_SCANLINES: u32 = 67;
+        /// Through the maiden's Module0E dialogue the thread's per-host share
+        /// in estimated 65816 cycles and the affine per-frame offset (fit on
+        /// the oracle's step cadence at route hosts 414033-414115).
+        const DUNGEON_POLY_THREAD_DIALOGUE_BUDGET_CYCLES: i64 = 7_572;
+        const DUNGEON_POLY_THREAD_DIALOGUE_SETUP_CYCLES: i64 = -20_641;
         let can_run_poly = self.game_state.ending.attract_scene.intro_did_run_step() != 0
             && !self.game_state.display.has_pending_polyhedral_update();
         if self.dungeon_poly_thread_is_active() && std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
@@ -45071,18 +45083,48 @@ impl ZeldaState {
                 if !self.poly_job_in_flight {
                     self.poly_run_frame();
                     self.poly_job_hold_frames = if dungeon_poly_thread {
-                        // The IRQ slice rasterizes 32 crystal scanlines per
-                        // host after a fixed setup worth 67 scanlines: every
-                        // one of the 86 oracle-measured frames of the first
-                        // crystal (route hosts 413554-414023; 4 hosts at 38-60
-                        // scanlines, 5 at 64-92, 6 at 94-106, 7 at 130-138)
-                        // completes on host `ceil((scanlines + 67) / 32)`.
+                        // The thread rasterizes 32 crystal scanlines per host
+                        // after a fixed per-frame setup measured in scanline
+                        // equivalents: 67 while Module07 runs the cutscene
+                        // (every one of the 86 oracle frames at route hosts
+                        // 413554-414023: 4 hosts at 38-60 scanlines, 5 at
+                        // 64-92, 6 at 94-106, 7 at 130-138) and 56 through
+                        // the maiden's Module0E dialogue, whose lighter main
+                        // iteration leaves the thread about a third of a host
+                        // more per frame (414033-416096: 5 hosts at ~100
+                        // scanlines, 6 at ~134, 7 at 138).
                         self.poly_dungeon_frames_rendered =
                             self.poly_dungeon_frames_rendered.saturating_add(1);
                         let scanlines = self.last_poly_work.scanlines;
-                        let slices = (scanlines + DUNGEON_POLY_THREAD_SETUP_SCANLINES)
-                            .div_ceil(DUNGEON_POLY_THREAD_SCANLINES_PER_HOST)
-                            .clamp(1, 16) as u8;
+                        let slices = if frame.main_module == 0x0e {
+                            // Through the dialogue the oracle's frame lengths
+                            // separate by the estimated cycle cost rather than
+                            // by scanlines (137-scanline frames complete in 6
+                            // hosts at 63.3k cycles, 138-scanline ones in 7 at
+                            // 66.7k). `ZELDA3_POLY_DIALOGUE_BUDGET=B,S`
+                            // overrides the calibration.
+                            static DIALOGUE_BUDGET: std::sync::OnceLock<(i64, i64)> =
+                                std::sync::OnceLock::new();
+                            let (budget, setup) = *DIALOGUE_BUDGET.get_or_init(|| {
+                                std::env::var("ZELDA3_POLY_DIALOGUE_BUDGET")
+                                    .ok()
+                                    .and_then(|value| {
+                                        let (b, s) = value.split_once(',')?;
+                                        Some((b.trim().parse().ok()?, s.trim().parse().ok()?))
+                                    })
+                                    .unwrap_or((
+                                        DUNGEON_POLY_THREAD_DIALOGUE_BUDGET_CYCLES,
+                                        DUNGEON_POLY_THREAD_DIALOGUE_SETUP_CYCLES,
+                                    ))
+                            });
+                            let cost =
+                                (i64::from(self.last_poly_work.estimated_65816_cycles()) + setup).max(1);
+                            ((cost + budget - 1) / budget).clamp(1, 16) as u8
+                        } else {
+                            (scanlines + DUNGEON_POLY_THREAD_SETUP_SCANLINES)
+                                .div_ceil(DUNGEON_POLY_THREAD_SCANLINES_PER_HOST)
+                                .clamp(1, 16) as u8
+                        };
                         self.poly_dungeon_current_frame_slices = slices;
                         slices - 1
                     } else {

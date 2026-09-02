@@ -688,6 +688,17 @@ impl ZeldaState {
             self.crystal_maiden_draw(k);
         }
         self.activate_nmi_thread();
+        if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+            eprintln!(
+                "[POLY] host={} maiden call: module={:02x}/{:02x} did_run_step={} e={:#x} ai={}",
+                self.frame_ctr_dbg,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                self.game_state.ending.attract_scene.intro_did_run_step(),
+                self.sprite_slot_view(k).e(),
+                self.sprite_slot_view(k).ai_state(),
+            );
+        }
         if self.game_state.ending.attract_scene.intro_did_run_step() == 0 {
             self.crystal_maiden_run_cutscene(k);
             self.attract_scene_mut().mark_intro_did_run_step();
