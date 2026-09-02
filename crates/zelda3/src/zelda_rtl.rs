@@ -11193,6 +11193,9 @@ pub struct ZeldaState {
     /// Crystal frames the dungeon poly thread has rendered since activation.
     #[serde(skip)]
     poly_dungeon_frames_rendered: u8,
+    /// Host that activated the dungeon poly thread.
+    #[serde(skip)]
+    poly_dungeon_activation_host: u32,
     #[serde(skip)]
     poly_job_hold_frames: u8,
     #[serde(skip)]
@@ -14786,6 +14789,12 @@ impl ZeldaState {
     }
 
     pub(crate) fn activate_nmi_thread(&mut self) {
+        if !self.game_state.display.nmi_thread_active {
+            // The crystal maiden's IRQ poly thread starts four hosts after
+            // this activation (route host 413550 → first slice 413554).
+            self.poly_dungeon_thread_startup_hold = Some(4);
+            self.poly_dungeon_activation_host = self.frame_ctr_dbg;
+        }
         self.display_core_mut().activate_nmi_thread();
     }
 
@@ -17468,6 +17477,7 @@ impl ZeldaState {
             poly_job_in_flight: false,
             poly_dungeon_thread_startup_hold: None,
             poly_dungeon_frames_rendered: 0,
+            poly_dungeon_activation_host: 0,
             poly_job_hold_frames: 0,
             intro_title_fade_poly_phase: 0,
             intro_title_fade_defer_suffix_this_frame: false,
@@ -19029,6 +19039,19 @@ impl ZeldaState {
     pub(super) fn take_original_timing_extended_oam_packing_interruption_for_caller_return(
         &mut self,
     ) -> bool {
+        let forwarded = self
+            .original_timing_semantic_receipts
+            .as_ref()
+            .and_then(OriginalTimingHostReceipts::forwarded_main_loop_interruption)
+            .map(|forwarded| forwarded.interruption());
+        if let Some(
+            interruption @ crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. },
+        ) = forwarded
+        {
+            return self
+                .take_forwarded_original_timing_main_loop_interruption(interruption)
+                .is_some();
+        }
         match self.original_timing_main_loop_interruption() {
             Some(crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }) => {
                 self.take_original_timing_main_loop_interruption_any().is_some()
@@ -21079,6 +21102,36 @@ impl ZeldaState {
                         OriginalTimingSemanticReceipt::NmiHandlerCompleted,
                         OriginalTimingSemanticReceipt::SpriteResetAllProgress(receipt),
                         OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                        OriginalTimingSemanticReceipt::MainLoopProgress(
+                            crate::MainLoopProgress::CallStackContinued,
+                        ),
+                    ]
+                }
+                OriginalTimingBoundary::HostReturn if self.original_timing_nmi_publication_pending => {
+                    // The previous host's trailing held acceptance carried
+                    // its handler into this host, which completes it and ends
+                    // at the checkpoint without accepting another NMI (route
+                    // host 638770, a dark-world death's dungeon reload).
+                    assert_eq!(
+                        timeline.nmi_phases_before_progress,
+                        [OriginalTimingNmiPhase::HandlerCompleted],
+                    );
+                    assert_eq!(
+                        nmi.handler_completion,
+                        OriginalTimingNmiHandlerCompletionOwner::PendingAtSequenceEntry,
+                    );
+                    assert!(!nmi.publication_pending_at_exit);
+                    assert_eq!(
+                        self.original_timing_pending_nmi_update_gate,
+                        Some(NmiUpdateGate::LatchHeld),
+                    );
+                    assert_eq!(
+                        self.original_timing_expected_nmi_update_gates.as_slice(),
+                        [NmiUpdateGate::LatchHeld],
+                    );
+                    vec![
+                        OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                        OriginalTimingSemanticReceipt::SpriteResetAllProgress(receipt),
                         OriginalTimingSemanticReceipt::MainLoopProgress(
                             crate::MainLoopProgress::CallStackContinued,
                         ),
@@ -32826,6 +32879,44 @@ impl ZeldaState {
                     }));
                     return true;
                 }
+                if live && self.original_timing_live_suffix_outstanding() {
+                    // The module tail returned Sprite_Main and a second held
+                    // acceptance landed before the shared suffix cleared the
+                    // latch (route host 786735: [Held, Handler,
+                    // SpriteMainReturned, Held, Continued]); the suffix stays
+                    // owed to the host that completes it, and this host's
+                    // lifecycle receipts are consumed here.
+                    if self.pending_main_loop_common_suffix.is_none() {
+                        self.pending_main_loop_common_suffix =
+                            Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+                    }
+                    let phases = self.take_original_timing_nmi_phases();
+                    let before = classify_original_timing_nmi_phases_with_ownership(
+                        self.original_timing_nmi_publication_pending,
+                        &phases,
+                    );
+                    self.complete_original_timing_nmi_handler_for_active_scanout(
+                        before.handler_completion,
+                        input,
+                        oam_dma_source,
+                    )
+                    .assert_no_unclaimed_dialogue_text_dma();
+                    assert_eq!(
+                        self.take_original_timing_main_loop_progress(),
+                        Some(crate::MainLoopProgress::CallStackContinued),
+                        "a suffix-deferred grayscale-filter caller host must continue its suspended stack",
+                    );
+                    if before.publication_pending_at_exit {
+                        self.capture_and_carry_original_timing_nmi_publication_at_host_return();
+                    }
+                    let link_obj_dma_generation = self.presented_link_obj_dma_generation();
+                    self.set_next_display_obj_scanout(Some(ObjScanoutGenerations {
+                        oam: OamScanoutSource::RetainResidentPpuOam,
+                        link_obj: link_obj_dma_generation,
+                        link_obj_sources: link_obj_dma_generation,
+                    }));
+                    return true;
+                }
                 self.nmi_prepare_sprites();
                 self.clear_nmi_update_latch();
                 // Publish the generation whose DMA completed before this
@@ -33940,6 +34031,42 @@ impl ZeldaState {
     }
 
     fn run_frame_internal_after_original_timing_body(&mut self, input: u16, run_what: u8) {
+        // The crystal maiden's poly thread owns every other host through the
+        // NMI thread switch while the main thread's iteration stays suspended;
+        // it renders regardless of which lane owns the main thread's host
+        // (route hosts 413552/413554), so run it before any lane returns.
+        // The ROM's crystal thread is IRQ-driven: every host gives it the
+        // IRQ-to-NMI remainder after the main iteration, and its frame
+        // completion is visible to the maiden's iteration of the host that
+        // holds the completing slice (oracle `$1F0A` idles to `$1F31` on the
+        // completing host, 413556/413560/…; the maiden steps the same host).
+        // The atomic frontend's RUN_POLY alternation does not apply here.
+        let dungeon_poly_thread_host = self.rom_startup_timing()
+            && self.game_state.frame.main_module == 7
+            && self.game_state.display.nmi_thread_active;
+        if dungeon_poly_thread_host {
+            self.zelda_run_poly_loop();
+        }
+        if self.game_state.frame.main_module == 7
+            && std::env::var_os("ZELDA3_DEBUG_POLY").is_some()
+            && (self.game_state.display.nmi_thread_active
+                || self.sprite_slot_view(15).sprite_type() == 0xab)
+        {
+            eprintln!(
+                "[POLY] host={} run_what={} thread_active={} stack={:#x} sub={:02x}/{:02x} maiden_ai={} e={} did_run_step={} pending={} sched={:?}",
+                self.frame_ctr_dbg,
+                run_what,
+                self.game_state.display.nmi_thread_active,
+                self.game_state.display.nmi_thread_stack_pointer,
+                self.game_state.frame.submodule,
+                self.game_state.frame.subsubmodule,
+                self.sprite_slot_view(15).ai_state(),
+                self.sprite_slot_view(15).e(),
+                self.game_state.ending.attract_scene.intro_did_run_step(),
+                self.game_state.display.has_pending_polyhedral_update(),
+                self.game_execution_scheduler.current_work(),
+            );
+        }
         if matches!(
             self.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::HoldOverworldSpriteReloadReturn)
@@ -35637,7 +35764,11 @@ impl ZeldaState {
                         // The room-load then accepts another held NMI at the
                         // source host return. Preserve this post-CPU scanout
                         // as the receptive owner for the next host's handler.
-                        self.capture_and_carry_original_timing_nmi_publication_at_host_return();
+                        // A boundary host whose one NMI completed in-host
+                        // (route host 638711) carries nothing.
+                        if plan.nmi.publication_pending_at_exit {
+                            self.capture_and_carry_original_timing_nmi_publication_at_host_return();
+                        }
                         self.assert_native_frame_state_matches_ram();
                         self.assert_native_world_location_state_matches_ram();
                         self.assert_native_display_state_matches_ram();
@@ -35773,12 +35904,18 @@ impl ZeldaState {
                 }
             };
             if consumes_frame {
+                // The crystal maiden's poly thread owns this host's CPU while
+                // the main thread's Sprite_Main stays suspended (route hosts
+                // 413552/413554): the thread still renders during it.
+                if run_what & crate::RUN_POLY != 0 && !dungeon_poly_thread_host {
+                    self.zelda_run_poly_loop();
+                }
                 self.capture_display_snapshot();
                 self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
                 return;
             }
         }
-        if run_what & crate::RUN_POLY != 0 {
+        if run_what & crate::RUN_POLY != 0 && !dungeon_poly_thread_host {
             self.zelda_run_poly_loop();
         }
         if self.intro_zelda_fade_transition_pending {
@@ -44765,6 +44902,9 @@ impl ZeldaState {
     }
 
     fn zelda_run_poly_loop(&mut self) {
+        /// Estimated 65816 cycles the crystal maiden's poly thread renders per
+        /// poly host between two NMI thread switches (route hosts 413554-413670).
+        const DUNGEON_POLY_THREAD_SLICE_CYCLES: u32 = 9_700;
         let can_run_poly = self.game_state.ending.attract_scene.intro_did_run_step() != 0
             && !self.game_state.display.has_pending_polyhedral_update();
         if self.game_state.frame.main_module == 7
@@ -44810,26 +44950,31 @@ impl ZeldaState {
                     );
                 }
                 if dungeon_poly_thread && !self.poly_job_in_flight {
-                    // The maiden activates the thread inside Sprite_Main; the
-                    // IRQ scheduler starts its first frame four hosts later
-                    // (route host 413549: config writes at 413553).
+                    // The maiden activates the thread inside Sprite_Main (route
+                    // host 413550, counted by `activate_nmi_thread`); the IRQ
+                    // thread's first slice, which writes the crystal config,
+                    // runs four hosts later (413554). The activation host's
+                    // own lane may bypass this loop, so the hold counts hosts
+                    // from the activation itself.
                     let hold = self.poly_dungeon_thread_startup_hold.get_or_insert(4);
-                    if *hold != 0 {
-                        *hold -= 1;
+                    let elapsed = self.frame_ctr_dbg.saturating_sub(self.poly_dungeon_activation_host);
+                    if u32::from(*hold) > elapsed {
                         return;
                     }
+                    *hold = 0;
                 }
                 if !self.poly_job_in_flight {
                     self.poly_run_frame();
                     self.poly_job_hold_frames = if dungeon_poly_thread {
-                        // The IRQ thread's share of a host renders the first
-                        // crystal frame in three hosts (visible to the maiden
-                        // at 413556) and each later frame in four (413560,
-                        // 413564): the consuming main iterations cost more.
-                        let frames = if self.poly_dungeon_frames_rendered == 0 { 3 } else { 4 };
+                        // The IRQ slice renders about 9.7k 65816 cycles per
+                        // host: crystal frames up to ~38k cycles span four
+                        // hosts (413554-413557, the maiden steps at 413557,
+                        // then 413561, 413565 … 413669) and the ~39.4k-cycle
+                        // frame five (413670-413674).
                         self.poly_dungeon_frames_rendered =
                             self.poly_dungeon_frames_rendered.saturating_add(1);
-                        frames - 1
+                        let cycles = self.last_poly_work.estimated_65816_cycles();
+                        (cycles.div_ceil(DUNGEON_POLY_THREAD_SLICE_CYCLES).clamp(1, 8) - 1) as u8
                     } else {
                         self.last_poly_work.worker_frames() - 1
                     };

@@ -13324,6 +13324,9 @@ impl ZeldaState {
     pub(super) fn complete_module07_dungeon_after_submodule_caller(&mut self) {
         if std::mem::take(&mut self.dungeon_nmi_prepare_sprites_return_pending) {
             debug_assert!(self.game_execution_scheduler.is_idle());
+            // A fresh iteration's forwarded extended-OAM-packing interruption
+            // (route host 767104) is owned by this same caller return.
+            let _ = self.take_original_timing_extended_oam_packing_interruption_for_caller_return();
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn {
                     caller: NmiPrepareSpritesCpuCaller::DungeonModule07,
