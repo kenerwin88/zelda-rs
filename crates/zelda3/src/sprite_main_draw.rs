@@ -5046,7 +5046,19 @@ impl ZeldaState {
         }
         self.link_cancel_dash();
         self.follower_link_state_mut().set_item_receipt_method(0);
-        self.link_receive_item(0x0d, 0);
+        if self
+            .link_receive_item_from(
+                0x0d,
+                0,
+                ItemReceiptCaller::SpriteMainDirect {
+                    sprite_slot: k as u8,
+                    suffix: SpriteMainItemReceiptSuffix::PotionShopPowder,
+                },
+            )
+            .is_suspended()
+        {
+            return;
+        }
         let value = 0;
         self.sprite_slot_view_mut(k).set_state(value);
     }
@@ -5118,7 +5130,14 @@ impl ZeldaState {
             .wrapping_sub(price);
         self.player_resources_mut().set_rupees_goal(rupees);
         self.follower_link_state_mut().set_item_receipt_method(0);
-        self.link_receive_item(item, 0);
+        let _ = self.link_receive_item_from(
+            item,
+            0,
+            ItemReceiptCaller::SpriteMainDirect {
+                sprite_slot: k as u8,
+                suffix: SpriteMainItemReceiptSuffix::PotionCauldron,
+            },
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -7192,7 +7211,19 @@ impl ZeldaState {
         if heart_pieces == 0 {
             self.link_cancel_dash();
             self.follower_link_state_mut().set_item_receipt_method(0);
-            self.link_receive_item(0x26, 0);
+            if self
+                .link_receive_item_from(
+                    0x26,
+                    0,
+                    ItemReceiptCaller::SpriteMainDirect {
+                        sprite_slot: k as u8,
+                        suffix: SpriteMainItemReceiptSuffix::HeartPiece,
+                    },
+                )
+                .is_suspended()
+            {
+                return;
+            }
         } else {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x2d);
             self.sprite_show_message_unconditional(HEART_PIECE_MESSAGES[usize::from(heart_pieces)]);

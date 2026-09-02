@@ -2782,9 +2782,20 @@ impl ZeldaState {
                 let e_idx = self.sprite_slot_view(k).e() as usize;
                 self.sprite_slot_view_mut(e_idx).set_ai_state(0);
                 self.follower_link_state_mut().set_item_receipt_method(0);
-                self.link_receive_item(2, 0);
-                self.save_progress_mut()
-                    .clear_progress_indicator_3_bits(0x80);
+                if self
+                    .link_receive_item_from(
+                        2,
+                        0,
+                        ItemReceiptCaller::SpriteMainDirect {
+                            sprite_slot: k as u8,
+                            suffix: SpriteMainItemReceiptSuffix::SmithyTemperedSword,
+                        },
+                    )
+                    .is_suspended()
+                {
+                    return;
+                }
+                self.complete_smithy_tempered_sword_receipt();
             }
             7 | 8 | 9 => {}
             10 => {
@@ -2812,6 +2823,12 @@ impl ZeldaState {
     //          (link_item_in_hand & 2) && player_handler_timer == 2 &&
     //          Sprite_CheckDamageToLink_same_layer(k);
     // }
+    /// Source suffix after Smithy_GiveTemperedSword's `Link_ReceiveItem(2, 0)`.
+    pub(super) fn complete_smithy_tempered_sword_receipt(&mut self) {
+        self.save_progress_mut()
+            .clear_progress_indicator_3_bits(0x80);
+    }
+
     pub(super) fn smithy_listen_for_hammer(&mut self, k: usize) -> bool {
         if self.sprite_slot_view(k).delay_aux1() != 0 {
             return false;

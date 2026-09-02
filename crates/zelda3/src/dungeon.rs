@@ -5610,6 +5610,25 @@ impl ZeldaState {
         );
         let reset_xy_flags = self.game_state.dungeon.door_setup.reset_xy_check_flags();
         self.apply_reset_xy_quadrant_overrides(reset_xy_flags);
+        if std::env::var_os("ZELDA3_DEBUG_QUADRANT").is_some() {
+            eprintln!(
+                "[QUADRANT-LAYOUT] host={} room={:#x} key={:#x} ram_aa={:#x} flags={:#x} x_mask={:#x} y_mask={:#x} ram_a8={:#x} ram_a9={:#x} blast=({},{}) reset_xy={:#x} -> fullsize=({},{})",
+                self.frame_ctr_dbg,
+                self.game_state.world.location.dungeon_room(),
+                self.game_state.dungeon.room_load.layout_quadrant_key(),
+                self.ram[0xaa],
+                flags,
+                horizontal_mask,
+                vertical_mask,
+                self.ram[0xa8],
+                self.ram[0xa9],
+                blast_wall_x_open,
+                blast_wall_y_open,
+                reset_xy_flags,
+                self.ram[0xa6],
+                self.ram[0xa7],
+            );
+        }
     }
 
     pub(super) fn Dung_SaveDataForCurrentRoom(&mut self) {
@@ -5898,6 +5917,21 @@ impl ZeldaState {
             LAYOUT_QUADRANT_FLAGS[self.game_state.dungeon.room_load.layout_quadrant_key() as usize];
         let mask = self.game_state.player.follower_link.quadrant_y_mask();
         let blast_wall_y_open = self.game_state.dungeon.room_effects.blast_wall_y_open();
+        if std::env::var_os("ZELDA3_DEBUG_QUADRANT").is_some() {
+            eprintln!(
+                "[QUADRANT] host={} room={:#x} key={:#x} ram_aa={:#x} flags={:#x} y_mask={:#x} ram_a9={:#x} blast_y={} ram_453={:#x} -> fullsize_y={}",
+                self.frame_ctr_dbg,
+                self.game_state.world.location.dungeon_room(),
+                self.game_state.dungeon.room_load.layout_quadrant_key(),
+                self.ram[0xaa],
+                flags,
+                mask,
+                self.ram[0xa9],
+                blast_wall_y_open,
+                self.ram[0x453],
+                u8::from(blast_wall_y_open || flags & mask == 0) * 2,
+            );
+        }
         self.apply_dungeon_layout_vertical_fullsize(flags, mask, blast_wall_y_open);
     }
 
@@ -13442,7 +13476,24 @@ impl ZeldaState {
         sprite_return: DungeonSpriteMainReturn,
     ) {
         self.active_dungeon_sprite_main_return = Some(sprite_return);
-        if let Some((boundary, resume_boundary)) =
+        if let Some(slot) = self.original_timing_direct_item_receipt_suspended_slot() {
+            // The wire's Sprite_Main checkpoint names the last completed slot,
+            // but the host ended inside a lower slot's synchronous item
+            // receipt (route host 968295: SpriteMainProgressed(BeforeFirstSlot)
+            // with slot 15's receipt suspended). Run the loop natively; the
+            // receipt call suspends it at the exact statement.
+            let checkpoint = self.take_original_timing_sprite_main_progress();
+            debug_assert!(
+                checkpoint.is_none_or(|boundary| match boundary {
+                    crate::zelda_rtl::SpriteMainCpuBoundary::BeforeFirstSlot => slot == 15,
+                    crate::zelda_rtl::SpriteMainCpuBoundary::AfterSlot(completed) => {
+                        slot + 1 == completed
+                    }
+                    _ => true,
+                }),
+                "a direct item receipt suspended in a slot the Sprite_Main checkpoint had not reached",
+            );
+        } else if let Some((boundary, resume_boundary)) =
             self.take_original_timing_sprite_main_boundary_for_fresh_caller()
         {
             self.arm_authoritative_sprite_main_cpu_continuation(

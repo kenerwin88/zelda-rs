@@ -6527,6 +6527,18 @@ pub(super) enum SpriteMainItemReceiptSuffix {
     /// ROM `$8589..` Sprite_MasterSword case 4: `Link_ReceiveItem(1, 0)` then
     /// the map-icon, pull-state, and AI-state tail (route host 264468).
     MasterSword,
+    /// ROM `$85f644` Sprite_BagOfPowder: `Link_ReceiveItem(0xd, 0)` then the
+    /// sprite-kill tail (route host 753969).
+    PotionShopPowder,
+    /// ROM `$85f68e`/`$85f72b`/`$85f7d0` potion cauldrons:
+    /// `Link_ReceiveItem(item, 0)` with nothing after it (route host 968296).
+    PotionCauldron,
+    /// ROM `$86b34e` Smithy_Main case 6 (GiveTemperedSword): `Link_ReceiveItem(2, 0)`
+    /// then the progress-indicator-3 bit clear (route host 809101).
+    SmithyTemperedSword,
+    /// ROM `$85f020` Sprite_HeartPiece's fourth piece: `Link_ReceiveItem(0x26, 0)`
+    /// then the sprite-kill and obtained-flag tail (route host 974819).
+    HeartPiece,
 }
 
 impl SpriteMainItemReceiptSuffix {
@@ -6550,6 +6562,10 @@ impl SpriteMainItemReceiptSuffix {
                 | Self::OldManMirror
                 | Self::ShopItem { .. }
                 | Self::MasterSword
+                | Self::PotionShopPowder
+                | Self::PotionCauldron
+                | Self::SmithyTemperedSword
+                | Self::HeartPiece
         )
     }
 }
@@ -18610,6 +18626,31 @@ impl ZeldaState {
             self.game_execution_scheduler,
         );
         self.original_timing_expected_nmi_update_gates.remove(0);
+    }
+
+    /// The slot of a `Sprite_Main`-direct item receipt the live wire reports
+    /// suspended inside this host, without consuming the receipt.
+    pub(super) fn original_timing_direct_item_receipt_suspended_slot(&self) -> Option<u8> {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return None;
+        }
+        self.original_timing_semantic_receipts
+            .as_ref()?
+            .semantic()
+            .iter()
+            .find_map(|receipt| match receipt {
+                OriginalTimingSemanticReceipt::ItemReceiptGraphicsProgress(progress) => {
+                    match progress.caller {
+                        ItemReceiptGraphicsCaller::SpriteMainDirect { slot }
+                            if progress.progress == SourceCallProgress::Suspended =>
+                        {
+                            Some(slot)
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            })
     }
 
     fn take_original_timing_item_receipt_graphics_progress(
@@ -40278,6 +40319,17 @@ impl ZeldaState {
                             SpriteMainItemReceiptSuffix::MasterSword => {
                                 self.complete_master_sword_item_receipt(sprite_slot)
                             }
+                            SpriteMainItemReceiptSuffix::PotionShopPowder => {
+                                self.sprite_slot_view_mut(sprite_slot).set_state(0);
+                            }
+                            SpriteMainItemReceiptSuffix::PotionCauldron => {}
+                            SpriteMainItemReceiptSuffix::SmithyTemperedSword => {
+                                self.complete_smithy_tempered_sword_receipt();
+                            }
+                            SpriteMainItemReceiptSuffix::HeartPiece => {
+                                self.sprite_slot_view_mut(sprite_slot).set_state(0);
+                                self.heart_upgrade_set_obtained_flag(sprite_slot);
+                            }
                         }
                         self.complete_sprite_main_after_interrupted_slot(sprite_slot);
                         match caller {
@@ -42273,6 +42325,26 @@ impl ZeldaState {
                     .contains(&OriginalTimingSemanticReceipt::SpriteMainReturned),
                 "interrupted main-loop execution did not consume its Sprite_Main return claims",
             );
+            // A synchronous Sprite_Main-direct item receipt suspends the slot
+            // loop inside its slot; the wire's checkpoint then names the last
+            // completed slot (BeforeFirstSlot for slot 15). The scheduled
+            // receipt continuation owns that boundary (route host 753968).
+            if let Some(GameWorkContinuation::FinishItemReceiptGraphics {
+                continuation:
+                    ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { sprite_slot, .. },
+            }) = self.game_execution_scheduler.current_work()
+            {
+                let owned = match self.original_timing_main_loop_interruption() {
+                    Some(crate::MainLoopInterruption::SpriteMainBeforeFirstSlot) => sprite_slot == 15,
+                    Some(crate::MainLoopInterruption::SpriteMainAfterSlot(completed)) => {
+                        completed == sprite_slot + 1
+                    }
+                    _ => false,
+                };
+                if owned {
+                    let _ = self.take_original_timing_main_loop_interruption_any();
+                }
+            }
             assert!(
                 !self.original_timing_main_loop_interruption_is_pending(),
                 "source continuation has no semantic owner for {timeline:?}; scheduler={:?}",
@@ -44535,13 +44607,29 @@ impl ZeldaState {
             && !self.game_state.display.has_pending_polyhedral_update();
         if can_run_poly {
             let frame = self.game_state.frame;
+            // The crystal maiden's cutscene (Sprite_AB, dungeon module) runs
+            // the same IRQ-driven poly worker as the title triforce; its
+            // frame cost gates the cutscene sprite the same way (route host
+            // 413549: the ROM's first poly frame held the maiden four hosts).
             let use_timed_worker = self.rom_startup_timing
-                && rom_intro_poly_thread_is_active(frame.main_module, frame.submodule);
+                && (rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
+                    || (frame.main_module == 7 && self.game_state.display.nmi_thread_active));
             if use_timed_worker {
                 if !self.poly_job_in_flight {
                     self.poly_run_frame();
                     self.poly_job_hold_frames = self.last_poly_work.worker_frames() - 1;
                     self.poly_job_in_flight = true;
+                    if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                        eprintln!(
+                            "[POLY] host={} module={:02x}/{:02x} cycles={} worker_frames={} config1={:#x}",
+                            self.frame_ctr_dbg,
+                            frame.main_module,
+                            frame.submodule,
+                            self.last_poly_work.estimated_65816_cycles(),
+                            self.last_poly_work.worker_frames(),
+                            self.game_state.poly.runtime.config1(),
+                        );
+                    }
                 }
                 if self.poly_job_hold_frames != 0 {
                     self.poly_job_hold_frames -= 1;

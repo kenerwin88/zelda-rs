@@ -209,6 +209,17 @@ impl ZeldaState {
             crate::rom_random::RomRandomResult::new(value, false)
         });
         let t = result.value();
+        if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_TRACE").is_some() {
+            eprintln!(
+                "rom_random_ctx host={} module={:02x}/{:02x}/{:02x} cur_sprite={} value={:02x}",
+                self.frame_ctr_dbg,
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+                self.game_state.frame.subsubmodule,
+                self.game_state.sprites.system.cur_object_index(),
+                t,
+            );
+        }
         self.set_rng_seed(t);
         let trace_rng = std::env::var_os("ZELDA3_TRACE_RNG").is_some();
         let trace_frame_matches = std::env::var("ZELDA3_TRACE_RNG_FRAME")
