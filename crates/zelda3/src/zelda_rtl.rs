@@ -40331,6 +40331,38 @@ impl ZeldaState {
                                 self.heart_upgrade_set_obtained_flag(sprite_slot);
                             }
                         }
+                        // The receipt returned inside this host but the wire
+                        // shows neither the Sprite_Main return nor the shared
+                        // suffix: the remaining slots cross the host boundary
+                        // (route host 809107: [LatchHeld, Completed,
+                        // ItemReceipt Returned, SpriteMainProgressed(AfterSlot(15)),
+                        // CallStackContinued]). Park the loop after the
+                        // receipt's slot and let the next host finish it.
+                        let remainder_crosses_host = matches!(
+                            self.original_timing_owner,
+                            OriginalTimingOwnerState::Live
+                        ) && self.original_timing_semantic_receipts.is_some()
+                            && authoritative_scheduled_caller_return_timeline.is_none()
+                            && !self.original_timing_owes_sprite_main_return()
+                            && !self.original_timing_hosts_fresh_iteration()
+                            && self.original_timing_main_loop_interruption().is_none();
+                        if let (true, SpriteMainItemReceiptCallerReturn::Module07(dungeon)) =
+                            (remainder_crosses_host, caller)
+                        {
+                            let _ = self.take_original_timing_sprite_main_progress();
+                            self.active_dungeon_sprite_main_return = Some(dungeon);
+                            self.game_execution_scheduler.schedule_work(
+                                GameWorkContinuation::FinishSpriteMain {
+                                    boundary: SpriteMainCpuBoundary::AfterSlot(sprite_slot as u8),
+                                    caller: SpriteMainCpuCaller::DungeonModule07Live {
+                                        boundary: OriginalTimingBoundary::HostReturn,
+                                    },
+                                },
+                                1,
+                            );
+                            self.retire_or_defer_main_loop_common_suffix_by_wire();
+                            return;
+                        }
                         self.complete_sprite_main_after_interrupted_slot(sprite_slot);
                         match caller {
                             SpriteMainItemReceiptCallerReturn::Module07(dungeon) => {
@@ -42334,15 +42366,23 @@ impl ZeldaState {
                     ItemReceiptGraphicsContinuation::ResumeSpriteMainItemReceipt { sprite_slot, .. },
             }) = self.game_execution_scheduler.current_work()
             {
-                let owned = match self.original_timing_main_loop_interruption() {
-                    Some(crate::MainLoopInterruption::SpriteMainBeforeFirstSlot) => sprite_slot == 15,
-                    Some(crate::MainLoopInterruption::SpriteMainAfterSlot(completed)) => {
+                let owns = |interruption: crate::MainLoopInterruption| match interruption {
+                    crate::MainLoopInterruption::SpriteMainBeforeFirstSlot => sprite_slot == 15,
+                    crate::MainLoopInterruption::SpriteMainAfterSlot(completed) => {
                         completed == sprite_slot + 1
                     }
                     _ => false,
                 };
-                if owned {
+                if self.original_timing_main_loop_interruption().is_some_and(owns) {
                     let _ = self.take_original_timing_main_loop_interruption_any();
+                }
+                let forwarded = self
+                    .original_timing_semantic_receipts
+                    .as_ref()
+                    .and_then(OriginalTimingHostReceipts::forwarded_main_loop_interruption)
+                    .map(|forwarded| forwarded.interruption());
+                if let Some(interruption) = forwarded.filter(|&interruption| owns(interruption)) {
+                    let _ = self.take_forwarded_original_timing_main_loop_interruption(interruption);
                 }
             }
             assert!(

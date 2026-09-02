@@ -2129,6 +2129,10 @@ impl DungeonRoomDoorSetupState {
         self.reset_xy_check_flags
     }
 
+    fn clear_reset_xy_check_flags(&mut self) {
+        self.reset_xy_check_flags = 0;
+    }
+
     fn set_adjacent_door_flags(&mut self, value: u16) {
         self.adjacent_door_flags = value;
     }
@@ -5306,6 +5310,14 @@ impl<'a> NativeDungeonRoomDoorSetupBridgeMut<'a> {
         let flags = self.state.add_reset_xy_check_flags(value);
         self.sync();
         flags
+    }
+
+    /// Room load zeroes `dung_unk2` (C dungeon.c `Dungeon_LoadRoom`); keep the
+    /// native owner aligned so its projection does not re-stamp a previous
+    /// room's exploding-wall quadrant override (route host 619103, room $49).
+    pub(crate) fn clear_reset_xy_check_flags(&mut self) {
+        self.state.clear_reset_xy_check_flags();
+        self.sync();
     }
 
     pub(crate) fn set_adjacent_door_flags(&mut self, value: u16) {

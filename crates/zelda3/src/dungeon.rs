@@ -1100,6 +1100,11 @@ impl ZeldaState {
         // as misc_object_index / cur_door_idx below).
         self.dungeon_room_effects_mut().clear_blast_wall_state();
         self.dungeon_room_doors_mut().clear_invisible_door_marker();
+        // dung_unk2 (0xfc, the exploding-wall quadrant override) is in the same
+        // RAM clear loop; DungeonDoorSetupState owns it and would otherwise
+        // re-project the previous room's 0x200 over the cleared bytes, locking
+        // the camera's vertical quadrant to full size (route host 619103).
+        self.dungeon_room_doors_mut().clear_reset_xy_check_flags();
         // dung_index_of_torches(_start) are zeroed by the room-load RAM loop. Keep
         // DungeonTorchState aligned until the current room's misc-object index is installed.
         self.dungeon_torch_mut().clear_torch_indices();
