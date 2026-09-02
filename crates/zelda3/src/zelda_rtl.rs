@@ -7376,6 +7376,34 @@ pub(super) enum TriforceRoomLoadStep {
     /// holds the iteration across the main thread's 81-line slots until the
     /// wire returns it (route hosts 1558261-1558267).
     Case9Scroll,
+    /// Cases 8-13 after `AdvancePolyhedral`: the ROM's main thread owns
+    /// only the V-IRQ-to-vblank slot, so a text render, palette animation, or
+    /// filter step often crosses hosts; its writes (submodule advances)
+    /// land where the wire returns the iteration (route hosts 1563689,
+    /// 1563886).
+    IterationTail { case: u8 },
+    /// One Module1A credits iteration whose host publishes no suffix: the
+    /// scene loads block the main thread for many hosts (route host 1563904:
+    /// entry through `LoadOverworldFromDungeon` and the music/ambient clears
+    /// land in the entry host; `DecompressAnimatedOverworldTiles` and
+    /// `InitializeTilesets` then hold the iteration 38 hosts, and the
+    /// palettes, font, scroll, and text writes land at the return host
+    /// 1563942; the dungeon scene at 1564763 likewise completes
+    /// `Dungeon_LoadEntrance` in its entry host and returns 45 hosts later).
+    /// `prefix` records which entry-host part already ran.
+    CreditsIteration { prefix: CreditsEntryHostPrefix },
+}
+
+/// The part of a held Module1A credits iteration the ROM completes in the
+/// iteration's entry host, before its first multi-host decompression.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CreditsEntryHostPrefix {
+    /// The whole body runs where the wire returns the iteration.
+    None,
+    /// `Credits_LoadScene_Overworld_PrepGFX` through the music/ambient clears.
+    OverworldPrepGfx,
+    /// `Credits_LoadScene_Dungeon` through the torch/lantern clears.
+    DungeonScene,
 }
 
 /// The four whirlpool-warp steps whose ROM call spans several held vblanks:
@@ -13358,22 +13386,27 @@ impl ZeldaState {
         self.frame_state_mut().set_submodule(value);
     }
 
+    #[track_caller]
     pub(crate) fn increment_submodule(&mut self) {
         self.frame_state_mut().increment_submodule();
     }
 
+    #[track_caller]
     pub(crate) fn decrement_submodule(&mut self) {
         self.frame_state_mut().decrement_submodule();
     }
 
+    #[track_caller]
     pub(crate) fn set_subsubmodule(&mut self, value: u8) {
         self.frame_state_mut().set_subsubmodule(value);
     }
 
+    #[track_caller]
     pub(crate) fn increment_subsubmodule(&mut self) {
         self.frame_state_mut().increment_subsubmodule();
     }
 
+    #[track_caller]
     pub(crate) fn decrement_subsubmodule(&mut self) {
         self.frame_state_mut().decrement_subsubmodule();
     }
@@ -45994,7 +46027,7 @@ impl ZeldaState {
     /// return module).
     pub(crate) fn triforce_room_poly_thread_is_active(&self) -> bool {
         self.game_state.display.nmi_thread_active
-            && (self.game_state.frame.main_module == 0x19
+            && (matches!(self.game_state.frame.main_module, 0x19 | 0x1a)
                 || (self.game_state.frame.main_module == 0x0e
                     && self.game_state.frame.saved_module_for_menu == 0x19))
     }

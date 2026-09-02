@@ -97,6 +97,15 @@ impl ZeldaState {
     }
 
     pub(super) fn credits_load_scene_overworld_prep_gfx(&mut self) {
+        self.credits_load_scene_overworld_prep_gfx_prefix();
+        self.credits_load_scene_overworld_prep_gfx_rest();
+    }
+
+    /// The part of `Credits_LoadScene_Overworld_PrepGFX` that completes in
+    /// the iteration's entry host (oracle host 1563904: `EraseTileMaps`,
+    /// `LoadOverworldFromDungeon` at V=118, then the music/ambient clears
+    /// before `DecompressAnimatedOverworldTiles` at V=123).
+    fn credits_load_scene_overworld_prep_gfx_prefix(&mut self) {
         self.enable_force_blank();
         self.erase_tile_maps_normal();
         self.set_color_window_selection(0x82);
@@ -109,6 +118,12 @@ impl ZeldaState {
         }
         self.set_music_control(0);
         self.set_ambient_sound_effect(0);
+    }
+
+    /// The rest of `Credits_LoadScene_Overworld_PrepGFX`: the animated-tile
+    /// and tileset decompression hold the main thread for dozens of hosts;
+    /// the palette, font, scroll, and mode writes land at the return host.
+    fn credits_load_scene_overworld_prep_gfx_rest(&mut self) {
         let t = self.game_state.world.location.overworld_screen_index() & !0x40;
         self.DecompressAnimatedOverworldTiles(if t == 3 || t == 5 || t == 7 {
             0x58
@@ -181,6 +196,14 @@ impl ZeldaState {
     }
 
     pub(super) fn credits_load_scene_dungeon(&mut self) {
+        self.credits_load_scene_dungeon_prefix();
+        self.credits_load_scene_dungeon_rest();
+    }
+
+    /// The part of `Credits_LoadScene_Dungeon` that completes in the
+    /// iteration's entry host (oracle host 1564763: `Dungeon_LoadEntrance` at
+    /// V=117, `Dungeon_LoadAndDrawRoom` entered at V=175 and holding).
+    fn credits_load_scene_dungeon_prefix(&mut self) {
         self.enable_force_blank();
         self.erase_tile_maps_normal();
         let i = (self.game_state.frame.submodule >> 1) as usize;
@@ -188,6 +211,13 @@ impl ZeldaState {
         self.Dungeon_LoadEntrance();
         self.dungeon_torch_mut().clear_lit_torches();
         self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
+    }
+
+    /// The rest of `Credits_LoadScene_Dungeon`: the room draw and
+    /// decompressions hold the iteration 45 hosts; palettes, the submodule
+    /// advance, and the sprite setup land at the return host (1564808).
+    fn credits_load_scene_dungeon_rest(&mut self) {
+        let i = (self.game_state.frame.submodule >> 1) as usize;
         self.Dungeon_LoadAndDrawRoom();
         self.decompress_animated_dungeon_tiles(
             DUNG_ANIMATED_TILES
@@ -384,52 +414,22 @@ impl ZeldaState {
                 self.triforce_room_load_case7_before_text();
                 self.triforce_room_load_case7_text_init();
             }
-            8 | 10 => {
+            case @ (8..=13) => {
+                // The ROM's polyhedral advance runs at the iteration start
+                // in the main thread's slot; the rest of the case may cross
+                // hosts and lands its writes where the wire returns the
+                // iteration.
                 self.advance_polyhedral();
-                if self.game_state.frame.subsubmodule == 11 {
-                    self.set_music_control(33);
-                    self.set_main_module(25);
-                    self.follower_link_state_mut()
-                        .set_direction_and_last_direction(0);
-                    self.increment_submodule();
+                if self.triforce_room_iteration_held_by_wire() {
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishTriforceRoomLoad {
+                            step: TriforceRoomLoadStep::IterationTail { case },
+                        },
+                        TRIFORCE_ROOM_CASE9_SCROLL_NMI_SLICES,
+                    );
+                    return;
                 }
-            }
-            9 => {
-                self.advance_polyhedral();
-                self.RenderText();
-                if self.game_state.frame.submodule == 0 {
-                    self.set_overworld_map_state(0);
-                    self.set_main_module(25);
-                    self.increment_subsubmodule();
-                }
-            }
-            11 => {
-                self.advance_polyhedral();
-                self.triforce_room_link_approach_triforce();
-                if self.game_state.frame.subsubmodule == 12 {
-                    self.follower_link_state_mut()
-                        .set_direction_and_last_direction(0);
-                }
-            }
-            12 => {
-                self.advance_polyhedral();
-                if self.ending_scratch_mut().decrement_primary_low() == 0 {
-                    self.Palette_AnimGetMasterSword2();
-                    self.increment_submodule();
-                }
-            }
-            13 => {
-                self.advance_polyhedral();
-                self.PaletteFilter_BlindingWhiteTriforce();
-                if self
-                    .game_state
-                    .display
-                    .palette_filter
-                    .darkening_or_lightening_screen()
-                    == 255
-                {
-                    self.increment_subsubmodule();
-                }
+                self.triforce_room_case_rest(case);
             }
             14 => {
                 self.decrement_screen_brightness();
@@ -446,25 +446,7 @@ impl ZeldaState {
             _ => {}
         }
         self.triforce_room_scroll_this_iteration = false;
-        if std::env::var_os("ZELDA3_DEBUG_HOST_PATH").is_some() {
-            eprintln!(
-                "[HOSTPATH] host={} module19 tail decision: timing={} fresh={} returned={} interruption={:?} pending={} receipts={:?}",
-                self.frame_ctr_dbg,
-                self.rom_startup_timing(),
-                self.original_timing_hosts_fresh_iteration(),
-                self.original_timing_main_loop_iteration_returned_to_wait(),
-                self.original_timing_main_loop_interruption(),
-                self.game_execution_scheduler.work_is_pending(),
-                self.original_timing_semantic_receipts.as_ref().map(|r| r.semantic().to_vec()),
-            );
-        }
-        if self.rom_startup_timing()
-            && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-            && self.original_timing_semantic_receipts.is_some()
-            && !self.original_timing_main_loop_iteration_returned_to_wait()
-            && self.original_timing_main_loop_interruption().is_none()
-            && !self.game_execution_scheduler.work_is_pending()
-        {
+        if self.triforce_room_iteration_held_by_wire() {
             // Under the V-IRQ thread the main loop owns only the lines from
             // the IRQ to vblank, so a text-rendering or scrolling iteration
             // often spans several hosts; the held latch publishes nothing
@@ -480,6 +462,68 @@ impl ZeldaState {
             return;
         }
         self.module19_triforce_room_tail();
+    }
+
+    /// Whether the live wire shows this host's fresh iteration not returning
+    /// to the main wait: under the V-IRQ thread the main loop owns only the
+    /// lines from the IRQ to vblank, so the ROM's iteration spans hosts and
+    /// the held latch publishes nothing until it returns.
+    fn triforce_room_iteration_held_by_wire(&self) -> bool {
+        self.rom_startup_timing()
+            && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && self.original_timing_semantic_receipts.is_some()
+            && !self.original_timing_main_loop_iteration_returned_to_wait()
+            && self.original_timing_main_loop_interruption().is_none()
+            && !self.game_execution_scheduler.work_is_pending()
+    }
+
+    /// Module19 cases 8-13 after `AdvancePolyhedral`.
+    fn triforce_room_case_rest(&mut self, case: u8) {
+        match case {
+            8 | 10 => {
+                if self.game_state.frame.subsubmodule == 11 {
+                    self.set_music_control(33);
+                    self.set_main_module(25);
+                    self.follower_link_state_mut()
+                        .set_direction_and_last_direction(0);
+                    self.increment_submodule();
+                }
+            }
+            9 => {
+                self.RenderText();
+                if self.game_state.frame.submodule == 0 {
+                    self.set_overworld_map_state(0);
+                    self.set_main_module(25);
+                    self.increment_subsubmodule();
+                }
+            }
+            11 => {
+                self.triforce_room_link_approach_triforce();
+                if self.game_state.frame.subsubmodule == 12 {
+                    self.follower_link_state_mut()
+                        .set_direction_and_last_direction(0);
+                }
+            }
+            12 => {
+                if self.ending_scratch_mut().decrement_primary_low() == 0 {
+                    self.Palette_AnimGetMasterSword2();
+                    self.increment_submodule();
+                }
+            }
+            13 => {
+                self.PaletteFilter_BlindingWhiteTriforce();
+                if self
+                    .game_state
+                    .display
+                    .palette_filter
+                    .darkening_or_lightening_screen()
+                    == 255
+                {
+                    self.increment_subsubmodule();
+                }
+            }
+            _ => {}
+        }
     }
 
     /// The Module19 tail after the case switch: scroll copies, Link
@@ -624,6 +668,21 @@ impl ZeldaState {
             }
             TriforceRoomLoadStep::Case7TextInit => self.triforce_room_load_case7_text_init(),
             TriforceRoomLoadStep::Case9Scroll => {}
+            TriforceRoomLoadStep::IterationTail { case } => self.triforce_room_case_rest(case),
+            TriforceRoomLoadStep::CreditsIteration { prefix } => {
+                match prefix {
+                    CreditsEntryHostPrefix::None => self.module1_a_credits_body(),
+                    CreditsEntryHostPrefix::OverworldPrepGfx => {
+                        self.credits_load_scene_overworld_prep_gfx_rest();
+                        self.credits_add_ending_sequence_text();
+                    }
+                    CreditsEntryHostPrefix::DungeonScene => {
+                        self.credits_load_scene_dungeon_rest();
+                        self.credits_add_ending_sequence_text();
+                    }
+                }
+                return;
+            }
         }
         self.module19_triforce_room_tail();
     }
@@ -1028,6 +1087,40 @@ impl ZeldaState {
 
     pub(super) fn module1_a_credits(&mut self) {
         self.oam_state_mut().init_credits_region_base();
+        if self.triforce_room_iteration_held_by_wire() {
+            // A credits scene load blocks the main thread across hosts; the
+            // held latch publishes nothing until the iteration returns.
+            let prefix = self.credits_iteration_entry_host_prefix();
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishTriforceRoomLoad {
+                    step: TriforceRoomLoadStep::CreditsIteration { prefix },
+                },
+                TRIFORCE_ROOM_CASE9_SCROLL_NMI_SLICES,
+            );
+            return;
+        }
+        self.module1_a_credits_body();
+    }
+
+    /// Runs the part of a held credits iteration that the ROM completes in
+    /// the entry host and names it for the deferred remainder.
+    fn credits_iteration_entry_host_prefix(&mut self) -> CreditsEntryHostPrefix {
+        let overworld_load = matches!(
+            self.game_state.frame.submodule,
+            0 | 4 | 6 | 8 | 10 | 12 | 14 | 16 | 18 | 24 | 26 | 28 | 30
+        );
+        if overworld_load && self.game_state.frame.subsubmodule == 0 {
+            self.credits_load_scene_overworld_prep_gfx_prefix();
+            return CreditsEntryHostPrefix::OverworldPrepGfx;
+        }
+        if matches!(self.game_state.frame.submodule, 2 | 20 | 22) {
+            self.credits_load_scene_dungeon_prefix();
+            return CreditsEntryHostPrefix::DungeonScene;
+        }
+        CreditsEntryHostPrefix::None
+    }
+
+    fn module1_a_credits_body(&mut self) {
         match self.game_state.frame.submodule {
             0 | 4 | 6 | 8 | 10 | 12 | 14 | 16 | 18 | 24 | 26 | 28 | 30 => {
                 self.credits_load_next_scene_overworld()

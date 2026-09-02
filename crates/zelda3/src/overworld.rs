@@ -593,7 +593,12 @@ impl ZeldaState {
         self.increment_submodule();
     }
 
-    fn prepare_overworld_load_overlays(&mut self) {
+    /// The cheap prefix of `Overworld_LoadOverlays2`. Returns `true` when the
+    /// source's special-area `getout` path already finished the whole call
+    /// (sub-screen layers cleared, submodule advanced) so the caller must not
+    /// run `finish_overworld_load_overlays` (route host 1568434: the credits'
+    /// master-sword grove scene advanced the submodule twice).
+    fn prepare_overworld_load_overlays(&mut self) -> bool {
         let overworld_screen = self.game_state.world.location.overworld_screen();
         self.set_prev_screen_index_word(overworld_screen);
         self.store_overworld_prev_map16_load_state(
@@ -615,7 +620,7 @@ impl ZeldaState {
                 if self.game_state.world.overworld.event_info.event_info(0x80) & 0x40 != 0 {
                     self.set_sub_screen_layers(0);
                     self.increment_submodule();
-                    return;
+                    return true;
                 }
             } else if room == 0x0181 {
                 xv = 0x94;
@@ -627,7 +632,7 @@ impl ZeldaState {
                 }
                 self.set_sub_screen_layers(0);
                 self.increment_submodule();
-                return;
+                return true;
             }
         } else if (si & 0x3f) == 0 {
             xv = if (si & 0x40) == 0
@@ -689,6 +694,7 @@ impl ZeldaState {
                 self.set_color_math_control(0x20);
             }
         }
+        false
     }
 
     pub(super) fn finish_overworld_load_overlays(&mut self) {
@@ -707,7 +713,9 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_LoadOverlays2(&mut self) {
-        self.prepare_overworld_load_overlays();
+        if self.prepare_overworld_load_overlays() {
+            return;
+        }
         if self.rom_startup_timing()
             && self.game_state.frame.main_module == 9
             && self.game_state.frame.submodule == 0x20
@@ -744,7 +752,9 @@ impl ZeldaState {
         // later, before LoadOverworldOverlay becomes the interruptible part of
         // this call. Keep that lightweight prefix on the entry boundary so NMI
         // never observes the temporary value 5.
-        self.prepare_overworld_load_overlays();
+        if self.prepare_overworld_load_overlays() {
+            return;
+        }
         if self.begin_pre_overworld_overlays_work() {
             return;
         }
@@ -2665,7 +2675,9 @@ impl ZeldaState {
                 self.dungeon_room_load_mut().set_draw_width_indicator(0);
                 // Overworld_LoadOverlays2's cheap prefix runs now; its overlay
                 // decode and Map16ToMap8 span the wire's held vblanks.
-                self.prepare_overworld_load_overlays();
+                // Whirlpool exits are never special-area screens, so the
+                // prefix cannot take the source's early `getout` return.
+                let _ = self.prepare_overworld_load_overlays();
                 self.run_or_schedule_module09_long_load(Module09LongLoadStep::LoadOverlays2, 8);
             }
             4 | 6 => {
