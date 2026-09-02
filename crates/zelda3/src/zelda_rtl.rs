@@ -4275,6 +4275,24 @@ fn dungeon_submodule_cpu_schedule(state: &ZeldaState) -> DungeonSubmoduleCpuSche
             {
                 return earliest;
             }
+            // The wire's slot boundary supersedes the estimated one (route
+            // host 1490403); when the candidates differ only in which slot
+            // the caller's Sprite_Main crosses, the plan is otherwise the
+            // same and the live receipt refines the boundary (route host
+            // 1330354: AfterSlot(2) against AfterSlot(3)).
+            let earliest_without_boundary = DungeonSubmoduleCpuSchedule {
+                sprite_main_boundary: None,
+                ..earliest_without_checkpoint
+            };
+            let latest_without_boundary = DungeonSubmoduleCpuSchedule {
+                sprite_main_boundary: None,
+                ..latest_without_checkpoint
+            };
+            if matches!(state.original_timing_owner, OriginalTimingOwnerState::Live)
+                && earliest_without_boundary == latest_without_boundary
+            {
+                return earliest;
+            }
         }
         assert_eq!(
             earliest, latest,
