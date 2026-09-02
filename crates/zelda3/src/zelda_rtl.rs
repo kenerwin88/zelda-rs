@@ -40565,6 +40565,23 @@ impl ZeldaState {
                             // interrupted NMIs. Only then may the palette tail
                             // advance state 9 to state 10.
                             self.Dungeon_HandleTranslucencyAndPalette();
+                            // The wire may suspend the module tail's cached-
+                            // sprite execution at the host return (route host
+                            // 1409941: CachedSpriteExecutionProgress Loading
+                            // slot 4, HostReturn); arm that boundary so
+                            // ExecuteCachedSprites parks there.
+                            if let Some((boundary, authority_boundary)) =
+                                self.take_authoritative_cached_sprite_interruption(None)
+                            {
+                                assert!(
+                                    self.dungeon_cached_sprite_cpu_interruption_pending
+                                        .replace(boundary)
+                                        .is_none(),
+                                    "cached-sprite interroom continuation was already armed",
+                                );
+                                self.dungeon_cached_sprite_cpu_interruption_boundary =
+                                    authority_boundary;
+                            }
                             self.complete_resumed_module07_caller_suffix_by_wire(
                                 authoritative_scheduled_caller_return_timeline.is_some(),
                             );
