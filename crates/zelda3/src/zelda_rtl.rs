@@ -3148,7 +3148,19 @@ const MODULE0E_DIALOGUE_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
     emulation: false,
     waiting: false,
     stack_address: 0x01fd,
-    stack_bytes: &[0x59, 0x80],
+    // JSL return address $00:8059 (+1 = $805a) INCLUDING its bank byte: a
+    // foreign (Snes9x-seeded) WRAM image holds $80 at $01FF because the ROM
+    // runs its bank-$00 code from the FastROM mirror, and an RTL into $80:805a
+    // would never reach `stop_pc` (oracle-seeded boundary 5, frame 72136).
+    stack_bytes: &[0x59, 0x80, 0x00],
+};
+
+/// `Module1B_SpawnSelect` ($02:8586, the save-quit "where to start" prompt)
+/// hosts the same RenderText/Text_Initialize call as Module0E_Interface and
+/// returns to ZeldaRunGameLoop through the same router tail-call.
+const MODULE1B_DIALOGUE_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
+    entry_pc: 0x02_8586,
+    ..MODULE0E_DIALOGUE_CPU_CHECKPOINT
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3199,6 +3211,11 @@ pub(super) fn dialogue_initialization_cpu_plan(
     entry: (u16, u16),
 ) -> DialogueInitializationCpuPlan {
     let timing_dma = state.dma_with_native_hdma_enable();
+    let checkpoint = if state.game_state.frame.main_module == 27 {
+        MODULE1B_DIALOGUE_CPU_CHECKPOINT
+    } else {
+        MODULE0E_DIALOGUE_CPU_CHECKPOINT
+    };
     let mut run = RomCpuTimingRun::new(
         &state.rom,
         &state.ram,
@@ -3206,7 +3223,7 @@ pub(super) fn dialogue_initialization_cpu_plan(
         &state.ppu,
         &timing_dma,
         state.zelda_audio_apu_output_ports(),
-        MODULE0E_DIALOGUE_CPU_CHECKPOINT,
+        checkpoint,
     )
     .expect("dialogue CPU timing requires the loaded Zelda ROM");
     run.restore_original_dialogue_pointer_table()
@@ -3278,9 +3295,29 @@ pub(super) fn dialogue_initialization_cpu_plan(
                     entered_text_initialize,
                     "Module0E reached NMI before Text_Initialize"
                 );
-                nmi_crossings = nmi_crossings
-                    .checked_add(1)
-                    .expect("dialogue NMI count overflowed");
+                if std::env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
+                    eprintln!(
+                        "[DLG-CPU] nmi #{nmi_crossings} at pc={:06x} module={:02x}/{:02x} $12={:02x} text_state={:02x} read_pos={:02x}{:02x} sp={:04x}",
+                        run.pc(),
+                        run.ram_byte(0x10),
+                        run.ram_byte(0x11),
+                        run.ram_byte(NMI_BOOLEAN),
+                        run.ram_byte(0x1cd8),
+                        run.ram_byte(0x1cda),
+                        run.ram_byte(0x1cd9),
+                        run.stack_pointer(),
+                    );
+                }
+                nmi_crossings = nmi_crossings.checked_add(1).unwrap_or_else(|| {
+                    panic!(
+                        "dialogue NMI count overflowed at pc={:06x} module={:02x}/{:02x} $12={:02x} text_state={:02x}",
+                        run.pc(),
+                        run.ram_byte(0x10),
+                        run.ram_byte(0x11),
+                        run.ram_byte(NMI_BOOLEAN),
+                        run.ram_byte(0x1cd8),
+                    )
+                });
                 final_interrupted_pc = run.pc();
             }
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
@@ -3335,7 +3372,9 @@ const DUNGEON_ROOM_LOAD_CPU_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
     emulation: false,
     waiting: false,
     stack_address: 0x01fb,
-    stack_bytes: &[0xae, 0x87, 0x59, 0x80],
+    // Inner RTS return ($87ae) then the outer JSL return ($8059) with its
+    // bank byte (see MODULE0E_DIALOGUE_CPU_CHECKPOINT).
+    stack_bytes: &[0xae, 0x87, 0x59, 0x80, 0x00],
 };
 
 // Every state-1 entry observed by Snes9x through the recorded route frontier
@@ -4046,7 +4085,15 @@ fn dungeon_room_load_cpu_plan(
                     run.stack_return_address(),
                 );
             }
-            nmis = nmis.checked_add(1).expect("room-load NMI count overflowed");
+            nmis = nmis.checked_add(1).unwrap_or_else(|| {
+                panic!(
+                    "room-load NMI count overflowed at pc={:06x} module={:02x}/{:02x} $12={:02x}",
+                    run.pc(),
+                    run.ram_byte(0x10),
+                    run.ram_byte(0x11),
+                    run.ram_byte(NMI_BOOLEAN),
+                )
+            });
             advance_rom_cpu_through_nmi(&mut run, &mut budget);
         }
     }
@@ -10129,6 +10176,13 @@ pub struct ZeldaState {
     /// host 20765).
     #[serde(skip)]
     pub(crate) dialogue_vwf_completion_stops_before_scroll: bool,
+    /// The authoritative decoder endpoint was reached by a command which
+    /// returns RenderText_Draw_MessageCharacters (a line command, a paced
+    /// glyph): the ROM's handler is complete and only its caller suffix
+    /// crosses to the terminal host, which must render nothing more (route
+    /// host 163369/163370: `[line2]` ends the held group at read position 33).
+    #[serde(skip)]
+    pub(crate) dialogue_vwf_handler_completed_at_endpoint: bool,
     /// Zelda message-decoder endpoint published by the temporary Live timing
     /// authority for this host interval. This is a transient work boundary,
     /// not persisted game state; the native VWF owner consumes it while
@@ -16839,6 +16893,7 @@ impl ZeldaState {
             dialogue_scroll_continuation: DialogueScrollContinuation::IDLE,
             dialogue_fast_forward_hold_pending: false,
             dialogue_vwf_completion_stops_before_scroll: false,
+            dialogue_vwf_handler_completed_at_endpoint: false,
             save_menu_initialization_completed_pending: false,
             dialogue_fast_forward_hold_active: false,
             dialogue_live_message_read_position_target: None,
@@ -17197,6 +17252,7 @@ impl ZeldaState {
             self.intro_memory_darken_frame_delay = 0;
             self.save_quit_reset_hold = false;
             self.save_quit_reset_writes_applied = false;
+            self.dialogue_vwf_handler_completed_at_endpoint = false;
             self.intro_poly_thread_initialization_phase = 0;
             self.attract_init_graphics_phase = 0;
             self.attract_first_story_render_delay = 0;
@@ -20280,6 +20336,15 @@ impl ZeldaState {
                     self.original_timing_expected_nmi_update_gates.as_slice(),
                     [NmiUpdateGate::LatchHeld],
                 );
+                if destination == SelectedGameLoadDestination::Dungeon
+                    && semantic.last()
+                        == Some(&OriginalTimingSemanticReceipt::PreDungeonModuleReturned)
+                {
+                    // Module_PreDungeon's 07/0f publication is reported for the
+                    // Module05 loader too (route host 2292); the terminal
+                    // completion below performs exactly that publication.
+                    expected.push(OriginalTimingSemanticReceipt::PreDungeonModuleReturned);
+                }
             }
             assert_eq!(
                 semantic, expected,
@@ -34351,6 +34416,11 @@ impl ZeldaState {
                             self.game_execution_scheduler.is_idle(),
                             "the source-proven selected-game return must retire its scheduler continuation",
                         );
+                        if plan.destination == SelectedGameLoadDestination::Dungeon {
+                            // The Module_PreDungeon publication ran inside the
+                            // completion above.
+                            let _ = self.take_original_timing_pre_dungeon_module_returned();
+                        }
                         if plan.destination == SelectedGameLoadDestination::Message {
                             assert!(
                                 self.take_original_timing_dialogue_closed(),
@@ -42473,7 +42543,7 @@ impl ZeldaState {
     /// machinery: Module0E (submodules 2/11) and Module1B_SpawnSelect
     /// (submodule 2 — the save-quit "where to start" prompt, route hosts
     /// 160304-160319).
-    fn frame_hosts_resident_render_text(&self) -> bool {
+    pub(super) fn frame_hosts_resident_render_text(&self) -> bool {
         matches!(
             (
                 self.game_state.frame.main_module,

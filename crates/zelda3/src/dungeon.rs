@@ -12962,10 +12962,11 @@ impl ZeldaState {
         self.follower_initialize();
     }
 
-    fn module_pre_dungeon_after_sprite_reset_with_song_bank_timing(
-        &mut self,
-        defer_song_bank: bool,
-    ) {
+    /// `Module_PreDungeon` from `Sprite_ResetAll`'s return through the start
+    /// of `Dungeon_LoadSongBankIfNeeded`: the module/submodule bytes are
+    /// written before the song-bank upload holds the wire. Returns whether a
+    /// song-bank transfer started.
+    fn module_pre_dungeon_after_sprite_reset_prefix(&mut self) -> bool {
         self.dungeon_reset_sprites();
         self.messaging_state_mut()
             .clear_message_or_sprite_state_cache();
@@ -12984,7 +12985,14 @@ impl ZeldaState {
         self.set_saved_module_for_menu(7);
         self.set_main_module(7);
         self.set_submodule(15);
-        let song_bank_transfer_started = self.Dungeon_LoadSongBankIfNeeded();
+        self.Dungeon_LoadSongBankIfNeeded()
+    }
+
+    fn module_pre_dungeon_after_sprite_reset_with_song_bank_timing(
+        &mut self,
+        defer_song_bank: bool,
+    ) {
+        let song_bank_transfer_started = self.module_pre_dungeon_after_sprite_reset_prefix();
         if defer_song_bank
             && song_bank_transfer_started
             && self.begin_pre_dungeon_song_bank_transfer_work()

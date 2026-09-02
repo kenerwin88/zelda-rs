@@ -346,11 +346,14 @@ impl ZeldaState {
     //   sprite_y_vel[k] = kHinox_Yvel[dir];
     // }
     pub(super) fn hinox_set_direction(&mut self, k: usize, dir: u8) {
-        let r = self.get_random_number();
+        // ROM Hinox_SetDirection $06:A007: `JSL GetRandomNumber : AND #$3F :
+        // ADC #$60` consumes the RNG carry-out (the C port drops it; route
+        // boundaries 15/17: delay $70 vs the carry-less $6F).
+        let r = self.get_random_number_with_carry();
         let idx = (dir as usize) & 3;
         let mut sprite = self.sprite_slot_view_mut(k);
         sprite.set_direction(dir);
-        sprite.set_delay_main((r & 63).wrapping_add(96));
+        sprite.set_delay_main(r.masked_adc(63, 96));
         sprite.increment_ai_state();
         sprite.set_x_velocity(HINOX_X_VELOCITIES[idx] as u8);
         sprite.set_y_velocity(HINOX_Y_VELOCITIES[idx] as u8);

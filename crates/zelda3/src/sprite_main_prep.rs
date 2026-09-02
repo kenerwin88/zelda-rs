@@ -1106,7 +1106,8 @@ impl ZeldaState {
         self.garnish_slot_view_mut(k).set_x_velocity(value);
         let value = yvel as u8;
         self.garnish_slot_view_mut(k).set_y_velocity(value);
-        let value = (self.get_random_number() & 31).wrapping_add(48);
+        // ROM Garnish15_ArrghusSplash countdown $09:B201: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+        let value = self.get_random_number_with_carry().masked_adc(31, 48);
         self.garnish_slot_view_mut(k).set_countdown(value);
     }
 

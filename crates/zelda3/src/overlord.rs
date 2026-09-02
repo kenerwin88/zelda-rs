@@ -739,7 +739,8 @@ impl ZeldaState {
                 let flags = (self.get_random_number() & mask) * 2;
                 self.dungeon_moving_floor_mut()
                     .set_floor_move_flags(u16::from(flags));
-                let value = (self.get_random_number() & 127).wrapping_add(128);
+                // ROM Garnish03_FallingTile/overlord gen2 $09:BD6E: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                let value = self.get_random_number_with_carry().masked_adc(127, 128);
                 self.overlord_slot_view_mut(k).set_gen2(value);
                 let value = self
                     .game_state

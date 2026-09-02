@@ -686,6 +686,7 @@ impl ZeldaState {
                 SelectedGameLoadDestination::Dungeon,
                 PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted,
             ) => self.complete_selected_game_load_after_sprite_disable_all(destination),
+
             (
                 SelectedGameLoadDestination::DarkWorldOverworld
                 | SelectedGameLoadDestination::Message,

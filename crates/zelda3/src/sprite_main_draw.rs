@@ -400,7 +400,8 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(j).set_y_velocity(value);
                 let value = i as u8;
                 self.sprite_slot_view_mut(j).set_a(value);
-                let value = (self.get_random_number() & 15).wrapping_add(24);
+                // ROM Sprite_SpawnBigSplash $05:9B94: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                let value = self.get_random_number_with_carry().masked_adc(15, 24);
                 self.sprite_slot_view_mut(j).set_z_velocity(value);
                 let value = 1;
                 self.sprite_slot_view_mut(j).set_ai_state(value);
@@ -2895,13 +2896,15 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                     let value = (self.get_random_number() & 2).wrapping_sub(1);
                     self.sprite_slot_view_mut(k).set_head_direction(value);
-                    let value = (self.get_random_number() & 31).wrapping_add(32);
+                    // ROM Sprite_09_GiantMoldorm $1D:D821: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                    let value = self.get_random_number_with_carry().masked_adc(31, 32);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                 }
             }
             1 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    let value = (self.get_random_number() & 15).wrapping_add(8);
+                    // ROM Sprite_09_GiantMoldorm $1D:D832: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                    let value = self.get_random_number_with_carry().masked_adc(15, 8);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
@@ -4008,7 +4011,8 @@ impl ZeldaState {
     }
 
     fn red_bari_set_electrocute_delay(&mut self, k: usize) {
-        let value = (self.get_random_number() & 63).wrapping_add(128);
+        // ROM Sprite_23_RedBari $06:A342: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+        let value = self.get_random_number_with_carry().masked_adc(63, 128);
         self.sprite_slot_view_mut(k).set_delay_aux1(value);
     }
 
@@ -6959,7 +6963,8 @@ impl ZeldaState {
             }
             2 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    let value = (self.get_random_number() & 15) + 16;
+                    // ROM Sprite_D0_Lynel $1D:8745: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                    let value = self.get_random_number_with_carry().masked_adc(15, 16);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
@@ -12249,13 +12254,15 @@ impl ZeldaState {
                     }
                     let value = (self.get_random_number() & 2).wrapping_sub(1);
                     self.sprite_slot_view_mut(k).set_head_direction(value);
-                    let value = (self.get_random_number() & 0x1f).wrapping_add(0x20);
+                    // ROM Sprite_18_MiniMoldorm $06:9881: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                    let value = self.get_random_number_with_carry().masked_adc(0x1f, 0x20);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                 }
             }
             1 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
-                    let value = (self.get_random_number() & 15).wrapping_add(8);
+                    // ROM Sprite_18_MiniMoldorm $06:9892: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                    let value = self.get_random_number_with_carry().masked_adc(15, 8);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     let value = 0;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
@@ -13116,7 +13123,8 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).and_deflection_bits(!4);
                     self.sprite_slot_view_mut(k).and_flags3(!0x40);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
-                    let value = (self.get_random_number() & 31).wrapping_add(32);
+                    // ROM Sprite_27_Deadrock $06:9524: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                    let value = self.get_random_number_with_carry().masked_adc(31, 32);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     let dir = if self.sprite_slot_view(k).b().wrapping_add(1) == 4 {
                         let value = 0;
@@ -13212,7 +13220,8 @@ impl ZeldaState {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     let value = 1;
                     self.sprite_slot_view_mut(k).set_ai_state(value);
-                    let value = (self.get_random_number() & 31).wrapping_add(32);
+                    // ROM Sprite_20_Sluggula $06:9623: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                    let value = self.get_random_number_with_carry().masked_adc(31, 32);
                     self.sprite_slot_view_mut(k).set_delay_main(value);
                     j = usize::from(self.sprite_slot_view(k).delay_main() & 3);
                     let value = j as u8;
@@ -13267,7 +13276,11 @@ impl ZeldaState {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
                     self.sprite_apply_speed_towards_link(k, 16);
-                    let value = (self.get_random_number() & 15).wrapping_add(20);
+                    // ROM $86:9E6C: `JSL GetRandomNumber : AND #$0F : ADC #$14`
+                    // — the ADC consumes GetRandomNumber's carry-out (the C
+                    // port drops it). Route boundary 21 (frame 567894): the
+                    // hop left at $1C, the carry-less port at $1B.
+                    let value = self.get_random_number_with_carry().masked_adc(15, 20);
                     self.sprite_slot_view_mut(k).set_z_velocity(value);
                     self.sprite_slot_view_mut(k).add_ai_state(1);
                 }
@@ -13371,7 +13384,8 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_anim_clock(value);
                         let value = 0;
                         self.sprite_slot_view_mut(k).set_ai_state(value);
-                        let value = (self.get_random_number() & 31).wrapping_add(16);
+                        // ROM Sprite_19_Poe $06:9769: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                        let value = self.get_random_number_with_carry().masked_adc(31, 16);
                         self.sprite_slot_view_mut(k).set_delay_main(value);
                     }
                 }
@@ -14951,7 +14965,8 @@ impl ZeldaState {
         self.sprite_check_damage_to_and_from_link(k);
         self.sprite_move_xy(k);
         if self.sprite_check_tile_collision(k) != 0 || self.sprite_slot_view(k).delay_main() == 0 {
-            let value = (self.get_random_number() & 63).wrapping_add(32);
+            // ROM Sprite_58_Crab $05:94CE: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+            let value = self.get_random_number_with_carry().masked_adc(63, 32);
             self.sprite_slot_view_mut(k).set_delay_main(value);
             let value = self.sprite_slot_view(k).delay_main() & 3;
             self.sprite_slot_view_mut(k).set_direction(value);

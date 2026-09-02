@@ -585,40 +585,7 @@ impl ZeldaState {
                 && self.overworld_map_state() != 0;
         }
         if !skip_run {
-            if self.rom_startup_timing()
-                && self.game_state.frame.submodule == 2
-                && self.game_state.messaging.runtime.module() == 0
-                && self.pending_dialogue_initialization_schedule.is_none()
-            {
-                // Module0E enters in this measured raster interval. Execute
-                // both endpoints against the live ROM/state: the host only
-                // consumes the result when the interval has one schedule.
-                let earliest = super::dialogue_initialization_cpu_plan(self, (255, 528));
-                let latest = super::dialogue_initialization_cpu_plan(self, (255, 700));
-                assert_eq!(
-                    earliest.schedule_key(),
-                    latest.schedule_key(),
-                    "dialogue CPU schedule varies across the measured Module0E entry interval"
-                );
-                self.pending_dialogue_initialization_schedule = Some((
-                    earliest.prefix_nmi_crossings(),
-                    earliest.caller_nmi_crossings(),
-                    Some(earliest.following_main_nmi_uses_host_animated_bg_operands()),
-                ));
-                if std::env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
-                    eprintln!(
-                        "dialogue_cpu_plan host={} msg={:#06x} speed={} earliest={:?} latest={:?} prefix_crossings={} caller_crossings={} following_main_animated_bg={:?}",
-                        self.frame_ctr_dbg,
-                        self.game_state.messaging.dialogue_message_index.value(),
-                        self.game_state.messaging.runtime.vwf_line_speed(),
-                        earliest.diagnostic(),
-                        latest.diagnostic(),
-                        earliest.prefix_nmi_crossings(),
-                        earliest.caller_nmi_crossings(),
-                        earliest.following_main_nmi_uses_host_animated_bg_operands(),
-                    );
-                }
-            }
+            self.arm_dialogue_initialization_schedule_if_needed();
             self.sprite_main();
             if self
                 .game_execution_scheduler
@@ -630,6 +597,47 @@ impl ZeldaState {
             return;
         }
         self.complete_module0e_run_interface();
+    }
+
+    /// Measure the ROM's Text_Initialize call at a dialogue module's entry
+    /// (Module0E_Interface, Module1B_SpawnSelect) and arm the schedule the
+    /// translated `Text_Initialize` consumes.
+    fn arm_dialogue_initialization_schedule_if_needed(&mut self) {
+        if self.rom_startup_timing()
+            && self.game_state.frame.submodule == 2
+            && self.game_state.messaging.runtime.module() == 0
+            && self.pending_dialogue_initialization_schedule.is_none()
+        {
+            // The module enters in this measured raster interval. Execute
+            // both endpoints against the live ROM/state: the host only
+            // consumes the result when the interval has one schedule.
+            let earliest = super::dialogue_initialization_cpu_plan(self, (255, 528));
+            let latest = super::dialogue_initialization_cpu_plan(self, (255, 700));
+            assert_eq!(
+                earliest.schedule_key(),
+                latest.schedule_key(),
+                "dialogue CPU schedule varies across the measured module entry interval"
+            );
+            self.pending_dialogue_initialization_schedule = Some((
+                earliest.prefix_nmi_crossings(),
+                earliest.caller_nmi_crossings(),
+                Some(earliest.following_main_nmi_uses_host_animated_bg_operands()),
+            ));
+            if std::env::var_os("ZELDA3_DEBUG_DIALOGUE_CPU_PLAN").is_some() {
+                eprintln!(
+                    "dialogue_cpu_plan host={} module={:#04x} msg={:#06x} speed={} earliest={:?} latest={:?} prefix_crossings={} caller_crossings={} following_main_animated_bg={:?}",
+                    self.frame_ctr_dbg,
+                    self.game_state.frame.main_module,
+                    self.game_state.messaging.dialogue_message_index.value(),
+                    self.game_state.messaging.runtime.vwf_line_speed(),
+                    earliest.diagnostic(),
+                    latest.diagnostic(),
+                    earliest.prefix_nmi_crossings(),
+                    earliest.caller_nmi_crossings(),
+                    earliest.following_main_nmi_uses_host_animated_bg_operands(),
+                );
+            }
+        }
     }
 
     /// Resume `Module0E_Interface` immediately after `Sprite_Main` returns.
@@ -855,6 +863,9 @@ impl ZeldaState {
     }
 
     pub(super) fn Module1B_SpawnSelect(&mut self) {
+        // The spawn-select prompt hosts the shared RenderText machinery; its
+        // Text_Initialize is measured like Module0E's (route host 160304).
+        self.arm_dialogue_initialization_schedule_if_needed();
         self.RenderText();
         if self.game_state.frame.submodule != 0 {
             return;
@@ -3846,6 +3857,7 @@ impl ZeldaState {
         // Text_Initialize here, not the VWF glyph loop. A stale hold routed
         // the initialization's caller-return host into the VWF terminal
         // branch (route host 103733).
+        self.dialogue_vwf_handler_completed_at_endpoint = false;
         self.dialogue_fast_forward_hold_active = false;
         self.dialogue_fast_forward_hold_pending = false;
         self.RenderText_SetDefaultWindowPosition();
@@ -4196,9 +4208,8 @@ impl ZeldaState {
             "a suspended VWF endpoint transition escaped the decoded message buffer",
         );
         assert!(
-            self.game_state.frame.main_module == 14
-                && matches!(self.game_state.frame.submodule, 2 | 11),
-            "a suspended VWF endpoint transition escaped Module0E RenderText: {:?}",
+            self.frame_hosts_resident_render_text(),
+            "a suspended VWF endpoint transition escaped Module0E/Module1B RenderText: {:?}",
             self.game_state.frame,
         );
         assert_eq!(
@@ -4270,6 +4281,7 @@ impl ZeldaState {
 
         self.dialogue_fast_forward_hold_active = true;
         self.dialogue_live_message_read_position_target = Some(target_read_position);
+        self.dialogue_vwf_handler_completed_at_endpoint = false;
         let mut slice_count = 0u32;
         loop {
             let cursor_before = self.game_state.messaging.runtime.dialogue_msg_read_pos();
@@ -4386,9 +4398,8 @@ impl ZeldaState {
             "a suspended VWF completion escaped the decoded message buffer",
         );
         assert!(
-            self.game_state.frame.main_module == 14
-                && matches!(self.game_state.frame.submodule, 2 | 11),
-            "a suspended VWF completion escaped Module0E RenderText: {:?}",
+            self.frame_hosts_resident_render_text(),
+            "a suspended VWF completion escaped Module0E/Module1B RenderText: {:?}",
             self.game_state.frame,
         );
         assert_eq!(
@@ -4452,6 +4463,20 @@ impl ZeldaState {
             );
         };
 
+        if std::mem::take(&mut self.dialogue_vwf_handler_completed_at_endpoint) {
+            // The endpoint host's final command already returned the ROM
+            // handler; this terminal host runs only the caller suffix.
+            assert_architectural_ownership_unchanged(self);
+            return SuspendedVwfCompletionTransition {
+                start_read_position,
+                end_read_position: start_read_position,
+                slice_count: 0,
+                // The typed common-suffix completion of this terminal host
+                // owns the caller suffix; report the translated hold as-is.
+                caller_suffix_crossed_vblank: self.dialogue_fast_forward_hold_pending,
+                begins_message_line_scroll: false,
+            };
+        }
         let mut slice_count = 0u32;
         self.dialogue_vwf_completion_stops_before_scroll = true;
         loop {
@@ -4696,6 +4721,18 @@ impl ZeldaState {
                 TEXT_CMD_CHOOSE3 => self.RenderText_Draw_Choose3(),
                 TEXT_CMD_CHOOSE2 => self.RenderText_Draw_Choose1Or2(),
                 TEXT_CMD_WAITKEY | TEXT_CMD_END_MESSAGE => {
+                    if std::env::var_os("ZELDA3_DEBUG_VWF_WAIT").is_some() {
+                        eprintln!(
+                            "[VWF-WAIT] host={} cmd={} read_pos={read_pos} target={:?} countdown2={} filtered={:#04x}/{:#04x} state={}",
+                            self.frame_ctr_dbg,
+                            if cmd == TEXT_CMD_WAITKEY { "WAITKEY" } else { "END" },
+                            self.dialogue_live_message_read_position_target,
+                            self.game_state.messaging.runtime.text_wait_countdown2(),
+                            self.game_state.player.follower_link.filtered_joypad_h(),
+                            self.game_state.player.follower_link.filtered_joypad_l(),
+                            self.game_state.messaging.runtime.text_render_state(),
+                        );
+                    }
                     if self
                         .dialogue_live_message_read_position_target
                         .is_some_and(|target| usize::from(target) > read_pos)
@@ -4738,6 +4775,11 @@ impl ZeldaState {
                     == Some(self.game_state.messaging.runtime.dialogue_msg_read_pos())
                 {
                     authority_boundary_reached = true;
+                    // A command which does not restart the glyph loop returns
+                    // the ROM handler here; the endpoint therefore also marks
+                    // the handler complete (its caller suffix is what the
+                    // following host still owes).
+                    self.dialogue_vwf_handler_completed_at_endpoint = !restart_if_zero_speed;
                     break;
                 }
             }

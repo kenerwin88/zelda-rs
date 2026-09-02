@@ -5039,12 +5039,17 @@ pub(crate) fn run_compare_libretro_oracle(
                 });
         }
         if let Some(frame) = seed_rust_from_oracle {
-            seed_rust_game_from_oracle_memory(&mut game, &oracle, frame).unwrap_or_else(|error| {
-                eprintln!("failed to seed Rust from the oracle state: {error}");
+            // Rust is seeded inside the frame loop at the first run boundary
+            // the oracle reaches with no pending NMI publication and a
+            // completed main-loop iteration (a savestate captured mid-NMI
+            // cannot seed a quiescent translated state).
+            let Some(trace) = oracle_semantic_trace.as_mut() else {
+                eprintln!("--seed-rust-from-oracle-state requires the pinned trace core's semantic receipts");
                 process::exit(2);
-            });
+            };
+            trace.begin_seed_warmup();
             println!(
-                "seeded Rust from the {oracle_name} state's memory at frame {frame} (development evidence, not parity authority)"
+                "oracle-seeded segment: warming up from {oracle_name} state at frame {frame} until a clean run boundary (development evidence, not parity authority)"
             );
         } else {
             println!(
@@ -5465,6 +5470,12 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut next_rolling_resume_frame = rolling_paired_resume
         .as_ref()
         .map(|rolling| rolling_capture_frame_after(start_frame, rolling.interval));
+    // Oracle-seeded start: Some(boundary) until Rust has been seeded.
+    let mut seed_pending = seed_rust_from_oracle;
+    let seed_warmup_max = env::var("ZELDA3_SEED_WARMUP_MAX")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(240);
     for frame_index in start_frame..frames {
         let mut stop_after_exact_audio_mismatch = false;
         let mut video_mismatch_this_frame = false;
@@ -5644,6 +5655,59 @@ pub(crate) fn run_compare_libretro_oracle(
                     );
                     process::exit(1);
                 });
+                if let Some(seed_boundary) = seed_pending {
+                    // Warm-up run: the oracle advanced alone. Seed Rust at the
+                    // first clean boundary; drain this run's RNG samples.
+                    let semantic = receipts.semantic();
+                    let clean = !trace.nmi_publication_pending()
+                        && semantic.last()
+                            == Some(&OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted)
+                        && semantic.iter().any(|receipt| {
+                            matches!(
+                                receipt,
+                                OriginalTimingSemanticReceipt::MainLoopProgress(
+                                    zelda3::MainLoopProgress::IterationStarted
+                                )
+                            )
+                        });
+                    previous_oracle_video = early_oracle_capture
+                        .as_ref()
+                        .map(PresentedOracleVideo::from);
+                    if let Some(rng) = live_oracle_rng_trace.as_mut() {
+                        let _ = rng
+                            .samples_for_run(frame_index - start_frame, frame_index)
+                            .unwrap_or_else(|error| {
+                                eprintln!(
+                                    "live oracle RNG authority failed at warm-up frame {frame_index}: {error}"
+                                );
+                                process::exit(1);
+                            });
+                    }
+                    input_history.push((frame_index, requested_input));
+                    completed_frames = frame_index.saturating_add(1);
+                    if clean {
+                        let seed_frame = frame_index.saturating_add(1);
+                        seed_rust_game_from_oracle_memory(&mut game, &oracle, seed_frame)
+                            .unwrap_or_else(|error| {
+                                eprintln!("failed to seed Rust from the oracle state: {error}");
+                                process::exit(2);
+                            });
+                        trace.end_seed_warmup();
+                        seed_pending = None;
+                        compare_engine_state_from_frame =
+                            compare_engine_state_from_frame.map(|start| start.max(seed_frame));
+                        println!(
+                            "seeded Rust from the {oracle_name} state's memory at frame {seed_frame} after {} warm-up run(s): {semantic:?}",
+                            seed_frame - seed_boundary
+                        );
+                    } else if frame_index - seed_boundary + 1 >= seed_warmup_max {
+                        eprintln!(
+                            "oracle-seeded start found no clean run boundary within {seed_warmup_max} frame(s) of {seed_boundary}; last run: {semantic:?}"
+                        );
+                        process::exit(2);
+                    }
+                    continue;
+                }
                 let semantic_debug = format!("{:?}", receipts.semantic());
                 game.install_original_timing_host_receipts(receipts)
                 .unwrap_or_else(|error| {

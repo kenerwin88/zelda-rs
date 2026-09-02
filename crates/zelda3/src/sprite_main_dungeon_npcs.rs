@@ -2258,7 +2258,8 @@ impl ZeldaState {
             8 => {
                 self.sprite_slot_view_mut(k).set_direction(8);
                 self.sprite_slot_view_mut(k).set_graphics(0);
-                let z_velocity = (self.get_random_number() & 15).wrapping_add(16);
+                // ROM Kiki_OfferEntranceService $1E:E648: `JSL GetRandomNumber : AND : ADC` consumes the RNG carry-out (the C port drops it).
+                let z_velocity = self.get_random_number_with_carry().masked_adc(15, 16);
                 self.sprite_slot_view_mut(k).set_z_velocity(z_velocity);
                 self.sprite_slot_view_mut(k).increment_ai_state();
             }

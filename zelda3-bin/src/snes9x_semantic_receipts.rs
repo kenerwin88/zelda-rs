@@ -509,6 +509,11 @@ impl CachedSpriteExecutionTracker {
 }
 
 pub(crate) struct Snes9xOracleSemanticTrace {
+    /// Seed warm-up (oracle-seeded segment starts): the decoder began at a
+    /// savestate captured mid-publication, so an NMI handler completion whose
+    /// acceptance predates the trace is dropped instead of rejected. Cleared
+    /// by the harness once Rust is seeded at a clean run boundary.
+    seed_warmup_active: bool,
     path: PathBuf,
     offset: u64,
     cache_write_progress: Option<CacheWriteProgress>,
@@ -948,7 +953,11 @@ impl HostFrameWindow {
                 }
             }
         }
-        if entry.main == 6 && returned.main == 7 && returned.sub == 15 {
+        // Module_PreDungeon publishes module 07/0f from the overworld entrance
+        // (Module06) and from the spawn-select reload, which re-enters through
+        // Module05's loader (route host 160528: the publication precedes the
+        // NMI-masked song-bank upload exactly as at the Module06 entrances).
+        if matches!(entry.main, 5 | 6) && returned.main == 7 && returned.sub == 15 {
             receipts.push(OriginalTimingSemanticReceipt::PreDungeonModuleReturned);
         }
         if entry.main == 14 && entry.sub == 11 && entry.subsub == 0 {
@@ -1124,11 +1133,28 @@ impl Snes9xOracleSemanticTrace {
             item_receipt_caller: None,
             sprite_main_execution: None,
             zelda_run_game_loop_call_active: false,
+            seed_warmup_active: false,
             nmi_publication_pending: false,
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
         })
+    }
+
+    /// Begin the oracle-seeded warm-up (see `seed_warmup_active`).
+    pub(crate) fn begin_seed_warmup(&mut self) {
+        self.seed_warmup_active = true;
+    }
+
+    /// End the oracle-seeded warm-up once Rust is seeded at a clean boundary.
+    pub(crate) fn end_seed_warmup(&mut self) {
+        self.seed_warmup_active = false;
+    }
+
+    /// Whether an accepted NMI's publication is still pending at the last
+    /// decoded run boundary (its handler completes in the next run).
+    pub(crate) fn nmi_publication_pending(&self) -> bool {
+        self.nmi_publication_pending
     }
 
     pub(crate) fn backing_path(&self) -> &Path {
@@ -1686,28 +1712,34 @@ impl Snes9xOracleSemanticTrace {
                 match pc {
                     pc if NMI_HANDLER_COMPLETE_PCS.contains(&pc) => {
                         if !self.nmi_publication_pending {
-                            return Err(
-                                "Snes9x reached NMI publication completion without an accepted NMI"
-                                    .to_string(),
-                            );
-                        }
-                        let update_gate = self.pending_nmi_update_gate.ok_or(
-                            "Snes9x NMI completion lost its accepted update-gate disposition",
-                        )?;
-                        let joypad_publication = if update_gate == NmiUpdateGate::Open {
-                            Some(event.joypad_publication()?.ok_or(
-                                "open Snes9x NMI completion omitted Zelda joypad publication",
-                            )?)
+                            if !self.seed_warmup_active {
+                                return Err(
+                                    "Snes9x reached NMI publication completion without an accepted NMI"
+                                        .to_string(),
+                                );
+                            }
+                            // Seed warm-up: the NMI was accepted before the
+                            // seeded oracle state was captured; its completion
+                            // belongs to no host this decoder saw. Drop it.
                         } else {
-                            None
-                        };
-                        self.pending_nmi_update_gate = None;
-                        self.nmi_publication_pending = false;
-                        receipts.push(OriginalTimingSemanticReceipt::NmiHandlerCompleted);
-                        if let Some(publication) = joypad_publication {
-                            receipts.push(OriginalTimingSemanticReceipt::JoypadPublication(
-                                publication,
-                            ));
+                            let update_gate = self.pending_nmi_update_gate.ok_or(
+                                "Snes9x NMI completion lost its accepted update-gate disposition",
+                            )?;
+                            let joypad_publication = if update_gate == NmiUpdateGate::Open {
+                                Some(event.joypad_publication()?.ok_or(
+                                    "open Snes9x NMI completion omitted Zelda joypad publication",
+                                )?)
+                            } else {
+                                None
+                            };
+                            self.pending_nmi_update_gate = None;
+                            self.nmi_publication_pending = false;
+                            receipts.push(OriginalTimingSemanticReceipt::NmiHandlerCompleted);
+                            if let Some(publication) = joypad_publication {
+                                receipts.push(OriginalTimingSemanticReceipt::JoypadPublication(
+                                    publication,
+                                ));
+                            }
                         }
                     }
                     BOTTLE_VENDOR_ITEM_RECEIPT_CALL_PC | SICK_KID_ITEM_RECEIPT_CALL_PC => {

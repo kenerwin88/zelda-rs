@@ -1108,9 +1108,11 @@ impl ZeldaState {
             let gfx = VITREOUS_SMALL_EYE_GRAPHICS[j - 1];
             self.sprite_slot_view_mut(j).set_ignore_projectile(gfx);
             self.sprite_slot_view_mut(j).set_graphics(gfx);
-            let rand = self.get_random_number();
+            // ROM Vitreous_SpawnSmallerEyes $1D:DF38: `JSL GetRandomNumber :
+            // ADC $0F` adds the RNG carry-out as well (the C port drops it).
+            let rand = self.get_random_number_with_carry();
             self.sprite_slot_view_mut(j)
-                .set_subtype2((((j - 1) * 8) as u8).wrapping_add(rand));
+                .set_subtype2(rand.masked_adc(0xff, ((j - 1) * 8) as u8));
         }
     }
 
