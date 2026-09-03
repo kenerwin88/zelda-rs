@@ -6134,6 +6134,21 @@ impl ZeldaState {
 
     pub(super) fn OverworldMosaicTransition_LoadSpriteGraphicsAndSetMosaic(&mut self) {
         self.LoadNewSpriteGFXSet();
+        if self.rom_startup_timing() {
+            // The source stays inside the sprite conversion across three
+            // host boundaries (route frames 165813..165815). Keep the caller
+            // suffix behind that source call; live receipts decide the exact
+            // return host if another graphics set takes a different path.
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishOverworldMosaicSpriteGraphics,
+                3,
+            );
+            return;
+        }
+        self.complete_overworld_mosaic_sprite_graphics();
+    }
+
+    pub(super) fn complete_overworld_mosaic_sprite_graphics(&mut self) {
         self.set_screen_brightness(0x0f);
         self.set_hdma_enable_mask(0x80);
         let countdown = self.game_state.display.mosaic_target_level.wrapping_sub(1);

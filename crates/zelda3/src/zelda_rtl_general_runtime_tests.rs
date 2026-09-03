@@ -11,7 +11,8 @@ use crate::game_state::constants::{
     DMA_SOURCE_ADDR_14, DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17,
     DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20,
     DMA_SOURCE_ADDR_21, DMA_SOURCE_ADDR_3, DMA_SOURCE_ADDR_4, DMA_SOURCE_ADDR_5, DMA_SOURCE_ADDR_6,
-    DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, DUNG_BG2, TM_COPY, TS_COPY,
+    DMA_SOURCE_ADDR_7, DMA_SOURCE_ADDR_8, DMA_SOURCE_ADDR_9, DUNG_BG2, HDMAEN_COPY, INIDISP_COPY,
+    MOSAIC_TARGET_LEVEL, PALETTE_FILTER_COUNTDOWN, SUBSUBMODULE, TM_COPY, TS_COPY,
 };
 use crate::game_state::constants::{FLAG_IS_ANCILLA_TO_PICK_UP, SPRITE_LIMIT_INSTANCE};
 use crate::game_state::constants::{MAP16_LOAD_DST_OFF, MAP16_LOAD_SRC_OFF, MAP16_LOAD_Y_UNIT};
@@ -26982,6 +26983,12 @@ fn completed_overworld_reload_uses_its_measured_return_phase() {
             .bg_scroll,
         Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
     );
+    assert_eq!(
+        GameWorkContinuation::FinishOverworldMosaicSpriteGraphics
+            .completion_publication(cpu_slice_entry)
+            .bg_scroll,
+        Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
+    );
     // The completion boundary still owns the scroll generation measured at
     // the CPU return. Entry geometry belongs to the following resume boundary.
     for post_return_hold_nmi_slices in [0, 1] {
@@ -27028,6 +27035,38 @@ fn completed_overworld_reload_uses_its_measured_return_phase() {
             .bg_scroll,
         None,
     );
+}
+
+#[test]
+fn overworld_mosaic_sprite_graphics_defers_its_source_suffix() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.set_screen_brightness(0);
+    state.set_hdma_enable_mask(0);
+    state.set_mosaic_target_level(31);
+    state.set_countdown(0);
+    state.set_subsubmodule(0);
+
+    state.OverworldMosaicTransition_LoadSpriteGraphicsAndSetMosaic();
+
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishOverworldMosaicSpriteGraphics),
+    );
+    assert_eq!(state.ram[INIDISP_COPY], 0);
+    assert_eq!(state.ram[HDMAEN_COPY], 0);
+    assert_eq!(state.ram[MOSAIC_TARGET_LEVEL], 31);
+    assert_eq!(state.ram[PALETTE_FILTER_COUNTDOWN], 0);
+    assert_eq!(state.ram[SUBSUBMODULE], 0);
+
+    state.complete_overworld_mosaic_sprite_graphics();
+
+    assert_eq!(state.ram[INIDISP_COPY], 0x0f);
+    assert_eq!(state.ram[HDMAEN_COPY], 0x80);
+    assert_eq!(state.ram[MOSAIC_TARGET_LEVEL], 0);
+    assert_eq!(state.ram[PALETTE_FILTER_COUNTDOWN], 30);
+    assert_eq!(state.ram[SUBSUBMODULE], 1);
 }
 
 #[test]

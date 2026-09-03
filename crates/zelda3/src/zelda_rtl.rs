@@ -7047,6 +7047,7 @@ enum GameWorkContinuation {
     FinishWorldMapOverlayReload,
     FinishWorldMapAmbientMap8,
     FinishOverworldAuxGraphics,
+    FinishOverworldMosaicSpriteGraphics,
     FinishOverworldMapQuadrants {
         scroll_map_and_sprite_gfx_tail_nmi_slices: u8,
     },
@@ -7118,6 +7119,7 @@ impl GameWorkContinuation {
                 | Self::FinishWorldMapLightLoad
                 | Self::FinishWorldMapExitTilesets
                 | Self::FinishOverworldAuxGraphics
+                | Self::FinishOverworldMosaicSpriteGraphics
                 | Self::FinishModule09LongLoad { .. }
                 | Self::FinishOverworldMapQuadrants { .. }
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
@@ -7151,6 +7153,7 @@ impl GameWorkContinuation {
                 | Self::FinishWorldMapExitTilesets
                 | Self::FinishWorldMapAmbientMap8
                 | Self::FinishOverworldAuxGraphics
+                | Self::FinishOverworldMosaicSpriteGraphics
                 | Self::FinishModule09LongLoad { .. }
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
                 | Self::FinishOverworldSpriteReloadTail { .. }
@@ -7201,6 +7204,7 @@ impl GameWorkContinuation {
             Self::FinishDungeonAfterSubmoduleCallerReturn
             | Self::FinishWorldMapAmbientMap8
             | Self::FinishOverworldAuxGraphics
+            | Self::FinishOverworldMosaicSpriteGraphics
             | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
             | Self::FinishOverworldSpriteReloadTail { .. }
             | Self::FinishItemReceiptGraphics { .. }
@@ -7288,7 +7292,9 @@ impl GameWorkContinuation {
         cpu_slice_entry: BgScrollRegisterScanout,
     ) -> GameWorkCompletionPublication {
         match self {
-            Self::FinishOverworldAuxGraphics | Self::HoldOverworldSpriteReloadReturn => {
+            Self::FinishOverworldAuxGraphics
+            | Self::FinishOverworldMosaicSpriteGraphics
+            | Self::HoldOverworldSpriteReloadReturn => {
                 GameWorkCompletionPublication {
                     bg_scroll: Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
                     obj: None,
@@ -39024,6 +39030,7 @@ impl ZeldaState {
                             self.game_execution_scheduler.current_work(),
                             Some(
                                 GameWorkContinuation::FinishOverworldAuxGraphics
+                                    | GameWorkContinuation::FinishOverworldMosaicSpriteGraphics
                                     // The straight-stair/spiral room callers'
                                     // Module07 LinkOam (route host 307614).
                                     | GameWorkContinuation::FinishDungeonSupertileTransition {
@@ -39040,6 +39047,7 @@ impl ZeldaState {
                     Some(
                         GameWorkContinuation::FinishOverworldSpriteReloadTail { .. }
                             | GameWorkContinuation::FinishOverworldAuxGraphics
+                            | GameWorkContinuation::FinishOverworldMosaicSpriteGraphics
                             | GameWorkContinuation::FinishOverworldScreenMapAndSpriteGraphicsTail
                             // The mirror-warp sprite reload's own Module09
                             // Sprite_Main is re-interrupted mid-loop (slot 9
@@ -39765,6 +39773,7 @@ impl ZeldaState {
                         // The special-overworld aux-graphics caller (route
                         // host 263657).
                         | GameWorkContinuation::FinishOverworldAuxGraphics
+                        | GameWorkContinuation::FinishOverworldMosaicSpriteGraphics
                 )
             ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                 && !matches!(
@@ -42898,13 +42907,16 @@ impl ZeldaState {
                         self.clear_nmi_update_latch();
                     }
                 }
-                GameWorkStep::Complete(GameWorkContinuation::FinishOverworldAuxGraphics) => {
-                    // PC/V-counter traces remain in LoadTransAuxGFX and
-                    // PrepTransAuxGfx through this frame's vblank, returning
-                    // to Module09_LoadAuxGFX immediately afterward. Preserve
-                    // that ordering: this scanout uses the pre-load display,
-                    // while the completed graphics and caller suffix become
-                    // CPU-visible before the next frame.
+                GameWorkStep::Complete(
+                    work @ (GameWorkContinuation::FinishOverworldAuxGraphics
+                    | GameWorkContinuation::FinishOverworldMosaicSpriteGraphics),
+                ) => {
+                    // PC/V-counter traces remain in the active Module09
+                    // graphics conversion through this frame's vblank,
+                    // returning to its module caller immediately afterward.
+                    // Preserve that ordering: this scanout uses the pre-load
+                    // display, while the completed graphics and caller suffix
+                    // become CPU-visible before the next frame.
                     //
                     // The interrupt's scroll-register writes occur at this
                     // vblank and are visible in the scanout even though the
@@ -42945,7 +42957,15 @@ impl ZeldaState {
                             continued_sprite_main_claims,
                         );
                     }
-                    self.complete_module09_load_aux_gfx();
+                    match work {
+                        GameWorkContinuation::FinishOverworldAuxGraphics => {
+                            self.complete_module09_load_aux_gfx();
+                        }
+                        GameWorkContinuation::FinishOverworldMosaicSpriteGraphics => {
+                            self.complete_overworld_mosaic_sprite_graphics();
+                        }
+                        _ => unreachable!("combined Module09 graphics completion changed kind"),
+                    }
                     self.complete_module09_overworld_after_submodule();
                     if self
                         .game_execution_scheduler
@@ -42958,7 +42978,7 @@ impl ZeldaState {
                         // slices, not this host.
                         assert!(
                             authoritative_scheduled_caller_return_timeline.is_none(),
-                            "a suspended aux-graphics caller cannot also own a terminal return",
+                            "a suspended Module09 graphics caller cannot also own a terminal return",
                         );
                         if continued_sprite_main_claims != 0
                             && self
@@ -42984,7 +43004,7 @@ impl ZeldaState {
                         // NMI_PrepareSprites (route host 187535).
                         assert!(
                             authoritative_scheduled_caller_return_timeline.is_none(),
-                            "an aux-graphics caller interrupted in NMI_PrepareSprites cannot own a terminal return",
+                            "a Module09 graphics caller interrupted in NMI_PrepareSprites cannot own a terminal return",
                         );
                         self.schedule_live_interrupted_nmi_prepare_sprites_caller_return(
                             NmiPrepareSpritesCpuCaller::Module09LongLoad,
@@ -43009,7 +43029,9 @@ impl ZeldaState {
                         self.nmi_prepare_sprites();
                         self.clear_nmi_update_latch();
                     }
-                    if authoritative_scheduled_caller_return_timeline.is_none() {
+                    if work == GameWorkContinuation::FinishOverworldAuxGraphics
+                        && authoritative_scheduled_caller_return_timeline.is_none()
+                    {
                         // The estimate lane holds the next iteration for its
                         // measured pre-main resume; a wire-proven return has
                         // already reached main wait, and the following fresh
