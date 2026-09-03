@@ -489,6 +489,8 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. }
                 | GameWorkContinuation::FinishModule09LongLoad { .. }
+                | GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload
+                | GameWorkContinuation::FinishOverworldLoadOverlaysOverlay
                 | GameWorkContinuation::FinishBigKeyDropGraphics { .. }
         )
     }

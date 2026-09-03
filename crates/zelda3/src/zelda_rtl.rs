@@ -2574,6 +2574,11 @@ const WORLD_MAP_LIGHT_LOAD_NMI_SLICES: u8 = 5;
 const ATTRACT_WORLD_MAP_EXIT_NMI_SLICES: u8 = 1;
 const OVERWORLD_SPRITE_RECORD_TIMING_UNITS: usize = 3;
 const OVERWORLD_SPRITE_RELOAD_SAME_FRAME_BUDGET_UNITS: usize = 39;
+// From the $02:af1e -> $02:fd0d `Overworld_LoadOverlays2` trace: the overlay
+// map32 decode and Map16ToMap8 conversion cross four NMI boundaries before
+// returning to the Module09 caller. Live semantic return authority may finish
+// earlier or later; this is only the standalone native fallback.
+const OVERWORLD_LOAD_OVERLAYS_OVERLAY_NMI_SLICES: u8 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OverworldAuxGraphicsWorkload {
@@ -7059,6 +7064,14 @@ enum GameWorkContinuation {
         resume_scanout: OverworldSpriteReloadResumeScanout,
     },
     HoldOverworldSpriteReloadReturn,
+    /// `Overworld_LoadOverlays` is suspended inside its concrete
+    /// `Sprite_ReloadAll_Overworld` call. The rebuilt generation is staged;
+    /// source activation and return receipts publish it incrementally.
+    FinishOverworldLoadOverlaysSpriteReload,
+    /// The same `Overworld_LoadOverlays` call has returned from sprite reload
+    /// and is suspended in `LoadOverworldOverlay`; its terminal return owns
+    /// Module09's Sprite_Main/HUD and shared main-loop suffix.
+    FinishOverworldLoadOverlaysOverlay,
 }
 
 const fn game_over_spotlight_build_uses_live_oam(work: Option<GameWorkContinuation>) -> bool {
@@ -7124,6 +7137,8 @@ impl GameWorkContinuation {
                 | Self::FinishOverworldMapQuadrants { .. }
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
                 | Self::FinishOverworldSpriteReloadTail { .. }
+                | Self::FinishOverworldLoadOverlaysSpriteReload
+                | Self::FinishOverworldLoadOverlaysOverlay
                 | Self::FinishDungeonFallingEntrance { .. }
                 | Self::FinishDungeonFallingRoomInitialization
                 | Self::FinishPreDungeonEntranceLoad { .. }
@@ -7185,6 +7200,8 @@ impl GameWorkContinuation {
                 | Self::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                 | Self::FinishModule09LinkOamCallerReturn { .. }
                 | Self::FinishWorldMapOverlayReload
+                | Self::FinishOverworldLoadOverlaysSpriteReload
+                | Self::FinishOverworldLoadOverlaysOverlay
                 | Self::FinishPreDungeonEntranceLoad { .. }
                 | Self::FinishDungeonSupertileTransition { .. }
                 | Self::FinishSpiralStaircasePaletteFilter { .. }
@@ -7212,7 +7229,9 @@ impl GameWorkContinuation {
             | Self::FinishSpiralStaircasePaletteFilter { .. }
             | Self::FinishBigKeyDropGraphics { .. }
             | Self::FinishStraightInterroomSpriteReset { .. }
-            | Self::FinishWorldMapOverlayReload => Some(1),
+            | Self::FinishWorldMapOverlayReload
+            | Self::FinishOverworldLoadOverlaysSpriteReload
+            | Self::FinishOverworldLoadOverlaysOverlay => Some(1),
             // Module15's warp caller runs no Sprite_Main after the load.
             Self::FinishModule09LongLoad { step } => {
                 if step.caller_is_module15() && !step.module15_runs_sprite_main_after() {
@@ -18934,6 +18953,19 @@ impl ZeldaState {
             .filter(|progress| {
                 matches!(
                     progress,
+                    crate::OverworldSpriteReloadProgress::GenerationReturned
+                )
+            })
+            .count()
+            > 1
+        {
+            return Err(OriginalTimingReceiptInstallError::InvalidOverworldSpriteReloadProgress);
+        }
+        if overworld_sprite_progress
+            .iter()
+            .filter(|progress| {
+                matches!(
+                    progress,
                     crate::OverworldSpriteReloadProgress::ProximityScanSuspended { .. }
                 )
             })
@@ -18947,6 +18979,7 @@ impl ZeldaState {
             .any(|progress| match progress {
                 crate::OverworldSpriteReloadProgress::PresencePublished
                 | crate::OverworldSpriteReloadProgress::ReloadReturned
+                | crate::OverworldSpriteReloadProgress::GenerationReturned
                 | crate::OverworldSpriteReloadProgress::ProximityScanSuspended { .. } => false,
                 crate::OverworldSpriteReloadProgress::SpriteActivated {
                     block,
@@ -24481,15 +24514,12 @@ impl ZeldaState {
             return Vec::new();
         }
         let current_work = self.game_execution_scheduler.current_work();
-        let deferred_module09_sprite_reload_active = self
+        let deferred_overworld_load_overlays_sprite_reload_active = self
             .pending_overworld_sprite_reload_slots
             .is_some()
             && matches!(
                 current_work,
-                Some(GameWorkContinuation::FinishSpriteMain {
-                    boundary: SpriteMainCpuBoundary::BeforeFirstSlot,
-                    caller: SpriteMainCpuCaller::Module09 { .. },
-                })
+                Some(GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload)
             );
         let Some(receipts) = self.original_timing_semantic_receipts.as_mut() else {
             return Vec::new();
@@ -24528,9 +24558,12 @@ impl ZeldaState {
                         current_work,
                         Some(GameWorkContinuation::PreOverworldPropertiesSpriteReset { .. })
                     ))
-                    || deferred_module09_sprite_reload_active,
+                    || deferred_overworld_load_overlays_sprite_reload_active,
                 crate::OverworldSpriteReloadProgress::ProximityScanSuspended { .. } => {
-                    deferred_module09_sprite_reload_active
+                    deferred_overworld_load_overlays_sprite_reload_active
+                }
+                crate::OverworldSpriteReloadProgress::GenerationReturned => {
+                    deferred_overworld_load_overlays_sprite_reload_active
                 }
                 crate::OverworldSpriteReloadProgress::ReloadReturned => matches!(
                     current_work,
@@ -24796,6 +24829,17 @@ impl ZeldaState {
                         "overworld proximity scan progress arrived without its deferred reload generation",
                     );
                     self.set_bg2_x(bg2_h);
+                }
+                crate::OverworldSpriteReloadProgress::GenerationReturned => {
+                    assert!(
+                        matches!(
+                            self.game_execution_scheduler.current_work(),
+                            Some(GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload)
+                        ),
+                        "Overworld_LoadOverlays sprite generation returned outside its suspended C caller",
+                    );
+                    assert!(!reload_returned, "overworld sprite generation return replayed");
+                    reload_returned = true;
                 }
                 crate::OverworldSpriteReloadProgress::ReloadReturned => {
                     assert!(
@@ -37268,7 +37312,10 @@ impl ZeldaState {
             matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
                 && matches!(
                     self.game_execution_scheduler.current_work(),
-                    Some(GameWorkContinuation::FinishOverworldSpriteReloadTail { .. })
+                    Some(
+                        GameWorkContinuation::FinishOverworldSpriteReloadTail { .. }
+                            | GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload
+                    )
                 );
         let authoritative_overworld_map_quadrants_published =
             self.take_original_timing_overworld_map_quadrants_published();
@@ -42745,6 +42792,107 @@ impl ZeldaState {
                         self.nmi_prepare_sprites();
                         self.clear_nmi_update_latch();
                     }
+                }
+                GameWorkStep::Complete(
+                    GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload,
+                ) => {
+                    // `$09:c4aa` returned from the concrete sprite-generation
+                    // call. Publish the remaining staged slots, execute only
+                    // the source statements between that RTL and the overlay
+                    // decoder, then keep the enclosing call suspended.
+                    let special_area_returned =
+                        self.complete_overworld_load_overlays_after_sprite_reload();
+                    if !special_area_returned {
+                        assert!(
+                            authoritative_scheduled_caller_return_timeline.is_none(),
+                            "Overworld_LoadOverlays cannot return before its overlay decoder",
+                        );
+                        self.game_execution_scheduler.schedule_work(
+                            GameWorkContinuation::FinishOverworldLoadOverlaysOverlay,
+                            OVERWORLD_LOAD_OVERLAYS_OVERLAY_NMI_SLICES,
+                        );
+                        return;
+                    }
+
+                    let sprite_main_return_claims = authoritative_scheduled_caller_return_timeline
+                        .as_ref()
+                        .map(|(_, _, claims)| *claims);
+                    if let Some(claims) = sprite_main_return_claims {
+                        self.begin_original_timing_sprite_main_return_claim_scope(claims);
+                    }
+                    self.complete_module09_overworld_after_submodule();
+                    if self.game_execution_scheduler.work_suspends_translated_call_stack() {
+                        assert!(
+                            authoritative_scheduled_caller_return_timeline.is_none(),
+                            "a suspended special-area caller cannot also own a terminal return",
+                        );
+                        return;
+                    }
+                    if sprite_main_return_claims.is_some() {
+                        self.finish_original_timing_sprite_main_return_claim_scope();
+                    }
+                    if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                        && authoritative_scheduled_caller_return_timeline.is_none()
+                    {
+                        self.retire_or_defer_main_loop_common_suffix_by_wire();
+                    } else {
+                        self.retire_or_run_main_loop_common_suffix_after_module_return();
+                    }
+                    return;
+                }
+                GameWorkStep::Complete(
+                    GameWorkContinuation::FinishOverworldLoadOverlaysOverlay,
+                ) => {
+                    if authoritative_scheduled_caller_accepts_nmi_at_return.is_none() {
+                        self.capture_display_snapshot();
+                        self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
+                    }
+                    let continued_sprite_main_claims =
+                        if authoritative_scheduled_caller_return_timeline.is_none() {
+                            self.original_timing_semantic_receipts
+                                .as_ref()
+                                .map(|receipts| {
+                                    receipts
+                                        .semantic()
+                                        .iter()
+                                        .filter(|receipt| {
+                                            **receipt
+                                                == OriginalTimingSemanticReceipt::SpriteMainReturned
+                                        })
+                                        .count()
+                                })
+                                .unwrap_or(0)
+                        } else {
+                            0
+                        };
+                    let sprite_main_return_claims = authoritative_scheduled_caller_return_timeline
+                        .as_ref()
+                        .map(|(_, _, claims)| *claims)
+                        .or((continued_sprite_main_claims != 0)
+                            .then_some(continued_sprite_main_claims));
+                    if let Some(claims) = sprite_main_return_claims {
+                        self.begin_original_timing_sprite_main_return_claim_scope(claims);
+                    }
+                    self.finish_overworld_load_overlays();
+                    self.complete_module09_overworld_after_submodule();
+                    if self.game_execution_scheduler.work_suspends_translated_call_stack() {
+                        assert!(
+                            authoritative_scheduled_caller_return_timeline.is_none(),
+                            "a suspended Overworld_LoadOverlays caller cannot own a terminal return",
+                        );
+                        return;
+                    }
+                    if sprite_main_return_claims.is_some() {
+                        self.finish_original_timing_sprite_main_return_claim_scope();
+                    }
+                    if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                        && authoritative_scheduled_caller_return_timeline.is_none()
+                    {
+                        self.retire_or_defer_main_loop_common_suffix_by_wire();
+                    } else {
+                        self.retire_or_run_main_loop_common_suffix_after_module_return();
+                    }
+                    return;
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishWorldMapOverlayReload) => {
                     let schedule = self

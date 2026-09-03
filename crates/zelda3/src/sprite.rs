@@ -1466,9 +1466,9 @@ impl ZeldaState {
         self.dungeon_room_tracking_mut().reset_room_history();
     }
 
-    pub(super) fn sprite_reload_all_overworld(&mut self) {
+    pub(super) fn sprite_reload_all_overworld(&mut self) -> OverworldSpriteReloadWorkload {
         self.sprite_disable_all();
-        self.sprite_overworld_reload_all_just_load();
+        self.sprite_overworld_reload_all_just_load()
     }
 
     pub(super) fn sprite_begin_reload_all_overworld(&mut self) {

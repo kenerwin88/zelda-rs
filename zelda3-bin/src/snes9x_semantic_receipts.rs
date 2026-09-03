@@ -224,6 +224,13 @@ const OVERWORLD_SPRITE_SCAN_START_PC: u32 = 0x09c55e;
 const OVERWORLD_SPRITE_SCAN_END_PC: u32 = 0x09c881;
 const OVERWORLD_LOAD_SINGLE_SPRITE_START_PC: u32 = 0x09c770;
 const OVERWORLD_LOAD_SINGLE_SPRITE_END_PC: u32 = 0x09c80b;
+// `Overworld_LoadOverlays` calls `Sprite_ReloadAll_Overworld` at $02:af0b;
+// the JSL returns to $02:af12. Track that source call from its callee entry
+// through the callee's $09:c4aa RTL rather than inferring ownership from the
+// module/submodule bytes, which remain unchanged while the call spans hosts.
+const OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC: u32 = 0x09c499;
+const OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_RETURN_PC: u32 = 0x09c4aa;
+const OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC: u32 = 0x02af12;
 // BottleVendor case 2 calls Link_ReceiveItem synchronously at $85:eb1d.
 // The call's graphics decompressor may span several host returns; $85:eb21 is
 // the first instruction of the caller suffix after that JSL returns.  These
@@ -558,6 +565,7 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     cached_sprite_execution: Option<CachedSpriteExecutionTracker>,
     overworld_presence_published: bool,
     overworld_sprite_activation: Option<OverworldSpriteActivationTracker>,
+    overworld_load_overlays_sprite_reload_active: bool,
     pending_spotlight_helper_nmi: Option<RawTraceEvent>,
     /// Index of the `NmiAccepted` receipt published for the pending helper
     /// NMI in the current host vector; host-local, never checkpointed.
@@ -574,7 +582,7 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     host_nmi_ppu_register_operands: Vec<NmiPpuRegisterOperands>,
 }
 
-const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 10;
+const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 11;
 
 /// Emulator-private continuation state for the typed semantic adapter.
 ///
@@ -591,6 +599,8 @@ pub(crate) struct Snes9xOracleSemanticTraceCheckpoint {
     cached_sprite_execution: Option<CachedSpriteExecutionTracker>,
     overworld_presence_published: bool,
     overworld_sprite_activation: Option<OverworldSpriteActivationTracker>,
+    #[serde(default)]
+    overworld_load_overlays_sprite_reload_active: bool,
     pending_spotlight_helper_nmi: Option<RawTraceEvent>,
     item_receipt_caller: Option<ItemReceiptGraphicsCaller>,
     #[serde(default)]
@@ -749,6 +759,10 @@ struct HostFrameWindow {
     /// completion belongs to the carried iteration and a fresh iteration may
     /// complete its own suffix later in the same host.
     leading_common_suffix_completed: bool,
+    /// This host executed inside the concrete `Overworld_LoadOverlays` sprite
+    /// reload call. Cross-host ownership is supplied by the semantic decoder;
+    /// seeing the private entry PC also sets it for the entry host itself.
+    overworld_load_overlays_sprite_reload_active: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -871,6 +885,14 @@ impl HostFrameWindow {
         &mut self,
         event: &RawTraceEvent,
     ) -> Result<Option<MainLoopCompletionProof>, String> {
+        if event.event == "pc"
+            && event.pc.map(|pc| pc & 0x00ff_ffff)
+                == Some(OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC)
+            && event.return_address.map(|pc| pc & 0x00ff_ffff)
+                == Some(OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC)
+        {
+            self.overworld_load_overlays_sprite_reload_active = true;
+        }
         if main_loop_started_by_event(event) {
             self.main_loop_starts = self
                 .main_loop_starts
@@ -972,8 +994,7 @@ impl HostFrameWindow {
                 entry.run, returned.run
             ));
         }
-        if matches!((entry.main, entry.sub), (0x0b, 0x18))
-            && matches!((returned.main, returned.sub), (0x0b, 0x18))
+        if self.overworld_load_overlays_sprite_reload_active
             && self.main_loop_starts == 0
             && entry.bg2_h != returned.bg2_h
         {
@@ -981,7 +1002,7 @@ impl HostFrameWindow {
                 OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
                     OverworldSpriteReloadProgress::ProximityScanSuspended {
                         bg2_h: returned.bg2_h.ok_or(
-                            "Snes9x Module0B/18 host return omitted the BG2 scan coordinate",
+                            "Snes9x Overworld_LoadOverlays host return omitted the BG2 scan coordinate",
                         )?,
                     },
                 ),
@@ -1205,7 +1226,7 @@ impl Snes9xOracleSemanticTrace {
                     &[
                         "028842", "05df49", "05df4d", "05eb1d", "05eb21", "068328", "0683a7",
                         "0684e2", "06a628", "06a724", "06b9cc", "06b9d0", "0799ad", "079a0b",
-                        "008225", "0082c7",
+                        "008225", "0082c7", "09c499", "09c4aa",
                     ],
                 ),
             );
@@ -1259,6 +1280,7 @@ impl Snes9xOracleSemanticTrace {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             item_receipt_caller: None,
@@ -1302,6 +1324,8 @@ impl Snes9xOracleSemanticTrace {
             cached_sprite_execution: self.cached_sprite_execution,
             overworld_presence_published: self.overworld_presence_published,
             overworld_sprite_activation: self.overworld_sprite_activation,
+            overworld_load_overlays_sprite_reload_active: self
+                .overworld_load_overlays_sprite_reload_active,
             pending_spotlight_helper_nmi: self.pending_spotlight_helper_nmi.clone(),
             item_receipt_caller: self.item_receipt_caller,
             sprite_main_execution: self.sprite_main_execution,
@@ -1362,6 +1386,8 @@ impl Snes9xOracleSemanticTrace {
         self.cached_sprite_execution = checkpoint.cached_sprite_execution;
         self.overworld_presence_published = checkpoint.overworld_presence_published;
         self.overworld_sprite_activation = checkpoint.overworld_sprite_activation;
+        self.overworld_load_overlays_sprite_reload_active =
+            checkpoint.overworld_load_overlays_sprite_reload_active;
         self.pending_spotlight_helper_nmi = checkpoint.pending_spotlight_helper_nmi;
         self.pending_spotlight_helper_nmi_acceptance_index = None;
         self.item_receipt_caller = checkpoint.item_receipt_caller;
@@ -1399,6 +1425,8 @@ impl Snes9xOracleSemanticTrace {
         let mut line = String::new();
         let mut receipts = Vec::new();
         let mut host_frame = HostFrameWindow::default();
+        host_frame.overworld_load_overlays_sprite_reload_active =
+            self.overworld_load_overlays_sprite_reload_active;
         let zelda_run_game_loop_call_active_at_entry = self.zelda_run_game_loop_call_active;
         let mut returned_event = None;
         loop {
@@ -1745,6 +1773,28 @@ impl Snes9xOracleSemanticTrace {
         match event.event.as_str() {
             "pc" => {
                 let pc = event.pc.ok_or("Snes9x PC receipt omitted PC")? & 0x00ff_ffff;
+                if pc == OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC
+                    && event.return_address.map(|pc| pc & 0x00ff_ffff)
+                        == Some(OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC)
+                {
+                    if self.overworld_load_overlays_sprite_reload_active {
+                        return Err(
+                            "Snes9x re-entered Overworld_LoadOverlays sprite reload before its prior call returned"
+                                .to_string(),
+                        );
+                    }
+                    self.overworld_load_overlays_sprite_reload_active = true;
+                }
+                if pc == OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_RETURN_PC
+                    && self.overworld_load_overlays_sprite_reload_active
+                {
+                    self.overworld_load_overlays_sprite_reload_active = false;
+                    receipts.push(
+                        OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                            OverworldSpriteReloadProgress::GenerationReturned,
+                        ),
+                    );
+                }
                 match pc {
                     SPRITE_MAIN_ENTRY_PC => {
                         // A fresh entry is also a source-level proof that any
@@ -2569,10 +2619,8 @@ impl Snes9xOracleSemanticTrace {
         address: u16,
         receipts: &mut Vec<OriginalTimingSemanticReceipt>,
     ) -> Result<(), String> {
-        let source_owns_reload_publication = matches!(
-            (event.main, event.sub),
-            (Some(8), Some(0)) | (Some(0x0b), Some(0x18))
-        );
+        let source_owns_reload_publication = self.overworld_load_overlays_sprite_reload_active
+            || matches!((event.main, event.sub), (Some(8), Some(0)));
         if !source_owns_reload_publication
             || !(OVERWORLD_LOAD_SINGLE_SPRITE_START_PC..OVERWORLD_LOAD_SINGLE_SPRITE_END_PC)
                 .contains(&pc)
@@ -4405,6 +4453,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -4733,6 +4782,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -5512,6 +5562,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -5568,29 +5619,21 @@ mod tests {
     }
 
     #[test]
-    fn module0b_sprite_writes_publish_activation_without_pre_overworld_presence() {
-        let mut tracker = Snes9xOracleSemanticTrace {
-            path: PathBuf::new(),
-            offset: 0,
-            cache_write_progress: None,
-            normal_load_ordinal: None,
-            pending_reset_progress: None,
-            cached_sprite_execution: None,
-            overworld_presence_published: false,
-            overworld_sprite_activation: None,
-            pending_spotlight_helper_nmi: None,
-            pending_spotlight_helper_nmi_acceptance_index: None,
-            seed_warmup_active: false,
-            item_receipt_caller: None,
-            sprite_main_execution: None,
-            zelda_run_game_loop_call_active: false,
-            nmi_publication_pending: false,
-            pending_nmi_update_gate: None,
-            nmi_resume_targets: Vec::new(),
-            synthesized_nmi_resume: None,
-            host_nmi_ppu_register_operands: Vec::new(),
-        };
+    fn overworld_load_overlays_call_identity_owns_cross_host_sprite_publication_and_return() {
+        let mut tracker = empty_semantic_tracker();
         let mut receipts = Vec::new();
+        let mut entry = raw(
+            "pc",
+            Some(OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC),
+            None,
+            None,
+        );
+        entry.return_address = Some(OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC);
+        entry.main = Some(0x0b);
+        entry.sub = Some(0x25);
+        tracker.consume_event(entry, &mut receipts).unwrap();
+        assert!(tracker.overworld_load_overlays_sprite_reload_active);
+
         let slot = 13u8;
         let writes = [
             (SPRITE_N_WORD_BASE + u16::from(slot) * 2, 0x98),
@@ -5611,10 +5654,23 @@ mod tests {
                 Some(address),
             );
             event.main = Some(0x0b);
-            event.sub = Some(0x18);
+            // The source module bytes do not prove this inner call. Use a
+            // different direct-dispatch submodule to ensure the entry/return
+            // identity, not the old Module0B/$18 special case, owns it.
+            event.sub = Some(0x25);
             event.value = Some(value);
             tracker.consume_event(event, &mut receipts).unwrap();
         }
+
+        let mut returned = raw(
+            "pc",
+            Some(OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_RETURN_PC),
+            None,
+            None,
+        );
+        returned.main = Some(0x0b);
+        returned.sub = Some(0x25);
+        tracker.consume_event(returned, &mut receipts).unwrap();
 
         assert_eq!(
             receipts,
@@ -5626,6 +5682,49 @@ mod tests {
                         sprite_type: 0xac,
                     },
                 ),
+                OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                    OverworldSpriteReloadProgress::GenerationReturned,
+                ),
+            ],
+        );
+        assert!(!tracker.overworld_load_overlays_sprite_reload_active);
+    }
+
+    #[test]
+    fn overworld_load_overlays_call_identity_survives_semantic_checkpoint() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut entry = raw(
+            "pc",
+            Some(OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC),
+            None,
+            None,
+        );
+        entry.return_address = Some(OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC);
+        source.consume_event(entry, &mut receipts).unwrap();
+
+        let checkpoint = source.checkpoint();
+        let mut resumed = empty_semantic_tracker();
+        resumed.restore_checkpoint(checkpoint).unwrap();
+        assert!(resumed.overworld_load_overlays_sprite_reload_active);
+
+        resumed
+            .consume_event(
+                raw(
+                    "pc",
+                    Some(OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_RETURN_PC),
+                    None,
+                    None,
+                ),
+                &mut receipts,
+            )
+            .unwrap();
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                    OverworldSpriteReloadProgress::GenerationReturned,
+                ),
             ],
         );
     }
@@ -5633,6 +5732,7 @@ mod tests {
     #[test]
     fn module0b_held_host_publishes_proximity_scan_scratch_coordinate() {
         let mut host = HostFrameWindow::default();
+        host.overworld_load_overlays_sprite_reload_active = true;
         let mut entry = frame_with_sub("entry", 165775, 0x0b, 0x18);
         entry.bg2_h = Some(0x021e);
         let mut returned = frame_with_sub("return", 165775, 0x0b, 0x18);
@@ -5665,6 +5765,14 @@ mod tests {
         returned.bg2_h = Some(0x022e);
 
         host.observe(&entry).unwrap();
+        let mut reload_entry = raw(
+            "pc",
+            Some(OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC),
+            None,
+            None,
+        );
+        reload_entry.return_address = Some(OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC);
+        host.observe(&reload_entry).unwrap();
         host.observe(&main_loop_start()).unwrap();
         host.observe(&returned).unwrap();
         let mut receipts = Vec::new();
@@ -5689,6 +5797,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -5742,6 +5851,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -5903,6 +6013,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6136,6 +6247,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6175,6 +6287,7 @@ mod tests {
                 cached_sprite_execution: None,
                 overworld_presence_published: false,
                 overworld_sprite_activation: None,
+                overworld_load_overlays_sprite_reload_active: false,
                 pending_spotlight_helper_nmi: None,
                 pending_spotlight_helper_nmi_acceptance_index: None,
                 seed_warmup_active: false,
@@ -6218,6 +6331,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6320,6 +6434,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6398,6 +6513,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6472,6 +6588,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6680,6 +6797,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6754,6 +6872,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6823,6 +6942,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: Some({
                 let mut event = raw("nmi", Some(0x00_f52d), None, None);
                 event.main = Some(0x0f);
@@ -6942,6 +7062,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7000,6 +7121,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7059,6 +7181,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7106,6 +7229,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7169,6 +7293,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7230,6 +7355,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7330,6 +7456,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7373,6 +7500,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7545,6 +7673,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7621,6 +7750,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7692,6 +7822,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7742,6 +7873,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7789,6 +7921,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7847,6 +7980,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7978,6 +8112,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8072,6 +8207,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8216,6 +8352,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8284,6 +8421,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8377,6 +8515,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8433,6 +8572,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8529,6 +8669,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8619,6 +8760,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8672,6 +8814,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8775,6 +8918,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8841,6 +8985,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8893,6 +9038,7 @@ mod tests {
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,

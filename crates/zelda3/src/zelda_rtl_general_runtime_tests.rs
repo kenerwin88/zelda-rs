@@ -1565,7 +1565,7 @@ fn live_overworld_sprite_return_receipt_owns_native_reload_completion() {
 }
 
 #[test]
-fn live_module09_reload_keeps_entry_sprite_slots_until_source_return() {
+fn live_overworld_load_overlays_keeps_entry_sprite_slots_until_source_return() {
     let mut state = ZeldaState::new();
     {
         let mut sprite = state.sprite_slot_view_mut(9);
@@ -1605,12 +1605,7 @@ fn live_module09_reload_keeps_entry_sprite_slots_until_source_return() {
 
     state.original_timing_owner = OriginalTimingOwnerState::Live;
     state.game_execution_scheduler.schedule_work(
-        GameWorkContinuation::FinishSpriteMain {
-            boundary: SpriteMainCpuBoundary::BeforeFirstSlot,
-            caller: SpriteMainCpuCaller::Module09 {
-                boundary: OriginalTimingBoundary::HostReturn,
-            },
-        },
+        GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload,
         1,
     );
     state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
@@ -1651,6 +1646,52 @@ fn live_module09_reload_keeps_entry_sprite_slots_until_source_return() {
     assert_eq!(state.sprite_slot_view(9).x(), 0x0340);
     assert_eq!(state.sprite_slot_view(9).y(), 0x0310);
     assert_eq!(state.sprite_slot_view(11).state(), 8);
+}
+
+#[test]
+fn live_overworld_load_overlays_generation_return_starts_the_overlay_phase() {
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.set_main_module(0x0b);
+    state.set_submodule(0x25);
+    state.pending_overworld_sprite_reload_slots =
+        Some(state.game_state.sprites.sprite_slots.clone());
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload,
+        1,
+    );
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        172_810,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                crate::OverworldSpriteReloadProgress::GenerationReturned,
+            ),
+        ],
+    ));
+
+    let progress = state.take_original_timing_overworld_sprite_reload_progress();
+    let returned = state.apply_original_timing_overworld_sprite_reload_progress(progress);
+    assert!(returned);
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .advance_work_one_nmi_slice_with_authoritative_completion(returned),
+        Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload,
+        )),
+    );
+
+    assert!(!state.complete_overworld_load_overlays_after_sprite_reload());
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishOverworldLoadOverlaysOverlay,
+        OVERWORLD_LOAD_OVERLAYS_OVERLAY_NMI_SLICES,
+    );
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishOverworldLoadOverlaysOverlay),
+    );
+    assert_eq!(state.game_state.frame.submodule, 0x25);
 }
 
 #[test]

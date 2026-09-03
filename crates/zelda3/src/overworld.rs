@@ -738,12 +738,43 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_LoadOverlays(&mut self) {
+        let source_owned_reload = self.rom_startup_timing()
+            && self.game_state.frame.main_module == 0x0b
+            && matches!(self.game_state.frame.submodule, 0x18 | 0x25);
+        let sprite_slots_before_reload = source_owned_reload
+            .then(|| self.game_state.sprites.sprite_slots.clone());
         self.sprite_initialize_slots();
-        self.sprite_reload_all_overworld();
+        let workload = self.sprite_reload_all_overworld();
+        if let Some(sprite_slots_before_reload) = sprite_slots_before_reload {
+            // `Overworld_LoadOverlays` remains inside the source sprite reload
+            // for several host calls. Stage the atomically translated result,
+            // restore the entry generation, then publish only the exact slot
+            // activations reported by the source call until its RTL.
+            self.defer_module09_sprite_slots_until_reload_return(sprite_slots_before_reload);
+            self.sprite_disable_live_slots_before_deferred_overworld_reload();
+            let timing = overworld_sprite_reload_timing(
+                workload,
+                OverworldSpriteReloadEntryPhase::OrdinaryModuleIteration,
+            );
+            self.game_execution_scheduler
+                .schedule_cpu_timed_work_from_current_main_iteration(
+                    GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload,
+                    timing.load_nmi_slices,
+                );
+            return;
+        }
         self.follower_link_state_mut().clear_state_bits();
         self.follower_link_state_mut().clear_picking_throw_state();
         self.set_ambient_sound_effect(5);
         self.Overworld_LoadOverlays2();
+    }
+
+    pub(super) fn complete_overworld_load_overlays_after_sprite_reload(&mut self) -> bool {
+        self.publish_deferred_module09_sprite_slots_at_reload_return();
+        self.follower_link_state_mut().clear_state_bits();
+        self.follower_link_state_mut().clear_picking_throw_state();
+        self.set_ambient_sound_effect(5);
+        self.prepare_overworld_load_overlays()
     }
 
     pub(super) fn PreOverworld_LoadOverlays(&mut self) {
@@ -2332,17 +2363,10 @@ impl ZeldaState {
         self.follower_link_state_mut().clear_swim_fast_state();
         let module = self.game_state.frame.main_module;
         let submodule = self.game_state.frame.submodule;
-        let sprite_slots_before_reload = self
-            .rom_startup_timing()
-            .then(|| self.game_state.sprites.sprite_slots.clone());
         self.Overworld_EnterSpecialArea();
         self.Overworld_LoadOverlays();
-        if let Some(sprite_slots_before_reload) = sprite_slots_before_reload {
-            // The loader spans several held hosts. Its completed sprite array
-            // stages OAM immediately, but the source does not expose that CPU
-            // generation until it returns and enters Sprite_Main.
-            self.defer_module09_sprite_slots_until_reload_return(sprite_slots_before_reload);
-            self.sprite_disable_live_slots_before_deferred_overworld_reload();
+        if self.game_execution_scheduler.work_is_pending() {
+            return;
         }
         self.set_submodule(submodule.wrapping_add(1));
         self.set_main_module(module);

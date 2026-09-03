@@ -882,6 +882,10 @@ pub enum OverworldSpriteReloadProgress {
     /// source-visible scratch coordinate at that boundary, not a display
     /// prediction.
     ProximityScanSuspended { bg2_h: u16 },
+    /// `Sprite_ReloadAll_Overworld` returned to its concrete
+    /// `Overworld_LoadOverlays` caller. The remainder of the overlay load is
+    /// still executing; this receipt exposes only the source call boundary.
+    GenerationReturned,
     /// `Module09_LoadNewSprites` completed its source-ordered tail, including
     /// the call to `Overworld_StartScrollTransition`. The receipt deliberately
     /// omits the resulting submodule value: translated gameplay owns that C
