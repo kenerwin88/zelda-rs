@@ -110,6 +110,9 @@ class PrepareSnes9xTraceOracleTests(unittest.TestCase):
         self.assertIn("spotlight_lower_cursor", joypad_patch)
         self.assertIn("Memory.RAM[0x067a]", joypad_patch)
         self.assertIn("Memory.RAM[0x0006]", joypad_patch)
+        self.assertIn("nmi_ppu_register_operands", joypad_patch)
+        self.assertIn("Memory.RAM[0x001c]", joypad_patch)
+        self.assertIn("Memory.RAM[0x063b]", joypad_patch)
 
     def test_lock_pins_the_official_snes9x_1_63_release(self) -> None:
         lock = json.loads(MODULE.LOCK_PATH.read_text())

@@ -31,9 +31,9 @@ use crate::snes9x_semantic_receipts::{
 };
 use serde::{Deserialize, Serialize};
 use zelda3::{
-    game_output::DspWriteEvent, OriginalTimingHostReceipts, OriginalTimingSemanticReceipt,
-    PresentedAnimatedBgTiles, PresentedAudio, PresentedCgram, PresentedHudTilemap, PresentedOam,
-    PresentedObjTiles, RomRandomSample, ZeldaState, RUN_MAIN,
+    game_output::DspWriteEvent, NmiPpuRegisterOperands, OriginalTimingHostReceipts,
+    OriginalTimingSemanticReceipt, PresentedAnimatedBgTiles, PresentedAudio, PresentedCgram,
+    PresentedHudTilemap, PresentedOam, PresentedObjTiles, RomRandomSample, ZeldaState, RUN_MAIN,
 };
 
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
@@ -46,13 +46,11 @@ const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.s
 // provenance for a replay sample.
 const CARTRIDGE_RNG_STORE_PC_LOW16: u64 = 0xba7f;
 const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
-// Schema 26 suppresses a deferred spotlight-helper checkpoint when a stronger
-// enclosing caller completion is present, including hosts whose later NMI
-// returns inside the handler. Schema 25 already required source-proven
-// ZeldaRunGameLoop call ownership for `CallStackContinued`; older caches
-// synthesize that progress during reset/bootstrap hosts which never entered
-// the source call.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 26;
+// Schema 27 binds every NMI acceptance to the complete Zelda software-register
+// generation consumed by unconditional `WritePpuRegisters`. Older caches can
+// otherwise reconstruct a carried handler from native RAM after the atomic
+// translated main body has advanced those operands.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 27;
 
 const PRESENTED_OBJ_CACHE_ABI: i32 = 1;
 const PRESENTED_OBJ_CACHE_SLOT_COUNT: usize = 512;
@@ -2280,6 +2278,8 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
                 );
                 process::exit(1);
             });
+        let nmi_acceptance_ppu_register_operands =
+            semantic_trace.take_host_nmi_ppu_register_operands();
         let actual_rng = oracle_rng_trace
             .samples_for_run(frame - start_frame, frame)
             .unwrap_or_else(|error| {
@@ -2314,6 +2314,7 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
             frame,
             input,
             semantic,
+            nmi_acceptance_ppu_register_operands,
         )
         .unwrap_or_else(|error| {
             eprintln!("failed to decode Snes9x host receipts at capture frame {frame}: {error}");
@@ -2357,9 +2358,7 @@ pub(crate) fn run_capture_snes9x_av(args: &[String]) {
         for sample in &recorded_rng {
             text.push_str(&format!(
                 "{} {} carry={}\n",
-                sample.execution_frame,
-                sample.value,
-                sample.carry as u8
+                sample.execution_frame, sample.value, sample.carry as u8
             ));
         }
         fs::write(output_dir.join("rom-random.txt"), text).unwrap_or_else(|error| {
@@ -4280,7 +4279,9 @@ pub(crate) fn run_compare_libretro_oracle(
             }
             "--seed-rust-from-oracle-state" => {
                 let Some(frame) = args.get(i + 1).and_then(|v| v.parse::<u32>().ok()) else {
-                    eprintln!("--seed-rust-from-oracle-state requires the oracle state's route frame");
+                    eprintln!(
+                        "--seed-rust-from-oracle-state requires the oracle state's route frame"
+                    );
                     process::exit(2);
                 };
                 seed_rust_from_oracle = Some(frame);
@@ -5153,12 +5154,16 @@ pub(crate) fn run_compare_libretro_oracle(
     // straight from the same RAM reads the mismatch check uses. This is the
     // ambiguity-free readout of per-frame chronology (trace event frame labels
     // drift when the game frame counter is held).
-    let engine_state_dump_frames = env::var("ZELDA3_ENGINE_STATE_DUMP_FRAMES")
-        .ok()
-        .and_then(|raw| {
-            let (lo, hi) = raw.split_once('-')?;
-            Some((lo.trim().parse::<u32>().ok()?, hi.trim().parse::<u32>().ok()?))
-        });
+    let engine_state_dump_frames =
+        env::var("ZELDA3_ENGINE_STATE_DUMP_FRAMES")
+            .ok()
+            .and_then(|raw| {
+                let (lo, hi) = raw.split_once('-')?;
+                Some((
+                    lo.trim().parse::<u32>().ok()?,
+                    hi.trim().parse::<u32>().ok()?,
+                ))
+            });
     // ZELDA3_ENGINE_STATE_DUMP_SPRITE=<slot> adds that sprite slot's
     // state/delay_main/ai_state to each dumped line.
     let engine_state_dump_sprite = env::var("ZELDA3_ENGINE_STATE_DUMP_SPRITE")
@@ -5630,6 +5635,8 @@ pub(crate) fn run_compare_libretro_oracle(
                     );
                     process::exit(1);
                     });
+                let nmi_acceptance_ppu_register_operands =
+                    trace.take_host_nmi_ppu_register_operands();
                 semantic.extend(snes9x_oracle_semantic_receipts(&oracle).unwrap_or_else(
                     |error| {
                     eprintln!(
@@ -5648,6 +5655,7 @@ pub(crate) fn run_compare_libretro_oracle(
                     frame_index,
                     requested_input,
                     semantic,
+                    nmi_acceptance_ppu_register_operands,
                 )
                 .unwrap_or_else(|error| {
                     eprintln!(
@@ -5894,8 +5902,7 @@ pub(crate) fn run_compare_libretro_oracle(
             }
         }
         if live_oracle_rng {
-            if let Err(error) =
-                game.finish_rom_random_replay_through(frame_index.saturating_add(1))
+            if let Err(error) = game.finish_rom_random_replay_through(frame_index.saturating_add(1))
             {
                 if std::env::var_os("ZELDA3_DEBUG_ROM_RANDOM_FRAME_DRIFT").is_some() {
                     // Diagnostic mode: report the first overdue frame and keep
@@ -10534,7 +10541,9 @@ fn seed_rust_game_from_oracle_memory(
             oracle
                 .debug_ppu_value(2, index)
                 .and_then(|value| u16::try_from(value).ok())
-                .ok_or_else(|| format!("oracle CGRAM color {index} is unavailable (trace core required)"))
+                .ok_or_else(|| {
+                    format!("oracle CGRAM color {index} is unavailable (trace core required)")
+                })
         })
         .collect::<Result<Vec<u16>, String>>()?;
     let oam = (0..544)
@@ -10542,7 +10551,9 @@ fn seed_rust_game_from_oracle_memory(
             oracle
                 .debug_ppu_value(15, index)
                 .and_then(|value| u8::try_from(value).ok())
-                .ok_or_else(|| format!("oracle OAM byte {index} is unavailable (trace core required)"))
+                .ok_or_else(|| {
+                    format!("oracle OAM byte {index} is unavailable (trace core required)")
+                })
         })
         .collect::<Result<Vec<u8>, String>>()?;
     // `seed_from_snes9x_oracle_memory` re-arms the live timing owner itself;
@@ -12151,8 +12162,20 @@ fn snes9x_original_timing_host_receipts(
     frame: u32,
     input: u16,
     semantic: Vec<OriginalTimingSemanticReceipt>,
+    nmi_acceptance_ppu_register_operands: Vec<NmiPpuRegisterOperands>,
 ) -> Result<OriginalTimingHostReceipts, String> {
-    let mut receipts = OriginalTimingHostReceipts::new(u64::from(frame), input, semantic);
+    let acceptance_count = semantic
+        .iter()
+        .filter(|receipt| matches!(receipt, OriginalTimingSemanticReceipt::NmiAccepted(_)))
+        .count();
+    if acceptance_count != nmi_acceptance_ppu_register_operands.len() {
+        return Err(format!(
+            "Snes9x host emitted {acceptance_count} NMI acceptances but {} PPU-register operand generations",
+            nmi_acceptance_ppu_register_operands.len(),
+        ));
+    }
+    let mut receipts = OriginalTimingHostReceipts::new(u64::from(frame), input, semantic)
+        .with_nmi_acceptance_ppu_register_operands(nmi_acceptance_ppu_register_operands);
     receipts = receipts.with_presented_audio(
         PresentedAudio::new(capture.audio.clone())
             .ok_or_else(|| "Snes9x returned an invalid stereo audio receipt".to_string())?,
@@ -14949,7 +14972,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 26);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 27);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None

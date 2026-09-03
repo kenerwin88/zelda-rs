@@ -2974,6 +2974,7 @@ fn carried_terminal_spotlight_build_can_capture_one_trailing_open() {
         );
     state.original_timing_expected_nmi_update_gates =
         vec![NmiUpdateGate::LatchHeld, NmiUpdateGate::Open];
+    state.original_timing_expected_nmi_ppu_register_operands = vec![None, None];
     let epoch_before = state.display_snapshot_epoch;
 
     state.run_frame_internal(0, crate::RUN_MAIN);
@@ -3030,6 +3031,7 @@ fn run4790_checkpoint_then_run4791_terminal_build_carries_its_trailing_open_once
         .semantic
         .remove(4);
     no_trailing.original_timing_expected_nmi_update_gates = vec![NmiUpdateGate::LatchHeld];
+    no_trailing.original_timing_expected_nmi_ppu_register_operands = vec![None];
     no_trailing.run_frame_internal(0, crate::RUN_MAIN);
     assert_eq!(no_trailing.display_snapshot_epoch, epoch_before + 2);
     let retained = no_trailing
@@ -6763,6 +6765,7 @@ fn live_link_oam_receipt_suspends_landing_before_shared_sprite_preparation() {
     ));
     state.original_timing_expected_nmi_update_gates =
         vec![NmiUpdateGate::LatchHeld, NmiUpdateGate::Open];
+    state.original_timing_expected_nmi_ppu_register_operands = vec![None, None];
     state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
 
     assert!(state.original_timing_nmi_publication_pending);
@@ -15070,6 +15073,7 @@ fn terminal_intro_memory_darken_return_seeds_two_then_suffix_decrements_once() {
     ];
     state.original_timing_expected_nmi_update_gates =
         vec![NmiUpdateGate::LatchHeld, NmiUpdateGate::Open];
+    state.original_timing_expected_nmi_ppu_register_operands = vec![None, None];
     state.run_frame_internal(0, 0);
 
     assert_eq!(state.game_state.display.bg_tile_animation_countdown, 1);
@@ -28861,16 +28865,21 @@ fn carried_open_handler_refines_only_its_receptive_scanout_with_completed_nmi_ef
     state.ppu.m7_prev = 0x73;
 
     state.capture_display_snapshot();
+    let exact_acceptance_operands =
+        nmi_ppu_register_operands_from_snapshot(state.display_snapshot.as_ref().unwrap());
     // The translated caller has advanced these native mirrors by the time the
-    // next host resumes the already-accepted handler. The source handler still
-    // owns the register operands captured at acceptance.
+    // atomic host wrapper captures the already-accepted handler. The source
+    // handler still owns the typed register operands sampled at acceptance,
+    // not this post-interruption RAM generation.
     state.set_main_screen_layers(0x15);
     state.set_sub_screen_layers(0x00);
     state.ppu.scroll_prev = 0x19;
     state.ppu.scroll_prev2 = 0x28;
     state.ppu.m7_prev = 0x37;
+    state.capture_display_snapshot();
     state.original_timing_nmi_publication_pending = true;
     state.original_timing_pending_nmi_update_gate = Some(NmiUpdateGate::Open);
+    state.original_timing_pending_nmi_ppu_register_operands = Some(exact_acceptance_operands);
     state
         .install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
             809,
@@ -28973,8 +28982,10 @@ fn acceptance_register_reconstruction_retains_mode7_terminal_write_latches() {
     state.set_mode7_center_y(0xdef0);
     state.capture_display_snapshot();
 
-    let registers =
-        nmi_ppu_register_scanout_from_acceptance_snapshot(state.display_snapshot.as_ref().unwrap());
+    let registers = nmi_ppu_register_scanout_from_acceptance_snapshot(
+        state.display_snapshot.as_ref().unwrap(),
+        None,
+    );
     assert_eq!(registers.scroll_prev, 0x9a);
     assert_eq!(registers.scroll_prev2, 0x56);
     assert_eq!(registers.m7_prev, 0xde);

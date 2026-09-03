@@ -7,6 +7,9 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
  		"\"rng_seed\":%u,\"nmi_latch\":%u,\"nmi_disable\":%u,\"nmi_pending\":%u,"
 +		"\"joypad_high\":%u,\"joypad_low\":%u,"
 +		"\"joypad_high_filtered\":%u,\"joypad_low_filtered\":%u,"
++		"\"nmi_ppu_register_operands\":[%u,%u,%u,%u,%u,%u,%u,%u,"
++		"%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,"
++		"%u,%u,%u,%u,%u,%u,%u],"
  		"\"return_address\":%u,"
  		"\"stack1\":%u,\"stack2\":%u,\"stack3\":%u,\"stack4\":%u",
  		event, (unsigned long long) retro_run_index, IPPU.TotalEmulatedFrames,
@@ -18,5 +21,19 @@ diff --git a/zelda3_trace.cpp b/zelda3_trace.cpp
 -		Memory.RAM[0x0710], Memory.RAM[0x17], return_address,
 +		Memory.RAM[0x0710], Memory.RAM[0x17],
 +		Memory.RAM[0x00f0], Memory.RAM[0x00f2],
-+		Memory.RAM[0x00f4], Memory.RAM[0x00f6], return_address,
++		Memory.RAM[0x00f4], Memory.RAM[0x00f6],
++		Memory.RAM[0x0096], Memory.RAM[0x0097], Memory.RAM[0x0098],
++		Memory.RAM[0x0099], Memory.RAM[0x009a],
++		Memory.RAM[0x009c], Memory.RAM[0x009d], Memory.RAM[0x009e],
++		Memory.RAM[0x001c], Memory.RAM[0x001d],
++		Memory.RAM[0x001e], Memory.RAM[0x001f],
++		Memory.RAM[0x0120], Memory.RAM[0x0121],
++		Memory.RAM[0x0124], Memory.RAM[0x0125],
++		Memory.RAM[0x011e], Memory.RAM[0x011f],
++		Memory.RAM[0x0122], Memory.RAM[0x0123],
++		Memory.RAM[0x00e4], Memory.RAM[0x00e5],
++		Memory.RAM[0x00ea], Memory.RAM[0x00eb],
++		Memory.RAM[0x0013], Memory.RAM[0x0095], Memory.RAM[0x0094],
++		Memory.RAM[0x0638], Memory.RAM[0x0639],
++		Memory.RAM[0x063a], Memory.RAM[0x063b], return_address,
  		Memory.RAM[(Registers.S.W + 1) & 0xffff],

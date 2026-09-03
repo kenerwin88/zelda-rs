@@ -14,11 +14,12 @@ use zelda3::{
     DialogueExecutionProgress, DungeonLoadSpritesCpuProgress, DungeonResetSpritesCpuProgress,
     DungeonResetSpritesProgressReceipt, DungeonSpriteDisableCpuProgress,
     DungeonSpriteLoadCheckpoint, ItemReceiptGraphicsCaller, ItemReceiptGraphicsProgressReceipt,
-    JoypadPublication, MainLoopInterruption, MainLoopProgress, NmiUpdateGate,
-    OriginalTimingBoundary, OriginalTimingSemanticReceipt, OverworldSpriteReloadProgress,
-    PreOverworldStageCompletion, SaveMenuInitializationProgress, SourceCallProgress,
-    SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt,
-    SpriteMainProgress, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
+    JoypadPublication, MainLoopInterruption, MainLoopProgress, NmiPpuRegisterOperands,
+    NmiUpdateGate, OriginalTimingBoundary, OriginalTimingSemanticReceipt,
+    OverworldSpriteReloadProgress, PreOverworldStageCompletion, SaveMenuInitializationProgress,
+    SourceCallProgress, SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress,
+    SpotlightTableBuildProgressReceipt, SpriteMainProgress, SpriteResetAllProgress,
+    SpriteResetAllProgressReceipt,
 };
 
 const TRACE_PATH_ENV: &str = "ZELDA3_SNES9X_TRACE";
@@ -549,6 +550,9 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     pending_nmi_update_gate: Option<NmiUpdateGate>,
     nmi_resume_targets: Vec<(u32, u16)>,
     synthesized_nmi_resume: Option<(u32, u16)>,
+    /// Host-local acceptance operands drained with the ordered receipt vector.
+    /// They never enter the cross-host semantic decoder checkpoint.
+    host_nmi_ppu_register_operands: Vec<NmiPpuRegisterOperands>,
 }
 
 const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 9;
@@ -632,9 +636,30 @@ struct RawTraceEvent {
     address: Option<u16>,
     #[serde(default)]
     value: Option<u8>,
+    #[serde(default)]
+    nmi_ppu_register_operands: Option<[u8; 31]>,
 }
 
 impl RawTraceEvent {
+    fn nmi_ppu_register_operands(&self) -> Result<NmiPpuRegisterOperands, String> {
+        let bytes = self
+            .nmi_ppu_register_operands
+            .ok_or("Snes9x NMI receipt omitted Zelda's WritePpuRegisters acceptance operands")?;
+        let word = |low: usize| u16::from_le_bytes([bytes[low], bytes[low + 1]]);
+        Ok(NmiPpuRegisterOperands {
+            window_selection: [bytes[0], bytes[1], bytes[2]],
+            color_window_selection: bytes[3],
+            color_math_control: bytes[4],
+            fixed_color: [bytes[5], bytes[6], bytes[7]],
+            screen_layers: [bytes[8], bytes[9], bytes[10], bytes[11]],
+            bg_scroll: [word(12), word(14), word(16), word(18), word(20), word(22)],
+            screen_brightness: bytes[24],
+            mosaic: bytes[25],
+            bg_mode: bytes[26],
+            mode7_center: [word(27), word(29)],
+        })
+    }
+
     fn joypad_publication(&self) -> Result<Option<JoypadPublication>, String> {
         match (
             self.joypad_high,
@@ -985,8 +1010,10 @@ impl HostFrameWindow {
             // movement on the following host; only the recurring caller
             // publishes the mid-loop Link position boundary (route hosts
             // 179577 vs 179586).
-            !(matches!(phase, MainLoopInterruption::LinkPositionAfterSubpixel { .. })
-                && entry.main == 0x0f
+            !(matches!(
+                phase,
+                MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+            ) && entry.main == 0x0f
                 && entry.sub == 0)
         }) {
             let observed = receipts
@@ -1204,6 +1231,7 @@ impl Snes9xOracleSemanticTrace {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         })
     }
 
@@ -1314,6 +1342,9 @@ impl Snes9xOracleSemanticTrace {
         spotlight_var4_low_at_return: Option<u8>,
         spotlight_lower_cursor_at_return: Option<u16>,
     ) -> Result<Vec<OriginalTimingSemanticReceipt>, String> {
+        if !self.host_nmi_ppu_register_operands.is_empty() {
+            return Err("prior Snes9x host NMI acceptance operands were not consumed".to_string());
+        }
         let mut file = File::open(&self.path).map_err(|error| {
             format!(
                 "open Snes9x semantic trace {}: {error}",
@@ -1498,13 +1529,12 @@ impl Snes9xOracleSemanticTrace {
                 Some(1)
             )
         );
-        let link_position_interruption_at_return = matches!(
-            (helper_nmi.main, helper_nmi.sub),
-            (Some(0x0f), Some(1))
-        ) && matches!(
-            main_loop_interruption_for_source_state(
-                returned_pc,
-                Some(0x0f),
+        let link_position_interruption_at_return =
+            matches!((helper_nmi.main, helper_nmi.sub), (Some(0x0f), Some(1)))
+                && matches!(
+                    main_loop_interruption_for_source_state(
+                        returned_pc,
+                        Some(0x0f),
                 Some(1),
                 returned_event.x,
             ),
@@ -1590,6 +1620,10 @@ impl Snes9xOracleSemanticTrace {
                 self.path.display()
             )
         })
+    }
+
+    pub(crate) fn take_host_nmi_ppu_register_operands(&mut self) -> Vec<NmiPpuRegisterOperands> {
+        std::mem::take(&mut self.host_nmi_ppu_register_operands)
     }
 
     fn flush_reset_progress(
@@ -1926,7 +1960,9 @@ impl Snes9xOracleSemanticTrace {
                                             "Snes9x ancilla item receipt omitted its slot X",
                                         )?,
                                     )
-                                    .map_err(|_| "Snes9x ancilla item receipt slot exceeded one byte")?;
+                                    .map_err(|_| {
+                                        "Snes9x ancilla item receipt slot exceeded one byte"
+                                    })?;
                                     self.item_receipt_caller =
                                         Some(ItemReceiptGraphicsCaller::SpriteMainAncilla { slot });
                                 }
@@ -2286,6 +2322,7 @@ impl Snes9xOracleSemanticTrace {
                 }
             }
             "nmi" => {
+                let ppu_register_operands = event.nmi_ppu_register_operands()?;
                 let target = nmi_resume_target(&event)?;
                 let update_gate = match event
                     .nmi_latch
@@ -2310,6 +2347,8 @@ impl Snes9xOracleSemanticTrace {
                 self.nmi_publication_pending = true;
                 self.pending_nmi_update_gate = Some(update_gate);
                 self.nmi_resume_targets.push(target);
+                self.host_nmi_ppu_register_operands
+                    .push(ppu_register_operands);
                 if publish_pre_dungeon_sprite_reset_progress(
                     &event,
                     OriginalTimingBoundary::NmiAccepted,
@@ -2371,9 +2410,8 @@ impl Snes9xOracleSemanticTrace {
                                 .to_string(),
                         );
                     }
-                    self.pending_spotlight_helper_nmi_acceptance_index = receipts
-                        .iter()
-                        .rposition(|receipt| {
+                    self.pending_spotlight_helper_nmi_acceptance_index =
+                        receipts.iter().rposition(|receipt| {
                             matches!(receipt, OriginalTimingSemanticReceipt::NmiAccepted(_))
                         });
                 } else if let Some(progress) = spotlight_table_build_progress(&event, None, None)? {
@@ -2917,8 +2955,7 @@ fn spotlight_table_build_progress(
                 }
                 let active_iterations = completed_iterations - iterations_before_iris;
                 let pending_circle_input = radius.saturating_sub(active_iterations);
-                let helper_index =
-                    (u32::from(pending_circle_input) << 8) / u32::from(radius) >> 1;
+                let helper_index = (u32::from(pending_circle_input) << 8) / u32::from(radius) >> 1;
                 if helper_index as u16 == observed_x {
                     if matched
                         .replace((completed_iterations, upper_cursor, lower_cursor))
@@ -3047,7 +3084,9 @@ fn main_loop_interruption_for_source_state(
         && (LINK_POSITION_AFTER_SUBPIXEL_START_PC..LINK_POSITION_AFTER_SUBPIXEL_END_PC)
             .contains(&pc)
     {
-        let pass = u8::try_from(x?).ok().filter(|pass| matches!(pass, 0 | 2 | 4))?;
+        let pass = u8::try_from(x?)
+            .ok()
+            .filter(|pass| matches!(pass, 0 | 2 | 4))?;
         Some(MainLoopInterruption::LinkPositionAfterSubpixel { pass })
     } else if matches!((main, sub), (Some(0x0f | 0x10), Some(0 | 1)))
         && (IRIS_SPOTLIGHT_RESET_TABLE_FIRST_STORE_PC..=IRIS_SPOTLIGHT_RESET_TABLE_BRANCH_PC)
@@ -3072,7 +3111,10 @@ fn spotlight_reset_table_completed_stores(pc: u32, x: u16) -> Option<u8> {
         }
         (x, offset / 3)
     } else if pc == IRIS_SPOTLIGHT_RESET_TABLE_FIRST_DEX_PC {
-        (x, u32::from(IRIS_SPOTLIGHT_RESET_TABLE_STORES_PER_ITERATION))
+        (
+            x,
+            u32::from(IRIS_SPOTLIGHT_RESET_TABLE_STORES_PER_ITERATION),
+        )
     } else if pc == IRIS_SPOTLIGHT_RESET_TABLE_SECOND_DEX_PC {
         (
             x.wrapping_add(1),
@@ -3538,6 +3580,27 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn nmi_acceptance_decodes_complete_ppu_register_operands_and_rejects_absence() {
+        let mut event = raw("nmi", None, None, None);
+        event.nmi_ppu_register_operands = Some(std::array::from_fn(|index| index as u8));
+        let operands = event.nmi_ppu_register_operands().unwrap();
+        assert_eq!(operands.window_selection, [0, 1, 2]);
+        assert_eq!(operands.fixed_color, [5, 6, 7]);
+        assert_eq!(operands.screen_layers, [8, 9, 10, 11]);
+        assert_eq!(
+            operands.bg_scroll,
+            [0x0d0c, 0x0f0e, 0x1110, 0x1312, 0x1514, 0x1716]
+        );
+        assert_eq!(operands.screen_brightness, 24);
+        assert_eq!(operands.mosaic, 25);
+        assert_eq!(operands.bg_mode, 26);
+        assert_eq!(operands.mode7_center, [0x1c1b, 0x1e1d]);
+
+        event.nmi_ppu_register_operands = None;
+        assert!(event.nmi_ppu_register_operands().is_err());
     }
 
     #[test]
@@ -4184,6 +4247,7 @@ mod tests {
             y: None,
             address,
             value: address.map(|_| 0),
+            nmi_ppu_register_operands: matches!(event, "nmi").then_some([0; 31]),
         }
     }
 
@@ -4219,6 +4283,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         }
     }
 
@@ -4270,6 +4335,7 @@ mod tests {
             y: None,
             address: None,
             value: None,
+            nmi_ppu_register_operands: None,
         }
     }
 
@@ -4401,7 +4467,8 @@ mod tests {
                 }),
                 serde_json::json!({
                     "event": "nmi", "run": 82, "pc": 0x0c_c1df,
-                    "s": 0x01f4, "main": 0, "sub": 1, "nmi_latch": 1
+                    "s": 0x01f4, "main": 0, "sub": 1, "nmi_latch": 1,
+                    "nmi_ppu_register_operands": vec![0; 31]
                 }),
                 serde_json::json!({
                     "event": "pc", "run": 82,
@@ -4543,6 +4610,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -5321,6 +5389,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
         let slot = 13u8;
@@ -5386,6 +5455,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
         for _ in 0..2 {
@@ -5546,6 +5616,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -5776,6 +5847,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -5814,6 +5886,7 @@ mod tests {
                 pending_nmi_update_gate: None,
                 nmi_resume_targets: Vec::new(),
                 synthesized_nmi_resume: None,
+                host_nmi_ppu_register_operands: Vec::new(),
             };
             let mut event = raw("nmi", Some(pc), None, None);
             event.main = Some(0x0f);
@@ -5856,6 +5929,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut event = raw("nmi", Some(IRIS_SPOTLIGHT_CIRCLE_VALUE_CALL_PC), None, None);
         event.a = Some(30);
@@ -5957,6 +6031,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         // The source loop loads t=126, decrements spotlight_var4 to 125, then
         // enters the pure circle helper. The authoritative frame-40977 NMI is
@@ -6034,6 +6109,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut host = HostFrameWindow::default();
         let mut entry = frame_with_sub("entry", 3186, 0x0f, 0);
@@ -6107,6 +6183,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut host = HostFrameWindow::default();
         let mut entry = frame_with_sub("entry", 3192, 0x0f, 1);
@@ -6314,6 +6391,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut host = HostFrameWindow::default();
         let mut entry = frame_with_sub("entry", 9931, 0x0f, 1);
@@ -6387,6 +6465,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut host = HostFrameWindow::default();
         let mut entry = frame_with_sub("entry", 7309, 0x10, 1);
@@ -6460,6 +6539,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut returned = frame_with_sub("return", 3186, 0x0f, 0);
         returned.pc = Some(0x0d_a38c);
@@ -6573,6 +6653,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut interrupted = raw(
             "nmi",
@@ -6630,6 +6711,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut event = raw(
             "nmi",
@@ -6688,6 +6770,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         // Pinned run 2327 is inside the same pure helper, but the enclosing
         // source caller is Module 7's dungeon-landing spotlight. That caller
@@ -6734,6 +6817,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         // At $f3be the absolute,X store at $f3bb has completed with X=$0138.
         // Bytes 0..=$0139, or 157 words, are therefore already published.
@@ -6796,6 +6880,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut event = raw(
             "nmi",
@@ -6856,6 +6941,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut event = raw(
             "nmi",
@@ -6955,6 +7041,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut event = raw(
             "nmi",
@@ -6997,6 +7084,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         // At $f3bb the long load is complete, but the absolute,X store has
         // not executed. X=$011e therefore denotes exactly 143 copied words.
@@ -7168,6 +7256,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         // Pinned Snes9x frame 48,536 accepts NMI at $09:c47b inside
         // Sprite_ResetAll_noDisable with the innermost return address $02:834b,
@@ -7243,6 +7332,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -7313,6 +7403,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -7362,6 +7453,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -7408,6 +7500,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -7465,6 +7558,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -7541,7 +7635,8 @@ mod tests {
             }),
             serde_json::json!({
                 "event": "nmi", "run": 7, "pc": 0x008123, "s": 0x01f8,
-                "main": 15, "sub": 1, "nmi_latch": 0
+                "main": 15, "sub": 1, "nmi_latch": 0,
+                "nmi_ppu_register_operands": vec![0; 31]
             }),
             serde_json::json!({
                 "event": "pc", "run": 7, "pc": NMI_HANDLER_COMPLETE_PC,
@@ -7559,7 +7654,8 @@ mod tests {
             }),
             serde_json::json!({
                 "event": "nmi", "run": 7, "pc": 0x009000, "s": 0x01f7,
-                "main": 15, "sub": 1, "nmi_latch": 1
+                "main": 15, "sub": 1, "nmi_latch": 1,
+                    "nmi_ppu_register_operands": vec![0; 31]
             }),
             serde_json::json!({
                 "event": "frame", "stage": "return", "run": 7,
@@ -7593,6 +7689,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
 
         let receipts = tracker.read_after_host_call(None, None, None).unwrap();
@@ -7624,7 +7721,8 @@ mod tests {
             }),
             serde_json::json!({
                 "event": "nmi", "run": 889, "pc": 0x008036, "s": 0x01ff,
-                "main": 0, "sub": 7, "nmi_latch": 0
+                "main": 0, "sub": 7, "nmi_latch": 0,
+                    "nmi_ppu_register_operands": vec![0; 31]
             }),
             serde_json::json!({
                 "event": "pc", "run": 889, "pc": NMI_HANDLER_COMPLETE_PC,
@@ -7647,7 +7745,8 @@ mod tests {
             }),
             serde_json::json!({
                 "event": "nmi", "run": 889, "pc": 0x09fd18, "s": 0x1f39,
-                "main": 0, "sub": 7, "nmi_latch": 0
+                "main": 0, "sub": 7, "nmi_latch": 0,
+                    "nmi_ppu_register_operands": vec![0; 31]
             }),
             serde_json::json!({
                 "event": "frame", "stage": "return", "run": 889,
@@ -7684,6 +7783,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
 
         let receipts = tracker.read_after_host_call(None, None, None).unwrap();
@@ -7699,6 +7799,7 @@ mod tests {
             ],
         );
         assert!(tracker.nmi_publication_pending);
+        assert_eq!(tracker.take_host_nmi_ppu_register_operands().len(), 2);
 
         let second_host = [
             serde_json::json!({
@@ -7770,7 +7871,8 @@ mod tests {
             }),
             serde_json::json!({
                 "event": "nmi", "run": 1059, "pc": 0x0cce3c,
-                "s": 0x01f3, "main": 4, "sub": 1, "nmi_latch": 1
+                "s": 0x01f3, "main": 4, "sub": 1, "nmi_latch": 1,
+                    "nmi_ppu_register_operands": vec![0; 31]
             }),
             serde_json::json!({
                 "event": "pc", "run": 1059, "pc": NMI_HANDLER_COMPLETE_PC,
@@ -7787,7 +7889,8 @@ mod tests {
             }),
             serde_json::json!({
                 "event": "nmi", "run": 1059, "pc": 0x008034,
-                "s": 0x01ff, "main": 4, "sub": 2, "nmi_latch": 0
+                "s": 0x01ff, "main": 4, "sub": 2, "nmi_latch": 0,
+                    "nmi_ppu_register_operands": vec![0; 31]
             }),
             serde_json::json!({
                 "event": "frame", "stage": "return", "run": 1059,
@@ -7824,6 +7927,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
 
         let receipts = tracker.read_after_host_call(None, None, None).unwrap();
@@ -7891,6 +7995,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
         for &base in &CACHED_SPRITE_LIVE_FIELDS[..4] {
@@ -7983,6 +8088,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
         tracker
@@ -8038,6 +8144,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
         tracker
@@ -8133,6 +8240,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
         for &(field, base) in &CACHE_FIELD_WRITES[..=6] {
@@ -8222,6 +8330,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
         tracker
@@ -8274,6 +8383,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut first_host = Vec::new();
         tracker
@@ -8376,6 +8486,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
         for line in include_str!(
@@ -8394,6 +8505,7 @@ mod tests {
                 // to drive its terminal acceptance through the stricter adapter.
                 event.s = Some(0x01f2);
                 event.nmi_latch = Some(1);
+                event.nmi_ppu_register_operands = Some([0; 31]);
             }
             trace.consume_event(event, &mut receipts).unwrap();
         }
@@ -8440,6 +8552,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
         tracker
@@ -8491,6 +8604,7 @@ mod tests {
             pending_nmi_update_gate: None,
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
         };
         let mut receipts = Vec::new();
         tracker

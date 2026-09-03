@@ -959,6 +959,27 @@ pub enum NmiUpdateGate {
     LatchHeld,
 }
 
+/// Zelda software-register operands sampled when hardware accepts an NMI.
+///
+/// `WritePpuRegisters` runs even when Zelda's update latch is held.  A source
+/// host may return while that handler is still pending, after the translated
+/// main-loop body has already advanced these mirrors.  Keeping the complete
+/// operand generation beside the acceptance receipt prevents those later
+/// native writes from being mistaken for the interrupted source generation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct NmiPpuRegisterOperands {
+    pub window_selection: [u8; 3],
+    pub color_window_selection: u8,
+    pub color_math_control: u8,
+    pub fixed_color: [u8; 3],
+    pub screen_layers: [u8; 4],
+    pub bg_scroll: [u16; 6],
+    pub screen_brightness: u8,
+    pub mosaic: u8,
+    pub bg_mode: u8,
+    pub mode7_center: [u16; 2],
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OriginalTimingSemanticReceipt {
     NmiAccepted(NmiUpdateGate),
@@ -1086,6 +1107,11 @@ pub struct OriginalTimingHostReceipts {
     pub(crate) host_call: u64,
     pub(crate) input_state: u16,
     pub(crate) semantic: Vec<OriginalTimingSemanticReceipt>,
+    /// One complete `WritePpuRegisters` operand generation per ordered
+    /// `NmiAccepted` receipt.  The live adapter validates this alignment
+    /// before constructing the host receipt; schema-gated cached evidence
+    /// therefore cannot silently fall back to post-interruption native RAM.
+    pub(crate) nmi_acceptance_ppu_register_operands: Vec<NmiPpuRegisterOperands>,
     /// One interruption temporarily forwarded by the host-timeline owner to
     /// the translated C caller during this same dispatch. The serialized
     /// oracle stream remains the ordered `NmiAccepted`/`MainLoopInterrupted`
@@ -1118,6 +1144,7 @@ impl OriginalTimingHostReceipts {
             host_call,
             input_state: sanitize_original_timing_input(input_state),
             semantic,
+            nmi_acceptance_ppu_register_operands: Vec::new(),
             forwarded_main_loop_interruption: None,
             presented_animated_bg_tiles: None,
             presented_cgram: None,
@@ -1133,6 +1160,14 @@ impl OriginalTimingHostReceipts {
             presented_obj_tiles: None,
             presented_audio: None,
         }
+    }
+
+    pub fn with_nmi_acceptance_ppu_register_operands(
+        mut self,
+        operands: Vec<NmiPpuRegisterOperands>,
+    ) -> Self {
+        self.nmi_acceptance_ppu_register_operands = operands;
+        self
     }
 
     pub fn with_presented_animated_bg_tiles(mut self, receipt: PresentedAnimatedBgTiles) -> Self {
@@ -1311,6 +1346,7 @@ pub enum OriginalTimingReceiptInstallError {
     InvalidOverworldSpriteReloadProgress,
     DuplicatePreOverworldStageCompletion,
     InvalidNmiLifecycle,
+    InvalidNmiPpuRegisterOperands,
     OutOfSequence { expected: u64, actual: u64 },
 }
 

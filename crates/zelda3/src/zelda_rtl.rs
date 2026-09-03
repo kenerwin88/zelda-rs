@@ -10537,52 +10537,95 @@ impl NmiPpuRegisterScanout {
 /// state captured when a cross-host NMI was accepted. A translated caller can
 /// advance its native mirrors before the following host resumes that handler;
 /// those later values are not source operands.
+fn nmi_ppu_register_operands_from_snapshot(
+    snapshot: &DisplaySnapshot,
+) -> crate::NmiPpuRegisterOperands {
+    let display = crate::game_state::DisplayState::load_from_ram(&snapshot.ram);
+    crate::NmiPpuRegisterOperands {
+        window_selection: [
+            display.bg12_window_selection,
+            display.bg34_window_selection,
+            display.object_color_window_selection,
+        ],
+        color_window_selection: display.palette_filter.color_window_selection(),
+        color_math_control: display.palette_filter.color_math_control(),
+        fixed_color: [
+            display.palette_filter.fixed_color_red(),
+            display.palette_filter.fixed_color_green(),
+            display.palette_filter.fixed_color_blue(),
+        ],
+        screen_layers: [
+            display.main_screen_layers,
+            display.sub_screen_layers,
+            display.main_screen_window_layers,
+            display.sub_screen_window_layers,
+        ],
+        bg_scroll: [
+            display.ppu_scroll_copy.bg1_h_copy(),
+            display.ppu_scroll_copy.bg1_v_copy(),
+            display.ppu_scroll_copy.bg2_h_copy(),
+            display.ppu_scroll_copy.bg2_v_copy(),
+            display.ppu_scroll_copy.bg3_h_copy2(),
+            display.ppu_scroll_copy.bg3_v_copy2(),
+        ],
+        screen_brightness: display.screen_brightness,
+        mosaic: display.mosaic_copy,
+        bg_mode: display.bg_mode,
+        mode7_center: [
+            display.ppu_scroll_copy.mode7_center_x(),
+            display.ppu_scroll_copy.mode7_center_y(),
+        ],
+    }
+}
+
 fn nmi_ppu_register_scanout_from_acceptance_snapshot(
     snapshot: &DisplaySnapshot,
+    exact_operands: Option<crate::NmiPpuRegisterOperands>,
 ) -> NmiPpuRegisterScanout {
-    let display = crate::game_state::DisplayState::load_from_ram(&snapshot.ram);
+    let operands =
+        exact_operands.unwrap_or_else(|| nmi_ppu_register_operands_from_snapshot(snapshot));
     let mut ppu = snapshot.ppu.clone();
     for (address, value) in [
-        (0x23, display.bg12_window_selection),
-        (0x24, display.bg34_window_selection),
-        (0x25, display.object_color_window_selection),
-        (0x30, display.palette_filter.color_window_selection()),
-        (0x31, display.palette_filter.color_math_control()),
-        (0x32, display.palette_filter.fixed_color_red()),
-        (0x32, display.palette_filter.fixed_color_green()),
-        (0x32, display.palette_filter.fixed_color_blue()),
-        (0x2c, display.main_screen_layers),
-        (0x2d, display.sub_screen_layers),
-        (0x2e, display.main_screen_window_layers),
-        (0x2f, display.sub_screen_window_layers),
-        (0x0d, display.ppu_scroll_copy.bg1_h_copy_low()),
-        (0x0d, display.ppu_scroll_copy.bg1_h_high()),
-        (0x0e, display.ppu_scroll_copy.bg1_v_copy_low()),
-        (0x0e, display.ppu_scroll_copy.bg1_v_high()),
-        (0x0f, display.ppu_scroll_copy.bg2_h_copy_low()),
-        (0x0f, display.ppu_scroll_copy.bg2_h_high()),
-        (0x10, display.ppu_scroll_copy.bg2_v_copy_low()),
-        (0x10, display.ppu_scroll_copy.bg2_v_high()),
-        (0x11, display.ppu_scroll_copy.bg3_h_copy2_low()),
-        (0x11, display.ppu_scroll_copy.bg3_h_high()),
-        (0x12, display.ppu_scroll_copy.bg3_v_copy2_low()),
-        (0x12, display.ppu_scroll_copy.bg3_v_high()),
-        (0x00, display.screen_brightness),
-        (0x06, display.mosaic_copy),
-        (0x05, display.bg_mode),
+        (0x23, operands.window_selection[0]),
+        (0x24, operands.window_selection[1]),
+        (0x25, operands.window_selection[2]),
+        (0x30, operands.color_window_selection),
+        (0x31, operands.color_math_control),
+        (0x32, operands.fixed_color[0]),
+        (0x32, operands.fixed_color[1]),
+        (0x32, operands.fixed_color[2]),
+        (0x2c, operands.screen_layers[0]),
+        (0x2d, operands.screen_layers[1]),
+        (0x2e, operands.screen_layers[2]),
+        (0x2f, operands.screen_layers[3]),
+        (0x0d, operands.bg_scroll[0] as u8),
+        (0x0d, (operands.bg_scroll[0] >> 8) as u8),
+        (0x0e, operands.bg_scroll[1] as u8),
+        (0x0e, (operands.bg_scroll[1] >> 8) as u8),
+        (0x0f, operands.bg_scroll[2] as u8),
+        (0x0f, (operands.bg_scroll[2] >> 8) as u8),
+        (0x10, operands.bg_scroll[3] as u8),
+        (0x10, (operands.bg_scroll[3] >> 8) as u8),
+        (0x11, operands.bg_scroll[4] as u8),
+        (0x11, (operands.bg_scroll[4] >> 8) as u8),
+        (0x12, operands.bg_scroll[5] as u8),
+        (0x12, (operands.bg_scroll[5] >> 8) as u8),
+        (0x00, operands.screen_brightness),
+        (0x06, operands.mosaic),
+        (0x05, operands.bg_mode),
     ] {
         ppu.write(address, value);
     }
-    if display.bg_mode & 7 == 7 {
+    if operands.bg_mode & 7 == 7 {
         for (address, value) in [
             (0x1c, 0),
             (0x1c, 0),
             (0x1d, 0),
             (0x1d, 0),
-            (0x1f, display.ppu_scroll_copy.mode7_center_x() as u8),
-            (0x1f, display.ppu_scroll_copy.mode7_center_x_high()),
-            (0x20, display.ppu_scroll_copy.mode7_center_y() as u8),
-            (0x20, display.ppu_scroll_copy.mode7_center_y_high()),
+            (0x1f, operands.mode7_center[0] as u8),
+            (0x1f, (operands.mode7_center[0] >> 8) as u8),
+            (0x20, operands.mode7_center[1] as u8),
+            (0x20, (operands.mode7_center[1] >> 8) as u8),
         ] {
             ppu.write(address, value);
         }
@@ -10907,11 +10950,21 @@ pub struct ZeldaState {
     /// explicit and fail-closed.
     #[serde(skip)]
     original_timing_pending_nmi_update_gate: Option<NmiUpdateGate>,
+    /// Exact software-register generation sampled with the unfinished NMI.
+    /// Like the pending display snapshot, this is runtime-only and cannot be
+    /// reconstructed from native mirrors after the interrupted body advances.
+    #[serde(skip)]
+    original_timing_pending_nmi_ppu_register_operands: Option<crate::NmiPpuRegisterOperands>,
     /// Accepted gate dispositions for handlers owned by the active host.
     /// This transient queue is populated from the typed receipt stream before
     /// any translated handler runs and never enters Zelda save-state bytes.
     #[serde(skip)]
     original_timing_expected_nmi_update_gates: Vec<NmiUpdateGate>,
+    /// Acceptance operands aligned one-for-one with the gate queue. Synthetic
+    /// unit receipts may leave an entry absent and exercise the legacy local
+    /// snapshot path; schema-gated live evidence always supplies every entry.
+    #[serde(skip)]
+    original_timing_expected_nmi_ppu_register_operands: Vec<Option<crate::NmiPpuRegisterOperands>>,
     /// A scheduled source caller accepted its following NMI at this host's
     /// return boundary. The ordered timeline is consumed before translated
     /// execution chooses among many early-return branches, so retain this one
@@ -17628,7 +17681,9 @@ impl ZeldaState {
             original_timing_sprite_main_return_claims_remaining: None,
             original_timing_nmi_publication_pending: false,
             original_timing_pending_nmi_update_gate: None,
+            original_timing_pending_nmi_ppu_register_operands: None,
             original_timing_expected_nmi_update_gates: Vec::new(),
+            original_timing_expected_nmi_ppu_register_operands: Vec::new(),
             original_timing_scheduled_nmi_accepted_at_host_return: false,
             original_timing_dungeon_exit_spotlight_entry_return_pending: false,
             original_timing_pre_dungeon_return_pending: None,
@@ -17835,7 +17890,10 @@ impl ZeldaState {
         self.original_timing_sprite_main_return_claims_remaining = None;
         self.original_timing_nmi_publication_pending = false;
         self.original_timing_pending_nmi_update_gate = None;
+        self.original_timing_pending_nmi_ppu_register_operands = None;
         self.original_timing_expected_nmi_update_gates.clear();
+        self.original_timing_expected_nmi_ppu_register_operands
+            .clear();
         self.original_timing_scheduled_nmi_accepted_at_host_return = false;
         self.original_timing_dungeon_exit_spotlight_entry_return_pending = false;
         self.original_timing_pre_dungeon_return_pending = None;
@@ -18209,6 +18267,7 @@ impl ZeldaState {
         self.original_timing_last_oracle_host_call = checkpoint.last_consumed_host_call;
         self.original_timing_nmi_publication_pending = checkpoint.nmi_publication_pending;
         self.original_timing_pending_nmi_update_gate = checkpoint.pending_nmi_update_gate;
+        self.original_timing_pending_nmi_ppu_register_operands = None;
         self.original_timing_dungeon_exit_spotlight_entry_return_pending =
             checkpoint.dungeon_exit_spotlight_entry_return_pending;
         self.original_timing_pre_dungeon_return_pending = checkpoint.pre_dungeon_return_pending;
@@ -18244,7 +18303,10 @@ impl ZeldaState {
         self.original_timing_sprite_main_return_claims_remaining = None;
         self.original_timing_nmi_publication_pending = false;
         self.original_timing_pending_nmi_update_gate = None;
+        self.original_timing_pending_nmi_ppu_register_operands = None;
         self.original_timing_expected_nmi_update_gates.clear();
+        self.original_timing_expected_nmi_ppu_register_operands
+            .clear();
         self.original_timing_dungeon_exit_spotlight_entry_return_pending = false;
         self.original_timing_pre_dungeon_return_pending = None;
         self.original_timing_presented_audio = None;
@@ -18330,6 +18392,16 @@ impl ZeldaState {
         }
         if self.original_timing_presented_audio.is_some() {
             return Err(OriginalTimingReceiptInstallError::UnconsumedPresentedAudio);
+        }
+        let nmi_acceptance_count = receipts
+            .semantic
+            .iter()
+            .filter(|receipt| matches!(receipt, OriginalTimingSemanticReceipt::NmiAccepted(_)))
+            .count();
+        if !receipts.nmi_acceptance_ppu_register_operands.is_empty()
+            && receipts.nmi_acceptance_ppu_register_operands.len() != nmi_acceptance_count
+        {
+            return Err(OriginalTimingReceiptInstallError::InvalidNmiPpuRegisterOperands);
         }
         if let Some(expected) = self
             .original_timing_last_oracle_host_call
@@ -18972,11 +19044,14 @@ impl ZeldaState {
             return Err(OriginalTimingReceiptInstallError::InvalidNmiLifecycle);
         }
         let mut expected_nmi_update_gates = Vec::new();
+        let mut expected_nmi_ppu_register_operands = Vec::new();
         if self.original_timing_nmi_publication_pending {
             expected_nmi_update_gates.push(
                 self.original_timing_pending_nmi_update_gate
                     .expect("pending source NMI lost its update-gate disposition"),
             );
+            expected_nmi_ppu_register_operands
+                .push(self.original_timing_pending_nmi_ppu_register_operands);
         }
         expected_nmi_update_gates.extend(receipts.semantic.iter().filter_map(
             |receipt| match receipt {
@@ -18984,7 +19059,21 @@ impl ZeldaState {
                 _ => None,
             },
         ));
+        if receipts.nmi_acceptance_ppu_register_operands.is_empty() {
+            expected_nmi_ppu_register_operands
+                .extend(std::iter::repeat_n(None, nmi_acceptance_count));
+        } else {
+            expected_nmi_ppu_register_operands.extend(
+                receipts
+                    .nmi_acceptance_ppu_register_operands
+                    .iter()
+                    .copied()
+                    .map(Some),
+            );
+        }
         self.original_timing_expected_nmi_update_gates = expected_nmi_update_gates;
+        self.original_timing_expected_nmi_ppu_register_operands =
+            expected_nmi_ppu_register_operands;
         self.original_timing_semantic_receipts = Some(receipts);
         Ok(())
     }
@@ -19014,6 +19103,8 @@ impl ZeldaState {
             self.game_execution_scheduler,
         );
         self.original_timing_expected_nmi_update_gates.remove(0);
+        self.original_timing_expected_nmi_ppu_register_operands
+            .remove(0);
     }
 
     /// The slot of a `Sprite_Main`-direct item receipt the live wire reports
@@ -24826,7 +24917,10 @@ impl ZeldaState {
         self.original_timing_semantic_receipts = None;
         self.original_timing_nmi_publication_pending = false;
         self.original_timing_pending_nmi_update_gate = None;
+        self.original_timing_pending_nmi_ppu_register_operands = None;
         self.original_timing_expected_nmi_update_gates.clear();
+        self.original_timing_expected_nmi_ppu_register_operands
+            .clear();
     }
 
     fn begin_original_timing_host_dispatch(&mut self, input_state: u16) -> bool {
@@ -25426,7 +25520,21 @@ impl ZeldaState {
                     "source NMI update-gate ownership disagreed at host close: pending={pending} gates={gates:?}",
                 ),
             };
+        self.original_timing_pending_nmi_ppu_register_operands =
+            match (
+                self.original_timing_nmi_publication_pending,
+                self.original_timing_expected_nmi_ppu_register_operands
+                    .as_slice(),
+            ) {
+                (false, []) => None,
+                (true, [operands]) => *operands,
+                (pending, operands) => panic!(
+                    "source NMI PPU-register ownership disagreed at host close: pending={pending} operands={operands:?}",
+                ),
+            };
         self.original_timing_expected_nmi_update_gates.clear();
+        self.original_timing_expected_nmi_ppu_register_operands
+            .clear();
         // Presentation receipt domains migrate independently after every
         // semantic control fact has been consumed by its native owner. Input,
         // host-call ordering, and duplicate facts remain fail-closed at
@@ -48114,6 +48222,10 @@ impl ZeldaState {
                     self.display_snapshot
                         .as_ref()
                         .expect("carry-in handler lost its receptive acceptance snapshot"),
+                    self.original_timing_expected_nmi_ppu_register_operands
+                        .first()
+                        .copied()
+                        .flatten(),
                 )
             });
         self.original_timing_nmi_publication_pending = false;
