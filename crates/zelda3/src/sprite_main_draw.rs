@@ -1481,43 +1481,50 @@ impl ZeldaState {
         } else {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
-            let Some(t) = self.sprite_prep_oam_coord_or_double_ret(k) else {
-                return;
-            };
-            let info = PrepOamCoordsRet::from_tuple(t);
-            let mut j: i32 = 29;
-            while {
-                let old = j as usize;
-                let filled = self.garnish_slot_view(old).garnish_type() != 0;
-                j -= 1;
-                filled && j >= 0
-            } {}
-            j += 1;
-            let j = j as usize;
-            let value = 22;
-            self.garnish_slot_view_mut(j).set_garnish_type(value);
-            self.garnish_state_mut().set_active_type(22);
-            let value = self.sprite_slot_view(k).x_low();
-            self.garnish_slot_view_mut(j).set_x_low(value);
-            let value = self.sprite_slot_view(k).x_high();
-            self.garnish_slot_view_mut(j).set_x_high(value);
-            let y = self
-                .sprite_get_y(k)
-                .wrapping_sub(self.sprite_slot_view(k).z() as u16)
-                .wrapping_add(0x10);
-            let value = y as u8;
-            self.garnish_slot_view_mut(j).set_y_low(value);
-            let value = (y >> 8) as u8;
-            self.garnish_slot_view_mut(j).set_y_high(value);
-            let value = info.flags;
-            self.garnish_slot_view_mut(j).set_oam_flags(value);
-            let value = self.sprite_slot_view(k).floor();
-            self.garnish_slot_view_mut(j).set_floor(value);
-            let value = 31;
-            self.garnish_slot_view_mut(j).set_countdown(value);
-            let value = self.sprite_slot_view(k).c();
-            self.garnish_slot_view_mut(j).set_sprite(value);
+            self.throwable_scenery_scatter_after_state_clear(k);
         }
+    }
+
+    /// Resume the small-debris branch immediately after its terminal
+    /// `sprite_state[k] = 0` publication. This source statement can be exposed
+    /// at a host boundary before the OAM-coordinate helper returns.
+    pub(super) fn throwable_scenery_scatter_after_state_clear(&mut self, k: usize) {
+        let Some(t) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return;
+        };
+        let info = PrepOamCoordsRet::from_tuple(t);
+        let mut j: i32 = 29;
+        while {
+            let old = j as usize;
+            let filled = self.garnish_slot_view(old).garnish_type() != 0;
+            j -= 1;
+            filled && j >= 0
+        } {}
+        j += 1;
+        let j = j as usize;
+        let value = 22;
+        self.garnish_slot_view_mut(j).set_garnish_type(value);
+        self.garnish_state_mut().set_active_type(22);
+        let value = self.sprite_slot_view(k).x_low();
+        self.garnish_slot_view_mut(j).set_x_low(value);
+        let value = self.sprite_slot_view(k).x_high();
+        self.garnish_slot_view_mut(j).set_x_high(value);
+        let y = self
+            .sprite_get_y(k)
+            .wrapping_sub(self.sprite_slot_view(k).z() as u16)
+            .wrapping_add(0x10);
+        let value = y as u8;
+        self.garnish_slot_view_mut(j).set_y_low(value);
+        let value = (y >> 8) as u8;
+        self.garnish_slot_view_mut(j).set_y_high(value);
+        let value = info.flags;
+        self.garnish_slot_view_mut(j).set_oam_flags(value);
+        let value = self.sprite_slot_view(k).floor();
+        self.garnish_slot_view_mut(j).set_floor(value);
+        let value = 31;
+        self.garnish_slot_view_mut(j).set_countdown(value);
+        let value = self.sprite_slot_view(k).c();
+        self.garnish_slot_view_mut(j).set_sprite(value);
     }
 
     // -----------------------------------------------------------------------

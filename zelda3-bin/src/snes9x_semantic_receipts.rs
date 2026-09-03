@@ -160,6 +160,12 @@ const SPRITE_MAIN_ENTRY_PC: u32 = 0x068328;
 const SPRITE_EXECUTE_SINGLE_ENTRY_PC: u32 = 0x0684e2;
 const SPRITE_SLOT_RETURN_PC: u32 = 0x0683a7;
 const SPRITE_MAIN_RETURN_PC: u32 = 0x028842;
+// `ThrowableScenery_ScatterIntoDebris`'s small-debris branch publishes the
+// current slot's terminal state clear here, before calling the OAM-coordinate
+// helper and optionally publishing one garnish. This is a resumable C
+// statement boundary; neither the PC nor the current-slot register leaves the
+// semantic adapter.
+const THROWABLE_SCENERY_STATE_CLEAR_PC: u32 = 0x06aca4;
 // Final subtype store in the state-10 `Chicken_IncrSubtype2(k, 3)` call.
 // The graphics store and the rest of the current Cucco handler remain pending.
 const CUCCO_SUBTYPE_INCREMENT_PUBLICATION_PCS: [u32; 5] =
@@ -308,6 +314,8 @@ struct SpriteMainExecutionTracker {
     current_slot: Option<u8>,
     last_completed_slot: Option<u8>,
     #[serde(default)]
+    throwable_scenery_state_clear_slot: Option<u8>,
+    #[serde(default)]
     cucco_subtype_increments: Option<(u8, u8, u8)>,
     #[serde(default)]
     cucco_helper_ordinal: u8,
@@ -327,6 +335,14 @@ struct SpriteMainExecutionTracker {
 
 impl SpriteMainExecutionTracker {
     fn progress(self) -> SpriteMainProgress {
+        if let Some(slot) = self.throwable_scenery_state_clear_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "throwable-scenery state clear outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterThrowableSceneryStateClear(slot);
+        }
         if let Some(slot) = self.big_key_drop_graphics_slot {
             assert_eq!(
                 self.current_slot,
@@ -411,6 +427,9 @@ impl SpriteMainExecutionTracker {
         match self.progress() {
             SpriteMainProgress::BeforeFirstSlot => MainLoopInterruption::SpriteMainBeforeFirstSlot,
             SpriteMainProgress::AfterSlot(slot) => MainLoopInterruption::SpriteMainAfterSlot(slot),
+            SpriteMainProgress::AfterThrowableSceneryStateClear(slot) => {
+                MainLoopInterruption::SpriteMainAfterThrowableSceneryStateClear(slot)
+            }
             SpriteMainProgress::AfterActiveCuccoX {
                 slot,
                 helper_ordinal,
@@ -555,7 +574,7 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     host_nmi_ppu_register_operands: Vec<NmiPpuRegisterOperands>,
 }
 
-const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 9;
+const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 10;
 
 /// Emulator-private continuation state for the typed semantic adapter.
 ///
@@ -1749,6 +1768,7 @@ impl Snes9xOracleSemanticTrace {
                                 ));
                             }
                             execution.current_slot = Some(slot);
+                            execution.throwable_scenery_state_clear_slot = None;
                             execution.cucco_subtype_increments = None;
                             execution.cucco_animation_slot = None;
                             execution.cucco_flee_movement = None;
@@ -1768,6 +1788,7 @@ impl Snes9xOracleSemanticTrace {
                             .current_slot
                             .ok_or("Snes9x returned one Sprite_Main slot before entering it")?;
                         execution.last_completed_slot = Some(slot);
+                        execution.throwable_scenery_state_clear_slot = None;
                         execution.cucco_subtype_increments = None;
                         execution.cucco_animation_slot = None;
                         execution.cucco_flee_movement = None;
@@ -2033,6 +2054,24 @@ impl Snes9xOracleSemanticTrace {
                 let pc = event.pc.ok_or("Snes9x WRAM write omitted PC")? & 0x00ff_ffff;
                 let address = event.address.ok_or("Snes9x WRAM write omitted address")?;
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
+                    if pc == THROWABLE_SCENERY_STATE_CLEAR_PC {
+                        let slot = execution.current_slot.ok_or(
+                            "Snes9x cleared throwable scenery before entering a sprite slot",
+                        )?;
+                        let value = event
+                            .value
+                            .ok_or("Snes9x throwable-scenery state clear omitted value")?;
+                        if event.x != Some(u16::from(slot))
+                            || address != SPRITE_STATE_BASE + u16::from(slot)
+                            || value != 0
+                        {
+                            return Err(format!(
+                                "Snes9x throwable-scenery state clear disagreed on slot {slot}: x={:?}, address=${address:04x}, value=${value:02x}",
+                                event.x,
+                            ));
+                        }
+                        execution.throwable_scenery_state_clear_slot = Some(slot);
+                    }
                     if let Some((slot, helper_ordinal)) = execution.active_cucco_movement {
                         let expected_x_address = match execution.active_cucco_x_publications {
                             0 => Some(SPRITE_X_SUBPIXEL_BASE + u16::from(slot)),
@@ -3763,6 +3802,7 @@ mod tests {
         source.sprite_main_execution = Some(SpriteMainExecutionTracker {
             current_slot: Some(2),
             last_completed_slot: Some(3),
+            throwable_scenery_state_clear_slot: None,
             cucco_subtype_increments: None,
             cucco_helper_ordinal: 0,
             cucco_flee_movement: None,
@@ -4082,6 +4122,73 @@ mod tests {
                     helper_ordinal: 0,
                 },
             )],
+        );
+    }
+
+    #[test]
+    fn sprite_main_host_return_exports_throwable_scenery_state_clear() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(7), None),
+            raw("pc", Some(SPRITE_SLOT_RETURN_PC), Some(7), None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(6), None),
+            raw(
+                "wram-write",
+                Some(THROWABLE_SCENERY_STATE_CLEAR_PC),
+                Some(6),
+                Some(SPRITE_STATE_BASE + 6),
+            ),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+
+        let checkpoint =
+            serde_json::from_slice(&serde_json::to_vec(&source.checkpoint()).unwrap()).unwrap();
+        let mut resumed = empty_semantic_tracker();
+        resumed.restore_checkpoint(checkpoint).unwrap();
+        resumed.flush_host_boundary_progress(
+            &mut receipts,
+            OriginalTimingBoundary::HostReturn,
+        );
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::AfterThrowableSceneryStateClear(6),
+            )],
+        );
+    }
+
+    #[test]
+    fn sprite_main_nmi_exports_throwable_scenery_state_clear() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(6), None),
+            raw(
+                "wram-write",
+                Some(THROWABLE_SCENERY_STATE_CLEAR_PC),
+                Some(6),
+                Some(SPRITE_STATE_BASE + 6),
+            ),
+            raw("nmi", Some(0x06_e465), Some(6), None),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainAfterThrowableSceneryStateClear(6),
+                ),
+            ],
         );
     }
 
@@ -5760,6 +5867,7 @@ mod tests {
         tracker.sprite_main_execution = Some(SpriteMainExecutionTracker {
             current_slot: Some(0),
             last_completed_slot: Some(1),
+            throwable_scenery_state_clear_slot: None,
             cucco_subtype_increments: None,
             cucco_helper_ordinal: 0,
             cucco_flee_movement: None,
@@ -5792,6 +5900,7 @@ mod tests {
         tracker.sprite_main_execution = Some(SpriteMainExecutionTracker {
             current_slot: Some(12),
             last_completed_slot: Some(13),
+            throwable_scenery_state_clear_slot: None,
             cucco_subtype_increments: None,
             cucco_helper_ordinal: 0,
             cucco_flee_movement: None,

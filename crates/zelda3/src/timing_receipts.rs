@@ -549,6 +549,11 @@ pub enum MainLoopInterruption {
     /// only the resumable C-loop boundary.
     SpriteMainBeforeFirstSlot,
     SpriteMainAfterSlot(u8),
+    /// A type-$ec throwable-scenery death slot decremented its timers and
+    /// published `sprite_state[k] = 0`, then the host boundary interrupted the
+    /// pending `Sprite_PrepOamCoordOrDoubleRet`/garnish suffix. The current
+    /// slot has not returned to the descending `Sprite_Main` loop.
+    SpriteMainAfterThrowableSceneryStateClear(u8),
     /// The active-Cucco branch completed all three source assignments in
     /// `Sprite_MoveX`, but has not entered `Sprite_MoveY`. The timing backend
     /// keeps the instruction boundary private; gameplay resumes at the next
@@ -638,6 +643,7 @@ impl MainLoopInterruption {
             self,
             Self::SpriteMainBeforeFirstSlot
                 | Self::SpriteMainAfterSlot(_)
+                | Self::SpriteMainAfterThrowableSceneryStateClear(_)
                 | Self::SpriteMainAfterActiveCuccoX { .. }
                 | Self::SpriteMainAfterActiveCuccoYSubpixel { .. }
                 | Self::SpriteMainAfterCuccoFleeMovement { .. }
@@ -649,7 +655,7 @@ impl MainLoopInterruption {
     }
 }
 
-/// The furthest returned statement in one still-active `Sprite_Main` call.
+/// The furthest completed source statement in one still-active `Sprite_Main` call.
 ///
 /// Unlike [`MainLoopInterruption`], this receipt does not imply that an NMI is
 /// currently suspending the call. It survives when an entry NMI resumes and
@@ -658,6 +664,7 @@ impl MainLoopInterruption {
 pub enum SpriteMainProgress {
     BeforeFirstSlot,
     AfterSlot(u8),
+    AfterThrowableSceneryStateClear(u8),
     AfterActiveCuccoX {
         slot: u8,
         helper_ordinal: u8,

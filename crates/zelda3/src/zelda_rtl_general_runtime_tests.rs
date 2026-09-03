@@ -6137,6 +6137,52 @@ fn live_host_return_progress_establishes_the_sprite_main_owner_before_resume() {
 }
 
 #[test]
+fn live_throwable_scenery_state_clear_applies_the_partial_slot_prefix() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.sprite_slot_view_mut(6).set_state(6);
+    state.sprite_slot_view_mut(6).set_sprite_type(0xec);
+    state.sprite_slot_view_mut(6).set_delay_main(31);
+    state.sprite_slot_view_mut(6).set_c(1);
+    state.sprite_slot_view_mut(6).set_x(0x0ef8);
+    state.sprite_slot_view_mut(6).set_y(0x0518);
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        164_140,
+        0,
+        vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+            crate::SpriteMainProgress::AfterThrowableSceneryStateClear(6),
+        )],
+    ));
+
+    state.run_module07_sprite_main_caller(DungeonSpriteMainReturn {
+        bg2_x: 0,
+        bg2_y: 0,
+        bg1_x: 0,
+        bg1_y: 0,
+    });
+
+    assert_eq!(state.sprite_slot_view(6).state(), 0);
+    assert_eq!(state.sprite_slot_view(6).delay_main(), 30);
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::AfterThrowableSceneryStateClear(6),
+            caller: SpriteMainCpuCaller::DungeonModule07Live {
+                boundary: crate::OriginalTimingBoundary::HostReturn,
+            },
+        }),
+    );
+    assert!(state.active_dungeon_sprite_main_return.is_some());
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
 fn live_big_key_publication_enters_the_existing_source_call_continuation() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();

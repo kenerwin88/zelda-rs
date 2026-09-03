@@ -4803,6 +4803,10 @@ pub(super) enum ModuleCpuPhase {
 enum SpriteMainCpuBoundary {
     BeforeFirstSlot,
     AfterSlot(u8),
+    /// The current type-$ec death slot published its timer/OAM prefix and
+    /// terminal state clear. Its OAM-coordinate/garnish suffix and the lower
+    /// Sprite_Main slots remain pending.
+    AfterThrowableSceneryStateClear(u8),
     /// The active-Cucco branch completed `Sprite_MoveX`; `Sprite_MoveY` and
     /// the caller suffix remain pending.
     AfterActiveCuccoX {
@@ -5019,6 +5023,13 @@ fn sprite_main_cpu_boundary_from_interruption(
             );
             Some(SpriteMainCpuBoundary::AfterSlot(slot))
         }
+        crate::MainLoopInterruption::SpriteMainAfterThrowableSceneryStateClear(slot) => {
+            assert!(
+                slot < 16,
+                "source throwable-scenery receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::AfterThrowableSceneryStateClear(slot))
+        }
         crate::MainLoopInterruption::SpriteMainAfterActiveCuccoX {
             slot,
             helper_ordinal,
@@ -5114,6 +5125,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
     match interruption {
         crate::MainLoopInterruption::SpriteMainBeforeFirstSlot => true,
         crate::MainLoopInterruption::SpriteMainAfterSlot(slot)
+        | crate::MainLoopInterruption::SpriteMainAfterThrowableSceneryStateClear(slot)
         | crate::MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(slot) => slot < 16,
         crate::MainLoopInterruption::SpriteMainAfterActiveCuccoX { slot, .. }
@@ -5144,6 +5156,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
     match progress {
         crate::SpriteMainProgress::BeforeFirstSlot => true,
         crate::SpriteMainProgress::AfterSlot(slot)
+        | crate::SpriteMainProgress::AfterThrowableSceneryStateClear(slot)
         | crate::SpriteMainProgress::BigKeyDropGraphicsStarted(slot) => slot < 16,
         crate::SpriteMainProgress::AfterActiveCuccoX { slot, .. }
         | crate::SpriteMainProgress::AfterActiveCuccoYSubpixel { slot, .. }
@@ -5166,6 +5179,13 @@ fn sprite_main_cpu_boundary_from_progress(
                 "source Sprite_Main progress used invalid slot {slot}"
             );
             SpriteMainCpuBoundary::AfterSlot(slot)
+        }
+        crate::SpriteMainProgress::AfterThrowableSceneryStateClear(slot) => {
+            assert!(
+                slot < 16,
+                "source throwable-scenery progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::AfterThrowableSceneryStateClear(slot)
         }
         crate::SpriteMainProgress::AfterActiveCuccoX {
             slot,
@@ -5264,6 +5284,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         }
         crate::MainLoopInterruption::SpriteMainBeforeFirstSlot
         | crate::MainLoopInterruption::SpriteMainAfterSlot(_)
+        | crate::MainLoopInterruption::SpriteMainAfterThrowableSceneryStateClear(_)
         | crate::MainLoopInterruption::SpriteMainAfterActiveCuccoX { .. }
         | crate::MainLoopInterruption::SpriteMainAfterActiveCuccoYSubpixel { .. }
         | crate::MainLoopInterruption::SpriteMainAfterCuccoFleeMovement { .. }
@@ -5286,6 +5307,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         SpriteMainCpuBoundary::BeforeFirstSlot => 0,
         SpriteMainCpuBoundary::AfterSlot(slot) => 2 * (16 - slot),
         SpriteMainCpuBoundary::AfterCuccoGraphicsPublication { slot, .. }
+        | SpriteMainCpuBoundary::AfterThrowableSceneryStateClear(slot)
         | SpriteMainCpuBoundary::AfterActiveCuccoX { slot, .. }
         | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel { slot, .. }
         | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }

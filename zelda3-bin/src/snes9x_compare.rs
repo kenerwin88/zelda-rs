@@ -47,10 +47,11 @@ const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.s
 const CARTRIDGE_RNG_STORE_PC_LOW16: u64 = 0xba7f;
 const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
 // Schema 27 binds every NMI acceptance to the complete Zelda software-register
-// generation consumed by unconditional `WritePpuRegisters`. Older caches can
-// otherwise reconstruct a carried handler from native RAM after the atomic
-// translated main body has advanced those operands.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 27;
+// generation consumed by unconditional `WritePpuRegisters`, plus partial
+// Sprite_Main statement boundaries such as throwable-scenery state clear.
+// Older caches can otherwise reconstruct a carried handler or slot boundary
+// after the atomic translated main body has advanced the underlying state.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 28;
 
 const PRESENTED_OBJ_CACHE_ABI: i32 = 1;
 const PRESENTED_OBJ_CACHE_SLOT_COUNT: usize = 512;
@@ -14972,7 +14973,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 27);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 28);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None

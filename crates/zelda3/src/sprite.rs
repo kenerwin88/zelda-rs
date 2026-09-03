@@ -2423,6 +2423,32 @@ impl ZeldaState {
                 self.replay_trace_ram_watch(&format!("sprite-before-execute-single slot={k}"));
             }
             if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::AfterThrowableSceneryStateClear(
+                    k as u8,
+                ))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "throwable-scenery continuation requires a measured NMI phase",
+                );
+                let boundary = self
+                    .sprite_main_cpu_boundary
+                    .take()
+                    .expect("throwable-scenery boundary was checked above");
+                assert_eq!(self.sprite_slot_view(k).state(), 6);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xec);
+                assert!(
+                    sign8(self.sprite_slot_view(k).c()) || self.sprite_slot_view(k).c() < 6,
+                    "throwable-scenery state-clear boundary requires the small-debris branch",
+                );
+                self.sprite_timers_and_oam(k);
+                self.sprite_slot_view_mut(k).set_state(0);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                return;
+            }
+            if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(k as u8))
             {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
@@ -2744,6 +2770,11 @@ impl ZeldaState {
             }
             SpriteMainCpuBoundary::AfterSlot(interrupted_slot) => {
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot as usize)
+            }
+            SpriteMainCpuBoundary::AfterThrowableSceneryStateClear(interrupted_slot) => {
+                let interrupted_slot = usize::from(interrupted_slot);
+                self.throwable_scenery_scatter_after_state_clear(interrupted_slot);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterActiveCuccoX {
                 slot,
