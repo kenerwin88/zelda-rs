@@ -35111,7 +35111,10 @@ impl ZeldaState {
         // so the scheduler parser below cannot consume a conflicting vector.
         let authoritative_dialogue_return_only =
             self.original_timing_dialogue_return_only_timeline();
-        let authoritative_dialogue_after_current_return = {
+        let (
+            authoritative_dialogue_after_current_return,
+            authoritative_dialogue_after_current_wait,
+        ) = {
             let mut scheduler_probe = self.game_execution_scheduler;
             let after_current = scheduler_probe.take_after_current_trailing_nmi();
             let live_dialogue_terminal_caller_is_active =
@@ -35126,7 +35129,7 @@ impl ZeldaState {
                     // the host whose wire returns to the main wait; earlier
                     // hosts are waiting slices.
                     if self.original_timing_main_loop_return_timeline().is_none() {
-                        None
+                        (None, None)
                     } else {
                         let step = scheduler_probe
                             .advance_work_one_nmi_slice_with_authoritative_completion(true);
@@ -35142,7 +35145,7 @@ impl ZeldaState {
                             .expect(
                                 "a live scheduled dialogue caller return requires exact terminal source authority",
                             );
-                        Some((terminal, scheduler_probe))
+                        (Some((terminal, scheduler_probe)), None)
                     }
                 } else {
                     assert_eq!(
@@ -35150,15 +35153,32 @@ impl ZeldaState {
                         Some(GameWorkContinuation::FinishDialogueInitializationCallerReturn),
                         "a live terminal dialogue caller requires the exact AfterCurrent owner",
                     );
-                    let terminal = self
-                        .take_original_timing_dialogue_terminal_return()
-                        .expect(
-                            "a live dialogue AfterCurrent caller return requires exact terminal source authority",
-                        );
-                    Some((terminal, scheduler_probe))
+                    if self.original_timing_main_loop_return_timeline().is_none() {
+                        // The caller-crossing estimate scheduled this as an
+                        // AfterCurrent return, but the poly thread can steal
+                        // enough of the following field that the ROM is still
+                        // inside Text_LoadCharacterBuffer when another Held
+                        // NMI arrives (route host 414030). The exact wire is a
+                        // nonterminal continued-call slice; retain the same
+                        // AfterCurrent owner until a later host publishes the
+                        // common-suffix return.
+                        let waiting = self
+                            .original_timing_nonterminal_continuation_plan()
+                            .expect(
+                                "a live dialogue AfterCurrent wait requires exact nonterminal source authority",
+                            );
+                        (None, Some((waiting, scheduler_probe)))
+                    } else {
+                        let terminal = self
+                            .take_original_timing_dialogue_terminal_return()
+                            .expect(
+                                "a live dialogue AfterCurrent caller return requires exact terminal source authority",
+                            );
+                        (Some((terminal, scheduler_probe)), None)
+                    }
                 }
             } else {
-                None
+                (None, None)
             }
         };
         let initialized_audio_bank_this_frame =
@@ -35171,6 +35191,23 @@ impl ZeldaState {
         self.prepare_audio_nmi_for_main_boundary(frame);
         if initialized_audio_bank_this_frame {
             self.zelda_initialization_code();
+        }
+        if let Some((waiting, mut scheduler_probe)) = authoritative_dialogue_after_current_wait {
+            scheduler_probe.schedule_after_current_trailing_nmi(
+                GameWorkContinuation::FinishDialogueInitializationCallerReturn,
+            );
+            self.game_execution_scheduler = scheduler_probe;
+            self.execute_original_timing_nonterminal_continuation(
+                waiting,
+                input,
+                oam_dma_source.as_deref(),
+                |_| {},
+            );
+            self.assert_native_frame_state_matches_ram();
+            self.assert_native_world_location_state_matches_ram();
+            self.assert_native_display_state_matches_ram();
+            debug_host_path_early_return(self.frame_ctr_dbg, line!());
+            return;
         }
         if let Some((timeline, scheduler_probe)) = authoritative_dialogue_after_current_return {
             // Commit the exact AfterCurrent owner only after the complete

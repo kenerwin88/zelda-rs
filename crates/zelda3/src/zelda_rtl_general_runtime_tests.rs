@@ -9035,6 +9035,49 @@ fn terminal_dialogue_return_accepts_all_four_source_nmi_ownership_cells() {
 }
 
 #[test]
+fn poly_thread_dialogue_after_current_waits_for_the_wire_terminal_return() {
+    let mut state = live_dialogue_terminal_return_state(0x37);
+    let endpoint_before = state.game_state.messaging.runtime.dialogue_msg_read_pos();
+    state
+        .install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            414029,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    crate::MainLoopProgress::CallStackContinued,
+                ),
+            ],
+        ))
+        .unwrap();
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDialogueInitializationCallerReturn),
+        "the source continued-call host must retain the interrupted dialogue caller",
+    );
+    assert_eq!(
+        state.game_state.messaging.runtime.dialogue_msg_read_pos(),
+        endpoint_before,
+        "a nonterminal host cannot execute the caller-return CPU suffix",
+    );
+    assert_eq!(
+        state.pending_main_loop_common_suffix,
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch),
+    );
+    assert!(state.game_state.display.nmi_update_is_latched());
+    assert!(state.original_timing_nmi_publication_pending);
+    assert_eq!(
+        state.original_timing_pending_nmi_update_gate,
+        Some(NmiUpdateGate::LatchHeld),
+    );
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
 fn idle_dialogue_iteration_after_terminal_initializer_uses_ordinary_main_loop_owner() {
     let mut state = live_dialogue_terminal_return_state(0x37);
     state.set_frame_counter(143);
