@@ -603,6 +603,11 @@ pub enum MainLoopInterruption {
     /// still pending; the timing backend keeps the instruction address
     /// private and exposes only this resumable C statement.
     SpriteMainBigKeyDropGraphicsStarted(u8),
+    /// King Zora spawned the purchased flippers and entered
+    /// `DecodeAnimatedSpriteTile_variable($11)`. The spawn and all of its
+    /// field publications are complete, while the graphics call, the current
+    /// slot return, and every lower Sprite_Main slot remain pending.
+    SpriteMainKingZoraFlippersGraphicsStarted(u8),
     /// A sprite slot completed its ordinary prefix and entered
     /// `Link_ReceiveItem`'s synchronous graphics loader. The caller-specific
     /// item receipt owns the suspended suffix; this boundary tells native
@@ -650,6 +655,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAfterCuccoSubtypeIncrements { .. }
                 | Self::SpriteMainAfterCuccoGraphicsPublication { .. }
                 | Self::SpriteMainBigKeyDropGraphicsStarted(_)
+                | Self::SpriteMainKingZoraFlippersGraphicsStarted(_)
                 | Self::SpriteMainItemReceiptGraphicsStarted(_)
         )
     }
@@ -687,6 +693,7 @@ pub enum SpriteMainProgress {
         helper_ordinal: u8,
     },
     BigKeyDropGraphicsStarted(u8),
+    KingZoraFlippersGraphicsStarted(u8),
 }
 
 /// Source-level dialogue work completed by one host interval.

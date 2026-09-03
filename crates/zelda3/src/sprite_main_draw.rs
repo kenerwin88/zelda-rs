@@ -417,9 +417,21 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_52_KingZora(int k) {  // 85995b
     pub(super) fn sprite_52_king_zora(&mut self, k: usize) {
+        assert!(!self.sprite_52_king_zora_impl(k, false));
+    }
+
+    /// Execute King Zora through the exact call site immediately before the
+    /// purchased-flippers sheet decode. This is used only when the timing
+    /// authority proves that the source CPU suspended inside that synchronous
+    /// call; the returned `true` proves the live sprite took that path.
+    pub(super) fn sprite_52_king_zora_before_flippers_graphics(&mut self, k: usize) -> bool {
+        self.sprite_52_king_zora_impl(k, true)
+    }
+
+    fn sprite_52_king_zora_impl(&mut self, k: usize, stop_before_flippers_graphics: bool) -> bool {
         self.zora_king_draw(k);
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
 
         match self.sprite_slot_view(k).ai_state() {
@@ -489,7 +501,7 @@ impl ZeldaState {
                     self.sprite_slot_view_mut(k).set_ai_state(value);
                     let value = 36;
                     self.sprite_slot_view_mut(k).set_delay_main(value);
-                    return;
+                    return false;
                 }
                 let value = SPRITE_52_KING_ZORA_DIALOGUE_GFX[usize::from(j >> 4)];
                 self.sprite_slot_view_mut(k).set_graphics(value);
@@ -528,7 +540,13 @@ impl ZeldaState {
                         self.sprite_slot_view_mut(k).set_delay_main(value);
                     }
                 } else if j == 77 && self.sprite_slot_view(k).e() != 0 {
-                    self.sprite_zora_regurgitate_flippers(k);
+                    if stop_before_flippers_graphics {
+                        if self.sprite_zora_regurgitate_flippers_before_graphics(k) {
+                            return true;
+                        }
+                    } else {
+                        self.sprite_zora_regurgitate_flippers(k);
+                    }
                 }
             }
             4 => {
@@ -548,15 +566,22 @@ impl ZeldaState {
             }
             _ => {}
         }
+        false
     }
 
     // -----------------------------------------------------------------------
     // void Sprite_Zora_RegurgitateFlippers(int k) {  // 9de1aa
     pub(super) fn sprite_zora_regurgitate_flippers(&mut self, k: usize) {
+        if self.sprite_zora_regurgitate_flippers_before_graphics(k) {
+            self.DecodeAnimatedSpriteTile_variable(0x11);
+        }
+    }
+
+    fn sprite_zora_regurgitate_flippers_before_graphics(&mut self, k: usize) -> bool {
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically(k, 0xc0, &mut info);
         if j < 0 {
-            return;
+            return false;
         }
         let j = j as usize;
         self.sprite_set_spawned_coordinates(j, &info);
@@ -575,7 +600,7 @@ impl ZeldaState {
         self.sprite_slot_view_mut(j).set_oam_flags(value);
         let value = 0x30;
         self.sprite_slot_view_mut(j).set_delay_aux3(value);
-        self.DecodeAnimatedSpriteTile_variable(0x11);
+        true
     }
 
     // -----------------------------------------------------------------------

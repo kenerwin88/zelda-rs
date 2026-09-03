@@ -192,6 +192,11 @@ const SPRITE_SUBTYPE2_BASE: u16 = 0x0e80;
 // only to translate that source statement into a typed gameplay receipt.
 const BIG_KEY_DROP_TYPE_PUBLICATION_PC: u32 = 0x06_f9d4;
 const BIG_KEY_DROP_SPRITE_TYPE: u8 = 0xe5;
+// The shared animated-sprite decoder has many callers. Its pinned entry PC
+// plus King Zora's return address proves that the purchased-flippers spawn
+// and every field publication before the `$11` decode have completed.
+const DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC: u32 = 0x00_d4ed;
+const ZORA_FLIPPERS_GRAPHICS_RETURN_ADDRESS: u32 = 0x1d_e1e9;
 // Pinned Link_HandleVelocity has a second, earlier source-equivalent boundary:
 // after `$87:e274 LDA link_player_handler_state`, the saved PC is `$87:e276`
 // and no Zelda state has been changed yet.  The following CMP/branch is also
@@ -338,6 +343,8 @@ struct SpriteMainExecutionTracker {
     cucco_animation_slot: Option<(u8, u8)>,
     #[serde(default)]
     big_key_drop_graphics_slot: Option<u8>,
+    #[serde(default)]
+    king_zora_flippers_graphics_slot: Option<u8>,
 }
 
 impl SpriteMainExecutionTracker {
@@ -365,6 +372,22 @@ impl SpriteMainExecutionTracker {
                 "one sprite slot published two incompatible partial checkpoints",
             );
             return SpriteMainProgress::BigKeyDropGraphicsStarted(slot);
+        }
+        if let Some(slot) = self.king_zora_flippers_graphics_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "King Zora flippers graphics publication outlived its active sprite slot",
+            );
+            assert_eq!(
+                self.cucco_animation_slot, None,
+                "one sprite slot published two incompatible partial checkpoints",
+            );
+            assert_eq!(
+                self.cucco_subtype_increments, None,
+                "one sprite slot published two incompatible partial checkpoints",
+            );
+            return SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot);
         }
         if let Some((slot, helper_ordinal)) = self.cucco_animation_slot {
             assert_eq!(
@@ -477,6 +500,9 @@ impl SpriteMainExecutionTracker {
             SpriteMainProgress::BigKeyDropGraphicsStarted(slot) => {
                 MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(slot)
             }
+            SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot) => {
+                MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(slot)
+            }
         }
     }
 }
@@ -582,7 +608,7 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     host_nmi_ppu_register_operands: Vec<NmiPpuRegisterOperands>,
 }
 
-const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 11;
+const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 12;
 
 /// Emulator-private continuation state for the typed semantic adapter.
 ///
@@ -1226,7 +1252,7 @@ impl Snes9xOracleSemanticTrace {
                     &[
                         "028842", "05df49", "05df4d", "05eb1d", "05eb21", "068328", "0683a7",
                         "0684e2", "06a628", "06a724", "06b9cc", "06b9d0", "0799ad", "079a0b",
-                        "008225", "0082c7", "09c499", "09c4aa",
+                        "008225", "0082c7", "00d4ed", "09c499", "09c4aa",
                     ],
                 ),
             );
@@ -1795,6 +1821,19 @@ impl Snes9xOracleSemanticTrace {
                         ),
                     );
                 }
+                if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
+                    && event.return_address.map(|pc| pc & 0x00ff_ffff)
+                        == Some(ZORA_FLIPPERS_GRAPHICS_RETURN_ADDRESS)
+                {
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Snes9x entered King Zora flippers graphics outside Sprite_Main")?;
+                    let slot = execution
+                        .current_slot
+                        .ok_or("Snes9x entered King Zora flippers graphics before a sprite slot")?;
+                    execution.king_zora_flippers_graphics_slot = Some(slot);
+                }
                 match pc {
                     SPRITE_MAIN_ENTRY_PC => {
                         // A fresh entry is also a source-level proof that any
@@ -1846,6 +1885,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.active_cucco_y_subpixel = None;
                             execution.cucco_helper_ordinal = 0;
                             execution.big_key_drop_graphics_slot = None;
+                            execution.king_zora_flippers_graphics_slot = None;
                         }
                     }
                     SPRITE_SLOT_RETURN_PC => {
@@ -1866,6 +1906,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.active_cucco_y_subpixel = None;
                         execution.cucco_helper_ordinal = 0;
                         execution.big_key_drop_graphics_slot = None;
+                        execution.king_zora_flippers_graphics_slot = None;
                         // Slot zero is the final iteration of the descending C
                         // loop. No caller-specific return address is needed to
                         // prove that later NMIs are outside Sprite_Main.
@@ -3883,6 +3924,7 @@ mod tests {
             active_cucco_y_subpixel: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
+            king_zora_flippers_graphics_slot: None,
         });
         let mut receipts = vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
             SpriteMainProgress::AfterSlot(4),
@@ -3937,6 +3979,74 @@ mod tests {
                 .map(|execution| execution.interruption()),
             Some(MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(2)),
         );
+    }
+
+    #[test]
+    fn king_zora_flippers_decoder_entry_becomes_a_typed_partial_slot_checkpoint() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(14), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut graphics_entry = raw(
+            "pc",
+            Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC),
+            None,
+            None,
+        );
+        graphics_entry.return_address = Some(ZORA_FLIPPERS_GRAPHICS_RETURN_ADDRESS);
+        source.consume_event(graphics_entry, &mut receipts).unwrap();
+
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::KingZoraFlippersGraphicsStarted(14),
+            )],
+        );
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .map(|execution| execution.interruption()),
+            Some(MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(14)),
+        );
+    }
+
+    #[test]
+    fn shared_animated_decode_without_king_zora_return_address_is_not_flippers_progress() {
+        let mut source = empty_semantic_tracker();
+        source.sprite_main_execution = Some(SpriteMainExecutionTracker {
+            current_slot: Some(14),
+            ..SpriteMainExecutionTracker::default()
+        });
+        let mut receipts = Vec::new();
+        let mut graphics_entry = raw(
+            "pc",
+            Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC),
+            None,
+            None,
+        );
+        graphics_entry.return_address = Some(0x1d_e000);
+
+        source.consume_event(graphics_entry, &mut receipts).unwrap();
+
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .map(|execution| execution.progress()),
+            Some(SpriteMainProgress::BeforeFirstSlot),
+        );
+        assert!(receipts.is_empty());
     }
 
     #[test]
@@ -6177,6 +6287,7 @@ mod tests {
             active_cucco_y_subpixel: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
+            king_zora_flippers_graphics_slot: None,
         });
         let mut receipts = Vec::new();
 
@@ -6210,6 +6321,7 @@ mod tests {
             active_cucco_y_subpixel: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
+            king_zora_flippers_graphics_slot: None,
         });
         tracker.item_receipt_caller = Some(ItemReceiptGraphicsCaller::SpriteMain { slot: 12 });
         let mut receipts = Vec::new();

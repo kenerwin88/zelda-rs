@@ -4857,6 +4857,10 @@ enum SpriteMainCpuBoundary {
     /// `PrepareEnemyDrop` published type `$e5` and entered the synchronous
     /// big-key graphics call. The current slot has not returned.
     BigKeyDropGraphicsStarted(u8),
+    /// King Zora published the purchased-flippers spawn and entered the
+    /// synchronous `$11` animated-sheet decode. The current slot and every
+    /// lower slot remain pending.
+    KingZoraFlippersGraphicsStarted(u8),
     /// The current slot entered `Link_ReceiveItem`'s synchronous graphics
     /// call. Its typed item-receipt continuation, rather than the outer loop,
     /// owns the suspended suffix.
@@ -5116,6 +5120,13 @@ fn sprite_main_cpu_boundary_from_interruption(
             );
             Some(SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(slot))
         }
+        crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(slot) => {
+            assert!(
+                slot < 16,
+                "source King Zora flippers graphics receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot))
+        }
         crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(slot) => {
             assert!(
                 slot < 16,
@@ -5133,6 +5144,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         crate::MainLoopInterruption::SpriteMainAfterSlot(slot)
         | crate::MainLoopInterruption::SpriteMainAfterThrowableSceneryStateClear(slot)
         | crate::MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(slot)
+        | crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(slot) => slot < 16,
         crate::MainLoopInterruption::SpriteMainAfterActiveCuccoX { slot, .. }
         | crate::MainLoopInterruption::SpriteMainAfterActiveCuccoYSubpixel { slot, .. }
@@ -5163,7 +5175,8 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         crate::SpriteMainProgress::BeforeFirstSlot => true,
         crate::SpriteMainProgress::AfterSlot(slot)
         | crate::SpriteMainProgress::AfterThrowableSceneryStateClear(slot)
-        | crate::SpriteMainProgress::BigKeyDropGraphicsStarted(slot) => slot < 16,
+        | crate::SpriteMainProgress::BigKeyDropGraphicsStarted(slot)
+        | crate::SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot) => slot < 16,
         crate::SpriteMainProgress::AfterActiveCuccoX { slot, .. }
         | crate::SpriteMainProgress::AfterActiveCuccoYSubpixel { slot, .. }
         | crate::SpriteMainProgress::AfterCuccoFleeMovement { slot, .. }
@@ -5273,6 +5286,13 @@ fn sprite_main_cpu_boundary_from_progress(
             );
             SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(slot)
         }
+        crate::SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot) => {
+            assert!(
+                slot < 16,
+                "source King Zora flippers graphics progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot)
+        }
     }
 }
 
@@ -5297,6 +5317,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterCuccoSubtypeIncrements { .. }
         | crate::MainLoopInterruption::SpriteMainAfterCuccoGraphicsPublication { .. }
         | crate::MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(_)
+        | crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(_) => unreachable!(),
         crate::MainLoopInterruption::LinkPositionBeforeCoordinates
         | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
@@ -5319,6 +5340,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }
         | SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements { slot, .. }
         | SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(slot)
+        | SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot)
         | SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(slot)
         | SpriteMainCpuBoundary::AfterZeldaFollowerGraphics { slot, .. }
@@ -15184,9 +15206,12 @@ impl ZeldaState {
 
     pub(crate) fn activate_nmi_thread(&mut self) {
         if !self.game_state.display.nmi_thread_active {
-            // The crystal maiden's IRQ poly thread starts four hosts after
-            // this activation (route host 413550 → first slice 413554).
-            self.poly_dungeon_thread_startup_hold = Some(5);
+            // The crystal maiden publishes the worker's go byte four source
+            // hosts after activation. The worker cannot enter its render
+            // call until the following host's NMI swaps to the thread, so the
+            // first render slot is six debug hosts after this native call
+            // (debug host N executes source/replay frame N-1).
+            self.poly_dungeon_thread_startup_hold = Some(6);
             self.poly_dungeon_activation_host = self.frame_ctr_dbg;
         }
         self.display_core_mut().activate_nmi_thread();
@@ -37317,6 +37342,10 @@ impl ZeldaState {
                             | GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload
                     )
                 );
+        let authoritative_overworld_load_overlays_overlay_is_active =
+            matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.game_execution_scheduler.current_work()
+                    == Some(GameWorkContinuation::FinishOverworldLoadOverlaysOverlay);
         let authoritative_overworld_map_quadrants_published =
             self.take_original_timing_overworld_map_quadrants_published();
         let authoritative_overworld_map_quadrants_is_active =
@@ -39680,6 +39709,25 @@ impl ZeldaState {
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(
                         authoritative_overworld_sprite_reload_returned,
+                    )
+            } else if authoritative_overworld_load_overlays_overlay_is_active {
+                // The fixed four-crossing count is only a native fallback.
+                // With a live wire, `LoadOverworldOverlay` has returned only
+                // once its enclosing Module09 caller reaches Sprite_Main (or
+                // the terminal-return lane above proves Sprite_Main and the
+                // shared suffix both returned). A bare Continued host keeps
+                // the overlay call suspended even after the estimate reaches
+                // zero (route host 186367).
+                let caller_reached_sprite_main = !self.original_timing_hosts_fresh_iteration()
+                    && (self.original_timing_owes_sprite_main_return()
+                        || self.original_timing_owes_sprite_main_progress()
+                        || authoritative_scheduled_caller_nmi_timeline.is_some_and(|timeline| {
+                            timeline.progress == crate::MainLoopProgress::CallStackContinued
+                                && timeline.interruption.is_sprite_main()
+                        }));
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(
+                        caller_reached_sprite_main,
                     )
             } else if authoritative_overworld_map_quadrants_is_active {
                 self.game_execution_scheduler
@@ -46819,10 +46867,11 @@ impl ZeldaState {
             if incremental_shadow {
                 if dungeon_poly_thread && !self.poly_job_in_flight {
                     // The ROM's `CrystalCutscene_InitializePolyhedral` sets the go byte
-                    // four hosts after `Polyhedral_InitializeThread` (its crystal
-                    // load starves under the new thread: oracle 413549 → 413553
-                    // V=198), so the first frame starts at the fifth host's swap.
-                    let hold = self.poly_dungeon_thread_startup_hold.get_or_insert(5);
+                    // four source hosts after `Polyhedral_InitializeThread`
+                    // (oracle 500942 → go-byte write late in 500946). The
+                    // render begins only when the next NMI swaps to the thread
+                    // (source 500947 `$09:F825`), which is debug host +6.
+                    let hold = self.poly_dungeon_thread_startup_hold.get_or_insert(6);
                     let elapsed = self.frame_ctr_dbg.saturating_sub(self.poly_dungeon_activation_host);
                     if u32::from(*hold) > elapsed {
                         return;
@@ -49551,6 +49600,7 @@ mod original_timing_receipt_validation_tests {
                 helper_ordinal: 0,
             },
             I::SpriteMainBigKeyDropGraphicsStarted(16),
+            I::SpriteMainKingZoraFlippersGraphicsStarted(16),
             I::SpriteMainItemReceiptGraphicsStarted(16),
             I::SpriteMainAfterCuccoSubtypeIncrements {
                 slot: 15,
@@ -49590,6 +49640,7 @@ mod original_timing_receipt_validation_tests {
                 helper_ordinal: u8::MAX,
             },
             I::SpriteMainBigKeyDropGraphicsStarted(15),
+            I::SpriteMainKingZoraFlippersGraphicsStarted(15),
             I::SpriteMainItemReceiptGraphicsStarted(15),
         ] {
             assert_install_accepted(OriginalTimingSemanticReceipt::MainLoopInterrupted(
@@ -49748,6 +49799,7 @@ mod original_timing_receipt_validation_tests {
                 helper_ordinal: 0,
             },
             P::BigKeyDropGraphicsStarted(16),
+            P::KingZoraFlippersGraphicsStarted(16),
             P::AfterCuccoSubtypeIncrements {
                 slot: 15,
                 helper_ordinal: 0,
@@ -49786,6 +49838,7 @@ mod original_timing_receipt_validation_tests {
                 helper_ordinal: u8::MAX,
             },
             P::BigKeyDropGraphicsStarted(15),
+            P::KingZoraFlippersGraphicsStarted(15),
         ] {
             assert_install_accepted(OriginalTimingSemanticReceipt::SpriteMainProgressed(
                 progress,

@@ -2492,6 +2492,34 @@ impl ZeldaState {
                 );
                 return;
             }
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(
+                    k as u8,
+                ))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "King Zora flippers graphics continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x52);
+                assert_eq!(self.sprite_slot_view(k).ai_state(), 3);
+                self.sprite_timers_and_oam(k);
+                assert!(
+                    self.sprite_52_king_zora_before_flippers_graphics(k),
+                    "source King Zora flippers boundary requires the live purchase-completion path",
+                );
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                assert!(matches!(caller, SpriteMainCpuCaller::Module09 { .. }));
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(k as u8),
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
             let enters_big_key_graphics = self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(k as u8));
             if enters_big_key_graphics {
@@ -2868,6 +2896,11 @@ impl ZeldaState {
                 unreachable!(
                     "item-receipt graphics boundary transfers directly to its typed continuation"
                 )
+            }
+            SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot) => {
+                let slot = usize::from(slot);
+                self.DecodeAnimatedSpriteTile_variable(0x11);
+                self.complete_sprite_main_after_interrupted_slot(slot);
             }
             SpriteMainCpuBoundary::AfterZeldaFollowerGraphics {
                 slot,
