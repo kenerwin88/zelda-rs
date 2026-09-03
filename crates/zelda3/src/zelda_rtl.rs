@@ -91,6 +91,7 @@ use crate::game_state::{
     NativeSpriteWorkspaceBridgeMut, NativeSwamolaHistoryBridgeMut, NativeSwamolaTargetBridgeMut,
     NativeSwimAccelerationBridgeMut, NativeSystemSignalsBridgeMut, NativeTagalongSlotBridgeMut,
     NativeTileDetectionBridgeMut, NativeTowerSealBridgeMut, NativeTowerSealOrbitBridgeMut,
+    SpriteSlotsState,
     NativeTowerSealSparkleBridgeMut, NativeTrinexxPaletteBridgeMut,
     NativeVramUploadBufferBridgeMut, NativeVwfRenderBridgeMut, NativeWaterHdmaWindowBridgeMut,
     NativeWeatherVaneBridgeMut, NativeWeatherVaneDebrisBridgeMut,
@@ -11090,6 +11091,11 @@ pub struct ZeldaState {
     /// route hosts 165774-165777 and 165778-165793).
     #[serde(skip)]
     pending_module09_frame_advance: Option<(u8, u8)>,
+    /// The fully rebuilt Module09 sprite array is used to stage the held
+    /// transition's OAM, but does not become CPU-visible until the source
+    /// loader reaches its return host.
+    #[serde(skip)]
+    pending_overworld_sprite_reload_slots: Option<SpriteSlotsState>,
     #[serde(skip)]
     intro_poly_thread_initialization_phase: u8,
     #[serde(skip)]
@@ -17730,6 +17736,7 @@ impl ZeldaState {
             save_quit_reset_hold: false,
             save_quit_reset_writes_applied: false,
             pending_module09_frame_advance: None,
+            pending_overworld_sprite_reload_slots: None,
             intro_poly_thread_initialization_phase: 0,
             attract_init_graphics_phase: 0,
             attract_first_story_render_delay: 0,
@@ -18046,6 +18053,7 @@ impl ZeldaState {
             self.save_quit_reset_writes_applied = false;
             self.dialogue_vwf_handler_completed_at_endpoint = false;
             self.pending_module09_frame_advance = None;
+            self.pending_overworld_sprite_reload_slots = None;
             self.intro_poly_thread_initialization_phase = 0;
             self.attract_init_graphics_phase = 0;
             self.attract_first_story_render_delay = 0;
@@ -18917,9 +18925,23 @@ impl ZeldaState {
         }
         if overworld_sprite_progress
             .iter()
+            .filter(|progress| {
+                matches!(
+                    progress,
+                    crate::OverworldSpriteReloadProgress::ProximityScanSuspended { .. }
+                )
+            })
+            .count()
+            > 1
+        {
+            return Err(OriginalTimingReceiptInstallError::InvalidOverworldSpriteReloadProgress);
+        }
+        if overworld_sprite_progress
+            .iter()
             .any(|progress| match progress {
                 crate::OverworldSpriteReloadProgress::PresencePublished
-                | crate::OverworldSpriteReloadProgress::ReloadReturned => false,
+                | crate::OverworldSpriteReloadProgress::ReloadReturned
+                | crate::OverworldSpriteReloadProgress::ProximityScanSuspended { .. } => false,
                 crate::OverworldSpriteReloadProgress::SpriteActivated {
                     block,
                     slot,
@@ -24453,6 +24475,16 @@ impl ZeldaState {
             return Vec::new();
         }
         let current_work = self.game_execution_scheduler.current_work();
+        let deferred_module09_sprite_reload_active = self
+            .pending_overworld_sprite_reload_slots
+            .is_some()
+            && matches!(
+                current_work,
+                Some(GameWorkContinuation::FinishSpriteMain {
+                    boundary: SpriteMainCpuBoundary::BeforeFirstSlot,
+                    caller: SpriteMainCpuCaller::Module09 { .. },
+                })
+            );
         let Some(receipts) = self.original_timing_semantic_receipts.as_mut() else {
             return Vec::new();
         };
@@ -24489,7 +24521,11 @@ impl ZeldaState {
                     && matches!(
                         current_work,
                         Some(GameWorkContinuation::PreOverworldPropertiesSpriteReset { .. })
-                    )),
+                    ))
+                    || deferred_module09_sprite_reload_active,
+                crate::OverworldSpriteReloadProgress::ProximityScanSuspended { .. } => {
+                    deferred_module09_sprite_reload_active
+                }
                 crate::OverworldSpriteReloadProgress::ReloadReturned => matches!(
                     current_work,
                     Some(GameWorkContinuation::FinishOverworldSpriteReloadTail { .. })
@@ -24716,17 +24752,21 @@ impl ZeldaState {
                     slot,
                     sprite_type,
                 } => {
-                    assert!(
-                        matches!(
-                            self.game_execution_scheduler.current_work(),
-                            Some(GameWorkContinuation::FinishPreOverworldProperties {
-                                sprite_presence_published: true,
-                                ..
-                            })
-                        ),
-                        "overworld sprite activation arrived before the presence map was published",
-                    );
-                    self.overworld_load_proxima_sprite_if_alive(block);
+                    if self.pending_overworld_sprite_reload_slots.is_some() {
+                        self.publish_deferred_module09_sprite_slot(slot);
+                    } else {
+                        assert!(
+                            matches!(
+                                self.game_execution_scheduler.current_work(),
+                                Some(GameWorkContinuation::FinishPreOverworldProperties {
+                                    sprite_presence_published: true,
+                                    ..
+                                })
+                            ),
+                            "overworld sprite activation arrived before the presence map was published",
+                        );
+                        self.overworld_load_proxima_sprite_if_alive(block);
+                    }
                     let sprite = self.sprite_slot_view(usize::from(slot));
                     assert_eq!(
                         sprite.n_word(),
@@ -24743,6 +24783,13 @@ impl ZeldaState {
                         8,
                         "native overworld activation did not publish active state",
                     );
+                }
+                crate::OverworldSpriteReloadProgress::ProximityScanSuspended { bg2_h } => {
+                    assert!(
+                        self.pending_overworld_sprite_reload_slots.is_some(),
+                        "overworld proximity scan progress arrived without its deferred reload generation",
+                    );
+                    self.set_bg2_x(bg2_h);
                 }
                 crate::OverworldSpriteReloadProgress::ReloadReturned => {
                     assert!(
@@ -35460,6 +35507,12 @@ impl ZeldaState {
                     oam_dma_source.as_deref(),
                 )
                 .assert_no_unclaimed_dialogue_text_dma();
+                let reload_progress =
+                    self.take_original_timing_overworld_sprite_reload_progress();
+                assert!(
+                    !self.apply_original_timing_overworld_sprite_reload_progress(reload_progress),
+                    "a held scheduled Sprite_Main host cannot publish its caller's reload return",
+                );
                 assert_eq!(
                     self.take_original_timing_main_loop_progress(),
                     Some(crate::MainLoopProgress::CallStackContinued),
@@ -43288,6 +43341,7 @@ impl ZeldaState {
                     } else if let Some(claims) = untimed_sprite_main_return_claims {
                         self.begin_original_timing_sprite_main_return_claim_scope(claims);
                     }
+                    self.publish_deferred_module09_sprite_slots_at_reload_return();
                     self.complete_module09_load_new_sprites_after_reload();
                     self.complete_module09_overworld_after_prepublished_rain();
                     if self

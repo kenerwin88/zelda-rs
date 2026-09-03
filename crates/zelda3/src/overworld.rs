@@ -2332,8 +2332,18 @@ impl ZeldaState {
         self.follower_link_state_mut().clear_swim_fast_state();
         let module = self.game_state.frame.main_module;
         let submodule = self.game_state.frame.submodule;
+        let sprite_slots_before_reload = self
+            .rom_startup_timing()
+            .then(|| self.game_state.sprites.sprite_slots.clone());
         self.Overworld_EnterSpecialArea();
         self.Overworld_LoadOverlays();
+        if let Some(sprite_slots_before_reload) = sprite_slots_before_reload {
+            // The loader spans several held hosts. Its completed sprite array
+            // stages OAM immediately, but the source does not expose that CPU
+            // generation until it returns and enters Sprite_Main.
+            self.defer_module09_sprite_slots_until_reload_return(sprite_slots_before_reload);
+            self.sprite_disable_live_slots_before_deferred_overworld_reload();
+        }
         self.set_submodule(submodule.wrapping_add(1));
         self.set_main_module(module);
     }
@@ -5045,6 +5055,9 @@ impl ZeldaState {
             let link_y = self.game_state.player.follower_link.y().wrapping_add(2);
             self.follower_link_state_mut().set_y(link_y);
         }
+        let sprite_slots_before_reload = self
+            .rom_startup_timing()
+            .then(|| self.game_state.sprites.sprite_slots.clone());
         let sprite_reload_workload = self.sprite_overworld_reload_all_just_load();
         self.memorized_tile_mut().clear_count();
         if !self.rom_startup_timing()
@@ -5082,6 +5095,10 @@ impl ZeldaState {
             let resume_scanout = reload_timing
                 .resume_boundary
                 .capture_scanout(self, bg1_generation);
+            self.defer_module09_sprite_slots_until_reload_return(
+                sprite_slots_before_reload
+                    .expect("live Module09 reload must retain its entry sprite slots"),
+            );
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishOverworldSpriteReloadTail {
                     post_return_hold_nmi_slices: reload_timing.post_return_hold_nmi_slices,
@@ -5094,6 +5111,45 @@ impl ZeldaState {
             return;
         }
         self.complete_module09_load_new_sprites_after_reload();
+    }
+
+    pub(super) fn defer_module09_sprite_slots_until_reload_return(
+        &mut self,
+        entry_slots: SpriteSlotsState,
+    ) {
+        assert!(
+            self.pending_overworld_sprite_reload_slots.is_none(),
+            "Module09 cannot replace an unpublished sprite reload generation",
+        );
+        let rebuilt_slots =
+            std::mem::replace(&mut self.game_state.sprites.sprite_slots, entry_slots);
+        self.game_state
+            .sprites
+            .sprite_slots
+            .write_to_ram(&mut self.ram);
+        self.pending_overworld_sprite_reload_slots = Some(rebuilt_slots);
+    }
+
+    pub(super) fn publish_deferred_module09_sprite_slots_at_reload_return(&mut self) {
+        let rebuilt_slots = self
+            .pending_overworld_sprite_reload_slots
+            .take()
+            .expect("a completing Module09 sprite reload lost its deferred slot generation");
+        rebuilt_slots.write_to_ram(&mut self.ram);
+        self.game_state.sprites.sprite_slots = rebuilt_slots;
+    }
+
+    pub(super) fn publish_deferred_module09_sprite_slot(&mut self, slot: u8) {
+        let rebuilt_slots = self
+            .pending_overworld_sprite_reload_slots
+            .as_ref()
+            .expect("an incremental overworld sprite publication lost its deferred generation")
+            .clone();
+        self.game_state.sprites.sprite_slots.copy_slot_from(
+            &rebuilt_slots,
+            &mut self.ram,
+            usize::from(slot),
+        );
     }
 
     pub(super) fn complete_module09_load_new_sprites_after_reload(&mut self) {

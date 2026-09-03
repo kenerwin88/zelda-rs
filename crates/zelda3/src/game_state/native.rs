@@ -110,8 +110,8 @@ pub(crate) use sprites::{
     NativeOverworldSpritePresenceBridgeMut, NativePrizeDropCycleBridgeMut,
     NativeSpriteDrawWorkPositionBridgeMut, NativeSpriteHitboxWorkOffsetBridgeMut,
     NativeSpriteSlotBridgeMut, NativeSpriteSlotView, NativeSpriteSystemBridgeMut,
-    NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut, SpriteState, TagalongSlotRead,
-    OVERWORLD_SPRITE_FLAG_COUNT,
+    NativeSpriteWorkspaceBridgeMut, NativeTagalongSlotBridgeMut, SpriteSlotsState, SpriteState,
+    TagalongSlotRead, OVERWORLD_SPRITE_FLAG_COUNT,
 };
 pub(crate) use system::{
     MsuResumeInfoState, MsuResumeSlot, NativeSystemSignalsBridgeMut, SystemSignalsState,

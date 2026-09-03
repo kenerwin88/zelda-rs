@@ -51,7 +51,7 @@ const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
 // Sprite_Main statement boundaries such as throwable-scenery state clear.
 // Older caches can otherwise reconstruct a carried handler or slot boundary
 // after the atomic translated main body has advanced the underlying state.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 28;
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 29;
 
 const PRESENTED_OBJ_CACHE_ABI: i32 = 1;
 const PRESENTED_OBJ_CACHE_SLOT_COUNT: usize = 512;
@@ -5124,25 +5124,11 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut completed_frames = start_frame;
     let mut first_engine_state_mismatch: Option<(u32, Vec<String>)> = None;
     let mut rom_random_overdue_reported = false;
-    // A frame_counter-only engine-state wobble is the documented
-    // cycle-accuracy-bound transient class (spotlight/iris table builds racing
-    // vblank, e.g. route frames 4790..4800 and 6169..): video-invisible and
-    // self-healing. Tolerate it for a bounded window and report it; any other
-    // field, or a wobble that fails to re-converge, still fails at its first
-    // frame.
-    let mut engine_state_transient: Option<(u32, Vec<String>, bool)> = None;
-    const FRAME_COUNTER_TRANSIENT_TOLERANCE_FRAMES: u32 = 32;
-    // Non-frame_counter fields tolerate only a very short self-healing wobble.
-    // Cycle-bound sub-frame races (a Link movement store vs the per-frame
-    // sample boundary inside a spotlight-close window, route frame 65295)
-    // shift a single field by one frame and re-converge exactly; a real
-    // divergence never heals, so it still fails at its first frame. Every
-    // window is logged loudly with begin/healed lines.
-    const ENGINE_STATE_TRANSIENT_TOLERANCE_FRAMES: u32 = 4;
     // Enumerator mode: instead of breaking on the first engine-state mismatch,
     // record every divergent frame and keep going, so one cold pass surfaces the
-    // whole class of WRAM divergences (transient timing lags collapse to ranges in
-    // the post-run summary). Diagnostic only; the ordinary ratchet still breaks.
+    // whole class of WRAM divergences (matching field sets collapse to ranges in
+    // the post-run summary). Diagnostic only; the ordinary ratchet breaks at the
+    // first unequal frame.
     //
     // Pair with ZELDA3_DEBUG_ALLOW_UNEXPECTED_ROM_RANDOM=1: past the FIRST divergence
     // that changes Rust's RNG-call count, the live-oracle RNG replay exhausts and
@@ -5849,57 +5835,15 @@ pub(crate) fn run_compare_libretro_oracle(
                 if engine_state_scan_all {
                     engine_state_divergences.push((frame_index, mismatches));
                 } else {
-                    let frame_counter_only = mismatches
-                        .iter()
-                        .all(|mismatch| mismatch.starts_with("frame_counter "));
-                    let transient_start = engine_state_transient
-                        .as_ref()
-                        .map(|(start, _, _)| *start)
-                        .unwrap_or(frame_index);
-                    let window_frame_counter_only = frame_counter_only
-                        && engine_state_transient
-                            .as_ref()
-                            .is_none_or(|(_, _, fc_only)| *fc_only);
-                    let tolerance = if window_frame_counter_only {
-                        FRAME_COUNTER_TRANSIENT_TOLERANCE_FRAMES
-                    } else {
-                        ENGINE_STATE_TRANSIENT_TOLERANCE_FRAMES
-                    };
-                    if frame_index - transient_start < tolerance {
-                        match engine_state_transient.as_mut() {
-                            None => {
-                                eprintln!(
-                                    "engine-state transient begins at frame {frame_index}: {}",
-                                    mismatches.join(", ")
-                                );
-                                engine_state_transient =
-                                    Some((frame_index, mismatches, frame_counter_only));
-                            }
-                            Some((_, _, fc_only)) => *fc_only &= frame_counter_only,
-                        }
-                    } else {
-                        // Report the wobble's first frame when it never
-                        // re-converged; otherwise this frame introduced the
-                        // real divergence.
-                        let (report_frame, report_mismatches) = engine_state_transient
-                            .take()
-                            .map(|(start, first_mismatches, _)| (start, first_mismatches))
-                            .unwrap_or((frame_index, mismatches));
-                        eprintln!(
-                            "engine-state divergence at frame {report_frame}: {}",
-                            report_mismatches.join(", ")
-                        );
-                        input_history.push((frame_index, input));
-                        completed_frames = frame_index.saturating_add(1);
-                        first_engine_state_mismatch = Some((report_frame, report_mismatches));
-                        break;
-                    }
+                    eprintln!(
+                        "engine-state divergence at frame {frame_index}: {}",
+                        mismatches.join(", ")
+                    );
+                    input_history.push((frame_index, input));
+                    completed_frames = frame_index.saturating_add(1);
+                    first_engine_state_mismatch = Some((frame_index, mismatches));
+                    break;
                 }
-            } else if let Some((start, _, _)) = engine_state_transient.take() {
-                eprintln!(
-                    "engine-state transient healed: frames {start}..{}",
-                    frame_index.saturating_sub(1)
-                );
             }
         }
         if live_oracle_rng {
@@ -8698,6 +8642,8 @@ fn compact_engine_state_mismatches(rust: &[u8], oracle: &[u8]) -> Vec<String> {
         ("dungeon_room", 0x00a0),
         ("link_x", 0x0022),
         ("link_y", 0x0020),
+        ("bg2_h", 0x00e2),
+        ("bg2_v", 0x00e8),
     ] {
         let rust_value = word(rust, address);
         let oracle_value = word(oracle, address);
@@ -14973,7 +14919,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 28);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 29);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None
@@ -15033,6 +14979,8 @@ pub(crate) mod tests {
         oracle[0xb0] = 4;
         rust[0x22..0x24].copy_from_slice(&0x05a9u16.to_le_bytes());
         oracle[0x22..0x24].copy_from_slice(&0x05a8u16.to_le_bytes());
+        rust[0xe2..0xe4].copy_from_slice(&0x034eu16.to_le_bytes());
+        oracle[0xe2..0xe4].copy_from_slice(&0x028eu16.to_le_bytes());
         rust[0x0df1] = 0x58;
         oracle[0x0df1] = 0x59;
         rust[0x0eb1] = 2;
@@ -15043,6 +14991,7 @@ pub(crate) mod tests {
             [
                 "subsubmodule rust=0x03 oracle=0x04",
                 "link_x rust=0x05a9 oracle=0x05a8",
+                "bg2_h rust=0x034e oracle=0x028e",
                 "sprite[1].head_direction rust=0x02 oracle=0x03",
                 "sprite[1].delay_main rust=0x58 oracle=0x59",
             ]

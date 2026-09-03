@@ -5,7 +5,8 @@ use crate::dialogue_ir::{
 };
 use crate::game_state::constants::{
     ANCILLA_TYPE, ANCILLA_X_LO, ANCILLA_X_VELOCITY, ANIMATED_TILE_DATA_SRC,
-    BG_TILE_ANIMATION_COUNTDOWN, DIALOGUE_MESSAGE_INDEX, DMA_SOURCE_ADDR_0, DMA_SOURCE_ADDR_1,
+    BG2_X_SCROLL, BG_TILE_ANIMATION_COUNTDOWN, DIALOGUE_MESSAGE_INDEX, DMA_SOURCE_ADDR_0,
+    DMA_SOURCE_ADDR_1,
     DMA_SOURCE_ADDR_10, DMA_SOURCE_ADDR_11, DMA_SOURCE_ADDR_12, DMA_SOURCE_ADDR_13,
     DMA_SOURCE_ADDR_14, DMA_SOURCE_ADDR_15, DMA_SOURCE_ADDR_16, DMA_SOURCE_ADDR_17,
     DMA_SOURCE_ADDR_18, DMA_SOURCE_ADDR_19, DMA_SOURCE_ADDR_2, DMA_SOURCE_ADDR_20,
@@ -1563,6 +1564,95 @@ fn live_overworld_sprite_return_receipt_owns_native_reload_completion() {
 }
 
 #[test]
+fn live_module09_reload_keeps_entry_sprite_slots_until_source_return() {
+    let mut state = ZeldaState::new();
+    {
+        let mut sprite = state.sprite_slot_view_mut(9);
+        sprite.set_sprite_type(0x0c);
+        sprite.set_state(0);
+        sprite.set_x(0x0f1c);
+        sprite.set_y(0x0343);
+    }
+    {
+        let mut sprite = state.sprite_slot_view_mut(11);
+        sprite.set_sprite_type(0x58);
+        sprite.set_state(9);
+    }
+    let entry_slots = state.game_state.sprites.sprite_slots.clone();
+    {
+        let mut sprite = state.sprite_slot_view_mut(9);
+        sprite.set_sprite_type(0x55);
+        sprite.set_state(8);
+        sprite.set_x(0x0340);
+        sprite.set_y(0x0310);
+    }
+    {
+        let mut sprite = state.sprite_slot_view_mut(11);
+        sprite.set_n_word(0x0c3c);
+        sprite.set_sprite_type(0x56);
+        sprite.set_state(8);
+    }
+
+    state.defer_module09_sprite_slots_until_reload_return(entry_slots);
+    state.sprite_disable_live_slots_before_deferred_overworld_reload();
+
+    assert_eq!(state.sprite_slot_view(9).sprite_type(), 0x0c);
+    assert_eq!(state.sprite_slot_view(9).state(), 0);
+    assert_eq!(state.sprite_slot_view(9).x(), 0x0f1c);
+    assert_eq!(state.sprite_slot_view(9).y(), 0x0343);
+    assert_eq!(state.sprite_slot_view(11).state(), 0);
+
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::BeforeFirstSlot,
+            caller: SpriteMainCpuCaller::Module09 {
+                boundary: OriginalTimingBoundary::HostReturn,
+            },
+        },
+        1,
+    );
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                crate::OverworldSpriteReloadProgress::SpriteActivated {
+                    block: 0x0c3c,
+                    slot: 11,
+                    sprite_type: 0x56,
+                },
+            ),
+            OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                crate::OverworldSpriteReloadProgress::ProximityScanSuspended { bg2_h: 0x034e },
+            ),
+        ],
+    ));
+    let progress = state.take_original_timing_overworld_sprite_reload_progress();
+    assert!(!state.apply_original_timing_overworld_sprite_reload_progress(progress));
+
+    assert_eq!(state.sprite_slot_view(9).sprite_type(), 0x0c);
+    assert_eq!(state.sprite_slot_view(9).state(), 0);
+    assert_eq!(state.sprite_slot_view(11).sprite_type(), 0x56);
+    assert_eq!(state.sprite_slot_view(11).state(), 8);
+    assert_eq!(
+        (
+            state.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
+            read_le_u16(&state.ram, BG2_X_SCROLL),
+        ),
+        (0x034e, 0x034e),
+    );
+
+    state.publish_deferred_module09_sprite_slots_at_reload_return();
+
+    assert_eq!(state.sprite_slot_view(9).sprite_type(), 0x55);
+    assert_eq!(state.sprite_slot_view(9).state(), 8);
+    assert_eq!(state.sprite_slot_view(9).x(), 0x0340);
+    assert_eq!(state.sprite_slot_view(9).y(), 0x0310);
+    assert_eq!(state.sprite_slot_view(11).state(), 8);
+}
+
+#[test]
 fn overworld_reload_tail_waits_for_its_nested_module09_sprite_main_return() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
@@ -1585,6 +1675,8 @@ fn overworld_reload_tail_waits_for_its_nested_module09_sprite_main_return() {
         },
         1,
     );
+    state.pending_overworld_sprite_reload_slots =
+        Some(state.game_state.sprites.sprite_slots.clone());
     state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
         38_517,
         0,

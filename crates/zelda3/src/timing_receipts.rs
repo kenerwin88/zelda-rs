@@ -877,6 +877,11 @@ pub enum OverworldSpriteReloadProgress {
         slot: u8,
         sprite_type: u8,
     },
+    /// `Sprite_ActivateAllProxima` returned to the host while its temporary
+    /// horizontal scan coordinate was still live in `$E2`. The value is the
+    /// source-visible scratch coordinate at that boundary, not a display
+    /// prediction.
+    ProximityScanSuspended { bg2_h: u16 },
     /// `Module09_LoadNewSprites` completed its source-ordered tail, including
     /// the call to `Overworld_StartScrollTransition`. The receipt deliberately
     /// omits the resulting submodule value: translated gameplay owns that C

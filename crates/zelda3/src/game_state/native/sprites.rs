@@ -482,6 +482,24 @@ impl SpriteSlotsState {
         }
     }
 
+    pub(crate) fn copy_slot_from(&mut self, source: &Self, ram: &mut [u8], slot: usize) {
+        assert!(slot < SPRITE_SLOT_COUNT);
+        for &(base, width) in SPRITE_SLOTS_FIELD_RANGES {
+            let offsets = if width == SPRITE_SLOT_COUNT {
+                [base + slot, base + slot]
+            } else {
+                assert_eq!(width, SPRITE_SLOT_COUNT * 2);
+                [base + slot * 2, base + slot * 2 + 1]
+            };
+            let count = if width == SPRITE_SLOT_COUNT { 1 } else { 2 };
+            for &offset in &offsets[..count] {
+                let value = source.byte_at(offset);
+                self.set_byte_at(offset, value);
+                ram[offset] = value;
+            }
+        }
+    }
+
     pub(crate) fn slot(&self, slot: usize) -> NativeSpriteSlotView<'_> {
         NativeSpriteSlotView { state: self, slot }
     }

@@ -634,6 +634,8 @@ struct RawTraceEvent {
     #[serde(default)]
     bg2_v: Option<u16>,
     #[serde(default)]
+    bg2_h: Option<u16>,
+    #[serde(default)]
     spotlight_radius: Option<u16>,
     #[serde(default)]
     spotlight_var4_low: Option<u8>,
@@ -724,6 +726,7 @@ struct HostFrameState {
     subsub: u8,
     frame_counter: u8,
     nmi_latch: u8,
+    bg2_h: Option<u16>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -938,6 +941,7 @@ impl HostFrameWindow {
             nmi_latch: event
                 .nmi_latch
                 .ok_or("Snes9x frame receipt omitted Zelda NMI latch")?,
+            bg2_h: event.bg2_h,
         };
         match stage {
             "entry" if self.entry.replace(state).is_none() => {}
@@ -967,6 +971,21 @@ impl HostFrameWindow {
                 "Snes9x frame receipt run changed within one host call: {} -> {}",
                 entry.run, returned.run
             ));
+        }
+        if matches!((entry.main, entry.sub), (0x0b, 0x18))
+            && matches!((returned.main, returned.sub), (0x0b, 0x18))
+            && self.main_loop_starts == 0
+            && entry.bg2_h != returned.bg2_h
+        {
+            receipts.push(
+                OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                    OverworldSpriteReloadProgress::ProximityScanSuspended {
+                        bg2_h: returned.bg2_h.ok_or(
+                            "Snes9x Module0B/18 host return omitted the BG2 scan coordinate",
+                        )?,
+                    },
+                ),
+            );
         }
         let main_loop_progress = match self.main_loop_starts {
             0 if zelda_run_game_loop_call_active_at_entry => {
@@ -2550,8 +2569,11 @@ impl Snes9xOracleSemanticTrace {
         address: u16,
         receipts: &mut Vec<OriginalTimingSemanticReceipt>,
     ) -> Result<(), String> {
-        if event.main != Some(8)
-            || event.sub != Some(0)
+        let source_owns_reload_publication = matches!(
+            (event.main, event.sub),
+            (Some(8), Some(0)) | (Some(0x0b), Some(0x18))
+        );
+        if !source_owns_reload_publication
             || !(OVERWORLD_LOAD_SINGLE_SPRITE_START_PC..OVERWORLD_LOAD_SINGLE_SPRITE_END_PC)
                 .contains(&pc)
         {
@@ -2570,7 +2592,9 @@ impl Snes9xOracleSemanticTrace {
                     event.x
                 ));
             }
-            self.publish_overworld_presence(receipts);
+            if event.main == Some(8) && event.sub == Some(0) {
+                self.publish_overworld_presence(receipts);
+            }
             let tracker =
                 self.overworld_sprite_activation
                     .get_or_insert(OverworldSpriteActivationTracker {
@@ -4343,6 +4367,7 @@ mod tests {
             nmi_latch: matches!(event, "nmi").then_some(0),
             link_y: None,
             bg2_v: None,
+            bg2_h: None,
             spotlight_radius: None,
             spotlight_var4_low: None,
             spotlight_lower_cursor: None,
@@ -4431,6 +4456,7 @@ mod tests {
             nmi_latch: Some(0),
             link_y: None,
             bg2_v: None,
+            bg2_h: None,
             spotlight_radius: None,
             spotlight_var4_low: None,
             spotlight_lower_cursor: None,
@@ -5539,6 +5565,170 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn module0b_sprite_writes_publish_activation_without_pre_overworld_presence() {
+        let mut tracker = Snes9xOracleSemanticTrace {
+            path: PathBuf::new(),
+            offset: 0,
+            cache_write_progress: None,
+            normal_load_ordinal: None,
+            pending_reset_progress: None,
+            cached_sprite_execution: None,
+            overworld_presence_published: false,
+            overworld_sprite_activation: None,
+            pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
+            item_receipt_caller: None,
+            sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
+            nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
+            nmi_resume_targets: Vec::new(),
+            synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
+        };
+        let mut receipts = Vec::new();
+        let slot = 13u8;
+        let writes = [
+            (SPRITE_N_WORD_BASE + u16::from(slot) * 2, 0x98),
+            (SPRITE_N_WORD_BASE + u16::from(slot) * 2 + 1, 0x01),
+            (SPRITE_TYPE_BASE + u16::from(slot), 0xac),
+            (SPRITE_STATE_BASE + u16::from(slot), 8),
+            (SPRITE_DIE_ACTION_BASE + u16::from(slot), 0),
+        ];
+        for (index, (address, value)) in writes.into_iter().enumerate() {
+            let mut event = raw(
+                "wram-write",
+                Some(OVERWORLD_LOAD_SINGLE_SPRITE_START_PC + 1),
+                Some(if index < 2 {
+                    u16::from(slot) * 2
+                } else {
+                    u16::from(slot)
+                }),
+                Some(address),
+            );
+            event.main = Some(0x0b);
+            event.sub = Some(0x18);
+            event.value = Some(value);
+            tracker.consume_event(event, &mut receipts).unwrap();
+        }
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                    OverworldSpriteReloadProgress::SpriteActivated {
+                        block: 0x0198,
+                        slot,
+                        sprite_type: 0xac,
+                    },
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn module0b_held_host_publishes_proximity_scan_scratch_coordinate() {
+        let mut host = HostFrameWindow::default();
+        let mut entry = frame_with_sub("entry", 165775, 0x0b, 0x18);
+        entry.bg2_h = Some(0x021e);
+        let mut returned = frame_with_sub("return", 165775, 0x0b, 0x18);
+        returned.bg2_h = Some(0x028e);
+
+        host.observe(&entry).unwrap();
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, None, true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                    OverworldSpriteReloadProgress::ProximityScanSuspended { bg2_h: 0x028e },
+                ),
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn module0b_fresh_iteration_does_not_publish_held_scan_scratch() {
+        let mut host = HostFrameWindow::default();
+        let mut entry = frame_with_sub("entry", 165774, 0x0b, 0x18);
+        entry.bg2_h = Some(0x021e);
+        let mut returned = frame_with_sub("return", 165774, 0x0b, 0x18);
+        returned.bg2_h = Some(0x022e);
+
+        host.observe(&entry).unwrap();
+        host.observe(&main_loop_start()).unwrap();
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, None, true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::MainLoopProgress(
+                MainLoopProgress::IterationStarted,
+            )],
+        );
+    }
+
+    #[test]
+    fn unrelated_module09_sprite_writes_do_not_publish_reload_activation() {
+        let mut tracker = Snes9xOracleSemanticTrace {
+            path: PathBuf::new(),
+            offset: 0,
+            cache_write_progress: None,
+            normal_load_ordinal: None,
+            pending_reset_progress: None,
+            cached_sprite_execution: None,
+            overworld_presence_published: false,
+            overworld_sprite_activation: None,
+            pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
+            item_receipt_caller: None,
+            sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
+            nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
+            nmi_resume_targets: Vec::new(),
+            synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
+        };
+        let mut receipts = Vec::new();
+        let slot = 13u8;
+        let writes = [
+            (SPRITE_N_WORD_BASE + u16::from(slot) * 2, 0x98),
+            (SPRITE_N_WORD_BASE + u16::from(slot) * 2 + 1, 0x01),
+            (SPRITE_TYPE_BASE + u16::from(slot), 0xac),
+            (SPRITE_STATE_BASE + u16::from(slot), 8),
+            (SPRITE_DIE_ACTION_BASE + u16::from(slot), 0),
+        ];
+        for (index, (address, value)) in writes.into_iter().enumerate() {
+            let mut event = raw(
+                "wram-write",
+                Some(OVERWORLD_LOAD_SINGLE_SPRITE_START_PC + 1),
+                Some(if index < 2 {
+                    u16::from(slot) * 2
+                } else {
+                    u16::from(slot)
+                }),
+                Some(address),
+            );
+            event.main = Some(9);
+            event.sub = Some(6);
+            event.value = Some(value);
+            tracker.consume_event(event, &mut receipts).unwrap();
+        }
+
+        assert!(receipts.is_empty());
+        assert!(tracker.overworld_sprite_activation.is_none());
     }
 
     #[test]

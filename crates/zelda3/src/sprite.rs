@@ -1361,6 +1361,20 @@ impl ZeldaState {
         self.sprite_disable_all_after_limit_instance();
     }
 
+    /// Publish only Sprite_DisableAll's early live-slot state clears while a
+    /// later overworld reload generation remains deferred. The surrounding
+    /// reset side effects already ran in the provisional loader body.
+    pub(super) fn sprite_disable_live_slots_before_deferred_overworld_reload(&mut self) {
+        for k in (0..=15usize).rev() {
+            if self.sprite_slot_view(k).state() != 0
+                && (self.game_state.world.location.is_indoors()
+                    || self.sprite_slot_view(k).sprite_type() != 0x6c)
+            {
+                self.sprite_slot_view_mut(k).set_state(0);
+            }
+        }
+    }
+
     fn apply_sprite_disable_actions_through(
         &mut self,
         completed: Option<DungeonSpriteDisableCpuProgress>,
@@ -2382,6 +2396,9 @@ impl ZeldaState {
         if let Some((main_module, submodule)) = self.pending_module09_frame_advance.take() {
             // The suspended Module09 handler's deferred advance lands right
             // before Sprite_Main, as the ROM writes it.
+            if self.pending_overworld_sprite_reload_slots.is_some() {
+                self.publish_deferred_module09_sprite_slots_at_reload_return();
+            }
             self.set_submodule(submodule);
             self.set_main_module(main_module);
         }
@@ -2763,6 +2780,9 @@ impl ZeldaState {
                 {
                     // The suspended Module09 handler's deferred advance lands
                     // right before Sprite_Main, as the ROM writes it.
+                    if self.pending_overworld_sprite_reload_slots.is_some() {
+                        self.publish_deferred_module09_sprite_slots_at_reload_return();
+                    }
                     self.set_submodule(submodule);
                     self.set_main_module(main_module);
                 }
