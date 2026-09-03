@@ -75,6 +75,7 @@ pub(crate) struct RomCpuCheckpoint {
 /// The clone supplies instruction ordering and cycle timing only. Its WRAM,
 /// SRAM, PPU, DMA, and APU-port mutations are discarded, leaving the translated
 /// Rust implementation as the sole owner of game state.
+#[derive(Clone)]
 pub(crate) struct RomCpuTimingRun {
     shadow: Snes,
     stop_pc: u32,

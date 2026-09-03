@@ -3509,17 +3509,31 @@ impl DungeonRoomLoadCpuPlan {
     }
 }
 
+/// Debug accounting of the HDMA master cycles the ROM CPU shadow charged
+/// (`ZELDA3_DEBUG_POLY` slot receipts): (init cycles, per-line cycles, lines).
+pub(crate) static ROM_CPU_SHADOW_HDMA_DEBUG: [std::sync::atomic::AtomicU64; 3] = [
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+    std::sync::atomic::AtomicU64::new(0),
+];
+
 fn advance_rom_cpu_step(run: &mut RomCpuTimingRun, budget: &mut CpuCycleBudget) -> CpuWorkAdvance {
+    use std::sync::atomic::Ordering::Relaxed;
     let timing = run.step();
     let instruction =
         budget.advance_instruction_with_hdma(timing.master_cycles, |event, scanline| match event {
             CpuBusEvent::HdmaInit => {
                 run.set_raster_position(scanline, 20);
-                run.run_hdma_init_master_cycles()
+                let cycles = run.run_hdma_init_master_cycles();
+                ROM_CPU_SHADOW_HDMA_DEBUG[0].fetch_add(u64::from(cycles), Relaxed);
+                cycles
             }
             CpuBusEvent::HdmaStart => {
                 run.set_raster_position(scanline, 1_106);
-                run.run_hdma_scanline_master_cycles()
+                let cycles = run.run_hdma_scanline_master_cycles();
+                ROM_CPU_SHADOW_HDMA_DEBUG[1].fetch_add(u64::from(cycles), Relaxed);
+                ROM_CPU_SHADOW_HDMA_DEBUG[2].fetch_add(1, Relaxed);
+                cycles
             }
             CpuBusEvent::WramRefresh => unreachable!(),
         });
@@ -11415,6 +11429,37 @@ pub struct ZeldaState {
     /// Crystal frames the dungeon poly thread has rendered since activation.
     #[serde(skip)]
     poly_dungeon_frames_rendered: u8,
+    /// The ROM thread's in-flight render, advanced one host slot at a time
+    /// (from that host's NMI swap to the V-IRQ line) so each host's actual NMI
+    /// duration bounds the thread's time.
+    #[serde(skip)]
+    poly_shadow_run: Option<RomCpuTimingRun>,
+    /// Master cycles the in-flight shadow render has consumed.
+    #[serde(skip)]
+    poly_shadow_master: u64,
+    /// Hosts the in-flight shadow render has spanned.
+    #[serde(skip)]
+    poly_shadow_hosts: u8,
+    /// Master cycles from the most recent NMI acceptance to the handler's
+    /// thread swap ($00:82C7), measured by the shadow on the RAM state at
+    /// that NMI (held latch → fast path at V≈227, poly upload → V≈256, text
+    /// DMA → V≈248-250); the next host's thread slot begins there.
+    #[serde(skip)]
+    poly_next_host_swap_master: Option<u64>,
+    /// `(latch_held, poly_upload_pending)` as seen by the most recent NMI;
+    /// the next host's swap is measured on the top-of-host RAM with these
+    /// two bytes ($12, $1F0C) restored to what that NMI saw.
+    #[serde(skip)]
+    poly_next_host_nmi_state: Option<(Option<bool>, bool)>,
+    /// `(first, last)` NMI acceptance dispositions (held?) of the previous
+    /// and current hosts' receipt vectors, refreshed at the top of every
+    /// thread host: the handler that begins this host's run was accepted
+    /// either at the end of the previous run (prev.last) or, when the run
+    /// boundary fell just before it, at the head of this run (cur.first).
+    #[serde(skip)]
+    poly_receipt_gates_prev: Option<(Option<bool>, Option<bool>)>,
+    #[serde(skip)]
+    poly_receipt_gates_cur: Option<(Option<bool>, Option<bool>)>,
     /// Host that activated the dungeon poly thread.
     #[serde(skip)]
     poly_dungeon_activation_host: u32,
@@ -15035,7 +15080,7 @@ impl ZeldaState {
         if !self.game_state.display.nmi_thread_active {
             // The crystal maiden's IRQ poly thread starts four hosts after
             // this activation (route host 413550 → first slice 413554).
-            self.poly_dungeon_thread_startup_hold = Some(4);
+            self.poly_dungeon_thread_startup_hold = Some(5);
             self.poly_dungeon_activation_host = self.frame_ctr_dbg;
         }
         self.display_core_mut().activate_nmi_thread();
@@ -17722,6 +17767,13 @@ impl ZeldaState {
             triforce_room_scroll_this_iteration: false,
             triforce_poly_shadow_ram: None,
             poly_dungeon_frames_rendered: 0,
+            poly_shadow_run: None,
+            poly_shadow_master: 0,
+            poly_shadow_hosts: 0,
+            poly_next_host_swap_master: None,
+            poly_next_host_nmi_state: None,
+            poly_receipt_gates_prev: None,
+            poly_receipt_gates_cur: None,
             poly_dungeon_activation_host: 0,
             original_timing_carried_suffix_completion_pending: false,
             original_timing_sprite_main_return_claim_scope_site: None,
@@ -45879,9 +45931,23 @@ impl ZeldaState {
     /// decide when the poly thread resumes: line ~239.9 bare, later with the
     /// BG3 text and poly-buffer DMAs; route hosts 1557815-1558362).
     fn rom_triforce_nmi_swap_master_cycles(&self, poly_upload_pending: bool) -> Option<u64> {
+        self.rom_nmi_swap_master_cycles(poly_upload_pending, None)
+    }
+
+    /// Master cycles from NMI entry ($00:80C9) to the thread swap ($00:82C7)
+    /// on the current RAM, with the poly-upload byte and optionally the
+    /// main-loop latch byte ($12) overridden to what the NMI saw.
+    fn rom_nmi_swap_master_cycles(
+        &self,
+        poly_upload_pending: bool,
+        latch_held: Option<bool>,
+    ) -> Option<u64> {
+        // Run through the thread-swap sequence ($82C7 REP/TSC/TAX/LDA/TCS/STX
+        // and the PLB/PLD/PLY/PLX/PLA pops) up to the RTI at $82D7; the RTI
+        // itself and the resumed thread's idle-loop check are added below.
         const NMI_HANDLER_CHECKPOINT: RomCpuCheckpoint = RomCpuCheckpoint {
             entry_pc: 0x00_80c9,
-            stop_pc: 0x00_82c7,
+            stop_pc: 0x00_82d7,
             a: 0,
             x: 0,
             y: 0,
@@ -45904,6 +45970,9 @@ impl ZeldaState {
         let timing_dma = self.dma_with_native_hdma_enable();
         let mut ram_image = self.ram.to_vec();
         ram_image[0x1f0c] = if poly_upload_pending { 0xff } else { 0 };
+        if let Some(latch_held) = latch_held {
+            ram_image[0x12] = u8::from(latch_held);
+        }
         let mut run = RomCpuTimingRun::new(
             &self.rom,
             &ram_image,
@@ -45914,10 +45983,18 @@ impl ZeldaState {
             NMI_HANDLER_CHECKPOINT,
         )
         .ok()?;
-        let mut master = 0u64;
+        // RTI: opcode fetch (slow ROM, 8) + one internal cycle (6) + five
+        // stack pops from WRAM (8 each) = 54 master cycles.
+        const RTI_MASTER_CYCLES: u64 = 54;
+        // The run's V=225 origin is the NMI acceptance; the handler's first
+        // instruction at $00:80C9 executes ~78 master cycles later (interrupt
+        // sequence: internal cycles, four stack pushes, vector fetch —
+        // oracle frame events show pc=80c9 at cycles 74-82).
+        const NMI_ENTRY_MASTER_CYCLES: u64 = 78;
+        let mut master = NMI_ENTRY_MASTER_CYCLES;
         for _ in 0..200_000 {
             if run.is_complete() {
-                return Some(master);
+                return Some(master + RTI_MASTER_CYCLES);
             }
             master += u64::from(run.step().master_cycles);
             master += u64::from(run.drain_started_dma_master_cycles());
@@ -45926,7 +46003,13 @@ impl ZeldaState {
     }
 
     fn rom_triforce_poly_render_hosts(&mut self) -> Option<(u8, u64)> {
-        const TRIFORCE_ROOM_VIRQ_SCANLINE: u16 = 144;
+        // Both polyhedral threads (Triforce room $FF=$90, dungeon crystal
+        // maiden $FF=$30) run the same $09:F81D loop; the V-IRQ line the ROM
+        // programmed bounds the main thread's slot [virq, 225).
+        let virq_scanline = match self.ram[0xff] {
+            line @ 1..=224 => u16::from(line),
+            _ => 144,
+        };
         // The thread resumes when the NMI handler swaps stacks; slot 1's
         // handler also uploads the frame the thread just finished.
         let swap_with_upload = self.rom_triforce_nmi_swap_master_cycles(true)?;
@@ -46012,7 +46095,7 @@ impl ZeldaState {
                 }
                 let (scanline, _) = after.coordinates();
                 if advance.reached_boundary().is_some()
-                    || (scanline >= TRIFORCE_ROOM_VIRQ_SCANLINE && scanline < 225)
+                    || (scanline >= virq_scanline && scanline < 225)
                 {
                     break;
                 }
@@ -46054,6 +46137,195 @@ impl ZeldaState {
         mask
     }
 
+    /// Whether a preemptive (V-IRQ switched) polyhedral thread is live under
+    /// original timing: the dungeon crystal maiden or the Triforce room.
+    fn preemptive_poly_thread_is_active(&self) -> bool {
+        self.rom_startup_timing
+            && (self.dungeon_poly_thread_is_active() || self.triforce_room_poly_thread_is_active())
+    }
+
+    /// Called at every NMI entry: measure this NMI handler's duration to its
+    /// thread swap on the RAM the handler will see, so the next host's thread
+    /// slot starts at the right raster position.
+    pub(super) fn stash_preemptive_poly_thread_nmi_swap(&mut self) {
+        if !self.preemptive_poly_thread_is_active() {
+            self.poly_next_host_swap_master = None;
+            return;
+        }
+        let upload = self.game_state.display.has_pending_polyhedral_update();
+        // The NMI this trailing handler models is normally accepted at the
+        // end of the current host's run (the last `NmiAccepted` of its
+        // receipts). When the run boundary falls just before the acceptance,
+        // the receipt moves to the head of the next host's vector and the
+        // slot consumer reads it there.
+        let wire_latch = self.original_timing_semantic_receipts.as_ref().and_then(|receipts| {
+            receipts.semantic().iter().rev().find_map(|receipt| match receipt {
+                OriginalTimingSemanticReceipt::NmiAccepted(gate) => {
+                    Some(matches!(gate, NmiUpdateGate::LatchHeld))
+                }
+                _ => None,
+            })
+        });
+        let latch = wire_latch;
+        self.poly_next_host_nmi_state = Some((latch, upload));
+        self.poly_next_host_swap_master = None;
+        if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+            eprintln!(
+                "[POLY-STASH] host={} latch={:?} upload={}",
+                self.frame_ctr_dbg, latch, upload,
+            );
+        }
+    }
+
+    /// Start the shadow render of the frame the ROM thread begins this host.
+    /// Must run before the native rasterizer mutates the poly runtime state.
+    fn begin_poly_shadow_frame(&mut self) {
+        const THREAD_WORK_RANGE: std::ops::Range<usize> = 0x1f10..0x2000;
+        const THREAD_BITMAP_RANGE: std::ops::Range<usize> = 0xe800..0xf000;
+        let timing_dma = self.dma_with_native_hdma_enable();
+        let mut ram_image = self.ram.to_vec();
+        if let Some(saved) = self.triforce_poly_shadow_ram.as_ref() {
+            ram_image[THREAD_WORK_RANGE].copy_from_slice(&saved[THREAD_WORK_RANGE]);
+            ram_image[THREAD_BITMAP_RANGE].copy_from_slice(&saved[THREAD_BITMAP_RANGE]);
+        }
+        self.poly_shadow_run = RomCpuTimingRun::new(
+            &self.rom,
+            &ram_image,
+            &self.sram,
+            &self.ppu,
+            &timing_dma,
+            self.zelda_audio_apu_output_ports(),
+            TRIFORCE_ROOM_POLY_RENDER_CPU_CHECKPOINT,
+        )
+        .ok();
+        self.poly_shadow_master = 0;
+        self.poly_shadow_hosts = 0;
+    }
+
+    /// Advance the in-flight shadow render through this host's thread slot:
+    /// from the NMI swap measured at this host's NMI to the V-IRQ line
+    /// (`$FF`). Returns `true` when the render completed within the slot.
+    fn advance_poly_shadow_host(&mut self) -> bool {
+        const THREAD_WORK_RANGE: std::ops::Range<usize> = 0x1f10..0x2000;
+        const THREAD_BITMAP_RANGE: std::ops::Range<usize> = 0xe800..0xf000;
+        let virq_scanline = match self.ram[0xff] {
+            line @ 1..=224 => u16::from(line),
+            _ => 144,
+        };
+        // Measure this host's NMI swap on the top-of-host RAM (the DMA
+        // queues the handler drained are what the ROM's handler saw), with
+        // the latch and upload bytes as they were at that NMI.
+        let (_, upload) = self.poly_next_host_nmi_state.take().unwrap_or((None, false));
+        let latch = self
+            .poly_receipt_gates_prev
+            .and_then(|(_, trailing)| trailing)
+            .or_else(|| self.poly_receipt_gates_cur.and_then(|(leading, _)| leading))
+            .unwrap_or_else(|| self.game_state.display.nmi_update_is_latched());
+        let Some(swap) = self.rom_nmi_swap_master_cycles(upload, Some(latch)) else {
+            return true;
+        };
+        self.poly_next_host_swap_master = Some(swap);
+        let Some(mut run) = self.poly_shadow_run.take() else {
+            return true;
+        };
+        self.poly_shadow_hosts = self.poly_shadow_hosts.saturating_add(1);
+        // On the frame's first slot the resumed thread still runs one idle
+        // loop check ($09:F81D LDA/BEQ/LDA/BNE, 10 cycles) before the render
+        // entry at $09:F825 where the checkpoint begins.
+        const IDLE_LOOP_CHECK_MASTER_CYCLES: u64 = 64;
+        let swap = if self.poly_shadow_hosts == 1 {
+            swap + IDLE_LOOP_CHECK_MASTER_CYCLES
+        } else {
+            swap
+        };
+        let master = swap * 1364 / 1324;
+        let mut scanline = 225 + (master / 1364) as u16;
+        let cycle = (master % 1364) as u16;
+        let mut even_field = self.frame_ctr_dbg & 1 == 0;
+        if scanline >= 262 {
+            scanline -= 262;
+            even_field = !even_field;
+        }
+        let entry = CpuRasterPosition::new(scanline, cycle);
+        let mut budget = CpuCycleBudget::until_next_nmi_acceptance(
+            entry,
+            CpuBusWorkload::with_dynamic_hdma(),
+            CpuFieldTiming::non_interlace(even_field),
+        );
+        let debug = std::env::var_os("ZELDA3_DEBUG_POLY").is_some();
+        for counter in &ROM_CPU_SHADOW_HDMA_DEBUG {
+            counter.store(0, std::sync::atomic::Ordering::Relaxed);
+        }
+        let mut steps = 0u32;
+        let mut mvn_steps = 0u32;
+        let mut mvn_master = 0u64;
+        let mut pc_counts = [0u32; 5];
+        let completed = loop {
+            if run.is_complete() {
+                let mut saved = self.triforce_poly_shadow_ram.take().unwrap_or_else(|| self.ram.to_vec());
+                saved[THREAD_WORK_RANGE].copy_from_slice(&run.ram()[THREAD_WORK_RANGE]);
+                saved[THREAD_BITMAP_RANGE].copy_from_slice(&run.ram()[THREAD_BITMAP_RANGE]);
+                self.triforce_poly_shadow_ram = Some(saved);
+                break true;
+            }
+            steps += 1;
+            if steps > 4_000_000 {
+                break true;
+            }
+            let before = budget.raster_position();
+            let step_pc = run.pc();
+            let advance = advance_rom_cpu_step(&mut run, &mut budget);
+            let after = budget.raster_position();
+            let (s0, c0) = before.coordinates();
+            let (s1, c1) = after.coordinates();
+            let delta = (i64::from(s1) - i64::from(s0)) * 1364 + (i64::from(c1) - i64::from(c0));
+            if delta > 0 {
+                self.poly_shadow_master += delta as u64;
+            }
+            if debug {
+                match step_pc {
+                    0x09_fd18 => {
+                        mvn_steps += 1;
+                        mvn_master += delta.max(0) as u64;
+                    }
+                    0x09_fd74 => pc_counts[0] += 1,
+                    0x09_fdcf => pc_counts[1] += 1,
+                    0x09_feb4 => pc_counts[2] += 1,
+                    0x09_ff1e => pc_counts[3] += 1,
+                    0x09_fe27 => pc_counts[4] += 1,
+                    _ => {}
+                }
+            }
+            let (now, _) = after.coordinates();
+            if advance.reached_boundary().is_some() || (now >= virq_scanline && now < 225) {
+                break false;
+            }
+        };
+        if debug {
+            let (now, cyc) = budget.raster_position().coordinates();
+            eprintln!(
+                "[POLY-PCS] host={} mvn_steps={} mvn_master={} fd74={} fdcf={} feb4={} ff1e={} fe27={}",
+                self.frame_ctr_dbg, mvn_steps, mvn_master, pc_counts[0], pc_counts[1], pc_counts[2], pc_counts[3], pc_counts[4]
+            );
+            eprintln!(
+                "[POLY-SLOT] host={} slot_entry={}:{} latch={} upload={} gates_prev={:?} gates_cur={:?} virq={} hosts={} master={} completed={} end={}:{} pc={:06x} hdma_init={} hdma_lines={} hdma_master={} hdma_mask={:#04x} ch7={{indirect={} mode={} a={:02x}:{:04x}}}",
+                self.frame_ctr_dbg, scanline, cycle, latch, upload, self.poly_receipt_gates_prev,
+                self.poly_receipt_gates_cur, virq_scanline, self.poly_shadow_hosts,
+                self.poly_shadow_master, completed, now, cyc, run.pc(),
+                ROM_CPU_SHADOW_HDMA_DEBUG[0].load(std::sync::atomic::Ordering::Relaxed),
+                ROM_CPU_SHADOW_HDMA_DEBUG[2].load(std::sync::atomic::Ordering::Relaxed),
+                ROM_CPU_SHADOW_HDMA_DEBUG[1].load(std::sync::atomic::Ordering::Relaxed),
+                self.game_state.display.hdma_enable_mask,
+                self.dma.channel[7].indirect, self.dma.channel[7].mode,
+                self.dma.channel[7].a_bank, self.dma.channel[7].a_adr,
+            );
+        }
+        if !completed {
+            self.poly_shadow_run = Some(run);
+        }
+        completed
+    }
+
     fn zelda_run_poly_loop(&mut self) {
         /// Crystal scanlines the maiden's IRQ poly thread rasterizes per host.
         const DUNGEON_POLY_THREAD_SCANLINES_PER_HOST: u32 = 32;
@@ -46065,8 +46337,51 @@ impl ZeldaState {
         /// the oracle's step cadence at route hosts 414033-414115).
         const DUNGEON_POLY_THREAD_DIALOGUE_BUDGET_CYCLES: i64 = 7_572;
         const DUNGEON_POLY_THREAD_DIALOGUE_SETUP_CYCLES: i64 = -20_641;
+        // The C port interleaves one poly step per main-loop step
+        // (`intro_did_run_step`). The ROM's V-IRQ threads (dungeon crystal
+        // maiden, Triforce room) start their next frame at the next host's
+        // swap whether or not the main iteration is held by the wire (oracle
+        // 415132: the thread restarts at V=257 while the Module0E iteration
+        // is still suspended); they wait only for the NMI upload of the
+        // finished frame.
+        // `intro_did_run_step` IS the ROM thread's go byte $1F00: the thread
+        // loop ($09:F81D) spins until the main thread sets it (the crystal
+        // maiden's `Sprite_AB_CrystalMaiden` at V≈65 of its main slot, once
+        // per completed frame) and the NMI has cleared the upload byte $1F0C.
         let can_run_poly = self.game_state.ending.attract_scene.intro_did_run_step() != 0
             && !self.game_state.display.has_pending_polyhedral_update();
+        if self.preemptive_poly_thread_is_active() {
+            // A run's leading acceptance (before any handler completion)
+            // belongs to the handler that begins this run's slot; a trailing
+            // acceptance (no completion after it) belongs to the next run's.
+            let gates = self.original_timing_semantic_receipts.as_ref().map(|receipts| {
+                let held = |receipt: &OriginalTimingSemanticReceipt| match receipt {
+                    OriginalTimingSemanticReceipt::NmiAccepted(gate) => {
+                        Some(matches!(gate, NmiUpdateGate::LatchHeld))
+                    }
+                    _ => None,
+                };
+                let completed = |receipt: &OriginalTimingSemanticReceipt| {
+                    matches!(receipt, OriginalTimingSemanticReceipt::NmiHandlerCompleted)
+                };
+                let semantic = receipts.semantic();
+                let leading = semantic
+                    .iter()
+                    .take_while(|receipt| !completed(receipt))
+                    .find_map(held);
+                let trailing = semantic
+                    .iter()
+                    .rev()
+                    .take_while(|receipt| !completed(receipt))
+                    .find_map(held);
+                (leading, trailing)
+            });
+            self.poly_receipt_gates_prev = self.poly_receipt_gates_cur.take();
+            self.poly_receipt_gates_cur = gates;
+        } else {
+            self.poly_receipt_gates_prev = None;
+            self.poly_receipt_gates_cur = None;
+        }
         if self.dungeon_poly_thread_is_active() && std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
             eprintln!(
                 "[POLY] host={} entry: did_run_step={} pending_update={} in_flight={} hold_frames={} startup_hold={:?} maiden_ai={}",
@@ -46100,12 +46415,57 @@ impl ZeldaState {
                 self.poly_dungeon_thread_startup_hold = None;
                 self.poly_dungeon_frames_rendered = 0;
                 self.triforce_poly_shadow_ram = None;
+                self.poly_shadow_run = None;
+                self.poly_shadow_hosts = 0;
+                self.poly_shadow_master = 0;
             }
             let use_timed_worker = self.rom_startup_timing
                 && (rom_intro_poly_thread_is_active(frame.main_module, frame.submodule)
                     || dungeon_poly_thread
                     || triforce_room_poly_thread);
-            if use_timed_worker {
+            let incremental_shadow = (dungeon_poly_thread || triforce_room_poly_thread)
+                && std::env::var("ZELDA3_POLY_SHADOW_INCREMENTAL").map_or(true, |v| v != "0");
+            if incremental_shadow {
+                if dungeon_poly_thread && !self.poly_job_in_flight {
+                    // The ROM's `CrystalCutscene_InitializePolyhedral` sets the go byte
+                    // four hosts after `Polyhedral_InitializeThread` (its crystal
+                    // load starves under the new thread: oracle 413549 → 413553
+                    // V=198), so the first frame starts at the fifth host's swap.
+                    let hold = self.poly_dungeon_thread_startup_hold.get_or_insert(5);
+                    let elapsed = self.frame_ctr_dbg.saturating_sub(self.poly_dungeon_activation_host);
+                    if u32::from(*hold) > elapsed {
+                        return;
+                    }
+                    *hold = 0;
+                }
+                if !self.poly_job_in_flight {
+                    // The ROM thread reads the frame's config at its start;
+                    // capture that state before the native rasterizer advances it.
+                    self.begin_poly_shadow_frame();
+                    self.poly_run_frame();
+                    if dungeon_poly_thread {
+                        self.poly_dungeon_frames_rendered =
+                            self.poly_dungeon_frames_rendered.saturating_add(1);
+                    }
+                    self.poly_job_in_flight = true;
+                    self.poly_job_hold_frames = 0;
+                }
+                if !self.advance_poly_shadow_host() {
+                    return;
+                }
+                if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                    eprintln!(
+                        "[POLY-FRAME] host={} module={:02x} config1={} scanlines={} hosts={} master={}",
+                        self.frame_ctr_dbg,
+                        frame.main_module,
+                        self.game_state.poly.runtime.config1(),
+                        self.last_poly_work.scanlines,
+                        self.poly_shadow_hosts,
+                        self.poly_shadow_master,
+                    );
+                }
+                self.poly_job_in_flight = false;
+            } else if use_timed_worker {
                 if dungeon_poly_thread && std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
                     eprintln!(
                         "[POLY] host={} dungeon thread: startup_hold={:?} in_flight={} hold_frames={} rendered={} pending_update={}",
@@ -46134,7 +46494,9 @@ impl ZeldaState {
                 if !self.poly_job_in_flight {
                     // Measure the ROM thread's exact render cost before the
                     // native rasterizer mutates the frame state.
-                    let triforce_render_hosts = if triforce_room_poly_thread {
+                    let dungeon_shadow_render = dungeon_poly_thread
+                        && std::env::var("ZELDA3_POLY_DUNGEON_SHADOW").map_or(true, |v| v != "0");
+                    let triforce_render_hosts = if triforce_room_poly_thread || dungeon_shadow_render {
                         self.rom_triforce_poly_render_hosts()
                     } else {
                         None
@@ -46154,7 +46516,20 @@ impl ZeldaState {
                         self.poly_dungeon_frames_rendered =
                             self.poly_dungeon_frames_rendered.saturating_add(1);
                         let scanlines = self.last_poly_work.scanlines;
-                        let slices = if frame.main_module == 0x0e {
+                        let slices = if let Some((hosts, master)) = triforce_render_hosts {
+                            if std::env::var_os("ZELDA3_DEBUG_POLY").is_some() {
+                                eprintln!(
+                                    "[POLY-DUNG] host={} module={:02x} config1={} shadow_master={} scanlines={} hosts={}",
+                                    self.frame_ctr_dbg,
+                                    frame.main_module,
+                                    self.game_state.poly.runtime.config1(),
+                                    master,
+                                    scanlines,
+                                    hosts,
+                                );
+                            }
+                            hosts.clamp(1, 16)
+                        } else if frame.main_module == 0x0e {
                             // Through the dialogue the oracle's frame lengths
                             // separate by the estimated cycle cost rather than
                             // by scanlines (137-scanline frames complete in 6
