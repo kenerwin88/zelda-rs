@@ -13610,6 +13610,88 @@ fn live_spotlight_link_position_boundary_resumes_the_complete_c_leaf_once() {
 }
 
 #[test]
+fn live_spotlight_entry_return_stops_at_its_exact_link_subpixel_boundary() {
+    fn configured_state() -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.set_main_module(0x0f);
+        state.set_submodule(0);
+        state.set_indoor_flag(0);
+        state.set_overworld_screen(0x0f);
+        state.follower_link_state_mut().set_x(0x0e60);
+        state.follower_link_state_mut().set_y(0x0218);
+        state
+            .follower_link_state_mut()
+            .set_direction_and_last_direction(8);
+        state.follower_link_state_mut().set_actual_y_velocity(0x1e);
+        state.set_bg2_v_copy2(0x0200);
+        state.set_spotlight_window_radius(0x77);
+        state.set_spotlight_window_state(0);
+        state
+    }
+
+    let iteration =
+        SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryBeforeTablePublication);
+    let mut atomic = configured_state();
+    atomic.complete_dungeon_exit_spotlight_entry(
+        SpotlightTableBuildContinuation::default(),
+        iteration,
+    );
+
+    let mut resumed = configured_state();
+    resumed.original_timing_owner = OriginalTimingOwnerState::Live;
+    resumed.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        179_577,
+        0,
+        vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(
+            crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass: 0 },
+        )],
+    ));
+    let entry_y = resumed.game_state.player.follower_link.y();
+
+    resumed.complete_dungeon_exit_spotlight_entry(
+        SpotlightTableBuildContinuation::default(),
+        iteration,
+    );
+
+    assert_eq!(resumed.game_state.frame.submodule, 1);
+    assert_eq!(resumed.game_state.player.follower_link.y(), entry_y);
+    let Some(GameWorkStep::Complete(
+        GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+            iteration,
+            pass,
+            pending_pixel_delta,
+            old_x,
+            old_y,
+        },
+    )) = resumed
+        .game_execution_scheduler
+        .advance_work_one_nmi_slice()
+    else {
+        panic!("entry Link movement did not retain its partial source continuation");
+    };
+    assert_eq!(pass, 0);
+    resumed.complete_dungeon_exit_spotlight_link_movement_after_subpixel(
+        iteration,
+        LinkMovePositionPartialReturn {
+            partial: LinkMovePositionPartial {
+                pass,
+                pending_pixel_delta,
+            },
+            old_x,
+            old_y,
+        },
+        false,
+    );
+
+    assert_eq!(resumed.ram, atomic.ram);
+    assert!(resumed
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
 fn live_spotlight_post_coordinate_boundary_resumes_only_later_axes() {
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();

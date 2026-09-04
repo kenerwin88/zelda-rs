@@ -46025,7 +46025,41 @@ impl ZeldaState {
                                 .begin_iris_spotlight_configure_table_at_progress(claim.progress);
                         }
                     }
-                    self.complete_dungeon_exit_spotlight_entry(table_build, iteration);
+                    let link_position_interruption =
+                        authoritative_scheduled_caller_nmi_timeline
+                            .map(|timeline| timeline.interruption)
+                            .filter(|interruption| {
+                                matches!(
+                                    interruption,
+                                    crate::MainLoopInterruption::LinkPositionAfterSubpixel {
+                                        ..
+                                    } | crate::MainLoopInterruption::LinkPositionAfterCoordinates {
+                                        ..
+                                    }
+                                )
+                            });
+                    match link_position_interruption {
+                        Some(crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }) => {
+                            self.complete_dungeon_exit_spotlight_entry_until_link_position_partial(
+                                table_build,
+                                iteration,
+                                pass,
+                            );
+                        }
+                        Some(crate::MainLoopInterruption::LinkPositionAfterCoordinates {
+                            pass,
+                        }) => {
+                            self.complete_dungeon_exit_spotlight_entry_until_link_position_after_coordinates(
+                                table_build,
+                                iteration,
+                                pass,
+                            );
+                        }
+                        None => {
+                            self.complete_dungeon_exit_spotlight_entry(table_build, iteration);
+                        }
+                        _ => unreachable!("filtered entry Link interruption changed"),
+                    }
                     if authoritative_scheduled_caller_return_timeline.is_some() {
                         // The wire's terminal return proves the shared
                         // ZeldaRunGameLoop suffix completes inside this host

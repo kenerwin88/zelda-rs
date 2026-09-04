@@ -3725,6 +3725,26 @@ impl ZeldaState {
         table_build: SpotlightTableBuildContinuation,
         iteration: SpotlightIteration,
     ) {
+        let (phase, iteration) =
+            self.complete_dungeon_exit_spotlight_entry_before_link(table_build, iteration);
+        let link_movement_suspended =
+            self.begin_module0f_spotlight_close_link_and_oam(None, iteration);
+        if phase == SpotlightIterationPhase::CloseEntryBeforeTablePublication
+            && !link_movement_suspended
+        {
+            self.schedule_spotlight_iteration_return(iteration);
+        }
+        if iteration.prepares_main_loop_sprites_before_second_nmi() {
+            self.nmi_prepare_sprites_for_main_loop_once();
+            self.clear_nmi_update_latch();
+        }
+    }
+
+    fn complete_dungeon_exit_spotlight_entry_before_link(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        iteration: SpotlightIteration,
+    ) -> (SpotlightIterationPhase, SpotlightIteration) {
         let vertical_center = spotlight_vertical_center(
             self.game_state.player.follower_link.y(),
             self.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
@@ -3747,14 +3767,57 @@ impl ZeldaState {
             iteration
         };
         self.increment_submodule();
-        self.module0f_spotlight_close_link_and_oam();
-        if phase == SpotlightIterationPhase::CloseEntryBeforeTablePublication {
-            self.schedule_spotlight_iteration_return(iteration);
-        }
-        if iteration.prepares_main_loop_sprites_before_second_nmi() {
-            self.nmi_prepare_sprites_for_main_loop_once();
-            self.clear_nmi_update_latch();
-        }
+        (phase, iteration)
+    }
+
+    /// Complete the entry table/control prefix through the source-observed
+    /// `Link_MovePosition` subpixel store, leaving that axis' coordinate add
+    /// and every later Link/OAM statement on a typed continuation.
+    pub(super) fn complete_dungeon_exit_spotlight_entry_until_link_position_partial(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        iteration: SpotlightIteration,
+        pass: u8,
+    ) {
+        let (_, iteration) =
+            self.complete_dungeon_exit_spotlight_entry_before_link(table_build, iteration);
+        let position_return = self
+            .module0f_spotlight_close_velocity_until_position_partial(pass)
+            .expect("a mid-loop Link_MovePosition interruption requires Module0F's outdoor velocity path");
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                iteration,
+                pass: position_return.partial.pass,
+                pending_pixel_delta: position_return.partial.pending_pixel_delta,
+                old_x: position_return.old_x,
+                old_y: position_return.old_y,
+            },
+            1,
+        );
+    }
+
+    /// Complete the entry prefix through both coordinate stores for `pass`,
+    /// preserving only later axes and the Link/OAM caller suffix.
+    pub(super) fn complete_dungeon_exit_spotlight_entry_until_link_position_after_coordinates(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        iteration: SpotlightIteration,
+        pass: u8,
+    ) {
+        let (_, iteration) =
+            self.complete_dungeon_exit_spotlight_entry_before_link(table_build, iteration);
+        let position_return = self
+            .module0f_spotlight_close_velocity_until_position_after_coordinates(pass)
+            .expect("a post-coordinate Link_MovePosition interruption requires Module0F's outdoor velocity path");
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
+                iteration,
+                pass: position_return.pass,
+                old_x: position_return.old_x,
+                old_y: position_return.old_y,
+            },
+            1,
+        );
     }
 
     pub(super) fn complete_dungeon_exit_spotlight_build(

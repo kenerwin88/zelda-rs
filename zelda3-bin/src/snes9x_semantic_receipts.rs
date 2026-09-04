@@ -2568,19 +2568,6 @@ impl HostFrameWindow {
                 Some(returned.sub),
                 returned.x,
             )
-        })
-        .filter(|phase| {
-            // Module0F's ENTRY host (submodule 0 -> 1) is owned by the
-            // spotlight-iteration model, which already places the whole Link
-            // movement on the following host; only the recurring caller
-            // publishes the mid-loop Link position boundary (route hosts
-            // 179577 vs 179586).
-            !(matches!(
-                phase,
-                MainLoopInterruption::LinkPositionAfterSubpixel { .. }
-                    | MainLoopInterruption::LinkPositionAfterCoordinates { .. }
-            ) && entry.main == 0x0f
-                && entry.sub == 0)
         }) {
             let observed = receipts
                 .iter()
@@ -9822,6 +9809,33 @@ mod tests {
             vec![
                 OriginalTimingSemanticReceipt::MainLoopProgress(
                     MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned,
+            ],
+        );
+    }
+
+    #[test]
+    fn dungeon_exit_spotlight_entry_preserves_its_partial_link_movement() {
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame_with_sub("entry", 24_193, 0x0f, 0))
+            .unwrap();
+        let mut returned = frame_with_sub("return", 24_193, 0x0f, 1);
+        returned.pc = Some(0x07_e3c5);
+        returned.x = Some(0);
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+
+        host.finish(&mut receipts, None, true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::LinkPositionAfterSubpixel { pass: 0 },
                 ),
                 OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned,
             ],
