@@ -43,8 +43,8 @@ impl PrepOamCoordsRet {
 
 // --- Tables shared by the Guard cluster. Verbatim from
 // zelda3/src/sprite_main.c lines 58..288.
-const SOLDIER_DIRECTION_LOCK_SETTINGS: [u8; 4] = [3, 2, 0, 1];
-const SOLDIER_GRAPHICS_BY_DIRECTION: [u8; 4] = [8, 0, 12, 5];
+pub(super) const SOLDIER_DIRECTION_LOCK_SETTINGS: [u8; 4] = [3, 2, 0, 1];
+pub(super) const SOLDIER_GRAPHICS_BY_DIRECTION: [u8; 4] = [8, 0, 12, 5];
 const SOLDIER_PATROL_DELAY_BY_DIRECTION: [u8; 4] = [0x60, 0xc0, 0xff, 0x40];
 const SOLDIER_X_VELOCITY_BY_DIRECTION: [i8; 4] = [8, -8, 0, 0];
 const SOLDIER_Y_VELOCITY_BY_DIRECTION: [i8; 4] = [0, 0, 8, -8];
@@ -670,6 +670,10 @@ impl ZeldaState {
             sprite.set_graphics(SOLDIER_GRAPHICS_BY_DIRECTION[(bak2 as usize) & 3]);
         }
         self.guard_handle_all_animation(k);
+        self.guard_main_after_animation(k, bak1, bak2);
+    }
+
+    pub(super) fn guard_main_after_animation(&mut self, k: usize, bak1: u8, bak2: u8) {
         {
             let mut sprite = self.sprite_slot_view_mut(k);
             sprite.set_direction(bak2);

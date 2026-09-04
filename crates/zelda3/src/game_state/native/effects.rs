@@ -1844,6 +1844,33 @@ impl<'a> NativeMoldormHistoryBridgeMut<'a> {
         self.sync();
     }
 
+    /// Publish one byte of `SpritePrep_MiniMoldorm_bounce`'s history entry in
+    /// the ROM's store order. This keeps the native shadow coherent when an
+    /// NMI interrupts between the four split-coordinate stores.
+    pub(crate) fn set_position_component(&mut self, component: u8, x: u16, y: u16) {
+        let (base, value) = match component {
+            0 => {
+                set_word_low_byte(&mut self.state.moldorm_y, self.slot, y as u8);
+                (MOLDORM_HISTORY_Y_LO, y as u8)
+            }
+            1 => {
+                set_word_high_byte(&mut self.state.moldorm_y, self.slot, (y >> 8) as u8);
+                (MOLDORM_HISTORY_Y_HI, (y >> 8) as u8)
+            }
+            2 => {
+                set_word_low_byte(&mut self.state.moldorm_x, self.slot, x as u8);
+                (MOLDORM_HISTORY_X_LO, x as u8)
+            }
+            3 => {
+                set_word_high_byte(&mut self.state.moldorm_x, self.slot, (x >> 8) as u8);
+                (MOLDORM_HISTORY_X_HI, (x >> 8) as u8)
+            }
+            _ => panic!("Moldorm history component must be in 0..4"),
+        };
+        self.ram[base + self.slot] = value;
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn set_low_position(&mut self, x_low: u8, y_low: u8) {
         self.state.set_moldorm_low_position(self.slot, x_low, y_low);
         // C writes ONLY the low byte of a trail entry (ram[MOLDORM_HISTORY_X_LO + slot]). The

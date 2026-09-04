@@ -487,8 +487,11 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX { .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
                 | GameWorkContinuation::FinishSpotlightIteration { .. }
                 | GameWorkContinuation::FinishOverworldSpotlightBuild { .. }
@@ -516,8 +519,17 @@ impl ScheduledGameWork {
             | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+                iteration,
+                ..
+            }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                iteration,
+                ..
+            }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
                 iteration,
                 ..
             }
@@ -554,8 +566,17 @@ impl ScheduledGameWork {
             | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+                iteration,
+                ..
+            }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                iteration,
+                ..
+            }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
                 iteration,
                 ..
             }
@@ -1449,10 +1470,42 @@ impl GameExecutionScheduler {
         else {
             return false;
         };
-        if *sprite_reset == PreDungeonSpriteResetContinuation::Completed {
+        *sprite_reset = match *sprite_reset {
+            PreDungeonSpriteResetContinuation::Pending
+            | PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted => {
+                PreDungeonSpriteResetContinuation::SpriteResetAllCompleted
+            }
+            PreDungeonSpriteResetContinuation::DungeonResetSprites(_) => {
+                PreDungeonSpriteResetContinuation::DungeonResetSpritesCompleted
+            }
+            PreDungeonSpriteResetContinuation::SpriteResetAllCompleted
+            | PreDungeonSpriteResetContinuation::DungeonResetSpritesCompleted => return false,
+            PreDungeonSpriteResetContinuation::NotApplicable => return false,
+        };
+        true
+    }
+
+    pub(super) fn mark_pre_dungeon_dungeon_reset_progress(
+        &mut self,
+        progress: crate::DungeonResetSpritesCpuProgress,
+    ) -> bool {
+        let Some(GameExecutionContinuation::ScheduledWork(work)) = self.continuation.as_mut()
+        else {
+            return false;
+        };
+        let GameWorkContinuation::FinishPreDungeonEntranceLoad { sprite_reset } =
+            &mut work.continuation
+        else {
+            return false;
+        };
+        if !matches!(
+            *sprite_reset,
+            PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted
+                | PreDungeonSpriteResetContinuation::DungeonResetSprites(_)
+        ) {
             return false;
         }
-        *sprite_reset = PreDungeonSpriteResetContinuation::Completed;
+        *sprite_reset = PreDungeonSpriteResetContinuation::DungeonResetSprites(progress);
         true
     }
 
@@ -2273,6 +2326,30 @@ mod cpu_timing_tests {
     }
 
     #[test]
+    fn coordinate_low_spotlight_continuation_retains_scheduler_semantics() {
+        let iteration = crate::zelda_rtl::SpotlightIteration::closing(
+            crate::zelda_rtl::SpotlightIterationPhase::WholeTable,
+        );
+        let work = ScheduledGameWork::schedule(
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+                iteration,
+                pass: 0,
+                pending_coordinate_high: 1,
+                old_x: 0x0e60,
+                old_y: 0x0200,
+            },
+            1,
+        );
+
+        assert!(work.suspends_translated_call_stack());
+        assert_eq!(
+            work.in_flight_display_snapshot_publication_override(),
+            Some(iteration.in_flight_publication()),
+        );
+        assert_eq!(work.spotlight_iteration(), Some(iteration));
+    }
+
+    #[test]
     fn deferred_spotlight_iteration_return_suspends_the_translated_call_stack() {
         let work = ScheduledGameWork::schedule(
             GameWorkContinuation::FinishSpotlightIteration {
@@ -2348,7 +2425,7 @@ mod cpu_timing_tests {
         assert_eq!(
             scheduler.current_work(),
             Some(GameWorkContinuation::FinishPreDungeonEntranceLoad {
-                sprite_reset: PreDungeonSpriteResetContinuation::Completed,
+                sprite_reset: PreDungeonSpriteResetContinuation::SpriteResetAllCompleted,
             }),
         );
     }

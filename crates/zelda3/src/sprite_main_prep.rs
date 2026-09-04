@@ -277,6 +277,15 @@ impl ZeldaState {
 
     // void SpritePrep_StandardGuard(int k) {  // 868fd6
     pub(super) fn sprite_prep_standard_guard(&mut self, k: usize) {
+        if self.sprite_prep_standard_guard_before_trooper(k) {
+            self.sprite_prep_trooper_and_archer_soldier(k);
+        }
+    }
+
+    /// Apply the source prefix of `SpritePrep_StandardGuard`. `true` means
+    /// the shared trooper/archer helper is the next source call; `false`
+    /// means the initializer returned through its indoor early exit.
+    fn sprite_prep_standard_guard_before_trooper(&mut self, k: usize) -> bool {
         let subtype = self.sprite_slot_view(k).subtype();
         if subtype != 0 {
             if (subtype & 7) >= 5 {
@@ -284,37 +293,66 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k)
                     .set_b(SPRITE_PREP_STANDARD_GUARD_GUARD_SUBTYPE_B_REMAP[j]);
                 self.sprite_slot_view_mut(k).masked_or_flags(0x0f, 0x50);
-                self.sprite_prep_trooper_and_archer_soldier(k);
-                return;
+                return true;
             }
             self.sprite_slot_view_mut(k)
                 .set_direction(((subtype & 7).wrapping_sub(1)) ^ 1);
         }
         if self.game_state.world.location.is_indoors() {
             self.sprite_slot_view_mut(k).and_flags5(!0x80);
-            return;
+            return false;
         }
         self.sprite_slot_view_mut(k).set_ai_state(1);
         self.sprite_slot_view_mut(k).set_delay_main(112);
         let dir = self.sprite_direction_to_face_link(k, None);
         self.sprite_slot_view_mut(k).set_direction(dir);
         self.sprite_slot_view_mut(k).set_head_direction(dir);
-        self.sprite_prep_trooper_and_archer_soldier(k);
+        true
     }
 
     // void SpritePrep_TrooperAndArcherSoldier(int k) {  // 869001
     pub(super) fn sprite_prep_trooper_and_archer_soldier(&mut self, k: usize) {
+        let bak0 = self.sprite_prep_trooper_and_archer_soldier_prefix(k);
+        self.sprite_active_main(k);
+        self.sprite_active_main(k);
+        self.sprite_prep_trooper_and_archer_soldier_suffix(k, bak0);
+    }
+
+    fn sprite_prep_trooper_and_archer_soldier_prefix(&mut self, k: usize) -> u8 {
         let bak0 = self.game_state.frame.submodule;
         self.set_submodule(0);
         let deflection_bits = (self.sprite_slot_view(k).deflection_bits() >> 1) | 0x80;
         self.sprite_slot_view_mut(k)
             .set_deflection_bits(deflection_bits);
-        self.sprite_active_main(k);
-        self.sprite_active_main(k);
+        bak0
+    }
+
+    fn sprite_prep_trooper_and_archer_soldier_suffix(&mut self, k: usize, bak0: u8) {
         let deflection_bits = self.sprite_slot_view(k).deflection_bits().wrapping_shl(1);
         self.sprite_slot_view_mut(k)
             .set_deflection_bits(deflection_bits);
         self.set_submodule(bak0);
+    }
+
+    pub(super) fn sprite_prep_standard_guard_until_weapon_flags(
+        &mut self,
+        k: usize,
+    ) -> Option<GuardPrepWeaponDrawContinuation> {
+        if !self.sprite_prep_standard_guard_before_trooper(k) {
+            return None;
+        }
+        let saved_submodule = self.sprite_prep_trooper_and_archer_soldier_prefix(k);
+        self.guard_prep_first_animation_until_weapon_flags(k, saved_submodule)
+    }
+
+    pub(super) fn complete_sprite_prep_standard_guard_after_weapon_flags(
+        &mut self,
+        k: usize,
+        continuation: GuardPrepWeaponDrawContinuation,
+    ) {
+        self.complete_guard_prep_first_animation_after_weapon_flags(k, continuation);
+        self.sprite_active_main(k);
+        self.sprite_prep_trooper_and_archer_soldier_suffix(k, continuation.saved_submodule);
     }
 
     pub(super) fn sprite_prep_mantle(&mut self, k: usize) {
@@ -639,12 +677,34 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_mini_moldorm_bounce(&mut self, k: usize) {
-        let mut j = 32 * k;
+        self.sprite_prep_mini_moldorm_bounce_prefix(k, 128);
+    }
+
+    pub(super) fn sprite_prep_mini_moldorm_bounce_prefix(
+        &mut self,
+        k: usize,
+        completed_stores: u8,
+    ) {
+        self.sprite_prep_mini_moldorm_bounce_store_range(k, 0, completed_stores);
+    }
+
+    pub(super) fn sprite_prep_mini_moldorm_bounce_from(&mut self, k: usize, completed_stores: u8) {
+        self.sprite_prep_mini_moldorm_bounce_store_range(k, completed_stores, 128);
+    }
+
+    fn sprite_prep_mini_moldorm_bounce_store_range(
+        &mut self,
+        k: usize,
+        start_store: u8,
+        end_store: u8,
+    ) {
+        assert!(start_store <= end_store && end_store <= 128);
         let x = self.sprite_slot_view(k).x();
         let y = self.sprite_slot_view(k).y();
-        for _ in 0..32 {
-            self.moldorm_history_mut(j).set_position(x, y);
-            j += 1;
+        for store in start_store..end_store {
+            let history_slot = 32 * k + usize::from(store / 4);
+            self.moldorm_history_mut(history_slot)
+                .set_position_component(store & 3, x, y);
         }
     }
 
@@ -2412,6 +2472,37 @@ impl ZeldaState {
                     .wrapping_add(item_idx)
                     .wrapping_sub(1) as usize;
                 let t = WISH_POND_ITEM_DATA[data_idx];
+                if matches!(
+                    self.sprite_main_cpu_boundary,
+                    Some(SpriteMainCpuBoundary::WishPondTossedItemGraphics {
+                        slot,
+                        continuation: None,
+                    }) if slot == k as u8
+                ) {
+                    let (ancilla_slot, graphics) = self
+                        .ancilla_add_tossed_pond_item_until_graphics(0x28, t, 4)
+                        .expect(
+                            "source Wish Pond graphics entry requires a successfully spawned tossed-item ancilla",
+                        );
+                    let boundary = SpriteMainCpuBoundary::WishPondTossedItemGraphics {
+                        slot: k as u8,
+                        continuation: Some(WishPondTossedItemGraphicsContinuation {
+                            ancilla_slot: ancilla_slot as u8,
+                            item,
+                            wish_item: t,
+                            graphics,
+                        }),
+                    };
+                    self.sprite_main_cpu_boundary = None;
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(
+                        nmi_slices, 0,
+                        "Wish Pond graphics continuation requires a measured NMI phase",
+                    );
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                    return;
+                }
                 self.ancilla_add_tossed_pond_item(0x28, t, 4);
                 self.hud_refresh_icon();
                 self.sprite_slot_view_mut(k).set_graphics(t);
@@ -2578,6 +2669,26 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    pub(super) fn complete_wish_pond_tossed_item_graphics(
+        &mut self,
+        k: usize,
+        continuation: WishPondTossedItemGraphicsContinuation,
+    ) {
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x72);
+        assert_eq!(self.sprite_slot_view(k).ai_state(), 3);
+        self.complete_ancilla_add_tossed_pond_item_graphics(
+            usize::from(continuation.ancilla_slot),
+            continuation.wish_item,
+            continuation.graphics,
+        );
+        self.hud_refresh_icon();
+        self.sprite_slot_view_mut(k)
+            .set_graphics(continuation.wish_item);
+        self.sprite_slot_view_mut(k)
+            .set_direction(continuation.item);
+        self.sprite_slot_view_mut(k).set_delay_main(255);
     }
 
     pub(super) fn sprite_happiness_pond(&mut self, k: usize) {
@@ -4656,21 +4767,45 @@ impl ZeldaState {
     pub(super) fn sprite_prep_fake_sword(&mut self, _k: usize) {}
 
     pub(super) fn sprite_prep_old_man_bounce(&mut self, k: usize) {
+        let Some(reset_follower_after_graphics) =
+            self.sprite_prep_old_man_before_follower_graphics(k)
+        else {
+            return;
+        };
+        self.load_follower_graphics();
+        self.sprite_prep_old_man_after_follower_graphics(reset_follower_after_graphics);
+    }
+
+    /// Execute `SpritePrep_OldMan` through the statement immediately before
+    /// its synchronous `LoadFollowerGraphics` call. The return value records
+    /// whether the source's post-call `follower_indicator = 0` remains.
+    pub(super) fn sprite_prep_old_man_before_follower_graphics(
+        &mut self,
+        k: usize,
+    ) -> Option<bool> {
         self.sprite_slot_view_mut(k).increment_ignore_projectile();
         if self.game_state.world.location.dungeon_room_index() == 0xe4 {
             self.sprite_slot_view_mut(k).set_subtype2(2);
-            return;
+            return None;
         }
         if self.game_state.sprites.follower_runtime.indicator() == 0 {
             if self.game_state.inventory.items.mirror() == 2 {
                 self.sprite_slot_view_mut(k).set_state(0);
             }
             self.follower_state_mut().set_indicator(4);
-            self.load_follower_graphics();
-            self.follower_state_mut().set_indicator(0);
+            Some(true)
         } else {
             self.sprite_slot_view_mut(k).set_state(0);
-            self.load_follower_graphics();
+            Some(false)
+        }
+    }
+
+    pub(super) fn sprite_prep_old_man_after_follower_graphics(
+        &mut self,
+        reset_follower_after_graphics: bool,
+    ) {
+        if reset_follower_after_graphics {
+            self.follower_state_mut().set_indicator(0);
         }
     }
 

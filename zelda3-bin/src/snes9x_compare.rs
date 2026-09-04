@@ -39,7 +39,7 @@ use zelda3::{
 pub(crate) const ORACLE_MUSIC_CONTROL: usize = 0x012c;
 pub(crate) const ORACLE_QUEUED_MUSIC_CONTROL: usize = 0x0132;
 pub(crate) const ORACLE_LAST_MUSIC_CONTROL: usize = 0x0133;
-const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-bundle <session-dir> | --input-script <path> --rom-random-script <path> --load-sram <path>] [--allow-mixed-replay-provenance] [--replay-save <path>] [--rom-random-script <path> | --live-oracle-rng] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--compare-engine-state-from-frame <n>] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--cold-evidence-invocation-id <id>] [--scan-all] (pass both --ignore-video and --ignore-audio for trace-only replay)";
+const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.sfc> [frames] [--replay-bundle <session-dir> | --input-script <path> --rom-random-script <path> --load-sram <path>] [--allow-mixed-replay-provenance] [--replay-save <path>] [--rom-random-script <path> | --live-oracle-rng] [--resume-paired <dir> | --resume-rust-state <path> --resume-oracle-state <path> [--resume-oracle-sram <path>]] [--save-paired-resume-at <frame> <dir>] [--save-rolling-paired-resume <interval> <dir>] [--native-apu-bootstrap <path>] [--ignore-video] [--ignore-audio] [--compare-from-frame <n>] [--compare-engine-state-from-frame <n> | --ignore-engine-state] [--skip-oracle-frames <n>] [--audio-comparison timing|exact] [--session-dir <path>] [--cold-evidence-invocation-id <id>] [--scan-all] (engine state is compared from --compare-from-frame by default; pass both --ignore-video and --ignore-audio for renderless replay)";
 
 // The cartridge RNG routine stores its return byte at mapped PC $0d:ba7f.
 // Other game code also writes $0fa1, so the address alone is not sufficient
@@ -56,7 +56,7 @@ const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
 // entry call's exact Link_MovePosition host-return prefix. Schema 53
 // distinguishes the source interval after the low coordinate-byte store from
 // the later state where both coordinate stores have committed.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 53;
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 56;
 
 // Source instructions which sample APUI00 while waiting for an item fanfare
 // to end. These adapter-only PCs become backend-neutral sample offsets before
@@ -4193,6 +4193,7 @@ pub(crate) fn run_compare_libretro_oracle(
     let mut compare_audio = true;
     let mut compare_from_frame = 0u32;
     let mut compare_engine_state_from_frame = None::<u32>;
+    let mut ignore_engine_state = false;
     let mut skip_oracle_frames = 0u32;
     let mut auto_align_video = false;
     let mut lead_rust_audio_blocks = 0u32;
@@ -4393,6 +4394,10 @@ pub(crate) fn run_compare_libretro_oracle(
                 }));
                 i += 2;
             }
+            "--ignore-engine-state" => {
+                ignore_engine_state = true;
+                i += 1;
+            }
             "--skip-snes9x-frames" | "--skip-oracle-frames" => {
                 let Some(value) = args.get(i + 1) else {
                     eprintln!("{} requires a count", args[i]);
@@ -4588,6 +4593,15 @@ pub(crate) fn run_compare_libretro_oracle(
             }
         }
     }
+    compare_engine_state_from_frame = resolve_engine_state_compare_start(
+        compare_from_frame,
+        compare_engine_state_from_frame,
+        ignore_engine_state,
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("{error}");
+        process::exit(2);
+    });
     validate_paired_resume_sram_selection(resume_paired.is_some(), load_sram.is_some())
         .unwrap_or_else(|error| {
             eprintln!("{error}");
@@ -5236,6 +5250,7 @@ pub(crate) fn run_compare_libretro_oracle(
         frames,
         start_frame,
         effective_compare_from_frame,
+        compare_engine_state_from_frame,
         skip_oracle_frames,
         compare_video,
         compare_audio,
@@ -8652,6 +8667,24 @@ pub(crate) fn validate_libretro_frame_window(
     Ok(())
 }
 
+fn resolve_engine_state_compare_start(
+    compare_from_frame: u32,
+    explicit_engine_start: Option<u32>,
+    ignore_engine_state: bool,
+) -> Result<Option<u32>, String> {
+    if ignore_engine_state && explicit_engine_start.is_some() {
+        return Err(
+            "--ignore-engine-state cannot be combined with --compare-engine-state-from-frame"
+                .to_string(),
+        );
+    }
+    Ok(if ignore_engine_state {
+        None
+    } else {
+        Some(explicit_engine_start.unwrap_or(compare_from_frame))
+    })
+}
+
 const fn scan_all_policy(explicit_scan_all: bool, _session_dir_present: bool) -> bool {
     explicit_scan_all
 }
@@ -9258,6 +9291,7 @@ pub(crate) fn initialize_libretro_session(
     frames: u32,
     start_frame: u32,
     compare_from_frame: u32,
+    compare_engine_state_from_frame: Option<u32>,
     skip_oracle_frames: u32,
     compare_video: bool,
     compare_audio: bool,
@@ -9466,6 +9500,8 @@ pub(crate) fn initialize_libretro_session(
         "comparison_lanes": {
             "video": compare_video,
             "audio": compare_audio,
+            "engine_state": compare_engine_state_from_frame.is_some(),
+            "engine_state_from_frame": compare_engine_state_from_frame,
         },
         "av_hash_ledger": {
             "schema": 1,
@@ -9527,8 +9563,15 @@ pub(crate) fn initialize_libretro_session(
         ""
     };
     let scan_all_flag = if scan_all { " --scan-all" } else { "" };
+    let engine_state_flag = match compare_engine_state_from_frame {
+        Some(start) if start != compare_from_frame => {
+            format!(" --compare-engine-state-from-frame {start}")
+        }
+        Some(_) => String::new(),
+        None => " --ignore-engine-state".to_string(),
+    };
     let replay = format!(
-        "#!/bin/sh\nset -eu\ncd {}\nZELDA3_ASSET_PACK={} cargo run -q -p zelda3-bin{} -- --compare-snes9x-oracle {} {} {} --expected-core-sha256 {} --expected-rom-sha256 {} --input-script {}{}{} {} --compare-from-frame {}{} --audio-comparison {} --audio-window-ms {} --audio-silence-threshold {} --audio-timing-tolerance-ms {} --audio-envelope-tolerance {} --session-dir {}{}\n",
+        "#!/bin/sh\nset -eu\ncd {}\nZELDA3_ASSET_PACK={} cargo run -q -p zelda3-bin{} -- --compare-snes9x-oracle {} {} {} --expected-core-sha256 {} --expected-rom-sha256 {} --input-script {}{}{} {} --compare-from-frame {}{}{} --audio-comparison {} --audio-window-ms {} --audio-silence-threshold {} --audio-timing-tolerance-ms {} --audio-envelope-tolerance {} --session-dir {}{}\n",
         shell_single_quote(&repo_root.to_string_lossy()),
         shell_single_quote(&asset_pack.to_string_lossy()),
         feature,
@@ -9542,6 +9585,7 @@ pub(crate) fn initialize_libretro_session(
         live_oracle_rng_flag,
         initial_state_flags,
         compare_from_frame,
+        engine_state_flag,
         lane_flags,
         audio_comparison.as_str(),
         (timing.window_frames as f64 / oracle.av_info.timing.sample_rate) * 1000.0,
@@ -13255,20 +13299,20 @@ pub(crate) mod tests {
         parse_debug_frame_selection, parse_paired_resume_capture,
         parse_rolling_paired_resume_capture, presented_video_rows_match_prior_surface,
         prune_rolling_paired_resume_captures, read_snes9x_retro_run_trace,
-        replayable_input_artifact, resolve_replay_bundle, rolling_capture_frame_after,
-        scan_all_policy, semantic_receipts_from_dma_ledger, semantic_trace_authority_available,
-        should_render_video_frame, should_stop_after_first_mismatch, should_write_frame_receipt,
-        smp_bootstrap_handoff_index, snes9x_presented_scanline_for_video_y,
-        summarize_presented_obj_cache, summarize_value_domain, trace_events_with_rom_rng,
-        validate_cold_evidence_invocation_id, validate_first_nmi_return_cpu_slice,
-        validate_oracle_av_checkpoint_interval, validate_oracle_rng_samples_for_run,
-        validate_paired_resume_provenance, validate_paired_resume_sram_selection,
-        validate_replay_source_parents, vram_domain_receipt, write_cached_av_final_paired_resume,
-        write_file_atomically, BootBoundaryState, FramedApuPortAccess, FramedCpuTimingTransaction,
-        FramedSmpInstruction, OrdinalApuPortAccess, PairedResumeCapture,
-        PendingFirstNmiReturnFixture, PlayCrashCheckpoint, PresentedOracleVideo,
-        RollingPairedResumeCapture, ValueDomainDiff, VramDomainReceipt, PAIRED_RESUME_SCHEMA,
-        PLAY_CRASH_CHECKPOINT_MAGIC,
+        replayable_input_artifact, resolve_engine_state_compare_start, resolve_replay_bundle,
+        rolling_capture_frame_after, scan_all_policy, semantic_receipts_from_dma_ledger,
+        semantic_trace_authority_available, should_render_video_frame,
+        should_stop_after_first_mismatch, should_write_frame_receipt, smp_bootstrap_handoff_index,
+        snes9x_presented_scanline_for_video_y, summarize_presented_obj_cache,
+        summarize_value_domain, trace_events_with_rom_rng, validate_cold_evidence_invocation_id,
+        validate_first_nmi_return_cpu_slice, validate_oracle_av_checkpoint_interval,
+        validate_oracle_rng_samples_for_run, validate_paired_resume_provenance,
+        validate_paired_resume_sram_selection, validate_replay_source_parents, vram_domain_receipt,
+        write_cached_av_final_paired_resume, write_file_atomically, BootBoundaryState,
+        FramedApuPortAccess, FramedCpuTimingTransaction, FramedSmpInstruction,
+        OrdinalApuPortAccess, PairedResumeCapture, PendingFirstNmiReturnFixture,
+        PlayCrashCheckpoint, PresentedOracleVideo, RollingPairedResumeCapture, ValueDomainDiff,
+        VramDomainReceipt, PAIRED_RESUME_SCHEMA, PLAY_CRASH_CHECKPOINT_MAGIC,
     };
     use crate::libretro_core::{
         LibretroApuPortWrite, LibretroCpuTimingTransaction, LibretroDmaLedgerEvent,
@@ -14992,7 +15036,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 53);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 56);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None
@@ -15103,6 +15147,29 @@ pub(crate) mod tests {
                 "sprite[1].head_direction rust=0x02 oracle=0x03",
                 "sprite[1].delay_main rust=0x58 oracle=0x59",
             ]
+        );
+    }
+
+    #[test]
+    fn engine_state_comparison_fails_closed_with_an_explicit_diagnostic_opt_out() {
+        assert_eq!(
+            resolve_engine_state_compare_start(123, None, false),
+            Ok(Some(123))
+        );
+        assert_eq!(
+            resolve_engine_state_compare_start(123, Some(456), false),
+            Ok(Some(456))
+        );
+        assert_eq!(
+            resolve_engine_state_compare_start(123, None, true),
+            Ok(None)
+        );
+        assert_eq!(
+            resolve_engine_state_compare_start(123, Some(456), true),
+            Err(
+                "--ignore-engine-state cannot be combined with --compare-engine-state-from-frame"
+                    .to_string()
+            )
         );
     }
 

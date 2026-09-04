@@ -77,11 +77,12 @@ const FOLLOWER_GRAPHICS_CONVERSION_DESTINATION_X: u16 = 0x2940;
 const FOLLOWER_GRAPHICS_CONVERSION_STORES: u16 = 32 * 8 * 2;
 // Return addresses of the Sprite_Main-owned calls to LoadFollowerGraphics.
 // The active slot plus the concrete caller distinguishes the two state-8
-// preparation paths and Blind Maiden's state-9 become-follower body from the
-// many other callers of the shared loader.
+// preparation paths, the Old Man's state-8 prep, and Blind Maiden's state-9
+// become-follower body from the many other callers of the shared loader.
 const SPRITE_PREP_BLIND_MAIDEN_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x06_89c2;
 const SPRITE_PREP_ZELDA_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x05_ebf5;
 const SPRITE_BLIND_MAIDEN_BODY_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x1e_e8ea;
+const SPRITE_PREP_OLD_MAN_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x1e_e925;
 // `Sprite_Zazak_Main`'s animation publication. The write event proves the
 // current slot's source-selected graphics byte committed before the boundary.
 const SPRITE_ZAZAK_GRAPHICS_STORE_PC: u32 = 0x1e_91fb;
@@ -307,11 +308,20 @@ const NMI_PREPARE_EXTENDED_OAM_GROUP_BEFORE_STORE_START_PC: u32 = 0x008602;
 const NMI_PREPARE_EXTENDED_OAM_GROUP_BEFORE_STORE_END_PC: u32 = 0x008615;
 const LINK_OAM_START_PC: u32 = 0x0da18e;
 const LINK_OAM_END_PC: u32 = 0x0dadb6;
+// Return edge of Module0F's indirect submodule call, before its Link suffix.
+// The address is private adapter evidence; the receipt exports only the C
+// source boundary.
+const MODULE0F_AFTER_SUBMODULE_DISPATCH_PC: u32 = 0x02998d;
 // The generic PC trace uses these private pinned-ROM boundaries to translate
 // the descending `Sprite_Main` loop into a Zelda-level resumable slot receipt.
 // Neither address nor the CPU X register crosses the adapter boundary.
 const SPRITE_MAIN_ENTRY_PC: u32 = 0x068328;
 const SPRITE_EXECUTE_SINGLE_ENTRY_PC: u32 = 0x0684e2;
+const SPRITE_ACTIVE_MAIN_ENTRY_PC: u32 = 0x069271;
+// Final weapon entry's flags store in `Guard_AnimateWeapon`. At this opcode
+// the entry's X, Y, and character bytes have committed, while flags and the
+// following bytewise-extended-OAM store have not.
+const GUARD_ANIMATE_WEAPON_FLAGS_STORE_PC: u32 = 0x05cbcd;
 // First instruction after Sprite_TimersAndOam's last countdown update. The
 // helper's floor/priority suffix and the state-dispatched body remain pending.
 // `$06:84A4` is the first instruction after the final countdown update in
@@ -354,6 +364,9 @@ const SPRITE_MAIN_RETURN_PC: u32 = 0x028842;
 // at this store. Its animation/draw suffix and the caller-specific sprite
 // body remain pending; the adapter exports only that semantic statement.
 const ANTFAIRY_SUBTYPE2_INCREMENT_PC: u32 = 0x1df39b;
+// `HelmasaurHardHatBeetleCommon` has passed its inactive check and published
+// the subtype2 increment shared by Mini Helmasaur and Hardhat Beetle.
+const HELMASAUR_HARD_HAT_BEETLE_SUBTYPE2_INCREMENT_PC: u32 = 0x06a473;
 // `Lanmola_Draw` has published its graphics/history prefix and the leading
 // subtype2 increment at this source store. Its remaining draw and AI body are
 // still pending.
@@ -424,6 +437,10 @@ const ZORA_FLIPPERS_GRAPHICS_RETURN_ADDRESS: u32 = 0x1d_e1e9;
 // pinned return address distinguishes that semantic caller from every other
 // animated-sheet user without exporting either address to gameplay.
 const BONK_ITEM_GRAPHICS_RETURN_ADDRESS: u32 = 0x06_8d17;
+// `AncillaAdd_TossedPondItem` enters the same decoder after Wish Pond case 2
+// has removed the selected item and successfully spawned its ancilla. Its
+// private return address identifies that exact source caller.
+const WISH_POND_TOSSED_ITEM_GRAPHICS_RETURN_ADDRESS: u32 = 0x09_8a64;
 // Pinned Link_HandleVelocity has a second, earlier source-equivalent boundary.
 // From `$87:e275 LDA link_player_handler_state` through the following
 // `$87:e27e BEQ`, the routine only reads the handler/movement flags and selects
@@ -444,6 +461,13 @@ const LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC: u32 = 0x07e280;
 // and coordinates have not changed yet (route host 65295).
 const LINK_VELOCITY_AFTER_SPEED_SELECTION_START_PC: u32 = 0x07e2c8;
 const LINK_VELOCITY_BEFORE_FIRST_STATE_STORE_END_PC: u32 = 0x07e2cc;
+// Link_HandleVelocity resolves actual velocity in X-then-Y source order. Once
+// the ROM's X-indexed pass has completed, X=0 identifies the vertical pass.
+// `$87:e344` begins that pass and `$87:e357` is its first persistent store;
+// a saved PC through the store itself therefore means actual X is resolved
+// while actual Y remains pending (route host 179604).
+const LINK_VELOCITY_AFTER_ACTUAL_X_START_PC: u32 = 0x07e344;
+const LINK_VELOCITY_BEFORE_ACTUAL_Y_STORE_END_PC: u32 = 0x07e359;
 // Pinned Link_MovePosition ($87:e370) copies Link's current coordinates and
 // safe-return bytes before its first coordinate integration store at $87:e3af.
 // Bank $07 is the executing LoROM mirror observed by the maintained core.
@@ -483,6 +507,17 @@ const SPRITE_PREP_LOAD_PROPERTIES_AFTER_ROOM_PC: u32 = 0x0db85a;
 const SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS3_PC: u32 = 0x0db869;
 const SPRITE_PREP_LOAD_PROPERTIES_AFTER_OAM_FLAGS_PC: u32 = 0x0db86e;
 const SPRITE_PREP_LOAD_PROPERTIES_RETURN_PC: u32 = 0x0db870;
+// `SpritePrep_MiniMoldorm_bounce` publishes 32 history entries as four
+// source-ordered byte stores (Y low/high, then X low/high). The live adapter
+// translates the private instruction/cursor position into a store count.
+const SPRITE_PREP_MINI_MOLDORM_HISTORY_LOOP_START_PC: u32 = 0x1df282;
+const SPRITE_PREP_MINI_MOLDORM_HISTORY_Y_HIGH_LOAD_PC: u32 = 0x1df289;
+const SPRITE_PREP_MINI_MOLDORM_HISTORY_X_LOW_LOAD_PC: u32 = 0x1df290;
+const SPRITE_PREP_MINI_MOLDORM_HISTORY_X_HIGH_LOAD_PC: u32 = 0x1df297;
+const SPRITE_PREP_MINI_MOLDORM_HISTORY_INCREMENT_PC: u32 = 0x1df29e;
+const SPRITE_PREP_MINI_MOLDORM_HISTORY_LOOP_TEST_PC: u32 = 0x1df29f;
+const SPRITE_PREP_MINI_MOLDORM_HISTORY_RETURN_START_PC: u32 = 0x1df2a3;
+const SPRITE_PREP_MINI_MOLDORM_HISTORY_END_PC: u32 = 0x1df2a5;
 // Fire Debirando's state-8 initializer converts type $64 to $63 before its
 // nested second SpritePrep_LoadProperties call. The following reset shares
 // the generic helper's PC and immediate return address with the initial load,
@@ -825,6 +860,12 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     timers_and_oam_dispatch_state: Option<u8>,
     #[serde(default)]
+    initialize_active_main_calls: u8,
+    #[serde(default)]
+    guard_prep_weapon_flags_pending_slot: Option<u8>,
+    #[serde(default)]
+    mini_moldorm_history: Option<(u8, u8)>,
+    #[serde(default)]
     initialize_reset_properties: Option<(u8, SpriteInitializeResetPropertiesPhase, u8)>,
     #[serde(default)]
     initialize_load_properties: Option<(u8, SpriteInitializeResetPropertiesPhase, u8)>,
@@ -838,6 +879,8 @@ struct SpriteMainExecutionTracker {
     antfairy_subtype2_increment_slot: Option<u8>,
     #[serde(default)]
     lanmola_subtype2_increment_slot: Option<u8>,
+    #[serde(default)]
+    helmasaur_hard_hat_beetle_subtype2_increment_slot: Option<u8>,
     #[serde(default)]
     timer_decrements_slot: Option<u8>,
     #[serde(default)]
@@ -869,6 +912,8 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     bonk_item_graphics_slot: Option<u8>,
     #[serde(default)]
+    wish_pond_tossed_item_graphics_slot: Option<u8>,
+    #[serde(default)]
     single_small_draw_position_slot: Option<u8>,
     #[serde(default)]
     probe_after_oam_coordinates_slot: Option<u8>,
@@ -884,6 +929,101 @@ struct SpriteMainExecutionTracker {
 }
 
 impl SpriteMainExecutionTracker {
+    fn observe_mini_moldorm_history(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if self.timers_and_oam_dispatch_state != Some(8) {
+            return Ok(());
+        }
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        if !(SPRITE_PREP_MINI_MOLDORM_HISTORY_LOOP_START_PC
+            ..SPRITE_PREP_MINI_MOLDORM_HISTORY_END_PC)
+            .contains(&pc)
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x entered Mini Moldorm history initialization before a sprite slot")?;
+        if event.y != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x Mini Moldorm history initializer disagreed on slot: tracker={slot}, y={:?}",
+                event.y,
+            ));
+        }
+        let base = u16::from(slot) * 32;
+        let completed_stores = if pc >= SPRITE_PREP_MINI_MOLDORM_HISTORY_RETURN_START_PC {
+            128
+        } else {
+            let cursor = event
+                .x
+                .ok_or("Snes9x Mini Moldorm history initializer omitted cursor X")?;
+            let entry = cursor.checked_sub(base).ok_or_else(|| {
+                format!("Snes9x Mini Moldorm history cursor preceded slot {slot}: x=${cursor:04x}")
+            })?;
+            let completed = if pc >= SPRITE_PREP_MINI_MOLDORM_HISTORY_LOOP_TEST_PC {
+                u32::from(entry) * 4
+            } else {
+                if entry >= 32 {
+                    return Err(format!(
+                        "Snes9x Mini Moldorm history cursor exceeded slot {slot}: x=${cursor:04x}"
+                    ));
+                }
+                let component = if pc < SPRITE_PREP_MINI_MOLDORM_HISTORY_Y_HIGH_LOAD_PC {
+                    0
+                } else if pc < SPRITE_PREP_MINI_MOLDORM_HISTORY_X_LOW_LOAD_PC {
+                    1
+                } else if pc < SPRITE_PREP_MINI_MOLDORM_HISTORY_X_HIGH_LOAD_PC {
+                    2
+                } else if pc < SPRITE_PREP_MINI_MOLDORM_HISTORY_INCREMENT_PC {
+                    3
+                } else {
+                    4
+                };
+                u32::from(entry) * 4 + component
+            };
+            u8::try_from(completed).map_err(|_| {
+                format!("Snes9x Mini Moldorm history progress exceeded 128 stores: {completed}")
+            })?
+        };
+        if completed_stores > 128 {
+            return Err(format!(
+                "Snes9x Mini Moldorm history progress exceeded 128 stores: {completed_stores}"
+            ));
+        }
+        self.initialize_reset_properties = None;
+        self.initialize_load_properties = None;
+        self.mini_moldorm_history = Some((slot, completed_stores));
+        Ok(())
+    }
+
+    fn observe_guard_prep_weapon_flags_pending(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(GUARD_ANIMATE_WEAPON_FLAGS_STORE_PC) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x reached guard weapon draw before a Sprite_Main slot")?;
+        if self.timers_and_oam_dispatch_state != Some(8)
+            || self.initialize_active_main_calls != 1
+            || event.x != Some(0)
+            || event.sub != Some(0)
+        {
+            return Err(format!(
+                "Snes9x guard weapon checkpoint lacked its state-8 first-active-call authority: slot={slot} dispatch={:?} active_calls={} x={:?} sub={:?}",
+                self.timers_and_oam_dispatch_state,
+                self.initialize_active_main_calls,
+                event.x,
+                event.sub,
+            ));
+        }
+        self.guard_prep_weapon_flags_pending_slot = Some(slot);
+        Ok(())
+    }
+
     fn observe_bari_before_random(&mut self, event: &RawTraceEvent) -> Result<(), String> {
         if !event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
             (SPRITE_BARI_BEFORE_RANDOM_START_PC..SPRITE_BARI_BEFORE_RANDOM_END_PC).contains(&pc)
@@ -1033,6 +1173,39 @@ impl SpriteMainExecutionTracker {
         }
         if self.lanmola_subtype2_increment_slot.replace(slot).is_some() {
             return Err("Snes9x published the Lanmola subtype2 increment twice in one slot".into());
+        }
+        Ok(())
+    }
+
+    fn observe_helmasaur_hard_hat_beetle_subtype2_increment(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        if event.pc.map(|pc| pc & 0x00ff_ffff)
+            != Some(HELMASAUR_HARD_HAT_BEETLE_SUBTYPE2_INCREMENT_PC)
+        {
+            return Ok(());
+        }
+        let slot = self.current_slot.ok_or(
+            "Snes9x published the Helmasaur/Hardhat subtype2 increment before entering a sprite slot",
+        )?;
+        if event.x != Some(u16::from(slot))
+            || event.address != Some(SPRITE_SUBTYPE2_BASE + u16::from(slot))
+        {
+            return Err(format!(
+                "Snes9x Helmasaur/Hardhat subtype2 publication disagreed on slot {slot}: x={:?}, address={:?}",
+                event.x, event.address,
+            ));
+        }
+        if self
+            .helmasaur_hard_hat_beetle_subtype2_increment_slot
+            .replace(slot)
+            .is_some()
+        {
+            return Err(
+                "Snes9x published the Helmasaur/Hardhat subtype2 increment twice in one slot"
+                    .into(),
+            );
         }
         Ok(())
     }
@@ -1391,6 +1564,17 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::ZazakAfterGraphics(slot);
         }
+        if let Some((slot, completed_stores)) = self.mini_moldorm_history {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Mini Moldorm history progress outlived its active sprite slot",
+            );
+            return SpriteMainProgress::MiniMoldormHistory {
+                slot,
+                completed_stores,
+            };
+        }
         if let Some(slot) = self.bari_before_random_slot {
             assert_eq!(
                 self.current_slot,
@@ -1475,6 +1659,14 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::AfterLanmolaSubtype2Increment(slot);
         }
+        if let Some(slot) = self.helmasaur_hard_hat_beetle_subtype2_increment_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Helmasaur/Hardhat subtype2 publication outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot);
+        }
         if let Some(slot) = self.throwable_scenery_state_clear_slot {
             assert_eq!(
                 self.current_slot,
@@ -1522,6 +1714,22 @@ impl SpriteMainExecutionTracker {
                 "bonk-item graphics entry outlived its active sprite slot",
             );
             return SpriteMainProgress::BonkItemGraphicsStarted(slot);
+        }
+        if let Some(slot) = self.wish_pond_tossed_item_graphics_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Wish Pond tossed-item graphics entry outlived its active sprite slot",
+            );
+            return SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot);
+        }
+        if let Some(slot) = self.guard_prep_weapon_flags_pending_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "guard prep weapon checkpoint outlived its active sprite slot",
+            );
+            return SpriteMainProgress::GuardPrepWeaponFlagsPending(slot);
         }
         if let Some((slot, helper_ordinal)) = self.cucco_animation_slot {
             assert_eq!(
@@ -1705,6 +1913,9 @@ impl SpriteMainExecutionTracker {
             SpriteMainProgress::BonkItemGraphicsStarted(slot) => {
                 MainLoopInterruption::SpriteMainBonkItemGraphicsStarted(slot)
             }
+            SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot) => {
+                MainLoopInterruption::SpriteMainWishPondTossedItemGraphicsStarted(slot)
+            }
             SpriteMainProgress::ProbeAfterOamCoordinates(slot) => {
                 MainLoopInterruption::SpriteMainProbeAfterOamCoordinates(slot)
             }
@@ -1744,6 +1955,19 @@ impl SpriteMainExecutionTracker {
             SpriteMainProgress::AfterLanmolaSubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(slot)
             }
+            SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot) => {
+                MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(slot)
+            }
+            SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => {
+                MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot)
+            }
+            SpriteMainProgress::MiniMoldormHistory {
+                slot,
+                completed_stores,
+            } => MainLoopInterruption::SpriteMainMiniMoldormHistory {
+                slot,
+                completed_stores,
+            },
         }
     }
 }
@@ -2669,6 +2893,10 @@ impl HostFrameWindow {
         if entry.main == 9 && entry.sub == 0x21 && returned.main == 9 && returned.sub == 0x22 {
             receipts.push(OriginalTimingSemanticReceipt::WorldMapAmbientMap8Returned);
         }
+        if entry.main == 0x0b && entry.sub == 0x24 && returned.main == 0x0b && returned.sub == 0x25
+        {
+            receipts.push(OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned);
+        }
         if spotlight_call_completion == Some(SpotlightCallCompletion::EntryReturned) {
             receipts.push(OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned);
         }
@@ -2735,10 +2963,10 @@ impl Snes9xOracleSemanticTrace {
                     env::var(TRACE_PCS_ENV).ok().as_deref(),
                     &[
                         "0280d3", "0280d6", "0280d9", "0280dd", "028842", "05df49", "05df4d",
-                        "05eb1d", "05eb21", "068328", "0683a7", "0684e2", "0684aa", "0684eb",
-                        "06a628", "06a724", "06b9cc", "06b9d0", "0799ad", "079a0b", "008225",
-                        "0082c7", "00d4ed", "09c499", "09c4aa", "09c173", "09f63f", "09f825",
-                        "0ffdc3", "00d423", "00e75c", "00e766", "00d44c",
+                        "05cbcd", "05eb1d", "05eb21", "068328", "0683a7", "0684e2", "0684aa",
+                        "0684eb", "069271", "06a628", "06a724", "06b9cc", "06b9d0", "0799ad",
+                        "079a0b", "008225", "0082c7", "00d4ed", "09c499", "09c4aa", "09c173",
+                        "09f63f", "09f825", "0ffdc3", "00d423", "00e75c", "00e766", "00d44c",
                     ],
                 ),
             );
@@ -3116,6 +3344,7 @@ impl Snes9xOracleSemanticTrace {
                 tracker.1.observe_boundary(returned_event)?;
             }
             if let Some(execution) = self.sprite_main_execution.as_mut() {
+                execution.observe_guard_prep_weapon_flags_pending(returned_event)?;
                 execution.observe_fire_debirando_spawn_boundary(returned_event)?;
                 execution.observe_bari_before_random(returned_event)?;
                 execution.observe_main_and_aux1_timer_decrements(returned_event)?;
@@ -3255,7 +3484,8 @@ impl Snes9xOracleSemanticTrace {
                         returned_event.x,
                     ),
                     Some(
-                        MainLoopInterruption::LinkPositionBeforeCoordinates
+                        MainLoopInterruption::LinkVelocityAfterActualX
+                            | MainLoopInterruption::LinkPositionBeforeCoordinates
                             | MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                             | MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                             | MainLoopInterruption::LinkPositionAfterCoordinates { .. }
@@ -3442,6 +3672,9 @@ impl Snes9xOracleSemanticTrace {
                 execution.zazak_graphics_slot = None;
             }
         }
+        if let Some(execution) = self.sprite_main_execution.as_mut() {
+            execution.observe_mini_moldorm_history(&event)?;
+        }
         match event.event.as_str() {
             "pc" => {
                 let pc = event.pc.ok_or("Snes9x PC receipt omitted PC")? & 0x00ff_ffff;
@@ -3503,6 +3736,9 @@ impl Snes9xOracleSemanticTrace {
                         }
                         Some(SPRITE_BLIND_MAIDEN_BODY_FOLLOWER_GRAPHICS_RETURN_PC) => {
                             Some(SpriteFollowerGraphicsCaller::BlindMaidenBody)
+                        }
+                        Some(SPRITE_PREP_OLD_MAN_FOLLOWER_GRAPHICS_RETURN_PC) => {
+                            Some(SpriteFollowerGraphicsCaller::OldMan)
                         }
                         _ => None,
                     };
@@ -3642,6 +3878,18 @@ impl Snes9xOracleSemanticTrace {
                         .ok_or("Snes9x entered bonk-item graphics before a sprite slot")?;
                     execution.bonk_item_graphics_slot = Some(slot);
                 }
+                if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
+                    && event.return_address.map(|pc| pc & 0x00ff_ffff)
+                        == Some(WISH_POND_TOSSED_ITEM_GRAPHICS_RETURN_ADDRESS)
+                {
+                    let execution = self.sprite_main_execution.as_mut().ok_or(
+                        "Snes9x entered Wish Pond tossed-item graphics outside Sprite_Main",
+                    )?;
+                    let slot = execution.current_slot.ok_or(
+                        "Snes9x entered Wish Pond tossed-item graphics before a sprite slot",
+                    )?;
+                    execution.wish_pond_tossed_item_graphics_slot = Some(slot);
+                }
                 match pc {
                     SPRITE_MAIN_ENTRY_PC => {
                         if let Some(tracker) = self.rescued_maiden_initialization.take() {
@@ -3695,6 +3943,9 @@ impl Snes9xOracleSemanticTrace {
                             execution.current_slot = Some(slot);
                             execution.timers_and_oam_slot = None;
                             execution.timers_and_oam_dispatch_state = None;
+                            execution.initialize_active_main_calls = 0;
+                            execution.guard_prep_weapon_flags_pending_slot = None;
+                            execution.mini_moldorm_history = None;
                             execution.initialize_reset_properties = None;
                             execution.initialize_load_properties = None;
                             execution.fire_debirando_property_reload = false;
@@ -3702,6 +3953,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.fire_debirando_spawn = None;
                             execution.antfairy_subtype2_increment_slot = None;
                             execution.lanmola_subtype2_increment_slot = None;
+                            execution.helmasaur_hard_hat_beetle_subtype2_increment_slot = None;
                             execution.timer_decrements_slot = None;
                             execution.primary_timer_decrements_slot = None;
                             execution.bari_before_random_slot = None;
@@ -3721,6 +3973,18 @@ impl Snes9xOracleSemanticTrace {
                             execution.wallmaster_reset_prefix_slot = None;
                             execution.zazak_graphics_slot = None;
                             execution.follower_graphics = None;
+                        }
+                    }
+                    SPRITE_ACTIVE_MAIN_ENTRY_PC => {
+                        if let Some(execution) = self.sprite_main_execution.as_mut() {
+                            if execution.timers_and_oam_dispatch_state == Some(8) {
+                                execution.initialize_active_main_calls = execution
+                                    .initialize_active_main_calls
+                                    .checked_add(1)
+                                    .ok_or(
+                                        "Snes9x state-8 initializer active-call count overflowed",
+                                    )?;
+                            }
                         }
                     }
                     SPRITE_TIMERS_AND_OAM_RETURN_PC => {
@@ -3745,6 +4009,9 @@ impl Snes9xOracleSemanticTrace {
                         execution.last_completed_slot = Some(slot);
                         execution.timers_and_oam_slot = None;
                         execution.timers_and_oam_dispatch_state = None;
+                        execution.initialize_active_main_calls = 0;
+                        execution.guard_prep_weapon_flags_pending_slot = None;
+                        execution.mini_moldorm_history = None;
                         execution.initialize_reset_properties = None;
                         execution.initialize_load_properties = None;
                         execution.fire_debirando_property_reload = false;
@@ -3752,6 +4019,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.fire_debirando_spawn = None;
                         execution.antfairy_subtype2_increment_slot = None;
                         execution.lanmola_subtype2_increment_slot = None;
+                        execution.helmasaur_hard_hat_beetle_subtype2_increment_slot = None;
                         execution.timer_decrements_slot = None;
                         execution.primary_timer_decrements_slot = None;
                         execution.bari_before_random_slot = None;
@@ -4058,9 +4326,11 @@ impl Snes9xOracleSemanticTrace {
                     );
                 }
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
+                    execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_fire_debirando_spawn_write(&event)?;
                     execution.observe_antfairy_subtype2_increment(&event)?;
                     execution.observe_lanmola_subtype2_increment(&event)?;
+                    execution.observe_helmasaur_hard_hat_beetle_subtype2_increment(&event)?;
                     execution.observe_zazak_graphics(&event)?;
                     if pc == THROWABLE_SCENERY_STATE_CLEAR_PC {
                         let slot = execution.current_slot.ok_or(
@@ -4494,6 +4764,7 @@ impl Snes9xOracleSemanticTrace {
                     }
                 }
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
+                    execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_fire_debirando_spawn_boundary(&event)?;
                     execution.observe_bari_before_random(&event)?;
                     execution.observe_main_and_aux1_timer_decrements(&event)?;
@@ -5449,12 +5720,22 @@ fn main_loop_interruption_for_source_state(
     sub: Option<u8>,
     x: Option<u16>,
 ) -> Option<MainLoopInterruption> {
+    if main == Some(0x0f) && sub == Some(1) && pc == MODULE0F_AFTER_SUBMODULE_DISPATCH_PC {
+        return Some(MainLoopInterruption::DungeonExitSpotlightAfterSubmodule);
+    }
     if main == Some(0x12) && sub == Some(0) {
         if let Some(completed_stores) = game_over_iris_palette_completed_stores(pc, x?) {
             return Some(MainLoopInterruption::GameOverIrisGoalPaletteFill { completed_stores });
         }
     }
     if main == Some(0x0f)
+        && sub == Some(1)
+        && x == Some(0)
+        && (LINK_VELOCITY_AFTER_ACTUAL_X_START_PC..LINK_VELOCITY_BEFORE_ACTUAL_Y_STORE_END_PC)
+            .contains(&pc)
+    {
+        Some(MainLoopInterruption::LinkVelocityAfterActualX)
+    } else if main == Some(0x0f)
         && sub == Some(1)
         && ((LINK_VELOCITY_BEFORE_STATE_BRANCH_START_PC..LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC)
             .contains(&pc)
@@ -6134,6 +6415,16 @@ fn retire_resumed_main_loop_interruption(
                     slot,
                     spawned_slot,
                     progress,
+                }),
+                MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => {
+                    Some(SpriteMainProgress::GuardPrepWeaponFlagsPending(slot))
+                }
+                MainLoopInterruption::SpriteMainMiniMoldormHistory {
+                    slot,
+                    completed_stores,
+                } => Some(SpriteMainProgress::MiniMoldormHistory {
+                    slot,
+                    completed_stores,
                 }),
                 _ => None,
             };
@@ -7032,6 +7323,9 @@ mod tests {
             last_completed_slot: Some(3),
             timers_and_oam_slot: None,
             timers_and_oam_dispatch_state: None,
+            initialize_active_main_calls: 0,
+            guard_prep_weapon_flags_pending_slot: None,
+            mini_moldorm_history: None,
             initialize_reset_properties: None,
             initialize_load_properties: None,
             fire_debirando_property_reload: false,
@@ -7039,6 +7333,7 @@ mod tests {
             fire_debirando_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
+            helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
             main_and_aux1_timer_decrements_slot: None,
@@ -7054,6 +7349,7 @@ mod tests {
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
             bonk_item_graphics_slot: None,
+            wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,
             probe_after_oam_coordinates_slot: None,
             wallmaster_reset_prefix_slot: None,
@@ -7184,6 +7480,42 @@ mod tests {
                 .sprite_main_execution
                 .map(|execution| execution.interruption()),
             Some(MainLoopInterruption::SpriteMainBonkItemGraphicsStarted(0)),
+        );
+    }
+
+    #[test]
+    fn wish_pond_tossed_item_decoder_entry_retains_the_spawned_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(0), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut graphics_entry = raw("pc", Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC), None, None);
+        graphics_entry.return_address = Some(WISH_POND_TOSSED_ITEM_GRAPHICS_RETURN_ADDRESS);
+        source.consume_event(graphics_entry, &mut receipts).unwrap();
+
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::WishPondTossedItemGraphicsStarted(0),
+            )],
+        );
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .map(|execution| execution.interruption()),
+            Some(MainLoopInterruption::SpriteMainWishPondTossedItemGraphicsStarted(0)),
         );
     }
 
@@ -7840,6 +8172,102 @@ mod tests {
     }
 
     #[test]
+    fn mini_moldorm_nmi_exports_exact_history_store_progress() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(0), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut timers_return = raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(0), None);
+        timers_return.stack1 = Some(8);
+        source.consume_event(timers_return, &mut receipts).unwrap();
+        let mut nmi = raw(
+            "nmi",
+            Some(SPRITE_PREP_MINI_MOLDORM_HISTORY_X_HIGH_LOAD_PC),
+            Some(24),
+            None,
+        );
+        nmi.y = Some(0);
+        source.consume_event(nmi, &mut receipts).unwrap();
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        let progress = SpriteMainProgress::MiniMoldormHistory {
+            slot: 0,
+            completed_stores: 99,
+        };
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainMiniMoldormHistory {
+                        slot: 0,
+                        completed_stores: 99,
+                    },
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(progress),
+            ],
+        );
+    }
+
+    #[test]
+    fn guard_prep_host_return_exports_the_first_active_calls_pending_weapon_flags() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(12), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut timers_return = raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(12), None);
+        timers_return.stack1 = Some(8);
+        source.consume_event(timers_return, &mut receipts).unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_ACTIVE_MAIN_ENTRY_PC), Some(12), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut weapon_flags_store = raw(
+            "wram-write",
+            Some(GUARD_ANIMATE_WEAPON_FLAGS_STORE_PC),
+            Some(0),
+            Some(0x0803),
+        );
+        weapon_flags_store.sub = Some(0);
+        source
+            .consume_event(weapon_flags_store, &mut receipts)
+            .unwrap();
+
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::GuardPrepWeaponFlagsPending(12),
+            )],
+        );
+    }
+
+    #[test]
     fn timer_decrement_nmi_exports_the_completed_countdown_prefix() {
         let mut source = empty_semantic_tracker();
         let mut receipts = Vec::new();
@@ -8133,6 +8561,33 @@ mod tests {
                     SpriteMainProgress::AfterLanmolaSubtype2Increment(2),
                 ),
             ],
+        );
+    }
+
+    #[test]
+    fn sprite_main_host_return_exports_helmasaur_hard_hat_subtype_increment() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(4), None),
+            raw(
+                "wram-write",
+                Some(HELMASAUR_HARD_HAT_BEETLE_SUBTYPE2_INCREMENT_PC),
+                Some(4),
+                Some(SPRITE_SUBTYPE2_BASE + 4),
+            ),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(4),
+            )],
         );
     }
 
@@ -8526,6 +8981,44 @@ mod tests {
                 .unwrap()
                 .0,
             SpriteFollowerGraphicsCaller::BlindMaidenBody,
+        );
+    }
+
+    #[test]
+    fn old_man_follower_graphics_uses_its_exact_prep_return() {
+        let mut source = empty_semantic_tracker();
+        let mut execution = SpriteMainExecutionTracker::default();
+        execution.current_slot = Some(8);
+        source.sprite_main_execution = Some(execution);
+
+        let mut load = raw(
+            "pc",
+            Some(RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC),
+            Some(8),
+            None,
+        );
+        load.return_address = Some(SPRITE_PREP_OLD_MAN_FOLLOWER_GRAPHICS_RETURN_PC);
+        source.consume_event(load, &mut Vec::new()).unwrap();
+
+        let mut boundary = raw("nmi", Some(0x00_e845), None, None);
+        boundary.main = Some(7);
+        boundary.sub = Some(15);
+        boundary.subsub = Some(1);
+        boundary.nmi_latch = Some(1);
+        boundary.y = Some(1102);
+        let mut receipts = Vec::new();
+        source.consume_event(boundary, &mut receipts).unwrap();
+
+        assert!(
+            receipts.contains(&OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                MainLoopInterruption::SpriteMainFollowerGraphics {
+                    slot: 8,
+                    caller: SpriteFollowerGraphicsCaller::OldMan,
+                    stage: RescuedMaidenInitializationStage::FirstFollowerSheet {
+                        completed_bytes: 1102,
+                    },
+                },
+            ))
         );
     }
 
@@ -9787,6 +10280,28 @@ mod tests {
     }
 
     #[test]
+    fn special_exit_mosaic_return_becomes_a_backend_neutral_receipt() {
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame_with_sub("entry", 7426, 0x0b, 0x24))
+            .unwrap();
+        host.observe(&frame_with_sub("return", 7426, 0x0b, 0x25))
+            .unwrap();
+        let mut receipts = Vec::new();
+
+        host.finish(&mut receipts, None, true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned,
+            ],
+        );
+    }
+
+    #[test]
     fn world_map_overlay_reload_return_becomes_a_backend_neutral_receipt() {
         let mut host = HostFrameWindow::default();
         host.observe(&frame_with_sub("entry", 6168, 9, 0x20))
@@ -10783,6 +11298,9 @@ mod tests {
             last_completed_slot: Some(1),
             timers_and_oam_slot: None,
             timers_and_oam_dispatch_state: None,
+            initialize_active_main_calls: 0,
+            guard_prep_weapon_flags_pending_slot: None,
+            mini_moldorm_history: None,
             initialize_reset_properties: None,
             initialize_load_properties: None,
             fire_debirando_property_reload: false,
@@ -10790,6 +11308,7 @@ mod tests {
             fire_debirando_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
+            helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
             main_and_aux1_timer_decrements_slot: None,
@@ -10805,6 +11324,7 @@ mod tests {
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
             bonk_item_graphics_slot: None,
+            wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,
             probe_after_oam_coordinates_slot: None,
             wallmaster_reset_prefix_slot: None,
@@ -10836,6 +11356,9 @@ mod tests {
             last_completed_slot: Some(13),
             timers_and_oam_slot: None,
             timers_and_oam_dispatch_state: None,
+            initialize_active_main_calls: 0,
+            guard_prep_weapon_flags_pending_slot: None,
+            mini_moldorm_history: None,
             initialize_reset_properties: None,
             initialize_load_properties: None,
             fire_debirando_property_reload: false,
@@ -10843,6 +11366,7 @@ mod tests {
             fire_debirando_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
+            helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
             main_and_aux1_timer_decrements_slot: None,
@@ -10858,6 +11382,7 @@ mod tests {
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
             bonk_item_graphics_slot: None,
+            wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,
             probe_after_oam_coordinates_slot: None,
             wallmaster_reset_prefix_slot: None,
@@ -10976,6 +11501,68 @@ mod tests {
                 "source PC {pc:06x}",
             );
         }
+    }
+
+    #[test]
+    fn nmi_after_spotlight_submodule_return_preserves_the_link_suffix() {
+        let mut tracker = Snes9xOracleSemanticTrace {
+            path: PathBuf::new(),
+            offset: 0,
+            cache_write_progress: None,
+            normal_load_ordinal: None,
+            pending_reset_progress: None,
+            cached_sprite_execution: None,
+            overworld_presence_published: false,
+            overworld_sprite_activation: None,
+            overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
+            pending_spotlight_helper_nmi: None,
+            pending_spotlight_helper_nmi_acceptance_index: None,
+            seed_warmup_active: false,
+            item_receipt_caller: None,
+            sprite_main_execution: None,
+            zelda_run_game_loop_call_active: false,
+            nmi_publication_pending: false,
+            pending_nmi_update_gate: None,
+            nmi_resume_targets: Vec::new(),
+            synthesized_nmi_resume: None,
+            host_nmi_ppu_register_operands: Vec::new(),
+        };
+        let mut event = raw(
+            "nmi",
+            Some(MODULE0F_AFTER_SUBMODULE_DISPATCH_PC),
+            None,
+            None,
+        );
+        event.main = Some(0x0f);
+        event.sub = Some(1);
+        let mut receipts = Vec::new();
+
+        tracker.consume_event(event, &mut receipts).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::DungeonExitSpotlightAfterSubmodule,
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn host_boundary_after_actual_x_velocity_retains_the_pending_y_component() {
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x07_e352, Some(0x0f), Some(1), Some(0),),
+            Some(MainLoopInterruption::LinkVelocityAfterActualX),
+        );
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x07_e352, Some(0x0f), Some(1), Some(1),),
+            None,
+            "the horizontal pass has not completed while X still names it",
+        );
     }
 
     #[test]

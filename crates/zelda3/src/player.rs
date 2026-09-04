@@ -1854,10 +1854,62 @@ impl ZeldaState {
         Some(self.link_move_position_after_coordinates(pass))
     }
 
+    /// Run `Link_HandleVelocity` through its horizontal actual-velocity pass,
+    /// retaining the unresolved vertical component for the following host.
+    pub(super) fn link_handle_velocity_until_actual_x_resolved(
+        &mut self,
+    ) -> Option<LinkVelocityAfterActualXReturn> {
+        let (direction, velocity) =
+            self.link_handle_velocity_before_actual_velocity_resolution()?;
+        if direction & 0x03 != 0 {
+            let actual_x = if direction & 0x02 != 0 {
+                0u8.wrapping_sub(velocity)
+            } else {
+                velocity
+            };
+            self.follower_link_state_mut()
+                .set_actual_x_velocity(actual_x);
+        }
+        let pending_actual_y = (direction & 0x0c != 0).then_some(if direction & 0x08 != 0 {
+            0u8.wrapping_sub(velocity)
+        } else {
+            velocity
+        });
+        Some(LinkVelocityAfterActualXReturn { pending_actual_y })
+    }
+
+    /// Resume the vertical actual-velocity publication, airborne defaults,
+    /// and `Link_MovePosition` without replaying speed/modifier selection.
+    pub(super) fn link_handle_velocity_from_after_actual_x_until_position_integrated(
+        &mut self,
+        velocity_return: LinkVelocityAfterActualXReturn,
+    ) -> Option<LinkMovePositionReturn> {
+        if let Some(actual_y) = velocity_return.pending_actual_y {
+            self.follower_link_state_mut()
+                .set_actual_y_velocity(actual_y);
+        }
+        self.follower_link_state_mut().prime_airborne_z_velocity();
+        self.link_move_position_until_coordinates_integrated()
+    }
+
     /// `Link_HandleVelocity` up to its `Link_MovePosition` call. `false` when
     /// the ROM returned earlier (safe-return/sand-drag, swim, or the
     /// all-blocked collision exit).
     fn link_handle_velocity_before_move_position(&mut self) -> bool {
+        let Some((direction, velocity)) =
+            self.link_handle_velocity_before_actual_velocity_resolution()
+        else {
+            return false;
+        };
+        self.follower_link_state_mut()
+            .set_actual_velocity_from_direction(direction, velocity);
+        self.follower_link_state_mut().prime_airborne_z_velocity();
+        true
+    }
+
+    /// Run the stateful speed-selection prefix, stopping before either
+    /// component of actual velocity is resolved.
+    fn link_handle_velocity_before_actual_velocity_resolution(&mut self) -> Option<(u8, u8)> {
         let old_x = self.game_state.player.follower_link.x();
         let old_y = self.game_state.player.follower_link.y();
 
@@ -1870,18 +1922,18 @@ impl ZeldaState {
         {
             self.store_link_safe_return_position(old_x, old_y);
             self.link_handle_velocity_and_sand_drag(old_x, old_y);
-            return false;
+            return None;
         }
 
         if self.game_state.player.follower_link.handler_state() == 4 {
             self.handle_swim_stroke_and_subpixels();
-            return false;
+            return None;
         }
 
         let mut speed_index = if self.game_state.player.follower_link.flag_moving() != 0 {
             if !self.game_state.player.follower_link.is_running() {
                 self.handle_swim_stroke_and_subpixels();
-                return false;
+                return None;
             }
             24
         } else {
@@ -1901,7 +1953,7 @@ impl ZeldaState {
                     .tile_collision_bits_secondary())
                 == 0x0f
             {
-                return false;
+                return None;
             }
             if self
                 .game_state
@@ -1950,17 +2002,13 @@ impl ZeldaState {
             }
         }
 
-        let vel = self
+        let velocity = self
             .game_state
             .player
             .follower_link
             .speed_modifier()
             .wrapping_add(LINK_HANDLE_VELOCITY_SPEED_MOD[speed_index as usize]);
-        let direction = self.game_state.player.follower_link.direction();
-        self.follower_link_state_mut()
-            .set_actual_velocity_from_direction(direction, vel);
-        self.follower_link_state_mut().prime_airborne_z_velocity();
-        true
+        Some((self.game_state.player.follower_link.direction(), velocity))
     }
 
     /// `Link_MovePosition` up to and including the `pass` axis' subpixel

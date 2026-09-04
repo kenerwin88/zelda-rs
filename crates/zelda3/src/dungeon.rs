@@ -13462,6 +13462,17 @@ impl ZeldaState {
         self.module_pre_dungeon_after_sprite_reset_with_song_bank_timing(false);
     }
 
+    /// Complete `Module_PreDungeon` after a source-tracked
+    /// `Dungeon_ResetSprites` call has already published and then resumed its
+    /// exact room-load prefix.
+    pub(super) fn complete_module_pre_dungeon_after_dungeon_reset_authoritative_return(&mut self) {
+        self.module_pre_dungeon_after_dungeon_reset_with_song_bank_timing(false);
+    }
+
+    pub(super) fn complete_module_pre_dungeon_after_dungeon_reset_entrance_load(&mut self) {
+        self.module_pre_dungeon_after_dungeon_reset_with_song_bank_timing(true);
+    }
+
     pub(super) fn complete_module_pre_dungeon_before_return_suffix(&mut self) {
         self.complete_module_pre_dungeon_before_sprite_reset();
         self.sprite_reset_all();
@@ -13547,6 +13558,10 @@ impl ZeldaState {
     /// song-bank transfer started.
     fn module_pre_dungeon_after_sprite_reset_prefix(&mut self) -> bool {
         self.dungeon_reset_sprites();
+        self.module_pre_dungeon_after_dungeon_reset_prefix()
+    }
+
+    fn module_pre_dungeon_after_dungeon_reset_prefix(&mut self) -> bool {
         self.messaging_state_mut()
             .clear_message_or_sprite_state_cache();
         self.dungeon_room_runtime_mut().skip_room_tags_once();
@@ -13565,6 +13580,20 @@ impl ZeldaState {
         self.set_main_module(7);
         self.set_submodule(15);
         self.Dungeon_LoadSongBankIfNeeded()
+    }
+
+    fn module_pre_dungeon_after_dungeon_reset_with_song_bank_timing(
+        &mut self,
+        defer_song_bank: bool,
+    ) {
+        let song_bank_transfer_started = self.module_pre_dungeon_after_dungeon_reset_prefix();
+        if defer_song_bank
+            && song_bank_transfer_started
+            && self.begin_pre_dungeon_song_bank_transfer_work()
+        {
+            return;
+        }
+        self.complete_module_pre_dungeon_after_song_bank_transfer();
     }
 
     fn module_pre_dungeon_after_sprite_reset_with_song_bank_timing(

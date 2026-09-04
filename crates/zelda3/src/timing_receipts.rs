@@ -649,6 +649,18 @@ pub enum MainLoopInterruption {
     /// `Sprite_Main` to execute the current slot through that semantic call
     /// instead of stopping at the preceding returned slot.
     SpriteMainItemReceiptGraphicsStarted(u8),
+    /// `Module0F_SpotlightClose` returned from its submodule-dispatch call,
+    /// including a completed dungeon-exit spotlight entry and its submodule
+    /// advance, but the accepted NMI preceded the caller's Link movement/OAM
+    /// suffix. The timing backend keeps the module-router instruction address
+    /// private; translated gameplay resumes the complete suffix without
+    /// replaying the entry call.
+    DungeonExitSpotlightAfterSubmodule,
+    /// `Link_HandleVelocity` resolved and published the horizontal component
+    /// of Link's actual velocity, but the accepted NMI (or host boundary)
+    /// preceded the vertical component. The speed-selection and modifier
+    /// prefix is complete and must not be replayed when movement resumes.
+    LinkVelocityAfterActualX,
     /// The main-loop module reached Link's movement call, but the accepted NMI
     /// preceded the first coordinate publication. The timing authority keeps
     /// the backend instruction address private; translated gameplay resumes
@@ -775,6 +787,30 @@ pub enum MainLoopInterruption {
         countdown: u8,
         next_color: u8,
     },
+    /// Wish Pond case 2 removed the selected inventory item, spawned its
+    /// tossed-item ancilla, and entered that helper's synchronous animated-
+    /// sheet decode. The graphics call, helper/case suffix, current slot, and
+    /// lower `Sprite_Main` slots remain pending.
+    SpriteMainWishPondTossedItemGraphicsStarted(u8),
+    /// A state-8 standard guard completed property initialization and entered
+    /// the first of `SpritePrep_TrooperAndArcherSoldier`'s two nested
+    /// `SpriteActive_Main` calls. The guard draw has published both weapon
+    /// entries through the final entry's character byte; its flags/extended
+    /// OAM fields, the rest of the first active call, the second active call,
+    /// and the initializer/slot-loop suffix remain pending.
+    SpriteMainGuardPrepWeaponFlagsPending(u8),
+    /// A state-8 Mini Moldorm completed generic property initialization and
+    /// this many of its 32 history entries' four byte stores. Stores are
+    /// counted in ROM order: Y low, Y high, X low, X high.
+    SpriteMainMiniMoldormHistory {
+        slot: u8,
+        completed_stores: u8,
+    },
+    /// `HelmasaurHardHatBeetleCommon` returned from its inactive check and
+    /// published the shared subtype2 increment. Its recoil check, movement /
+    /// collision body, current-slot return, and lower Sprite_Main slots remain
+    /// pending.
+    SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -836,6 +872,10 @@ impl MainLoopInterruption {
                 | Self::SpriteMainFireDebirandoSpawn { .. }
                 | Self::SpriteMainAfterAntfairySubtype2Increment(_)
                 | Self::SpriteMainAfterLanmolaSubtype2Increment(_)
+                | Self::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
+                | Self::SpriteMainWishPondTossedItemGraphicsStarted(_)
+                | Self::SpriteMainGuardPrepWeaponFlagsPending(_)
+                | Self::SpriteMainMiniMoldormHistory { .. }
         )
     }
 }
@@ -932,6 +972,23 @@ pub enum SpriteMainProgress {
     /// subtype2 increment. Its remaining draw/body suffix and lower slots are
     /// pending.
     AfterLanmolaSubtype2Increment(u8),
+    /// Wish Pond case 2 is suspended inside the tossed-item ancilla's
+    /// animated-sheet decoder after all item-removal and spawn-prefix writes.
+    WishPondTossedItemGraphicsStarted(u8),
+    /// The first nested active call in a state-8 standard-guard initializer
+    /// published the final weapon entry through its character byte. Its flags
+    /// and extended-OAM stores are the next source mutations.
+    GuardPrepWeaponFlagsPending(u8),
+    /// A state-8 Mini Moldorm completed generic property initialization and
+    /// this many of its 128 source-ordered history byte stores.
+    MiniMoldormHistory {
+        slot: u8,
+        completed_stores: u8,
+    },
+    /// The shared Mini Helmasaur / Hardhat Beetle body completed its inactive
+    /// check and subtype2 increment. The rest of that body and lower slots are
+    /// pending.
+    AfterHelmasaurHardHatBeetleSubtype2Increment(u8),
 }
 
 /// Source call site owning an interrupted `SpritePrep_ResetProperties`.
@@ -1164,6 +1221,8 @@ pub enum SpriteFollowerGraphicsCaller {
     /// `Sprite_B7_BlindMaiden`'s state-9 transition into a follower.
     /// Keep new variants at the end: these receipts are checkpoint-serialized.
     BlindMaidenBody,
+    /// `SpritePrep_OldMan`'s state-8 initialization call.
+    OldMan,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -1574,6 +1633,12 @@ pub enum OriginalTimingSemanticReceipt {
     TriforceRoomCase2PaletteProgress(TriforceRoomCase2PaletteProgressReceipt),
     CreditsSceneLoadProgress(CreditsSceneLoadProgressReceipt),
     CreditsEndSequence32Progress(CreditsEndSequence32ProgressReceipt),
+    /// Module0B/$24 completed the animated-sprite decode which precedes
+    /// `LoadOverworldFromSpecialOverworld`, restored the saved overworld
+    /// coordinates and scroll state, and advanced to the next submodule. The
+    /// timing backend identifies the enclosing source-stage return; gameplay
+    /// owns every restored value.
+    OverworldSpecialExitMosaicReturned,
 }
 
 /// One source interruption temporarily owned by a translated C caller during

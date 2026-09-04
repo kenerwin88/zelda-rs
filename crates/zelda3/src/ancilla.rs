@@ -3548,47 +3548,65 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_add_tossed_pond_item(&mut self, a: u8, xin: u8, yin: u8) {
-        self.follower_link_state_mut().set_receive_item_index(xin);
-        if let Some(k) = self.ancilla_add_ancilla(a, yin) {
-            self.set_sound_effect_2_with_link_pan(0x13);
-            let sb = RECEIVE_ITEM_GRAPHICS[xin as usize];
-            if sb != 0xff {
-                if sb == 0x20 {
-                    self.DecompressShieldGraphics();
-                }
-                self.DecodeAnimatedSpriteTile_variable(sb);
-            } else {
-                self.DecodeAnimatedSpriteTile_variable(0);
-            }
-            if sb == 6 {
-                self.DecompressSwordGraphics();
-            }
-
-            self.follower_link_state_mut().enter_item_hold_pose();
-            let receive_item = self.game_state.player.follower_link.receive_item_index();
-            {
-                let mut item = self.ancilla_slot_view_mut(k);
-                item.set_z_velocity(20);
-                item.set_y_velocity((-40i8) as u8);
-                item.set_x_velocity(0);
-                item.set_z(0);
-                item.set_timer(16);
-                item.set_item_to_link(receive_item);
-            }
-            self.ancilla_set_xy(
-                k,
-                self.game_state.player.follower_link.x().wrapping_add(
-                    ANCILLA_ADD_TOSSED_POND_ITEM_WISH_POND_ITEM_X
-                        [self.game_state.player.follower_link.receive_item_index() as usize]
-                        as u16,
-                ),
-                self.game_state.player.follower_link.y().wrapping_add(
-                    ANCILLA_ADD_TOSSED_POND_ITEM_WISH_POND_ITEM_Y
-                        [self.game_state.player.follower_link.receive_item_index() as usize]
-                        as i16 as u16,
-                ),
-            );
+        if let Some((slot, graphics)) =
+            self.ancilla_add_tossed_pond_item_until_graphics(a, xin, yin)
+        {
+            self.complete_ancilla_add_tossed_pond_item_graphics(slot, xin, graphics);
         }
+    }
+
+    /// Execute `AncillaAdd_TossedPondItem` through the source call to
+    /// `DecodeAnimatedSpriteTile_variable`, but do not enter that synchronous
+    /// graphics call. The selected ancilla slot and decoded-sheet selector are
+    /// call locals which must survive a host return inside the decompressor.
+    pub(super) fn ancilla_add_tossed_pond_item_until_graphics(
+        &mut self,
+        a: u8,
+        xin: u8,
+        yin: u8,
+    ) -> Option<(usize, u8)> {
+        self.follower_link_state_mut().set_receive_item_index(xin);
+        let k = self.ancilla_add_ancilla(a, yin)?;
+        self.set_sound_effect_2_with_link_pan(0x13);
+        let graphics = RECEIVE_ITEM_GRAPHICS[xin as usize];
+        if graphics == 0x20 {
+            self.DecompressShieldGraphics();
+        }
+        Some((k, graphics))
+    }
+
+    /// Resume `AncillaAdd_TossedPondItem` at its interrupted animated-sheet
+    /// call and finish the exact caller suffix without replaying its spawn.
+    pub(super) fn complete_ancilla_add_tossed_pond_item_graphics(
+        &mut self,
+        k: usize,
+        receive_item: u8,
+        graphics: u8,
+    ) {
+        self.DecodeAnimatedSpriteTile_variable(if graphics == 0xff { 0 } else { graphics });
+        if graphics == 6 {
+            self.DecompressSwordGraphics();
+        }
+
+        self.follower_link_state_mut().enter_item_hold_pose();
+        {
+            let mut item = self.ancilla_slot_view_mut(k);
+            item.set_z_velocity(20);
+            item.set_y_velocity((-40i8) as u8);
+            item.set_x_velocity(0);
+            item.set_z(0);
+            item.set_timer(16);
+            item.set_item_to_link(receive_item);
+        }
+        self.ancilla_set_xy(
+            k,
+            self.game_state.player.follower_link.x().wrapping_add(
+                ANCILLA_ADD_TOSSED_POND_ITEM_WISH_POND_ITEM_X[receive_item as usize] as u16,
+            ),
+            self.game_state.player.follower_link.y().wrapping_add(
+                ANCILLA_ADD_TOSSED_POND_ITEM_WISH_POND_ITEM_Y[receive_item as usize] as i16 as u16,
+            ),
+        );
     }
 
     fn ancilla_add_cutscene_duck(&mut self, a: u8, y: u8) {

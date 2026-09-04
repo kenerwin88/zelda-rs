@@ -6,6 +6,114 @@ fn fresh_state() -> Box<ZeldaState> {
 }
 
 #[test]
+fn wish_pond_graphics_boundary_keeps_the_spawn_prefix_and_call_locals() {
+    let mut state = fresh_state();
+    let slot = 0;
+    state.sprite_slot_view_mut(slot).set_state(9);
+    state.sprite_slot_view_mut(slot).set_sprite_type(0x72);
+    state.sprite_slot_view_mut(slot).set_ai_state(2);
+    state.multiselect_choice_mut().set_value(1);
+    state.inventory_items_mut().set_inventory_item(1, 1);
+    state.arm_sprite_main_cpu_continuation(
+        SpriteMainCpuBoundary::WishPondTossedItemGraphics {
+            slot: slot as u8,
+            continuation: None,
+        },
+        1,
+        SpriteMainCpuCaller::DungeonModule07Live {
+            boundary: OriginalTimingBoundary::HostReturn,
+        },
+    );
+
+    state.sprite_wish_pond3(slot);
+
+    assert_eq!(state.sprite_slot_view(slot).ai_state(), 3);
+    assert_eq!(state.sprite_slot_view(slot).c(), 1);
+    assert_eq!(state.game_state.inventory.items.inventory_item(1), 0);
+    assert_eq!(state.sprite_slot_view(slot).delay_main(), 0);
+    let continuation = match state.game_execution_scheduler.current_work() {
+        Some(GameWorkContinuation::FinishSpriteMain {
+            boundary:
+                SpriteMainCpuBoundary::WishPondTossedItemGraphics {
+                    slot: 0,
+                    continuation: Some(continuation),
+                },
+            caller: SpriteMainCpuCaller::DungeonModule07Live { .. },
+        }) => continuation,
+        other => panic!("Wish Pond graphics prefix scheduled the wrong continuation: {other:?}"),
+    };
+    assert_eq!(
+        state
+            .ancilla_slot_view(usize::from(continuation.ancilla_slot))
+            .ancilla_type(),
+        0x28,
+    );
+
+    state.complete_wish_pond_tossed_item_graphics(slot, continuation);
+
+    assert_eq!(
+        state.sprite_slot_view(slot).graphics(),
+        continuation.wish_item
+    );
+    assert_eq!(state.sprite_slot_view(slot).direction(), continuation.item);
+    assert_eq!(state.sprite_slot_view(slot).delay_main(), 255);
+    assert_eq!(
+        state
+            .ancilla_slot_view(usize::from(continuation.ancilla_slot))
+            .timer(),
+        16,
+    );
+}
+
+#[test]
+fn standard_guard_boundary_leaves_weapon_flags_and_extended_oam_for_the_resume() {
+    let mut state = fresh_state();
+    let slot = 12;
+    state.set_indoor_flag(0);
+    state.set_submodule(0x25);
+    state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    state
+        .oam_state_mut()
+        .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+    for index in 0..128 {
+        let addr = OAM_BUF + index * 4;
+        state.oam_state_mut().set_entry_flags(addr, 0xa5);
+        state.oam_state_mut().set_extended_byte(index, 2);
+    }
+    {
+        let mut sprite = state.sprite_slot_view_mut(slot);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x41);
+        sprite.set_x(0x0080);
+        sprite.set_y(0x0080);
+        sprite.set_deflection_bits(0x20);
+    }
+
+    let continuation = state
+        .sprite_prep_standard_guard_until_weapon_flags(slot)
+        .expect("outdoor standard guard should reach its first nested weapon draw");
+    let pending_index = usize::from(continuation.pending_oam_index);
+    let pending_addr = OAM_BUF + pending_index * 4;
+
+    assert_eq!(state.game_state.frame.submodule, 0);
+    assert_eq!(state.game_state.oam.entry_flags(pending_addr), 0xa5);
+    assert_eq!(state.game_state.oam.extended_byte(pending_index), 2);
+
+    state.complete_sprite_prep_standard_guard_after_weapon_flags(slot, continuation);
+
+    assert_eq!(state.game_state.frame.submodule, 0x25);
+    assert_eq!(
+        state.game_state.oam.entry_flags(pending_addr),
+        continuation.pending_oam_flags,
+    );
+    assert_eq!(
+        state.game_state.oam.extended_byte(pending_index),
+        (continuation.pending_oam_x >> 8) as u8 & 1,
+    );
+    assert_eq!(state.sprite_slot_view(slot).deflection_bits(), 0x20);
+}
+
+#[test]
 fn simple_sprite_prep_offsets_and_flags_match_c() {
     let mut s = fresh_state();
     let k = 2;
@@ -343,6 +451,24 @@ fn moldorm_and_chainchomp_history_buffers_are_seeded_from_sprite_position() {
     assert_eq!(s.ram[MOLDORM_X_HI_PREP + base + 31], 0x01);
     assert_eq!(s.ram[MOLDORM_Y_LO_PREP + base + 15], 0x55);
     assert_eq!(s.ram[MOLDORM_Y_HI_PREP + base + 31], 0x02);
+
+    let mut partial = fresh_state();
+    partial.sprite_slot_view_mut(0).set_x_low(0x23);
+    partial.sprite_slot_view_mut(0).set_x_high(0x01);
+    partial.sprite_slot_view_mut(0).set_y_low(0x56);
+    partial.sprite_slot_view_mut(0).set_y_high(0x04);
+    partial.sprite_prep_mini_moldorm_bounce_prefix(0, 99);
+    assert_eq!(partial.ram[MOLDORM_Y_LO_PREP + 24], 0x56);
+    assert_eq!(partial.ram[MOLDORM_Y_HI_PREP + 24], 0x04);
+    assert_eq!(partial.ram[MOLDORM_X_LO_PREP + 24], 0x23);
+    assert_eq!(partial.ram[MOLDORM_X_HI_PREP + 24], 0x00);
+    assert_eq!(partial.ram[MOLDORM_Y_LO_PREP + 25], 0x00);
+    partial.sprite_prep_mini_moldorm_bounce_from(0, 99);
+    assert_eq!(partial.ram[MOLDORM_X_HI_PREP + 24], 0x01);
+    assert_eq!(partial.ram[MOLDORM_Y_LO_PREP + 31], 0x56);
+    assert_eq!(partial.ram[MOLDORM_Y_HI_PREP + 31], 0x04);
+    assert_eq!(partial.ram[MOLDORM_X_LO_PREP + 31], 0x23);
+    assert_eq!(partial.ram[MOLDORM_X_HI_PREP + 31], 0x01);
 
     s.sprite_workspace_mut().set_current_sprite_x(0x1234);
     s.sprite_workspace_mut().set_current_sprite_y(0x5678);
@@ -853,6 +979,31 @@ fn blind_maiden_and_old_man_prep_follow_follower_gates() {
     old_man_room.sprite_prep_old_man_bounce(k);
     assert_eq!(old_man_room.sprite_slot_view(k).ignore_projectile(), 1);
     assert_eq!(old_man_room.sprite_slot_view(k).subtype2(), 2);
+
+    let mut old_man_prefix = fresh_state();
+    old_man_prefix.sprite_slot_view_mut(k).set_state(9);
+    assert_eq!(
+        old_man_prefix.sprite_prep_old_man_before_follower_graphics(k),
+        Some(true),
+    );
+    assert_eq!(old_man_prefix.sprite_slot_view(k).ignore_projectile(), 1);
+    assert_eq!(
+        old_man_prefix
+            .game_state
+            .sprites
+            .follower_runtime
+            .indicator(),
+        4,
+    );
+    old_man_prefix.sprite_prep_old_man_after_follower_graphics(true);
+    assert_eq!(
+        old_man_prefix
+            .game_state
+            .sprites
+            .follower_runtime
+            .indicator(),
+        0,
+    );
 
     let mut old_man_mirror = fresh_state();
     old_man_mirror.inventory_items_mut().set_mirror(2);

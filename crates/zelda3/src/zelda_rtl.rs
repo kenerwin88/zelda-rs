@@ -4915,6 +4915,14 @@ enum SpriteMainCpuBoundary {
     /// call. Its typed item-receipt continuation, rather than the outer loop,
     /// owns the suspended suffix.
     ItemReceiptGraphicsStarted(u8),
+    /// Wish Pond case 2 has removed the selected inventory item, spawned the
+    /// tossed-item ancilla, and entered that helper's synchronous animated-
+    /// sheet decode. The backend receipt carries no call-local data; native
+    /// execution binds the exact suffix before parking the continuation.
+    WishPondTossedItemGraphics {
+        slot: u8,
+        continuation: Option<WishPondTossedItemGraphicsContinuation>,
+    },
     /// Sprite state/property initialization and Zelda's prep prefix returned,
     /// then NMI interrupted the shared follower-graphics loader. The saved
     /// indicator is filled by the translated prefix before scheduling.
@@ -4999,6 +5007,49 @@ enum SpriteMainCpuBoundary {
         slot: u8,
         continuation: Option<LanmolaDrawContinuation>,
     },
+    /// `HelmasaurHardHatBeetleCommon` published its shared subtype2 increment.
+    /// Both callers have completed their draw prefix; only the shared body
+    /// suffix and the lower Sprite_Main slots remain pending.
+    AfterHelmasaurHardHatBeetleSubtype2Increment {
+        slot: u8,
+    },
+    /// The first nested active call in a state-8 standard-guard initializer
+    /// stopped at the final weapon entry's flags store. The semantic wire
+    /// carries only the slot; translated execution binds the source locals
+    /// and the already-published OAM prefix before parking.
+    GuardPrepWeaponFlagsPending {
+        slot: u8,
+        continuation: Option<GuardPrepWeaponDrawContinuation>,
+    },
+    /// A state-8 Mini Moldorm has completed its generic initialization and a
+    /// source-ordered prefix of the Y-low/Y-high/X-low/X-high history stores.
+    MiniMoldormHistory {
+        slot: u8,
+        completed_stores: u8,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct GuardPrepWeaponDrawContinuation {
+    saved_submodule: u8,
+    guard_bak_graphics: u8,
+    guard_bak_direction: u8,
+    draw_flags3: u8,
+    draw_direction: u8,
+    poc_x: u16,
+    poc_y: u16,
+    poc_flags: u8,
+    pending_oam_index: u16,
+    pending_oam_x: u16,
+    pending_oam_flags: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct WishPondTossedItemGraphicsContinuation {
+    ancilla_slot: u8,
+    item: u8,
+    wish_item: u8,
+    graphics: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5174,6 +5225,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(active_slot)
+        | SpriteMainCpuBoundary::WishPondTossedItemGraphics {
+            slot: active_slot, ..
+        }
         | SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(active_slot)
         | SpriteMainCpuBoundary::AfterZeldaFollowerGraphics {
             slot: active_slot, ..
@@ -5201,6 +5255,15 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment {
+            slot: active_slot,
+        }
+        | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::MiniMoldormHistory {
             slot: active_slot, ..
         } => active_slot == slot,
     }
@@ -5412,6 +5475,16 @@ fn sprite_main_cpu_boundary_from_interruption(
             );
             Some(SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot))
         }
+        crate::MainLoopInterruption::SpriteMainWishPondTossedItemGraphicsStarted(slot) => {
+            assert!(
+                slot < 16,
+                "source Wish Pond graphics receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::WishPondTossedItemGraphics {
+                slot,
+                continuation: None,
+            })
+        }
         crate::MainLoopInterruption::SpriteMainZazakAfterGraphics(slot) => {
             assert!(
                 slot < 16,
@@ -5507,6 +5580,36 @@ fn sprite_main_cpu_boundary_from_interruption(
                 continuation: None,
             })
         }
+        crate::MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(
+            slot,
+        ) => {
+            assert!(
+                slot < 16,
+                "source Helmasaur/Hardhat subtype2 receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot })
+        }
+        crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => {
+            assert!(
+                slot < 16,
+                "source guard-prep weapon receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
+                slot,
+                continuation: None,
+            })
+        }
+        crate::MainLoopInterruption::SpriteMainMiniMoldormHistory {
+            slot,
+            completed_stores,
+        } => {
+            assert!(slot < 16);
+            assert!(completed_stores <= 128);
+            Some(SpriteMainCpuBoundary::MiniMoldormHistory {
+                slot,
+                completed_stores,
+            })
+        }
         _ => None,
     }
 }
@@ -5538,11 +5641,20 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(slot)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(slot)
+        | crate::MainLoopInterruption::SpriteMainWishPondTossedItemGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainZazakAfterGraphics(slot)
         | crate::MainLoopInterruption::SpriteMainBonkItemGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainProbeAfterOamCoordinates(slot)
         | crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(slot)
-        | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(slot) => slot < 16,
+        | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(slot)
+        | crate::MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(
+            slot,
+        )
+        | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => slot < 16,
+        crate::MainLoopInterruption::SpriteMainMiniMoldormHistory {
+            slot,
+            completed_stores,
+        } => slot < 16 && completed_stores <= 128,
         crate::MainLoopInterruption::SpriteMainInitializeResetProperties {
             slot,
             phase: _,
@@ -5586,6 +5698,8 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         } => slot < 16 && completed >= 1 && completed <= 5,
         crate::MainLoopInterruption::LinkOam
         | crate::MainLoopInterruption::SpritePreparation
+        | crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
+        | crate::MainLoopInterruption::LinkVelocityAfterActualX
         | crate::MainLoopInterruption::LinkPositionBeforeCoordinates => true,
         crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }
         | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { pass, .. }
@@ -5652,12 +5766,19 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AfterThrowableSceneryStateClear(slot)
         | crate::SpriteMainProgress::BigKeyDropGraphicsStarted(slot)
         | crate::SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot)
+        | crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot)
         | crate::SpriteMainProgress::AfterSingleSmallDrawPosition(slot)
         | crate::SpriteMainProgress::ZazakAfterGraphics(slot)
         | crate::SpriteMainProgress::BonkItemGraphicsStarted(slot)
         | crate::SpriteMainProgress::ProbeAfterOamCoordinates(slot)
         | crate::SpriteMainProgress::AfterAntfairySubtype2Increment(slot)
-        | crate::SpriteMainProgress::AfterLanmolaSubtype2Increment(slot) => slot < 16,
+        | crate::SpriteMainProgress::AfterLanmolaSubtype2Increment(slot)
+        | crate::SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot)
+        | crate::SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => slot < 16,
+        crate::SpriteMainProgress::MiniMoldormHistory {
+            slot,
+            completed_stores,
+        } => slot < 16 && completed_stores <= 128,
         crate::SpriteMainProgress::InitializeResetProperties {
             slot,
             phase: _,
@@ -5864,6 +5985,16 @@ fn sprite_main_cpu_boundary_from_progress(
             );
             SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot)
         }
+        crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot) => {
+            assert!(
+                slot < 16,
+                "source Wish Pond graphics progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::WishPondTossedItemGraphics {
+                slot,
+                continuation: None,
+            }
+        }
         crate::SpriteMainProgress::AfterSingleSmallDrawPosition(slot) => {
             assert!(
                 slot < 16,
@@ -5973,6 +6104,34 @@ fn sprite_main_cpu_boundary_from_progress(
                 continuation: None,
             }
         }
+        crate::SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot) => {
+            assert!(
+                slot < 16,
+                "source Helmasaur/Hardhat subtype2 progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot }
+        }
+        crate::SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => {
+            assert!(
+                slot < 16,
+                "source guard-prep weapon progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
+                slot,
+                continuation: None,
+            }
+        }
+        crate::SpriteMainProgress::MiniMoldormHistory {
+            slot,
+            completed_stores,
+        } => {
+            assert!(slot < 16);
+            assert!(completed_stores <= 128);
+            SpriteMainCpuBoundary::MiniMoldormHistory {
+                slot,
+                completed_stores,
+            }
+        }
     }
 }
 
@@ -6008,6 +6167,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(_)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(_)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(_)
+        | crate::MainLoopInterruption::SpriteMainWishPondTossedItemGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainZazakAfterGraphics(_)
         | crate::MainLoopInterruption::SpriteMainProbeAfterOamCoordinates(_)
         | crate::MainLoopInterruption::SpriteMainInitializeResetProperties { .. }
@@ -6015,10 +6175,15 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainFireDebirandoBeforeSpawn(_)
         | crate::MainLoopInterruption::SpriteMainFireDebirandoSpawn { .. }
         | crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(_)
-        | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(_) => {
+        | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(_)
+        | crate::MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
+        | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(_)
+        | crate::MainLoopInterruption::SpriteMainMiniMoldormHistory { .. } => {
             unreachable!()
         }
-        crate::MainLoopInterruption::LinkPositionBeforeCoordinates
+        crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
+        | crate::MainLoopInterruption::LinkVelocityAfterActualX
+        | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
         | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
         | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
         | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
@@ -6084,6 +6249,10 @@ fn same_sprite_main_source_checkpoint(
         | (
             SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot: left, .. },
             SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot: right, .. },
+        )
+        | (
+            SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot: left },
+            SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot: right },
         ) => left == right,
         (
             SpriteMainCpuBoundary::InitializeResetProperties {
@@ -6171,6 +6340,22 @@ fn same_sprite_main_source_checkpoint(
                 && left_helper == right_helper
                 && left_completed == right_completed
         }
+        (
+            SpriteMainCpuBoundary::WishPondTossedItemGraphics {
+                slot: left_slot, ..
+            },
+            SpriteMainCpuBoundary::WishPondTossedItemGraphics {
+                slot: right_slot, ..
+            },
+        ) => left_slot == right_slot,
+        (
+            SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
+                slot: left_slot, ..
+            },
+            SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
+                slot: right_slot, ..
+            },
+        ) => left_slot == right_slot,
         _ => left == right,
     }
 }
@@ -6209,6 +6394,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(slot)
         | SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot)
+        | SpriteMainCpuBoundary::WishPondTossedItemGraphics { slot, .. }
         | SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(slot)
         | SpriteMainCpuBoundary::AfterZeldaFollowerGraphics { slot, .. }
         | SpriteMainCpuBoundary::BonkItemGraphicsEntered(slot)
@@ -6220,7 +6406,10 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::FireDebirandoBeforeSpawn(slot)
         | SpriteMainCpuBoundary::FireDebirandoSpawn { slot, .. }
         | SpriteMainCpuBoundary::AfterAntfairySubtype2Increment { slot, .. }
-        | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot, .. } => 2 * (16 - slot) - 1,
+        | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot, .. }
+        | SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot }
+        | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending { slot, .. }
+        | SpriteMainCpuBoundary::MiniMoldormHistory { slot, .. } => 2 * (16 - slot) - 1,
         SpriteMainCpuBoundary::AfterWallmasterResetPrefix(slot) => 2 * (16 - slot) - 1,
     }
 }
@@ -7767,6 +7956,13 @@ pub(super) struct LinkMovePositionReturn {
     old_y: u16,
 }
 
+/// `Link_HandleVelocity` has resolved the horizontal actual-velocity pass;
+/// the vertical pass and the movement call remain on the source stack.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LinkVelocityAfterActualXReturn {
+    pending_actual_y: Option<u8>,
+}
+
 /// `Link_MovePosition` suspended inside its axis loop: the `pass` axis (the
 /// loop's X register: 4 = z, 2 = y, 0 = x) has its subpixel stored and still
 /// owes `pending_pixel_delta` on its coordinate; later axes are untouched.
@@ -7875,7 +8071,11 @@ enum PreDungeonSpriteResetContinuation {
     /// This selected-game destination does not enter `Module_PreDungeon`.
     NotApplicable,
     SpriteDisableAllCompleted,
-    Completed,
+    /// `Sprite_ResetAll` returned and the following `Dungeon_ResetSprites`
+    /// call published this exact source checkpoint.
+    DungeonResetSprites(crate::DungeonResetSpritesCpuProgress),
+    SpriteResetAllCompleted,
+    DungeonResetSpritesCompleted,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8042,6 +8242,19 @@ enum GameWorkContinuation {
         position_return: LinkMovePositionReturn,
         iteration: SpotlightIteration,
     },
+    /// Module0F ended inside `Link_HandleVelocity` after resolving actual X
+    /// velocity but before resolving actual Y. The speed/modifier prefix is
+    /// already committed and must not run again.
+    FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+        velocity_return: LinkVelocityAfterActualXReturn,
+        iteration: SpotlightIteration,
+    },
+    /// Module0F's submodule call returned before the accepted NMI, but none
+    /// of the following Link movement/OAM suffix executed. Resume that whole
+    /// source suffix without replaying the completed spotlight entry.
+    FinishDungeonExitSpotlightLinkAndOam {
+        iteration: SpotlightIteration,
+    },
     /// Module0F reached vblank in `Link_MovePosition` before either coordinate
     /// integration store. The following host owns the complete movement and
     /// Link/OAM suffix, so no partially executed native leaf is replayed.
@@ -8168,6 +8381,11 @@ enum GameWorkContinuation {
         old_x: u16,
         old_y: u16,
     },
+    /// Module0B/$24 entered `DecodeAnimatedSpriteTile_variable` before
+    /// restoring the saved special-overworld coordinates. The completed
+    /// decode is staged, while the restore and submodule advance remain
+    /// pending until the wire reports the enclosing source-stage return.
+    FinishOverworldSpecialExitMosaic,
 }
 
 const fn game_over_spotlight_build_uses_live_oam(work: Option<GameWorkContinuation>) -> bool {
@@ -8230,6 +8448,7 @@ impl GameWorkContinuation {
                 | Self::FinishWorldMapExitTilesets
                 | Self::FinishOverworldAuxGraphics
                 | Self::FinishOverworldMosaicSpriteGraphics
+                | Self::FinishOverworldSpecialExitMosaic
                 | Self::FinishModule09LongLoad { .. }
                 | Self::FinishOverworldMapQuadrants { .. }
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
@@ -8271,6 +8490,7 @@ impl GameWorkContinuation {
                 | Self::FinishWorldMapAmbientMap8
                 | Self::FinishOverworldAuxGraphics
                 | Self::FinishOverworldMosaicSpriteGraphics
+                | Self::FinishOverworldSpecialExitMosaic
                 | Self::FinishModule09LongLoad { .. }
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
                 | Self::FinishOverworldSpriteReloadTail { .. }
@@ -8302,7 +8522,9 @@ impl GameWorkContinuation {
                 | Self::FinishDesertPrayerIris { .. }
                 | Self::FinishDesertPrayerPaletteFilter { .. }
                 | Self::FinishDungeonExitSpotlightEntry { .. }
+                | Self::FinishDungeonExitSpotlightLinkAndOam { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovement { .. }
+                | Self::FinishDungeonExitSpotlightLinkVelocityAfterActualX { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
@@ -8331,6 +8553,7 @@ impl GameWorkContinuation {
             | Self::FinishWorldMapAmbientMap8
             | Self::FinishOverworldAuxGraphics
             | Self::FinishOverworldMosaicSpriteGraphics
+            | Self::FinishOverworldSpecialExitMosaic
             | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
             | Self::FinishOverworldSpriteReloadTail { .. }
             | Self::FinishItemReceiptGraphics { .. }
@@ -8426,6 +8649,7 @@ impl GameWorkContinuation {
         match self {
             Self::FinishOverworldAuxGraphics
             | Self::FinishOverworldMosaicSpriteGraphics
+            | Self::FinishOverworldSpecialExitMosaic
             | Self::HoldOverworldSpriteReloadReturn => GameWorkCompletionPublication {
                 bg_scroll: Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
                 obj: None,
@@ -8534,37 +8758,6 @@ impl SpotlightTableBuildContinuation {
             Some(progress),
             "an accepting NMI re-checkpointed a different spotlight table continuation",
         );
-    }
-
-    fn assert_projection_recheckpoint_not_behind(self, progress: SpotlightTableBuildProgress) {
-        let Some(source) = self.source_progress else {
-            panic!("an accepting NMI cannot re-checkpoint an estimated spotlight continuation");
-        };
-        if source == progress {
-            return;
-        }
-        match (source.checkpoint, progress.checkpoint) {
-            (
-                crate::SpotlightTableBuildCheckpoint::ProjectionCopy {
-                    copied_words: source_words,
-                },
-                crate::SpotlightTableBuildCheckpoint::ProjectionCopy {
-                    copied_words: accepted_words,
-                },
-            ) => {
-                assert_eq!(
-                    source.completed_iterations, progress.completed_iterations,
-                    "an accepting NMI changed the completed spotlight row count during projection",
-                );
-                assert!(
-                    accepted_words >= source_words,
-                    "an accepting NMI moved a spotlight projection cursor backwards",
-                );
-            }
-            _ => panic!(
-                "an accepting NMI re-checkpointed a different spotlight table statement: source={source:?} accepted={progress:?}",
-            ),
-        }
     }
 
     /// Prove that a same-host accepting NMI exposed this saved continuation
@@ -8701,12 +8894,14 @@ pub(super) enum CreditsEntryHostPrefix {
     DungeonScene,
 }
 
-/// The four whirlpool-warp steps whose ROM call spans several held vblanks:
-/// `Module09_2E_Whirlpool` cases 3, 5, 7, and 9 (route hosts 183223,
-/// 183234, 183254, 183271).
+/// The whirlpool-warp steps whose ROM calls span several held vblanks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Module09LongLoadStep {
-    /// Case 3: `Overworld_LoadOverlays2`'s overlay decode and Map16ToMap8.
+    /// Case 3's first source phase: `FindPartnerWhirlpoolExit` is suspended in
+    /// the second `Sprite_ReloadAll_Overworld` call inside
+    /// `Overworld_LoadBirdTravelPos`. The reset generation left by the first
+    /// `Sprite_ResetAll` remains live until the source reports individual slot
+    /// activations and the nested reload return.
     LoadOverlays2,
     /// Case 5: `Overworld_LoadOverlayAndMap`'s screen build.
     LoadOverlayAndMap,
@@ -8748,6 +8943,10 @@ pub(super) enum Module09LongLoadStep {
     /// scheduler discriminant.
     MirrorWarpSpriteLoadTail,
     Module15MirrorWarpSpriteLoadTail,
+    /// Case 3 after `Sprite_ReloadAll_Overworld` returns: Link/ambient and
+    /// overlay-selection prefixes are live, while `LoadOverworldOverlay` and
+    /// the enclosing Module09 caller remain suspended.
+    LoadOverlays2Overlay,
 }
 
 impl Module09LongLoadStep {
@@ -21669,6 +21868,8 @@ impl ZeldaState {
                             // Module0F's spotlight-close Link movement
                             // consumes this boundary inside the module body
                             // (route hosts 50635, 179586).
+                            | crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
+                            | crate::MainLoopInterruption::LinkVelocityAfterActualX
                             | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
                             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                             | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
@@ -21882,6 +22083,22 @@ impl ZeldaState {
         expected_semantic.push(OriginalTimingSemanticReceipt::MainLoopInterrupted(
             interruption,
         ));
+        if interruption == crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
+            && semantic.iter().any(|receipt| {
+                matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned
+                )
+            })
+        {
+            // The submodule-return fact and the following interruption are
+            // two views of the same exact source ordering: the entry call
+            // returned, then vblank stopped its Module0F caller before the
+            // Link suffix. The pre-entry owner consumes the return token
+            // after this immutable preflight.
+            expected_semantic
+                .push(OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned);
+        }
         if let crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(started_slot) =
             interruption
         {
@@ -22002,6 +22219,16 @@ impl ZeldaState {
             semantic, expected_semantic,
             "an interrupted main-loop host published an unsupported or reordered semantic vector",
         );
+
+        let semantic = semantic
+            .into_iter()
+            .filter(|receipt| {
+                !matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned
+                )
+            })
+            .collect();
 
         Some(OriginalTimingInterruptedIdleMainLoopPlan {
             semantic,
@@ -22610,6 +22837,9 @@ impl ZeldaState {
                     // The state-10 body consumes this host-return cursor when
                     // it reaches the synchronous follower-graphics call.
                     | OriginalTimingSemanticReceipt::RescuedMaidenInitializationProgress(_)
+                    // Module0B/$24 consumes this stage return from its
+                    // suspended animated-sprite decode continuation.
+                    | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned
                     // Module0F's entry call can return inside a fresh
                     // iteration whose trailing acceptance stays held; the
                     // pre-entry owner defers the token to the native entry
@@ -24739,6 +24969,7 @@ impl ZeldaState {
         };
         match interruption {
             crate::MainLoopInterruption::LinkOam
+            | crate::MainLoopInterruption::LinkVelocityAfterActualX
             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
             | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
             | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. } => {}
@@ -24994,6 +25225,19 @@ impl ZeldaState {
             .as_ref()
             .map(|receipts| receipts.semantic().to_vec());
         match interruption {
+            crate::MainLoopInterruption::LinkVelocityAfterActualX => {
+                cpu_probe.complete_dungeon_exit_spotlight_build_until_link_velocity_after_actual_x(
+                    table_build,
+                    projection_completed,
+                    iteration,
+                );
+                assert!(matches!(
+                    cpu_probe.game_execution_scheduler.current_work(),
+                    Some(
+                        GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX { .. }
+                    )
+                ));
+            }
             crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass } => {
                 cpu_probe.complete_dungeon_exit_spotlight_build_until_link_position_partial(
                     table_build,
@@ -26588,7 +26832,8 @@ impl ZeldaState {
                             | GameWorkContinuation::FinishOverworldSpriteReloadTail { .. }
                             | GameWorkContinuation::FinishModule09LongLoad {
                                 step: Module09LongLoadStep::MirrorWarpSpriteLoadReload
-                                    | Module09LongLoadStep::Module15MirrorWarpSpriteLoadReload,
+                                    | Module09LongLoadStep::Module15MirrorWarpSpriteLoadReload
+                                    | Module09LongLoadStep::LoadOverlays2,
                             }
                     )
                 );
@@ -26707,6 +26952,29 @@ impl ZeldaState {
             }
         });
         published
+    }
+
+    fn take_original_timing_overworld_special_exit_mosaic_returned(&mut self) -> bool {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return false;
+        }
+        let Some(receipts) = self.original_timing_semantic_receipts.as_mut() else {
+            return false;
+        };
+        let mut returned = false;
+        receipts.semantic.retain(|receipt| {
+            if matches!(
+                receipt,
+                OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned
+            ) {
+                assert!(!returned, "special-exit mosaic return receipt replayed");
+                returned = true;
+                false
+            } else {
+                true
+            }
+        });
+        returned
     }
 
     fn take_original_timing_dungeon_falling_entrance_progress(
@@ -26988,7 +27256,8 @@ impl ZeldaState {
                                         | GameWorkContinuation::FinishOverworldSpriteReloadTail { .. }
                                         | GameWorkContinuation::FinishModule09LongLoad {
                                             step: Module09LongLoadStep::MirrorWarpSpriteLoadReload
-                                                | Module09LongLoadStep::Module15MirrorWarpSpriteLoadReload,
+                                                | Module09LongLoadStep::Module15MirrorWarpSpriteLoadReload
+                                                | Module09LongLoadStep::LoadOverlays2,
                                         }
                                 )
                             ),
@@ -27130,6 +27399,17 @@ impl ZeldaState {
                     if let Some(GameWorkContinuation::FinishModule09LongLoad { step }) =
                         self.game_execution_scheduler.current_work()
                     {
+                        if step == Module09LongLoadStep::LoadOverlays2 {
+                            if self.overworld_proximity_scan_saved_scroll.is_some() {
+                                self.complete_overworld_proximity_scan_continuation();
+                            }
+                            assert!(
+                                !reload_returned,
+                                "whirlpool bird-travel sprite generation return replayed"
+                            );
+                            reload_returned = true;
+                            continue;
+                        }
                         let tail = match step {
                             Module09LongLoadStep::MirrorWarpSpriteLoadReload => {
                                 Module09LongLoadStep::MirrorWarpSpriteLoadTail
@@ -29522,6 +29802,42 @@ impl ZeldaState {
         );
     }
 
+    fn apply_pre_dungeon_dungeon_reset_progress(
+        &mut self,
+        receipt: DungeonResetSpritesProgressReceipt,
+    ) {
+        let GameWorkContinuation::FinishPreDungeonEntranceLoad { sprite_reset } = self
+            .game_execution_scheduler
+            .current_work()
+            .expect("pre-dungeon Dungeon_ResetSprites progress requires active entrance work")
+        else {
+            panic!("pre-dungeon Dungeon_ResetSprites progress reached the wrong work kind");
+        };
+        match sprite_reset {
+            PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted => {
+                // The source returned from Sprite_ResetAll_noDisable before it
+                // entered Dungeon_ResetSprites. Publish that intervening tail
+                // once, then the exact prefix of the new room's sprite load.
+                self.complete_module_pre_dungeon_after_sprite_disable_all();
+                self.dungeon_reset_sprites_through_cpu_progress(receipt.progress);
+            }
+            PreDungeonSpriteResetContinuation::DungeonResetSprites(completed) => {
+                assert!(
+                    self.dungeon_advance_reset_sprites_cpu_progress(completed, receipt.progress),
+                    "timing authority published an unsupported pre-dungeon Dungeon_ResetSprites progress transition",
+                );
+            }
+            _ => panic!(
+                "pre-dungeon Dungeon_ResetSprites progress followed invalid state {sprite_reset:?}"
+            ),
+        }
+        assert!(
+            self.game_execution_scheduler
+                .mark_pre_dungeon_dungeon_reset_progress(receipt.progress),
+            "pre-dungeon Dungeon_ResetSprites progress was duplicated or out of sequence",
+        );
+    }
+
     fn complete_pre_dungeon_sprite_reset_continuation(
         &mut self,
         progress: PreDungeonSpriteResetContinuation,
@@ -29536,7 +29852,41 @@ impl ZeldaState {
             PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted => {
                 self.complete_module_pre_dungeon_after_sprite_disable_all();
             }
-            PreDungeonSpriteResetContinuation::Completed => {}
+            PreDungeonSpriteResetContinuation::DungeonResetSprites(progress) => {
+                self.dungeon_resume_reset_sprites_after_cpu_progress(progress);
+            }
+            PreDungeonSpriteResetContinuation::SpriteResetAllCompleted
+            | PreDungeonSpriteResetContinuation::DungeonResetSpritesCompleted => {}
+        }
+    }
+
+    fn complete_pre_dungeon_authoritative_return_after(
+        &mut self,
+        progress: PreDungeonSpriteResetContinuation,
+    ) {
+        if matches!(
+            progress,
+            PreDungeonSpriteResetContinuation::DungeonResetSprites(_)
+                | PreDungeonSpriteResetContinuation::DungeonResetSpritesCompleted
+        ) {
+            self.complete_module_pre_dungeon_after_dungeon_reset_authoritative_return();
+        } else {
+            self.complete_module_pre_dungeon_authoritative_return();
+        }
+    }
+
+    fn complete_pre_dungeon_entrance_load_after(
+        &mut self,
+        progress: PreDungeonSpriteResetContinuation,
+    ) {
+        if matches!(
+            progress,
+            PreDungeonSpriteResetContinuation::DungeonResetSprites(_)
+                | PreDungeonSpriteResetContinuation::DungeonResetSpritesCompleted
+        ) {
+            self.complete_module_pre_dungeon_after_dungeon_reset_entrance_load();
+        } else {
+            self.complete_module_pre_dungeon_entrance_load();
         }
     }
 
@@ -30066,6 +30416,10 @@ impl ZeldaState {
         {
             Some(GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. })
             | Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration })
+            | Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+                iteration,
+                ..
+            })
             | Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
                 iteration,
                 ..
@@ -36957,6 +37311,19 @@ impl ZeldaState {
                 )));
                 self.complete_dungeon_exit_spotlight_link_velocity(position_return, iteration);
             }
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+                velocity_return,
+                iteration,
+            } => {
+                self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
+                    GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                )));
+                self.complete_dungeon_exit_spotlight_link_velocity_after_actual_x(
+                    velocity_return,
+                    iteration,
+                    false,
+                );
+            }
             GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration } => {
                 self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                     GraphicsDmaGeneration::HostBoundaryBeforeMain,
@@ -40207,16 +40574,24 @@ impl ZeldaState {
                             | GameWorkContinuation::FinishOverworldLoadOverlaysSpriteReload
                             | GameWorkContinuation::FinishModule09LongLoad {
                                 step: Module09LongLoadStep::MirrorWarpSpriteLoadReload
-                                    | Module09LongLoadStep::Module15MirrorWarpSpriteLoadReload,
+                                    | Module09LongLoadStep::Module15MirrorWarpSpriteLoadReload
+                                    | Module09LongLoadStep::LoadOverlays2,
                             }
                     )
                 );
         let authoritative_overworld_load_overlays_overlay_is_active =
             matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-                && self.game_execution_scheduler.current_work()
-                    == Some(GameWorkContinuation::FinishOverworldLoadOverlaysOverlay);
+                && matches!(
+                    self.game_execution_scheduler.current_work(),
+                    Some(GameWorkContinuation::FinishOverworldLoadOverlaysOverlay)
+                        | Some(GameWorkContinuation::FinishModule09LongLoad {
+                            step: Module09LongLoadStep::LoadOverlays2Overlay,
+                        })
+                );
         let authoritative_overworld_map_quadrants_published =
             self.take_original_timing_overworld_map_quadrants_published();
+        let authoritative_overworld_special_exit_mosaic_returned =
+            self.take_original_timing_overworld_special_exit_mosaic_returned();
         if let Some(progress) = self.take_original_timing_dungeon_falling_entrance_progress() {
             self.apply_original_timing_dungeon_falling_entrance_progress(progress);
         }
@@ -40348,6 +40723,8 @@ impl ZeldaState {
                     || matches!(
                         interruption,
                         crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }
+                            | crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
+                            | crate::MainLoopInterruption::LinkVelocityAfterActualX
                             | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
                             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                             | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
@@ -40895,14 +41272,16 @@ impl ZeldaState {
                 }
                 if matches!(
                     expected_work,
-                    GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
+                    GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
                 ) {
-                    // The resumed movement leaf returns through Module0F to
-                    // the main wait alongside this same host return (route
-                    // host 50636).
+                    // The resumed post-submodule suffix or movement leaf
+                    // returns through Module0F to the main wait alongside
+                    // this same host return (route hosts 252090 and 50636).
                     expected_semantic.push(
                         OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait,
                     );
@@ -40980,7 +41359,9 @@ impl ZeldaState {
                 }
                 if matches!(
                     expected_work,
-                    GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
+                    GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
@@ -41185,17 +41566,23 @@ impl ZeldaState {
                         | GameWorkContinuation::FinishPreDungeonEntranceLoad {
                             sprite_reset:
                                 PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted
-                                    | PreDungeonSpriteResetContinuation::Completed,
+                                    | PreDungeonSpriteResetContinuation::DungeonResetSprites(_)
+                                    | PreDungeonSpriteResetContinuation::SpriteResetAllCompleted
+                                    | PreDungeonSpriteResetContinuation::DungeonResetSpritesCompleted,
                         }
                 )
             )
         {
-            // The resumed caller's pre-dungeon sprite reset can be restated
-            // at the interrupting acceptance or the host return; the native
-            // body runs the same reset inside its own slices (route hosts
-            // 41278, 48537, 50718, and once more after the whole reset
-            // continuation completed at route host 104273).
-            let _ = self.take_original_timing_dungeon_reset_sprites_progress();
+            // Sprite_ResetAll can be restated at the interrupting acceptance
+            // after its host-return checkpoint. Dungeon_ResetSprites is not
+            // a restatement here: the pre-dungeon continuation consumes its
+            // exact room-load cursor below.
+            if matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishDungeonExitSpotlightGoalCaller { .. })
+            ) {
+                let _ = self.take_original_timing_dungeon_reset_sprites_progress();
+            }
             if let Some(receipt) = self.take_original_timing_sprite_reset_all_progress() {
                 assert_eq!(
                     receipt.progress,
@@ -42053,11 +42440,9 @@ impl ZeldaState {
         if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             && pre_dungeon_work_is_active
         {
-            // The entrance load's Dungeon_ResetSprites can straddle a held
-            // vblank; the estimate lane models the whole load atomically, so
-            // the wire's disable-loop checkpoint is informational here (route
-            // host 1194569: Disable(SpriteStatesThrough { slot: 15 })).
-            let _ = self.take_original_timing_dungeon_reset_sprites_progress();
+            if let Some(receipt) = self.take_original_timing_dungeon_reset_sprites_progress() {
+                self.apply_pre_dungeon_dungeon_reset_progress(receipt);
+            }
         }
         let authoritative_pre_dungeon_progress =
             (matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
@@ -42313,6 +42698,10 @@ impl ZeldaState {
                         );
                         refined_boundary
                     }
+                    (
+                        SpriteMainCpuBoundary::BeforeFirstSlot,
+                        SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
+                    ) => self.advance_sprite_main_before_first_slot_to_after_timers_and_oam(slot),
                     (
                         SpriteMainCpuBoundary::FollowerGraphics {
                             slot,
@@ -42779,7 +43168,8 @@ impl ZeldaState {
                 // source call in flight (route host 716884), while a Sprite_Main
                 // checkpoint or caller return completes it even if an estimate
                 // remains (route host 907403).
-                let returned = self.original_timing_owes_sprite_main_progress()
+                let returned = authoritative_supertile_sprite_main_returned
+                    || self.original_timing_owes_sprite_main_progress()
                     || self.original_timing_owes_sprite_main_return()
                     || self.original_timing_main_loop_interruption().is_some()
                     || self.original_timing_main_loop_return_timeline().is_some();
@@ -43060,6 +43450,14 @@ impl ZeldaState {
                     .advance_work_one_nmi_slice_with_authoritative_completion(
                         caller_reached_sprite_main,
                     )
+            } else if self.game_execution_scheduler.current_work()
+                == Some(GameWorkContinuation::FinishOverworldSpecialExitMosaic)
+                && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            {
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(
+                        authoritative_overworld_special_exit_mosaic_returned,
+                    )
             } else if matches!(
                 self.game_execution_scheduler.current_work(),
                 Some(
@@ -43150,7 +43548,14 @@ impl ZeldaState {
                             || falling_room_init_reached_sprite_main
                             || rescued_maiden_initialization_reached_sprite_main,
                     )
-            } else if authoritative_pre_dungeon_progress.is_some() {
+            } else if pre_dungeon_work_is_active
+                && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.original_timing_semantic_receipts.is_some()
+            {
+                // Live Module_PreDungeon work is owned by its source return,
+                // including hosts with no intermediate semantic checkpoint.
+                // The native slice count is a fallback estimate only and may
+                // reach zero before the ROM enters Sprite_ResetAll.
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(
                         authoritative_pre_dungeon_returned,
@@ -43335,6 +43740,8 @@ impl ZeldaState {
                 .game_execution_scheduler
                 .scheduled_work_slices_remaining()
                 == Some(PRE_DUNGEON_RETURN_SUFFIX_NMI_SLICES)
+            && !(matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.original_timing_semantic_receipts.is_some())
         {
             // On the C stack, Sprite_ResetAll finishes before the final NMI
             // that separates it from Dungeon_ResetSprites and the module-7
@@ -43756,7 +44163,16 @@ impl ZeldaState {
                     },
                 ) => Some(iteration.completion_publication()),
                 GameWorkStep::Complete(
-                    GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
+                GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+                    iteration,
+                    ..
+                },
+            ) => Some(iteration.completion_publication()),
+            GameWorkStep::Complete(
+                GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { iteration },
+            ) => Some(iteration.completion_publication()),
+            GameWorkStep::Complete(
+                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
                         iteration, ..
                     }
                     | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
@@ -45054,7 +45470,7 @@ impl ZeldaState {
                         // handler and trailing publication through the shared
                         // lane; only the module return and its ordinary
                         // ZeldaRunGameLoop suffix run here (route host 39723).
-                        self.complete_module_pre_dungeon_authoritative_return();
+                        self.complete_pre_dungeon_authoritative_return_after(sprite_reset);
                         self.retire_or_run_main_loop_common_suffix_after_module_return();
                         return;
                     }
@@ -45072,7 +45488,7 @@ impl ZeldaState {
                         // these writes retained the old CGWSEL generation even
                         // though WritePpuRegisters installed the new one for the
                         // active dungeon scanout.
-                        self.complete_module_pre_dungeon_authoritative_return();
+                        self.complete_pre_dungeon_authoritative_return_after(sprite_reset);
                         self.nmi_prepare_sprites_for_main_loop_once();
                         self.clear_nmi_update_latch();
                         self.game_execution_scheduler
@@ -45095,7 +45511,7 @@ impl ZeldaState {
                         // ended before another ZeldaRunGameLoop iteration or
                         // NMI began. Publish the source-ordered module state and
                         // leave both later boundaries to their own receipts.
-                        self.complete_module_pre_dungeon_authoritative_return();
+                        self.complete_pre_dungeon_authoritative_return_after(sprite_reset);
                         return;
                     }
                     // The final sprite-reset slice is interrupted before
@@ -45104,7 +45520,7 @@ impl ZeldaState {
                     // after this scanout boundary.
                     self.capture_display_snapshot();
                     self.interrupt_nmi(input, oam_dma_source.as_deref(), false);
-                    self.complete_module_pre_dungeon_entrance_load();
+                    self.complete_pre_dungeon_entrance_load_after(sprite_reset);
                     if self.game_execution_scheduler.work_is_pending() {
                         return;
                     }
@@ -45969,6 +46385,24 @@ impl ZeldaState {
                     self.complete_dungeon_exit_spotlight_link_velocity(position_return, iteration);
                 }
                 GameWorkStep::Complete(
+                    GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+                        velocity_return,
+                        iteration,
+                    },
+                ) => {
+                    self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
+                        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    )));
+                    self.complete_dungeon_exit_spotlight_link_velocity_after_actual_x(
+                        velocity_return,
+                        iteration,
+                        authoritative_scheduled_caller_return_timeline.is_some(),
+                    );
+                    if authoritative_scheduled_caller_return_timeline.is_some() {
+                        self.retire_or_run_main_loop_common_suffix_after_module_return();
+                    }
+                }
+                GameWorkStep::Complete(
                     GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration },
                 ) => {
                     // The accepted NMI preceded Link_MovePosition's first
@@ -46039,6 +46473,17 @@ impl ZeldaState {
                         },
                         authoritative_scheduled_caller_return_timeline.is_some(),
                     );
+                    if authoritative_scheduled_caller_return_timeline.is_some() {
+                        self.retire_or_run_main_loop_common_suffix_after_module_return();
+                    }
+                }
+                GameWorkStep::Complete(
+                    GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { iteration },
+                ) => {
+                    self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
+                        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    )));
+                    self.complete_dungeon_exit_spotlight_link_and_oam(iteration);
                     if authoritative_scheduled_caller_return_timeline.is_some() {
                         self.retire_or_run_main_loop_common_suffix_after_module_return();
                     }
@@ -46135,6 +46580,8 @@ impl ZeldaState {
                             .filter(|interruption| {
                                 matches!(
                                     interruption,
+                                    crate::MainLoopInterruption::LinkVelocityAfterActualX
+                                        |
                                     crate::MainLoopInterruption::LinkPositionAfterSubpixel {
                                         ..
                                     } | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow {
@@ -46145,6 +46592,12 @@ impl ZeldaState {
                                 )
                             });
                     match link_position_interruption {
+                        Some(crate::MainLoopInterruption::LinkVelocityAfterActualX) => {
+                            self.complete_dungeon_exit_spotlight_entry_until_link_velocity_after_actual_x(
+                                table_build,
+                                iteration,
+                            );
+                        }
                         Some(crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }) => {
                             self.complete_dungeon_exit_spotlight_entry_until_link_position_partial(
                                 table_build,
@@ -46196,7 +46649,8 @@ impl ZeldaState {
                         .filter(|interruption| {
                             matches!(
                                 interruption,
-                                crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+                                crate::MainLoopInterruption::LinkVelocityAfterActualX
+                                    | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                                     | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                                     | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
                             )
@@ -46214,6 +46668,12 @@ impl ZeldaState {
                             "a mid-loop Link position boundary cannot share its host with a caller return or LinkOam interruption",
                         );
                         match interruption {
+                            crate::MainLoopInterruption::LinkVelocityAfterActualX => self
+                                .complete_dungeon_exit_spotlight_build_until_link_velocity_after_actual_x(
+                                    table_build,
+                                    projection_completed,
+                                    iteration,
+                                ),
                             crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass } => self
                                 .complete_dungeon_exit_spotlight_build_until_link_position_partial(
                                     table_build,
@@ -46400,14 +46860,14 @@ impl ZeldaState {
                             "a game-over Build re-checkpoint must ride an accepting NMI",
                         );
                         if table_build.source_progress.is_some() {
-                            table_build.assert_projection_recheckpoint_not_behind(claim.progress);
+                            table_build.assert_recheckpoint_not_behind(claim.progress);
                         }
                         if table_build.source_progress != Some(claim.progress) {
-                            // The source can execute part of the projection
-                            // between its host-return checkpoint and the
-                            // accepting NMI. Rebuild at that later statement
-                            // so every intervening word store becomes live
-                            // before the interrupted call resumes.
+                            // The source can execute more row-loop or
+                            // projection statements between its host-return
+                            // checkpoint and the accepting NMI. Rebuild at
+                            // that later statement so every intervening store
+                            // becomes live before the interrupted call resumes.
                             table_build = self
                                 .begin_iris_spotlight_configure_table_at_progress(claim.progress);
                         }
@@ -46851,7 +47311,8 @@ impl ZeldaState {
                 }
                 GameWorkStep::Complete(
                     work @ (GameWorkContinuation::FinishOverworldAuxGraphics
-                    | GameWorkContinuation::FinishOverworldMosaicSpriteGraphics),
+                    | GameWorkContinuation::FinishOverworldMosaicSpriteGraphics
+                    | GameWorkContinuation::FinishOverworldSpecialExitMosaic),
                 ) => {
                     // PC/V-counter traces remain in the active Module09
                     // graphics conversion through this frame's vblank,
@@ -46905,6 +47366,9 @@ impl ZeldaState {
                         }
                         GameWorkContinuation::FinishOverworldMosaicSpriteGraphics => {
                             self.complete_overworld_mosaic_sprite_graphics();
+                        }
+                        GameWorkContinuation::FinishOverworldSpecialExitMosaic => {
+                            self.complete_overworld_start_mosaic_after_animated_sprite_tile();
                         }
                         _ => unreachable!("combined Module09 graphics completion changed kind"),
                     }
@@ -47494,6 +47958,10 @@ impl ZeldaState {
                 | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+                    iteration,
+                    ..
+                }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
                     iteration,

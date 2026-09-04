@@ -12618,6 +12618,12 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_13_MiniHelmasaur(int k) {  // 86a409
     pub(super) fn sprite_13_mini_helmasaur(&mut self, k: usize) {
+        if self.sprite_13_mini_helmasaur_through_subtype2_increment(k) {
+            self.helmasaur_hard_hat_beetle_common_after_subtype2_increment(k);
+        }
+    }
+
+    pub(super) fn sprite_13_mini_helmasaur_through_subtype2_increment(&mut self, k: usize) -> bool {
         let j = usize::from(
             ((self.sprite_slot_view(k).subtype2() >> 2) & 1)
                 | (self.sprite_slot_view(k).direction() << 1),
@@ -12644,25 +12650,41 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_direction(value);
         }
         self.sprite_draw_single_large(k);
-        self.helmasaur_hard_hat_beetle_common(k);
+        self.helmasaur_hard_hat_beetle_common_through_subtype2_increment(k)
     }
 
     // -----------------------------------------------------------------------
     // void Sprite_26_HardhatBeetle(int k) {  // 86a460
     pub(super) fn sprite_26_hardhat_beetle(&mut self, k: usize) {
+        if self.sprite_26_hardhat_beetle_through_subtype2_increment(k) {
+            self.helmasaur_hard_hat_beetle_common_after_subtype2_increment(k);
+        }
+    }
+
+    pub(super) fn sprite_26_hardhat_beetle_through_subtype2_increment(&mut self, k: usize) -> bool {
         let value = (self.sprite_slot_view(k).subtype2() >> 2) & 1;
         self.sprite_slot_view_mut(k).set_graphics(value);
         self.hard_hat_beetle_draw(k);
-        self.helmasaur_hard_hat_beetle_common(k);
+        self.helmasaur_hard_hat_beetle_common_through_subtype2_increment(k)
     }
 
     // -----------------------------------------------------------------------
     // void HelmasaurHardHatBeetleCommon(int k) {  // 86a46d
     pub(super) fn helmasaur_hard_hat_beetle_common(&mut self, k: usize) {
+        if self.helmasaur_hard_hat_beetle_common_through_subtype2_increment(k) {
+            self.helmasaur_hard_hat_beetle_common_after_subtype2_increment(k);
+        }
+    }
+
+    fn helmasaur_hard_hat_beetle_common_through_subtype2_increment(&mut self, k: usize) -> bool {
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
         self.sprite_slot_view_mut(k).add_subtype2(1);
+        true
+    }
+
+    pub(super) fn helmasaur_hard_hat_beetle_common_after_subtype2_increment(&mut self, k: usize) {
         if self.sprite_return_if_recoiling(k) {
             return;
         }
