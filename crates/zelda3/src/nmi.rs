@@ -349,7 +349,8 @@ impl ZeldaState {
                 self.ppu.forced_blank,
                 self.nmi_forced_blank_scanlines_pending,
                 self.legacy_nmi_forced_blank_from_scanline_pending,
-                self.nmi_active_display_blanking_candidate.suffix_start_scanline,
+                self.nmi_active_display_blanking_candidate
+                    .suffix_start_scanline,
                 self.live_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper),
                 self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_0],
                 self.ram[FIRST_BOOT_NMI_DMA_SOURCE_BYTE_1],
@@ -495,7 +496,8 @@ impl ZeldaState {
                 self.nmi_forced_blank_scanlines_pending,
                 self.ppu.forced_blank_from_scanline,
                 self.legacy_nmi_forced_blank_from_scanline_pending,
-                self.nmi_active_display_blanking_candidate.suffix_start_scanline,
+                self.nmi_active_display_blanking_candidate
+                    .suffix_start_scanline,
                 self.live_link_dma_source(LinkDmaSourceSlot::AnimatedTileUpper),
                 self.ppu.vram.get(0x40b0).copied().unwrap_or(0),
             );

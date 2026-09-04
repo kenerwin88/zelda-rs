@@ -237,6 +237,22 @@ impl RomCpuTimingRun {
         self.take_hdma_master_cycles()
     }
 
+    /// Reconstruct the HDMA channel phase left by a poly-upload NMI which
+    /// crosses the following field's line-zero HDMA window. Pinned Snes9x
+    /// keeps the prior field's channel cursor in that case: the 225 visible
+    /// scanlines have already consumed the table, then line zero consumes one
+    /// more entry before the poly thread resumes after H=1106.
+    pub(crate) fn seed_hdma_after_upload_crossed_line_zero(&mut self) {
+        const VISIBLE_SCANLINES: usize = 225;
+
+        self.shadow.dma_init_hdma();
+        self.take_hdma_master_cycles();
+        for _ in 0..=VISIBLE_SCANLINES {
+            self.shadow.dma_do_hdma();
+            self.take_hdma_master_cycles();
+        }
+    }
+
     fn take_hdma_master_cycles(&mut self) -> u32 {
         let master_cycles = u32::from(self.shadow.dma.hdma_timer);
         self.shadow.dma.hdma_timer = 0;

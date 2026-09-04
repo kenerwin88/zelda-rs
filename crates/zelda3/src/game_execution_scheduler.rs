@@ -467,14 +467,20 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishModule09LinkOamCallerReturn { .. }
                 | GameWorkContinuation::FinishDialogueInitializationPrefix { .. }
                 | GameWorkContinuation::FinishDialogueInitializationCallerReturn
+                | GameWorkContinuation::FinishDesertPrayerIris { .. }
+                | GameWorkContinuation::FinishDesertPrayerPaletteFilter { .. }
                 | GameWorkContinuation::FinishGameOverSpotlightBuild { .. }
+                | GameWorkContinuation::FinishGameOverIrisGoalPaletteFill { .. }
                 | GameWorkContinuation::FinishDungeonSubtilePaletteFilter
                 | GameWorkContinuation::FinishDungeonFallingRoomInitialization
+                | GameWorkContinuation::FinishRescuedMaidenTilemapClear { .. }
+                | GameWorkContinuation::FinishRescuedMaidenInitialization { .. }
                 | GameWorkContinuation::FinishStraightInterroomFadeoutSuffix
                 | GameWorkContinuation::FinishStraightInterroomSpriteReset { .. }
                 | GameWorkContinuation::FinishSpriteMain { .. }
                 | GameWorkContinuation::FinishWorldMapOverlayReload
                 | GameWorkContinuation::FinishWorldMapAmbientMap8
+                | GameWorkContinuation::FinishFluteMenuSelectedScreen { .. }
                 | GameWorkContinuation::FinishDungeonCachedSpriteMain { .. }
                 | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. }
@@ -483,6 +489,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
                 | GameWorkContinuation::FinishSpotlightIteration { .. }
                 | GameWorkContinuation::FinishOverworldSpotlightBuild { .. }
                 | GameWorkContinuation::FinishOverworldSpotlightLinkOam { .. }
@@ -504,13 +511,17 @@ impl ScheduledGameWork {
     ) -> Option<DisplaySnapshotPublication> {
         match self.continuation {
             GameWorkContinuation::FinishSpotlightIteration { iteration }
-            | GameWorkContinuation::FinishGameOverSpotlightBuild { iteration }
+            | GameWorkContinuation::FinishGameOverSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightEntry { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                iteration,
+                ..
+            }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
                 iteration,
                 ..
             }
@@ -538,13 +549,17 @@ impl ScheduledGameWork {
     fn spotlight_iteration(self) -> Option<SpotlightIteration> {
         match self.continuation {
             GameWorkContinuation::FinishSpotlightIteration { iteration }
-            | GameWorkContinuation::FinishGameOverSpotlightBuild { iteration }
+            | GameWorkContinuation::FinishGameOverSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightEntry { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                iteration,
+                ..
+            }
+            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
                 iteration,
                 ..
             }
@@ -627,7 +642,9 @@ enum SelectedGameLoadContinuation {
     AfterPreDungeonAudio {
         nmi_slices_remaining: u8,
         destination: SelectedGameLoadDestination,
+        entry_room_load_pending: bool,
         sprite_reset: PreDungeonSpriteResetContinuation,
+        message_interface_published: bool,
     },
 }
 
@@ -664,11 +681,14 @@ impl SelectedGameLoadContinuation {
                     *self = Self::AfterPreDungeonAudio {
                         nmi_slices_remaining: SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
                         destination: *destination,
+                        entry_room_load_pending: *destination
+                            == SelectedGameLoadDestination::Dungeon,
                         sprite_reset: if *destination == SelectedGameLoadDestination::Dungeon {
                             PreDungeonSpriteResetContinuation::Pending
                         } else {
                             PreDungeonSpriteResetContinuation::NotApplicable
                         },
+                        message_interface_published: false,
                     };
                     StartupSequenceStep::BeginPreDungeonAudio
                 } else {
@@ -697,6 +717,32 @@ impl SelectedGameLoadContinuation {
         }
     }
 
+    fn pending_entry_room_load(self) -> Option<SelectedGameLoadDestination> {
+        match self {
+            Self::AfterPreDungeonAudio {
+                destination,
+                entry_room_load_pending: true,
+                ..
+            } => Some(destination),
+            _ => None,
+        }
+    }
+
+    fn mark_entry_room_load_completed(&mut self) {
+        let Self::AfterPreDungeonAudio {
+            entry_room_load_pending,
+            ..
+        } = self
+        else {
+            panic!("selected-game entry room load reached the wrong scheduler phase");
+        };
+        assert!(
+            *entry_room_load_pending,
+            "selected-game entry room load completed twice",
+        );
+        *entry_room_load_pending = false;
+    }
+
     fn destination(self) -> SelectedGameLoadDestination {
         match self {
             Self::BeforePreDungeonAudio { destination, .. }
@@ -704,17 +750,53 @@ impl SelectedGameLoadContinuation {
         }
     }
 
-    /// Advance the post-audio selected-load caller from exact source facts.
-    /// The caller only invokes this for a source-proven route. The earlier
-    /// pre-dungeon-audio boundary remains count-backed until the timing adapter
-    /// exposes a typed entry fact; post-audio numeric counts are compatibility
-    /// state only.
+    fn message_interface_published(self) -> bool {
+        matches!(
+            self,
+            Self::AfterPreDungeonAudio {
+                destination: SelectedGameLoadDestination::Message,
+                message_interface_published: true,
+                ..
+            }
+        )
+    }
+
+    /// Cross the Message destination's mid-call boundary only when the timing
+    /// backend proves that `Main_ShowTextMessage` has committed module 14 and
+    /// submodule 2. Numeric decompression counts never authorize this state.
+    fn publish_message_interface_from_source(&mut self) -> StartupSequenceStep {
+        let Self::BeforePreDungeonAudio { destination, .. } = *self else {
+            panic!("selected-game Message interface was published from the wrong scheduler phase");
+        };
+        assert_eq!(
+            destination,
+            SelectedGameLoadDestination::Message,
+            "only the Message selected-game destination publishes the dialogue interface",
+        );
+        *self = Self::AfterPreDungeonAudio {
+            nmi_slices_remaining: SELECTED_GAME_LOAD_AFTER_PRE_DUNGEON_AUDIO_NMI_SLICES,
+            destination,
+            entry_room_load_pending: false,
+            sprite_reset: PreDungeonSpriteResetContinuation::NotApplicable,
+            message_interface_published: true,
+        };
+        StartupSequenceStep::SelectedGameLoadWaiting
+    }
+
+    /// Advance the post-boundary selected-load caller from exact source facts.
+    /// Numeric counts are compatibility state only; live execution enters
+    /// this phase from typed source receipts.
     fn advance_after_pre_dungeon_audio_from_source(
         &mut self,
         progress: Option<SpriteResetAllProgress>,
         completes_caller: bool,
     ) -> StartupSequenceStep {
-        let Self::AfterPreDungeonAudio { sprite_reset, .. } = self else {
+        let Self::AfterPreDungeonAudio {
+            entry_room_load_pending,
+            sprite_reset,
+            ..
+        } = self
+        else {
             panic!("selected-game source authority reached the wrong pre-dungeon-audio phase");
         };
         assert!(
@@ -722,6 +804,10 @@ impl SelectedGameLoadContinuation {
             "selected-game Sprite_ResetAll progress and caller return cannot share one source host",
         );
         if let Some(progress) = progress {
+            assert!(
+                !*entry_room_load_pending,
+                "selected-game Sprite_ResetAll progressed before its entry room load",
+            );
             assert_eq!(
                 *sprite_reset,
                 PreDungeonSpriteResetContinuation::Pending,
@@ -735,6 +821,10 @@ impl SelectedGameLoadContinuation {
             return StartupSequenceStep::SelectedGameLoadWaiting;
         }
         if completes_caller {
+            assert!(
+                !*entry_room_load_pending,
+                "selected-game caller returned before its entry room load",
+            );
             assert!(
                 matches!(
                     *sprite_reset,
@@ -1147,6 +1237,46 @@ impl GameExecutionScheduler {
             }
             _ => None,
         }
+    }
+
+    pub(super) fn selected_game_load_message_interface_published(self) -> bool {
+        match self.continuation {
+            Some(GameExecutionContinuation::SelectedGameLoad(continuation)) => {
+                continuation.message_interface_published()
+            }
+            _ => false,
+        }
+    }
+
+    pub(super) fn publish_selected_game_load_message_interface_from_source(
+        &mut self,
+    ) -> Option<StartupSequenceStep> {
+        match self.continuation.as_mut()? {
+            GameExecutionContinuation::SelectedGameLoad(continuation) => {
+                Some(continuation.publish_message_interface_from_source())
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn selected_game_load_pending_entry_room_load(
+        self,
+    ) -> Option<SelectedGameLoadDestination> {
+        match self.continuation {
+            Some(GameExecutionContinuation::SelectedGameLoad(continuation)) => {
+                continuation.pending_entry_room_load()
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn mark_selected_game_load_entry_room_load_completed(&mut self) {
+        let Some(GameExecutionContinuation::SelectedGameLoad(continuation)) =
+            self.continuation.as_mut()
+        else {
+            panic!("selected-game entry room load lost its scheduler owner");
+        };
+        continuation.mark_entry_room_load_completed();
     }
 
     pub(super) fn advance_selected_game_load_after_pre_dungeon_audio_from_source(

@@ -242,14 +242,12 @@ impl RomRandomReplay {
     /// selection) inside it.
     pub(crate) fn has_sample_for_current_frame(&self) -> Option<bool> {
         self.enabled.then(|| {
-            self.samples
-                .front()
-                .is_some_and(|sample| {
-                    // A carried sample from the previous host counts as this
-                    // host's: the parked slot that draws it resumes here.
-                    self.current_execution_frame
-                        .is_some_and(|current| sample.execution_frame <= current)
-                })
+            self.samples.front().is_some_and(|sample| {
+                // A carried sample from the previous host counts as this
+                // host's: the parked slot that draws it resumes here.
+                self.current_execution_frame
+                    .is_some_and(|current| sample.execution_frame <= current)
+            })
         })
     }
 

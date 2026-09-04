@@ -5,6 +5,19 @@ fn fresh_state() -> ZeldaState {
 }
 
 #[test]
+fn head_direction_preserves_sprite_is_right_of_link_carry() {
+    let sprite_x = 0x0141;
+
+    // The ROM's ADC includes the no-borrow carry from the helper. Therefore
+    // +30 is the last centered coordinate on the right, while +31 selects
+    // right. The negative side has no carry and remains centered through -32.
+    assert_eq!(ganon_head_direction(0x015f, sprite_x), 1);
+    assert_eq!(ganon_head_direction(0x0160, sprite_x), 2);
+    assert_eq!(ganon_head_direction(0x0121, sprite_x), 1);
+    assert_eq!(ganon_head_direction(0x0120, sprite_x), 0);
+}
+
+#[test]
 fn attempt_trident_catch_matches_8x8_window() {
     // cur_sprite_(x,y) within +/- 4 of the target should report a catch.
     let mut s = fresh_state();

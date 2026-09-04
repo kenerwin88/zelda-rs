@@ -103,9 +103,16 @@ impl ZeldaState {
             self.game_state.frame.main_module,
             self.game_state.frame.submodule,
             self.game_state.frame.subsubmodule,
-            self.game_state.world.overworld.event_info.event_info(screen_byte as usize),
+            self.game_state
+                .world
+                .overworld
+                .event_info
+                .event_info(screen_byte as usize),
             self.game_state.world.region.ow_entrance_value(),
-            self.game_state.dungeon.object_tracking.big_rock_starting_address(),
+            self.game_state
+                .dungeon
+                .object_tracking
+                .big_rock_starting_address(),
         );
     }
 
@@ -213,7 +220,10 @@ impl ZeldaState {
         sprite_presence_published: bool,
     ) {
         if sprite_presence_published {
-            self.sprite_activate_all_proxima();
+            // Every source activation was already applied from the ordered
+            // reload receipts. Retire the suspended scan by restoring its C
+            // locals instead of rerunning the whole activation loop.
+            self.complete_overworld_proximity_scan_continuation();
         } else {
             self.sprite_finish_reload_all_overworld();
         }
@@ -377,7 +387,7 @@ impl ZeldaState {
         self.Overworld_LoadNewScreenProperties();
     }
 
-    pub(super) fn Overworld_EnterSpecialArea(&mut self) {
+    fn overworld_enter_special_area_before_palettes(&mut self) -> (u8, u8, u8) {
         self.memorized_tile_mut().clear_count();
         self.save_spexit_area_index();
         self.save_spexit_tm_copy();
@@ -406,13 +416,25 @@ impl ZeldaState {
                 self.special_exit_screen_index(),
                 self.game_state.player.special_exit_position.x(),
                 self.game_state.player.special_exit_position.y(),
-                self.game_state.display.ppu_scroll_copy.special_exit_bg2_h_copy2(),
-                self.game_state.display.ppu_scroll_copy.special_exit_bg2_v_copy2(),
+                self.game_state
+                    .display
+                    .ppu_scroll_copy
+                    .special_exit_bg2_h_copy2(),
+                self.game_state
+                    .display
+                    .ppu_scroll_copy
+                    .special_exit_bg2_v_copy2(),
                 self.overworld_spexit_map16_src_off(),
                 self.overworld_map16_y_unit(),
                 self.overworld_map16_dst_off(),
-                self.game_state.world.camera_boundaries.spexit_camera_x_scroll_low(),
-                self.game_state.world.camera_boundaries.spexit_camera_y_scroll_low(),
+                self.game_state
+                    .world
+                    .camera_boundaries
+                    .spexit_camera_x_scroll_low(),
+                self.game_state
+                    .world
+                    .camera_boundaries
+                    .spexit_camera_y_scroll_low(),
                 self.game_state.world.location.dungeon_room(),
                 self.game_state.frame.main_module,
                 self.game_state.frame.submodule,
@@ -434,8 +456,14 @@ impl ZeldaState {
             .set_graphics_index(SPECIAL_EXIT_SPRITE_GRAPHICS[i]);
         self.world_palette_theme_mut()
             .set_aux_tile_theme_index(SPECIAL_EXIT_AUX_GRAPHICS[i]);
-        self.Overworld_LoadPalettes(SPECIAL_EXIT_BG_PALETTES[i], SPECIAL_EXIT_SPRITE_PALETTES[i]);
+        (
+            room_bak,
+            SPECIAL_EXIT_BG_PALETTES[i],
+            SPECIAL_EXIT_SPRITE_PALETTES[i],
+        )
+    }
 
+    fn overworld_enter_special_area_after_palettes(&mut self, room_bak: u8) {
         let j = (self.game_state.world.location.dungeon_room_index() & 0x3f) as usize;
         self.set_overworld_offset_base_y(SPECIAL_EXIT_TOP_BOUNDS[j]);
         self.set_overworld_offset_base_x(SPECIAL_EXIT_LEFT_EDGE_OF_MAP[j] >> 3);
@@ -456,6 +484,36 @@ impl ZeldaState {
 
         self.set_dungeon_room_index(room_bak);
         self.Palette_SpecialOw();
+    }
+
+    pub(super) fn Overworld_EnterSpecialArea(&mut self) {
+        let (room_bak, bg_palette, sprite_palette) =
+            self.overworld_enter_special_area_before_palettes();
+        self.Overworld_LoadPalettes(bg_palette, sprite_palette);
+        self.overworld_enter_special_area_after_palettes(room_bak);
+    }
+
+    pub(super) fn overworld_enter_special_area_through_ow_bg2_words(
+        &mut self,
+        completed_ow_bg2_words: usize,
+    ) -> u8 {
+        let (room_bak, bg_palette, sprite_palette) =
+            self.overworld_enter_special_area_before_palettes();
+        self.overworld_load_palettes_through_ow_bg2_words(
+            bg_palette,
+            sprite_palette,
+            completed_ow_bg2_words,
+        );
+        room_bak
+    }
+
+    pub(super) fn overworld_enter_special_area_after_ow_bg2_words(
+        &mut self,
+        room_bak: u8,
+        completed_ow_bg2_words: usize,
+    ) {
+        self.overworld_load_palettes_after_ow_bg2_words(completed_ow_bg2_words);
+        self.overworld_enter_special_area_after_palettes(room_bak);
     }
 
     pub(super) fn GetOverworldBgPalette(&self, idx: u8) -> u8 {
@@ -741,8 +799,8 @@ impl ZeldaState {
         let source_owned_reload = self.rom_startup_timing()
             && self.game_state.frame.main_module == 0x0b
             && matches!(self.game_state.frame.submodule, 0x18 | 0x25);
-        let sprite_slots_before_reload = source_owned_reload
-            .then(|| self.game_state.sprites.sprite_slots.clone());
+        let sprite_slots_before_reload =
+            source_owned_reload.then(|| self.game_state.sprites.sprite_slots.clone());
         self.sprite_initialize_slots();
         let workload = self.sprite_reload_all_overworld();
         if let Some(sprite_slots_before_reload) = sprite_slots_before_reload {
@@ -1207,12 +1265,10 @@ impl ZeldaState {
             "the provisional transition sprite build cannot open its own Sprite_Main claim scope",
         );
         self.original_timing_sprite_main_return_claims_remaining = source_claim_scope;
-        let staged_oam =
-            self.ram[crate::game_state::constants::OAM_BUF..][..0x220].to_vec();
+        let staged_oam = self.ram[crate::game_state::constants::OAM_BUF..][..0x220].to_vec();
         self.ram.copy_from_slice(&ram_before_provisional_walk);
         self.game_state = game_state_before_provisional_walk;
-        self.ram[crate::game_state::constants::OAM_BUF..][..0x220]
-            .copy_from_slice(&staged_oam);
+        self.ram[crate::game_state::constants::OAM_BUF..][..0x220].copy_from_slice(&staged_oam);
         self.set_bg2_x(bg2x);
         self.set_bg2_y(bg2y);
         self.set_bg1_x(bg1x);
@@ -2681,12 +2737,39 @@ impl ZeldaState {
     /// torch/player reset, and the portal spawn.
     fn mirror_warp_load_sprites_reload_and_portal(&mut self) {
         self.sprite_reload_all_overworld();
+        self.mirror_warp_finish_after_sprite_reload();
+    }
+
+    /// Compute the reload's final sprite generation while retaining the reset
+    /// generation which is still visible during the source call. Typed source
+    /// receipts publish individual slots as `Sprite_ActivateAllProxima`
+    /// reaches them.
+    fn mirror_warp_prepare_deferred_sprite_reload(&mut self) {
+        let reset_slots = self.game_state.sprites.sprite_slots.clone();
+        self.sprite_reload_all_overworld();
+        self.defer_module09_sprite_slots_until_reload_return(reset_slots);
+    }
+
+    /// `MirrorWarp_LoadSpritesAndColors` after
+    /// `Sprite_ReloadAll_Overworld` returns.
+    fn mirror_warp_finish_after_sprite_reload(&mut self) {
         self.link_item_reset_from_overworld_things();
         self.Dungeon_ResetTorchBackgroundAndPlayerInner();
         self.follower_link_state_mut().set_handler_state(20);
         if self.game_state.world.location.overworld_screen_index() & 0x40 == 0 {
             self.sprite_initialize_mirror_portal();
         }
+    }
+
+    /// Run the straight-line remainder after the overworld sprite generation
+    /// returns, stopping before the enclosing Module09/Module15 dispatcher
+    /// suffix. The live source wire owns that later caller boundary
+    /// independently, so Sprite_Main must not be folded into this host.
+    pub(super) fn complete_mirror_warp_after_sprite_generation_return(&mut self) {
+        self.mirror_warp_finish_after_sprite_reload();
+        self.set_pending_nmi_subroutine(12);
+        self.set_core_update_disable_flag(12);
+        self.mirror_warp_table_after_animation();
     }
 
     pub(super) fn Module09_2E_Whirlpool(&mut self) {
@@ -2720,13 +2803,15 @@ impl ZeldaState {
                 self.increment_subsubmodule();
             }
             5 => {
-                self.run_or_schedule_module09_long_load(Module09LongLoadStep::LoadOverlayAndMap, 18);
+                self.run_or_schedule_module09_long_load(
+                    Module09LongLoadStep::LoadOverlayAndMap,
+                    18,
+                );
             }
             7 => {
                 self.module09_load_aux_gfx_prefix();
-                let slices =
-                    overworld_aux_graphics_timing(self.overworld_aux_graphics_workload())
-                        .load_nmi_slices;
+                let slices = overworld_aux_graphics_timing(self.overworld_aux_graphics_workload())
+                    .load_nmi_slices;
                 self.run_or_schedule_module09_long_load(
                     Module09LongLoadStep::LoadAuxGraphics,
                     slices,
@@ -2839,6 +2924,7 @@ impl ZeldaState {
                 } else {
                     Module09LongLoadStep::MirrorWarpSpriteLoadReload
                 };
+                self.mirror_warp_prepare_deferred_sprite_reload();
                 self.game_execution_scheduler.schedule_work(
                     GameWorkContinuation::FinishModule09LongLoad { step: reload },
                     5,
@@ -2854,11 +2940,11 @@ impl ZeldaState {
             }
             Module09LongLoadStep::MirrorWarpSpriteLoadReload
             | Module09LongLoadStep::Module15MirrorWarpSpriteLoadReload => {
-                self.mirror_warp_load_sprites_reload_and_portal();
-                self.set_pending_nmi_subroutine(12);
-                self.set_core_update_disable_flag(12);
-                self.mirror_warp_table_after_animation();
+                self.publish_deferred_module09_sprite_slots_at_reload_return();
+                self.complete_mirror_warp_after_sprite_generation_return();
             }
+            Module09LongLoadStep::MirrorWarpSpriteLoadTail
+            | Module09LongLoadStep::Module15MirrorWarpSpriteLoadTail => {}
             Module09LongLoadStep::ReloadSheets => {
                 self.ReloadPreviouslyLoadedSheets();
                 self.set_hdma_enable_mask(0x80);
@@ -3350,7 +3436,9 @@ impl ZeldaState {
             crate::MainLoopInterruption::LinkPositionBeforeCoordinates,
         );
         let authoritative_after_subpixel = match self.original_timing_main_loop_interruption() {
-            Some(interruption @ crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }) => {
+            Some(
+                interruption @ crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass },
+            ) => {
                 assert!(
                     self.take_original_timing_main_loop_interruption(interruption),
                     "the observed mid-loop Link position interruption disappeared",
@@ -3359,15 +3447,33 @@ impl ZeldaState {
             }
             _ => None,
         };
+        let authoritative_after_coordinates = match self.original_timing_main_loop_interruption() {
+            Some(
+                interruption @ crate::MainLoopInterruption::LinkPositionAfterCoordinates { pass },
+            ) => {
+                assert!(
+                    self.take_original_timing_main_loop_interruption(interruption),
+                    "the observed post-coordinate Link position interruption disappeared",
+                );
+                Some(pass)
+            }
+            _ => None,
+        };
         let authoritative_link_oam_interruption =
             self.take_original_timing_main_loop_interruption(crate::MainLoopInterruption::LinkOam);
         assert!(
-            !(authoritative_before_coordinates && authoritative_link_oam_interruption),
-            "one Module0F source call cannot stop before Link coordinates and in LinkOam",
+            usize::from(authoritative_before_coordinates)
+                + usize::from(authoritative_after_subpixel.is_some())
+                + usize::from(authoritative_after_coordinates.is_some())
+                + usize::from(authoritative_link_oam_interruption)
+                <= 1,
+            "one Module0F source call cannot publish two Link movement interruptions",
         );
         if let Some(pass) = authoritative_after_subpixel {
             assert!(
-                cpu_plan.is_none() && !authoritative_before_coordinates && !authoritative_link_oam_interruption,
+                cpu_plan.is_none()
+                    && !authoritative_before_coordinates
+                    && !authoritative_link_oam_interruption,
                 "the mid-loop Link position receipt cannot share its host with another Module0F owner",
             );
             let position_return = self
@@ -3385,11 +3491,35 @@ impl ZeldaState {
             );
             return true;
         }
+        if let Some(pass) = authoritative_after_coordinates {
+            assert!(
+                cpu_plan.is_none(),
+                "the post-coordinate Link position receipt cannot share a host with the isolated spotlight CPU plan",
+            );
+            let position_return = self
+                .module0f_spotlight_close_velocity_until_position_after_coordinates(pass)
+                .expect("a post-coordinate Link_MovePosition interruption requires Module0F's outdoor velocity path");
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
+                    iteration,
+                    pass: position_return.pass,
+                    old_x: position_return.old_x,
+                    old_y: position_return.old_y,
+                },
+                1,
+            );
+            return true;
+        }
         if authoritative_before_coordinates {
             assert!(
                 cpu_plan.is_none(),
                 "the isolated spotlight CPU plan and Live Link-position receipt cannot both own one interruption",
             );
+            // The source has returned from Sprite_Main and executed
+            // Module0F's outdoor Link prefix before entering
+            // Link_HandleVelocity. Publish those source stores in this host;
+            // the saved call stack resumes only the velocity/movement leaf.
+            self.module0f_spotlight_close_before_velocity();
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration },
                 1,
@@ -3427,10 +3557,24 @@ impl ZeldaState {
     }
 
     pub(super) fn module0f_spotlight_close_link_and_oam(&mut self) {
-        if let Some(position_return) =
-            self.module0f_spotlight_close_velocity_until_position_integrated()
-        {
-            self.complete_link_move_position_after_coordinates(position_return);
+        self.module0f_spotlight_close_before_velocity();
+        self.module0f_spotlight_close_velocity_and_oam();
+    }
+
+    fn module0f_spotlight_close_before_velocity(&mut self) {
+        if !self.game_state.world.location.is_outdoors() {
+            return;
+        }
+        if self.game_state.world.location.overworld_screen_index() == 0x0f {
+            self.follower_link_state_mut()
+                .set_water_ripple_or_grass_state(1);
+        }
+        self.follower_link_state_mut().set_speed_setting(6);
+    }
+
+    fn module0f_spotlight_close_velocity_and_oam(&mut self) {
+        if self.game_state.world.location.is_outdoors() {
+            self.link_handle_velocity();
         }
         self.module0f_spotlight_close_after_velocity();
     }
@@ -3460,6 +3604,21 @@ impl ZeldaState {
             }
             self.follower_link_state_mut().set_speed_setting(6);
             return self.link_handle_velocity_until_position_integrated();
+        }
+        None
+    }
+
+    fn module0f_spotlight_close_velocity_until_position_after_coordinates(
+        &mut self,
+        pass: u8,
+    ) -> Option<LinkMovePositionAfterCoordinatesReturn> {
+        if self.game_state.world.location.is_outdoors() {
+            if self.game_state.world.location.overworld_screen_index() == 0x0f {
+                self.follower_link_state_mut()
+                    .set_water_ripple_or_grass_state(1);
+            }
+            self.follower_link_state_mut().set_speed_setting(6);
+            return self.link_handle_velocity_until_position_after_coordinates(pass);
         }
         None
     }
@@ -3524,11 +3683,35 @@ impl ZeldaState {
         }
     }
 
+    /// Resume Module0F after one `Link_MovePosition` axis fully published:
+    /// complete only later axes, then the velocity and Link/OAM suffix.
+    pub(super) fn complete_dungeon_exit_spotlight_link_movement_after_coordinates(
+        &mut self,
+        iteration: SpotlightIteration,
+        position_return: LinkMovePositionAfterCoordinatesReturn,
+        caller_returned_in_host: bool,
+    ) {
+        self.complete_link_move_position_from_after_coordinates(position_return);
+        self.module0f_spotlight_close_after_velocity();
+        if caller_returned_in_host {
+            return;
+        }
+        if iteration.prepares_main_loop_sprites_before_second_nmi() {
+            self.nmi_prepare_sprites_for_main_loop_once();
+            self.clear_nmi_update_latch();
+        } else {
+            self.schedule_spotlight_iteration_return(iteration);
+        }
+    }
+
     pub(super) fn complete_dungeon_exit_spotlight_link_movement(
         &mut self,
         iteration: SpotlightIteration,
     ) {
-        self.module0f_spotlight_close_link_and_oam();
+        // Module0F's speed/ripple prefix ran before the interrupt which
+        // parked this call. Resume at Link_HandleVelocity, then execute the
+        // remaining movement-animation and Link-OAM suffix exactly once.
+        self.module0f_spotlight_close_velocity_and_oam();
         if iteration.prepares_main_loop_sprites_before_second_nmi() {
             self.nmi_prepare_sprites_for_main_loop_once();
             self.clear_nmi_update_latch();
@@ -3661,6 +3844,39 @@ impl ZeldaState {
         );
     }
 
+    /// `complete_dungeon_exit_spotlight_build_cpu`, but the host ended after
+    /// both coordinate stores for `pass` in `Link_MovePosition`.
+    pub(super) fn complete_dungeon_exit_spotlight_build_until_link_position_after_coordinates(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        projection_completed: bool,
+        iteration: SpotlightIteration,
+        pass: u8,
+    ) {
+        if projection_completed {
+            self.complete_iris_spotlight_configure_table_after_projection();
+        } else {
+            self.complete_iris_spotlight_configure_table(table_build);
+        }
+        let caller_interrupted = self.complete_spotlight_configure_table_and_control_after_table(
+            self.game_state.frame.main_module,
+            false,
+        );
+        debug_assert!(!caller_interrupted);
+        let position_return = self
+            .module0f_spotlight_close_velocity_until_position_after_coordinates(pass)
+            .expect("a post-coordinate Link_MovePosition interruption requires Module0F's outdoor velocity path");
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
+                iteration,
+                pass: position_return.pass,
+                old_x: position_return.old_x,
+                old_y: position_return.old_y,
+            },
+            1,
+        );
+    }
+
     pub(super) fn complete_dungeon_exit_spotlight_build_cpu(
         &mut self,
         table_build: SpotlightTableBuildContinuation,
@@ -3776,6 +3992,36 @@ impl ZeldaState {
     }
 
     pub(super) fn Overworld_LoadBirdTravelPos(&mut self, k: usize) {
+        self.Overworld_LoadBirdTravelPosPrefix(k);
+        self.sprite_reset_all();
+        self.sprite_reload_all_overworld();
+        self.complete_bird_travel_position_after_sprite_reload();
+    }
+
+    pub(super) fn FluteMenu_LoadTransportThroughInitialSpriteDisable(&mut self) {
+        self.memorized_tile_mut().clear_count();
+        let k = self.birdtravel_status() as usize;
+        let bird_travel_index_x2 = self.birdtravel_status_word() << 1;
+        self.set_birdtravel_status_word(bird_travel_index_x2);
+        self.Overworld_LoadBirdTravelPosPrefix(k);
+        self.sprite_disable_all();
+    }
+
+    pub(super) fn complete_bird_travel_initial_reset_and_begin_reload(&mut self) {
+        self.sprite_reset_all_no_disable();
+        self.sprite_disable_all();
+    }
+
+    pub(super) fn complete_bird_travel_reload_reset_before_presence(&mut self) {
+        self.sprite_reset_all_no_disable();
+    }
+
+    pub(super) fn complete_bird_travel_position_after_sprite_reload(&mut self) {
+        self.follower_link_state_mut().clear_doorway_state();
+        self.Dungeon_ResetTorchBackgroundAndPlayerInner();
+    }
+
+    fn Overworld_LoadBirdTravelPosPrefix(&mut self, k: usize) {
         let screen_index = self
             .asset_raw(113)
             .expect("Overworld_LoadBirdTravelPos missing kBirdTravel_ScreenIndex asset")
@@ -3860,10 +4106,6 @@ impl ZeldaState {
         self.dungeon_object_tracking_mut()
             .set_big_rock_starting_address(0);
         self.Overworld_LoadNewScreenProperties();
-        self.sprite_reset_all();
-        self.sprite_reload_all_overworld();
-        self.follower_link_state_mut().clear_doorway_state();
-        self.Dungeon_ResetTorchBackgroundAndPlayerInner();
     }
 
     pub(super) fn FluteMenu_LoadSelectedScreenPalettes(&mut self) {
@@ -3969,15 +4211,39 @@ impl ZeldaState {
                 self.special_exit_screen_index(),
                 self.game_state.player.special_exit_position.x(),
                 self.game_state.player.special_exit_position.y(),
-                self.game_state.display.ppu_scroll_copy.special_exit_bg2_h_copy2(),
-                self.game_state.display.ppu_scroll_copy.special_exit_bg2_v_copy2(),
+                self.game_state
+                    .display
+                    .ppu_scroll_copy
+                    .special_exit_bg2_h_copy2(),
+                self.game_state
+                    .display
+                    .ppu_scroll_copy
+                    .special_exit_bg2_v_copy2(),
                 self.overworld_spexit_map16_src_off(),
-                self.game_state.world.camera_boundaries.spexit_camera_x_scroll_low(),
-                self.game_state.world.camera_boundaries.spexit_camera_y_scroll_low(),
-                self.game_state.world.camera_boundaries.spexit_room_bound_x_start(),
-                self.game_state.world.camera_boundaries.spexit_room_bound_x_end(),
-                self.game_state.world.camera_boundaries.spexit_room_bound_y_start(),
-                self.game_state.world.camera_boundaries.spexit_room_bound_y_end(),
+                self.game_state
+                    .world
+                    .camera_boundaries
+                    .spexit_camera_x_scroll_low(),
+                self.game_state
+                    .world
+                    .camera_boundaries
+                    .spexit_camera_y_scroll_low(),
+                self.game_state
+                    .world
+                    .camera_boundaries
+                    .spexit_room_bound_x_start(),
+                self.game_state
+                    .world
+                    .camera_boundaries
+                    .spexit_room_bound_x_end(),
+                self.game_state
+                    .world
+                    .camera_boundaries
+                    .spexit_room_bound_y_start(),
+                self.game_state
+                    .world
+                    .camera_boundaries
+                    .spexit_room_bound_y_end(),
             );
         }
         self.memorized_tile_mut().clear_count();
@@ -6163,10 +6429,8 @@ impl ZeldaState {
             // host boundaries (route frames 165813..165815). Keep the caller
             // suffix behind that source call; live receipts decide the exact
             // return host if another graphics set takes a different path.
-            self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishOverworldMosaicSpriteGraphics,
-                3,
-            );
+            self.game_execution_scheduler
+                .schedule_work(GameWorkContinuation::FinishOverworldMosaicSpriteGraphics, 3);
             return;
         }
         self.complete_overworld_mosaic_sprite_graphics();

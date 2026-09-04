@@ -10,16 +10,22 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use zelda3::{
-    CachedSpriteCacheField, CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt,
-    DialogueExecutionProgress, DungeonLoadSpritesCpuProgress, DungeonResetSpritesCpuProgress,
+    CachedSpriteCacheField, CachedSpriteExecutionBodyProgress, CachedSpriteExecutionProgress,
+    CachedSpriteExecutionProgressReceipt, CreditsEndSequence32ProgressReceipt,
+    CreditsSceneLoadProgress, CreditsSceneLoadProgressReceipt, DialogueExecutionProgress,
+    DungeonFallingEntranceProgress, DungeonLoadSpritesCpuProgress,
+    DungeonPegAttributeFlipProgressReceipt, DungeonResetSpritesCpuProgress,
     DungeonResetSpritesProgressReceipt, DungeonSpriteDisableCpuProgress,
     DungeonSpriteLoadCheckpoint, ItemReceiptGraphicsCaller, ItemReceiptGraphicsProgressReceipt,
     JoypadPublication, MainLoopInterruption, MainLoopProgress, NmiPpuRegisterOperands,
     NmiUpdateGate, OriginalTimingBoundary, OriginalTimingSemanticReceipt,
-    OverworldSpriteReloadProgress, PreOverworldStageCompletion, SaveMenuInitializationProgress,
-    SourceCallProgress, SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress,
-    SpotlightTableBuildProgressReceipt, SpriteMainProgress, SpriteResetAllProgress,
-    SpriteResetAllProgressReceipt,
+    OverworldSpriteReloadProgress, PreOverworldStageCompletion,
+    RescuedMaidenInitializationProgressReceipt, RescuedMaidenInitializationStage,
+    RescuedMaidenTilemapClearProgressReceipt, SaveMenuInitializationProgress, SourceCallProgress,
+    SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt,
+    SpriteDynamicSpawnProgress, SpriteFollowerGraphicsCaller, SpriteInitializeResetPropertiesPhase,
+    SpriteMainProgress, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
+    TriforceRoomCase2PaletteProgressReceipt,
 };
 
 const TRACE_PATH_ENV: &str = "ZELDA3_SNES9X_TRACE";
@@ -30,6 +36,62 @@ const REQUIRED_TRACE_EVENTS: &[&str] = &["frame", "nmi", "nmi-resume", "wram", "
 
 const FRAME_COUNTER: u16 = 0x001a;
 const NMI_UPDATE_LATCH: u16 = 0x0012;
+const SUBMODULE_INDEX: u16 = 0x0011;
+const SUBSUBMODULE_INDEX: u16 = 0x00b0;
+const CREDITS_SCENE_OVERWORLD_SUBSUBMODULE_INCREMENT_PC: u32 = 0x02_8696;
+const CREDITS_ENDING_TEXT_BEFORE_TILE_COPY_PC: u32 = 0x0e_c34b;
+const CREDITS_END_SEQUENCE_32_SAVE_CHECKSUM_LOOP_PC: u32 = 0x00_899c;
+// Source statements inside Module11_02's long room load. These post-write
+// PCs are pinned-adapter provenance only; gameplay receives the typed
+// `DungeonFallingEntranceProgress` facts below.
+const FALLING_ENTRANCE_ROOM_PARSER_SUBSUB_CLEAR_PC: u32 = 0x02_c5b1;
+const FALLING_ENTRANCE_SUBSUB_ADVANCE_PC: u32 = 0x02_9b9d;
+const FALLING_ENTRANCE_SONG_BANK_TAIL_PC: u32 = 0x02_9bd7;
+// The rescued-maiden transition clears four BG2 and then four BG1 1,024-word
+// regions for each even X cursor. Snes9x reports the opcode-postfetch PC which
+// the interrupted stack resumes at; these are private adapter coordinates for
+// translating that position to an exact source-order store count.
+const RESCUED_MAIDEN_TILEMAP_CLEAR_FIRST_STORE_PC: u32 = 0x02_984a;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_SECOND_STORE_PC: u32 = 0x02_984e;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_THIRD_STORE_PC: u32 = 0x02_9852;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_FOURTH_STORE_PC: u32 = 0x02_9856;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_FIFTH_STORE_PC: u32 = 0x02_985a;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_SIXTH_STORE_PC: u32 = 0x02_985e;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_SEVENTH_STORE_PC: u32 = 0x02_9862;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_EIGHTH_STORE_PC: u32 = 0x02_9866;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_FIRST_INX_PC: u32 = 0x02_986a;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_SECOND_INX_PC: u32 = 0x02_986b;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_COMPARE_PC: u32 = 0x02_986c;
+const RESCUED_MAIDEN_TILEMAP_CLEAR_BRANCH_PC: u32 = 0x02_986f;
+// Source call boundaries inside the rescued-maiden state's synchronous
+// follower-graphics load. Only these sparse call sites are traced; the exact
+// decompressor output cursor comes from Y on the host/NMI boundary event, so
+// route-wide tracing does not record one event per output byte.
+const RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC: u32 = 0x00_d423;
+const RESCUED_MAIDEN_FIRST_FOLLOWER_SHEET_ENTRY_PC: u32 = 0x00_e75c;
+const RESCUED_MAIDEN_SECOND_FOLLOWER_SHEET_ENTRY_PC: u32 = 0x00_e766;
+const RESCUED_MAIDEN_FOLLOWER_SHEETS_RETURN_PC: u32 = 0x00_d44c;
+const FOLLOWER_GRAPHICS_CONVERSION_START_PC: u32 = 0x00_d5ce;
+const FOLLOWER_GRAPHICS_CONVERSION_END_PC: u32 = 0x00_d619;
+const FOLLOWER_GRAPHICS_CONVERSION_DESTINATION_X: u16 = 0x2940;
+const FOLLOWER_GRAPHICS_CONVERSION_STORES: u16 = 32 * 8 * 2;
+// Return addresses of the Sprite_Main-owned calls to LoadFollowerGraphics.
+// The active slot plus the concrete caller distinguishes the two state-8
+// preparation paths and Blind Maiden's state-9 become-follower body from the
+// many other callers of the shared loader.
+const SPRITE_PREP_BLIND_MAIDEN_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x06_89c2;
+const SPRITE_PREP_ZELDA_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x05_d444;
+const SPRITE_BLIND_MAIDEN_BODY_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x1e_e8ea;
+// `Sprite_Zazak_Main`'s animation publication. The write event proves the
+// current slot's source-selected graphics byte committed before the boundary.
+const SPRITE_ZAZAK_GRAPHICS_STORE_PC: u32 = 0x1e_91fb;
+const RESCUED_MAIDEN_DECOMPRESS_BODY_START_PC: u32 = 0x00_e79e;
+const RESCUED_MAIDEN_DECOMPRESS_BODY_END_PC: u32 = 0x00_e851;
+// Snes9x reports the post-fetch PC $e7f4 while the preceding `STA [$00],Y`
+// has committed but its following INY has not. Every other supported body PC
+// exposes Y directly as the number of committed output bytes.
+const RESCUED_MAIDEN_DECOMPRESS_STORE_POSTFETCH_PC: u32 = 0x00_e7f4;
+const RESCUED_MAIDEN_FOLLOWER_SHEET_BYTES: u16 = 0x0600;
 // The pinned ROM has two source paths through `Interrupt_NMI`. The ordinary
 // path finishes its final PPU write at $00:8221 and reaches REP at $00:8225;
 // the active IRQ/poly-thread path jumps through `NMI_SwitchThread`, finishes
@@ -53,21 +115,65 @@ const ZELDA_RUN_GAME_LOOP_COMMON_SUFFIX_WRITE_PC: u32 = 0x00805f;
 // its input and conditionally decremented spotlight_var4, but has not yet
 // calculated or stored either HDMA-table word.
 const IRIS_SPOTLIGHT_CIRCLE_VALUE_CALL_PC: u32 = 0x00f375;
+// `$00:F378..$00:F382` is the publication-free caller suffix after the pure
+// circle helper returns: it loads and doubles the upper cursor, then evaluates
+// the upper-table guard. Neither table word has been stored yet, so these
+// instruction boundaries resume from the same source checkpoint as the pure
+// helper call. `$00:F383` is the first upper-table store itself.
+const IRIS_SPOTLIGHT_AFTER_CIRCLE_VALUE_START_PC: u32 = 0x00f378;
 // ROM $00:f364 is the direct-page store which initializes the current loop
 // iteration's `r8 = 0xff`. At this instruction boundary the store and every
 // table publication for the iteration remain pending. The adapter derives the
 // completed C iteration count from the source `r6` cursor captured at the NMI
 // handler entry; gameplay never observes this ROM address or scratch register.
 const IRIS_SPOTLIGHT_ITERATION_VALUE_STORE_PC: u32 = 0x00f364;
+// `$00:F366..$00:F374` only evaluates the new iteration's upper-bound
+// branch and, on the active-circle path, tests whether `spotlight_var4` will
+// be decremented. Before `$00:F375` neither that decrement nor either HDMA
+// table store has executed, so these instruction boundaries rewind to the
+// same backend-neutral iteration-start checkpoint as `$00:F364`.
+const IRIS_SPOTLIGHT_AFTER_ITERATION_VALUE_STORE_START_PC: u32 = 0x00f366;
 // The pure circle helper has returned and the source loop has doubled its
 // upper cursor, but neither HDMA-table store has executed. Rewind this
 // emulator-private instruction boundary to the same resumable C checkpoint as
 // the helper call: recalculating the pure value cannot replay a publication.
 const IRIS_SPOTLIGHT_UPPER_TABLE_WRITE_PC: u32 = 0x00f383;
+// After the upper long store completes, $00:F387..$00:F391 evaluates the
+// guarded lower-table write. An NMI here has published the upper word but may
+// have repurposed A/X for the guard, so expose the source statement rather
+// than trying to recover the prior accumulator value.
+const IRIS_SPOTLIGHT_AFTER_UPPER_TABLE_WRITE_START_PC: u32 = 0x00f387;
+const IRIS_SPOTLIGHT_LOWER_TABLE_WRITE_PC: u32 = 0x00f392;
+// The lower long store has returned at `$00:F396`; LDA/CMP then prepare the
+// source loop-completion test whose branch begins at `$00:F39A`. All three
+// instruction boundaries name the same source checkpoint: both table writes
+// are published and the loop test itself remains pending.
+const IRIS_SPOTLIGHT_BEFORE_LOOP_COMPLETION_TEST_START_PC: u32 = 0x00f396;
+const DESERT_PRAYER_IRIS_ENTRY_PC: u32 = 0x07ea27;
+const DESERT_PRAYER_IRIS_LOWER_Y_PUBLISHED_PC: u32 = 0x07ea40;
+const DESERT_PRAYER_IRIS_UPPER_Y_PUBLISHED_PC: u32 = 0x07ea4f;
+const DESERT_PRAYER_IRIS_X_CENTER_PUBLISHED_PC: u32 = 0x07ea5b;
+const DESERT_PRAYER_IRIS_CURSOR_PUBLISHED_PC: u32 = 0x07ea61;
+const DESERT_PRAYER_IRIS_EARLY_ITERATION_END_PC: u32 = 0x07ea79;
+const DESERT_PRAYER_IRIS_RADIAL_BRANCH_START_PC: u32 = 0x07ea7c;
+const DESERT_PRAYER_IRIS_RADIAL_BRANCH_END_PC: u32 = 0x07ea7f;
+const DESERT_PRAYER_IRIS_RADIAL_CALCULATION_START_PC: u32 = 0x07ea97;
+const DESERT_PRAYER_IRIS_BEFORE_LOWER_ZERO_WRITE_PC: u32 = 0x07ea9e;
+const DESERT_PRAYER_IRIS_PRIMARY_VALUE_START_PC: u32 = 0x07eaa1;
+const DESERT_PRAYER_IRIS_PRIMARY_INDEX_IN_X_PC: u32 = 0x07eaca;
+const DESERT_PRAYER_IRIS_PRIMARY_TABLE_WRITE_PC: u32 = 0x07eb12;
+const DESERT_PRAYER_IRIS_AFTER_PRIMARY_TABLE_WRITE_PC: u32 = 0x07eb15;
+const DESERT_PRAYER_IRIS_BEFORE_MIRRORED_TABLE_WRITE_PC: u32 = 0x07eb43;
+const DESERT_PRAYER_IRIS_AFTER_ITERATION_PCS: [u32; 4] = [0x07eb4b, 0x07eb4f, 0x07eb52, 0x07eb54];
+const DESERT_PRAYER_IRIS_LOOP_COMPLETE_START_PC: u32 = 0x07eb57;
+const DESERT_PRAYER_IRIS_STATE4_TAIL_START_PC: u32 = 0x07eb66;
+const DESERT_PRAYER_IRIS_SHAPE_HELPER_START_PC: u32 = 0x07ecdc;
+const DESERT_PRAYER_IRIS_SHAPE_HELPER_END_PC: u32 = 0x07ed2c;
+const PALETTE_FILTER_BEFORE_COLOR_LOAD_PC: u32 = 0x00e9e4;
+const PALETTE_FILTER_BEFORE_COLOR_STORE_PC: u32 = 0x00ea30;
 // ROM $00:f392 is the long WRAM store of the already-calculated circle value
 // to `hdma_table_dynamic[r6]`. The upper-cursor store at $00:f383 is complete;
 // this lower store and the loop-cursor update remain pending.
-const IRIS_SPOTLIGHT_LOWER_TABLE_WRITE_PC: u32 = 0x00f392;
 // At $00:f39a both table stores are complete and the source loop has compared
 // its upper cursor with the vertical center. The branch and any cursor update
 // remain pending. The adapter converts the private X register into the two C
@@ -109,6 +215,16 @@ const IRIS_SPOTLIGHT_RESET_TABLE_FIRST_STORE_PC: u32 = 0x00f42f;
 const IRIS_SPOTLIGHT_RESET_TABLE_FIRST_DEX_PC: u32 = 0x00f444;
 const IRIS_SPOTLIGHT_RESET_TABLE_SECOND_DEX_PC: u32 = 0x00f445;
 const IRIS_SPOTLIGHT_RESET_TABLE_BRANCH_PC: u32 = 0x00f446;
+const GAME_OVER_IRIS_PALETTE_FIRST_STORE_PC: u32 = 0x09f37a;
+const GAME_OVER_IRIS_PALETTE_SECOND_STORE_PC: u32 = 0x09f37e;
+const GAME_OVER_IRIS_PALETTE_THIRD_STORE_PC: u32 = 0x09f382;
+const GAME_OVER_IRIS_PALETTE_FOURTH_STORE_PC: u32 = 0x09f386;
+const GAME_OVER_IRIS_PALETTE_FIFTH_STORE_PC: u32 = 0x09f38a;
+const GAME_OVER_IRIS_PALETTE_SIXTH_STORE_PC: u32 = 0x09f38e;
+const GAME_OVER_IRIS_PALETTE_FIRST_INCREMENT_PC: u32 = 0x09f391;
+const GAME_OVER_IRIS_PALETTE_SECOND_INCREMENT_PC: u32 = 0x09f392;
+const GAME_OVER_IRIS_PALETTE_COMPARE_PC: u32 = 0x09f393;
+const GAME_OVER_IRIS_PALETTE_BRANCH_PC: u32 = 0x09f396;
 const IRIS_SPOTLIGHT_RESET_TABLE_INITIAL_X: u16 = 0x3e;
 const IRIS_SPOTLIGHT_RESET_TABLE_STORES_PER_ITERATION: u16 = 7;
 const IRIS_SPOTLIGHT_CIRCLE_VALUE_START_PC: u32 = 0x00f4cc;
@@ -116,9 +232,29 @@ const IRIS_SPOTLIGHT_CIRCLE_VALUE_END_PC: u32 = 0x00f53e;
 pub(crate) const SPOTLIGHT_VAR4_LOW_ADDRESS: usize = 0x067a;
 pub(crate) const SPOTLIGHT_LOWER_CURSOR_ADDRESS: usize = 0x0006;
 const NMI_HANDLER_ENTRY_PC: u32 = 0x0080c9;
+// `$09:F825` is the common render-call entry reached by Zelda's IRQ-driven
+// poly worker after its go/upload-byte loop admits the next frame. The PC is
+// private adapter provenance; gameplay receives only the source call-start
+// fact, and only for the preemptive dungeon/Triforce users modeled there.
+const POLYHEDRAL_RENDER_START_PC: u32 = 0x09f825;
 const DUNGEON_CACHE_TRANS_SPRITES_START_PC: u32 = 0x09c176;
 const DUNGEON_CACHE_TRANS_SPRITES_END_PC: u32 = 0x09c244;
 const DUNGEON_RESET_SPRITES_CLEAR_PC: u32 = 0x09c244;
+// After Sprite_DisableAll returns, Dungeon_ResetSprites publishes the paired
+// collision sizes and performs a read-only four-entry room-history search.
+// An interrupt anywhere in the search can resume from its source start: no
+// history mutation has occurred yet. These private PCs distinguish that
+// caller checkpoint from the completed callee boundary at $09:C244..C290.
+const DUNGEON_RESET_SPRITES_AFTER_DISABLE_PC: u32 = 0x09c124;
+const DUNGEON_RESET_SPRITES_COLLISION_Y_STORE_PC: u32 = 0x09c12c;
+const DUNGEON_RESET_SPRITES_HISTORY_SEARCH_START_PC: u32 = 0x09c12f;
+const DUNGEON_RESET_SPRITES_HISTORY_FIRST_MUTATION_PC: u32 = 0x09c148;
+const DUNGEON_RESET_SPRITES_HISTORY_FOUND_PC: u32 = 0x09c16e;
+const DUNGEON_RESET_SPRITES_LOAD_CALL_PC: u32 = 0x09c170;
+// First instruction after Dungeon_LoadSprites returns to Dungeon_ResetSprites.
+// Any partial cache/disable/load cursor is retired here even when the room had
+// no new sprite-record writes to supersede it.
+const DUNGEON_RESET_SPRITES_RETURN_PC: u32 = 0x09c173;
 const SPRITE_DISABLE_ALL_END_PC: u32 = 0x09c290;
 const SPRITE_DISABLE_ALL_FINAL_GARNISH_PC: u32 = 0x09c281;
 const GARNISH_TYPE_SLOT_ZERO: u16 = 0x0b00;
@@ -126,12 +262,30 @@ const ANCILLA_TYPE_BASE: u16 = 0x0c4a;
 const ANCILLA_PICKUP_FLAG: u16 = 0x02ec;
 const SPRITE_LIMIT_INSTANCE: u16 = 0x0b6a;
 const DUNGEON_LOAD_SINGLE_SPRITE_STATE_PC: u32 = 0x09c38c;
+const DUNGEON_LOAD_SINGLE_SPRITE_TEMP_Y_PC: u32 = 0x09c391;
+const DUNGEON_LOAD_SINGLE_SPRITE_FLOOR_PC: u32 = 0x09c398;
+const DUNGEON_LOAD_SINGLE_SPRITE_Y_LOW_PC: u32 = 0x09c3a1;
 const DUNGEON_LOAD_SINGLE_SPRITE_Y_HIGH_PC: u32 = 0x09c3a9;
-const DUNGEON_LOAD_SINGLE_SPRITE_END_PC: u32 = 0x09c400;
+const DUNGEON_LOAD_SINGLE_SPRITE_SHARED_X_PC: u32 = 0x09c3af;
+const DUNGEON_LOAD_SINGLE_SPRITE_X_LOW_PC: u32 = 0x09c3b6;
+const DUNGEON_LOAD_SINGLE_SPRITE_X_HIGH_PC: u32 = 0x09c3be;
+const DUNGEON_LOAD_SINGLE_SPRITE_TYPE_PC: u32 = 0x09c3c4;
+const DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_CLEAR_PC: u32 = 0x09c3c7;
+const DUNGEON_LOAD_SINGLE_SPRITE_TEMP_SUBTYPE_PC: u32 = 0x09c3d1;
+const DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_FINAL_PC: u32 = 0x09c3df;
+const DUNGEON_LOAD_SINGLE_SPRITE_SPAWN_INDEX_PC: u32 = 0x09c3e4;
+const DUNGEON_LOAD_SINGLE_SPRITE_COMPLETE_PC: u32 = 0x09c3e7;
+const DUNGEON_LOAD_SINGLE_SPRITE_END_PC: u32 = 0x09c3e8;
 // `Module_PreDungeon` calls `Sprite_ResetAll` at $02:8347; the return address
 // exposed by the pinned trace is $02:834b. The shared reset routine itself is
 // adapter-private provenance; gameplay receives only its semantic checkpoint.
 const MODULE_PRE_DUNGEON_AFTER_SPRITE_RESET_PC: u32 = 0x02_834b;
+// `Overworld_LoadBirdTravelPos` performs an initial `Sprite_ResetAll`, then
+// immediately enters `Sprite_ReloadAll_Overworld`. These caller return PCs
+// distinguish its two source reset phases from every other shared caller.
+const BIRD_TRAVEL_AFTER_INITIAL_SPRITE_RESET_PC: u32 = 0x02_ecd2;
+const BIRD_TRAVEL_AFTER_SPRITE_RELOAD_PC: u32 = 0x02_ecd6;
+const SPRITE_RELOAD_AFTER_DISABLE_PC: u32 = 0x09_c4a0;
 const SPRITE_RESET_ALL_NO_DISABLE_START_PC: u32 = 0x09_c452;
 const SPRITE_RESET_ALL_END_PC: u32 = 0x09_c499;
 const NMI_PREPARE_SPRITES_START_PC: u32 = 0x0085fc;
@@ -158,8 +312,66 @@ const LINK_OAM_END_PC: u32 = 0x0dadb6;
 // Neither address nor the CPU X register crosses the adapter boundary.
 const SPRITE_MAIN_ENTRY_PC: u32 = 0x068328;
 const SPRITE_EXECUTE_SINGLE_ENTRY_PC: u32 = 0x0684e2;
+// First instruction after Sprite_TimersAndOam's last countdown update. The
+// helper's floor/priority suffix and the state-dispatched body remain pending.
+// `$06:84A4` is the first instruction after the final countdown update in
+// Sprite_TimersAndOam.  Through the helper's RTS at `$06:84B8`, the countdown
+// prefix is complete while the floor/priority suffix may still be in flight.
+const SPRITE_TIMER_DECREMENTS_COMPLETE_START_PC: u32 = 0x0684a4;
+const SPRITE_TIMER_DECREMENTS_COMPLETE_END_PC: u32 = 0x0684b9;
+const SPRITE_TIMER_DECREMENTS_TRACE_PC: u32 = 0x0684aa;
+// The four leading countdown statements (`delay_main`, aux1, aux2, aux3)
+// are complete once the ROM begins loading `sprite_hit_timer`. Include the
+// possible mid-instruction host-return PCs through the AND operand; no hit-
+// timer statement has published at any address in this interval.
+const SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_START_PC: u32 = 0x068444;
+const SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_END_PC: u32 = 0x068449;
+// `$06:8432` begins the aux2 load after the main/aux1 countdown statements.
+// An NMI may be accepted during that instruction, before aux2 has executed.
+const SPRITE_MAIN_AND_AUX1_TIMER_DECREMENTS_COMPLETE_START_PC: u32 = 0x068432;
+const SPRITE_MAIN_AND_AUX1_TIMER_DECREMENTS_COMPLETE_END_PC: u32 = 0x068437;
+// First instruction after Sprite_ExecuteSingle's shared
+// Sprite_TimersAndOam call returns, before the saved dispatch state is
+// restored from the stack. The adapter exports only that C-call boundary.
+const SPRITE_TIMERS_AND_OAM_RETURN_PC: u32 = 0x0684eb;
+const PALETTE_LOAD_MULTIPLE_BEFORE_WORD_COPY_PC: u32 = 0x1bef5f;
+const OVERWORLD_PARSE_MAP32_DEFINITION_SECOND_WORD_PC: u32 = 0x02f695;
+// `SpritePrep_Bari` has completed its fixed Z publication and room-$ce
+// conditional when execution reaches the RNG tail at `$06:8B2B`. A libretro
+// host may return on the preceding BNE instruction, so include the complete
+// compare/branch range as the same source boundary.
+const SPRITE_BARI_BEFORE_RANDOM_START_PC: u32 = 0x068b24;
+const SPRITE_BARI_BEFORE_RANDOM_END_PC: u32 = 0x068b2e;
 const SPRITE_SLOT_RETURN_PC: u32 = 0x0683a7;
 const SPRITE_MAIN_RETURN_PC: u32 = 0x028842;
+// `SpriteDraw_Antfairy` has published its source-visible subtype increment
+// at this store. Its animation/draw suffix and the caller-specific sprite
+// body remain pending; the adapter exports only that semantic statement.
+const ANTFAIRY_SUBTYPE2_INCREMENT_PC: u32 = 0x1df39b;
+const DUNGEON_PEG_FLIP_LOOP_START_PC: u32 = 0x01c22f;
+const DUNGEON_PEG_FLIP_BANK_B_PC: u32 = 0x01c241;
+const DUNGEON_PEG_FLIP_BANK_C_PC: u32 = 0x01c253;
+const DUNGEON_PEG_FLIP_BANK_D_PC: u32 = 0x01c265;
+const DUNGEON_PEG_FLIP_DECREMENT_PC: u32 = 0x01c277;
+const DUNGEON_PEG_FLIP_BRANCH_PC: u32 = 0x01c278;
+const DUNGEON_PEG_FLIP_INDEX_EXHAUSTED_PC: u32 = 0x01c27a;
+const DUNGEON_PEG_FLIP_RETURN_PC: u32 = 0x01c27d;
+// `SpriteDraw_SingleSmall` has published its X coordinate, extended-OAM
+// size/X bit, and visible Y coordinate when execution reaches this CLC. The
+// character/flags stores and optional shadow remain pending. Keep the pinned
+// PC private to the adapter; gameplay receives only the source statement.
+const SPRITE_SINGLE_SMALL_AFTER_POSITION_PC: u32 = 0x06dd1a;
+// Probe has returned from Sprite_PrepOamCoordOrDoubleRet and is about to test
+// its prepared coordinates for off-screen removal. Movement, collision, and
+// proximity work are complete; keep the instruction address in this adapter.
+const SPRITE_PROBE_AFTER_OAM_COORDINATES_PC: u32 = 0x05c21d;
+// WallMaster_SendPlayerToLastEntrance calls Sprite_ResetAll from $0B:FFAF;
+// the return address proves this is the nested Wallmaster call rather than
+// one of the other users of the shared reset routine. At $09:C47B the fixed
+// Sprite_ResetAll_noDisable stores are complete and the first large clear
+// store has not executed yet.
+const WALLMASTER_RESET_AFTER_FIXED_PREFIX_PC: u32 = 0x09c47b;
+const WALLMASTER_AFTER_SPRITE_RESET_PC: u32 = 0x0bffb3;
 // `ThrowableScenery_ScatterIntoDebris`'s small-debris branch publishes the
 // current slot's terminal state clear here, before calling the OAM-coordinate
 // helper and optionally publishing one garnish. This is a resumable C
@@ -197,14 +409,31 @@ const BIG_KEY_DROP_SPRITE_TYPE: u8 = 0xe5;
 // and every field publication before the `$11` decode have completed.
 const DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC: u32 = 0x00_d4ed;
 const ZORA_FLIPPERS_GRAPHICS_RETURN_ADDRESS: u32 = 0x1d_e1e9;
-// Pinned Link_HandleVelocity has a second, earlier source-equivalent boundary:
-// after `$87:e274 LDA link_player_handler_state`, the saved PC is `$87:e276`
-// and no Zelda state has been changed yet.  The following CMP/branch is also
-// side-effect free.  Keep this private adapter range separate from the wider
-// Link_MovePosition range so unrelated Link_HandleVelocity branches cannot be
+// `SpritePrep_BonkItem`'s room-$107 branch calls the same decoder after its
+// state/property initialization and floor assignment have returned. The
+// pinned return address distinguishes that semantic caller from every other
+// animated-sheet user without exporting either address to gameplay.
+const BONK_ITEM_GRAPHICS_RETURN_ADDRESS: u32 = 0x06_8d17;
+// Pinned Link_HandleVelocity has a second, earlier source-equivalent boundary.
+// From `$87:e275 LDA link_player_handler_state` through the following
+// `$87:e27e BEQ`, the routine only reads the handler/movement flags and selects
+// a branch; no Zelda state has changed yet. Snes9x can expose an operand-byte
+// PC while `retro_run` returns between CPU cycles (route host 142141 exposes
+// `$87:e27d`, the high operand byte of `LDA link_flag_moving`), so cover the
+// complete instructions rather than only their opcode boundaries. Keep this
+// private adapter range separate from the wider Link_MovePosition range so
+// later Link_HandleVelocity branches which mutate gameplay state cannot be
 // mistaken for the same semantic checkpoint.
-const LINK_VELOCITY_BEFORE_STATE_BRANCH_START_PC: u32 = 0x07e276;
-const LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC: u32 = 0x07e27a;
+const LINK_VELOCITY_BEFORE_STATE_BRANCH_START_PC: u32 = 0x07e275;
+const LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC: u32 = 0x07e280;
+// After Link_HandleVelocity has selected its speed-table index, `$87:e2c8`
+// stores only the call-local scratch byte. The next instruction at `$87:e2ca`
+// is the first gameplay-state store (`STZ link_actual_vel_y`). An interrupt
+// whose saved PC lies in this interval therefore exposes the same semantic
+// boundary: Module0F's outer speed/ripple prefix has run, but Link's velocity
+// and coordinates have not changed yet (route host 65295).
+const LINK_VELOCITY_AFTER_SPEED_SELECTION_START_PC: u32 = 0x07e2c8;
+const LINK_VELOCITY_BEFORE_FIRST_STATE_STORE_END_PC: u32 = 0x07e2cc;
 // Pinned Link_MovePosition ($87:e370) copies Link's current coordinates and
 // safe-return bytes before its first coordinate integration store at $87:e3af.
 // Bank $07 is the executing LoROM mirror observed by the maintained core.
@@ -212,19 +441,69 @@ const LINK_POSITION_BEFORE_COORDINATES_START_PC: u32 = 0x07e370;
 const LINK_POSITION_BEFORE_COORDINATES_END_PC: u32 = 0x07e3af;
 // Link_MovePosition's axis loop between `STA $2A,y` (the subpixel store) and
 // `ADC $20,x` (the coordinate add): the current axis' subpixel is published,
-// its coordinate is not. X names the pass (4 = z, 2 = y, 0 = x).
+// its coordinate is not. X names the pass (4 = z, 2 = x, 0 = y).
 const LINK_POSITION_AFTER_SUBPIXEL_START_PC: u32 = 0x07e3b2;
 const LINK_POSITION_AFTER_SUBPIXEL_END_PC: u32 = 0x07e3c6;
+// After `STA $21,x` publishes the current axis' high coordinate byte, the
+// loop still owes its cursor decrements, later axes, and movement tail. X
+// identifies the just-completed pass through the loop epilogue. Once the
+// final Y pass has decremented X below zero, its PC identifies that completed
+// pass even though X no longer does (route host 76632).
+const LINK_POSITION_AFTER_COORDINATES_START_PC: u32 = 0x07e3d0;
+const LINK_POSITION_AFTER_COORDINATES_END_PC: u32 = 0x07e3d5;
+const SPRITE_PREP_RESET_PROPERTIES_START_PC: u32 = 0x0db871;
+const SPRITE_PREP_RESET_PROPERTIES_ACCUMULATOR_CLEAR_PC: u32 = 0x0db8da;
+const SPRITE_PREP_RESET_PROPERTIES_LONG_STORES_START_PC: u32 = 0x0db8dc;
+const SPRITE_PREP_RESET_PROPERTIES_RETURN_PC: u32 = 0x0db8f0;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_RESET_RETURN_ADDRESS: u32 = 0x0db81b;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_RESET_PC: u32 = 0x0db81c;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS2_PC: u32 = 0x0db829;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_HEALTH_PC: u32 = 0x0db82f;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS4_PC: u32 = 0x0db835;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS5_PC: u32 = 0x0db83b;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_DEFLECTION_PC: u32 = 0x0db841;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_BUMP_DAMAGE_PC: u32 = 0x0db847;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS_PC: u32 = 0x0db84d;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_ROOM_PC: u32 = 0x0db85a;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS3_PC: u32 = 0x0db869;
+const SPRITE_PREP_LOAD_PROPERTIES_AFTER_OAM_FLAGS_PC: u32 = 0x0db86e;
+const SPRITE_PREP_LOAD_PROPERTIES_RETURN_PC: u32 = 0x0db870;
+// Fire Debirando's state-8 initializer converts type $64 to $63 before its
+// nested second SpritePrep_LoadProperties call. The following reset shares
+// the generic helper's PC and immediate return address with the initial load,
+// so this source write distinguishes the caller phase.
+const SPRITE_PREP_FIRE_DEBIRANDO_TYPE_STORE_PC: u32 = 0x068b43;
+const SPRITE_PREP_FIRE_DEBIRANDO_SPAWN_RETURN_ADDRESS: u32 = 0x068b5f;
+const SPRITE_SPAWN_DYNAMICALLY_ENTRY_PC: u32 = 0x1df65d;
+const SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC: u32 = 0x1df66f;
+const SPRITE_SPAWN_DYNAMICALLY_STATE_STORE_PC: u32 = 0x1df674;
+const SPRITE_SPAWN_DYNAMICALLY_IDENTITY_STORE_PC: u32 = 0x1df6b8;
+const SPRITE_SPAWN_DYNAMICALLY_FLOOR_STORE_PC: u32 = 0x1df6bf;
+const SPRITE_SPAWN_DYNAMICALLY_DIRECTION_STORE_PC: u32 = 0x1df6c5;
+const SPRITE_SPAWN_DYNAMICALLY_DIE_ACTION_STORE_PC: u32 = 0x1df6cc;
+const SPRITE_SPAWN_DYNAMICALLY_SUBTYPE_STORE_PC: u32 = 0x1df6cf;
 const VWF_RENDER_SINGLE_START_PC: u32 = 0x0ecab8;
+// The shared body entered by VWF_RenderSingle after its per-glyph prefix. A
+// host return in this range proves that the current decoder byte's click and
+// line-transition statements have committed even though the decoder cursor
+// itself has not advanced yet.
+const VWF_RENDER_SINGLE_BODY_START_PC: u32 = 0x0ecb5e;
 const VWF_RENDER_SINGLE_END_PC: u32 = 0x0ecd1a;
 const UNCACHE_SPRITE_START_PC: u32 = 0x1dea00;
 const UNCACHE_SPRITE_RESTORE_START_PC: u32 = 0x1deb06;
 const UNCACHE_SPRITE_END_PC: u32 = 0x1deb68;
 const SPRITE_STATE_BASE: u16 = 0x0dd0;
+const SPRITE_Y_LOW_BASE: u16 = 0x0d00;
 const SPRITE_Y_HIGH_BASE: u16 = 0x0d20;
 const SPRITE_N_WORD_BASE: u16 = 0x0bc0;
 const SPRITE_TYPE_BASE: u16 = 0x0e20;
-const SPRITE_DIE_ACTION_BASE: u16 = 0x0f20;
+const SPRITE_SUBTYPE_BASE: u16 = 0x0e30;
+const SPRITE_FLOOR_BASE: u16 = 0x0f20;
+const SPRITE_DIRECTION_BASE: u16 = 0x0de0;
+const SPRITE_N_BASE: u16 = 0x0bc0;
+const SPRITE_DIE_ACTION_BASE: u16 = 0x0cba;
+const DUNGEON_LOAD_TEMP_Y: u16 = 0x0fb5;
+const DUNGEON_LOAD_SHARED_X: u16 = 0x0fb6;
 const OVERWORLD_SPRITE_SCAN_START_PC: u32 = 0x09c55e;
 const OVERWORLD_SPRITE_SCAN_END_PC: u32 = 0x09c881;
 const OVERWORLD_LOAD_SINGLE_SPRITE_START_PC: u32 = 0x09c770;
@@ -236,6 +515,24 @@ const OVERWORLD_LOAD_SINGLE_SPRITE_END_PC: u32 = 0x09c80b;
 const OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC: u32 = 0x09c499;
 const OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_RETURN_PC: u32 = 0x09c4aa;
 const OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC: u32 = 0x02af12;
+// `PreOverworld_LoadProperties` calls `Sprite_ReloadAll_Overworld`; its JSL
+// returns here after the reset, presence publication, and proximity scan.
+const PRE_OVERWORLD_AFTER_SPRITE_RELOAD_PC: u32 = 0x0284dd;
+// `MirrorWarp_LoadSpritesAndColors` calls the same reload at $02:b3ef; the
+// JSL returns to $02:b3f3. The module remains Module09/$23 throughout the
+// cross-host call, so only this concrete return address proves ownership.
+const MIRROR_WARP_AFTER_SPRITE_RELOAD_PC: u32 = 0x02b3f3;
+// Death_Func15 has returned from Death_Func31 and published its reset module,
+// Link coordinate, and scroll stores when it reaches the source-ordered
+// `memset(save_dung_info, 0, ...)` loop. The loop and song upload remain live.
+const SAVE_QUIT_RESET_DUNGEON_INFO_CLEAR_ENTRY_PC: u32 = 0x09f63f;
+// Graphics decompression clears its shared low-WRAM workspace with three
+// descending STZ loops at $02:80d0/$02:80d3/$02:80d6. Reaching $02:80dd
+// proves the complete $0d00-$0fff range is zero. During file-select loading
+// this aliases the live sprite arrays while the graphics caller remains live.
+const FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_RETURN_PC: u32 = 0x0280dd;
+const SELECTED_GAME_LOAD_MESSAGE_INTERFACE_RETURN_PC: u32 = 0x0ffdc3;
+const MODULE05_AFTER_SHOW_TEXT_MESSAGE_PC: u32 = 0x0281f5;
 // BottleVendor case 2 calls Link_ReceiveItem synchronously at $85:eb1d.
 // The call's graphics decompressor may span several host returns; $85:eb21 is
 // the first instruction of the caller suffix after that JSL returns.  These
@@ -310,6 +607,186 @@ struct CachedSpriteExecutionTracker {
     copied_fields: u8,
     restored_fields: u8,
     restore_started: bool,
+    #[serde(default)]
+    body_progress: Option<CachedSpriteExecutionBodyProgress>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+enum RescuedMaidenInitializationTrackerPhase {
+    FirstFollowerSheet,
+    SecondFollowerSheet,
+    /// Both sheets returned. A host boundary here would require a separate
+    /// conversion/caller-suffix checkpoint and is rejected fail-closed.
+    Converting,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct RescuedMaidenInitializationTracker {
+    phase: RescuedMaidenInitializationTrackerPhase,
+    completed_bytes: u16,
+}
+
+impl RescuedMaidenInitializationTracker {
+    const fn first_sheet() -> Self {
+        Self {
+            phase: RescuedMaidenInitializationTrackerPhase::FirstFollowerSheet,
+            completed_bytes: 0,
+        }
+    }
+
+    fn begin_second_sheet(&mut self) -> Result<(), String> {
+        if self.phase != RescuedMaidenInitializationTrackerPhase::FirstFollowerSheet {
+            return Err(format!(
+                "Snes9x rescued-maiden follower graphics entered the second sheet from {:?}",
+                self.phase,
+            ));
+        }
+        self.phase = RescuedMaidenInitializationTrackerPhase::SecondFollowerSheet;
+        self.completed_bytes = 0;
+        Ok(())
+    }
+
+    fn begin_conversion(&mut self) -> Result<(), String> {
+        if self.phase != RescuedMaidenInitializationTrackerPhase::SecondFollowerSheet {
+            return Err(format!(
+                "Snes9x rescued-maiden follower graphics returned from {:?}",
+                self.phase,
+            ));
+        }
+        self.phase = RescuedMaidenInitializationTrackerPhase::Converting;
+        self.completed_bytes = 0;
+        Ok(())
+    }
+
+    fn observe_boundary(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if self.phase == RescuedMaidenInitializationTrackerPhase::Converting {
+            if let Some(completed_stores) = follower_graphics_conversion_completed_stores(event)? {
+                if completed_stores < self.completed_bytes {
+                    return Err(format!(
+                        "Snes9x follower-graphics conversion cursor moved backward: {} -> {completed_stores}",
+                        self.completed_bytes,
+                    ));
+                }
+                self.completed_bytes = completed_stores;
+            }
+            return Ok(());
+        }
+        let pc = event
+            .pc
+            .ok_or("Snes9x rescued-maiden decompressor boundary omitted PC")?
+            & 0x00ff_ffff;
+        if !(RESCUED_MAIDEN_DECOMPRESS_BODY_START_PC..=RESCUED_MAIDEN_DECOMPRESS_BODY_END_PC)
+            .contains(&pc)
+        {
+            // An accepted NMI may leave the host inside its handler. The
+            // acceptance event already captured the interrupted cursor.
+            return Ok(());
+        }
+        let y = event
+            .y
+            .ok_or("Snes9x rescued-maiden decompressor boundary omitted Y")?;
+        let completed_bytes = if pc == RESCUED_MAIDEN_DECOMPRESS_STORE_POSTFETCH_PC {
+            y.checked_add(1)
+                .ok_or("Snes9x rescued-maiden decompressor cursor overflowed")?
+        } else {
+            y
+        };
+        if completed_bytes > RESCUED_MAIDEN_FOLLOWER_SHEET_BYTES {
+            return Err(format!(
+                "Snes9x rescued-maiden decompressor exceeded one sheet: {completed_bytes}",
+            ));
+        }
+        if completed_bytes < self.completed_bytes {
+            return Err(format!(
+                "Snes9x rescued-maiden decompressor cursor moved backward: {} -> {completed_bytes}",
+                self.completed_bytes,
+            ));
+        }
+        self.completed_bytes = completed_bytes;
+        Ok(())
+    }
+
+    fn host_return_receipt(self) -> Result<RescuedMaidenInitializationProgressReceipt, String> {
+        let stage = match self.phase {
+            RescuedMaidenInitializationTrackerPhase::FirstFollowerSheet => {
+                RescuedMaidenInitializationStage::FirstFollowerSheet {
+                    completed_bytes: self.completed_bytes,
+                }
+            }
+            RescuedMaidenInitializationTrackerPhase::SecondFollowerSheet => {
+                RescuedMaidenInitializationStage::SecondFollowerSheet {
+                    completed_bytes: self.completed_bytes,
+                }
+            }
+            RescuedMaidenInitializationTrackerPhase::Converting => {
+                RescuedMaidenInitializationStage::Conversion {
+                    completed_stores: self.completed_bytes,
+                }
+            }
+        };
+        Ok(RescuedMaidenInitializationProgressReceipt {
+            stage,
+            boundary: OriginalTimingBoundary::HostReturn,
+        })
+    }
+}
+
+/// Convert the pinned converter's private instruction/X position into the
+/// exact prefix of its 512 source-order 16-bit publications. X advances by
+/// two bytes per row and by a further sixteen bytes between 32-byte tiles;
+/// each row publishes its low/high word before its upper-plane word.
+fn follower_graphics_conversion_completed_stores(
+    event: &RawTraceEvent,
+) -> Result<Option<u16>, String> {
+    let pc = event
+        .pc
+        .ok_or("Snes9x follower-graphics conversion boundary omitted PC")?
+        & 0x00ff_ffff;
+    if !(FOLLOWER_GRAPHICS_CONVERSION_START_PC..=FOLLOWER_GRAPHICS_CONVERSION_END_PC).contains(&pc)
+    {
+        return Ok(None);
+    }
+    if pc >= 0x00_d618 {
+        return Ok(Some(FOLLOWER_GRAPHICS_CONVERSION_STORES));
+    }
+    let x = event
+        .x
+        .ok_or("Snes9x follower-graphics conversion boundary omitted X")?;
+    let delta = x
+        .checked_sub(FOLLOWER_GRAPHICS_CONVERSION_DESTINATION_X)
+        .ok_or_else(|| {
+            format!("Snes9x follower-graphics conversion X preceded its destination: ${x:04x}")
+        })?;
+    if delta > 0x0400 {
+        return Err(format!(
+            "Snes9x follower-graphics conversion X exceeded its destination: ${x:04x}",
+        ));
+    }
+    let tile = delta / 0x20;
+    let within_tile = delta % 0x20;
+    if within_tile > 0x10 || within_tile & 1 != 0 {
+        return Err(format!(
+            "Snes9x follower-graphics conversion used invalid row cursor X=${x:04x}",
+        ));
+    }
+    let row = tile * 8 + within_tile / 2;
+    let before_current_instruction = row * 2;
+    let committed_in_row = match pc {
+        0x00_d5db..=0x00_d5dd | 0x00_d5f2..=0x00_d5f4 => 0,
+        0x00_d5e1..=0x00_d5ea | 0x00_d5f8..=0x00_d601 => 1,
+        0x00_d5ee..=0x00_d5f1 | 0x00_d605..=0x00_d60b => 2,
+        _ => 0,
+    };
+    let completed = before_current_instruction
+        .checked_add(committed_in_row)
+        .ok_or("Snes9x follower-graphics conversion cursor overflowed")?;
+    if completed > FOLLOWER_GRAPHICS_CONVERSION_STORES {
+        return Err(format!(
+            "Snes9x follower-graphics conversion exceeded {} stores: {completed}",
+            FOLLOWER_GRAPHICS_CONVERSION_STORES,
+        ));
+    }
+    Ok(Some(completed))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,6 +802,30 @@ struct OverworldSpriteActivationTracker {
 struct SpriteMainExecutionTracker {
     current_slot: Option<u8>,
     last_completed_slot: Option<u8>,
+    #[serde(default)]
+    timers_and_oam_slot: Option<u8>,
+    #[serde(default)]
+    timers_and_oam_dispatch_state: Option<u8>,
+    #[serde(default)]
+    initialize_reset_properties: Option<(u8, SpriteInitializeResetPropertiesPhase, u8)>,
+    #[serde(default)]
+    initialize_load_properties: Option<(u8, SpriteInitializeResetPropertiesPhase, u8)>,
+    #[serde(default)]
+    fire_debirando_property_reload: bool,
+    #[serde(default)]
+    fire_debirando_before_spawn_slot: Option<u8>,
+    #[serde(default)]
+    fire_debirando_spawn: Option<(u8, u8, SpriteDynamicSpawnProgress)>,
+    #[serde(default)]
+    antfairy_subtype2_increment_slot: Option<u8>,
+    #[serde(default)]
+    timer_decrements_slot: Option<u8>,
+    #[serde(default)]
+    primary_timer_decrements_slot: Option<u8>,
+    #[serde(default)]
+    main_and_aux1_timer_decrements_slot: Option<u8>,
+    #[serde(default)]
+    bari_before_random_slot: Option<u8>,
     #[serde(default)]
     throwable_scenery_state_clear_slot: Option<u8>,
     #[serde(default)]
@@ -345,10 +846,583 @@ struct SpriteMainExecutionTracker {
     big_key_drop_graphics_slot: Option<u8>,
     #[serde(default)]
     king_zora_flippers_graphics_slot: Option<u8>,
+    #[serde(default)]
+    bonk_item_graphics_slot: Option<u8>,
+    #[serde(default)]
+    single_small_draw_position_slot: Option<u8>,
+    #[serde(default)]
+    probe_after_oam_coordinates_slot: Option<u8>,
+    #[serde(default)]
+    wallmaster_reset_prefix_slot: Option<u8>,
+    #[serde(default)]
+    zazak_graphics_slot: Option<u8>,
+    #[serde(default)]
+    follower_graphics: Option<(
+        SpriteFollowerGraphicsCaller,
+        RescuedMaidenInitializationTracker,
+    )>,
 }
 
 impl SpriteMainExecutionTracker {
+    fn observe_bari_before_random(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if !event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
+            (SPRITE_BARI_BEFORE_RANDOM_START_PC..SPRITE_BARI_BEFORE_RANDOM_END_PC).contains(&pc)
+        }) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x reached the Bari pre-RNG boundary before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x Bari pre-RNG boundary disagreed on slot: tracker={slot}, x={:?}",
+                event.x,
+            ));
+        }
+        self.bari_before_random_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_timer_decrements(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if !event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
+            (SPRITE_TIMER_DECREMENTS_COMPLETE_START_PC..SPRITE_TIMER_DECREMENTS_COMPLETE_END_PC)
+                .contains(&pc)
+        }) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x completed sprite timer decrements before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x sprite timer decrement boundary disagreed on slot: tracker={slot}, x={:?}",
+                event.x,
+            ));
+        }
+        self.timer_decrements_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_primary_timer_decrements(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if !event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
+            (SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_START_PC
+                ..SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_END_PC)
+                .contains(&pc)
+        }) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x completed primary sprite timer decrements before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x primary sprite timer decrement boundary disagreed on slot: tracker={slot}, x={:?}",
+                event.x,
+            ));
+        }
+        self.primary_timer_decrements_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_main_and_aux1_timer_decrements(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        if !event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
+            (SPRITE_MAIN_AND_AUX1_TIMER_DECREMENTS_COMPLETE_START_PC
+                ..SPRITE_MAIN_AND_AUX1_TIMER_DECREMENTS_COMPLETE_END_PC)
+                .contains(&pc)
+        }) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x completed main/aux1 sprite timer decrements before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x main/aux1 sprite timer decrement boundary disagreed on slot: tracker={slot}, x={:?}",
+                event.x,
+            ));
+        }
+        self.main_and_aux1_timer_decrements_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_timers_and_oam_return(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(SPRITE_TIMERS_AND_OAM_RETURN_PC) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x returned from Sprite_TimersAndOam before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x Sprite_TimersAndOam return disagreed on slot: tracker={slot}, x={:?}",
+                event.x,
+            ));
+        }
+        self.timers_and_oam_slot = Some(slot);
+        self.timers_and_oam_dispatch_state = event.stack1;
+        Ok(())
+    }
+
+    fn observe_antfairy_subtype2_increment(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(ANTFAIRY_SUBTYPE2_INCREMENT_PC) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x published Antfairy subtype2 before entering a sprite slot")?;
+        if event.x != Some(u16::from(slot))
+            || event.address != Some(SPRITE_SUBTYPE2_BASE + u16::from(slot))
+        {
+            return Err(format!(
+                "Snes9x Antfairy subtype2 publication disagreed on slot {slot}: x={:?}, address={:?}",
+                event.x, event.address,
+            ));
+        }
+        if self
+            .antfairy_subtype2_increment_slot
+            .replace(slot)
+            .is_some()
+        {
+            return Err(
+                "Snes9x published the Antfairy subtype2 increment twice in one slot".into(),
+            );
+        }
+        Ok(())
+    }
+
+    fn observe_initialize_reset_properties(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        let Some(completed_stores) = sprite_prep_reset_properties_completed_stores(pc) else {
+            return Ok(());
+        };
+        if event.return_address.map(|pc| pc & 0x00ff_ffff)
+            != Some(SPRITE_PREP_LOAD_PROPERTIES_AFTER_RESET_RETURN_ADDRESS)
+            || self.timers_and_oam_dispatch_state != Some(8)
+        {
+            return Ok(());
+        }
+        if self
+            .fire_debirando_spawn
+            .is_some_and(|(_, spawned_slot, _)| event.x == Some(u16::from(spawned_slot)))
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x reset state-8 sprite properties before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x state-8 property reset disagreed on slot: tracker={slot}, x={:?}",
+                event.x,
+            ));
+        }
+        let phase = if self.fire_debirando_property_reload {
+            SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion
+        } else {
+            SpriteInitializeResetPropertiesPhase::InitialPropertyLoad
+        };
+        self.initialize_reset_properties = Some((slot, phase, completed_stores));
+        Ok(())
+    }
+
+    fn observe_initialize_load_properties(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        let Some(completed_stores) = sprite_prep_load_properties_completed_stores(pc) else {
+            return Ok(());
+        };
+        if self.timers_and_oam_dispatch_state != Some(8) {
+            return Ok(());
+        }
+        if self
+            .fire_debirando_spawn
+            .is_some_and(|(_, spawned_slot, _)| event.x == Some(u16::from(spawned_slot)))
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x loaded state-8 sprite properties before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x state-8 property load disagreed on slot: tracker={slot}, x={:?}",
+                event.x,
+            ));
+        }
+        let phase = if self.fire_debirando_property_reload {
+            SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion
+        } else {
+            SpriteInitializeResetPropertiesPhase::InitialPropertyLoad
+        };
+        self.initialize_reset_properties = None;
+        self.initialize_load_properties = Some((slot, phase, completed_stores));
+        Ok(())
+    }
+
+    fn observe_fire_debirando_before_spawn(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        if !(SPRITE_SPAWN_DYNAMICALLY_ENTRY_PC..=SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC)
+            .contains(&pc)
+            || event.return_address.map(|pc| pc & 0x00ff_ffff)
+                != Some(SPRITE_PREP_FIRE_DEBIRANDO_SPAWN_RETURN_ADDRESS)
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x entered Fire Debirando spawn before a sprite slot")?;
+        if !self.fire_debirando_property_reload || event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x Fire Debirando spawn disagreed on slot {slot}: converted={}, x={:?}",
+                self.fire_debirando_property_reload, event.x,
+            ));
+        }
+        self.initialize_reset_properties = None;
+        self.initialize_load_properties = None;
+        self.fire_debirando_before_spawn_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_fire_debirando_spawn_write(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        let pc = event.pc.ok_or("Snes9x WRAM write omitted PC")? & 0x00ff_ffff;
+        let address = event.address.ok_or("Snes9x WRAM write omitted address")?;
+
+        if pc == SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC && self.fire_debirando_property_reload
+        {
+            let slot = self
+                .current_slot
+                .ok_or("Snes9x spawned Fire Debirando child before a sprite slot")?;
+            let spawned_slot = u8::try_from(
+                event
+                    .y
+                    .ok_or("Snes9x Fire Debirando spawn type write omitted slot Y")?,
+            )
+            .map_err(|_| "Snes9x Fire Debirando spawned slot exceeded one byte")?;
+            if event.x != Some(u16::from(slot))
+                || spawned_slot >= 16
+                || address != SPRITE_TYPE_BASE + u16::from(spawned_slot)
+                || event.value != Some(0x64)
+            {
+                return Err(format!(
+                    "Snes9x Fire Debirando spawn type publication disagreed: parent={slot}, x={:?}, spawned={spawned_slot}, address=${address:04x}, value={:?}",
+                    event.x, event.value,
+                ));
+            }
+            self.fire_debirando_before_spawn_slot = None;
+            self.fire_debirando_spawn = Some((
+                slot,
+                spawned_slot,
+                SpriteDynamicSpawnProgress::TypePublished,
+            ));
+            return Ok(());
+        }
+
+        let Some((slot, spawned_slot, _)) = self.fire_debirando_spawn else {
+            return Ok(());
+        };
+        let spawned_address = |base: u16| base + u16::from(spawned_slot);
+        let progress = if pc == SPRITE_SPAWN_DYNAMICALLY_STATE_STORE_PC {
+            if event.y != Some(u16::from(spawned_slot))
+                || address != spawned_address(SPRITE_STATE_BASE)
+                || event.value != Some(9)
+            {
+                return Err(format!(
+                    "Snes9x Fire Debirando spawn state publication disagreed on slot {spawned_slot}"
+                ));
+            }
+            Some(SpriteDynamicSpawnProgress::StatePublished)
+        } else if let Some(completed_stores) = sprite_prep_reset_properties_completed_stores(pc) {
+            (event.x == Some(u16::from(spawned_slot)))
+                .then_some(SpriteDynamicSpawnProgress::ResetProperties { completed_stores })
+        } else if let Some(completed_stores) = sprite_prep_load_properties_completed_stores(pc) {
+            (event.x == Some(u16::from(spawned_slot)))
+                .then_some(SpriteDynamicSpawnProgress::LoadProperties { completed_stores })
+        } else {
+            match pc {
+                SPRITE_SPAWN_DYNAMICALLY_IDENTITY_STORE_PC => {
+                    let indoor_address = SPRITE_N_BASE + u16::from(spawned_slot);
+                    let outdoor_high_address = SPRITE_N_BASE + u16::from(spawned_slot) * 2 + 1;
+                    if !matches!(address, a if a == indoor_address || a == outdoor_high_address)
+                        || event.value != Some(0xff)
+                    {
+                        return Err(format!(
+                            "Snes9x Fire Debirando spawn identity publication disagreed on slot {spawned_slot}: address=${address:04x}, value={:?}",
+                            event.value,
+                        ));
+                    }
+                    Some(SpriteDynamicSpawnProgress::IdentityPublished)
+                }
+                SPRITE_SPAWN_DYNAMICALLY_FLOOR_STORE_PC => {
+                    if event.y != Some(u16::from(spawned_slot))
+                        || address != spawned_address(SPRITE_FLOOR_BASE)
+                    {
+                        return Err(format!(
+                            "Snes9x Fire Debirando spawn floor publication disagreed on slot {spawned_slot}"
+                        ));
+                    }
+                    Some(SpriteDynamicSpawnProgress::FloorPublished)
+                }
+                SPRITE_SPAWN_DYNAMICALLY_DIRECTION_STORE_PC => {
+                    if event.y != Some(u16::from(spawned_slot))
+                        || address != spawned_address(SPRITE_DIRECTION_BASE)
+                    {
+                        return Err(format!(
+                            "Snes9x Fire Debirando spawn direction publication disagreed on slot {spawned_slot}"
+                        ));
+                    }
+                    Some(SpriteDynamicSpawnProgress::DirectionPublished)
+                }
+                SPRITE_SPAWN_DYNAMICALLY_DIE_ACTION_STORE_PC => {
+                    if event.y != Some(u16::from(spawned_slot))
+                        || address != spawned_address(SPRITE_DIE_ACTION_BASE)
+                    {
+                        return Err(format!(
+                            "Snes9x Fire Debirando spawn die-action publication disagreed on slot {spawned_slot}"
+                        ));
+                    }
+                    Some(SpriteDynamicSpawnProgress::DieActionCleared)
+                }
+                SPRITE_SPAWN_DYNAMICALLY_SUBTYPE_STORE_PC => {
+                    if event.y != Some(u16::from(spawned_slot))
+                        || address != spawned_address(SPRITE_SUBTYPE_BASE)
+                    {
+                        return Err(format!(
+                            "Snes9x Fire Debirando spawn subtype publication disagreed on slot {spawned_slot}"
+                        ));
+                    }
+                    Some(SpriteDynamicSpawnProgress::SubtypeCleared)
+                }
+                _ => None,
+            }
+        };
+        if let Some(progress) = progress {
+            self.fire_debirando_spawn = Some((slot, spawned_slot, progress));
+        }
+        Ok(())
+    }
+
+    fn observe_fire_debirando_spawn_boundary(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        let Some((slot, spawned_slot, _)) = self.fire_debirando_spawn else {
+            return Ok(());
+        };
+        if event.x != Some(u16::from(spawned_slot)) {
+            return Ok(());
+        }
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        let progress =
+            if let Some(completed_stores) = sprite_prep_reset_properties_completed_stores(pc) {
+                Some(SpriteDynamicSpawnProgress::ResetProperties { completed_stores })
+            } else {
+                sprite_prep_load_properties_completed_stores(pc).map(|completed_stores| {
+                    SpriteDynamicSpawnProgress::LoadProperties { completed_stores }
+                })
+            };
+        if let Some(progress) = progress {
+            self.fire_debirando_spawn = Some((slot, spawned_slot, progress));
+        }
+        Ok(())
+    }
+
+    fn observe_wallmaster_reset_prefix(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(WALLMASTER_RESET_AFTER_FIXED_PREFIX_PC)
+            || event.return_address.map(|pc| pc & 0x00ff_ffff)
+                != Some(WALLMASTER_AFTER_SPRITE_RESET_PC)
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x reached the Wallmaster reset prefix before a sprite slot")?;
+        self.wallmaster_reset_prefix_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_single_small_draw_position(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(SPRITE_SINGLE_SMALL_AFTER_POSITION_PC) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x reached the single-small draw position before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x single-small draw position disagreed on slot: tracker={slot}, x={:?}",
+                event.x,
+            ));
+        }
+        self.single_small_draw_position_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_probe_after_oam_coordinates(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(SPRITE_PROBE_AFTER_OAM_COORDINATES_PC) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x reached the guard-probe OAM boundary before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x guard-probe OAM boundary disagreed on slot: tracker={slot}, x={:?}",
+                event.x,
+            ));
+        }
+        self.probe_after_oam_coordinates_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_zazak_graphics(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(SPRITE_ZAZAK_GRAPHICS_STORE_PC) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x published Zazak graphics before a Sprite_Main slot")?;
+        if event.x != Some(u16::from(slot))
+            || event.address != Some(SPRITE_GRAPHICS_BASE + u16::from(slot))
+        {
+            return Err(format!(
+                "Snes9x Zazak graphics publication disagreed on slot: tracker={slot}, x={:?}, address={:?}",
+                event.x, event.address,
+            ));
+        }
+        self.zazak_graphics_slot = Some(slot);
+        Ok(())
+    }
+
     fn progress(self) -> SpriteMainProgress {
+        if let Some((caller, tracker)) = self.follower_graphics {
+            let slot = self
+                .current_slot
+                .expect("Zelda follower graphics outlived its active Sprite_Main slot");
+            let stage = match tracker.phase {
+                RescuedMaidenInitializationTrackerPhase::FirstFollowerSheet => {
+                    RescuedMaidenInitializationStage::FirstFollowerSheet {
+                        completed_bytes: tracker.completed_bytes,
+                    }
+                }
+                RescuedMaidenInitializationTrackerPhase::SecondFollowerSheet => {
+                    RescuedMaidenInitializationStage::SecondFollowerSheet {
+                        completed_bytes: tracker.completed_bytes,
+                    }
+                }
+                RescuedMaidenInitializationTrackerPhase::Converting => {
+                    RescuedMaidenInitializationStage::Conversion {
+                        completed_stores: tracker.completed_bytes,
+                    }
+                }
+            };
+            return SpriteMainProgress::FollowerGraphics {
+                slot,
+                caller,
+                stage,
+            };
+        }
+        if let Some(slot) = self.wallmaster_reset_prefix_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Wallmaster reset prefix outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterWallmasterResetPrefix(slot);
+        }
+        if let Some(slot) = self.zazak_graphics_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Zazak graphics publication outlived its active sprite slot",
+            );
+            return SpriteMainProgress::ZazakAfterGraphics(slot);
+        }
+        if let Some(slot) = self.bari_before_random_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Bari pre-RNG boundary outlived its active sprite slot",
+            );
+            return SpriteMainProgress::BariBeforeRandom(slot);
+        }
+        if let Some(slot) = self.single_small_draw_position_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "single-small draw position publication outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterSingleSmallDrawPosition(slot);
+        }
+        if let Some(slot) = self.probe_after_oam_coordinates_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "guard-probe OAM boundary outlived its active sprite slot",
+            );
+            return SpriteMainProgress::ProbeAfterOamCoordinates(slot);
+        }
+        if let Some((slot, spawned_slot, progress)) = self.fire_debirando_spawn {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Fire Debirando dynamic spawn outlived its active sprite slot",
+            );
+            return SpriteMainProgress::FireDebirandoSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            };
+        }
+        if let Some((slot, phase, completed_stores)) = self.initialize_load_properties {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "state-8 property load outlived its active sprite slot",
+            );
+            return SpriteMainProgress::InitializeLoadProperties {
+                slot,
+                phase,
+                completed_stores,
+            };
+        }
+        if let Some((slot, phase, completed_stores)) = self.initialize_reset_properties {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "state-8 property reset outlived its active sprite slot",
+            );
+            return SpriteMainProgress::InitializeResetProperties {
+                slot,
+                phase,
+                completed_stores,
+            };
+        }
+        if let Some(slot) = self.fire_debirando_before_spawn_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Fire Debirando spawn boundary outlived its active sprite slot",
+            );
+            return SpriteMainProgress::FireDebirandoBeforeSpawn(slot);
+        }
+        if let Some(slot) = self.antfairy_subtype2_increment_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Antfairy subtype2 publication outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterAntfairySubtype2Increment(slot);
+        }
         if let Some(slot) = self.throwable_scenery_state_clear_slot {
             assert_eq!(
                 self.current_slot,
@@ -388,6 +1462,14 @@ impl SpriteMainExecutionTracker {
                 "one sprite slot published two incompatible partial checkpoints",
             );
             return SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot);
+        }
+        if let Some(slot) = self.bonk_item_graphics_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "bonk-item graphics entry outlived its active sprite slot",
+            );
+            return SpriteMainProgress::BonkItemGraphicsStarted(slot);
         }
         if let Some((slot, helper_ordinal)) = self.cucco_animation_slot {
             assert_eq!(
@@ -447,6 +1529,38 @@ impl SpriteMainExecutionTracker {
                 completed,
             };
         }
+        if let Some(slot) = self.timers_and_oam_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "timer/OAM return outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterTimersAndOam(slot);
+        }
+        if let Some(slot) = self.timer_decrements_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "timer decrement boundary outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterTimerDecrements(slot);
+        }
+        if let Some(slot) = self.primary_timer_decrements_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "primary timer decrement boundary outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterPrimaryTimerDecrements(slot);
+        }
+        if let Some(slot) = self.main_and_aux1_timer_decrements_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "main/aux1 timer decrement boundary outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterMainAndAux1TimerDecrements(slot);
+        }
         self.last_completed_slot.map_or(
             SpriteMainProgress::BeforeFirstSlot,
             SpriteMainProgress::AfterSlot,
@@ -457,6 +1571,30 @@ impl SpriteMainExecutionTracker {
         match self.progress() {
             SpriteMainProgress::BeforeFirstSlot => MainLoopInterruption::SpriteMainBeforeFirstSlot,
             SpriteMainProgress::AfterSlot(slot) => MainLoopInterruption::SpriteMainAfterSlot(slot),
+            SpriteMainProgress::AfterTimersAndOam(slot) => {
+                MainLoopInterruption::SpriteMainAfterTimersAndOam(slot)
+            }
+            SpriteMainProgress::AfterTimerDecrements(slot) => {
+                MainLoopInterruption::SpriteMainAfterTimerDecrements(slot)
+            }
+            SpriteMainProgress::AfterPrimaryTimerDecrements(slot) => {
+                MainLoopInterruption::SpriteMainAfterPrimaryTimerDecrements(slot)
+            }
+            SpriteMainProgress::AfterMainAndAux1TimerDecrements(slot) => {
+                MainLoopInterruption::SpriteMainAfterMainAndAux1TimerDecrements(slot)
+            }
+            SpriteMainProgress::BariBeforeRandom(slot) => {
+                MainLoopInterruption::SpriteMainBariBeforeRandom(slot)
+            }
+            SpriteMainProgress::FollowerGraphics {
+                slot,
+                caller,
+                stage,
+            } => MainLoopInterruption::SpriteMainFollowerGraphics {
+                slot,
+                caller,
+                stage,
+            },
             SpriteMainProgress::AfterThrowableSceneryStateClear(slot) => {
                 MainLoopInterruption::SpriteMainAfterThrowableSceneryStateClear(slot)
             }
@@ -503,8 +1641,103 @@ impl SpriteMainExecutionTracker {
             SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot) => {
                 MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(slot)
             }
+            SpriteMainProgress::AfterSingleSmallDrawPosition(slot) => {
+                MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
+            }
+            SpriteMainProgress::AfterWallmasterResetPrefix(slot) => {
+                MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(slot)
+            }
+            SpriteMainProgress::ZazakAfterGraphics(slot) => {
+                MainLoopInterruption::SpriteMainZazakAfterGraphics(slot)
+            }
+            SpriteMainProgress::BonkItemGraphicsStarted(slot) => {
+                MainLoopInterruption::SpriteMainBonkItemGraphicsStarted(slot)
+            }
+            SpriteMainProgress::ProbeAfterOamCoordinates(slot) => {
+                MainLoopInterruption::SpriteMainProbeAfterOamCoordinates(slot)
+            }
+            SpriteMainProgress::InitializeResetProperties {
+                slot,
+                phase,
+                completed_stores,
+            } => MainLoopInterruption::SpriteMainInitializeResetProperties {
+                slot,
+                phase,
+                completed_stores,
+            },
+            SpriteMainProgress::InitializeLoadProperties {
+                slot,
+                phase,
+                completed_stores,
+            } => MainLoopInterruption::SpriteMainInitializeLoadProperties {
+                slot,
+                phase,
+                completed_stores,
+            },
+            SpriteMainProgress::FireDebirandoBeforeSpawn(slot) => {
+                MainLoopInterruption::SpriteMainFireDebirandoBeforeSpawn(slot)
+            }
+            SpriteMainProgress::FireDebirandoSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            } => MainLoopInterruption::SpriteMainFireDebirandoSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            },
+            SpriteMainProgress::AfterAntfairySubtype2Increment(slot) => {
+                MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(slot)
+            }
         }
     }
+}
+
+fn sprite_prep_load_properties_completed_stores(pc: u32) -> Option<u8> {
+    let checkpoints = [
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_RESET_PC, 0),
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS2_PC, 1),
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_HEALTH_PC, 2),
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS4_PC, 3),
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS5_PC, 4),
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_DEFLECTION_PC, 5),
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_BUMP_DAMAGE_PC, 6),
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS_PC, 7),
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_ROOM_PC, 8),
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS3_PC, 9),
+        (SPRITE_PREP_LOAD_PROPERTIES_AFTER_OAM_FLAGS_PC, 10),
+    ];
+    if !(SPRITE_PREP_LOAD_PROPERTIES_AFTER_RESET_PC..=SPRITE_PREP_LOAD_PROPERTIES_RETURN_PC)
+        .contains(&pc)
+    {
+        return None;
+    }
+    checkpoints
+        .iter()
+        .rev()
+        .find_map(|&(start, completed)| (pc >= start).then_some(completed))
+}
+
+fn sprite_prep_reset_properties_completed_stores(pc: u32) -> Option<u8> {
+    if (SPRITE_PREP_RESET_PROPERTIES_START_PC..SPRITE_PREP_RESET_PROPERTIES_ACCUMULATOR_CLEAR_PC)
+        .contains(&pc)
+    {
+        let offset = pc - SPRITE_PREP_RESET_PROPERTIES_START_PC;
+        return (offset % 3 == 0).then_some((offset / 3) as u8);
+    }
+    if (SPRITE_PREP_RESET_PROPERTIES_ACCUMULATOR_CLEAR_PC
+        ..SPRITE_PREP_RESET_PROPERTIES_LONG_STORES_START_PC)
+        .contains(&pc)
+    {
+        return Some(35);
+    }
+    if (SPRITE_PREP_RESET_PROPERTIES_LONG_STORES_START_PC..SPRITE_PREP_RESET_PROPERTIES_RETURN_PC)
+        .contains(&pc)
+    {
+        let offset = pc - SPRITE_PREP_RESET_PROPERTIES_LONG_STORES_START_PC;
+        return (offset % 4 == 0).then_some(35 + (offset / 4) as u8);
+    }
+    (pc == SPRITE_PREP_RESET_PROPERTIES_RETURN_PC).then_some(40)
 }
 
 impl CachedSpriteExecutionTracker {
@@ -515,6 +1748,7 @@ impl CachedSpriteExecutionTracker {
                 copied_fields: CACHED_SPRITE_LIVE_FIELDS.len() as u8,
                 restored_fields: (CACHED_SPRITE_LIVE_FIELDS.len() - field_index) as u8,
                 restore_started: true,
+                body_progress: None,
             }
         } else {
             Self {
@@ -522,6 +1756,7 @@ impl CachedSpriteExecutionTracker {
                 copied_fields: (field_index + 1) as u8,
                 restored_fields: 0,
                 restore_started: false,
+                body_progress: None,
             }
         }
     }
@@ -568,6 +1803,11 @@ impl CachedSpriteExecutionTracker {
                 live_fields: (CACHED_SPRITE_LIVE_FIELDS.len() - usize::from(self.restored_fields))
                     as u8,
             }
+        } else if let Some(progress) = self.body_progress {
+            CachedSpriteExecutionProgress::Executing {
+                slot: self.slot,
+                progress,
+            }
         } else {
             CachedSpriteExecutionProgress::Loading {
                 slot: self.slot,
@@ -592,6 +1832,12 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     overworld_presence_published: bool,
     overworld_sprite_activation: Option<OverworldSpriteActivationTracker>,
     overworld_load_overlays_sprite_reload_active: bool,
+    /// The active overworld reload's inner `Sprite_ResetAll_noDisable` has
+    /// already exposed its one source completion edge. The call can remain
+    /// suspended in that routine for another host, so this must not be
+    /// inferred anew from every later NMI/host return at the same PC range.
+    overworld_sprite_reload_reset_published: bool,
+    rescued_maiden_initialization: Option<RescuedMaidenInitializationTracker>,
     pending_spotlight_helper_nmi: Option<RawTraceEvent>,
     /// Index of the `NmiAccepted` receipt published for the pending helper
     /// NMI in the current host vector; host-local, never checkpointed.
@@ -608,7 +1854,7 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     host_nmi_ppu_register_operands: Vec<NmiPpuRegisterOperands>,
 }
 
-const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 12;
+const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 18;
 
 /// Emulator-private continuation state for the typed semantic adapter.
 ///
@@ -627,6 +1873,10 @@ pub(crate) struct Snes9xOracleSemanticTraceCheckpoint {
     overworld_sprite_activation: Option<OverworldSpriteActivationTracker>,
     #[serde(default)]
     overworld_load_overlays_sprite_reload_active: bool,
+    #[serde(default)]
+    overworld_sprite_reload_reset_published: bool,
+    #[serde(default)]
+    rescued_maiden_initialization: Option<RescuedMaidenInitializationTracker>,
     pending_spotlight_helper_nmi: Option<RawTraceEvent>,
     item_receipt_caller: Option<ItemReceiptGraphicsCaller>,
     #[serde(default)]
@@ -654,6 +1904,8 @@ struct RawTraceEvent {
     #[serde(default)]
     return_address: Option<u32>,
     #[serde(default)]
+    stack1: Option<u8>,
+    #[serde(default)]
     a: Option<u16>,
     #[serde(default)]
     main: Option<u8>,
@@ -661,6 +1913,8 @@ struct RawTraceEvent {
     sub: Option<u8>,
     #[serde(default)]
     subsub: Option<u8>,
+    #[serde(default)]
+    room: Option<u16>,
     #[serde(default)]
     frame_counter: Option<u8>,
     #[serde(default)]
@@ -675,6 +1929,7 @@ struct RawTraceEvent {
     spotlight_radius: Option<u16>,
     #[serde(default)]
     spotlight_var4_low: Option<u8>,
+    palette_countdown: Option<u8>,
     #[serde(default)]
     spotlight_lower_cursor: Option<u16>,
     #[serde(default)]
@@ -752,17 +2007,87 @@ fn nmi_resume_target(event: &RawTraceEvent) -> Result<(u32, u16), String> {
     ))
 }
 
+fn dungeon_peg_attribute_flip_progress(
+    event: &RawTraceEvent,
+    boundary: OriginalTimingBoundary,
+) -> Result<Option<DungeonPegAttributeFlipProgressReceipt>, String> {
+    let selectable_caller = event.main == Some(7)
+        && matches!(
+            (event.sub, event.subsub),
+            (Some(2), Some(1..=u8::MAX))
+                | (Some(6), Some(3..=u8::MAX))
+                | (Some(7), Some(6..=u8::MAX))
+                | (Some(0x0e), Some(7..=u8::MAX))
+                | (Some(0x11..=0x13), Some(3..=u8::MAX))
+                | (Some(0x15), Some(3..=u8::MAX))
+        );
+    let update_pegs_caller =
+        (event.main, event.sub, event.subsub) == (Some(7), Some(0x16), Some(0x10));
+    if !selectable_caller && !update_pegs_caller {
+        return Ok(None);
+    }
+    let pc = event.pc.map(|pc| pc & 0x00ff_ffff);
+    let completed_banks = match pc {
+        Some(pc) if (DUNGEON_PEG_FLIP_LOOP_START_PC..DUNGEON_PEG_FLIP_BANK_B_PC).contains(&pc) => 0,
+        Some(pc) if (DUNGEON_PEG_FLIP_BANK_B_PC..DUNGEON_PEG_FLIP_BANK_C_PC).contains(&pc) => 1,
+        Some(pc) if (DUNGEON_PEG_FLIP_BANK_C_PC..DUNGEON_PEG_FLIP_BANK_D_PC).contains(&pc) => 2,
+        Some(pc) if (DUNGEON_PEG_FLIP_BANK_D_PC..DUNGEON_PEG_FLIP_DECREMENT_PC).contains(&pc) => 3,
+        Some(DUNGEON_PEG_FLIP_DECREMENT_PC) => 4,
+        // DEX has already selected the next index at the branch. X=$ffff is
+        // the source's exact exhausted-loop cursor.
+        Some(DUNGEON_PEG_FLIP_BRANCH_PC) => 0,
+        Some(pc)
+            if (DUNGEON_PEG_FLIP_INDEX_EXHAUSTED_PC..DUNGEON_PEG_FLIP_RETURN_PC).contains(&pc) =>
+        {
+            0
+        }
+        _ => return Ok(None),
+    };
+    let index = event
+        .x
+        .ok_or("Snes9x peg-attribute flip boundary omitted source index X")?;
+    if index > 0x07ff && index != 0xffff {
+        return Err(format!(
+            "Snes9x peg-attribute flip used invalid source index ${index:04x}",
+        ));
+    }
+    if index == 0xffff
+        && !matches!(
+            pc,
+            Some(DUNGEON_PEG_FLIP_BRANCH_PC)
+                | Some(DUNGEON_PEG_FLIP_INDEX_EXHAUSTED_PC..DUNGEON_PEG_FLIP_RETURN_PC)
+        )
+    {
+        return Err(format!(
+            "Snes9x peg-attribute flip exposed exhausted X at invalid PC ${:06x}",
+            pc.unwrap_or_default(),
+        ));
+    }
+    Ok(Some(DungeonPegAttributeFlipProgressReceipt {
+        index,
+        completed_banks,
+        boundary,
+    }))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct HostFrameState {
     run: u64,
     pc: u32,
+    a: Option<u16>,
     x: Option<u16>,
+    y: Option<u16>,
     main: u8,
     sub: u8,
     subsub: u8,
     frame_counter: u8,
     nmi_latch: u8,
     bg2_h: Option<u16>,
+    bg2_v: Option<u16>,
+    link_y: Option<u16>,
+    spotlight_radius: Option<u16>,
+    spotlight_var4_low: Option<u8>,
+    palette_countdown: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -778,6 +2103,11 @@ struct HostFrameWindow {
     entry: Option<HostFrameState>,
     returned: Option<HostFrameState>,
     vwf_nmi_observed: bool,
+    /// Whether the most recently accepted NMI interrupted the committed body
+    /// of `VWF_RenderSingle`. When a host ends at NMI entry, that interrupted
+    /// PC is the terminal source position; the frame-return PC itself cannot
+    /// describe which part of the suspended glyph call already ran.
+    last_nmi_interrupted_vwf_glyph_body: bool,
     main_loop_starts: u8,
     main_loop_common_suffix_completed: bool,
     /// The host began inside the previous iteration's common suffix, before
@@ -914,8 +2244,18 @@ impl HostFrameWindow {
         if event.event == "pc"
             && event.pc.map(|pc| pc & 0x00ff_ffff)
                 == Some(OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC)
-            && event.return_address.map(|pc| pc & 0x00ff_ffff)
-                == Some(OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC)
+            && event
+                .return_address
+                .map(|pc| pc & 0x00ff_ffff)
+                .is_some_and(|return_pc| {
+                    matches!(
+                        return_pc,
+                        OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC
+                            | BIRD_TRAVEL_AFTER_SPRITE_RELOAD_PC
+                            | MIRROR_WARP_AFTER_SPRITE_RELOAD_PC
+                            | PRE_OVERWORLD_AFTER_SPRITE_RELOAD_PC
+                    )
+                })
         {
             self.overworld_load_overlays_sprite_reload_active = true;
         }
@@ -949,12 +2289,17 @@ impl HostFrameWindow {
             }
             self.main_loop_common_suffix_completed = true;
         }
-        if event.event == "nmi"
-            && event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
+        if event.event == "nmi" {
+            let interrupted_pc = event.pc.map(|pc| pc & 0x00ff_ffff);
+            let interrupted_vwf = interrupted_pc.is_some_and(|pc| {
                 (VWF_RENDER_SINGLE_START_PC..VWF_RENDER_SINGLE_END_PC).contains(&pc)
-            })
-        {
-            self.vwf_nmi_observed = true;
+            });
+            if interrupted_vwf {
+                self.vwf_nmi_observed = true;
+            }
+            self.last_nmi_interrupted_vwf_glyph_body = interrupted_pc.is_some_and(|pc| {
+                (VWF_RENDER_SINGLE_BODY_START_PC..VWF_RENDER_SINGLE_END_PC).contains(&pc)
+            });
         }
         if event.event != "frame" {
             return Ok(if common_suffix_completed {
@@ -973,7 +2318,9 @@ impl HostFrameWindow {
                 .pc
                 .ok_or("Snes9x frame receipt omitted its program counter")?
                 & 0x00ff_ffff,
+            a: event.a,
             x: event.x,
+            y: event.y,
             main: event
                 .main
                 .ok_or("Snes9x frame receipt omitted Zelda main module")?,
@@ -990,6 +2337,11 @@ impl HostFrameWindow {
                 .nmi_latch
                 .ok_or("Snes9x frame receipt omitted Zelda NMI latch")?,
             bg2_h: event.bg2_h,
+            bg2_v: event.bg2_v,
+            link_y: event.link_y,
+            spotlight_radius: event.spotlight_radius,
+            spotlight_var4_low: event.spotlight_var4_low,
+            palette_countdown: event.palette_countdown,
         };
         match stage {
             "entry" if self.entry.replace(state).is_none() => {}
@@ -1020,7 +2372,16 @@ impl HostFrameWindow {
                 entry.run, returned.run
             ));
         }
-        if self.overworld_load_overlays_sprite_reload_active
+        let overworld_sprite_scan_suspended = (OVERWORLD_SPRITE_SCAN_START_PC
+            ..OVERWORLD_SPRITE_SCAN_END_PC)
+            .contains(&returned.pc)
+            && (self.overworld_load_overlays_sprite_reload_active
+                || (entry.main == 9
+                    && matches!(entry.sub, 4 | 0x12)
+                    && returned.main == entry.main
+                    && returned.sub == entry.sub)
+                || (entry.main == 8 && entry.sub == 0 && returned.main == 8 && returned.sub == 0));
+        if overworld_sprite_scan_suspended
             && self.main_loop_starts == 0
             && entry.bg2_h != returned.bg2_h
         {
@@ -1083,12 +2444,36 @@ impl HostFrameWindow {
             receipts
                 .push(OriginalTimingSemanticReceipt::DungeonExitSpotlightCallerReturnedToMainWait);
         }
-        if let Some(phase) = main_loop_interruption_for_source_state(
+        if let Some(phase) = desert_prayer_iris_interruption(
             returned.pc,
             Some(returned.main),
             Some(returned.sub),
+            Some(returned.subsub),
+            returned.spotlight_radius,
+            returned.spotlight_var4_low,
+            returned.palette_countdown,
+            returned.link_y,
+            returned.bg2_v,
+            returned.a,
             returned.x,
-        )
+            returned.y,
+        )?
+        .or(desert_prayer_palette_filter_interruption(
+            returned.pc,
+            Some(returned.main),
+            Some(returned.sub),
+            Some(returned.subsub),
+            returned.palette_countdown,
+            returned.x,
+        )?)
+        .or_else(|| {
+            main_loop_interruption_for_source_state(
+                returned.pc,
+                Some(returned.main),
+                Some(returned.sub),
+                returned.x,
+            )
+        })
         .filter(|phase| {
             // Module0F's ENTRY host (submodule 0 -> 1) is owned by the
             // spotlight-iteration model, which already places the whole Link
@@ -1098,6 +2483,7 @@ impl HostFrameWindow {
             !(matches!(
                 phase,
                 MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+                    | MainLoopInterruption::LinkPositionAfterCoordinates { .. }
             ) && entry.main == 0x0f
                 && entry.sub == 0)
         }) {
@@ -1150,10 +2536,21 @@ impl HostFrameWindow {
         {
             let message_read_position = dialogue_message_read_position
                 .ok_or("Snes9x dialogue continuation omitted its semantic message read position")?;
-            receipts.push(OriginalTimingSemanticReceipt::DialogueExecutionProgress(
+            let current_glyph_started = (VWF_RENDER_SINGLE_BODY_START_PC..VWF_RENDER_SINGLE_END_PC)
+                .contains(&returned.pc)
+                || (returned.pc == NMI_HANDLER_ENTRY_PC
+                    && self.last_nmi_interrupted_vwf_glyph_body);
+            let progress = if current_glyph_started {
+                DialogueExecutionProgress::ResumedRenderingWithCurrentGlyphStarted {
+                    message_read_position,
+                }
+            } else {
                 DialogueExecutionProgress::ResumedRenderingWithoutMainIteration {
                     message_read_position,
-                },
+                }
+            };
+            receipts.push(OriginalTimingSemanticReceipt::DialogueExecutionProgress(
+                progress,
             ));
         }
         if entry.main == 14 && returned.main != 14 {
@@ -1250,9 +2647,11 @@ impl Snes9xOracleSemanticTrace {
                 append_csv(
                     env::var(TRACE_PCS_ENV).ok().as_deref(),
                     &[
-                        "028842", "05df49", "05df4d", "05eb1d", "05eb21", "068328", "0683a7",
-                        "0684e2", "06a628", "06a724", "06b9cc", "06b9d0", "0799ad", "079a0b",
-                        "008225", "0082c7", "00d4ed", "09c499", "09c4aa",
+                        "0280dd", "028842", "05df49", "05df4d", "05eb1d", "05eb21", "068328",
+                        "0683a7", "0684e2", "0684aa", "0684eb", "06a628", "06a724", "06b9cc",
+                        "06b9d0", "0799ad", "079a0b", "008225", "0082c7", "00d4ed", "09c499",
+                        "09c4aa", "09c173", "09f63f", "09f825", "0ffdc3", "00d423", "00e75c",
+                        "00e766", "00d44c",
                     ],
                 ),
             );
@@ -1266,7 +2665,9 @@ impl Snes9xOracleSemanticTrace {
                     env::var(TRACE_WRAM_ENV).ok().as_deref(),
                     &[
                         "0012",
+                        "0011",
                         "001a",
+                        "00b0",
                         "0020-002f",
                         "02ec",
                         "0b00-0b1d",
@@ -1274,11 +2675,13 @@ impl Snes9xOracleSemanticTrace {
                         "0b89-0b98",
                         "0ba0-0baf",
                         "0bc0-0bdf",
+                        "0cba-0cc9",
                         "0c4a-0c53",
                         "0d00-0d3f",
                         "0d60-0d7f",
                         "0d80-0dff",
                         "0e20-0e2f",
+                        "0e30-0e3f",
                         "0e40-0e4f",
                         "0e60-0e6f",
                         "0e80-0e9f",
@@ -1287,6 +2690,7 @@ impl Snes9xOracleSemanticTrace {
                         "0f50-0f5f",
                         "0f70-0f7f",
                         "0fba",
+                        "0fb5-0fb6",
                         "1d00-1dff",
                         "f9c2-f9d1",
                         "fa5c-fabb",
@@ -1307,6 +2711,8 @@ impl Snes9xOracleSemanticTrace {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             item_receipt_caller: None,
@@ -1352,6 +2758,8 @@ impl Snes9xOracleSemanticTrace {
             overworld_sprite_activation: self.overworld_sprite_activation,
             overworld_load_overlays_sprite_reload_active: self
                 .overworld_load_overlays_sprite_reload_active,
+            overworld_sprite_reload_reset_published: self.overworld_sprite_reload_reset_published,
+            rescued_maiden_initialization: self.rescued_maiden_initialization,
             pending_spotlight_helper_nmi: self.pending_spotlight_helper_nmi.clone(),
             item_receipt_caller: self.item_receipt_caller,
             sprite_main_execution: self.sprite_main_execution,
@@ -1414,6 +2822,18 @@ impl Snes9xOracleSemanticTrace {
         self.overworld_sprite_activation = checkpoint.overworld_sprite_activation;
         self.overworld_load_overlays_sprite_reload_active =
             checkpoint.overworld_load_overlays_sprite_reload_active;
+        self.overworld_sprite_reload_reset_published =
+            checkpoint.overworld_sprite_reload_reset_published;
+        if checkpoint
+            .rescued_maiden_initialization
+            .is_some_and(|tracker| tracker.completed_bytes > RESCUED_MAIDEN_FOLLOWER_SHEET_BYTES)
+        {
+            return Err(
+                "Snes9x semantic checkpoint has invalid rescued-maiden decompressor progress"
+                    .to_string(),
+            );
+        }
+        self.rescued_maiden_initialization = checkpoint.rescued_maiden_initialization;
         self.pending_spotlight_helper_nmi = checkpoint.pending_spotlight_helper_nmi;
         self.pending_spotlight_helper_nmi_acceptance_index = None;
         self.item_receipt_caller = checkpoint.item_receipt_caller;
@@ -1523,11 +2943,97 @@ impl Snes9xOracleSemanticTrace {
                 self.zelda_run_game_loop_call_active = true;
             }
             if main_loop_common_suffix_completed {
+                if let Some(tracker) = self.rescued_maiden_initialization.take() {
+                    if tracker.phase != RescuedMaidenInitializationTrackerPhase::Converting {
+                        return Err(format!(
+                            "Snes9x rescued-maiden caller reached the main-loop suffix from {:?}",
+                            tracker.phase,
+                        ));
+                    }
+                }
                 self.zelda_run_game_loop_call_active = false;
             }
             self.consume_event(event, &mut receipts)?;
         }
         if let Some(returned_event) = returned_event.as_ref() {
+            if let Some(progress) = credits_scene_load_boundary_progress(
+                returned_event,
+                OriginalTimingBoundary::HostReturn,
+            )? {
+                receipts.retain(|receipt| {
+                    !matches!(
+                        receipt,
+                        OriginalTimingSemanticReceipt::CreditsSceneLoadProgress(_)
+                    )
+                });
+                receipts.push(OriginalTimingSemanticReceipt::CreditsSceneLoadProgress(
+                    progress,
+                ));
+            }
+            if let Some(progress) = credits_end_sequence_32_boundary_progress(
+                returned_event,
+                OriginalTimingBoundary::HostReturn,
+            )? {
+                receipts.retain(|receipt| {
+                    !matches!(
+                        receipt,
+                        OriginalTimingSemanticReceipt::CreditsEndSequence32Progress(_)
+                    )
+                });
+                receipts.push(OriginalTimingSemanticReceipt::CreditsEndSequence32Progress(
+                    progress,
+                ));
+            }
+            if let Some(progress) = triforce_room_case2_palette_progress(
+                returned_event,
+                OriginalTimingBoundary::HostReturn,
+            )? {
+                receipts.push(
+                    OriginalTimingSemanticReceipt::TriforceRoomCase2PaletteProgress(progress),
+                );
+            }
+            if let Some(progress) = dungeon_peg_attribute_flip_progress(
+                returned_event,
+                OriginalTimingBoundary::HostReturn,
+            )? {
+                receipts.retain(|receipt| {
+                    !matches!(
+                        receipt,
+                        OriginalTimingSemanticReceipt::DungeonPegAttributeFlipProgress(_)
+                    )
+                });
+                receipts
+                    .push(OriginalTimingSemanticReceipt::DungeonPegAttributeFlipProgress(progress));
+            }
+            if let Some(tracker) = self.rescued_maiden_initialization.as_mut() {
+                tracker.observe_boundary(returned_event)?;
+                receipts.push(
+                    OriginalTimingSemanticReceipt::RescuedMaidenInitializationProgress(
+                        tracker.host_return_receipt()?,
+                    ),
+                );
+            }
+            if let Some(tracker) = self
+                .sprite_main_execution
+                .as_mut()
+                .and_then(|execution| execution.follower_graphics.as_mut())
+            {
+                tracker.1.observe_boundary(returned_event)?;
+            }
+            if let Some(execution) = self.sprite_main_execution.as_mut() {
+                execution.observe_fire_debirando_spawn_boundary(returned_event)?;
+                execution.observe_bari_before_random(returned_event)?;
+                execution.observe_main_and_aux1_timer_decrements(returned_event)?;
+                execution.observe_primary_timer_decrements(returned_event)?;
+                execution.observe_timer_decrements(returned_event)?;
+                execution.observe_single_small_draw_position(returned_event)?;
+                execution.observe_probe_after_oam_coordinates(returned_event)?;
+                execution.observe_initialize_reset_properties(returned_event)?;
+                execution.observe_initialize_load_properties(returned_event)?;
+                execution.observe_fire_debirando_before_spawn(returned_event)?;
+                execution.observe_zazak_graphics(returned_event)?;
+                execution.observe_wallmaster_reset_prefix(returned_event)?;
+            }
             self.finish_pending_spotlight_helper_nmi(
                 returned_event,
                 spotlight_var4_low_at_return,
@@ -1544,12 +3050,19 @@ impl Snes9xOracleSemanticTrace {
             if publish_pre_dungeon_sprite_reset_progress(
                 returned_event,
                 OriginalTimingBoundary::HostReturn,
+                host_frame.overworld_load_overlays_sprite_reload_active
+                    && !self.overworld_sprite_reload_reset_published,
                 &mut receipts,
             )? {
                 // The shared Sprite_DisableAll candidate belongs to the
                 // enclosing Sprite_ResetAll call identified above, not to the
                 // later Dungeon_ResetSprites call. Keep the domains separate.
                 self.pending_reset_progress = None;
+                if host_frame.overworld_load_overlays_sprite_reload_active {
+                    self.overworld_sprite_reload_reset_published = true;
+                }
+            } else if let Some(progress) = dungeon_reset_sprites_caller_progress(returned_event) {
+                self.pending_reset_progress = Some(progress);
             }
         }
         // `retro_run` may return at the SCAN_KEYS boundary without accepting
@@ -1566,6 +3079,22 @@ impl Snes9xOracleSemanticTrace {
             dialogue_message_read_position,
             zelda_run_game_loop_call_active_at_entry,
         )?;
+        let credits_text_returned_to_sprite_preparation = receipts.iter().any(|receipt| {
+            matches!(
+                receipt,
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpritePreparation
+                        | MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }
+                )
+            )
+        });
+        if credits_text_returned_to_sprite_preparation {
+            for receipt in &mut receipts {
+                if let OriginalTimingSemanticReceipt::CreditsSceneLoadProgress(progress) = receipt {
+                    progress.progress = CreditsSceneLoadProgress::EndingTextCompleted;
+                }
+            }
+        }
         if receipts.iter().any(|receipt| {
             matches!(
                 receipt,
@@ -1627,14 +3156,15 @@ impl Snes9xOracleSemanticTrace {
                     main_loop_interruption_for_source_state(
                         returned_pc,
                         Some(0x0f),
-                Some(1),
-                returned_event.x,
-            ),
-            Some(
-                MainLoopInterruption::LinkPositionBeforeCoordinates
-                    | MainLoopInterruption::LinkPositionAfterSubpixel { .. }
-            )
-        );
+                        Some(1),
+                        returned_event.x,
+                    ),
+                    Some(
+                        MainLoopInterruption::LinkPositionBeforeCoordinates
+                            | MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+                            | MainLoopInterruption::LinkPositionAfterCoordinates { .. }
+                    )
+                );
         if superseded || link_position_interruption_at_return {
             // A host return inside Module0F's Link movement proves the
             // recurring caller's table build completed after the helper NMI;
@@ -1759,10 +3289,26 @@ impl Snes9xOracleSemanticTrace {
                     OriginalTimingSemanticReceipt::SpriteMainProgressed(_)
                 )
             });
-            if let Some(execution) = self.sprite_main_execution {
-                receipts.push(OriginalTimingSemanticReceipt::SpriteMainProgressed(
-                    execution.progress(),
-                ));
+            // A caller-specific Sprite_Main/Uncle item-receipt continuation
+            // already owns the exact suspended statement and the surrounding
+            // Sprite_Main remainder.  Do not also publish an earlier generic
+            // slot checkpoint: it is dominated by the typed call boundary and
+            // has no independent consumer.  Direct Link_ReceiveItem calls keep
+            // the generic checkpoint because their typed receipt owns only the
+            // nested graphics call.
+            let caller_specific_item_receipt = matches!(
+                self.item_receipt_caller,
+                Some(
+                    ItemReceiptGraphicsCaller::SpriteMain { .. }
+                        | ItemReceiptGraphicsCaller::UnclePassage { .. }
+                )
+            );
+            if !caller_specific_item_receipt {
+                if let Some(execution) = self.sprite_main_execution {
+                    receipts.push(OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                        execution.progress(),
+                    ));
+                }
             }
         }
     }
@@ -1790,18 +3336,157 @@ impl Snes9xOracleSemanticTrace {
         }
         let resumed_nmi_context = self.reconcile_nmi_context_resume(&event)?;
         if resumed_nmi_context {
-            retire_resumed_main_loop_interruption(
-                receipts,
-                self.sprite_main_execution
-                    .map(|execution| execution.progress()),
-            )?;
+            let resumed_progress = self
+                .sprite_main_execution
+                .map(|execution| execution.progress());
+            retire_resumed_main_loop_interruption(receipts, resumed_progress)?;
+            if let Some(execution) = self.sprite_main_execution.as_mut() {
+                execution.single_small_draw_position_slot = None;
+                execution.wallmaster_reset_prefix_slot = None;
+                execution.zazak_graphics_slot = None;
+            }
         }
         match event.event.as_str() {
             "pc" => {
                 let pc = event.pc.ok_or("Snes9x PC receipt omitted PC")? & 0x00ff_ffff;
-                if pc == OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC
+                if pc == DUNGEON_RESET_SPRITES_RETURN_PC {
+                    self.pending_reset_progress = None;
+                    self.cache_write_progress = None;
+                    self.normal_load_ordinal = None;
+                }
+                if pc == SAVE_QUIT_RESET_DUNGEON_INFO_CLEAR_ENTRY_PC {
+                    if (event.main, event.sub, event.subsub) != (Some(0), Some(10), Some(10)) {
+                        return Err(format!(
+                            "Snes9x save-quit reset prefix returned with unexpected module state {:?}/{:?}/{:?}",
+                            event.main, event.sub, event.subsub,
+                        ));
+                    }
+                    receipts.push(OriginalTimingSemanticReceipt::SaveQuitResetStatePublished);
+                }
+                if pc == FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_RETURN_PC
+                    && (event.main, event.sub, event.subsub) == (Some(1), Some(1), Some(10))
+                {
+                    receipts.push(OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared);
+                }
+                if pc == SELECTED_GAME_LOAD_MESSAGE_INTERFACE_RETURN_PC
                     && event.return_address.map(|pc| pc & 0x00ff_ffff)
-                        == Some(OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC)
+                        == Some(MODULE05_AFTER_SHOW_TEXT_MESSAGE_PC)
+                    && (event.main, event.sub) == (Some(14), Some(2))
+                {
+                    receipts.push(
+                        OriginalTimingSemanticReceipt::SelectedGameLoadMessageInterfacePublished,
+                    );
+                }
+                if pc == RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC
+                    && (event.main, event.sub, event.subsub) == (Some(7), Some(0x18), Some(10))
+                {
+                    if self.rescued_maiden_initialization.is_some() {
+                        return Err(
+                            "Snes9x re-entered rescued-maiden follower graphics before its prior call returned"
+                                .to_string(),
+                        );
+                    }
+                    self.rescued_maiden_initialization =
+                        Some(RescuedMaidenInitializationTracker::first_sheet());
+                }
+                let sprite_follower_graphics_caller =
+                    match event.return_address.map(|pc| pc & 0x00ff_ffff) {
+                        Some(SPRITE_PREP_BLIND_MAIDEN_FOLLOWER_GRAPHICS_RETURN_PC) => {
+                            Some(SpriteFollowerGraphicsCaller::BlindMaiden)
+                        }
+                        Some(SPRITE_PREP_ZELDA_FOLLOWER_GRAPHICS_RETURN_PC) => {
+                            Some(SpriteFollowerGraphicsCaller::Zelda)
+                        }
+                        Some(SPRITE_BLIND_MAIDEN_BODY_FOLLOWER_GRAPHICS_RETURN_PC) => {
+                            Some(SpriteFollowerGraphicsCaller::BlindMaidenBody)
+                        }
+                        _ => None,
+                    };
+                if pc == RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC
+                    && sprite_follower_graphics_caller.is_some()
+                {
+                    let caller = sprite_follower_graphics_caller
+                        .expect("checked sprite follower-graphics caller disappeared");
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Snes9x entered sprite follower graphics outside Sprite_Main")?;
+                    let slot = execution
+                        .current_slot
+                        .ok_or("Snes9x entered follower graphics before a Sprite_Main slot")?;
+                    if execution.follower_graphics.is_some() {
+                        return Err(format!(
+                            "Snes9x re-entered {caller:?} follower graphics in slot {slot} before its prior call returned",
+                        ));
+                    }
+                    execution.follower_graphics =
+                        Some((caller, RescuedMaidenInitializationTracker::first_sheet()));
+                }
+                if pc == RESCUED_MAIDEN_FIRST_FOLLOWER_SHEET_ENTRY_PC
+                    && (self.rescued_maiden_initialization.is_some()
+                        || self
+                            .sprite_main_execution
+                            .as_ref()
+                            .is_some_and(|execution| execution.follower_graphics.is_some()))
+                {
+                    if event.y != Some(0x66) && event.y != Some(0x64) {
+                        return Err(format!(
+                            "Snes9x rescued-maiden first follower sheet used unexpected asset {:?}",
+                            event.y,
+                        ));
+                    }
+                }
+                if pc == RESCUED_MAIDEN_SECOND_FOLLOWER_SHEET_ENTRY_PC {
+                    if let Some(tracker) = self.rescued_maiden_initialization.as_mut() {
+                        if event.y != Some(0x65) {
+                            return Err(format!(
+                                "Snes9x rescued-maiden second follower sheet used unexpected asset {:?}",
+                                event.y,
+                            ));
+                        }
+                        tracker.begin_second_sheet()?;
+                    }
+                    if let Some(tracker) = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .and_then(|execution| execution.follower_graphics.as_mut())
+                    {
+                        if event.y != Some(0x65) {
+                            return Err(format!(
+                                "Snes9x Zelda's second follower sheet used unexpected asset {:?}",
+                                event.y,
+                            ));
+                        }
+                        tracker.1.begin_second_sheet()?;
+                    }
+                }
+                if pc == RESCUED_MAIDEN_FOLLOWER_SHEETS_RETURN_PC {
+                    if let Some(tracker) = self.rescued_maiden_initialization.as_mut() {
+                        tracker.begin_conversion()?;
+                    }
+                    if let Some(tracker) = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .and_then(|execution| execution.follower_graphics.as_mut())
+                    {
+                        tracker.1.begin_conversion()?;
+                    }
+                }
+                if pc == POLYHEDRAL_RENDER_START_PC
+                    && matches!(event.main, Some(0x07 | 0x0e | 0x19))
+                {
+                    receipts.push(OriginalTimingSemanticReceipt::PreemptivePolyhedralRenderStarted);
+                }
+                if pc == OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC
+                    && matches!(
+                        event.return_address.map(|pc| pc & 0x00ff_ffff),
+                        Some(
+                            OVERWORLD_LOAD_OVERLAYS_AFTER_SPRITE_RELOAD_PC
+                                | BIRD_TRAVEL_AFTER_SPRITE_RELOAD_PC
+                                | MIRROR_WARP_AFTER_SPRITE_RELOAD_PC
+                                | PRE_OVERWORLD_AFTER_SPRITE_RELOAD_PC
+                        )
+                    )
                 {
                     if self.overworld_load_overlays_sprite_reload_active {
                         return Err(
@@ -1810,16 +3495,22 @@ impl Snes9xOracleSemanticTrace {
                         );
                     }
                     self.overworld_load_overlays_sprite_reload_active = true;
+                    self.overworld_sprite_reload_reset_published = false;
+                    self.overworld_presence_published = false;
+                    self.overworld_sprite_activation = None;
                 }
                 if pc == OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_RETURN_PC
                     && self.overworld_load_overlays_sprite_reload_active
                 {
                     self.overworld_load_overlays_sprite_reload_active = false;
-                    receipts.push(
-                        OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
-                            OverworldSpriteReloadProgress::GenerationReturned,
-                        ),
-                    );
+                    self.overworld_sprite_reload_reset_published = false;
+                    if !matches!((event.main, event.sub), (Some(8), Some(0))) {
+                        receipts.push(
+                            OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                                OverworldSpriteReloadProgress::GenerationReturned,
+                            ),
+                        );
+                    }
                 }
                 if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
                     && event.return_address.map(|pc| pc & 0x00ff_ffff)
@@ -1834,8 +3525,30 @@ impl Snes9xOracleSemanticTrace {
                         .ok_or("Snes9x entered King Zora flippers graphics before a sprite slot")?;
                     execution.king_zora_flippers_graphics_slot = Some(slot);
                 }
+                if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
+                    && event.return_address.map(|pc| pc & 0x00ff_ffff)
+                        == Some(BONK_ITEM_GRAPHICS_RETURN_ADDRESS)
+                {
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Snes9x entered bonk-item graphics outside Sprite_Main")?;
+                    let slot = execution
+                        .current_slot
+                        .ok_or("Snes9x entered bonk-item graphics before a sprite slot")?;
+                    execution.bonk_item_graphics_slot = Some(slot);
+                }
                 match pc {
                     SPRITE_MAIN_ENTRY_PC => {
+                        if let Some(tracker) = self.rescued_maiden_initialization.take() {
+                            if tracker.phase != RescuedMaidenInitializationTrackerPhase::Converting
+                            {
+                                return Err(format!(
+                                    "Snes9x rescued-maiden caller entered Sprite_Main from {:?}",
+                                    tracker.phase,
+                                ));
+                            }
+                        }
                         // A fresh entry is also a source-level proof that any
                         // prior call returned. Different module callers have
                         // different private return PCs, so the generic adapter
@@ -1876,6 +3589,17 @@ impl Snes9xOracleSemanticTrace {
                                 ));
                             }
                             execution.current_slot = Some(slot);
+                            execution.timers_and_oam_slot = None;
+                            execution.timers_and_oam_dispatch_state = None;
+                            execution.initialize_reset_properties = None;
+                            execution.initialize_load_properties = None;
+                            execution.fire_debirando_property_reload = false;
+                            execution.fire_debirando_before_spawn_slot = None;
+                            execution.fire_debirando_spawn = None;
+                            execution.antfairy_subtype2_increment_slot = None;
+                            execution.timer_decrements_slot = None;
+                            execution.primary_timer_decrements_slot = None;
+                            execution.bari_before_random_slot = None;
                             execution.throwable_scenery_state_clear_slot = None;
                             execution.cucco_subtype_increments = None;
                             execution.cucco_animation_slot = None;
@@ -1886,6 +3610,23 @@ impl Snes9xOracleSemanticTrace {
                             execution.cucco_helper_ordinal = 0;
                             execution.big_key_drop_graphics_slot = None;
                             execution.king_zora_flippers_graphics_slot = None;
+                            execution.bonk_item_graphics_slot = None;
+                            execution.single_small_draw_position_slot = None;
+                            execution.probe_after_oam_coordinates_slot = None;
+                            execution.wallmaster_reset_prefix_slot = None;
+                            execution.zazak_graphics_slot = None;
+                            execution.follower_graphics = None;
+                        }
+                    }
+                    SPRITE_TIMERS_AND_OAM_RETURN_PC => {
+                        if let Some(execution) = self.sprite_main_execution.as_mut() {
+                            execution.observe_bari_before_random(&event)?;
+                            execution.observe_timers_and_oam_return(&event)?;
+                        }
+                    }
+                    SPRITE_TIMER_DECREMENTS_TRACE_PC => {
+                        if let Some(execution) = self.sprite_main_execution.as_mut() {
+                            execution.observe_timer_decrements(&event)?;
                         }
                     }
                     SPRITE_SLOT_RETURN_PC => {
@@ -1897,6 +3638,17 @@ impl Snes9xOracleSemanticTrace {
                             .current_slot
                             .ok_or("Snes9x returned one Sprite_Main slot before entering it")?;
                         execution.last_completed_slot = Some(slot);
+                        execution.timers_and_oam_slot = None;
+                        execution.timers_and_oam_dispatch_state = None;
+                        execution.initialize_reset_properties = None;
+                        execution.initialize_load_properties = None;
+                        execution.fire_debirando_property_reload = false;
+                        execution.fire_debirando_before_spawn_slot = None;
+                        execution.fire_debirando_spawn = None;
+                        execution.antfairy_subtype2_increment_slot = None;
+                        execution.timer_decrements_slot = None;
+                        execution.primary_timer_decrements_slot = None;
+                        execution.bari_before_random_slot = None;
                         execution.throwable_scenery_state_clear_slot = None;
                         execution.cucco_subtype_increments = None;
                         execution.cucco_animation_slot = None;
@@ -1907,6 +3659,20 @@ impl Snes9xOracleSemanticTrace {
                         execution.cucco_helper_ordinal = 0;
                         execution.big_key_drop_graphics_slot = None;
                         execution.king_zora_flippers_graphics_slot = None;
+                        execution.bonk_item_graphics_slot = None;
+                        execution.single_small_draw_position_slot = None;
+                        execution.probe_after_oam_coordinates_slot = None;
+                        execution.wallmaster_reset_prefix_slot = None;
+                        execution.zazak_graphics_slot = None;
+                        if let Some((caller, tracker)) = execution.follower_graphics.take() {
+                            if tracker.phase != RescuedMaidenInitializationTrackerPhase::Converting
+                            {
+                                return Err(format!(
+                                    "Snes9x {caller:?} sprite slot {slot} returned from follower graphics in {:?}",
+                                    tracker.phase,
+                                ));
+                            }
+                        }
                         // Slot zero is the final iteration of the descending C
                         // loop. No caller-specific return address is needed to
                         // prove that later NMIs are outside Sprite_Main.
@@ -2163,7 +3929,32 @@ impl Snes9xOracleSemanticTrace {
             "wram-write" => {
                 let pc = event.pc.ok_or("Snes9x WRAM write omitted PC")? & 0x00ff_ffff;
                 let address = event.address.ok_or("Snes9x WRAM write omitted address")?;
+                if pc == CREDITS_SCENE_OVERWORLD_SUBSUBMODULE_INCREMENT_PC
+                    && address == SUBSUBMODULE_INDEX
+                    && event.main == Some(0x1a)
+                {
+                    receipts.retain(|receipt| {
+                        !matches!(
+                            receipt,
+                            OriginalTimingSemanticReceipt::CreditsSceneLoadProgress(_)
+                        )
+                    });
+                    receipts.push(OriginalTimingSemanticReceipt::CreditsSceneLoadProgress(
+                        CreditsSceneLoadProgressReceipt {
+                            progress: CreditsSceneLoadProgress::SceneLoadCompleted,
+                            boundary: OriginalTimingBoundary::HostReturn,
+                        },
+                    ));
+                }
+                if let Some(progress) = dungeon_falling_entrance_progress(&event, pc, address)? {
+                    receipts.push(
+                        OriginalTimingSemanticReceipt::DungeonFallingEntranceProgress(progress),
+                    );
+                }
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
+                    execution.observe_fire_debirando_spawn_write(&event)?;
+                    execution.observe_antfairy_subtype2_increment(&event)?;
+                    execution.observe_zazak_graphics(&event)?;
                     if pc == THROWABLE_SCENERY_STATE_CLEAR_PC {
                         let slot = execution.current_slot.ok_or(
                             "Snes9x cleared throwable scenery before entering a sprite slot",
@@ -2317,6 +4108,32 @@ impl Snes9xOracleSemanticTrace {
                         execution.big_key_drop_graphics_slot = Some(slot);
                     }
                 }
+                if pc == SPRITE_PREP_FIRE_DEBIRANDO_TYPE_STORE_PC {
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Snes9x converted Fire Debirando outside Sprite_Main")?;
+                    let slot = execution
+                        .current_slot
+                        .ok_or("Snes9x converted Fire Debirando before entering a slot")?;
+                    if execution.timers_and_oam_dispatch_state != Some(8)
+                        || event.x != Some(u16::from(slot))
+                        || address != SPRITE_TYPE_BASE + u16::from(slot)
+                        || event.value != Some(0x63)
+                    {
+                        return Err(format!(
+                            "Snes9x Fire Debirando conversion disagreed on slot {slot}: dispatch={:?}, x={:?}, address=${address:04x}, value={:?}",
+                            execution.timers_and_oam_dispatch_state,
+                            event.x,
+                            event.value,
+                        ));
+                    }
+                    execution.fire_debirando_property_reload = true;
+                    // Any checkpoint from the first property reset is now
+                    // superseded by the later source call.
+                    execution.initialize_reset_properties = None;
+                    execution.initialize_load_properties = None;
+                }
                 self.observe_overworld_sprite_publication(&event, pc, address, receipts)?;
                 let disable_progress = sprite_disable_progress(pc, address, event.value)?;
                 // `SpritesDisabled` is a candidate for a host boundary at the
@@ -2345,6 +4162,33 @@ impl Snes9xOracleSemanticTrace {
                     .contains(&pc)
                     .then(|| cached_sprite_live_field(address))
                     .flatten();
+                if pc == ANTFAIRY_SUBTYPE2_INCREMENT_PC {
+                    if let Some(progress) = self.cached_sprite_execution.as_mut() {
+                        if progress.restore_started
+                            || usize::from(progress.copied_fields)
+                                != CACHED_SPRITE_LIVE_FIELDS.len()
+                            || event.x != Some(u16::from(progress.slot))
+                            || address != SPRITE_SUBTYPE2_BASE + u16::from(progress.slot)
+                        {
+                            return Err(format!(
+                                "Snes9x cached Antfairy subtype publication disagreed with the live-slot swap: tracker={progress:?}, x={:?}, address=${address:04x}",
+                                event.x,
+                            ));
+                        }
+                        if progress
+                            .body_progress
+                            .replace(
+                                CachedSpriteExecutionBodyProgress::AfterAntfairySubtype2Increment,
+                            )
+                            .is_some()
+                        {
+                            return Err(
+                                "Snes9x cached Antfairy published its subtype increment twice"
+                                    .to_string(),
+                            );
+                        }
+                    }
+                }
                 if let Some((field_index, slot)) = cached_sprite_write {
                     if let Some(progress) = self.cached_sprite_execution.as_mut() {
                         if progress.observe_write(pc, slot, field_index)? {
@@ -2442,35 +4286,120 @@ impl Snes9xOracleSemanticTrace {
                             .map(|ordinal| ordinal.saturating_add(1))
                             .unwrap_or(0),
                     );
-                    self.pending_reset_progress = None;
+                    self.pending_reset_progress = Some(DungeonResetSpritesCpuProgress::Load(
+                        DungeonLoadSpritesCpuProgress {
+                            normal_load_ordinal: self.normal_load_ordinal.unwrap(),
+                            slot,
+                            checkpoint: DungeonSpriteLoadCheckpoint::State,
+                        },
+                    ));
                 } else if (DUNGEON_LOAD_SINGLE_SPRITE_STATE_PC..DUNGEON_LOAD_SINGLE_SPRITE_END_PC)
                     .contains(&pc)
                 {
-                    self.pending_reset_progress = None;
-                    if pc == DUNGEON_LOAD_SINGLE_SPRITE_Y_HIGH_PC
-                        && (SPRITE_Y_HIGH_BASE..SPRITE_Y_HIGH_BASE + 16).contains(&address)
-                    {
-                        let slot = (address - SPRITE_Y_HIGH_BASE) as u8;
-                        if event.x != Some(u16::from(slot)) {
-                            return Err(format!(
-                                "Snes9x Dungeon_LoadSingleSprite YHigh write disagrees on slot: x={:?}, address=${address:04x}",
-                                event.x
-                            ));
-                        }
-                        let normal_load_ordinal = self.normal_load_ordinal.ok_or(
-                            "Snes9x observed Dungeon_LoadSingleSprite YHigh before record state",
-                        )?;
-                        self.pending_reset_progress = Some(DungeonResetSpritesCpuProgress::Load(
-                            DungeonLoadSpritesCpuProgress {
-                                normal_load_ordinal,
-                                slot,
-                                checkpoint: DungeonSpriteLoadCheckpoint::YHigh,
-                            },
+                    let Some((slot, checkpoint)) =
+                        dungeon_load_single_sprite_write_progress(pc, address, event.x)?
+                    else {
+                        return Err(format!(
+                            "Snes9x Dungeon_LoadSingleSprite wrote unsupported source field ${address:04x} at ${pc:06x}",
                         ));
-                    }
+                    };
+                    let normal_load_ordinal = self.normal_load_ordinal.ok_or(
+                        "Snes9x observed Dungeon_LoadSingleSprite field before record state",
+                    )?;
+                    self.pending_reset_progress = Some(DungeonResetSpritesCpuProgress::Load(
+                        DungeonLoadSpritesCpuProgress {
+                            normal_load_ordinal,
+                            slot,
+                            checkpoint,
+                        },
+                    ));
                 }
             }
             "nmi" => {
+                if let Some(progress) = credits_scene_load_boundary_progress(
+                    &event,
+                    OriginalTimingBoundary::NmiAccepted,
+                )? {
+                    receipts.retain(|receipt| {
+                        !matches!(
+                            receipt,
+                            OriginalTimingSemanticReceipt::CreditsSceneLoadProgress(_)
+                        )
+                    });
+                    receipts.push(OriginalTimingSemanticReceipt::CreditsSceneLoadProgress(
+                        progress,
+                    ));
+                }
+                if let Some(progress) = credits_end_sequence_32_boundary_progress(
+                    &event,
+                    OriginalTimingBoundary::NmiAccepted,
+                )? {
+                    receipts.retain(|receipt| {
+                        !matches!(
+                            receipt,
+                            OriginalTimingSemanticReceipt::CreditsEndSequence32Progress(_)
+                        )
+                    });
+                    receipts.push(OriginalTimingSemanticReceipt::CreditsEndSequence32Progress(
+                        progress,
+                    ));
+                }
+                if let Some(progress) = triforce_room_case2_palette_progress(
+                    &event,
+                    OriginalTimingBoundary::NmiAccepted,
+                )? {
+                    receipts.retain(|receipt| {
+                        !matches!(
+                            receipt,
+                            OriginalTimingSemanticReceipt::TriforceRoomCase2PaletteProgress(_)
+                        )
+                    });
+                    receipts.push(
+                        OriginalTimingSemanticReceipt::TriforceRoomCase2PaletteProgress(progress),
+                    );
+                }
+                if let Some(progress) = dungeon_peg_attribute_flip_progress(
+                    &event,
+                    OriginalTimingBoundary::NmiAccepted,
+                )? {
+                    receipts.retain(|receipt| {
+                        !matches!(
+                            receipt,
+                            OriginalTimingSemanticReceipt::DungeonPegAttributeFlipProgress(_)
+                        )
+                    });
+                    receipts.push(
+                        OriginalTimingSemanticReceipt::DungeonPegAttributeFlipProgress(progress),
+                    );
+                }
+                if let Some(tracker) = self.rescued_maiden_initialization.as_mut() {
+                    if (event.main, event.sub, event.subsub) != (Some(7), Some(0x18), Some(10)) {
+                        return Err(format!(
+                            "Snes9x rescued-maiden decompressor escaped its source domain: main={:?}, sub={:?}, subsub={:?}",
+                            event.main, event.sub, event.subsub,
+                        ));
+                    }
+                    tracker.observe_boundary(&event)?;
+                }
+                if let Some(execution) = self.sprite_main_execution.as_mut() {
+                    if let Some((_, tracker)) = execution.follower_graphics.as_mut() {
+                        tracker.observe_boundary(&event)?;
+                    }
+                }
+                if let Some(execution) = self.sprite_main_execution.as_mut() {
+                    execution.observe_fire_debirando_spawn_boundary(&event)?;
+                    execution.observe_bari_before_random(&event)?;
+                    execution.observe_main_and_aux1_timer_decrements(&event)?;
+                    execution.observe_primary_timer_decrements(&event)?;
+                    execution.observe_timer_decrements(&event)?;
+                    execution.observe_single_small_draw_position(&event)?;
+                    execution.observe_probe_after_oam_coordinates(&event)?;
+                    execution.observe_initialize_reset_properties(&event)?;
+                    execution.observe_initialize_load_properties(&event)?;
+                    execution.observe_fire_debirando_before_spawn(&event)?;
+                    execution.observe_zazak_graphics(&event)?;
+                    execution.observe_wallmaster_reset_prefix(&event)?;
+                }
                 let ppu_register_operands = event.nmi_ppu_register_operands()?;
                 let target = nmi_resume_target(&event)?;
                 let update_gate = match event
@@ -2501,6 +4430,8 @@ impl Snes9xOracleSemanticTrace {
                 if publish_pre_dungeon_sprite_reset_progress(
                     &event,
                     OriginalTimingBoundary::NmiAccepted,
+                    self.overworld_load_overlays_sprite_reload_active
+                        && !self.overworld_sprite_reload_reset_published,
                     receipts,
                 )? {
                     // `Sprite_DisableAll` is shared by `Sprite_ResetAll` and
@@ -2509,17 +4440,38 @@ impl Snes9xOracleSemanticTrace {
                     // the former, so the generic reset candidate must not
                     // escape into the wrong semantic domain below.
                     self.pending_reset_progress = None;
+                    if self.overworld_load_overlays_sprite_reload_active {
+                        self.overworld_sprite_reload_reset_published = true;
+                    }
+                } else if let Some(progress) = dungeon_reset_sprites_caller_progress(&event) {
+                    self.pending_reset_progress = Some(progress);
                 }
-                if event.main == Some(8)
-                    && event.sub == Some(0)
+                let overworld_sprite_scan_suspended = (self
+                    .overworld_load_overlays_sprite_reload_active
+                    || (event.main == Some(8) && event.sub == Some(0))
+                    || (event.main == Some(9) && matches!(event.sub, Some(4 | 0x12))))
                     && event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
                         (OVERWORLD_SPRITE_SCAN_START_PC..OVERWORLD_SPRITE_SCAN_END_PC).contains(&pc)
-                    })
-                {
+                    });
+                if overworld_sprite_scan_suspended {
                     self.publish_overworld_presence(receipts);
+                    receipts.push(
+                        OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                            OverworldSpriteReloadProgress::ProximityScanSuspended {
+                                bg2_h: event.bg2_h.ok_or(
+                                    "Snes9x overworld scan NMI omitted the BG2 scratch coordinate",
+                                )?,
+                            },
+                        ),
+                    );
                 }
                 self.flush_host_boundary_progress(receipts, OriginalTimingBoundary::NmiAccepted);
                 receipts.push(OriginalTimingSemanticReceipt::NmiAccepted(update_gate));
+                if let Some(progress) = rescued_maiden_tilemap_clear_progress(&event)? {
+                    receipts.push(
+                        OriginalTimingSemanticReceipt::RescuedMaidenTilemapClearProgress(progress),
+                    );
+                }
                 if let Some(execution) = self.sprite_main_execution {
                     let interruption = match self.item_receipt_caller {
                         Some(
@@ -2661,7 +4613,8 @@ impl Snes9xOracleSemanticTrace {
         receipts: &mut Vec<OriginalTimingSemanticReceipt>,
     ) -> Result<(), String> {
         let source_owns_reload_publication = self.overworld_load_overlays_sprite_reload_active
-            || matches!((event.main, event.sub), (Some(8), Some(0)));
+            || matches!((event.main, event.sub), (Some(8), Some(0)))
+            || matches!((event.main, event.sub), (Some(9), Some(4 | 0x12)));
         if !source_owns_reload_publication
             || !(OVERWORLD_LOAD_SINGLE_SPRITE_START_PC..OVERWORLD_LOAD_SINGLE_SPRITE_END_PC)
                 .contains(&pc)
@@ -2681,7 +4634,11 @@ impl Snes9xOracleSemanticTrace {
                     event.x
                 ));
             }
-            if event.main == Some(8) && event.sub == Some(0) {
+            if (event.main == Some(8) && event.sub == Some(0))
+                || (event.main == Some(0x0e)
+                    && event.sub == Some(0x0a)
+                    && self.overworld_load_overlays_sprite_reload_active)
+            {
                 self.publish_overworld_presence(receipts);
             }
             let tracker =
@@ -2798,22 +4755,30 @@ fn publish_spotlight_host_return_progress(
 fn publish_pre_dungeon_sprite_reset_progress(
     event: &RawTraceEvent,
     boundary: OriginalTimingBoundary,
+    source_overworld_reload_active: bool,
     receipts: &mut Vec<OriginalTimingSemanticReceipt>,
 ) -> Result<bool, String> {
     let pc = event.pc.map(|pc| pc & 0x00ff_ffff);
     let return_address = event.return_address.map(|address| address & 0x00ff_ffff);
+    let pre_dungeon_caller = return_address == Some(MODULE_PRE_DUNGEON_AFTER_SPRITE_RESET_PC);
+    let bird_travel_caller = matches!((event.main, event.sub), (Some(0x0e), Some(0x0a)))
+        && matches!(
+            return_address,
+            Some(BIRD_TRAVEL_AFTER_INITIAL_SPRITE_RESET_PC | SPRITE_RELOAD_AFTER_DISABLE_PC)
+        );
+    let pre_overworld_caller = source_overworld_reload_active
+        && matches!((event.main, event.sub), (Some(8), Some(0)))
+        && return_address == Some(SPRITE_RELOAD_AFTER_DISABLE_PC);
     if !pc.is_some_and(|pc| {
         (SPRITE_RESET_ALL_NO_DISABLE_START_PC..SPRITE_RESET_ALL_END_PC).contains(&pc)
-    }) || return_address != Some(MODULE_PRE_DUNGEON_AFTER_SPRITE_RESET_PC)
+    }) || !(pre_dungeon_caller || bird_travel_caller || pre_overworld_caller)
     {
         return Ok(false);
     }
     // The return address is the source-owned caller proof. `Module_PreDungeon`
-    // is both main-module 6's dispatch target and a direct callee of the
-    // module-5 selected-game and module-27 spawn-select loaders. Those direct
-    // callers deliberately retain their current module byte until
-    // `Module_PreDungeon` publishes module 7 near its return, so the incidental
-    // module/submodule state cannot identify this call boundary.
+    // is both main-module 6's dispatch target and a direct callee of two
+    // selected-game loaders. The bird-travel path has two consecutive reset
+    // calls; its exact outer and inner return PCs distinguish their phases.
     receipts.retain(|receipt| {
         !matches!(
             receipt,
@@ -2844,7 +4809,28 @@ fn spotlight_table_build_progress(
     let inside_circle_value = pc.is_some_and(|pc| {
         (IRIS_SPOTLIGHT_CIRCLE_VALUE_START_PC..IRIS_SPOTLIGHT_CIRCLE_VALUE_END_PC).contains(&pc)
     });
+    let after_circle_value_before_upper_write = pc.is_some_and(|pc| {
+        (IRIS_SPOTLIGHT_AFTER_CIRCLE_VALUE_START_PC..=IRIS_SPOTLIGHT_UPPER_TABLE_WRITE_PC)
+            .contains(&pc)
+    });
+    let after_upper_table_write = pc.is_some_and(|pc| {
+        (IRIS_SPOTLIGHT_AFTER_UPPER_TABLE_WRITE_START_PC..IRIS_SPOTLIGHT_LOWER_TABLE_WRITE_PC)
+            .contains(&pc)
+    });
+    let before_loop_completion_test = pc.is_some_and(|pc| {
+        (IRIS_SPOTLIGHT_BEFORE_LOOP_COMPLETION_TEST_START_PC
+            ..=IRIS_SPOTLIGHT_LOOP_COMPLETION_BRANCH_PC)
+            .contains(&pc)
+    });
+    let after_iteration_value_before_circle = pc.is_some_and(|pc| {
+        (IRIS_SPOTLIGHT_AFTER_ITERATION_VALUE_STORE_START_PC..IRIS_SPOTLIGHT_CIRCLE_VALUE_CALL_PC)
+            .contains(&pc)
+    });
     if !inside_circle_value
+        && !after_iteration_value_before_circle
+        && !after_circle_value_before_upper_write
+        && !after_upper_table_write
+        && !before_loop_completion_test
         && !matches!(
             pc,
             Some(
@@ -2905,8 +4891,10 @@ fn spotlight_table_build_progress(
     let iteration_initialization_checkpoint = matches!(
         pc,
         Some(IRIS_SPOTLIGHT_ITERATION_VALUE_STORE_PC | IRIS_SPOTLIGHT_NEXT_ITERATION_PC)
-    );
+    ) || after_iteration_value_before_circle;
     let projection_checkpoint = !inside_circle_value
+        && !after_upper_table_write
+        && !before_loop_completion_test
         && !matches!(
             pc,
             Some(
@@ -2939,6 +4927,7 @@ fn spotlight_table_build_progress(
             SpotlightTableBuildCheckpoint::BeforeIterationInitialization,
         )
     } else if inside_circle_value
+        || after_circle_value_before_upper_write
         || matches!(
             pc,
             Some(IRIS_SPOTLIGHT_CIRCLE_VALUE_CALL_PC | IRIS_SPOTLIGHT_UPPER_TABLE_WRITE_PC)
@@ -2990,7 +4979,9 @@ fn spotlight_table_build_progress(
             }
             (pending_circle_input, completed_iterations)
         } else {
-            let pending_circle_input = if inside_circle_value {
+            let pending_circle_input = if inside_circle_value
+                || after_circle_value_before_upper_write
+            {
                 spotlight_var4_low
                     .ok_or("Snes9x spotlight pure-circle checkpoint omitted spotlight_var4")?
                     .checked_add(1)
@@ -3023,6 +5014,16 @@ fn spotlight_table_build_progress(
                 pending_circle_input,
             },
         )
+    } else if after_upper_table_write {
+        let lower_cursor = spotlight_lower_cursor
+            .ok_or("Snes9x spotlight lower-table guard omitted the source lower cursor")?;
+        let completed_iterations = initial_lower_cursor
+            .checked_sub(lower_cursor)
+            .ok_or("Snes9x spotlight lower-table guard exceeded its source initial cursor")?;
+        (
+            completed_iterations,
+            SpotlightTableBuildCheckpoint::AfterUpperTableWrite { lower_cursor },
+        )
     } else if pc == Some(IRIS_SPOTLIGHT_LOWER_TABLE_WRITE_PC) {
         let doubled_lower_cursor = event
             .x
@@ -3046,10 +5047,7 @@ fn spotlight_table_build_progress(
                 circle_value,
             },
         )
-    } else if matches!(
-        pc,
-        Some(IRIS_SPOTLIGHT_LOOP_COMPLETION_BRANCH_PC | IRIS_SPOTLIGHT_LOWER_CURSOR_DECREMENT_PC)
-    ) {
+    } else if before_loop_completion_test || pc == Some(IRIS_SPOTLIGHT_LOWER_CURSOR_DECREMENT_PC) {
         let observed_x = event
             .x
             .ok_or("Snes9x spotlight loop-test checkpoint omitted X")?;
@@ -3199,12 +5197,136 @@ fn spotlight_table_build_progress(
 fn spotlight_receipt_domain(event: &RawTraceEvent) -> bool {
     matches!(
         (event.main, event.sub),
-        (Some(0x0f), Some(0 | 1)) | (Some(0x10), Some(0 | 1))
+        (Some(0x0f), Some(0 | 1)) | (Some(0x10), Some(0 | 1)) | (Some(0x12), Some(2 | 3))
     )
 }
 
 fn zelda_main_wait_pc(pc: u32) -> bool {
     matches!(pc, 0x00_8034 | 0x00_8036)
+}
+
+fn dungeon_falling_entrance_progress(
+    event: &RawTraceEvent,
+    pc: u32,
+    address: u16,
+) -> Result<Option<DungeonFallingEntranceProgress>, String> {
+    // `Dungeon_LoadAndDrawRoom` is shared with Module_PreDungeon. Its parser
+    // tail executes the same subsubmodule clear at the same PC while main is
+    // still $06; only Module11_02's call owns a falling-entrance continuation.
+    // The later caller-local publications have unique PCs and remain
+    // fail-closed below if their module state disagrees.
+    if pc == FALLING_ENTRANCE_ROOM_PARSER_SUBSUB_CLEAR_PC && event.main != Some(0x11) {
+        return Ok(None);
+    }
+    let (expected_address, expected_value, progress) = match pc {
+        FALLING_ENTRANCE_ROOM_PARSER_SUBSUB_CLEAR_PC => (
+            SUBSUBMODULE_INDEX,
+            0,
+            DungeonFallingEntranceProgress::RoomParserClearedSubsubmodule,
+        ),
+        FALLING_ENTRANCE_SUBSUB_ADVANCE_PC => (
+            SUBSUBMODULE_INDEX,
+            3,
+            DungeonFallingEntranceProgress::RoomLoadAdvancedSubsubmodule,
+        ),
+        FALLING_ENTRANCE_SONG_BANK_TAIL_PC => (
+            SUBMODULE_INDEX,
+            7,
+            DungeonFallingEntranceProgress::SongBankTailEntered,
+        ),
+        _ => return Ok(None),
+    };
+    let value = event
+        .value
+        .ok_or("Snes9x falling-entrance control publication omitted its value")?;
+    if event.main != Some(0x11) || address != expected_address || value != expected_value {
+        return Err(format!(
+            "Snes9x falling-entrance publication {progress:?} disagreed with its source state: main={:?}, address=${address:04x}, value=${value:02x}",
+            event.main,
+        ));
+    }
+    Ok(Some(progress))
+}
+
+fn rescued_maiden_tilemap_clear_progress(
+    event: &RawTraceEvent,
+) -> Result<Option<RescuedMaidenTilemapClearProgressReceipt>, String> {
+    let pc = event
+        .pc
+        .ok_or("Snes9x NMI receipt omitted interrupted PC")?
+        & 0x00ff_ffff;
+    let next_store = match pc {
+        RESCUED_MAIDEN_TILEMAP_CLEAR_FIRST_STORE_PC => Some(0),
+        RESCUED_MAIDEN_TILEMAP_CLEAR_SECOND_STORE_PC => Some(1),
+        RESCUED_MAIDEN_TILEMAP_CLEAR_THIRD_STORE_PC => Some(2),
+        RESCUED_MAIDEN_TILEMAP_CLEAR_FOURTH_STORE_PC => Some(3),
+        RESCUED_MAIDEN_TILEMAP_CLEAR_FIFTH_STORE_PC => Some(4),
+        RESCUED_MAIDEN_TILEMAP_CLEAR_SIXTH_STORE_PC => Some(5),
+        RESCUED_MAIDEN_TILEMAP_CLEAR_SEVENTH_STORE_PC => Some(6),
+        RESCUED_MAIDEN_TILEMAP_CLEAR_EIGHTH_STORE_PC => Some(7),
+        RESCUED_MAIDEN_TILEMAP_CLEAR_FIRST_INX_PC
+        | RESCUED_MAIDEN_TILEMAP_CLEAR_SECOND_INX_PC
+        | RESCUED_MAIDEN_TILEMAP_CLEAR_COMPARE_PC
+        | RESCUED_MAIDEN_TILEMAP_CLEAR_BRANCH_PC => None,
+        _ => return Ok(None),
+    };
+    if (event.main, event.sub, event.subsub) != (Some(7), Some(0x18), Some(0)) {
+        return Err(format!(
+            "Snes9x rescued-maiden tilemap-clear PC escaped its source domain: main={:?}, sub={:?}, subsub={:?}",
+            event.main, event.sub, event.subsub,
+        ));
+    }
+    let x = event
+        .x
+        .ok_or("Snes9x rescued-maiden tilemap-clear NMI omitted X")?;
+    let completed_stores = if let Some(next_store) = next_store {
+        if x > 0x07fe || x & 1 != 0 {
+            return Err(format!(
+                "Snes9x rescued-maiden store checkpoint used invalid X=${x:04x}",
+            ));
+        }
+        (x / 2)
+            .checked_mul(8)
+            .and_then(|stores| stores.checked_add(next_store))
+            .ok_or("Snes9x rescued-maiden store checkpoint overflowed")?
+    } else {
+        match pc {
+            RESCUED_MAIDEN_TILEMAP_CLEAR_FIRST_INX_PC => {
+                if x > 0x07fe || x & 1 != 0 {
+                    return Err(format!(
+                        "Snes9x rescued-maiden first INX checkpoint used invalid X=${x:04x}",
+                    ));
+                }
+                (x / 2 + 1) * 8
+            }
+            RESCUED_MAIDEN_TILEMAP_CLEAR_SECOND_INX_PC => {
+                if x == 0 || x > 0x07ff || x & 1 == 0 {
+                    return Err(format!(
+                        "Snes9x rescued-maiden second INX checkpoint used invalid X=${x:04x}",
+                    ));
+                }
+                ((x + 1) / 2) * 8
+            }
+            RESCUED_MAIDEN_TILEMAP_CLEAR_COMPARE_PC | RESCUED_MAIDEN_TILEMAP_CLEAR_BRANCH_PC => {
+                if x > 0x0800 || x & 1 != 0 {
+                    return Err(format!(
+                        "Snes9x rescued-maiden loop-control checkpoint used invalid X=${x:04x}",
+                    ));
+                }
+                (x / 2) * 8
+            }
+            _ => unreachable!("store checkpoints were handled above"),
+        }
+    };
+    if completed_stores > 8192 {
+        return Err(format!(
+            "Snes9x rescued-maiden checkpoint exceeded the 8192-store clear: {completed_stores}",
+        ));
+    }
+    Ok(Some(RescuedMaidenTilemapClearProgressReceipt {
+        completed_stores,
+        boundary: OriginalTimingBoundary::NmiAccepted,
+    }))
 }
 
 fn main_loop_interruption_for_pc(pc: u32) -> Option<MainLoopInterruption> {
@@ -3223,10 +5345,18 @@ fn main_loop_interruption_for_source_state(
     sub: Option<u8>,
     x: Option<u16>,
 ) -> Option<MainLoopInterruption> {
+    if main == Some(0x12) && sub == Some(0) {
+        if let Some(completed_stores) = game_over_iris_palette_completed_stores(pc, x?) {
+            return Some(MainLoopInterruption::GameOverIrisGoalPaletteFill { completed_stores });
+        }
+    }
     if main == Some(0x0f)
         && sub == Some(1)
         && ((LINK_VELOCITY_BEFORE_STATE_BRANCH_START_PC..LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC)
             .contains(&pc)
+            || (LINK_VELOCITY_AFTER_SPEED_SELECTION_START_PC
+                ..LINK_VELOCITY_BEFORE_FIRST_STATE_STORE_END_PC)
+                .contains(&pc)
             || (LINK_POSITION_BEFORE_COORDINATES_START_PC..LINK_POSITION_BEFORE_COORDINATES_END_PC)
                 .contains(&pc))
     {
@@ -3240,15 +5370,62 @@ fn main_loop_interruption_for_source_state(
             .ok()
             .filter(|pass| matches!(pass, 0 | 2 | 4))?;
         Some(MainLoopInterruption::LinkPositionAfterSubpixel { pass })
-    } else if matches!((main, sub), (Some(0x0f | 0x10), Some(0 | 1)))
-        && (IRIS_SPOTLIGHT_RESET_TABLE_FIRST_STORE_PC..=IRIS_SPOTLIGHT_RESET_TABLE_BRANCH_PC)
+    } else if main == Some(0x0f)
+        && sub == Some(1)
+        && (LINK_POSITION_AFTER_COORDINATES_START_PC..LINK_POSITION_AFTER_COORDINATES_END_PC)
             .contains(&pc)
+    {
+        let pass = if pc >= 0x07e3d3 {
+            // The only fall-through from the final BPL is the completed Y
+            // pass. Both DEX instructions have run, so X is $fffe rather
+            // than the semantic pass value zero.
+            0
+        } else {
+            u8::try_from(x?)
+                .ok()
+                .filter(|pass| matches!(pass, 0 | 2 | 4))?
+        };
+        Some(MainLoopInterruption::LinkPositionAfterCoordinates { pass })
+    } else if matches!(
+        (main, sub),
+        (Some(0x0f | 0x10), Some(0 | 1)) | (Some(0x12), Some(0))
+    ) && (IRIS_SPOTLIGHT_RESET_TABLE_FIRST_STORE_PC
+        ..=IRIS_SPOTLIGHT_RESET_TABLE_BRANCH_PC)
+        .contains(&pc)
     {
         let completed_stores = spotlight_reset_table_completed_stores(pc, x?)?;
         Some(MainLoopInterruption::SpotlightGoalResetTable { completed_stores })
     } else {
         main_loop_interruption_for_pc(pc)
     }
+}
+
+fn game_over_iris_palette_completed_stores(pc: u32, x: u16) -> Option<u8> {
+    let stores_in_iteration = match pc {
+        GAME_OVER_IRIS_PALETTE_FIRST_STORE_PC => 0,
+        GAME_OVER_IRIS_PALETTE_SECOND_STORE_PC => 1,
+        GAME_OVER_IRIS_PALETTE_THIRD_STORE_PC => 2,
+        GAME_OVER_IRIS_PALETTE_FOURTH_STORE_PC => 3,
+        GAME_OVER_IRIS_PALETTE_FIFTH_STORE_PC => 4,
+        GAME_OVER_IRIS_PALETTE_SIXTH_STORE_PC => 5,
+        GAME_OVER_IRIS_PALETTE_FIRST_INCREMENT_PC | GAME_OVER_IRIS_PALETTE_SECOND_INCREMENT_PC => 6,
+        GAME_OVER_IRIS_PALETTE_COMPARE_PC | GAME_OVER_IRIS_PALETTE_BRANCH_PC => 0,
+        _ => return None,
+    };
+    let completed_iterations = match pc {
+        GAME_OVER_IRIS_PALETTE_SECOND_INCREMENT_PC => x.checked_sub(1)? / 2,
+        GAME_OVER_IRIS_PALETTE_COMPARE_PC | GAME_OVER_IRIS_PALETTE_BRANCH_PC => x / 2,
+        _ => x / 2,
+    };
+    let completed = if matches!(
+        pc,
+        GAME_OVER_IRIS_PALETTE_COMPARE_PC | GAME_OVER_IRIS_PALETTE_BRANCH_PC
+    ) {
+        completed_iterations * 6
+    } else {
+        completed_iterations * 6 + stores_in_iteration
+    };
+    u8::try_from(completed).ok().filter(|&stores| stores <= 96)
 }
 
 /// Recover how many of `IrisSpotlight_ResetTable`'s 224 source-order stores
@@ -3288,12 +5465,127 @@ fn spotlight_reset_table_completed_stores(pc: u32, x: u16) -> Option<u8> {
     u8::try_from(completed).ok()
 }
 
+fn triforce_room_case2_palette_progress(
+    event: &RawTraceEvent,
+    boundary: OriginalTimingBoundary,
+) -> Result<Option<TriforceRoomCase2PaletteProgressReceipt>, String> {
+    let pc = event.pc.map(|pc| pc & 0x00ff_ffff);
+    if (event.main, event.sub, event.subsub) != (Some(0x19), Some(0), Some(2)) {
+        return Ok(None);
+    }
+
+    // Entering the overlay parser is an unambiguous source-order proof that
+    // `Overworld_EnterSpecialArea`, including all palette words, returned.
+    if event.event == "nmi"
+        && pc == Some(OVERWORLD_PARSE_MAP32_DEFINITION_SECOND_WORD_PC)
+        && event.room == Some(0x0189)
+    {
+        return Ok(Some(TriforceRoomCase2PaletteProgressReceipt {
+            completed_ow_bg2_words: 21,
+            boundary,
+        }));
+    }
+    if pc != Some(PALETTE_LOAD_MULTIPLE_BEFORE_WORD_COPY_PC) || event.room != Some(0x0109) {
+        return Ok(None);
+    }
+
+    let x = event
+        .x
+        .ok_or("Triforce case-2 OWBG2 palette progress omitted destination X")?;
+    let completed_ow_bg2_words = [0x00b2u16, 0x00d2, 0x00f2]
+        .into_iter()
+        .enumerate()
+        .find_map(|(row, base)| {
+            (x >= base && x <= base + 14 && (x - base) & 1 == 0)
+                .then_some((row * 7 + usize::from((x - base) / 2)) as u8)
+        })
+        .ok_or_else(|| {
+            format!("Triforce case-2 OWBG2 palette progress used invalid destination X {x:#06x}")
+        })?;
+    Ok(Some(TriforceRoomCase2PaletteProgressReceipt {
+        completed_ow_bg2_words,
+        boundary,
+    }))
+}
+
+fn credits_scene_load_boundary_progress(
+    event: &RawTraceEvent,
+    boundary: OriginalTimingBoundary,
+) -> Result<Option<CreditsSceneLoadProgressReceipt>, String> {
+    if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(CREDITS_ENDING_TEXT_BEFORE_TILE_COPY_PC)
+        || event.main != Some(0x1a)
+    {
+        return Ok(None);
+    }
+    let completed_payload_bytes = event
+        .x
+        .ok_or("credits ending-text boundary omitted destination X")?;
+    if completed_payload_bytes & 1 != 0 {
+        return Err(format!(
+            "credits ending-text boundary used odd destination X ${completed_payload_bytes:04x}",
+        ));
+    }
+    Ok(Some(CreditsSceneLoadProgressReceipt {
+        progress: CreditsSceneLoadProgress::EndingTextPayloadBytes(completed_payload_bytes),
+        boundary,
+    }))
+}
+
+fn credits_end_sequence_32_boundary_progress(
+    event: &RawTraceEvent,
+    boundary: OriginalTimingBoundary,
+) -> Result<Option<CreditsEndSequence32ProgressReceipt>, String> {
+    if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(CREDITS_END_SEQUENCE_32_SAVE_CHECKSUM_LOOP_PC)
+        || (event.main, event.sub, event.subsub) != (Some(0x1a), Some(0x21), Some(0))
+    {
+        return Ok(None);
+    }
+    let checksum_byte_cursor = event
+        .x
+        .ok_or("credits finale save-checksum boundary omitted source cursor")?;
+    if checksum_byte_cursor > 0x4fe || checksum_byte_cursor & 1 != 0 {
+        return Err(format!(
+            "credits finale save-checksum boundary used invalid cursor ${checksum_byte_cursor:04x}",
+        ));
+    }
+    Ok(Some(CreditsEndSequence32ProgressReceipt {
+        completed_checksum_words: checksum_byte_cursor / 2,
+        boundary,
+    }))
+}
+
 fn main_loop_interruption_for_event(
     event: &RawTraceEvent,
 ) -> Result<Option<MainLoopInterruption>, String> {
     let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
         return Ok(None);
     };
+    if let Some(interruption) = desert_prayer_iris_interruption(
+        pc,
+        event.main,
+        event.sub,
+        event.subsub,
+        event.spotlight_radius,
+        event.spotlight_var4_low,
+        event.palette_countdown,
+        event.link_y,
+        event.bg2_v,
+        event.a,
+        event.x,
+        event.y,
+    )? {
+        return Ok(Some(interruption));
+    }
+    if let Some(interruption) = desert_prayer_palette_filter_interruption(
+        pc,
+        event.main,
+        event.sub,
+        event.subsub,
+        event.palette_countdown,
+        event.x,
+    )? {
+        return Ok(Some(interruption));
+    }
     if (NMI_PREPARE_EXTENDED_OAM_GROUP_BEFORE_STORE_START_PC
         ..NMI_PREPARE_EXTENDED_OAM_GROUP_BEFORE_STORE_END_PC)
         .contains(&pc)
@@ -3323,6 +5615,273 @@ fn main_loop_interruption_for_event(
     }
     Ok(main_loop_interruption_for_source_state(
         pc, event.main, event.sub, event.x,
+    ))
+}
+
+fn desert_prayer_iris_interruption(
+    pc: u32,
+    main: Option<u8>,
+    sub: Option<u8>,
+    subsub: Option<u8>,
+    spotlight_radius: Option<u16>,
+    y_buffer: Option<u8>,
+    palette_countdown: Option<u8>,
+    link_y: Option<u16>,
+    bg2_v: Option<u16>,
+    a: Option<u16>,
+    x: Option<u16>,
+    y: Option<u16>,
+) -> Result<Option<MainLoopInterruption>, String> {
+    let in_builder =
+        (DESERT_PRAYER_IRIS_ENTRY_PC..=DESERT_PRAYER_IRIS_STATE4_TAIL_START_PC).contains(&pc);
+    let in_shape_helper = (DESERT_PRAYER_IRIS_SHAPE_HELPER_START_PC
+        ..DESERT_PRAYER_IRIS_SHAPE_HELPER_END_PC)
+        .contains(&pc);
+    if (main, sub) != (Some(0x0e), Some(5)) || (!in_builder && !in_shape_helper) {
+        return Ok(None);
+    }
+    let source_subsubmodule = subsub
+        .filter(|subsub| (2..=4).contains(subsub))
+        .ok_or_else(|| {
+            format!("Snes9x Desert Prayer iris checkpoint used invalid subsubmodule {subsub:?}",)
+        })?;
+    let radius = spotlight_radius.ok_or("Snes9x Desert Prayer iris checkpoint omitted radius")?;
+    if source_subsubmodule != 4 && radius != 0x26 {
+        return Err(format!(
+            "Snes9x Desert Prayer iris checkpoint used radius {:?}, expected $26",
+            spotlight_radius,
+        ));
+    }
+    if radius == 0 || radius >= 0xc0 {
+        return Err(format!(
+            "Snes9x Desert Prayer iris checkpoint used invalid live radius ${radius:04x}",
+        ));
+    }
+    let y_buffer = y_buffer.ok_or("Snes9x Desert Prayer iris checkpoint omitted row cursor")?;
+    if y_buffer == 0 || u16::from(y_buffer) > radius + 1 {
+        return Err(format!(
+            "Snes9x Desert Prayer iris checkpoint used row cursor {y_buffer} outside radius {radius}",
+        ));
+    }
+    let palette_countdown = palette_countdown
+        .ok_or("Snes9x Desert Prayer iris checkpoint omitted palette countdown")?;
+    let progress = if in_shape_helper {
+        // The helper only computes the current radial pair. No Zelda-owned
+        // persistent state is published until its caller reaches the primary
+        // HDMA-table store, so every instruction inside it resumes from that
+        // source statement boundary.
+        zelda3::DesertPrayerIrisProgress::BeforePrimaryTableWrite {
+            table_word: desert_prayer_radial_primary_table_word(link_y, bg2_v, y_buffer)?,
+            y_buffer,
+        }
+    } else if pc < DESERT_PRAYER_IRIS_LOWER_Y_PUBLISHED_PC {
+        zelda3::DesertPrayerIrisProgress::Setup {
+            completed_writes: 0,
+        }
+    } else if pc < DESERT_PRAYER_IRIS_UPPER_Y_PUBLISHED_PC {
+        zelda3::DesertPrayerIrisProgress::Setup {
+            completed_writes: 1,
+        }
+    } else if pc < DESERT_PRAYER_IRIS_X_CENTER_PUBLISHED_PC {
+        zelda3::DesertPrayerIrisProgress::Setup {
+            completed_writes: 2,
+        }
+    } else if pc < DESERT_PRAYER_IRIS_CURSOR_PUBLISHED_PC {
+        zelda3::DesertPrayerIrisProgress::Setup {
+            completed_writes: 3,
+        }
+    } else if pc <= DESERT_PRAYER_IRIS_EARLY_ITERATION_END_PC
+        || (DESERT_PRAYER_IRIS_RADIAL_BRANCH_START_PC..=DESERT_PRAYER_IRIS_RADIAL_BRANCH_END_PC)
+            .contains(&pc)
+        || (DESERT_PRAYER_IRIS_RADIAL_CALCULATION_START_PC
+            ..=DESERT_PRAYER_IRIS_BEFORE_LOWER_ZERO_WRITE_PC)
+            .contains(&pc)
+    {
+        let scanline = desert_prayer_scanline_before_iteration(
+            pc,
+            link_y,
+            bg2_v,
+            spotlight_radius,
+            y_buffer,
+            a,
+            x,
+            y,
+        )?;
+        zelda3::DesertPrayerIrisProgress::BeforeIteration { scanline }
+    } else if (DESERT_PRAYER_IRIS_PRIMARY_VALUE_START_PC
+        ..=DESERT_PRAYER_IRIS_PRIMARY_TABLE_WRITE_PC)
+        .contains(&pc)
+    {
+        zelda3::DesertPrayerIrisProgress::BeforePrimaryTableWrite {
+            table_word: if pc >= DESERT_PRAYER_IRIS_PRIMARY_INDEX_IN_X_PC {
+                desert_prayer_table_word_from_x(x)?
+            } else {
+                desert_prayer_radial_primary_table_word(link_y, bg2_v, y_buffer)?
+            },
+            y_buffer,
+        }
+    } else if (DESERT_PRAYER_IRIS_AFTER_PRIMARY_TABLE_WRITE_PC
+        ..=DESERT_PRAYER_IRIS_BEFORE_MIRRORED_TABLE_WRITE_PC)
+        .contains(&pc)
+    {
+        zelda3::DesertPrayerIrisProgress::AfterPrimaryTableWrite {
+            table_word: desert_prayer_primary_table_word_after_store(
+                pc, x, link_y, bg2_v, y_buffer,
+            )?,
+            y_buffer,
+        }
+    } else if DESERT_PRAYER_IRIS_AFTER_ITERATION_PCS.contains(&pc) {
+        let next_scanline = if pc == DESERT_PRAYER_IRIS_AFTER_ITERATION_PCS[0] {
+            desert_prayer_table_word_from_x(x)?.wrapping_add(2)
+        } else {
+            a.ok_or("Snes9x Desert Prayer iris iteration checkpoint omitted next scanline")?
+        };
+        zelda3::DesertPrayerIrisProgress::AfterIteration {
+            next_scanline,
+            y_buffer,
+        }
+    } else if (DESERT_PRAYER_IRIS_LOOP_COMPLETE_START_PC..=DESERT_PRAYER_IRIS_STATE4_TAIL_START_PC)
+        .contains(&pc)
+    {
+        zelda3::DesertPrayerIrisProgress::LoopComplete
+    } else {
+        return Err(format!(
+            "Snes9x Desert Prayer iris NMI stopped at unsupported source statement ${pc:06x}",
+        ));
+    };
+    Ok(Some(MainLoopInterruption::DesertPrayerIris {
+        source_subsubmodule,
+        palette_countdown,
+        radius,
+        progress,
+    }))
+}
+
+fn desert_prayer_table_word_from_x(x: Option<u16>) -> Result<u16, String> {
+    let x = x.ok_or("Snes9x Desert Prayer iris checkpoint omitted source cursor X")?;
+    if x & 1 != 0 {
+        return Err(format!(
+            "Snes9x Desert Prayer iris checkpoint used odd table byte cursor ${x:04x}",
+        ));
+    }
+    Ok(x / 2)
+}
+
+fn desert_prayer_primary_table_word_after_store(
+    pc: u32,
+    x: Option<u16>,
+    link_y: Option<u16>,
+    bg2_v: Option<u16>,
+    y_buffer: u8,
+) -> Result<u16, String> {
+    if pc <= 0x07eb26 {
+        return desert_prayer_table_word_from_x(x);
+    }
+    desert_prayer_radial_primary_table_word(link_y, bg2_v, y_buffer)
+}
+
+fn desert_prayer_radial_primary_table_word(
+    link_y: Option<u16>,
+    bg2_v: Option<u16>,
+    y_buffer: u8,
+) -> Result<u16, String> {
+    let r14 = link_y
+        .ok_or("Snes9x Desert Prayer iris checkpoint omitted Link Y")?
+        .wrapping_sub(bg2_v.ok_or("Snes9x Desert Prayer iris checkpoint omitted BG2 Y")?)
+        .wrapping_add(12);
+    Ok(r14.wrapping_sub(u16::from(y_buffer)).wrapping_sub(1))
+}
+
+fn desert_prayer_scanline_before_iteration(
+    pc: u32,
+    link_y: Option<u16>,
+    bg2_v: Option<u16>,
+    radius: Option<u16>,
+    y_buffer: u8,
+    a: Option<u16>,
+    x: Option<u16>,
+    y: Option<u16>,
+) -> Result<u16, String> {
+    if pc >= DESERT_PRAYER_IRIS_RADIAL_BRANCH_START_PC {
+        let r14 = link_y
+            .ok_or("Snes9x Desert Prayer iris checkpoint omitted Link Y")?
+            .wrapping_sub(bg2_v.ok_or("Snes9x Desert Prayer iris checkpoint omitted BG2 Y")?)
+            .wrapping_add(12);
+        let lower = r14.wrapping_sub(
+            radius.ok_or("Snes9x Desert Prayer iris checkpoint omitted source radius")?,
+        );
+        return Ok(lower.wrapping_add(u16::from(y_buffer)).wrapping_sub(1));
+    }
+    if pc >= 0x07ea6f {
+        return a.ok_or_else(|| {
+            "Snes9x Desert Prayer iris checkpoint omitted scanline accumulator A".to_string()
+        });
+    }
+    let r14 = link_y
+        .ok_or("Snes9x Desert Prayer iris checkpoint omitted Link Y")?
+        .wrapping_sub(bg2_v.ok_or("Snes9x Desert Prayer iris checkpoint omitted BG2 Y")?)
+        .wrapping_add(12);
+    let lower = r14
+        .wrapping_sub(radius.ok_or("Snes9x Desert Prayer iris checkpoint omitted source radius")?);
+    let initial = if lower & 0x8000 != 0 { lower } else { 0 };
+    // Once the source has loaded `spotlight_y_lower`, a negative lower bound
+    // forces the radial branch for every live iteration.  X and Y are still
+    // scratch registers left by the preceding call/host at this boundary;
+    // the persistent `spotlight_var4` cursor is the source authority for r4.
+    if lower & 0x8000 != 0 && pc >= 0x07ea68 {
+        return Ok(lower.wrapping_add(u16::from(y_buffer)).wrapping_sub(1));
+    }
+    if !matches!(y, Some(0 | 0xff)) {
+        return Ok(initial);
+    }
+    let previous_table_word = desert_prayer_table_word_from_x(x)?;
+    let upper = lower.wrapping_add(radius.unwrap() * 2);
+    if previous_table_word < lower || previous_table_word >= upper {
+        return Ok(previous_table_word.wrapping_add(2));
+    }
+    if previous_table_word == r14.wrapping_add(u16::from(y_buffer)).wrapping_sub(3) {
+        return Ok(lower.wrapping_add(u16::from(y_buffer)).wrapping_sub(1));
+    }
+    Err(format!(
+        "Snes9x Desert Prayer iris checkpoint cannot derive the next scanline from in-window cursor X=${:04x}",
+        x.unwrap(),
+    ))
+}
+
+fn desert_prayer_palette_filter_interruption(
+    pc: u32,
+    main: Option<u8>,
+    sub: Option<u8>,
+    subsub: Option<u8>,
+    palette_countdown: Option<u8>,
+    x: Option<u16>,
+) -> Result<Option<MainLoopInterruption>, String> {
+    if (main, sub, subsub) != (Some(0x0e), Some(5), Some(3))
+        || !(PALETTE_FILTER_BEFORE_COLOR_LOAD_PC..=PALETTE_FILTER_BEFORE_COLOR_STORE_PC)
+            .contains(&pc)
+    {
+        return Ok(None);
+    }
+    let countdown = palette_countdown
+        .ok_or("Snes9x Desert Prayer palette checkpoint omitted source countdown")?;
+    let x = x.ok_or("Snes9x Desert Prayer palette checkpoint omitted source cursor X")?;
+    if x & 1 != 0 {
+        return Err(format!(
+            "Snes9x Desert Prayer palette checkpoint used odd byte cursor ${x:04x}",
+        ));
+    }
+    let next_color = u8::try_from(x / 2)
+        .map_err(|_| format!("Snes9x Desert Prayer palette cursor exceeded one byte: ${x:04x}"))?;
+    if !((0x20..=0xd8).contains(&next_color) || (0xe0..=0xf0).contains(&next_color)) {
+        return Err(format!(
+            "Snes9x Desert Prayer palette checkpoint used invalid next color ${next_color:02x}",
+        ));
+    }
+    Ok(Some(
+        MainLoopInterruption::DesertPrayerPaletteFilterBeforeColor {
+            countdown,
+            next_color,
+        },
     ))
 }
 
@@ -3382,6 +5941,18 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainAfterSlot(slot) => {
                     Some(SpriteMainProgress::AfterSlot(slot))
                 }
+                MainLoopInterruption::SpriteMainAfterTimersAndOam(slot) => {
+                    Some(SpriteMainProgress::AfterTimersAndOam(slot))
+                }
+                MainLoopInterruption::SpriteMainAfterTimerDecrements(slot) => {
+                    Some(SpriteMainProgress::AfterTimerDecrements(slot))
+                }
+                MainLoopInterruption::SpriteMainAfterPrimaryTimerDecrements(slot) => {
+                    Some(SpriteMainProgress::AfterPrimaryTimerDecrements(slot))
+                }
+                MainLoopInterruption::SpriteMainAfterMainAndAux1TimerDecrements(slot) => {
+                    Some(SpriteMainProgress::AfterMainAndAux1TimerDecrements(slot))
+                }
                 MainLoopInterruption::SpriteMainAfterActiveCuccoX {
                     slot,
                     helper_ordinal,
@@ -3415,6 +5986,42 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(slot) => {
                     Some(SpriteMainProgress::BigKeyDropGraphicsStarted(slot))
                 }
+                MainLoopInterruption::SpriteMainBonkItemGraphicsStarted(slot) => {
+                    Some(SpriteMainProgress::BonkItemGraphicsStarted(slot))
+                }
+                MainLoopInterruption::SpriteMainProbeAfterOamCoordinates(slot) => {
+                    Some(SpriteMainProgress::ProbeAfterOamCoordinates(slot))
+                }
+                MainLoopInterruption::SpriteMainInitializeResetProperties {
+                    slot,
+                    phase,
+                    completed_stores,
+                } => Some(SpriteMainProgress::InitializeResetProperties {
+                    slot,
+                    phase,
+                    completed_stores,
+                }),
+                MainLoopInterruption::SpriteMainInitializeLoadProperties {
+                    slot,
+                    phase,
+                    completed_stores,
+                } => Some(SpriteMainProgress::InitializeLoadProperties {
+                    slot,
+                    phase,
+                    completed_stores,
+                }),
+                MainLoopInterruption::SpriteMainFireDebirandoBeforeSpawn(slot) => {
+                    Some(SpriteMainProgress::FireDebirandoBeforeSpawn(slot))
+                }
+                MainLoopInterruption::SpriteMainFireDebirandoSpawn {
+                    slot,
+                    spawned_slot,
+                    progress,
+                } => Some(SpriteMainProgress::FireDebirandoSpawn {
+                    slot,
+                    spawned_slot,
+                    progress,
+                }),
                 _ => None,
             };
             if let Some(progress) = progress {
@@ -3464,6 +6071,93 @@ fn sprite_disable_progress(
     Ok(progress)
 }
 
+fn dungeon_load_single_sprite_write_progress(
+    pc: u32,
+    address: u16,
+    x: Option<u16>,
+) -> Result<Option<(u8, DungeonSpriteLoadCheckpoint)>, String> {
+    let slot =
+        u8::try_from(x.ok_or("Snes9x Dungeon_LoadSingleSprite field write omitted source slot X")?)
+            .map_err(|_| "Snes9x Dungeon_LoadSingleSprite source slot exceeded one byte")?;
+    if slot >= 16 {
+        return Err(format!(
+            "Snes9x Dungeon_LoadSingleSprite used invalid source slot {slot}",
+        ));
+    }
+    let indexed = |base: u16| address == base + u16::from(slot);
+    let checkpoint = match pc {
+        DUNGEON_LOAD_SINGLE_SPRITE_TEMP_Y_PC if address == DUNGEON_LOAD_TEMP_Y => {
+            DungeonSpriteLoadCheckpoint::TempY
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_FLOOR_PC if indexed(SPRITE_FLOOR_BASE) => {
+            DungeonSpriteLoadCheckpoint::Floor
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_Y_LOW_PC if indexed(SPRITE_Y_LOW_BASE) => {
+            DungeonSpriteLoadCheckpoint::YLow
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_Y_HIGH_PC if indexed(SPRITE_Y_HIGH_BASE) => {
+            DungeonSpriteLoadCheckpoint::YHigh
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_SHARED_X_PC if address == DUNGEON_LOAD_SHARED_X => {
+            DungeonSpriteLoadCheckpoint::SharedX
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_X_LOW_PC if indexed(SPRITE_X_LOW_BASE) => {
+            DungeonSpriteLoadCheckpoint::XLow
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_X_HIGH_PC if indexed(SPRITE_X_HIGH_BASE) => {
+            DungeonSpriteLoadCheckpoint::XHigh
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_TYPE_PC if indexed(SPRITE_TYPE_BASE) => {
+            DungeonSpriteLoadCheckpoint::Type
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_CLEAR_PC if indexed(SPRITE_SUBTYPE_BASE) => {
+            DungeonSpriteLoadCheckpoint::SubtypeClear
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_TEMP_SUBTYPE_PC if address == DUNGEON_LOAD_TEMP_Y => {
+            DungeonSpriteLoadCheckpoint::TempSubtype
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_FINAL_PC if indexed(SPRITE_SUBTYPE_BASE) => {
+            DungeonSpriteLoadCheckpoint::SubtypeFinal
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_SPAWN_INDEX_PC
+            if (SPRITE_N_WORD_BASE..SPRITE_N_WORD_BASE + 16).contains(&address)
+                && indexed(SPRITE_N_WORD_BASE) =>
+        {
+            DungeonSpriteLoadCheckpoint::SpawnIndex
+        }
+        DUNGEON_LOAD_SINGLE_SPRITE_COMPLETE_PC if indexed(SPRITE_DIE_ACTION_BASE) => {
+            DungeonSpriteLoadCheckpoint::Complete
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some((slot, checkpoint)))
+}
+
+fn dungeon_reset_sprites_caller_progress(
+    event: &RawTraceEvent,
+) -> Option<DungeonResetSpritesCpuProgress> {
+    let pc = event.pc? & 0x00ff_ffff;
+    if (DUNGEON_RESET_SPRITES_AFTER_DISABLE_PC..DUNGEON_RESET_SPRITES_COLLISION_Y_STORE_PC)
+        .contains(&pc)
+    {
+        Some(DungeonResetSpritesCpuProgress::SpritesDisabled)
+    } else if (DUNGEON_RESET_SPRITES_COLLISION_Y_STORE_PC
+        ..DUNGEON_RESET_SPRITES_HISTORY_SEARCH_START_PC)
+        .contains(&pc)
+    {
+        Some(DungeonResetSpritesCpuProgress::CollisionXSizeSet)
+    } else if (DUNGEON_RESET_SPRITES_HISTORY_SEARCH_START_PC
+        ..DUNGEON_RESET_SPRITES_HISTORY_FIRST_MUTATION_PC)
+        .contains(&pc)
+        || (DUNGEON_RESET_SPRITES_HISTORY_FOUND_PC..DUNGEON_RESET_SPRITES_LOAD_CALL_PC)
+            .contains(&pc)
+    {
+        Some(DungeonResetSpritesCpuProgress::RoomHistorySearchStarted)
+    } else {
+        None
+    }
+}
+
 fn cached_sprite_live_field(address: u16) -> Option<(usize, u8)> {
     CACHED_SPRITE_LIVE_FIELDS
         .iter()
@@ -3496,6 +6190,251 @@ mod tests {
     use super::*;
 
     const NMI_HANDLER_COMPLETE_PC: u32 = NMI_HANDLER_COMPLETE_PCS[0];
+
+    #[test]
+    fn desert_prayer_iris_exports_source_statement_progress() {
+        assert_eq!(
+            desert_prayer_iris_interruption(
+                0x07eb31,
+                Some(0x0e),
+                Some(5),
+                Some(2),
+                Some(0x26),
+                Some(22),
+                Some(0),
+                Some(3472),
+                Some(3374),
+                Some(130),
+                Some(131),
+                Some(255),
+            )
+            .unwrap(),
+            Some(MainLoopInterruption::DesertPrayerIris {
+                source_subsubmodule: 2,
+                palette_countdown: 0,
+                radius: 0x26,
+                progress: zelda3::DesertPrayerIrisProgress::AfterPrimaryTableWrite {
+                    table_word: 87,
+                    y_buffer: 22,
+                },
+            }),
+        );
+        assert_eq!(
+            desert_prayer_iris_interruption(
+                0x07ed1d,
+                Some(0x0e),
+                Some(5),
+                Some(4),
+                Some(187),
+                Some(69),
+                Some(0),
+                Some(3472),
+                Some(3374),
+                Some(0),
+                Some(80),
+                Some(255),
+            )
+            .unwrap(),
+            Some(MainLoopInterruption::DesertPrayerIris {
+                source_subsubmodule: 4,
+                palette_countdown: 0,
+                radius: 187,
+                progress: zelda3::DesertPrayerIrisProgress::BeforePrimaryTableWrite {
+                    table_word: 40,
+                    y_buffer: 69,
+                },
+            }),
+        );
+        assert_eq!(
+            desert_prayer_iris_interruption(
+                0x07ea6b,
+                Some(0x0e),
+                Some(5),
+                Some(4),
+                Some(115),
+                Some(1),
+                Some(0),
+                Some(3472),
+                Some(3374),
+                Some(0xfffb),
+                Some(352),
+                Some(0xff),
+            )
+            .unwrap(),
+            Some(MainLoopInterruption::DesertPrayerIris {
+                source_subsubmodule: 4,
+                palette_countdown: 0,
+                radius: 115,
+                progress: zelda3::DesertPrayerIrisProgress::BeforeIteration { scanline: 0xfffb },
+            }),
+        );
+        assert_eq!(
+            desert_prayer_iris_interruption(
+                0x07eb03,
+                Some(0x0e),
+                Some(5),
+                Some(3),
+                Some(0x26),
+                Some(1),
+                Some(11),
+                Some(3472),
+                Some(3374),
+                Some(0xffff),
+                Some(444),
+                Some(255),
+            )
+            .unwrap(),
+            Some(MainLoopInterruption::DesertPrayerIris {
+                source_subsubmodule: 3,
+                palette_countdown: 11,
+                radius: 0x26,
+                progress: zelda3::DesertPrayerIrisProgress::BeforePrimaryTableWrite {
+                    table_word: 222,
+                    y_buffer: 1,
+                },
+            }),
+        );
+        assert_eq!(
+            desert_prayer_iris_interruption(
+                0x07ea66,
+                Some(0x0e),
+                Some(5),
+                Some(4),
+                Some(0x26),
+                Some(34),
+                Some(0),
+                Some(3472),
+                Some(3374),
+                Some(0x0100),
+                Some(0x011a),
+                Some(0x00ff),
+            )
+            .unwrap(),
+            Some(MainLoopInterruption::DesertPrayerIris {
+                source_subsubmodule: 4,
+                palette_countdown: 0,
+                radius: 0x26,
+                progress: zelda3::DesertPrayerIrisProgress::BeforeIteration { scanline: 105 },
+            }),
+        );
+        assert_eq!(
+            desert_prayer_iris_interruption(
+                0x07eaa1,
+                Some(0x0e),
+                Some(5),
+                Some(4),
+                Some(0x26),
+                Some(35),
+                Some(0),
+                Some(3472),
+                Some(3374),
+                Some(0),
+                Some(117),
+                Some(0),
+            )
+            .unwrap(),
+            Some(MainLoopInterruption::DesertPrayerIris {
+                source_subsubmodule: 4,
+                palette_countdown: 0,
+                radius: 0x26,
+                progress: zelda3::DesertPrayerIrisProgress::BeforePrimaryTableWrite {
+                    table_word: 74,
+                    y_buffer: 35,
+                },
+            }),
+        );
+        assert_eq!(
+            desert_prayer_iris_interruption(
+                0x07ea9e,
+                Some(0x0e),
+                Some(5),
+                Some(4),
+                Some(0x26),
+                Some(35),
+                Some(0),
+                Some(3472),
+                Some(3374),
+                Some(0),
+                Some(117),
+                Some(0),
+            )
+            .unwrap(),
+            Some(MainLoopInterruption::DesertPrayerIris {
+                source_subsubmodule: 4,
+                palette_countdown: 0,
+                radius: 0x26,
+                progress: zelda3::DesertPrayerIrisProgress::BeforeIteration { scanline: 106 },
+            }),
+        );
+        assert_eq!(
+            desert_prayer_iris_interruption(
+                0x07ea77,
+                Some(0x0e),
+                Some(5),
+                Some(4),
+                Some(51),
+                Some(40),
+                Some(0),
+                Some(3472),
+                Some(3374),
+                Some(98),
+                Some(294),
+                Some(200),
+            )
+            .unwrap(),
+            Some(MainLoopInterruption::DesertPrayerIris {
+                source_subsubmodule: 4,
+                palette_countdown: 0,
+                radius: 51,
+                progress: zelda3::DesertPrayerIrisProgress::BeforeIteration { scanline: 98 },
+            }),
+        );
+        assert!(desert_prayer_iris_interruption(
+            0x07eb31,
+            Some(0x0e),
+            Some(5),
+            Some(2),
+            Some(0x25),
+            Some(22),
+            Some(0),
+            Some(3472),
+            Some(3374),
+            Some(130),
+            Some(131),
+            Some(255),
+        )
+        .unwrap_err()
+        .contains("expected $26"));
+    }
+
+    #[test]
+    fn desert_prayer_palette_filter_exports_next_source_color() {
+        assert_eq!(
+            desert_prayer_palette_filter_interruption(
+                0x00e9e4,
+                Some(0x0e),
+                Some(5),
+                Some(3),
+                Some(0),
+                Some(0x01aa),
+            )
+            .unwrap(),
+            Some(MainLoopInterruption::DesertPrayerPaletteFilterBeforeColor {
+                countdown: 0,
+                next_color: 213,
+            }),
+        );
+        assert!(desert_prayer_palette_filter_interruption(
+            0x00e9e4,
+            Some(0x0e),
+            Some(5),
+            Some(3),
+            None,
+            Some(0x01aa),
+        )
+        .unwrap_err()
+        .contains("omitted source countdown"));
+    }
 
     #[test]
     fn semantic_trace_configuration_observes_acceptance_publication_and_context_resume() {
@@ -3910,11 +6849,86 @@ mod tests {
     }
 
     #[test]
+    fn nmi_inside_aux2_load_publishes_main_and_aux1_countdowns() {
+        let mut execution = SpriteMainExecutionTracker {
+            current_slot: Some(0),
+            last_completed_slot: Some(1),
+            ..SpriteMainExecutionTracker::default()
+        };
+        let nmi = raw(
+            "nmi",
+            Some(SPRITE_MAIN_AND_AUX1_TIMER_DECREMENTS_COMPLETE_START_PC + 2),
+            Some(0),
+            None,
+        );
+
+        execution
+            .observe_main_and_aux1_timer_decrements(&nmi)
+            .unwrap();
+
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::AfterMainAndAux1TimerDecrements(0),
+        );
+        assert_eq!(
+            execution.interruption(),
+            MainLoopInterruption::SpriteMainAfterMainAndAux1TimerDecrements(0),
+        );
+    }
+
+    #[test]
+    fn host_return_inside_hit_timer_load_publishes_primary_countdowns() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        for (pc, x) in [
+            (SPRITE_MAIN_ENTRY_PC, None),
+            (SPRITE_EXECUTE_SINGLE_ENTRY_PC, Some(0)),
+        ] {
+            source
+                .consume_event(raw("pc", Some(pc), x, None), &mut receipts)
+                .unwrap();
+        }
+        let returned = raw(
+            "frame",
+            Some(SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_START_PC + 4),
+            Some(0),
+            None,
+        );
+        source
+            .sprite_main_execution
+            .as_mut()
+            .unwrap()
+            .observe_primary_timer_decrements(&returned)
+            .unwrap();
+
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::AfterPrimaryTimerDecrements(0),
+            )],
+        );
+    }
+
+    #[test]
     fn host_return_coalesces_resumed_sprite_progress_to_the_latest_checkpoint() {
         let mut source = empty_semantic_tracker();
         source.sprite_main_execution = Some(SpriteMainExecutionTracker {
             current_slot: Some(2),
             last_completed_slot: Some(3),
+            timers_and_oam_slot: None,
+            timers_and_oam_dispatch_state: None,
+            initialize_reset_properties: None,
+            initialize_load_properties: None,
+            fire_debirando_property_reload: false,
+            fire_debirando_before_spawn_slot: None,
+            fire_debirando_spawn: None,
+            antfairy_subtype2_increment_slot: None,
+            timer_decrements_slot: None,
+            primary_timer_decrements_slot: None,
+            main_and_aux1_timer_decrements_slot: None,
+            bari_before_random_slot: None,
             throwable_scenery_state_clear_slot: None,
             cucco_subtype_increments: None,
             cucco_helper_ordinal: 0,
@@ -3925,6 +6939,12 @@ mod tests {
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
+            bonk_item_graphics_slot: None,
+            single_small_draw_position_slot: None,
+            probe_after_oam_coordinates_slot: None,
+            wallmaster_reset_prefix_slot: None,
+            zazak_graphics_slot: None,
+            follower_graphics: None,
         });
         let mut receipts = vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
             SpriteMainProgress::AfterSlot(4),
@@ -3997,12 +7017,7 @@ mod tests {
                 &mut receipts,
             )
             .unwrap();
-        let mut graphics_entry = raw(
-            "pc",
-            Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC),
-            None,
-            None,
-        );
+        let mut graphics_entry = raw("pc", Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC), None, None);
         graphics_entry.return_address = Some(ZORA_FLIPPERS_GRAPHICS_RETURN_ADDRESS);
         source.consume_event(graphics_entry, &mut receipts).unwrap();
 
@@ -4023,6 +7038,42 @@ mod tests {
     }
 
     #[test]
+    fn bonk_item_decoder_entry_becomes_a_typed_partial_slot_checkpoint() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(0), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut graphics_entry = raw("pc", Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC), None, None);
+        graphics_entry.return_address = Some(BONK_ITEM_GRAPHICS_RETURN_ADDRESS);
+        source.consume_event(graphics_entry, &mut receipts).unwrap();
+
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::BonkItemGraphicsStarted(0),
+            )],
+        );
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .map(|execution| execution.interruption()),
+            Some(MainLoopInterruption::SpriteMainBonkItemGraphicsStarted(0)),
+        );
+    }
+
+    #[test]
     fn shared_animated_decode_without_king_zora_return_address_is_not_flippers_progress() {
         let mut source = empty_semantic_tracker();
         source.sprite_main_execution = Some(SpriteMainExecutionTracker {
@@ -4030,12 +7081,7 @@ mod tests {
             ..SpriteMainExecutionTracker::default()
         });
         let mut receipts = Vec::new();
-        let mut graphics_entry = raw(
-            "pc",
-            Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC),
-            None,
-            None,
-        );
+        let mut graphics_entry = raw("pc", Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC), None, None);
         graphics_entry.return_address = Some(0x1d_e000);
 
         source.consume_event(graphics_entry, &mut receipts).unwrap();
@@ -4308,6 +7354,454 @@ mod tests {
     }
 
     #[test]
+    fn single_small_draw_nmi_exports_the_published_position_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(15), None),
+            raw(
+                "nmi",
+                Some(SPRITE_SINGLE_SMALL_AFTER_POSITION_PC),
+                Some(15),
+                None,
+            ),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(15),
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::AfterSingleSmallDrawPosition(15),
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn guard_probe_nmi_exports_the_completed_oam_coordinate_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(8), None),
+            raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(8), None),
+            raw(
+                "nmi",
+                Some(SPRITE_PROBE_AFTER_OAM_COORDINATES_PC),
+                Some(8),
+                None,
+            ),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainProbeAfterOamCoordinates(8),
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::ProbeAfterOamCoordinates(8),
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn state8_property_reset_nmi_exports_the_exact_completed_store_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(1), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut timers_return = raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(1), None);
+        timers_return.stack1 = Some(8);
+        source.consume_event(timers_return, &mut receipts).unwrap();
+        let mut nmi = raw("nmi", Some(0x0db8ad), Some(1), None);
+        nmi.return_address = Some(SPRITE_PREP_LOAD_PROPERTIES_AFTER_RESET_RETURN_ADDRESS);
+        source.consume_event(nmi, &mut receipts).unwrap();
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainInitializeResetProperties {
+                        slot: 1,
+                        phase: SpriteInitializeResetPropertiesPhase::InitialPropertyLoad,
+                        completed_stores: 20,
+                    },
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::InitializeResetProperties {
+                        slot: 1,
+                        phase: SpriteInitializeResetPropertiesPhase::InitialPropertyLoad,
+                        completed_stores: 20,
+                    },
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn fire_debirando_nested_property_reset_exports_its_source_phase() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(1), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut timers_return = raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(1), None);
+        timers_return.stack1 = Some(8);
+        source.consume_event(timers_return, &mut receipts).unwrap();
+        let mut conversion = raw(
+            "wram-write",
+            Some(SPRITE_PREP_FIRE_DEBIRANDO_TYPE_STORE_PC),
+            Some(1),
+            Some(SPRITE_TYPE_BASE + 1),
+        );
+        conversion.value = Some(0x63);
+        source.consume_event(conversion, &mut receipts).unwrap();
+        let mut nmi = raw("nmi", Some(0x0db874), Some(1), None);
+        nmi.return_address = Some(SPRITE_PREP_LOAD_PROPERTIES_AFTER_RESET_RETURN_ADDRESS);
+        source.consume_event(nmi, &mut receipts).unwrap();
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainInitializeResetProperties {
+                        slot: 1,
+                        phase: SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion,
+                        completed_stores: 1,
+                    },
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::InitializeResetProperties {
+                        slot: 1,
+                        phase: SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion,
+                        completed_stores: 1,
+                    },
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn fire_debirando_property_load_exports_its_source_store_cursor() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(0), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut timers_return = raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(0), None);
+        timers_return.stack1 = Some(8);
+        source.consume_event(timers_return, &mut receipts).unwrap();
+        let mut conversion = raw(
+            "wram-write",
+            Some(SPRITE_PREP_FIRE_DEBIRANDO_TYPE_STORE_PC),
+            Some(0),
+            Some(SPRITE_TYPE_BASE),
+        );
+        conversion.value = Some(0x63);
+        source.consume_event(conversion, &mut receipts).unwrap();
+        let returned = raw(
+            "frame",
+            Some(SPRITE_PREP_LOAD_PROPERTIES_AFTER_FLAGS3_PC),
+            Some(0),
+            None,
+        );
+        source
+            .sprite_main_execution
+            .as_mut()
+            .unwrap()
+            .observe_initialize_load_properties(&returned)
+            .unwrap();
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::InitializeLoadProperties {
+                    slot: 0,
+                    phase: SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion,
+                    completed_stores: 9,
+                },
+            )],
+        );
+    }
+
+    #[test]
+    fn fire_debirando_spawn_scan_exports_the_completed_initializer_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(0), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut timers_return = raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(0), None);
+        timers_return.stack1 = Some(8);
+        source.consume_event(timers_return, &mut receipts).unwrap();
+        let mut conversion = raw(
+            "wram-write",
+            Some(SPRITE_PREP_FIRE_DEBIRANDO_TYPE_STORE_PC),
+            Some(0),
+            Some(SPRITE_TYPE_BASE),
+        );
+        conversion.value = Some(0x63);
+        source.consume_event(conversion, &mut receipts).unwrap();
+        let mut returned = raw(
+            "frame",
+            Some(SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC),
+            Some(0),
+            None,
+        );
+        returned.return_address = Some(SPRITE_PREP_FIRE_DEBIRANDO_SPAWN_RETURN_ADDRESS);
+        source
+            .sprite_main_execution
+            .as_mut()
+            .unwrap()
+            .observe_fire_debirando_before_spawn(&returned)
+            .unwrap();
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::FireDebirandoBeforeSpawn(0),
+            )],
+        );
+    }
+
+    #[test]
+    fn fire_debirando_dynamic_spawn_exports_the_exact_source_publication() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(0), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut timers_return = raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(0), None);
+        timers_return.stack1 = Some(8);
+        source.consume_event(timers_return, &mut receipts).unwrap();
+        let mut conversion = raw(
+            "wram-write",
+            Some(SPRITE_PREP_FIRE_DEBIRANDO_TYPE_STORE_PC),
+            Some(0),
+            Some(SPRITE_TYPE_BASE),
+        );
+        conversion.value = Some(0x63);
+        source.consume_event(conversion, &mut receipts).unwrap();
+
+        let mut child_type = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC),
+            Some(0),
+            Some(SPRITE_TYPE_BASE + 15),
+        );
+        child_type.y = Some(15);
+        child_type.value = Some(0x64);
+        source.consume_event(child_type, &mut receipts).unwrap();
+        let mut child_state = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_STATE_STORE_PC),
+            Some(0),
+            Some(SPRITE_STATE_BASE + 15),
+        );
+        child_state.y = Some(15);
+        child_state.value = Some(9);
+        source.consume_event(child_state, &mut receipts).unwrap();
+        let mut child_floor = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_FLOOR_STORE_PC),
+            Some(0),
+            Some(SPRITE_FLOOR_BASE + 15),
+        );
+        child_floor.y = Some(15);
+        source.consume_event(child_floor, &mut receipts).unwrap();
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::FireDebirandoSpawn {
+                    slot: 0,
+                    spawned_slot: 15,
+                    progress: SpriteDynamicSpawnProgress::FloorPublished,
+                },
+            )],
+        );
+    }
+
+    #[test]
+    fn timer_oam_return_nmi_exports_the_generic_completed_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(10), None),
+            raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(10), None),
+            raw("nmi", Some(0x069276), Some(10), None),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainAfterTimersAndOam(10),
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::AfterTimersAndOam(10),
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn timer_decrement_nmi_exports_the_completed_countdown_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(0), None),
+            // The route frontier returns from retro_run at `$06:84A8`, after
+            // countdowns and before the suffix's conditional floor branch.
+            raw(
+                "nmi",
+                Some(SPRITE_TIMER_DECREMENTS_COMPLETE_START_PC + 4),
+                Some(0),
+                None,
+            ),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainAfterTimerDecrements(0),
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::AfterTimerDecrements(0),
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn wallmaster_reset_nmi_exports_the_fixed_reset_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(12), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut nmi = raw(
+            "nmi",
+            Some(WALLMASTER_RESET_AFTER_FIXED_PREFIX_PC),
+            None,
+            None,
+        );
+        nmi.return_address = Some(WALLMASTER_AFTER_SPRITE_RESET_PC);
+        source.consume_event(nmi, &mut receipts).unwrap();
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(12),
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::AfterWallmasterResetPrefix(12),
+                ),
+            ],
+        );
+    }
+
+    #[test]
     fn sprite_main_host_return_exports_throwable_scenery_state_clear() {
         let mut source = empty_semantic_tracker();
         let mut receipts = Vec::new();
@@ -4331,10 +7825,7 @@ mod tests {
             serde_json::from_slice(&serde_json::to_vec(&source.checkpoint()).unwrap()).unwrap();
         let mut resumed = empty_semantic_tracker();
         resumed.restore_checkpoint(checkpoint).unwrap();
-        resumed.flush_host_boundary_progress(
-            &mut receipts,
-            OriginalTimingBoundary::HostReturn,
-        );
+        resumed.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
 
         assert_eq!(
             receipts,
@@ -4369,6 +7860,94 @@ mod tests {
                 OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
                 OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     MainLoopInterruption::SpriteMainAfterThrowableSceneryStateClear(6),
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn cached_sprite_nmi_exports_antfairy_subtype_increment() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for &address in &CACHED_SPRITE_LIVE_FIELDS {
+            source
+                .consume_event(
+                    raw(
+                        "wram-write",
+                        Some(UNCACHE_SPRITE_START_PC),
+                        Some(1),
+                        Some(address + 1),
+                    ),
+                    &mut receipts,
+                )
+                .unwrap();
+        }
+        source
+            .consume_event(
+                raw(
+                    "wram-write",
+                    Some(ANTFAIRY_SUBTYPE2_INCREMENT_PC),
+                    Some(1),
+                    Some(SPRITE_SUBTYPE2_BASE + 1),
+                ),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("nmi", Some(0x05_dfb5), Some(0x08e8), None),
+                &mut receipts,
+            )
+            .unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(
+                    CachedSpriteExecutionProgressReceipt {
+                        progress: CachedSpriteExecutionProgress::Executing {
+                            slot: 1,
+                            progress:
+                                CachedSpriteExecutionBodyProgress::AfterAntfairySubtype2Increment,
+                        },
+                        boundary: OriginalTimingBoundary::NmiAccepted,
+                    },
+                ),
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+            ],
+        );
+    }
+
+    #[test]
+    fn sprite_main_nmi_exports_antfairy_subtype_increment() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(1), None),
+            raw(
+                "wram-write",
+                Some(ANTFAIRY_SUBTYPE2_INCREMENT_PC),
+                Some(1),
+                Some(SPRITE_SUBTYPE2_BASE + 1),
+            ),
+            raw("nmi", Some(0x06_e465), Some(1), None),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(1),
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::AfterAntfairySubtype2Increment(1),
                 ),
             ],
         );
@@ -4508,6 +8087,265 @@ mod tests {
         );
     }
 
+    #[test]
+    fn preemptive_poly_render_start_is_module_scoped_source_authority() {
+        for main in [0x07, 0x0e, 0x19] {
+            let mut source = empty_semantic_tracker();
+            let mut receipts = Vec::new();
+            let mut event = raw("pc", Some(POLYHEDRAL_RENDER_START_PC), None, None);
+            event.main = Some(main);
+            source.consume_event(event, &mut receipts).unwrap();
+            assert_eq!(
+                receipts,
+                vec![OriginalTimingSemanticReceipt::PreemptivePolyhedralRenderStarted],
+            );
+        }
+
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut title_event = raw("pc", Some(POLYHEDRAL_RENDER_START_PC), None, None);
+        title_event.main = Some(0x00);
+        source.consume_event(title_event, &mut receipts).unwrap();
+        assert!(receipts.is_empty());
+    }
+
+    #[test]
+    fn dungeon_reset_caller_pc_maps_to_the_last_published_source_statement() {
+        let cases = [
+            (
+                DUNGEON_RESET_SPRITES_AFTER_DISABLE_PC,
+                DungeonResetSpritesCpuProgress::SpritesDisabled,
+            ),
+            (
+                DUNGEON_RESET_SPRITES_COLLISION_Y_STORE_PC,
+                DungeonResetSpritesCpuProgress::CollisionXSizeSet,
+            ),
+            (
+                DUNGEON_RESET_SPRITES_HISTORY_SEARCH_START_PC,
+                DungeonResetSpritesCpuProgress::RoomHistorySearchStarted,
+            ),
+            (
+                0x09_c137,
+                DungeonResetSpritesCpuProgress::RoomHistorySearchStarted,
+            ),
+            (
+                DUNGEON_RESET_SPRITES_HISTORY_FOUND_PC,
+                DungeonResetSpritesCpuProgress::RoomHistorySearchStarted,
+            ),
+        ];
+        for (pc, expected) in cases {
+            let event = raw("nmi", Some(pc), None, None);
+            assert_eq!(
+                dungeon_reset_sprites_caller_progress(&event),
+                Some(expected)
+            );
+        }
+        assert_eq!(
+            dungeon_reset_sprites_caller_progress(&raw(
+                "nmi",
+                Some(DUNGEON_RESET_SPRITES_HISTORY_FIRST_MUTATION_PC),
+                None,
+                None,
+            )),
+            None,
+        );
+    }
+
+    #[test]
+    fn falling_entrance_control_writes_publish_source_stages_without_cpu_provenance() {
+        let cases = [
+            (
+                FALLING_ENTRANCE_ROOM_PARSER_SUBSUB_CLEAR_PC,
+                SUBSUBMODULE_INDEX,
+                0,
+                DungeonFallingEntranceProgress::RoomParserClearedSubsubmodule,
+            ),
+            (
+                FALLING_ENTRANCE_SUBSUB_ADVANCE_PC,
+                SUBSUBMODULE_INDEX,
+                3,
+                DungeonFallingEntranceProgress::RoomLoadAdvancedSubsubmodule,
+            ),
+            (
+                FALLING_ENTRANCE_SONG_BANK_TAIL_PC,
+                SUBMODULE_INDEX,
+                7,
+                DungeonFallingEntranceProgress::SongBankTailEntered,
+            ),
+        ];
+
+        for (pc, address, value, expected) in cases {
+            let mut source = empty_semantic_tracker();
+            let mut receipts = Vec::new();
+            let mut event = raw("wram-write", Some(pc), None, Some(address));
+            event.main = Some(0x11);
+            event.value = Some(value);
+            source.consume_event(event, &mut receipts).unwrap();
+            assert_eq!(
+                receipts,
+                vec![OriginalTimingSemanticReceipt::DungeonFallingEntranceProgress(expected,)],
+            );
+        }
+
+        let mut source = empty_semantic_tracker();
+        let mut event = raw(
+            "wram-write",
+            Some(FALLING_ENTRANCE_ROOM_PARSER_SUBSUB_CLEAR_PC),
+            None,
+            Some(SUBSUBMODULE_INDEX),
+        );
+        event.main = Some(6);
+        let mut receipts = Vec::new();
+        source.consume_event(event, &mut receipts).unwrap();
+        assert!(
+            receipts.is_empty(),
+            "Module_PreDungeon's shared room-parser clear is not a falling-entrance publication",
+        );
+    }
+
+    #[test]
+    fn rescued_maiden_nmi_publishes_exact_source_order_tilemap_clear_prefix() {
+        let cases = [
+            (RESCUED_MAIDEN_TILEMAP_CLEAR_FIRST_STORE_PC, 0x03b4, 3792),
+            (RESCUED_MAIDEN_TILEMAP_CLEAR_SIXTH_STORE_PC, 0x03b4, 3797),
+            (RESCUED_MAIDEN_TILEMAP_CLEAR_FIRST_INX_PC, 0x03b4, 3800),
+            (RESCUED_MAIDEN_TILEMAP_CLEAR_SECOND_INX_PC, 0x03b5, 3800),
+            (RESCUED_MAIDEN_TILEMAP_CLEAR_COMPARE_PC, 0x03b6, 3800),
+            (RESCUED_MAIDEN_TILEMAP_CLEAR_BRANCH_PC, 0x0800, 8192),
+        ];
+
+        for (pc, x, completed_stores) in cases {
+            let mut source = empty_semantic_tracker();
+            let mut receipts = Vec::new();
+            let mut event = raw("nmi", Some(pc), Some(x), None);
+            event.main = Some(7);
+            event.sub = Some(0x18);
+            event.subsub = Some(0);
+            event.nmi_latch = Some(1);
+            source.consume_event(event, &mut receipts).unwrap();
+            assert_eq!(
+                receipts,
+                vec![
+                    OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                    OriginalTimingSemanticReceipt::RescuedMaidenTilemapClearProgress(
+                        RescuedMaidenTilemapClearProgressReceipt {
+                            completed_stores,
+                            boundary: OriginalTimingBoundary::NmiAccepted,
+                        },
+                    ),
+                ],
+            );
+        }
+
+        let mut source = empty_semantic_tracker();
+        let mut event = raw(
+            "nmi",
+            Some(RESCUED_MAIDEN_TILEMAP_CLEAR_SIXTH_STORE_PC),
+            Some(0x03b4),
+            None,
+        );
+        event.main = Some(7);
+        event.sub = Some(0x17);
+        event.subsub = Some(0);
+        assert!(source.consume_event(event, &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn rescued_maiden_follower_graphics_tracks_exact_sheet_cursors() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        let mut load = raw(
+            "pc",
+            Some(RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC),
+            None,
+            None,
+        );
+        load.main = Some(7);
+        load.sub = Some(0x18);
+        load.subsub = Some(10);
+        source.consume_event(load, &mut receipts).unwrap();
+
+        let mut first_entry = raw(
+            "pc",
+            Some(RESCUED_MAIDEN_FIRST_FOLLOWER_SHEET_ENTRY_PC),
+            None,
+            None,
+        );
+        first_entry.y = Some(0x66);
+        source.consume_event(first_entry, &mut receipts).unwrap();
+
+        let mut first_boundary = raw("nmi", Some(0x00_e843), None, None);
+        first_boundary.main = Some(7);
+        first_boundary.sub = Some(0x18);
+        first_boundary.subsub = Some(10);
+        first_boundary.nmi_latch = Some(1);
+        first_boundary.y = Some(1027);
+        source.consume_event(first_boundary, &mut receipts).unwrap();
+        assert_eq!(
+            source
+                .rescued_maiden_initialization
+                .unwrap()
+                .host_return_receipt()
+                .unwrap(),
+            RescuedMaidenInitializationProgressReceipt {
+                stage: RescuedMaidenInitializationStage::FirstFollowerSheet {
+                    completed_bytes: 1027,
+                },
+                boundary: OriginalTimingBoundary::HostReturn,
+            },
+        );
+
+        let mut tracker = RescuedMaidenInitializationTracker::first_sheet();
+        tracker.begin_second_sheet().unwrap();
+        let mut second_boundary = raw("frame", Some(0x00_e851), None, None);
+        second_boundary.y = Some(189);
+        tracker.observe_boundary(&second_boundary).unwrap();
+        assert_eq!(
+            tracker.host_return_receipt().unwrap().stage,
+            RescuedMaidenInitializationStage::SecondFollowerSheet {
+                completed_bytes: 189,
+            },
+        );
+
+        let mut after_store = raw("frame", Some(0x00_e7f4), None, None);
+        after_store.y = Some(1343);
+        tracker.observe_boundary(&after_store).unwrap();
+        assert_eq!(
+            tracker.host_return_receipt().unwrap().stage,
+            RescuedMaidenInitializationStage::SecondFollowerSheet {
+                completed_bytes: 1344,
+            },
+        );
+    }
+
+    #[test]
+    fn blind_maiden_body_follower_graphics_uses_its_exact_caller() {
+        let mut source = empty_semantic_tracker();
+        let mut execution = SpriteMainExecutionTracker::default();
+        execution.current_slot = Some(0);
+        source.sprite_main_execution = Some(execution);
+
+        let mut load = raw(
+            "pc",
+            Some(RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC),
+            Some(0),
+            None,
+        );
+        load.return_address = Some(SPRITE_BLIND_MAIDEN_BODY_FOLLOWER_GRAPHICS_RETURN_PC);
+        source.consume_event(load, &mut Vec::new()).unwrap();
+
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .unwrap()
+                .follower_graphics
+                .unwrap()
+                .0,
+            SpriteFollowerGraphicsCaller::BlindMaidenBody,
+        );
+    }
+
     fn raw(event: &str, pc: Option<u32>, x: Option<u16>, address: Option<u16>) -> RawTraceEvent {
         let pc = pc.or_else(|| matches!(event, "nmi" | "nmi-resume").then_some(0x008000));
         RawTraceEvent {
@@ -4517,10 +8355,12 @@ mod tests {
             pc,
             s: matches!(event, "nmi" | "nmi-resume").then_some(0x01ff),
             return_address: None,
+            stack1: None,
             a: None,
             main: None,
             sub: None,
             subsub: None,
+            room: None,
             frame_counter: None,
             nmi_latch: matches!(event, "nmi").then_some(0),
             link_y: None,
@@ -4528,6 +8368,7 @@ mod tests {
             bg2_h: None,
             spotlight_radius: None,
             spotlight_var4_low: None,
+            palette_countdown: None,
             spotlight_lower_cursor: None,
             joypad_high: None,
             joypad_low: None,
@@ -4539,6 +8380,144 @@ mod tests {
             value: address.map(|_| 0),
             nmi_ppu_register_operands: matches!(event, "nmi").then_some([0; 31]),
         }
+    }
+
+    #[test]
+    fn triforce_case2_palette_progress_uses_source_word_and_return_boundaries() {
+        let mut partial = raw(
+            "frame",
+            Some(PALETTE_LOAD_MULTIPLE_BEFORE_WORD_COPY_PC),
+            Some(0x00bc),
+            None,
+        );
+        partial.main = Some(0x19);
+        partial.sub = Some(0);
+        partial.subsub = Some(2);
+        partial.room = Some(0x0109);
+        assert_eq!(
+            triforce_room_case2_palette_progress(&partial, OriginalTimingBoundary::HostReturn,)
+                .unwrap(),
+            Some(TriforceRoomCase2PaletteProgressReceipt {
+                completed_ow_bg2_words: 5,
+                boundary: OriginalTimingBoundary::HostReturn,
+            }),
+        );
+
+        let mut completed = raw(
+            "nmi",
+            Some(OVERWORLD_PARSE_MAP32_DEFINITION_SECOND_WORD_PC),
+            None,
+            None,
+        );
+        completed.main = Some(0x19);
+        completed.sub = Some(0);
+        completed.subsub = Some(2);
+        completed.room = Some(0x0189);
+        assert_eq!(
+            triforce_room_case2_palette_progress(&completed, OriginalTimingBoundary::NmiAccepted,)
+                .unwrap(),
+            Some(TriforceRoomCase2PaletteProgressReceipt {
+                completed_ow_bg2_words: 21,
+                boundary: OriginalTimingBoundary::NmiAccepted,
+            }),
+        );
+    }
+
+    #[test]
+    fn credits_scene_progress_preserves_the_scene_advance_and_text_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut scene_return = raw(
+            "wram-write",
+            Some(CREDITS_SCENE_OVERWORLD_SUBSUBMODULE_INCREMENT_PC),
+            None,
+            Some(SUBSUBMODULE_INDEX),
+        );
+        scene_return.main = Some(0x1a);
+        scene_return.value = Some(1);
+        source.consume_event(scene_return, &mut receipts).unwrap();
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::CreditsSceneLoadProgress(
+                CreditsSceneLoadProgressReceipt {
+                    progress: CreditsSceneLoadProgress::SceneLoadCompleted,
+                    boundary: OriginalTimingBoundary::HostReturn,
+                },
+            )],
+        );
+
+        let mut text = raw(
+            "frame",
+            Some(CREDITS_ENDING_TEXT_BEFORE_TILE_COPY_PC),
+            Some(50),
+            None,
+        );
+        text.main = Some(0x1a);
+        assert_eq!(
+            credits_scene_load_boundary_progress(&text, OriginalTimingBoundary::HostReturn)
+                .unwrap(),
+            Some(CreditsSceneLoadProgressReceipt {
+                progress: CreditsSceneLoadProgress::EndingTextPayloadBytes(50),
+                boundary: OriginalTimingBoundary::HostReturn,
+            }),
+        );
+    }
+
+    #[test]
+    fn credits_finale_save_progress_decodes_the_completed_checksum_words() {
+        let mut event = raw(
+            "frame",
+            Some(CREDITS_END_SEQUENCE_32_SAVE_CHECKSUM_LOOP_PC),
+            Some(0x016e),
+            None,
+        );
+        event.main = Some(0x1a);
+        event.sub = Some(0x21);
+        event.subsub = Some(0);
+        assert_eq!(
+            credits_end_sequence_32_boundary_progress(&event, OriginalTimingBoundary::HostReturn,)
+                .unwrap(),
+            Some(CreditsEndSequence32ProgressReceipt {
+                completed_checksum_words: 183,
+                boundary: OriginalTimingBoundary::HostReturn,
+            }),
+        );
+    }
+
+    #[test]
+    fn peg_attribute_flip_pc_decodes_to_source_bank_progress() {
+        let mut event = raw(
+            "frame",
+            Some(DUNGEON_PEG_FLIP_BANK_C_PC),
+            Some(0x0594),
+            None,
+        );
+        event.main = Some(7);
+        event.sub = Some(0x16);
+        event.subsub = Some(0x10);
+
+        assert_eq!(
+            dungeon_peg_attribute_flip_progress(&event, OriginalTimingBoundary::HostReturn,)
+                .unwrap(),
+            Some(DungeonPegAttributeFlipProgressReceipt {
+                index: 0x0594,
+                completed_banks: 2,
+                boundary: OriginalTimingBoundary::HostReturn,
+            }),
+        );
+
+        event.sub = Some(2);
+        event.subsub = Some(8);
+        assert_eq!(
+            dungeon_peg_attribute_flip_progress(&event, OriginalTimingBoundary::HostReturn,)
+                .unwrap(),
+            Some(DungeonPegAttributeFlipProgressReceipt {
+                index: 0x0594,
+                completed_banks: 2,
+                boundary: OriginalTimingBoundary::HostReturn,
+            }),
+            "the shared source helper must expose the same cursor to its selectable caller",
+        );
     }
 
     fn raw_at(event: &str, pc: u32, s: u16) -> RawTraceEvent {
@@ -4564,6 +8543,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -4607,10 +8588,12 @@ mod tests {
             pc: Some(0),
             s: Some(0x01ff),
             return_address: None,
+            stack1: None,
             a: None,
             main: Some(main),
             sub: Some(0),
             subsub: Some(0),
+            room: None,
             frame_counter: Some(frame_counter),
             nmi_latch: Some(0),
             link_y: None,
@@ -4618,6 +8601,7 @@ mod tests {
             bg2_h: None,
             spotlight_radius: None,
             spotlight_var4_low: None,
+            palette_countdown: None,
             spotlight_lower_cursor: None,
             joypad_high: None,
             joypad_low: None,
@@ -4893,6 +8877,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -5345,6 +9331,65 @@ mod tests {
     }
 
     #[test]
+    fn dialogue_return_inside_current_glyph_preserves_the_committed_prefix() {
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame("entry", 7327, 14, 0x35)).unwrap();
+        host.observe(&raw("nmi", Some(VWF_RENDER_SINGLE_END_PC - 1), None, None))
+            .unwrap();
+        let mut returned = frame("return", 7327, 14, 0x35);
+        returned.pc = Some(VWF_RENDER_SINGLE_BODY_START_PC);
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, Some(0x003a), true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::DialogueExecutionProgress(
+                    DialogueExecutionProgress::ResumedRenderingWithCurrentGlyphStarted {
+                        message_read_position: 0x003a,
+                    },
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn dialogue_return_at_nmi_entry_preserves_the_interrupted_glyph_prefix() {
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame("entry", 7332, 14, 0xbf)).unwrap();
+        host.observe(&raw(
+            "nmi",
+            Some(VWF_RENDER_SINGLE_BODY_START_PC + 0x166),
+            None,
+            None,
+        ))
+        .unwrap();
+        let mut returned = frame("return", 7332, 14, 0xbf);
+        returned.pc = Some(NMI_HANDLER_ENTRY_PC);
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, Some(0x0056), true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::DialogueExecutionProgress(
+                    DialogueExecutionProgress::ResumedRenderingWithCurrentGlyphStarted {
+                        message_read_position: 0x0056,
+                    },
+                ),
+            ],
+        );
+    }
+
+    #[test]
     fn dialogue_caller_return_pc_outside_vwf_range_omits_semantic_hold() {
         let mut host = HostFrameWindow::default();
         host.observe(&frame("entry", 2333, 14, 0x8f)).unwrap();
@@ -5673,6 +9718,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -5801,6 +9848,158 @@ mod tests {
     }
 
     #[test]
+    fn mirror_warp_call_identity_owns_module09_23_scan_and_generation_return() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut entry = raw(
+            "pc",
+            Some(OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC),
+            None,
+            None,
+        );
+        entry.return_address = Some(MIRROR_WARP_AFTER_SPRITE_RELOAD_PC);
+        entry.main = Some(9);
+        entry.sub = Some(0x23);
+        tracker.consume_event(entry, &mut receipts).unwrap();
+        assert!(tracker.overworld_load_overlays_sprite_reload_active);
+
+        let mut nmi = raw(
+            "nmi",
+            Some(OVERWORLD_SPRITE_SCAN_START_PC + 0x1b0),
+            None,
+            None,
+        );
+        nmi.main = Some(9);
+        nmi.sub = Some(0x23);
+        nmi.nmi_latch = Some(1);
+        nmi.bg2_h = Some(0x01fa);
+        tracker.consume_event(nmi, &mut receipts).unwrap();
+        assert!(receipts.contains(
+            &OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::PresencePublished,
+            ),
+        ));
+        assert!(receipts.contains(
+            &OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::ProximityScanSuspended { bg2_h: 0x01fa },
+            ),
+        ));
+
+        publish_nmi(&mut tracker, &mut receipts);
+        tracker
+            .consume_event(
+                raw(
+                    "nmi-resume",
+                    Some(OVERWORLD_SPRITE_SCAN_START_PC + 0x1b0),
+                    None,
+                    None,
+                ),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut returned = raw(
+            "pc",
+            Some(OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_RETURN_PC),
+            None,
+            None,
+        );
+        returned.main = Some(9);
+        returned.sub = Some(0x23);
+        tracker.consume_event(returned, &mut receipts).unwrap();
+        assert!(receipts.contains(
+            &OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturned,
+            ),
+        ));
+        assert!(!tracker.overworld_load_overlays_sprite_reload_active);
+    }
+
+    #[test]
+    fn save_quit_reset_dungeon_info_clear_entry_publishes_typed_state_boundary() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw(
+            "pc",
+            Some(SAVE_QUIT_RESET_DUNGEON_INFO_CLEAR_ENTRY_PC),
+            None,
+            None,
+        );
+        event.main = Some(0);
+        event.sub = Some(10);
+        event.subsub = Some(10);
+
+        tracker.consume_event(event, &mut receipts).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SaveQuitResetStatePublished],
+        );
+    }
+
+    #[test]
+    fn file_select_graphics_low_wram_clear_return_publishes_typed_boundary() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw(
+            "pc",
+            Some(FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_RETURN_PC),
+            None,
+            None,
+        );
+        event.main = Some(1);
+        event.sub = Some(1);
+        event.subsub = Some(10);
+
+        tracker.consume_event(event, &mut receipts).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared],
+        );
+    }
+
+    #[test]
+    fn module05_show_text_message_return_publishes_typed_interface_boundary() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw(
+            "pc",
+            Some(SELECTED_GAME_LOAD_MESSAGE_INTERFACE_RETURN_PC),
+            None,
+            None,
+        );
+        event.return_address = Some(MODULE05_AFTER_SHOW_TEXT_MESSAGE_PC);
+        event.main = Some(14);
+        event.sub = Some(2);
+
+        tracker.consume_event(event, &mut receipts).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SelectedGameLoadMessageInterfacePublished,],
+        );
+    }
+
+    #[test]
+    fn show_text_message_return_from_an_unrelated_caller_is_not_module05_publication() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw(
+            "pc",
+            Some(SELECTED_GAME_LOAD_MESSAGE_INTERFACE_RETURN_PC),
+            None,
+            None,
+        );
+        event.return_address = Some(MODULE05_AFTER_SHOW_TEXT_MESSAGE_PC + 1);
+        event.main = Some(14);
+        event.sub = Some(2);
+
+        tracker.consume_event(event, &mut receipts).unwrap();
+
+        assert!(receipts.is_empty());
+    }
+
+    #[test]
     fn overworld_load_overlays_call_identity_survives_semantic_checkpoint() {
         let mut source = empty_semantic_tracker();
         let mut receipts = Vec::new();
@@ -5846,6 +10045,7 @@ mod tests {
         let mut entry = frame_with_sub("entry", 165775, 0x0b, 0x18);
         entry.bg2_h = Some(0x021e);
         let mut returned = frame_with_sub("return", 165775, 0x0b, 0x18);
+        returned.pc = Some(OVERWORLD_SPRITE_SCAN_START_PC + 1);
         returned.bg2_h = Some(0x028e);
 
         host.observe(&entry).unwrap();
@@ -5858,6 +10058,33 @@ mod tests {
             vec![
                 OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
                     OverworldSpriteReloadProgress::ProximityScanSuspended { bg2_h: 0x028e },
+                ),
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn pre_overworld_held_host_publishes_proximity_scan_scratch_coordinate() {
+        let mut host = HostFrameWindow::default();
+        let mut entry = frame_with_sub("entry", 652122, 0x08, 0);
+        entry.bg2_h = Some(0x0700);
+        let mut returned = frame_with_sub("return", 652122, 0x08, 0);
+        returned.pc = Some(OVERWORLD_SPRITE_SCAN_START_PC + 1);
+        returned.bg2_h = Some(0x0720);
+
+        host.observe(&entry).unwrap();
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, None, true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                    OverworldSpriteReloadProgress::ProximityScanSuspended { bg2_h: 0x0720 },
                 ),
                 OriginalTimingSemanticReceipt::MainLoopProgress(
                     MainLoopProgress::CallStackContinued,
@@ -5908,6 +10135,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -5962,6 +10191,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -5979,6 +10210,7 @@ mod tests {
             let mut event = raw("nmi", Some(OVERWORLD_SPRITE_SCAN_START_PC + 1), None, None);
             event.main = Some(8);
             event.sub = Some(0);
+            event.bg2_h = Some(0x0720);
             tracker.consume_event(event, &mut receipts).unwrap();
             publish_nmi(&mut tracker, &mut receipts);
         }
@@ -6124,6 +10356,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6278,6 +10512,18 @@ mod tests {
         tracker.sprite_main_execution = Some(SpriteMainExecutionTracker {
             current_slot: Some(0),
             last_completed_slot: Some(1),
+            timers_and_oam_slot: None,
+            timers_and_oam_dispatch_state: None,
+            initialize_reset_properties: None,
+            initialize_load_properties: None,
+            fire_debirando_property_reload: false,
+            fire_debirando_before_spawn_slot: None,
+            fire_debirando_spawn: None,
+            antfairy_subtype2_increment_slot: None,
+            timer_decrements_slot: None,
+            primary_timer_decrements_slot: None,
+            main_and_aux1_timer_decrements_slot: None,
+            bari_before_random_slot: None,
             throwable_scenery_state_clear_slot: None,
             cucco_subtype_increments: None,
             cucco_helper_ordinal: 0,
@@ -6288,6 +10534,12 @@ mod tests {
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
+            bonk_item_graphics_slot: None,
+            single_small_draw_position_slot: None,
+            probe_after_oam_coordinates_slot: None,
+            wallmaster_reset_prefix_slot: None,
+            zazak_graphics_slot: None,
+            follower_graphics: None,
         });
         let mut receipts = Vec::new();
 
@@ -6312,6 +10564,18 @@ mod tests {
         tracker.sprite_main_execution = Some(SpriteMainExecutionTracker {
             current_slot: Some(12),
             last_completed_slot: Some(13),
+            timers_and_oam_slot: None,
+            timers_and_oam_dispatch_state: None,
+            initialize_reset_properties: None,
+            initialize_load_properties: None,
+            fire_debirando_property_reload: false,
+            fire_debirando_before_spawn_slot: None,
+            fire_debirando_spawn: None,
+            antfairy_subtype2_increment_slot: None,
+            timer_decrements_slot: None,
+            primary_timer_decrements_slot: None,
+            main_and_aux1_timer_decrements_slot: None,
+            bari_before_random_slot: None,
             throwable_scenery_state_clear_slot: None,
             cucco_subtype_increments: None,
             cucco_helper_ordinal: 0,
@@ -6322,6 +10586,12 @@ mod tests {
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
+            bonk_item_graphics_slot: None,
+            single_small_draw_position_slot: None,
+            probe_after_oam_coordinates_slot: None,
+            wallmaster_reset_prefix_slot: None,
+            zazak_graphics_slot: None,
+            follower_graphics: None,
         });
         tracker.item_receipt_caller = Some(ItemReceiptGraphicsCaller::SpriteMain { slot: 12 });
         let mut receipts = Vec::new();
@@ -6329,6 +10599,7 @@ mod tests {
         tracker
             .consume_event(raw("nmi", Some(0x07_99f0), Some(12), None), &mut receipts)
             .unwrap();
+        tracker.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
         tracker.flush_item_receipt_progress(&mut receipts);
 
         assert_eq!(
@@ -6360,6 +10631,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6389,7 +10662,7 @@ mod tests {
 
     #[test]
     fn nmi_before_link_coordinate_publication_becomes_a_backend_neutral_receipt() {
-        for pc in [0x07_e276, 0x07_e381] {
+        for pc in [0x07_e275, 0x07_e27d, 0x07_e27f, 0x07_e2ca, 0x07_e381] {
             let mut tracker = Snes9xOracleSemanticTrace {
                 path: PathBuf::new(),
                 offset: 0,
@@ -6400,6 +10673,8 @@ mod tests {
                 overworld_presence_published: false,
                 overworld_sprite_activation: None,
                 overworld_load_overlays_sprite_reload_active: false,
+                overworld_sprite_reload_reset_published: false,
+                rescued_maiden_initialization: None,
                 pending_spotlight_helper_nmi: None,
                 pending_spotlight_helper_nmi_acceptance_index: None,
                 seed_warmup_active: false,
@@ -6433,6 +10708,34 @@ mod tests {
     }
 
     #[test]
+    fn link_position_after_coordinates_names_the_completed_axis() {
+        assert_eq!(
+            main_loop_interruption_for_source_state(
+                LINK_POSITION_AFTER_COORDINATES_START_PC,
+                Some(0x0f),
+                Some(1),
+                Some(2),
+            ),
+            Some(MainLoopInterruption::LinkPositionAfterCoordinates { pass: 2 }),
+        );
+        assert_eq!(
+            main_loop_interruption_for_source_state(
+                LINK_POSITION_AFTER_COORDINATES_START_PC,
+                Some(0x0f),
+                Some(1),
+                Some(1),
+            ),
+            None,
+            "the loop's transient first DEX value is not a completed axis",
+        );
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x07e3d3, Some(0x0f), Some(1), Some(0xfffe),),
+            Some(MainLoopInterruption::LinkPositionAfterCoordinates { pass: 0 }),
+            "the final loop epilogue has committed Y even though X is no longer the pass",
+        );
+    }
+
+    #[test]
     fn nmi_inside_spotlight_circle_build_reports_exact_c_statement_progress() {
         let mut tracker = Snes9xOracleSemanticTrace {
             path: PathBuf::new(),
@@ -6444,6 +10747,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6483,6 +10788,33 @@ mod tests {
                     },
                 ),
             ],
+        );
+    }
+
+    #[test]
+    fn host_return_after_pure_circle_helper_precedes_the_first_table_publication() {
+        // Route host 682798 returns at $00:F37B: ASL has doubled the upper
+        // cursor, but the guarded upper-table STA at $00:F383 is still pending.
+        // Re-running the pure helper is state-equivalent; advancing to the
+        // table store is not.
+        let mut event = frame_with_sub("return", 17_288, 0x0f, 0);
+        event.pc = Some(0x00f37b);
+        event.a = Some(286);
+        event.x = Some(98);
+        event.link_y = Some(3060);
+        event.bg2_v = Some(2833);
+        event.spotlight_radius = Some(126);
+        event.spotlight_var4_low = Some(96);
+        event.spotlight_lower_cursor = Some(335);
+
+        assert_eq!(
+            spotlight_table_build_progress(&event, None, None).unwrap(),
+            Some(SpotlightTableBuildProgress {
+                completed_iterations: 143,
+                checkpoint: SpotlightTableBuildCheckpoint::BeforeCircleCalculation {
+                    pending_circle_input: 97,
+                },
+            }),
         );
     }
 
@@ -6547,6 +10879,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6626,6 +10960,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6701,6 +11037,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6910,6 +11248,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -6985,6 +11325,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7055,6 +11397,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: Some({
                 let mut event = raw("nmi", Some(0x00_f52d), None, None);
                 event.main = Some(0x0f);
@@ -7158,6 +11502,64 @@ mod tests {
     }
 
     #[test]
+    fn host_return_after_lower_spotlight_store_keeps_loop_test_pending() {
+        // Route host 104340 returns at $00:F398. The visible upper row for
+        // cursor 211 has been stored, the lower row at 265 was clipped, and
+        // the source loop-completion comparison has not executed yet.
+        let mut event = frame_with_sub("return", 104_340, 0x0f, 0);
+        event.pc = Some(0x00f398);
+        event.x = Some(422);
+        event.link_y = Some(6644);
+        event.bg2_v = Some(6418);
+        event.spotlight_radius = Some(126);
+        event.spotlight_var4_low = Some(27);
+        event.spotlight_lower_cursor = Some(265);
+        let mut receipts = Vec::new();
+
+        publish_spotlight_host_return_progress(&event, None, None, &mut receipts).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+                SpotlightTableBuildProgressReceipt {
+                    progress: SpotlightTableBuildProgress {
+                        completed_iterations: 211,
+                        checkpoint: SpotlightTableBuildCheckpoint::BeforeLoopCompletionTest {
+                            upper_cursor: 211,
+                            lower_cursor: 265,
+                        },
+                    },
+                    boundary: OriginalTimingBoundary::HostReturn,
+                },
+            )],
+        );
+    }
+
+    #[test]
+    fn nmi_in_spotlight_iteration_bound_branch_rewinds_before_publication() {
+        // Route host 752654 accepts NMI at $00:F36B. The iteration-local
+        // value has been initialized and the upper-bound comparison has run,
+        // but the radius scratch decrement, pure circle call, and both HDMA
+        // table stores are still pending.
+        let mut event = raw("nmi", Some(0x00f36b), None, None);
+        event.main = Some(0x10);
+        event.sub = Some(1);
+        event.link_y = Some(1335);
+        event.bg2_v = Some(1254);
+        event.spotlight_radius = Some(119);
+        event.spotlight_var4_low = Some(4);
+        event.spotlight_lower_cursor = Some(96);
+
+        assert_eq!(
+            spotlight_table_build_progress(&event, None, None).unwrap(),
+            Some(SpotlightTableBuildProgress {
+                completed_iterations: 128,
+                checkpoint: SpotlightTableBuildCheckpoint::BeforeIterationInitialization,
+            }),
+        );
+    }
+
+    #[test]
     fn nmi_before_upper_spotlight_write_derives_input_from_source_cursor() {
         // Pinned frame 54151 accepts NMI at $00:f383 after the pure circle
         // helper returned but before the upper-table store. C has not advanced
@@ -7175,6 +11577,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7234,6 +11638,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7294,6 +11700,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7342,6 +11750,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7406,6 +11816,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7468,6 +11880,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7569,6 +11983,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7613,6 +12029,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7723,6 +12141,7 @@ mod tests {
         assert!(publish_pre_dungeon_sprite_reset_progress(
             &returned,
             OriginalTimingBoundary::HostReturn,
+            false,
             &mut receipts,
         )
         .unwrap());
@@ -7742,6 +12161,7 @@ mod tests {
         assert!(!publish_pre_dungeon_sprite_reset_progress(
             &returned,
             OriginalTimingBoundary::HostReturn,
+            false,
             &mut wrong_caller,
         )
         .unwrap());
@@ -7759,6 +12179,7 @@ mod tests {
             assert!(publish_pre_dungeon_sprite_reset_progress(
                 &returned,
                 OriginalTimingBoundary::HostReturn,
+                false,
                 &mut receipts,
             )
             .unwrap());
@@ -7786,6 +12207,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7863,6 +12286,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7935,6 +12360,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -7986,6 +12413,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8034,6 +12463,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8093,6 +12524,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8225,6 +12658,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8320,6 +12755,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8465,6 +12902,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8534,6 +12973,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8628,6 +13069,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8685,6 +13128,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8771,6 +13216,89 @@ mod tests {
     }
 
     #[test]
+    fn completed_dungeon_sprite_record_survives_to_host_return() {
+        let mut tracker = empty_semantic_tracker();
+        tracker.normal_load_ordinal = Some(5);
+        let mut receipts = Vec::new();
+        let slot = 6u16;
+        let writes = [
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_STATE_PC,
+                SPRITE_STATE_BASE + slot,
+            ),
+            (DUNGEON_LOAD_SINGLE_SPRITE_TEMP_Y_PC, DUNGEON_LOAD_TEMP_Y),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_FLOOR_PC,
+                SPRITE_FLOOR_BASE + slot,
+            ),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_Y_LOW_PC,
+                SPRITE_Y_LOW_BASE + slot,
+            ),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_Y_HIGH_PC,
+                SPRITE_Y_HIGH_BASE + slot,
+            ),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_SHARED_X_PC,
+                DUNGEON_LOAD_SHARED_X,
+            ),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_X_LOW_PC,
+                SPRITE_X_LOW_BASE + slot,
+            ),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_X_HIGH_PC,
+                SPRITE_X_HIGH_BASE + slot,
+            ),
+            (DUNGEON_LOAD_SINGLE_SPRITE_TYPE_PC, SPRITE_TYPE_BASE + slot),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_CLEAR_PC,
+                SPRITE_SUBTYPE_BASE + slot,
+            ),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_TEMP_SUBTYPE_PC,
+                DUNGEON_LOAD_TEMP_Y,
+            ),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_SUBTYPE_FINAL_PC,
+                SPRITE_SUBTYPE_BASE + slot,
+            ),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_SPAWN_INDEX_PC,
+                SPRITE_N_WORD_BASE + slot,
+            ),
+            (
+                DUNGEON_LOAD_SINGLE_SPRITE_COMPLETE_PC,
+                SPRITE_DIE_ACTION_BASE + slot,
+            ),
+        ];
+        for (pc, address) in writes {
+            tracker
+                .consume_event(
+                    raw("wram-write", Some(pc), Some(slot), Some(address)),
+                    &mut receipts,
+                )
+                .unwrap();
+        }
+        tracker.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(
+                DungeonResetSpritesProgressReceipt {
+                    progress: DungeonResetSpritesCpuProgress::Load(DungeonLoadSpritesCpuProgress {
+                        normal_load_ordinal: 6,
+                        slot: 6,
+                        checkpoint: DungeonSpriteLoadCheckpoint::Complete,
+                    },),
+                    boundary: OriginalTimingBoundary::HostReturn,
+                },
+            )],
+        );
+    }
+
+    #[test]
     fn cache_short_branch_then_nmi_becomes_a_typed_field_receipt() {
         let mut tracker = Snes9xOracleSemanticTrace {
             path: PathBuf::new(),
@@ -8782,6 +13310,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8873,6 +13403,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -8927,6 +13459,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -9031,6 +13565,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -9086,7 +13622,7 @@ mod tests {
     }
 
     #[test]
-    fn later_source_write_invalidates_the_y_high_candidate() {
+    fn later_source_write_refines_the_y_high_candidate() {
         let path = env::temp_dir().join("unused-snes9x-semantic-test.jsonl");
         let mut tracker = Snes9xOracleSemanticTrace {
             path,
@@ -9098,6 +13634,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,
@@ -9133,9 +13671,21 @@ mod tests {
             .unwrap();
         assert_eq!(
             receipts,
-            vec![OriginalTimingSemanticReceipt::NmiAccepted(
-                NmiUpdateGate::Open
-            )]
+            vec![
+                OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(
+                    DungeonResetSpritesProgressReceipt {
+                        progress: DungeonResetSpritesCpuProgress::Load(
+                            DungeonLoadSpritesCpuProgress {
+                                normal_load_ordinal: 0,
+                                slot: 0,
+                                checkpoint: DungeonSpriteLoadCheckpoint::XLow,
+                            },
+                        ),
+                        boundary: OriginalTimingBoundary::NmiAccepted,
+                    },
+                ),
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+            ]
         );
     }
 
@@ -9151,6 +13701,8 @@ mod tests {
             overworld_presence_published: false,
             overworld_sprite_activation: None,
             overworld_load_overlays_sprite_reload_active: false,
+            overworld_sprite_reload_reset_published: false,
+            rescued_maiden_initialization: None,
             pending_spotlight_helper_nmi: None,
             pending_spotlight_helper_nmi_acceptance_index: None,
             seed_warmup_active: false,

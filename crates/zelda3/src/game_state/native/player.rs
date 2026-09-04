@@ -4866,8 +4866,12 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         let coord = read_le_u16(self.ram, coord_offset).wrapping_add(delta);
         write_le_u16(self.ram, coord_offset, coord);
         match pass {
-            2 => self.state.set_x_with_subpixel(coord, self.ram[subpixel_offset]),
-            0 => self.state.set_y_with_subpixel(coord, self.ram[subpixel_offset]),
+            2 => self
+                .state
+                .set_x_with_subpixel(coord, self.ram[subpixel_offset]),
+            0 => self
+                .state
+                .set_y_with_subpixel(coord, self.ram[subpixel_offset]),
             _ => self.state.set_z(coord),
         }
         self.debug_assert_matches_ram();

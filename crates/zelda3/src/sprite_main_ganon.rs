@@ -353,6 +353,27 @@ fn ganon_sin(a: u16, b: u8) -> i8 {
     }
 }
 
+/// Reproduce Ganon's carry-sensitive head-direction calculation at $9D:8F24.
+///
+/// `Sprite_IsRightOfLink` returns the low delta byte in `$0f`, but its final
+/// 16-bit subtraction also leaves the CPU carry set when Link is at or to the
+/// right of the sprite. The caller immediately executes `ADC #$20` without a
+/// `CLC`, so that carry is part of the horizontal dead-zone calculation. The
+/// C source expression omits this machine-level dependency.
+fn ganon_head_direction(link_x: u16, sprite_x: u16) -> u8 {
+    let (delta, borrowed) = link_x.overflowing_sub(sprite_x);
+    let centered = (delta as u8)
+        .wrapping_add(32)
+        .wrapping_add(u8::from(!borrowed));
+    if centered < 64 {
+        1
+    } else if crate::types::sign16(delta) {
+        0
+    } else {
+        2
+    }
+}
+
 impl ZeldaState {
     fn replay_trace_ganon_matches(&self) -> bool {
         if std::env::var_os("ZELDA3_TRACE_GANON").is_none() {
@@ -560,14 +581,10 @@ impl ZeldaState {
             self.ganon_extinguish_torch_adjust_translucency_for_ganon();
         }
 
-        let pair = self.sprite_is_right_of_link(k);
-        let head_direction = if pair.b.wrapping_add(32) < 64 {
-            1
-        } else if pair.a != 0 {
-            0
-        } else {
-            2
-        };
+        let head_direction = ganon_head_direction(
+            self.game_state.player.follower_link.x(),
+            self.sprite_get_x(k),
+        );
         self.sprite_slot_view_mut(k)
             .set_head_direction(head_direction);
 
@@ -1400,8 +1417,16 @@ impl ZeldaState {
                 self.sprite_slot_view(k).health(),
                 self.sprite_slot_view(k).subtype(),
                 self.sprite_slot_view(k).direction(),
-                self.game_state.effects.sprite_histories.swamola_target(0).x_low(),
-                self.game_state.effects.sprite_histories.swamola_target(0).y_low(),
+                self.game_state
+                    .effects
+                    .sprite_histories
+                    .swamola_target(0)
+                    .x_low(),
+                self.game_state
+                    .effects
+                    .sprite_histories
+                    .swamola_target(0)
+                    .y_low(),
             );
         }
         let rnd = self.get_random_number();

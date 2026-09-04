@@ -98,14 +98,20 @@ impl ZeldaState {
             self.ram[SCRATCH_A],
             self.game_state.player.follower_link.z(),
             self.game_state.player.follower_link.actual_z_velocity(),
-            self.game_state.player.follower_link.actual_z_velocity_copy(),
+            self.game_state
+                .player
+                .follower_link
+                .actual_z_velocity_copy(),
             self.game_state.player.follower_link.x_subpixel(),
             self.game_state.player.follower_link.y_subpixel(),
             self.game_state.player.follower_link.actual_x_velocity(),
             self.game_state.player.follower_link.actual_y_velocity(),
             self.game_state.player.follower_link.direction(),
             self.game_state.player.follower_link.last_direction(),
-            self.game_state.player.follower_link.last_direction_moved_towards(),
+            self.game_state
+                .player
+                .follower_link
+                .last_direction_moved_towards(),
             self.game_state.player.tile_detection.pit_tile(),
             self.game_state.player.follower_link.tile_below(),
             self.game_state.player.tile_detection.collision_bits(),
@@ -129,7 +135,10 @@ impl ZeldaState {
             self.game_state.player.follower_link.defense_flags(),
             self.game_state.player.follower_link.push_fatigue_timer(),
             self.game_state.player.follower_link.button_b_frames(),
-            self.game_state.player.follower_link.last_direction_moved_towards(),
+            self.game_state
+                .player
+                .follower_link
+                .last_direction_moved_towards(),
             self.game_state.player.follower_link.facing(),
         );
     }
@@ -1820,6 +1829,19 @@ impl ZeldaState {
         Some(self.link_move_position_partial_after_subpixel(pass))
     }
 
+    /// `Link_HandleVelocity` through both coordinate stores for `pass` in
+    /// `Link_MovePosition`. `None` when the velocity handler returned before
+    /// entering the movement loop.
+    pub(super) fn link_handle_velocity_until_position_after_coordinates(
+        &mut self,
+        pass: u8,
+    ) -> Option<LinkMovePositionAfterCoordinatesReturn> {
+        if !self.link_handle_velocity_before_move_position() {
+            return None;
+        }
+        Some(self.link_move_position_after_coordinates(pass))
+    }
+
     /// `Link_HandleVelocity` up to its `Link_MovePosition` call. `false` when
     /// the ROM returned earlier (safe-return/sand-drag, swim, or the
     /// all-blocked collision exit).
@@ -1932,7 +1954,10 @@ impl ZeldaState {
     /// `Link_MovePosition` up to and including the `pass` axis' subpixel
     /// store: the ROM's loop runs z (airborne only), then x, then y; earlier
     /// passes complete, the `pass` axis owes its coordinate delta.
-    fn link_move_position_partial_after_subpixel(&mut self, pass: u8) -> LinkMovePositionPartialReturn {
+    fn link_move_position_partial_after_subpixel(
+        &mut self,
+        pass: u8,
+    ) -> LinkMovePositionPartialReturn {
         let x = self.game_state.player.follower_link.x();
         let y = self.game_state.player.follower_link.y();
         self.follower_link_state_mut()
@@ -1962,6 +1987,34 @@ impl ZeldaState {
         panic!("Link_MovePosition interruption named pass {pass} outside the ROM's axis loop");
     }
 
+    /// `Link_MovePosition` through both coordinate stores for `pass`.
+    fn link_move_position_after_coordinates(
+        &mut self,
+        pass: u8,
+    ) -> LinkMovePositionAfterCoordinatesReturn {
+        let x = self.game_state.player.follower_link.x();
+        let y = self.game_state.player.follower_link.y();
+        self.follower_link_state_mut()
+            .store_safe_return_position(x, y);
+        assert!(
+            !(self.game_state.player.follower_link.handler_state() != 10
+                && self.game_state.player.follower_link.on_somaria_platform() == 2),
+            "a mid-loop Link_MovePosition interruption cannot take the Somaria platform exit",
+        );
+        for candidate in self.link_move_position_passes() {
+            let velocity = self.link_move_position_pass_velocity(candidate);
+            self.link_move_position_full_pass(candidate, velocity);
+            if candidate == pass {
+                return LinkMovePositionAfterCoordinatesReturn {
+                    old_x: x,
+                    old_y: y,
+                    pass,
+                };
+            }
+        }
+        panic!("Link_MovePosition interruption named pass {pass} outside the ROM's axis loop");
+    }
+
     /// Resume `Link_MovePosition` after `link_move_position_partial_after_subpixel`.
     pub(super) fn complete_link_move_position_from_partial(
         &mut self,
@@ -1977,6 +2030,27 @@ impl ZeldaState {
         let resume_at = passes
             .iter()
             .position(|candidate| *candidate == pass)
+            .expect("a suspended Link_MovePosition pass must belong to the ROM's axis loop");
+        for candidate in passes[resume_at + 1..].iter().copied() {
+            let velocity = self.link_move_position_pass_velocity(candidate);
+            self.link_move_position_full_pass(candidate, velocity);
+        }
+        self.complete_link_move_position_after_coordinates(LinkMovePositionReturn {
+            old_x: position_return.old_x,
+            old_y: position_return.old_y,
+        });
+    }
+
+    /// Resume after `link_move_position_after_coordinates`, beginning with
+    /// the following axis and then completing the ordinary movement tail.
+    pub(super) fn complete_link_move_position_from_after_coordinates(
+        &mut self,
+        position_return: LinkMovePositionAfterCoordinatesReturn,
+    ) {
+        let passes = self.link_move_position_passes();
+        let resume_at = passes
+            .iter()
+            .position(|candidate| *candidate == position_return.pass)
             .expect("a suspended Link_MovePosition pass must belong to the ROM's axis loop");
         for candidate in passes[resume_at + 1..].iter().copied() {
             let velocity = self.link_move_position_pass_velocity(candidate);

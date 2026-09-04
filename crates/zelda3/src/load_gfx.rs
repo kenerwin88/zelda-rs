@@ -611,6 +611,18 @@ impl ZeldaState {
         self.palette_load_multiple(src, 0xb2, 6, 2);
     }
 
+    pub(super) fn palette_load_ow_bg2_word_range(&mut self, start: usize, end: usize) {
+        let src = PALETTE_OVERWORLD_BG_AUX12_SNES_ADDR
+            + self
+                .game_state
+                .display
+                .palette_buffer
+                .overworld_palette_aux2_hi() as u32
+                * 21
+                * 2;
+        self.palette_load_multiple_word_range(src, 0xb2, 6, 2, start, end);
+    }
+
     pub(super) fn palette_load_ow_bg3(&mut self) {
         let src = PALETTE_OVERWORLD_BG_AUX3_SNES_ADDR
             + self
@@ -752,16 +764,40 @@ impl ZeldaState {
 
     pub(super) fn palette_load_multiple(
         &mut self,
-        mut src: u32,
-        mut dst: usize,
+        src: u32,
+        dst: usize,
         x_ents: usize,
         y_pals: usize,
     ) {
         let count = x_ents + 1;
-        for _ in 0..=y_pals {
-            self.palette_load_single(src, dst, x_ents);
-            src += count as u32 * 2;
-            dst += 32;
+        self.palette_load_multiple_word_range(src, dst, x_ents, y_pals, 0, count * (y_pals + 1));
+    }
+
+    fn palette_load_multiple_word_range(
+        &mut self,
+        src: u32,
+        dst: usize,
+        x_ents: usize,
+        y_pals: usize,
+        start: usize,
+        end: usize,
+    ) {
+        let row_words = x_ents + 1;
+        let total_words = row_words * (y_pals + 1);
+        assert!(start <= end && end <= total_words);
+        let palette_offset = self
+            .game_state
+            .display
+            .palette_buffer
+            .overworld_aux_or_main_offset() as usize;
+        for ordinal in start..end {
+            let row = ordinal / row_words;
+            let column = ordinal % row_words;
+            let Some(color) = self.rom_or_asset_word_snes(src + ordinal as u32 * 2) else {
+                return;
+            };
+            let byte_offset = dst + row * 32 + palette_offset + column * 2;
+            self.set_aux_color_asset(byte_offset >> 1, color);
         }
     }
 
@@ -857,6 +893,19 @@ impl ZeldaState {
     }
 
     pub(super) fn load_follower_graphics(&mut self) {
+        let first_sheet = self.follower_graphics_first_sheet();
+        self.decompress_sprite_graphics_to_buffer(
+            GraphicsDecompressionScratch::secondary_buffer_offset(),
+            first_sheet,
+        );
+        self.decompress_sprite_graphics_to_buffer(
+            GraphicsDecompressionScratch::primary_buffer_offset(),
+            0x65,
+        );
+        self.finish_follower_graphics_conversion();
+    }
+
+    fn follower_graphics_first_sheet(&self) -> usize {
         let follower = self.game_state.sprites.follower_runtime.indicator() as usize;
         let mut yv = 0x64;
         if follower != 1 {
@@ -868,15 +917,103 @@ impl ZeldaState {
                 }
             }
         }
+        yv
+    }
 
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::secondary_buffer_offset(),
-            yv,
+    /// Commit one exact source-order prefix slice of either decompressed
+    /// follower sheet without touching the uncommitted tail of its WRAM
+    /// scratch buffer.
+    pub(super) fn apply_follower_graphics_decompression_slice(
+        &mut self,
+        first_sheet: bool,
+        start: u16,
+        end: u16,
+    ) {
+        const SHEET_BYTES: u16 = 0x0600;
+        assert!(start <= end && end <= SHEET_BYTES);
+        let pack = if first_sheet {
+            self.follower_graphics_first_sheet()
+        } else {
+            0x65
+        };
+        let data = self
+            .decompressed_sprite_graphics_data(pack)
+            .expect("rescued-maiden follower graphics require their source sheet");
+        assert_eq!(
+            data.len(),
+            usize::from(SHEET_BYTES),
+            "rescued-maiden follower sheet ${pack:02x} must expand to 1536 bytes",
         );
-        self.decompress_sprite_graphics_to_buffer(
-            GraphicsDecompressionScratch::primary_buffer_offset(),
-            0x65,
-        );
+        let dst = if first_sheet {
+            GraphicsDecompressionScratch::secondary_buffer_offset()
+        } else {
+            GraphicsDecompressionScratch::primary_buffer_offset()
+        };
+        let start = usize::from(start);
+        let end = usize::from(end);
+        self.copy_decompressed_graphics_to(dst + start, &data[start..end]);
+    }
+
+    /// Finish the source-order remainder of a `LoadFollowerGraphics` call
+    /// whose two-sheet decompressor stopped at `stage`.
+    pub(super) fn complete_follower_graphics_decompression(
+        &mut self,
+        stage: crate::RescuedMaidenInitializationStage,
+    ) {
+        use crate::RescuedMaidenInitializationStage::{
+            Conversion, FirstFollowerSheet, SecondFollowerSheet,
+        };
+        match stage {
+            FirstFollowerSheet { completed_bytes } => {
+                self.apply_follower_graphics_decompression_slice(true, completed_bytes, 0x0600);
+                self.apply_follower_graphics_decompression_slice(false, 0, 0x0600);
+                self.apply_follower_graphics_conversion_slice(0, 512);
+            }
+            SecondFollowerSheet { completed_bytes } => {
+                self.apply_follower_graphics_decompression_slice(false, completed_bytes, 0x0600);
+                self.apply_follower_graphics_conversion_slice(0, 512);
+            }
+            Conversion { completed_stores } => {
+                self.apply_follower_graphics_conversion_slice(completed_stores, 512);
+            }
+        }
+    }
+
+    /// Commit an exact source-order slice of the 3bpp-to-4bpp conversion at
+    /// the tail of `LoadFollowerGraphics`. Each source store publishes one
+    /// 16-bit plane word; keeping that granularity preserves boundaries which
+    /// split a row between its low/high and upper-plane writes.
+    pub(super) fn apply_follower_graphics_conversion_slice(
+        &mut self,
+        start_store: u16,
+        end_store: u16,
+    ) {
+        const TOTAL_STORES: u16 = 32 * 8 * 2;
+        assert!(start_store <= end_store && end_store <= TOTAL_STORES);
+        let follower = self.game_state.sprites.follower_runtime.indicator() as usize;
+        let source = self.graphics_combined_decompression_buffers();
+        let source_base = FOLLOWER_GFX_DECOMPRESSION_OFFSETS
+            .get(follower)
+            .copied()
+            .unwrap_or(0);
+        for store in start_store..end_store {
+            let row_index = usize::from(store / 2);
+            let tile = row_index / 8;
+            let row = row_index % 8;
+            let src = source_base + tile * 24;
+            let dst = 0xb940 + tile * 32 + row * 2;
+            if store & 1 == 0 {
+                self.ram[dst] = source.get(src + row * 2).copied().unwrap_or(0);
+                self.ram[dst + 1] = source.get(src + row * 2 + 1).copied().unwrap_or(0);
+            } else {
+                self.ram[dst + 0x10] = source.get(src + 0x10 + row).copied().unwrap_or(0);
+                self.ram[dst + 0x11] = 0;
+            }
+        }
+    }
+
+    pub(super) fn finish_follower_graphics_conversion(&mut self) {
+        let follower = self.game_state.sprites.follower_runtime.indicator() as usize;
         let tmp = self.graphics_combined_decompression_buffers();
         let offset = FOLLOWER_GFX_DECOMPRESSION_OFFSETS
             .get(follower)
@@ -1955,10 +2092,8 @@ impl ZeldaState {
                     } else {
                         crate::zelda_rtl::Module09LongLoadStep::MirrorWarpSpriteLoadMap16
                     };
-                    self.game_execution_scheduler.schedule_work(
-                        GameWorkContinuation::FinishModule09LongLoad { step },
-                        3,
-                    );
+                    self.game_execution_scheduler
+                        .schedule_work(GameWorkContinuation::FinishModule09LongLoad { step }, 3);
                     return;
                 }
                 self.mirror_warp_load_sprites_and_colors_after_blink();
@@ -3056,7 +3191,7 @@ impl ZeldaState {
         self.overworld_copy_palettes_to_cache();
     }
 
-    pub(super) fn Overworld_LoadPalettes(&mut self, bg: u8, spr: u8) {
+    fn overworld_select_palettes(&mut self, bg: u8, spr: u8) {
         self.clear_overworld_aux_or_main_offset();
         let bg_base = bg as usize * 3;
         if OW_BG_PAL_INFO[bg_base] >= 0 {
@@ -3076,8 +3211,35 @@ impl ZeldaState {
         if OW_SPR_PAL_INFO[spr_base + 1] >= 0 {
             self.set_sp6l(OW_SPR_PAL_INFO[spr_base + 1] as u8);
         }
+    }
+
+    pub(super) fn Overworld_LoadPalettes(&mut self, bg: u8, spr: u8) {
+        self.overworld_select_palettes(bg, spr);
         self.palette_load_ow_bg1();
         self.palette_load_ow_bg2();
+        self.palette_load_ow_bg3();
+        self.palette_load_sp5l();
+        self.palette_load_sp6l();
+    }
+
+    pub(super) fn overworld_load_palettes_through_ow_bg2_words(
+        &mut self,
+        bg: u8,
+        spr: u8,
+        completed_ow_bg2_words: usize,
+    ) {
+        assert!(completed_ow_bg2_words <= 21);
+        self.overworld_select_palettes(bg, spr);
+        self.palette_load_ow_bg1();
+        self.palette_load_ow_bg2_word_range(0, completed_ow_bg2_words);
+    }
+
+    pub(super) fn overworld_load_palettes_after_ow_bg2_words(
+        &mut self,
+        completed_ow_bg2_words: usize,
+    ) {
+        assert!(completed_ow_bg2_words <= 21);
+        self.palette_load_ow_bg2_word_range(completed_ow_bg2_words, 21);
         self.palette_load_ow_bg3();
         self.palette_load_sp5l();
         self.palette_load_sp6l();
@@ -3401,6 +3563,43 @@ impl ZeldaState {
         self.palette_filter_range(0, 1);
         self.palette_filter_range(0x20, 0xd8);
         self.palette_filter_range(0xe0, 0xf0);
+        self.complete_apply_palette_filter_bounce_after_ranges();
+    }
+
+    const fn valid_apply_palette_filter_next_color(next_color: u8) -> bool {
+        matches!(next_color, 0 | 1)
+            || (next_color >= 0x20 && next_color <= 0xd8)
+            || (next_color >= 0xe0 && next_color <= 0xf0)
+    }
+
+    pub(super) fn apply_palette_filter_bounce_prefix(&mut self, next_color: u8) {
+        assert!(Self::valid_apply_palette_filter_next_color(next_color));
+        if next_color > 0 {
+            self.palette_filter_range(0, 1);
+        }
+        if next_color > 0x20 {
+            self.palette_filter_range(0x20, usize::from(next_color.min(0xd8)));
+        }
+        if next_color > 0xe0 {
+            self.palette_filter_range(0xe0, usize::from(next_color.min(0xf0)));
+        }
+    }
+
+    pub(super) fn complete_apply_palette_filter_bounce_from(&mut self, next_color: u8) {
+        assert!(Self::valid_apply_palette_filter_next_color(next_color));
+        if next_color == 0 {
+            self.palette_filter_range(0, 1);
+        }
+        if next_color <= 0xd8 {
+            self.palette_filter_range(usize::from(next_color.max(0x20)), 0xd8);
+        }
+        if next_color <= 0xf0 {
+            self.palette_filter_range(usize::from(next_color.max(0xe0)), 0xf0);
+        }
+        self.complete_apply_palette_filter_bounce_after_ranges();
+    }
+
+    fn complete_apply_palette_filter_bounce_after_ranges(&mut self) {
         self.increment_cgram_update_flag();
 
         let countdown = self.game_state.display.palette_filter.countdown_word();
@@ -3536,6 +3735,7 @@ impl ZeldaState {
             pending_lower_cursor_decrement: false,
             projection_tail_cleared: false,
             projection_words_copied: 0,
+            source_progress: None,
         };
         self.advance_iris_spotlight_configure_table(&mut build, max_iterations);
         build
@@ -3607,13 +3807,46 @@ impl ZeldaState {
                     circle_value,
                     "spotlight lower-write receipt disagrees with the native circle value",
                 );
-                if build.upper_cursor < 240 {
+                if build.upper_cursor < 224 {
                     self.set_spotlight_hdma_table_dynamic_entry(
                         build.upper_cursor as usize,
                         circle_value,
                     );
                 }
                 build.pending_lower_value = Some(circle_value);
+            }
+            crate::SpotlightTableBuildCheckpoint::AfterUpperTableWrite { lower_cursor } => {
+                assert!(
+                    !build.completed,
+                    "spotlight upper-write progress cannot point beyond the completed C table loop",
+                );
+                assert_eq!(
+                    build.lower_cursor, lower_cursor,
+                    "spotlight upper-write receipt disagrees with the native C loop cursor",
+                );
+                let mut circle_value = 0x00ff;
+                if build.lower_cursor < self.game_state.display.spotlight_hdma.y_upper() {
+                    let pending_circle_input = self
+                        .game_state
+                        .display
+                        .spotlight_hdma
+                        .window_y_buffer_byte();
+                    if pending_circle_input != 0 {
+                        self.decrement_spotlight_window_y_buffer();
+                    }
+                    circle_value = self.iris_spotlight_calculate_circle_value(pending_circle_input);
+                }
+                if build.upper_cursor < 224 {
+                    self.set_spotlight_hdma_table_dynamic_entry(
+                        build.upper_cursor as usize,
+                        circle_value,
+                    );
+                }
+                if build.lower_cursor < 224 {
+                    build.pending_lower_value = Some(circle_value);
+                } else {
+                    build.pending_loop_completion_test = true;
+                }
             }
             crate::SpotlightTableBuildCheckpoint::ProjectionCopy { copied_words } => {
                 assert!(
@@ -3657,13 +3890,13 @@ impl ZeldaState {
                     }
                     circle_value = self.iris_spotlight_calculate_circle_value(pending_circle_input);
                 }
-                if build.upper_cursor < 240 {
+                if build.upper_cursor < 224 {
                     self.set_spotlight_hdma_table_dynamic_entry(
                         build.upper_cursor as usize,
                         circle_value,
                     );
                 }
-                if build.lower_cursor < 240 {
+                if build.lower_cursor < 224 {
                     self.set_spotlight_hdma_table_dynamic_entry(
                         build.lower_cursor as usize,
                         circle_value,
@@ -3700,13 +3933,13 @@ impl ZeldaState {
                     }
                     circle_value = self.iris_spotlight_calculate_circle_value(pending_circle_input);
                 }
-                if build.upper_cursor < 240 {
+                if build.upper_cursor < 224 {
                     self.set_spotlight_hdma_table_dynamic_entry(
                         build.upper_cursor as usize,
                         circle_value,
                     );
                 }
-                if build.lower_cursor < 240 {
+                if build.lower_cursor < 224 {
                     self.set_spotlight_hdma_table_dynamic_entry(
                         build.lower_cursor as usize,
                         circle_value,
@@ -3716,6 +3949,7 @@ impl ZeldaState {
                 build.pending_lower_cursor_decrement = true;
             }
         }
+        build.source_progress = Some(progress);
         build
     }
 
@@ -3744,7 +3978,7 @@ impl ZeldaState {
                 continue;
             }
             if let Some(r8) = build.pending_lower_value.take() {
-                if build.lower_cursor < 240 {
+                if build.lower_cursor < 224 {
                     self.set_spotlight_hdma_table_dynamic_entry(build.lower_cursor as usize, r8);
                 }
                 if build.upper_cursor == build.vertical_center {
@@ -3769,10 +4003,10 @@ impl ZeldaState {
                 }
                 r8 = self.iris_spotlight_calculate_circle_value(t);
             }
-            if build.upper_cursor < 240 {
+            if build.upper_cursor < 224 {
                 self.set_spotlight_hdma_table_dynamic_entry(build.upper_cursor as usize, r8);
             }
-            if build.lower_cursor < 240 {
+            if build.lower_cursor < 224 {
                 self.set_spotlight_hdma_table_dynamic_entry(build.lower_cursor as usize, r8);
             }
             if build.upper_cursor == build.vertical_center {

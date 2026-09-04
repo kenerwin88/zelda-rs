@@ -594,7 +594,10 @@ impl ZeldaState {
                 self.game_state.player.follower_link.x(),
                 self.game_state.player.follower_link.y(),
                 self.game_state.player.follower_link.facing(),
-                self.game_state.player.follower_link.spin_attack_step_counter(),
+                self.game_state
+                    .player
+                    .follower_link
+                    .spin_attack_step_counter(),
                 self.game_state.player.follower_link.actual_x_velocity(),
                 self.game_state.player.follower_link.actual_y_velocity(),
                 self.ancilla_slot_view(k).ancilla_type(),
@@ -7134,7 +7137,10 @@ impl ZeldaState {
                 self.ram[MILESTONE_ITEM_GFX_SWAP_COUNTDOWN],
                 self.ancilla_slot_view(k).work_byte_3(),
                 self.game_state.player.follower_link.has_auxiliary_state(),
-                self.game_state.player.follower_link.has_hookshot_interlock(),
+                self.game_state
+                    .player
+                    .follower_link
+                    .has_hookshot_interlock(),
                 self.game_state.frame.submodule,
             );
         }
@@ -8948,7 +8954,10 @@ impl ZeldaState {
                 self.game_state.player.follower_link.x(),
                 self.game_state.player.follower_link.y(),
                 self.game_state.player.follower_link.facing(),
-                self.game_state.player.follower_link.spin_attack_step_counter(),
+                self.game_state
+                    .player
+                    .follower_link
+                    .spin_attack_step_counter(),
                 self.game_state.player.follower_link.actual_x_velocity(),
                 self.game_state.player.follower_link.actual_y_velocity(),
             );

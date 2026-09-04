@@ -48,9 +48,10 @@ def instruction_token(instruction: dict, *, rust: bool) -> tuple[int, ...]:
 def direct_page_witness(instruction: dict, *, rust: bool) -> list[int] | None:
     if rust:
         low = instruction.get("direct_page_0_3")
+        middle = instruction.get("direct_page_4_7")
         high = instruction.get("direct_page_8_11")
-        if low is not None and high is not None:
-            return [*map(int, low), *map(int, high)]
+        if low is not None and middle is not None and high is not None:
+            return [*map(int, low), *map(int, middle), *map(int, high)]
         return None
     values = instruction.get("direct_page_0_11")
     return None if values is None else [*map(int, values)]

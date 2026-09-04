@@ -1119,6 +1119,7 @@ pub struct SpcInstructionTrace {
     pub sp: u8,
     pub p: bool,
     pub direct_page_0_3: [u8; 4],
+    pub direct_page_4_7: [u8; 4],
     pub direct_page_8_11: [u8; 4],
     pub input_ports: [u8; 4],
     pub timer0_cycles: u8,
@@ -1644,6 +1645,9 @@ impl ApuState {
         let direct_page_0_3 = self.ram[direct_page_base..direct_page_base + 4]
             .try_into()
             .expect("SPC direct page prefix is always four bytes");
+        let direct_page_4_7 = self.ram[direct_page_base + 4..direct_page_base + 8]
+            .try_into()
+            .expect("SPC direct page command state is always four bytes");
         let direct_page_8_11 = self.ram[direct_page_base + 8..direct_page_base + 12]
             .try_into()
             .expect("SPC direct page command latches are always four bytes");
@@ -1662,6 +1666,7 @@ impl ApuState {
                 sp: self.spc.sp,
                 p: self.spc.p,
                 direct_page_0_3,
+                direct_page_4_7,
                 direct_page_8_11,
                 input_ports: self.in_ports[..4]
                     .try_into()
@@ -1761,7 +1766,11 @@ impl ApuState {
     /// `shift` must be a multiple of 32 so the DSP sample phase (`cycles &
     /// 0x1f`) is preserved.
     pub fn rebase_cycles(&mut self, shift: u32) {
-        debug_assert_eq!(shift & 0x1f, 0, "APU cycle rebase must keep the DSP sample phase");
+        debug_assert_eq!(
+            shift & 0x1f,
+            0,
+            "APU cycle rebase must keep the DSP sample phase"
+        );
         self.cycles = self.cycles.wrapping_sub(shift);
         for event in &mut self.scheduled_input_port_writes {
             event.0 = event.0.saturating_sub(shift);

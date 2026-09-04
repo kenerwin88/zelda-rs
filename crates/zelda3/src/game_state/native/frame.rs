@@ -154,28 +154,48 @@ impl<'a> NativeFrameStateBridgeMut<'a> {
     #[track_caller]
     pub(crate) fn increment_submodule(&mut self) {
         self.frame.increment_submodule();
-        crate::types::ww_check(0x11, 1, "increment_submodule", u32::from(self.frame.submodule));
+        crate::types::ww_check(
+            0x11,
+            1,
+            "increment_submodule",
+            u32::from(self.frame.submodule),
+        );
         self.sync();
     }
 
     #[track_caller]
     pub(crate) fn decrement_submodule(&mut self) {
         self.frame.decrement_submodule();
-        crate::types::ww_check(0x11, 1, "decrement_submodule", u32::from(self.frame.submodule));
+        crate::types::ww_check(
+            0x11,
+            1,
+            "decrement_submodule",
+            u32::from(self.frame.submodule),
+        );
         self.sync();
     }
 
     #[track_caller]
     pub(crate) fn increment_subsubmodule(&mut self) {
         self.frame.increment_subsubmodule();
-        crate::types::ww_check(0xb0, 1, "increment_subsubmodule", u32::from(self.frame.subsubmodule));
+        crate::types::ww_check(
+            0xb0,
+            1,
+            "increment_subsubmodule",
+            u32::from(self.frame.subsubmodule),
+        );
         self.sync();
     }
 
     #[track_caller]
     pub(crate) fn decrement_subsubmodule(&mut self) {
         self.frame.decrement_subsubmodule();
-        crate::types::ww_check(0xb0, 1, "decrement_subsubmodule", u32::from(self.frame.subsubmodule));
+        crate::types::ww_check(
+            0xb0,
+            1,
+            "decrement_subsubmodule",
+            u32::from(self.frame.subsubmodule),
+        );
         self.sync();
     }
 

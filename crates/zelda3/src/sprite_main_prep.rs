@@ -21,6 +21,11 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).increment_state();
     }
 
+    pub(super) fn sprite_module_initialize_properties_after_reset(&mut self, k: usize) {
+        self.sprite_prep_load_properties_after_reset(k);
+        self.sprite_slot_view_mut(k).increment_state();
+    }
+
     pub(super) fn sprite_module_initialize_after_properties(&mut self, k: usize) {
         match self.sprite_slot_view(k).sprite_type() {
             0x00 => self.sprite_prep_raven(k),
@@ -486,6 +491,14 @@ impl ZeldaState {
     pub(super) fn sprite_prep_do_nothing_c(&mut self, _k: usize) {}
 
     pub(super) fn sprite_prep_blind_maiden(&mut self, k: usize) {
+        if !self.sprite_prep_blind_maiden_before_follower_graphics(k) {
+            return;
+        }
+        self.load_follower_graphics();
+        self.sprite_prep_blind_maiden_after_follower_graphics();
+    }
+
+    pub(super) fn sprite_prep_blind_maiden_before_follower_graphics(&mut self, k: usize) -> bool {
         if self
             .game_state
             .inventory
@@ -499,13 +512,16 @@ impl ZeldaState {
                 self.follower_state_mut().set_indicator(6);
                 self.follower_state_mut().set_dropped(0);
                 self.follower_state_mut().set_appearance_none_flag(0);
-                self.load_follower_graphics();
-                self.follower_initialize();
-                self.follower_state_mut().set_indicator(0);
-                return;
+                return true;
             }
         }
         self.sprite_slot_view_mut(k).set_state(0);
+        false
+    }
+
+    pub(super) fn sprite_prep_blind_maiden_after_follower_graphics(&mut self) {
+        self.follower_initialize();
+        self.follower_state_mut().set_indicator(0);
     }
 
     pub(super) fn sprite_prep_snitches(&mut self, k: usize) {
@@ -3076,10 +3092,18 @@ impl ZeldaState {
     }
 
     pub(super) fn sprite_prep_bari(&mut self, k: usize) {
+        self.sprite_prep_bari_before_random(k);
+        self.sprite_prep_bari_after_random_boundary(k);
+    }
+
+    pub(super) fn sprite_prep_bari_before_random(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).set_z(6);
         if self.game_state.dungeon.room_tracking.room_index2() == 206 {
             self.sprite_slot_view_mut(k).decrement_c();
         }
+    }
+
+    pub(super) fn sprite_prep_bari_after_random_boundary(&mut self, k: usize) {
         // ROM $86:8B1C: JSL GetRandomNumber / AND #$3F / ADC #$80 keeps the
         // carry GetRandomNumber leaves set (route hosts 357284 and 583864:
         // Blue/Red Bari aux1 0x90 vs a carry-dropped 0x8f).
@@ -3098,28 +3122,55 @@ impl ZeldaState {
     pub(super) fn sprite_prep_fire_debirando(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).set_sprite_type(0x63);
         self.sprite_prep_load_properties(k);
+        self.sprite_prep_fire_debirando_after_property_reload(k);
+    }
+
+    pub(super) fn sprite_prep_fire_debirando_after_property_reload(&mut self, k: usize) {
+        self.sprite_prep_fire_debirando_after_property_reload_before_spawn(k);
+        self.sprite_prep_debirando_pit_after_before_spawn(k);
+    }
+
+    pub(super) fn sprite_prep_fire_debirando_after_property_reload_before_spawn(
+        &mut self,
+        k: usize,
+    ) {
         self.sprite_slot_view_mut(k).decrement_g();
-        self.sprite_prep_debirando_pit(k);
+        self.sprite_prep_debirando_pit_before_spawn(k);
     }
 
     pub(super) fn sprite_prep_debirando_pit(&mut self, k: usize) {
+        self.sprite_prep_debirando_pit_before_spawn(k);
+        self.sprite_prep_debirando_pit_after_before_spawn(k);
+    }
+
+    fn sprite_prep_debirando_pit_before_spawn(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).increment_g();
         self.sprite_slot_view_mut(k).set_delay_main(0);
         self.sprite_slot_view_mut(k).set_graphics(6);
         self.sprite_prep_ignore_projectiles(k);
+    }
 
+    pub(super) fn sprite_prep_debirando_pit_after_before_spawn(&mut self, k: usize) {
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically(k, 0x64, &mut info);
         if j >= 0 {
-            let j = j as usize;
-            self.sprite_set_spawned_coordinates(j, &info);
-            self.sprite_slot_view_mut(j).set_delay_main(96);
-            self.sprite_slot_view_mut(k).set_head_direction(j as u8);
-            let g = self.sprite_slot_view(k).g();
-            self.sprite_slot_view_mut(j).set_g(g);
-            self.sprite_slot_view_mut(j)
-                .set_oam_flags(SPRITE_PREP_DEBIRANDO_PIT_DEBIRANDO_OAM_FLAGS[g as usize]);
+            self.sprite_prep_debirando_pit_after_spawn(k, j as usize, &info);
         }
+    }
+
+    pub(super) fn sprite_prep_debirando_pit_after_spawn(
+        &mut self,
+        k: usize,
+        j: usize,
+        info: &SpriteSpawnInfo,
+    ) {
+        self.sprite_set_spawned_coordinates(j, info);
+        self.sprite_slot_view_mut(j).set_delay_main(96);
+        self.sprite_slot_view_mut(k).set_head_direction(j as u8);
+        let g = self.sprite_slot_view(k).g();
+        self.sprite_slot_view_mut(j).set_g(g);
+        self.sprite_slot_view_mut(j)
+            .set_oam_flags(SPRITE_PREP_DEBIRANDO_PIT_DEBIRANDO_OAM_FLAGS[g as usize]);
     }
 
     pub(super) fn sprite_prep_weak_guard(&mut self, k: usize) {

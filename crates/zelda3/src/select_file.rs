@@ -138,6 +138,15 @@ impl ZeldaState {
         self.decompress_enemy_damage_subclasses();
     }
 
+    /// Publish the source decompressor's completed `$02:80cd-$02:80dc`
+    /// scratch clear. The three descending STZ loops own all of WRAM
+    /// `$0d00-$0fff`; that range aliases the live sprite arrays, so both the
+    /// shared RAM image and its native owner must adopt the same generation.
+    pub(super) fn publish_file_select_graphics_low_wram_clear(&mut self) {
+        self.ram[0x0d00..0x1000].fill(0);
+        self.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&self.ram);
+    }
+
     pub(super) fn load_file_select_graphics(&mut self) {
         let data = self
             .decompressed_sprite_graphics_data(0x5e)

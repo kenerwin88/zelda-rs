@@ -549,6 +549,29 @@ pub enum MainLoopInterruption {
     /// only the resumable C-loop boundary.
     SpriteMainBeforeFirstSlot,
     SpriteMainAfterSlot(u8),
+    /// The current slot's shared `Sprite_TimersAndOam` prefix returned, but
+    /// its state-dispatched body and every lower `Sprite_Main` slot remain
+    /// pending. This is the generic source-call boundary immediately after
+    /// the timer/OAM helper; no timer field or sprite type is inferred.
+    SpriteMainAfterTimersAndOam(u8),
+    /// The current slot completed every countdown update in
+    /// `Sprite_TimersAndOam`; only that helper's final priority publication,
+    /// the state-dispatched body, and lower slots remain pending.
+    SpriteMainAfterTimerDecrements(u8),
+    /// A state-8 Bari initializer loaded the sprite property table, promoted
+    /// the slot to state 9, published its fixed Z value, and completed the
+    /// room-$ce conditional before entering the RNG-backed delay assignment.
+    /// The RNG call and every lower `Sprite_Main` slot remain pending.
+    SpriteMainBariBeforeRandom(u8),
+    /// Zelda's state-8 sprite initializer completed its generic property
+    /// setup and Zelda-specific prefix, then stopped inside the shared two-
+    /// sheet follower-graphics decompression. The source slot remains active;
+    /// `stage` is the exact committed output prefix.
+    SpriteMainFollowerGraphics {
+        slot: u8,
+        caller: SpriteFollowerGraphicsCaller,
+        stage: RescuedMaidenInitializationStage,
+    },
     /// A type-$ec throwable-scenery death slot decremented its timers and
     /// published `sprite_state[k] = 0`, then the host boundary interrupted the
     /// pending `Sprite_PrepOamCoordOrDoubleRet`/garnish suffix. The current
@@ -608,6 +631,18 @@ pub enum MainLoopInterruption {
     /// field publications are complete, while the graphics call, the current
     /// slot return, and every lower Sprite_Main slot remain pending.
     SpriteMainKingZoraFlippersGraphicsStarted(u8),
+    /// `SpriteDraw_SingleSmall` published the current slot's timer/OAM
+    /// prefix, X coordinate, extended-OAM size/X bit, and visible Y
+    /// coordinate. The character/flags stores, optional shadow, remainder of
+    /// the sprite handler, current slot return, and every lower slot remain
+    /// pending.
+    SpriteMainAfterSingleSmallDrawPosition(u8),
+    /// A Wallmaster carried Link past the room boundary, saved the dungeon
+    /// state, disabled every sprite/ancilla/effect slot, and completed the
+    /// fixed prefix of `Sprite_ResetAll_noDisable`. The large
+    /// `sprite_where_in_room` clear and every later reset/caller statement
+    /// remain pending.
+    SpriteMainAfterWallmasterResetPrefix(u8),
     /// A sprite slot completed its ordinary prefix and entered
     /// `Link_ReceiveItem`'s synchronous graphics loader. The caller-specific
     /// item receipt owns the suspended suffix; this boundary tells native
@@ -622,7 +657,7 @@ pub enum MainLoopInterruption {
     /// `Link_MovePosition`'s per-axis loop stored the current axis' subpixel
     /// byte but the accepted NMI (or the host boundary) preceded that axis'
     /// coordinate store. `pass` is the loop's X register: 4 = z (airborne
-    /// only), 2 = y, 0 = x; earlier passes are complete, later ones pending
+    /// only), 2 = x, 0 = y; earlier passes are complete, later ones pending
     /// (route host 179586, Module0F's dungeon-exit spotlight close).
     LinkPositionAfterSubpixel {
         pass: u8,
@@ -636,6 +671,122 @@ pub enum MainLoopInterruption {
     SpotlightGoalResetTable {
         completed_stores: u8,
     },
+    /// Game Over's closing iris reached radius zero and returned through the
+    /// generic spotlight goal transition. The caller restored module $12 and
+    /// was interrupted while filling six 16-color constant-palette rows;
+    /// `completed_stores` counts the exact 16-bit stores in source order.
+    GameOverIrisGoalPaletteFill {
+        completed_stores: u8,
+    },
+    /// The current Zazak/Stalfos slot published its source-selected animation
+    /// frame. Drawing, activity/recoil checks, movement, AI, and lower slots
+    /// remain pending.
+    SpriteMainZazakAfterGraphics(u8),
+    /// The current slot completed the four leading countdown statements in
+    /// `Sprite_TimersAndOam` (`delay_main` and aux1-aux3). The hit-timer,
+    /// aux4, final priority publication, state-dispatched body, and lower
+    /// slots remain pending.
+    SpriteMainAfterPrimaryTimerDecrements(u8),
+    /// The current slot completed the `delay_main` and `delay_aux1`
+    /// statements in `Sprite_TimersAndOam`. The aux2/aux3, hit-timer, aux4,
+    /// priority, dispatch, and lower-slot work remains pending.
+    SpriteMainAfterMainAndAux1TimerDecrements(u8),
+    /// A state-8 bonk item completed its generic initialization and floor
+    /// publication, then entered the synchronous room-$107 animated-sheet
+    /// decode. The graphics call, current slot return, and lower slots remain
+    /// pending.
+    SpriteMainBonkItemGraphicsStarted(u8),
+    /// `Link_MovePosition` completed both coordinate-byte stores for the
+    /// current axis, but the accepted NMI (or host boundary) preceded the
+    /// next axis or the movement tail. `pass` names the completed loop axis:
+    /// 4 = z (airborne only), 2 = x, 0 = y. Earlier axes and this axis are
+    /// complete; later axes remain pending. For the final Y pass, the source
+    /// may already have drained the state-neutral loop indices before the NMI
+    /// (route hosts 71903 and 76632, Module0F's dungeon-exit spotlight close).
+    LinkPositionAfterCoordinates {
+        pass: u8,
+    },
+    /// A guard probe completed movement, collision/proximity checks, and its
+    /// `Sprite_PrepOamCoordOrDoubleRet` call. Only the final off-screen test,
+    /// current-slot return, and lower `Sprite_Main` slots remain pending
+    /// (route host 76088, a newly spawned lower-slot probe).
+    SpriteMainProbeAfterOamCoordinates(u8),
+    /// A state-8 slot entered `SpritePrep_LoadProperties` and completed this
+    /// many stores from `SpritePrep_ResetProperties`' source-ordered 40-field
+    /// clear. `phase` distinguishes the initial property load from a nested
+    /// source call made by the initializer after earlier mutations have
+    /// already committed. The remaining reset stores and caller suffix remain
+    /// pending (route hosts 80273 and 126785).
+    SpriteMainInitializeResetProperties {
+        slot: u8,
+        phase: SpriteInitializeResetPropertiesPhase,
+        completed_stores: u8,
+    },
+    /// A state-8 initializer completed its current 40-store reset and this
+    /// many of `SpritePrep_LoadProperties`' ten following source stores.
+    SpriteMainInitializeLoadProperties {
+        slot: u8,
+        phase: SpriteInitializeResetPropertiesPhase,
+        completed_stores: u8,
+    },
+    /// Fire Debirando completed both property loads, converted `$64` to `$63`,
+    /// and published the fixed pit-initialization prefix. It has entered
+    /// `Sprite_SpawnDynamically`, but no free-slot mutation has committed.
+    SpriteMainFireDebirandoBeforeSpawn(u8),
+    /// Fire Debirando entered `Sprite_SpawnDynamically`, selected a free
+    /// sprite slot, and completed the named source mutation within that
+    /// helper. The remaining helper statements, caller suffix, current-slot
+    /// return, and lower `Sprite_Main` slots remain pending.
+    SpriteMainFireDebirandoSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: SpriteDynamicSpawnProgress,
+    },
+    /// `SpriteDraw_Antfairy` published its leading subtype2 increment, but
+    /// the animation/draw suffix, caller-specific active body, current-slot
+    /// return, and lower `Sprite_Main` slots remain pending.
+    SpriteMainAfterAntfairySubtype2Increment(u8),
+    /// `DesertPrayer_BuildIrisHDMATable` stopped at an exact source statement.
+    /// The progress value names every persistent setup/table mutation already
+    /// published by the interrupted call; the rest of the builder and its
+    /// Module0E caller remain pending.
+    DesertPrayerIris {
+        source_subsubmodule: u8,
+        palette_countdown: u8,
+        radius: u16,
+        progress: DesertPrayerIrisProgress,
+    },
+    /// `ApplyPaletteFilter` in Desert Prayer state 3 completed every source
+    /// range before `next_color`, then stopped before loading that color. The
+    /// remaining palette stores, filter-state transition, iris build, and
+    /// Module0E caller suffix remain pending.
+    DesertPrayerPaletteFilterBeforeColor {
+        countdown: u8,
+        next_color: u8,
+    },
+}
+
+/// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
+/// Scratch-register-only instruction boundaries collapse to the nearest C
+/// statement: only writes which can survive the interrupt are represented.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DesertPrayerIrisProgress {
+    /// Setup writes are ordered as lower Y, upper Y, X center, radial cursor.
+    Setup { completed_writes: u8 },
+    /// The loop is about to calculate one scanline. All prior iterations are
+    /// complete and `scanline` is the source's direct-page `$04` value.
+    BeforeIteration { scanline: u16 },
+    /// The current scanline has been calculated but its primary table word has
+    /// not been published yet.
+    BeforePrimaryTableWrite { table_word: u16, y_buffer: u8 },
+    /// The primary table statement is complete; the optional mirrored write,
+    /// radial-cursor advance, and loop test remain pending.
+    AfterPrimaryTableWrite { table_word: u16, y_buffer: u8 },
+    /// Both table statements and cursor advances for the preceding iteration
+    /// are complete. `next_scanline` is the next `$04` value.
+    AfterIteration { next_scanline: u16, y_buffer: u8 },
+    /// The scanline loop is complete, before the state-4 input/radius tail.
+    LoopComplete,
 }
 
 impl MainLoopInterruption {
@@ -648,6 +799,10 @@ impl MainLoopInterruption {
             self,
             Self::SpriteMainBeforeFirstSlot
                 | Self::SpriteMainAfterSlot(_)
+                | Self::SpriteMainAfterTimersAndOam(_)
+                | Self::SpriteMainAfterTimerDecrements(_)
+                | Self::SpriteMainBariBeforeRandom(_)
+                | Self::SpriteMainFollowerGraphics { .. }
                 | Self::SpriteMainAfterThrowableSceneryStateClear(_)
                 | Self::SpriteMainAfterActiveCuccoX { .. }
                 | Self::SpriteMainAfterActiveCuccoYSubpixel { .. }
@@ -656,7 +811,19 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAfterCuccoGraphicsPublication { .. }
                 | Self::SpriteMainBigKeyDropGraphicsStarted(_)
                 | Self::SpriteMainKingZoraFlippersGraphicsStarted(_)
+                | Self::SpriteMainAfterSingleSmallDrawPosition(_)
+                | Self::SpriteMainAfterWallmasterResetPrefix(_)
+                | Self::SpriteMainZazakAfterGraphics(_)
                 | Self::SpriteMainItemReceiptGraphicsStarted(_)
+                | Self::SpriteMainAfterPrimaryTimerDecrements(_)
+                | Self::SpriteMainAfterMainAndAux1TimerDecrements(_)
+                | Self::SpriteMainBonkItemGraphicsStarted(_)
+                | Self::SpriteMainProbeAfterOamCoordinates(_)
+                | Self::SpriteMainInitializeResetProperties { .. }
+                | Self::SpriteMainInitializeLoadProperties { .. }
+                | Self::SpriteMainFireDebirandoBeforeSpawn(_)
+                | Self::SpriteMainFireDebirandoSpawn { .. }
+                | Self::SpriteMainAfterAntfairySubtype2Increment(_)
         )
     }
 }
@@ -670,6 +837,14 @@ impl MainLoopInterruption {
 pub enum SpriteMainProgress {
     BeforeFirstSlot,
     AfterSlot(u8),
+    AfterTimersAndOam(u8),
+    AfterTimerDecrements(u8),
+    BariBeforeRandom(u8),
+    FollowerGraphics {
+        slot: u8,
+        caller: SpriteFollowerGraphicsCaller,
+        stage: RescuedMaidenInitializationStage,
+    },
     AfterThrowableSceneryStateClear(u8),
     AfterActiveCuccoX {
         slot: u8,
@@ -694,6 +869,83 @@ pub enum SpriteMainProgress {
     },
     BigKeyDropGraphicsStarted(u8),
     KingZoraFlippersGraphicsStarted(u8),
+    AfterSingleSmallDrawPosition(u8),
+    AfterWallmasterResetPrefix(u8),
+    /// Keep new checkpoint variants at the end: progress receipts are
+    /// checkpoint-serialized.
+    ZazakAfterGraphics(u8),
+    /// The four leading `Sprite_TimersAndOam` countdown statements returned;
+    /// hit-timer handling and every later statement remain pending.
+    AfterPrimaryTimerDecrements(u8),
+    /// The `delay_main` and `delay_aux1` countdown statements returned;
+    /// aux2/aux3 and every later statement remain pending.
+    AfterMainAndAux1TimerDecrements(u8),
+    /// A state-8 bonk item completed its generic initialization and floor
+    /// publication, then entered the synchronous room-$107 animated-sheet
+    /// decode. The graphics call, current slot return, and lower slots remain
+    /// pending.
+    BonkItemGraphicsStarted(u8),
+    /// A guard probe completed movement, collision/proximity checks, and its
+    /// OAM-coordinate preparation. The final off-screen test and the rest of
+    /// the descending slot loop remain pending.
+    ProbeAfterOamCoordinates(u8),
+    /// A state-8 slot completed a source-ordered prefix of the shared
+    /// `SpritePrep_ResetProperties` clear.
+    InitializeResetProperties {
+        slot: u8,
+        phase: SpriteInitializeResetPropertiesPhase,
+        completed_stores: u8,
+    },
+    /// The reset returned and this many of the shared property loader's ten
+    /// source stores committed.
+    InitializeLoadProperties {
+        slot: u8,
+        phase: SpriteInitializeResetPropertiesPhase,
+        completed_stores: u8,
+    },
+    /// Fire Debirando entered its dynamic-spawn call after publishing the
+    /// initializer prefix, before the callee mutated a free sprite slot.
+    FireDebirandoBeforeSpawn(u8),
+    /// Fire Debirando's dynamic-spawn helper selected `spawned_slot` and
+    /// published the source statements named by `progress`.
+    FireDebirandoSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: SpriteDynamicSpawnProgress,
+    },
+    /// The current active slot completed `SpriteDraw_Antfairy`'s leading
+    /// subtype2 increment. Its draw/body suffix and lower slots are pending.
+    AfterAntfairySubtype2Increment(u8),
+}
+
+/// Source call site owning an interrupted `SpritePrep_ResetProperties`.
+///
+/// A state-8 Fire Debirando performs one ordinary property load, increments
+/// its state, converts type `$64` to `$63`, and then performs a second nested
+/// property load. Both calls share the same reset helper and return address,
+/// so the call site is part of the semantic checkpoint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SpriteInitializeResetPropertiesPhase {
+    InitialPropertyLoad,
+    FireDebirandoTypeConversion,
+}
+
+/// Furthest persistent source mutation completed by
+/// `Sprite_SpawnDynamicallyEx` after it selects a free slot.
+///
+/// Coordinate capture is scratch-only until the caller consumes the returned
+/// `SpriteSpawnInfo`, so it deliberately does not introduce a checkpoint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SpriteDynamicSpawnProgress {
+    TypePublished,
+    StatePublished,
+    ResetProperties { completed_stores: u8 },
+    LoadProperties { completed_stores: u8 },
+    IdentityPublished,
+    FloorPublished,
+    DirectionPublished,
+    DieActionCleared,
+    SubtypeCleared,
 }
 
 /// Source-level dialogue work completed by one host interval.
@@ -705,6 +957,29 @@ pub enum DialogueExecutionProgress {
     /// has already completed the same semantic prefix without importing a CPU
     /// address, register, or raster position.
     ResumedRenderingWithoutMainIteration { message_read_position: u16 },
+    /// The interval returned from inside the current `VWF_RenderSingle` call
+    /// after its function prefix had committed, but before the decoder cursor
+    /// advanced. In particular, the optional glyph click and line-transition
+    /// state already belong to the source call and must not be replayed when
+    /// the translated continuation resumes the drawing body.
+    ResumedRenderingWithCurrentGlyphStarted { message_read_position: u16 },
+}
+
+impl DialogueExecutionProgress {
+    pub const fn message_read_position(self) -> u16 {
+        match self {
+            Self::ResumedRenderingWithoutMainIteration {
+                message_read_position,
+            }
+            | Self::ResumedRenderingWithCurrentGlyphStarted {
+                message_read_position,
+            } => message_read_position,
+        }
+    }
+
+    pub const fn current_glyph_started(self) -> bool {
+        matches!(self, Self::ResumedRenderingWithCurrentGlyphStarted { .. })
+    }
 }
 
 /// Source-level progress while one cached dungeon sprite temporarily occupies
@@ -713,8 +988,37 @@ pub enum DialogueExecutionProgress {
 /// authority boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CachedSpriteExecutionProgress {
-    Loading { slot: u8, copied_fields: u8 },
-    Restoring { slot: u8, live_fields: u8 },
+    Loading {
+        slot: u8,
+        copied_fields: u8,
+    },
+    Executing {
+        slot: u8,
+        progress: CachedSpriteExecutionBodyProgress,
+    },
+    Restoring {
+        slot: u8,
+        live_fields: u8,
+    },
+}
+
+/// Source statements completed by the cached sprite handler after the live
+/// slot swap and before the displaced sprite is restored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CachedSpriteExecutionBodyProgress {
+    AfterAntfairySubtype2Increment,
+}
+
+/// Source-order cursor inside `Dungeon_FlipCrystalPegAttribute`. The ROM
+/// visits four 0x800-byte attribute banks at each descending `index` before
+/// decrementing it; `completed_banks` names the completed prefix at the
+/// current index. `index == 0xffff` is the literal exhausted X-register state
+/// after the final DEX, with no current bank prefix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DungeonPegAttributeFlipProgressReceipt {
+    pub index: u16,
+    pub completed_banks: u8,
+    pub boundary: OriginalTimingBoundary,
 }
 
 /// Source-visible progress through one cached-sprite swap, together with the
@@ -773,6 +1077,83 @@ pub enum PreOverworldStageCompletion {
     PropertiesReturned,
     OverlaysReturned,
     ScreenBuildReturned,
+}
+
+/// Source-visible control-state publications made while
+/// `Module11_02_LoadEntrance` remains suspended inside its long room load.
+///
+/// These are statement boundaries, not elapsed-frame estimates. A temporary
+/// CPU-backed oracle may identify the corresponding stores from private
+/// execution state, while translated gameplay receives only their semantic
+/// effect and can therefore use any timing backend which publishes the same
+/// source facts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DungeonFallingEntranceProgress {
+    /// `Dungeon_LoadAndDrawRoom` completed the room-parser tail which clears
+    /// `subsubmodule_index` before the caller restores its saved phase.
+    RoomParserClearedSubsubmodule,
+    /// `Module11_02_LoadEntrance` restored and advanced its saved
+    /// `subsubmodule_index` after the room draw returned.
+    RoomLoadAdvancedSubsubmodule,
+    /// The caller published `submodule_index = 7`; only the following dungeon
+    /// song-bank transfer remains inside the suspended source call.
+    SongBankTailEntered,
+}
+
+/// Source-level progress through the rescued-maiden room-tilemap clear.
+///
+/// The assembly clears eight 1,024-word regions for each even X cursor: four
+/// BG2 quadrants followed by four BG1 quadrants.  `completed_stores` is the
+/// exact prefix of that 8,192-store source order which committed before the
+/// boundary.  It deliberately exposes neither a CPU address nor a raster
+/// position, so any timing backend can publish the same C-visible state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RescuedMaidenTilemapClearProgressReceipt {
+    pub completed_stores: u16,
+    pub boundary: OriginalTimingBoundary,
+}
+
+/// Source-level progress through the two sprite-sheet decompressions inside
+/// `CrystalCutscene_SpawnMaiden`'s synchronous `LoadFollowerGraphics` call.
+///
+/// Each sheet expands to exactly 1,536 bytes. The cursor names the committed
+/// output prefix at a host return; it exposes neither the decompressor's CPU
+/// registers nor its private program counter. The translated caller can
+/// therefore preserve the exact partially-written scratch buffers while the
+/// source call stack remains suspended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum RescuedMaidenInitializationStage {
+    FirstFollowerSheet {
+        completed_bytes: u16,
+    },
+    SecondFollowerSheet {
+        completed_bytes: u16,
+    },
+    /// Both sheets are complete. `completed_stores` counts the exact prefix
+    /// of the 512 source-order 16-bit stores which expand 32 tiles from 3bpp
+    /// into the shared 4bpp buffer.
+    Conversion {
+        completed_stores: u16,
+    },
+}
+
+/// The sprite initializer which owns a suspended shared follower-graphics
+/// load.  The loader itself is common, but each caller has a distinct prefix
+/// and suffix which translated gameplay must resume exactly once.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SpriteFollowerGraphicsCaller {
+    /// `SpritePrep_BlindMaiden`'s state-8 initialization call.
+    BlindMaiden,
+    Zelda,
+    /// `Sprite_B7_BlindMaiden`'s state-9 transition into a follower.
+    /// Keep new variants at the end: these receipts are checkpoint-serialized.
+    BlindMaidenBody,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct RescuedMaidenInitializationProgressReceipt {
+    pub stage: RescuedMaidenInitializationStage,
+    pub boundary: OriginalTimingBoundary,
 }
 
 /// Source-level progress through `ZeldaRunGameLoop` during one host interval.
@@ -835,6 +1216,11 @@ pub enum SpotlightTableBuildCheckpoint {
         lower_cursor: u16,
         circle_value: u16,
     },
+    /// The upper table word is published, but the source has not yet reached
+    /// the guarded lower-word store. `lower_cursor` identifies the current C
+    /// loop iteration; native gameplay recomputes the pure circle value from
+    /// its matching loop state instead of importing a CPU accumulator.
+    AfterUpperTableWrite { lower_cursor: u16 },
     /// The row-pair build and off-screen clear are complete. This many words
     /// of the 224-word dynamic table have been copied to the reserved HDMA
     /// table; the remaining projection and caller suffix are still pending.
@@ -866,6 +1252,49 @@ pub struct SpotlightTableBuildProgress {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SpotlightTableBuildProgressReceipt {
     pub progress: SpotlightTableBuildProgress,
+    pub boundary: OriginalTimingBoundary,
+}
+
+/// Source-level progress through Module19 case 2's special-area palette load.
+///
+/// The song upload can return late enough in a host for the caller to enter
+/// `Overworld_EnterSpecialArea` and publish only a prefix of the OWBG2 palette
+/// before the host boundary. The temporary timing backend derives the count
+/// from private CPU state; translated gameplay receives only the number of
+/// source-order palette words already committed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TriforceRoomCase2PaletteProgressReceipt {
+    pub completed_ow_bg2_words: u8,
+    pub boundary: OriginalTimingBoundary,
+}
+
+/// Source-level progress through a blocking Module1A credits scene load.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CreditsSceneLoadProgress {
+    /// The scene loader published its module/submodule advance and returned
+    /// to `Credits_LoadNextScene_*`, before the ending text append.
+    SceneLoadCompleted,
+    /// The ending text append wrote its header and this many payload bytes.
+    EndingTextPayloadBytes(u16),
+    /// The scene loader and ending text append returned; only the shared
+    /// ZeldaRunGameLoop suffix remains suspended.
+    EndingTextCompleted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CreditsSceneLoadProgressReceipt {
+    pub progress: CreditsSceneLoadProgress,
+    pub boundary: OriginalTimingBoundary,
+}
+
+/// Source-level progress through the credits finale's `SaveGameFile` call.
+///
+/// Both SRAM save-block mirrors have been copied before this loop begins.
+/// `completed_checksum_words` identifies the live save-block words already
+/// accumulated by the checksum loop when the host boundary exposed it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CreditsEndSequence32ProgressReceipt {
+    pub completed_checksum_words: u16,
     pub boundary: OriginalTimingBoundary,
 }
 
@@ -1006,6 +1435,11 @@ pub struct NmiPpuRegisterOperands {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OriginalTimingSemanticReceipt {
     NmiAccepted(NmiUpdateGate),
+    /// The preemptive dungeon/Triforce poly worker entered its source-level
+    /// render call. The temporary timing backend identifies the entry from
+    /// private CPU state; translated gameplay consumes only the fact that the
+    /// worker started the next frame in this host interval.
+    PreemptivePolyhedralRenderStarted,
     /// The accepted NMI handler reached its common completion point.
     /// An open update gate has published DMA/joypad work; a held gate has run
     /// only the unconditional audio and PPU-register portions.
@@ -1082,12 +1516,33 @@ pub enum OriginalTimingSemanticReceipt {
     WorldMapAmbientMap8Returned,
     OverworldSpriteReloadProgress(OverworldSpriteReloadProgress),
     CachedSpriteExecutionProgress(CachedSpriteExecutionProgressReceipt),
+    DungeonPegAttributeFlipProgress(DungeonPegAttributeFlipProgressReceipt),
     DungeonResetSpritesProgress(DungeonResetSpritesProgressReceipt),
     SpriteResetAllProgress(SpriteResetAllProgressReceipt),
     PreOverworldStageCompleted(PreOverworldStageCompletion),
+    DungeonFallingEntranceProgress(DungeonFallingEntranceProgress),
+    RescuedMaidenTilemapClearProgress(RescuedMaidenTilemapClearProgressReceipt),
+    RescuedMaidenInitializationProgress(RescuedMaidenInitializationProgressReceipt),
     DmaPublicationCompleted {
         channel_mask: u8,
     },
+    /// `Death_Func15`'s save-quit branch returned from `Death_Func31` and
+    /// published its module, Link-coordinate, and scroll-reset prefix before
+    /// entering the source-ordered dungeon-info clear. The later clear/song
+    /// upload remain owned by the suspended caller.
+    SaveQuitResetStatePublished,
+    /// File-select graphics decompression completed the source loop at
+    /// `$02:80cd-$02:80dc` which zeros WRAM `$0d00-$0fff`. This is an
+    /// observable mid-call publication because the range aliases the live
+    /// sprite arrays; the graphics caller itself remains suspended.
+    FileSelectGraphicsLowWramCleared,
+    /// `Main_ShowTextMessage` returned inside Module05's Message destination.
+    /// Module 14 and submodule 2 are now observable, while palette loading and
+    /// Module05's final Module1B publication remain in the suspended caller.
+    SelectedGameLoadMessageInterfacePublished,
+    TriforceRoomCase2PaletteProgress(TriforceRoomCase2PaletteProgressReceipt),
+    CreditsSceneLoadProgress(CreditsSceneLoadProgressReceipt),
+    CreditsEndSequence32Progress(CreditsEndSequence32ProgressReceipt),
 }
 
 /// One source interruption temporarily owned by a translated C caller during
@@ -1135,6 +1590,12 @@ pub struct OriginalTimingHostReceipts {
     /// before constructing the host receipt; schema-gated cached evidence
     /// therefore cannot silently fall back to post-interruption native RAM.
     pub(crate) nmi_acceptance_ppu_register_operands: Vec<NmiPpuRegisterOperands>,
+    /// Native DSP-sample offsets of source `APUI00` song-end polls in this
+    /// host interval, in C call order. The timing authority supplies only the
+    /// point within the current audio window; Zelda's own SPC clock remains
+    /// authoritative for the value observed at that point.
+    #[serde(default)]
+    pub(crate) song_end_poll_native_sample_offsets: Vec<u16>,
     /// One interruption temporarily forwarded by the host-timeline owner to
     /// the translated C caller during this same dispatch. The serialized
     /// oracle stream remains the ordered `NmiAccepted`/`MainLoopInterrupted`
@@ -1168,6 +1629,7 @@ impl OriginalTimingHostReceipts {
             input_state: sanitize_original_timing_input(input_state),
             semantic,
             nmi_acceptance_ppu_register_operands: Vec::new(),
+            song_end_poll_native_sample_offsets: Vec::new(),
             forwarded_main_loop_interruption: None,
             presented_animated_bg_tiles: None,
             presented_cgram: None,
@@ -1190,6 +1652,11 @@ impl OriginalTimingHostReceipts {
         operands: Vec<NmiPpuRegisterOperands>,
     ) -> Self {
         self.nmi_acceptance_ppu_register_operands = operands;
+        self
+    }
+
+    pub fn with_song_end_poll_native_sample_offsets(mut self, offsets: Vec<u16>) -> Self {
+        self.song_end_poll_native_sample_offsets = offsets;
         self
     }
 
@@ -1343,6 +1810,8 @@ pub enum OriginalTimingReceiptInstallError {
     InvalidSpriteResetAllProgress,
     DuplicateCachedSpriteExecutionProgress,
     InvalidCachedSpriteExecutionProgress,
+    DuplicateDungeonPegAttributeFlipProgress,
+    InvalidDungeonPegAttributeFlipProgress,
     DuplicateDialogueExecutionProgress,
     DuplicateSaveMenuInitializationProgress,
     DuplicateItemReceiptGraphicsProgress,
@@ -1366,8 +1835,22 @@ pub enum OriginalTimingReceiptInstallError {
     DuplicateWorldMapOverlayReloadReturn,
     DuplicateWorldMapAmbientMap8Return,
     DuplicateOverworldSpritePresencePublished,
+    DuplicateSaveQuitResetStatePublished,
+    DuplicateFileSelectGraphicsLowWramCleared,
+    DuplicateSelectedGameLoadMessageInterfacePublished,
+    DuplicateTriforceRoomCase2PaletteProgress,
+    InvalidTriforceRoomCase2PaletteProgress,
+    DuplicateCreditsSceneLoadProgress,
+    InvalidCreditsSceneLoadProgress,
+    DuplicateCreditsEndSequence32Progress,
+    InvalidCreditsEndSequence32Progress,
     InvalidOverworldSpriteReloadProgress,
     DuplicatePreOverworldStageCompletion,
+    DuplicateDungeonFallingEntranceProgress,
+    DuplicateRescuedMaidenTilemapClearProgress,
+    InvalidRescuedMaidenTilemapClearProgress,
+    DuplicateRescuedMaidenInitializationProgress,
+    InvalidRescuedMaidenInitializationProgress,
     InvalidNmiLifecycle,
     InvalidNmiPpuRegisterOperands,
     OutOfSequence { expected: u64, actual: u64 },

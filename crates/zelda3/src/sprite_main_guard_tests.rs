@@ -5,6 +5,49 @@ fn fresh_state() -> ZeldaState {
 }
 
 #[test]
+fn guard_probe_oam_boundary_commits_movement_without_replaying_it_on_resume() {
+    let mut split = fresh_state();
+    let probe_slot = 8;
+    let parent_slot = 10;
+    split.follower_link_state_mut().set_position(0x0200, 0x0200);
+    split
+        .sprite_slot_view_mut(parent_slot)
+        .set_sprite_type(0xce);
+    {
+        let mut probe = split.sprite_slot_view_mut(probe_slot);
+        probe.set_state(9);
+        probe.set_sprite_type(0x41);
+        probe.set_c((parent_slot + 1) as u8);
+        probe.set_x(0x0080);
+        probe.set_y(0x0080);
+        probe.set_x_velocity((-16i8) as u8);
+        probe.set_y_velocity(2);
+    }
+    let mut atomic = split.clone();
+
+    let oam_position = split
+        .probe_until_after_oam_coordinates(probe_slot)
+        .expect("visible guard probe did not reach its post-OAM boundary");
+    assert_eq!(split.sprite_slot_view(probe_slot).x(), 0x0070);
+    assert_eq!(split.sprite_slot_view(probe_slot).y(), 0x0082);
+    split.complete_probe_after_oam_coordinates(probe_slot, oam_position);
+
+    atomic.probe(probe_slot);
+    assert_eq!(
+        split.sprite_slot_view(probe_slot).state(),
+        atomic.sprite_slot_view(probe_slot).state()
+    );
+    assert_eq!(
+        split.sprite_slot_view(probe_slot).x(),
+        atomic.sprite_slot_view(probe_slot).x()
+    );
+    assert_eq!(
+        split.sprite_slot_view(probe_slot).y(),
+        atomic.sprite_slot_view(probe_slot).y()
+    );
+}
+
+#[test]
 fn guard_random_patrol_delay_preserves_rng_carry_through_masked_adc() {
     assert_eq!(
         soldier_random_patrol_delay(crate::rom_random::RomRandomResult::new(0x7b, false)),

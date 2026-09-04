@@ -339,6 +339,7 @@ pub(super) struct SuspendedVwfEndpointTransition {
     start_read_position: u16,
     target_read_position: u16,
     slice_count: u32,
+    current_glyph_started: bool,
 }
 
 /// Deterministic native work needed to finish one already-suspended VWF
@@ -372,7 +373,7 @@ impl SuspendedVwfCompletionTransition {
 
 impl SuspendedVwfEndpointTransition {
     pub(super) const fn advanced_native_vwf(self) -> bool {
-        self.slice_count != 0
+        self.slice_count != 0 || self.current_glyph_started
     }
 
     #[cfg(test)]
@@ -770,17 +771,125 @@ impl ZeldaState {
             0 => self.ResetTransitionPropsAndAdvance_ResetInterface(),
             1 => self.ApplyPaletteFilter_bounce(),
             2 => {
+                if let Some(
+                    interruption @ crate::MainLoopInterruption::DesertPrayerIris {
+                        source_subsubmodule,
+                        palette_countdown,
+                        radius,
+                        progress,
+                    },
+                ) = self.original_timing_main_loop_interruption()
+                {
+                    assert_eq!(source_subsubmodule, 2);
+                    assert_eq!(
+                        u16::from(palette_countdown),
+                        self.game_state.display.palette_filter.countdown_word(),
+                    );
+                    assert!(
+                        self.take_original_timing_main_loop_interruption(interruption),
+                        "Desert Prayer iris interruption disappeared before its source caller consumed it",
+                    );
+                    self.CleanUpAndPrepDesertPrayerHDMA();
+                    self.set_spotlight_window_radius_byte(0x26);
+                    self.set_spotlight_window_state_byte(0);
+                    assert_eq!(
+                        u16::from(self.game_state.display.spotlight_hdma.window_radius_byte(),),
+                        radius,
+                    );
+                    self.begin_desert_prayer_iris(
+                        progress,
+                        crate::zelda_rtl::DesertPrayerIrisCaller::InitializeCase2,
+                    );
+                    return;
+                }
                 self.DesertPrayer_InitializeIrisHDMA();
-                let countdown = self.game_state.display.mosaic_target_level.wrapping_sub(1);
-                self.set_countdown(countdown);
-                self.clear_mosaic_target_level();
-                self.set_darkening_or_lightening_screen(2);
+                self.complete_desert_prayer_case2_after_iris();
             }
             3 => {
+                if let Some(
+                    interruption @ crate::MainLoopInterruption::DesertPrayerIris {
+                        source_subsubmodule,
+                        palette_countdown,
+                        radius,
+                        progress,
+                    },
+                ) = self.original_timing_main_loop_interruption()
+                {
+                    assert!(
+                        self.take_original_timing_main_loop_interruption(interruption),
+                        "Desert Prayer iris interruption disappeared before its source caller consumed it",
+                    );
+                    self.ApplyPaletteFilter_bounce();
+                    assert_eq!(
+                        self.game_state.display.palette_filter.countdown_word(),
+                        u16::from(palette_countdown),
+                    );
+                    assert_eq!(self.game_state.frame.subsubmodule, source_subsubmodule);
+                    assert_eq!(
+                        u16::from(self.game_state.display.spotlight_hdma.window_radius_byte(),),
+                        radius,
+                    );
+                    self.begin_desert_prayer_iris(
+                        progress,
+                        crate::zelda_rtl::DesertPrayerIrisCaller::PaletteFilterCase3,
+                    );
+                    return;
+                }
+                if let Some(
+                    interruption @ crate::MainLoopInterruption::DesertPrayerPaletteFilterBeforeColor {
+                        countdown,
+                        next_color,
+                    },
+                ) = self.original_timing_main_loop_interruption()
+                {
+                    assert!(
+                        self.take_original_timing_main_loop_interruption(interruption),
+                        "Desert Prayer palette interruption disappeared before its source caller consumed it",
+                    );
+                    self.apply_palette_filter_bounce_prefix(next_color);
+                    self.game_execution_scheduler.schedule_work(
+                        crate::zelda_rtl::GameWorkContinuation::FinishDesertPrayerPaletteFilter {
+                            countdown,
+                            next_color,
+                        },
+                        1,
+                    );
+                    return;
+                }
                 self.ApplyPaletteFilter_bounce();
                 self.DesertPrayer_BuildIrisHDMATable();
             }
-            4 => self.DesertPrayer_BuildIrisHDMATable(),
+            4 => {
+                if let Some(
+                    interruption @ crate::MainLoopInterruption::DesertPrayerIris {
+                        source_subsubmodule,
+                        palette_countdown,
+                        radius,
+                        progress,
+                    },
+                ) = self.original_timing_main_loop_interruption()
+                {
+                    assert_eq!(source_subsubmodule, 4);
+                    assert_eq!(
+                        u16::from(palette_countdown),
+                        self.game_state.display.palette_filter.countdown_word(),
+                    );
+                    assert_eq!(
+                        u16::from(self.game_state.display.spotlight_hdma.window_radius_byte(),),
+                        radius,
+                    );
+                    assert!(
+                        self.take_original_timing_main_loop_interruption(interruption),
+                        "Desert Prayer iris interruption disappeared before its source caller consumed it",
+                    );
+                    self.begin_desert_prayer_iris(
+                        progress,
+                        crate::zelda_rtl::DesertPrayerIrisCaller::RecurringCase4,
+                    );
+                    return;
+                }
+                self.DesertPrayer_BuildIrisHDMATable();
+            }
             _ => {}
         }
     }
@@ -903,7 +1012,81 @@ impl ZeldaState {
         self.increment_subsubmodule();
     }
 
+    fn complete_desert_prayer_case2_after_iris(&mut self) {
+        let countdown = self.game_state.display.mosaic_target_level.wrapping_sub(1);
+        self.set_countdown(countdown);
+        self.clear_mosaic_target_level();
+        self.set_darkening_or_lightening_screen(2);
+    }
+
+    pub(super) fn begin_desert_prayer_iris(
+        &mut self,
+        progress: crate::DesertPrayerIrisProgress,
+        caller: crate::zelda_rtl::DesertPrayerIrisCaller,
+    ) {
+        assert!(
+            self.desert_prayer_build_iris_hdma_table(Some(progress)),
+            "Desert Prayer iris builder did not reach source progress {progress:?}",
+        );
+        self.game_execution_scheduler.schedule_work(
+            crate::zelda_rtl::GameWorkContinuation::FinishDesertPrayerIris { progress, caller },
+            1,
+        );
+    }
+
+    pub(super) fn complete_desert_prayer_iris(
+        &mut self,
+        caller: crate::zelda_rtl::DesertPrayerIrisCaller,
+    ) {
+        self.DesertPrayer_BuildIrisHDMATable();
+        if caller == crate::zelda_rtl::DesertPrayerIrisCaller::InitializeCase2 {
+            self.increment_subsubmodule();
+            self.complete_desert_prayer_case2_after_iris();
+        }
+        self.complete_module0e_interface_after_run();
+    }
+
+    pub(super) fn desert_prayer_iris_completion_closes_dialogue(&self) -> bool {
+        self.game_state.frame.subsubmodule == 4
+            && self.game_state.display.spotlight_hdma.window_state_byte() != 0
+            && self
+                .game_state
+                .display
+                .spotlight_hdma
+                .window_radius_byte()
+                .wrapping_add(8)
+                >= 0xc0
+    }
+
+    pub(super) fn complete_desert_prayer_palette_filter_before_iris(
+        &mut self,
+        countdown: u8,
+        next_color: u8,
+    ) {
+        assert_eq!(
+            self.game_state.display.palette_filter.countdown_word(),
+            u16::from(countdown),
+            "Desert Prayer palette continuation lost its source countdown",
+        );
+        self.complete_apply_palette_filter_bounce_from(next_color);
+    }
+
+    pub(super) fn complete_desert_prayer_palette_filter_after_iris(&mut self) {
+        self.DesertPrayer_BuildIrisHDMATable();
+        self.complete_module0e_interface_after_run();
+    }
+
     pub(super) fn DesertPrayer_BuildIrisHDMATable(&mut self) {
+        assert!(!self.desert_prayer_build_iris_hdma_table(None));
+    }
+
+    /// Execute the source builder through an optional persistent-statement
+    /// checkpoint. Returning `true` means the named prefix was published and
+    /// every later source statement remains pending.
+    fn desert_prayer_build_iris_hdma_table(
+        &mut self,
+        stop_at: Option<crate::DesertPrayerIrisProgress>,
+    ) -> bool {
         let r14 = self
             .game_state
             .player
@@ -913,7 +1096,21 @@ impl ZeldaState {
             .wrapping_add(12);
         let radius = self.game_state.display.spotlight_hdma.window_radius_byte();
         let mut spotlight_y_lower = r14.wrapping_sub(u16::from(radius));
+        if stop_at
+            == Some(crate::DesertPrayerIrisProgress::Setup {
+                completed_writes: 0,
+            })
+        {
+            return true;
+        }
         self.set_spotlight_y_lower(spotlight_y_lower);
+        if stop_at
+            == Some(crate::DesertPrayerIrisProgress::Setup {
+                completed_writes: 1,
+            })
+        {
+            return true;
+        }
         let mut r4 = if sign16(spotlight_y_lower) {
             spotlight_y_lower
         } else {
@@ -921,6 +1118,13 @@ impl ZeldaState {
         };
         let spotlight_y_upper = spotlight_y_lower.wrapping_add(u16::from(radius) * 2);
         self.set_spotlight_y_upper(spotlight_y_upper);
+        if stop_at
+            == Some(crate::DesertPrayerIrisProgress::Setup {
+                completed_writes: 2,
+            })
+        {
+            return true;
+        }
         let spotlight_x_center = self
             .game_state
             .player
@@ -929,9 +1133,26 @@ impl ZeldaState {
             .wrapping_sub(self.game_state.display.ppu_scroll_copy.bg2_h_copy2())
             .wrapping_add(8);
         self.set_spotlight_window_x_center(spotlight_x_center);
+        if stop_at
+            == Some(crate::DesertPrayerIrisProgress::Setup {
+                completed_writes: 3,
+            })
+        {
+            return true;
+        }
         self.set_spotlight_window_y_buffer_byte(1);
+        if stop_at
+            == Some(crate::DesertPrayerIrisProgress::Setup {
+                completed_writes: 4,
+            })
+        {
+            return true;
+        }
 
         loop {
+            if stop_at == Some(crate::DesertPrayerIrisProgress::BeforeIteration { scanline: r4 }) {
+                return true;
+            }
             let mut r0 = 0x0100u16;
             let mut r2 = 0x0100u16;
             let in_window =
@@ -971,6 +1192,15 @@ impl ZeldaState {
                 .wrapping_sub(1)
             };
 
+            if stop_at
+                == Some(crate::DesertPrayerIrisProgress::BeforePrimaryTableWrite {
+                    table_word: k,
+                    y_buffer,
+                })
+            {
+                return true;
+            }
+
             let t6 = if r0 < 256 {
                 r0 as u8
             } else if r0 < 512 {
@@ -985,6 +1215,14 @@ impl ZeldaState {
                     k as usize,
                     if r6 == 0xffff { 0x00ff } else { r6 },
                 );
+            }
+            if stop_at
+                == Some(crate::DesertPrayerIrisProgress::AfterPrimaryTableWrite {
+                    table_word: k,
+                    y_buffer,
+                })
+            {
+                return true;
             }
 
             if sign16(spotlight_y_lower) || (r4 >= spotlight_y_lower && r4 < spotlight_y_upper) {
@@ -1006,13 +1244,29 @@ impl ZeldaState {
             }
 
             r4 = r4.wrapping_add(1);
+            if stop_at
+                == Some(crate::DesertPrayerIrisProgress::AfterIteration {
+                    next_scanline: r4,
+                    y_buffer: self
+                        .game_state
+                        .display
+                        .spotlight_hdma
+                        .window_y_buffer_byte(),
+                })
+            {
+                return true;
+            }
             if !sign16(r4) && r4 >= 225 {
                 break;
             }
         }
 
+        if stop_at == Some(crate::DesertPrayerIrisProgress::LoopComplete) {
+            return true;
+        }
+
         if self.game_state.frame.subsubmodule != 4 {
-            return;
+            return false;
         }
         if self.game_state.display.spotlight_hdma.window_state_byte() != 1
             && (self.game_state.player.follower_link.filtered_joypad_h()
@@ -1041,7 +1295,7 @@ impl ZeldaState {
                 self.set_main_module(saved_module);
                 self.clear_window_layer_masks();
                 self.IrisSpotlight_ResetTable();
-                return;
+                return false;
             }
         }
         if (self
@@ -1061,6 +1315,7 @@ impl ZeldaState {
             self.follower_link_state_mut()
                 .set_spin_attack_delay_timer(PRAYING_SCENE_DELAYS[i as usize]);
         }
+        false
     }
 
     pub(super) fn DesertHDMA_CalculateIrisShapeLine(&self) -> Pair16U {
@@ -1097,6 +1352,24 @@ impl ZeldaState {
     }
 
     pub(super) fn SaveGameFile(&mut self) {
+        let accumulated_word_sum = self.save_game_file_copy_blocks_and_sum_prefix(0);
+        self.save_game_file_finish_checksum(0, accumulated_word_sum);
+    }
+
+    /// Copy the two source-ordered SRAM mirrors, then accumulate exactly the
+    /// requested prefix of the live WRAM checksum input.
+    ///
+    /// The ROM finishes both copies before entering its checksum loop. Keeping
+    /// the sum outside WRAM lets a suspended native caller retain the same
+    /// source value while an intervening NMI may mutate later save-block words.
+    pub(super) fn save_game_file_copy_blocks_and_sum_prefix(
+        &mut self,
+        completed_checksum_words: u16,
+    ) -> u16 {
+        assert!(
+            completed_checksum_words <= 0x4fe / 2,
+            "SaveGameFile checksum prefix exceeds the source save block",
+        );
         let offs = self.selected_save_slot_offset();
         // C copies the LIVE save block from WRAM (ram[SAVE_DUNG_INFO..+0x500]) and
         // checksums it from WRAM. The SaveProgress native model keeps a `dungeon_info`
@@ -1112,10 +1385,32 @@ impl ZeldaState {
         if offs + 0xf00 + 0x500 <= self.sram.len() {
             self.sram[offs + 0xf00..offs + 0xf00 + 0x500].copy_from_slice(&dung_info);
         }
-        let mut checksum = 0x5a5au16;
-        for i in (0..0x4fe).step_by(2) {
-            checksum = checksum.wrapping_sub(read_le_u16(&self.ram, SAVE_DUNG_INFO + i));
+
+        let mut accumulated_word_sum = 0u16;
+        for word in 0..usize::from(completed_checksum_words) {
+            accumulated_word_sum = accumulated_word_sum
+                .wrapping_add(read_le_u16(&self.ram, SAVE_DUNG_INFO + word * 2));
         }
+        accumulated_word_sum
+    }
+
+    /// Resume `SaveGameFile` after a source checksum-loop boundary.
+    pub(super) fn save_game_file_finish_checksum(
+        &mut self,
+        completed_checksum_words: u16,
+        mut accumulated_word_sum: u16,
+    ) {
+        let total_checksum_words = 0x4fe / 2;
+        assert!(
+            completed_checksum_words <= total_checksum_words,
+            "SaveGameFile checksum continuation exceeds the source save block",
+        );
+        for word in usize::from(completed_checksum_words)..usize::from(total_checksum_words) {
+            accumulated_word_sum = accumulated_word_sum
+                .wrapping_add(read_le_u16(&self.ram, SAVE_DUNG_INFO + word * 2));
+        }
+        let checksum = 0x5a5au16.wrapping_sub(accumulated_word_sum);
+        let offs = self.selected_save_slot_offset();
         // Keep the shadow + ram[SAVE_DUNG_INFO+0x4fe] coherent so the frame-end bulk
         // projection of dungeon_info doesn't re-stamp a stale checksum over ram.
         self.save_progress_mut().set_dungeon_info_checksum(checksum);
@@ -1223,13 +1518,36 @@ impl ZeldaState {
     pub(super) fn Module12_GameOver(&mut self) {
         let entry_submodule = self.game_state.frame.submodule;
         let spotlight_radius = self.game_state.display.spotlight_hdma.window_radius();
-        let game_over_spotlight_build_suspended =
-            entry_submodule == 3 && self.begin_game_over_spotlight_build(spotlight_radius);
+        let live_goal_palette_fill =
+            match self.original_timing_main_loop_interruption() {
+                Some(crate::MainLoopInterruption::GameOverIrisGoalPaletteFill {
+                    completed_stores,
+                }) if entry_submodule == 3 => Some(completed_stores),
+                _ => None,
+            };
+        let live_table_progress = matches!(entry_submodule, 2 | 3)
+            .then(|| self.take_original_timing_spotlight_table_build_progress())
+            .flatten();
+        let game_over_spotlight_entry_suspended = entry_submodule == 2
+            && live_table_progress
+                .is_some_and(|progress| self.begin_game_over_spotlight_entry(progress.progress));
+        let game_over_goal_palette_suspended = live_goal_palette_fill.is_some_and(|completed| {
+            self.begin_game_over_iris_goal_palette_fill(spotlight_radius, completed)
+        });
+        let game_over_spotlight_build_suspended = entry_submodule == 3
+            && !game_over_goal_palette_suspended
+            && self.begin_game_over_spotlight_build(
+                spotlight_radius,
+                live_table_progress.map(|progress| progress.progress),
+            );
         match entry_submodule {
             0 => self.GameOver_AdvanceImmediately(),
             1 => self.Death_Func1(),
-            2 => self.GameOver_DelayBeforeIris(),
-            3 if !game_over_spotlight_build_suspended => self.GameOver_IrisWipe(),
+            2 if !game_over_spotlight_entry_suspended => self.GameOver_DelayBeforeIris(),
+            2 => {}
+            3 if !game_over_spotlight_build_suspended && !game_over_goal_palette_suspended => {
+                self.GameOver_IrisWipe()
+            }
             3 => {}
             4 => self.Death_Func4(),
             5 => self.GameOver_SplatAndFade(),
@@ -1245,7 +1563,10 @@ impl ZeldaState {
             15 => self.GameOver_ResituateLink(),
             _ => {}
         }
-        if self.game_state.frame.submodule != 9 && !game_over_spotlight_build_suspended {
+        let spotlight_suspended = game_over_spotlight_entry_suspended
+            || game_over_spotlight_build_suspended
+            || game_over_goal_palette_suspended;
+        if self.game_state.frame.submodule != 9 && !spotlight_suspended {
             self.link_oam_main();
         }
         let link_oam_suspended = self
@@ -1257,39 +1578,114 @@ impl ZeldaState {
         // leaves the shared ZeldaRunGameLoop suffix to the generic body: the
         // translated LinkOam_Main call already completed atomically, and the
         // body arms the pending suffix for the resumed stack's next host.
-        let entered_iris = entry_submodule == 2 && self.game_state.frame.submodule == 3;
-        if entered_iris && !link_oam_suspended {
-            // IrisSpotlight_ConfigureTable is long enough for vblank to split
-            // each circle build from its caller return. The initial build owns
-            // the pre-iris scanout; subsequent builds use the same staged
-            // publication cadence already measured for dungeon-exit irises.
-            let phase = SpotlightIterationPhase::CloseEntryBeforeTablePublication;
-            self.schedule_spotlight_iteration_return(SpotlightIteration::game_over_closing(
-                phase,
-                entered_iris,
-            ));
-        }
+        let _ = link_oam_suspended;
     }
 
-    fn begin_game_over_spotlight_build(&mut self, spotlight_radius: u16) -> bool {
+    fn begin_game_over_spotlight_entry(
+        &mut self,
+        progress: crate::SpotlightTableBuildProgress,
+    ) -> bool {
+        self.messaging_state_mut().decrement_menu_animation_timer();
+        assert_eq!(
+            self.game_state.messaging.runtime.menu_animation_timer(),
+            0,
+            "a game-over entry table checkpoint requires the delay timer to expire",
+        );
+        self.Death_InitializeGameOverLetters();
+        self.spotlight_internal_before_table(0x7e, 0);
+        let table_build = self.begin_iris_spotlight_configure_table_at_progress(progress);
+        let iteration = SpotlightIteration::game_over_closing(
+            SpotlightIterationPhase::CloseEntryBeforeTablePublication,
+            true,
+        );
+        self.schedule_game_over_spotlight_build(table_build, true, iteration);
+        true
+    }
+
+    fn begin_game_over_spotlight_build(
+        &mut self,
+        spotlight_radius: u16,
+        live_progress: Option<crate::SpotlightTableBuildProgress>,
+    ) -> bool {
         if !self.rom_startup_timing() {
             return false;
         }
+        if spotlight_radius == 7
+            && live_progress.is_none()
+            && self
+                .game_execution_scheduler
+                .current_main_iteration_follows_leading_nmi()
+        {
+            // At the final radius the complete table, radius-zero goal
+            // transition, and Module-12 restore all fit between the leading
+            // Open NMI and the following Held NMI. The latter lands at
+            // $09:f35d, before the first palette store, so retain an exact
+            // zero-store palette continuation instead of scheduling another
+            // table-build slice.
+            return self.begin_game_over_iris_goal_palette_fill(spotlight_radius, 0);
+        }
         self.game_over_iris_wipe_before_table();
         let phase = SpotlightIterationPhase::for_game_over_close_iteration(spotlight_radius);
-        self.schedule_game_over_spotlight_build(SpotlightIteration::game_over_closing(
-            phase, false,
-        ));
+        let table_build = match live_progress {
+            Some(progress) => self.begin_iris_spotlight_configure_table_at_progress(progress),
+            None => self.begin_iris_spotlight_configure_table(0),
+        };
+        self.schedule_game_over_spotlight_build(
+            table_build,
+            false,
+            SpotlightIteration::game_over_closing(phase, false),
+        );
+        true
+    }
+
+    fn begin_game_over_iris_goal_palette_fill(
+        &mut self,
+        spotlight_radius: u16,
+        completed_stores: u8,
+    ) -> bool {
+        assert_eq!(
+            spotlight_radius, 7,
+            "the game-over goal palette fill requires the final closing-iris radius",
+        );
+        assert!(completed_stores <= 96);
+        self.game_over_iris_wipe_before_table();
+        let table_build = self.begin_iris_spotlight_configure_table(usize::MAX);
+        self.complete_iris_spotlight_table_projection(table_build);
+        assert!(
+            self.complete_iris_spotlight_configure_table_after_projection_deferring_goal(true),
+            "the game-over palette interruption requires the closing iris to reach radius zero",
+        );
+        self.complete_iris_spotlight_goal_transition();
+        self.set_main_module(0x12);
+        self.game_over_iris_goal_palette_stores(0, usize::from(completed_stores));
+        self.game_execution_scheduler.schedule_work(
+            crate::zelda_rtl::GameWorkContinuation::FinishGameOverIrisGoalPaletteFill {
+                completed_stores,
+            },
+            1,
+        );
         true
     }
 
     pub(super) fn complete_game_over_spotlight_build(
         &mut self,
+        table_build: crate::zelda_rtl::SpotlightTableBuildContinuation,
+        entry: bool,
         iteration: SpotlightIteration,
         wire_defers_caller_return: bool,
         wire_completes_caller_return: bool,
     ) {
-        self.game_over_iris_wipe_after_table();
+        if entry {
+            self.complete_iris_spotlight_configure_table(table_build);
+            self.spotlight_internal_after_table();
+            self.set_object_color_window_selection(0x30);
+            self.set_bg34_window_selection(0);
+            self.increment_submodule();
+        } else {
+            let main_module = self.game_state.frame.main_module;
+            self.complete_iris_spotlight_configure_table(table_build);
+            self.game_over_iris_wipe_after_completed_table(main_module);
+        }
         self.link_oam_main();
         // The live wire decides whether the caller return crosses vblank: a
         // whole-table build whose LinkOam_Main the ROM's held NMI still
@@ -1403,15 +1799,29 @@ impl ZeldaState {
     fn game_over_iris_wipe_after_table(&mut self) {
         let bak = self.game_state.frame.main_module;
         self.IrisSpotlight_ConfigureTable();
+        self.game_over_iris_wipe_after_completed_table(bak);
+    }
+
+    fn game_over_iris_wipe_after_completed_table(&mut self, bak: u8) {
         self.set_main_module(bak);
         if self.game_state.frame.submodule != 0 {
             return;
         }
-        for base in [0x20usize, 0x30, 0x40, 0x50, 0x60, 0x70] {
-            for i in 0..16 {
-                self.set_main_color_constant(base + i, 0x18);
-            }
+        self.game_over_iris_goal_palette_stores(0, 96);
+        self.game_over_iris_goal_after_palette_fill();
+    }
+
+    fn game_over_iris_goal_palette_stores(&mut self, start: usize, end: usize) {
+        debug_assert!(start <= end && end <= 96);
+        let bases = [0x20usize, 0x30, 0x40, 0x50, 0x60, 0x70];
+        for store in start..end {
+            let color = store / bases.len();
+            let base = bases[store % bases.len()];
+            self.set_main_color_constant(base + color, 0x18);
         }
+    }
+
+    fn game_over_iris_goal_after_palette_fill(&mut self) {
         self.set_main_color_constant(0, 0x18);
         self.set_main_color_constant(32, 0x18);
         self.IrisSpotlight_ResetTable();
@@ -1435,6 +1845,12 @@ impl ZeldaState {
         self.set_countdown(0);
         self.set_darkening_or_lightening_screen(0);
         self.Death_PrepFaint();
+    }
+
+    pub(super) fn complete_game_over_iris_goal_palette_fill(&mut self, completed_stores: u8) {
+        self.game_over_iris_goal_palette_stores(usize::from(completed_stores), 96);
+        self.game_over_iris_goal_after_palette_fill();
+        self.link_oam_main();
     }
 
     pub(super) fn GameOver_SplatAndFade(&mut self) {
@@ -1747,6 +2163,13 @@ impl ZeldaState {
     /// reset's NMI masking begins, before the song upload (route run
     /// 159378).
     pub(super) fn death_func15_save_quit_reset_writes(&mut self) {
+        self.death_func15_save_quit_reset_state_before_dungeon_info_clear();
+        self.death_func15_save_quit_finish_dungeon_info_clear();
+    }
+
+    /// The save-quit reset prefix through the last scroll store immediately
+    /// before the source begins clearing `save_dung_info`.
+    pub(super) fn death_func15_save_quit_reset_state_before_dungeon_info_clear(&mut self) {
         self.death_func31();
         self.clear_restart_check_flag();
         self.clear_game_over_check_flag();
@@ -1761,6 +2184,11 @@ impl ZeldaState {
         self.set_bg2_h_copy(0);
         self.set_bg1_v_copy(0);
         self.set_bg2_v_copy(0);
+    }
+
+    /// Complete the source-ordered dungeon-info clear after its reset-state
+    /// prefix has already been published.
+    pub(super) fn death_func15_save_quit_finish_dungeon_info_clear(&mut self) {
         self.save_progress_mut().clear_dungeon_info();
     }
 
@@ -1962,6 +2390,19 @@ impl ZeldaState {
     }
 
     pub(super) fn FluteMenu_LoadSelectedScreen(&mut self) {
+        self.FluteMenu_LoadSelectedScreenPrefix();
+
+        if self.game_state.messaging.runtime.menu_animation_timer() & 0x40 == 0 {
+            if self.begin_original_timing_flute_menu_selected_screen() {
+                return;
+            }
+            self.FluteMenu_LoadTransport();
+        }
+
+        self.FluteMenu_LoadSelectedScreenAfterTransport();
+    }
+
+    pub(super) fn FluteMenu_LoadSelectedScreenPrefix(&mut self) {
         self.clear_overworld_event_bits(0x3b, 0x20);
         self.clear_overworld_event_bits(0x7b, 0x20);
         let dung_267 = self
@@ -1979,11 +2420,9 @@ impl ZeldaState {
         self.save_progress_mut()
             .set_dungeon_info_word(267, dung_267);
         self.save_progress_mut().set_dungeon_info_word(40, dung_40);
+    }
 
-        if self.game_state.messaging.runtime.menu_animation_timer() & 0x40 == 0 {
-            self.FluteMenu_LoadTransport();
-        }
-
+    pub(super) fn FluteMenu_LoadSelectedScreenAfterTransport(&mut self) {
         self.FluteMenu_LoadSelectedScreenPalettes();
         let t = self.game_state.world.location.overworld_screen_index() & 0xbf;
         self.DecompressAnimatedOverworldTiles(if t == 3 || t == 5 || t == 7 {
@@ -3796,7 +4235,8 @@ impl ZeldaState {
         {
             assert_ne!(prefix_nmi_crossings, 0);
             if let Some(GameWorkContinuation::FinishItemReceiptGraphics {
-                continuation: continuation @ ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. },
+                continuation:
+                    continuation @ ItemReceiptGraphicsContinuation::CallerAlreadyCompleted { .. },
             }) = self.game_execution_scheduler.current_work()
             {
                 // The atomic item-receipt decompression tail holds only the
@@ -4213,6 +4653,7 @@ impl ZeldaState {
     pub(super) fn advance_suspended_vwf_to_authoritative_endpoint(
         &mut self,
         target_read_position: u16,
+        source_current_glyph_started: bool,
     ) -> SuspendedVwfEndpointTransition {
         let start_read_position = self.game_state.messaging.runtime.dialogue_msg_read_pos();
         let decoded_text_len = self.game_state.messaging.decoded_text.as_slice().len();
@@ -4277,7 +4718,7 @@ impl ZeldaState {
                 "a VWF endpoint transition cannot publish architectural NMI or suffix state",
             );
         };
-        if start_read_position >= target_read_position {
+        if start_read_position > target_read_position {
             // A fresh module iteration renders natively at its own budget and
             // may legitimately lead the wire's decoder; an endpoint at or
             // behind the native cursor is therefore an already-satisfied
@@ -4285,17 +4726,37 @@ impl ZeldaState {
             // not source authority either way: normalize the target without
             // replaying or rewinding any native VWF command.
             self.dialogue_live_message_read_position_target = None;
+            assert!(
+                !source_current_glyph_started,
+                "native VWF execution advanced beyond a source-started current glyph",
+            );
             assert_architectural_ownership_unchanged(self);
             return SuspendedVwfEndpointTransition {
                 start_read_position,
                 target_read_position,
                 slice_count: 0,
+                current_glyph_started: false,
             };
         }
 
         self.dialogue_fast_forward_hold_active = true;
         self.dialogue_live_message_read_position_target = Some(target_read_position);
         self.dialogue_vwf_handler_completed_at_endpoint = false;
+        if start_read_position == target_read_position {
+            if source_current_glyph_started {
+                self.resume_current_vwf_glyph_after_committed_prefix();
+                self.dialogue_fast_forward_hold_pending = true;
+            } else {
+                self.dialogue_live_message_read_position_target = None;
+            }
+            assert_architectural_ownership_unchanged(self);
+            return SuspendedVwfEndpointTransition {
+                start_read_position,
+                target_read_position,
+                slice_count: 0,
+                current_glyph_started: source_current_glyph_started,
+            };
+        }
         let mut slice_count = 0u32;
         loop {
             let cursor_before = self.game_state.messaging.runtime.dialogue_msg_read_pos();
@@ -4359,11 +4820,15 @@ impl ZeldaState {
                         self.dialogue_fast_forward_hold_pending,
                         "the authoritative VWF endpoint omitted its suspended hold marker",
                     );
+                    if source_current_glyph_started {
+                        self.resume_current_vwf_glyph_after_committed_prefix();
+                    }
                     assert_architectural_ownership_unchanged(self);
                     return SuspendedVwfEndpointTransition {
                         start_read_position,
                         target_read_position,
                         slice_count,
+                        current_glyph_started: source_current_glyph_started,
                     };
                 }
                 VwfCpuSliceOutcome::HandlerComplete { .. } => {
@@ -4384,8 +4849,14 @@ impl ZeldaState {
                             || wait_after != wait_before
                             || scroll_nibble_after != scroll_nibble_before,
                         "native VWF handler stalled before authoritative endpoint {target_read_position:#x}: cursor={cursor_after:#x} byte={:#x} next={:?} wait={wait_after} line_speed={} scroll_idle={} stops_flag={} scroll_speed={} host={}",
-                        self.game_state.messaging.decoded_text.byte(usize::from(cursor_after)),
-                        self.game_state.messaging.decoded_text.next_byte(usize::from(cursor_after)),
+                        self.game_state
+                            .messaging
+                            .decoded_text
+                            .byte(usize::from(cursor_after)),
+                        self.game_state
+                            .messaging
+                            .decoded_text
+                            .next_byte(usize::from(cursor_after)),
                         self.game_state.messaging.runtime.vwf_line_speed_cur(),
                         self.dialogue_scroll_cpu_is_idle(),
                         self.dialogue_vwf_completion_stops_before_scroll,
@@ -4393,6 +4864,45 @@ impl ZeldaState {
                         self.frame_ctr_dbg,
                     );
                 }
+            }
+        }
+    }
+
+    /// Align a decoder endpoint which returned from inside the current
+    /// `VWF_RenderSingle` body. The source has already committed the function
+    /// prefix, so establish the matching native continuation without replaying
+    /// that prefix when the drawing body resumes on the next host.
+    fn resume_current_vwf_glyph_after_committed_prefix(&mut self) {
+        let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos() as usize;
+        let c = self.game_state.messaging.decoded_text.byte(read_pos);
+        let (param, cmd, multibyte) = self.text_decode_cmd(
+            c,
+            self.game_state.messaging.decoded_text.next_byte(read_pos),
+        );
+        assert_eq!(cmd, TEXT_CMD_IS_LETTER);
+        assert!(!multibyte);
+        assert!(
+            self.game_state.messaging.runtime.vwf_line_speed_cur() < 2,
+            "a source-started VWF glyph retained an unexpired line delay",
+        );
+        let width = self.dialogue_glyph_width(param);
+        let glyph_cursor = vwf_glyph_cursor_after_pending_line_transition(
+            self.game_state.messaging.vwf_render.glyph_cursor_usize(),
+            self.game_state.messaging.vwf_render.current_line(),
+            self.game_state.messaging.vwf_render.next_line_requested() != 0,
+        );
+        let x = self.vwf_glyph_advance_prefix_sum(glyph_cursor);
+        let drawing_master_cycles = vwf_render_glyph_drawing_master_cycles(width, x);
+        match self.dialogue_vwf_glyph_cpu_phase {
+            VwfGlyphCpuPhase::Ready => {
+                self.begin_vwf_glyph(param);
+                self.dialogue_vwf_glyph_cpu_phase = VwfGlyphCpuPhase::Drawing {
+                    remaining_master_cycles: drawing_master_cycles,
+                };
+            }
+            VwfGlyphCpuPhase::PreparingDrawing { .. } | VwfGlyphCpuPhase::Drawing { .. } => {}
+            VwfGlyphCpuPhase::Entering { .. } => {
+                panic!("native VWF execution had not committed a source-started glyph prefix")
             }
         }
     }
@@ -4545,8 +5055,7 @@ impl ZeldaState {
                 outcome @ VwfCpuSliceOutcome::HandlerComplete { .. } => {
                     let caller_suffix_crossed_vblank = outcome.caller_suffix_crosses_vblank();
                     assert_eq!(
-                        self.dialogue_fast_forward_hold_pending,
-                        caller_suffix_crossed_vblank,
+                        self.dialogue_fast_forward_hold_pending, caller_suffix_crossed_vblank,
                         "a suspended VWF completion disagreed with its translated caller-suffix hold",
                     );
                     assert_architectural_ownership_unchanged(self);
@@ -4745,7 +5254,11 @@ impl ZeldaState {
                         eprintln!(
                             "[VWF-WAIT] host={} cmd={} read_pos={read_pos} target={:?} countdown2={} filtered={:#04x}/{:#04x} state={}",
                             self.frame_ctr_dbg,
-                            if cmd == TEXT_CMD_WAITKEY { "WAITKEY" } else { "END" },
+                            if cmd == TEXT_CMD_WAITKEY {
+                                "WAITKEY"
+                            } else {
+                                "END"
+                            },
                             self.dialogue_live_message_read_position_target,
                             self.game_state.messaging.runtime.text_wait_countdown2(),
                             self.game_state.player.follower_link.filtered_joypad_h(),
@@ -4821,8 +5334,7 @@ impl ZeldaState {
                 cursor,
                 arrval,
                 cycles_left,
-                self.dialogue_vwf_glyph_cpu_phase
-                    .remaining_master_cycles(),
+                self.dialogue_vwf_glyph_cpu_phase.remaining_master_cycles(),
                 self.dialogue_vwf_glyph_cpu_phase,
                 midline_yield,
                 resuming,

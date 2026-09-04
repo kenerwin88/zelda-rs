@@ -842,7 +842,10 @@ impl ZeldaState {
                 legacy_marker,
                 pending_effect2,
                 input_effect2,
-                self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_deferred,
+                self.audio
+                    .modern
+                    .queue
+                    .vwf_glyph_tone_crossed_vblank_deferred,
                 self.audio.modern.queue.write_position,
                 self.audio.modern.queue.write_count,
                 self.game_state.frame.main_module,
@@ -871,14 +874,27 @@ impl ZeldaState {
 
     /// The APUI00 value the ROM's mid-frame song-end poll observes.
     ///
-    /// The modern driver clock advances only when the host renders audio at
-    /// the END of a game frame, so a fanfare-end port-0 clear that the real
-    /// SPC emits mid-frame reaches the `apui00` snapshot one host late. The
-    /// crystal and pendant ceremony gates poll that edge exactly (route host
-    /// 103727); peek one native frame ahead on a clone of the deterministic
-    /// driver clock to read the value the mid-frame poll sees.
-    pub(crate) fn zelda_read_apui00_for_song_end_poll(&self) -> u8 {
+    /// Audio rendering advances the persistent SPC clock at host return, but
+    /// these gameplay branches read the port earlier inside the current CPU
+    /// interval. Advance a clone only to the source-authoritative sample
+    /// offset of this read. The timing receipt never supplies the port value:
+    /// Zelda's deterministic SPC program remains its sole owner.
+    pub(crate) fn zelda_read_apui00_for_song_end_poll(&mut self) -> u8 {
         let current = self.game_state.system_signals.apui00();
+        let sample_offset = if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+        {
+            let receipts = self
+                .original_timing_semantic_receipts
+                .as_mut()
+                .expect("a live APUI00 song-end poll requires installed source timing");
+            assert!(
+                !receipts.song_end_poll_native_sample_offsets.is_empty(),
+                "a live APUI00 song-end poll requires exact intra-frame timing authority",
+            );
+            receipts.song_end_poll_native_sample_offsets.remove(0)
+        } else {
+            return current;
+        };
         if current == 0 {
             return 0;
         }
@@ -888,10 +904,30 @@ impl ZeldaState {
         let mut peek = clock.clone();
         peek.advance(
             self.audio.modern.queue.input_commands,
-            crate::game_output::AUDIO_INTERNAL_SAMPLES_PER_FRAME as u32,
+            u32::from(sample_offset),
             self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_input,
         );
-        peek.host_acknowledgements()[0]
+        let sampled = peek.host_acknowledgements()[0];
+        let debug_song_poll = std::env::var("ZELDA3_DEBUG_SONG_POLL")
+            .ok()
+            .is_some_and(|value| value == "all" || value.parse() == Ok(self.frame_ctr_dbg));
+        if debug_song_poll {
+            let first_zero =
+                (u32::from(sample_offset)..=u32::from(sample_offset) + 256).find(|&offset| {
+                    let mut probe = clock.clone();
+                    probe.advance(
+                        self.audio.modern.queue.input_commands,
+                        offset,
+                        self.audio.modern.queue.vwf_glyph_tone_crossed_vblank_input,
+                    );
+                    probe.host_acknowledgements()[0] == 0
+                });
+            eprintln!(
+                "[SONG-POLL-RUST] host={} sample={} current={:02x} sampled={:02x} first_zero={:?}",
+                self.frame_ctr_dbg, sample_offset, current, sampled, first_zero,
+            );
+        }
+        sampled
     }
 
     /// Legacy APUI acknowledgement projection used by compatibility tests.
@@ -984,11 +1020,30 @@ impl ZeldaState {
             }
         }
         let frame = if let Some(clock) = self.audio.modern.driver_clock.as_mut() {
+            let debug_spc_polls = std::env::var_os("ZELDA3_DEBUG_SPC_CLOCK_WITNESS").is_some();
+            let frame_start_apu_cycle = clock.absolute_dsp_cycle() * 32;
             let window = clock.advance(
                 driver_commands,
                 native_samples,
                 vwf_glyph_tone_crossed_vblank,
             );
+            if debug_spc_polls {
+                let polls: Vec<_> = window
+                    .polls
+                    .iter()
+                    .map(|poll| {
+                        (
+                            poll.absolute_apu_cycle
+                                .saturating_sub(frame_start_apu_cycle),
+                            poll.ticks,
+                        )
+                    })
+                    .collect();
+                eprintln!(
+                    "spc_poll_witness rust_host={} polls={polls:?}",
+                    self.frame_ctr_dbg,
+                );
+            }
             let acknowledgements = clock.host_acknowledgements();
             let completed_song_bank_id = clock.take_completed_song_bank_id();
             if let Some(bank_id) = completed_song_bank_id {

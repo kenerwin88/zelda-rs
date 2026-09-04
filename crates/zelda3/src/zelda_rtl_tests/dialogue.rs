@@ -250,6 +250,85 @@ fn dialogue_vwf_return_suffix_releases_the_preprocessed_nmi_generation() {
     assert_eq!(state.zelda_debug_apu_write_ports()[3], 12);
 }
 
+fn live_dialogue_vwf_return_state(
+    native_read_position: u16,
+    source_read_position: u16,
+) -> ZeldaState {
+    let mut state = ZeldaState::new();
+    state.initialized = true;
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.set_animated_tile_data_source_address(0xa680);
+    state.schedule_pre_main_caller_continuation(PreMainCallerContinuation::DialogueVwfReturn);
+    state.dialogue_fast_forward_hold_active = true;
+    state.audio_nmi_processed_before_main = true;
+    state.set_pending_nmi_subroutine(2);
+    state.set_core_update_disable_flag(2);
+    state.latch_nmi_update();
+    state.messaging_state_mut().set_text_render_state(3);
+    state
+        .messaging_state_mut()
+        .set_dialogue_msg_read_pos(native_read_position);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.pending_main_loop_common_suffix =
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+    state
+        .install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            73648,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    crate::MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+                OriginalTimingSemanticReceipt::DialogueExecutionProgress(
+                    crate::DialogueExecutionProgress::ResumedRenderingWithoutMainIteration {
+                        message_read_position: source_read_position,
+                    },
+                ),
+            ],
+        ))
+        .unwrap();
+    state
+}
+
+#[test]
+fn live_dialogue_vwf_return_consumes_its_exact_source_endpoint() {
+    let mut state = live_dialogue_vwf_return_state(86, 86);
+    let frame_counter = state.game_state.frame.frame_counter;
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert_eq!(
+        state.game_state.messaging.runtime.dialogue_msg_read_pos(),
+        86
+    );
+    assert_eq!(state.game_state.frame.frame_counter, frame_counter);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert!(!state.dialogue_fast_forward_hold_active);
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
+fn live_dialogue_vwf_return_rejects_a_source_cursor_mismatch_before_mutation() {
+    let mut state = live_dialogue_vwf_return_state(86, 87);
+    let receipts_before = state.original_timing_semantic_receipts.clone();
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        state.run_frame_internal(0, crate::RUN_MAIN);
+    }));
+
+    assert!(result.is_err());
+    assert!(state
+        .game_execution_scheduler
+        .pre_main_caller_continuation_is(PreMainCallerContinuation::DialogueVwfReturn));
+    assert!(state.dialogue_fast_forward_hold_active);
+    assert_eq!(state.original_timing_semantic_receipts, receipts_before);
+}
+
 #[test]
 fn dialogue_vwf_return_rejects_an_unowned_nmi_lifecycle_at_host_close() {
     let mut state = ZeldaState::new();

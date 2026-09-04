@@ -1,5 +1,6 @@
 // Methods ported from zelda3/src/sprite.c and included inside ZeldaState.
 
+use super::sprite_main_mothula::WallmasterMainPrefixOutcome;
 use super::*;
 use crate::types::{sign16, sign8, PairU8, Point16U, PointU8, ProjectSpeedRet, SpriteHitBox};
 
@@ -114,6 +115,13 @@ pub enum DungeonResetSpritesCpuProgress {
     /// clear, but the remaining room-history bookkeeping and new room sprite
     /// load have not yet published.
     SpritesDisabled,
+    /// `Sprite_DisableAll` has returned and the caller has published
+    /// `sprcoll_x_size = 0xffff`; the paired Y-size store is still pending.
+    CollisionXSizeSet,
+    /// Both collision-size stores have published. The following four-entry
+    /// room-history search is read-only, so this is also the resumable source
+    /// checkpoint anywhere inside that search before its first mutation.
+    RoomHistorySearchStarted,
     Load(DungeonLoadSpritesCpuProgress),
 }
 
@@ -412,36 +420,96 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).clear_prep_runtime_state();
     }
 
+    pub(super) fn sprite_prep_reset_properties_prefix(&mut self, k: usize, completed_stores: u8) {
+        self.sprite_slot_view_mut(k)
+            .clear_prep_runtime_state_prefix(completed_stores);
+    }
+
+    pub(super) fn sprite_prep_reset_properties_from(&mut self, k: usize, completed_stores: u8) {
+        self.sprite_slot_view_mut(k)
+            .clear_prep_runtime_state_from(completed_stores);
+    }
+
     pub(super) fn sprite_prep_load_properties(&mut self, k: usize) {
         self.sprite_prep_reset_properties(k);
+        self.sprite_prep_load_properties_after_reset(k);
+    }
+
+    pub(super) fn sprite_prep_load_properties_after_reset(&mut self, k: usize) {
+        self.sprite_prep_load_properties_after_reset_prefix(k, 10);
+    }
+
+    pub(super) fn sprite_prep_load_properties_after_reset_prefix(
+        &mut self,
+        k: usize,
+        completed_stores: u8,
+    ) {
+        assert!(completed_stores <= 10);
+        for store in 0..completed_stores {
+            self.sprite_prep_load_property_store(k, store);
+        }
+    }
+
+    pub(super) fn sprite_prep_load_properties_after_reset_from(
+        &mut self,
+        k: usize,
+        completed_stores: u8,
+    ) {
+        assert!(completed_stores <= 10);
+        for store in completed_stores..10 {
+            self.sprite_prep_load_property_store(k, store);
+        }
+    }
+
+    fn sprite_prep_load_property_store(&mut self, k: usize, store: u8) {
         let ty = self.sprite_slot_view(k).sprite_type();
-
-        let value = sprite_init_value(SPRITE_INIT_FLAGS2_TABLE, ty);
-        self.sprite_slot_view_mut(k).set_flags2(value);
-        let value = sprite_init_value(SPRITE_INIT_HEALTH_TABLE, ty);
-        self.sprite_slot_view_mut(k).set_health(value);
-        let value = sprite_init_value(SPRITE_INIT_FLAGS4_TABLE, ty);
-        self.sprite_slot_view_mut(k).set_flags4(value);
-        let value = sprite_init_value(SPRITE_INIT_FLAGS5_TABLE, ty);
-        self.sprite_slot_view_mut(k).set_flags5(value);
-        let value = sprite_init_value(SPRITE_INIT_DEFL_BITS_TABLE, ty);
-        self.sprite_slot_view_mut(k).set_deflection_bits(value);
-        let value = sprite_init_value(SPRITE_INIT_BUMP_DAMAGE_TABLE, ty);
-        self.sprite_slot_view_mut(k).set_bump_damage(value);
-        let value = sprite_init_value(SPRITE_INIT_FLAGS_TABLE, ty);
-        self.sprite_slot_view_mut(k).set_flags(value);
-        let value = if self.game_state.world.location.is_indoors() {
-            self.game_state.dungeon.room_tracking.room_index2_word() as u8
-        } else {
-            self.game_state.world.region.overworld_area() as u8
-        };
-        self.sprite_slot_view_mut(k).set_room(value);
-
-        let flags3 = sprite_init_value(SPRITE_INIT_FLAGS3_TABLE, ty);
-        let value = flags3;
-        self.sprite_slot_view_mut(k).set_flags3(value);
-        let value = flags3 & 0x0f;
-        self.sprite_slot_view_mut(k).set_oam_flags(value);
+        match store {
+            0 => {
+                let value = sprite_init_value(SPRITE_INIT_FLAGS2_TABLE, ty);
+                self.sprite_slot_view_mut(k).set_flags2(value);
+            }
+            1 => {
+                let value = sprite_init_value(SPRITE_INIT_HEALTH_TABLE, ty);
+                self.sprite_slot_view_mut(k).set_health(value);
+            }
+            2 => {
+                let value = sprite_init_value(SPRITE_INIT_FLAGS4_TABLE, ty);
+                self.sprite_slot_view_mut(k).set_flags4(value);
+            }
+            3 => {
+                let value = sprite_init_value(SPRITE_INIT_FLAGS5_TABLE, ty);
+                self.sprite_slot_view_mut(k).set_flags5(value);
+            }
+            4 => {
+                let value = sprite_init_value(SPRITE_INIT_DEFL_BITS_TABLE, ty);
+                self.sprite_slot_view_mut(k).set_deflection_bits(value);
+            }
+            5 => {
+                let value = sprite_init_value(SPRITE_INIT_BUMP_DAMAGE_TABLE, ty);
+                self.sprite_slot_view_mut(k).set_bump_damage(value);
+            }
+            6 => {
+                let value = sprite_init_value(SPRITE_INIT_FLAGS_TABLE, ty);
+                self.sprite_slot_view_mut(k).set_flags(value);
+            }
+            7 => {
+                let value = if self.game_state.world.location.is_indoors() {
+                    self.game_state.dungeon.room_tracking.room_index2_word() as u8
+                } else {
+                    self.game_state.world.region.overworld_area() as u8
+                };
+                self.sprite_slot_view_mut(k).set_room(value);
+            }
+            8 => {
+                let value = sprite_init_value(SPRITE_INIT_FLAGS3_TABLE, ty);
+                self.sprite_slot_view_mut(k).set_flags3(value);
+            }
+            9 => {
+                let value = sprite_init_value(SPRITE_INIT_FLAGS3_TABLE, ty) & 0x0f;
+                self.sprite_slot_view_mut(k).set_oam_flags(value);
+            }
+            _ => unreachable!("property-store cursor was validated above"),
+        }
     }
 
     pub(super) fn sprite_prep_load_palette(&mut self, k: usize) {
@@ -1449,6 +1517,13 @@ impl ZeldaState {
     //   memset(dungeon_room_history, 0xff, 8);
     // }
     pub(super) fn sprite_reset_all_no_disable(&mut self) {
+        self.sprite_reset_all_no_disable_fixed_prefix();
+        self.sprite_reset_all_no_disable_after_fixed_prefix();
+    }
+
+    /// Complete the fixed stores before Sprite_ResetAll_noDisable's first
+    /// large descending clear. This is the exact source boundary at $09:C47B.
+    pub(super) fn sprite_reset_all_no_disable_fixed_prefix(&mut self) {
         self.garnish_state_mut()
             .clear_haunted_grove_flute_event_latch();
         self.sprite_system_mut().set_alert_flag(0);
@@ -1461,6 +1536,9 @@ impl ZeldaState {
         if self.game_state.sprites.follower_runtime.indicator() != 13 {
             self.set_super_bomb_indicator_timer(0xfe);
         }
+    }
+
+    pub(super) fn sprite_reset_all_no_disable_after_fixed_prefix(&mut self) {
         self.sprite_workspace_mut().clear_where_in_room();
         self.clear_all_overworld_sprite_loaded_masks();
         self.dungeon_room_tracking_mut().reset_room_history();
@@ -1809,6 +1887,14 @@ impl ZeldaState {
             DungeonResetSpritesCpuProgress::SpritesDisabled => {
                 self.dungeon_reset_sprites_through_sprite_disable_all();
             }
+            DungeonResetSpritesCpuProgress::CollisionXSizeSet => {
+                self.dungeon_reset_sprites_through_sprite_disable_all();
+                self.garnish_state_mut().set_sprcoll_x_size(0xffff);
+            }
+            DungeonResetSpritesCpuProgress::RoomHistorySearchStarted => {
+                self.dungeon_reset_sprites_through_sprite_disable_all();
+                self.dungeon_reset_sprites_set_collision_sizes();
+            }
             DungeonResetSpritesCpuProgress::Load(progress) => {
                 self.dungeon_reset_sprites_before_room_load();
                 self.dungeon_load_sprites_through_cpu_progress(progress);
@@ -1839,6 +1925,15 @@ impl ZeldaState {
             }
             DungeonResetSpritesCpuProgress::SpritesDisabled => {
                 self.dungeon_reset_sprites_after_sprite_disable_before_room_load();
+                self.dungeon_load_sprites();
+            }
+            DungeonResetSpritesCpuProgress::CollisionXSizeSet => {
+                self.garnish_state_mut().set_sprcoll_y_size(0xffff);
+                self.dungeon_reset_sprites_after_collision_sizes_before_room_load();
+                self.dungeon_load_sprites();
+            }
+            DungeonResetSpritesCpuProgress::RoomHistorySearchStarted => {
+                self.dungeon_reset_sprites_after_collision_sizes_before_room_load();
                 self.dungeon_load_sprites();
             }
             DungeonResetSpritesCpuProgress::Load(progress) => {
@@ -1913,6 +2008,27 @@ impl ZeldaState {
                 }
                 true
             }
+            (
+                DungeonResetSpritesCpuProgress::SpritesDisabled,
+                DungeonResetSpritesCpuProgress::CollisionXSizeSet,
+            ) => {
+                self.garnish_state_mut().set_sprcoll_x_size(0xffff);
+                true
+            }
+            (
+                DungeonResetSpritesCpuProgress::SpritesDisabled,
+                DungeonResetSpritesCpuProgress::RoomHistorySearchStarted,
+            ) => {
+                self.dungeon_reset_sprites_set_collision_sizes();
+                true
+            }
+            (
+                DungeonResetSpritesCpuProgress::CollisionXSizeSet,
+                DungeonResetSpritesCpuProgress::RoomHistorySearchStarted,
+            ) => {
+                self.garnish_state_mut().set_sprcoll_y_size(0xffff);
+                true
+            }
             _ => false,
         }
     }
@@ -1938,8 +2054,16 @@ impl ZeldaState {
     }
 
     fn dungeon_reset_sprites_after_sprite_disable_before_room_load(&mut self) {
+        self.dungeon_reset_sprites_set_collision_sizes();
+        self.dungeon_reset_sprites_after_collision_sizes_before_room_load();
+    }
+
+    fn dungeon_reset_sprites_set_collision_sizes(&mut self) {
         self.garnish_state_mut().set_sprcoll_x_size(0xffff);
         self.garnish_state_mut().set_sprcoll_y_size(0xffff);
+    }
+
+    fn dungeon_reset_sprites_after_collision_sizes_before_room_load(&mut self) {
         let room = self.game_state.dungeon.room_tracking.room_index2_word();
         let seen =
             (0..4).any(|i| self.game_state.dungeon.room_tracking.room_history_entry(i) == room);
@@ -2439,6 +2563,371 @@ impl ZeldaState {
             if trace_sprite_slots {
                 self.replay_trace_ram_watch(&format!("sprite-before-execute-single slot={k}"));
             }
+            if let Some(SpriteMainCpuBoundary::InitializeResetProperties {
+                slot,
+                phase,
+                completed_stores,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(
+                        nmi_slices, 0,
+                        "sprite-init reset continuation requires a measured NMI phase",
+                    );
+                    let boundary = self
+                        .sprite_main_cpu_boundary
+                        .take()
+                        .expect("sprite-init reset boundary was checked above");
+                    assert_eq!(
+                        self.sprite_slot_view(k).state(),
+                        8,
+                        "source sprite-init reset boundary requires state 8",
+                    );
+                    self.sprite_timers_and_oam(k);
+                    if phase
+                        == crate::SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion
+                    {
+                        // The source is inside Fire Debirando's second
+                        // property load: its first load, state promotion, and
+                        // type conversion all precede this reset call.
+                        self.sprite_module_initialize_properties(k);
+                        self.sprite_slot_view_mut(k).set_sprite_type(0x63);
+                    }
+                    self.sprite_prep_reset_properties_prefix(k, completed_stores);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                    return;
+                }
+            }
+            if let Some(SpriteMainCpuBoundary::InitializeLoadProperties {
+                slot,
+                phase,
+                completed_stores,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(
+                        nmi_slices, 0,
+                        "sprite property-load continuation requires a measured NMI phase",
+                    );
+                    let boundary = self
+                        .sprite_main_cpu_boundary
+                        .take()
+                        .expect("sprite property-load boundary was checked above");
+                    assert_eq!(self.sprite_slot_view(k).state(), 8);
+                    self.sprite_timers_and_oam(k);
+                    match phase {
+                        crate::SpriteInitializeResetPropertiesPhase::InitialPropertyLoad => {
+                            self.sprite_prep_reset_properties(k);
+                        }
+                        crate::SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion => {
+                            self.sprite_module_initialize_properties(k);
+                            self.sprite_slot_view_mut(k).set_sprite_type(0x63);
+                            self.sprite_prep_reset_properties(k);
+                        }
+                    }
+                    self.sprite_prep_load_properties_after_reset_prefix(k, completed_stores);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                    return;
+                }
+            }
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::FireDebirandoBeforeSpawn(k as u8))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "Fire Debirando spawn continuation requires a measured NMI phase",
+                );
+                let boundary = self
+                    .sprite_main_cpu_boundary
+                    .take()
+                    .expect("Fire Debirando boundary was checked above");
+                assert_eq!(
+                    self.sprite_slot_view(k).state(),
+                    8,
+                    "Fire Debirando source boundary requires state 8 at slot entry",
+                );
+                assert_eq!(
+                    self.sprite_slot_view(k).sprite_type(),
+                    0x64,
+                    "Fire Debirando source boundary requires type $64 at slot entry",
+                );
+                self.sprite_timers_and_oam(k);
+                self.sprite_module_initialize_properties(k);
+                self.sprite_slot_view_mut(k).set_sprite_type(0x63);
+                self.sprite_prep_load_properties(k);
+                self.sprite_prep_fire_debirando_after_property_reload_before_spawn(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                return;
+            }
+            if let Some(SpriteMainCpuBoundary::FireDebirandoSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(
+                        nmi_slices, 0,
+                        "Fire Debirando dynamic-spawn continuation requires a measured NMI phase",
+                    );
+                    let boundary = self
+                        .sprite_main_cpu_boundary
+                        .take()
+                        .expect("Fire Debirando dynamic-spawn boundary was checked above");
+                    assert_eq!(self.sprite_slot_view(k).state(), 8);
+                    assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x64);
+                    let spawned = usize::from(spawned_slot);
+                    assert_ne!(spawned, k);
+                    for candidate in (spawned + 1)..16 {
+                        assert_ne!(
+                            self.sprite_slot_view(candidate).state(),
+                            0,
+                            "source dynamic-spawn receipt skipped a higher free slot {candidate}",
+                        );
+                    }
+                    self.sprite_timers_and_oam(k);
+                    self.sprite_module_initialize_properties(k);
+                    self.sprite_slot_view_mut(k).set_sprite_type(0x63);
+                    self.sprite_prep_load_properties(k);
+                    self.sprite_prep_fire_debirando_after_property_reload_before_spawn(k);
+                    let mut info = SpriteSpawnInfo::default();
+                    self.sprite_spawn_dynamically_selected_prefix(
+                        k, 0x64, &mut info, spawned, progress,
+                    );
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                    return;
+                }
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None })
+                    if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "timer/OAM continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                let state = self.sprite_slot_view(k).state();
+                assert_ne!(
+                    state, 0,
+                    "source timer/OAM return requires an active sprite slot",
+                );
+                self.sprite_timers_and_oam(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterTimersAndOam {
+                        slot: k as u8,
+                        state: Some(state),
+                    },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterAntfairySubtype2Increment {
+                    slot,
+                    continuation: None,
+                }) if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "Antfairy subtype continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                assert_eq!(
+                    self.sprite_slot_view(k).state(),
+                    9,
+                    "source Antfairy subtype boundary requires an active sprite",
+                );
+                self.sprite_timers_and_oam(k);
+                let continuation = self.antfairy_draw_continuation(k);
+                self.sprite_slot_view_mut(k).add_subtype2(1);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterAntfairySubtype2Increment {
+                        slot: k as u8,
+                        continuation: Some(continuation),
+                    },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::BonkItemGraphicsEntered(k as u8))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "bonk-item graphics continuation requires a measured NMI phase",
+                );
+                let boundary = self
+                    .sprite_main_cpu_boundary
+                    .take()
+                    .expect("bonk-item graphics boundary was checked above");
+                assert_eq!(self.sprite_slot_view(k).state(), 8);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x3b);
+                self.sprite_timers_and_oam(k);
+                self.sprite_module_initialize_properties(k);
+                self.sprite_slot_view_mut(k).set_floor(2);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                return;
+            }
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::BariBeforeRandom(k as u8))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "Bari pre-RNG continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                assert_eq!(self.sprite_slot_view(k).state(), 8);
+                assert!(matches!(
+                    self.sprite_slot_view(k).sprite_type(),
+                    0x23 | 0x24
+                ));
+                self.sprite_timers_and_oam(k);
+                self.sprite_module_initialize_properties(k);
+                self.sprite_prep_bari_before_random(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::BariBeforeRandom(k as u8),
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterMainAndAux1TimerDecrements {
+                    slot,
+                    state: None,
+                }) if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "main/aux1 timer decrement continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                let state = self.sprite_slot_view(k).state();
+                assert_ne!(
+                    state, 0,
+                    "source main/aux1 timer decrement boundary requires an active sprite slot",
+                );
+                self.sprite_timers_and_oam_through_main_and_aux1_timer_decrements(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterMainAndAux1TimerDecrements {
+                        slot: k as u8,
+                        state: Some(state),
+                    },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { slot, state: None })
+                    if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "primary timer decrement continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                let state = self.sprite_slot_view(k).state();
+                assert_ne!(
+                    state, 0,
+                    "source primary timer decrement boundary requires an active sprite slot",
+                );
+                self.sprite_timers_and_oam_through_primary_timer_decrements(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterPrimaryTimerDecrements {
+                        slot: k as u8,
+                        state: Some(state),
+                    },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterTimerDecrements { slot, state: None })
+                    if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "timer decrement continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                let state = self.sprite_slot_view(k).state();
+                assert_ne!(
+                    state, 0,
+                    "source timer decrement boundary requires an active sprite slot",
+                );
+                self.sprite_timers_and_oam_through_timer_decrements(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterTimerDecrements {
+                        slot: k as u8,
+                        state: Some(state),
+                    },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::AfterWallmasterResetPrefix(k as u8))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "Wallmaster reset continuation requires a measured NMI phase",
+                );
+                let boundary = self
+                    .sprite_main_cpu_boundary
+                    .take()
+                    .expect("Wallmaster reset boundary was checked above");
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x90);
+                self.sprite_timers_and_oam(k);
+                assert_eq!(
+                    self.sprite_90_wallmaster_through_send_decision(k),
+                    WallmasterMainPrefixOutcome::SendPlayer,
+                    "source Wallmaster reset boundary requires the send-player branch: state={:#04x} sub={:#04x} modal={:#04x} pause={:#04x} deflection={:#04x}",
+                    self.sprite_slot_view(k).state(),
+                    self.game_state.frame.submodule,
+                    self.game_state.frame.modal_pause_flag,
+                    self.sprite_slot_view(k).pause(),
+                    self.sprite_slot_view(k).deflection_bits(),
+                );
+                self.wall_master_send_player_through_reset_fixed_prefix();
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                return;
+            }
             if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::AfterThrowableSceneryStateClear(
                     k as u8,
@@ -2493,6 +2982,96 @@ impl ZeldaState {
                 return;
             }
             if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::ZazakAfterGraphics(k as u8))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "Zazak graphics continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert!(matches!(
+                    self.sprite_slot_view(k).sprite_type(),
+                    0xa5 | 0xa6 | 0xa7
+                ));
+                self.sprite_timers_and_oam(k);
+                assert!(
+                    self.sprite_zazak_before_graphics_boundary(k),
+                    "source Zazak graphics boundary requires the ordinary live body",
+                );
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::ZazakAfterGraphics(k as u8),
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if let Some(SpriteMainCpuBoundary::FollowerGraphics {
+                slot,
+                caller: follower_graphics_caller,
+                prefix_completed: false,
+                saved_follower_indicator: None,
+                stage,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(
+                        nmi_slices, 0,
+                        "partial sprite follower-graphics continuation requires a measured NMI phase",
+                    );
+                    self.sprite_main_cpu_boundary = None;
+                    let saved_follower_indicator = match follower_graphics_caller {
+                        crate::SpriteFollowerGraphicsCaller::BlindMaiden => {
+                            assert_eq!(self.sprite_slot_view(k).state(), 8);
+                            assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xb7);
+                            self.sprite_timers_and_oam(k);
+                            self.sprite_module_initialize_properties(k);
+                            assert!(
+                                self.sprite_prep_blind_maiden_before_follower_graphics(k),
+                                "source follower-graphics progress requires Blind Maiden's live prep path",
+                            );
+                            None
+                        }
+                        crate::SpriteFollowerGraphicsCaller::Zelda => {
+                            assert_eq!(self.sprite_slot_view(k).state(), 8);
+                            assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x76);
+                            self.sprite_timers_and_oam(k);
+                            self.sprite_module_initialize_properties(k);
+                            Some(self.sprite_prep_zelda_before_follower_graphics(k).expect(
+                                "source follower-graphics progress requires Zelda's live prep path",
+                            ))
+                        }
+                        crate::SpriteFollowerGraphicsCaller::BlindMaidenBody => {
+                            assert_eq!(self.sprite_slot_view(k).state(), 9);
+                            assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xb7);
+                            self.sprite_timers_and_oam(k);
+                            assert!(
+                                self.sprite_b7_blind_maiden_before_follower_graphics(k),
+                                "source follower-graphics progress requires Blind Maiden's live become-follower path",
+                            );
+                            None
+                        }
+                    };
+                    self.apply_follower_graphics_progress(None, stage);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::FollowerGraphics {
+                            slot,
+                            caller: follower_graphics_caller,
+                            prefix_completed: true,
+                            saved_follower_indicator,
+                            stage,
+                        },
+                        nmi_slices,
+                        caller,
+                    );
+                    return;
+                }
+            }
+            if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(
                     k as u8,
                 ))
@@ -2515,6 +3094,82 @@ impl ZeldaState {
                 assert!(matches!(caller, SpriteMainCpuCaller::Module09 { .. }));
                 self.schedule_sprite_main_cpu_continuation(
                     SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(k as u8),
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterSingleSmallDrawPosition {
+                    slot,
+                    continuation: None,
+                }) if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "single-small draw continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert!(matches!(
+                    self.sprite_slot_view(k).sprite_type(),
+                    0x23 | 0x24
+                ));
+                assert!(
+                    self.sprite_slot_view(k).c() != 0 && !sign8(self.sprite_slot_view(k).c()),
+                    "source single-small draw boundary requires Red Bari's positive-C draw path",
+                );
+                self.sprite_timers_and_oam(k);
+                let continuation = self
+                    .sprite_draw_single_small_position_prefix(k)
+                    .expect("source single-small draw boundary requires visible OAM preparation");
+                assert!(
+                    continuation.visible,
+                    "source single-small draw position boundary requires the visible Y store",
+                );
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterSingleSmallDrawPosition {
+                        slot: k as u8,
+                        continuation: Some(continuation),
+                    },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::ProbeAfterOamCoordinates {
+                    slot,
+                    oam_position: None,
+                }) if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "guard-probe continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x41);
+                assert_ne!(
+                    self.sprite_slot_view(k).c(),
+                    0,
+                    "source guard-probe boundary requires Probe rather than Guard_Main",
+                );
+                self.sprite_timers_and_oam(k);
+                let oam_position = self
+                    .probe_until_after_oam_coordinates(k)
+                    .expect("source guard-probe boundary did not reach its OAM-coordinate return");
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::ProbeAfterOamCoordinates {
+                        slot: k as u8,
+                        oam_position: Some(oam_position),
+                    },
                     nmi_slices,
                     caller,
                 );
@@ -2610,32 +3265,6 @@ impl ZeldaState {
                     "Sprite_Main continuation requires a measured NMI phase",
                 );
                 let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
-                let boundary = if boundary == SpriteMainCpuBoundary::AfterSlot(k as u8)
-                    && k >= 1
-                    && self.sprite_slot_view(k - 1).state() == 8
-                    && self.sprite_slot_view(k - 1).sprite_type() == 0x3b
-                    && !self.game_state.world.location.is_outdoors()
-                    && self.game_state.world.location.dungeon_room() == 0x0107
-                    && self.game_state.inventory.items.book() == 0
-                {
-                    // The ROM's NMI landed inside the bonk item's synchronous
-                    // sheet decode, not between the slots: after the previous
-                    // slot returns, SpritePrep_BonkItem reaches
-                    // DecodeAnimatedSpriteTile_variable($0e) within the same
-                    // host, so the initialize prefix (timers, properties,
-                    // state 9, and the floor assignment) is already visible
-                    // in WRAM when the suspension begins (oracle sprite[0]
-                    // state receipt at route frame 63268; the wire names only
-                    // the last returned slot).
-                    let entered = k - 1;
-                    self.sprite_system_mut().set_cur_object_index(entered as u8);
-                    self.sprite_timers_and_oam(entered);
-                    self.sprite_module_initialize_properties(entered);
-                    self.sprite_slot_view_mut(entered).set_floor(2);
-                    SpriteMainCpuBoundary::BonkItemGraphicsEntered(entered as u8)
-                } else {
-                    boundary
-                };
                 self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
             }
             if self
@@ -2804,8 +3433,7 @@ impl ZeldaState {
     ) {
         match boundary {
             SpriteMainCpuBoundary::BeforeFirstSlot => {
-                if let Some((main_module, submodule)) = self.pending_module09_frame_advance.take()
-                {
+                if let Some((main_module, submodule)) = self.pending_module09_frame_advance.take() {
                     // The suspended Module09 handler's deferred advance lands
                     // right before Sprite_Main, as the ROM writes it.
                     if self.pending_overworld_sprite_reload_slots.is_some() {
@@ -2819,9 +3447,214 @@ impl ZeldaState {
             SpriteMainCpuBoundary::AfterSlot(interrupted_slot) => {
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot as usize)
             }
+            SpriteMainCpuBoundary::AfterTimersAndOam {
+                slot,
+                state: Some(state),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterTimersAndOam { state: None, .. } => unreachable!(
+                "source timer/OAM boundary did not bind to the saved native dispatch state"
+            ),
+            SpriteMainCpuBoundary::InitializeResetProperties {
+                slot,
+                phase,
+                completed_stores,
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                let expected_state = match phase {
+                    crate::SpriteInitializeResetPropertiesPhase::InitialPropertyLoad => 8,
+                    crate::SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion => 9,
+                };
+                assert_eq!(
+                    self.sprite_slot_view(interrupted_slot).state(),
+                    expected_state,
+                    "resumed sprite-init reset boundary lost its source state",
+                );
+                self.sprite_prep_reset_properties_from(interrupted_slot, completed_stores);
+                match phase {
+                    crate::SpriteInitializeResetPropertiesPhase::InitialPropertyLoad => {
+                        self.sprite_module_initialize_properties_after_reset(interrupted_slot);
+                        self.sprite_module_initialize_after_properties(interrupted_slot);
+                    }
+                    crate::SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion => {
+                        self.sprite_prep_load_properties_after_reset(interrupted_slot);
+                        self.sprite_prep_fire_debirando_after_property_reload(interrupted_slot);
+                    }
+                }
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::InitializeLoadProperties {
+                slot,
+                phase,
+                completed_stores,
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                let expected_state = match phase {
+                    crate::SpriteInitializeResetPropertiesPhase::InitialPropertyLoad => 8,
+                    crate::SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion => 9,
+                };
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), expected_state);
+                self.sprite_prep_load_properties_after_reset_from(
+                    interrupted_slot,
+                    completed_stores,
+                );
+                match phase {
+                    crate::SpriteInitializeResetPropertiesPhase::InitialPropertyLoad => {
+                        self.sprite_slot_view_mut(interrupted_slot).increment_state();
+                        self.sprite_module_initialize_after_properties(interrupted_slot);
+                    }
+                    crate::SpriteInitializeResetPropertiesPhase::FireDebirandoTypeConversion => {
+                        self.sprite_prep_fire_debirando_after_property_reload(interrupted_slot);
+                    }
+                }
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::FireDebirandoBeforeSpawn(slot) => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).sprite_type(), 0x63);
+                self.sprite_prep_debirando_pit_after_before_spawn(interrupted_slot);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::FireDebirandoSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            } => {
+                let interrupted_slot = usize::from(slot);
+                let spawned = usize::from(spawned_slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).sprite_type(), 0x63);
+                assert_eq!(self.sprite_slot_view(spawned).sprite_type(), 0x64);
+                let mut info = SpriteSpawnInfo::default();
+                self.sprite_spawn_dynamically_selected_from(
+                    interrupted_slot,
+                    &mut info,
+                    spawned,
+                    progress,
+                );
+                self.sprite_prep_debirando_pit_after_spawn(interrupted_slot, spawned, &info);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterAntfairySubtype2Increment {
+                slot,
+                continuation: Some(continuation),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.complete_antfairy_after_subtype2_increment(
+                    interrupted_slot,
+                    continuation,
+                );
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterAntfairySubtype2Increment {
+                continuation: None,
+                ..
+            } => unreachable!(
+                "source Antfairy subtype boundary did not bind to a native draw caller"
+            ),
+            SpriteMainCpuBoundary::AfterTimerDecrements {
+                slot,
+                state: Some(state),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterTimerDecrements { state: None, .. } => unreachable!(
+                "source timer decrement boundary did not bind to the saved native dispatch state"
+            ),
+            SpriteMainCpuBoundary::AfterPrimaryTimerDecrements {
+                slot,
+                state: Some(state),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.sprite_timers_and_oam_after_primary_through_timer_decrements(interrupted_slot);
+                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { state: None, .. } => unreachable!(
+                "source primary timer decrement boundary did not bind to the saved native dispatch state"
+            ),
+            SpriteMainCpuBoundary::AfterMainAndAux1TimerDecrements {
+                slot,
+                state: Some(state),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(
+                    interrupted_slot,
+                );
+                self.sprite_timers_and_oam_after_primary_through_timer_decrements(interrupted_slot);
+                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterMainAndAux1TimerDecrements { state: None, .. } => {
+                unreachable!(
+                    "source main/aux1 timer decrement boundary did not bind to the saved native dispatch state"
+                )
+            }
+            SpriteMainCpuBoundary::BariBeforeRandom(slot) => {
+                let interrupted_slot = usize::from(slot);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
+                assert!(matches!(
+                    self.sprite_slot_view(interrupted_slot).sprite_type(),
+                    0x23 | 0x24
+                ));
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.sprite_prep_bari_after_random_boundary(interrupted_slot);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
             SpriteMainCpuBoundary::AfterThrowableSceneryStateClear(interrupted_slot) => {
                 let interrupted_slot = usize::from(interrupted_slot);
                 self.throwable_scenery_scatter_after_state_clear(interrupted_slot);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterSingleSmallDrawPosition {
+                slot,
+                continuation: Some(continuation),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.complete_sprite_slot_after_single_small_draw_position(
+                    interrupted_slot,
+                    continuation,
+                );
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::ProbeAfterOamCoordinates {
+                slot,
+                oam_position: Some(oam_position),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.complete_probe_after_oam_coordinates(interrupted_slot, oam_position);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterWallmasterResetPrefix(interrupted_slot) => {
+                let interrupted_slot = usize::from(interrupted_slot);
+                self.sprite_system_mut()
+                    .set_cur_object_index(interrupted_slot as u8);
+                self.wall_master_send_player_after_reset_fixed_prefix();
+                self.link_initialize();
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::ZazakAfterGraphics(interrupted_slot) => {
+                let interrupted_slot = usize::from(interrupted_slot);
+                self.sprite_zazak_after_graphics_boundary(interrupted_slot);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterActiveCuccoX {
@@ -2887,6 +3720,17 @@ impl ZeldaState {
             | SpriteMainCpuBoundary::AfterCuccoGraphicsPublication {
                 continuation: None, ..
             } => unreachable!("source Cucco boundary did not bind to a native C call site"),
+            SpriteMainCpuBoundary::AfterSingleSmallDrawPosition {
+                continuation: None, ..
+            } => unreachable!(
+                "source single-small draw boundary did not bind to a native C call site"
+            ),
+            SpriteMainCpuBoundary::ProbeAfterOamCoordinates {
+                oam_position: None,
+                ..
+            } => unreachable!(
+                "source guard-probe boundary did not bind to its native OAM coordinates"
+            ),
             SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(_) => {
                 unreachable!(
                     "big-key graphics boundary transfers directly to its typed continuation"
@@ -2911,6 +3755,39 @@ impl ZeldaState {
                 self.sprite_prep_zelda_after_follower_graphics(slot, saved_follower_indicator);
                 self.complete_sprite_main_after_interrupted_slot(slot);
             }
+            SpriteMainCpuBoundary::FollowerGraphics {
+                slot,
+                caller,
+                prefix_completed: true,
+                saved_follower_indicator,
+                stage,
+            } => {
+                let slot = usize::from(slot);
+                self.complete_follower_graphics_decompression(stage);
+                match caller {
+                    crate::SpriteFollowerGraphicsCaller::BlindMaiden => {
+                        assert_eq!(saved_follower_indicator, None);
+                        self.sprite_prep_blind_maiden_after_follower_graphics();
+                    }
+                    crate::SpriteFollowerGraphicsCaller::Zelda => {
+                        self.sprite_prep_zelda_after_follower_graphics(
+                            slot,
+                            saved_follower_indicator.expect(
+                                "Zelda follower-graphics continuation lost its saved follower",
+                            ),
+                        );
+                    }
+                    crate::SpriteFollowerGraphicsCaller::BlindMaidenBody => {
+                        assert_eq!(saved_follower_indicator, None);
+                        self.sprite_b7_blind_maiden_after_follower_graphics(slot);
+                    }
+                }
+                self.complete_sprite_main_after_interrupted_slot(slot);
+            }
+            SpriteMainCpuBoundary::FollowerGraphics {
+                prefix_completed: false,
+                ..
+            } => unreachable!("source follower-graphics boundary did not bind its caller prefix"),
             SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(_) => {
                 unreachable!("unstarted Zelda prep boundary cannot complete scheduled work")
             }
@@ -2926,6 +3803,21 @@ impl ZeldaState {
         }
     }
 
+    pub(super) fn complete_sprite_slot_after_single_small_draw_position(
+        &mut self,
+        slot: usize,
+        continuation: SingleSmallDrawContinuation,
+    ) {
+        assert_eq!(self.sprite_slot_view(slot).state(), 9);
+        assert!(matches!(
+            self.sprite_slot_view(slot).sprite_type(),
+            0x23 | 0x24
+        ));
+        self.sprite_system_mut().set_cur_object_index(slot as u8);
+        self.sprite_draw_single_small_after_position(slot, continuation);
+        self.sprite_23_red_bari_after_draw(slot);
+    }
+
     fn complete_sprite_main_after_all_slots(&mut self) {
         // Every Sprite_Main body reaching its slot-zero return crosses this
         // boundary, whether it ran whole or resumed from a saved CPU slot, so
@@ -2934,9 +3826,7 @@ impl ZeldaState {
             assert_ne!(
                 claims_remaining, 0,
                 "the native body returned from more Sprite_Main loops than its immutable host plan claimed: host={} frame={:?} scheduler={:?}",
-                self.frame_ctr_dbg,
-                self.game_state.frame,
-                self.game_execution_scheduler,
+                self.frame_ctr_dbg, self.game_state.frame, self.game_execution_scheduler,
             );
             assert!(
                 self.take_original_timing_sprite_main_returned(),
@@ -2966,6 +3856,10 @@ impl ZeldaState {
         if st != 0 {
             self.sprite_timers_and_oam(k);
         }
+        self.sprite_execute_single_after_timers(k, st);
+    }
+
+    fn sprite_execute_single_after_timers(&mut self, k: usize, st: u8) {
         match st {
             0 => self.sprite_inactive_sprite(k),
             1 => self.sprite_module_fall1(k),
@@ -3010,7 +3904,7 @@ impl ZeldaState {
             if self.cached_sprite_slot(i).is_active() {
                 if interruption.is_some_and(|(boundary, _)| usize::from(boundary.slot()) == i) {
                     let mut live_slot_backup = [0; 24];
-                    let (boundary, authority_boundary) = interruption.unwrap();
+                    let (mut boundary, authority_boundary) = interruption.unwrap();
                     match boundary {
                         CachedSpriteCpuInterruption::Loading { copied_fields, .. } => {
                             self.cached_sprite_slot_mut(i)
@@ -3019,6 +3913,31 @@ impl ZeldaState {
                                     usize::from(copied_fields),
                                 );
                         }
+                        CachedSpriteCpuInterruption::ExecutingAntfairyAfterSubtype2Increment {
+                            continuation: None,
+                            ..
+                        } => {
+                            self.cached_sprite_slot_mut(i)
+                                .load_cached_into_live(&mut live_slot_backup);
+                            assert_eq!(
+                                self.sprite_slot_view(i).state(),
+                                9,
+                                "cached Antfairy body checkpoint requires an active sprite",
+                            );
+                            self.sprite_timers_and_oam(i);
+                            let continuation = self.antfairy_draw_continuation(i);
+                            self.sprite_slot_view_mut(i).add_subtype2(1);
+                            boundary = CachedSpriteCpuInterruption::ExecutingAntfairyAfterSubtype2Increment {
+                                slot: i as u8,
+                                continuation: Some(continuation),
+                            };
+                        }
+                        CachedSpriteCpuInterruption::ExecutingAntfairyAfterSubtype2Increment {
+                            continuation: Some(_),
+                            ..
+                        } => unreachable!(
+                            "cached Antfairy boundary was already bound before entering its native call site"
+                        ),
                         CachedSpriteCpuInterruption::Restoring { live_fields, .. } => {
                             self.cached_sprite_slot_mut(i)
                                 .load_cached_into_live(&mut live_slot_backup);
@@ -3087,6 +4006,23 @@ impl ZeldaState {
                 self.cached_sprite_slot_mut(interrupted_slot)
                     .restore_live_from_backup(&live_slot_backup);
             }
+            CachedSpriteCpuInterruption::ExecutingAntfairyAfterSubtype2Increment {
+                continuation: Some(continuation),
+                ..
+            } => {
+                self.complete_antfairy_after_subtype2_increment(interrupted_slot, continuation);
+                if self.sprite_slot_view(interrupted_slot).pause() != 0 {
+                    self.cached_sprite_slot_mut(interrupted_slot).clear_state();
+                }
+                self.cached_sprite_slot_mut(interrupted_slot)
+                    .restore_live_from_backup(&live_slot_backup);
+            }
+            CachedSpriteCpuInterruption::ExecutingAntfairyAfterSubtype2Increment {
+                continuation: None,
+                ..
+            } => unreachable!(
+                "cached Antfairy subtype boundary did not bind to a native draw caller"
+            ),
             CachedSpriteCpuInterruption::Restoring { live_fields, .. } => {
                 self.cached_sprite_slot_mut(interrupted_slot)
                     .restore_live_prefix_from_backup_after_nmi(
@@ -3225,6 +4161,21 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_timers_and_oam(&mut self, k: usize) {
+        self.sprite_timers_and_oam_through_timer_decrements(k);
+        self.sprite_timers_and_oam_after_timer_decrements(k);
+    }
+
+    fn sprite_timers_and_oam_through_timer_decrements(&mut self, k: usize) {
+        self.sprite_timers_and_oam_through_primary_timer_decrements(k);
+        self.sprite_timers_and_oam_after_primary_through_timer_decrements(k);
+    }
+
+    fn sprite_timers_and_oam_through_primary_timer_decrements(&mut self, k: usize) {
+        self.sprite_timers_and_oam_through_main_and_aux1_timer_decrements(k);
+        self.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(k);
+    }
+
+    fn sprite_timers_and_oam_through_main_and_aux1_timer_decrements(&mut self, k: usize) {
         let x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
         self.sprite_workspace_mut().set_current_sprite_x(x);
@@ -3250,6 +4201,14 @@ impl ZeldaState {
                 let value = self.sprite_slot_view(k).delay_aux1().wrapping_sub(1);
                 self.sprite_slot_view_mut(k).set_delay_aux1(value);
             }
+        }
+    }
+
+    fn sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(
+        &mut self,
+        k: usize,
+    ) {
+        if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0 {
             if self.sprite_slot_view(k).delay_aux2() != 0 {
                 let value = self.sprite_slot_view(k).delay_aux2().wrapping_sub(1);
                 self.sprite_slot_view_mut(k).set_delay_aux2(value);
@@ -3258,7 +4217,11 @@ impl ZeldaState {
                 let value = self.sprite_slot_view(k).delay_aux3().wrapping_sub(1);
                 self.sprite_slot_view_mut(k).set_delay_aux3(value);
             }
+        }
+    }
 
+    fn sprite_timers_and_oam_after_primary_through_timer_decrements(&mut self, k: usize) {
+        if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0 {
             let timer = self.sprite_slot_view(k).hit_timer() & 0x7f;
             if timer != 0 {
                 if self.sprite_slot_view(k).state() >= 9 {
@@ -3287,7 +4250,9 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_delay_aux4(value);
             }
         }
+    }
 
+    fn sprite_timers_and_oam_after_timer_decrements(&mut self, k: usize) {
         let mut floor = self.game_state.player.follower_link.lower_level_state() as usize;
         if floor != 3 {
             floor = self.sprite_slot_view(k).floor() as usize;
@@ -6426,7 +7391,10 @@ impl ZeldaState {
                 self.game_state.player.follower_link.y(),
                 overlap,
                 self.game_state.player.follower_link.blink_countdown(),
-                self.game_state.player.follower_link.sprite_damage_disable_timer(),
+                self.game_state
+                    .player
+                    .follower_link
+                    .sprite_damage_disable_timer(),
                 self.game_state.player.follower_link.auxiliary_state(),
                 self.game_state.player.follower_link.incapacitated_timer(),
                 self.game_state.inventory.player_resources.current_health(),
@@ -6566,7 +7534,10 @@ impl ZeldaState {
                 k,
                 self.sprite_slot_view(k).sprite_type(),
                 self.game_state.player.follower_link.blink_countdown(),
-                self.game_state.player.follower_link.sprite_damage_disable_timer(),
+                self.game_state
+                    .player
+                    .follower_link
+                    .sprite_damage_disable_timer(),
                 self.game_state.player.follower_link.auxiliary_state(),
                 self.game_state.player.follower_link.incapacitated_timer(),
                 self.game_state.player.follower_link.actual_x_velocity(),
@@ -7828,20 +8799,59 @@ impl ZeldaState {
     //   ...see sprite.c...
     // }
     pub(super) fn sprite_draw_single_small(&mut self, k: usize) {
-        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+        let Some(continuation) = self.sprite_draw_single_small_position_prefix(k) else {
             return;
+        };
+        self.sprite_draw_single_small_after_position(k, continuation);
+    }
+
+    fn sprite_draw_single_small_position_prefix(
+        &mut self,
+        k: usize,
+    ) -> Option<SingleSmallDrawContinuation> {
+        let Some((x, y, flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
+            return None;
         };
         let oam = self.game_state.oam.current_pointer_usize();
         self.oam_state_mut().set_entry_x(oam, x as u8);
-        if y.wrapping_add(0x10) < 0x100 {
-            self.oam_state_mut().set_entry_y(oam, y as u8);
-            let chr = self.sprite_single_draw_char(k);
-            self.oam_state_mut().set_entry_char(oam, chr);
-            self.oam_state_mut().set_entry_flags(oam, flags);
-        }
+        // The ROM publishes the extended-OAM size/X bit before its vertical
+        // clipping branch ($86:DCFD), not after the character/flags stores as
+        // the decompilation orders it. This is observable when vblank lands
+        // at the source statement after the visible Y write.
         let ext_index = (oam - OAM_BUF) / 4;
         let value = u8::from(x >= 256);
         self.oam_state_mut().set_extended_byte(ext_index, value);
+        let visible = y.wrapping_add(0x10) < 0x100;
+        if visible {
+            self.oam_state_mut().set_entry_y(oam, y as u8);
+        }
+        Some(SingleSmallDrawContinuation {
+            x,
+            y,
+            oam: u16::try_from(oam).expect("single-small OAM pointer exceeded one word"),
+            flags,
+            visible,
+        })
+    }
+
+    fn sprite_draw_single_small_after_position(
+        &mut self,
+        k: usize,
+        continuation: SingleSmallDrawContinuation,
+    ) {
+        let SingleSmallDrawContinuation {
+            x,
+            y,
+            oam,
+            flags,
+            visible,
+        } = continuation;
+        if visible {
+            let chr = self.sprite_single_draw_char(k);
+            self.oam_state_mut().set_entry_char(usize::from(oam), chr);
+            self.oam_state_mut()
+                .set_entry_flags(usize::from(oam), flags);
+        }
         if self.sprite_slot_view(k).flags3() & 0x10 != 0 {
             let mut info = PrepOamCoordsRet { x, y, r4: 0, flags };
             self.sprite_draw_shadow_custom(k, &mut info, 2);
@@ -8256,30 +9266,13 @@ impl ZeldaState {
                         self.sprite_slot_view(ju).bump_damage(),
                     );
                 }
-                let value = what;
-                self.sprite_slot_view_mut(ju).set_sprite_type(value);
-                let value = 9;
-                self.sprite_slot_view_mut(ju).set_state(value);
-                info.r0_x = self.sprite_get_x(k);
-                info.r2_y = self.sprite_get_y(k);
-                info.r4_z = self.sprite_slot_view(k).z();
-                info.r5_overlord_x = self.overlord_slot_view(k).x();
-                info.r7_overlord_y = self.overlord_slot_view(k).y();
-                self.sprite_prep_load_properties_for_helpers(ju);
-                if self.game_state.world.location.is_outdoors() {
-                    self.sprite_slot_view_mut(ju).set_n_word(0xffff);
-                } else {
-                    let value = 0xff;
-                    self.sprite_slot_view_mut(ju).set_n(value);
-                }
-                let value = self.sprite_slot_view(k).floor();
-                self.sprite_slot_view_mut(ju).set_floor(value);
-                let value = self.sprite_slot_view(k).direction();
-                self.sprite_slot_view_mut(ju).set_direction(value);
-                let value = 0;
-                self.sprite_slot_view_mut(ju).set_die_action(value);
-                let value = 0;
-                self.sprite_slot_view_mut(ju).set_subtype(value);
+                self.sprite_spawn_dynamically_selected_prefix(
+                    k,
+                    what,
+                    info,
+                    ju,
+                    crate::SpriteDynamicSpawnProgress::SubtypeCleared,
+                );
                 break;
             }
             if j >= 0 && std::env::var_os("ZELDA3_REPLAY_SPRITE_SPAWN_SCAN_DUMP").is_some() {
@@ -8302,6 +9295,145 @@ impl ZeldaState {
             }
         }
         j
+    }
+
+    fn sprite_spawn_dynamically_capture_info(&self, k: usize, info: &mut SpriteSpawnInfo) {
+        info.r0_x = self.sprite_get_x(k);
+        info.r2_y = self.sprite_get_y(k);
+        info.r4_z = self.sprite_slot_view(k).z();
+        info.r5_overlord_x = self.overlord_slot_view(k).x();
+        info.r7_overlord_y = self.overlord_slot_view(k).y();
+    }
+
+    pub(super) fn sprite_spawn_dynamically_selected_prefix(
+        &mut self,
+        k: usize,
+        what: u8,
+        info: &mut SpriteSpawnInfo,
+        j: usize,
+        progress: crate::SpriteDynamicSpawnProgress,
+    ) {
+        assert!(j < 16);
+        assert_eq!(
+            self.sprite_slot_view(j).state(),
+            0,
+            "source dynamic-spawn slot must be free before its first publication",
+        );
+        self.sprite_slot_view_mut(j).set_sprite_type(what);
+        if progress == crate::SpriteDynamicSpawnProgress::TypePublished {
+            return;
+        }
+        self.sprite_slot_view_mut(j).set_state(9);
+        self.sprite_spawn_dynamically_capture_info(k, info);
+        if progress == crate::SpriteDynamicSpawnProgress::StatePublished {
+            return;
+        }
+
+        match progress {
+            crate::SpriteDynamicSpawnProgress::ResetProperties { completed_stores } => {
+                self.sprite_prep_reset_properties_prefix(j, completed_stores);
+                return;
+            }
+            crate::SpriteDynamicSpawnProgress::LoadProperties { completed_stores } => {
+                self.sprite_prep_reset_properties(j);
+                self.sprite_prep_load_properties_after_reset_prefix(j, completed_stores);
+                return;
+            }
+            _ => self.sprite_prep_load_properties_for_helpers(j),
+        }
+        if self.game_state.world.location.is_outdoors() {
+            self.sprite_slot_view_mut(j).set_n_word(0xffff);
+        } else {
+            self.sprite_slot_view_mut(j).set_n(0xff);
+        }
+        if progress == crate::SpriteDynamicSpawnProgress::IdentityPublished {
+            return;
+        }
+        let floor = self.sprite_slot_view(k).floor();
+        self.sprite_slot_view_mut(j).set_floor(floor);
+        if progress == crate::SpriteDynamicSpawnProgress::FloorPublished {
+            return;
+        }
+        let direction = self.sprite_slot_view(k).direction();
+        self.sprite_slot_view_mut(j).set_direction(direction);
+        if progress == crate::SpriteDynamicSpawnProgress::DirectionPublished {
+            return;
+        }
+        self.sprite_slot_view_mut(j).set_die_action(0);
+        if progress == crate::SpriteDynamicSpawnProgress::DieActionCleared {
+            return;
+        }
+        self.sprite_slot_view_mut(j).set_subtype(0);
+        assert_eq!(progress, crate::SpriteDynamicSpawnProgress::SubtypeCleared);
+    }
+
+    pub(super) fn sprite_spawn_dynamically_selected_from(
+        &mut self,
+        k: usize,
+        info: &mut SpriteSpawnInfo,
+        j: usize,
+        progress: crate::SpriteDynamicSpawnProgress,
+    ) {
+        self.sprite_spawn_dynamically_capture_info(k, info);
+        match progress {
+            crate::SpriteDynamicSpawnProgress::TypePublished => {
+                self.sprite_slot_view_mut(j).set_state(9);
+                self.sprite_prep_load_properties_for_helpers(j);
+            }
+            crate::SpriteDynamicSpawnProgress::StatePublished => {
+                self.sprite_prep_load_properties_for_helpers(j);
+            }
+            crate::SpriteDynamicSpawnProgress::ResetProperties { completed_stores } => {
+                self.sprite_prep_reset_properties_from(j, completed_stores);
+                self.sprite_prep_load_properties_after_reset(j);
+            }
+            crate::SpriteDynamicSpawnProgress::LoadProperties { completed_stores } => {
+                self.sprite_prep_load_properties_after_reset_from(j, completed_stores);
+            }
+            _ => {}
+        }
+        if matches!(
+            progress,
+            crate::SpriteDynamicSpawnProgress::TypePublished
+                | crate::SpriteDynamicSpawnProgress::StatePublished
+                | crate::SpriteDynamicSpawnProgress::ResetProperties { .. }
+                | crate::SpriteDynamicSpawnProgress::LoadProperties { .. }
+        ) {
+            if self.game_state.world.location.is_outdoors() {
+                self.sprite_slot_view_mut(j).set_n_word(0xffff);
+            } else {
+                self.sprite_slot_view_mut(j).set_n(0xff);
+            }
+        }
+        if !matches!(
+            progress,
+            crate::SpriteDynamicSpawnProgress::FloorPublished
+                | crate::SpriteDynamicSpawnProgress::DirectionPublished
+                | crate::SpriteDynamicSpawnProgress::DieActionCleared
+                | crate::SpriteDynamicSpawnProgress::SubtypeCleared
+        ) {
+            let floor = self.sprite_slot_view(k).floor();
+            self.sprite_slot_view_mut(j).set_floor(floor);
+        }
+        if !matches!(
+            progress,
+            crate::SpriteDynamicSpawnProgress::DirectionPublished
+                | crate::SpriteDynamicSpawnProgress::DieActionCleared
+                | crate::SpriteDynamicSpawnProgress::SubtypeCleared
+        ) {
+            let direction = self.sprite_slot_view(k).direction();
+            self.sprite_slot_view_mut(j).set_direction(direction);
+        }
+        if !matches!(
+            progress,
+            crate::SpriteDynamicSpawnProgress::DieActionCleared
+                | crate::SpriteDynamicSpawnProgress::SubtypeCleared
+        ) {
+            self.sprite_slot_view_mut(j).set_die_action(0);
+        }
+        if progress != crate::SpriteDynamicSpawnProgress::SubtypeCleared {
+            self.sprite_slot_view_mut(j).set_subtype(0);
+        }
     }
 
     // int ReleaseFairy() {  // 9efe33

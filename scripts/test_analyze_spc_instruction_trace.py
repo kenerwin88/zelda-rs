@@ -31,6 +31,7 @@ def rust(pc: int, *, remaining: int, a: int = 0) -> dict:
         "timer0_cycles": remaining,
         "timer0_divider": 4,
         "direct_page_0_3": [0, 0, 0, 0],
+        "direct_page_4_7": [0, 0, 0, 0],
         "direct_page_8_11": [0, 0, 0, 0],
     }
 
@@ -114,7 +115,7 @@ class AnalyzeSpcInstructionTraceTests(unittest.TestCase):
         self.assertEqual(divergence["tag"], "delete")
         self.assertEqual(divergence["rust_range"], (1, 2))
         self.assertEqual(divergence["oracle_range"], (1, 1))
-        self.assertEqual(divergence["rust_direct_page"], [0] * 8)
+        self.assertEqual(divergence["rust_direct_page"], [0] * 12)
 
     def test_reports_duplicate_dsp_write_across_receipts(self) -> None:
         def receipt(rust_writes: list[tuple[int, int]], oracle_writes: list[tuple[int, int]]) -> dict:

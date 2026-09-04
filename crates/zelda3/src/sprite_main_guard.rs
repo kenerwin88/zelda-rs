@@ -308,6 +308,15 @@ impl ZeldaState {
     //   ...
     // }
     pub(super) fn probe(&mut self, k: usize) {
+        if let Some(oam_position) = self.probe_until_after_oam_coordinates(k) {
+            self.complete_probe_after_oam_coordinates(k, oam_position);
+        }
+    }
+
+    /// Execute `Probe` through the return from
+    /// `Sprite_PrepOamCoordOrDoubleRet`, immediately before the final
+    /// `(oam.x | oam.y) >= 256` test at `$05:C21D`.
+    pub(super) fn probe_until_after_oam_coordinates(&mut self, k: usize) -> Option<(u16, u16)> {
         self.sprite_add_xy(
             k,
             self.sprite_slot_view(k).x_velocity() as i8 as i32,
@@ -337,7 +346,7 @@ impl ZeldaState {
                 || self.game_state.player.follower_link.is_cape_active()
             {
                 self.sprite_slot_view_mut(k).clear();
-                return;
+                return None;
             }
             let x = self
                 .game_state
@@ -370,10 +379,16 @@ impl ZeldaState {
                 }
             }
             self.sprite_slot_view_mut(k).clear();
-        } else if let Some((x, y, _flags)) = self.sprite_prep_oam_coord_or_double_ret(k) {
-            if (x | y) >= 256 {
-                self.sprite_slot_view_mut(k).clear();
-            }
+            None
+        } else {
+            self.sprite_prep_oam_coord_or_double_ret(k)
+                .map(|(x, y, _flags)| (x, y))
+        }
+    }
+
+    pub(super) fn complete_probe_after_oam_coordinates(&mut self, k: usize, (x, y): (u16, u16)) {
+        if (x | y) >= 256 {
+            self.sprite_slot_view_mut(k).clear();
         }
     }
 

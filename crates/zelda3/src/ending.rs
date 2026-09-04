@@ -6,6 +6,7 @@ use super::sprite::{DrawMultipleData, PrepOamCoordsRet};
 /// wire's iteration return decides the actual host (route hosts 1557656-1557677,
 /// 1557678-1557708, 1557709-1557723).
 const TRIFORCE_ROOM_SONG_BANK_UPLOAD_NMI_SLICES: u8 = 15;
+const TRIFORCE_ROOM_CASE2_SPECIAL_AREA_PALETTES_NMI_SLICES: u8 = 1;
 const TRIFORCE_ROOM_CASE2_OVERLAYS_NMI_SLICES: u8 = 6;
 const TRIFORCE_ROOM_CASE3_NMI_SLICES: u8 = 30;
 const TRIFORCE_ROOM_CASE4_NMI_SLICES: u8 = 15;
@@ -568,8 +569,19 @@ impl ZeldaState {
         }
     }
 
-    /// Case 2 after the `LoadCreditsSongs` upload returns (the ROM runs
-    /// these in the upload's last host, route host 1557671).
+    /// Case 2 after the `LoadCreditsSongs` upload returns, through the exact
+    /// source-order OWBG2 palette word exposed at the host boundary.
+    fn triforce_room_load_case2_through_palette_progress(
+        &mut self,
+        completed_ow_bg2_words: u8,
+    ) -> u8 {
+        self.set_dungeon_room(0x189);
+        self.erase_tile_maps_normal();
+        self.Palette_RevertTranslucencySwap();
+        self.overworld_enter_special_area_through_ow_bg2_words(usize::from(completed_ow_bg2_words))
+    }
+
+    /// Non-live completion of case 2 after the upload estimate expires.
     fn triforce_room_load_case2_after_upload(&mut self) {
         self.set_dungeon_room(0x189);
         self.erase_tile_maps_normal();
@@ -641,7 +653,64 @@ impl ZeldaState {
     pub(super) fn complete_triforce_room_load_step(&mut self, step: TriforceRoomLoadStep) {
         match step {
             TriforceRoomLoadStep::Case2Upload => {
+                if let Some(progress) =
+                    self.take_original_timing_triforce_room_case2_palette_progress()
+                {
+                    let room_bak = self.triforce_room_load_case2_through_palette_progress(
+                        progress.completed_ow_bg2_words,
+                    );
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishTriforceRoomLoad {
+                            step: TriforceRoomLoadStep::Case2SpecialAreaPalettes {
+                                room_bak,
+                                completed_ow_bg2_words: progress.completed_ow_bg2_words,
+                            },
+                        },
+                        TRIFORCE_ROOM_CASE2_SPECIAL_AREA_PALETTES_NMI_SLICES,
+                    );
+                    return;
+                }
                 self.triforce_room_load_case2_after_upload();
+                self.game_execution_scheduler.schedule_work(
+                    GameWorkContinuation::FinishTriforceRoomLoad {
+                        step: TriforceRoomLoadStep::Case2Overlays,
+                    },
+                    TRIFORCE_ROOM_CASE2_OVERLAYS_NMI_SLICES,
+                );
+                return;
+            }
+            TriforceRoomLoadStep::Case2SpecialAreaPalettes {
+                room_bak,
+                completed_ow_bg2_words,
+            } => {
+                if let Some(progress) =
+                    self.take_original_timing_triforce_room_case2_palette_progress()
+                {
+                    assert!(
+                        progress.completed_ow_bg2_words >= completed_ow_bg2_words,
+                        "Triforce case-2 OWBG2 palette checkpoint moved backwards",
+                    );
+                    if progress.completed_ow_bg2_words < 21 {
+                        self.palette_load_ow_bg2_word_range(
+                            usize::from(completed_ow_bg2_words),
+                            usize::from(progress.completed_ow_bg2_words),
+                        );
+                        self.game_execution_scheduler.schedule_work(
+                            GameWorkContinuation::FinishTriforceRoomLoad {
+                                step: TriforceRoomLoadStep::Case2SpecialAreaPalettes {
+                                    room_bak,
+                                    completed_ow_bg2_words: progress.completed_ow_bg2_words,
+                                },
+                            },
+                            TRIFORCE_ROOM_CASE2_SPECIAL_AREA_PALETTES_NMI_SLICES,
+                        );
+                        return;
+                    }
+                }
+                self.overworld_enter_special_area_after_ow_bg2_words(
+                    room_bak,
+                    usize::from(completed_ow_bg2_words),
+                );
                 // The overlay load holds the iteration under held vblanks
                 // until the wire returns it (LinkOam interruption at route
                 // host 1557676).
@@ -670,6 +739,76 @@ impl ZeldaState {
             TriforceRoomLoadStep::Case9Scroll => {}
             TriforceRoomLoadStep::IterationTail { case } => self.triforce_room_case_rest(case),
             TriforceRoomLoadStep::CreditsIteration { prefix } => {
+                if let Some(progress) = self.take_original_timing_credits_end_sequence_32_progress()
+                {
+                    assert_eq!(
+                        prefix,
+                        CreditsEntryHostPrefix::None,
+                        "credits finale checksum progress followed a scene-entry prefix",
+                    );
+                    let accumulated_word_sum = self.end_sequence_32_through_save_checksum_words(
+                        progress.completed_checksum_words,
+                    );
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishTriforceRoomLoad {
+                            step: TriforceRoomLoadStep::CreditsEndSequence32AfterSaveChecksum {
+                                completed_checksum_words: progress.completed_checksum_words,
+                                accumulated_word_sum,
+                            },
+                        },
+                        1,
+                    );
+                    return;
+                }
+                if let Some(progress) = self.take_original_timing_credits_scene_load_progress() {
+                    match prefix {
+                        CreditsEntryHostPrefix::OverworldPrepGfx => {
+                            self.credits_load_scene_overworld_prep_gfx_rest();
+                        }
+                        CreditsEntryHostPrefix::DungeonScene => {
+                            self.credits_load_scene_dungeon_rest();
+                        }
+                        CreditsEntryHostPrefix::None => {
+                            panic!("credits scene-load progress had no deferred scene prefix")
+                        }
+                    }
+                    let completed_payload_bytes = match progress.progress {
+                        crate::CreditsSceneLoadProgress::SceneLoadCompleted => 0,
+                        crate::CreditsSceneLoadProgress::EndingTextPayloadBytes(bytes) => bytes,
+                        crate::CreditsSceneLoadProgress::EndingTextCompleted => {
+                            self.credits_add_ending_sequence_text();
+                            return;
+                        }
+                    };
+                    if matches!(
+                        self.original_timing_main_loop_interruption(),
+                        Some(
+                            crate::MainLoopInterruption::SpritePreparation
+                                | crate::MainLoopInterruption::SpritePreparationExtendedOamPacking {
+                                    ..
+                                }
+                        )
+                    ) {
+                        // The interrupted common suffix proves the whole
+                        // Module1A body, including the text append, returned
+                        // before this boundary. The scene receipt still owns
+                        // the earlier module/submodule publication.
+                        self.credits_add_ending_sequence_text();
+                        return;
+                    }
+                    self.credits_add_ending_sequence_text_through_payload_bytes(
+                        completed_payload_bytes,
+                    );
+                    self.game_execution_scheduler.schedule_work(
+                        GameWorkContinuation::FinishTriforceRoomLoad {
+                            step: TriforceRoomLoadStep::CreditsTextAfterSceneLoad {
+                                completed_payload_bytes,
+                            },
+                        },
+                        1,
+                    );
+                    return;
+                }
                 match prefix {
                     CreditsEntryHostPrefix::None => self.module1_a_credits_body(),
                     CreditsEntryHostPrefix::OverworldPrepGfx => {
@@ -681,6 +820,22 @@ impl ZeldaState {
                         self.credits_add_ending_sequence_text();
                     }
                 }
+                return;
+            }
+            TriforceRoomLoadStep::CreditsTextAfterSceneLoad {
+                completed_payload_bytes,
+            } => {
+                self.credits_add_ending_sequence_text_after_payload_bytes(completed_payload_bytes);
+                return;
+            }
+            TriforceRoomLoadStep::CreditsEndSequence32AfterSaveChecksum {
+                completed_checksum_words,
+                accumulated_word_sum,
+            } => {
+                self.end_sequence_32_after_save_checksum_words(
+                    completed_checksum_words,
+                    accumulated_word_sum,
+                );
                 return;
             }
         }
@@ -2213,6 +2368,12 @@ impl ZeldaState {
     }
 
     pub(super) fn end_sequence_32(&mut self) {
+        self.end_sequence_32_before_save_game_file();
+        self.SaveGameFile();
+        self.end_sequence_32_after_save_game_file();
+    }
+
+    fn end_sequence_32_before_save_game_file(&mut self) {
         self.enable_force_blank();
         self.erase_tile_maps_triforce();
         self.transfer_font_to_vram();
@@ -2252,7 +2413,29 @@ impl ZeldaState {
             [(self.game_state.inventory.player_resources.health_capacity() >> 3) as usize];
         self.player_resources_mut().set_current_health(health);
         self.save_progress_mut().set_dark_world_state(0x40);
-        self.SaveGameFile();
+    }
+
+    /// Run the credits finale through the exact source checkpoint in
+    /// `SaveGameFile` and return the checksum accumulator retained by the
+    /// suspended caller.
+    fn end_sequence_32_through_save_checksum_words(
+        &mut self,
+        completed_checksum_words: u16,
+    ) -> u16 {
+        self.end_sequence_32_before_save_game_file();
+        self.save_game_file_copy_blocks_and_sum_prefix(completed_checksum_words)
+    }
+
+    fn end_sequence_32_after_save_checksum_words(
+        &mut self,
+        completed_checksum_words: u16,
+        accumulated_word_sum: u16,
+    ) {
+        self.save_game_file_finish_checksum(completed_checksum_words, accumulated_word_sum);
+        self.end_sequence_32_after_save_game_file();
+    }
+
+    fn end_sequence_32_after_save_game_file(&mut self) {
         self.set_aux_color_constant(38, 0);
         self.set_main_color_constant(38, 0);
         self.set_aux_color_constant(0, 0);
@@ -2408,41 +2591,75 @@ impl ZeldaState {
         self.set_bg_vram_load_mode(1);
     }
 
-    pub(super) fn credits_add_ending_sequence_text(&mut self) {
-        let mut dst = self.game_state.display.vram_upload_buffer_base();
-        self.write_vram_upload_absolute_word(dst, 0x0060);
-        self.write_vram_upload_absolute_word(dst + 2, 0xfe47);
-        let blank_tile = self.ending_asset_u16(76, 159);
-        self.write_vram_upload_absolute_word(dst + 4, blank_tile);
-        dst += 6;
-
+    fn credits_ending_sequence_text_payload(&self) -> Vec<u16> {
         let scene = (self.game_state.frame.submodule >> 1) as usize;
         let mut curo = self.ending_asset_u16(77, scene) as usize;
         let endo = self.ending_asset_u16(77, scene + 1) as usize;
         let data = self
             .asset_raw(78)
-            .unwrap_or_else(|| panic!("missing ending asset 78"))
-            .to_vec();
+            .unwrap_or_else(|| panic!("missing ending asset 78"));
+        let mut payload = Vec::new();
         while curo != endo {
             let a = u16::from_le_bytes([data[curo], data[curo + 1]]);
             let b = u16::from_le_bytes([data[curo + 2], data[curo + 3]]);
-            self.write_vram_upload_absolute_word(dst, a);
-            self.write_vram_upload_absolute_word(dst + 2, b);
+            payload.push(a);
+            payload.push(b);
             let m = ((b >> 9) & 0x7f) as usize;
-            dst += 4;
             curo += 4;
             for _ in 0..=m {
                 let ch = data[curo] as usize;
-                let tile = self.ending_asset_u16(76, ch);
-                self.write_vram_upload_absolute_word(dst, tile);
-                dst += 2;
+                payload.push(self.ending_asset_u16(76, ch));
                 curo += 1;
             }
         }
-        let upload_base = self.game_state.display.vram_upload_buffer_base();
-        self.set_vram_upload_cursor((dst - upload_base) as u16);
-        self.write_vram_upload_absolute_byte(dst, 0xff);
+        payload
+    }
+
+    fn credits_write_ending_sequence_text_header(&mut self) {
+        let dst = self.game_state.display.vram_upload_buffer_base();
+        self.write_vram_upload_absolute_word(dst, 0x0060);
+        self.write_vram_upload_absolute_word(dst + 2, 0xfe47);
+        let blank_tile = self.ending_asset_u16(76, 159);
+        self.write_vram_upload_absolute_word(dst + 4, blank_tile);
+    }
+
+    fn credits_add_ending_sequence_text_through_payload_bytes(
+        &mut self,
+        completed_payload_bytes: u16,
+    ) {
+        let payload = self.credits_ending_sequence_text_payload();
+        let completed_payload_bytes = usize::from(completed_payload_bytes);
+        assert!(completed_payload_bytes & 1 == 0);
+        assert!(completed_payload_bytes <= payload.len() * 2);
+        self.credits_write_ending_sequence_text_header();
+        let dst = self.game_state.display.vram_upload_buffer_base() + 6;
+        for (index, &word) in payload[..completed_payload_bytes / 2].iter().enumerate() {
+            self.write_vram_upload_absolute_word(dst + index * 2, word);
+        }
+    }
+
+    fn credits_add_ending_sequence_text_after_payload_bytes(
+        &mut self,
+        completed_payload_bytes: u16,
+    ) {
+        let payload = self.credits_ending_sequence_text_payload();
+        let completed_payload_bytes = usize::from(completed_payload_bytes);
+        assert!(completed_payload_bytes & 1 == 0);
+        assert!(completed_payload_bytes <= payload.len() * 2);
+        let base = self.game_state.display.vram_upload_buffer_base();
+        let dst = base + 6;
+        for (index, &word) in payload[completed_payload_bytes / 2..].iter().enumerate() {
+            self.write_vram_upload_absolute_word(dst + completed_payload_bytes + index * 2, word);
+        }
+        let end = dst + payload.len() * 2;
+        self.set_vram_upload_cursor((end - base) as u16);
+        self.write_vram_upload_absolute_byte(end, 0xff);
         self.set_bg_vram_load_mode(1);
+    }
+
+    pub(super) fn credits_add_ending_sequence_text(&mut self) {
+        self.credits_add_ending_sequence_text_through_payload_bytes(0);
+        self.credits_add_ending_sequence_text_after_payload_bytes(0);
     }
 
     pub(super) fn credits_brighten_triangles(&mut self) {

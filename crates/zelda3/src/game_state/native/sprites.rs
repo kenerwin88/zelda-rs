@@ -863,6 +863,49 @@ impl<'a> NativeSpriteSlotView<'a> {
     }
 }
 
+const SPRITE_PREP_RUNTIME_STATE_SOURCE_ORDER: [usize; 40] = [
+    SPRITE_PAUSE,
+    SPRITE_E,
+    SPRITE_X_VELOCITY,
+    SPRITE_Y_VELOCITY,
+    SPRITE_Z_VELOCITY,
+    SPRITE_X_SUBPIXEL,
+    SPRITE_Y_SUBPIXEL,
+    SPRITE_Z_SUBPIXEL,
+    SPRITE_AI_STATE,
+    SPRITE_GRAPHICS,
+    SPRITE_D,
+    SPRITE_DELAY_MAIN,
+    SPRITE_DELAY_AUX1,
+    SPRITE_DELAY_AUX2,
+    SPRITE_DELAY_AUX4,
+    SPRITE_HEAD_DIR,
+    SPRITE_ANIM_CLOCK,
+    SPRITE_G,
+    SPRITE_HIT_TIMER,
+    SPRITE_WALL_COLLISION,
+    SPRITE_Z,
+    SPRITE_HEALTH,
+    SPRITE_F,
+    SPRITE_X_RECOIL,
+    SPRITE_Y_RECOIL,
+    SPRITE_A,
+    SPRITE_B,
+    SPRITE_C,
+    SPRITE_DRAW_WORK_BYTE_2,
+    SPRITE_SUBTYPE2,
+    SPRITE_IGNORE_PROJECTILE,
+    SPRITE_OBJ_PRIO,
+    SPRITE_OAM_FLAGS,
+    SPRITE_STUNNED,
+    SPRITE_INCOMING_DAMAGE,
+    SPRITE_DRAW_WORK_BYTE_3,
+    SPRITE_DRAW_WORK_BYTE_4,
+    SPRITE_DRAW_WORK_BYTE_5,
+    SPRITE_DRAW_WORK_BYTE_1,
+    SPRITE_DRAW_I,
+];
+
 pub(crate) struct NativeSpriteSlotBridgeMut<'a> {
     state: &'a mut SpriteSlotsState,
     ram: &'a mut [u8],
@@ -1567,51 +1610,30 @@ impl<'a> NativeSpriteSlotBridgeMut<'a> {
         self.set_byte(SPRITE_OBJ_PRIO, next);
     }
 
-    pub(crate) fn clear_prep_runtime_state(&mut self) {
-        for base in [
-            SPRITE_A,
-            SPRITE_AI_STATE,
-            SPRITE_ANIM_CLOCK,
-            SPRITE_B,
-            SPRITE_C,
-            SPRITE_D,
-            SPRITE_DELAY_AUX1,
-            SPRITE_DELAY_AUX2,
-            SPRITE_DELAY_AUX4,
-            SPRITE_DELAY_MAIN,
-            SPRITE_DRAW_I,
-            SPRITE_DRAW_WORK_BYTE_1,
-            SPRITE_DRAW_WORK_BYTE_2,
-            SPRITE_DRAW_WORK_BYTE_3,
-            SPRITE_DRAW_WORK_BYTE_4,
-            SPRITE_DRAW_WORK_BYTE_5,
-            SPRITE_E,
-            SPRITE_F,
-            SPRITE_G,
-            SPRITE_GRAPHICS,
-            SPRITE_HEAD_DIR,
-            SPRITE_HEALTH,
-            SPRITE_HIT_TIMER,
-            SPRITE_IGNORE_PROJECTILE,
-            SPRITE_INCOMING_DAMAGE,
-            SPRITE_OAM_FLAGS,
-            SPRITE_OBJ_PRIO,
-            SPRITE_PAUSE,
-            SPRITE_STUNNED,
-            SPRITE_SUBTYPE2,
-            SPRITE_WALL_COLLISION,
-            SPRITE_X_RECOIL,
-            SPRITE_X_SUBPIXEL,
-            SPRITE_X_VELOCITY,
-            SPRITE_Y_RECOIL,
-            SPRITE_Y_SUBPIXEL,
-            SPRITE_Y_VELOCITY,
-            SPRITE_Z,
-            SPRITE_Z_SUBPIXEL,
-            SPRITE_Z_VELOCITY,
-        ] {
+    pub(crate) fn clear_prep_runtime_state_prefix(&mut self, completed_stores: u8) {
+        let completed_stores = usize::from(completed_stores);
+        assert!(
+            completed_stores <= SPRITE_PREP_RUNTIME_STATE_SOURCE_ORDER.len(),
+            "SpritePrep_ResetProperties prefix exceeds its source store count",
+        );
+        for &base in &SPRITE_PREP_RUNTIME_STATE_SOURCE_ORDER[..completed_stores] {
             self.set_byte(base, 0);
         }
+    }
+
+    pub(crate) fn clear_prep_runtime_state_from(&mut self, completed_stores: u8) {
+        const TOTAL_STORES: u8 = SPRITE_PREP_RUNTIME_STATE_SOURCE_ORDER.len() as u8;
+        assert!(
+            completed_stores <= TOTAL_STORES,
+            "SpritePrep_ResetProperties continuation exceeds its source store count",
+        );
+        for &base in &SPRITE_PREP_RUNTIME_STATE_SOURCE_ORDER[usize::from(completed_stores)..] {
+            self.set_byte(base, 0);
+        }
+    }
+
+    pub(crate) fn clear_prep_runtime_state(&mut self) {
+        self.clear_prep_runtime_state_prefix(40);
     }
 
     pub(crate) fn decrement_anim_clock(&mut self) {

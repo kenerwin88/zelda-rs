@@ -751,8 +751,17 @@ impl ZeldaState {
     pub(super) fn Module07_0E_SpiralStairs(&mut self) {
         if self.game_state.frame.subsubmodule >= 7 {
             self.Graphics_IncrementalVRAMUpload();
+            if self.suspend_dungeon_selectable_peg_attribute_flip(
+                DungeonPegAttributeFlipCaller::SpiralStairs,
+            ) {
+                return;
+            }
             self.Dungeon_LoadAttribute_Selectable();
         }
+        self.complete_module07_0e_spiral_stairs_after_attribute_loader();
+    }
+
+    pub(super) fn complete_module07_0e_spiral_stairs_after_attribute_loader(&mut self) {
         self.HandleLinkOnSpiralStairs();
         match self.game_state.frame.subsubmodule {
             0 => self.Module07_0E_00_InitPriorityAndScreens(),
@@ -8450,6 +8459,50 @@ impl ZeldaState {
         self.set_overworld_map_state(0);
     }
 
+    /// Transfer the long selectable-loader peg flip to the live source
+    /// cursor, retaining the exact translated caller which follows the shared
+    /// helper's return.
+    fn suspend_dungeon_selectable_peg_attribute_flip(
+        &mut self,
+        caller: DungeonPegAttributeFlipCaller,
+    ) -> bool {
+        if self.overworld_map_state() != 4
+            || self
+                .game_state
+                .dungeon
+                .environment
+                .orange_blue_barrier_state()
+                == 0
+        {
+            return false;
+        }
+        let Some(progress) = self.take_original_timing_dungeon_peg_attribute_flip_progress() else {
+            return false;
+        };
+        // Dungeon_LoadAttribute_Selectable advances the selector before it
+        // enters Dungeon_FlipCrystalPegAttribute.
+        self.set_overworld_map_state(5);
+        self.dungeon_flip_crystal_peg_attribute_through_progress(progress);
+        assert!(
+            self.dungeon_peg_attribute_flip_pending
+                .replace(DungeonPegAttributeFlipContinuation { caller, progress })
+                .is_none(),
+            "peg-attribute flip continuation was already pending",
+        );
+        match progress.boundary {
+            OriginalTimingBoundary::NmiAccepted => self
+                .game_execution_scheduler
+                .schedule_after_current_trailing_nmi(
+                    GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+                ),
+            OriginalTimingBoundary::HostReturn => self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+                1,
+            ),
+        }
+        true
+    }
+
     pub(super) fn Dungeon_LoadAttribute_Selectable(&mut self) {
         match self.overworld_map_state() {
             0 => {
@@ -8543,41 +8596,134 @@ impl ZeldaState {
                 "dungeon-attr-state room=0x{:04x} star=0x{:04x} inter={:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x},{:04x} in1={:04x},{:04x},{:04x},{:04x},{:04x},{:04x} misc=0x{:04x} torch=0x{:04x} chest=0x{:04x} big=0x{:04x} in2={:04x},{:04x},{:04x},{:04x} table1={:04x},{:04x},{:04x},{:04x} table2={:04x},{:04x},{:04x},{:04x} obj={:04x},{:04x},{:04x},{:04x}",
                 self.game_state.world.location.dungeon_room(),
                 self.game_state.dungeon.room_parser.star_switch_count_x2(),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InterRoomUpNorth),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::WallUpNorthSpiral),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::WallUpNorthSpiralBg1),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InterRoomUpNorthStraight),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InterRoomUpSouthStraight),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InterRoomSouthDown),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::WallDownNorthSpiral),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::WallDownNorthSpiralBg1),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InterRoomDownNorthStraight),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InRoomUpNorth),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InRoomSouthDown),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InterPseudoUpNorth),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::WaterSideStepSwitch),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InRoomUpNorthWater),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::ActivatedWaterLadders),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::InterRoomUpNorth),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::WallUpNorthSpiral),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::WallUpNorthSpiralBg1),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::InterRoomUpNorthStraight),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::InterRoomUpSouthStraight),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::InterRoomSouthDown),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::WallDownNorthSpiral),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::WallDownNorthSpiralBg1),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::InterRoomDownNorthStraight),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::InRoomUpNorth),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::InRoomSouthDown),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::InterPseudoUpNorth),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::WaterSideStepSwitch),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::InRoomUpNorthWater),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::ActivatedWaterLadders),
                 self.game_state.dungeon.object_tracking.misc_object_index(),
                 self.game_state.dungeon.torch.torch_index(),
                 self.game_state.dungeon.room_items.num_chests_x2(),
                 self.game_state.dungeon.room_items.num_big_key_locks_x2(),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::Stairs1),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::Stairs2),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::WetStairs),
-                self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InRoomUpSouthWater),
-                self.game_state.dungeon.stair_lists.stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 0),
-                self.game_state.dungeon.stair_lists.stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 2),
-                self.game_state.dungeon.stair_lists.stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 4),
-                self.game_state.dungeon.stair_lists.stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 6),
-                self.game_state.dungeon.stair_lists.stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
-                self.game_state.dungeon.stair_lists.stair_list_tilemap_pos(DungeonStairList::Stairs1, 2),
-                self.game_state.dungeon.stair_lists.stair_list_tilemap_pos(DungeonStairList::Stairs1, 4),
-                self.game_state.dungeon.stair_lists.stair_list_tilemap_pos(DungeonStairList::Stairs1, 6),
-                self.game_state.dungeon.object_tracking.object_tilemap_pos(0),
-                self.game_state.dungeon.object_tracking.object_tilemap_pos(1),
-                self.game_state.dungeon.object_tracking.object_tilemap_pos(2),
-                self.game_state.dungeon.object_tracking.object_tilemap_pos(3),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::Stairs1),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::Stairs2),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::WetStairs),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_count(DungeonStairList::InRoomUpSouthWater),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 0),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 2),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 4),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 6),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_tilemap_pos(DungeonStairList::Stairs1, 2),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_tilemap_pos(DungeonStairList::Stairs1, 4),
+                self.game_state
+                    .dungeon
+                    .stair_lists
+                    .stair_list_tilemap_pos(DungeonStairList::Stairs1, 6),
+                self.game_state
+                    .dungeon
+                    .object_tracking
+                    .object_tilemap_pos(0),
+                self.game_state
+                    .dungeon
+                    .object_tracking
+                    .object_tilemap_pos(1),
+                self.game_state
+                    .dungeon
+                    .object_tracking
+                    .object_tilemap_pos(2),
+                self.game_state
+                    .dungeon
+                    .object_tracking
+                    .object_tilemap_pos(3),
             );
         }
         let mut i = 0usize;
@@ -9140,7 +9286,10 @@ impl ZeldaState {
                 t,
                 self.game_state.dungeon.doors.door_type_word(k),
                 self.game_state.dungeon.doors.opened_doors(),
-                self.game_state.dungeon.doors.opened_doors_including_adjacent(),
+                self.game_state
+                    .dungeon
+                    .doors
+                    .opened_doors_including_adjacent(),
                 self.game_state.dungeon.doors.current_door_pos(),
                 self.game_state.dungeon.doors.door_tilemap_address(k),
                 self.game_state.dungeon.doors.door_direction_word(k),
@@ -9354,15 +9503,99 @@ impl ZeldaState {
         assert_eq!(self.game_state.dungeon.door_setup.width_road_address(), 0);
     }
 
-    fn Dungeon_FlipCrystalPegAttribute(&mut self) {
-        for i in (0..=0x0fff).rev() {
-            if self.game_state.dungeon.bg2_attributes.bg2_attr(i) & !1 == 0x66 {
-                self.dungeon_bg2_attributes_mut().xor_bg2_attr(i, 1);
-            }
-            if self.game_state.dungeon.bg2_attributes.bg1_attr(i) & !1 == 0x66 {
-                self.dungeon_bg2_attributes_mut().xor_bg1_attr(i, 1);
+    fn flip_crystal_peg_attribute_bank(&mut self, index: usize, bank: u8) {
+        let (bg1, offset) = match bank {
+            0 => (false, index),
+            1 => (false, 0x0800 + index),
+            2 => (true, index),
+            3 => (true, 0x0800 + index),
+            _ => unreachable!("crystal-peg attribute bank exceeded the source loop"),
+        };
+        let value = if bg1 {
+            self.game_state.dungeon.bg2_attributes.bg1_attr(offset)
+        } else {
+            self.game_state.dungeon.bg2_attributes.bg2_attr(offset)
+        };
+        if value & !1 == 0x66 {
+            if bg1 {
+                self.dungeon_bg2_attributes_mut().xor_bg1_attr(offset, 1);
+            } else {
+                self.dungeon_bg2_attributes_mut().xor_bg2_attr(offset, 1);
             }
         }
+    }
+
+    fn flip_crystal_peg_attribute_index(&mut self, index: usize) {
+        for bank in 0..4 {
+            self.flip_crystal_peg_attribute_bank(index, bank);
+        }
+    }
+
+    fn Dungeon_FlipCrystalPegAttribute(&mut self) {
+        for index in (0..=0x07ff).rev() {
+            self.flip_crystal_peg_attribute_index(index);
+        }
+    }
+
+    fn dungeon_peg_attribute_flip_progress_ordinal(
+        progress: crate::DungeonPegAttributeFlipProgressReceipt,
+    ) -> usize {
+        if progress.index == 0xffff {
+            assert_eq!(progress.completed_banks, 0);
+            return 0x0800 * 4;
+        }
+        assert!(progress.index <= 0x07ff);
+        assert!(progress.completed_banks <= 4);
+        (0x07ff - usize::from(progress.index)) * 4 + usize::from(progress.completed_banks)
+    }
+
+    fn apply_dungeon_peg_attribute_flip_ordinal_range(&mut self, start: usize, end: usize) {
+        assert!(start <= end);
+        assert!(end <= 0x0800 * 4);
+        for ordinal in start..end {
+            let index = 0x07ff - ordinal / 4;
+            let bank = (ordinal & 3) as u8;
+            self.flip_crystal_peg_attribute_bank(index, bank);
+        }
+    }
+
+    fn dungeon_flip_crystal_peg_attribute_through_progress(
+        &mut self,
+        progress: crate::DungeonPegAttributeFlipProgressReceipt,
+    ) {
+        let end = Self::dungeon_peg_attribute_flip_progress_ordinal(progress);
+        self.apply_dungeon_peg_attribute_flip_ordinal_range(0, end);
+    }
+
+    pub(super) fn advance_dungeon_peg_attribute_flip_between_progress(
+        &mut self,
+        previous: crate::DungeonPegAttributeFlipProgressReceipt,
+        next: crate::DungeonPegAttributeFlipProgressReceipt,
+    ) {
+        let start = Self::dungeon_peg_attribute_flip_progress_ordinal(previous);
+        let end = Self::dungeon_peg_attribute_flip_progress_ordinal(next);
+        assert!(
+            start <= end,
+            "the source peg-attribute cursor moved backward: {previous:?} -> {next:?}",
+        );
+        self.apply_dungeon_peg_attribute_flip_ordinal_range(start, end);
+    }
+
+    pub(super) fn complete_dungeon_peg_attribute_flip_body_after_progress(
+        &mut self,
+        progress: crate::DungeonPegAttributeFlipProgressReceipt,
+    ) {
+        let start = Self::dungeon_peg_attribute_flip_progress_ordinal(progress);
+        self.apply_dungeon_peg_attribute_flip_ordinal_range(start, 0x0800 * 4);
+    }
+
+    pub(super) fn complete_dungeon_peg_attribute_flip_after_progress(
+        &mut self,
+        progress: crate::DungeonPegAttributeFlipProgressReceipt,
+    ) {
+        self.complete_dungeon_peg_attribute_flip_body_after_progress(progress);
+        self.set_subsubmodule(0);
+        self.set_submodule(0);
     }
 
     fn write_attr2(&mut self, j: usize, attr: u16) {
@@ -9377,20 +9610,50 @@ impl ZeldaState {
                     attr,
                     base,
                     self.compatibility_state_len(),
-                    self.game_state.dungeon.stair_lists.stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 0),
-                    self.game_state.dungeon.stair_lists.stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
+                    self.game_state
+                        .dungeon
+                        .stair_lists
+                        .stair_list_tilemap_pos(DungeonStairList::InRoomUpNorth, 0),
+                    self.game_state
+                        .dungeon
+                        .stair_lists
+                        .stair_list_tilemap_pos(DungeonStairList::Stairs1, 0),
                     self.game_state.dungeon.stair_lists.inter_staircase_pos(0),
                     self.game_state.dungeon.object_tracking.misc_object_index(),
                     self.game_state.dungeon.room_items.num_chests_x2(),
                     self.game_state.dungeon.room_items.num_big_key_locks_x2(),
-                    self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InRoomUpNorth),
-                    self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InRoomSouthDown),
-                    self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InterPseudoUpNorth),
-                    self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::WaterSideStepSwitch),
-                    self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::InRoomUpNorthWater),
-                    self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::ActivatedWaterLadders),
-                    self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::Stairs1),
-                    self.game_state.dungeon.stair_lists.stair_list_count(DungeonStairList::Stairs2),
+                    self.game_state
+                        .dungeon
+                        .stair_lists
+                        .stair_list_count(DungeonStairList::InRoomUpNorth),
+                    self.game_state
+                        .dungeon
+                        .stair_lists
+                        .stair_list_count(DungeonStairList::InRoomSouthDown),
+                    self.game_state
+                        .dungeon
+                        .stair_lists
+                        .stair_list_count(DungeonStairList::InterPseudoUpNorth),
+                    self.game_state
+                        .dungeon
+                        .stair_lists
+                        .stair_list_count(DungeonStairList::WaterSideStepSwitch),
+                    self.game_state
+                        .dungeon
+                        .stair_lists
+                        .stair_list_count(DungeonStairList::InRoomUpNorthWater),
+                    self.game_state
+                        .dungeon
+                        .stair_lists
+                        .stair_list_count(DungeonStairList::ActivatedWaterLadders),
+                    self.game_state
+                        .dungeon
+                        .stair_lists
+                        .stair_list_count(DungeonStairList::Stairs1),
+                    self.game_state
+                        .dungeon
+                        .stair_lists
+                        .stair_list_count(DungeonStairList::Stairs2),
                 );
             }
             return;
@@ -9421,7 +9684,10 @@ impl ZeldaState {
                     format_optional_hex(before.map(|pair| pair.0)),
                     format_optional_hex(before.map(|pair| pair.1)),
                     self.game_state.dungeon.doors.opened_doors(),
-                    self.game_state.dungeon.doors.opened_doors_including_adjacent(),
+                    self.game_state
+                        .dungeon
+                        .doors
+                        .opened_doors_including_adjacent(),
                     self.game_state.dungeon.doors.current_door_pos(),
                     self.game_state.frame.submodule,
                     self.game_state.dungeon.doors.door_animation_step(),
@@ -10108,8 +10374,17 @@ impl ZeldaState {
     pub(super) fn Module07_15_WarpPad(&mut self) {
         if self.game_state.frame.subsubmodule >= 3 {
             self.Graphics_IncrementalVRAMUpload();
+            if self.suspend_dungeon_selectable_peg_attribute_flip(
+                DungeonPegAttributeFlipCaller::WarpPad,
+            ) {
+                return;
+            }
             self.Dungeon_LoadAttribute_Selectable();
         }
+        self.complete_module07_15_warp_pad_after_attribute_loader();
+    }
+
+    pub(super) fn complete_module07_15_warp_pad_after_attribute_loader(&mut self) {
         match self.game_state.frame.subsubmodule {
             0 => self.reset_transition_props_and_advance_reset_interface(),
             1 => self.Module07_15_01_ApplyMosaicAndFilter(),
@@ -10332,8 +10607,27 @@ impl ZeldaState {
             if self.game_state.frame.subsubmodule >= 7 {
                 self.Graphics_IncrementalVRAMUpload();
             }
+            if self.suspend_dungeon_selectable_peg_attribute_flip(
+                DungeonPegAttributeFlipCaller::SupertileTransition {
+                    state_12_cpu_advance,
+                    quadrant_cpu_advance,
+                },
+            ) {
+                return;
+            }
             self.Dungeon_LoadAttribute_Selectable();
         }
+        self.complete_module07_02_supertile_transition_after_attribute_loader(
+            state_12_cpu_advance,
+            quadrant_cpu_advance,
+        );
+    }
+
+    pub(super) fn complete_module07_02_supertile_transition_after_attribute_loader(
+        &mut self,
+        state_12_cpu_advance: Option<DungeonModuleCpuAdvance>,
+        quadrant_cpu_advance: Option<DungeonModuleCpuAdvance>,
+    ) {
         self.link_handle_moving_animation_full_long_entry();
         match self.game_state.frame.subsubmodule {
             0 => self.Module07_02_00_InitializeTransition(),
@@ -10352,57 +10646,58 @@ impl ZeldaState {
             10 => self.Dungeon_InterRoomTrans_State10(),
             11 => self.Dungeon_InterRoomTrans_State9(),
             12 => {
-                let caller_suffix_crosses_nmi =
-                    match state_12_cpu_advance.map(|advance| advance.phase) {
-                        Some(ModuleCpuPhase::InterruptedBeforeNmiPrepareSprites) => true,
-                        Some(ModuleCpuPhase::InterruptedInNmiPrepareSprites) => {
-                            // The state body and common Module 7 suffix have
-                            // already returned. Preserve the existing semantic
-                            // NMI_PrepareSprites continuation so the dispatcher
-                            // resumes only that interrupted caller after NMI.
-                            self.dungeon_nmi_prepare_sprites_return_pending = true;
-                            false
-                        }
-                        Some(
-                            ModuleCpuPhase::InterruptedAfterSpriteMain
-                            | ModuleCpuPhase::InterruptedInLinkOam,
-                        ) => {
-                            // As in state 13: the translated common suffix
-                            // executes Sprite_Main exactly once, then suspends
-                            // at the measured post-sprite boundary before
-                            // resuming Link/OAM work after NMI (route: the
-                            // warp-pad landing following host 92533).
+                let caller_suffix_crosses_nmi = match state_12_cpu_advance
+                    .map(|advance| advance.phase)
+                {
+                    Some(ModuleCpuPhase::InterruptedBeforeNmiPrepareSprites) => true,
+                    Some(ModuleCpuPhase::InterruptedInNmiPrepareSprites) => {
+                        // The state body and common Module 7 suffix have
+                        // already returned. Preserve the existing semantic
+                        // NMI_PrepareSprites continuation so the dispatcher
+                        // resumes only that interrupted caller after NMI.
+                        self.dungeon_nmi_prepare_sprites_return_pending = true;
+                        false
+                    }
+                    Some(
+                        ModuleCpuPhase::InterruptedAfterSpriteMain
+                        | ModuleCpuPhase::InterruptedInLinkOam,
+                    ) => {
+                        // As in state 13: the translated common suffix
+                        // executes Sprite_Main exactly once, then suspends
+                        // at the measured post-sprite boundary before
+                        // resuming Link/OAM work after NMI (route: the
+                        // warp-pad landing following host 92533).
+                        self.dungeon_post_sprite_main_return_pending = true;
+                        false
+                    }
+                    Some(
+                        ModuleCpuPhase::InterruptedBeforeSpriteMain
+                        | ModuleCpuPhase::InterruptedInSpriteMain,
+                    ) => {
+                        // As in state 13 (route host 408408: the host ends
+                        // inside Sprite_Main after slot 1 with no NMI).
+                        if self.original_timing_owes_sprite_main_return() {
                             self.dungeon_post_sprite_main_return_pending = true;
-                            false
+                        } else {
+                            let armed = self.arm_dungeon_sprite_main_cpu_continuation(
+                                state_12_cpu_advance
+                                    .expect("state-12 Sprite_Main phase requires its advance"),
+                            );
+                            debug_assert!(armed);
                         }
-                        Some(
-                            ModuleCpuPhase::InterruptedBeforeSpriteMain
-                            | ModuleCpuPhase::InterruptedInSpriteMain,
-                        ) => {
-                            // As in state 13 (route host 408408: the host ends
-                            // inside Sprite_Main after slot 1 with no NMI).
-                            if self.original_timing_owes_sprite_main_return() {
-                                self.dungeon_post_sprite_main_return_pending = true;
-                            } else {
-                                let armed = self.arm_dungeon_sprite_main_cpu_continuation(
-                                    state_12_cpu_advance
-                                        .expect("state-12 Sprite_Main phase requires its advance"),
-                                );
-                                debug_assert!(armed);
-                            }
-                            false
-                        }
-                        Some(
-                            phase @ (ModuleCpuPhase::InterruptedBeforeSubmodule
-                            | ModuleCpuPhase::InterruptedInSubmodule
-                            | ModuleCpuPhase::InterruptedAfterModule),
-                        ) => panic!(
-                            "state-12 vblank reached {phase:?}; a semantic continuation is required (host={} room={:04x})",
-                            self.frame_ctr_dbg,
-                            self.game_state.world.location.dungeon_room(),
-                        ),
-                        Some(ModuleCpuPhase::CompleteBeforeNmi) | None => false,
-                    };
+                        false
+                    }
+                    Some(
+                        phase @ (ModuleCpuPhase::InterruptedBeforeSubmodule
+                        | ModuleCpuPhase::InterruptedInSubmodule
+                        | ModuleCpuPhase::InterruptedAfterModule),
+                    ) => panic!(
+                        "state-12 vblank reached {phase:?}; a semantic continuation is required (host={} room={:04x})",
+                        self.frame_ctr_dbg,
+                        self.game_state.world.location.dungeon_room(),
+                    ),
+                    Some(ModuleCpuPhase::CompleteBeforeNmi) | None => false,
+                };
                 self.Dungeon_InterRoomTrans_State12();
                 self.dungeon_state_12_caller_suffix_nmi_pending = caller_suffix_crosses_nmi;
             }
@@ -10498,7 +10793,18 @@ impl ZeldaState {
     pub(super) fn Module07_07_FallingTransition(&mut self) {
         if self.game_state.frame.subsubmodule >= 6 {
             self.Graphics_IncrementalVRAMUpload();
+            if self.suspend_dungeon_selectable_peg_attribute_flip(
+                DungeonPegAttributeFlipCaller::FallingTransition,
+            ) {
+                return;
+            }
             self.Dungeon_LoadAttribute_Selectable();
+        }
+        self.complete_module07_07_falling_transition_after_attribute_loader();
+    }
+
+    pub(super) fn complete_module07_07_falling_transition_after_attribute_loader(&mut self) {
+        if self.game_state.frame.subsubmodule >= 6 {
             self.ApplyGrayscaleFixed_Incremental();
         }
         match self.game_state.frame.subsubmodule {
@@ -10719,16 +11025,6 @@ impl ZeldaState {
     }
 
     pub(super) fn complete_module11_02_load_entrance(&mut self) {
-        // Under ROM timing the measured mid-window write already advanced
-        // SUBSUBMODULE to `bak + 1` (see the falling-entrance slice effects in
-        // zelda_rtl); the room parser below zeroes it again, so restore what
-        // that write established. The untimed inline path keeps C's literal
-        // save-then-advance order.
-        let bak = if self.rom_startup_timing() {
-            self.game_state.frame.subsubmodule.wrapping_sub(1)
-        } else {
-            self.game_state.frame.subsubmodule
-        };
         self.dungeon_torch_mut().clear_lit_torches();
         self.dungeon_torch_mut().clear_dungeon_dark_with_lantern();
         self.Dungeon_LoadAndDrawRoom();
@@ -10737,7 +11033,12 @@ impl ZeldaState {
             [self.game_state.world.palette_theme.main_tile_theme_index() as usize];
         self.decompress_animated_dungeon_tiles(animated as usize);
         self.Dungeon_LoadAttributeTable();
-        self.set_subsubmodule(bak.wrapping_add(1));
+        // This is Module11 stage 2's literal `bak + 1` publication. In the
+        // live-timing path the room-parser clear and this restore are exposed
+        // separately by semantic receipts while the long call is suspended;
+        // completing the translated body remains idempotent at the source's
+        // terminal stage instead of reconstructing `bak` from transient RAM.
+        self.set_subsubmodule(3);
         self.world_palette_theme_mut()
             .set_misc_sprites_graphics_index(10);
         self.initialize_tilesets();
@@ -11486,13 +11787,15 @@ impl ZeldaState {
         // The warp-pad transition ($15) shares this exact sprite-graphics
         // reload with the spiral-stairs transition ($0e); both can hold the
         // translated caller across measured NMI slices (route host 92533).
-        if self.game_state.frame.main_module == 7
-            && matches!(self.game_state.frame.submodule, 0x0e | 0x15)
-            && self.begin_dungeon_supertile_transition_work(
-                DungeonSupertileTransitionWork::SpiralSpriteGraphics,
-            )
-        {
-            return;
+        if self.game_state.frame.main_module == 7 {
+            let work = match self.game_state.frame.submodule {
+                7 => Some(DungeonSupertileTransitionWork::FallingSpriteGraphics),
+                0x0e | 0x15 => Some(DungeonSupertileTransitionWork::SpiralSpriteGraphics),
+                _ => None,
+            };
+            if work.is_some_and(|work| self.begin_dungeon_supertile_transition_work(work)) {
+                return;
+            }
         }
         self.complete_dungeon_transition_load_sprite_gfx();
     }
@@ -11538,9 +11841,17 @@ impl ZeldaState {
 
     pub(super) fn Module07_06_FatInterRoomStairs(&mut self) {
         if self.game_state.frame.subsubmodule >= 3 {
+            if self.suspend_dungeon_selectable_peg_attribute_flip(
+                DungeonPegAttributeFlipCaller::FatInterRoomStairs,
+            ) {
+                return;
+            }
             self.Dungeon_LoadAttribute_Selectable();
         }
+        self.complete_module07_06_fat_inter_room_stairs_after_attribute_loader();
+    }
 
+    pub(super) fn complete_module07_06_fat_inter_room_stairs_after_attribute_loader(&mut self) {
         if self.game_state.frame.subsubmodule >= 13 {
             self.Graphics_IncrementalVRAMUpload();
             if self
@@ -11695,6 +12006,38 @@ impl ZeldaState {
             2 => self.Module07_16_UpdatePegs_Step2(),
             3 => self.RecoverPegGFXFromMapping(),
             4 => {
+                if let Some(progress) =
+                    self.take_original_timing_dungeon_peg_attribute_flip_progress()
+                {
+                    assert_eq!(
+                        self.game_state.frame.subsubmodule, 0x10,
+                        "peg-attribute flip progress requires Module07/$16 state $10",
+                    );
+                    self.dungeon_flip_crystal_peg_attribute_through_progress(progress);
+                    assert!(
+                        self.dungeon_peg_attribute_flip_pending
+                            .replace(DungeonPegAttributeFlipContinuation {
+                                caller: DungeonPegAttributeFlipCaller::UpdatePegs,
+                                progress,
+                            })
+                            .is_none(),
+                        "peg-attribute flip continuation was already pending",
+                    );
+                    match progress.boundary {
+                        OriginalTimingBoundary::NmiAccepted => self
+                            .game_execution_scheduler
+                            .schedule_after_current_trailing_nmi(
+                                GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+                            ),
+                        OriginalTimingBoundary::HostReturn => {
+                            self.game_execution_scheduler.schedule_work(
+                                GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+                                1,
+                            )
+                        }
+                    }
+                    return;
+                }
                 self.Dungeon_FlipCrystalPegAttribute();
                 self.set_subsubmodule(0);
                 self.set_submodule(0);
@@ -11741,16 +12084,25 @@ impl ZeldaState {
                 {
                     return;
                 }
-                for i in 0..0x1000usize {
-                    self.dungeon_room_tilemaps_mut().set_bg2_tile(i, 0x01ec);
-                    self.dungeon_room_tilemaps_mut().set_bg1_tile(i, 0x01ec);
+                if let Some(progress) =
+                    self.take_original_timing_rescued_maiden_tilemap_clear_progress()
+                {
+                    assert_eq!(
+                        progress.boundary,
+                        crate::OriginalTimingBoundary::NmiAccepted,
+                        "rescued-maiden tilemap progress requires its interrupting NMI",
+                    );
+                    self.apply_rescued_maiden_tilemap_clear_stores(0, progress.completed_stores);
+                    self.game_execution_scheduler
+                        .schedule_cpu_timed_work_returning_on_later_host(
+                            GameWorkContinuation::FinishRescuedMaidenTilemapClear {
+                                completed_stores: progress.completed_stores,
+                            },
+                            1,
+                        );
+                    return;
                 }
-                self.set_bg1_y_offset(0);
-                self.set_bg1_x_offset(0);
-                self.dungeon_moving_floor_mut().clear_floor_offsets();
-                self.clear_screen_transition();
-                self.dungeon_room_load_mut().clear_quadrant_upload_index();
-                self.increment_subsubmodule();
+                self.complete_rescued_maiden_tilemap_clear(0);
             }
             1 => {
                 self.PaletteFilter_Crystal();
@@ -11779,14 +12131,63 @@ impl ZeldaState {
             2 | 4 | 6 | 8 => self.Dungeon_InterRoomTrans_notDarkRoom(),
             3 | 5 | 7 | 9 => self.Dungeon_InterRoomTrans_State4(),
             10 => {
-                self.activate_nmi_thread();
-                self.Polyhedral_InitializeThread();
-                self.CrystalCutscene_Initialize();
+                if let Some(progress) =
+                    self.take_original_timing_rescued_maiden_initialization_progress()
+                {
+                    assert_eq!(
+                        progress.boundary,
+                        crate::OriginalTimingBoundary::HostReturn,
+                        "rescued-maiden initialization requires source host-return progress",
+                    );
+                    self.begin_rescued_maiden_initialization();
+                    self.apply_follower_graphics_progress(None, progress.stage);
+                    self.game_execution_scheduler
+                        .schedule_cpu_timed_work_returning_on_later_host(
+                            GameWorkContinuation::FinishRescuedMaidenInitialization {
+                                stage: progress.stage,
+                            },
+                            1,
+                        );
+                    return;
+                }
+                self.begin_rescued_maiden_initialization();
+                self.LoadFollowerGraphics();
+                self.crystal_cutscene_initialize_after_follower_graphics();
                 self.set_submodule(0);
                 self.set_subsubmodule(0);
             }
             _ => {}
         }
+    }
+
+    pub(super) fn apply_rescued_maiden_tilemap_clear_stores(&mut self, start: u16, end: u16) {
+        const STORES_PER_WORD: u16 = 8;
+        const WORDS_PER_QUADRANT: usize = 0x400;
+        const TOTAL_STORES: u16 = 0x2000;
+
+        assert!(start <= end && end <= TOTAL_STORES);
+        for ordinal in start..end {
+            let word = usize::from(ordinal / STORES_PER_WORD);
+            let region = usize::from(ordinal % STORES_PER_WORD);
+            let tile_index = (region & 3) * WORDS_PER_QUADRANT + word;
+            if region < 4 {
+                self.dungeon_room_tilemaps_mut()
+                    .set_bg2_tile(tile_index, 0x01ec);
+            } else {
+                self.dungeon_room_tilemaps_mut()
+                    .set_bg1_tile(tile_index, 0x01ec);
+            }
+        }
+    }
+
+    pub(super) fn complete_rescued_maiden_tilemap_clear(&mut self, completed_stores: u16) {
+        self.apply_rescued_maiden_tilemap_clear_stores(completed_stores, 0x2000);
+        self.set_bg1_y_offset(0);
+        self.set_bg1_x_offset(0);
+        self.dungeon_moving_floor_mut().clear_floor_offsets();
+        self.clear_screen_transition();
+        self.dungeon_room_load_mut().clear_quadrant_upload_index();
+        self.increment_subsubmodule();
     }
 
     pub(super) fn Module07_19_MirrorFade(&mut self) {
@@ -11926,13 +12327,15 @@ impl ZeldaState {
         self.PrepTransAuxGfx();
         self.set_pending_nmi_subroutine(9);
         self.set_core_update_disable_flag(9);
-        if self.game_state.frame.main_module == 7
-            && self.game_state.frame.submodule == 0x0e
-            && self.begin_dungeon_supertile_transition_work(
-                DungeonSupertileTransitionWork::SpiralBgCharacters34,
-            )
-        {
-            return;
+        if self.game_state.frame.main_module == 7 {
+            let work = match self.game_state.frame.submodule {
+                7 => Some(DungeonSupertileTransitionWork::FallingBgCharacters34),
+                0x0e => Some(DungeonSupertileTransitionWork::SpiralBgCharacters34),
+                _ => None,
+            };
+            if work.is_some_and(|work| self.begin_dungeon_supertile_transition_work(work)) {
+                return;
+            }
         }
         self.increment_subsubmodule();
     }
@@ -12455,8 +12858,17 @@ impl ZeldaState {
 
     pub(super) fn Module07_11_StraightInterroomStairs(&mut self) {
         if self.game_state.frame.subsubmodule >= 3 {
+            if self.suspend_dungeon_selectable_peg_attribute_flip(
+                DungeonPegAttributeFlipCaller::StraightInterroomStairs,
+            ) {
+                return;
+            }
             self.Dungeon_LoadAttribute_Selectable();
         }
+        self.complete_module07_11_straight_interroom_stairs_after_attribute_loader();
+    }
+
+    pub(super) fn complete_module07_11_straight_interroom_stairs_after_attribute_loader(&mut self) {
         if self.game_state.frame.subsubmodule >= 13 {
             self.Graphics_IncrementalVRAMUpload();
         }
@@ -13188,6 +13600,12 @@ impl ZeldaState {
     }
 
     pub(super) fn CrystalCutscene_Initialize(&mut self) {
+        self.crystal_cutscene_initialize_before_follower_graphics();
+        self.LoadFollowerGraphics();
+        self.crystal_cutscene_initialize_after_follower_graphics();
+    }
+
+    fn crystal_cutscene_initialize_before_follower_graphics(&mut self) {
         self.set_color_math_control(0x33);
         self.set_countdown(0);
         self.set_darkening_or_lightening_screen(0);
@@ -13200,11 +13618,16 @@ impl ZeldaState {
             self.set_main_color_asset(112 + i, *color);
         }
         self.increment_cgram_update_flag();
-        self.CrystalCutscene_SpawnMaiden();
-        self.crystal_cutscene_initialize_polyhedral();
+        self.crystal_cutscene_spawn_maiden_before_follower_graphics();
     }
 
     pub(super) fn CrystalCutscene_SpawnMaiden(&mut self) {
+        self.crystal_cutscene_spawn_maiden_before_follower_graphics();
+        self.LoadFollowerGraphics();
+        self.crystal_cutscene_spawn_maiden_after_follower_graphics();
+    }
+
+    fn crystal_cutscene_spawn_maiden_before_follower_graphics(&mut self) {
         self.sprite_system_mut().fill_live_states(0);
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically(0, 0xab, &mut info);
@@ -13229,7 +13652,9 @@ impl ZeldaState {
         } else {
             self.follower_state_mut().set_indicator(6);
         }
-        self.LoadFollowerGraphics();
+    }
+
+    fn crystal_cutscene_spawn_maiden_after_follower_graphics(&mut self) {
         self.follower_state_mut().set_indicator(0);
 
         let floor_x = self
@@ -13245,6 +13670,129 @@ impl ZeldaState {
             .set_floor_offsets(floor_x, floor_y);
         self.dungeon_room_load_mut()
             .set_header_collision_2_mirror(1);
+    }
+
+    fn crystal_cutscene_initialize_after_follower_graphics(&mut self) {
+        self.crystal_cutscene_spawn_maiden_after_follower_graphics();
+        self.crystal_cutscene_initialize_polyhedral();
+    }
+
+    pub(super) fn begin_rescued_maiden_initialization(&mut self) {
+        self.activate_nmi_thread();
+        self.Polyhedral_InitializeThread();
+        self.crystal_cutscene_initialize_before_follower_graphics();
+    }
+
+    pub(super) fn apply_follower_graphics_progress(
+        &mut self,
+        prior: Option<crate::RescuedMaidenInitializationStage>,
+        next: crate::RescuedMaidenInitializationStage,
+    ) {
+        use crate::RescuedMaidenInitializationStage::{
+            Conversion, FirstFollowerSheet, SecondFollowerSheet,
+        };
+
+        match (prior, next) {
+            (
+                None,
+                FirstFollowerSheet {
+                    completed_bytes: end,
+                },
+            ) => self.apply_follower_graphics_decompression_slice(true, 0, end),
+            (
+                None,
+                SecondFollowerSheet {
+                    completed_bytes: end,
+                },
+            ) => {
+                self.apply_follower_graphics_decompression_slice(true, 0, 0x0600);
+                self.apply_follower_graphics_decompression_slice(false, 0, end);
+            }
+            (None, Conversion { completed_stores }) => {
+                self.apply_follower_graphics_decompression_slice(true, 0, 0x0600);
+                self.apply_follower_graphics_decompression_slice(false, 0, 0x0600);
+                self.apply_follower_graphics_conversion_slice(0, completed_stores);
+            }
+            (
+                Some(FirstFollowerSheet {
+                    completed_bytes: start,
+                }),
+                FirstFollowerSheet {
+                    completed_bytes: end,
+                },
+            ) => {
+                assert!(start <= end, "rescued-maiden first sheet moved backward");
+                self.apply_follower_graphics_decompression_slice(true, start, end);
+            }
+            (
+                Some(FirstFollowerSheet {
+                    completed_bytes: start,
+                }),
+                SecondFollowerSheet {
+                    completed_bytes: end,
+                },
+            ) => {
+                self.apply_follower_graphics_decompression_slice(true, start, 0x0600);
+                self.apply_follower_graphics_decompression_slice(false, 0, end);
+            }
+            (
+                Some(SecondFollowerSheet {
+                    completed_bytes: start,
+                }),
+                SecondFollowerSheet {
+                    completed_bytes: end,
+                },
+            ) => {
+                assert!(start <= end, "rescued-maiden second sheet moved backward");
+                self.apply_follower_graphics_decompression_slice(false, start, end);
+            }
+            (
+                Some(FirstFollowerSheet {
+                    completed_bytes: start,
+                }),
+                Conversion { completed_stores },
+            ) => {
+                self.apply_follower_graphics_decompression_slice(true, start, 0x0600);
+                self.apply_follower_graphics_decompression_slice(false, 0, 0x0600);
+                self.apply_follower_graphics_conversion_slice(0, completed_stores);
+            }
+            (
+                Some(SecondFollowerSheet {
+                    completed_bytes: start,
+                }),
+                Conversion { completed_stores },
+            ) => {
+                self.apply_follower_graphics_decompression_slice(false, start, 0x0600);
+                self.apply_follower_graphics_conversion_slice(0, completed_stores);
+            }
+            (
+                Some(Conversion {
+                    completed_stores: start,
+                }),
+                Conversion {
+                    completed_stores: end,
+                },
+            ) => {
+                assert!(start <= end, "follower-graphics conversion moved backward");
+                self.apply_follower_graphics_conversion_slice(start, end);
+            }
+            (Some(SecondFollowerSheet { .. }), FirstFollowerSheet { .. }) => {
+                panic!("rescued-maiden initialization returned to its first sheet")
+            }
+            (Some(Conversion { .. }), FirstFollowerSheet { .. } | SecondFollowerSheet { .. }) => {
+                panic!("follower-graphics conversion returned to a decompression sheet")
+            }
+        }
+    }
+
+    pub(super) fn complete_rescued_maiden_initialization(
+        &mut self,
+        stage: crate::RescuedMaidenInitializationStage,
+    ) {
+        self.complete_follower_graphics_decompression(stage);
+        self.crystal_cutscene_initialize_after_follower_graphics();
+        self.set_submodule(0);
+        self.set_subsubmodule(0);
     }
 
     pub(super) fn reset_then_cache_room_entry_properties(&mut self) {
@@ -13303,7 +13851,8 @@ impl ZeldaState {
             .work_suspends_translated_call_stack()
             && (self.take_original_timing_main_loop_interruption(
                 crate::MainLoopInterruption::SpritePreparation,
-            ) || self.take_original_timing_extended_oam_packing_interruption_for_caller_return())
+            ) || self
+                .take_original_timing_extended_oam_packing_interruption_for_caller_return())
         {
             // The authority observed this completed submodule's shared
             // NMI_PrepareSprites caller suffix being interrupted. Reuse the

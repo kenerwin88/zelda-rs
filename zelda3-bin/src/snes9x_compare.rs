@@ -46,12 +46,42 @@ const COMPARE_ORACLE_USAGE: &str = "<path-to-snes-libretro.dylib> <path-to-rom.s
 // provenance for a replay sample.
 const CARTRIDGE_RNG_STORE_PC_LOW16: u64 = 0xba7f;
 const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
-// Schema 27 binds every NMI acceptance to the complete Zelda software-register
-// generation consumed by unconditional `WritePpuRegisters`, plus partial
-// Sprite_Main statement boundaries such as throwable-scenery state clear.
-// Older caches can otherwise reconstruct a carried handler or slot boundary
-// after the atomic translated main body has advanced the underlying state.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 29;
+// Schema 31 binds each gameplay-visible APUI00 song-end poll to its intra-frame
+// native-sample offset and each preemptive poly render to its source-level
+// call-start boundary. Older caches cannot prove either scheduling point.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 48;
+
+// Source instructions which sample APUI00 while waiting for an item fanfare
+// to end. These adapter-only PCs become backend-neutral sample offsets before
+// they cross into ZeldaState.
+const SONG_END_POLL_APUI00_READ_PCS: [i32; 2] = [0x08_c400, 0x08_c609];
+
+fn song_end_poll_native_sample_offset(
+    program_counter: i32,
+    port: i32,
+    is_read: bool,
+    output_sample: i32,
+    audio_samples: usize,
+) -> Option<Result<u16, String>> {
+    if !is_read || port != 0 || !SONG_END_POLL_APUI00_READ_PCS.contains(&program_counter) {
+        return None;
+    }
+    Some((|| {
+        let offset = usize::try_from(output_sample).map_err(|_| {
+            format!(
+                "Snes9x song-end APUI00 poll at ${program_counter:06x} used negative sample offset {output_sample}",
+            )
+        })?;
+        if offset > audio_samples {
+            return Err(format!(
+                "Snes9x song-end APUI00 poll at ${program_counter:06x} used sample offset {offset} beyond the {audio_samples}-sample host window",
+            ));
+        }
+        u16::try_from(offset).map_err(|_| {
+            format!("Snes9x song-end APUI00 poll sample offset {offset} exceeds the receipt width",)
+        })
+    })())
+}
 
 const PRESENTED_OBJ_CACHE_ABI: i32 = 1;
 const PRESENTED_OBJ_CACHE_SLOT_COUNT: usize = 512;
@@ -839,6 +869,7 @@ fn validate_paired_resume_provenance(
     rom: &Path,
     input_script: Option<&Path>,
     rom_random_script: Option<&Path>,
+    allow_mixed_replay_provenance: bool,
 ) -> Result<(), String> {
     let (dir, _) = resolve_paired_resume_dir(path)?;
     let manifest_path = dir.join("manifest.json");
@@ -864,7 +895,7 @@ fn validate_paired_resume_provenance(
                     selected.display()
                 )
             })?;
-            if actual != expected.sha256 {
+            if actual != expected.sha256 && !allow_mixed_replay_provenance {
                 return Err(format!(
                     "paired-resume {label} provenance mismatch: manifest={}, selected={actual}",
                     expected.sha256,
@@ -4627,6 +4658,7 @@ pub(crate) fn run_compare_libretro_oracle(
             Path::new(rom_path),
             input_script_path.as_deref(),
             rom_random_script.as_deref(),
+            allow_mixed_replay_provenance,
         )
         .unwrap_or_else(|error| {
             eprintln!(
@@ -7760,6 +7792,12 @@ pub(crate) fn run_compare_libretro_oracle(
                 );
                 process::exit(2);
             });
+            let oracle_polls: Vec<_> = oracle_instructions
+                .iter()
+                .filter(|instruction| instruction.program_counter == 0x0879)
+                .map(|instruction| (instruction.output_sample, instruction.y))
+                .collect();
+            eprintln!("spc_poll_witness oracle_frame={frame_index} polls={oracle_polls:?}");
             let rust_instructions = rust_spc_instruction_trace
                 .as_ref()
                 .map(|(_, instructions)| instructions.as_slice())
@@ -7824,6 +7862,7 @@ pub(crate) fn run_compare_libretro_oracle(
                     "oracle_dsp_samples": oracle.debug_dsp_samples(),
                     "oracle_dsp_register_writes": oracle.debug_dsp_register_writes(),
                     "oracle_apu_port_writes": oracle.debug_apu_port_writes(),
+                    "oracle_smp_output_port_writes": oracle.debug_smp_output_port_writes(),
                     "oracle_smp_instructions": oracle.debug_smp_instructions(),
                     "oracle_audio": capture.audio,
                     "rust_audio": rust_audio,
@@ -12121,8 +12160,35 @@ fn snes9x_original_timing_host_receipts(
             nmi_acceptance_ppu_register_operands.len(),
         ));
     }
+    let song_end_poll_native_sample_offsets = oracle
+        .debug_apu_port_writes_exact()?
+        .ok_or_else(|| {
+            "Snes9x host receipts require exact CPU-side APU-port instrumentation".to_string()
+        })?
+        .into_iter()
+        .filter_map(|access| {
+            let receipt = song_end_poll_native_sample_offset(
+                access.program_counter,
+                access.port,
+                access.is_read,
+                access.output_sample,
+                capture.audio.len() / PresentedAudio::CHANNELS,
+            );
+            if receipt.is_some() && std::env::var_os("ZELDA3_DEBUG_SONG_POLL").is_some() {
+                eprintln!(
+                    "[SONG-POLL-SOURCE] frame={frame} pc={:06x} sample={} value={:02x} window={}",
+                    access.program_counter,
+                    access.output_sample,
+                    access.value,
+                    capture.audio.len() / PresentedAudio::CHANNELS,
+                );
+            }
+            receipt
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let mut receipts = OriginalTimingHostReceipts::new(u64::from(frame), input, semantic)
-        .with_nmi_acceptance_ppu_register_operands(nmi_acceptance_ppu_register_operands);
+        .with_nmi_acceptance_ppu_register_operands(nmi_acceptance_ppu_register_operands)
+        .with_song_end_poll_native_sample_offsets(song_end_poll_native_sample_offsets);
     receipts = receipts.with_presented_audio(
         PresentedAudio::new(capture.audio.clone())
             .ok_or_else(|| "Snes9x returned an invalid stereo audio receipt".to_string())?,
@@ -14919,7 +14985,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 29);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 48);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None
@@ -14938,6 +15004,41 @@ pub(crate) mod tests {
             .decode()
             .unwrap_err()
             .contains("slot count is invalid: 64"));
+    }
+
+    #[test]
+    fn song_end_poll_receipt_keeps_only_exact_source_read_timing() {
+        assert_eq!(
+            super::song_end_poll_native_sample_offset(0x08_c400, 0, true, 75, 534)
+                .unwrap()
+                .unwrap(),
+            75,
+        );
+        assert_eq!(
+            super::song_end_poll_native_sample_offset(0x08_c609, 0, true, 96, 534)
+                .unwrap()
+                .unwrap(),
+            96,
+        );
+        assert!(super::song_end_poll_native_sample_offset(0x00_80e4, 0, true, 75, 534).is_none());
+        assert!(super::song_end_poll_native_sample_offset(0x08_c400, 0, false, 75, 534).is_none());
+        assert!(super::song_end_poll_native_sample_offset(0x08_c400, 1, true, 75, 534).is_none());
+    }
+
+    #[test]
+    fn song_end_poll_receipt_rejects_offsets_outside_the_host_audio_window() {
+        assert!(
+            super::song_end_poll_native_sample_offset(0x08_c609, 0, true, -1, 534)
+                .unwrap()
+                .unwrap_err()
+                .contains("negative sample offset")
+        );
+        assert!(
+            super::song_end_poll_native_sample_offset(0x08_c609, 0, true, 535, 534)
+                .unwrap()
+                .unwrap_err()
+                .contains("beyond the 534-sample host window")
+        );
     }
 
     #[test]
@@ -15238,6 +15339,7 @@ pub(crate) mod tests {
             sp: 4,
             p: false,
             direct_page_0_3: [0; 4],
+            direct_page_4_7: [0; 4],
             direct_page_8_11: [0; 4],
             input_ports: [0; 4],
             timer0_cycles: 100,
@@ -15510,6 +15612,7 @@ pub(crate) mod tests {
             &rom,
             Some(&input),
             Some(&rng),
+            false,
         )
         .is_ok());
         for (path, label) in [
@@ -15526,16 +15629,27 @@ pub(crate) mod tests {
                 &rom,
                 Some(&input),
                 Some(&rng),
+                false,
             )
             .unwrap_err();
             assert!(
                 error.contains(label) && error.contains("mismatch"),
                 "{error}"
             );
+            assert!(validate_paired_resume_provenance(
+                &checkpoint,
+                &core,
+                &rom,
+                Some(&input),
+                Some(&rng),
+                true,
+            )
+            .is_ok());
             fs::write(path, original).unwrap();
         }
-        let error = validate_paired_resume_provenance(&checkpoint, &core, &rom, None, Some(&rng))
-            .unwrap_err();
+        let error =
+            validate_paired_resume_provenance(&checkpoint, &core, &rom, None, Some(&rng), false)
+                .unwrap_err();
         assert!(
             error.contains("input script provenance requires"),
             "{error}"

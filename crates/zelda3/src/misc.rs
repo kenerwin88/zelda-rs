@@ -694,6 +694,22 @@ impl ZeldaState {
         self.complete_module05_load_file_destination(destination);
     }
 
+    /// Publish the exact mid-call state reached when Module05's Message path
+    /// returns from `Main_ShowTextMessage`. The common load prefix and message
+    /// selection have completed; palette loading and the final Module1B
+    /// publication remain suspended in the source caller.
+    pub(super) fn publish_selected_game_load_message_interface(&mut self) {
+        self.complete_module05_load_file_common_after_force_blank();
+        self.begin_module05_load_file_message_destination();
+    }
+
+    /// Resume Module05 immediately after its already-published
+    /// `Main_ShowTextMessage` call, without replaying the common load prefix or
+    /// the dialogue-interface writes.
+    pub(super) fn complete_selected_game_load_message_after_interface_publication(&mut self) {
+        self.finish_module05_load_file_message_destination();
+    }
+
     pub(super) fn complete_selected_game_load_from_frozen_continuation(
         &mut self,
         destination: SelectedGameLoadDestination,
@@ -735,6 +751,18 @@ impl ZeldaState {
             return;
         }
         self.module_pre_dungeon_initial_entrance();
+    }
+
+    pub(super) fn complete_pending_selected_game_load_entry_room_load(&mut self) {
+        let Some(destination) = self
+            .game_execution_scheduler
+            .selected_game_load_pending_entry_room_load()
+        else {
+            return;
+        };
+        self.selected_game_load_entry_room_load(destination);
+        self.game_execution_scheduler
+            .mark_selected_game_load_entry_room_load_completed();
     }
 
     pub(super) fn selected_game_load_destination(&self) -> SelectedGameLoadDestination {
@@ -815,20 +843,28 @@ impl ZeldaState {
                 self.clear_restart_check_flag();
             }
             SelectedGameLoadDestination::Message => {
-                let message = if self.game_state.inventory.items.mirror() == 2 {
-                    0x0185
-                } else {
-                    0x0184
-                };
-                self.dialogue_message_index_mut().set_value(message);
-                self.main_show_text_message();
-                self.dungeon_load_palettes();
-                self.set_screen_brightness(15);
-                self.set_main_screen_layers(4);
-                self.set_sub_screen_layers(0);
-                self.set_main_module(27);
+                self.begin_module05_load_file_message_destination();
+                self.finish_module05_load_file_message_destination();
             }
         }
+    }
+
+    fn begin_module05_load_file_message_destination(&mut self) {
+        let message = if self.game_state.inventory.items.mirror() == 2 {
+            0x0185
+        } else {
+            0x0184
+        };
+        self.dialogue_message_index_mut().set_value(message);
+        self.main_show_text_message();
+    }
+
+    fn finish_module05_load_file_message_destination(&mut self) {
+        self.dungeon_load_palettes();
+        self.set_screen_brightness(15);
+        self.set_main_screen_layers(4);
+        self.set_sub_screen_layers(0);
+        self.set_main_module(27);
     }
 
     pub(super) fn load_dungeon_room_rebuild_hud(&mut self) {
@@ -1493,6 +1529,8 @@ impl ZeldaState {
                     // hosts are consumed by the save-quit reset plan.
                     self.death_func15_common_prefix(false);
                     self.death_func15_save_quit_pre_hold();
+                    self.save_quit_reset_state_published = false;
+                    self.save_quit_reset_writes_applied = false;
                     self.save_quit_reset_hold = true;
                     return;
                 }
@@ -1552,9 +1590,19 @@ impl ZeldaState {
     }
 
     pub(super) fn wall_master_send_player_to_last_entrance(&mut self) {
+        self.wall_master_send_player_through_reset_fixed_prefix();
+        self.wall_master_send_player_after_reset_fixed_prefix();
+    }
+
+    pub(super) fn wall_master_send_player_through_reset_fixed_prefix(&mut self) {
         self.SaveDungeonKeys_misc();
         self.Dungeon_FlagRoomData_Quadrants();
-        self.sprite_reset_all();
+        self.sprite_disable_all();
+        self.sprite_reset_all_no_disable_fixed_prefix();
+    }
+
+    pub(super) fn wall_master_send_player_after_reset_fixed_prefix(&mut self) {
+        self.sprite_reset_all_no_disable_after_fixed_prefix();
         self.clear_restart_check_flag();
         self.set_main_module(17);
         self.set_submodule(0);

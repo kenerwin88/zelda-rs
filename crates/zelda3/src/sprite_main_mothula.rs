@@ -20,6 +20,13 @@ use crate::zelda_rtl::sprite::SpriteSpawnInfo;
 mod sprite_main_mothula_shared;
 use sprite_main_mothula_shared::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum WallmasterMainPrefixOutcome {
+    Return,
+    Continue,
+    SendPlayer,
+}
+
 impl ZeldaState {
     // void Sprite_Wizzbeam(int k) {
     pub(super) fn sprite_wizzbeam(&mut self, k: usize) {
@@ -1258,10 +1265,17 @@ impl ZeldaState {
 
     // void Sprite_Zazak_Main(int k) {  // 9e919f
     pub(super) fn sprite_zazak_main(&mut self, k: usize) {
+        if !self.sprite_zazak_before_graphics_boundary(k) {
+            return;
+        }
+        self.sprite_zazak_after_graphics_boundary(k);
+    }
+
+    pub(super) fn sprite_zazak_before_graphics_boundary(&mut self, k: usize) -> bool {
         if self.sprite_slot_view(k).b() != 0 {
             self.fire_phlegm_draw(k);
             if self.sprite_return_if_inactive(k) {
-                return;
+                return false;
             }
             let value = (self.game_state.frame.frame_counter >> 1) & 1;
             self.sprite_slot_view_mut(k).set_graphics(value);
@@ -1271,7 +1285,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_state(0);
                 self.sprite_place_rupulse_spark_2(k);
             }
-            return;
+            return false;
         }
 
         let t = self.sprite_slot_view(k).delay_aux3();
@@ -1311,6 +1325,14 @@ impl ZeldaState {
             (self.sprite_slot_view(k).subtype2() & 1) * 4 + self.sprite_slot_view(k).direction(),
         )];
         self.sprite_slot_view_mut(k).set_graphics(value);
+        true
+    }
+
+    pub(super) fn sprite_zazak_after_graphics_boundary(&mut self, k: usize) {
+        let trace_stalfos_head = std::env::var_os("ZELDA3_TRACE_STALFOS_HEAD").is_some()
+            && self.sprite_slot_view(k).sprite_type() == 0xa7
+            && k == 0
+            && self.game_state.world.location.dungeon_room() == 0x00a8;
         if self.sprite_slot_view(k).sprite_type() == 0xa7 {
             self.stalfos_draw(k);
         } else {
@@ -3854,6 +3876,22 @@ impl ZeldaState {
 
     // void Sprite_90_Wallmaster(int k) {  // 9eaea4
     pub(super) fn sprite_90_wallmaster(&mut self, k: usize) {
+        match self.sprite_90_wallmaster_through_send_decision(k) {
+            WallmasterMainPrefixOutcome::Return => return,
+            WallmasterMainPrefixOutcome::SendPlayer => {
+                self.wall_master_send_player_to_last_entrance();
+                self.link_initialize();
+                return;
+            }
+            WallmasterMainPrefixOutcome::Continue => {}
+        }
+        self.sprite_90_wallmaster_after_send_decision(k);
+    }
+
+    pub(super) fn sprite_90_wallmaster_through_send_decision(
+        &mut self,
+        k: usize,
+    ) -> WallmasterMainPrefixOutcome {
         self.sprite_slot_view_mut(k).or_object_priority(0x30);
         self.wall_master_draw(k);
         if self.sprite_slot_view(k).state() != 9 {
@@ -3862,7 +3900,7 @@ impl ZeldaState {
                 .clear_sprite_damage_disable_timer();
         }
         if self.sprite_return_if_inactive(k) {
-            return;
+            return WallmasterMainPrefixOutcome::Return;
         }
         if self.sprite_slot_view(k).a() != 0 {
             let link_x = self.sprite_get_x(k);
@@ -3886,13 +3924,15 @@ impl ZeldaState {
                 self.follower_link_state_mut().clear_immobilized();
                 self.follower_link_state_mut()
                     .clear_sprite_damage_disable_timer();
-                self.wall_master_send_player_to_last_entrance();
-                self.link_initialize();
-                return;
+                return WallmasterMainPrefixOutcome::SendPlayer;
             }
         } else {
             self.sprite_check_damage_from_link(k);
         }
+        WallmasterMainPrefixOutcome::Continue
+    }
+
+    pub(super) fn sprite_90_wallmaster_after_send_decision(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 let old_z = self.sprite_slot_view(k).z();

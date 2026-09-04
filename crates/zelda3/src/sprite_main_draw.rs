@@ -3210,6 +3210,10 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     pub(super) fn sprite_draw_antfairy(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).add_subtype2(1);
+        self.sprite_draw_antfairy_after_subtype2_increment(k);
+    }
+
+    fn sprite_draw_antfairy_after_subtype2_increment(&mut self, k: usize) {
         if (self.sprite_slot_view(k).subtype2() & 1)
             | self.game_state.frame.submodule
             | self.game_state.frame.modal_pause_flag
@@ -3223,6 +3227,40 @@ impl ZeldaState {
         }
         let base = (self.sprite_slot_view(k).graphics() as usize) * 5;
         self.sprite_draw_multiple(k, &DRAW_FOUR_AROUND_ONE_DRAW_FRAMES[base..base + 5], None);
+    }
+
+    pub(super) fn complete_antfairy_after_subtype2_increment(
+        &mut self,
+        k: usize,
+        continuation: AntfairyDrawContinuation,
+    ) {
+        self.sprite_draw_antfairy_after_subtype2_increment(k);
+        match continuation {
+            AntfairyDrawContinuation::BunnyBeam => self.sprite_bunny_beam_after_antfairy_draw(k),
+            AntfairyDrawContinuation::Antifairy => self.sprite_15_antifairy_after_draw(k),
+            AntfairyDrawContinuation::AntifairyCircle => {
+                self.sprite_82_antifairy_circle_after_draw(k)
+            }
+        }
+    }
+
+    pub(super) fn antfairy_draw_continuation(&self, k: usize) -> AntfairyDrawContinuation {
+        match self.sprite_slot_view(k).sprite_type() {
+            0xd1 => {
+                assert!(self.game_state.world.location.is_indoors());
+                assert_ne!(
+                    self.sprite_slot_view(k).ai_state(),
+                    0,
+                    "Bunny Beam Antfairy checkpoint requires its draw branch",
+                );
+                AntfairyDrawContinuation::BunnyBeam
+            }
+            0x15 => AntfairyDrawContinuation::Antifairy,
+            0x82 => AntfairyDrawContinuation::AntifairyCircle,
+            sprite_type => panic!(
+                "Antfairy subtype checkpoint reached incompatible sprite type {sprite_type:#04x}",
+            ),
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -3992,6 +4030,10 @@ impl ZeldaState {
             self.red_bari_draw(k);
         }
 
+        self.sprite_23_red_bari_after_draw(k);
+    }
+
+    pub(super) fn sprite_23_red_bari_after_draw(&mut self, k: usize) {
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -6924,6 +6966,10 @@ impl ZeldaState {
         }
 
         self.sprite_draw_antfairy(k);
+        self.sprite_bunny_beam_after_antfairy_draw(k);
+    }
+
+    fn sprite_bunny_beam_after_antfairy_draw(&mut self, k: usize) {
         if self.sprite_slot_view(k).pause() == 0 {
             let oam = self.game_state.oam.current_pointer_usize();
             let charnum = RABBIT_BEAM_GFX[self.sprite_slot_view(k).graphics() as usize];
@@ -7661,9 +7707,17 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_B7_BlindMaiden(int k) {  // 9ee8b6
     pub(super) fn sprite_b7_blind_maiden(&mut self, k: usize) {
+        if !self.sprite_b7_blind_maiden_before_follower_graphics(k) {
+            return;
+        }
+        self.load_follower_graphics();
+        self.sprite_b7_blind_maiden_after_follower_graphics(k);
+    }
+
+    pub(super) fn sprite_b7_blind_maiden_before_follower_graphics(&mut self, k: usize) -> bool {
         self.crystal_maiden_draw(k);
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
         self.sprite_track_body_to_head(k);
         let value = self.sprite_direction_to_face_link(k, None) ^ 3;
@@ -7673,13 +7727,17 @@ impl ZeldaState {
                 let value = 1;
                 self.sprite_slot_view_mut(k).set_ai_state(value);
             }
+            false
         } else {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             self.follower_state_mut().set_indicator(6);
-            self.load_follower_graphics();
-            self.sprite_become_follower(k);
+            true
         }
+    }
+
+    pub(super) fn sprite_b7_blind_maiden_after_follower_graphics(&mut self, k: usize) {
+        self.sprite_become_follower(k);
     }
 
     // -----------------------------------------------------------------------
@@ -12656,6 +12714,10 @@ impl ZeldaState {
     // void Sprite_15_Antifairy(int k) {  // 86a50c
     pub(super) fn sprite_15_antifairy(&mut self, k: usize) {
         self.sprite_draw_antfairy(k);
+        self.sprite_15_antifairy_after_draw(k);
+    }
+
+    fn sprite_15_antifairy_after_draw(&mut self, k: usize) {
         if self.sprite_return_if_inactive(k) {
             return;
         }
@@ -12678,6 +12740,10 @@ impl ZeldaState {
     // void Sprite_82_AntifairyCircle(int k) {  // 9ecb97
     pub(super) fn sprite_82_antifairy_circle(&mut self, k: usize) {
         self.sprite_draw_antfairy(k);
+        self.sprite_82_antifairy_circle_after_draw(k);
+    }
+
+    fn sprite_82_antifairy_circle_after_draw(&mut self, k: usize) {
         if self.sprite_return_if_inactive(k) {
             return;
         }

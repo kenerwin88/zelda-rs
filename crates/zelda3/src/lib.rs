@@ -37,12 +37,16 @@ pub use game_state::{
 };
 pub use rom_random::{parse_rom_random_script, RomRandomSample};
 pub use timing_receipts::{
-    CachedSpriteExecutionProgress, CachedSpriteExecutionProgressReceipt, DialogueExecutionProgress,
-    DungeonResetSpritesProgressReceipt, ItemReceiptGraphicsCaller,
-    ItemReceiptGraphicsProgressReceipt, JoypadPublication, MainLoopInterruption, MainLoopProgress,
-    NmiPpuRegisterOperands, NmiUpdateGate, OriginalTimingAudioShadowResult,
-    OriginalTimingBgScrollShadowResult, OriginalTimingBgTilemapShadowResult,
-    OriginalTimingBoundary, OriginalTimingDialogueTextShadowResult, OriginalTimingHostReceipts,
+    CachedSpriteExecutionBodyProgress, CachedSpriteExecutionProgress,
+    CachedSpriteExecutionProgressReceipt, CreditsEndSequence32ProgressReceipt,
+    CreditsSceneLoadProgress, CreditsSceneLoadProgressReceipt, DesertPrayerIrisProgress,
+    DialogueExecutionProgress, DungeonFallingEntranceProgress,
+    DungeonPegAttributeFlipProgressReceipt, DungeonResetSpritesProgressReceipt,
+    ItemReceiptGraphicsCaller, ItemReceiptGraphicsProgressReceipt, JoypadPublication,
+    MainLoopInterruption, MainLoopProgress, NmiPpuRegisterOperands, NmiUpdateGate,
+    OriginalTimingAudioShadowResult, OriginalTimingBgScrollShadowResult,
+    OriginalTimingBgTilemapShadowResult, OriginalTimingBoundary,
+    OriginalTimingDialogueTextShadowResult, OriginalTimingHostReceipts,
     OriginalTimingMode7TransformShadowResult, OriginalTimingReceiptInstallError,
     OriginalTimingResumeCheckpoint, OriginalTimingSemanticReceipt,
     OriginalTimingWindowMaskShadowResult, OverworldSpriteReloadProgress,
@@ -50,9 +54,12 @@ pub use timing_receipts::{
     PresentedAudio, PresentedBgScroll, PresentedBgTilemapLayer, PresentedBgTilemaps,
     PresentedCgram, PresentedDialogueText, PresentedHudTilemap, PresentedInidisp,
     PresentedMode7Transform, PresentedOam, PresentedObjTiles, PresentedScanoutGeometry,
-    PresentedWindowMask, SaveMenuInitializationProgress, SourceCallProgress,
-    SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt,
-    SpriteMainProgress, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
+    PresentedWindowMask, RescuedMaidenInitializationProgressReceipt,
+    RescuedMaidenInitializationStage, RescuedMaidenTilemapClearProgressReceipt,
+    SaveMenuInitializationProgress, SourceCallProgress, SpotlightTableBuildCheckpoint,
+    SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt, SpriteDynamicSpawnProgress,
+    SpriteFollowerGraphicsCaller, SpriteInitializeResetPropertiesPhase, SpriteMainProgress,
+    SpriteResetAllProgress, SpriteResetAllProgressReceipt, TriforceRoomCase2PaletteProgressReceipt,
 };
 pub use zelda3_dialogue as dialogue_ir;
 pub use zelda_rtl::{
