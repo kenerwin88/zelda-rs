@@ -5114,7 +5114,7 @@ enum NmiPrepareSpritesCpuCaller {
 // follower-graphics loader. At this point C has completed the generic state-8
 // initialization prefix and Zelda's prep prefix, but the current slot has not
 // returned to Sprite_Main yet.
-const ZELDA_FOLLOWER_GRAPHICS_RETURN_ADDRESS: u32 = 0x05_d444;
+const ZELDA_FOLLOWER_GRAPHICS_RETURN_ADDRESS: u32 = 0x05_ebf5;
 
 fn sprite_main_cpu_interruption_boundary(
     current_slot: Option<u8>,

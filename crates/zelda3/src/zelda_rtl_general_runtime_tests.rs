@@ -25707,6 +25707,7 @@ fn faded_filter_uses_the_interior_sprite_boundary_as_the_single_nmi_owner() {
 
 #[test]
 fn sprite_main_interruption_preserves_the_c_zelda_initializer_prefix() {
+    assert_eq!(ZELDA_FOLLOWER_GRAPHICS_RETURN_ADDRESS, 0x05_ebf5);
     assert_eq!(
         sprite_main_cpu_interruption_boundary(
             Some(0),

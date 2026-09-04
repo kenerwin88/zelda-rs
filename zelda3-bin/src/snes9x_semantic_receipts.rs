@@ -80,7 +80,7 @@ const FOLLOWER_GRAPHICS_CONVERSION_STORES: u16 = 32 * 8 * 2;
 // preparation paths and Blind Maiden's state-9 become-follower body from the
 // many other callers of the shared loader.
 const SPRITE_PREP_BLIND_MAIDEN_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x06_89c2;
-const SPRITE_PREP_ZELDA_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x05_d444;
+const SPRITE_PREP_ZELDA_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x05_ebf5;
 const SPRITE_BLIND_MAIDEN_BODY_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x1e_e8ea;
 // `Sprite_Zazak_Main`'s animation publication. The write event proves the
 // current slot's source-selected graphics byte committed before the boundary.
@@ -8524,6 +8524,33 @@ mod tests {
                 .unwrap()
                 .0,
             SpriteFollowerGraphicsCaller::BlindMaidenBody,
+        );
+    }
+
+    #[test]
+    fn zelda_follower_graphics_uses_the_pinned_sprite_prep_return() {
+        let mut source = empty_semantic_tracker();
+        let mut execution = SpriteMainExecutionTracker::default();
+        execution.current_slot = Some(1);
+        source.sprite_main_execution = Some(execution);
+
+        let mut load = raw(
+            "pc",
+            Some(RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC),
+            Some(1),
+            None,
+        );
+        load.return_address = Some(0x05_ebf5);
+        source.consume_event(load, &mut Vec::new()).unwrap();
+
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .unwrap()
+                .follower_graphics
+                .unwrap()
+                .0,
+            SpriteFollowerGraphicsCaller::Zelda,
         );
     }
 
