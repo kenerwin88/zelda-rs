@@ -517,6 +517,19 @@ pub struct OriginalTimingDialogueTextShadowResult {
     pub first_mismatch: Option<usize>,
 }
 
+/// Furthest source assignment published by one `Sprite_MoveXY` invocation.
+/// The helper stores each axis in subpixel, low-byte, high-byte order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SpriteMoveXYCheckpoint {
+    BeforeMovement,
+    AfterXSubpixel,
+    AfterXLow,
+    AfterXHigh,
+    AfterYSubpixel,
+    AfterYLow,
+    AfterYHigh,
+}
+
 impl PresentedCgram {
     pub const COLOR_COUNT: usize = 256;
 
@@ -811,6 +824,22 @@ pub enum MainLoopInterruption {
     /// collision body, current-slot return, and lower Sprite_Main slots remain
     /// pending.
     SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(u8),
+    /// A type-$62 master-sword light beam completed its draw and reached the
+    /// named assignment in `Sprite_MoveXY`. The remainder of movement, its
+    /// frame-gated caller suffix, and all lower Sprite_Main slots are pending.
+    SpriteMainMasterSwordLightBeamMovement {
+        slot: u8,
+        checkpoint: SpriteMoveXYCheckpoint,
+    },
+    /// A type-$62 master-sword light beam completed movement, entered its
+    /// frame-gated replacement spawn, selected `spawned_slot`, and published
+    /// the named source mutation. The remainder of the shared dynamic-spawn
+    /// helper, caller suffix, and lower Sprite_Main slots are pending.
+    SpriteMainMasterSwordLightBeamSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: SpriteDynamicSpawnProgress,
+    },
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -876,6 +905,8 @@ impl MainLoopInterruption {
                 | Self::SpriteMainWishPondTossedItemGraphicsStarted(_)
                 | Self::SpriteMainGuardPrepWeaponFlagsPending(_)
                 | Self::SpriteMainMiniMoldormHistory { .. }
+                | Self::SpriteMainMasterSwordLightBeamMovement { .. }
+                | Self::SpriteMainMasterSwordLightBeamSpawn { .. }
         )
     }
 }
@@ -989,6 +1020,19 @@ pub enum SpriteMainProgress {
     /// check and subtype2 increment. The rest of that body and lower slots are
     /// pending.
     AfterHelmasaurHardHatBeetleSubtype2Increment(u8),
+    /// Keep new checkpoint variants at the end: progress receipts are
+    /// checkpoint-serialized.
+    MasterSwordLightBeamMovement {
+        slot: u8,
+        checkpoint: SpriteMoveXYCheckpoint,
+    },
+    /// The current master-sword light beam entered its frame-gated
+    /// replacement spawn and published the named shared-helper mutation.
+    MasterSwordLightBeamSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: SpriteDynamicSpawnProgress,
+    },
 }
 
 /// Source call site owning an interrupted `SpritePrep_ResetProperties`.
@@ -1633,11 +1677,14 @@ pub enum OriginalTimingSemanticReceipt {
     TriforceRoomCase2PaletteProgress(TriforceRoomCase2PaletteProgressReceipt),
     CreditsSceneLoadProgress(CreditsSceneLoadProgressReceipt),
     CreditsEndSequence32Progress(CreditsEndSequence32ProgressReceipt),
-    /// Module0B/$24 completed the animated-sprite decode which precedes
-    /// `LoadOverworldFromSpecialOverworld`, restored the saved overworld
-    /// coordinates and scroll state, and advanced to the next submodule. The
-    /// timing backend identifies the enclosing source-stage return; gameplay
-    /// owns every restored value.
+    /// Module0B/$24 completed its first animated-sprite decode and
+    /// `LoadOverworldFromSpecialOverworld`, then entered the second decode.
+    /// The saved overworld coordinates and scroll state are now live, while
+    /// the second decode and submodule advance remain in the suspended caller.
+    OverworldSpecialExitMosaicRestored,
+    /// Module0B/$24 returned from its second animated-sprite decode and
+    /// advanced to the next submodule. The timing backend identifies the
+    /// enclosing source-stage return; gameplay owns every restored value.
     OverworldSpecialExitMosaicReturned,
 }
 

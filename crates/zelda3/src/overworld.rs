@@ -6817,11 +6817,31 @@ impl ZeldaState {
             return;
         }
         if self.game_state.frame.submodule == 36 {
-            self.LoadOverworldFromSpecialOverworld();
-            if u16::from(self.game_state.world.location.overworld_screen_index()) & 0x3f == 0 {
+            if self.publish_overworld_special_exit_mosaic_restore_prefix() {
                 self.DecodeAnimatedSpriteTile_variable(0x1e);
             }
         }
+        self.increment_submodule();
+    }
+
+    /// Publish Module0B/$24's source prefix after its first animated-sprite
+    /// decode returns. The ROM restores the special-overworld state before it
+    /// conditionally enters the second decode, so these gameplay fields can
+    /// become host-visible while that second call remains suspended.
+    pub(super) fn publish_overworld_special_exit_mosaic_restore_prefix(&mut self) -> bool {
+        assert_eq!(self.game_state.frame.main_module, 0x0b);
+        assert_eq!(self.game_state.frame.submodule, 0x24);
+        self.LoadOverworldFromSpecialOverworld();
+        u16::from(self.game_state.world.location.overworld_screen_index()) & 0x3f == 0
+    }
+
+    /// Resume the same Module0B/$24 caller after the second animated-sprite
+    /// decode. Its restored overworld state was already published by the
+    /// preceding source checkpoint and must not be replayed.
+    pub(super) fn complete_overworld_special_exit_mosaic_after_second_decode(&mut self) {
+        assert_eq!(self.game_state.frame.main_module, 0x0b);
+        assert_eq!(self.game_state.frame.submodule, 0x24);
+        self.DecodeAnimatedSpriteTile_variable(0x1e);
         self.increment_submodule();
     }
 

@@ -3529,6 +3529,8 @@ impl ZeldaState {
                     SpriteMainCpuBoundary::AfterSlot(slot)
                         | SpriteMainCpuBoundary::AfterActiveCuccoX { slot, .. }
                         | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel { slot, .. }
+                        | SpriteMainCpuBoundary::MasterSwordLightBeamMovement { slot, .. }
+                        | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn { slot, .. }
                         | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }
                         | SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements { slot, .. }
                         | SpriteMainCpuBoundary::AfterCuccoGraphicsPublication { slot, .. }
@@ -3837,6 +3839,39 @@ impl ZeldaState {
                 self.sprite_prep_debirando_pit_after_spawn(interrupted_slot, spawned, &info);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
+            SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            } => {
+                let interrupted_slot = usize::from(slot);
+                let spawned = usize::from(spawned_slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).sprite_type(), 0x62);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).subtype2(), 2);
+                assert_ne!(self.sprite_slot_view(interrupted_slot).a(), 0);
+                assert_eq!(self.sprite_slot_view(spawned).sprite_type(), 0x62);
+                let mut info = SpriteSpawnInfo::default();
+                self.sprite_spawn_dynamically_selected_from(
+                    interrupted_slot,
+                    &mut info,
+                    spawned,
+                    progress,
+                );
+                self.master_sword_finish_replacement_light_beam_spawn(
+                    interrupted_slot,
+                    spawned,
+                    info.r0_x,
+                    info.r2_y,
+                );
+                let new_b = self.sprite_slot_view(interrupted_slot).b().wrapping_sub(1);
+                self.sprite_slot_view_mut(interrupted_slot).set_b(new_b);
+                if new_b == 0 {
+                    self.sprite_slot_view_mut(interrupted_slot).set_state(0);
+                }
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
             SpriteMainCpuBoundary::AfterAntfairySubtype2Increment {
                 slot,
                 continuation: Some(continuation),
@@ -3999,6 +4034,26 @@ impl ZeldaState {
                 );
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
+            SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                slot,
+                checkpoint,
+                continuation: Some(continuation),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.complete_master_sword_light_beam_movement(
+                    interrupted_slot,
+                    checkpoint,
+                    continuation,
+                );
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                continuation: None,
+                ..
+            } => unreachable!(
+                "source master-sword movement boundary did not bind to native coordinate results"
+            ),
             SpriteMainCpuBoundary::AfterCuccoFleeMovement {
                 slot,
                 helper_ordinal,
@@ -4646,6 +4701,30 @@ impl ZeldaState {
     pub(super) fn sprite_move_xy(&mut self, k: usize) {
         self.sprite_move_x(k);
         self.sprite_move_y(k);
+    }
+
+    /// Execute only `Sprite_MoveX`'s first source assignment and return the
+    /// already-computed coordinate bytes for an exact host-boundary resume.
+    pub(super) fn sprite_move_x_through_subpixel(&mut self, k: usize) -> (u8, u8) {
+        let sprite = self.sprite_slot_view(k);
+        let velocity = sprite.x_velocity();
+        let position = u32::from(sprite.x_subpixel())
+            | (u32::from(sprite.x_low()) << 8)
+            | (u32::from(sprite.x_high()) << 16);
+        let delta = ((velocity as i8 as i32) << 4) as u32;
+        let moved = position.wrapping_add(delta);
+        self.sprite_slot_view_mut(k).set_x_subpixel(moved as u8);
+        ((moved >> 8) as u8, (moved >> 16) as u8)
+    }
+
+    pub(super) fn complete_sprite_move_x_after_subpixel(
+        &mut self,
+        k: usize,
+        x_low: u8,
+        x_high: u8,
+    ) {
+        self.sprite_slot_view_mut(k).set_x_low(x_low);
+        self.sprite_slot_view_mut(k).set_x_high(x_high);
     }
 
     /// Execute `Sprite_MoveXY` through the first assignment in

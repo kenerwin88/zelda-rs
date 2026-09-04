@@ -5,7 +5,7 @@
 //! reproduced as a comment block immediately above each port so a reviewer
 //! can verify behavior line-by-line.
 
-use super::sprite::DrawMultipleData;
+use super::sprite::{DrawMultipleData, SpriteSpawnInfo};
 use super::*;
 use crate::types::{sign16, sign8};
 
@@ -890,6 +890,75 @@ impl ZeldaState {
     pub(super) fn sprite_master_sword_light_beam(&mut self, k: usize) {
         self.sprite_draw_single_large_for_world(k);
         if self.sprite_slot_view(k).a() != 0 {
+            if let Some(SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if usize::from(slot) == k {
+                    assert_eq!(
+                        self.game_state.frame.frame_counter & 3,
+                        0,
+                        "replacement light-beam spawn requires its four-frame source gate",
+                    );
+                    let spawned = usize::from(spawned_slot);
+                    assert_ne!(spawned, k);
+                    for candidate in (spawned + 1)..16 {
+                        assert_ne!(
+                            self.sprite_slot_view(candidate).state(),
+                            0,
+                            "source replacement spawn skipped a higher free slot {candidate}",
+                        );
+                    }
+                    self.sprite_move_xy(k);
+                    let mut info = SpriteSpawnInfo::default();
+                    self.sprite_spawn_dynamically_selected_prefix(
+                        k, 0x62, &mut info, spawned, progress,
+                    );
+                    return;
+                }
+            }
+            if let Some(SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                slot,
+                checkpoint,
+                continuation: None,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if usize::from(slot) == k {
+                    let mut continuation = SpriteMoveXYContinuation::default();
+                    match checkpoint {
+                        crate::SpriteMoveXYCheckpoint::BeforeMovement => {}
+                        crate::SpriteMoveXYCheckpoint::AfterXSubpixel => {
+                            (continuation.x_low, continuation.x_high) =
+                                self.sprite_move_x_through_subpixel(k);
+                        }
+                        crate::SpriteMoveXYCheckpoint::AfterXLow => {
+                            (continuation.x_low, continuation.x_high) =
+                                self.sprite_move_x_through_subpixel(k);
+                            self.sprite_slot_view_mut(k).set_x_low(continuation.x_low);
+                        }
+                        crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_x(k),
+                        crate::SpriteMoveXYCheckpoint::AfterYSubpixel => {
+                            (continuation.y_low, continuation.y_high) =
+                                self.sprite_move_xy_through_y_subpixel(k);
+                        }
+                        crate::SpriteMoveXYCheckpoint::AfterYLow => {
+                            (continuation.y_low, continuation.y_high) =
+                                self.sprite_move_xy_through_y_subpixel(k);
+                            self.sprite_slot_view_mut(k).set_y_low(continuation.y_low);
+                        }
+                        crate::SpriteMoveXYCheckpoint::AfterYHigh => self.sprite_move_xy(k),
+                    }
+                    self.sprite_main_cpu_boundary =
+                        Some(SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                            slot,
+                            checkpoint,
+                            continuation: Some(continuation),
+                        });
+                    return;
+                }
+            }
             self.sprite_move_xy(k);
             if (self.game_state.frame.frame_counter & 3) == 0 {
                 self.master_sword_spawn_replacement_light_beam(k);
@@ -897,6 +966,49 @@ impl ZeldaState {
                 return;
             }
         }
+        let new_b = self.sprite_slot_view(k).b().wrapping_sub(1);
+        self.sprite_slot_view_mut(k).set_b(new_b);
+        if new_b == 0 {
+            self.sprite_slot_view_mut(k).set_state(0);
+        }
+    }
+
+    pub(super) fn complete_master_sword_light_beam_movement(
+        &mut self,
+        k: usize,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+        continuation: SpriteMoveXYContinuation,
+    ) {
+        assert_eq!(self.sprite_slot_view(k).state(), 9);
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x62);
+        assert_eq!(self.sprite_slot_view(k).subtype2(), 2);
+        assert_ne!(self.sprite_slot_view(k).a(), 0);
+        match checkpoint {
+            crate::SpriteMoveXYCheckpoint::BeforeMovement => self.sprite_move_xy(k),
+            crate::SpriteMoveXYCheckpoint::AfterXSubpixel => {
+                self.complete_sprite_move_x_after_subpixel(
+                    k,
+                    continuation.x_low,
+                    continuation.x_high,
+                );
+                self.sprite_move_y(k);
+            }
+            crate::SpriteMoveXYCheckpoint::AfterXLow => {
+                self.sprite_slot_view_mut(k).set_x_high(continuation.x_high);
+                self.sprite_move_y(k);
+            }
+            crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_y(k),
+            crate::SpriteMoveXYCheckpoint::AfterYSubpixel => self
+                .complete_sprite_move_y_after_subpixel(k, continuation.y_low, continuation.y_high),
+            crate::SpriteMoveXYCheckpoint::AfterYLow => {
+                self.sprite_slot_view_mut(k).set_y_high(continuation.y_high)
+            }
+            crate::SpriteMoveXYCheckpoint::AfterYHigh => {}
+        }
+        if (self.game_state.frame.frame_counter & 3) != 0 {
+            return;
+        }
+        self.master_sword_spawn_replacement_light_beam(k);
         let new_b = self.sprite_slot_view(k).b().wrapping_sub(1);
         self.sprite_slot_view_mut(k).set_b(new_b);
         if new_b == 0 {
@@ -920,6 +1032,16 @@ impl ZeldaState {
         let Some((j, r0_x, r2_y)) = self.sprite_spawn_dynamically_for_world(k, 0x62) else {
             return;
         };
+        self.master_sword_finish_replacement_light_beam_spawn(k, j, r0_x, r2_y);
+    }
+
+    pub(super) fn master_sword_finish_replacement_light_beam_spawn(
+        &mut self,
+        k: usize,
+        j: usize,
+        r0_x: u16,
+        r2_y: u16,
+    ) {
         self.sprite_set_x(j, r0_x);
         self.sprite_set_y(j, r2_y);
         self.sprite_slot_view_mut(j).set_subtype2(2);

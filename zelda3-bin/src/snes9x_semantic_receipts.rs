@@ -24,8 +24,8 @@ use zelda3::{
     RescuedMaidenTilemapClearProgressReceipt, SaveMenuInitializationProgress, SourceCallProgress,
     SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt,
     SpriteDynamicSpawnProgress, SpriteFollowerGraphicsCaller, SpriteInitializeResetPropertiesPhase,
-    SpriteMainProgress, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
-    TriforceRoomCase2PaletteProgressReceipt,
+    SpriteMainProgress, SpriteMoveXYCheckpoint, SpriteResetAllProgress,
+    SpriteResetAllProgressReceipt, TriforceRoomCase2PaletteProgressReceipt,
 };
 
 const TRACE_PATH_ENV: &str = "ZELDA3_SNES9X_TRACE";
@@ -416,6 +416,10 @@ const CUCCO_FLEE_SUBTYPE_HELPER_CALL_PC: u32 = 0x06_a724;
 // The active-Cucco branch enters `Sprite_MoveXY` here. The PC is private
 // adapter provenance; gameplay receives only the C assignment boundary.
 const ACTIVE_CUCCO_MOVEMENT_CALL_PC: u32 = 0x06_a628;
+// `Sprite_62_MasterSword` subtype 2 enters `Sprite_MoveXY` after its draw and
+// nonzero-A branch. This private call-site PC distinguishes the light-beam
+// caller from the many other users of the shared movement helper.
+const MASTER_SWORD_LIGHT_BEAM_MOVEMENT_CALL_PC: u32 = 0x05_8af3;
 const SPRITE_X_SUBPIXEL_BASE: u16 = 0x0d70;
 const SPRITE_X_LOW_BASE: u16 = 0x0d10;
 const SPRITE_X_HIGH_BASE: u16 = 0x0d30;
@@ -431,6 +435,11 @@ const BIG_KEY_DROP_SPRITE_TYPE: u8 = 0xe5;
 // plus King Zora's return address proves that the purchased-flippers spawn
 // and every field publication before the `$11` decode have completed.
 const DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC: u32 = 0x00_d4ed;
+// Module0B/$24 enters the shared decoder a second time only after
+// `LoadOverworldFromSpecialOverworld` has restored the special-exit state.
+// JSL leaves the address of its final operand on the native stack, so the
+// pinned caller proof is $02:AECA for the call whose opcode is $02:AEC7.
+const SPECIAL_EXIT_MOSAIC_SECOND_DECODE_RETURN_ADDRESS: u32 = 0x02_aeca;
 const ZORA_FLIPPERS_GRAPHICS_RETURN_ADDRESS: u32 = 0x1d_e1e9;
 // `SpritePrep_BonkItem`'s room-$107 branch calls the same decoder after its
 // state/property initialization and floor assignment have returned. The
@@ -904,6 +913,10 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     active_cucco_y_subpixel: Option<(u8, u8)>,
     #[serde(default)]
+    master_sword_light_beam_movement: Option<(u8, u8)>,
+    #[serde(default)]
+    master_sword_light_beam_spawn: Option<(u8, u8, SpriteDynamicSpawnProgress)>,
+    #[serde(default)]
     cucco_animation_slot: Option<(u8, u8)>,
     #[serde(default)]
     big_key_drop_graphics_slot: Option<u8>,
@@ -1342,115 +1355,68 @@ impl SpriteMainExecutionTracker {
             return Ok(());
         }
 
-        let Some((slot, spawned_slot, _)) = self.fire_debirando_spawn else {
-            return Ok(());
-        };
-        let spawned_address = |base: u16| base + u16::from(spawned_slot);
-        let progress = if pc == SPRITE_SPAWN_DYNAMICALLY_STATE_STORE_PC {
-            if event.y != Some(u16::from(spawned_slot))
-                || address != spawned_address(SPRITE_STATE_BASE)
-                || event.value != Some(9)
-            {
-                return Err(format!(
-                    "Snes9x Fire Debirando spawn state publication disagreed on slot {spawned_slot}"
-                ));
-            }
-            Some(SpriteDynamicSpawnProgress::StatePublished)
-        } else if let Some(completed_stores) = sprite_prep_reset_properties_completed_stores(pc) {
-            (event.x == Some(u16::from(spawned_slot)))
-                .then_some(SpriteDynamicSpawnProgress::ResetProperties { completed_stores })
-        } else if let Some(completed_stores) = sprite_prep_load_properties_completed_stores(pc) {
-            (event.x == Some(u16::from(spawned_slot)))
-                .then_some(SpriteDynamicSpawnProgress::LoadProperties { completed_stores })
-        } else {
-            match pc {
-                SPRITE_SPAWN_DYNAMICALLY_IDENTITY_STORE_PC => {
-                    let indoor_address = SPRITE_N_BASE + u16::from(spawned_slot);
-                    let outdoor_high_address = SPRITE_N_BASE + u16::from(spawned_slot) * 2 + 1;
-                    if !matches!(address, a if a == indoor_address || a == outdoor_high_address)
-                        || event.value != Some(0xff)
-                    {
-                        return Err(format!(
-                            "Snes9x Fire Debirando spawn identity publication disagreed on slot {spawned_slot}: address=${address:04x}, value={:?}",
-                            event.value,
-                        ));
-                    }
-                    Some(SpriteDynamicSpawnProgress::IdentityPublished)
-                }
-                SPRITE_SPAWN_DYNAMICALLY_FLOOR_STORE_PC => {
-                    if event.y != Some(u16::from(spawned_slot))
-                        || address != spawned_address(SPRITE_FLOOR_BASE)
-                    {
-                        return Err(format!(
-                            "Snes9x Fire Debirando spawn floor publication disagreed on slot {spawned_slot}"
-                        ));
-                    }
-                    Some(SpriteDynamicSpawnProgress::FloorPublished)
-                }
-                SPRITE_SPAWN_DYNAMICALLY_DIRECTION_STORE_PC => {
-                    if event.y != Some(u16::from(spawned_slot))
-                        || address != spawned_address(SPRITE_DIRECTION_BASE)
-                    {
-                        return Err(format!(
-                            "Snes9x Fire Debirando spawn direction publication disagreed on slot {spawned_slot}"
-                        ));
-                    }
-                    Some(SpriteDynamicSpawnProgress::DirectionPublished)
-                }
-                SPRITE_SPAWN_DYNAMICALLY_DIE_ACTION_STORE_PC => {
-                    if event.y != Some(u16::from(spawned_slot))
-                        || address != spawned_address(SPRITE_DIE_ACTION_BASE)
-                    {
-                        return Err(format!(
-                            "Snes9x Fire Debirando spawn die-action publication disagreed on slot {spawned_slot}"
-                        ));
-                    }
-                    Some(SpriteDynamicSpawnProgress::DieActionCleared)
-                }
-                SPRITE_SPAWN_DYNAMICALLY_SUBTYPE_STORE_PC => {
-                    if event.y != Some(u16::from(spawned_slot))
-                        || address != spawned_address(SPRITE_SUBTYPE_BASE)
-                    {
-                        return Err(format!(
-                            "Snes9x Fire Debirando spawn subtype publication disagreed on slot {spawned_slot}"
-                        ));
-                    }
-                    Some(SpriteDynamicSpawnProgress::SubtypeCleared)
-                }
-                _ => None,
-            }
-        };
-        if let Some(progress) = progress {
-            self.fire_debirando_spawn = Some((slot, spawned_slot, progress));
-        }
-        Ok(())
+        observe_dynamic_spawn_progress_write(
+            &mut self.fire_debirando_spawn,
+            event,
+            "Fire Debirando",
+        )
     }
 
     fn observe_fire_debirando_spawn_boundary(
         &mut self,
         event: &RawTraceEvent,
     ) -> Result<(), String> {
-        let Some((slot, spawned_slot, _)) = self.fire_debirando_spawn else {
-            return Ok(());
-        };
-        if event.x != Some(u16::from(spawned_slot)) {
+        observe_dynamic_spawn_progress_boundary(&mut self.fire_debirando_spawn, event)
+    }
+
+    fn observe_master_sword_light_beam_spawn_write(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        let pc = event.pc.ok_or("Snes9x WRAM write omitted PC")? & 0x00ff_ffff;
+        let address = event.address.ok_or("Snes9x WRAM write omitted address")?;
+        if pc == SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC
+            && self.master_sword_light_beam_movement.is_some()
+        {
+            let slot = self
+                .current_slot
+                .ok_or("Snes9x spawned a replacement light beam before a sprite slot")?;
+            let spawned_slot = u8::try_from(
+                event
+                    .y
+                    .ok_or("Snes9x replacement light-beam type write omitted slot Y")?,
+            )
+            .map_err(|_| "Snes9x replacement light-beam slot exceeded one byte")?;
+            if event.x != Some(u16::from(slot))
+                || spawned_slot >= 16
+                || address != SPRITE_TYPE_BASE + u16::from(spawned_slot)
+                || event.value != Some(0x62)
+            {
+                return Err(format!(
+                    "Snes9x replacement light-beam type publication disagreed: parent={slot}, x={:?}, spawned={spawned_slot}, address=${address:04x}, value={:?}",
+                    event.x, event.value,
+                ));
+            }
+            self.master_sword_light_beam_movement = None;
+            self.master_sword_light_beam_spawn = Some((
+                slot,
+                spawned_slot,
+                SpriteDynamicSpawnProgress::TypePublished,
+            ));
             return Ok(());
         }
-        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
-            return Ok(());
-        };
-        let progress =
-            if let Some(completed_stores) = sprite_prep_reset_properties_completed_stores(pc) {
-                Some(SpriteDynamicSpawnProgress::ResetProperties { completed_stores })
-            } else {
-                sprite_prep_load_properties_completed_stores(pc).map(|completed_stores| {
-                    SpriteDynamicSpawnProgress::LoadProperties { completed_stores }
-                })
-            };
-        if let Some(progress) = progress {
-            self.fire_debirando_spawn = Some((slot, spawned_slot, progress));
-        }
-        Ok(())
+        observe_dynamic_spawn_progress_write(
+            &mut self.master_sword_light_beam_spawn,
+            event,
+            "replacement light beam",
+        )
+    }
+
+    fn observe_master_sword_light_beam_spawn_boundary(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        observe_dynamic_spawn_progress_boundary(&mut self.master_sword_light_beam_spawn, event)
     }
 
     fn observe_wallmaster_reset_prefix(&mut self, event: &RawTraceEvent) -> Result<(), String> {
@@ -1777,6 +1743,36 @@ impl SpriteMainExecutionTracker {
                 };
             }
         }
+        if let Some((slot, spawned_slot, progress)) = self.master_sword_light_beam_spawn {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "master-sword replacement spawn outlived its active sprite slot",
+            );
+            return SpriteMainProgress::MasterSwordLightBeamSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            };
+        }
+        if let Some((slot, checkpoint_ordinal)) = self.master_sword_light_beam_movement {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "master-sword light-beam movement outlived its active sprite slot",
+            );
+            let checkpoint = match checkpoint_ordinal {
+                0 => SpriteMoveXYCheckpoint::BeforeMovement,
+                1 => SpriteMoveXYCheckpoint::AfterXSubpixel,
+                2 => SpriteMoveXYCheckpoint::AfterXLow,
+                3 => SpriteMoveXYCheckpoint::AfterXHigh,
+                4 => SpriteMoveXYCheckpoint::AfterYSubpixel,
+                5 => SpriteMoveXYCheckpoint::AfterYLow,
+                6 => SpriteMoveXYCheckpoint::AfterYHigh,
+                count => panic!("invalid master-sword movement store count {count}"),
+            };
+            return SpriteMainProgress::MasterSwordLightBeamMovement { slot, checkpoint };
+        }
         if let Some((slot, helper_ordinal, completed)) = self.cucco_subtype_increments {
             assert_eq!(
                 self.current_slot,
@@ -1871,6 +1867,18 @@ impl SpriteMainExecutionTracker {
             } => MainLoopInterruption::SpriteMainAfterActiveCuccoYSubpixel {
                 slot,
                 helper_ordinal,
+            },
+            SpriteMainProgress::MasterSwordLightBeamMovement { slot, checkpoint } => {
+                MainLoopInterruption::SpriteMainMasterSwordLightBeamMovement { slot, checkpoint }
+            }
+            SpriteMainProgress::MasterSwordLightBeamSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            } => MainLoopInterruption::SpriteMainMasterSwordLightBeamSpawn {
+                slot,
+                spawned_slot,
+                progress,
             },
             SpriteMainProgress::AfterCuccoFleeMovement {
                 slot,
@@ -2094,6 +2102,133 @@ impl CachedSpriteExecutionTracker {
             }
         }
     }
+}
+
+fn observe_dynamic_spawn_progress_write(
+    tracker: &mut Option<(u8, u8, SpriteDynamicSpawnProgress)>,
+    event: &RawTraceEvent,
+    caller: &str,
+) -> Result<(), String> {
+    let Some((slot, spawned_slot, _)) = *tracker else {
+        return Ok(());
+    };
+    let pc = event.pc.ok_or("Snes9x WRAM write omitted PC")? & 0x00ff_ffff;
+    let address = event.address.ok_or("Snes9x WRAM write omitted address")?;
+    let spawned_address = |base: u16| base + u16::from(spawned_slot);
+    let progress = if pc == SPRITE_SPAWN_DYNAMICALLY_STATE_STORE_PC {
+        if event.y != Some(u16::from(spawned_slot))
+            || address != spawned_address(SPRITE_STATE_BASE)
+            || event.value != Some(9)
+        {
+            return Err(format!(
+                "Snes9x {caller} spawn state publication disagreed on slot {spawned_slot}"
+            ));
+        }
+        Some(SpriteDynamicSpawnProgress::StatePublished)
+    } else if let Some(completed_stores) = sprite_prep_reset_properties_completed_stores(pc) {
+        (event.x == Some(u16::from(spawned_slot)))
+            .then_some(SpriteDynamicSpawnProgress::ResetProperties { completed_stores })
+    } else if let Some(completed_stores) = sprite_prep_load_properties_completed_stores(pc) {
+        (event.x == Some(u16::from(spawned_slot)))
+            .then_some(SpriteDynamicSpawnProgress::LoadProperties { completed_stores })
+    } else {
+        match pc {
+            SPRITE_SPAWN_DYNAMICALLY_IDENTITY_STORE_PC => {
+                let indoor_address = SPRITE_N_BASE + u16::from(spawned_slot);
+                let outdoor_low_address = SPRITE_N_BASE + u16::from(spawned_slot) * 2;
+                let outdoor_high_address = SPRITE_N_BASE + u16::from(spawned_slot) * 2 + 1;
+                if !matches!(
+                    address,
+                    a if a == indoor_address
+                        || a == outdoor_low_address
+                        || a == outdoor_high_address
+                ) || event.value != Some(0xff)
+                {
+                    return Err(format!(
+                        "Snes9x {caller} spawn identity publication disagreed on slot {spawned_slot}: address=${address:04x}, value={:?}",
+                        event.value,
+                    ));
+                }
+                // Outdoors this is one 16-bit CPU store and the trace emits
+                // its low and high WRAM writes separately. NMI cannot split
+                // the instruction, so the low byte validates provenance but
+                // only the high byte publishes the completed C assignment.
+                (address != outdoor_low_address || address == indoor_address)
+                    .then_some(SpriteDynamicSpawnProgress::IdentityPublished)
+            }
+            SPRITE_SPAWN_DYNAMICALLY_FLOOR_STORE_PC => {
+                if event.y != Some(u16::from(spawned_slot))
+                    || address != spawned_address(SPRITE_FLOOR_BASE)
+                {
+                    return Err(format!(
+                        "Snes9x {caller} spawn floor publication disagreed on slot {spawned_slot}"
+                    ));
+                }
+                Some(SpriteDynamicSpawnProgress::FloorPublished)
+            }
+            SPRITE_SPAWN_DYNAMICALLY_DIRECTION_STORE_PC => {
+                if event.y != Some(u16::from(spawned_slot))
+                    || address != spawned_address(SPRITE_DIRECTION_BASE)
+                {
+                    return Err(format!(
+                        "Snes9x {caller} spawn direction publication disagreed on slot {spawned_slot}"
+                    ));
+                }
+                Some(SpriteDynamicSpawnProgress::DirectionPublished)
+            }
+            SPRITE_SPAWN_DYNAMICALLY_DIE_ACTION_STORE_PC => {
+                if event.y != Some(u16::from(spawned_slot))
+                    || address != spawned_address(SPRITE_DIE_ACTION_BASE)
+                {
+                    return Err(format!(
+                        "Snes9x {caller} spawn die-action publication disagreed on slot {spawned_slot}"
+                    ));
+                }
+                Some(SpriteDynamicSpawnProgress::DieActionCleared)
+            }
+            SPRITE_SPAWN_DYNAMICALLY_SUBTYPE_STORE_PC => {
+                if event.y != Some(u16::from(spawned_slot))
+                    || address != spawned_address(SPRITE_SUBTYPE_BASE)
+                {
+                    return Err(format!(
+                        "Snes9x {caller} spawn subtype publication disagreed on slot {spawned_slot}"
+                    ));
+                }
+                Some(SpriteDynamicSpawnProgress::SubtypeCleared)
+            }
+            _ => None,
+        }
+    };
+    if let Some(progress) = progress {
+        *tracker = Some((slot, spawned_slot, progress));
+    }
+    Ok(())
+}
+
+fn observe_dynamic_spawn_progress_boundary(
+    tracker: &mut Option<(u8, u8, SpriteDynamicSpawnProgress)>,
+    event: &RawTraceEvent,
+) -> Result<(), String> {
+    let Some((slot, spawned_slot, _)) = *tracker else {
+        return Ok(());
+    };
+    if event.x != Some(u16::from(spawned_slot)) {
+        return Ok(());
+    }
+    let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+        return Ok(());
+    };
+    let progress = if let Some(completed_stores) = sprite_prep_reset_properties_completed_stores(pc)
+    {
+        Some(SpriteDynamicSpawnProgress::ResetProperties { completed_stores })
+    } else {
+        sprite_prep_load_properties_completed_stores(pc)
+            .map(|completed_stores| SpriteDynamicSpawnProgress::LoadProperties { completed_stores })
+    };
+    if let Some(progress) = progress {
+        *tracker = Some((slot, spawned_slot, progress));
+    }
+    Ok(())
 }
 
 pub(crate) struct Snes9xOracleSemanticTrace {
@@ -2392,6 +2527,23 @@ fn publish_file_select_graphics_low_wram_clear_progress(
         )
     });
     receipts.push(OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramClearProgress(progress));
+}
+
+fn special_exit_mosaic_restore_checkpoint(event: &RawTraceEvent) -> Result<bool, String> {
+    if event.event != "pc"
+        || event.pc.map(|pc| pc & 0x00ff_ffff) != Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC)
+        || event.return_address.map(|pc| pc & 0x00ff_ffff)
+            != Some(SPECIAL_EXIT_MOSAIC_SECOND_DECODE_RETURN_ADDRESS)
+    {
+        return Ok(false);
+    }
+    if !matches!((event.main, event.sub), (Some(0x0b), Some(0x24))) {
+        return Err(format!(
+            "Snes9x special-exit second decode entered outside Module0B/$24: main={:?} sub={:?}",
+            event.main, event.sub,
+        ));
+    }
+    Ok(true)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2895,6 +3047,15 @@ impl HostFrameWindow {
         }
         if entry.main == 0x0b && entry.sub == 0x24 && returned.main == 0x0b && returned.sub == 0x25
         {
+            // A fast terminal host can observe both the second-decode entry
+            // and the enclosing caller return. The terminal source fact
+            // supersedes the intermediate checkpoint.
+            receipts.retain(|receipt| {
+                !matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored
+                )
+            });
             receipts.push(OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned);
         }
         if spotlight_call_completion == Some(SpotlightCallCompletion::EntryReturned) {
@@ -2964,9 +3125,10 @@ impl Snes9xOracleSemanticTrace {
                     &[
                         "0280d3", "0280d6", "0280d9", "0280dd", "028842", "05df49", "05df4d",
                         "05cbcd", "05eb1d", "05eb21", "068328", "0683a7", "0684e2", "0684aa",
-                        "0684eb", "069271", "06a628", "06a724", "06b9cc", "06b9d0", "0799ad",
-                        "079a0b", "008225", "0082c7", "00d4ed", "09c499", "09c4aa", "09c173",
-                        "09f63f", "09f825", "0ffdc3", "00d423", "00e75c", "00e766", "00d44c",
+                        "058af3", "0684eb", "069271", "06a628", "06a724", "06b9cc", "06b9d0",
+                        "0799ad", "079a0b", "008225", "0082c7", "00d4ed", "09c499", "09c4aa",
+                        "09c173", "09f63f", "09f825", "0ffdc3", "00d423", "00e75c", "00e766",
+                        "00d44c",
                     ],
                 ),
             );
@@ -3258,6 +3420,22 @@ impl Snes9xOracleSemanticTrace {
                 if let Some(progress) = file_select_graphics_low_wram_clear_progress(&event)? {
                     publish_file_select_graphics_low_wram_clear_progress(&mut receipts, progress);
                 }
+                if special_exit_mosaic_restore_checkpoint(&event)? {
+                    if receipts.iter().any(|receipt| {
+                        matches!(
+                            receipt,
+                            OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored
+                                | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned
+                        )
+                    }) {
+                        return Err(
+                            "Snes9x special-exit mosaic restore checkpoint replayed in one host"
+                                .to_string(),
+                        );
+                    }
+                    receipts
+                        .push(OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored);
+                }
             }
             if main_loop_started {
                 self.zelda_run_game_loop_call_active = true;
@@ -3346,6 +3524,7 @@ impl Snes9xOracleSemanticTrace {
             if let Some(execution) = self.sprite_main_execution.as_mut() {
                 execution.observe_guard_prep_weapon_flags_pending(returned_event)?;
                 execution.observe_fire_debirando_spawn_boundary(returned_event)?;
+                execution.observe_master_sword_light_beam_spawn_boundary(returned_event)?;
                 execution.observe_bari_before_random(returned_event)?;
                 execution.observe_main_and_aux1_timer_decrements(returned_event)?;
                 execution.observe_primary_timer_decrements(returned_event)?;
@@ -3964,6 +4143,8 @@ impl Snes9xOracleSemanticTrace {
                             execution.active_cucco_movement = None;
                             execution.active_cucco_x_publications = 0;
                             execution.active_cucco_y_subpixel = None;
+                            execution.master_sword_light_beam_movement = None;
+                            execution.master_sword_light_beam_spawn = None;
                             execution.cucco_helper_ordinal = 0;
                             execution.big_key_drop_graphics_slot = None;
                             execution.king_zora_flippers_graphics_slot = None;
@@ -4030,6 +4211,8 @@ impl Snes9xOracleSemanticTrace {
                         execution.active_cucco_movement = None;
                         execution.active_cucco_x_publications = 0;
                         execution.active_cucco_y_subpixel = None;
+                        execution.master_sword_light_beam_movement = None;
+                        execution.master_sword_light_beam_spawn = None;
                         execution.cucco_helper_ordinal = 0;
                         execution.big_key_drop_graphics_slot = None;
                         execution.king_zora_flippers_graphics_slot = None;
@@ -4064,6 +4247,27 @@ impl Snes9xOracleSemanticTrace {
                         if self.sprite_main_execution.take().is_some() {
                             receipts.push(OriginalTimingSemanticReceipt::SpriteMainReturned);
                         }
+                    }
+                    MASTER_SWORD_LIGHT_BEAM_MOVEMENT_CALL_PC => {
+                        let execution = self.sprite_main_execution.as_mut().ok_or(
+                            "Snes9x entered master-sword light-beam movement outside Sprite_Main",
+                        )?;
+                        let slot = execution.current_slot.ok_or(
+                            "Snes9x entered master-sword light-beam movement before a sprite slot",
+                        )?;
+                        if event.x != Some(u16::from(slot)) {
+                            return Err(format!(
+                                "Snes9x master-sword light-beam movement disagreed on slot {slot}: x={:?}",
+                                event.x,
+                            ));
+                        }
+                        if execution.master_sword_light_beam_movement.is_some() {
+                            return Err(
+                                "Snes9x restarted master-sword light-beam movement before its slot returned"
+                                    .to_string(),
+                            );
+                        }
+                        execution.master_sword_light_beam_movement = Some((slot, 0));
                     }
                     ACTIVE_CUCCO_MOVEMENT_CALL_PC | CUCCO_FLEE_SUBTYPE_HELPER_CALL_PC
                         if self.sprite_main_execution.is_none() && event.main == Some(0x1a) =>
@@ -4328,6 +4532,7 @@ impl Snes9xOracleSemanticTrace {
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_fire_debirando_spawn_write(&event)?;
+                    execution.observe_master_sword_light_beam_spawn_write(&event)?;
                     execution.observe_antfairy_subtype2_increment(&event)?;
                     execution.observe_lanmola_subtype2_increment(&event)?;
                     execution.observe_helmasaur_hard_hat_beetle_subtype2_increment(&event)?;
@@ -4388,6 +4593,47 @@ impl Snes9xOracleSemanticTrace {
                                 );
                             }
                             execution.active_cucco_y_subpixel = Some((slot, helper_ordinal));
+                        }
+                    }
+                    if let Some((slot, checkpoint_ordinal)) =
+                        execution.master_sword_light_beam_movement.as_mut()
+                    {
+                        let slot = *slot;
+                        let expected = [
+                            SPRITE_X_SUBPIXEL_BASE,
+                            SPRITE_X_LOW_BASE,
+                            SPRITE_X_HIGH_BASE,
+                            SPRITE_Y_SUBPIXEL_BASE,
+                            SPRITE_Y_LOW_BASE,
+                            SPRITE_Y_HIGH_BASE,
+                        ];
+                        let movement_addresses = expected.map(|base| base + u16::from(slot));
+                        if let Some(index) = movement_addresses
+                            .iter()
+                            .position(|&candidate| candidate == address)
+                        {
+                            // `Sprite_MoveX` and `Sprite_MoveY` each return
+                            // without publishing any coordinate assignment
+                            // when that axis' velocity is zero. The first
+                            // observed Y store can therefore legitimately
+                            // follow the call site with no X stores. Preserve
+                            // the source checkpoint reached, rather than
+                            // counting only writes that happened to execute.
+                            let next_ordinal = match (*checkpoint_ordinal, index) {
+                                (0, 0) => 1,
+                                (1, 1) => 2,
+                                (2, 2) => 3,
+                                (0 | 3, 3) => 4,
+                                (4, 4) => 5,
+                                (5, 5) => 6,
+                                _ => {
+                                    return Err(format!(
+                                        "Snes9x master-sword light-beam movement stores were out of source order: checkpoint={} address=${address:04x}",
+                                        *checkpoint_ordinal,
+                                    ));
+                                }
+                            };
+                            *checkpoint_ordinal = next_ordinal;
                         }
                     }
                 }
@@ -6361,6 +6607,19 @@ fn retire_resumed_main_loop_interruption(
                     slot,
                     helper_ordinal,
                 }),
+                MainLoopInterruption::SpriteMainMasterSwordLightBeamMovement {
+                    slot,
+                    checkpoint,
+                } => Some(SpriteMainProgress::MasterSwordLightBeamMovement { slot, checkpoint }),
+                MainLoopInterruption::SpriteMainMasterSwordLightBeamSpawn {
+                    slot,
+                    spawned_slot,
+                    progress,
+                } => Some(SpriteMainProgress::MasterSwordLightBeamSpawn {
+                    slot,
+                    spawned_slot,
+                    progress,
+                }),
                 MainLoopInterruption::SpriteMainAfterCuccoSubtypeIncrements {
                     slot,
                     helper_ordinal,
@@ -7345,6 +7604,8 @@ mod tests {
             active_cucco_movement: None,
             active_cucco_x_publications: 0,
             active_cucco_y_subpixel: None,
+            master_sword_light_beam_movement: None,
+            master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
@@ -7796,6 +8057,210 @@ mod tests {
                     helper_ordinal: 0,
                 },
             )],
+        );
+    }
+
+    #[test]
+    fn master_sword_light_beam_exports_every_move_xy_assignment_prefix() {
+        let checkpoints = [
+            SpriteMoveXYCheckpoint::BeforeMovement,
+            SpriteMoveXYCheckpoint::AfterXSubpixel,
+            SpriteMoveXYCheckpoint::AfterXLow,
+            SpriteMoveXYCheckpoint::AfterXHigh,
+            SpriteMoveXYCheckpoint::AfterYSubpixel,
+            SpriteMoveXYCheckpoint::AfterYLow,
+            SpriteMoveXYCheckpoint::AfterYHigh,
+        ];
+        let addresses = [
+            SPRITE_X_SUBPIXEL_BASE + 2,
+            SPRITE_X_LOW_BASE + 2,
+            SPRITE_X_HIGH_BASE + 2,
+            SPRITE_Y_SUBPIXEL_BASE + 2,
+            SPRITE_Y_LOW_BASE + 2,
+            SPRITE_Y_HIGH_BASE + 2,
+        ];
+        for (completed, checkpoint) in checkpoints.into_iter().enumerate() {
+            let mut source = empty_semantic_tracker();
+            let mut receipts = Vec::new();
+            source
+                .consume_event(
+                    raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                    &mut receipts,
+                )
+                .unwrap();
+            source
+                .consume_event(
+                    raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(2), None),
+                    &mut receipts,
+                )
+                .unwrap();
+            source
+                .consume_event(
+                    raw(
+                        "pc",
+                        Some(MASTER_SWORD_LIGHT_BEAM_MOVEMENT_CALL_PC),
+                        Some(2),
+                        None,
+                    ),
+                    &mut receipts,
+                )
+                .unwrap();
+            for &address in &addresses[..completed] {
+                source
+                    .consume_event(
+                        raw("wram-write", Some(0x05_fa00), Some(2), Some(address)),
+                        &mut receipts,
+                    )
+                    .unwrap();
+            }
+            source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+            assert_eq!(
+                receipts,
+                vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::MasterSwordLightBeamMovement {
+                        slot: 2,
+                        checkpoint,
+                    },
+                )],
+            );
+        }
+    }
+
+    #[test]
+    fn master_sword_light_beam_zero_x_velocity_starts_at_y_assignment() {
+        let y_addresses = [
+            SPRITE_Y_SUBPIXEL_BASE + 10,
+            SPRITE_Y_LOW_BASE + 10,
+            SPRITE_Y_HIGH_BASE + 10,
+        ];
+        let checkpoints = [
+            SpriteMoveXYCheckpoint::AfterYSubpixel,
+            SpriteMoveXYCheckpoint::AfterYLow,
+            SpriteMoveXYCheckpoint::AfterYHigh,
+        ];
+
+        for (completed, checkpoint) in (1..=3).zip(checkpoints) {
+            let mut source = empty_semantic_tracker();
+            let mut receipts = Vec::new();
+            for event in [
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(10), None),
+                raw(
+                    "pc",
+                    Some(MASTER_SWORD_LIGHT_BEAM_MOVEMENT_CALL_PC),
+                    Some(10),
+                    None,
+                ),
+            ] {
+                source.consume_event(event, &mut receipts).unwrap();
+            }
+            for &address in &y_addresses[..completed] {
+                source
+                    .consume_event(
+                        raw("wram-write", Some(0x05_fa00), Some(10), Some(address)),
+                        &mut receipts,
+                    )
+                    .unwrap();
+            }
+            source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+            assert_eq!(
+                receipts,
+                vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::MasterSwordLightBeamMovement {
+                        slot: 10,
+                        checkpoint,
+                    },
+                )],
+            );
+        }
+    }
+
+    #[test]
+    fn master_sword_replacement_spawn_exports_shared_helper_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(5), None),
+            raw(
+                "pc",
+                Some(MASTER_SWORD_LIGHT_BEAM_MOVEMENT_CALL_PC),
+                Some(5),
+                None,
+            ),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+
+        let mut type_write = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC),
+            Some(5),
+            Some(SPRITE_TYPE_BASE + 3),
+        );
+        type_write.y = Some(3);
+        type_write.value = Some(0x62);
+        source.consume_event(type_write, &mut receipts).unwrap();
+
+        let mut state_write = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_STATE_STORE_PC),
+            Some(5),
+            Some(SPRITE_STATE_BASE + 3),
+        );
+        state_write.y = Some(3);
+        state_write.value = Some(9);
+        source.consume_event(state_write, &mut receipts).unwrap();
+
+        source
+            .consume_event(
+                raw("wram-write", Some(0x0d_b877), Some(3), Some(0x0e93)),
+                &mut receipts,
+            )
+            .unwrap();
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::MasterSwordLightBeamSpawn {
+                    slot: 5,
+                    spawned_slot: 3,
+                    progress: SpriteDynamicSpawnProgress::ResetProperties {
+                        completed_stores: 2,
+                    },
+                },
+            )],
+        );
+    }
+
+    #[test]
+    fn dynamic_spawn_outdoor_identity_publishes_after_atomic_word_store() {
+        let mut tracker = Some((5, 4, SpriteDynamicSpawnProgress::StatePublished));
+        let mut low = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_IDENTITY_STORE_PC),
+            Some(4),
+            Some(SPRITE_N_BASE + 8),
+        );
+        low.value = Some(0xff);
+        observe_dynamic_spawn_progress_write(&mut tracker, &low, "test").unwrap();
+        assert_eq!(
+            tracker,
+            Some((5, 4, SpriteDynamicSpawnProgress::StatePublished)),
+        );
+
+        let mut high = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_IDENTITY_STORE_PC),
+            Some(4),
+            Some(SPRITE_N_BASE + 9),
+        );
+        high.value = Some(0xff);
+        observe_dynamic_spawn_progress_write(&mut tracker, &high, "test").unwrap();
+        assert_eq!(
+            tracker,
+            Some((5, 4, SpriteDynamicSpawnProgress::IdentityPublished)),
         );
     }
 
@@ -10302,6 +10767,41 @@ mod tests {
     }
 
     #[test]
+    fn special_exit_second_decode_entry_proves_the_restore_prefix() {
+        let mut event = raw("pc", Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC), None, None);
+        event.return_address = Some(SPECIAL_EXIT_MOSAIC_SECOND_DECODE_RETURN_ADDRESS);
+        event.main = Some(0x0b);
+        event.sub = Some(0x24);
+
+        assert!(special_exit_mosaic_restore_checkpoint(&event).unwrap());
+
+        event.sub = Some(0x23);
+        assert!(special_exit_mosaic_restore_checkpoint(&event).is_err());
+    }
+
+    #[test]
+    fn special_exit_terminal_return_supersedes_the_restore_checkpoint() {
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame_with_sub("entry", 7426, 0x0b, 0x24))
+            .unwrap();
+        host.observe(&frame_with_sub("return", 7426, 0x0b, 0x25))
+            .unwrap();
+        let mut receipts = vec![OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored];
+
+        host.finish(&mut receipts, None, true).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned,
+            ],
+        );
+    }
+
+    #[test]
     fn world_map_overlay_reload_return_becomes_a_backend_neutral_receipt() {
         let mut host = HostFrameWindow::default();
         host.observe(&frame_with_sub("entry", 6168, 9, 0x20))
@@ -11320,6 +11820,8 @@ mod tests {
             active_cucco_movement: None,
             active_cucco_x_publications: 0,
             active_cucco_y_subpixel: None,
+            master_sword_light_beam_movement: None,
+            master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
@@ -11378,6 +11880,8 @@ mod tests {
             active_cucco_movement: None,
             active_cucco_x_publications: 0,
             active_cucco_y_subpixel: None,
+            master_sword_light_beam_movement: None,
+            master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,

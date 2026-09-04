@@ -4878,6 +4878,21 @@ enum SpriteMainCpuBoundary {
         y_low: Option<u8>,
         y_high: Option<u8>,
     },
+    /// A master-sword light beam is suspended at an exact assignment in its
+    /// `Sprite_MoveXY` call. Computed coordinate bytes are bound by native
+    /// execution before the continuation is parked.
+    MasterSwordLightBeamMovement {
+        slot: u8,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+        continuation: Option<SpriteMoveXYContinuation>,
+    },
+    /// The same light beam has completed movement and published a prefix of
+    /// its frame-gated replacement `Sprite_SpawnDynamically` call.
+    MasterSwordLightBeamSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: crate::SpriteDynamicSpawnProgress,
+    },
     /// `Cucco_Flee` published its movement/Z/retarget prefix and is about to
     /// enter the shared subtype helper. The helper ordinal distinguishes this
     /// call from the optional state-10 helper in the same sprite invocation.
@@ -5027,6 +5042,14 @@ enum SpriteMainCpuBoundary {
         slot: u8,
         completed_stores: u8,
     },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct SpriteMoveXYContinuation {
+    x_low: u8,
+    x_high: u8,
+    y_low: u8,
+    y_high: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5213,6 +5236,12 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel {
             slot: active_slot, ..
         }
+        | SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
+            slot: active_slot, ..
+        }
         | SpriteMainCpuBoundary::AfterCuccoFleeMovement {
             slot: active_slot, ..
         }
@@ -5390,6 +5419,33 @@ fn sprite_main_cpu_boundary_from_interruption(
                 helper_ordinal,
                 y_low: None,
                 y_high: None,
+            })
+        }
+        crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamMovement {
+            slot,
+            checkpoint,
+        } => {
+            assert!(
+                slot < 16,
+                "source master-sword movement used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                slot,
+                checkpoint,
+                continuation: None,
+            })
+        }
+        crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => {
+            assert!(slot < 16 && spawned_slot < 16);
+            assert!(valid_dynamic_spawn_progress(progress));
+            Some(SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
+                slot,
+                spawned_slot,
+                progress,
             })
         }
         crate::MainLoopInterruption::SpriteMainAfterCuccoFleeMovement {
@@ -5651,6 +5707,15 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
             slot,
         )
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => slot < 16,
+        crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamMovement {
+            slot,
+            checkpoint: _,
+        } => slot < 16,
+        crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => slot < 16 && spawned_slot < 16 && valid_dynamic_spawn_progress(progress),
         crate::MainLoopInterruption::SpriteMainMiniMoldormHistory {
             slot,
             completed_stores,
@@ -5817,6 +5882,15 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         crate::SpriteMainProgress::AfterCuccoSubtypeIncrements {
             slot, completed, ..
         } => slot < 16 && completed >= 1 && completed <= 5,
+        crate::SpriteMainProgress::MasterSwordLightBeamMovement {
+            slot,
+            checkpoint: _,
+        } => slot < 16,
+        crate::SpriteMainProgress::MasterSwordLightBeamSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => slot < 16 && spawned_slot < 16 && valid_dynamic_spawn_progress(progress),
     }
 }
 
@@ -5924,6 +5998,30 @@ fn sprite_main_cpu_boundary_from_progress(
                 helper_ordinal,
                 y_low: None,
                 y_high: None,
+            }
+        }
+        crate::SpriteMainProgress::MasterSwordLightBeamMovement { slot, checkpoint } => {
+            assert!(
+                slot < 16,
+                "source master-sword movement used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                slot,
+                checkpoint,
+                continuation: None,
+            }
+        }
+        crate::SpriteMainProgress::MasterSwordLightBeamSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => {
+            assert!(slot < 16 && spawned_slot < 16);
+            assert!(valid_dynamic_spawn_progress(progress));
+            SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
+                slot,
+                spawned_slot,
+                progress,
             }
         }
         crate::SpriteMainProgress::AfterCuccoFleeMovement {
@@ -6162,6 +6260,8 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterCuccoFleeMovement { .. }
         | crate::MainLoopInterruption::SpriteMainAfterCuccoSubtypeIncrements { .. }
         | crate::MainLoopInterruption::SpriteMainAfterCuccoGraphicsPublication { .. }
+        | crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamMovement { .. }
+        | crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamSpawn { .. }
         | crate::MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(_)
@@ -6356,6 +6456,34 @@ fn same_sprite_main_source_checkpoint(
                 slot: right_slot, ..
             },
         ) => left_slot == right_slot,
+        (
+            SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                slot: left_slot,
+                checkpoint: left_checkpoint,
+                ..
+            },
+            SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                slot: right_slot,
+                checkpoint: right_checkpoint,
+                ..
+            },
+        ) => left_slot == right_slot && left_checkpoint == right_checkpoint,
+        (
+            SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
+                slot: left_slot,
+                spawned_slot: left_spawned,
+                progress: left_progress,
+            },
+            SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
+                slot: right_slot,
+                spawned_slot: right_spawned,
+                progress: right_progress,
+            },
+        ) => {
+            left_slot == right_slot
+                && left_spawned == right_spawned
+                && left_progress == right_progress
+        }
         _ => left == right,
     }
 }
@@ -6389,6 +6517,8 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AfterThrowableSceneryStateClear(slot)
         | SpriteMainCpuBoundary::AfterActiveCuccoX { slot, .. }
         | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel { slot, .. }
+        | SpriteMainCpuBoundary::MasterSwordLightBeamMovement { slot, .. }
+        | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn { slot, .. }
         | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }
         | SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements { slot, .. }
         | SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(slot)
@@ -8386,6 +8516,10 @@ enum GameWorkContinuation {
     /// decode is staged, while the restore and submodule advance remain
     /// pending until the wire reports the enclosing source-stage return.
     FinishOverworldSpecialExitMosaic,
+    /// Module0B/$24 restored the saved special-overworld state and entered
+    /// its second `DecodeAnimatedSpriteTile_variable` call. Only that decode,
+    /// the submodule advance, and the Module09 caller suffix remain pending.
+    FinishOverworldSpecialExitMosaicSecondDecode,
 }
 
 const fn game_over_spotlight_build_uses_live_oam(work: Option<GameWorkContinuation>) -> bool {
@@ -8449,6 +8583,7 @@ impl GameWorkContinuation {
                 | Self::FinishOverworldAuxGraphics
                 | Self::FinishOverworldMosaicSpriteGraphics
                 | Self::FinishOverworldSpecialExitMosaic
+                | Self::FinishOverworldSpecialExitMosaicSecondDecode
                 | Self::FinishModule09LongLoad { .. }
                 | Self::FinishOverworldMapQuadrants { .. }
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
@@ -8491,6 +8626,7 @@ impl GameWorkContinuation {
                 | Self::FinishOverworldAuxGraphics
                 | Self::FinishOverworldMosaicSpriteGraphics
                 | Self::FinishOverworldSpecialExitMosaic
+                | Self::FinishOverworldSpecialExitMosaicSecondDecode
                 | Self::FinishModule09LongLoad { .. }
                 | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
                 | Self::FinishOverworldSpriteReloadTail { .. }
@@ -8554,6 +8690,7 @@ impl GameWorkContinuation {
             | Self::FinishOverworldAuxGraphics
             | Self::FinishOverworldMosaicSpriteGraphics
             | Self::FinishOverworldSpecialExitMosaic
+            | Self::FinishOverworldSpecialExitMosaicSecondDecode
             | Self::FinishOverworldScreenMapAndSpriteGraphicsTail
             | Self::FinishOverworldSpriteReloadTail { .. }
             | Self::FinishItemReceiptGraphics { .. }
@@ -8650,6 +8787,7 @@ impl GameWorkContinuation {
             Self::FinishOverworldAuxGraphics
             | Self::FinishOverworldMosaicSpriteGraphics
             | Self::FinishOverworldSpecialExitMosaic
+            | Self::FinishOverworldSpecialExitMosaicSecondDecode
             | Self::HoldOverworldSpriteReloadReturn => GameWorkCompletionPublication {
                 bg_scroll: Some(DisplayBgScrollGeneration::ComposeLiveAfterNmi),
                 obj: None,
@@ -22837,8 +22975,9 @@ impl ZeldaState {
                     // The state-10 body consumes this host-return cursor when
                     // it reaches the synchronous follower-graphics call.
                     | OriginalTimingSemanticReceipt::RescuedMaidenInitializationProgress(_)
-                    // Module0B/$24 consumes this stage return from its
-                    // suspended animated-sprite decode continuation.
+                    // Module0B/$24 consumes these staged source checkpoints
+                    // from its suspended animated-sprite decode continuation.
+                    | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored
                     | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned
                     // Module0F's entry call can return inside a fresh
                     // iteration whose trailing acceptance stays held; the
@@ -26952,6 +27091,29 @@ impl ZeldaState {
             }
         });
         published
+    }
+
+    fn take_original_timing_overworld_special_exit_mosaic_restored(&mut self) -> bool {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return false;
+        }
+        let Some(receipts) = self.original_timing_semantic_receipts.as_mut() else {
+            return false;
+        };
+        let mut restored = false;
+        receipts.semantic.retain(|receipt| {
+            if matches!(
+                receipt,
+                OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored
+            ) {
+                assert!(!restored, "special-exit mosaic restore receipt replayed");
+                restored = true;
+                false
+            } else {
+                true
+            }
+        });
+        restored
     }
 
     fn take_original_timing_overworld_special_exit_mosaic_returned(&mut self) -> bool {
@@ -40590,8 +40752,29 @@ impl ZeldaState {
                 );
         let authoritative_overworld_map_quadrants_published =
             self.take_original_timing_overworld_map_quadrants_published();
+        let authoritative_overworld_special_exit_mosaic_restored =
+            self.take_original_timing_overworld_special_exit_mosaic_restored();
         let authoritative_overworld_special_exit_mosaic_returned =
             self.take_original_timing_overworld_special_exit_mosaic_returned();
+        if authoritative_overworld_special_exit_mosaic_restored {
+            assert_eq!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishOverworldSpecialExitMosaic),
+                "special-exit mosaic restore receipt reached the wrong native source stage",
+            );
+        }
+        if authoritative_overworld_special_exit_mosaic_returned {
+            assert!(
+                matches!(
+                    self.game_execution_scheduler.current_work(),
+                    Some(
+                        GameWorkContinuation::FinishOverworldSpecialExitMosaic
+                            | GameWorkContinuation::FinishOverworldSpecialExitMosaicSecondDecode
+                    )
+                ),
+                "special-exit mosaic return receipt reached the wrong native source stage",
+            );
+        }
         if let Some(progress) = self.take_original_timing_dungeon_falling_entrance_progress() {
             self.apply_original_timing_dungeon_falling_entrance_progress(progress);
         }
@@ -43450,13 +43633,28 @@ impl ZeldaState {
                     .advance_work_one_nmi_slice_with_authoritative_completion(
                         caller_reached_sprite_main,
                     )
-            } else if self.game_execution_scheduler.current_work()
-                == Some(GameWorkContinuation::FinishOverworldSpecialExitMosaic)
+            } else if matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(
+                    GameWorkContinuation::FinishOverworldSpecialExitMosaic
+                        | GameWorkContinuation::FinishOverworldSpecialExitMosaicSecondDecode
+                )
+            )
                 && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
             {
+                let source_stage_completed = match self.game_execution_scheduler.current_work() {
+                    Some(GameWorkContinuation::FinishOverworldSpecialExitMosaic) => {
+                        authoritative_overworld_special_exit_mosaic_restored
+                            || authoritative_overworld_special_exit_mosaic_returned
+                    }
+                    Some(GameWorkContinuation::FinishOverworldSpecialExitMosaicSecondDecode) => {
+                        authoritative_overworld_special_exit_mosaic_returned
+                    }
+                    _ => unreachable!("special-exit mosaic work changed before advancement"),
+                };
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(
-                        authoritative_overworld_special_exit_mosaic_returned,
+                        source_stage_completed,
                     )
             } else if matches!(
                 self.game_execution_scheduler.current_work(),
@@ -47312,7 +47510,8 @@ impl ZeldaState {
                 GameWorkStep::Complete(
                     work @ (GameWorkContinuation::FinishOverworldAuxGraphics
                     | GameWorkContinuation::FinishOverworldMosaicSpriteGraphics
-                    | GameWorkContinuation::FinishOverworldSpecialExitMosaic),
+                    | GameWorkContinuation::FinishOverworldSpecialExitMosaic
+                    | GameWorkContinuation::FinishOverworldSpecialExitMosaicSecondDecode),
                 ) => {
                     // PC/V-counter traces remain in the active Module09
                     // graphics conversion through this frame's vblank,
@@ -47360,17 +47559,63 @@ impl ZeldaState {
                             continued_sprite_main_claims,
                         );
                     }
-                    match work {
+                    let caller_remains_suspended = match work {
                         GameWorkContinuation::FinishOverworldAuxGraphics => {
                             self.complete_module09_load_aux_gfx();
+                            false
                         }
                         GameWorkContinuation::FinishOverworldMosaicSpriteGraphics => {
                             self.complete_overworld_mosaic_sprite_graphics();
+                            false
                         }
                         GameWorkContinuation::FinishOverworldSpecialExitMosaic => {
-                            self.complete_overworld_start_mosaic_after_animated_sprite_tile();
+                            let special_exit_caller = self.game_state.frame.main_module == 0x0b
+                                && self.game_state.frame.submodule == 0x24;
+                            if !special_exit_caller
+                                || authoritative_overworld_special_exit_mosaic_returned
+                            {
+                                self.complete_overworld_start_mosaic_after_animated_sprite_tile();
+                                false
+                            } else {
+                                assert!(
+                                    authoritative_overworld_special_exit_mosaic_restored,
+                                    "special-exit mosaic first decode completed without a source restore checkpoint",
+                                );
+                                assert!(
+                                    self.publish_overworld_special_exit_mosaic_restore_prefix(),
+                                    "special-exit mosaic restore checkpoint did not enter its source second decode",
+                                );
+                                self.game_execution_scheduler.schedule_work(
+                                    GameWorkContinuation::FinishOverworldSpecialExitMosaicSecondDecode,
+                                    4,
+                                );
+                                true
+                            }
+                        }
+                        GameWorkContinuation::FinishOverworldSpecialExitMosaicSecondDecode => {
+                            assert!(
+                                authoritative_overworld_special_exit_mosaic_returned,
+                                "special-exit mosaic second decode completed without its source caller return",
+                            );
+                            self.complete_overworld_special_exit_mosaic_after_second_decode();
+                            false
                         }
                         _ => unreachable!("combined Module09 graphics completion changed kind"),
+                    };
+                    if caller_remains_suspended {
+                        // The restore checkpoint is inside Module0B/$24's
+                        // second animated-tile decode. The ROM has not yet
+                        // reached Module09's Sprite_Main/HUD suffix, so do
+                        // not create or consume any of that caller's claims.
+                        assert!(
+                            authoritative_scheduled_caller_return_timeline.is_none(),
+                            "a special-exit restore checkpoint cannot own a terminal caller return",
+                        );
+                        assert_eq!(
+                            continued_sprite_main_claims, 0,
+                            "a special-exit restore checkpoint cannot own Sprite_Main returns",
+                        );
+                        return;
                     }
                     self.complete_module09_overworld_after_submodule();
                     if self

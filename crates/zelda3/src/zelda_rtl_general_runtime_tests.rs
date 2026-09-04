@@ -1991,6 +1991,55 @@ fn special_exit_mosaic_waits_for_its_source_stage_return() {
 }
 
 #[test]
+fn special_exit_mosaic_restore_and_second_decode_are_distinct_source_stages() {
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state
+        .game_execution_scheduler
+        .schedule_work(GameWorkContinuation::FinishOverworldSpecialExitMosaic, 4);
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        266_268,
+        0,
+        vec![OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored],
+    ));
+
+    let restored = state.take_original_timing_overworld_special_exit_mosaic_restored();
+    let returned = state.take_original_timing_overworld_special_exit_mosaic_returned();
+    assert!(restored);
+    assert!(!returned);
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .advance_work_one_nmi_slice_with_authoritative_completion(restored || returned),
+        Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishOverworldSpecialExitMosaic,
+        )),
+    );
+
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishOverworldSpecialExitMosaicSecondDecode,
+        4,
+    );
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        266_272,
+        0,
+        vec![OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned],
+    ));
+    let restored = state.take_original_timing_overworld_special_exit_mosaic_restored();
+    let returned = state.take_original_timing_overworld_special_exit_mosaic_returned();
+    assert!(!restored);
+    assert!(returned);
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .advance_work_one_nmi_slice_with_authoritative_completion(returned),
+        Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishOverworldSpecialExitMosaicSecondDecode,
+        )),
+    );
+}
+
+#[test]
 fn live_mirror_warp_reload_retains_and_restores_source_scan_locals() {
     let mut state = ZeldaState::new();
     state.original_timing_owner = OriginalTimingOwnerState::Live;
@@ -7577,6 +7626,133 @@ fn active_cucco_y_subpixel_checkpoint_resumes_without_replaying_movement() {
     };
 
     resumed.complete_active_cucco_after_y_subpixel(5, 0, y_low, y_high);
+    resumed.sprite_main_cpu_boundary = None;
+
+    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(resumed.game_state, atomic.game_state);
+}
+
+#[test]
+fn master_sword_light_beam_move_xy_checkpoints_resume_without_replaying_stores() {
+    fn configured_state() -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.set_main_module(9);
+        state.game_state.frame.frame_counter = 1;
+        state.oam_reset_region_bases();
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state
+            .oam_state_mut()
+            .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+        state.sprite_system_mut().set_cur_object_index(2);
+        let mut sprite = state.sprite_slot_view_mut(2);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x62);
+        sprite.set_subtype2(2);
+        sprite.set_a(1);
+        sprite.set_b(3);
+        sprite.set_x(0x0133);
+        sprite.set_y(0x024b);
+        sprite.set_x_velocity(0xd0);
+        sprite.set_y_velocity(0x27);
+        sprite.set_x_subpixel(0x20);
+        sprite.set_y_subpixel(0x90);
+        state
+    }
+
+    let checkpoints = [
+        crate::SpriteMoveXYCheckpoint::BeforeMovement,
+        crate::SpriteMoveXYCheckpoint::AfterXSubpixel,
+        crate::SpriteMoveXYCheckpoint::AfterXLow,
+        crate::SpriteMoveXYCheckpoint::AfterXHigh,
+        crate::SpriteMoveXYCheckpoint::AfterYSubpixel,
+        crate::SpriteMoveXYCheckpoint::AfterYLow,
+        crate::SpriteMoveXYCheckpoint::AfterYHigh,
+    ];
+    let mut atomic = configured_state();
+    atomic.sprite_master_sword_light_beam(2);
+
+    for checkpoint in checkpoints {
+        let mut resumed = configured_state();
+        resumed.sprite_main_cpu_boundary =
+            Some(SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                slot: 2,
+                checkpoint,
+                continuation: None,
+            });
+        resumed.sprite_master_sword_light_beam(2);
+        let Some(SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+            slot: 2,
+            checkpoint: observed,
+            continuation: Some(continuation),
+        }) = resumed.sprite_main_cpu_boundary
+        else {
+            panic!("master-sword movement did not bind its coordinate continuation")
+        };
+        assert_eq!(observed, checkpoint);
+        resumed.complete_master_sword_light_beam_movement(2, checkpoint, continuation);
+        resumed.sprite_main_cpu_boundary = None;
+        assert_eq!(resumed.ram, atomic.ram, "checkpoint {checkpoint:?}");
+        assert_eq!(
+            resumed.game_state, atomic.game_state,
+            "checkpoint {checkpoint:?}"
+        );
+    }
+}
+
+#[test]
+fn master_sword_replacement_spawn_resumes_after_the_exact_helper_prefix() {
+    fn configured_state() -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.set_main_module(9);
+        state.game_state.frame.frame_counter = 0;
+        state.oam_reset_region_bases();
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state
+            .oam_state_mut()
+            .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+        for slot in 4..16 {
+            let mut sprite = state.sprite_slot_view_mut(slot);
+            sprite.set_state(9);
+            sprite.set_sprite_type(1);
+        }
+        state.sprite_system_mut().set_cur_object_index(5);
+        let mut sprite = state.sprite_slot_view_mut(5);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x62);
+        sprite.set_subtype2(2);
+        sprite.set_a(1);
+        sprite.set_b(3);
+        sprite.set_graphics(3);
+        sprite.set_oam_flags(0x24);
+        sprite.set_x(0x0133);
+        sprite.set_y(0x024b);
+        state
+    }
+
+    let progress = crate::SpriteDynamicSpawnProgress::ResetProperties {
+        completed_stores: 1,
+    };
+    let mut atomic = configured_state();
+    atomic.sprite_master_sword_light_beam(5);
+
+    let mut resumed = configured_state();
+    resumed.sprite_main_cpu_boundary = Some(SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
+        slot: 5,
+        spawned_slot: 3,
+        progress,
+    });
+    resumed.sprite_master_sword_light_beam(5);
+    assert_eq!(resumed.sprite_slot_view(3).sprite_type(), 0x62);
+    assert_eq!(resumed.sprite_slot_view(3).state(), 9);
+
+    let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
+    resumed.sprite_spawn_dynamically_selected_from(5, &mut info, 3, progress);
+    resumed.master_sword_finish_replacement_light_beam_spawn(5, 3, info.r0_x, info.r2_y);
+    let new_b = resumed.sprite_slot_view(5).b().wrapping_sub(1);
+    resumed.sprite_slot_view_mut(5).set_b(new_b);
+    if new_b == 0 {
+        resumed.sprite_slot_view_mut(5).set_state(0);
+    }
     resumed.sprite_main_cpu_boundary = None;
 
     assert_eq!(resumed.ram, atomic.ram);

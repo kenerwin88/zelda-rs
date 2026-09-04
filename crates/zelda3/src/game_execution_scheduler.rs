@@ -482,6 +482,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishWorldMapAmbientMap8
                 | GameWorkContinuation::FinishFluteMenuSelectedScreen { .. }
                 | GameWorkContinuation::FinishDungeonCachedSpriteMain { .. }
+                | GameWorkContinuation::FinishOverworldSpecialExitMosaicSecondDecode
                 | GameWorkContinuation::FinishSpiralStaircasePaletteFilter { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightEntry { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { .. }

@@ -59,7 +59,8 @@ pub use timing_receipts::{
     SaveMenuInitializationProgress, SourceCallProgress, SpotlightTableBuildCheckpoint,
     SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt, SpriteDynamicSpawnProgress,
     SpriteFollowerGraphicsCaller, SpriteInitializeResetPropertiesPhase, SpriteMainProgress,
-    SpriteResetAllProgress, SpriteResetAllProgressReceipt, TriforceRoomCase2PaletteProgressReceipt,
+    SpriteMoveXYCheckpoint, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
+    TriforceRoomCase2PaletteProgressReceipt,
 };
 pub use zelda3_dialogue as dialogue_ir;
 pub use zelda_rtl::{
