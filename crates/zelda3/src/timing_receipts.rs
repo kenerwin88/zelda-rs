@@ -669,12 +669,12 @@ pub enum MainLoopInterruption {
     /// private; translated gameplay resumes the complete suffix without
     /// replaying the entry call.
     DungeonExitSpotlightAfterSubmodule,
-    /// `Link_HandleVelocity` reached its actual-velocity loop. The source
-    /// cursor distinguishes an unresolved horizontal pass from a completed
-    /// horizontal pass. Speed selection is complete; vertical publication
-    /// and movement remain pending in either case.
+    /// `Link_HandleVelocity` cleared actual velocity and movement deltas.
+    /// `None` retains speed adjustment before the actual-velocity loop;
+    /// `Some(false)` is the first pass and `Some(true)` the second pass.
+    /// Vertical publication and movement remain pending in every case.
     LinkActualVelocity {
-        horizontal_resolved: bool,
+        horizontal_resolved: Option<bool>,
     },
     /// The main-loop module reached Link's movement call, but the accepted NMI
     /// preceded the first coordinate publication. The timing authority keeps

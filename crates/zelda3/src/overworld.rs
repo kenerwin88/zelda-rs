@@ -3719,7 +3719,7 @@ impl ZeldaState {
 
     fn module0f_spotlight_close_velocity_until_actual_checkpoint(
         &mut self,
-        horizontal_resolved: bool,
+        horizontal_resolved: Option<bool>,
     ) -> Option<LinkActualVelocityReturn> {
         if self.game_state.world.location.is_outdoors() {
             if self.game_state.world.location.overworld_screen_index() == 0x0f {
@@ -4010,7 +4010,7 @@ impl ZeldaState {
         &mut self,
         table_build: SpotlightTableBuildContinuation,
         iteration: SpotlightIteration,
-        horizontal_resolved: bool,
+        horizontal_resolved: Option<bool>,
     ) {
         let (_, iteration) =
             self.complete_dungeon_exit_spotlight_entry_before_link(table_build, iteration);
@@ -4167,7 +4167,7 @@ impl ZeldaState {
         table_build: SpotlightTableBuildContinuation,
         projection_completed: bool,
         iteration: SpotlightIteration,
-        horizontal_resolved: bool,
+        horizontal_resolved: Option<bool>,
     ) {
         if projection_completed {
             self.complete_iris_spotlight_configure_table_after_projection();

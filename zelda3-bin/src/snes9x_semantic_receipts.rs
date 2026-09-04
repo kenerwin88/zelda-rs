@@ -6164,7 +6164,14 @@ fn main_loop_interruption_for_source_state(
             .contains(&pc)
     {
         Some(MainLoopInterruption::LinkActualVelocity {
-            horizontal_resolved: x == Some(0),
+            horizontal_resolved: Some(x == Some(0)),
+        })
+    } else if main == Some(0x0f) && sub == Some(1) && (0x07_e2d2..0x07_e2e8).contains(&pc) {
+        // All four STZ stores ($27, $28, $68, $69) have completed.
+        // Direction indexing is call-local; the next stateful branch starts
+        // after LDA $5b at $07:E2E7. Retain the selected speed for its suffix.
+        Some(MainLoopInterruption::LinkActualVelocity {
+            horizontal_resolved: None,
         })
     } else if main == Some(0x0f)
         && sub == Some(1)
@@ -9013,6 +9020,8 @@ mod tests {
     fn guard_draw_cursors_distinguish_body_and_weapon_store_prefixes() {
         use zelda3::GuardAnimationCheckpoint as Stage;
         for (pc, x, y, expected) in [
+            (0x05_c717, 0, 2, Stage::HeadCharacterPending),
+            (0x05_ca9e, 35, 6, Stage::BodyFlagsPending { entry: 3 }),
             (0x05_ca29, 33, 12, Stage::BodyBeforeEntry { entry: 1 }),
             (0x05_ca6b, 66, 13, Stage::BodyCoordinates { entry: 1 }),
             (0x05_ca96, 34, 10, Stage::BodyFlagsPending { entry: 2 }),
@@ -12445,6 +12454,12 @@ mod tests {
     #[test]
     fn host_boundary_after_actual_x_velocity_retains_the_pending_y_component() {
         assert_eq!(
+            main_loop_interruption_for_source_state(0x07_e2de, Some(0x0f), Some(1), Some(0)),
+            Some(MainLoopInterruption::LinkActualVelocity {
+                horizontal_resolved: None
+            }),
+        );
+        assert_eq!(
             main_loop_interruption_for_source_state(
                 MODULE0F_LINK_VELOCITY_CALL_PC,
                 Some(0x0f),
@@ -12456,13 +12471,13 @@ mod tests {
         assert_eq!(
             main_loop_interruption_for_source_state(0x07_e352, Some(0x0f), Some(1), Some(0),),
             Some(MainLoopInterruption::LinkActualVelocity {
-                horizontal_resolved: true
+                horizontal_resolved: Some(true)
             }),
         );
         assert_eq!(
             main_loop_interruption_for_source_state(0x07_e352, Some(0x0f), Some(1), Some(1),),
             Some(MainLoopInterruption::LinkActualVelocity {
-                horizontal_resolved: false
+                horizontal_resolved: Some(false)
             }),
             "the horizontal pass has not completed while X still names it",
         );

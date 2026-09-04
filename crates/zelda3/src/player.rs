@@ -1858,16 +1858,23 @@ impl ZeldaState {
     /// retaining whichever components have not yet been published.
     pub(super) fn link_handle_velocity_until_actual_checkpoint(
         &mut self,
-        horizontal_resolved: bool,
+        horizontal_resolved: Option<bool>,
     ) -> Option<LinkActualVelocityReturn> {
-        let (direction, velocity) =
-            self.link_handle_velocity_before_actual_velocity_resolution()?;
+        let speed_index = self.link_handle_velocity_until_velocity_cleared()?;
+        if horizontal_resolved.is_none() {
+            return Some(LinkActualVelocityReturn {
+                pending_speed_index: Some(speed_index),
+                pending_actual_x: None,
+                pending_actual_y: None,
+            });
+        }
+        let (direction, velocity) = self.link_handle_velocity_after_velocity_cleared(speed_index);
         let mut pending_actual_x = (direction & 0x03 != 0).then_some(if direction & 0x02 != 0 {
             0u8.wrapping_sub(velocity)
         } else {
             velocity
         });
-        if let Some(actual_x) = pending_actual_x.filter(|_| horizontal_resolved) {
+        if let Some(actual_x) = pending_actual_x.filter(|_| horizontal_resolved == Some(true)) {
             self.follower_link_state_mut()
                 .set_actual_x_velocity(actual_x);
             pending_actual_x = None;
@@ -1878,6 +1885,7 @@ impl ZeldaState {
             velocity
         });
         Some(LinkActualVelocityReturn {
+            pending_speed_index: None,
             pending_actual_x,
             pending_actual_y,
         })
@@ -1889,6 +1897,12 @@ impl ZeldaState {
         &mut self,
         velocity_return: LinkActualVelocityReturn,
     ) -> Option<LinkMovePositionReturn> {
+        if let Some(speed_index) = velocity_return.pending_speed_index {
+            let (direction, velocity) =
+                self.link_handle_velocity_after_velocity_cleared(speed_index);
+            self.follower_link_state_mut()
+                .set_actual_velocity_from_direction(direction, velocity);
+        }
         if let Some(actual_x) = velocity_return.pending_actual_x {
             self.follower_link_state_mut()
                 .set_actual_x_velocity(actual_x);
@@ -1919,6 +1933,11 @@ impl ZeldaState {
     /// Run the stateful speed-selection prefix, stopping before either
     /// component of actual velocity is resolved.
     fn link_handle_velocity_before_actual_velocity_resolution(&mut self) -> Option<(u8, u8)> {
+        let speed_index = self.link_handle_velocity_until_velocity_cleared()?;
+        Some(self.link_handle_velocity_after_velocity_cleared(speed_index))
+    }
+
+    fn link_handle_velocity_until_velocity_cleared(&mut self) -> Option<u8> {
         let old_x = self.game_state.player.follower_link.x();
         let old_y = self.game_state.player.follower_link.y();
 
@@ -1939,7 +1958,7 @@ impl ZeldaState {
             return None;
         }
 
-        let mut speed_index = if self.game_state.player.follower_link.flag_moving() != 0 {
+        let speed_index = if self.game_state.player.follower_link.flag_moving() != 0 {
             if !self.game_state.player.follower_link.is_running() {
                 self.handle_swim_stroke_and_subpixels();
                 return None;
@@ -1983,7 +2002,10 @@ impl ZeldaState {
 
         self.follower_link_state_mut()
             .clear_actual_velocity_and_page_movement_deltas();
+        Some(speed_index)
+    }
 
+    fn link_handle_velocity_after_velocity_cleared(&mut self, mut speed_index: u8) -> (u8, u8) {
         let direction = self.game_state.player.follower_link.direction();
         if (direction & 0x0c) != 0 && (direction & 0x03) != 0 {
             speed_index = speed_index.wrapping_add(1);
@@ -2017,7 +2039,7 @@ impl ZeldaState {
             .follower_link
             .speed_modifier()
             .wrapping_add(LINK_HANDLE_VELOCITY_SPEED_MOD[speed_index as usize]);
-        Some((self.game_state.player.follower_link.direction(), velocity))
+        (self.game_state.player.follower_link.direction(), velocity)
     }
 
     /// `Link_MovePosition` up to and including the `pass` axis' subpixel

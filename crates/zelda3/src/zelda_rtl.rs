@@ -8196,6 +8196,7 @@ pub(super) struct LinkMovePositionReturn {
 /// components and the movement call remain on the source stack.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct LinkActualVelocityReturn {
+    pending_speed_index: Option<u8>,
     pending_actual_x: Option<u8>,
     pending_actual_y: Option<u8>,
 }

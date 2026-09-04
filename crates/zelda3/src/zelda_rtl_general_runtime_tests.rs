@@ -13997,7 +13997,9 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
         state
     }
 
-    for horizontal_resolved in [false, true] {
+    // Original ROM $07:E2DE (host 340155) has cleared velocity but has
+    // not adjusted speed; $07:E346 reaches the later per-axis loop.
+    for horizontal_resolved in [None, Some(false), Some(true)] {
         for direction in [8, 2, 10] {
             let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
             let mut atomic = configured_state(direction);
@@ -14022,7 +14024,7 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
             assert_eq!(resumed.game_state.player.follower_link.y(), entry_y);
             assert_eq!(
                 resumed.game_state.player.follower_link.actual_x_velocity(),
-                if horizontal_resolved {
+                if horizontal_resolved == Some(true) {
                     atomic.game_state.player.follower_link.actual_x_velocity()
                 } else {
                     0
@@ -14047,12 +14049,12 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
             };
             assert_eq!(
                 velocity_return.pending_actual_y,
-                (direction & 12 != 0)
+                (horizontal_resolved.is_some() && direction & 12 != 0)
                     .then_some(atomic.game_state.player.follower_link.actual_y_velocity())
             );
             assert_eq!(
                 velocity_return.pending_actual_x,
-                (!horizontal_resolved && direction & 3 != 0)
+                (horizontal_resolved == Some(false) && direction & 3 != 0)
                     .then_some(atomic.game_state.player.follower_link.actual_x_velocity())
             );
             resumed.complete_dungeon_exit_spotlight_link_actual_velocity(
