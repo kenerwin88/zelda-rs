@@ -49,7 +49,9 @@ const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
 // Schema 49 adds exact Lanmola draw publication and the zero-hit-timer branch,
 // and recognizes the publication-free `$00:F361` spotlight loop prefix.
 // Older caches cannot prove these source statement boundaries.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 49;
+// Schema 50 adds source-ordered partial publication of Intro_ValidateSram's
+// final low-WRAM clear. Schema 49 ledgers only proved the loop's completion.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 50;
 
 // Source instructions which sample APUI00 while waiting for an item fanfare
 // to end. These adapter-only PCs become backend-neutral sample offsets before
@@ -14985,7 +14987,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 49);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 50);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None

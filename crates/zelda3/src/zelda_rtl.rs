@@ -112,12 +112,12 @@ use crate::rom_cpu_timing::{RomCpuCheckpoint, RomCpuTimingRun};
 use crate::timing_receipts::{
     sanitize_original_timing_input, CachedSpriteExecutionProgressReceipt,
     CreditsEndSequence32ProgressReceipt, CreditsSceneLoadProgressReceipt,
-    DungeonResetSpritesProgressReceipt, ItemReceiptGraphicsCaller,
-    ItemReceiptGraphicsProgressReceipt, NmiUpdateGate, OriginalTimingBoundary,
-    OriginalTimingHostReceipts, OriginalTimingReceiptInstallError, OriginalTimingSemanticReceipt,
-    SaveMenuInitializationProgress, SourceCallProgress, SpotlightTableBuildProgress,
-    SpotlightTableBuildProgressReceipt, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
-    TriforceRoomCase2PaletteProgressReceipt,
+    DungeonResetSpritesProgressReceipt, FileSelectGraphicsLowWramClearProgress,
+    ItemReceiptGraphicsCaller, ItemReceiptGraphicsProgressReceipt, NmiUpdateGate,
+    OriginalTimingBoundary, OriginalTimingHostReceipts, OriginalTimingReceiptInstallError,
+    OriginalTimingSemanticReceipt, SaveMenuInitializationProgress, SourceCallProgress,
+    SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt, SpriteResetAllProgress,
+    SpriteResetAllProgressReceipt, TriforceRoomCase2PaletteProgressReceipt,
 };
 use crate::types::{read_le_u16, write_le_u16, xy, MemBlk};
 use crate::util::{find_index_in_memblk, ByteArray, ByteArray_AppendByte, ByteArray_AppendData};
@@ -1309,6 +1309,12 @@ struct OriginalTimingNonterminalContinuationPlan {
     semantic: Vec<OriginalTimingSemanticReceipt>,
     timeline: OriginalTimingMainLoopTimeline,
     nmi: OriginalTimingNmiPhaseClassification,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OriginalTimingFileSelectLowWramPublication {
+    Progress(FileSelectGraphicsLowWramClearProgress),
+    Complete,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20263,17 +20269,40 @@ impl ZeldaState {
         {
             return Err(OriginalTimingReceiptInstallError::DuplicateSaveQuitResetStatePublished);
         }
-        if receipts
-            .semantic
-            .iter()
-            .filter(|receipt| {
-                **receipt == OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared
-            })
-            .count()
-            > 1
-        {
+        let file_select_low_wram_publications =
+            receipts
+                .semantic
+                .iter()
+                .filter_map(|receipt| match receipt {
+                    OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramClearProgress(
+                        progress,
+                    ) => Some(OriginalTimingFileSelectLowWramPublication::Progress(
+                        *progress,
+                    )),
+                    OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared => {
+                        Some(OriginalTimingFileSelectLowWramPublication::Complete)
+                    }
+                    _ => None,
+                });
+        if file_select_low_wram_publications.clone().count() > 1 {
             return Err(
                 OriginalTimingReceiptInstallError::DuplicateFileSelectGraphicsLowWramCleared,
+            );
+        }
+        if file_select_low_wram_publications
+            .into_iter()
+            .any(|publication| {
+                matches!(
+                    publication,
+                    OriginalTimingFileSelectLowWramPublication::Progress(progress)
+                        if progress.word_offset & 1 != 0
+                            || progress.completed_page_stores == 0
+                            || progress.completed_page_stores > 3
+                )
+            })
+        {
+            return Err(
+                OriginalTimingReceiptInstallError::InvalidFileSelectGraphicsLowWramClearProgress,
             );
         }
         if receipts
@@ -24152,27 +24181,39 @@ impl ZeldaState {
         published
     }
 
-    fn take_original_timing_file_select_low_wram_cleared(&mut self) -> bool {
+    fn take_original_timing_file_select_low_wram_publication(
+        &mut self,
+    ) -> Option<OriginalTimingFileSelectLowWramPublication> {
         if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
-            return false;
+            return None;
         }
         let Some(receipts) = self.original_timing_semantic_receipts.as_mut() else {
-            return false;
+            return None;
         };
-        let mut published = false;
+        let mut publication = None;
         receipts.semantic.retain(|receipt| {
-            if *receipt == OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared {
+            let current = match receipt {
+                OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramClearProgress(progress) => {
+                    Some(OriginalTimingFileSelectLowWramPublication::Progress(
+                        *progress,
+                    ))
+                }
+                OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared => {
+                    Some(OriginalTimingFileSelectLowWramPublication::Complete)
+                }
+                _ => None,
+            };
+            if let Some(current) = current {
                 assert!(
-                    !published,
-                    "file-select low-WRAM clear replayed in one host"
+                    publication.replace(current).is_none(),
+                    "file-select low-WRAM publication replayed in one host"
                 );
-                published = true;
                 false
             } else {
                 true
             }
         });
-        published
+        publication
     }
 
     fn take_original_timing_selected_game_load_message_interface_published(&mut self) -> bool {
@@ -37465,13 +37506,21 @@ impl ZeldaState {
                 "pre-audio selected-game caller cannot return before its source entry boundary",
             );
         }
-        let file_select_low_wram_cleared = self
+        let file_select_low_wram_publication = self
             .original_timing_semantic_receipts
             .as_ref()
-            .is_some_and(|receipts| {
-                receipts
-                    .semantic
-                    .contains(&OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared)
+            .and_then(|receipts| {
+                receipts.semantic.iter().find_map(|receipt| match receipt {
+                    OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramClearProgress(
+                        progress,
+                    ) => Some(OriginalTimingFileSelectLowWramPublication::Progress(
+                        *progress,
+                    )),
+                    OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared => {
+                        Some(OriginalTimingFileSelectLowWramPublication::Complete)
+                    }
+                    _ => None,
+                })
             });
         let file_select_authoritative_probe = if self.rom_startup_timing()
             && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
@@ -37508,8 +37557,16 @@ impl ZeldaState {
             .filter(|(step, _, _)| *step == StartupSequenceStep::FileSelectWaiting)
             .map(|_| {
                 self.original_timing_nonterminal_continuation_plan_with_receipt_before_progress(
-                    file_select_low_wram_cleared
-                        .then_some(OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared),
+                    file_select_low_wram_publication.map(|publication| match publication {
+                        OriginalTimingFileSelectLowWramPublication::Progress(progress) => {
+                            OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramClearProgress(
+                                progress,
+                            )
+                        }
+                        OriginalTimingFileSelectLowWramPublication::Complete => {
+                            OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared
+                        }
+                    }),
                 )
                 .expect("live nonterminal file-select graphics lost its continued-call owner")
             });
@@ -39099,12 +39156,24 @@ impl ZeldaState {
                             input,
                             oam_dma_source.as_deref(),
                             |state| {
-                                if file_select_low_wram_cleared {
-                                    assert!(
-                                        state.take_original_timing_file_select_low_wram_cleared(),
-                                        "validated file-select low-WRAM clear disappeared",
-                                    );
-                                    state.publish_file_select_graphics_low_wram_clear();
+                                if let Some(expected) = file_select_low_wram_publication {
+                                    let publication = state
+                                        .take_original_timing_file_select_low_wram_publication()
+                                        .expect(
+                                            "validated file-select low-WRAM publication disappeared",
+                                        );
+                                    assert_eq!(publication, expected);
+                                    match publication {
+                                        OriginalTimingFileSelectLowWramPublication::Progress(
+                                            progress,
+                                        ) => state
+                                            .publish_file_select_graphics_low_wram_clear_progress(
+                                                progress,
+                                            ),
+                                        OriginalTimingFileSelectLowWramPublication::Complete => {
+                                            state.publish_file_select_graphics_low_wram_clear()
+                                        }
+                                    }
                                 }
                                 state.game_execution_scheduler = startup_scheduler_probe;
                             },

@@ -1441,6 +1441,19 @@ pub struct NmiPpuRegisterOperands {
     pub mode7_center: [u16; 2],
 }
 
+/// Cumulative source prefix of `Intro_ValidateSram`'s final 768-byte clear.
+///
+/// The pinned ROM lowers the clear to one descending 16-bit loop. For each
+/// even `word_offset`, it stores zero to the `$0d`, `$0e`, and `$0f` pages in
+/// that order before decrementing the cursor by two. All words above
+/// `word_offset` have therefore completed all three page stores; this many
+/// stores have completed for the current word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FileSelectGraphicsLowWramClearProgress {
+    pub word_offset: u8,
+    pub completed_page_stores: u8,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OriginalTimingSemanticReceipt {
     NmiAccepted(NmiUpdateGate),
@@ -1540,10 +1553,12 @@ pub enum OriginalTimingSemanticReceipt {
     /// entering the source-ordered dungeon-info clear. The later clear/song
     /// upload remain owned by the suspended caller.
     SaveQuitResetStatePublished,
-    /// File-select graphics decompression completed the source loop at
-    /// `$02:80cd-$02:80dc` which zeros WRAM `$0d00-$0fff`. This is an
-    /// observable mid-call publication because the range aliases the live
-    /// sprite arrays; the graphics caller itself remains suspended.
+    /// `Intro_ValidateSram` committed a source-ordered prefix of its final
+    /// low-WRAM clear while the file-select graphics caller remains suspended.
+    /// The range aliases live sprite arrays, so every host-visible store is
+    /// gameplay state rather than private decompressor timing.
+    FileSelectGraphicsLowWramClearProgress(FileSelectGraphicsLowWramClearProgress),
+    /// The same source loop completed all of WRAM `$0d00-$0fff`.
     FileSelectGraphicsLowWramCleared,
     /// `Main_ShowTextMessage` returned inside Module05's Message destination.
     /// Module 14 and submodule 2 are now observable, while palette loading and
@@ -1846,6 +1861,7 @@ pub enum OriginalTimingReceiptInstallError {
     DuplicateOverworldSpritePresencePublished,
     DuplicateSaveQuitResetStatePublished,
     DuplicateFileSelectGraphicsLowWramCleared,
+    InvalidFileSelectGraphicsLowWramClearProgress,
     DuplicateSelectedGameLoadMessageInterfacePublished,
     DuplicateTriforceRoomCase2PaletteProgress,
     InvalidTriforceRoomCase2PaletteProgress,

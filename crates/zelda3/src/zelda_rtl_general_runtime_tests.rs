@@ -23451,6 +23451,38 @@ fn live_file_select_waiting_uses_all_four_source_continuation_shapes() {
 }
 
 #[test]
+fn live_file_select_waiting_publishes_only_the_committed_low_wram_clear_prefix() {
+    let mut state = live_file_select_waiting_state(false, false, 0, 968);
+    state.ram[0x0d00..0x1000].fill(0x5a);
+    state.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&state.ram);
+    let progress = FileSelectGraphicsLowWramClearProgress {
+        word_offset: 0xfe,
+        completed_page_stores: 1,
+    };
+    let semantic = &mut state
+        .original_timing_semantic_receipts
+        .as_mut()
+        .unwrap()
+        .semantic;
+    semantic.insert(
+        semantic.len() - 1,
+        OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramClearProgress(progress),
+    );
+
+    state.run_frame_internal(0, crate::RUN_MAIN);
+
+    assert_eq!(&state.ram[0x0dfe..0x0e00], &[0, 0]);
+    assert_eq!(&state.ram[0x0efe..0x0f00], &[0x5a, 0x5a]);
+    assert_eq!(&state.ram[0x0ffe..0x1000], &[0x5a, 0x5a]);
+    assert_eq!(state.ram[0x0dfc], 0x5a);
+    assert_eq!(
+        state.game_state.sprites.sprite_slots,
+        SpriteSlotsState::load_from_ram(&state.ram),
+    );
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
 fn live_file_select_waiting_rejects_bad_gate_snapshot_or_phase_before_mutation() {
     for malformed in ["wrong-gate", "closed-carry", "resume-module"] {
         let mut state = live_file_select_waiting_state(

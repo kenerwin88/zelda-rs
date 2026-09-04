@@ -138,10 +138,34 @@ impl ZeldaState {
         self.decompress_enemy_damage_subclasses();
     }
 
-    /// Publish the source decompressor's completed `$02:80cd-$02:80dc`
-    /// scratch clear. The three descending STZ loops own all of WRAM
-    /// `$0d00-$0fff`; that range aliases the live sprite arrays, so both the
-    /// shared RAM image and its native owner must adopt the same generation.
+    /// Publish a cumulative source prefix of the final low-WRAM clear in
+    /// `Intro_ValidateSram`. The ROM uses one descending 16-bit loop and, for
+    /// each word, clears the `$0d`, `$0e`, and `$0f` pages in that order.
+    /// This range aliases the live sprite arrays, so both the shared RAM image
+    /// and its native owner must adopt each host-visible generation.
+    pub(super) fn publish_file_select_graphics_low_wram_clear_progress(
+        &mut self,
+        progress: FileSelectGraphicsLowWramClearProgress,
+    ) {
+        assert_eq!(progress.word_offset & 1, 0);
+        assert!(progress.completed_page_stores <= 3);
+        assert_ne!(progress.completed_page_stores, 0);
+
+        let current = usize::from(progress.word_offset);
+        for word_offset in (current + 2..0x100).step_by(2) {
+            for page in 0..3 {
+                let address = 0x0d00 + page * 0x100 + word_offset;
+                self.ram[address..address + 2].fill(0);
+            }
+        }
+        for page in 0..usize::from(progress.completed_page_stores) {
+            let address = 0x0d00 + page * 0x100 + current;
+            self.ram[address..address + 2].fill(0);
+        }
+        self.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&self.ram);
+    }
+
+    /// Publish completion of the same source clear.
     pub(super) fn publish_file_select_graphics_low_wram_clear(&mut self) {
         self.ram[0x0d00..0x1000].fill(0);
         self.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&self.ram);

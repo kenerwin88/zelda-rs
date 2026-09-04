@@ -16,9 +16,9 @@ use zelda3::{
     DungeonFallingEntranceProgress, DungeonLoadSpritesCpuProgress,
     DungeonPegAttributeFlipProgressReceipt, DungeonResetSpritesCpuProgress,
     DungeonResetSpritesProgressReceipt, DungeonSpriteDisableCpuProgress,
-    DungeonSpriteLoadCheckpoint, ItemReceiptGraphicsCaller, ItemReceiptGraphicsProgressReceipt,
-    JoypadPublication, MainLoopInterruption, MainLoopProgress, NmiPpuRegisterOperands,
-    NmiUpdateGate, OriginalTimingBoundary, OriginalTimingSemanticReceipt,
+    DungeonSpriteLoadCheckpoint, FileSelectGraphicsLowWramClearProgress, ItemReceiptGraphicsCaller,
+    ItemReceiptGraphicsProgressReceipt, JoypadPublication, MainLoopInterruption, MainLoopProgress,
+    NmiPpuRegisterOperands, NmiUpdateGate, OriginalTimingBoundary, OriginalTimingSemanticReceipt,
     OverworldSpriteReloadProgress, PreOverworldStageCompletion,
     RescuedMaidenInitializationProgressReceipt, RescuedMaidenInitializationStage,
     RescuedMaidenTilemapClearProgressReceipt, SaveMenuInitializationProgress, SourceCallProgress,
@@ -537,9 +537,12 @@ const MIRROR_WARP_AFTER_SPRITE_RELOAD_PC: u32 = 0x02b3f3;
 // `memset(save_dung_info, 0, ...)` loop. The loop and song upload remain live.
 const SAVE_QUIT_RESET_DUNGEON_INFO_CLEAR_ENTRY_PC: u32 = 0x09f63f;
 // Graphics decompression clears its shared low-WRAM workspace with three
-// descending STZ loops at $02:80d0/$02:80d3/$02:80d6. Reaching $02:80dd
+// descending 16-bit STZ stores at $02:80d0/$02:80d3/$02:80d6. Reaching $02:80dd
 // proves the complete $0d00-$0fff range is zero. During file-select loading
 // this aliases the live sprite arrays while the graphics caller remains live.
+const FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_AFTER_PAGE_D_PC: u32 = 0x0280d3;
+const FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_AFTER_PAGE_E_PC: u32 = 0x0280d6;
+const FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_AFTER_PAGE_F_PC: u32 = 0x0280d9;
 const FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_RETURN_PC: u32 = 0x0280dd;
 const SELECTED_GAME_LOAD_MESSAGE_INTERFACE_RETURN_PC: u32 = 0x0ffdc3;
 const MODULE05_AFTER_SHOW_TEXT_MESSAGE_PC: u32 = 0x0281f5;
@@ -2117,6 +2120,51 @@ fn dungeon_peg_attribute_flip_progress(
     }))
 }
 
+fn file_select_graphics_low_wram_clear_progress(
+    event: &RawTraceEvent,
+) -> Result<Option<FileSelectGraphicsLowWramClearProgress>, String> {
+    // `Intro_ValidateSram` has one source caller, Module_SelectFile_0. Its
+    // long graphics load leaves `$b0` as scratch (`0xd6` on this route), so
+    // subsubmodule is not caller authority here.
+    if (event.main, event.sub) != (Some(1), Some(1)) {
+        return Ok(None);
+    }
+    let completed_page_stores = match event.pc.map(|pc| pc & 0x00ff_ffff) {
+        Some(FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_AFTER_PAGE_D_PC) => 1,
+        Some(FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_AFTER_PAGE_E_PC) => 2,
+        Some(FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_AFTER_PAGE_F_PC) => 3,
+        _ => return Ok(None),
+    };
+    let word_offset = event
+        .x
+        .ok_or("Snes9x file-select low-WRAM clear checkpoint omitted X")?;
+    if word_offset > 0xfe || word_offset & 1 != 0 {
+        return Err(format!(
+            "Snes9x file-select low-WRAM clear checkpoint has invalid word offset ${word_offset:04x}",
+        ));
+    }
+    Ok(Some(FileSelectGraphicsLowWramClearProgress {
+        word_offset: word_offset as u8,
+        completed_page_stores,
+    }))
+}
+
+fn publish_file_select_graphics_low_wram_clear_progress(
+    receipts: &mut Vec<OriginalTimingSemanticReceipt>,
+    progress: FileSelectGraphicsLowWramClearProgress,
+) {
+    // Only the furthest cumulative prefix at a given source boundary matters.
+    // Replacing it here also retains its exact position relative to any NMI
+    // lifecycle events which follow the last observed store.
+    receipts.retain(|receipt| {
+        !matches!(
+            receipt,
+            OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramClearProgress(_)
+        )
+    });
+    receipts.push(OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramClearProgress(progress));
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct HostFrameState {
     run: u64,
@@ -2694,11 +2742,11 @@ impl Snes9xOracleSemanticTrace {
                 append_csv(
                     env::var(TRACE_PCS_ENV).ok().as_deref(),
                     &[
-                        "0280dd", "028842", "05df49", "05df4d", "05eb1d", "05eb21", "068328",
-                        "0683a7", "0684e2", "0684aa", "0684eb", "06a628", "06a724", "06b9cc",
-                        "06b9d0", "0799ad", "079a0b", "008225", "0082c7", "00d4ed", "09c499",
-                        "09c4aa", "09c173", "09f63f", "09f825", "0ffdc3", "00d423", "00e75c",
-                        "00e766", "00d44c",
+                        "0280d3", "0280d6", "0280d9", "0280dd", "028842", "05df49", "05df4d",
+                        "05eb1d", "05eb21", "068328", "0683a7", "0684e2", "0684aa", "0684eb",
+                        "06a628", "06a724", "06b9cc", "06b9d0", "0799ad", "079a0b", "008225",
+                        "0082c7", "00d4ed", "09c499", "09c4aa", "09c173", "09f63f", "09f825",
+                        "0ffdc3", "00d423", "00e75c", "00e766", "00d44c",
                     ],
                 ),
             );
@@ -2986,6 +3034,11 @@ impl Snes9xOracleSemanticTrace {
                 let MainLoopCompletionProof::CommonSuffixCompleted = completion;
                 receipts.push(OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted);
             }
+            if event.event == "pc" {
+                if let Some(progress) = file_select_graphics_low_wram_clear_progress(&event)? {
+                    publish_file_select_graphics_low_wram_clear_progress(&mut receipts, progress);
+                }
+            }
             if main_loop_started {
                 self.zelda_run_game_loop_call_active = true;
             }
@@ -3003,6 +3056,9 @@ impl Snes9xOracleSemanticTrace {
             self.consume_event(event, &mut receipts)?;
         }
         if let Some(returned_event) = returned_event.as_ref() {
+            if let Some(progress) = file_select_graphics_low_wram_clear_progress(returned_event)? {
+                publish_file_select_graphics_low_wram_clear_progress(&mut receipts, progress);
+            }
             if let Some(progress) = credits_scene_load_boundary_progress(
                 returned_event,
                 OriginalTimingBoundary::HostReturn,
@@ -3411,8 +3467,16 @@ impl Snes9xOracleSemanticTrace {
                     receipts.push(OriginalTimingSemanticReceipt::SaveQuitResetStatePublished);
                 }
                 if pc == FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_RETURN_PC
-                    && (event.main, event.sub, event.subsub) == (Some(1), Some(1), Some(10))
+                    && (event.main, event.sub) == (Some(1), Some(1))
                 {
+                    receipts.retain(|receipt| {
+                        !matches!(
+                            receipt,
+                            OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramClearProgress(
+                                _
+                            )
+                        )
+                    });
                     receipts.push(OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared);
                 }
                 if pc == SELECTED_GAME_LOAD_MESSAGE_INTERFACE_RETURN_PC
@@ -10054,6 +10118,38 @@ mod tests {
     }
 
     #[test]
+    fn file_select_graphics_low_wram_store_reports_exact_source_prefix() {
+        let mut event = raw(
+            "pc",
+            Some(FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_AFTER_PAGE_D_PC),
+            None,
+            None,
+        );
+        event.main = Some(1);
+        event.sub = Some(1);
+        event.subsub = Some(0xd6);
+        event.x = Some(0x00fe);
+
+        assert_eq!(
+            file_select_graphics_low_wram_clear_progress(&event).unwrap(),
+            Some(FileSelectGraphicsLowWramClearProgress {
+                word_offset: 0xfe,
+                completed_page_stores: 1,
+            }),
+        );
+
+        event.pc = Some(FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_AFTER_PAGE_F_PC);
+        event.x = Some(0x00fc);
+        assert_eq!(
+            file_select_graphics_low_wram_clear_progress(&event).unwrap(),
+            Some(FileSelectGraphicsLowWramClearProgress {
+                word_offset: 0xfc,
+                completed_page_stores: 3,
+            }),
+        );
+    }
+
+    #[test]
     fn file_select_graphics_low_wram_clear_return_publishes_typed_boundary() {
         let mut tracker = empty_semantic_tracker();
         let mut receipts = Vec::new();
@@ -10065,7 +10161,7 @@ mod tests {
         );
         event.main = Some(1);
         event.sub = Some(1);
-        event.subsub = Some(10);
+        event.subsub = Some(0xd6);
 
         tracker.consume_event(event, &mut receipts).unwrap();
 
