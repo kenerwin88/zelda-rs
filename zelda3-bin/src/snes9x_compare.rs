@@ -63,7 +63,11 @@ const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
 // Schema 61 includes the spotlight loop's branch fallthrough before INC r4.
 // Schema 62 preserves LinkOam's initial stores before equipment selection.
 // Schema 63 also distinguishes the earlier pose-selected NMI checkpoint.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 63;
+// Schema 64 retains the first as well as second actual-velocity pass.
+// Schema 65 retires LinkOam checkpoints with their resumed source context.
+// Schema 66 qualifies the new LinkOam receipt by its stair-drawing branch.
+// Schema 67 recognizes Module0F's call after its speed-setting store.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 67;
 
 // Source instructions which sample APUI00 while waiting for an item fanfare
 // to end. These adapter-only PCs become backend-neutral sample offsets before
@@ -15043,7 +15047,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 63);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 67);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None

@@ -669,11 +669,13 @@ pub enum MainLoopInterruption {
     /// private; translated gameplay resumes the complete suffix without
     /// replaying the entry call.
     DungeonExitSpotlightAfterSubmodule,
-    /// `Link_HandleVelocity` resolved and published the horizontal component
-    /// of Link's actual velocity, but the accepted NMI (or host boundary)
-    /// preceded the vertical component. The speed-selection and modifier
-    /// prefix is complete and must not be replayed when movement resumes.
-    LinkVelocityAfterActualX,
+    /// `Link_HandleVelocity` reached its actual-velocity loop. The source
+    /// cursor distinguishes an unresolved horizontal pass from a completed
+    /// horizontal pass. Speed selection is complete; vertical publication
+    /// and movement remain pending in either case.
+    LinkActualVelocity {
+        horizontal_resolved: bool,
+    },
     /// The main-loop module reached Link's movement call, but the accepted NMI
     /// preceded the first coordinate publication. The timing authority keeps
     /// the backend instruction address private; translated gameplay resumes
@@ -1698,13 +1700,13 @@ pub enum OriginalTimingSemanticReceipt {
     /// advanced to the next submodule. The timing backend identifies the
     /// enclosing source-stage return; gameplay owns every restored value.
     OverworldSpecialExitMosaicReturned,
-    /// LinkOam_Main reached its read-only equipment selector. The initial
-    /// sprite banks and temporary stair coordinate are already published.
-    LinkOamProgress(LinkOamProgress),
+    /// LinkOam_Main reached a source checkpoint while its temporary stair
+    /// coordinate is live. The remaining drawing suffix owns its restoration.
+    LinkOamStairProgress(LinkOamStairProgress),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum LinkOamProgress {
+pub enum LinkOamStairProgress {
     PoseSelected,
     EquipmentSelection,
 }

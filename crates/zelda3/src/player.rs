@@ -1854,36 +1854,45 @@ impl ZeldaState {
         Some(self.link_move_position_after_coordinates(pass))
     }
 
-    /// Run `Link_HandleVelocity` through its horizontal actual-velocity pass,
-    /// retaining the unresolved vertical component for the following host.
-    pub(super) fn link_handle_velocity_until_actual_x_resolved(
+    /// Run speed selection and the source-proven actual-velocity prefix,
+    /// retaining whichever components have not yet been published.
+    pub(super) fn link_handle_velocity_until_actual_checkpoint(
         &mut self,
-    ) -> Option<LinkVelocityAfterActualXReturn> {
+        horizontal_resolved: bool,
+    ) -> Option<LinkActualVelocityReturn> {
         let (direction, velocity) =
             self.link_handle_velocity_before_actual_velocity_resolution()?;
-        if direction & 0x03 != 0 {
-            let actual_x = if direction & 0x02 != 0 {
-                0u8.wrapping_sub(velocity)
-            } else {
-                velocity
-            };
+        let mut pending_actual_x = (direction & 0x03 != 0).then_some(if direction & 0x02 != 0 {
+            0u8.wrapping_sub(velocity)
+        } else {
+            velocity
+        });
+        if let Some(actual_x) = pending_actual_x.filter(|_| horizontal_resolved) {
             self.follower_link_state_mut()
                 .set_actual_x_velocity(actual_x);
+            pending_actual_x = None;
         }
         let pending_actual_y = (direction & 0x0c != 0).then_some(if direction & 0x08 != 0 {
             0u8.wrapping_sub(velocity)
         } else {
             velocity
         });
-        Some(LinkVelocityAfterActualXReturn { pending_actual_y })
+        Some(LinkActualVelocityReturn {
+            pending_actual_x,
+            pending_actual_y,
+        })
     }
 
-    /// Resume the vertical actual-velocity publication, airborne defaults,
+    /// Resume pending actual-velocity publication in X-then-Y order, airborne defaults,
     /// and `Link_MovePosition` without replaying speed/modifier selection.
-    pub(super) fn link_handle_velocity_from_after_actual_x_until_position_integrated(
+    pub(super) fn link_handle_velocity_from_actual_checkpoint_until_position_integrated(
         &mut self,
-        velocity_return: LinkVelocityAfterActualXReturn,
+        velocity_return: LinkActualVelocityReturn,
     ) -> Option<LinkMovePositionReturn> {
+        if let Some(actual_x) = velocity_return.pending_actual_x {
+            self.follower_link_state_mut()
+                .set_actual_x_velocity(actual_x);
+        }
         if let Some(actual_y) = velocity_return.pending_actual_y {
             self.follower_link_state_mut()
                 .set_actual_y_velocity(actual_y);

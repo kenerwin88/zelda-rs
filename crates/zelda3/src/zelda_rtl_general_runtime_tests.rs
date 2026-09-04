@@ -13980,8 +13980,8 @@ fn live_spotlight_link_position_boundary_resumes_the_complete_c_leaf_once() {
 }
 
 #[test]
-fn live_spotlight_actual_x_boundary_does_not_replay_velocity_selection() {
-    fn configured_state() -> ZeldaState {
+fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() {
+    fn configured_state(direction: u8) -> ZeldaState {
         let mut state = ZeldaState::new();
         state.set_rom_startup_timing(true);
         state.set_main_module(0x0f);
@@ -13992,63 +13992,82 @@ fn live_spotlight_actual_x_boundary_does_not_replay_velocity_selection() {
         state.follower_link_state_mut().set_y(0x0209);
         state
             .follower_link_state_mut()
-            .set_direction_and_last_direction(8);
+            .set_direction_and_last_direction(direction);
         state.follower_link_state_mut().set_actual_y_velocity(0x14);
         state
     }
 
-    let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
-    let mut atomic = configured_state();
-    atomic.module0f_spotlight_close_link_and_oam();
+    for horizontal_resolved in [false, true] {
+        for direction in [8, 2, 10] {
+            let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
+            let mut atomic = configured_state(direction);
+            atomic.module0f_spotlight_close_link_and_oam();
 
-    let mut resumed = configured_state();
-    resumed.original_timing_owner = OriginalTimingOwnerState::Live;
-    resumed.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
-        179_604,
-        0,
-        vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(
-            crate::MainLoopInterruption::LinkVelocityAfterActualX,
-        )],
-    ));
-    let entry_x = resumed.game_state.player.follower_link.x();
-    let entry_y = resumed.game_state.player.follower_link.y();
+            let mut resumed = configured_state(direction);
+            resumed.original_timing_owner = OriginalTimingOwnerState::Live;
+            resumed.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+                179_604,
+                0,
+                vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    crate::MainLoopInterruption::LinkActualVelocity {
+                        horizontal_resolved,
+                    },
+                )],
+            ));
+            let entry_x = resumed.game_state.player.follower_link.x();
+            let entry_y = resumed.game_state.player.follower_link.y();
 
-    assert!(resumed.begin_module0f_spotlight_close_link_and_oam(None, iteration));
-    assert_eq!(resumed.game_state.player.follower_link.x(), entry_x);
-    assert_eq!(resumed.game_state.player.follower_link.y(), entry_y);
-    assert_eq!(
-        resumed.game_state.player.follower_link.actual_x_velocity(),
-        0,
-        "the horizontal velocity pass is resolved before the host boundary",
-    );
-    assert_eq!(
-        resumed.game_state.player.follower_link.actual_y_velocity(),
-        0,
-        "the vertical velocity publication belongs to the following host",
-    );
-    let Some(GameWorkStep::Complete(
-        GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
-            velocity_return,
-            iteration,
-        },
-    )) = resumed
-        .game_execution_scheduler
-        .advance_work_one_nmi_slice()
-    else {
-        panic!("actual-X Link velocity did not retain its typed continuation");
-    };
-    assert_eq!(velocity_return.pending_actual_y, Some(0xf8));
-    resumed.complete_dungeon_exit_spotlight_link_velocity_after_actual_x(
-        velocity_return,
-        iteration,
-        false,
-    );
+            assert!(resumed.begin_module0f_spotlight_close_link_and_oam(None, iteration));
+            assert_eq!(resumed.game_state.player.follower_link.x(), entry_x);
+            assert_eq!(resumed.game_state.player.follower_link.y(), entry_y);
+            assert_eq!(
+                resumed.game_state.player.follower_link.actual_x_velocity(),
+                if horizontal_resolved {
+                    atomic.game_state.player.follower_link.actual_x_velocity()
+                } else {
+                    0
+                },
+                "only a source-completed horizontal pass may publish its velocity",
+            );
+            assert_eq!(
+                resumed.game_state.player.follower_link.actual_y_velocity(),
+                0,
+                "the vertical velocity publication belongs to the following host",
+            );
+            let Some(GameWorkStep::Complete(
+                GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
+                    velocity_return,
+                    iteration,
+                },
+            )) = resumed
+                .game_execution_scheduler
+                .advance_work_one_nmi_slice()
+            else {
+                panic!("actual Link velocity did not retain its typed continuation");
+            };
+            assert_eq!(
+                velocity_return.pending_actual_y,
+                (direction & 12 != 0)
+                    .then_some(atomic.game_state.player.follower_link.actual_y_velocity())
+            );
+            assert_eq!(
+                velocity_return.pending_actual_x,
+                (!horizontal_resolved && direction & 3 != 0)
+                    .then_some(atomic.game_state.player.follower_link.actual_x_velocity())
+            );
+            resumed.complete_dungeon_exit_spotlight_link_actual_velocity(
+                velocity_return,
+                iteration,
+                false,
+            );
 
-    assert_eq!(resumed.ram, atomic.ram);
-    assert!(resumed
-        .original_timing_semantic_receipts
-        .as_ref()
-        .is_some_and(|receipts| receipts.semantic().is_empty()));
+            assert_eq!(resumed.ram, atomic.ram);
+            assert!(resumed
+                .original_timing_semantic_receipts
+                .as_ref()
+                .is_some_and(|receipts| receipts.semantic().is_empty()));
+        }
+    }
 }
 
 #[test]

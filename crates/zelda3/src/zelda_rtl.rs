@@ -5790,7 +5790,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         crate::MainLoopInterruption::LinkOam
         | crate::MainLoopInterruption::SpritePreparation
         | crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
-        | crate::MainLoopInterruption::LinkVelocityAfterActualX
+        | crate::MainLoopInterruption::LinkActualVelocity { .. }
         | crate::MainLoopInterruption::LinkPositionBeforeCoordinates => true,
         crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }
         | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { pass, .. }
@@ -6320,7 +6320,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
             unreachable!()
         }
         crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
-        | crate::MainLoopInterruption::LinkVelocityAfterActualX
+        | crate::MainLoopInterruption::LinkActualVelocity { .. }
         | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
         | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
         | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
@@ -8138,10 +8138,11 @@ pub(super) struct LinkMovePositionReturn {
     old_y: u16,
 }
 
-/// `Link_HandleVelocity` has resolved the horizontal actual-velocity pass;
-/// the vertical pass and the movement call remain on the source stack.
+/// `Link_HandleVelocity` has selected its speed. Unpublished actual-velocity
+/// components and the movement call remain on the source stack.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) struct LinkVelocityAfterActualXReturn {
+pub(super) struct LinkActualVelocityReturn {
+    pending_actual_x: Option<u8>,
     pending_actual_y: Option<u8>,
 }
 
@@ -8424,11 +8425,11 @@ enum GameWorkContinuation {
         position_return: LinkMovePositionReturn,
         iteration: SpotlightIteration,
     },
-    /// Module0F ended inside `Link_HandleVelocity` after resolving actual X
-    /// velocity but before resolving actual Y. The speed/modifier prefix is
+    /// Module0F ended inside `Link_HandleVelocity`'s actual-velocity loop.
+    /// The unresolved components are retained; the speed/modifier prefix is
     /// already committed and must not run again.
-    FinishDungeonExitSpotlightLinkVelocityAfterActualX {
-        velocity_return: LinkVelocityAfterActualXReturn,
+    FinishDungeonExitSpotlightActualVelocity {
+        velocity_return: LinkActualVelocityReturn,
         iteration: SpotlightIteration,
     },
     /// Module0F's submodule call returned before the accepted NMI, but none
@@ -8712,7 +8713,7 @@ impl GameWorkContinuation {
                 | Self::FinishDungeonExitSpotlightEntry { .. }
                 | Self::FinishDungeonExitSpotlightLinkAndOam { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovement { .. }
-                | Self::FinishDungeonExitSpotlightLinkVelocityAfterActualX { .. }
+                | Self::FinishDungeonExitSpotlightActualVelocity { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
@@ -22059,7 +22060,7 @@ impl ZeldaState {
                             // consumes this boundary inside the module body
                             // (route hosts 50635, 179586).
                             | crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
-                            | crate::MainLoopInterruption::LinkVelocityAfterActualX
+                            | crate::MainLoopInterruption::LinkActualVelocity { .. }
                             | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
                             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                             | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
@@ -25160,7 +25161,7 @@ impl ZeldaState {
         };
         match interruption {
             crate::MainLoopInterruption::LinkOam
-            | crate::MainLoopInterruption::LinkVelocityAfterActualX
+            | crate::MainLoopInterruption::LinkActualVelocity { .. }
             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
             | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
             | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. } => {}
@@ -25416,17 +25417,18 @@ impl ZeldaState {
             .as_ref()
             .map(|receipts| receipts.semantic().to_vec());
         match interruption {
-            crate::MainLoopInterruption::LinkVelocityAfterActualX => {
-                cpu_probe.complete_dungeon_exit_spotlight_build_until_link_velocity_after_actual_x(
+            crate::MainLoopInterruption::LinkActualVelocity {
+                horizontal_resolved,
+            } => {
+                cpu_probe.complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
                     table_build,
                     projection_completed,
                     iteration,
+                    horizontal_resolved,
                 );
                 assert!(matches!(
                     cpu_probe.game_execution_scheduler.current_work(),
-                    Some(
-                        GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX { .. }
-                    )
+                    Some(GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity { .. })
                 ));
             }
             crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass } => {
@@ -30630,7 +30632,7 @@ impl ZeldaState {
         {
             Some(GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. })
             | Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration })
-            | Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+            | Some(GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
                 iteration,
                 ..
             })
@@ -37525,14 +37527,14 @@ impl ZeldaState {
                 )));
                 self.complete_dungeon_exit_spotlight_link_velocity(position_return, iteration);
             }
-            GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+            GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
                 velocity_return,
                 iteration,
             } => {
                 self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                     GraphicsDmaGeneration::HostBoundaryBeforeMain,
                 )));
-                self.complete_dungeon_exit_spotlight_link_velocity_after_actual_x(
+                self.complete_dungeon_exit_spotlight_link_actual_velocity(
                     velocity_return,
                     iteration,
                     false,
@@ -40807,7 +40809,7 @@ impl ZeldaState {
         let mut authoritative_link_oam_equipment_prefix = None;
         if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
             receipts.semantic.retain(|receipt| {
-                if let OriginalTimingSemanticReceipt::LinkOamProgress(progress) = *receipt {
+                if let OriginalTimingSemanticReceipt::LinkOamStairProgress(progress) = *receipt {
                     assert!(
                         authoritative_link_oam_equipment_prefix.is_none(),
                         "LinkOam prefix replayed"
@@ -40989,7 +40991,7 @@ impl ZeldaState {
                         interruption,
                         crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }
                             | crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
-                            | crate::MainLoopInterruption::LinkVelocityAfterActualX
+                            | crate::MainLoopInterruption::LinkActualVelocity { .. }
                             | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
                             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                             | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
@@ -41539,7 +41541,7 @@ impl ZeldaState {
                     expected_work,
                     GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
-                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX { .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
@@ -41626,7 +41628,7 @@ impl ZeldaState {
                     expected_work,
                     GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
-                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX { .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
@@ -44446,7 +44448,7 @@ impl ZeldaState {
                     },
                 ) => Some(iteration.completion_publication()),
                 GameWorkStep::Complete(
-                GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+                GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
                     iteration,
                     ..
                 },
@@ -46670,7 +46672,7 @@ impl ZeldaState {
                     self.complete_dungeon_exit_spotlight_link_velocity(position_return, iteration);
                 }
                 GameWorkStep::Complete(
-                    GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+                    GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
                         velocity_return,
                         iteration,
                     },
@@ -46678,7 +46680,7 @@ impl ZeldaState {
                     self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                         GraphicsDmaGeneration::HostBoundaryBeforeMain,
                     )));
-                    self.complete_dungeon_exit_spotlight_link_velocity_after_actual_x(
+                    self.complete_dungeon_exit_spotlight_link_actual_velocity(
                         velocity_return,
                         iteration,
                         authoritative_scheduled_caller_return_timeline.is_some(),
@@ -46865,7 +46867,7 @@ impl ZeldaState {
                             .filter(|interruption| {
                                 matches!(
                                     interruption,
-                                    crate::MainLoopInterruption::LinkVelocityAfterActualX
+                                    crate::MainLoopInterruption::LinkActualVelocity { .. }
                                         |
                                     crate::MainLoopInterruption::LinkPositionAfterSubpixel {
                                         ..
@@ -46877,10 +46879,11 @@ impl ZeldaState {
                                 )
                             });
                     match link_position_interruption {
-                        Some(crate::MainLoopInterruption::LinkVelocityAfterActualX) => {
-                            self.complete_dungeon_exit_spotlight_entry_until_link_velocity_after_actual_x(
+                        Some(crate::MainLoopInterruption::LinkActualVelocity { horizontal_resolved }) => {
+                            self.complete_dungeon_exit_spotlight_entry_until_link_actual_velocity(
                                 table_build,
                                 iteration,
+                                horizontal_resolved,
                             );
                         }
                         Some(crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }) => {
@@ -46934,7 +46937,7 @@ impl ZeldaState {
                         .filter(|interruption| {
                             matches!(
                                 interruption,
-                                crate::MainLoopInterruption::LinkVelocityAfterActualX
+                                crate::MainLoopInterruption::LinkActualVelocity { .. }
                                     | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                                     | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                                     | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
@@ -46953,11 +46956,12 @@ impl ZeldaState {
                             "a mid-loop Link position boundary cannot share its host with a caller return or LinkOam interruption",
                         );
                         match interruption {
-                            crate::MainLoopInterruption::LinkVelocityAfterActualX => self
-                                .complete_dungeon_exit_spotlight_build_until_link_velocity_after_actual_x(
+                            crate::MainLoopInterruption::LinkActualVelocity { horizontal_resolved } => self
+                                .complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
                                     table_build,
                                     projection_completed,
                                     iteration,
+                                    horizontal_resolved,
                                 ),
                             crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass } => self
                                 .complete_dungeon_exit_spotlight_build_until_link_position_partial(
@@ -48290,9 +48294,8 @@ impl ZeldaState {
                 | GameWorkContinuation::FinishOverworldSpotlightGoalResetTable { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
-                | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
-                    iteration,
-                    ..
+                | GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
+                    iteration, ..
                 }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
@@ -53018,7 +53021,7 @@ impl ZeldaState {
     fn complete_resumed_module07_caller_suffix_by_wire(
         &mut self,
         terminal_return: bool,
-        equipment_prefix: Option<crate::LinkOamProgress>,
+        equipment_prefix: Option<crate::LinkOamStairProgress>,
     ) {
         if self
             .take_forwarded_original_timing_main_loop_interruption(
@@ -53070,8 +53073,8 @@ impl ZeldaState {
             self.set_bg1_x(sprite_return.bg1_x);
             self.set_bg1_y(sprite_return.bg1_y);
             sprite_return.link_oam = Some(match progress {
-                crate::LinkOamProgress::PoseSelected => self.link_oam_after_pose_selection(),
-                crate::LinkOamProgress::EquipmentSelection => self.link_oam_before_equipment(),
+                crate::LinkOamStairProgress::PoseSelected => self.link_oam_after_pose_selection(),
+                crate::LinkOamStairProgress::EquipmentSelection => self.link_oam_before_equipment(),
             });
             self.active_dungeon_sprite_main_return = Some(sprite_return);
         }

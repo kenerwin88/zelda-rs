@@ -488,7 +488,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonExitSpotlightBuild { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { .. }
-                | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX { .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
@@ -520,9 +520,8 @@ impl ScheduledGameWork {
             | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
-            | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
-                iteration,
-                ..
+            | GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
+                iteration, ..
             }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
@@ -567,9 +566,8 @@ impl ScheduledGameWork {
             | GameWorkContinuation::FinishDungeonExitSpotlightBuild { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { iteration, .. }
-            | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
-                iteration,
-                ..
+            | GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
+                iteration, ..
             }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }

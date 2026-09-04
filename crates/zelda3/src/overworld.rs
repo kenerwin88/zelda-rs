@@ -3480,9 +3480,17 @@ impl ZeldaState {
         let authoritative_after_submodule = self.take_original_timing_main_loop_interruption(
             crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule,
         );
-        let authoritative_after_actual_x = self.take_original_timing_main_loop_interruption(
-            crate::MainLoopInterruption::LinkVelocityAfterActualX,
-        );
+        let authoritative_actual_velocity = match self.original_timing_main_loop_interruption() {
+            Some(
+                interruption @ crate::MainLoopInterruption::LinkActualVelocity {
+                    horizontal_resolved,
+                },
+            ) => {
+                assert!(self.take_original_timing_main_loop_interruption(interruption));
+                Some(horizontal_resolved)
+            }
+            _ => None,
+        };
         let authoritative_before_coordinates = self.take_original_timing_main_loop_interruption(
             crate::MainLoopInterruption::LinkPositionBeforeCoordinates,
         );
@@ -3527,7 +3535,7 @@ impl ZeldaState {
             self.take_original_timing_main_loop_interruption(crate::MainLoopInterruption::LinkOam);
         assert!(
             usize::from(authoritative_after_submodule)
-                + usize::from(authoritative_after_actual_x)
+                + usize::from(authoritative_actual_velocity.is_some())
                 + usize::from(authoritative_before_coordinates)
                 + usize::from(authoritative_after_subpixel.is_some())
                 + usize::from(authoritative_after_coordinate_low.is_some())
@@ -3547,16 +3555,16 @@ impl ZeldaState {
             );
             return true;
         }
-        if authoritative_after_actual_x {
+        if let Some(horizontal_resolved) = authoritative_actual_velocity {
             assert!(
                 cpu_plan.is_none(),
                 "the isolated spotlight CPU plan and live actual-X receipt cannot both own one interruption",
             );
             let velocity_return = self
-                .module0f_spotlight_close_velocity_until_actual_x_resolved()
+                .module0f_spotlight_close_velocity_until_actual_checkpoint(horizontal_resolved)
                 .expect("an actual-X Link velocity interruption requires Module0F's outdoor velocity path");
             self.game_execution_scheduler.schedule_work(
-                GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+                GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
                     velocity_return,
                     iteration,
                 },
@@ -3709,16 +3717,17 @@ impl ZeldaState {
         None
     }
 
-    fn module0f_spotlight_close_velocity_until_actual_x_resolved(
+    fn module0f_spotlight_close_velocity_until_actual_checkpoint(
         &mut self,
-    ) -> Option<LinkVelocityAfterActualXReturn> {
+        horizontal_resolved: bool,
+    ) -> Option<LinkActualVelocityReturn> {
         if self.game_state.world.location.is_outdoors() {
             if self.game_state.world.location.overworld_screen_index() == 0x0f {
                 self.follower_link_state_mut()
                     .set_water_ripple_or_grass_state(1);
             }
             self.follower_link_state_mut().set_speed_setting(6);
-            return self.link_handle_velocity_until_actual_x_resolved();
+            return self.link_handle_velocity_until_actual_checkpoint(horizontal_resolved);
         }
         None
     }
@@ -3803,14 +3812,14 @@ impl ZeldaState {
         }
     }
 
-    pub(super) fn complete_dungeon_exit_spotlight_link_velocity_after_actual_x(
+    pub(super) fn complete_dungeon_exit_spotlight_link_actual_velocity(
         &mut self,
-        velocity_return: LinkVelocityAfterActualXReturn,
+        velocity_return: LinkActualVelocityReturn,
         iteration: SpotlightIteration,
         caller_returned_in_host: bool,
     ) {
-        if let Some(position_return) =
-            self.link_handle_velocity_from_after_actual_x_until_position_integrated(velocity_return)
+        if let Some(position_return) = self
+            .link_handle_velocity_from_actual_checkpoint_until_position_integrated(velocity_return)
         {
             self.complete_link_move_position_after_coordinates(position_return);
         }
@@ -3997,20 +4006,21 @@ impl ZeldaState {
         );
     }
 
-    pub(super) fn complete_dungeon_exit_spotlight_entry_until_link_velocity_after_actual_x(
+    pub(super) fn complete_dungeon_exit_spotlight_entry_until_link_actual_velocity(
         &mut self,
         table_build: SpotlightTableBuildContinuation,
         iteration: SpotlightIteration,
+        horizontal_resolved: bool,
     ) {
         let (_, iteration) =
             self.complete_dungeon_exit_spotlight_entry_before_link(table_build, iteration);
         let velocity_return = self
-            .module0f_spotlight_close_velocity_until_actual_x_resolved()
+            .module0f_spotlight_close_velocity_until_actual_checkpoint(horizontal_resolved)
             .expect(
                 "an actual-X Link velocity interruption requires Module0F's outdoor velocity path",
             );
         self.game_execution_scheduler.schedule_work(
-            GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+            GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
                 velocity_return,
                 iteration,
             },
@@ -4152,11 +4162,12 @@ impl ZeldaState {
         );
     }
 
-    pub(super) fn complete_dungeon_exit_spotlight_build_until_link_velocity_after_actual_x(
+    pub(super) fn complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
         &mut self,
         table_build: SpotlightTableBuildContinuation,
         projection_completed: bool,
         iteration: SpotlightIteration,
+        horizontal_resolved: bool,
     ) {
         if projection_completed {
             self.complete_iris_spotlight_configure_table_after_projection();
@@ -4169,12 +4180,12 @@ impl ZeldaState {
         );
         debug_assert!(!caller_interrupted);
         let velocity_return = self
-            .module0f_spotlight_close_velocity_until_actual_x_resolved()
+            .module0f_spotlight_close_velocity_until_actual_checkpoint(horizontal_resolved)
             .expect(
                 "an actual-X Link velocity interruption requires Module0F's outdoor velocity path",
             );
         self.game_execution_scheduler.schedule_work(
-            GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocityAfterActualX {
+            GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
                 velocity_return,
                 iteration,
             },

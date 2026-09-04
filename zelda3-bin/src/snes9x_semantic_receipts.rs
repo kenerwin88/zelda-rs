@@ -316,6 +316,8 @@ const LINK_OAM_END_PC: u32 = 0x0dadb6;
 // The address is private adapter evidence; the receipt exports only the C
 // source boundary.
 const MODULE0F_AFTER_SUBMODULE_DISPATCH_PC: u32 = 0x02998d;
+// JSL Link_HandleVelocity, after Module0F's ripple/speed prefix stores.
+const MODULE0F_LINK_VELOCITY_CALL_PC: u32 = 0x0299a0;
 // The generic PC trace uses these private pinned-ROM boundaries to translate
 // the descending `Sprite_Main` loop into a Zelda-level resumable slot receipt.
 // Neither address nor the CPU X register crosses the adapter boundary.
@@ -477,13 +479,12 @@ const LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC: u32 = 0x07e280;
 // and coordinates have not changed yet (route host 65295).
 const LINK_VELOCITY_AFTER_SPEED_SELECTION_START_PC: u32 = 0x07e2c8;
 const LINK_VELOCITY_BEFORE_FIRST_STATE_STORE_END_PC: u32 = 0x07e2cc;
-// Link_HandleVelocity resolves actual velocity in X-then-Y source order. Once
-// the ROM's X-indexed pass has completed, X=0 identifies the vertical pass.
-// `$87:e344` begins that pass and `$87:e357` is its first persistent store;
-// a saved PC through the store itself therefore means actual X is resolved
-// while actual Y remains pending (route host 179604).
-const LINK_VELOCITY_AFTER_ACTUAL_X_START_PC: u32 = 0x07e344;
-const LINK_VELOCITY_BEFORE_ACTUAL_Y_STORE_END_PC: u32 = 0x07e359;
+// Link_HandleVelocity resolves actual velocity in X-then-Y source order.
+// The source cursor is 1 for horizontal and 0 for vertical. `$87:e344`
+// begins each pass and `$87:e357` is its first persistent store, so the
+// interrupted cursor identifies which components remain unpublished.
+const LINK_ACTUAL_VELOCITY_PASS_START_PC: u32 = 0x07e344;
+const LINK_ACTUAL_VELOCITY_BEFORE_STORE_END_PC: u32 = 0x07e359;
 // Pinned Link_MovePosition ($87:e370) copies Link's current coordinates and
 // safe-return bytes before its first coordinate integration store at $87:e3af.
 // Bank $07 is the executing LoROM mirror observed by the maintained core.
@@ -3015,8 +3016,10 @@ impl HostFrameWindow {
         }
         // The selector at $0D:A61A is read-only: all initial LinkOam stores
         // precede it, and equipment drawing plus stair-Y restoration follow it.
-        if let Some(progress) = link_oam_progress(returned.pc) {
-            receipts.push(OriginalTimingSemanticReceipt::LinkOamProgress(progress));
+        if let Some(progress) = link_oam_stair_progress(returned.pc, Some(returned.sub)) {
+            receipts.push(OriginalTimingSemanticReceipt::LinkOamStairProgress(
+                progress,
+            ));
         }
         // Module_PreDungeon publishes module 07/0f from the overworld entrance
         // (Module06) and from the spawn-select reload, which re-enters through
@@ -3709,7 +3712,7 @@ impl Snes9xOracleSemanticTrace {
                         returned_event.x,
                     ),
                     Some(
-                        MainLoopInterruption::LinkVelocityAfterActualX
+                        MainLoopInterruption::LinkActualVelocity { .. }
                             | MainLoopInterruption::LinkPositionBeforeCoordinates
                             | MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                             | MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
@@ -5200,8 +5203,13 @@ impl Snes9xOracleSemanticTrace {
                 if let Some(phase) = main_loop_interruption {
                     receipts.push(OriginalTimingSemanticReceipt::MainLoopInterrupted(phase));
                 }
-                if let Some(progress) = event.pc.and_then(link_oam_progress) {
-                    receipts.push(OriginalTimingSemanticReceipt::LinkOamProgress(progress));
+                if let Some(progress) = event
+                    .pc
+                    .and_then(|pc| link_oam_stair_progress(pc, event.sub))
+                {
+                    receipts.push(OriginalTimingSemanticReceipt::LinkOamStairProgress(
+                        progress,
+                    ));
                 }
             }
             "nmi-resume" => {
@@ -6013,12 +6021,18 @@ fn main_loop_interruption_for_pc(pc: u32) -> Option<MainLoopInterruption> {
     }
 }
 
-fn link_oam_progress(pc: u32) -> Option<zelda3::LinkOamProgress> {
+fn link_oam_stair_progress(pc: u32, sub: Option<u8>) -> Option<zelda3::LinkOamStairProgress> {
+    // LinkOam_Main applies a temporary gameplay Y adjustment only for these
+    // two source submodules. This receipt describes that stair-drawing call;
+    // other calls continue to use the ordinary LinkOam interruption grammar.
+    if !matches!(sub, Some(18 | 19)) {
+        return None;
+    }
     match pc & 0x00ff_ffff {
         // Initial palette word is stored; follower palette selection and
         // both optional sprite banks have not run yet.
-        0x0d_a47e => Some(zelda3::LinkOamProgress::PoseSelected),
-        0x0d_a61a => Some(zelda3::LinkOamProgress::EquipmentSelection),
+        0x0d_a47e => Some(zelda3::LinkOamStairProgress::PoseSelected),
+        0x0d_a61a => Some(zelda3::LinkOamStairProgress::EquipmentSelection),
         _ => None,
     }
 }
@@ -6039,15 +6053,19 @@ fn main_loop_interruption_for_source_state(
     }
     if main == Some(0x0f)
         && sub == Some(1)
-        && x == Some(0)
-        && (LINK_VELOCITY_AFTER_ACTUAL_X_START_PC..LINK_VELOCITY_BEFORE_ACTUAL_Y_STORE_END_PC)
+        && matches!(x, Some(0 | 1))
+        && (LINK_ACTUAL_VELOCITY_PASS_START_PC..LINK_ACTUAL_VELOCITY_BEFORE_STORE_END_PC)
             .contains(&pc)
     {
-        Some(MainLoopInterruption::LinkVelocityAfterActualX)
+        Some(MainLoopInterruption::LinkActualVelocity {
+            horizontal_resolved: x == Some(0),
+        })
     } else if main == Some(0x0f)
         && sub == Some(1)
-        && ((LINK_VELOCITY_BEFORE_STATE_BRANCH_START_PC..LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC)
-            .contains(&pc)
+        && (pc == MODULE0F_LINK_VELOCITY_CALL_PC
+            || (LINK_VELOCITY_BEFORE_STATE_BRANCH_START_PC
+                ..LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC)
+                .contains(&pc)
             || (LINK_VELOCITY_AFTER_SPEED_SELECTION_START_PC
                 ..LINK_VELOCITY_BEFORE_FIRST_STATE_STORE_END_PC)
                 .contains(&pc)
@@ -6757,6 +6775,19 @@ fn retire_resumed_main_loop_interruption(
                 receipts[*index] = OriginalTimingSemanticReceipt::SpriteMainProgressed(progress);
             } else {
                 receipts.remove(*index);
+            }
+            if interruption == MainLoopInterruption::LinkOam {
+                // This exact interrupted source context resumed in the same
+                // host. Its partial drawing checkpoint no longer names an
+                // outstanding call, just like the enclosing interruption.
+                for index in (last_acceptance + 1..receipts.len()).rev() {
+                    if matches!(
+                        receipts[index],
+                        OriginalTimingSemanticReceipt::LinkOamStairProgress(_)
+                    ) {
+                        receipts.remove(index);
+                    }
+                }
             }
             Ok(())
         }
@@ -10818,10 +10849,11 @@ mod tests {
     #[test]
     fn link_oam_equipment_selector_publishes_its_native_prefix() {
         assert_eq!(
-            link_oam_progress(0x0d_a47e),
-            Some(zelda3::LinkOamProgress::PoseSelected)
+            link_oam_stair_progress(0x0d_a47e, Some(18)),
+            Some(zelda3::LinkOamStairProgress::PoseSelected)
         );
-        assert_eq!(link_oam_progress(0x0d_a47b), None);
+        assert_eq!(link_oam_stair_progress(0x0d_a47b, Some(18)), None);
+        assert_eq!(link_oam_stair_progress(0x0d_a47e, Some(1)), None);
         let mut host = HostFrameWindow::default();
         host.observe(&frame_with_sub("entry", 1, 7, 18)).unwrap();
         let mut returned = frame_with_sub("return", 1, 7, 18);
@@ -10835,8 +10867,8 @@ mod tests {
             ))
         );
         assert!(
-            receipts.contains(&OriginalTimingSemanticReceipt::LinkOamProgress(
-                zelda3::LinkOamProgress::EquipmentSelection
+            receipts.contains(&OriginalTimingSemanticReceipt::LinkOamStairProgress(
+                zelda3::LinkOamStairProgress::EquipmentSelection
             ))
         );
     }
@@ -12201,13 +12233,44 @@ mod tests {
     #[test]
     fn host_boundary_after_actual_x_velocity_retains_the_pending_y_component() {
         assert_eq!(
+            main_loop_interruption_for_source_state(
+                MODULE0F_LINK_VELOCITY_CALL_PC,
+                Some(0x0f),
+                Some(1),
+                Some(0)
+            ),
+            Some(MainLoopInterruption::LinkPositionBeforeCoordinates),
+        );
+        assert_eq!(
             main_loop_interruption_for_source_state(0x07_e352, Some(0x0f), Some(1), Some(0),),
-            Some(MainLoopInterruption::LinkVelocityAfterActualX),
+            Some(MainLoopInterruption::LinkActualVelocity {
+                horizontal_resolved: true
+            }),
         );
         assert_eq!(
             main_loop_interruption_for_source_state(0x07_e352, Some(0x0f), Some(1), Some(1),),
-            None,
+            Some(MainLoopInterruption::LinkActualVelocity {
+                horizontal_resolved: false
+            }),
             "the horizontal pass has not completed while X still names it",
+        );
+    }
+
+    #[test]
+    fn resumed_link_oam_context_retires_its_intermediate_drawing_checkpoint() {
+        let mut receipts = vec![
+            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+            OriginalTimingSemanticReceipt::MainLoopInterrupted(MainLoopInterruption::LinkOam),
+            OriginalTimingSemanticReceipt::LinkOamStairProgress(
+                zelda3::LinkOamStairProgress::EquipmentSelection,
+            ),
+        ];
+        retire_resumed_main_loop_interruption(&mut receipts, None).unwrap();
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::NmiAccepted(
+                NmiUpdateGate::LatchHeld
+            )]
         );
     }
 
