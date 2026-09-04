@@ -15740,6 +15740,10 @@ impl ZeldaState {
         };
         self.sprite_prep_oam_coord(k, &mut info);
         self.lanmola_draw(k);
+        self.sprite_54_lanmolas_after_draw(k);
+    }
+
+    fn sprite_54_lanmolas_after_draw(&mut self, k: usize) {
         if self.sprite_return_if_paused(k) {
             return;
         }
@@ -15932,6 +15936,37 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Lanmola_Draw(int k) {  // 85a64a
     pub(super) fn lanmola_draw(&mut self, k: usize) {
+        let continuation = self.lanmola_draw_through_subtype2_increment(k);
+        self.lanmola_draw_after_subtype2_increment(k, continuation);
+    }
+
+    pub(super) fn complete_lanmola_after_subtype2_increment(
+        &mut self,
+        k: usize,
+        continuation: LanmolaDrawContinuation,
+    ) {
+        self.lanmola_draw_after_subtype2_increment(k, continuation);
+        self.sprite_54_lanmolas_after_draw(k);
+    }
+
+    pub(super) fn lanmola_prep_and_draw_through_subtype2_increment(
+        &mut self,
+        k: usize,
+    ) -> LanmolaDrawContinuation {
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_prep_oam_coord(k, &mut info);
+        self.lanmola_draw_through_subtype2_increment(k)
+    }
+
+    pub(super) fn lanmola_draw_through_subtype2_increment(
+        &mut self,
+        k: usize,
+    ) -> LanmolaDrawContinuation {
         let spr_offs = usize::from(LANMOLA_DRAW_SPR_OFFS[k]);
         self.oam_state_mut()
             .set_current_pointer((0x800 + spr_offs * 4) as u16);
@@ -15946,8 +15981,8 @@ impl ZeldaState {
         );
 
         self.sprite_slot_view_mut(k).set_graphics(value);
-        let mut r2 = self.sprite_slot_view(k).subtype2();
-        let mut r5 = r2;
+        let r2 = self.sprite_slot_view(k).subtype2();
+        let r5 = r2;
         let j = k * 64 + usize::from(r2);
         let x_low = self.sprite_slot_view(k).x_low();
         let y_low = self.sprite_slot_view(k).y_low();
@@ -15963,6 +15998,17 @@ impl ZeldaState {
             let value = self.sprite_slot_view(k).subtype2().wrapping_add(1) & 63;
             self.sprite_slot_view_mut(k).set_subtype2(value);
         }
+
+        LanmolaDrawContinuation { r2, r5 }
+    }
+
+    fn lanmola_draw_after_subtype2_increment(
+        &mut self,
+        k: usize,
+        continuation: LanmolaDrawContinuation,
+    ) {
+        let mut r2 = continuation.r2;
+        let mut r5 = continuation.r5;
 
         let r3 = self.sprite_slot_view(k).oam_flags() | self.sprite_slot_view(k).object_priority();
         let n = self.garnish_slot_view(k).y_low();

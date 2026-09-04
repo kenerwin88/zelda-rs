@@ -2766,6 +2766,42 @@ impl ZeldaState {
                 );
                 return;
             }
+            if matches!(
+                self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment {
+                    slot,
+                    continuation: None,
+                }) if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "Lanmola subtype continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                assert_eq!(
+                    self.sprite_slot_view(k).state(),
+                    9,
+                    "source Lanmola subtype boundary requires an active sprite",
+                );
+                assert_eq!(
+                    self.sprite_slot_view(k).sprite_type(),
+                    0x54,
+                    "source Lanmola subtype boundary requires a Lanmola",
+                );
+                self.sprite_timers_and_oam(k);
+                let continuation = self.lanmola_prep_and_draw_through_subtype2_increment(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment {
+                        slot: k as u8,
+                        continuation: Some(continuation),
+                    },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
             if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::BonkItemGraphicsEntered(k as u8))
             {
@@ -3561,6 +3597,21 @@ impl ZeldaState {
                 ..
             } => unreachable!(
                 "source Antfairy subtype boundary did not bind to a native draw caller"
+            ),
+            SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment {
+                slot,
+                continuation: Some(continuation),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.complete_lanmola_after_subtype2_increment(interrupted_slot, continuation);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment {
+                continuation: None,
+                ..
+            } => unreachable!(
+                "source Lanmola subtype boundary did not bind to a native draw caller"
             ),
             SpriteMainCpuBoundary::AfterTimerDecrements {
                 slot,

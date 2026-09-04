@@ -746,6 +746,10 @@ pub enum MainLoopInterruption {
     /// the animation/draw suffix, caller-specific active body, current-slot
     /// return, and lower `Sprite_Main` slots remain pending.
     SpriteMainAfterAntfairySubtype2Increment(u8),
+    /// `Lanmola_Draw` published its graphics/history prefix and leading
+    /// subtype2 increment. The remaining draw, Lanmola AI body, current-slot
+    /// return, and lower `Sprite_Main` slots remain pending.
+    SpriteMainAfterLanmolaSubtype2Increment(u8),
     /// `DesertPrayer_BuildIrisHDMATable` stopped at an exact source statement.
     /// The progress value names every persistent setup/table mutation already
     /// published by the interrupted call; the rest of the builder and its
@@ -824,6 +828,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainFireDebirandoBeforeSpawn(_)
                 | Self::SpriteMainFireDebirandoSpawn { .. }
                 | Self::SpriteMainAfterAntfairySubtype2Increment(_)
+                | Self::SpriteMainAfterLanmolaSubtype2Increment(_)
         )
     }
 }
@@ -916,6 +921,10 @@ pub enum SpriteMainProgress {
     /// The current active slot completed `SpriteDraw_Antfairy`'s leading
     /// subtype2 increment. Its draw/body suffix and lower slots are pending.
     AfterAntfairySubtype2Increment(u8),
+    /// The current Lanmola slot completed the source prefix through its
+    /// subtype2 increment. Its remaining draw/body suffix and lower slots are
+    /// pending.
+    AfterLanmolaSubtype2Increment(u8),
 }
 
 /// Source call site owning an interrupted `SpritePrep_ResetProperties`.

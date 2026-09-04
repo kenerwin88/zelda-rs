@@ -4986,6 +4986,13 @@ enum SpriteMainCpuBoundary {
         slot: u8,
         continuation: Option<AntfairyDrawContinuation>,
     },
+    /// `Lanmola_Draw` published its graphics/history prefix and subtype2
+    /// increment. `continuation` retains the source locals needed by the two
+    /// remaining trail loops and is bound before the native caller parks.
+    AfterLanmolaSubtype2Increment {
+        slot: u8,
+        continuation: Option<LanmolaDrawContinuation>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5003,6 +5010,12 @@ pub(super) enum AntfairyDrawContinuation {
     BunnyBeam,
     Antifairy,
     AntifairyCircle,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) struct LanmolaDrawContinuation {
+    r2: u8,
+    r5: u8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5179,6 +5192,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::AfterAntfairySubtype2Increment {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment {
             slot: active_slot, ..
         } => active_slot == slot,
     }
@@ -5475,6 +5491,16 @@ fn sprite_main_cpu_boundary_from_interruption(
                 continuation: None,
             })
         }
+        crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(slot) => {
+            assert!(
+                slot < 16,
+                "source Lanmola subtype2 receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment {
+                slot,
+                continuation: None,
+            })
+        }
         _ => None,
     }
 }
@@ -5509,7 +5535,8 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainZazakAfterGraphics(slot)
         | crate::MainLoopInterruption::SpriteMainBonkItemGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainProbeAfterOamCoordinates(slot)
-        | crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(slot) => slot < 16,
+        | crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(slot)
+        | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(slot) => slot < 16,
         crate::MainLoopInterruption::SpriteMainInitializeResetProperties {
             slot,
             phase: _,
@@ -5620,7 +5647,8 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::ZazakAfterGraphics(slot)
         | crate::SpriteMainProgress::BonkItemGraphicsStarted(slot)
         | crate::SpriteMainProgress::ProbeAfterOamCoordinates(slot)
-        | crate::SpriteMainProgress::AfterAntfairySubtype2Increment(slot) => slot < 16,
+        | crate::SpriteMainProgress::AfterAntfairySubtype2Increment(slot)
+        | crate::SpriteMainProgress::AfterLanmolaSubtype2Increment(slot) => slot < 16,
         crate::SpriteMainProgress::InitializeResetProperties {
             slot,
             phase: _,
@@ -5926,6 +5954,16 @@ fn sprite_main_cpu_boundary_from_progress(
                 continuation: None,
             }
         }
+        crate::SpriteMainProgress::AfterLanmolaSubtype2Increment(slot) => {
+            assert!(
+                slot < 16,
+                "source Lanmola subtype2 progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment {
+                slot,
+                continuation: None,
+            }
+        }
     }
 }
 
@@ -5967,7 +6005,8 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainInitializeLoadProperties { .. }
         | crate::MainLoopInterruption::SpriteMainFireDebirandoBeforeSpawn(_)
         | crate::MainLoopInterruption::SpriteMainFireDebirandoSpawn { .. }
-        | crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(_) => {
+        | crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(_)
+        | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(_) => {
             unreachable!()
         }
         crate::MainLoopInterruption::LinkPositionBeforeCoordinates
@@ -6031,6 +6070,10 @@ fn same_sprite_main_source_checkpoint(
         (
             SpriteMainCpuBoundary::AfterAntfairySubtype2Increment { slot: left, .. },
             SpriteMainCpuBoundary::AfterAntfairySubtype2Increment { slot: right, .. },
+        )
+        | (
+            SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot: left, .. },
+            SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot: right, .. },
         ) => left == right,
         (
             SpriteMainCpuBoundary::InitializeResetProperties {
@@ -6166,7 +6209,8 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::InitializeLoadProperties { slot, .. }
         | SpriteMainCpuBoundary::FireDebirandoBeforeSpawn(slot)
         | SpriteMainCpuBoundary::FireDebirandoSpawn { slot, .. }
-        | SpriteMainCpuBoundary::AfterAntfairySubtype2Increment { slot, .. } => 2 * (16 - slot) - 1,
+        | SpriteMainCpuBoundary::AfterAntfairySubtype2Increment { slot, .. }
+        | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot, .. } => 2 * (16 - slot) - 1,
         SpriteMainCpuBoundary::AfterWallmasterResetPrefix(slot) => 2 * (16 - slot) - 1,
     }
 }

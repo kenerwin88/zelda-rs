@@ -18250,6 +18250,48 @@ fn antfairy_sprite_main_boundary_commits_every_source_reached_increment() {
 }
 
 #[test]
+fn lanmola_sprite_main_boundary_commits_source_prefix_once_and_saves_draw_locals() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.clear_modal_pause_flag();
+    state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    state
+        .oam_state_mut()
+        .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+    state.sprite_slot_view_mut(0).set_state(9);
+    state.sprite_slot_view_mut(0).set_sprite_type(0x54);
+    state.sprite_slot_view_mut(0).set_x(0x0040);
+    state.sprite_slot_view_mut(0).set_y(0x0080);
+    state.sprite_slot_view_mut(0).set_subtype2(3);
+    state.arm_sprite_main_cpu_continuation(
+        SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment {
+            slot: 0,
+            continuation: None,
+        },
+        1,
+        SpriteMainCpuCaller::DungeonModule07,
+    );
+
+    state.sprite_main();
+
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment {
+                slot: 0,
+                continuation: Some(LanmolaDrawContinuation { r2: 3, r5: 3 }),
+            },
+            caller: SpriteMainCpuCaller::DungeonModule07,
+        })
+    ));
+    assert_eq!(state.sprite_slot_view(0).state(), 9);
+    assert_eq!(state.game_state.frame.submodule, 0);
+    assert_eq!(state.game_state.frame.modal_pause_flag, 0);
+    assert_eq!(state.sprite_slot_view(0).subtype2(), 4);
+}
+
+#[test]
 fn room_72_quadrant_builder_completes_inside_rom_timed_dispatcher_iteration() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();

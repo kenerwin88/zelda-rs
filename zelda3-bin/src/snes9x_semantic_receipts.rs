@@ -121,18 +121,18 @@ const IRIS_SPOTLIGHT_CIRCLE_VALUE_CALL_PC: u32 = 0x00f375;
 // instruction boundaries resume from the same source checkpoint as the pure
 // helper call. `$00:F383` is the first upper-table store itself.
 const IRIS_SPOTLIGHT_AFTER_CIRCLE_VALUE_START_PC: u32 = 0x00f378;
-// ROM $00:f364 is the direct-page store which initializes the current loop
-// iteration's `r8 = 0xff`. At this instruction boundary the store and every
-// table publication for the iteration remain pending. The adapter derives the
-// completed C iteration count from the source `r6` cursor captured at the NMI
-// handler entry; gameplay never observes this ROM address or scratch register.
+// ROM $00:f361 loads the constant for the direct-page store at $00:f364 which
+// initializes the current loop iteration's `r8 = 0xff`. From the load through
+// that store, the initialization and every table publication for the iteration
+// remain pending. The adapter derives the completed C iteration count from the
+// source `r6` cursor captured at the boundary; gameplay never observes this ROM
+// address or scratch register.
+const IRIS_SPOTLIGHT_ITERATION_VALUE_LOAD_PC: u32 = 0x00f361;
 const IRIS_SPOTLIGHT_ITERATION_VALUE_STORE_PC: u32 = 0x00f364;
-// `$00:F366..$00:F374` only evaluates the new iteration's upper-bound
-// branch and, on the active-circle path, tests whether `spotlight_var4` will
-// be decremented. Before `$00:F375` neither that decrement nor either HDMA
-// table store has executed, so these instruction boundaries rewind to the
-// same backend-neutral iteration-start checkpoint as `$00:F364`.
-const IRIS_SPOTLIGHT_AFTER_ITERATION_VALUE_STORE_START_PC: u32 = 0x00f366;
+// `$00:F366..$00:F374` only evaluates the new iteration's upper-bound branch
+// and, on the active-circle path, tests whether `spotlight_var4` will be
+// decremented. The complete `$00:F361..$00:F374` prefix therefore rewinds to
+// one backend-neutral iteration-start checkpoint.
 // The pure circle helper has returned and the source loop has doubled its
 // upper cursor, but neither HDMA-table store has executed. Rewind this
 // emulator-private instruction boundary to the same resumable C checkpoint as
@@ -326,6 +326,12 @@ const SPRITE_TIMER_DECREMENTS_TRACE_PC: u32 = 0x0684aa;
 // timer statement has published at any address in this interval.
 const SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_START_PC: u32 = 0x068444;
 const SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_END_PC: u32 = 0x068449;
+// When `sprite_hit_timer & $7f` is zero, the branch at `$06:8446` jumps
+// directly to the `STZ sprite_hit_timer,X` instruction. Its opcode and operand
+// fetches are still before that store publishes, so they name the same exact
+// source boundary as the linear hit-timer load/branch interval above.
+const SPRITE_PRIMARY_TIMER_DECREMENTS_ZERO_HIT_STORE_START_PC: u32 = 0x068496;
+const SPRITE_PRIMARY_TIMER_DECREMENTS_ZERO_HIT_STORE_END_PC: u32 = 0x068499;
 // `$06:8432` begins the aux2 load after the main/aux1 countdown statements.
 // An NMI may be accepted during that instruction, before aux2 has executed.
 const SPRITE_MAIN_AND_AUX1_TIMER_DECREMENTS_COMPLETE_START_PC: u32 = 0x068432;
@@ -348,6 +354,10 @@ const SPRITE_MAIN_RETURN_PC: u32 = 0x028842;
 // at this store. Its animation/draw suffix and the caller-specific sprite
 // body remain pending; the adapter exports only that semantic statement.
 const ANTFAIRY_SUBTYPE2_INCREMENT_PC: u32 = 0x1df39b;
+// `Lanmola_Draw` has published its graphics/history prefix and the leading
+// subtype2 increment at this source store. Its remaining draw and AI body are
+// still pending.
+const LANMOLA_SUBTYPE2_INCREMENT_PC: u32 = 0x05a6bd;
 const DUNGEON_PEG_FLIP_LOOP_START_PC: u32 = 0x01c22f;
 const DUNGEON_PEG_FLIP_BANK_B_PC: u32 = 0x01c241;
 const DUNGEON_PEG_FLIP_BANK_C_PC: u32 = 0x01c253;
@@ -819,6 +829,8 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     antfairy_subtype2_increment_slot: Option<u8>,
     #[serde(default)]
+    lanmola_subtype2_increment_slot: Option<u8>,
+    #[serde(default)]
     timer_decrements_slot: Option<u8>,
     #[serde(default)]
     primary_timer_decrements_slot: Option<u8>,
@@ -908,6 +920,9 @@ impl SpriteMainExecutionTracker {
             (SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_START_PC
                 ..SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_END_PC)
                 .contains(&pc)
+                || (SPRITE_PRIMARY_TIMER_DECREMENTS_ZERO_HIT_STORE_START_PC
+                    ..SPRITE_PRIMARY_TIMER_DECREMENTS_ZERO_HIT_STORE_END_PC)
+                    .contains(&pc)
         }) {
             return Ok(());
         }
@@ -989,6 +1004,27 @@ impl SpriteMainExecutionTracker {
             return Err(
                 "Snes9x published the Antfairy subtype2 increment twice in one slot".into(),
             );
+        }
+        Ok(())
+    }
+
+    fn observe_lanmola_subtype2_increment(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.pc.map(|pc| pc & 0x00ff_ffff) != Some(LANMOLA_SUBTYPE2_INCREMENT_PC) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x published Lanmola subtype2 before entering a sprite slot")?;
+        if event.x != Some(u16::from(slot))
+            || event.address != Some(SPRITE_SUBTYPE2_BASE + u16::from(slot))
+        {
+            return Err(format!(
+                "Snes9x Lanmola subtype2 publication disagreed on slot {slot}: x={:?}, address={:?}",
+                event.x, event.address,
+            ));
+        }
+        if self.lanmola_subtype2_increment_slot.replace(slot).is_some() {
+            return Err("Snes9x published the Lanmola subtype2 increment twice in one slot".into());
         }
         Ok(())
     }
@@ -1423,6 +1459,14 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::AfterAntfairySubtype2Increment(slot);
         }
+        if let Some(slot) = self.lanmola_subtype2_increment_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Lanmola subtype2 publication outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterLanmolaSubtype2Increment(slot);
+        }
         if let Some(slot) = self.throwable_scenery_state_clear_slot {
             assert_eq!(
                 self.current_slot,
@@ -1689,6 +1733,9 @@ impl SpriteMainExecutionTracker {
             SpriteMainProgress::AfterAntfairySubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(slot)
             }
+            SpriteMainProgress::AfterLanmolaSubtype2Increment(slot) => {
+                MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(slot)
+            }
         }
     }
 }
@@ -1854,7 +1901,7 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     host_nmi_ppu_register_operands: Vec<NmiPpuRegisterOperands>,
 }
 
-const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 18;
+const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 19;
 
 /// Emulator-private continuation state for the typed semantic adapter.
 ///
@@ -3597,6 +3644,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.fire_debirando_before_spawn_slot = None;
                             execution.fire_debirando_spawn = None;
                             execution.antfairy_subtype2_increment_slot = None;
+                            execution.lanmola_subtype2_increment_slot = None;
                             execution.timer_decrements_slot = None;
                             execution.primary_timer_decrements_slot = None;
                             execution.bari_before_random_slot = None;
@@ -3646,6 +3694,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.fire_debirando_before_spawn_slot = None;
                         execution.fire_debirando_spawn = None;
                         execution.antfairy_subtype2_increment_slot = None;
+                        execution.lanmola_subtype2_increment_slot = None;
                         execution.timer_decrements_slot = None;
                         execution.primary_timer_decrements_slot = None;
                         execution.bari_before_random_slot = None;
@@ -3954,6 +4003,7 @@ impl Snes9xOracleSemanticTrace {
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
                     execution.observe_fire_debirando_spawn_write(&event)?;
                     execution.observe_antfairy_subtype2_increment(&event)?;
+                    execution.observe_lanmola_subtype2_increment(&event)?;
                     execution.observe_zazak_graphics(&event)?;
                     if pc == THROWABLE_SCENERY_STATE_CLEAR_PC {
                         let slot = execution.current_slot.ok_or(
@@ -4822,12 +4872,11 @@ fn spotlight_table_build_progress(
             ..=IRIS_SPOTLIGHT_LOOP_COMPLETION_BRANCH_PC)
             .contains(&pc)
     });
-    let after_iteration_value_before_circle = pc.is_some_and(|pc| {
-        (IRIS_SPOTLIGHT_AFTER_ITERATION_VALUE_STORE_START_PC..IRIS_SPOTLIGHT_CIRCLE_VALUE_CALL_PC)
-            .contains(&pc)
+    let before_circle_iteration_prefix = pc.is_some_and(|pc| {
+        (IRIS_SPOTLIGHT_ITERATION_VALUE_LOAD_PC..IRIS_SPOTLIGHT_CIRCLE_VALUE_CALL_PC).contains(&pc)
     });
     if !inside_circle_value
-        && !after_iteration_value_before_circle
+        && !before_circle_iteration_prefix
         && !after_circle_value_before_upper_write
         && !after_upper_table_write
         && !before_loop_completion_test
@@ -4888,10 +4937,8 @@ fn spotlight_table_build_progress(
                 .wrapping_sub(initial_lower_cursor),
         )
         .wrapping_add(1);
-    let iteration_initialization_checkpoint = matches!(
-        pc,
-        Some(IRIS_SPOTLIGHT_ITERATION_VALUE_STORE_PC | IRIS_SPOTLIGHT_NEXT_ITERATION_PC)
-    ) || after_iteration_value_before_circle;
+    let iteration_initialization_checkpoint =
+        before_circle_iteration_prefix || pc == Some(IRIS_SPOTLIGHT_NEXT_ITERATION_PC);
     let projection_checkpoint = !inside_circle_value
         && !after_upper_table_write
         && !before_loop_completion_test
@@ -6925,6 +6972,7 @@ mod tests {
             fire_debirando_before_spawn_slot: None,
             fire_debirando_spawn: None,
             antfairy_subtype2_increment_slot: None,
+            lanmola_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
             main_and_aux1_timer_decrements_slot: None,
@@ -7761,6 +7809,41 @@ mod tests {
     }
 
     #[test]
+    fn zero_hit_timer_branch_nmi_exports_the_primary_countdown_prefix() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(14), None),
+            // The zero branch skipped the linear hit-timer interval and the
+            // host ended while fetching the first clear instruction.
+            raw(
+                "nmi",
+                Some(SPRITE_PRIMARY_TIMER_DECREMENTS_ZERO_HIT_STORE_START_PC),
+                Some(14),
+                None,
+            ),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainAfterPrimaryTimerDecrements(14),
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::AfterPrimaryTimerDecrements(14),
+                ),
+            ],
+        );
+    }
+
+    #[test]
     fn wallmaster_reset_nmi_exports_the_fixed_reset_prefix() {
         let mut source = empty_semantic_tracker();
         let mut receipts = Vec::new();
@@ -7948,6 +8031,40 @@ mod tests {
                 ),
                 OriginalTimingSemanticReceipt::SpriteMainProgressed(
                     SpriteMainProgress::AfterAntfairySubtype2Increment(1),
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn sprite_main_nmi_exports_lanmola_subtype_increment() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(2), None),
+            raw(
+                "wram-write",
+                Some(LANMOLA_SUBTYPE2_INCREMENT_PC),
+                Some(2),
+                Some(SPRITE_SUBTYPE2_BASE + 2),
+            ),
+            raw("nmi", Some(0x05_a6c0), Some(2), None),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(2),
+                ),
+                OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                    SpriteMainProgress::AfterLanmolaSubtype2Increment(2),
                 ),
             ],
         );
@@ -10520,6 +10637,7 @@ mod tests {
             fire_debirando_before_spawn_slot: None,
             fire_debirando_spawn: None,
             antfairy_subtype2_increment_slot: None,
+            lanmola_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
             main_and_aux1_timer_decrements_slot: None,
@@ -10572,6 +10690,7 @@ mod tests {
             fire_debirando_before_spawn_slot: None,
             fire_debirando_spawn: None,
             antfairy_subtype2_increment_slot: None,
+            lanmola_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
             main_and_aux1_timer_decrements_slot: None,
@@ -11498,6 +11617,37 @@ mod tests {
                 completed_iterations: 190,
                 checkpoint: SpotlightTableBuildCheckpoint::BeforeIterationInitialization,
             }),
+        );
+    }
+
+    #[test]
+    fn host_return_before_spotlight_iteration_value_load_reports_pending_iteration() {
+        // Route host 155201 returns at $00:F361 after 172 row-pair iterations.
+        // The next iteration has not initialized its local value, while the
+        // lower cursor and spotlight scratch independently identify the exact
+        // source loop position.
+        let mut event = frame_with_sub("return", 155_201, 0x10, 1);
+        event.pc = Some(IRIS_SPOTLIGHT_ITERATION_VALUE_LOAD_PC);
+        event.link_y = Some(3112);
+        event.bg2_v = Some(3072);
+        event.spotlight_radius = Some(119);
+        event.spotlight_var4_low = Some(1);
+        event.spotlight_lower_cursor = Some(52);
+        let mut receipts = Vec::new();
+
+        publish_spotlight_host_return_progress(&event, None, None, &mut receipts).unwrap();
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+                SpotlightTableBuildProgressReceipt {
+                    progress: SpotlightTableBuildProgress {
+                        completed_iterations: 172,
+                        checkpoint: SpotlightTableBuildCheckpoint::BeforeIterationInitialization,
+                    },
+                    boundary: OriginalTimingBoundary::HostReturn,
+                },
+            )],
         );
     }
 
