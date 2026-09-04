@@ -3201,6 +3201,7 @@ fn uncle_item_return_stages_the_interrupted_receipt_cache_and_live_oam() {
         },
         sprite_slot: 0,
         dungeon: DungeonSpriteMainReturn {
+            link_oam: None,
             bg2_x: 1,
             bg2_y: 2,
             bg1_x: 3,

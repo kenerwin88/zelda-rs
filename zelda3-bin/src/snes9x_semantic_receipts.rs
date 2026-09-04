@@ -3013,6 +3013,11 @@ impl HostFrameWindow {
                 }
             }
         }
+        // The selector at $0D:A61A is read-only: all initial LinkOam stores
+        // precede it, and equipment drawing plus stair-Y restoration follow it.
+        if let Some(progress) = link_oam_progress(returned.pc) {
+            receipts.push(OriginalTimingSemanticReceipt::LinkOamProgress(progress));
+        }
         // Module_PreDungeon publishes module 07/0f from the overworld entrance
         // (Module06) and from the spawn-select reload, which re-enters through
         // Module05's loader (route host 160528: the publication precedes the
@@ -5195,6 +5200,9 @@ impl Snes9xOracleSemanticTrace {
                 if let Some(phase) = main_loop_interruption {
                     receipts.push(OriginalTimingSemanticReceipt::MainLoopInterrupted(phase));
                 }
+                if let Some(progress) = event.pc.and_then(link_oam_progress) {
+                    receipts.push(OriginalTimingSemanticReceipt::LinkOamProgress(progress));
+                }
             }
             "nmi-resume" => {
                 // Reconciliation above validates the private stack-qualified
@@ -6002,6 +6010,16 @@ fn main_loop_interruption_for_pc(pc: u32) -> Option<MainLoopInterruption> {
         Some(MainLoopInterruption::SpritePreparation)
     } else {
         None
+    }
+}
+
+fn link_oam_progress(pc: u32) -> Option<zelda3::LinkOamProgress> {
+    match pc & 0x00ff_ffff {
+        // Initial palette word is stored; follower palette selection and
+        // both optional sprite banks have not run yet.
+        0x0d_a47e => Some(zelda3::LinkOamProgress::PoseSelected),
+        0x0d_a61a => Some(zelda3::LinkOamProgress::EquipmentSelection),
+        _ => None,
     }
 }
 
@@ -10794,6 +10812,32 @@ mod tests {
                     OverworldSpriteReloadProgress::ReloadReturned,
                 ),
             ],
+        );
+    }
+
+    #[test]
+    fn link_oam_equipment_selector_publishes_its_native_prefix() {
+        assert_eq!(
+            link_oam_progress(0x0d_a47e),
+            Some(zelda3::LinkOamProgress::PoseSelected)
+        );
+        assert_eq!(link_oam_progress(0x0d_a47b), None);
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame_with_sub("entry", 1, 7, 18)).unwrap();
+        let mut returned = frame_with_sub("return", 1, 7, 18);
+        returned.pc = Some(0x0d_a61a);
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, None, true).unwrap();
+        assert!(
+            receipts.contains(&OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                MainLoopInterruption::LinkOam,
+            ))
+        );
+        assert!(
+            receipts.contains(&OriginalTimingSemanticReceipt::LinkOamProgress(
+                zelda3::LinkOamProgress::EquipmentSelection
+            ))
         );
     }
 

@@ -3,6 +3,26 @@
 
 use super::*;
 
+/// Locals retained while LinkOam_Main is selecting equipment. Its stair Y
+/// adjustment and initial sprite banks are live until the drawing suffix returns.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LinkOamEquipmentContinuation {
+    y_coord_backup: u16,
+    submodule: u8,
+    xcoord: u8,
+    ycoord: u8,
+    scratch_0_var: bool,
+    oam_priority_value: u16,
+    sort_sprites_offset_into_oam_buffer: u16,
+    handler_state: u8,
+    r2: usize,
+    r4loc: usize,
+    link_palette_bits_of_oam: u16,
+    pose: u8,
+    animation_offset: u8,
+    initial_banks_pending: bool,
+}
+
 #[derive(Clone, Copy)]
 struct LinkSpriteBody {
     y: i8,
@@ -2137,6 +2157,16 @@ impl ZeldaState {
     }
 
     pub(crate) fn link_oam_main(&mut self) {
+        let continuation = self.link_oam_before_equipment();
+        self.link_oam_after_equipment(continuation);
+    }
+
+    pub(super) fn link_oam_before_equipment(&mut self) -> LinkOamEquipmentContinuation {
+        let continuation = self.link_oam_after_pose_selection();
+        self.link_oam_initial_sprite_banks(continuation)
+    }
+
+    pub(super) fn link_oam_after_pose_selection(&mut self) -> LinkOamEquipmentContinuation {
         let y_coord_backup = self.game_state.player.follower_link.y();
         let submodule = self.game_state.frame.submodule;
 
@@ -2437,7 +2467,45 @@ impl ZeldaState {
 
         let dir = self.game_state.player.follower_link.facing_index();
         let r2 = kPlayerOamOtherOffs[dir * 40 + yt as usize] as usize + rt as usize;
-        let mut r4loc = kPlayerOamSpriteLocs[r2] as usize;
+        let r4loc = kPlayerOamSpriteLocs[r2] as usize;
+
+        self.follower_link_state_mut()
+            .set_palette_bits_of_oam_word(0x0e00);
+        LinkOamEquipmentContinuation {
+            y_coord_backup,
+            submodule,
+            xcoord,
+            ycoord,
+            scratch_0_var,
+            oam_priority_value,
+            sort_sprites_offset_into_oam_buffer,
+            handler_state,
+            r2,
+            r4loc,
+            link_palette_bits_of_oam: 0x0e00,
+            pose: yt,
+            animation_offset: rt,
+            initial_banks_pending: true,
+        }
+    }
+
+    fn link_oam_initial_sprite_banks(
+        &mut self,
+        mut continuation: LinkOamEquipmentContinuation,
+    ) -> LinkOamEquipmentContinuation {
+        assert!(continuation.initial_banks_pending);
+        let LinkOamEquipmentContinuation {
+            xcoord,
+            ycoord,
+            scratch_0_var,
+            oam_priority_value,
+            sort_sprites_offset_into_oam_buffer,
+            r4loc,
+            pose: yt,
+            animation_offset: rt,
+            ..
+        } = continuation;
+        let dir = self.game_state.player.follower_link.facing_index();
 
         let link_palette_bits_of_oam =
             if self.game_state.sprites.follower_runtime.palette_swap_flag() != 0 {
@@ -2516,6 +2584,31 @@ impl ZeldaState {
             }
         }
 
+        continuation.link_palette_bits_of_oam = link_palette_bits_of_oam;
+        continuation.initial_banks_pending = false;
+        continuation
+    }
+
+    pub(super) fn link_oam_after_equipment(&mut self, continuation: LinkOamEquipmentContinuation) {
+        let continuation = if continuation.initial_banks_pending {
+            self.link_oam_initial_sprite_banks(continuation)
+        } else {
+            continuation
+        };
+        let LinkOamEquipmentContinuation {
+            y_coord_backup,
+            submodule,
+            xcoord,
+            ycoord,
+            scratch_0_var,
+            oam_priority_value,
+            sort_sprites_offset_into_oam_buffer,
+            handler_state,
+            r2,
+            mut r4loc,
+            link_palette_bits_of_oam,
+            ..
+        } = continuation;
         let mut sr = SwordResult { r6: 0, r12: 0 };
         if self
             .game_state

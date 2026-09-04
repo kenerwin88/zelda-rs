@@ -2040,6 +2040,40 @@ fn special_exit_mosaic_restore_and_second_decode_are_distinct_source_stages() {
 }
 
 #[test]
+fn link_oam_equipment_checkpoint_retains_stair_y_until_drawing_returns() {
+    for submodule in [18, 19] {
+        for animation_step in 0..6 {
+            let setup = || {
+                let mut state = ZeldaState::new();
+                state.game_state.frame.main_module = 7;
+                state.game_state.frame.submodule = submodule;
+                state.follower_link_state_mut().set_y(0x0812);
+                state
+                    .follower_link_state_mut()
+                    .set_animation_step(animation_step);
+                state
+            };
+            let mut atomic = setup();
+            atomic.link_oam_main();
+            for pose_only in [false, true] {
+                let mut staged = setup();
+                let continuation = if pose_only {
+                    staged.link_oam_after_pose_selection()
+                } else {
+                    staged.link_oam_before_equipment()
+                };
+                let offset = [0u16, 2, 3, 0, 2, 3][animation_step as usize];
+                assert_eq!(staged.game_state.player.follower_link.y(), 0x0812 - offset);
+                staged.link_oam_after_equipment(continuation);
+                assert_eq!(staged.game_state.player.follower_link.y(), 0x0812);
+                assert_eq!(staged.ram, atomic.ram);
+                staged.assert_native_frame_state_matches_ram();
+            }
+        }
+    }
+}
+
+#[test]
 fn live_mirror_warp_reload_retains_and_restores_source_scan_locals() {
     let mut state = ZeldaState::new();
     state.original_timing_owner = OriginalTimingOwnerState::Live;
@@ -6637,6 +6671,7 @@ fn live_sprite_main_call_stack_holds_then_advances_only_the_observed_slot_delta(
     // The active continuation begins after slot 4's source call returned.
     state.sprite_slot_view_mut(4).set_state(9);
     state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0,
         bg1_x: 0,
@@ -6755,6 +6790,7 @@ fn live_host_return_progress_establishes_the_sprite_main_owner_before_resume() {
     ));
 
     state.run_module07_sprite_main_caller(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0,
         bg1_x: 0,
@@ -6800,6 +6836,7 @@ fn live_throwable_scenery_state_clear_applies_the_partial_slot_prefix() {
     ));
 
     state.run_module07_sprite_main_caller(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0,
         bg1_x: 0,
@@ -6850,6 +6887,7 @@ fn live_single_small_draw_position_applies_prefix_and_resumes_without_replaying_
     ));
 
     state.run_module07_sprite_main_caller(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0,
         bg1_x: 0,
@@ -6901,6 +6939,7 @@ fn live_timer_oam_return_resumes_dispatch_without_replaying_timers() {
     ));
 
     state.run_module07_sprite_main_caller(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0,
         bg1_x: 0,
@@ -6951,6 +6990,7 @@ fn live_timer_decrement_boundary_finishes_priority_and_dispatch_without_replayin
     ));
 
     state.run_module07_sprite_main_caller(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0,
         bg1_x: 0,
@@ -7064,6 +7104,7 @@ fn live_wallmaster_reset_prefix_publishes_before_resume_without_replaying_the_se
     ));
 
     state.run_module07_sprite_main_caller(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0x0700,
         bg1_x: 0,
@@ -7112,6 +7153,7 @@ fn live_big_key_publication_enters_the_existing_source_call_continuation() {
     ));
 
     state.run_module07_sprite_main_caller(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0,
         bg1_x: 0,
@@ -7125,6 +7167,7 @@ fn live_big_key_publication_enters_the_existing_source_call_continuation() {
         Some(GameWorkContinuation::FinishBigKeyDropGraphics {
             sprite_slot: 2,
             dungeon: DungeonSpriteMainReturn {
+                link_oam: None,
                 bg2_x: 0,
                 bg2_y: 0,
                 bg1_x: 0,
@@ -19421,6 +19464,7 @@ fn big_key_drop_publishes_entry_dma_then_holds_it_across_waiting_slices() {
     state.last_presented_oam = Some(vec![0x1111; 272]);
     state.staged_presented_oam = Some(vec![0x2222; 272]);
     state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 1,
         bg2_y: 2,
         bg1_x: 3,
@@ -19458,6 +19502,7 @@ fn big_key_drop_publishes_entry_dma_then_holds_it_across_waiting_slices() {
         Some(GameWorkContinuation::FinishBigKeyDropGraphics {
             sprite_slot: 2,
             dungeon: DungeonSpriteMainReturn {
+                link_oam: None,
                 bg2_x: 1,
                 bg2_y: 2,
                 bg1_x: 3,
@@ -19485,6 +19530,7 @@ fn c_big_key_decompression_retains_leading_nmi_scroll_until_its_nmi_returns() {
     state.ppu.bg_layer[1].h_scroll = 0x00a4;
     let active_scanout_scroll = BgScrollRegisterScanout::capture(&state.ppu);
     state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 1,
         bg2_y: 2,
         bg1_x: 3,
@@ -20288,6 +20334,7 @@ fn standard_item_receipt_graphics_hold_the_four_snes9x_observed_nmi_slices() {
                 },
                 sprite_slot: 0,
                 dungeon: DungeonSpriteMainReturn {
+                    link_oam: None,
                     bg2_x: 1,
                     bg2_y: 2,
                     bg1_x: 3,
@@ -20940,6 +20987,7 @@ fn sick_kid_suffix_waits_for_the_live_source_call_return_receipt() {
     state.rom_startup_timing = true;
     state.original_timing_owner = OriginalTimingOwnerState::Live;
     state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0x1111,
         bg2_y: 0x2222,
         bg1_x: 0x3333,
@@ -20992,6 +21040,7 @@ fn sick_kid_suffix_waits_for_the_live_source_call_return_receipt() {
             assert_eq!(
                 caller,
                 SpriteMainItemReceiptCallerReturn::Module07(DungeonSpriteMainReturn {
+                    link_oam: None,
                     bg2_x: 0x1111,
                     bg2_y: 0x2222,
                     bg1_x: 0x3333,
@@ -26691,6 +26740,7 @@ fn cached_sprite_restore_receipt_resumes_to_the_atomic_c_endpoint() {
     let mut resumed = base;
     resumed.dungeon_cached_sprite_cpu_interruption_pending = Some(boundary);
     resumed.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0,
         bg1_x: 0,
@@ -26756,6 +26806,7 @@ fn cached_antfairy_body_checkpoint_publishes_then_resumes_without_reincrementing
     resumed.dungeon_cached_sprite_cpu_interruption_boundary =
         Some(OriginalTimingBoundary::NmiAccepted);
     resumed.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0,
         bg1_x: 0,
@@ -26978,6 +27029,7 @@ fn cached_sprite_receipt_boundary_selects_the_source_resume_side_of_nmi() {
             });
         state.dungeon_cached_sprite_cpu_interruption_boundary = Some(boundary);
         state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+            link_oam: None,
             bg2_x: 0,
             bg2_y: 0,
             bg1_x: 0,
@@ -27040,6 +27092,7 @@ fn completed_cached_sprite_caller_carries_the_following_source_nmi_at_main_wait(
     state.dungeon_cached_sprite_cpu_interruption_boundary =
         Some(OriginalTimingBoundary::HostReturn);
     state.active_dungeon_sprite_main_return = Some(DungeonSpriteMainReturn {
+        link_oam: None,
         bg2_x: 0,
         bg2_y: 0,
         bg1_x: 0,

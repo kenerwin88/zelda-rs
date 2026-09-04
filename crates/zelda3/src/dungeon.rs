@@ -14048,6 +14048,7 @@ impl ZeldaState {
             bg2_y: bg2y,
             bg1_x: bg1x_restore,
             bg1_y: bg1y_restore,
+            link_oam: None,
         };
         self.run_module07_sprite_main_caller(sprite_return);
     }
@@ -14153,12 +14154,15 @@ impl ZeldaState {
         &mut self,
         sprite_return: DungeonSpriteMainReturn,
     ) {
-        self.set_bg2_x(sprite_return.bg2_x);
-        self.set_bg2_y(sprite_return.bg2_y);
-        self.set_bg1_x(sprite_return.bg1_x);
-        self.set_bg1_y(sprite_return.bg1_y);
-
-        self.link_oam_main();
+        if let Some(continuation) = sprite_return.link_oam {
+            self.link_oam_after_equipment(continuation);
+        } else {
+            self.set_bg2_x(sprite_return.bg2_x);
+            self.set_bg2_y(sprite_return.bg2_y);
+            self.set_bg1_x(sprite_return.bg1_x);
+            self.set_bg1_y(sprite_return.bg1_y);
+            self.link_oam_main();
+        }
         self.replay_trace_ram_watch("module07-after-link-oam");
         self.hud_refill_logic();
         self.replay_trace_ram_watch("module07-after-refill");

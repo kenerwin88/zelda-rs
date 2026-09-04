@@ -8129,6 +8129,7 @@ pub(super) struct DungeonSpriteMainReturn {
     bg2_y: u16,
     bg1_x: u16,
     bg1_y: u16,
+    link_oam: Option<player_oam::LinkOamEquipmentContinuation>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40803,6 +40804,36 @@ impl ZeldaState {
                 );
         let authoritative_overworld_map_quadrants_published =
             self.take_original_timing_overworld_map_quadrants_published();
+        let mut authoritative_link_oam_equipment_prefix = None;
+        if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
+            receipts.semantic.retain(|receipt| {
+                if let OriginalTimingSemanticReceipt::LinkOamProgress(progress) = *receipt {
+                    assert!(
+                        authoritative_link_oam_equipment_prefix.is_none(),
+                        "LinkOam prefix replayed"
+                    );
+                    authoritative_link_oam_equipment_prefix = Some(progress);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        if authoritative_link_oam_equipment_prefix.is_some() {
+            assert!(
+                matches!(
+                    self.game_execution_scheduler.current_work(),
+                    Some(GameWorkContinuation::FinishDungeonSupertileTransition {
+                        work: DungeonSupertileTransitionWork::StraightInterroomRoomInitialization
+                            | DungeonSupertileTransitionWork::StraightInterroomSpriteGraphics
+                            | DungeonSupertileTransitionWork::StraightInterroomBgCharacters34
+                            | DungeonSupertileTransitionWork::SpiralRoomInitialization
+                            | DungeonSupertileTransitionWork::SpiralBackgroundSync
+                    })
+                ),
+                "LinkOam equipment prefix reached an unsupported caller"
+            );
+        }
         let authoritative_overworld_special_exit_mosaic_restored =
             self.take_original_timing_overworld_special_exit_mosaic_restored();
         let authoritative_overworld_special_exit_mosaic_returned =
@@ -42862,6 +42893,9 @@ impl ZeldaState {
                             | GameWorkContinuation::FinishDungeonSupertileTransition {
                                 work: DungeonSupertileTransitionWork::SpiralRoomInitialization
                                     | DungeonSupertileTransitionWork::SpiralBackgroundSync
+                                    | DungeonSupertileTransitionWork::StraightInterroomRoomInitialization
+                                    | DungeonSupertileTransitionWork::StraightInterroomSpriteGraphics
+                                    | DungeonSupertileTransitionWork::StraightInterroomBgCharacters34
                                     | DungeonSupertileTransitionWork::SpriteConversion
                                     | DungeonSupertileTransitionWork::RoomLoadSpriteReset { .. }
                             }
@@ -45394,6 +45428,7 @@ impl ZeldaState {
                             self.increment_subsubmodule();
                             self.complete_resumed_module07_caller_suffix_by_wire(
                                 authoritative_scheduled_caller_return_timeline.is_some(),
+                                authoritative_link_oam_equipment_prefix,
                             );
                             if let Some(oam) = self
                                 .active_display_obj_generation
@@ -45452,6 +45487,7 @@ impl ZeldaState {
                             }
                             self.complete_resumed_module07_caller_suffix_by_wire(
                                 authoritative_scheduled_caller_return_timeline.is_some(),
+                                authoritative_link_oam_equipment_prefix,
                             );
                             if let Some(oam) = self
                                 .active_display_obj_generation
@@ -52979,7 +53015,11 @@ impl ZeldaState {
     /// Sprite_Main return in this host is claimed by the caller's own
     /// Sprite_Main, and the shared suffix is retired by a terminal return or
     /// deferred while the wire holds it (route hosts 307614, 307634).
-    fn complete_resumed_module07_caller_suffix_by_wire(&mut self, terminal_return: bool) {
+    fn complete_resumed_module07_caller_suffix_by_wire(
+        &mut self,
+        terminal_return: bool,
+        equipment_prefix: Option<crate::LinkOamProgress>,
+    ) {
         if self
             .take_forwarded_original_timing_main_loop_interruption(
                 crate::MainLoopInterruption::LinkOam,
@@ -53008,6 +53048,33 @@ impl ZeldaState {
             self.begin_original_timing_sprite_main_return_claim_scope(continued_sprite_main_claims);
         }
         self.complete_module07_dungeon_after_submodule();
+        if let Some(progress) = equipment_prefix {
+            assert!(
+                !terminal_return,
+                "LinkOam prefix cannot own a terminal caller return"
+            );
+            assert_eq!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn)
+            );
+            let mut sprite_return = self
+                .active_dungeon_sprite_main_return
+                .take()
+                .expect("LinkOam prefix requires its suspended dungeon caller");
+            assert!(
+                sprite_return.link_oam.is_none(),
+                "LinkOam prefix was already executed"
+            );
+            self.set_bg2_x(sprite_return.bg2_x);
+            self.set_bg2_y(sprite_return.bg2_y);
+            self.set_bg1_x(sprite_return.bg1_x);
+            self.set_bg1_y(sprite_return.bg1_y);
+            sprite_return.link_oam = Some(match progress {
+                crate::LinkOamProgress::PoseSelected => self.link_oam_after_pose_selection(),
+                crate::LinkOamProgress::EquipmentSelection => self.link_oam_before_equipment(),
+            });
+            self.active_dungeon_sprite_main_return = Some(sprite_return);
+        }
         if continued_sprite_main_claims != 0
             && self
                 .original_timing_sprite_main_return_claims_remaining

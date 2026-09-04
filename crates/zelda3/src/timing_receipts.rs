@@ -1698,6 +1698,15 @@ pub enum OriginalTimingSemanticReceipt {
     /// advanced to the next submodule. The timing backend identifies the
     /// enclosing source-stage return; gameplay owns every restored value.
     OverworldSpecialExitMosaicReturned,
+    /// LinkOam_Main reached its read-only equipment selector. The initial
+    /// sprite banks and temporary stair coordinate are already published.
+    LinkOamProgress(LinkOamProgress),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum LinkOamProgress {
+    PoseSelected,
+    EquipmentSelection,
 }
 
 /// One source interruption temporarily owned by a translated C caller during
