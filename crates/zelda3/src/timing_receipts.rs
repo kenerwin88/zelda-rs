@@ -662,6 +662,13 @@ pub enum MainLoopInterruption {
     LinkPositionAfterSubpixel {
         pass: u8,
     },
+    /// `Link_MovePosition` published the low coordinate byte for the current
+    /// axis, but the accepted NMI (or host boundary) preceded its high-byte
+    /// store. The typed continuation retains the computed high byte and every
+    /// later axis.
+    LinkPositionAfterCoordinateLow {
+        pass: u8,
+    },
     /// The opening or closing iris reached its goal inside
     /// `IrisSpotlight_ConfigureTable` and entered `IrisSpotlight_ResetTable`,
     /// whose 224 table-word stores were interrupted by the accepted NMI (or

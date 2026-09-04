@@ -5586,9 +5586,12 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         } => slot < 16 && completed >= 1 && completed <= 5,
         crate::MainLoopInterruption::LinkOam
         | crate::MainLoopInterruption::SpritePreparation
-        | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
-        | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
-        | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. } => true,
+        | crate::MainLoopInterruption::LinkPositionBeforeCoordinates => true,
+        crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }
+        | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { pass, .. }
+        | crate::MainLoopInterruption::LinkPositionAfterCoordinates { pass } => {
+            matches!(pass, 0 | 2 | 4)
+        }
         crate::MainLoopInterruption::SpotlightGoalResetTable { completed_stores } => {
             completed_stores <= 224
         }
@@ -6017,6 +6020,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         }
         crate::MainLoopInterruption::LinkPositionBeforeCoordinates
         | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+        | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
         | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
         | crate::MainLoopInterruption::SpotlightGoalResetTable { .. }
         | crate::MainLoopInterruption::GameOverIrisGoalPaletteFill { .. }
@@ -7779,6 +7783,17 @@ pub(super) struct LinkMovePositionPartialReturn {
     partial: LinkMovePositionPartial,
 }
 
+/// `Link_MovePosition` suspended after the current axis' low coordinate byte
+/// but before its high coordinate byte. The mixed coordinate is already
+/// visible in RAM/native state; `pending_coordinate_high` completes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LinkMovePositionAfterCoordinateLowReturn {
+    old_x: u16,
+    old_y: u16,
+    pass: u8,
+    pending_coordinate_high: u8,
+}
+
 /// `Link_MovePosition` suspended after both coordinate stores for `pass`.
 /// Earlier axes and `pass` are complete; later axes and the movement tail
 /// remain pending.
@@ -8044,6 +8059,15 @@ enum GameWorkContinuation {
         old_x: u16,
         old_y: u16,
     },
+    /// Module0F's Link movement published the selected axis' coordinate low
+    /// byte; the high byte, later axes, and caller suffix remain pending.
+    FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+        iteration: SpotlightIteration,
+        pass: u8,
+        pending_coordinate_high: u8,
+        old_x: u16,
+        old_y: u16,
+    },
     /// Module10's Sprite_Main prefix returned, but vblank interrupted the
     /// opening-iris table build or copy before its radius/control suffix.
     FinishOverworldSpotlightBuild {
@@ -8280,6 +8304,7 @@ impl GameWorkContinuation {
                 | Self::FinishDungeonExitSpotlightEntry { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovement { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
+                | Self::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                 | Self::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
                 | Self::FinishModule09LinkOamCallerReturn { .. }
                 | Self::FinishWorldMapOverlayReload
@@ -21646,6 +21671,7 @@ impl ZeldaState {
                             // (route hosts 50635, 179586).
                             | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
                             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+                            | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                             | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
                             | crate::MainLoopInterruption::GameOverIrisGoalPaletteFill { .. }
                             | crate::MainLoopInterruption::DesertPrayerIris { .. }
@@ -24714,6 +24740,7 @@ impl ZeldaState {
         match interruption {
             crate::MainLoopInterruption::LinkOam
             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+            | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
             | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. } => {}
             other => panic!(
                 "a continued recurring spotlight Build requires its LinkOam or mid-loop Link position boundary, not {other:?}"
@@ -24978,6 +25005,21 @@ impl ZeldaState {
                     cpu_probe.game_execution_scheduler.current_work(),
                     Some(
                         GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
+                    )
+                ));
+            }
+            crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { pass } => {
+                cpu_probe
+                    .complete_dungeon_exit_spotlight_build_until_link_position_after_coordinate_low(
+                        table_build,
+                        projection_completed,
+                        iteration,
+                        pass,
+                    );
+                assert!(matches!(
+                    cpu_probe.game_execution_scheduler.current_work(),
+                    Some(
+                        GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                     )
                 ));
             }
@@ -30032,6 +30074,12 @@ impl ZeldaState {
                 iteration,
                 ..
             })
+            | Some(
+                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+                    iteration,
+                    ..
+                },
+            )
             | Some(
                 GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
                     iteration,
@@ -36938,6 +36986,27 @@ impl ZeldaState {
                     false,
                 );
             }
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+                iteration,
+                pass,
+                pending_coordinate_high,
+                old_x,
+                old_y,
+            } => {
+                self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
+                    GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                )));
+                self.complete_dungeon_exit_spotlight_link_movement_after_coordinate_low(
+                    iteration,
+                    LinkMovePositionAfterCoordinateLowReturn {
+                        old_x,
+                        old_y,
+                        pass,
+                        pending_coordinate_high,
+                    },
+                    false,
+                );
+            }
             GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
                 iteration,
                 pass,
@@ -37645,6 +37714,7 @@ impl ZeldaState {
                                             | GameWorkContinuation::FinishWorldMapOverlayReload
                                             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
                                             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
+                                            | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                                             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
                                             | GameWorkContinuation::FinishSpriteMain { .. }
                                             | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
@@ -40280,6 +40350,7 @@ impl ZeldaState {
                         crate::MainLoopInterruption::SpritePreparationExtendedOamPacking { .. }
                             | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
                             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+                            | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                             | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
                             | crate::MainLoopInterruption::GameOverIrisGoalPaletteFill { .. }
                             | crate::MainLoopInterruption::DesertPrayerIris { .. }
@@ -40826,6 +40897,7 @@ impl ZeldaState {
                     expected_work,
                     GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
                 ) {
                     // The resumed movement leaf returns through Module0F to
@@ -40910,6 +40982,7 @@ impl ZeldaState {
                     expected_work,
                     GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
+                        | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
                         | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates { .. }
                 ) {
                     assert!(
@@ -42081,6 +42154,7 @@ impl ZeldaState {
                                 // The recurring spotlight Build's host may end
                                 // inside Link_MovePosition (route host 179586).
                                 | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+                                | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                                 | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
                         )
                         || (matches!(
@@ -43686,6 +43760,10 @@ impl ZeldaState {
                         iteration, ..
                     }
                     | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                        iteration,
+                        ..
+                    }
+                    | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
                         iteration,
                         ..
                     }
@@ -45940,6 +46018,32 @@ impl ZeldaState {
                     }
                 }
                 GameWorkStep::Complete(
+                    GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+                        iteration,
+                        pass,
+                        pending_coordinate_high,
+                        old_x,
+                        old_y,
+                    },
+                ) => {
+                    self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
+                        GraphicsDmaGeneration::HostBoundaryBeforeMain,
+                    )));
+                    self.complete_dungeon_exit_spotlight_link_movement_after_coordinate_low(
+                        iteration,
+                        LinkMovePositionAfterCoordinateLowReturn {
+                            old_x,
+                            old_y,
+                            pass,
+                            pending_coordinate_high,
+                        },
+                        authoritative_scheduled_caller_return_timeline.is_some(),
+                    );
+                    if authoritative_scheduled_caller_return_timeline.is_some() {
+                        self.retire_or_run_main_loop_common_suffix_after_module_return();
+                    }
+                }
+                GameWorkStep::Complete(
                     GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
                         iteration,
                         pass,
@@ -46033,6 +46137,8 @@ impl ZeldaState {
                                     interruption,
                                     crate::MainLoopInterruption::LinkPositionAfterSubpixel {
                                         ..
+                                    } | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow {
+                                        ..
                                     } | crate::MainLoopInterruption::LinkPositionAfterCoordinates {
                                         ..
                                     }
@@ -46041,6 +46147,15 @@ impl ZeldaState {
                     match link_position_interruption {
                         Some(crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }) => {
                             self.complete_dungeon_exit_spotlight_entry_until_link_position_partial(
+                                table_build,
+                                iteration,
+                                pass,
+                            );
+                        }
+                        Some(crate::MainLoopInterruption::LinkPositionAfterCoordinateLow {
+                            pass,
+                        }) => {
+                            self.complete_dungeon_exit_spotlight_entry_until_link_position_after_coordinate_low(
                                 table_build,
                                 iteration,
                                 pass,
@@ -46082,6 +46197,7 @@ impl ZeldaState {
                             matches!(
                                 interruption,
                                 crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+                                    | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                                     | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
                             )
                         });
@@ -46105,6 +46221,12 @@ impl ZeldaState {
                                     iteration,
                                     pass,
                                 ),
+                            crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { pass } => self.complete_dungeon_exit_spotlight_build_until_link_position_after_coordinate_low(
+                                table_build,
+                                projection_completed,
+                                iteration,
+                                pass,
+                            ),
                             crate::MainLoopInterruption::LinkPositionAfterCoordinates { pass } => self
                                 .complete_dungeon_exit_spotlight_build_until_link_position_after_coordinates(
                                     table_build,
@@ -47377,6 +47499,10 @@ impl ZeldaState {
                     iteration,
                     ..
                 }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+                    iteration,
+                    ..
+                }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinates {
                     iteration,
                     ..
@@ -47431,6 +47557,10 @@ impl ZeldaState {
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { iteration }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
+                    iteration,
+                    ..
+                }
+                | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
                     iteration,
                     ..
                 }

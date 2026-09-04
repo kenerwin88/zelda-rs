@@ -13692,6 +13692,79 @@ fn live_spotlight_entry_return_stops_at_its_exact_link_subpixel_boundary() {
 }
 
 #[test]
+fn live_spotlight_coordinate_low_boundary_preserves_pending_high_byte_carry() {
+    fn configured_state() -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.set_main_module(0x0f);
+        state.set_submodule(1);
+        state.set_indoor_flag(0);
+        state.set_overworld_screen(0x0f);
+        state.follower_link_state_mut().set_x(0x0cf0);
+        state.follower_link_state_mut().set_y(0x0200);
+        state
+            .follower_link_state_mut()
+            .set_direction_and_last_direction(8);
+        state.follower_link_state_mut().set_actual_y_velocity(0xf8);
+        state
+    }
+
+    let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
+    let mut atomic = configured_state();
+    atomic.module0f_spotlight_close_link_and_oam();
+    assert_eq!(atomic.game_state.player.follower_link.y(), 0x01fe);
+
+    let mut resumed = configured_state();
+    resumed.original_timing_owner = OriginalTimingOwnerState::Live;
+    resumed.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        179_583,
+        0,
+        vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(
+            crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { pass: 0 },
+        )],
+    ));
+
+    assert!(resumed.begin_module0f_spotlight_close_link_and_oam(None, iteration));
+    assert_eq!(
+        resumed.game_state.player.follower_link.y(),
+        0x02fe,
+        "the low-byte boundary must retain the old high byte until the source high-byte store",
+    );
+    let Some(GameWorkStep::Complete(
+        GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+            iteration,
+            pass,
+            pending_coordinate_high,
+            old_x,
+            old_y,
+        },
+    )) = resumed
+        .game_execution_scheduler
+        .advance_work_one_nmi_slice()
+    else {
+        panic!("coordinate-low Link movement did not retain its high-byte continuation");
+    };
+    assert_eq!(pass, 0);
+    assert_eq!(pending_coordinate_high, 0x01);
+    resumed.complete_dungeon_exit_spotlight_link_movement_after_coordinate_low(
+        iteration,
+        LinkMovePositionAfterCoordinateLowReturn {
+            old_x,
+            old_y,
+            pass,
+            pending_coordinate_high,
+        },
+        false,
+    );
+
+    assert_eq!(resumed.ram, atomic.ram);
+    assert!(resumed
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
 fn live_spotlight_post_coordinate_boundary_resumes_only_later_axes() {
     fn configured_state() -> ZeldaState {
         let mut state = ZeldaState::new();

@@ -4878,6 +4878,46 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         coord
     }
 
+    /// Publish only the low byte of the current axis' pending coordinate add,
+    /// matching the source interval between `STA $20,x` and `STA $21,x`.
+    /// Returns the still-unpublished high byte of the completed addition.
+    pub(crate) fn apply_axis_pixel_delta_low(&mut self, pass: u8, delta: u16) -> u8 {
+        let (subpixel_offset, coord_offset) = link_move_position_axis_offsets(pass);
+        let completed = read_le_u16(self.ram, coord_offset).wrapping_add(delta);
+        self.ram[coord_offset] = completed as u8;
+        let mixed = read_le_u16(self.ram, coord_offset);
+        match pass {
+            2 => self
+                .state
+                .set_x_with_subpixel(mixed, self.ram[subpixel_offset]),
+            0 => self
+                .state
+                .set_y_with_subpixel(mixed, self.ram[subpixel_offset]),
+            _ => self.state.set_z(mixed),
+        }
+        self.debug_assert_matches_ram();
+        (completed >> 8) as u8
+    }
+
+    /// Complete the high-byte store retained by
+    /// `apply_axis_pixel_delta_low` and return the final coordinate.
+    pub(crate) fn apply_axis_coordinate_high(&mut self, pass: u8, high: u8) -> u16 {
+        let (subpixel_offset, coord_offset) = link_move_position_axis_offsets(pass);
+        self.ram[coord_offset + 1] = high;
+        let coord = read_le_u16(self.ram, coord_offset);
+        match pass {
+            2 => self
+                .state
+                .set_x_with_subpixel(coord, self.ram[subpixel_offset]),
+            0 => self
+                .state
+                .set_y_with_subpixel(coord, self.ram[subpixel_offset]),
+            _ => self.state.set_z(coord),
+        }
+        self.debug_assert_matches_ram();
+        coord
+    }
+
     pub(crate) fn move_z_by_velocity(&mut self, velocity: u8) -> u16 {
         let z = move_link_axis_by_velocity(self.ram, LINK_Z_SUBPIXEL, LINK_Z_COORD, velocity);
         self.state.set_z(z);

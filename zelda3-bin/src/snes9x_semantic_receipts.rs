@@ -453,13 +453,18 @@ const LINK_POSITION_BEFORE_COORDINATES_END_PC: u32 = 0x07e3af;
 // `ADC $20,x` (the coordinate add): the current axis' subpixel is published,
 // its coordinate is not. X names the pass (4 = z, 2 = x, 0 = y).
 const LINK_POSITION_AFTER_SUBPIXEL_START_PC: u32 = 0x07e3b2;
-const LINK_POSITION_AFTER_SUBPIXEL_END_PC: u32 = 0x07e3c6;
+const LINK_POSITION_AFTER_SUBPIXEL_END_PC: u32 = 0x07e3ca;
+// After `STA $20,x` has published the coordinate low byte, the source still
+// owes the high-byte add/store. A return PC at $87:E3CA through $87:E3CE is
+// exactly this mixed-coordinate interval (route host 179583).
+const LINK_POSITION_AFTER_COORDINATE_LOW_START_PC: u32 = 0x07e3ca;
+const LINK_POSITION_AFTER_COORDINATE_LOW_END_PC: u32 = 0x07e3cf;
 // After `STA $21,x` publishes the current axis' high coordinate byte, the
 // loop still owes its cursor decrements, later axes, and movement tail. X
 // identifies the just-completed pass through the loop epilogue. Once the
 // final Y pass has decremented X below zero, its PC identifies that completed
 // pass even though X no longer does (route host 76632).
-const LINK_POSITION_AFTER_COORDINATES_START_PC: u32 = 0x07e3d0;
+const LINK_POSITION_AFTER_COORDINATES_START_PC: u32 = 0x07e3cf;
 const LINK_POSITION_AFTER_COORDINATES_END_PC: u32 = 0x07e3d5;
 const SPRITE_PREP_RESET_PROPERTIES_START_PC: u32 = 0x0db871;
 const SPRITE_PREP_RESET_PROPERTIES_ACCUMULATOR_CLEAR_PC: u32 = 0x0db8da;
@@ -3252,6 +3257,7 @@ impl Snes9xOracleSemanticTrace {
                     Some(
                         MainLoopInterruption::LinkPositionBeforeCoordinates
                             | MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+                            | MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                             | MainLoopInterruption::LinkPositionAfterCoordinates { .. }
                     )
                 );
@@ -5468,6 +5474,15 @@ fn main_loop_interruption_for_source_state(
             .ok()
             .filter(|pass| matches!(pass, 0 | 2 | 4))?;
         Some(MainLoopInterruption::LinkPositionAfterSubpixel { pass })
+    } else if main == Some(0x0f)
+        && sub == Some(1)
+        && (LINK_POSITION_AFTER_COORDINATE_LOW_START_PC..LINK_POSITION_AFTER_COORDINATE_LOW_END_PC)
+            .contains(&pc)
+    {
+        let pass = u8::try_from(x?)
+            .ok()
+            .filter(|pass| matches!(pass, 0 | 2 | 4))?;
+        Some(MainLoopInterruption::LinkPositionAfterCoordinateLow { pass })
     } else if main == Some(0x0f)
         && sub == Some(1)
         && (LINK_POSITION_AFTER_COORDINATES_START_PC..LINK_POSITION_AFTER_COORDINATES_END_PC)
@@ -10988,6 +11003,19 @@ mod tests {
             main_loop_interruption_for_source_state(0x07e3d3, Some(0x0f), Some(1), Some(0xfffe),),
             Some(MainLoopInterruption::LinkPositionAfterCoordinates { pass: 0 }),
             "the final loop epilogue has committed Y even though X is no longer the pass",
+        );
+    }
+
+    #[test]
+    fn link_position_low_coordinate_store_is_a_distinct_source_boundary() {
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x07_e3ca, Some(0x0f), Some(1), Some(0),),
+            Some(MainLoopInterruption::LinkPositionAfterCoordinateLow { pass: 0 }),
+        );
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x07_e3cd, Some(0x0f), Some(1), Some(2),),
+            Some(MainLoopInterruption::LinkPositionAfterCoordinateLow { pass: 2 }),
+            "the whole interval before the high-byte store is the same source boundary",
         );
     }
 

@@ -1829,6 +1829,18 @@ impl ZeldaState {
         Some(self.link_move_position_partial_after_subpixel(pass))
     }
 
+    /// `Link_HandleVelocity` through the low coordinate-byte store for
+    /// `pass`, retaining the computed high byte and later movement suffix.
+    pub(super) fn link_handle_velocity_until_position_after_coordinate_low(
+        &mut self,
+        pass: u8,
+    ) -> Option<LinkMovePositionAfterCoordinateLowReturn> {
+        if !self.link_handle_velocity_before_move_position() {
+            return None;
+        }
+        Some(self.link_move_position_after_coordinate_low(pass))
+    }
+
     /// `Link_HandleVelocity` through both coordinate stores for `pass` in
     /// `Link_MovePosition`. `None` when the velocity handler returned before
     /// entering the movement loop.
@@ -2015,6 +2027,42 @@ impl ZeldaState {
         panic!("Link_MovePosition interruption named pass {pass} outside the ROM's axis loop");
     }
 
+    /// `Link_MovePosition` through the current axis' low coordinate-byte
+    /// store, preserving its high byte and every later axis.
+    fn link_move_position_after_coordinate_low(
+        &mut self,
+        pass: u8,
+    ) -> LinkMovePositionAfterCoordinateLowReturn {
+        let x = self.game_state.player.follower_link.x();
+        let y = self.game_state.player.follower_link.y();
+        self.follower_link_state_mut()
+            .store_safe_return_position(x, y);
+        assert!(
+            !(self.game_state.player.follower_link.handler_state() != 10
+                && self.game_state.player.follower_link.on_somaria_platform() == 2),
+            "a mid-loop Link_MovePosition interruption cannot take the Somaria platform exit",
+        );
+        for candidate in self.link_move_position_passes() {
+            let velocity = self.link_move_position_pass_velocity(candidate);
+            if candidate == pass {
+                let pending_pixel_delta = self
+                    .follower_link_state_mut()
+                    .move_axis_subpixel_only_by_velocity(candidate, velocity);
+                let pending_coordinate_high = self
+                    .follower_link_state_mut()
+                    .apply_axis_pixel_delta_low(candidate, pending_pixel_delta);
+                return LinkMovePositionAfterCoordinateLowReturn {
+                    old_x: x,
+                    old_y: y,
+                    pass,
+                    pending_coordinate_high,
+                };
+            }
+            self.link_move_position_full_pass(candidate, velocity);
+        }
+        panic!("Link_MovePosition interruption named pass {pass} outside the ROM's axis loop");
+    }
+
     /// Resume `Link_MovePosition` after `link_move_position_partial_after_subpixel`.
     pub(super) fn complete_link_move_position_from_partial(
         &mut self,
@@ -2039,6 +2087,24 @@ impl ZeldaState {
             old_x: position_return.old_x,
             old_y: position_return.old_y,
         });
+    }
+
+    /// Resume after the current axis' low coordinate byte was published.
+    pub(super) fn complete_link_move_position_from_after_coordinate_low(
+        &mut self,
+        position_return: LinkMovePositionAfterCoordinateLowReturn,
+    ) {
+        self.follower_link_state_mut().apply_axis_coordinate_high(
+            position_return.pass,
+            position_return.pending_coordinate_high,
+        );
+        self.complete_link_move_position_from_after_coordinates(
+            LinkMovePositionAfterCoordinatesReturn {
+                old_x: position_return.old_x,
+                old_y: position_return.old_y,
+                pass: position_return.pass,
+            },
+        );
     }
 
     /// Resume after `link_move_position_after_coordinates`, beginning with

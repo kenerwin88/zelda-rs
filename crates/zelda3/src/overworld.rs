@@ -3447,6 +3447,19 @@ impl ZeldaState {
             }
             _ => None,
         };
+        let authoritative_after_coordinate_low = match self.original_timing_main_loop_interruption()
+        {
+            Some(
+                interruption @ crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { pass },
+            ) => {
+                assert!(
+                    self.take_original_timing_main_loop_interruption(interruption),
+                    "the observed coordinate-low Link interruption disappeared",
+                );
+                Some(pass)
+            }
+            _ => None,
+        };
         let authoritative_after_coordinates = match self.original_timing_main_loop_interruption() {
             Some(
                 interruption @ crate::MainLoopInterruption::LinkPositionAfterCoordinates { pass },
@@ -3464,6 +3477,7 @@ impl ZeldaState {
         assert!(
             usize::from(authoritative_before_coordinates)
                 + usize::from(authoritative_after_subpixel.is_some())
+                + usize::from(authoritative_after_coordinate_low.is_some())
                 + usize::from(authoritative_after_coordinates.is_some())
                 + usize::from(authoritative_link_oam_interruption)
                 <= 1,
@@ -3484,6 +3498,26 @@ impl ZeldaState {
                     iteration,
                     pass: position_return.partial.pass,
                     pending_pixel_delta: position_return.partial.pending_pixel_delta,
+                    old_x: position_return.old_x,
+                    old_y: position_return.old_y,
+                },
+                1,
+            );
+            return true;
+        }
+        if let Some(pass) = authoritative_after_coordinate_low {
+            assert!(
+                cpu_plan.is_none(),
+                "the coordinate-low Link receipt cannot share a host with the isolated spotlight CPU plan",
+            );
+            let position_return = self
+                .module0f_spotlight_close_velocity_until_position_after_coordinate_low(pass)
+                .expect("a coordinate-low Link_MovePosition interruption requires Module0F's outdoor velocity path");
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+                    iteration,
+                    pass: position_return.pass,
+                    pending_coordinate_high: position_return.pending_coordinate_high,
                     old_x: position_return.old_x,
                     old_y: position_return.old_y,
                 },
@@ -3608,6 +3642,21 @@ impl ZeldaState {
         None
     }
 
+    fn module0f_spotlight_close_velocity_until_position_after_coordinate_low(
+        &mut self,
+        pass: u8,
+    ) -> Option<LinkMovePositionAfterCoordinateLowReturn> {
+        if self.game_state.world.location.is_outdoors() {
+            if self.game_state.world.location.overworld_screen_index() == 0x0f {
+                self.follower_link_state_mut()
+                    .set_water_ripple_or_grass_state(1);
+            }
+            self.follower_link_state_mut().set_speed_setting(6);
+            return self.link_handle_velocity_until_position_after_coordinate_low(pass);
+        }
+        None
+    }
+
     fn module0f_spotlight_close_velocity_until_position_after_coordinates(
         &mut self,
         pass: u8,
@@ -3673,6 +3722,25 @@ impl ZeldaState {
         if caller_returned_in_host {
             // The wire's terminal return owns the shared suffix in this same
             // host (route host 179587); no deferred iteration return remains.
+            return;
+        }
+        if iteration.prepares_main_loop_sprites_before_second_nmi() {
+            self.nmi_prepare_sprites_for_main_loop_once();
+            self.clear_nmi_update_latch();
+        } else {
+            self.schedule_spotlight_iteration_return(iteration);
+        }
+    }
+
+    pub(super) fn complete_dungeon_exit_spotlight_link_movement_after_coordinate_low(
+        &mut self,
+        iteration: SpotlightIteration,
+        position_return: LinkMovePositionAfterCoordinateLowReturn,
+        caller_returned_in_host: bool,
+    ) {
+        self.complete_link_move_position_from_after_coordinate_low(position_return);
+        self.module0f_spotlight_close_after_velocity();
+        if caller_returned_in_host {
             return;
         }
         if iteration.prepares_main_loop_sprites_before_second_nmi() {
@@ -3796,6 +3864,29 @@ impl ZeldaState {
         );
     }
 
+    pub(super) fn complete_dungeon_exit_spotlight_entry_until_link_position_after_coordinate_low(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        iteration: SpotlightIteration,
+        pass: u8,
+    ) {
+        let (_, iteration) =
+            self.complete_dungeon_exit_spotlight_entry_before_link(table_build, iteration);
+        let position_return = self
+            .module0f_spotlight_close_velocity_until_position_after_coordinate_low(pass)
+            .expect("a coordinate-low Link_MovePosition interruption requires Module0F's outdoor velocity path");
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+                iteration,
+                pass: position_return.pass,
+                pending_coordinate_high: position_return.pending_coordinate_high,
+                old_x: position_return.old_x,
+                old_y: position_return.old_y,
+            },
+            1,
+        );
+    }
+
     /// Complete the entry prefix through both coordinate stores for `pass`,
     /// preserving only later axes and the Link/OAM caller suffix.
     pub(super) fn complete_dungeon_exit_spotlight_entry_until_link_position_after_coordinates(
@@ -3900,6 +3991,38 @@ impl ZeldaState {
                 iteration,
                 pass: position_return.partial.pass,
                 pending_pixel_delta: position_return.partial.pending_pixel_delta,
+                old_x: position_return.old_x,
+                old_y: position_return.old_y,
+            },
+            1,
+        );
+    }
+
+    pub(super) fn complete_dungeon_exit_spotlight_build_until_link_position_after_coordinate_low(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        projection_completed: bool,
+        iteration: SpotlightIteration,
+        pass: u8,
+    ) {
+        if projection_completed {
+            self.complete_iris_spotlight_configure_table_after_projection();
+        } else {
+            self.complete_iris_spotlight_configure_table(table_build);
+        }
+        let caller_interrupted = self.complete_spotlight_configure_table_and_control_after_table(
+            self.game_state.frame.main_module,
+            false,
+        );
+        debug_assert!(!caller_interrupted);
+        let position_return = self
+            .module0f_spotlight_close_velocity_until_position_after_coordinate_low(pass)
+            .expect("a coordinate-low Link_MovePosition interruption requires Module0F's outdoor velocity path");
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow {
+                iteration,
+                pass: position_return.pass,
+                pending_coordinate_high: position_return.pending_coordinate_high,
                 old_x: position_return.old_x,
                 old_y: position_return.old_y,
             },
