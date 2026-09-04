@@ -25720,6 +25720,46 @@ fn sprite_main_interruption_preserves_the_c_zelda_initializer_prefix() {
 }
 
 #[test]
+fn fresh_sprite_main_same_slot_item_receipt_supersedes_its_outer_prefix() {
+    let mut state = ZeldaState::new();
+    state.rom_startup_timing = true;
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    let item_progress = ItemReceiptGraphicsProgressReceipt {
+        caller: ItemReceiptGraphicsCaller::SpriteMainDirect { slot: 13 },
+        progress: SourceCallProgress::Suspended,
+    };
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        177046,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                crate::SpriteMainProgress::AfterTimersAndOam(13),
+            ),
+            OriginalTimingSemanticReceipt::ItemReceiptGraphicsProgress(item_progress),
+        ],
+    ));
+
+    assert_eq!(
+        state.take_original_timing_sprite_main_boundary_for_fresh_caller(),
+        Some((
+            SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(13),
+            OriginalTimingBoundary::HostReturn,
+        )),
+    );
+    assert_eq!(
+        state
+            .original_timing_semantic_receipts
+            .as_ref()
+            .unwrap()
+            .semantic(),
+        &[OriginalTimingSemanticReceipt::ItemReceiptGraphicsProgress(
+            item_progress,
+        )],
+        "the item call itself remains the sole consumer of its suspension receipt",
+    );
+}
+
+#[test]
 fn sprite_main_interruption_does_not_promote_an_unreturned_slot() {
     assert_eq!(
         sprite_main_cpu_interruption_boundary(Some(0), Some(1), Some(0), 0x00_e7a6),

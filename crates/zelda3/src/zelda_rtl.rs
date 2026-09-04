@@ -21252,40 +21252,36 @@ impl ZeldaState {
         // carry the remaining C suffix across the host return.
         let boundary = self.take_original_timing_sprite_main_progress()?;
         // When the same host also restates a suspended item-receipt graphics
-        // call started directly by the next lower slot, the pair names one C
-        // statement: the source is inside that slot's item-receipt call. The
-        // native body must therefore enter the call and suspend there; the
-        // begin site consumes the item-receipt claim.
-        if let SpriteMainCpuBoundary::AfterSlot(after_slot) = boundary {
-            let suspended_direct_slot =
-                self.original_timing_semantic_receipts
-                    .as_ref()
-                    .and_then(|receipts| {
-                        receipts.semantic.iter().find_map(|receipt| match receipt {
-                            OriginalTimingSemanticReceipt::ItemReceiptGraphicsProgress(
-                                progress,
-                            ) if progress.progress == crate::SourceCallProgress::Suspended => {
-                                match progress.caller {
-                                    ItemReceiptGraphicsCaller::SpriteMainDirect { slot } => {
-                                        Some(slot)
-                                    }
-                                    _ => None,
-                                }
+        // call started by the source slot, the pair names one C statement:
+        // the source is inside that slot's item-receipt call. Depending on
+        // where the slot body entered the graphics helper, the outer tracker
+        // can restate either the preceding completed slot or a prefix of the
+        // same active slot. The shared pairing predicate owns both forms.
+        let suspended_direct_slot =
+            self.original_timing_semantic_receipts
+                .as_ref()
+                .and_then(|receipts| {
+                    receipts.semantic.iter().find_map(|receipt| match receipt {
+                        OriginalTimingSemanticReceipt::ItemReceiptGraphicsProgress(progress)
+                            if progress.progress == crate::SourceCallProgress::Suspended =>
+                        {
+                            match progress.caller {
+                                ItemReceiptGraphicsCaller::SpriteMainDirect { slot } => Some(slot),
+                                _ => None,
                             }
-                            _ => None,
-                        })
-                    });
-            if let Some(slot) = suspended_direct_slot {
-                assert_eq!(
-                    slot.checked_add(1),
-                    Some(after_slot),
-                    "a suspended direct item-receipt claim disagrees with its Sprite_Main slot checkpoint",
-                );
-                return Some((
-                    SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot),
-                    OriginalTimingBoundary::HostReturn,
-                ));
-            }
+                        }
+                        _ => None,
+                    })
+                });
+        if let Some(slot) = suspended_direct_slot {
+            assert!(
+                direct_item_receipt_slot_pairs_with_boundary(slot, boundary),
+                "a suspended direct item-receipt claim disagrees with its Sprite_Main slot checkpoint: slot={slot} boundary={boundary:?}",
+            );
+            return Some((
+                SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot),
+                OriginalTimingBoundary::HostReturn,
+            ));
         }
         Some((boundary, OriginalTimingBoundary::HostReturn))
     }
