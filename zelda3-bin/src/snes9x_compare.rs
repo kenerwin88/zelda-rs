@@ -60,7 +60,8 @@ const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
 // beam's replacement `Sprite_SpawnDynamically` call. Schema 57 caches can
 // prove its movement prefix but not a host boundary inside the spawn helper.
 // Schema 60 preserves the nested guard initializer's parry-hitbox boundary.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 60;
+// Schema 61 includes the spotlight loop's branch fallthrough before INC r4.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 61;
 
 // Source instructions which sample APUI00 while waiting for an item fanfare
 // to end. These adapter-only PCs become backend-neutral sample offsets before
@@ -15040,7 +15041,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 60);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 61);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None

@@ -180,6 +180,10 @@ const PALETTE_FILTER_BEFORE_COLOR_STORE_PC: u32 = 0x00ea30;
 // remain pending. The adapter converts the private X register into the two C
 // cursors and exports only that resumable statement boundary.
 const IRIS_SPOTLIGHT_LOOP_COMPLETION_BRANCH_PC: u32 = 0x00f39a;
+// At the fallthrough INC r4 opcode the branch has completed, but neither
+// cursor has changed. Re-evaluating the pure loop test has the same source
+// state; keep this boundary in the existing pre-test continuation domain.
+const IRIS_SPOTLIGHT_UPPER_CURSOR_INCREMENT_PC: u32 = 0x00f39c;
 // The branch above was not taken and the source has incremented its upper
 // cursor at $00:f39c. At $00:f39e only the paired lower-cursor decrement is
 // still pending before the next C loop iteration.
@@ -5484,7 +5488,7 @@ fn spotlight_table_build_progress(
     });
     let before_loop_completion_test = pc.is_some_and(|pc| {
         (IRIS_SPOTLIGHT_BEFORE_LOOP_COMPLETION_TEST_START_PC
-            ..=IRIS_SPOTLIGHT_LOOP_COMPLETION_BRANCH_PC)
+            ..=IRIS_SPOTLIGHT_UPPER_CURSOR_INCREMENT_PC)
             .contains(&pc)
     });
     let before_circle_iteration_prefix = pc.is_some_and(|pc| {
@@ -13362,6 +13366,30 @@ mod tests {
                     },
                 ),
             ],
+        );
+    }
+
+    #[test]
+    fn spotlight_entry_before_upper_increment_keeps_the_loop_pending() {
+        // Pinned ROM host 281498 returns at INC r4 ($00:F39C), before
+        // that write: center=239, upper=217, lower=261, X=2*upper.
+        let mut event = raw("frame", Some(0x00f39c), Some(434), None);
+        event.main = Some(0x0f);
+        event.sub = Some(0);
+        event.link_y = Some(3573);
+        event.bg2_v = Some(3346);
+        event.spotlight_radius = Some(126);
+        event.spotlight_var4_low = Some(22);
+        event.spotlight_lower_cursor = Some(261);
+        assert_eq!(
+            spotlight_table_build_progress(&event, None, None).unwrap(),
+            Some(SpotlightTableBuildProgress {
+                completed_iterations: 217,
+                checkpoint: SpotlightTableBuildCheckpoint::BeforeLoopCompletionTest {
+                    upper_cursor: 217,
+                    lower_cursor: 261,
+                },
+            })
         );
     }
 
