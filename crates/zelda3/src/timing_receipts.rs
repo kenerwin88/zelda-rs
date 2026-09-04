@@ -848,6 +848,12 @@ pub enum MainLoopInterruption {
         slot: u8,
         active_call: u8,
     },
+    /// An active guard's weapon entry published its coordinate words while
+    /// its temporary animation pose remains live in the drawing caller.
+    SpriteMainGuardAnimation {
+        slot: u8,
+        checkpoint: GuardAnimationCheckpoint,
+    },
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -913,6 +919,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainWishPondTossedItemGraphicsStarted(_)
                 | Self::SpriteMainGuardPrepWeaponFlagsPending(_)
                 | Self::SpriteMainGuardPrepParryHitbox { .. }
+                | Self::SpriteMainGuardAnimation { .. }
                 | Self::SpriteMainMiniMoldormHistory { .. }
                 | Self::SpriteMainMasterSwordLightBeamMovement { .. }
                 | Self::SpriteMainMasterSwordLightBeamSpawn { .. }
@@ -1047,6 +1054,36 @@ pub enum SpriteMainProgress {
         slot: u8,
         active_call: u8,
     },
+    GuardAnimation {
+        slot: u8,
+        checkpoint: GuardAnimationCheckpoint,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum GuardAnimationCheckpoint {
+    HeadCharacterPending,
+    HeadFlagsPending,
+    WeaponCoordinates { entry: u8 },
+    BodyBeforeEntry { entry: u8 },
+    BodyCoordinates { entry: u8 },
+    BodyFlagsPending { entry: u8 },
+    WeaponBeforeCoordinates { entry: u8 },
+}
+
+impl GuardAnimationCheckpoint {
+    pub const fn is_valid(self) -> bool {
+        matches!(
+            self,
+            Self::HeadCharacterPending
+                | Self::HeadFlagsPending
+                | Self::WeaponCoordinates { entry: 0 | 1 }
+                | Self::WeaponBeforeCoordinates { entry: 0 | 1 }
+                | Self::BodyBeforeEntry { entry: 0..=3 }
+                | Self::BodyCoordinates { entry: 0..=3 }
+                | Self::BodyFlagsPending { entry: 0..=3 }
+        )
+    }
 }
 
 /// Source call site owning an interrupted `SpritePrep_ResetProperties`.

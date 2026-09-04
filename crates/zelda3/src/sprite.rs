@@ -2929,6 +2929,33 @@ impl ZeldaState {
                     return;
                 }
             }
+            if let Some(SpriteMainCpuBoundary::GuardAnimation {
+                slot,
+                checkpoint,
+                continuation: None,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    self.sprite_main_cpu_boundary = None;
+                    assert_eq!(self.sprite_slot_view(k).state(), 9);
+                    assert!((0x41..=0x44).contains(&self.sprite_slot_view(k).sprite_type()));
+                    self.sprite_timers_and_oam(k);
+                    let continuation = self.guard_animation_until_checkpoint(k, checkpoint);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::GuardAnimation {
+                            slot,
+                            checkpoint,
+                            continuation: Some(continuation),
+                        },
+                        nmi_slices,
+                        caller,
+                    );
+                    return;
+                }
+            }
             if matches!(
                 self.sprite_main_cpu_boundary,
                 Some(SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None })
@@ -4253,6 +4280,14 @@ impl ZeldaState {
                 self.complete_sprite_main_after_interrupted_slot(k);
             }
             SpriteMainCpuBoundary::GuardPrepParryHitbox { continuation: None, .. } => unreachable!("guard parry checkpoint did not bind its source locals"),
+            SpriteMainCpuBoundary::GuardAnimation { slot, continuation: Some(continuation), .. } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                self.complete_guard_animation_at_checkpoint(k, continuation);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::GuardAnimation { continuation: None, .. } => unreachable!("guard weapon checkpoint did not bind its source locals"),
         }
     }
 

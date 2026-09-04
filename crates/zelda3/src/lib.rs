@@ -42,7 +42,7 @@ pub use timing_receipts::{
     CreditsSceneLoadProgress, CreditsSceneLoadProgressReceipt, DesertPrayerIrisProgress,
     DialogueExecutionProgress, DungeonFallingEntranceProgress,
     DungeonPegAttributeFlipProgressReceipt, DungeonResetSpritesProgressReceipt,
-    FileSelectGraphicsLowWramClearProgress, ItemReceiptGraphicsCaller,
+    FileSelectGraphicsLowWramClearProgress, GuardAnimationCheckpoint, ItemReceiptGraphicsCaller,
     ItemReceiptGraphicsProgressReceipt, JoypadPublication, LinkOamStairProgress,
     MainLoopInterruption, MainLoopProgress, NmiPpuRegisterOperands, NmiUpdateGate,
     OriginalTimingAudioShadowResult, OriginalTimingBgScrollShadowResult,

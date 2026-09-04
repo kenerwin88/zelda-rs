@@ -881,6 +881,10 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     guard_prep_parry_hitbox: Option<(u8, u8)>,
     #[serde(default)]
+    guard_animation_checkpoint: Option<(u8, zelda3::GuardAnimationCheckpoint)>,
+    #[serde(default)]
+    guard_animation_pose_slot: Option<u8>,
+    #[serde(default)]
     guard_prep_weapon_flags_pending_slot: Option<u8>,
     #[serde(default)]
     mini_moldorm_history: Option<(u8, u8)>,
@@ -1068,6 +1072,92 @@ impl SpriteMainExecutionTracker {
             ));
         }
         self.guard_prep_weapon_flags_pending_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_guard_animation_checkpoint(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.event == "wram-write"
+            && event.pc == Some(0x05_c240)
+            && self.timers_and_oam_dispatch_state == Some(9)
+        {
+            let slot = self
+                .current_slot
+                .ok_or("guard temporary pose has no current slot")?;
+            if event.address != Some(SPRITE_GRAPHICS_BASE + u16::from(slot))
+                || event.x != Some(u16::from(slot))
+            {
+                return Err("guard temporary pose store disagreed with its active caller".into());
+            }
+            self.guard_animation_pose_slot = Some(slot);
+            return Ok(());
+        }
+        if !matches!(
+            event.pc.map(|pc| pc & 0x00ff_ffff),
+            Some(
+                0x05_cbaa
+                    | 0x05_cb86
+                    | 0x05_c717
+                    | 0x05_c719
+                    | 0x05_c71c
+                    | 0x05_ca29
+                    | 0x05_ca6b
+                    | 0x05_ca93..=0x05_ca9f
+            )
+        ) || self.timers_and_oam_dispatch_state != Some(9)
+            || self.guard_animation_pose_slot != self.current_slot
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("guard weapon checkpoint has no active slot")?;
+        if matches!(event.pc, Some(0x05_c717 | 0x05_c719 | 0x05_c71c)) {
+            if event.y != Some(2) {
+                return Err("guard head flags checkpoint has an invalid OAM cursor".into());
+            }
+            self.guard_animation_checkpoint = Some((
+                slot,
+                if event.pc == Some(0x05_c717) {
+                    zelda3::GuardAnimationCheckpoint::HeadCharacterPending
+                } else {
+                    zelda3::GuardAnimationCheckpoint::HeadFlagsPending
+                },
+            ));
+            return Ok(());
+        }
+        let x = event
+            .x
+            .ok_or("guard weapon checkpoint omitted its table cursor")?;
+        use zelda3::GuardAnimationCheckpoint as Stage;
+        let y = event.y.ok_or("guard draw omitted its OAM cursor")?;
+        let checkpoint = match event.pc {
+            Some(0x05_ca29) if x < 56 && y & 3 == 0 => Stage::BodyBeforeEntry {
+                entry: (x & 3) as u8,
+            },
+            Some(0x05_ca6b) if x < 112 && x & 1 == 0 && y & 3 == 1 => Stage::BodyCoordinates {
+                entry: ((x >> 1) & 3) as u8,
+            },
+            Some(0x05_ca93..=0x05_ca9f) if x < 56 && matches!(y & 3, 2 | 3) => {
+                Stage::BodyFlagsPending {
+                    entry: (x & 3) as u8,
+                }
+            }
+            Some(0x05_cb86) if x < 56 && x & 1 == 0 && y & 3 == 0 => {
+                Stage::WeaponBeforeCoordinates {
+                    entry: ((x >> 1) & 1) as u8,
+                }
+            }
+            Some(0x05_cbaa) if x < 56 && x & 1 == 0 && y & 3 == 1 => Stage::WeaponCoordinates {
+                entry: ((x >> 1) & 1) as u8,
+            },
+            _ => {
+                return Err(format!(
+                    "guard draw checkpoint has invalid cursors: pc={:?} x={x} y={y}",
+                    event.pc
+                ))
+            }
+        };
+        self.guard_animation_checkpoint = Some((slot, checkpoint));
         Ok(())
     }
 
@@ -1723,6 +1813,10 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot);
         }
+        if let Some((slot, checkpoint)) = self.guard_animation_checkpoint {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::GuardAnimation { slot, checkpoint };
+        }
         if let Some(slot) = self.guard_prep_weapon_flags_pending_slot {
             assert_eq!(
                 self.current_slot,
@@ -2006,6 +2100,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => {
                 MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot)
+            }
+            SpriteMainProgress::GuardAnimation { slot, checkpoint } => {
+                MainLoopInterruption::SpriteMainGuardAnimation { slot, checkpoint }
             }
             SpriteMainProgress::GuardPrepParryHitbox { slot, active_call } => {
                 MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call }
@@ -3571,6 +3668,7 @@ impl Snes9xOracleSemanticTrace {
             }
             if let Some(execution) = self.sprite_main_execution.as_mut() {
                 execution.observe_guard_prep_weapon_flags_pending(returned_event)?;
+                execution.observe_guard_animation_checkpoint(returned_event)?;
                 execution.observe_guard_prep_parry_hitbox(returned_event)?;
                 execution.observe_fire_debirando_spawn_boundary(returned_event)?;
                 execution.observe_master_sword_light_beam_spawn_boundary(returned_event)?;
@@ -4173,6 +4271,8 @@ impl Snes9xOracleSemanticTrace {
                             execution.timers_and_oam_dispatch_state = None;
                             execution.initialize_active_main_calls = 0;
                             execution.guard_prep_parry_hitbox = None;
+                            execution.guard_animation_checkpoint = None;
+                            execution.guard_animation_pose_slot = None;
                             execution.guard_prep_weapon_flags_pending_slot = None;
                             execution.mini_moldorm_history = None;
                             execution.initialize_reset_properties = None;
@@ -4209,6 +4309,8 @@ impl Snes9xOracleSemanticTrace {
                     SPRITE_ACTIVE_MAIN_ENTRY_PC => {
                         if let Some(execution) = self.sprite_main_execution.as_mut() {
                             execution.guard_prep_parry_hitbox = None;
+                            execution.guard_animation_checkpoint = None;
+                            execution.guard_animation_pose_slot = None;
                             if execution.timers_and_oam_dispatch_state == Some(8) {
                                 execution.initialize_active_main_calls = execution
                                     .initialize_active_main_calls
@@ -4243,6 +4345,8 @@ impl Snes9xOracleSemanticTrace {
                         execution.timers_and_oam_dispatch_state = None;
                         execution.initialize_active_main_calls = 0;
                         execution.guard_prep_parry_hitbox = None;
+                        execution.guard_animation_checkpoint = None;
+                        execution.guard_animation_pose_slot = None;
                         execution.guard_prep_weapon_flags_pending_slot = None;
                         execution.mini_moldorm_history = None;
                         execution.initialize_reset_properties = None;
@@ -4583,6 +4687,7 @@ impl Snes9xOracleSemanticTrace {
                 }
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
+                    execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_fire_debirando_spawn_write(&event)?;
                     execution.observe_master_sword_light_beam_spawn_write(&event)?;
                     execution.observe_antfairy_subtype2_increment(&event)?;
@@ -5063,6 +5168,7 @@ impl Snes9xOracleSemanticTrace {
                 }
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
+                    execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_fire_debirando_spawn_boundary(&event)?;
                     execution.observe_guard_prep_parry_hitbox(&event)?;
                     execution.observe_bari_before_random(&event)?;
@@ -6759,6 +6865,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => {
                     Some(SpriteMainProgress::GuardPrepWeaponFlagsPending(slot))
                 }
+                MainLoopInterruption::SpriteMainGuardAnimation { slot, checkpoint } => {
+                    Some(SpriteMainProgress::GuardAnimation { slot, checkpoint })
+                }
                 MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call } => {
                     Some(SpriteMainProgress::GuardPrepParryHitbox { slot, active_call })
                 }
@@ -7681,6 +7790,8 @@ mod tests {
             timers_and_oam_dispatch_state: None,
             initialize_active_main_calls: 0,
             guard_prep_parry_hitbox: None,
+            guard_animation_checkpoint: None,
+            guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
             initialize_reset_properties: None,
@@ -8828,6 +8939,103 @@ mod tests {
                 SpriteMainProgress::GuardPrepWeaponFlagsPending(12),
             )],
         );
+    }
+
+    #[test]
+    fn active_guard_weapon_nmi_exports_the_unfinished_entry() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(10), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut timers_return = raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(10), None);
+        timers_return.stack1 = Some(9);
+        source.consume_event(timers_return, &mut receipts).unwrap();
+        let mut nmi = raw("nmi", Some(0x05_cbaa), Some(34), None);
+        let mut pose = raw(
+            "wram-write",
+            Some(0x05_c240),
+            Some(10),
+            Some(SPRITE_GRAPHICS_BASE + 10),
+        );
+        pose.value = Some(8);
+        source.consume_event(pose, &mut receipts).unwrap();
+        nmi.y = Some(21);
+        source.consume_event(nmi, &mut receipts).unwrap();
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+        assert!(
+            receipts.contains(&OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                MainLoopInterruption::SpriteMainGuardAnimation {
+                    slot: 10,
+                    checkpoint: zelda3::GuardAnimationCheckpoint::WeaponCoordinates { entry: 1 }
+                }
+            ))
+        );
+        assert!(
+            receipts.contains(&OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::GuardAnimation {
+                    slot: 10,
+                    checkpoint: zelda3::GuardAnimationCheckpoint::WeaponCoordinates { entry: 1 }
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn guard_head_flags_boundary_requires_the_temporary_pose_caller() {
+        let mut tracker = SpriteMainExecutionTracker {
+            current_slot: Some(11),
+            timers_and_oam_dispatch_state: Some(9),
+            ..Default::default()
+        };
+        let mut event = raw("nmi", Some(0x05_c71c), Some(0), None);
+        event.y = Some(2);
+        tracker.observe_guard_animation_checkpoint(&event).unwrap();
+        assert_eq!(tracker.guard_animation_checkpoint, None);
+        tracker.guard_animation_pose_slot = Some(11);
+        tracker.observe_guard_animation_checkpoint(&event).unwrap();
+        assert_eq!(
+            tracker.guard_animation_checkpoint,
+            Some((11, zelda3::GuardAnimationCheckpoint::HeadFlagsPending))
+        );
+    }
+
+    #[test]
+    fn guard_draw_cursors_distinguish_body_and_weapon_store_prefixes() {
+        use zelda3::GuardAnimationCheckpoint as Stage;
+        for (pc, x, y, expected) in [
+            (0x05_ca29, 33, 12, Stage::BodyBeforeEntry { entry: 1 }),
+            (0x05_ca6b, 66, 13, Stage::BodyCoordinates { entry: 1 }),
+            (0x05_ca96, 34, 10, Stage::BodyFlagsPending { entry: 2 }),
+            (0x05_ca9f, 35, 7, Stage::BodyFlagsPending { entry: 3 }),
+            (
+                0x05_cb86,
+                32,
+                24,
+                Stage::WeaponBeforeCoordinates { entry: 0 },
+            ),
+            (0x05_cbaa, 34, 21, Stage::WeaponCoordinates { entry: 1 }),
+        ] {
+            let mut tracker = SpriteMainExecutionTracker {
+                current_slot: Some(11),
+                timers_and_oam_dispatch_state: Some(9),
+                guard_animation_pose_slot: Some(11),
+                ..Default::default()
+            };
+            let mut event = raw("nmi", Some(pc), Some(x), None);
+            event.y = Some(y);
+            tracker.observe_guard_animation_checkpoint(&event).unwrap();
+            assert_eq!(tracker.guard_animation_checkpoint, Some((11, expected)));
+        }
     }
 
     #[test]
@@ -11972,6 +12180,8 @@ mod tests {
             timers_and_oam_dispatch_state: None,
             initialize_active_main_calls: 0,
             guard_prep_parry_hitbox: None,
+            guard_animation_checkpoint: None,
+            guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
             initialize_reset_properties: None,
@@ -12033,6 +12243,8 @@ mod tests {
             timers_and_oam_dispatch_state: None,
             initialize_active_main_calls: 0,
             guard_prep_parry_hitbox: None,
+            guard_animation_checkpoint: None,
+            guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
             initialize_reset_properties: None,

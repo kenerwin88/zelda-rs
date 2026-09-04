@@ -67,7 +67,11 @@ const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
 // Schema 65 retires LinkOam checkpoints with their resumed source context.
 // Schema 66 qualifies the new LinkOam receipt by its stair-drawing branch.
 // Schema 67 recognizes Module0F's call after its speed-setting store.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 67;
+// Schema 68 preserves active guard weapon-coordinate stores and temporary pose.
+// Schema 69 also preserves the earlier guard head-flags boundary.
+// Schema 70 carries the source body-entry/coordinate/flags and weapon-entry cursors.
+// Schema 71 includes host returns before head-character and body-flags stores.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 71;
 
 // Source instructions which sample APUI00 while waiting for an item fanfare
 // to end. These adapter-only PCs become backend-neutral sample offsets before
@@ -15047,7 +15051,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 67);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 71);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None

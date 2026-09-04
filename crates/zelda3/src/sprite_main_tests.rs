@@ -1,6 +1,52 @@
 use super::*;
 
 #[test]
+fn active_guard_weapon_coordinates_hold_pose_until_the_draw_returns() {
+    use crate::GuardAnimationCheckpoint as Stage;
+    let mut checkpoints = vec![Stage::HeadCharacterPending, Stage::HeadFlagsPending];
+    for entry in 0..4 {
+        checkpoints.extend([
+            Stage::BodyBeforeEntry { entry },
+            Stage::BodyCoordinates { entry },
+            Stage::BodyFlagsPending { entry },
+        ]);
+    }
+    for entry in 0..2 {
+        checkpoints.extend([
+            Stage::WeaponBeforeCoordinates { entry },
+            Stage::WeaponCoordinates { entry },
+        ]);
+    }
+    for checkpoint in checkpoints {
+        let mut atomic = ZeldaState::new();
+        atomic.set_main_module(9);
+        atomic.set_submodule(0x2e);
+        atomic
+            .oam_state_mut()
+            .set_current_pointer((OAM_BUF + 0x140) as u16);
+        atomic.sprite_set_x(10, 0x40);
+        atomic.sprite_set_y(10, 0x50);
+        {
+            let mut sprite = atomic.sprite_slot_view_mut(10);
+            sprite.set_state(9);
+            sprite.set_sprite_type(0x41);
+            sprite.set_direction(0);
+            sprite.set_graphics(11);
+            sprite.set_delay_aux1(1);
+        }
+        let mut staged = atomic.clone();
+        atomic.guard_main(10);
+        let continuation = staged.guard_animation_until_checkpoint(10, checkpoint);
+        assert_eq!(staged.sprite_slot_view(10).direction(), 3);
+        assert_eq!(staged.sprite_slot_view(10).graphics(), 8);
+        staged.complete_guard_animation_at_checkpoint(10, continuation);
+        assert_eq!(staged.sprite_slot_view(10).direction(), 0);
+        assert_eq!(staged.sprite_slot_view(10).graphics(), 11);
+        assert_eq!(staged.ram, atomic.ram);
+    }
+}
+
+#[test]
 fn guard_body_packs_skipped_oam_and_hides_type_46_blank_tiles() {
     let graphics = (0..SOLDIER_DRAW2_CHAR.len() / 4)
         .find(|&graphics| {

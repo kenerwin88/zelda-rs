@@ -666,6 +666,12 @@ impl ZeldaState {
     }
 
     fn guard_main_animation(&mut self, k: usize) -> (u8, u8) {
+        let saved = self.guard_main_prepare_animation_pose(k);
+        self.guard_handle_all_animation(k);
+        saved
+    }
+
+    pub(super) fn guard_main_prepare_animation_pose(&mut self, k: usize) -> (u8, u8) {
         let bak1 = self.sprite_slot_view(k).graphics();
         let bak2 = self.sprite_slot_view(k).direction();
 
@@ -674,7 +680,6 @@ impl ZeldaState {
             sprite.set_direction(SOLDIER_DIRECTION_LOCK_SETTINGS[(bak2 as usize) & 3]);
             sprite.set_graphics(SOLDIER_GRAPHICS_BY_DIRECTION[(bak2 as usize) & 3]);
         }
-        self.guard_handle_all_animation(k);
         (bak1, bak2)
     }
 
