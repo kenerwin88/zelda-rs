@@ -345,6 +345,42 @@ impl ZeldaState {
         self.guard_prep_first_animation_until_weapon_flags(k, saved_submodule)
     }
 
+    pub(super) fn sprite_prep_standard_guard_until_parry_hitbox(
+        &mut self,
+        k: usize,
+        active_call: u8,
+    ) -> GuardPrepParryContinuation {
+        assert!((1..=2).contains(&active_call));
+        assert!(self.sprite_prep_standard_guard_before_trooper(k));
+        let saved_submodule = self.sprite_prep_trooper_and_archer_soldier_prefix(k);
+        for _ in 1..active_call {
+            self.sprite_active_main(k);
+        }
+        let (hitbox, disabled_oam_offsets) = self.guard_main_until_parry_hitbox(k);
+        GuardPrepParryContinuation {
+            saved_submodule,
+            hitbox,
+            disabled_oam_offsets,
+        }
+    }
+
+    pub(super) fn complete_sprite_prep_standard_guard_after_parry_hitbox(
+        &mut self,
+        k: usize,
+        active_call: u8,
+        continuation: GuardPrepParryContinuation,
+    ) {
+        self.complete_guard_main_after_parry_hitbox(
+            k,
+            continuation.hitbox,
+            continuation.disabled_oam_offsets,
+        );
+        for _ in active_call..2 {
+            self.sprite_active_main(k);
+        }
+        self.sprite_prep_trooper_and_archer_soldier_suffix(k, continuation.saved_submodule);
+    }
+
     pub(super) fn complete_sprite_prep_standard_guard_after_weapon_flags(
         &mut self,
         k: usize,

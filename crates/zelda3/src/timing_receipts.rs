@@ -840,6 +840,12 @@ pub enum MainLoopInterruption {
         spawned_slot: u8,
         progress: SpriteDynamicSpawnProgress,
     },
+    /// A nested guard initializer call completed drawing and parry hitbox
+    /// setup. Damage checks and the remaining active calls are pending.
+    SpriteMainGuardPrepParryHitbox {
+        slot: u8,
+        active_call: u8,
+    },
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -904,6 +910,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
                 | Self::SpriteMainWishPondTossedItemGraphicsStarted(_)
                 | Self::SpriteMainGuardPrepWeaponFlagsPending(_)
+                | Self::SpriteMainGuardPrepParryHitbox { .. }
                 | Self::SpriteMainMiniMoldormHistory { .. }
                 | Self::SpriteMainMasterSwordLightBeamMovement { .. }
                 | Self::SpriteMainMasterSwordLightBeamSpawn { .. }
@@ -1032,6 +1039,11 @@ pub enum SpriteMainProgress {
         slot: u8,
         spawned_slot: u8,
         progress: SpriteDynamicSpawnProgress,
+    },
+    /// One of the initializer's two active calls reached parry hitbox setup.
+    GuardPrepParryHitbox {
+        slot: u8,
+        active_call: u8,
     },
 }
 

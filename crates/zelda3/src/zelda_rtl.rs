@@ -5042,6 +5042,18 @@ enum SpriteMainCpuBoundary {
         slot: u8,
         completed_stores: u8,
     },
+    GuardPrepParryHitbox {
+        slot: u8,
+        active_call: u8,
+        continuation: Option<GuardPrepParryContinuation>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct GuardPrepParryContinuation {
+    saved_submodule: u8,
+    hitbox: crate::types::SpriteHitBox,
+    disabled_oam_offsets: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5290,6 +5302,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
             slot: active_slot,
         }
         | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::GuardPrepParryHitbox {
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::MiniMoldormHistory {
@@ -5655,6 +5670,14 @@ fn sprite_main_cpu_boundary_from_interruption(
                 continuation: None,
             })
         }
+        crate::MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call } => {
+            assert!(slot < 16 && (1..=2).contains(&active_call));
+            Some(SpriteMainCpuBoundary::GuardPrepParryHitbox {
+                slot,
+                active_call,
+                continuation: None,
+            })
+        }
         crate::MainLoopInterruption::SpriteMainMiniMoldormHistory {
             slot,
             completed_stores,
@@ -5707,6 +5730,9 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
             slot,
         )
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => slot < 16,
+        crate::MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call } => {
+            slot < 16 && active_call >= 1 && active_call <= 2
+        }
         crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamMovement {
             slot,
             checkpoint: _,
@@ -5840,6 +5866,9 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AfterLanmolaSubtype2Increment(slot)
         | crate::SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot)
         | crate::SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => slot < 16,
+        crate::SpriteMainProgress::GuardPrepParryHitbox { slot, active_call } => {
+            slot < 16 && active_call >= 1 && active_call <= 2
+        }
         crate::SpriteMainProgress::MiniMoldormHistory {
             slot,
             completed_stores,
@@ -6219,6 +6248,14 @@ fn sprite_main_cpu_boundary_from_progress(
                 continuation: None,
             }
         }
+        crate::SpriteMainProgress::GuardPrepParryHitbox { slot, active_call } => {
+            assert!(slot < 16 && (1..=2).contains(&active_call));
+            SpriteMainCpuBoundary::GuardPrepParryHitbox {
+                slot,
+                active_call,
+                continuation: None,
+            }
+        }
         crate::SpriteMainProgress::MiniMoldormHistory {
             slot,
             completed_stores,
@@ -6278,6 +6315,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(_)
+        | crate::MainLoopInterruption::SpriteMainGuardPrepParryHitbox { .. }
         | crate::MainLoopInterruption::SpriteMainMiniMoldormHistory { .. } => {
             unreachable!()
         }
@@ -6457,6 +6495,18 @@ fn same_sprite_main_source_checkpoint(
             },
         ) => left_slot == right_slot,
         (
+            SpriteMainCpuBoundary::GuardPrepParryHitbox {
+                slot: left_slot,
+                active_call: left_call,
+                ..
+            },
+            SpriteMainCpuBoundary::GuardPrepParryHitbox {
+                slot: right_slot,
+                active_call: right_call,
+                ..
+            },
+        ) => left_slot == right_slot && left_call == right_call,
+        (
             SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
                 slot: left_slot,
                 checkpoint: left_checkpoint,
@@ -6539,6 +6589,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot, .. }
         | SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot }
         | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending { slot, .. }
+        | SpriteMainCpuBoundary::GuardPrepParryHitbox { slot, .. }
         | SpriteMainCpuBoundary::MiniMoldormHistory { slot, .. } => 2 * (16 - slot) - 1,
         SpriteMainCpuBoundary::AfterWallmasterResetPrefix(slot) => 2 * (16 - slot) - 1,
     }

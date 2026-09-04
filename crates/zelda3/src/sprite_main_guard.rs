@@ -8,7 +8,7 @@
 //! or hold guard-specific shims while the remaining shared helpers are filled in.
 
 use super::*;
-use crate::types::PointU8;
+use crate::types::{sign8, PointU8, SpriteHitBox};
 
 // --- Local copies of constant addresses needed here. These mirror what's
 // already declared in zelda_rtl.rs / ending.rs but are module-private over
@@ -661,6 +661,11 @@ impl ZeldaState {
     //   }
     // }
     pub(super) fn guard_main(&mut self, k: usize) {
+        let (bak1, bak2) = self.guard_main_animation(k);
+        self.guard_main_after_animation(k, bak1, bak2);
+    }
+
+    fn guard_main_animation(&mut self, k: usize) -> (u8, u8) {
         let bak1 = self.sprite_slot_view(k).graphics();
         let bak2 = self.sprite_slot_view(k).direction();
 
@@ -670,7 +675,64 @@ impl ZeldaState {
             sprite.set_graphics(SOLDIER_GRAPHICS_BY_DIRECTION[(bak2 as usize) & 3]);
         }
         self.guard_handle_all_animation(k);
-        self.guard_main_after_animation(k, bak1, bak2);
+        (bak1, bak2)
+    }
+
+    /// The ROM has reached CMP #$80 at $06:EB94 in the parry helper.
+    /// Its animation and fast hitbox are complete; collision/AI is pending.
+    pub(super) fn guard_main_until_parry_hitbox(&mut self, k: usize) -> (SpriteHitBox, bool) {
+        let (graphics, direction) = self.guard_main_animation(k);
+        self.sprite_slot_view_mut(k).set_graphics(graphics);
+        self.sprite_slot_view_mut(k).set_direction(direction);
+        assert_ne!(self.sprite_slot_view(k).state(), 5);
+        assert!(!self.sprite_return_if_inactive_for_guard(k));
+        assert_eq!(
+            self.game_state.player.follower_link.lower_level_state(),
+            self.sprite_slot_view(k).floor()
+        );
+        assert_eq!(
+            self.game_state.player.follower_link.incapacitated_timer(),
+            0
+        );
+        assert!(!self.game_state.player.follower_link.has_auxiliary_state());
+        assert!(!sign8(self.sprite_slot_view(k).hit_timer()));
+        assert!(!self.game_state.player.follower_link.position_mode_has(0x10));
+        let mut hitbox = SpriteHitBox {
+            r0_xlo: 0,
+            r8_xhi: 0,
+            r1_ylo: 0,
+            r9_yhi: 0,
+            r2: 0,
+            r3: 0,
+            r4_spr_xlo: 0,
+            r10_spr_xhi: 0,
+            r5_spr_ylo: 0,
+            r11_spr_yhi: 0,
+            r6_spr_xsize: 0,
+            r7_spr_ysize: 0,
+        };
+        self.sprite_do_hit_boxes_fast(k, &mut hitbox);
+        (
+            hitbox,
+            self.game_state
+                .player
+                .follower_link
+                .has_disabled_oam_offsets(),
+        )
+    }
+
+    pub(super) fn complete_guard_main_after_parry_hitbox(
+        &mut self,
+        k: usize,
+        hitbox: SpriteHitBox,
+        disabled_oam_offsets: bool,
+    ) {
+        if disabled_oam_offsets {
+            self.sprite_attempt_damage_to_link_with_collision_check(k);
+        } else {
+            self.guard_parry_sword_attacks_after_hitbox(k, hitbox);
+        }
+        self.guard_main_after_parry(k);
     }
 
     pub(super) fn guard_main_after_animation(&mut self, k: usize, bak1: u8, bak2: u8) {
@@ -693,6 +755,10 @@ impl ZeldaState {
             return;
         }
         self.guard_parry_sword_attacks_for_guard(k);
+        self.guard_main_after_parry(k);
+    }
+
+    fn guard_main_after_parry(&mut self, k: usize) {
         let dmg_link = self.sprite_check_damage_to_link_for_guard(k);
         let alert = self.game_state.sprites.system.alert_flag() != 0;
         if (dmg_link || alert) && self.sprite_slot_view(k).ai_state() < 3 {

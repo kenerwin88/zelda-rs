@@ -49,7 +49,7 @@ pub struct ProjectSpeedRet {
     pub ydiff: u8,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SpriteHitBox {
     pub r0_xlo: u8,
     pub r8_xhi: u8,

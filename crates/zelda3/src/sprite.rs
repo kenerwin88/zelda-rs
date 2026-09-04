@@ -2900,6 +2900,35 @@ impl ZeldaState {
                 );
                 return;
             }
+            if let Some(SpriteMainCpuBoundary::GuardPrepParryHitbox {
+                slot,
+                active_call,
+                continuation: None,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    self.sprite_main_cpu_boundary = None;
+                    assert_eq!(self.sprite_slot_view(k).state(), 8);
+                    assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x41);
+                    self.sprite_timers_and_oam(k);
+                    self.sprite_module_initialize_properties(k);
+                    let continuation =
+                        self.sprite_prep_standard_guard_until_parry_hitbox(k, active_call);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::GuardPrepParryHitbox {
+                            slot,
+                            active_call,
+                            continuation: Some(continuation),
+                        },
+                        nmi_slices,
+                        caller,
+                    );
+                    return;
+                }
+            }
             if matches!(
                 self.sprite_main_cpu_boundary,
                 Some(SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None })
@@ -4216,6 +4245,14 @@ impl ZeldaState {
             } => unreachable!(
                 "source guard-prep weapon boundary did not bind its native caller suffix"
             ),
+            SpriteMainCpuBoundary::GuardPrepParryHitbox { slot, active_call, continuation: Some(continuation) } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                self.complete_sprite_prep_standard_guard_after_parry_hitbox(k, active_call, continuation);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::GuardPrepParryHitbox { continuation: None, .. } => unreachable!("guard parry checkpoint did not bind its source locals"),
         }
     }
 
@@ -7867,6 +7904,14 @@ impl ZeldaState {
             self.sprite_attempt_damage_to_link_with_collision_check(k);
             return;
         }
+        self.guard_parry_sword_attacks_after_hitbox(k, hb);
+    }
+
+    pub(super) fn guard_parry_sword_attacks_after_hitbox(
+        &mut self,
+        k: usize,
+        mut hb: SpriteHitBox,
+    ) {
         self.player_setup_action_hit_box(&mut hb);
         let button_neg = sign8(self.game_state.player.follower_link.button_b_frames());
         let action_overlap = self.check_if_hit_boxes_overlap(&hb);

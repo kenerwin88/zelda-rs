@@ -322,6 +322,9 @@ const SPRITE_ACTIVE_MAIN_ENTRY_PC: u32 = 0x069271;
 // the entry's X, Y, and character bytes have committed, while flags and the
 // following bytewise-extended-OAM store have not.
 const GUARD_ANIMATE_WEAPON_FLAGS_STORE_PC: u32 = 0x05cbcd;
+// CMP #$80 after the fast parry hitbox and position-mode branch. Include
+// its operand byte: Snes9x can expose an in-instruction PC at host return.
+const GUARD_PARRY_HITBOX_COMPARE_PC: u32 = 0x06eb94;
 // First instruction after Sprite_TimersAndOam's last countdown update. The
 // helper's floor/priority suffix and the state-dispatched body remain pending.
 // `$06:84A4` is the first instruction after the final countdown update in
@@ -871,6 +874,8 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     initialize_active_main_calls: u8,
     #[serde(default)]
+    guard_prep_parry_hitbox: Option<(u8, u8)>,
+    #[serde(default)]
     guard_prep_weapon_flags_pending_slot: Option<u8>,
     #[serde(default)]
     mini_moldorm_history: Option<(u8, u8)>,
@@ -942,6 +947,30 @@ struct SpriteMainExecutionTracker {
 }
 
 impl SpriteMainExecutionTracker {
+    fn observe_guard_prep_parry_hitbox(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if !event.pc.is_some_and(|pc| {
+            (GUARD_PARRY_HITBOX_COMPARE_PC..GUARD_PARRY_HITBOX_COMPARE_PC + 2)
+                .contains(&(pc & 0x00ff_ffff))
+        }) || self.timers_and_oam_dispatch_state != Some(8)
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("guard parry checkpoint has no current slot")?;
+        if event.x != Some(u16::from(slot)) || !(1..=2).contains(&self.initialize_active_main_calls)
+        {
+            return Err(
+                "guard parry checkpoint lacks its initializer active-call authority".into(),
+            );
+        }
+        self.initialize_reset_properties = None;
+        self.initialize_load_properties = None;
+        self.guard_prep_weapon_flags_pending_slot = None;
+        self.guard_prep_parry_hitbox = Some((slot, self.initialize_active_main_calls));
+        Ok(())
+    }
+
     fn observe_mini_moldorm_history(&mut self, event: &RawTraceEvent) -> Result<(), String> {
         if self.timers_and_oam_dispatch_state != Some(8) {
             return Ok(());
@@ -1697,6 +1726,10 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::GuardPrepWeaponFlagsPending(slot);
         }
+        if let Some((slot, active_call)) = self.guard_prep_parry_hitbox {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::GuardPrepParryHitbox { slot, active_call };
+        }
         if let Some((slot, helper_ordinal)) = self.cucco_animation_slot {
             assert_eq!(
                 self.current_slot,
@@ -1968,6 +2001,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => {
                 MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot)
+            }
+            SpriteMainProgress::GuardPrepParryHitbox { slot, active_call } => {
+                MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call }
             }
             SpriteMainProgress::MiniMoldormHistory {
                 slot,
@@ -3523,6 +3559,7 @@ impl Snes9xOracleSemanticTrace {
             }
             if let Some(execution) = self.sprite_main_execution.as_mut() {
                 execution.observe_guard_prep_weapon_flags_pending(returned_event)?;
+                execution.observe_guard_prep_parry_hitbox(returned_event)?;
                 execution.observe_fire_debirando_spawn_boundary(returned_event)?;
                 execution.observe_master_sword_light_beam_spawn_boundary(returned_event)?;
                 execution.observe_bari_before_random(returned_event)?;
@@ -4123,6 +4160,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.timers_and_oam_slot = None;
                             execution.timers_and_oam_dispatch_state = None;
                             execution.initialize_active_main_calls = 0;
+                            execution.guard_prep_parry_hitbox = None;
                             execution.guard_prep_weapon_flags_pending_slot = None;
                             execution.mini_moldorm_history = None;
                             execution.initialize_reset_properties = None;
@@ -4158,6 +4196,7 @@ impl Snes9xOracleSemanticTrace {
                     }
                     SPRITE_ACTIVE_MAIN_ENTRY_PC => {
                         if let Some(execution) = self.sprite_main_execution.as_mut() {
+                            execution.guard_prep_parry_hitbox = None;
                             if execution.timers_and_oam_dispatch_state == Some(8) {
                                 execution.initialize_active_main_calls = execution
                                     .initialize_active_main_calls
@@ -4191,6 +4230,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.timers_and_oam_slot = None;
                         execution.timers_and_oam_dispatch_state = None;
                         execution.initialize_active_main_calls = 0;
+                        execution.guard_prep_parry_hitbox = None;
                         execution.guard_prep_weapon_flags_pending_slot = None;
                         execution.mini_moldorm_history = None;
                         execution.initialize_reset_properties = None;
@@ -5012,6 +5052,7 @@ impl Snes9xOracleSemanticTrace {
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_fire_debirando_spawn_boundary(&event)?;
+                    execution.observe_guard_prep_parry_hitbox(&event)?;
                     execution.observe_bari_before_random(&event)?;
                     execution.observe_main_and_aux1_timer_decrements(&event)?;
                     execution.observe_primary_timer_decrements(&event)?;
@@ -6678,6 +6719,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => {
                     Some(SpriteMainProgress::GuardPrepWeaponFlagsPending(slot))
                 }
+                MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call } => {
+                    Some(SpriteMainProgress::GuardPrepParryHitbox { slot, active_call })
+                }
                 MainLoopInterruption::SpriteMainMiniMoldormHistory {
                     slot,
                     completed_stores,
@@ -7583,6 +7627,7 @@ mod tests {
             timers_and_oam_slot: None,
             timers_and_oam_dispatch_state: None,
             initialize_active_main_calls: 0,
+            guard_prep_parry_hitbox: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
             initialize_reset_properties: None,
@@ -8730,6 +8775,53 @@ mod tests {
                 SpriteMainProgress::GuardPrepWeaponFlagsPending(12),
             )],
         );
+    }
+
+    #[test]
+    fn guard_initializer_parry_nmi_preserves_the_nested_call_ordinal() {
+        // Pinned-ROM host 279816: slot 10 dispatches state 8, reaches
+        // $069271 twice, and accepts NMI at $06EB94 during call two.
+        assert_eq!(GUARD_PARRY_HITBOX_COMPARE_PC, 0x06eb94);
+        for active_call in 1..=2 {
+            let mut source = empty_semantic_tracker();
+            let mut receipts = Vec::new();
+            for event in [
+                raw("pc", Some(0x068328), None, None),
+                raw("pc", Some(0x0684e2), Some(10), None),
+            ] {
+                source.consume_event(event, &mut receipts).unwrap();
+            }
+            let mut timers = raw("pc", Some(SPRITE_TIMERS_AND_OAM_RETURN_PC), Some(10), None);
+            timers.stack1 = Some(8);
+            source.consume_event(timers, &mut receipts).unwrap();
+            for _ in 0..active_call {
+                source
+                    .consume_event(raw("pc", Some(0x069271), Some(10), None), &mut receipts)
+                    .unwrap();
+            }
+            source
+                .consume_event(raw("nmi", Some(0x06eb94), Some(10), None), &mut receipts)
+                .unwrap();
+            source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+            assert_eq!(
+                receipts,
+                vec![
+                    OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                    OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                        MainLoopInterruption::SpriteMainGuardPrepParryHitbox {
+                            slot: 10,
+                            active_call
+                        }
+                    ),
+                    OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                        SpriteMainProgress::GuardPrepParryHitbox {
+                            slot: 10,
+                            active_call
+                        }
+                    ),
+                ]
+            );
+        }
     }
 
     #[test]
@@ -11799,6 +11891,7 @@ mod tests {
             timers_and_oam_slot: None,
             timers_and_oam_dispatch_state: None,
             initialize_active_main_calls: 0,
+            guard_prep_parry_hitbox: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
             initialize_reset_properties: None,
@@ -11859,6 +11952,7 @@ mod tests {
             timers_and_oam_slot: None,
             timers_and_oam_dispatch_state: None,
             initialize_active_main_calls: 0,
+            guard_prep_parry_hitbox: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
             initialize_reset_properties: None,
