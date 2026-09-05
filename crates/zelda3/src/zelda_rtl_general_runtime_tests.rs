@@ -14690,7 +14690,12 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
 
     // Original ROM $07:E2DE (host 340155) has cleared velocity but has
     // not adjusted speed; $07:E346 reaches the later per-axis loop.
-    for horizontal_resolved in [None, Some(false), Some(true)] {
+    for checkpoint in [
+        LinkActualVelocityCheckpoint::BeforeSelection,
+        LinkActualVelocityCheckpoint::BeforeX,
+        LinkActualVelocityCheckpoint::BeforeY,
+        LinkActualVelocityCheckpoint::AfterBoth,
+    ] {
         for direction in [8, 2, 10] {
             let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
             let mut atomic = configured_state(direction);
@@ -14702,8 +14707,18 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
                 179_604,
                 0,
                 vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(
-                    crate::MainLoopInterruption::LinkActualVelocity {
-                        horizontal_resolved,
+                    match checkpoint {
+                        LinkActualVelocityCheckpoint::AfterBoth => {
+                            crate::MainLoopInterruption::LinkActualVelocityCompleted
+                        }
+                        _ => crate::MainLoopInterruption::LinkActualVelocity {
+                            horizontal_resolved: match checkpoint {
+                                LinkActualVelocityCheckpoint::BeforeSelection => None,
+                                LinkActualVelocityCheckpoint::BeforeX => Some(false),
+                                LinkActualVelocityCheckpoint::BeforeY => Some(true),
+                                _ => unreachable!(),
+                            },
+                        },
                     },
                 )],
             ));
@@ -14715,7 +14730,10 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
             assert_eq!(resumed.game_state.player.follower_link.y(), entry_y);
             assert_eq!(
                 resumed.game_state.player.follower_link.actual_x_velocity(),
-                if horizontal_resolved == Some(true) {
+                if matches!(
+                    checkpoint,
+                    LinkActualVelocityCheckpoint::BeforeY | LinkActualVelocityCheckpoint::AfterBoth
+                ) {
                     atomic.game_state.player.follower_link.actual_x_velocity()
                 } else {
                     0
@@ -14724,8 +14742,12 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
             );
             assert_eq!(
                 resumed.game_state.player.follower_link.actual_y_velocity(),
-                0,
-                "the vertical velocity publication belongs to the following host",
+                if checkpoint == LinkActualVelocityCheckpoint::AfterBoth {
+                    atomic.game_state.player.follower_link.actual_y_velocity()
+                } else {
+                    0
+                },
+                "only a completed vertical pass publishes its velocity",
             );
             let Some(GameWorkStep::Complete(
                 GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity {
@@ -14740,12 +14762,15 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
             };
             assert_eq!(
                 velocity_return.pending_actual_y,
-                (horizontal_resolved.is_some() && direction & 12 != 0)
+                (matches!(
+                    checkpoint,
+                    LinkActualVelocityCheckpoint::BeforeX | LinkActualVelocityCheckpoint::BeforeY
+                ) && direction & 12 != 0)
                     .then_some(atomic.game_state.player.follower_link.actual_y_velocity())
             );
             assert_eq!(
                 velocity_return.pending_actual_x,
-                (horizontal_resolved == Some(false) && direction & 3 != 0)
+                (checkpoint == LinkActualVelocityCheckpoint::BeforeX && direction & 3 != 0)
                     .then_some(atomic.game_state.player.follower_link.actual_x_velocity())
             );
             resumed.complete_dungeon_exit_spotlight_link_actual_velocity(

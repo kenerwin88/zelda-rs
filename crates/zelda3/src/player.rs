@@ -1858,10 +1858,11 @@ impl ZeldaState {
     /// retaining whichever components have not yet been published.
     pub(super) fn link_handle_velocity_until_actual_checkpoint(
         &mut self,
-        horizontal_resolved: Option<bool>,
+        checkpoint: impl Into<LinkActualVelocityCheckpoint>,
     ) -> Option<LinkActualVelocityReturn> {
+        let checkpoint = checkpoint.into();
         let speed_index = self.link_handle_velocity_until_velocity_cleared()?;
-        if horizontal_resolved.is_none() {
+        if checkpoint == LinkActualVelocityCheckpoint::BeforeSelection {
             return Some(LinkActualVelocityReturn {
                 pending_speed_index: Some(speed_index),
                 pending_actual_x: None,
@@ -1874,16 +1875,27 @@ impl ZeldaState {
         } else {
             velocity
         });
-        if let Some(actual_x) = pending_actual_x.filter(|_| horizontal_resolved == Some(true)) {
+        if let Some(actual_x) = pending_actual_x.filter(|_| {
+            matches!(
+                checkpoint,
+                LinkActualVelocityCheckpoint::BeforeY | LinkActualVelocityCheckpoint::AfterBoth
+            )
+        }) {
             self.follower_link_state_mut()
                 .set_actual_x_velocity(actual_x);
             pending_actual_x = None;
         }
-        let pending_actual_y = (direction & 0x0c != 0).then_some(if direction & 0x08 != 0 {
+        let mut pending_actual_y = (direction & 0x0c != 0).then_some(if direction & 0x08 != 0 {
             0u8.wrapping_sub(velocity)
         } else {
             velocity
         });
+        if checkpoint == LinkActualVelocityCheckpoint::AfterBoth {
+            if let Some(actual_y) = pending_actual_y.take() {
+                self.follower_link_state_mut()
+                    .set_actual_y_velocity(actual_y);
+            }
+        }
         Some(LinkActualVelocityReturn {
             pending_speed_index: None,
             pending_actual_x,

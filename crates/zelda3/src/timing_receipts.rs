@@ -882,6 +882,9 @@ pub enum MainLoopInterruption {
     SpriteMainKholdstareDamagePending(u8),
     SpriteMainAfterMainTimerDecrement(u8),
     SpriteMainAfterZeroHitTimerClear(u8),
+    /// Both actual velocity components are stored; airborne defaults and
+    /// position integration remain pending in Link_HandleVelocity.
+    LinkActualVelocityCompleted,
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.

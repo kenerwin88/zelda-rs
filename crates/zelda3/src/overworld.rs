@@ -3564,7 +3564,13 @@ impl ZeldaState {
                 },
             ) => {
                 assert!(self.take_original_timing_main_loop_interruption(interruption));
-                Some(horizontal_resolved)
+                Some(LinkActualVelocityCheckpoint::from(horizontal_resolved))
+            }
+            Some(crate::MainLoopInterruption::LinkActualVelocityCompleted) => {
+                assert!(self.take_original_timing_main_loop_interruption(
+                    crate::MainLoopInterruption::LinkActualVelocityCompleted
+                ));
+                Some(LinkActualVelocityCheckpoint::AfterBoth)
             }
             _ => None,
         };
@@ -3796,7 +3802,7 @@ impl ZeldaState {
 
     fn module0f_spotlight_close_velocity_until_actual_checkpoint(
         &mut self,
-        horizontal_resolved: Option<bool>,
+        horizontal_resolved: impl Into<LinkActualVelocityCheckpoint>,
     ) -> Option<LinkActualVelocityReturn> {
         if self.game_state.world.location.is_outdoors() {
             if self.game_state.world.location.overworld_screen_index() == 0x0f {
@@ -4091,7 +4097,7 @@ impl ZeldaState {
         &mut self,
         table_build: SpotlightTableBuildContinuation,
         iteration: SpotlightIteration,
-        horizontal_resolved: Option<bool>,
+        horizontal_resolved: impl Into<LinkActualVelocityCheckpoint>,
     ) {
         let (_, iteration) =
             self.complete_dungeon_exit_spotlight_entry_before_link(table_build, iteration);
@@ -4248,7 +4254,7 @@ impl ZeldaState {
         table_build: SpotlightTableBuildContinuation,
         projection_completed: bool,
         iteration: SpotlightIteration,
-        horizontal_resolved: Option<bool>,
+        horizontal_resolved: impl Into<LinkActualVelocityCheckpoint>,
     ) {
         if projection_completed {
             self.complete_iris_spotlight_configure_table_after_projection();
