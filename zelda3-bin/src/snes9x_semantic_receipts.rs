@@ -1040,7 +1040,9 @@ impl SpriteMainExecutionTracker {
 
     fn observe_guard_prep_parry_hitbox(&mut self, event: &RawTraceEvent) -> Result<(), String> {
         if !event.pc.is_some_and(|pc| {
-            (GUARD_PARRY_HITBOX_COMPARE_PC..GUARD_PARRY_HITBOX_COMPARE_PC + 2)
+            // LDA $44 and its following CMP #$80 have the same completed
+            // hitbox prefix. Neither instruction publishes gameplay state.
+            (GUARD_PARRY_HITBOX_COMPARE_PC - 2..GUARD_PARRY_HITBOX_COMPARE_PC + 2)
                 .contains(&(pc & 0x00ff_ffff))
         }) || self.timers_and_oam_dispatch_state != Some(8)
         {
@@ -9292,7 +9294,7 @@ mod tests {
         // Pinned-ROM host 279816: slot 10 dispatches state 8, reaches
         // $069271 twice, and accepts NMI at $06EB94 during call two.
         assert_eq!(GUARD_PARRY_HITBOX_COMPARE_PC, 0x06eb94);
-        for active_call in 1..=2 {
+        for (active_call, pc) in [(1, 0x06eb92), (2, 0x06eb92), (1, 0x06eb94), (2, 0x06eb94)] {
             let mut source = empty_semantic_tracker();
             let mut receipts = Vec::new();
             for event in [
@@ -9310,7 +9312,7 @@ mod tests {
                     .unwrap();
             }
             source
-                .consume_event(raw("nmi", Some(0x06eb94), Some(10), None), &mut receipts)
+                .consume_event(raw("nmi", Some(pc), Some(10), None), &mut receipts)
                 .unwrap();
             source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
             assert_eq!(
