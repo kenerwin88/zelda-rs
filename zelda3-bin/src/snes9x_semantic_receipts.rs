@@ -972,6 +972,8 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     primary_timer_decrements_slot: Option<u8>,
     #[serde(default)]
+    hit_timer_slot: Option<u8>,
+    #[serde(default)]
     main_and_aux1_timer_decrements_slot: Option<u8>,
     #[serde(default)]
     bari_before_random_slot: Option<u8>,
@@ -1378,6 +1380,27 @@ impl SpriteMainExecutionTracker {
             ));
         }
         self.primary_timer_decrements_slot = Some(slot);
+        Ok(())
+    }
+
+    /// The hit timer and its priority update are complete; aux4 has not run.
+    fn observe_hit_timer(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        // LDA aux4 / BEQ / the following DEC opcode are all before the
+        // countdown store. Operand fetches from the load are safe as well.
+        if !event
+            .pc
+            .map(|pc| pc & 0xffffff)
+            .is_some_and(|pc| (0x06_849c..=0x06_84a1).contains(&pc))
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("hit timer returned before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err("hit timer return disagreed on sprite slot".to_string());
+        }
+        self.hit_timer_slot = Some(slot);
         Ok(())
     }
 
@@ -2151,6 +2174,14 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::AfterTimerDecrements(slot);
         }
+        if let Some(slot) = self.hit_timer_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "hit timer decrement boundary outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterHitTimer(slot);
+        }
         if let Some(slot) = self.primary_timer_decrements_slot {
             assert_eq!(
                 self.current_slot,
@@ -2185,6 +2216,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::AfterPrimaryTimerDecrements(slot) => {
                 MainLoopInterruption::SpriteMainAfterPrimaryTimerDecrements(slot)
+            }
+            SpriteMainProgress::AfterHitTimer(slot) => {
+                MainLoopInterruption::SpriteMainAfterHitTimer(slot)
             }
             SpriteMainProgress::AfterMainAndAux1TimerDecrements(slot) => {
                 MainLoopInterruption::SpriteMainAfterMainAndAux1TimerDecrements(slot)
@@ -3968,6 +4002,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_bari_before_random(returned_event)?;
                 execution.observe_main_and_aux1_timer_decrements(returned_event)?;
                 execution.observe_primary_timer_decrements(returned_event)?;
+                execution.observe_hit_timer(returned_event)?;
                 execution.observe_timer_decrements(returned_event)?;
                 execution.observe_single_small_draw_position(returned_event)?;
                 execution.observe_probe_after_oam_coordinates(returned_event)?;
@@ -4603,6 +4638,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.helmasaur_hard_hat_beetle_subtype2_increment_slot = None;
                             execution.timer_decrements_slot = None;
                             execution.primary_timer_decrements_slot = None;
+                            execution.hit_timer_slot = None;
                             execution.bari_before_random_slot = None;
                             execution.throwable_scenery_state_clear_slot = None;
                             execution.cucco_subtype_increments = None;
@@ -4690,6 +4726,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.helmasaur_hard_hat_beetle_subtype2_increment_slot = None;
                         execution.timer_decrements_slot = None;
                         execution.primary_timer_decrements_slot = None;
+                        execution.hit_timer_slot = None;
                         execution.bari_before_random_slot = None;
                         execution.throwable_scenery_state_clear_slot = None;
                         execution.cucco_subtype_increments = None;
@@ -5518,6 +5555,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_bari_before_random(&event)?;
                     execution.observe_main_and_aux1_timer_decrements(&event)?;
                     execution.observe_primary_timer_decrements(&event)?;
+                    execution.observe_hit_timer(&event)?;
                     execution.observe_timer_decrements(&event)?;
                     execution.observe_single_small_draw_position(&event)?;
                     execution.observe_probe_after_oam_coordinates(&event)?;
@@ -7120,6 +7158,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainAfterPrimaryTimerDecrements(slot) => {
                     Some(SpriteMainProgress::AfterPrimaryTimerDecrements(slot))
                 }
+                MainLoopInterruption::SpriteMainAfterHitTimer(slot) => {
+                    Some(SpriteMainProgress::AfterHitTimer(slot))
+                }
                 MainLoopInterruption::SpriteMainAfterMainAndAux1TimerDecrements(slot) => {
                     Some(SpriteMainProgress::AfterMainAndAux1TimerDecrements(slot))
                 }
@@ -8183,6 +8224,7 @@ mod tests {
             helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
+            hit_timer_slot: None,
             main_and_aux1_timer_decrements_slot: None,
             bari_before_random_slot: None,
             throwable_scenery_state_clear_slot: None,
@@ -9500,6 +9542,37 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn hit_timer_nmi_retains_the_pending_aux4_update() {
+        for pc in [0x06_849c, 0x06_849f, 0x06_84a1] {
+            let mut source = empty_semantic_tracker();
+            let mut receipts = Vec::new();
+
+            for event in [
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(0), None),
+                // The aux4 load follows the completed hit-timer statement.
+                raw("nmi", Some(pc), Some(0), None),
+            ] {
+                source.consume_event(event, &mut receipts).unwrap();
+            }
+            source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+            assert_eq!(
+                receipts,
+                vec![
+                    OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                    OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                        MainLoopInterruption::SpriteMainAfterHitTimer(0),
+                    ),
+                    OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                        SpriteMainProgress::AfterHitTimer(0),
+                    ),
+                ],
+            );
+        }
     }
 
     #[test]
@@ -12993,6 +13066,7 @@ mod tests {
             helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
+            hit_timer_slot: None,
             main_and_aux1_timer_decrements_slot: None,
             bari_before_random_slot: None,
             throwable_scenery_state_clear_slot: None,
@@ -13063,6 +13137,7 @@ mod tests {
             helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
+            hit_timer_slot: None,
             main_and_aux1_timer_decrements_slot: None,
             bari_before_random_slot: None,
             throwable_scenery_state_clear_slot: None,

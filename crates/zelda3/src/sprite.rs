@@ -3343,6 +3343,35 @@ impl ZeldaState {
             }
             if matches!(
                 self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterHitTimer { slot, state: None })
+                    if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "hit timer decrement continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                let state = self.sprite_slot_view(k).state();
+                assert_ne!(
+                    state, 0,
+                    "source hit timer decrement boundary requires an active sprite slot",
+                );
+                self.sprite_timers_and_oam_through_primary_timer_decrements(k);
+                self.sprite_timers_and_oam_after_primary_through_hit_timer(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterHitTimer {
+                        slot: k as u8,
+                        state: Some(state),
+                    },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
                 Some(SpriteMainCpuBoundary::AfterTimerDecrements { slot, state: None })
                     if slot == k as u8
             ) {
@@ -4176,6 +4205,20 @@ impl ZeldaState {
             SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { state: None, .. } => unreachable!(
                 "source primary timer decrement boundary did not bind to the saved native dispatch state"
             ),
+            SpriteMainCpuBoundary::AfterHitTimer {
+                slot,
+                state: Some(state),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.sprite_timers_and_oam_after_hit_through_timer_decrements(interrupted_slot);
+                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterHitTimer { state: None, .. } => unreachable!(
+                "source hit timer decrement boundary did not bind to the saved native dispatch state"
+            ),
             SpriteMainCpuBoundary::AfterMainAndAux1TimerDecrements {
                 slot,
                 state: Some(state),
@@ -4914,6 +4957,13 @@ impl ZeldaState {
 
     fn sprite_timers_and_oam_after_primary_through_timer_decrements(&mut self, k: usize) {
         if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0 {
+            self.sprite_timers_and_oam_after_primary_through_hit_timer(k);
+            self.sprite_timers_and_oam_after_hit_through_timer_decrements(k);
+        }
+    }
+
+    fn sprite_timers_and_oam_after_primary_through_hit_timer(&mut self, k: usize) {
+        if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0 {
             let timer = self.sprite_slot_view(k).hit_timer() & 0x7f;
             if timer != 0 {
                 if self.sprite_slot_view(k).state() >= 9 {
@@ -4936,11 +4986,15 @@ impl ZeldaState {
                 let value = 0;
                 self.sprite_slot_view_mut(k).set_object_priority(value);
             }
+        }
+    }
 
-            if self.sprite_slot_view(k).delay_aux4() != 0 {
-                let value = self.sprite_slot_view(k).delay_aux4().wrapping_sub(1);
-                self.sprite_slot_view_mut(k).set_delay_aux4(value);
-            }
+    fn sprite_timers_and_oam_after_hit_through_timer_decrements(&mut self, k: usize) {
+        // Entry proves the timer branch was taken before hit processing;
+        // that processing may itself change the module's state.
+        if self.sprite_slot_view(k).delay_aux4() != 0 {
+            let value = self.sprite_slot_view(k).delay_aux4().wrapping_sub(1);
+            self.sprite_slot_view_mut(k).set_delay_aux4(value);
         }
     }
 

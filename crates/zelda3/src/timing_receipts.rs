@@ -876,6 +876,7 @@ pub enum MainLoopInterruption {
         slot: u8,
         cleared_bytes: u16,
     },
+    SpriteMainAfterHitTimer(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -929,6 +930,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainZazakAfterGraphics(_)
                 | Self::SpriteMainItemReceiptGraphicsStarted(_)
                 | Self::SpriteMainAfterPrimaryTimerDecrements(_)
+                | Self::SpriteMainAfterHitTimer(_)
                 | Self::SpriteMainAfterMainAndAux1TimerDecrements(_)
                 | Self::SpriteMainBonkItemGraphicsStarted(_)
                 | Self::SpriteMainProbeAfterOamCoordinates(_)
@@ -1101,6 +1103,7 @@ pub enum SpriteMainProgress {
         slot: u8,
         cleared_bytes: u16,
     },
+    AfterHitTimer(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

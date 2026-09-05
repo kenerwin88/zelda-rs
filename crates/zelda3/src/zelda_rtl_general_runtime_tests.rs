@@ -7537,6 +7537,63 @@ fn live_timer_decrement_boundary_finishes_priority_and_dispatch_without_replayin
 }
 
 #[test]
+fn live_hit_timer_checkpoint_leaves_aux4_for_the_resumed_call() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.set_main_module(7);
+    state.set_submodule(0);
+    // State 2 has no native countdown write of its own while the timer is
+    // nonzero, so the assertion below isolates replay of Sprite_TimersAndOam.
+    state.sprite_slot_view_mut(0).set_state(2);
+    state.sprite_slot_view_mut(0).set_delay_main(0xa0);
+    state.sprite_slot_view_mut(0).set_hit_timer(3);
+    state.sprite_slot_view_mut(0).set_delay_aux4(3);
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        676_340,
+        0,
+        vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+            crate::SpriteMainProgress::AfterHitTimer(0),
+        )],
+    ));
+
+    state.run_module07_sprite_main_caller(DungeonSpriteMainReturn {
+        link_oam: None,
+        bg2_x: 0,
+        bg2_y: 0,
+        bg1_x: 0,
+        bg1_y: 0,
+    });
+
+    assert_eq!(state.sprite_slot_view(0).delay_main(), 0x9f);
+    assert_eq!(state.sprite_slot_view(0).hit_timer(), 2);
+    assert_eq!(state.sprite_slot_view(0).delay_aux4(), 3);
+    let boundary = match state.game_execution_scheduler.current_work() {
+        Some(GameWorkContinuation::FinishSpriteMain {
+            boundary:
+                SpriteMainCpuBoundary::AfterHitTimer {
+                    slot: 0,
+                    state: Some(2),
+                },
+            caller:
+                SpriteMainCpuCaller::DungeonModule07Live {
+                    boundary: crate::OriginalTimingBoundary::HostReturn,
+                },
+        }) => SpriteMainCpuBoundary::AfterHitTimer {
+            slot: 0,
+            state: Some(2),
+        },
+        other => panic!("unexpected timer decrement continuation: {other:?}"),
+    };
+
+    state.complete_sprite_main_after_cpu_boundary(boundary);
+    assert_eq!(state.sprite_slot_view(0).hit_timer(), 2);
+    assert_eq!(state.sprite_slot_view(0).delay_aux4(), 2);
+
+    assert_eq!(state.sprite_slot_view(0).delay_main(), 0x9f);
+}
+
+#[test]
 fn sprite_main_source_checkpoint_identity_excludes_native_resume_payloads() {
     assert!(same_sprite_main_source_checkpoint(
         SpriteMainCpuBoundary::AfterTimersAndOam {

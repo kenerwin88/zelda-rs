@@ -5077,6 +5077,10 @@ enum SpriteMainCpuBoundary {
         slot: u8,
         cleared_bytes: u16,
     },
+    AfterHitTimer {
+        slot: u8,
+        state: Option<u8>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5275,6 +5279,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::AfterPrimaryTimerDecrements {
             slot: active_slot, ..
         }
+        | SpriteMainCpuBoundary::AfterHitTimer {
+            slot: active_slot, ..
+        }
         | SpriteMainCpuBoundary::AfterMainAndAux1TimerDecrements {
             slot: active_slot, ..
         }
@@ -5418,6 +5425,13 @@ fn sprite_main_cpu_boundary_from_interruption(
                 "source Sprite_Main primary timer decrement receipt used invalid slot {slot}"
             );
             Some(SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { slot, state: None })
+        }
+        crate::MainLoopInterruption::SpriteMainAfterHitTimer(slot) => {
+            assert!(
+                slot < 16,
+                "source Sprite_Main hit timer decrement receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::AfterHitTimer { slot, state: None })
         }
         crate::MainLoopInterruption::SpriteMainAfterMainAndAux1TimerDecrements(slot) => {
             assert!(
@@ -5817,6 +5831,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainAfterTimersAndOam(slot)
         | crate::MainLoopInterruption::SpriteMainAfterTimerDecrements(slot)
         | crate::MainLoopInterruption::SpriteMainAfterPrimaryTimerDecrements(slot)
+        | crate::MainLoopInterruption::SpriteMainAfterHitTimer(slot)
         | crate::MainLoopInterruption::SpriteMainAfterMainAndAux1TimerDecrements(slot)
         | crate::MainLoopInterruption::SpriteMainBariBeforeRandom(slot)
         | crate::MainLoopInterruption::SpriteMainAfterThrowableSceneryStateClear(slot)
@@ -5972,6 +5987,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AfterTimersAndOam(slot)
         | crate::SpriteMainProgress::AfterTimerDecrements(slot)
         | crate::SpriteMainProgress::AfterPrimaryTimerDecrements(slot)
+        | crate::SpriteMainProgress::AfterHitTimer(slot)
         | crate::SpriteMainProgress::AfterMainAndAux1TimerDecrements(slot)
         | crate::SpriteMainProgress::BariBeforeRandom(slot)
         | crate::SpriteMainProgress::AfterThrowableSceneryStateClear(slot)
@@ -6087,6 +6103,13 @@ fn sprite_main_cpu_boundary_from_progress(
                 "source Sprite_Main primary timer decrement progress used invalid slot {slot}"
             );
             SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { slot, state: None }
+        }
+        crate::SpriteMainProgress::AfterHitTimer(slot) => {
+            assert!(
+                slot < 16,
+                "source Sprite_Main hit timer decrement progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::AfterHitTimer { slot, state: None }
         }
         crate::SpriteMainProgress::AfterMainAndAux1TimerDecrements(slot) => {
             assert!(
@@ -6465,6 +6488,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterTimersAndOam(_)
         | crate::MainLoopInterruption::SpriteMainAfterTimerDecrements(_)
         | crate::MainLoopInterruption::SpriteMainAfterPrimaryTimerDecrements(_)
+        | crate::MainLoopInterruption::SpriteMainAfterHitTimer(_)
         | crate::MainLoopInterruption::SpriteMainAfterMainAndAux1TimerDecrements(_)
         | crate::MainLoopInterruption::SpriteMainBonkItemGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainBariBeforeRandom(_)
@@ -6538,6 +6562,10 @@ fn same_sprite_main_source_checkpoint(
         | (
             SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { slot: left, .. },
             SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { slot: right, .. },
+        )
+        | (
+            SpriteMainCpuBoundary::AfterHitTimer { slot: left, .. },
+            SpriteMainCpuBoundary::AfterHitTimer { slot: right, .. },
         )
         | (
             SpriteMainCpuBoundary::AfterMainAndAux1TimerDecrements { slot: left, .. },
@@ -6790,6 +6818,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AfterTimersAndOam { slot, .. }
         | SpriteMainCpuBoundary::AfterTimerDecrements { slot, .. }
         | SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { slot, .. }
+        | SpriteMainCpuBoundary::AfterHitTimer { slot, .. }
         | SpriteMainCpuBoundary::AfterMainAndAux1TimerDecrements { slot, .. }
         | SpriteMainCpuBoundary::BariBeforeRandom(slot)
         | SpriteMainCpuBoundary::FollowerGraphics { slot, .. }
