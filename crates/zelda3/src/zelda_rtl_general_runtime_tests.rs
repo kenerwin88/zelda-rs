@@ -19809,6 +19809,68 @@ fn absorbable_vertical_lookup_keeps_movement_and_defers_bounce_suffix() {
 }
 
 #[test]
+fn swamola_segment_draw_resumes_without_repeating_history_or_oam_steps() {
+    for (velocity, y) in [(8, 0x80), (0xf8, 0x80), (8, 0x500), (0xf8, 0x500)] {
+        for segment in 0..4u8 {
+            let mut state = ZeldaState::new();
+            state.set_main_module(9);
+            state.set_submodule(0);
+            {
+                let mut sprite = state.sprite_slot_view_mut(4);
+                sprite.set_state(9);
+                sprite.set_sprite_type(0xcf);
+                sprite.set_ai_state(2);
+                sprite.set_x(0x80);
+                sprite.set_y(y);
+                sprite.set_subtype2(10);
+                sprite.set_x_velocity(8);
+                sprite.set_y_velocity(velocity);
+                sprite.set_deflection_bits(0x80);
+            }
+            for index in 0..32 {
+                state
+                    .swamola_history_mut(4 * 32 + index)
+                    .set_position(0x80 + index as u16, 0x80);
+            }
+            state.sprite_get16_bit_coords(4);
+            let mut atomic = state.clone();
+            atomic.swamola_draw(4);
+            let mut head = state.clone();
+            let history_before = head.game_state.effects.sprite_histories.clone();
+            let oam_before = head.game_state.oam.clone();
+            head.swamola_prepare_head(4);
+            assert_eq!(head.game_state.effects.sprite_histories, history_before);
+            assert_eq!(head.game_state.oam, oam_before);
+            head.swamola_draw_after_head_checkpoint(4);
+            assert_eq!(head.game_state, atomic.game_state);
+            assert_eq!(head.ram, atomic.ram);
+            let mut completed_head = state.clone();
+            completed_head.swamola_prepare_head(4);
+            completed_head.sprite_draw_single_large(4);
+            assert_eq!(
+                completed_head.game_state.effects.sprite_histories,
+                history_before
+            );
+            completed_head.swamola_draw_after_completed_head(4);
+            assert_eq!(completed_head.game_state, atomic.game_state);
+            assert_eq!(completed_head.ram, atomic.ram);
+            state.swamola_draw_until_segment(4, segment);
+            assert_eq!(
+                state.sprite_slot_view(4).graphics(),
+                [0, 0, 1, 2][usize::from(segment)]
+            );
+            assert_eq!(
+                state.game_state.sprites.workspace.shared_scratch_a(),
+                segment
+            );
+            state.swamola_draw_after_segment_checkpoint(4, segment);
+            assert_eq!(state.game_state, atomic.game_state);
+            assert_eq!(state.ram, atomic.ram);
+        }
+    }
+}
+
+#[test]
 fn purple_chest_follower_graphics_retains_the_deleted_sprite_prefix() {
     let mut state = ZeldaState::new();
     state.set_main_module(9);

@@ -3222,6 +3222,25 @@ impl ZeldaState {
                 self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
                 return;
             }
+            if let Some(
+                boundary @ (SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, .. }
+                | SpriteMainCpuBoundary::SwamolaHeadDraw { slot }
+                | SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot }),
+            ) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    assert_eq!(self.sprite_slot_view(k).state(), 9);
+                    assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xcf);
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    self.sprite_timers_and_oam(k);
+                    self.sprite_active_main(k);
+                    self.sprite_main_cpu_boundary = None;
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                    return;
+                }
+            }
             if matches!(self.sprite_main_cpu_boundary,
                 Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot }) if slot == k as u8)
             {
@@ -4305,6 +4324,27 @@ impl ZeldaState {
                 assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
                 self.sprite_absorbable_after_vertical_lookup(interrupted_slot);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.swamola_draw_after_completed_head(k);
+                self.sprite_cf_swamola_after_draw(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::SwamolaHeadDraw { slot } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.swamola_draw_after_head_checkpoint(k);
+                self.sprite_cf_swamola_after_draw(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, segment } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.swamola_draw_after_segment_checkpoint(k, segment);
+                self.sprite_cf_swamola_after_draw(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
             }
             SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot } => {
                 let interrupted_slot = usize::from(slot);

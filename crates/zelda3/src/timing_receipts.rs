@@ -890,6 +890,12 @@ pub enum MainLoopInterruption {
     DungeonExitSpotlightTableCompleted,
     SpriteMainAbsorbableVerticalTileLookup(u8),
     SpriteMainAbsorbableVerticalTileAttributeLoaded(u8),
+    SpriteMainSwamolaHeadDraw(u8),
+    SpriteMainSwamolaHeadDrawCompleted(u8),
+    SpriteMainSwamolaSegmentDraw {
+        slot: u8,
+        segment: u8,
+    },
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -960,6 +966,9 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAbsorbableHorizontalTileLookup(_)
                 | Self::SpriteMainAbsorbableVerticalTileLookup(_)
                 | Self::SpriteMainAbsorbableVerticalTileAttributeLoaded(_)
+                | Self::SpriteMainSwamolaHeadDraw(_)
+                | Self::SpriteMainSwamolaHeadDrawCompleted(_)
+                | Self::SpriteMainSwamolaSegmentDraw { .. }
                 | Self::SpriteMainPengatorSlidePending(_)
                 | Self::SpriteMainAntifairyBouncePending(_)
                 | Self::SpriteMainKholdstareDamagePending(_)
@@ -1131,6 +1140,12 @@ pub enum SpriteMainProgress {
     AfterZeroHitTimerClear(u8),
     AbsorbableVerticalTileLookup(u8),
     AbsorbableVerticalTileAttributeLoaded(u8),
+    SwamolaHeadDraw(u8),
+    SwamolaHeadDrawCompleted(u8),
+    SwamolaSegmentDraw {
+        slot: u8,
+        segment: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

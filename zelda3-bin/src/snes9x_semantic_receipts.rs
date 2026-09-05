@@ -947,6 +947,11 @@ struct SpriteMainExecutionTracker {
     absorbable_horizontal_lookup: Option<u8>,
     absorbable_vertical_lookup: Option<u8>,
     absorbable_vertical_attribute_loaded: Option<u8>,
+    swamola_segment: Option<u8>,
+    swamola_head_prepared: bool,
+    swamola_head_draw_completed: Option<u8>,
+    swamola_head_draw: Option<u8>,
+    swamola_segment_draw: Option<(u8, u8)>,
     pengator_slide_pending: Option<u8>,
     antifairy_bounce_pending: Option<u8>,
     kholdstare_subtype_decremented: bool,
@@ -1089,6 +1094,40 @@ impl SpriteMainExecutionTracker {
             return Err("Pengator slide checkpoint disagrees with its active caller".into());
         }
         self.pengator_slide_pending = Some(slot);
+        Ok(())
+    }
+
+    fn observe_swamola_segment_draw(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        // PrepOamCoord's off-screen path has applied its side effects and
+        // is discarding the near return address. Swamola's history is pending.
+        if self.swamola_head_prepared
+            && event.pc.map(|pc| pc & 0xff_ffff) == Some(0x06_e492)
+            && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0xdb_f5dc)
+            && self.current_slot.map(u16::from) == event.x
+        {
+            self.swamola_head_draw_completed = self.current_slot;
+        }
+        // The Swamola caller has stored head graphics and flags, but the
+        // JSL has only entered SpriteDraw_SingleLarge; history is still pending.
+        if event.pc.map(|pc| pc & 0xff_ffff) == Some(0x06_dbf0)
+            && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x1d_9f8b)
+            && self.current_slot.map(u16::from) == event.x
+        {
+            self.swamola_head_draw = self.current_slot;
+        }
+        if event.pc.map(|pc| pc & 0xff_ffff) == Some(0x06_e442)
+            && event
+                .return_address
+                .is_some_and(|address| address & 0xffff == 0xdc12)
+            && self.current_slot.map(u16::from) == event.x
+        {
+            if let Some(segment) = self.swamola_segment.filter(|&segment| segment < 4) {
+                self.swamola_segment_draw = Some((
+                    self.current_slot.ok_or("Swamola draw lost its slot")?,
+                    segment,
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -2238,6 +2277,16 @@ impl SpriteMainExecutionTracker {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::HogSpearBodyGraphicsPending(slot);
         }
+        if let Some(slot) = self.swamola_head_draw_completed {
+            return SpriteMainProgress::SwamolaHeadDrawCompleted(slot);
+        }
+        if let Some(slot) = self.swamola_head_draw {
+            return SpriteMainProgress::SwamolaHeadDraw(slot);
+        }
+        if let Some((slot, segment)) = self.swamola_segment_draw {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::SwamolaSegmentDraw { slot, segment };
+        }
         if let Some(slot) = self.absorbable_horizontal_lookup {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::AbsorbableHorizontalTileLookup(slot);
@@ -2598,6 +2647,15 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::AbsorbableVerticalTileAttributeLoaded(slot) => {
                 MainLoopInterruption::SpriteMainAbsorbableVerticalTileAttributeLoaded(slot)
+            }
+            SpriteMainProgress::SwamolaHeadDraw(slot) => {
+                MainLoopInterruption::SpriteMainSwamolaHeadDraw(slot)
+            }
+            SpriteMainProgress::SwamolaHeadDrawCompleted(slot) => {
+                MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(slot)
+            }
+            SpriteMainProgress::SwamolaSegmentDraw { slot, segment } => {
+                MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment }
             }
             SpriteMainProgress::PengatorSlidePending(slot) => {
                 MainLoopInterruption::SpriteMainPengatorSlidePending(slot)
@@ -4255,6 +4313,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_guard_animation_checkpoint(returned_event)?;
                 execution.observe_hog_spear_body_graphics_pending(returned_event)?;
                 execution.observe_absorbable_tile_lookup(returned_event)?;
+                execution.observe_swamola_segment_draw(returned_event)?;
                 execution.observe_pengator_slide_pending(returned_event)?;
                 execution.observe_antifairy_bounce_pending(returned_event)?;
                 execution.observe_kholdstare_damage_pending(returned_event)?;
@@ -4938,6 +4997,11 @@ impl Snes9xOracleSemanticTrace {
                             execution.absorbable_horizontal_lookup = None;
                             execution.absorbable_vertical_lookup = None;
                             execution.absorbable_vertical_attribute_loaded = None;
+                            execution.swamola_segment = None;
+                            execution.swamola_head_prepared = false;
+                            execution.swamola_head_draw_completed = None;
+                            execution.swamola_head_draw = None;
+                            execution.swamola_segment_draw = None;
                             execution.pengator_slide_pending = None;
                             execution.antifairy_bounce_pending = None;
                             execution.kholdstare_subtype_decremented = false;
@@ -4993,6 +5057,11 @@ impl Snes9xOracleSemanticTrace {
                             execution.absorbable_horizontal_lookup = None;
                             execution.absorbable_vertical_lookup = None;
                             execution.absorbable_vertical_attribute_loaded = None;
+                            execution.swamola_segment = None;
+                            execution.swamola_head_prepared = false;
+                            execution.swamola_head_draw_completed = None;
+                            execution.swamola_head_draw = None;
+                            execution.swamola_segment_draw = None;
                             execution.pengator_slide_pending = None;
                             execution.antifairy_bounce_pending = None;
                             execution.kholdstare_subtype_decremented = false;
@@ -5041,6 +5110,11 @@ impl Snes9xOracleSemanticTrace {
                         execution.absorbable_horizontal_lookup = None;
                         execution.absorbable_vertical_lookup = None;
                         execution.absorbable_vertical_attribute_loaded = None;
+                        execution.swamola_segment = None;
+                        execution.swamola_head_prepared = false;
+                        execution.swamola_head_draw_completed = None;
+                        execution.swamola_head_draw = None;
+                        execution.swamola_segment_draw = None;
                         execution.pengator_slide_pending = None;
                         execution.antifairy_bounce_pending = None;
                         execution.kholdstare_subtype_decremented = false;
@@ -5368,6 +5442,37 @@ impl Snes9xOracleSemanticTrace {
             "wram-write" => {
                 let pc = event.pc.ok_or("Snes9x WRAM write omitted PC")? & 0x00ff_ffff;
                 let address = event.address.ok_or("Snes9x WRAM write omitted address")?;
+                if pc == 0x1d_9f88 {
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Swamola head flags outside Sprite_Main")?;
+                    let slot = execution.current_slot.ok_or("Swamola head lost slot")?;
+                    if event.x != Some(u16::from(slot)) || address != 0x0f50 + u16::from(slot) {
+                        return Err("Swamola head flags disagree with source slot".into());
+                    }
+                    execution.swamola_head_prepared = true;
+                }
+                if address == 0x0fb6 && matches!(pc, 0x1d_9fd7 | 0x1d_a034) {
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Swamola segment publication outside Sprite_Main")?;
+                    if execution.current_slot.map(u16::from) != event.x {
+                        return Err("Swamola segment slot disagrees with the active caller".into());
+                    }
+                    let segment = event
+                        .value
+                        .ok_or("Swamola segment publication omitted its value")?;
+                    if segment > 4 {
+                        return Err("Swamola segment exceeds its four-part body".into());
+                    }
+                    execution.swamola_segment = Some(segment);
+                    execution.swamola_head_prepared = false;
+                    execution.swamola_head_draw_completed = None;
+                    execution.swamola_head_draw = None;
+                    execution.swamola_segment_draw = None;
+                }
                 if pc == CREDITS_SCENE_OVERWORLD_SUBSUBMODULE_INCREMENT_PC
                     && address == SUBSUBMODULE_INDEX
                     && event.main == Some(0x1a)
@@ -5407,6 +5512,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_tile_lookup(&event)?;
+                    execution.observe_swamola_segment_draw(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_antifairy_bounce_pending(&event)?;
                     execution.observe_kholdstare_damage_pending(&event)?;
@@ -5899,6 +6005,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_tile_lookup(&event)?;
+                    execution.observe_swamola_segment_draw(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_antifairy_bounce_pending(&event)?;
                     execution.observe_kholdstare_damage_pending(&event)?;
@@ -7683,6 +7790,15 @@ fn retire_resumed_main_loop_interruption(
                         slot,
                     ))
                 }
+                MainLoopInterruption::SpriteMainSwamolaHeadDraw(slot) => {
+                    Some(SpriteMainProgress::SwamolaHeadDraw(slot))
+                }
+                MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(slot) => {
+                    Some(SpriteMainProgress::SwamolaHeadDrawCompleted(slot))
+                }
+                MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment } => {
+                    Some(SpriteMainProgress::SwamolaSegmentDraw { slot, segment })
+                }
                 MainLoopInterruption::SpriteMainPengatorSlidePending(slot) => {
                     Some(SpriteMainProgress::PengatorSlidePending(slot))
                 }
@@ -8686,6 +8802,11 @@ mod tests {
             absorbable_horizontal_lookup: None,
             absorbable_vertical_lookup: None,
             absorbable_vertical_attribute_loaded: None,
+            swamola_segment: None,
+            swamola_head_prepared: false,
+            swamola_head_draw_completed: None,
+            swamola_head_draw: None,
+            swamola_segment_draw: None,
             pengator_slide_pending: None,
             antifairy_bounce_pending: None,
             kholdstare_subtype_decremented: false,
@@ -10609,6 +10730,11 @@ mod tests {
         execution.absorbable_horizontal_lookup = None;
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
+        execution.swamola_segment = None;
+        execution.swamola_head_prepared = false;
+        execution.swamola_head_draw_completed = None;
+        execution.swamola_head_draw = None;
+        execution.swamola_segment_draw = None;
         execution.pengator_slide_pending = None;
         execution.antifairy_bounce_pending = None;
         execution.kholdstare_subtype_decremented = false;
@@ -10697,6 +10823,11 @@ mod tests {
         execution.absorbable_horizontal_lookup = None;
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
+        execution.swamola_segment = None;
+        execution.swamola_head_prepared = false;
+        execution.swamola_head_draw_completed = None;
+        execution.swamola_head_draw = None;
+        execution.swamola_segment_draw = None;
         execution.pengator_slide_pending = None;
         execution.antifairy_bounce_pending = None;
         execution.kholdstare_subtype_decremented = false;
@@ -10707,6 +10838,11 @@ mod tests {
         assert_eq!(execution.absorbable_vertical_lookup, Some(3));
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
+        execution.swamola_segment = None;
+        execution.swamola_head_prepared = false;
+        execution.swamola_head_draw_completed = None;
+        execution.swamola_head_draw = None;
+        execution.swamola_segment_draw = None;
         event.pc = Some(0x06_e782);
         event.return_address = Some(0x03_e5f0);
         event.x = Some(3);
@@ -10718,6 +10854,11 @@ mod tests {
         );
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
+        execution.swamola_segment = None;
+        execution.swamola_head_prepared = false;
+        execution.swamola_head_draw_completed = None;
+        execution.swamola_head_draw = None;
+        execution.swamola_segment_draw = None;
         event.return_address = Some(0x03_e5f1);
         execution.observe_absorbable_tile_lookup(&event).unwrap();
         assert_eq!(execution.absorbable_vertical_lookup, None);
@@ -10729,6 +10870,11 @@ mod tests {
             SpriteMainProgress::AbsorbableVerticalTileAttributeLoaded(3)
         );
         execution.absorbable_vertical_attribute_loaded = None;
+        execution.swamola_segment = None;
+        execution.swamola_head_prepared = false;
+        execution.swamola_head_draw_completed = None;
+        execution.swamola_head_draw = None;
+        execution.swamola_segment_draw = None;
         event.pc = Some(0x06_e883);
         event.return_address = Some(0xba_e7a0);
         event.y = Some(14);
@@ -11139,6 +11285,55 @@ mod tests {
             RescuedMaidenInitializationStage::SecondFollowerSheet {
                 completed_bytes: 1344,
             },
+        );
+    }
+
+    #[test]
+    fn swamola_segment_checkpoint_requires_the_source_loop_and_draw_caller() {
+        let mut source = empty_semantic_tracker();
+        source.sprite_main_execution = Some(SpriteMainExecutionTracker::default());
+        source.sprite_main_execution.as_mut().unwrap().current_slot = Some(4);
+        let mut write = raw("wram-write", Some(0x1d_a034), Some(4), None);
+        write.address = Some(0x0fb6);
+        write.value = Some(1);
+        source.consume_event(write, &mut Vec::new()).unwrap();
+        let execution = source.sprite_main_execution.as_mut().unwrap();
+        let mut returned = raw("frame", Some(0x06_e442), Some(4), None);
+        returned.return_address = Some(0xf5_dc12);
+        execution.observe_swamola_segment_draw(&returned).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::SwamolaSegmentDraw {
+                slot: 4,
+                segment: 1
+            }
+        );
+        execution.swamola_head_prepared = false;
+        execution.swamola_head_draw_completed = None;
+        execution.swamola_head_draw = None;
+        execution.swamola_segment_draw = None;
+        returned.return_address = Some(0xf5_dc13);
+        execution.observe_swamola_segment_draw(&returned).unwrap();
+        assert_eq!(execution.swamola_segment_draw, None);
+        returned.pc = Some(0x06_dbf0);
+        returned.return_address = Some(0x1d_9f8b);
+        execution.observe_swamola_segment_draw(&returned).unwrap();
+        assert_eq!(execution.progress(), SpriteMainProgress::SwamolaHeadDraw(4));
+        execution.swamola_head_prepared = false;
+        execution.swamola_head_draw_completed = None;
+        execution.swamola_head_draw = None;
+        returned.return_address = Some(0x1d_9f8c);
+        execution.observe_swamola_segment_draw(&returned).unwrap();
+        assert_eq!(execution.swamola_head_draw, None);
+        returned.pc = Some(0x06_e492);
+        returned.return_address = Some(0xdb_f5dc);
+        execution.observe_swamola_segment_draw(&returned).unwrap();
+        assert_eq!(execution.swamola_head_draw_completed, None);
+        execution.swamola_head_prepared = true;
+        execution.observe_swamola_segment_draw(&returned).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::SwamolaHeadDrawCompleted(4)
         );
     }
 
@@ -13875,6 +14070,11 @@ mod tests {
             absorbable_horizontal_lookup: None,
             absorbable_vertical_lookup: None,
             absorbable_vertical_attribute_loaded: None,
+            swamola_segment: None,
+            swamola_head_prepared: false,
+            swamola_head_draw_completed: None,
+            swamola_head_draw: None,
+            swamola_segment_draw: None,
             pengator_slide_pending: None,
             antifairy_bounce_pending: None,
             kholdstare_subtype_decremented: false,
@@ -13954,6 +14154,11 @@ mod tests {
             absorbable_horizontal_lookup: None,
             absorbable_vertical_lookup: None,
             absorbable_vertical_attribute_loaded: None,
+            swamola_segment: None,
+            swamola_head_prepared: false,
+            swamola_head_draw_completed: None,
+            swamola_head_draw: None,
+            swamola_segment_draw: None,
             pengator_slide_pending: None,
             antifairy_bounce_pending: None,
             kholdstare_subtype_decremented: false,

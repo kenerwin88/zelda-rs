@@ -5107,6 +5107,16 @@ enum SpriteMainCpuBoundary {
     AbsorbableVerticalTileAttributeLoaded {
         slot: u8,
     },
+    SwamolaHeadDraw {
+        slot: u8,
+    },
+    SwamolaHeadDrawCompleted {
+        slot: u8,
+    },
+    SwamolaSegmentDraw {
+        slot: u8,
+        segment: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5388,6 +5398,11 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot: active_slot }
         | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot: active_slot }
         | SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot: active_slot }
+        | SpriteMainCpuBoundary::SwamolaHeadDraw { slot: active_slot }
+        | SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot: active_slot }
+        | SpriteMainCpuBoundary::SwamolaSegmentDraw {
+            slot: active_slot, ..
+        }
         | SpriteMainCpuBoundary::PengatorSlidePending { slot: active_slot }
         | SpriteMainCpuBoundary::AntifairyBouncePending { slot: active_slot }
         | SpriteMainCpuBoundary::KholdstareDamagePending { slot: active_slot }
@@ -5830,6 +5845,18 @@ fn sprite_main_cpu_boundary_from_interruption(
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot })
         }
+        crate::MainLoopInterruption::SpriteMainSwamolaHeadDraw(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::SwamolaHeadDraw { slot })
+        }
+        crate::MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot })
+        }
+        crate::MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment } => {
+            assert!(slot < 16 && segment < 4);
+            Some(SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, segment })
+        }
         crate::MainLoopInterruption::SpriteMainPengatorSlidePending(slot) => {
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::PengatorSlidePending { slot })
@@ -5897,6 +5924,9 @@ const fn valid_dynamic_spawn_progress(progress: crate::SpriteDynamicSpawnProgres
 
 const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruption) -> bool {
     match interruption {
+        crate::MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment } => {
+            slot < 16 && segment < 4
+        }
         crate::MainLoopInterruption::SpriteMainBeforeFirstSlot => true,
         crate::MainLoopInterruption::SpriteMainAfterSlot(slot)
         | crate::MainLoopInterruption::SpriteMainAfterTimersAndOam(slot)
@@ -5926,6 +5956,8 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(slot)
         | crate::MainLoopInterruption::SpriteMainAbsorbableVerticalTileLookup(slot)
         | crate::MainLoopInterruption::SpriteMainAbsorbableVerticalTileAttributeLoaded(slot)
+        | crate::MainLoopInterruption::SpriteMainSwamolaHeadDraw(slot)
+        | crate::MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(slot)
         | crate::MainLoopInterruption::SpriteMainPengatorSlidePending(slot)
         | crate::MainLoopInterruption::SpriteMainAntifairyBouncePending(slot)
         | crate::MainLoopInterruption::SpriteMainKholdstareDamagePending(slot)
@@ -6062,6 +6094,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
 
 const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool {
     match progress {
+        crate::SpriteMainProgress::SwamolaSegmentDraw { slot, segment } => slot < 16 && segment < 4,
         crate::SpriteMainProgress::BeforeFirstSlot => true,
         crate::SpriteMainProgress::AfterSlot(slot)
         | crate::SpriteMainProgress::AfterTimersAndOam(slot)
@@ -6087,6 +6120,8 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AbsorbableHorizontalTileLookup(slot)
         | crate::SpriteMainProgress::AbsorbableVerticalTileLookup(slot)
         | crate::SpriteMainProgress::AbsorbableVerticalTileAttributeLoaded(slot)
+        | crate::SpriteMainProgress::SwamolaHeadDraw(slot)
+        | crate::SpriteMainProgress::SwamolaHeadDrawCompleted(slot)
         | crate::SpriteMainProgress::PengatorSlidePending(slot)
         | crate::SpriteMainProgress::AntifairyBouncePending(slot)
         | crate::SpriteMainProgress::KholdstareDamagePending(slot)
@@ -6540,6 +6575,18 @@ fn sprite_main_cpu_boundary_from_progress(
             assert!(slot < 16);
             SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot }
         }
+        crate::SpriteMainProgress::SwamolaHeadDraw(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::SwamolaHeadDraw { slot }
+        }
+        crate::SpriteMainProgress::SwamolaHeadDrawCompleted(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot }
+        }
+        crate::SpriteMainProgress::SwamolaSegmentDraw { slot, segment } => {
+            assert!(slot < 16 && segment < 4);
+            SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, segment }
+        }
         crate::SpriteMainProgress::PengatorSlidePending(slot) => {
             assert!(slot < 16);
             SpriteMainCpuBoundary::PengatorSlidePending { slot }
@@ -6644,6 +6691,9 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(_)
         | crate::MainLoopInterruption::SpriteMainAbsorbableVerticalTileLookup(_)
         | crate::MainLoopInterruption::SpriteMainAbsorbableVerticalTileAttributeLoaded(_)
+        | crate::MainLoopInterruption::SpriteMainSwamolaHeadDraw(_)
+        | crate::MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(_)
+        | crate::MainLoopInterruption::SpriteMainSwamolaSegmentDraw { .. }
         | crate::MainLoopInterruption::SpriteMainPengatorSlidePending(_)
         | crate::MainLoopInterruption::SpriteMainAntifairyBouncePending(_)
         | crate::MainLoopInterruption::SpriteMainKholdstareDamagePending(_)
@@ -6990,6 +7040,9 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot }
         | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot }
         | SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot }
+        | SpriteMainCpuBoundary::SwamolaHeadDraw { slot }
+        | SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot }
+        | SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, .. }
         | SpriteMainCpuBoundary::PengatorSlidePending { slot }
         | SpriteMainCpuBoundary::AntifairyBouncePending { slot }
         | SpriteMainCpuBoundary::KholdstareDamagePending { slot }

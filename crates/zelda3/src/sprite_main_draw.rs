@@ -6162,6 +6162,30 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_CF_Swamola(int k) {  // 9d9cb0
     pub(super) fn sprite_cf_swamola(&mut self, k: usize) {
+        if self.sprite_main_cpu_boundary
+            == Some(SpriteMainCpuBoundary::SwamolaHeadDraw { slot: k as u8 })
+        {
+            assert!((1..0x80).contains(&self.sprite_slot_view(k).ai_state()));
+            self.swamola_prepare_head(k);
+            return;
+        }
+        if self.sprite_main_cpu_boundary
+            == Some(SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot: k as u8 })
+        {
+            assert!((1..0x80).contains(&self.sprite_slot_view(k).ai_state()));
+            self.swamola_prepare_head(k);
+            self.sprite_draw_single_large(k);
+            return;
+        }
+        if let Some(SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, segment }) =
+            self.sprite_main_cpu_boundary
+        {
+            if usize::from(slot) == k {
+                assert!((1..0x80).contains(&self.sprite_slot_view(k).ai_state()));
+                self.swamola_draw_until_segment(k, segment);
+                return;
+            }
+        }
         if self.sprite_slot_view(k).ai_state() != 0 {
             if sign8(self.sprite_slot_view(k).ai_state()) {
                 self.sprite_swamola_ripples(k);
@@ -6169,6 +6193,10 @@ impl ZeldaState {
             }
             self.swamola_draw(k);
         }
+        self.sprite_cf_swamola_after_draw(k);
+    }
+
+    pub(super) fn sprite_cf_swamola_after_draw(&mut self, k: usize) {
         self.sprite_get16_bit_coords(k);
         if self.sprite_return_if_inactive(k) {
             return;
@@ -6383,6 +6411,21 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Swamola_Draw(int k) {  // 9d9f64
     pub(super) fn swamola_draw(&mut self, k: usize) {
+        self.swamola_draw_before_segments(k);
+        self.swamola_draw_remaining_segments(k, 0);
+    }
+
+    fn swamola_draw_before_segments(&mut self, k: usize) {
+        self.swamola_prepare_head(k);
+        self.swamola_draw_head_and_publish_history(k);
+    }
+
+    pub(super) fn swamola_draw_after_head_checkpoint(&mut self, k: usize) {
+        self.swamola_draw_head_and_publish_history(k);
+        self.swamola_draw_remaining_segments(k, 0);
+    }
+
+    pub(super) fn swamola_prepare_head(&mut self, k: usize) {
         let j = usize::from(Self::sprite_convert_velocity_to_angle(
             self.sprite_slot_view(k).x_velocity(),
             self.sprite_slot_view(k)
@@ -6393,23 +6436,28 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_graphics(value);
         let value = (self.sprite_slot_view(k).oam_flags() & 63) | SWAMOLA_DRAW_FLAGS[j];
         self.sprite_slot_view_mut(k).set_oam_flags(value);
-        self.sprite_draw_single_large(k);
+    }
 
+    fn swamola_draw_head_and_publish_history(&mut self, k: usize) {
+        self.sprite_draw_single_large(k);
+        self.swamola_publish_history(k);
+    }
+
+    pub(super) fn swamola_draw_after_completed_head(&mut self, k: usize) {
+        self.swamola_publish_history(k);
+        self.swamola_draw_remaining_segments(k, 0);
+    }
+
+    fn swamola_publish_history(&mut self, k: usize) {
         let hist = usize::from(self.sprite_slot_view(k).subtype2() & 0x1f) + k * 32;
         let x = self.sprite_slot_view(k).x();
         let y = self.sprite_slot_view(k).y();
         self.swamola_history_mut(hist).set_position(x, y);
 
-        let (mut oam_step, mut ext_step): (i16, i16) =
-            if sign8(self.sprite_slot_view(k).y_velocity()) {
-                (5 * 4, 5)
-            } else {
-                (0, 0)
-            };
-        let delta: i16 = if sign8(self.sprite_slot_view(k).y_velocity()) {
-            -1
+        let (oam_step, ext_step): (i16, i16) = if sign8(self.sprite_slot_view(k).y_velocity()) {
+            (5 * 4, 5)
         } else {
-            1
+            (0, 0)
         };
         let cur = self.game_state.oam.current_pointer();
         self.oam_state_mut()
@@ -6418,40 +6466,75 @@ impl ZeldaState {
         self.oam_state_mut()
             .set_current_extended_pointer(ext.wrapping_add_signed(ext_step));
 
-        for i in 0..4 {
-            let value = SWAMOLA_DRAW_SECONDARY_GRAPHICS[i];
-            self.sprite_slot_view_mut(k).set_graphics(value);
-            let j = usize::from(
-                self.sprite_slot_view(k)
-                    .subtype2()
-                    .wrapping_sub(SWAMOLA_DRAW_HIST_OFFS[i])
-                    & 31,
-            ) + k * 32;
-            let x = self
-                .game_state
-                .effects
-                .sprite_histories
-                .swamola_history(j)
-                .x();
-            let y = self
-                .game_state
-                .effects
-                .sprite_histories
-                .swamola_history(j)
-                .y();
-            self.sprite_workspace_mut().set_current_sprite_x(x);
-            self.sprite_workspace_mut().set_current_sprite_y(y);
-            oam_step = delta * 4;
-            ext_step = delta;
-            let cur = self.game_state.oam.current_pointer();
-            self.oam_state_mut()
-                .set_current_pointer(cur.wrapping_add_signed(oam_step));
-            let ext = self.game_state.oam.current_extended_pointer();
-            self.oam_state_mut()
-                .set_current_extended_pointer(ext.wrapping_add_signed(ext_step));
+        self.sprite_workspace_mut().set_shared_scratch_a(0);
+    }
+
+    fn swamola_prepare_segment(&mut self, k: usize, i: usize) {
+        let value = SWAMOLA_DRAW_SECONDARY_GRAPHICS[i];
+        self.sprite_slot_view_mut(k).set_graphics(value);
+        let j = usize::from(
+            self.sprite_slot_view(k)
+                .subtype2()
+                .wrapping_sub(SWAMOLA_DRAW_HIST_OFFS[i])
+                & 31,
+        ) + k * 32;
+        let x = self
+            .game_state
+            .effects
+            .sprite_histories
+            .swamola_history(j)
+            .x();
+        let y = self
+            .game_state
+            .effects
+            .sprite_histories
+            .swamola_history(j)
+            .y();
+        self.sprite_workspace_mut().set_current_sprite_x(x);
+        self.sprite_workspace_mut().set_current_sprite_y(y);
+        let delta: i16 = if sign8(self.sprite_slot_view(k).y_velocity()) {
+            -1
+        } else {
+            1
+        };
+        let oam_step = delta * 4;
+        let ext_step = delta;
+        let cur = self.game_state.oam.current_pointer();
+        self.oam_state_mut()
+            .set_current_pointer(cur.wrapping_add_signed(oam_step));
+        let ext = self.game_state.oam.current_extended_pointer();
+        self.oam_state_mut()
+            .set_current_extended_pointer(ext.wrapping_add_signed(ext_step));
+    }
+
+    fn swamola_draw_remaining_segments(&mut self, k: usize, start: u8) {
+        for segment in start..4 {
+            self.swamola_prepare_segment(k, usize::from(segment));
             self.sprite_draw_single_large(k);
+            self.sprite_workspace_mut()
+                .set_shared_scratch_a(segment + 1);
         }
-        self.sprite_workspace_mut().set_shared_scratch_a(4);
+    }
+
+    pub(super) fn swamola_draw_until_segment(&mut self, k: usize, segment: u8) {
+        assert!(segment < 4);
+        self.swamola_draw_before_segments(k);
+        for prior in 0..segment {
+            self.swamola_prepare_segment(k, usize::from(prior));
+            self.sprite_draw_single_large(k);
+            self.sprite_workspace_mut().set_shared_scratch_a(prior + 1);
+        }
+        self.swamola_prepare_segment(k, usize::from(segment));
+        // PrepOamCoord cleared pause before reaching the suspended Y calculation.
+        self.sprite_slot_view_mut(k).set_pause(0);
+    }
+
+    pub(super) fn swamola_draw_after_segment_checkpoint(&mut self, k: usize, segment: u8) {
+        assert!(segment < 4);
+        self.sprite_draw_single_large(k);
+        self.sprite_workspace_mut()
+            .set_shared_scratch_a(segment + 1);
+        self.swamola_draw_remaining_segments(k, segment + 1);
     }
 
     // -----------------------------------------------------------------------
