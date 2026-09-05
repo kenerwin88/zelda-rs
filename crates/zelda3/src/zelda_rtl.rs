@@ -30922,6 +30922,70 @@ impl ZeldaState {
         true
     }
 
+    fn preflight_continued_peg_attribute_flip(
+        &self,
+    ) -> Option<crate::DungeonPegAttributeFlipProgressReceipt> {
+        let progress = (matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && self.game_execution_scheduler.current_work()
+                == Some(GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn)
+            && self.dungeon_peg_attribute_flip_pending.is_some())
+        .then(|| self.original_timing_dungeon_peg_attribute_flip_progress())
+        .flatten();
+        if let Some(progress) = progress {
+            assert_eq!(self.game_state.frame.main_module, 7);
+            match self
+                .dungeon_peg_attribute_flip_pending
+                .expect("continued peg-attribute cursor lost its saved caller")
+                .caller
+            {
+                DungeonPegAttributeFlipCaller::UpdatePegs => {
+                    assert_eq!(self.game_state.frame.submodule, 0x16);
+                    assert_eq!(self.game_state.frame.subsubmodule, 0x10);
+                }
+                DungeonPegAttributeFlipCaller::SupertileTransition { .. } => {
+                    assert_eq!(self.game_state.frame.submodule, 2);
+                }
+                DungeonPegAttributeFlipCaller::SpiralStairs => {
+                    assert_eq!(self.game_state.frame.submodule, 0x0e);
+                }
+                DungeonPegAttributeFlipCaller::WarpPad => {
+                    assert_eq!(self.game_state.frame.submodule, 0x15);
+                }
+                DungeonPegAttributeFlipCaller::FallingTransition => {
+                    assert_eq!(self.game_state.frame.submodule, 7);
+                }
+                DungeonPegAttributeFlipCaller::FatInterRoomStairs => {
+                    assert_eq!(self.game_state.frame.submodule, 6);
+                }
+                DungeonPegAttributeFlipCaller::StraightInterroomStairs => {
+                    assert!(matches!(self.game_state.frame.submodule, 0x11..=0x13));
+                }
+            }
+            let semantic = self
+                .original_timing_semantic_receipts
+                .as_ref()
+                .expect("continued peg-attribute cursor lost its host authority")
+                .semantic();
+            let progress_index = semantic
+                .iter()
+                .position(|receipt| {
+                    *receipt
+                        == OriginalTimingSemanticReceipt::DungeonPegAttributeFlipProgress(progress)
+                })
+                .expect("continued peg-attribute cursor disappeared during preflight");
+            if progress.boundary == OriginalTimingBoundary::NmiAccepted {
+                assert_eq!(
+                    semantic.get(progress_index + 1),
+                    Some(&OriginalTimingSemanticReceipt::NmiAccepted(
+                        NmiUpdateGate::LatchHeld,
+                    )),
+                    "a continued peg-attribute cursor must immediately precede the held NMI which exposes it",
+                );
+            }
+        }
+        progress
+    }
+
     fn apply_pre_dungeon_sprite_disable_prefix(&mut self, slot: u8) {
         assert!(slot < 16);
         let work = self
@@ -38352,7 +38416,28 @@ impl ZeldaState {
     }
 
     fn complete_dungeon_after_submodule_caller_return(&mut self) {
+        // A held suffix may follow a completed Sprite_Main even though the
+        // enclosing ZeldaRunGameLoop has not returned. Bind that source fact
+        // to the actual native slot-loop return, before deferring the suffix.
+        let claims = self
+            .original_timing_semantic_receipts
+            .as_ref()
+            .map_or(0, |receipts| {
+                receipts
+                    .semantic()
+                    .iter()
+                    .filter(|receipt| {
+                        **receipt == OriginalTimingSemanticReceipt::SpriteMainReturned
+                    })
+                    .count()
+            });
+        if claims != 0 {
+            self.begin_original_timing_sprite_main_return_claim_scope(claims);
+        }
         self.complete_dungeon_after_submodule_cpu_caller_return();
+        if claims != 0 {
+            self.finish_original_timing_sprite_main_return_claim_scope();
+        }
         let live_suffix_outstanding = self.original_timing_live_suffix_outstanding();
         if live_suffix_outstanding {
             // A live host whose wire holds the update latch through its
@@ -42299,6 +42384,8 @@ impl ZeldaState {
                 );
             }
         }
+        // Validate cursor-to-NMI adjacency before the timeline consumes those phases.
+        let authoritative_dungeon_peg_flip_progress = self.preflight_continued_peg_attribute_flip();
         let authoritative_main_loop_interruption_timeline =
             self.take_original_timing_main_loop_interruption_timeline(idle_outer_interruption);
         if let Some(timeline) = authoritative_main_loop_interruption_timeline.as_ref() {
@@ -42987,65 +43074,6 @@ impl ZeldaState {
                     claim.boundary,
                     OriginalTimingBoundary::NmiAccepted,
                     "a deferred spotlight iteration's build re-checkpoint must ride an accepting NMI",
-                );
-            }
-        }
-        let authoritative_dungeon_peg_flip_progress =
-            (matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-                && self.game_execution_scheduler.current_work()
-                    == Some(GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn)
-                && self.dungeon_peg_attribute_flip_pending.is_some())
-            .then(|| self.original_timing_dungeon_peg_attribute_flip_progress())
-            .flatten();
-        if let Some(progress) = authoritative_dungeon_peg_flip_progress {
-            assert_eq!(self.game_state.frame.main_module, 7);
-            match self
-                .dungeon_peg_attribute_flip_pending
-                .expect("continued peg-attribute cursor lost its saved caller")
-                .caller
-            {
-                DungeonPegAttributeFlipCaller::UpdatePegs => {
-                    assert_eq!(self.game_state.frame.submodule, 0x16);
-                    assert_eq!(self.game_state.frame.subsubmodule, 0x10);
-                }
-                DungeonPegAttributeFlipCaller::SupertileTransition { .. } => {
-                    assert_eq!(self.game_state.frame.submodule, 2);
-                }
-                DungeonPegAttributeFlipCaller::SpiralStairs => {
-                    assert_eq!(self.game_state.frame.submodule, 0x0e);
-                }
-                DungeonPegAttributeFlipCaller::WarpPad => {
-                    assert_eq!(self.game_state.frame.submodule, 0x15);
-                }
-                DungeonPegAttributeFlipCaller::FallingTransition => {
-                    assert_eq!(self.game_state.frame.submodule, 7);
-                }
-                DungeonPegAttributeFlipCaller::FatInterRoomStairs => {
-                    assert_eq!(self.game_state.frame.submodule, 6);
-                }
-                DungeonPegAttributeFlipCaller::StraightInterroomStairs => {
-                    assert!(matches!(self.game_state.frame.submodule, 0x11..=0x13));
-                }
-            }
-            let semantic = self
-                .original_timing_semantic_receipts
-                .as_ref()
-                .expect("continued peg-attribute cursor lost its host authority")
-                .semantic();
-            let progress_index = semantic
-                .iter()
-                .position(|receipt| {
-                    *receipt
-                        == OriginalTimingSemanticReceipt::DungeonPegAttributeFlipProgress(progress)
-                })
-                .expect("continued peg-attribute cursor disappeared during preflight");
-            if progress.boundary == OriginalTimingBoundary::NmiAccepted {
-                assert_eq!(
-                    semantic.get(progress_index + 1),
-                    Some(&OriginalTimingSemanticReceipt::NmiAccepted(
-                        NmiUpdateGate::LatchHeld,
-                    )),
-                    "a continued peg-attribute cursor must immediately precede the held NMI which exposes it",
                 );
             }
         }

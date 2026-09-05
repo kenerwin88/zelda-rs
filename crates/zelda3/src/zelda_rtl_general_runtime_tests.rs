@@ -20092,6 +20092,95 @@ fn sprite_disable_resumes_after_each_exact_state_clear() {
 }
 
 #[test]
+fn continued_peg_cursor_is_validated_before_timeline_consumption() {
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.set_main_module(7);
+    state.set_submodule(7);
+    let progress = crate::DungeonPegAttributeFlipProgressReceipt {
+        index: 51,
+        completed_banks: 2,
+        boundary: OriginalTimingBoundary::NmiAccepted,
+    };
+    state.dungeon_peg_attribute_flip_pending = Some(DungeonPegAttributeFlipContinuation {
+        caller: DungeonPegAttributeFlipCaller::FallingTransition,
+        progress,
+    });
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn,
+        1,
+    );
+    let semantic = vec![
+        OriginalTimingSemanticReceipt::DungeonPegAttributeFlipProgress(progress),
+        OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+        OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+        OriginalTimingSemanticReceipt::SpriteMainReturned,
+        OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+        OriginalTimingSemanticReceipt::MainLoopInterrupted(
+            crate::MainLoopInterruption::SpritePreparation,
+        ),
+        OriginalTimingSemanticReceipt::MainLoopProgress(
+            crate::MainLoopProgress::CallStackContinued,
+        ),
+    ];
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        1206044,
+        0,
+        semantic.clone(),
+    ));
+    assert_eq!(
+        state.preflight_continued_peg_attribute_flip(),
+        Some(progress)
+    );
+    assert_eq!(
+        state
+            .original_timing_semantic_receipts
+            .as_ref()
+            .unwrap()
+            .semantic(),
+        semantic
+    );
+    state
+        .original_timing_semantic_receipts
+        .as_mut()
+        .unwrap()
+        .semantic
+        .remove(1);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || state.preflight_continued_peg_attribute_flip()
+    ))
+    .is_err());
+}
+
+#[test]
+fn dungeon_caller_owns_sprite_return_while_common_suffix_remains_held() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        1206044,
+        0,
+        vec![OriginalTimingSemanticReceipt::SpriteMainReturned],
+    ));
+    state.complete_dungeon_after_submodule_caller_return();
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .unwrap()
+        .semantic()
+        .is_empty());
+    assert_eq!(
+        state.original_timing_sprite_main_return_claims_remaining,
+        None
+    );
+    assert_eq!(
+        state.pending_main_loop_common_suffix,
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch)
+    );
+}
+
+#[test]
 fn super_bomb_purchase_pays_once_before_suspended_follower_graphics() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);
