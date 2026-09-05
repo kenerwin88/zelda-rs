@@ -2957,7 +2957,10 @@ impl HostFrameWindow {
             }
             self.main_loop_common_suffix_completed = true;
         }
-        if event.event == "nmi" {
+        // A carried handler can resume the glyph and reach Scroll before
+        // this host's next NMI. Its resume PC proves the same suspended VWF
+        // caller as an acceptance within the glyph on this host.
+        if matches!(event.event.as_str(), "nmi" | "nmi-resume") {
             let interrupted_pc = event.pc.map(|pc| pc & 0x00ff_ffff);
             let interrupted_vwf = interrupted_pc.is_some_and(|pc| {
                 (VWF_RENDER_SINGLE_START_PC..VWF_RENDER_SINGLE_END_PC).contains(&pc)
@@ -2965,9 +2968,11 @@ impl HostFrameWindow {
             if interrupted_vwf {
                 self.vwf_nmi_observed = true;
             }
-            self.last_nmi_interrupted_vwf_glyph_body = interrupted_pc.is_some_and(|pc| {
-                (VWF_RENDER_SINGLE_BODY_START_PC..VWF_RENDER_SINGLE_END_PC).contains(&pc)
-            });
+            if event.event == "nmi" {
+                self.last_nmi_interrupted_vwf_glyph_body = interrupted_pc.is_some_and(|pc| {
+                    (VWF_RENDER_SINGLE_BODY_START_PC..VWF_RENDER_SINGLE_END_PC).contains(&pc)
+                });
+            }
         }
         if event.event != "frame" {
             return Ok(if common_suffix_completed {
@@ -11012,6 +11017,38 @@ mod tests {
         assert!(duplicate
             .observe(&raw("pc", Some(DIALOGUE_SCROLL_ENTRY_PC), None, None))
             .is_err());
+    }
+
+    #[test]
+    fn carried_glyph_resume_preserves_the_endpoint_before_scroll_entry() {
+        let mut host = HostFrameWindow::default();
+        let mut entry = frame_with_sub("entry", 218, 14, 2);
+        entry.pc = Some(NMI_HANDLER_ENTRY_PC);
+        host.observe(&entry).unwrap();
+        host.observe(&raw("nmi-resume", Some(0x0e_cca5), None, None))
+            .unwrap();
+        host.observe(&raw("pc", Some(DIALOGUE_SCROLL_ENTRY_PC), None, None))
+            .unwrap();
+        host.observe(&raw("nmi", Some(0x0e_d031), None, None))
+            .unwrap();
+        let mut returned = frame_with_sub("return", 218, 14, 2);
+        returned.pc = Some(NMI_HANDLER_ENTRY_PC);
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, Some(65), true).unwrap();
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    MainLoopProgress::CallStackContinued
+                ),
+                OriginalTimingSemanticReceipt::DialogueExecutionProgress(
+                    DialogueExecutionProgress::ResumedRenderingWithoutMainIteration {
+                        message_read_position: 65
+                    },
+                ),
+            ]
+        );
     }
 
     #[test]
