@@ -955,6 +955,7 @@ struct SpriteMainExecutionTracker {
     moblin_attribute_loaded: Option<u8>,
     vitreous_player_damage_pending: Option<u8>,
     vitreous_ai_pending: Option<u8>,
+    mini_moldorm_ai_pending: Option<u8>,
     vitreous_damage_pending: Option<u8>,
     swamola_head_prepared: bool,
     swamola_head_draw_completed: Option<u8>,
@@ -2420,6 +2421,9 @@ impl SpriteMainExecutionTracker {
         if let Some(slot) = self.vitreous_ai_pending {
             return SpriteMainProgress::VitreousAiPending(slot);
         }
+        if let Some(slot) = self.mini_moldorm_ai_pending {
+            return SpriteMainProgress::MiniMoldormAiPending(slot);
+        }
         if let Some(slot) = self.vitreous_player_damage_pending {
             return SpriteMainProgress::VitreousPlayerDamagePending(slot);
         }
@@ -2823,6 +2827,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::VitreousAiPending(slot) => {
                 MainLoopInterruption::SpriteMainVitreousAiPending(slot)
+            }
+            SpriteMainProgress::MiniMoldormAiPending(slot) => {
+                MainLoopInterruption::SpriteMainMiniMoldormAiPending(slot)
             }
             SpriteMainProgress::VitreousPlayerDamagePending(slot) => {
                 MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(slot)
@@ -4131,7 +4138,8 @@ impl Snes9xOracleSemanticTrace {
                         "058af3", "0684eb", "069271", "06a628", "06a724", "06b9cc", "06b9d0",
                         "0799ad", "079a0b", "008225", "0082c7", "00d4ed", "09c499", "09c4aa",
                         "09c173", "09f63f", "09f825", "0ffdc3", "00d423", "00e75c", "00e766",
-                        "00d44c", "06e4ab", "0ecfe2", "0ed088", "0ed0c2", "06d051", "02824d",
+                        "00d44c", "069853", "069860", "06988d", "0698b2", "06e4ab", "0ecfe2",
+                        "0ed088", "0ed0c2", "06d051", "02824d",
                     ],
                 ),
             );
@@ -5136,6 +5144,26 @@ impl Snes9xOracleSemanticTrace {
                         );
                     }
                 }
+                // The body has completed movement and collision. The shared
+                // jump-table helper has no gameplay effects before the AI target.
+                if pc == 0x06_9853 {
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Mini Moldorm AI dispatch has no Sprite_Main owner")?;
+                    let slot = execution
+                        .current_slot
+                        .ok_or("Mini Moldorm dispatch has no slot")?;
+                    if event.x != Some(u16::from(slot)) {
+                        return Err("Mini Moldorm dispatch disagrees with its active slot".into());
+                    }
+                    execution.mini_moldorm_ai_pending = Some(slot);
+                }
+                if matches!(pc, 0x06_9860 | 0x06_988d | 0x06_98b2) {
+                    if let Some(execution) = self.sprite_main_execution.as_mut() {
+                        execution.mini_moldorm_ai_pending = None;
+                    }
+                }
                 if pc == 0x06_e4ab
                     && event
                         .return_address
@@ -5279,6 +5307,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.vitreous_minions_seen = false;
                             execution.vitreous_player_damage_pending = None;
                             execution.vitreous_ai_pending = None;
+                            execution.mini_moldorm_ai_pending = None;
                             execution.vitreous_damage_pending = None;
                             execution.swamola_segment = None;
                             execution.swamola_head_prepared = false;
@@ -5348,6 +5377,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.vitreous_minions_seen = false;
                             execution.vitreous_player_damage_pending = None;
                             execution.vitreous_ai_pending = None;
+                            execution.mini_moldorm_ai_pending = None;
                             execution.vitreous_damage_pending = None;
                             execution.swamola_segment = None;
                             execution.swamola_head_prepared = false;
@@ -5409,6 +5439,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.vitreous_minions_seen = false;
                         execution.vitreous_player_damage_pending = None;
                         execution.vitreous_ai_pending = None;
+                        execution.mini_moldorm_ai_pending = None;
                         execution.vitreous_damage_pending = None;
                         execution.swamola_segment = None;
                         execution.swamola_head_prepared = false;
@@ -8133,6 +8164,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainVitreousAiPending(slot) => {
                     Some(SpriteMainProgress::VitreousAiPending(slot))
                 }
+                MainLoopInterruption::SpriteMainMiniMoldormAiPending(slot) => {
+                    Some(SpriteMainProgress::MiniMoldormAiPending(slot))
+                }
                 MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(slot) => {
                     Some(SpriteMainProgress::VitreousPlayerDamagePending(slot))
                 }
@@ -9158,6 +9192,7 @@ mod tests {
             moblin_attribute_loaded: None,
             vitreous_player_damage_pending: None,
             vitreous_ai_pending: None,
+            mini_moldorm_ai_pending: None,
             vitreous_damage_pending: None,
             swamola_head_prepared: false,
             swamola_head_draw_completed: None,
@@ -9296,6 +9331,36 @@ mod tests {
                 .sprite_main_execution
                 .map(|execution| execution.interruption()),
             Some(MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(14)),
+        );
+    }
+
+    #[test]
+    fn mini_moldorm_dispatch_checkpoint_ends_at_the_ai_target() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(1), None),
+            raw("pc", Some(0x06_9853), Some(1), None),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::MiniMoldormAiPending(1)
+            )]
+        );
+        source
+            .consume_event(raw("pc", Some(0x06_9860), Some(1), None), &mut receipts)
+            .unwrap();
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .unwrap()
+                .mini_moldorm_ai_pending,
+            None
         );
     }
     #[test]
@@ -11134,6 +11199,7 @@ mod tests {
         execution.vitreous_minions_seen = false;
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
+        execution.mini_moldorm_ai_pending = None;
         execution.vitreous_damage_pending = None;
         execution.swamola_segment = None;
         execution.swamola_head_prepared = false;
@@ -11235,6 +11301,7 @@ mod tests {
         execution.vitreous_minions_seen = false;
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
+        execution.mini_moldorm_ai_pending = None;
         execution.vitreous_damage_pending = None;
         execution.swamola_segment = None;
         execution.swamola_head_prepared = false;
@@ -11258,6 +11325,7 @@ mod tests {
         execution.vitreous_minions_seen = false;
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
+        execution.mini_moldorm_ai_pending = None;
         execution.vitreous_damage_pending = None;
         execution.swamola_segment = None;
         execution.swamola_head_prepared = false;
@@ -11282,6 +11350,7 @@ mod tests {
         execution.vitreous_minions_seen = false;
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
+        execution.mini_moldorm_ai_pending = None;
         execution.vitreous_damage_pending = None;
         execution.swamola_segment = None;
         execution.swamola_head_prepared = false;
@@ -11306,6 +11375,7 @@ mod tests {
         execution.vitreous_minions_seen = false;
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
+        execution.mini_moldorm_ai_pending = None;
         execution.vitreous_damage_pending = None;
         execution.swamola_segment = None;
         execution.swamola_head_prepared = false;
@@ -11791,6 +11861,7 @@ mod tests {
         );
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
+        execution.mini_moldorm_ai_pending = None;
         execution.vitreous_damage_pending = None;
         returned.return_address = Some(0xc2_151d);
         execution.observe_vitreous_damage_pending(&returned);
@@ -11827,6 +11898,7 @@ mod tests {
             SpriteMainProgress::VitreousAiPending(0)
         );
         execution.vitreous_ai_pending = None;
+        execution.mini_moldorm_ai_pending = None;
         returned.pc = Some(0x06_f145);
         returned.return_address = Some(0x1d_f126);
         execution.observe_vitreous_damage_pending(&returned);
@@ -14824,6 +14896,7 @@ mod tests {
             moblin_attribute_loaded: None,
             vitreous_player_damage_pending: None,
             vitreous_ai_pending: None,
+            mini_moldorm_ai_pending: None,
             vitreous_damage_pending: None,
             swamola_head_prepared: false,
             swamola_head_draw_completed: None,
@@ -14917,6 +14990,7 @@ mod tests {
             moblin_attribute_loaded: None,
             vitreous_player_damage_pending: None,
             vitreous_ai_pending: None,
+            mini_moldorm_ai_pending: None,
             vitreous_damage_pending: None,
             swamola_head_prepared: false,
             swamola_head_draw_completed: None,

@@ -20005,6 +20005,38 @@ fn moblin_collision_geometry_preserves_movement_before_tile_effects() {
 }
 
 #[test]
+fn mini_moldorm_ai_dispatch_retains_movement_without_replaying_it() {
+    for direction in [0, 4, 8, 12] {
+        let mut state = ZeldaState::new();
+        state.set_main_module(7);
+        state.set_submodule(0);
+        state.follower_link_state_mut().set_position(0x10, 0x10);
+        {
+            let mut sprite = state.sprite_slot_view_mut(1);
+            sprite.set_state(9);
+            sprite.set_sprite_type(0x18);
+            sprite.set_x(0x80);
+            sprite.set_y(0x80);
+            sprite.set_direction(direction);
+            sprite.set_ai_state(0);
+            sprite.set_delay_main(0);
+        }
+        let mut atomic = state.clone();
+        atomic.sprite_18_mini_moldorm(1);
+        state.sprite_main_cpu_boundary =
+            Some(SpriteMainCpuBoundary::MiniMoldormAiPending { slot: 1 });
+        state.sprite_18_mini_moldorm(1);
+        assert_eq!(state.sprite_slot_view(1).subtype2(), 1);
+        assert_eq!(state.sprite_slot_view(1).ai_state(), 0);
+        state.sprite_main_cpu_boundary = None;
+        state.mini_moldorm_ai_after_collision(1);
+        assert_eq!(state.game_state, atomic.game_state);
+        assert_eq!(state.ram, atomic.ram);
+        assert_eq!(state.get_random_number(), atomic.get_random_number());
+    }
+}
+
+#[test]
 fn super_bomb_purchase_pays_once_before_suspended_follower_graphics() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);

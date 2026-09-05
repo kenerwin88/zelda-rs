@@ -5134,6 +5134,9 @@ enum SpriteMainCpuBoundary {
     },
     Module09FinalScrollPairPending,
     HappinessPondRupeeGraphicsStarted(u8),
+    MiniMoldormAiPending {
+        slot: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5423,6 +5426,7 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::MoblinCollisionGeometry { slot: active_slot }
         | SpriteMainCpuBoundary::VitreousDamagePending { slot: active_slot }
         | SpriteMainCpuBoundary::VitreousAiPending { slot: active_slot }
+        | SpriteMainCpuBoundary::MiniMoldormAiPending { slot: active_slot }
         | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot: active_slot }
         | SpriteMainCpuBoundary::SwamolaSegmentDraw {
             slot: active_slot, ..
@@ -5902,6 +5906,10 @@ fn sprite_main_cpu_boundary_from_interruption(
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::VitreousAiPending { slot })
         }
+        crate::MainLoopInterruption::SpriteMainMiniMoldormAiPending(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::MiniMoldormAiPending { slot })
+        }
         crate::MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(slot) => {
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot })
@@ -6016,6 +6024,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainMoblinCollisionGeometry(slot)
         | crate::MainLoopInterruption::SpriteMainVitreousDamagePending(slot)
         | crate::MainLoopInterruption::SpriteMainVitreousAiPending(slot)
+        | crate::MainLoopInterruption::SpriteMainMiniMoldormAiPending(slot)
         | crate::MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(slot)
         | crate::MainLoopInterruption::SpriteMainPengatorSlidePending(slot)
         | crate::MainLoopInterruption::SpriteMainAntifairyBouncePending(slot)
@@ -6186,6 +6195,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::MoblinCollisionGeometry(slot)
         | crate::SpriteMainProgress::VitreousDamagePending(slot)
         | crate::SpriteMainProgress::VitreousAiPending(slot)
+        | crate::SpriteMainProgress::MiniMoldormAiPending(slot)
         | crate::SpriteMainProgress::VitreousPlayerDamagePending(slot)
         | crate::SpriteMainProgress::PengatorSlidePending(slot)
         | crate::SpriteMainProgress::AntifairyBouncePending(slot)
@@ -6671,6 +6681,10 @@ fn sprite_main_cpu_boundary_from_progress(
             assert!(slot < 16);
             SpriteMainCpuBoundary::VitreousAiPending { slot }
         }
+        crate::SpriteMainProgress::MiniMoldormAiPending(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::MiniMoldormAiPending { slot }
+        }
         crate::SpriteMainProgress::VitreousPlayerDamagePending(slot) => {
             assert!(slot < 16);
             SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot }
@@ -6790,6 +6804,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainMoblinCollisionGeometry(_)
         | crate::MainLoopInterruption::SpriteMainVitreousDamagePending(_)
         | crate::MainLoopInterruption::SpriteMainVitreousAiPending(_)
+        | crate::MainLoopInterruption::SpriteMainMiniMoldormAiPending(_)
         | crate::MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(_)
         | crate::MainLoopInterruption::SpriteMainSwamolaSegmentDraw { .. }
         | crate::MainLoopInterruption::SpriteMainPengatorSlidePending(_)
@@ -7146,6 +7161,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::MoblinCollisionGeometry { slot }
         | SpriteMainCpuBoundary::VitreousDamagePending { slot }
         | SpriteMainCpuBoundary::VitreousAiPending { slot }
+        | SpriteMainCpuBoundary::MiniMoldormAiPending { slot }
         | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot }
         | SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, .. }
         | SpriteMainCpuBoundary::PengatorSlidePending { slot }

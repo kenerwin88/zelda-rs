@@ -902,6 +902,7 @@ pub enum MainLoopInterruption {
     SpriteMainMoblinCollisionGeometry(u8),
     SpriteMainMoblinAttributeLoaded(u8),
     SpriteMainHappinessPondRupeeGraphicsStarted(u8),
+    SpriteMainMiniMoldormAiPending(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -979,6 +980,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainMoblinCollisionGeometry(_)
                 | Self::SpriteMainVitreousDamagePending(_)
                 | Self::SpriteMainVitreousAiPending(_)
+                | Self::SpriteMainMiniMoldormAiPending(_)
                 | Self::SpriteMainVitreousPlayerDamagePending(_)
                 | Self::SpriteMainSwamolaSegmentDraw { .. }
                 | Self::SpriteMainPengatorSlidePending(_)
@@ -1164,6 +1166,7 @@ pub enum SpriteMainProgress {
     MoblinCollisionGeometry(u8),
     MoblinAttributeLoaded(u8),
     HappinessPondRupeeGraphicsStarted(u8),
+    MiniMoldormAiPending(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

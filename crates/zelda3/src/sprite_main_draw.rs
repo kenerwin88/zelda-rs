@@ -12626,6 +12626,15 @@ impl ZeldaState {
                 SPRITE_18_MINI_MOLDORM_NEXT_DIR[usize::from(self.sprite_slot_view(k).direction())];
             self.sprite_slot_view_mut(k).set_direction(value);
         }
+        if self.sprite_main_cpu_boundary
+            == Some(SpriteMainCpuBoundary::MiniMoldormAiPending { slot: k as u8 })
+        {
+            return;
+        }
+        self.mini_moldorm_ai_after_collision(k);
+    }
+
+    pub(super) fn mini_moldorm_ai_after_collision(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {
