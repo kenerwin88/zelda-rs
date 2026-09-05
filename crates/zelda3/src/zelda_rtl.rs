@@ -5014,6 +5014,13 @@ enum SpriteMainCpuBoundary {
         spawned_slot: u8,
         progress: crate::SpriteDynamicSpawnProgress,
     },
+    /// The dying Trinexx body's explosion spawn selected a child slot and
+    /// published the named source mutation.
+    TrinexxDeathExplosionSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: crate::SpriteDynamicSpawnProgress,
+    },
     /// `SpriteDraw_Antfairy` published its leading subtype2 increment.
     /// `continuation` is bound by the native sprite call site before parking.
     AfterAntfairySubtype2Increment {
@@ -5149,6 +5156,11 @@ enum SpriteMainCpuBoundary {
         segment: u8,
         continuation: Option<TrinexxHeadDrawContinuation>,
     },
+    SidenexxNeckTargetLoop {
+        slot: u8,
+        step: u8,
+        continuation: Option<SidenexxNeckLoopContinuation>,
+    },
     TrinexxHeadFrontPart {
         slot: u8,
         completed_stores: u8,
@@ -5164,6 +5176,14 @@ struct TrinexxHeadDrawContinuation {
     oam: usize,
     next_segment: u8,
     front_part: Option<(u8, u8, u8)>,
+}
+
+/// Sprite_Sidenexx's state-2 neck-target loop locals: the change count in
+/// `$01` and whether the current pass stored a step whose count is pending.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct SidenexxNeckLoopContinuation {
+    n: u8,
+    pending_increment: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5438,6 +5458,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::FireDebirandoSpawn {
             slot: active_slot, ..
         }
+        | SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
+            slot: active_slot, ..
+        }
         | SpriteMainCpuBoundary::AfterAntfairySubtype2Increment {
             slot: active_slot, ..
         }
@@ -5466,6 +5489,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::TrinexxHeadDraw {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::SidenexxNeckTargetLoop {
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::TrinexxHeadFrontPart {
@@ -5877,6 +5903,19 @@ fn sprite_main_cpu_boundary_from_interruption(
                 progress,
             })
         }
+        crate::MainLoopInterruption::SpriteMainTrinexxDeathExplosionSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => {
+            assert!(slot < 16 && spawned_slot < 16);
+            assert!(valid_dynamic_spawn_progress(progress));
+            Some(SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            })
+        }
         crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(slot) => {
             assert!(
                 slot < 16,
@@ -5996,6 +6035,14 @@ fn sprite_main_cpu_boundary_from_interruption(
                 continuation: None,
             })
         }
+        crate::MainLoopInterruption::SpriteMainSidenexxNeckTargetLoop { slot, step } => {
+            assert!(slot < 16 && step < 56);
+            Some(SpriteMainCpuBoundary::SidenexxNeckTargetLoop {
+                slot,
+                step,
+                continuation: None,
+            })
+        }
         crate::MainLoopInterruption::SpriteMainTrinexxHeadFrontPart {
             slot,
             completed_stores,
@@ -6079,6 +6126,9 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         }
         crate::MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment } => {
             slot < 16 && segment < 9
+        }
+        crate::MainLoopInterruption::SpriteMainSidenexxNeckTargetLoop { slot, step } => {
+            slot < 16 && step < 56
         }
         crate::MainLoopInterruption::SpriteMainTrinexxHeadFrontPart {
             slot,
@@ -6175,6 +6225,11 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
             spawned_slot,
             progress,
         } => slot < 16 && spawned_slot < 16 && valid_dynamic_spawn_progress(progress),
+        crate::MainLoopInterruption::SpriteMainTrinexxDeathExplosionSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => slot < 16 && spawned_slot < 16 && valid_dynamic_spawn_progress(progress),
         crate::MainLoopInterruption::SpriteMainFollowerGraphics { slot, stage, .. } => {
             slot < 16
                 && match stage {
@@ -6265,6 +6320,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
     match progress {
         crate::SpriteMainProgress::SwamolaSegmentDraw { slot, segment } => slot < 16 && segment < 4,
         crate::SpriteMainProgress::TrinexxHeadDraw { slot, segment } => slot < 16 && segment < 9,
+        crate::SpriteMainProgress::SidenexxNeckTargetLoop { slot, step } => slot < 16 && step < 56,
         crate::SpriteMainProgress::TrinexxHeadFrontPart {
             slot,
             completed_stores,
@@ -6336,6 +6392,11 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         } => slot < 16 && completed_stores <= 10,
         crate::SpriteMainProgress::FireDebirandoBeforeSpawn(slot) => slot < 16,
         crate::SpriteMainProgress::FireDebirandoSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => slot < 16 && spawned_slot < 16 && valid_dynamic_spawn_progress(progress),
+        crate::SpriteMainProgress::TrinexxDeathExplosionSpawn {
             slot,
             spawned_slot,
             progress,
@@ -6725,6 +6786,19 @@ fn sprite_main_cpu_boundary_from_progress(
                 progress,
             }
         }
+        crate::SpriteMainProgress::TrinexxDeathExplosionSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => {
+            assert!(slot < 16 && spawned_slot < 16);
+            assert!(valid_dynamic_spawn_progress(progress));
+            SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            }
+        }
         crate::SpriteMainProgress::AfterAntfairySubtype2Increment(slot) => {
             assert!(
                 slot < 16,
@@ -6836,6 +6910,14 @@ fn sprite_main_cpu_boundary_from_progress(
             SpriteMainCpuBoundary::TrinexxHeadDraw {
                 slot,
                 segment,
+                continuation: None,
+            }
+        }
+        crate::SpriteMainProgress::SidenexxNeckTargetLoop { slot, step } => {
+            assert!(slot < 16 && step < 56);
+            SpriteMainCpuBoundary::SidenexxNeckTargetLoop {
+                slot,
+                step,
                 continuation: None,
             }
         }
@@ -6951,6 +7033,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainInitializeLoadProperties { .. }
         | crate::MainLoopInterruption::SpriteMainFireDebirandoBeforeSpawn(_)
         | crate::MainLoopInterruption::SpriteMainFireDebirandoSpawn { .. }
+        | crate::MainLoopInterruption::SpriteMainTrinexxDeathExplosionSpawn { .. }
         | crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
@@ -6969,6 +7052,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(_)
         | crate::MainLoopInterruption::SpriteMainSwamolaSegmentDraw { .. }
         | crate::MainLoopInterruption::SpriteMainTrinexxHeadDraw { .. }
+        | crate::MainLoopInterruption::SpriteMainSidenexxNeckTargetLoop { .. }
         | crate::MainLoopInterruption::SpriteMainTrinexxHeadFrontPart { .. }
         | crate::MainLoopInterruption::SpriteMainPengatorSlidePending(_)
         | crate::MainLoopInterruption::SpriteMainAntifairyBouncePending(_)
@@ -7063,6 +7147,18 @@ fn same_sprite_main_source_checkpoint(
             },
         ) => left == right && left_segment == right_segment,
         (
+            SpriteMainCpuBoundary::SidenexxNeckTargetLoop {
+                slot: left,
+                step: left_step,
+                ..
+            },
+            SpriteMainCpuBoundary::SidenexxNeckTargetLoop {
+                slot: right,
+                step: right_step,
+                ..
+            },
+        ) => left == right && left_step == right_step,
+        (
             SpriteMainCpuBoundary::TrinexxHeadFrontPart {
                 slot: left,
                 completed_stores: a,
@@ -7141,6 +7237,18 @@ fn same_sprite_main_source_checkpoint(
                 progress: left_progress,
             },
             SpriteMainCpuBoundary::FireDebirandoSpawn {
+                slot: right_slot,
+                spawned_slot: right_spawned,
+                progress: right_progress,
+            },
+        )
+        | (
+            SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
+                slot: left_slot,
+                spawned_slot: left_spawned,
+                progress: left_progress,
+            },
+            SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 slot: right_slot,
                 spawned_slot: right_spawned,
                 progress: right_progress,
@@ -7343,6 +7451,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::InitializeLoadProperties { slot, .. }
         | SpriteMainCpuBoundary::FireDebirandoBeforeSpawn(slot)
         | SpriteMainCpuBoundary::FireDebirandoSpawn { slot, .. }
+        | SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn { slot, .. }
         | SpriteMainCpuBoundary::AfterAntfairySubtype2Increment { slot, .. }
         | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot, .. }
         | SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot }
@@ -7361,6 +7470,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot }
         | SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, .. }
         | SpriteMainCpuBoundary::TrinexxHeadDraw { slot, .. }
+        | SpriteMainCpuBoundary::SidenexxNeckTargetLoop { slot, .. }
         | SpriteMainCpuBoundary::TrinexxHeadFrontPart { slot, .. }
         | SpriteMainCpuBoundary::PengatorSlidePending { slot }
         | SpriteMainCpuBoundary::AntifairyBouncePending { slot }

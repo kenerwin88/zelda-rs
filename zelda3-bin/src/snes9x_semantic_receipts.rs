@@ -940,8 +940,11 @@ struct SpriteMainExecutionTracker {
     hog_spear_active_body: bool,
     buzzblob_movement: Option<(u8, bool)>,
     trinexx_head_draw: Option<(u8, u8)>,
+    /// The last traced `$0FB5` store: TrinexxHead_Draw's segment counter.
+    trinexx_segment_counter: Option<u8>,
     trinexx_head_draw_setup: Option<u8>,
     trinexx_breath_tile_collision: Option<u8>,
+    sidenexx_neck_target: Option<(u8, u8)>,
     trinexx_front_part: Option<(u8, u8)>,
     #[serde(default)]
     guard_prep_parry_hitbox: Option<(u8, u8)>,
@@ -988,6 +991,7 @@ struct SpriteMainExecutionTracker {
     fire_debirando_before_spawn_slot: Option<u8>,
     #[serde(default)]
     fire_debirando_spawn: Option<(u8, u8, SpriteDynamicSpawnProgress)>,
+    trinexx_death_spawn: Option<(u8, u8, SpriteDynamicSpawnProgress)>,
     #[serde(default)]
     antfairy_subtype2_increment_slot: Option<u8>,
     #[serde(default)]
@@ -1502,6 +1506,15 @@ impl SpriteMainExecutionTracker {
     }
 
     fn observe_trinexx_head_draw(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.event == "wram-write" {
+            // STZ/INC $0FB5 publish the neck segment being computed or
+            // drawn; boundaries after the angle calculation pulled the
+            // cursor out of Y and X, so the counter is the only source.
+            if event.address == Some(0x0fb5) {
+                self.trinexx_segment_counter = event.value;
+            }
+            return Ok(());
+        }
         if !matches!(event.event.as_str(), "nmi" | "frame") {
             return Ok(());
         }
@@ -1691,14 +1704,44 @@ impl SpriteMainExecutionTracker {
             self.trinexx_head_draw = Some((slot, segment));
             return Ok(());
         }
+        // After PLX the two TrinexxHeadSin multiplications store only the
+        // delta scratch ($0FA8/$0FA9) and hardware multiply registers, then
+        // LDA $0FB5 / BNE select the first-part JSR or the segment draw at
+        // $1D:BC3C. Nothing of segment `$0FB5` has been drawn yet.
+        if event
+            .pc
+            .is_some_and(|pc| (0x1d_bbe2..=0x1d_bc3c).contains(&pc))
+        {
+            let slot = self
+                .current_slot
+                .ok_or("Trinexx neck delta calculation omitted its active slot")?;
+            if event.x != Some(u16::from(slot))
+                || event.return_address.map(|r| r & 0x00ff_ffff) != Some(0x1f_b8dc)
+                || event.stack4 != Some(0xc2)
+            {
+                return Err("Trinexx neck delta calculation has the wrong source stack".into());
+            }
+            let segment = self
+                .trinexx_segment_counter
+                .ok_or("Trinexx neck delta calculation has no traced segment counter")?;
+            if segment >= 9
+                || (event.pc == Some(0x1d_bc37) && segment != 0)
+                || (event.pc == Some(0x1d_bc3c) && segment == 0)
+            {
+                return Err("Trinexx neck delta calculation has an invalid segment".into());
+            }
+            self.trinexx_head_draw = Some((slot, segment));
+            return Ok(());
+        }
         // The straight-line neck angle calculation from the REP #$30 after
-        // PHX through the SEP #$30 before PLX only loads sine-table words
-        // and stores direct-page scratch ($08/$0A/$0C); every boundary in
-        // it leaves the pending segment undrawn with the slot still pushed.
+        // PHX through the PLX only loads sine-table words and stores
+        // direct-page scratch ($08/$0A/$0C); every boundary in it leaves
+        // the pending segment undrawn with the slot still pushed.
         if !matches!(
             event.pc,
             Some(
-                0x1d_bbbf
+                0x1d_bbe1
+                    | 0x1d_bbbf
                     | 0x1d_bbc1
                     | 0x1d_bbc4
                     | 0x1d_bbc5
@@ -1773,6 +1816,78 @@ impl SpriteMainExecutionTracker {
             return Err("Trinexx breath tile-collision return has the wrong active slot".into());
         }
         self.trinexx_breath_tile_collision = Some(slot);
+        Ok(())
+    }
+
+    fn observe_sidenexx_neck_target(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if !matches!(event.event.as_str(), "nmi" | "frame") {
+            return Ok(());
+        }
+        self.sidenexx_neck_target = None;
+        // Sprite_Sidenexx state 2 ($1D:B9F2): PHX saves the slot, X walks
+        // the nine cached segments and each iteration runs two type passes
+        // and one radius pass of compare / INC-or-DEC / INC $01. `counted`
+        // names how many of the current segment's six steps have run;
+        // `x_is_next` marks the INY/DEC/BPL tail where X already advanced.
+        let (x_is_next, counted) = match event.pc {
+            Some(0x1d_ba07 | 0x1d_ba0a | 0x1d_ba0d | 0x1d_ba0f | 0x1d_ba11 | 0x1d_ba18) => {
+                (false, 0u8)
+            }
+            Some(0x1d_ba14 | 0x1d_ba1b) => (false, 1),
+            Some(
+                0x1d_ba16 | 0x1d_ba1d | 0x1d_ba20 | 0x1d_ba23 | 0x1d_ba25 | 0x1d_ba27 | 0x1d_ba2e,
+            ) => (false, 2),
+            Some(0x1d_ba2a | 0x1d_ba31) => (false, 3),
+            Some(
+                0x1d_ba2c | 0x1d_ba33 | 0x1d_ba35 | 0x1d_ba37 | 0x1d_ba39 | 0x1d_ba3c | 0x1d_ba3f
+                | 0x1d_ba41 | 0x1d_ba43 | 0x1d_ba4a,
+            ) => (false, 4),
+            Some(0x1d_ba46 | 0x1d_ba4d) => (false, 5),
+            Some(0x1d_ba48 | 0x1d_ba4f) => (false, 6),
+            Some(0x1d_ba50 | 0x1d_ba51 | 0x1d_ba53 | 0x1d_ba55) => (true, 0),
+            Some(0x1d_ba56 | 0x1d_ba58 | 0x1d_ba5a | 0x1d_ba5d) => {
+                // PLX restored the slot; the change-count test, the idle
+                // state store or its random delay are pending.
+                let slot = self
+                    .current_slot
+                    .ok_or("Sidenexx neck-target completion omitted its active slot")?;
+                if event.x != Some(u16::from(slot))
+                    || event.return_address.map(|r| r & 0x00ff_ffff) != Some(0x06_c21f)
+                {
+                    return Err("Sidenexx neck-target completion has the wrong source stack".into());
+                }
+                let step = if event.pc == Some(0x1d_ba5d) { 55 } else { 54 };
+                self.sidenexx_neck_target = Some((slot, step));
+                return Ok(());
+            }
+            _ => return Ok(()),
+        };
+        let slot = self
+            .current_slot
+            .ok_or("Sidenexx neck-target loop omitted its active slot")?;
+        if event.return_address.map(|r| r & 0x00ff_ffff) != Some(0xc2_1f00 | u32::from(slot))
+            || event.stack4 != Some(0x06)
+        {
+            return Err("Sidenexx neck-target loop has the wrong source stack".into());
+        }
+        let x = event
+            .x
+            .ok_or("Sidenexx neck-target loop omitted its segment cursor")?;
+        let segment = x
+            .checked_sub(u16::from(slot) * 9)
+            .ok_or("Sidenexx neck-target loop cursor precedes its head")?;
+        let step = if x_is_next {
+            if !(1..=9).contains(&segment) {
+                return Err("Sidenexx neck-target loop tail has an invalid cursor".into());
+            }
+            segment as u8 * 6
+        } else {
+            if segment >= 9 {
+                return Err("Sidenexx neck-target loop has an invalid cursor".into());
+            }
+            segment as u8 * 6 + counted
+        };
+        self.sidenexx_neck_target = Some((slot, step));
         Ok(())
     }
 
@@ -2386,6 +2501,56 @@ impl SpriteMainExecutionTracker {
         observe_dynamic_spawn_progress_boundary(&mut self.fire_debirando_spawn, event)
     }
 
+    fn observe_trinexx_death_spawn_write(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        let pc = event.pc.ok_or("Snes9x WRAM write omitted PC")? & 0x00ff_ffff;
+        let address = event.address.ok_or("Snes9x WRAM write omitted address")?;
+        // Sprite_MakeBossDeathExplosion_NoSound ($1D:DC30) calls the spawn
+        // helper with type 0; the JSR return low byte $AA under its JSL
+        // return names Sprite_CB_TrinexxRockHead's death branch caller.
+        if pc == SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC
+            && event.return_address.map(|r| r & 0x00ff_ffff) == Some(0x1d_dc35)
+            && event.stack4 == Some(0xaa)
+        {
+            let slot = self
+                .current_slot
+                .ok_or("Snes9x spawned a Trinexx death explosion before a sprite slot")?;
+            let spawned_slot = u8::try_from(
+                event
+                    .y
+                    .ok_or("Snes9x Trinexx explosion spawn type write omitted slot Y")?,
+            )
+            .map_err(|_| "Snes9x Trinexx explosion spawned slot exceeded one byte")?;
+            if event.x != Some(u16::from(slot))
+                || spawned_slot >= 16
+                || address != SPRITE_TYPE_BASE + u16::from(spawned_slot)
+                || event.value != Some(0)
+            {
+                return Err(format!(
+                    "Snes9x Trinexx explosion spawn type publication disagreed: parent={slot}, x={:?}, spawned={spawned_slot}, address=${address:04x}, value={:?}",
+                    event.x, event.value,
+                ));
+            }
+            self.trinexx_death_spawn = Some((
+                slot,
+                spawned_slot,
+                SpriteDynamicSpawnProgress::TypePublished,
+            ));
+            return Ok(());
+        }
+        observe_dynamic_spawn_progress_write(
+            &mut self.trinexx_death_spawn,
+            event,
+            "Trinexx explosion",
+        )
+    }
+
+    fn observe_trinexx_death_spawn_boundary(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        observe_dynamic_spawn_progress_boundary(&mut self.trinexx_death_spawn, event)
+    }
+
     fn observe_master_sword_light_beam_spawn_write(
         &mut self,
         event: &RawTraceEvent,
@@ -2615,6 +2780,18 @@ impl SpriteMainExecutionTracker {
                 progress,
             };
         }
+        if let Some((slot, spawned_slot, progress)) = self.trinexx_death_spawn {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Trinexx explosion dynamic spawn outlived its active sprite slot",
+            );
+            return SpriteMainProgress::TrinexxDeathExplosionSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            };
+        }
         if let Some(slot) = self.initialize_prep_pending {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::InitializePrepPending(slot);
@@ -2802,6 +2979,10 @@ impl SpriteMainExecutionTracker {
         if let Some(slot) = self.trinexx_breath_tile_collision {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot);
+        }
+        if let Some((slot, step)) = self.sidenexx_neck_target {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::SidenexxNeckTargetLoop { slot, step };
         }
         if let Some(slot) = self.trinexx_head_draw_setup {
             assert_eq!(self.current_slot, Some(slot));
@@ -3172,6 +3353,15 @@ impl SpriteMainExecutionTracker {
                 spawned_slot,
                 progress,
             },
+            SpriteMainProgress::TrinexxDeathExplosionSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            } => MainLoopInterruption::SpriteMainTrinexxDeathExplosionSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            },
             SpriteMainProgress::AfterAntfairySubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(slot)
             }
@@ -3231,6 +3421,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::TrinexxHeadDraw { slot, segment } => {
                 MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment }
+            }
+            SpriteMainProgress::SidenexxNeckTargetLoop { slot, step } => {
+                MainLoopInterruption::SpriteMainSidenexxNeckTargetLoop { slot, step }
             }
             SpriteMainProgress::TrinexxHeadFrontPart {
                 slot,
@@ -5011,6 +5204,7 @@ impl Snes9xOracleSemanticTrace {
                 if self.nmi_resume_targets.is_empty() {
                     execution.observe_trinexx_head_draw(returned_event)?;
                     execution.observe_trinexx_breath_tile_collision(returned_event)?;
+                    execution.observe_sidenexx_neck_target(returned_event)?;
                 }
                 execution.observe_guard_animation_checkpoint(returned_event)?;
                 execution.observe_hog_spear_body_graphics_pending(returned_event)?;
@@ -5026,6 +5220,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_guard_prep_patrol_delay(returned_event)?;
                 execution.observe_guard_prep_tile_collision_return(returned_event)?;
                 execution.observe_fire_debirando_spawn_boundary(returned_event)?;
+                execution.observe_trinexx_death_spawn_boundary(returned_event)?;
                 execution.observe_master_sword_light_beam_spawn_boundary(returned_event)?;
                 execution.observe_bari_before_random(returned_event)?;
                 execution.observe_main_and_aux1_timer_decrements(returned_event)?;
@@ -5795,6 +5990,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.fire_debirando_property_reload = false;
                             execution.fire_debirando_before_spawn_slot = None;
                             execution.fire_debirando_spawn = None;
+                            execution.trinexx_death_spawn = None;
                             execution.antfairy_subtype2_increment_slot = None;
                             execution.lanmola_subtype2_increment_slot = None;
                             execution.helmasaur_hard_hat_beetle_subtype2_increment_slot = None;
@@ -5833,8 +6029,10 @@ impl Snes9xOracleSemanticTrace {
                             execution.hog_spear_active_body = false;
                             execution.buzzblob_movement = None;
                             execution.trinexx_head_draw = None;
+                            execution.trinexx_segment_counter = None;
                             execution.trinexx_head_draw_setup = None;
                             execution.trinexx_breath_tile_collision = None;
+                            execution.sidenexx_neck_target = None;
                             execution.trinexx_front_part = None;
                             execution.guard_prep_parry_hitbox = None;
                             execution.guard_prep_patrol_delay = None;
@@ -5880,6 +6078,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.observe_buzzblob_movement(&event)?;
                             execution.observe_trinexx_head_draw(&event)?;
                             execution.observe_trinexx_breath_tile_collision(&event)?;
+                            execution.observe_sidenexx_neck_target(&event)?;
                             execution.observe_guard_animation_checkpoint(&event)?;
                         }
                     }
@@ -5942,6 +6141,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.fire_debirando_property_reload = false;
                         execution.fire_debirando_before_spawn_slot = None;
                         execution.fire_debirando_spawn = None;
+                        execution.trinexx_death_spawn = None;
                         execution.antfairy_subtype2_increment_slot = None;
                         execution.lanmola_subtype2_increment_slot = None;
                         execution.helmasaur_hard_hat_beetle_subtype2_increment_slot = None;
@@ -6341,6 +6541,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_buzzblob_movement(&event)?;
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
+                    execution.observe_sidenexx_neck_target(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_tile_lookup(&event)?;
@@ -6352,6 +6553,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_antifairy_bounce_pending(&event)?;
                     execution.observe_kholdstare_damage_pending(&event)?;
                     execution.observe_fire_debirando_spawn_write(&event)?;
+                    execution.observe_trinexx_death_spawn_write(&event)?;
                     execution.observe_master_sword_light_beam_spawn_write(&event)?;
                     execution.observe_antfairy_subtype2_increment(&event)?;
                     execution.observe_lanmola_subtype2_increment(&event)?;
@@ -6840,6 +7042,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_buzzblob_movement(&event)?;
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
+                    execution.observe_sidenexx_neck_target(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_tile_lookup(&event)?;
@@ -6851,6 +7054,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_antifairy_bounce_pending(&event)?;
                     execution.observe_kholdstare_damage_pending(&event)?;
                     execution.observe_fire_debirando_spawn_boundary(&event)?;
+                    execution.observe_trinexx_death_spawn_boundary(&event)?;
                     execution.observe_guard_prep_parry_hitbox(&event)?;
                     execution.observe_guard_prep_patrol_delay(&event)?;
                     execution.observe_guard_prep_tile_collision_return(&event)?;
@@ -8712,6 +8916,15 @@ fn retire_resumed_main_loop_interruption(
                     spawned_slot,
                     progress,
                 }),
+                MainLoopInterruption::SpriteMainTrinexxDeathExplosionSpawn {
+                    slot,
+                    spawned_slot,
+                    progress,
+                } => Some(SpriteMainProgress::TrinexxDeathExplosionSpawn {
+                    slot,
+                    spawned_slot,
+                    progress,
+                }),
                 MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => {
                     Some(SpriteMainProgress::GuardPrepWeaponFlagsPending(slot))
                 }
@@ -8780,6 +8993,9 @@ fn retire_resumed_main_loop_interruption(
                 }
                 MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment } => {
                     Some(SpriteMainProgress::TrinexxHeadDraw { slot, segment })
+                }
+                MainLoopInterruption::SpriteMainSidenexxNeckTargetLoop { slot, step } => {
+                    Some(SpriteMainProgress::SidenexxNeckTargetLoop { slot, step })
                 }
                 MainLoopInterruption::SpriteMainTrinexxHeadFrontPart {
                     slot,
@@ -9793,8 +10009,10 @@ mod tests {
             hog_spear_active_body: false,
             buzzblob_movement: None,
             trinexx_head_draw: None,
+            trinexx_segment_counter: None,
             trinexx_head_draw_setup: None,
             trinexx_breath_tile_collision: None,
+            sidenexx_neck_target: None,
             trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
@@ -9832,6 +10050,7 @@ mod tests {
             fire_debirando_property_reload: false,
             fire_debirando_before_spawn_slot: None,
             fire_debirando_spawn: None,
+            trinexx_death_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
             helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
@@ -10063,6 +10282,148 @@ mod tests {
     }
 
     #[test]
+    fn trinexx_death_explosion_spawn_tracks_the_dynamic_spawn_progress() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(0);
+        let mut store = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC),
+            Some(0),
+            Some(SPRITE_TYPE_BASE + 13),
+        );
+        store.y = Some(13);
+        store.value = Some(0);
+        store.return_address = Some(0x1d_dc35);
+        store.stack4 = Some(0xaa);
+        tracker.observe_trinexx_death_spawn_write(&store).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxDeathExplosionSpawn {
+                slot: 0,
+                spawned_slot: 13,
+                progress: SpriteDynamicSpawnProgress::TypePublished,
+            }
+        );
+        let mut state = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_STATE_STORE_PC),
+            Some(0),
+            Some(SPRITE_STATE_BASE + 13),
+        );
+        state.y = Some(13);
+        state.value = Some(9);
+        tracker.observe_trinexx_death_spawn_write(&state).unwrap();
+        let mut boundary = raw("nmi", Some(0x0d_b835), Some(13), None);
+        boundary.return_address = Some(0xa6_0d1d);
+        tracker
+            .observe_trinexx_death_spawn_boundary(&boundary)
+            .unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxDeathExplosionSpawn {
+                slot: 0,
+                spawned_slot: 13,
+                progress: SpriteDynamicSpawnProgress::LoadProperties {
+                    completed_stores: 3
+                },
+            }
+        );
+        let mut other = SpriteMainExecutionTracker::default();
+        other.current_slot = Some(0);
+        store.stack4 = Some(0x12);
+        other.observe_trinexx_death_spawn_write(&store).unwrap();
+        assert_eq!(other.trinexx_death_spawn, None);
+    }
+
+    #[test]
+    fn trinexx_neck_delta_checkpoint_reads_the_traced_segment_counter() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(1);
+        let mut event = raw("frame", Some(0x1d_bc3c), Some(1), None);
+        event.return_address = Some(0x1f_b8dc);
+        event.stack4 = Some(0xc2);
+        assert!(tracker.observe_trinexx_head_draw(&event).is_err());
+        let mut store = raw("wram-write", Some(0x1d_bc74), Some(1), Some(0x0fb5));
+        store.value = Some(8);
+        tracker.observe_trinexx_head_draw(&store).unwrap();
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadDraw {
+                slot: 1,
+                segment: 8
+            }
+        );
+        event.pc = Some(0x1d_bc07);
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadDraw {
+                slot: 1,
+                segment: 8
+            }
+        );
+        event.pc = Some(0x1d_bc37);
+        assert!(tracker.observe_trinexx_head_draw(&event).is_err());
+        store.value = Some(0);
+        tracker.observe_trinexx_head_draw(&store).unwrap();
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadDraw {
+                slot: 1,
+                segment: 0
+            }
+        );
+    }
+
+    #[test]
+    fn sidenexx_neck_target_checkpoints_count_loop_steps() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(1);
+        for (pc, x, step) in [
+            (0x1d_ba07, 9, 0),
+            (0x1d_ba11, 12, 18),
+            (0x1d_ba14, 12, 19),
+            (0x1d_ba1d, 12, 20),
+            (0x1d_ba31, 12, 21),
+            (0x1d_ba39, 12, 22),
+            (0x1d_ba46, 12, 23),
+            (0x1d_ba4f, 12, 24),
+            (0x1d_ba50, 16, 42),
+            (0x1d_ba53, 18, 54),
+            (0x1d_ba55, 18, 54),
+        ] {
+            let mut event = raw("frame", Some(pc), Some(x), None);
+            event.return_address = Some(0xc2_1f01);
+            event.stack4 = Some(0x06);
+            tracker.observe_sidenexx_neck_target(&event).unwrap();
+            assert_eq!(
+                tracker.progress(),
+                SpriteMainProgress::SidenexxNeckTargetLoop { slot: 1, step },
+                "{pc:#x}"
+            );
+        }
+        for (pc, step) in [(0x1d_ba56, 54), (0x1d_ba5a, 54), (0x1d_ba5d, 55)] {
+            let mut event = raw("frame", Some(pc), Some(1), None);
+            event.return_address = Some(0x06_c21f);
+            tracker.observe_sidenexx_neck_target(&event).unwrap();
+            assert_eq!(
+                tracker.progress(),
+                SpriteMainProgress::SidenexxNeckTargetLoop { slot: 1, step },
+                "{pc:#x}"
+            );
+        }
+        let mut event = raw("frame", Some(0x1d_ba50), Some(8), None);
+        event.return_address = Some(0xc2_1f01);
+        event.stack4 = Some(0x06);
+        assert!(tracker.observe_sidenexx_neck_target(&event).is_err());
+        event.x = Some(16);
+        event.return_address = Some(0xc2_1f02);
+        assert!(tracker.observe_sidenexx_neck_target(&event).is_err());
+    }
+
+    #[test]
     fn trinexx_first_part_loop_checkpoints_count_the_entry_stores() {
         let mut tracker = SpriteMainExecutionTracker::default();
         tracker.current_slot = Some(2);
@@ -10170,13 +10531,19 @@ mod tests {
         );
         event.pc = Some(0x1d_bbe1);
         tracker.observe_trinexx_head_draw(&event).unwrap();
-        assert_ne!(
+        assert_eq!(
             tracker.progress(),
             SpriteMainProgress::TrinexxHeadDraw {
                 slot: 1,
                 segment: 4
             }
         );
+        // After PLX the cursor left Y; without a traced segment counter the
+        // boundary is refused rather than guessed.
+        event.pc = Some(0x1d_bbe2);
+        event.return_address = Some(0x1f_b8dc);
+        event.stack4 = Some(0xc2);
+        assert!(tracker.observe_trinexx_head_draw(&event).is_err());
     }
 
     #[test]
@@ -16017,8 +16384,10 @@ mod tests {
             hog_spear_active_body: false,
             buzzblob_movement: None,
             trinexx_head_draw: None,
+            trinexx_segment_counter: None,
             trinexx_head_draw_setup: None,
             trinexx_breath_tile_collision: None,
+            sidenexx_neck_target: None,
             trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
@@ -16056,6 +16425,7 @@ mod tests {
             fire_debirando_property_reload: false,
             fire_debirando_before_spawn_slot: None,
             fire_debirando_spawn: None,
+            trinexx_death_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
             helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
@@ -16118,8 +16488,10 @@ mod tests {
             hog_spear_active_body: false,
             buzzblob_movement: None,
             trinexx_head_draw: None,
+            trinexx_segment_counter: None,
             trinexx_head_draw_setup: None,
             trinexx_breath_tile_collision: None,
+            sidenexx_neck_target: None,
             trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
@@ -16157,6 +16529,7 @@ mod tests {
             fire_debirando_property_reload: false,
             fire_debirando_before_spawn_slot: None,
             fire_debirando_spawn: None,
+            trinexx_death_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
             helmasaur_hard_hat_beetle_subtype2_increment_slot: None,

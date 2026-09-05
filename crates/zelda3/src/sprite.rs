@@ -2965,6 +2965,40 @@ impl ZeldaState {
                 self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
                 return;
             }
+            if let Some(SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(
+                        nmi_slices, 0,
+                        "Trinexx death explosion spawn continuation requires a measured NMI phase",
+                    );
+                    let boundary = self
+                        .sprite_main_cpu_boundary
+                        .take()
+                        .expect("Trinexx death explosion spawn boundary was checked above");
+                    assert_eq!(self.sprite_slot_view(k).state(), 9);
+                    assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xcb);
+                    let spawned = usize::from(spawned_slot);
+                    assert_ne!(spawned, k);
+                    for candidate in (spawned + 1)..16 {
+                        assert_ne!(
+                            self.sprite_slot_view(candidate).state(),
+                            0,
+                            "source dynamic-spawn receipt skipped a higher free slot {candidate}",
+                        );
+                    }
+                    self.sprite_timers_and_oam(k);
+                    self.begin_trinexx_death_explosion_spawn_checkpoint(k, spawned, progress);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                    return;
+                }
+            }
             if let Some(SpriteMainCpuBoundary::FireDebirandoSpawn {
                 slot,
                 spawned_slot,
@@ -3483,6 +3517,32 @@ impl ZeldaState {
                             slot,
                             segment,
                             continuation: Some(draw),
+                        },
+                        nmi_slices,
+                        caller,
+                    );
+                    return;
+                }
+            }
+            if let Some(SpriteMainCpuBoundary::SidenexxNeckTargetLoop {
+                slot,
+                step,
+                continuation: None,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    assert_eq!(self.sprite_slot_view(k).state(), 9);
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    self.sprite_timers_and_oam(k);
+                    self.sprite_main_cpu_boundary = None;
+                    let continuation = self.begin_sidenexx_neck_target_checkpoint(k, step);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::SidenexxNeckTargetLoop {
+                            slot,
+                            step,
+                            continuation: Some(continuation),
                         },
                         nmi_slices,
                         caller,
@@ -4487,6 +4547,20 @@ impl ZeldaState {
                 self.sprite_prep_debirando_pit_after_before_spawn(interrupted_slot);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
+            SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            } => {
+                let interrupted_slot = usize::from(slot);
+                let spawned = usize::from(spawned_slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).sprite_type(), 0xcb);
+                assert_eq!(self.sprite_slot_view(spawned).sprite_type(), 0);
+                self.resume_trinexx_death_explosion_spawn(interrupted_slot, spawned, progress);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
             SpriteMainCpuBoundary::FireDebirandoSpawn {
                 slot,
                 spawned_slot,
@@ -4682,6 +4756,13 @@ impl ZeldaState {
             }
             SpriteMainCpuBoundary::TrinexxHeadDraw { continuation: None, .. }
             | SpriteMainCpuBoundary::TrinexxHeadFrontPart { continuation: None, .. } => unreachable!("Trinexx draw continuation lost its source locals"),
+            SpriteMainCpuBoundary::SidenexxNeckTargetLoop { slot, step, continuation: Some(continuation) } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.resume_sidenexx_neck_target(k, step, continuation);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::SidenexxNeckTargetLoop { continuation: None, .. } => unreachable!("Sidenexx neck-target continuation lost its source locals"),
             SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot } => {
                 let interrupted_slot = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);

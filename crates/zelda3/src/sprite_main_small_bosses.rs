@@ -54,12 +54,19 @@ const TRINEXX_BODY_OAM_OFFSETS: [u16; 24] = [
 const TRINEXX_FINAL_PHASE_X_VELOCITIES: [i8; 4] = [0, -31, 0, 31];
 const TRINEXX_FINAL_PHASE_Y_VELOCITIES: [i8; 4] = [31, 0, -31, 0];
 const TRINEXX_SIDE_HEAD_X_OFFSETS: [i8; 2] = [-14, 13];
-const TRINEXX_SIDE_HEAD_X_TARGETS: [u8; 45] = [
+/// Compare/count steps in Sprite_Sidenexx's state-2 neck-target loop: nine
+/// segments, three passes each, one store and one count per pass.
+pub(super) const SIDENEXX_NECK_TARGET_LOOP_STEPS: u8 = 54;
+/// The loop found nothing to move and stored the idle state; its random
+/// delay is still pending.
+pub(super) const SIDENEXX_NECK_TARGET_AI_STATE_STORED: u8 = 55;
+
+pub(crate) const TRINEXX_SIDE_HEAD_X_TARGETS: [u8; 45] = [
     0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x40, 0x58, 0x64, 0x6a, 0x6f, 0x74, 0x7a, 0x7e,
     0x80, 0x80, 0x39, 0x48, 0x52, 0x5c, 0x65, 0x73, 0x77, 0x7a, 0x80, 0x1e, 0x24, 0x29, 0x2e, 0x34,
     0x3a, 0x44, 0x4d, 0x80, 0x0a, 0x11, 0x17, 0x1c, 0x22, 0x2a, 0x36, 0x3a, 0x80,
 ];
-const TRINEXX_SIDE_HEAD_Y_TARGETS: [u8; 45] = [
+pub(crate) const TRINEXX_SIDE_HEAD_Y_TARGETS: [u8; 45] = [
     0x30, 0x28, 0x23, 0x1e, 0x19, 0x13, 0x0c, 6, 0, 0x2f, 0x26, 0x21, 0x1d, 0x18, 0x12, 0x0c, 6, 0,
     0x2f, 0x27, 0x22, 0x1d, 0x18, 0x12, 0x0c, 6, 0, 0x2f, 0x27, 0x22, 0x1d, 0x18, 0x12, 0x0c, 6, 0,
     0x48, 0x3a, 0x32, 0x29, 0x22, 0x19, 0x10, 7, 0,
@@ -456,17 +463,7 @@ impl ZeldaState {
                     self.sprite_sfx_queue_sfx2_with_pan(k, 0x0c);
                 }
                 if (self.sprite_slot_view(k).delay_main() & 1) == 0 {
-                    let xi = (self.get_random_number() & 7) as usize;
-                    let yi = (self.get_random_number() & 7) as usize;
-                    let x = self
-                        .sprite_get_x(k)
-                        .wrapping_add_signed(i16::from(TRINEXX_DEATH_EXPLOSION_X_OFFSETS[xi]));
-                    let y = self
-                        .sprite_get_y(k)
-                        .wrapping_add_signed(i16::from(TRINEXX_DEATH_EXPLOSION_Y_OFFSETS[yi]))
-                        .wrapping_sub(8);
-                    self.sprite_workspace_mut().set_current_sprite_x(x);
-                    self.sprite_workspace_mut().set_current_sprite_y(y);
+                    self.trinexx_death_explosion_position(k);
                     self.sprite_make_boss_death_explosion_no_sound(k);
                 }
                 self.sprite_slot_view_mut(k).set_head_direction(255);
@@ -738,8 +735,16 @@ impl ZeldaState {
     }
 
     pub(super) fn sidenexx_after_head_draw(&mut self, k: usize) {
+        if self.sidenexx_after_head_draw_prefix(k) {
+            self.sidenexx_ai_switch(k);
+        }
+    }
+
+    /// Everything after TrinexxHead_Draw up to the AI-state switch. Returns
+    /// `false` on the inactive and explode returns.
+    fn sidenexx_after_head_draw_prefix(&mut self, k: usize) -> bool {
         if self.sprite_return_if_inactive_for_small_bosses(k) {
-            return;
+            return false;
         }
         if (self.sprite_slot_view(k).ai_state() as i8).is_negative() {
             {
@@ -747,7 +752,7 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_ignore_projectile(value);
             }
             self.sidenexx_explode(k);
-            return;
+            return false;
         }
 
         if self.sprite_slot_view(k).hit_timer() != 0 && self.sprite_slot_view(k).ai_state() != 4 {
@@ -762,6 +767,10 @@ impl ZeldaState {
         }
         self.sprite_check_damage_to_and_from_link_for_small_bosses(k);
         self.sprite_slot_view_mut(k).or_deflection_bits(4);
+        true
+    }
+
+    fn sidenexx_ai_switch(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_slot_view_mut(k).or_flags3(0x40);
@@ -790,53 +799,14 @@ impl ZeldaState {
                 }
             }
             2 => {
-                let mut n = 0u8;
-                let mut target = usize::from(self.sprite_slot_view(k).direction()) * 9;
-                let mut f = k * 9;
-                for _ in (0..=8usize).rev() {
-                    let a = self.cached_sprite_slot(f).type_byte();
-                    let wanted = TRINEXX_SIDE_HEAD_X_TARGETS[target];
-                    if a != wanted {
-                        self.cached_sprite_slot_mut(f).set_type_byte(a.wrapping_add(
-                            if (a.wrapping_sub(wanted) as i8).is_negative() {
-                                1
-                            } else {
-                                0xff
-                            },
-                        ));
-                        n = n.wrapping_add(1);
-                    }
-                    let a = self.cached_sprite_slot(f).type_byte();
-                    if a != wanted {
-                        self.cached_sprite_slot_mut(f).set_type_byte(a.wrapping_add(
-                            if (a.wrapping_sub(wanted) as i8).is_negative() {
-                                1
-                            } else {
-                                0xff
-                            },
-                        ));
-                        n = n.wrapping_add(1);
-                    }
-                    let b = self.cached_sprite_slot(f).y_high();
-                    let wanted_y = TRINEXX_SIDE_HEAD_Y_TARGETS[target];
-                    if b != wanted_y {
-                        self.cached_sprite_slot_mut(f).set_y_high(b.wrapping_add(
-                            if (b.wrapping_sub(wanted_y) as i8).is_negative() {
-                                1
-                            } else {
-                                0xff
-                            },
-                        ));
-                        n = n.wrapping_add(1);
-                    }
-                    target += 1;
-                    f += 1;
-                }
-                if n == 0 {
-                    self.sprite_slot_view_mut(k).set_ai_state(1);
-                    let delay = self.get_random_number() & 15;
-                    self.sprite_slot_view_mut(k).set_delay_main(delay);
-                }
+                let mut continuation = SidenexxNeckLoopContinuation::default();
+                self.sidenexx_neck_target_steps(
+                    k,
+                    &mut continuation,
+                    0,
+                    SIDENEXX_NECK_TARGET_LOOP_STEPS,
+                );
+                self.sidenexx_neck_target_finish(k, continuation);
             }
             3 => {
                 let j = self.sprite_slot_view(k).delay_main();
@@ -900,6 +870,184 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    /// The dying Trinexx body's random explosion offset: two random draws
+    /// select the X/Y table entries that become the spawn position.
+    fn trinexx_death_explosion_position(&mut self, k: usize) {
+        let xi = (self.get_random_number() & 7) as usize;
+        let yi = (self.get_random_number() & 7) as usize;
+        let x = self
+            .sprite_get_x(k)
+            .wrapping_add_signed(i16::from(TRINEXX_DEATH_EXPLOSION_X_OFFSETS[xi]));
+        let y = self
+            .sprite_get_y(k)
+            .wrapping_add_signed(i16::from(TRINEXX_DEATH_EXPLOSION_Y_OFFSETS[yi]))
+            .wrapping_sub(8);
+        self.sprite_workspace_mut().set_current_sprite_x(x);
+        self.sprite_workspace_mut().set_current_sprite_y(y);
+    }
+
+    /// Runs `Sprite_CB_TrinexxRockHead`'s death branch on the interrupted
+    /// host up to the named dynamic-spawn publication of `spawned`.
+    pub(super) fn begin_trinexx_death_explosion_spawn_checkpoint(
+        &mut self,
+        k: usize,
+        spawned: usize,
+        progress: crate::SpriteDynamicSpawnProgress,
+    ) {
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xcb);
+        assert_eq!(self.overlord_slot_view(0).x_high(), 0);
+        self.set_main_screen_layers(0x17);
+        self.set_sub_screen_layers(0);
+        self.sprite_draw_trinexx_rock_head_and_body_for_small_bosses(k);
+        assert!(
+            !self.sprite_return_if_inactive_for_small_bosses(k),
+            "Trinexx death explosion checkpoint requires an active body"
+        );
+        let ai_state = self.sprite_slot_view(k).ai_state();
+        assert!((ai_state as i8).is_negative());
+        self.follower_link_state_mut().set_menu_block_flag(ai_state);
+        let delay = self.sprite_slot_view(k).delay_main();
+        assert!(
+            delay != 0 && delay < 0xe0 && delay & 1 == 0,
+            "Trinexx death explosion checkpoint requires an explosion frame"
+        );
+        if delay & 3 == 0 {
+            self.sprite_sfx_queue_sfx2_with_pan(k, 0x0c);
+        }
+        self.trinexx_death_explosion_position(k);
+        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
+        self.sprite_spawn_dynamically_selected_prefix(k, 0x00, &mut info, spawned, progress);
+    }
+
+    pub(super) fn resume_trinexx_death_explosion_spawn(
+        &mut self,
+        k: usize,
+        spawned: usize,
+        progress: crate::SpriteDynamicSpawnProgress,
+    ) {
+        let mut info = crate::zelda_rtl::sprite::SpriteSpawnInfo::default();
+        self.sprite_spawn_dynamically_selected_from(k, &mut info, spawned, progress);
+        self.sprite_make_boss_death_explosion_after_spawn(spawned);
+        self.sprite_slot_view_mut(k).set_head_direction(255);
+    }
+
+    /// One step of Sprite_Sidenexx's state-2 neck-target loop ($1D:BA07).
+    /// Step `6 * i + 2 * pass + counted`: even steps compare segment `i`'s
+    /// cached byte (two type passes, then the radius pass) with its target
+    /// and step it by one; odd steps count that change in `$01`.
+    fn sidenexx_neck_target_steps(
+        &mut self,
+        k: usize,
+        continuation: &mut SidenexxNeckLoopContinuation,
+        from: u8,
+        to: u8,
+    ) {
+        assert!(from <= to && to <= SIDENEXX_NECK_TARGET_LOOP_STEPS);
+        let target_base = usize::from(self.sprite_slot_view(k).direction()) * 9;
+        let f_base = k * 9;
+        for step in from..to {
+            let i = usize::from(step / 6);
+            let pass = (step % 6) / 2;
+            if step % 2 == 0 {
+                let (value, wanted) = if pass < 2 {
+                    (
+                        self.cached_sprite_slot(f_base + i).type_byte(),
+                        TRINEXX_SIDE_HEAD_X_TARGETS[target_base + i],
+                    )
+                } else {
+                    (
+                        self.cached_sprite_slot(f_base + i).y_high(),
+                        TRINEXX_SIDE_HEAD_Y_TARGETS[target_base + i],
+                    )
+                };
+                continuation.pending_increment = value != wanted;
+                if value != wanted {
+                    let stepped =
+                        value.wrapping_add(if (value.wrapping_sub(wanted) as i8).is_negative() {
+                            1
+                        } else {
+                            0xff
+                        });
+                    if pass < 2 {
+                        self.cached_sprite_slot_mut(f_base + i)
+                            .set_type_byte(stepped);
+                    } else {
+                        self.cached_sprite_slot_mut(f_base + i).set_y_high(stepped);
+                    }
+                }
+            } else if continuation.pending_increment {
+                continuation.n = continuation.n.wrapping_add(1);
+                continuation.pending_increment = false;
+            }
+        }
+    }
+
+    fn sidenexx_neck_target_finish(
+        &mut self,
+        k: usize,
+        continuation: SidenexxNeckLoopContinuation,
+    ) {
+        if continuation.n == 0 {
+            self.sprite_slot_view_mut(k).set_ai_state(1);
+            let delay = self.get_random_number() & 15;
+            self.sprite_slot_view_mut(k).set_delay_main(delay);
+        }
+    }
+
+    /// Runs Sprite_Sidenexx up to neck-target `step` on the interrupted
+    /// host: the head draw, the pre-switch prefix and `step` loop steps.
+    /// Step 55 has also stored the idle state and owes its random delay.
+    pub(super) fn begin_sidenexx_neck_target_checkpoint(
+        &mut self,
+        k: usize,
+        step: u8,
+    ) -> SidenexxNeckLoopContinuation {
+        assert!(step <= SIDENEXX_NECK_TARGET_AI_STATE_STORED);
+        assert!(matches!(
+            self.sprite_slot_view(k).sprite_type(),
+            0xcc | 0xcd
+        ));
+        self.sidenexx_before_head_draw(k);
+        self.trinexx_head_draw(k);
+        assert!(
+            self.sidenexx_after_head_draw_prefix(k),
+            "Sidenexx neck-target checkpoint requires an active head"
+        );
+        assert_eq!(self.sprite_slot_view(k).ai_state(), 2);
+        let mut continuation = SidenexxNeckLoopContinuation::default();
+        self.sidenexx_neck_target_steps(
+            k,
+            &mut continuation,
+            0,
+            step.min(SIDENEXX_NECK_TARGET_LOOP_STEPS),
+        );
+        if step == SIDENEXX_NECK_TARGET_AI_STATE_STORED {
+            assert_eq!(continuation.n, 0);
+            self.sprite_slot_view_mut(k).set_ai_state(1);
+        }
+        continuation
+    }
+
+    pub(super) fn resume_sidenexx_neck_target(
+        &mut self,
+        k: usize,
+        step: u8,
+        mut continuation: SidenexxNeckLoopContinuation,
+    ) {
+        if step == SIDENEXX_NECK_TARGET_AI_STATE_STORED {
+            let delay = self.get_random_number() & 15;
+            self.sprite_slot_view_mut(k).set_delay_main(delay);
+            return;
+        }
+        self.sidenexx_neck_target_steps(
+            k,
+            &mut continuation,
+            step,
+            SIDENEXX_NECK_TARGET_LOOP_STEPS,
+        );
+        self.sidenexx_neck_target_finish(k, continuation);
     }
 
     // void TrinexxHead_Draw(int k) {  // 9dbb70

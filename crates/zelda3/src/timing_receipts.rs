@@ -776,6 +776,16 @@ pub enum MainLoopInterruption {
         spawned_slot: u8,
         progress: SpriteDynamicSpawnProgress,
     },
+    /// The dying Trinexx body's `Sprite_MakeBossDeathExplosion_NoSound`
+    /// entered `Sprite_SpawnDynamically`, selected `spawned_slot`, and
+    /// completed the named source mutation. The explosion's own setup, the
+    /// head-direction store, the current-slot return and lower `Sprite_Main`
+    /// slots remain pending.
+    SpriteMainTrinexxDeathExplosionSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: SpriteDynamicSpawnProgress,
+    },
     /// `SpriteDraw_Antfairy` published its leading subtype2 increment, but
     /// the animation/draw suffix, caller-specific active body, current-slot
     /// return, and lower `Sprite_Main` slots remain pending.
@@ -914,6 +924,15 @@ pub enum MainLoopInterruption {
         slot: u8,
         segment: u8,
     },
+    /// Sprite_Sidenexx's state-2 neck-target loop ($1D:BA07..BA53) or its
+    /// completion test. `step` counts the loop's compare/count steps
+    /// (`6 * segment + 2 * pass + counted`), 54 is the loop done with the
+    /// change count pending and 55 the state store done with its random
+    /// delay pending.
+    SpriteMainSidenexxNeckTargetLoop {
+        slot: u8,
+        step: u8,
+    },
     SpriteMainTrinexxHeadFrontPart {
         slot: u8,
         completed_stores: u8,
@@ -985,6 +1004,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainInitializeLoadProperties { .. }
                 | Self::SpriteMainFireDebirandoBeforeSpawn(_)
                 | Self::SpriteMainFireDebirandoSpawn { .. }
+                | Self::SpriteMainTrinexxDeathExplosionSpawn { .. }
                 | Self::SpriteMainAfterAntfairySubtype2Increment(_)
                 | Self::SpriteMainAfterLanmolaSubtype2Increment(_)
                 | Self::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
@@ -1003,6 +1023,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainVitreousPlayerDamagePending(_)
                 | Self::SpriteMainSwamolaSegmentDraw { .. }
                 | Self::SpriteMainTrinexxHeadDraw { .. }
+                | Self::SpriteMainSidenexxNeckTargetLoop { .. }
                 | Self::SpriteMainTrinexxHeadFrontPart { .. }
                 | Self::SpriteMainPengatorSlidePending(_)
                 | Self::SpriteMainAntifairyBouncePending(_)
@@ -1106,6 +1127,13 @@ pub enum SpriteMainProgress {
         spawned_slot: u8,
         progress: SpriteDynamicSpawnProgress,
     },
+    /// The dying Trinexx body's explosion spawn selected `spawned_slot` and
+    /// published the source statements named by `progress`.
+    TrinexxDeathExplosionSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: SpriteDynamicSpawnProgress,
+    },
     /// The current active slot completed `SpriteDraw_Antfairy`'s leading
     /// subtype2 increment. Its draw/body suffix and lower slots are pending.
     AfterAntfairySubtype2Increment(u8),
@@ -1195,6 +1223,10 @@ pub enum SpriteMainProgress {
     TrinexxHeadDraw {
         slot: u8,
         segment: u8,
+    },
+    SidenexxNeckTargetLoop {
+        slot: u8,
+        step: u8,
     },
     TrinexxHeadFrontPart {
         slot: u8,

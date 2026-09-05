@@ -19026,6 +19026,110 @@ fn pre_dungeon_garnish_clear_publishes_only_completed_descending_stores() {
 }
 
 #[test]
+fn trinexx_death_explosion_spawn_checkpoints_resume_to_the_atomic_explosion() {
+    use crate::SpriteDynamicSpawnProgress as P;
+    for progress in [
+        P::TypePublished,
+        P::StatePublished,
+        P::ResetProperties {
+            completed_stores: 4,
+        },
+        P::LoadProperties {
+            completed_stores: 0,
+        },
+        P::LoadProperties {
+            completed_stores: 3,
+        },
+        P::LoadProperties {
+            completed_stores: 10,
+        },
+        P::IdentityPublished,
+        P::FloorPublished,
+        P::DirectionPublished,
+        P::DieActionCleared,
+        P::SubtypeCleared,
+    ] {
+        let mut state = ZeldaState::new();
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state.sprite_slot_view_mut(0).set_sprite_type(0xcb);
+        state.sprite_slot_view_mut(0).set_state(9);
+        state.sprite_slot_view_mut(0).set_ai_state(0xff);
+        state.sprite_slot_view_mut(0).set_delay_main(0x40);
+        state.sprite_slot_view_mut(0).set_x_low(0x23);
+        state.sprite_slot_view_mut(0).set_x_high(8);
+        state.sprite_slot_view_mut(0).set_y_low(0xb4);
+        state.sprite_slot_view_mut(0).set_y_high(0x15);
+        for slot in 14..16 {
+            state.sprite_slot_view_mut(slot).set_state(4);
+        }
+        let mut atomic = state.clone();
+        atomic.sprite_cb_trinexx_rock_head(0);
+        assert_eq!(
+            atomic.sprite_slot_view(13).state(),
+            4,
+            "explosion spawned in slot 13"
+        );
+        state.begin_trinexx_death_explosion_spawn_checkpoint(0, 13, progress);
+        assert_eq!(state.sprite_slot_view(13).sprite_type(), 0);
+        state.resume_trinexx_death_explosion_spawn(0, 13, progress);
+        assert_eq!(state.ram, atomic.ram, "{progress:?}");
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+    }
+}
+
+#[test]
+fn sidenexx_neck_target_checkpoints_resume_to_the_atomic_loop() {
+    fn head_state(reached: bool) -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state.sprite_slot_view_mut(0).set_a(100);
+        state.sprite_slot_view_mut(0).set_c(100);
+        state.sprite_slot_view_mut(1).set_sprite_type(0xcc);
+        state.sprite_slot_view_mut(1).set_state(9);
+        state.sprite_slot_view_mut(1).set_ai_state(2);
+        state.sprite_slot_view_mut(1).set_direction(1);
+        state.sprite_slot_view_mut(1).set_subtype2(9);
+        for j in 9..18 {
+            let (angle, radius) = if reached {
+                (
+                    crate::zelda_rtl::sprite_main_small_bosses::TRINEXX_SIDE_HEAD_X_TARGETS[j],
+                    crate::zelda_rtl::sprite_main_small_bosses::TRINEXX_SIDE_HEAD_Y_TARGETS[j],
+                )
+            } else {
+                (40 + j as u8, if j % 2 == 0 { 30 } else { 2 })
+            };
+            state.cached_sprite_slot_mut(j).set_type_byte(angle);
+            state.cached_sprite_slot_mut(j).set_y_high(radius);
+        }
+        state
+    }
+    for step in 0..=54u8 {
+        let mut state = head_state(false);
+        let mut atomic = state.clone();
+        atomic.sprite_sidenexx(1);
+        let continuation = state.begin_sidenexx_neck_target_checkpoint(1, step);
+        assert_eq!(state.sprite_slot_view(1).ai_state(), 2);
+        state.resume_sidenexx_neck_target(1, step, continuation);
+        assert_eq!(state.ram, atomic.ram, "step {step}");
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+    }
+    for step in [0u8, 27, 54, 55] {
+        let mut state = head_state(true);
+        let mut atomic = state.clone();
+        atomic.sprite_sidenexx(1);
+        assert_eq!(atomic.sprite_slot_view(1).ai_state(), 1);
+        let continuation = state.begin_sidenexx_neck_target_checkpoint(1, step);
+        assert_eq!(
+            state.sprite_slot_view(1).ai_state(),
+            if step == 55 { 1 } else { 2 }
+        );
+        state.resume_sidenexx_neck_target(1, step, continuation);
+        assert_eq!(state.ram, atomic.ram, "reached step {step}");
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+    }
+}
+
+#[test]
 fn trinexx_breath_tile_collision_checkpoint_resumes_to_the_atomic_breath() {
     for sprite_type in [0xccu8, 0xcd] {
         let mut state = ZeldaState::new();

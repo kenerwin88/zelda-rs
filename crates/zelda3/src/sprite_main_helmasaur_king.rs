@@ -732,7 +732,12 @@ impl ZeldaState {
         if j < 0 {
             return;
         }
-        let j = j as usize;
+        self.sprite_make_boss_death_explosion_after_spawn(j as usize);
+    }
+
+    /// `Sprite_MakeBossDeathExplosion_NoSound` after its dynamic spawn
+    /// selected slot `j`: the explosion's graphics request and slot setup.
+    pub(super) fn sprite_make_boss_death_explosion_after_spawn(&mut self, j: usize) {
         self.set_chr_halfslot_request(11);
         {
             let mut sprite = self.sprite_slot_view_mut(j);
