@@ -1884,6 +1884,9 @@ pub enum OriginalTimingSemanticReceipt {
     /// Module 7 reached its push-block draw call after saving and applying
     /// the caller's scroll values; drawing and Sprite_Main remain pending.
     DungeonPushBlocksPending,
+    /// Module09 has applied three saved scroll pairs; BG1 vertical and
+    /// the ensuing Sprite_Main call remain in its native caller frame.
+    Module09FinalScrollPairPending,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

@@ -19924,6 +19924,44 @@ fn swamola_segment_draw_resumes_without_repeating_history_or_oam_steps() {
 }
 
 #[test]
+fn module09_scroll_prefix_retains_the_pending_vertical_pair() {
+    let mut state = ZeldaState::new();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.set_main_module(9);
+    state.set_submodule(5);
+    state.set_bg2_x(100);
+    state.set_bg2_y(200);
+    state.set_bg1_x(300);
+    state.set_bg1_y(400);
+    state.set_bg1_x_offset(3);
+    state.set_bg1_y_offset(5);
+    let mut atomic = state.clone();
+    let saved = atomic.begin_module09_sprite_main();
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        0,
+        0,
+        vec![OriginalTimingSemanticReceipt::Module09FinalScrollPairPending],
+    ));
+    state.complete_module09_sprite_and_hud_suffix();
+    assert_eq!(state.game_state.display.ppu_scroll_copy.bg1_v_copy2(), 400);
+    assert_eq!(
+        state.active_module09_sprite_main_return.unwrap().scroll,
+        saved
+    );
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::Module09FinalScrollPairPending,
+            ..
+        })
+    ));
+    state.complete_module09_final_scroll_pair();
+    assert_eq!(state.game_state.display.ppu_scroll_copy.bg1_v_copy2(), 405);
+    assert_eq!(state.game_state, atomic.game_state);
+    assert_eq!(state.ram, atomic.ram);
+}
+
+#[test]
 fn moblin_collision_geometry_preserves_movement_before_tile_effects() {
     for (velocity, attribute_loaded) in [(16, false), (32, false), (16, true), (32, true)] {
         let mut state = ZeldaState::new();

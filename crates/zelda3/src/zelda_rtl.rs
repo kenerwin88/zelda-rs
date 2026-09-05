@@ -5132,6 +5132,7 @@ enum SpriteMainCpuBoundary {
     MoblinAttributeLoaded {
         slot: u8,
     },
+    Module09FinalScrollPairPending,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5319,7 +5320,8 @@ fn sprite_main_cpu_interruption_boundary(
 /// partial checkpoints identify the in-flight slot directly.
 fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCpuBoundary) -> bool {
     match boundary {
-        SpriteMainCpuBoundary::BeforeFirstSlot => slot == 15,
+        SpriteMainCpuBoundary::BeforeFirstSlot
+        | SpriteMainCpuBoundary::Module09FinalScrollPairPending => slot == 15,
         SpriteMainCpuBoundary::AfterSlot(after_slot) => slot.checked_add(1) == Some(after_slot),
         SpriteMainCpuBoundary::AfterTimersAndOam {
             slot: active_slot, ..
@@ -7075,7 +7077,8 @@ fn same_optional_sprite_main_source_checkpoint(
 /// intentionally not interchangeable.
 const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
     match boundary {
-        SpriteMainCpuBoundary::BeforeFirstSlot => 0,
+        SpriteMainCpuBoundary::BeforeFirstSlot
+        | SpriteMainCpuBoundary::Module09FinalScrollPairPending => 0,
         SpriteMainCpuBoundary::AfterSlot(slot) => 2 * (16 - slot),
         SpriteMainCpuBoundary::AfterCuccoGraphicsPublication { slot, .. }
         | SpriteMainCpuBoundary::AfterTimersAndOam { slot, .. }
@@ -23692,6 +23695,7 @@ impl ZeldaState {
                     // from its suspended animated-sprite decode continuation.
                     | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored
                     | OriginalTimingSemanticReceipt::DungeonPushBlocksPending
+                    | OriginalTimingSemanticReceipt::Module09FinalScrollPairPending
                     | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned
                     | OriginalTimingSemanticReceipt::DungeonFallingFadeInPaletteDirectionToggled
                     // Module0F's entry call can return inside a fresh
@@ -43907,7 +43911,15 @@ impl ZeldaState {
             if current_boundary != refined_boundary {
                 let scheduled_refined_boundary = match (current_boundary, refined_boundary) {
                     (
+                        SpriteMainCpuBoundary::Module09FinalScrollPairPending,
                         SpriteMainCpuBoundary::BeforeFirstSlot,
+                    ) => {
+                        self.complete_module09_final_scroll_pair();
+                        refined_boundary
+                    }
+                    (
+                        SpriteMainCpuBoundary::BeforeFirstSlot
+                        | SpriteMainCpuBoundary::Module09FinalScrollPairPending,
                         SpriteMainCpuBoundary::AfterSlot(newly_completed_slot),
                     ) => {
                         // The saved caller's Sprite_Main started in this host
@@ -43919,7 +43931,8 @@ impl ZeldaState {
                         refined_boundary
                     }
                     (
-                        SpriteMainCpuBoundary::BeforeFirstSlot,
+                        SpriteMainCpuBoundary::BeforeFirstSlot
+                        | SpriteMainCpuBoundary::Module09FinalScrollPairPending,
                         SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
                     ) => self.advance_sprite_main_before_first_slot_to_after_timers_and_oam(slot),
                     (

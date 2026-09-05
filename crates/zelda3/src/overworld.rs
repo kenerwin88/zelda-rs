@@ -1066,7 +1066,23 @@ impl ZeldaState {
         &mut self,
         rain_already_published: bool,
     ) {
-        let caller = self.begin_module09_sprite_main();
+        let mut final_scroll_pair_pending = false;
+        if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
+            receipts.semantic.retain(|receipt| {
+                if *receipt == crate::OriginalTimingSemanticReceipt::Module09FinalScrollPairPending
+                {
+                    assert!(
+                        !final_scroll_pair_pending,
+                        "Module09 scroll prefix replayed"
+                    );
+                    final_scroll_pair_pending = true;
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        let caller = self.begin_module09_sprite_main_scroll_prefix(final_scroll_pair_pending);
         assert!(
             self.active_module09_sprite_main_return
                 .replace(Module09ItemReceiptCallerReturn {
@@ -1078,6 +1094,18 @@ impl ZeldaState {
                 .is_none(),
             "Module 9 entered a second Sprite_Main caller before the first returned",
         );
+        if final_scroll_pair_pending {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishSpriteMain {
+                    boundary: SpriteMainCpuBoundary::Module09FinalScrollPairPending,
+                    caller: SpriteMainCpuCaller::Module09 {
+                        boundary: OriginalTimingBoundary::HostReturn,
+                    },
+                },
+                1,
+            );
+            return;
+        }
         if self.original_timing_ancilla_item_receipt_suspended() {
             // An ancilla's receipt (the dug-up flute, route host 514800)
             // suspended inside Sprite_Main's prefix before any slot ran; run
@@ -1160,6 +1188,25 @@ impl ZeldaState {
     }
 
     pub(super) fn begin_module09_sprite_main(&mut self) -> Module09SpriteMainReturn {
+        self.begin_module09_sprite_main_scroll_prefix(false)
+    }
+
+    pub(super) fn complete_module09_final_scroll_pair(&mut self) {
+        let saved = self
+            .active_module09_sprite_main_return
+            .as_ref()
+            .expect("Module09 scroll suffix lost its native caller")
+            .scroll
+            .bg1_y;
+        self.set_bg1_v_live_and_copy(
+            saved.wrapping_add(self.game_state.world.scroll.bg1_y_offset()),
+        );
+    }
+
+    fn begin_module09_sprite_main_scroll_prefix(
+        &mut self,
+        final_pair_pending: bool,
+    ) -> Module09SpriteMainReturn {
         let bg2x = self.game_state.display.ppu_scroll_copy.bg2_h_copy2();
         let bg2y = self.game_state.display.ppu_scroll_copy.bg2_v_copy2();
         let bg1x = self.game_state.display.ppu_scroll_copy.bg1_h_copy2();
@@ -1174,7 +1221,9 @@ impl ZeldaState {
         self.set_bg2_h_live_and_copy(bg2x_off);
         self.set_bg2_v_live_and_copy(bg2y_off);
         self.set_bg1_h_live_and_copy(bg1x_off);
-        self.set_bg1_v_live_and_copy(bg1y_off);
+        if !final_pair_pending {
+            self.set_bg1_v_live_and_copy(bg1y_off);
+        }
 
         self.replay_trace_ram_watch("module09-before-sprite-main");
         Module09SpriteMainReturn {

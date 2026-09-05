@@ -3756,6 +3756,12 @@ impl HostFrameWindow {
                 entry.run, returned.run
             ));
         }
+        if returned.pc == 0x02_a4aa {
+            if !matches!(returned.main, 9 | 0x0b) {
+                return Err("Module09 scroll prefix escaped its source caller".into());
+            }
+            receipts.push(OriginalTimingSemanticReceipt::Module09FinalScrollPairPending);
+        }
         // A portal reset belongs to the spawn proven by its private caller.
         if let Some(completed_stores) = self.mirror_portal_reset_progress {
             let slot = self
@@ -13824,6 +13830,24 @@ mod tests {
             ],
         );
         assert!(!tracker.overworld_load_overlays_sprite_reload_active);
+    }
+
+    #[test]
+    fn module09_scroll_prefix_is_distinct_from_sprite_main_entry() {
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame_with_sub("entry", 1, 9, 4)).unwrap();
+        let mut returned = frame_with_sub("return", 1, 9, 5);
+        returned.pc = Some(0x02_a4aa);
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, None, true).unwrap();
+        assert!(receipts.contains(&OriginalTimingSemanticReceipt::Module09FinalScrollPairPending));
+        assert!(receipts.contains(
+            &OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::ReloadReturned
+            )
+        ));
+        assert!(!receipts.contains(&OriginalTimingSemanticReceipt::SpriteMainReturned));
     }
 
     #[test]

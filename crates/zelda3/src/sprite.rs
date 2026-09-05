@@ -2717,6 +2717,15 @@ impl ZeldaState {
 
     fn resume_sprite_main_before_first_slot_prefix(&mut self) {
         let parked_work = self.game_execution_scheduler.current_work();
+        if matches!(
+            parked_work,
+            Some(GameWorkContinuation::FinishSpriteMain {
+                boundary: SpriteMainCpuBoundary::Module09FinalScrollPairPending,
+                ..
+            })
+        ) {
+            self.complete_module09_final_scroll_pair();
+        }
         if let Some((main_module, submodule)) = self.pending_module09_frame_advance.take() {
             // The suspended Module09 handler's deferred advance lands right
             // before Sprite_Main, as the ROM writes it.
@@ -4155,6 +4164,10 @@ impl ZeldaState {
         boundary: SpriteMainCpuBoundary,
     ) {
         match boundary {
+            SpriteMainCpuBoundary::Module09FinalScrollPairPending => {
+                self.complete_module09_final_scroll_pair();
+                self.sprite_main();
+            }
             SpriteMainCpuBoundary::BeforeFirstSlot => {
                 if let Some((main_module, submodule)) = self.pending_module09_frame_advance.take() {
                     // The suspended Module09 handler's deferred advance lands
