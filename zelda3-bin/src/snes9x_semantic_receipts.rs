@@ -1271,6 +1271,7 @@ impl SpriteMainExecutionTracker {
                 | 0x05_c71c
                 | 0x05_c721..=0x05_c729
                 | 0x05_ca29
+                | 0x05_ca43..=0x05_ca4b
                 | 0x05_ca6b
                 | 0x05_ca93..=0x05_ca9f,
             )
@@ -1314,6 +1315,13 @@ impl SpriteMainExecutionTracker {
             Some(0x05_ca29) if x < 56 && y & 3 == 0 => Stage::BodyBeforeEntry {
                 entry: (x & 3) as u8,
             },
+            // The body table index has doubled, but the first coordinate
+            // store has not run. This is the same native publication prefix.
+            Some(0x05_ca43..=0x05_ca4b) if x < 112 && x & 1 == 0 && y & 3 == 0 => {
+                Stage::BodyBeforeEntry {
+                    entry: ((x >> 1) & 3) as u8,
+                }
+            }
             Some(0x05_ca6b) if x < 112 && x & 1 == 0 && y & 3 == 1 => Stage::BodyCoordinates {
                 entry: ((x >> 1) & 3) as u8,
             },
@@ -9523,6 +9531,8 @@ mod tests {
             (0x05_c717, 0, 2, Stage::HeadCharacterPending),
             (0x05_ca9e, 35, 6, Stage::BodyFlagsPending { entry: 3 }),
             (0x05_ca29, 33, 12, Stage::BodyBeforeEntry { entry: 1 }),
+            (0x05_ca43, 66, 12, Stage::BodyBeforeEntry { entry: 1 }),
+            (0x05_ca4b, 66, 12, Stage::BodyBeforeEntry { entry: 1 }),
             (0x05_ca6b, 66, 13, Stage::BodyCoordinates { entry: 1 }),
             (0x05_ca96, 34, 10, Stage::BodyFlagsPending { entry: 2 }),
             (0x05_ca9f, 35, 7, Stage::BodyFlagsPending { entry: 3 }),
