@@ -3904,11 +3904,15 @@ impl ZeldaState {
     pub(super) fn complete_dungeon_exit_spotlight_link_movement(
         &mut self,
         iteration: SpotlightIteration,
+        caller_returned_in_host: bool,
     ) {
         // Module0F's speed/ripple prefix ran before the interrupt which
         // parked this call. Resume at Link_HandleVelocity, then execute the
         // remaining movement-animation and Link-OAM suffix exactly once.
         self.module0f_spotlight_close_velocity_and_oam();
+        if caller_returned_in_host {
+            return;
+        }
         if iteration.prepares_main_loop_sprites_before_second_nmi() {
             self.nmi_prepare_sprites_for_main_loop_once();
             self.clear_nmi_update_latch();

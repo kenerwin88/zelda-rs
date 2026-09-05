@@ -37644,7 +37644,7 @@ impl ZeldaState {
                 self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                     GraphicsDmaGeneration::HostBoundaryBeforeMain,
                 )));
-                self.complete_dungeon_exit_spotlight_link_movement(iteration);
+                self.complete_dungeon_exit_spotlight_link_movement(iteration, false);
             }
             GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
                 iteration,
@@ -46815,7 +46815,10 @@ impl ZeldaState {
                     self.set_next_display_obj_scanout(Some(ObjScanoutGenerations::coherent(
                         GraphicsDmaGeneration::HostBoundaryBeforeMain,
                     )));
-                    self.complete_dungeon_exit_spotlight_link_movement(iteration);
+                    self.complete_dungeon_exit_spotlight_link_movement(
+                        iteration,
+                        authoritative_scheduled_caller_return_timeline.is_some(),
+                    );
                     if authoritative_scheduled_caller_return_timeline.is_some() {
                         // The wire's terminal return proves the shared
                         // ZeldaRunGameLoop suffix completes inside this host

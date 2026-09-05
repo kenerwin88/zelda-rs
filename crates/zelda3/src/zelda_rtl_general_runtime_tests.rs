@@ -14194,62 +14194,67 @@ fn live_spotlight_link_position_boundary_resumes_the_complete_c_leaf_once() {
         state
     }
 
-    let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
-    let mut atomic = configured_state();
-    atomic.module0f_spotlight_close_link_and_oam();
+    for caller_returned in [false, true] {
+        let iteration = SpotlightIteration::closing(SpotlightIterationPhase::WholeTable);
+        let mut atomic = configured_state();
+        atomic.module0f_spotlight_close_link_and_oam();
 
-    let mut resumed = configured_state();
-    resumed.original_timing_owner = OriginalTimingOwnerState::Live;
-    resumed.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
-        50_635,
-        0,
-        vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(
-            crate::MainLoopInterruption::LinkPositionBeforeCoordinates,
-        )],
-    ));
-    let entry_x = resumed.game_state.player.follower_link.x();
-    let entry_y = resumed.game_state.player.follower_link.y();
+        let mut resumed = configured_state();
+        resumed.original_timing_owner = OriginalTimingOwnerState::Live;
+        resumed.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+            50_635,
+            0,
+            vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                crate::MainLoopInterruption::LinkPositionBeforeCoordinates,
+            )],
+        ));
+        let entry_x = resumed.game_state.player.follower_link.x();
+        let entry_y = resumed.game_state.player.follower_link.y();
 
-    assert!(resumed.begin_module0f_spotlight_close_link_and_oam(None, iteration));
-    assert_eq!(resumed.game_state.player.follower_link.x(), entry_x);
-    assert_eq!(resumed.game_state.player.follower_link.y(), entry_y);
-    assert_eq!(
-        resumed
-            .game_state
-            .player
-            .follower_link
-            .water_ripple_or_grass_state(),
-        1,
-        "Module0F's source prefix must publish before the Link velocity interruption",
-    );
-    assert_eq!(resumed.game_state.player.follower_link.speed_setting(), 6,);
-    assert!(matches!(
-        resumed.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
-            iteration: pending,
-            ..
-        }) if pending == iteration
-    ));
-    assert!(resumed
-        .original_timing_semantic_receipts
-        .as_ref()
-        .is_some_and(|receipts| receipts.semantic().is_empty()));
+        assert!(resumed.begin_module0f_spotlight_close_link_and_oam(None, iteration));
+        assert_eq!(resumed.game_state.player.follower_link.x(), entry_x);
+        assert_eq!(resumed.game_state.player.follower_link.y(), entry_y);
+        assert_eq!(
+            resumed
+                .game_state
+                .player
+                .follower_link
+                .water_ripple_or_grass_state(),
+            1,
+            "Module0F's source prefix must publish before the Link velocity interruption",
+        );
+        assert_eq!(resumed.game_state.player.follower_link.speed_setting(), 6,);
+        assert!(matches!(
+            resumed.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement {
+                iteration: pending,
+                ..
+            }) if pending == iteration
+        ));
+        assert!(resumed
+            .original_timing_semantic_receipts
+            .as_ref()
+            .is_some_and(|receipts| receipts.semantic().is_empty()));
 
-    let Some(GameWorkStep::Complete(
-        GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration },
-    )) = resumed
-        .game_execution_scheduler
-        .advance_work_one_nmi_slice()
-    else {
-        panic!("Link movement did not resume at the following accepted NMI");
-    };
-    resumed.complete_dungeon_exit_spotlight_link_movement(iteration);
+        let Some(GameWorkStep::Complete(
+            GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration },
+        )) = resumed
+            .game_execution_scheduler
+            .advance_work_one_nmi_slice()
+        else {
+            panic!("Link movement did not resume at the following accepted NMI");
+        };
+        resumed.complete_dungeon_exit_spotlight_link_movement(iteration, caller_returned);
 
-    assert_eq!(resumed.ram, atomic.ram);
-    assert!(matches!(
-        resumed.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishSpotlightIteration { .. })
-    ));
+        assert_eq!(resumed.ram, atomic.ram);
+        assert_eq!(
+            matches!(
+                resumed.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishSpotlightIteration { .. })
+            ),
+            !caller_returned
+        );
+    }
 }
 
 #[test]
