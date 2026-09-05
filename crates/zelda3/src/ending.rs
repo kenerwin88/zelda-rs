@@ -426,7 +426,13 @@ impl ZeldaState {
                 // hosts and lands its writes where the wire returns the
                 // iteration.
                 self.advance_polyhedral();
-                if self.triforce_room_iteration_held_by_wire() {
+                // A host whose wire carries a message-line scroll receipt
+                // reached case 9's RenderText before vblank held it: the
+                // scroll copy itself is what spans hosts, and its receipt
+                // must be consumed here (route host 1558261).
+                let scroll_entered_this_host =
+                    case == 9 && self.original_timing_dialogue_scroll_progress().is_some();
+                if self.triforce_room_iteration_held_by_wire() && !scroll_entered_this_host {
                     self.game_execution_scheduler.schedule_work(
                         GameWorkContinuation::FinishTriforceRoomLoad {
                             step: TriforceRoomLoadStep::IterationTail { case },
@@ -845,6 +851,12 @@ impl ZeldaState {
             }
         }
         self.module19_triforce_room_tail();
+        if step == TriforceRoomLoadStep::Case9Scroll {
+            // The scroll's completed text generation publishes with this
+            // terminal host's trailing NMI; stage it after the tail exactly
+            // as an uninterrupted iteration would (route host 1558267).
+            self.stage_pending_dialogue_scroll_completion_after_captured_boundary();
+        }
     }
 
     pub(super) fn Intro_InitializeBackgroundSettings(&mut self) {

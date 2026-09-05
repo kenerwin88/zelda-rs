@@ -32396,7 +32396,7 @@ impl ZeldaState {
             .begin_scroll(frozen_scanout, completion_timing);
     }
 
-    fn original_timing_dialogue_scroll_progress(
+    pub(super) fn original_timing_dialogue_scroll_progress(
         &self,
     ) -> Option<crate::DialogueScrollProgressReceipt> {
         if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
@@ -32442,6 +32442,42 @@ impl ZeldaState {
             "a terminal scroll caller cannot precede its copy return"
         );
         u16::from(progress.completed_pixel_passes)
+    }
+
+    /// One lag host of a Module19 message-line scroll held by wire: apply
+    /// this host's copy receipt and report whether `RenderText_Draw_Scroll`
+    /// returned. Mirrors the Module0E terminal without its
+    /// Module0E_Interface scroll-register suffix.
+    fn advance_triforce_room_dialogue_scroll_lag_host(
+        &mut self,
+        completion_timing_if_returned: DialogueScrollCompletionTiming,
+    ) -> bool {
+        debug_assert!(self.dialogue_scroll_is_copying_remaining_pixels());
+        let Some(progress) = self.take_original_timing_dialogue_scroll_progress(false) else {
+            // A host spent entirely in the suspended NMI handler has no
+            // source scroll-copy operation to publish.
+            return false;
+        };
+        let passes = u16::from(progress.completed_pixel_passes);
+        if !progress.returned {
+            self.render_text_scroll_pixels(passes);
+            return false;
+        }
+        // The caller names how the RTS relates to this host's vblank: a
+        // terminal host that also completes the shared suffix returned before
+        // it, so the completed text generation publishes at the captured
+        // display boundary; otherwise a return-only host follows.
+        let completion_timing = completion_timing_if_returned;
+        self.dialogue_scroll_machine_mut()
+            .finish_remaining_pixels(Some(completion_timing));
+        let command_done = self.render_text_scroll_pixels(passes);
+        if command_done {
+            let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos();
+            self.messaging_state_mut()
+                .set_dialogue_msg_read_pos(read_pos.wrapping_add(1));
+        }
+        self.finish_dialogue_character_render_call();
+        true
     }
 
     fn finish_dialogue_scroll_remaining_pixels(&mut self) -> DialogueScrollCompletionTiming {
@@ -43907,6 +43943,22 @@ impl ZeldaState {
                         "an overlay-reload terminal lost its module-return token",
                     );
                 }
+                if expected_work
+                    == (GameWorkContinuation::FinishTriforceRoomLoad {
+                        step: TriforceRoomLoadStep::Case9Scroll,
+                    })
+                    && !self.dialogue_scroll_cpu_is_idle()
+                {
+                    // The terminal host copies the scroll's last passes and
+                    // returns through RenderText into Module19's tail (route
+                    // host 1558267).
+                    assert!(
+                        self.advance_triforce_room_dialogue_scroll_lag_host(
+                            DialogueScrollCompletionTiming::BeforeNextVblank,
+                        ),
+                        "a Triforce-room scroll terminal lost its copy/return receipt",
+                    );
+                }
                 if matches!(
                     expected_work,
                     GameWorkContinuation::FinishPreDungeonEntranceLoad { .. }
@@ -45751,6 +45803,37 @@ impl ZeldaState {
                     || self
                         .original_timing_credits_end_sequence_32_progress()
                         .is_some();
+                self.game_execution_scheduler
+                    .advance_work_one_nmi_slice_with_authoritative_completion(returned)
+            } else if matches!(
+                self.game_execution_scheduler.current_work(),
+                Some(GameWorkContinuation::FinishTriforceRoomLoad {
+                    step: TriforceRoomLoadStep::Case9Scroll,
+                })
+            ) && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+                && self.original_timing_semantic_receipts.is_some()
+                && !self.dialogue_scroll_cpu_is_idle()
+            {
+                // Lag host of the Triforce room's message-line scroll (route
+                // hosts 1558262-1558267): the ROM's main thread is still
+                // inside RenderText_Draw_Scroll, so this host copies the
+                // receipt's pixel passes and nothing else; the source RTS
+                // returns through RenderText into Module19's tail.
+                // The scroll's RTS stayed inside this host whenever the wire shows
+                // the caller running on afterwards: a completed shared suffix,
+                // or an interruption inside that suffix (SpritePreparation at
+                // route host 1558283). Only a bare continued return leaves the
+                // RTS itself to cross the boundary.
+                let completion_timing = if self.original_timing_main_loop_iteration_returned_to_wait()
+                    || self.original_timing_main_loop_interruption().is_some()
+                    || authoritative_scheduled_caller_nmi_timeline.is_some()
+                {
+                    DialogueScrollCompletionTiming::BeforeNextVblank
+                } else {
+                    DialogueScrollCompletionTiming::AfterReturnBoundary
+                };
+                let returned =
+                    self.advance_triforce_room_dialogue_scroll_lag_host(completion_timing);
                 self.game_execution_scheduler
                     .advance_work_one_nmi_slice_with_authoritative_completion(returned)
             } else if matches!(
