@@ -6850,6 +6850,9 @@ fn main_loop_interruption_for_source_state(
     } else if main == Some(0x0f)
         && sub == Some(1)
         && (pc == MODULE0F_LINK_VELOCITY_CALL_PC
+            // The JSL has entered the same leaf; its first PHB has not
+            // executed. Module0F's speed/ripple stores remain the prefix.
+            || pc == 0x07_e245
             || (LINK_VELOCITY_BEFORE_STATE_BRANCH_START_PC
                 ..LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC)
                 .contains(&pc)
@@ -13952,6 +13955,14 @@ mod tests {
 
     #[test]
     fn host_boundary_after_actual_x_velocity_retains_the_pending_y_component() {
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x07_e245, Some(0x0f), Some(1), Some(0)),
+            Some(MainLoopInterruption::LinkPositionBeforeCoordinates),
+        );
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x07_e245, Some(9), Some(0), Some(0)),
+            None,
+        );
         assert_eq!(
             main_loop_interruption_for_source_state(0x07_e2de, Some(0x0f), Some(1), Some(0)),
             Some(MainLoopInterruption::LinkActualVelocity {
