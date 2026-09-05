@@ -1559,6 +1559,120 @@ impl SpriteMainExecutionTracker {
             return Ok(());
         }
 
+        // The first-part OAM loop body ($1D:BCAB..BCDF and the INY/INX after
+        // PLY). X is the OAM entry being built; only PHX (the slot) and the
+        // local JSR return ($1D:BC39) sit above the Sidenexx caller. Each
+        // arm names how many of the entry's five stores have executed; the
+        // cur_sprite scratch bytes it also writes are re-derived on resume.
+        let loop_stores = match event.pc {
+            Some(
+                0x1d_bcab | 0x1d_bcae | 0x1d_bcaf | 0x1d_bcb1 | 0x1d_bcb4 | 0x1d_bcb5 | 0x1d_bcb8,
+            ) => Some(0u8),
+            Some(
+                0x1d_bcba | 0x1d_bcbd | 0x1d_bcbe | 0x1d_bcc0 | 0x1d_bcc3 | 0x1d_bcc4 | 0x1d_bcc7
+                | 0x1d_bcc9 | 0x1d_bccb | 0x1d_bccc | 0x1d_bcce | 0x1d_bccf,
+            ) => Some(1),
+            Some(0x1d_bcd1 | 0x1d_bcd4 | 0x1d_bcd5) => Some(2),
+            Some(0x1d_bcd7 | 0x1d_bcd9 | 0x1d_bcdc | 0x1d_bcdd) => Some(3),
+            Some(0x1d_bcdf) => Some(4),
+            Some(0x1d_bce9 | 0x1d_bcea) => Some(5),
+            _ => None,
+        };
+        if let Some(stores) = loop_stores {
+            let slot = self
+                .current_slot
+                .ok_or("Trinexx first-part loop omitted its active slot")?;
+            let entry = event
+                .x
+                .filter(|&x| x < 5)
+                .ok_or("Trinexx first-part loop has an invalid entry")?
+                as u8;
+            if event.return_address.map(|r| r & 0x00ff_ffff) != Some(0xbc_3900 | u32::from(slot))
+                || event.stack4 != Some(0xdc)
+            {
+                return Err("Trinexx first-part loop has the wrong source stack".into());
+            }
+            self.trinexx_front_part = Some((slot, entry * 5 + stores));
+            return Ok(());
+        }
+        // After INX the loop counter names the completed entries; the CPX,
+        // the loop branch and the closing PLX store nothing.
+        if matches!(event.pc, Some(0x1d_bceb | 0x1d_bced | 0x1d_bcef)) {
+            let slot = self
+                .current_slot
+                .ok_or("Trinexx first-part loop omitted its active slot")?;
+            let entries = event
+                .x
+                .filter(|&x| (1..=5).contains(&x))
+                .ok_or("Trinexx first-part loop exit has an invalid counter")?
+                as u8;
+            if event.return_address.map(|r| r & 0x00ff_ffff) != Some(0xbc_3900 | u32::from(slot))
+                || event.stack4 != Some(0xdc)
+            {
+                return Err("Trinexx first-part loop exit has the wrong source stack".into());
+            }
+            self.trinexx_front_part = Some((slot, entries * 5));
+            return Ok(());
+        }
+        // The prologue ($1D:BCA0..BCA8) has stored nothing yet: subtype
+        // scratch, PHX and the entry/OAM cursor loads precede the loop.
+        if matches!(
+            event.pc,
+            Some(0x1d_bca0 | 0x1d_bca3 | 0x1d_bca5 | 0x1d_bca6 | 0x1d_bca8)
+        ) {
+            let slot = self
+                .current_slot
+                .ok_or("Trinexx first-part prologue omitted its active slot")?;
+            let pushed = matches!(event.pc, Some(0x1d_bca6 | 0x1d_bca8));
+            let expected_x = if event.pc == Some(0x1d_bca8) {
+                0
+            } else {
+                u16::from(slot)
+            };
+            let stack_ok = if pushed {
+                event.return_address.map(|r| r & 0x00ff_ffff) == Some(0xbc_3900 | u32::from(slot))
+                    && event.stack4 == Some(0xdc)
+            } else {
+                event.return_address.map(|r| r & 0x00ff_ffff) == Some(0xdc_bc39)
+                    && event.stack4 == Some(0xb8)
+            };
+            if event.x != Some(expected_x) || !stack_ok {
+                return Err("Trinexx first-part prologue has the wrong source stack".into());
+            }
+            self.trinexx_front_part = Some((slot, 0));
+            return Ok(());
+        }
+        // The first-part tail after the OAM entries: the shared scratch
+        // advance ($1D:BCF0..BCF6), then Sprite_SetX/SetY's four stores.
+        // Only the local JSR return ($1D:BC39) and the Sidenexx caller
+        // ($1D:B8DC) remain on the stack above the head-draw code.
+        let tail_completed = match event.pc {
+            Some(0x1d_bcf0 | 0x1d_bcf3 | 0x1d_bcf4) => Some(25u8),
+            Some(
+                0x1d_bcf9 | 0x1d_bcfb | 0x1d_bcfe | 0x1d_bd00 | 0x1d_bd01 | 0x1d_bd02 | 0x1d_bd05,
+            ) => Some(26),
+            Some(0x1d_bd08 | 0x1d_bd09 | 0x1d_bd0c) => Some(27),
+            Some(
+                0x1d_bd0f | 0x1d_bd11 | 0x1d_bd14 | 0x1d_bd16 | 0x1d_bd17 | 0x1d_bd18 | 0x1d_bd1b,
+            ) => Some(28),
+            Some(0x1d_bd1e | 0x1d_bd1f | 0x1d_bd22) => Some(29),
+            Some(0x1d_bd25) => Some(30),
+            _ => None,
+        };
+        if let Some(completed_stores) = tail_completed {
+            let slot = self
+                .current_slot
+                .ok_or("Trinexx first-part position omitted its active slot")?;
+            if event.x != Some(u16::from(slot))
+                || event.return_address.map(|r| r & 0x00ff_ffff) != Some(0xdc_bc39)
+                || event.stack4 != Some(0xb8)
+            {
+                return Err("Trinexx first-part position has the wrong source stack".into());
+            }
+            self.trinexx_front_part = Some((slot, completed_stores));
+            return Ok(());
+        }
+
         if event.pc == Some(0x1d_bc7c) {
             let slot = self
                 .current_slot
@@ -9946,6 +10060,87 @@ mod tests {
             )
             .unwrap());
         }
+    }
+
+    #[test]
+    fn trinexx_first_part_loop_checkpoints_count_the_entry_stores() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(2);
+        for (pc, x, completed) in [
+            (0x1d_bca6, 2, 0),
+            (0x1d_bca8, 0, 0),
+            (0x1d_bcab, 0, 0),
+            (0x1d_bcb4, 3, 15),
+            (0x1d_bcba, 3, 16),
+            (0x1d_bcd1, 1, 7),
+            (0x1d_bcd7, 4, 23),
+            (0x1d_bcdf, 4, 24),
+            (0x1d_bce9, 4, 25),
+            (0x1d_bceb, 2, 10),
+            (0x1d_bcef, 5, 25),
+        ] {
+            let mut event = raw("frame", Some(pc), Some(x), None);
+            event.return_address = Some(0xbc_3902);
+            event.stack4 = Some(0xdc);
+            tracker.observe_trinexx_head_draw(&event).unwrap();
+            assert_eq!(
+                tracker.progress(),
+                SpriteMainProgress::TrinexxHeadFrontPart {
+                    slot: 2,
+                    completed_stores: completed,
+                },
+                "{pc:#x}"
+            );
+        }
+        let mut event = raw("frame", Some(0x1d_bca0), Some(2), None);
+        event.return_address = Some(0xdc_bc39);
+        event.stack4 = Some(0xb8);
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadFrontPart {
+                slot: 2,
+                completed_stores: 0,
+            }
+        );
+        let mut event = raw("frame", Some(0x1d_bcb4), Some(3), None);
+        event.return_address = Some(0xbc_3903);
+        event.stack4 = Some(0xdc);
+        assert!(tracker.observe_trinexx_head_draw(&event).is_err());
+        event.return_address = Some(0xbc_3902);
+        event.x = Some(5);
+        assert!(tracker.observe_trinexx_head_draw(&event).is_err());
+    }
+
+    #[test]
+    fn trinexx_first_part_tail_checkpoints_count_the_position_stores() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(2);
+        for (pc, completed) in [
+            (0x1d_bcf0, 25),
+            (0x1d_bcf9, 26),
+            (0x1d_bd08, 27),
+            (0x1d_bd14, 28),
+            (0x1d_bd1e, 29),
+            (0x1d_bd25, 30),
+        ] {
+            let mut event = raw("nmi", Some(pc), Some(2), None);
+            event.return_address = Some(0xdc_bc39);
+            event.stack4 = Some(0xb8);
+            tracker.observe_trinexx_head_draw(&event).unwrap();
+            assert_eq!(
+                tracker.progress(),
+                SpriteMainProgress::TrinexxHeadFrontPart {
+                    slot: 2,
+                    completed_stores: completed,
+                },
+                "{pc:#x}"
+            );
+        }
+        let mut event = raw("nmi", Some(0x1d_bd14), Some(2), None);
+        event.return_address = Some(0xdc_bc39);
+        event.stack4 = Some(0xbc);
+        assert!(tracker.observe_trinexx_head_draw(&event).is_err());
     }
 
     #[test]

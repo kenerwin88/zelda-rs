@@ -6000,7 +6000,7 @@ fn sprite_main_cpu_boundary_from_interruption(
             slot,
             completed_stores,
         } => {
-            assert!(slot < 16 && completed_stores <= 29);
+            assert!(slot < 16 && completed_stores <= 30);
             Some(SpriteMainCpuBoundary::TrinexxHeadFrontPart {
                 slot,
                 completed_stores,
@@ -6083,7 +6083,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         crate::MainLoopInterruption::SpriteMainTrinexxHeadFrontPart {
             slot,
             completed_stores,
-        } => slot < 16 && completed_stores <= 29,
+        } => slot < 16 && completed_stores <= 30,
         crate::MainLoopInterruption::SpriteMainBeforeFirstSlot => true,
         crate::MainLoopInterruption::SpriteMainAfterSlot(slot)
         | crate::MainLoopInterruption::SpriteMainAfterTimersAndOam(slot)
@@ -6268,7 +6268,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         crate::SpriteMainProgress::TrinexxHeadFrontPart {
             slot,
             completed_stores,
-        } => slot < 16 && completed_stores <= 29,
+        } => slot < 16 && completed_stores <= 30,
         crate::SpriteMainProgress::BeforeFirstSlot => true,
         crate::SpriteMainProgress::AfterSlot(slot)
         | crate::SpriteMainProgress::AfterTimersAndOam(slot)
@@ -6843,7 +6843,7 @@ fn sprite_main_cpu_boundary_from_progress(
             slot,
             completed_stores,
         } => {
-            assert!(slot < 16 && completed_stores <= 29);
+            assert!(slot < 16 && completed_stores <= 30);
             SpriteMainCpuBoundary::TrinexxHeadFrontPart {
                 slot,
                 completed_stores,

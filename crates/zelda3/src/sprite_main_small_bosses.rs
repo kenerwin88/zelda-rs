@@ -935,7 +935,7 @@ impl ZeldaState {
         mut draw: TrinexxHeadDrawContinuation,
     ) {
         if let Some((completed, x_delta, y_delta)) = draw.front_part.take() {
-            self.trinexx_head_first_part_stores(k, &draw, x_delta, y_delta, completed, 29);
+            self.trinexx_head_first_part_stores(k, &draw, x_delta, y_delta, completed, 30);
             draw.oam += 20;
             draw.next_segment = 1;
             self.temp_counter_mut().set(1);
@@ -952,7 +952,7 @@ impl ZeldaState {
         k: usize,
         completed: u8,
     ) -> TrinexxHeadDrawContinuation {
-        assert!(completed <= 29);
+        assert!(completed <= 30);
         let mut draw = self.begin_sidenexx_head_draw_checkpoint(k, 0);
         let head = self.cached_sprite_slot(k * 9);
         let angle = if k == 2 {
@@ -979,7 +979,7 @@ impl ZeldaState {
         from: u8,
         end: u8,
     ) {
-        assert!(from <= end && end <= 29);
+        assert!(from <= end && end <= 30);
         for action in from..end {
             if action < 25 {
                 let m = usize::from(action / 5);
@@ -1016,8 +1016,11 @@ impl ZeldaState {
                         .set_extended_byte((oam - OAM_BUF) / 4, 2),
                     _ => unreachable!(),
                 }
-            } else {
+            } else if action == 25 {
+                // $1D:BCF0: the shared scratch byte advances past the five
+                // OAM entries before Sprite_SetX/SetY publish the position.
                 self.sprite_workspace_mut().set_shared_scratch_a(20);
+            } else {
                 let base_x = (u16::from(self.sprite_slot_view(k).b()) << 8)
                     | u16::from(self.sprite_slot_view(k).a());
                 let base_y = (u16::from(self.sprite_slot_view(k).g()) << 8)
@@ -1025,10 +1028,10 @@ impl ZeldaState {
                 let x = base_x.wrapping_add_signed(i16::from(x_delta as i8));
                 let y = base_y.wrapping_add_signed(i16::from(y_delta as i8));
                 match action {
-                    25 => self.sprite_slot_view_mut(k).set_x_low(x as u8),
-                    26 => self.sprite_slot_view_mut(k).set_x_high((x >> 8) as u8),
-                    27 => self.sprite_slot_view_mut(k).set_y_low(y as u8),
-                    28 => self.sprite_slot_view_mut(k).set_y_high((y >> 8) as u8),
+                    26 => self.sprite_slot_view_mut(k).set_x_low(x as u8),
+                    27 => self.sprite_slot_view_mut(k).set_x_high((x >> 8) as u8),
+                    28 => self.sprite_slot_view_mut(k).set_y_low(y as u8),
+                    29 => self.sprite_slot_view_mut(k).set_y_high((y >> 8) as u8),
                     _ => unreachable!(),
                 }
             }
@@ -1127,7 +1130,7 @@ impl ZeldaState {
             if i == 0 {
                 let mut first = *draw;
                 first.oam = oam;
-                self.trinexx_head_first_part_stores(k, &first, x_delta, y_delta, 0, 29);
+                self.trinexx_head_first_part_stores(k, &first, x_delta, y_delta, 0, 30);
                 oam += 20;
             } else {
                 let x = info_x.wrapping_add(u16::from(x_delta)) as u8;

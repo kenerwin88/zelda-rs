@@ -19086,7 +19086,7 @@ fn trinexx_head_draw_checkpoint_keeps_coordinates_and_remaining_oam_stores() {
 
 #[test]
 fn trinexx_first_part_keeps_unwritten_oam_and_position_bytes_pending() {
-    for completed in 0..=29 {
+    for completed in 0..=30 {
         let mut state = ZeldaState::new();
         state.set_submodule(1);
         state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
@@ -19102,7 +19102,16 @@ fn trinexx_first_part_keeps_unwritten_oam_and_position_bytes_pending() {
         let mut atomic = state.clone();
         atomic.sprite_sidenexx(2);
         let draw = state.begin_sidenexx_front_part_checkpoint(2, completed);
-        if completed <= 25 {
+        if completed == 25 {
+            assert_eq!(
+                state.ram[0xfb6], 0,
+                "scratch advances only after the OAM entries"
+            );
+        }
+        if completed == 26 {
+            assert_eq!(state.ram[0xfb6], 20);
+        }
+        if completed <= 26 {
             assert_eq!(
                 state.sprite_slot_view(2).x_low(),
                 state.sprite_slot_view(2).a()
