@@ -12808,6 +12808,11 @@ pub struct ZeldaState {
     /// loader reaches its return host.
     #[serde(skip)]
     pending_overworld_sprite_reload_slots: Option<SpriteSlotsState>,
+    /// Native loader publications in source order. A later allocation may
+    /// reuse a slot before the scan returns, so the final array is insufficient.
+    #[serde(skip)]
+    pending_overworld_sprite_activations:
+        Option<std::collections::VecDeque<(u8, SpriteSlotsState)>>,
     /// Source `Sprite_ActivateAllProxima` locals retained while any translated
     /// overworld reload scan crosses host boundaries: the routine temporarily
     /// walks BG2 H and forces the horizontal delta byte, then restores both at
@@ -19477,6 +19482,7 @@ impl ZeldaState {
             save_quit_reset_writes_applied: false,
             pending_module09_frame_advance: None,
             pending_overworld_sprite_reload_slots: None,
+            pending_overworld_sprite_activations: None,
             overworld_proximity_scan_saved_scroll: None,
             intro_poly_thread_initialization_phase: 0,
             attract_init_graphics_phase: 0,
@@ -19798,6 +19804,7 @@ impl ZeldaState {
             self.dialogue_vwf_handler_completed_at_endpoint = false;
             self.pending_module09_frame_advance = None;
             self.pending_overworld_sprite_reload_slots = None;
+            self.pending_overworld_sprite_activations = None;
             self.intro_poly_thread_initialization_phase = 0;
             self.attract_init_graphics_phase = 0;
             self.attract_first_story_render_delay = 0;

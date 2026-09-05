@@ -822,6 +822,7 @@ impl ZeldaState {
         continuation: GameWorkContinuation,
     ) {
         let sprite_slots_before_reload = self.game_state.sprites.sprite_slots.clone();
+        self.begin_deferred_overworld_sprite_activations();
         self.sprite_initialize_slots();
         let workload = self.sprite_reload_all_overworld();
         self.defer_module09_sprite_slots_until_reload_return(sprite_slots_before_reload);
@@ -2756,6 +2757,7 @@ impl ZeldaState {
     /// reaches them.
     fn mirror_warp_prepare_deferred_sprite_reload(&mut self) {
         let reset_slots = self.game_state.sprites.sprite_slots.clone();
+        self.begin_deferred_overworld_sprite_activations();
         self.sprite_reload_all_overworld();
         self.defer_module09_sprite_slots_until_reload_return(reset_slots);
     }
@@ -4534,6 +4536,7 @@ impl ZeldaState {
         self.sprite_reset_all();
 
         let reset_slots = self.game_state.sprites.sprite_slots.clone();
+        self.begin_deferred_overworld_sprite_activations();
         let workload = self.sprite_reload_all_overworld();
         self.defer_module09_sprite_slots_until_reload_return(reset_slots);
         workload
@@ -5753,6 +5756,9 @@ impl ZeldaState {
         let sprite_slots_before_reload = self
             .rom_startup_timing()
             .then(|| self.game_state.sprites.sprite_slots.clone());
+        if self.rom_startup_timing() {
+            self.begin_deferred_overworld_sprite_activations();
+        }
         let sprite_reload_workload = self.sprite_overworld_reload_all_just_load();
         self.memorized_tile_mut().clear_count();
         if !self.rom_startup_timing()
@@ -5808,6 +5814,14 @@ impl ZeldaState {
         self.complete_module09_load_new_sprites_after_reload();
     }
 
+    fn begin_deferred_overworld_sprite_activations(&mut self) {
+        assert!(
+            self.pending_overworld_sprite_activations.is_none(),
+            "overworld activation generation replayed"
+        );
+        self.pending_overworld_sprite_activations = Some(std::collections::VecDeque::new());
+    }
+
     pub(super) fn defer_module09_sprite_slots_until_reload_return(
         &mut self,
         entry_slots: SpriteSlotsState,
@@ -5826,6 +5840,7 @@ impl ZeldaState {
     }
 
     pub(super) fn publish_deferred_module09_sprite_slots_at_reload_return(&mut self) {
+        self.pending_overworld_sprite_activations = None;
         let rebuilt_slots = self
             .pending_overworld_sprite_reload_slots
             .take()
@@ -5836,12 +5851,17 @@ impl ZeldaState {
 
     pub(super) fn publish_deferred_module09_sprite_slot(&mut self, slot: u8) {
         let rebuilt_slots = self
-            .pending_overworld_sprite_reload_slots
-            .as_ref()
-            .expect("an incremental overworld sprite publication lost its deferred generation")
-            .clone();
+            .pending_overworld_sprite_activations
+            .as_mut()
+            .expect("an incremental overworld sprite publication lost its activation generation")
+            .pop_front()
+            .expect("oracle activation exceeded the native loader publications");
+        assert_eq!(
+            rebuilt_slots.0, slot,
+            "native activation order disagreed with its source caller"
+        );
         self.game_state.sprites.sprite_slots.copy_slot_from(
-            &rebuilt_slots,
+            &rebuilt_slots.1,
             &mut self.ram,
             usize::from(slot),
         );

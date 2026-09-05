@@ -1734,6 +1734,10 @@ fn live_overworld_load_overlays_keeps_entry_sprite_slots_until_source_return() {
         sprite.set_state(8);
     }
 
+    state.pending_overworld_sprite_activations = Some(std::collections::VecDeque::from([(
+        11,
+        state.game_state.sprites.sprite_slots.clone(),
+    )]));
     state.defer_module09_sprite_slots_until_reload_return(entry_slots);
     state.sprite_disable_live_slots_before_deferred_overworld_reload();
 
@@ -1786,6 +1790,37 @@ fn live_overworld_load_overlays_keeps_entry_sprite_slots_until_source_return() {
     assert_eq!(state.sprite_slot_view(9).x(), 0x0340);
     assert_eq!(state.sprite_slot_view(9).y(), 0x0310);
     assert_eq!(state.sprite_slot_view(11).state(), 8);
+}
+
+#[test]
+fn deferred_overworld_reload_preserves_reused_slot_activations() {
+    // ROM host346491 activates block480/type41 then block420/typeAC in slot10.
+    // Overworld_AllocSprite permits reuse of type41 when its retained C is nonzero.
+    let mut state = ZeldaState::new();
+    for slot in 11..=13 {
+        state.sprite_slot_view_mut(slot).set_state(9);
+    }
+    state.sprite_slot_view_mut(10).set_c(1);
+    state.set_overworld_sprite_presence_marker(480, 0x42);
+    state.set_overworld_sprite_presence_marker(420, 0xad);
+    let entry_slots = state.game_state.sprites.sprite_slots.clone();
+    state.pending_overworld_sprite_activations = Some(std::collections::VecDeque::new());
+    state.overworld_load_proxima_sprite_if_alive(480);
+    state.overworld_load_proxima_sprite_if_alive(420);
+    assert_eq!(state.sprite_slot_view(10).n_word(), 420);
+    state.defer_module09_sprite_slots_until_reload_return(entry_slots);
+    state.publish_deferred_module09_sprite_slot(10);
+    assert_eq!(state.sprite_slot_view(10).n_word(), 480);
+    assert_eq!(state.sprite_slot_view(10).sprite_type(), 0x41);
+    state.publish_deferred_module09_sprite_slot(10);
+    assert_eq!(state.sprite_slot_view(10).n_word(), 420);
+    assert_eq!(state.sprite_slot_view(10).sprite_type(), 0xac);
+    assert!(state
+        .pending_overworld_sprite_activations
+        .as_ref()
+        .unwrap()
+        .is_empty());
+    state.publish_deferred_module09_sprite_slots_at_reload_return();
 }
 
 #[test]

@@ -1860,6 +1860,11 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_subtype(value);
             let value = 0;
             self.sprite_slot_view_mut(k).set_die_action(value);
+            if self.pending_overworld_sprite_reload_slots.is_none() {
+                if let Some(activations) = self.pending_overworld_sprite_activations.as_mut() {
+                    activations.push_back((k as u8, self.game_state.sprites.sprite_slots.clone()));
+                }
+            }
         }
     }
 
