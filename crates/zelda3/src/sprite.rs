@@ -2995,6 +2995,30 @@ impl ZeldaState {
                     return;
                 }
             }
+            if let Some(SpriteMainCpuBoundary::LanmolaDrawPrefix {
+                slot,
+                completed_stores,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    self.sprite_main_cpu_boundary = None;
+                    assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x54);
+                    self.sprite_timers_and_oam(k);
+                    self.begin_lanmola_draw_prefix_checkpoint(k, completed_stores);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::LanmolaDrawPrefix {
+                            slot,
+                            completed_stores,
+                        },
+                        nmi_slices,
+                        caller,
+                    );
+                    return;
+                }
+            }
             if let Some(SpriteMainCpuBoundary::HelmasaurHardHatTileCollision { slot, stage }) =
                 self.sprite_main_cpu_boundary
             {
@@ -4659,7 +4683,17 @@ impl ZeldaState {
                 self.resume_trinexx_final_phase_draw(k, segment, stage, continuation);
                 self.complete_sprite_main_after_interrupted_slot(k);
             }
-            SpriteMainCpuBoundary::HelmasaurHardHatTileCollision { slot, stage } => {
+                        SpriteMainCpuBoundary::LanmolaDrawPrefix {
+                slot,
+                completed_stores,
+            } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x54);
+                self.resume_lanmola_draw_prefix(k, completed_stores);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+SpriteMainCpuBoundary::HelmasaurHardHatTileCollision { slot, stage } => {
                 let k = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
                 assert_eq!(self.sprite_slot_view(k).state(), 9);

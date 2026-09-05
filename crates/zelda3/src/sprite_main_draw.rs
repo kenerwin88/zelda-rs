@@ -44,6 +44,9 @@ impl PrepOamCoordsRet {
 
 mod sprite_main_draw_shared;
 use sprite_main_draw_shared::*;
+
+/// `Lanmola_Draw` prologue stores (see `lanmola_draw_prefix_stores`).
+pub(super) const LANMOLA_DRAW_PREFIX_STORES: u8 = 5;
 pub(super) use sprite_main_draw_shared::{arrgi_sin, trinexx_head_sin};
 
 /// ROM $05:a8f0 calls the RNG, then executes `AND #$7f; ADC #$40`.
@@ -16395,39 +16398,100 @@ impl ZeldaState {
         &mut self,
         k: usize,
     ) -> LanmolaDrawContinuation {
+        self.lanmola_draw_set_oam_pointers(k);
+        self.lanmola_draw_prefix_stores(k, 0, LANMOLA_DRAW_PREFIX_STORES);
+        self.lanmola_draw_subtype2_increment(k)
+    }
+
+    fn lanmola_draw_set_oam_pointers(&mut self, k: usize) {
         let spr_offs = usize::from(LANMOLA_DRAW_SPR_OFFS[k]);
         self.oam_state_mut()
             .set_current_pointer((0x800 + spr_offs * 4) as u16);
         self.oam_state_mut()
             .set_current_extended_pointer((0x0a20 + spr_offs) as u16);
+    }
 
-        let value = Self::sprite_convert_velocity_to_angle(
-            self.sprite_slot_view(k).x_velocity(),
-            self.sprite_slot_view(k)
-                .y_velocity()
-                .wrapping_sub(self.sprite_slot_view(k).z_velocity()),
-        );
+    /// `Lanmola_Draw`'s prologue as its five source stores: the graphics
+    /// angle, then the trail entry's direction, z offset, y and x bytes
+    /// (the ROM pushes x, y, z and graphics and pops them in that order).
+    fn lanmola_draw_prefix_stores(&mut self, k: usize, from: u8, to: u8) {
+        assert!(from <= to && to <= LANMOLA_DRAW_PREFIX_STORES);
+        let j = k * 64 + usize::from(self.sprite_slot_view(k).subtype2());
+        for store in from..to {
+            match store {
+                0 => {
+                    let value = Self::sprite_convert_velocity_to_angle(
+                        self.sprite_slot_view(k).x_velocity(),
+                        self.sprite_slot_view(k)
+                            .y_velocity()
+                            .wrapping_sub(self.sprite_slot_view(k).z_velocity()),
+                    );
+                    self.sprite_slot_view_mut(k).set_graphics(value);
+                }
+                1 => {
+                    let direction = self.sprite_slot_view(k).graphics();
+                    self.lanmola_segment_motion_mut(j).set_direction(direction);
+                }
+                2 => {
+                    let z_offset = self.sprite_slot_view(k).z();
+                    self.lanmola_segment_motion_mut(j).set_z_offset(z_offset);
+                }
+                3 => {
+                    let x_low = self
+                        .game_state
+                        .effects
+                        .sprite_histories
+                        .moldorm_history(j)
+                        .x() as u8;
+                    let y_low = self.sprite_slot_view(k).y_low();
+                    self.moldorm_history_mut(j).set_low_position(x_low, y_low);
+                }
+                4 => {
+                    let y_low = self
+                        .game_state
+                        .effects
+                        .sprite_histories
+                        .moldorm_history(j)
+                        .y() as u8;
+                    let x_low = self.sprite_slot_view(k).x_low();
+                    self.moldorm_history_mut(j).set_low_position(x_low, y_low);
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
 
-        self.sprite_slot_view_mut(k).set_graphics(value);
+    fn lanmola_draw_subtype2_increment(&mut self, k: usize) -> LanmolaDrawContinuation {
         let r2 = self.sprite_slot_view(k).subtype2();
         let r5 = r2;
-        let j = k * 64 + usize::from(r2);
-        let x_low = self.sprite_slot_view(k).x_low();
-        let y_low = self.sprite_slot_view(k).y_low();
-        self.moldorm_history_mut(j).set_low_position(x_low, y_low);
-        let z_offset = self.sprite_slot_view(k).z();
-        let direction = self.sprite_slot_view(k).graphics();
-        let mut segment = self.lanmola_segment_motion_mut(j);
-        segment.set_z_offset(z_offset);
-        segment.set_direction(direction);
         if self.sprite_slot_view(k).state() == 9
             && (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0
         {
             let value = self.sprite_slot_view(k).subtype2().wrapping_add(1) & 63;
             self.sprite_slot_view_mut(k).set_subtype2(value);
         }
-
         LanmolaDrawContinuation { r2, r5 }
+    }
+
+    /// Runs `Sprite_54_Lanmolas` on the interrupted host through
+    /// `Lanmola_Draw`'s first `completed_stores` prologue stores.
+    pub(super) fn begin_lanmola_draw_prefix_checkpoint(&mut self, k: usize, completed_stores: u8) {
+        assert!(completed_stores <= LANMOLA_DRAW_PREFIX_STORES);
+        let mut info = SpritePrepOamCoordsRet {
+            x: 0,
+            y: 0,
+            r4: 0,
+            flags: 0,
+        };
+        self.sprite_prep_oam_coord(k, &mut info);
+        self.lanmola_draw_set_oam_pointers(k);
+        self.lanmola_draw_prefix_stores(k, 0, completed_stores);
+    }
+
+    pub(super) fn resume_lanmola_draw_prefix(&mut self, k: usize, completed_stores: u8) {
+        self.lanmola_draw_prefix_stores(k, completed_stores, LANMOLA_DRAW_PREFIX_STORES);
+        let continuation = self.lanmola_draw_subtype2_increment(k);
+        self.complete_lanmola_after_subtype2_increment(k, continuation);
     }
 
     fn lanmola_draw_after_subtype2_increment(

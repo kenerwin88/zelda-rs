@@ -399,10 +399,11 @@ const SPRITE_TIMER_DECREMENTS_COMPLETE_START_PC: u32 = 0x0684a4;
 const SPRITE_TIMER_DECREMENTS_COMPLETE_END_PC: u32 = 0x0684b9;
 const SPRITE_TIMER_DECREMENTS_TRACE_PC: u32 = 0x0684aa;
 // The four leading countdown statements (`delay_main`, aux1, aux2, aux3)
-// are complete once the ROM begins loading `sprite_hit_timer`. Include the
-// possible mid-instruction host-return PCs through the AND operand; no hit-
-// timer statement has published at any address in this interval.
-const SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_START_PC: u32 = 0x068444;
+// are complete once the ROM begins loading `sprite_hit_timer` at `$06:8441`
+// (route host 1514571 returned on that opcode). Include the possible
+// mid-instruction host-return PCs through the AND operand; no hit-timer
+// statement has published at any address in this interval.
+const SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_START_PC: u32 = 0x068441;
 const SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_END_PC: u32 = 0x068449;
 // When `sprite_hit_timer & $7f` is zero, the branch at `$06:8446` jumps
 // directly to the `STZ sprite_hit_timer,X` instruction. Its opcode and operand
@@ -410,9 +411,10 @@ const SPRITE_PRIMARY_TIMER_DECREMENTS_COMPLETE_END_PC: u32 = 0x068449;
 // source boundary as the linear hit-timer load/branch interval above.
 const SPRITE_PRIMARY_TIMER_DECREMENTS_ZERO_HIT_STORE_START_PC: u32 = 0x068496;
 const SPRITE_PRIMARY_TIMER_DECREMENTS_ZERO_HIT_STORE_END_PC: u32 = 0x068499;
-// `$06:8432` begins the aux2 load after the main/aux1 countdown statements.
-// An NMI may be accepted during that instruction, before aux2 has executed.
-const SPRITE_MAIN_AND_AUX1_TIMER_DECREMENTS_COMPLETE_START_PC: u32 = 0x068432;
+// `$06:8431` is the aux2 load after the main/aux1 countdown statements.
+// A host may return on its opcode or be interrupted during that instruction,
+// before aux2 has executed.
+const SPRITE_MAIN_AND_AUX1_TIMER_DECREMENTS_COMPLETE_START_PC: u32 = 0x068431;
 const SPRITE_MAIN_AND_AUX1_TIMER_DECREMENTS_COMPLETE_END_PC: u32 = 0x068437;
 // First instruction after Sprite_ExecuteSingle's shared
 // Sprite_TimersAndOam call returns, before the saved dispatch state is
@@ -1043,6 +1045,7 @@ struct SpriteMainExecutionTracker {
     antfairy_subtype2_increment_slot: Option<u8>,
     #[serde(default)]
     lanmola_subtype2_increment_slot: Option<u8>,
+    lanmola_draw_prefix: Option<(u8, u8)>,
     #[serde(default)]
     helmasaur_hard_hat_beetle_subtype2_increment_slot: Option<u8>,
     #[serde(default)]
@@ -2251,6 +2254,69 @@ impl SpriteMainExecutionTracker {
         Ok(())
     }
 
+    fn observe_lanmola_draw_prefix(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if !matches!(event.event.as_str(), "nmi" | "frame") {
+            return Ok(());
+        }
+        self.lanmola_draw_prefix = None;
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        if !(0x05_a64a..=0x05_a6a5).contains(&pc) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Lanmola draw prologue omitted its active slot")?;
+        let ret24 = event.return_address.map(|r| r & 0x00ff_ffff);
+        let ret16 = event.return_address.map(|r| r & 0xffff);
+        // Lanmola_Draw is JSR'd from Sprite_54_Lanmolas ($05:A3A5, return
+        // $A3A8). Its prologue pushes X (the slot) and the x, y, z and
+        // graphics bytes, then pops them into the trail arrays; the stack
+        // shape names how many bytes sit above the return.
+        let slot_pushed = ret24 == Some(0xa3_a800 | u32::from(slot));
+        let plain = ret16 == Some(0xa3a8);
+        let (completed_stores, stack_ok, x_is_slot) = match pc {
+            0x05_a64a..=0x05_a66d => (0u8, plain, true),
+            0x05_a670 | 0x05_a673 | 0x05_a675 => (1, plain, true),
+            0x05_a676..=0x05_a679 => (1, slot_pushed, true),
+            0x05_a67a..=0x05_a67d => (
+                1,
+                ret24.map(|r| r >> 8) == Some(0xa800 | u32::from(slot))
+                    && event.stack4 == Some(0xa3),
+                true,
+            ),
+            0x05_a67e..=0x05_a681 => (
+                1,
+                ret24.map(|r| r >> 16) == Some(u32::from(slot)) && event.stack4 == Some(0xa8),
+                true,
+            ),
+            0x05_a682..=0x05_a685 => (1, event.stack4 == Some(slot), true),
+            0x05_a686..=0x05_a68f => (1, true, true),
+            0x05_a690..=0x05_a692 => (1, event.stack4 == Some(slot), false),
+            0x05_a696 => (2, event.stack4 == Some(slot), false),
+            0x05_a697 => (2, event.stack4 == Some(0xa8), false),
+            0x05_a69b => (3, event.stack4 == Some(0xa8), false),
+            0x05_a69c => (3, event.stack4 == Some(0xa3), false),
+            0x05_a6a0 => (4, event.stack4 == Some(0xa3), false),
+            0x05_a6a1 => (4, slot_pushed, false),
+            0x05_a6a5 => (5, slot_pushed, false),
+            _ => {
+                return Err(format!(
+                    "Lanmola draw prologue stopped at an unmodeled boundary ${pc:06x}"
+                ))
+            }
+        };
+        if !stack_ok {
+            return Err("Lanmola draw prologue has the wrong source stack".into());
+        }
+        if x_is_slot && event.x != Some(u16::from(slot)) {
+            return Err("Lanmola draw prologue has the wrong active slot".into());
+        }
+        self.lanmola_draw_prefix = Some((slot, completed_stores));
+        Ok(())
+    }
+
     fn observe_sidenexx_neck_target(&mut self, event: &RawTraceEvent) -> Result<(), String> {
         if !matches!(event.event.as_str(), "nmi" | "frame") {
             return Ok(());
@@ -3286,6 +3352,13 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::AfterAntfairySubtype2Increment(slot);
         }
+        if let Some((slot, completed_stores)) = self.lanmola_draw_prefix {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::LanmolaDrawPrefix {
+                slot,
+                completed_stores,
+            };
+        }
         if let Some(slot) = self.lanmola_subtype2_increment_slot {
             assert_eq!(
                 self.current_slot,
@@ -3869,6 +3942,13 @@ impl SpriteMainExecutionTracker {
             SpriteMainProgress::AfterLanmolaSubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(slot)
             }
+            SpriteMainProgress::LanmolaDrawPrefix {
+                slot,
+                completed_stores,
+            } => MainLoopInterruption::SpriteMainLanmolaDrawPrefix {
+                slot,
+                completed_stores,
+            },
             SpriteMainProgress::InitializePrepPending(slot) => {
                 MainLoopInterruption::SpriteMainInitializePrepPending(slot)
             }
@@ -5724,6 +5804,7 @@ impl Snes9xOracleSemanticTrace {
                 if self.nmi_resume_targets.is_empty() {
                     execution.observe_trinexx_head_draw(returned_event)?;
                     execution.observe_trinexx_breath_tile_collision(returned_event)?;
+                    execution.observe_lanmola_draw_prefix(returned_event)?;
                     execution.observe_sprite_handler_returned(returned_event)?;
                     execution.observe_trinexx_final_phase_tile_collision(returned_event)?;
                     execution.observe_helmasaur_hard_hat_tile_collision(returned_event)?;
@@ -6549,6 +6630,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.trinexx_death_spawn = None;
                             execution.antfairy_subtype2_increment_slot = None;
                             execution.lanmola_subtype2_increment_slot = None;
+                            execution.lanmola_draw_prefix = None;
                             execution.helmasaur_hard_hat_beetle_subtype2_increment_slot = None;
                             execution.timer_decrements_slot = None;
                             execution.primary_timer_decrements_slot = None;
@@ -6643,6 +6725,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.observe_buzzblob_movement(&event)?;
                             execution.observe_trinexx_head_draw(&event)?;
                             execution.observe_trinexx_breath_tile_collision(&event)?;
+                            execution.observe_lanmola_draw_prefix(&event)?;
                             execution.observe_sprite_handler_returned(&event)?;
                             execution.observe_trinexx_final_phase_tile_collision(&event)?;
                             execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
@@ -6713,6 +6796,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.trinexx_death_spawn = None;
                         execution.antfairy_subtype2_increment_slot = None;
                         execution.lanmola_subtype2_increment_slot = None;
+                        execution.lanmola_draw_prefix = None;
                         execution.helmasaur_hard_hat_beetle_subtype2_increment_slot = None;
                         execution.timer_decrements_slot = None;
                         execution.primary_timer_decrements_slot = None;
@@ -7112,6 +7196,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_buzzblob_movement(&event)?;
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
+                    execution.observe_lanmola_draw_prefix(&event)?;
                     execution.observe_sprite_handler_returned(&event)?;
                     execution.observe_trinexx_final_phase_tile_collision(&event)?;
                     execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
@@ -7683,6 +7768,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_buzzblob_movement(&event)?;
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
+                    execution.observe_lanmola_draw_prefix(&event)?;
                     execution.observe_sprite_handler_returned(&event)?;
                     execution.observe_trinexx_final_phase_tile_collision(&event)?;
                     execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
@@ -10752,6 +10838,7 @@ mod tests {
             trinexx_death_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
+            lanmola_draw_prefix: None,
             helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
@@ -14271,6 +14358,38 @@ mod tests {
     }
 
     #[test]
+    fn lanmola_draw_prologue_checkpoints_count_the_trail_stores() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(2);
+        for (pc, x, ret, stack4, completed) in [
+            (0x05_a66d, 2, 0x00_a3a8, 0x00, 0),
+            (0x05_a670, 2, 0x00_a3a8, 0x00, 1),
+            (0x05_a676, 2, 0xa3_a802, 0x00, 1),
+            (0x05_a692, 40, 0x70_6802, 0x02, 1),
+            (0x05_a697, 40, 0x68_02a8, 0xa8, 2),
+            (0x05_a69c, 40, 0x68_02a8, 0xa3, 3),
+            (0x05_a6a1, 40, 0xa3_a802, 0xc8, 4),
+            (0x05_a6a5, 40, 0xa3_a802, 0xc8, 5),
+        ] {
+            let mut event = raw("nmi", Some(pc), Some(x), None);
+            event.return_address = Some(ret);
+            event.stack4 = Some(stack4);
+            tracker.observe_lanmola_draw_prefix(&event).unwrap();
+            assert_eq!(
+                tracker.progress(),
+                SpriteMainProgress::LanmolaDrawPrefix {
+                    slot: 2,
+                    completed_stores: completed,
+                },
+                "{pc:#x}"
+            );
+        }
+        let mut event = raw("nmi", Some(0x05_a6a1), Some(40), None);
+        event.return_address = Some(0xa3_a803);
+        assert!(tracker.observe_lanmola_draw_prefix(&event).is_err());
+    }
+
+    #[test]
     fn bank_1d_dispatcher_return_completes_the_active_slot() {
         let mut tracker = SpriteMainExecutionTracker::default();
         tracker.current_slot = Some(4);
@@ -17506,6 +17625,7 @@ mod tests {
             trinexx_death_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
+            lanmola_draw_prefix: None,
             helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,
@@ -17619,6 +17739,7 @@ mod tests {
             trinexx_death_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
+            lanmola_draw_prefix: None,
             helmasaur_hard_hat_beetle_subtype2_increment_slot: None,
             timer_decrements_slot: None,
             primary_timer_decrements_slot: None,

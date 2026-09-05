@@ -19072,6 +19072,36 @@ fn trinexx_final_phase_draw_checkpoints_resume_to_the_atomic_draw() {
 }
 
 #[test]
+fn lanmola_draw_prefix_checkpoints_resume_to_the_atomic_draw() {
+    for completed in 0..=5u8 {
+        let mut state = ZeldaState::new();
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state.game_state.world.location.set_indoor_flag(1);
+        state.sprite_slot_view_mut(2).set_sprite_type(0x54);
+        state.sprite_slot_view_mut(2).set_state(9);
+        state.sprite_slot_view_mut(2).set_ai_state(3);
+        state.sprite_slot_view_mut(2).set_subtype2(8);
+        state.sprite_slot_view_mut(2).set_x_velocity(0x10);
+        state.sprite_slot_view_mut(2).set_y_velocity(0xf0);
+        state.sprite_slot_view_mut(2).set_z_velocity(0x08);
+        state.sprite_slot_view_mut(2).set_z(0x20);
+        state.sprite_slot_view_mut(2).set_x_low(0x68);
+        state.sprite_slot_view_mut(2).set_x_high(0x18);
+        state.sprite_slot_view_mut(2).set_y_low(0x70);
+        state.sprite_slot_view_mut(2).set_y_high(0x0d);
+        let mut atomic = state.clone();
+        atomic.sprite_54_lanmolas(2);
+        state.begin_lanmola_draw_prefix_checkpoint(2, completed);
+        if completed == 0 {
+            assert_eq!(state.sprite_slot_view(2).graphics(), 0);
+        }
+        state.resume_lanmola_draw_prefix(2, completed);
+        assert_eq!(state.ram, atomic.ram, "completed {completed}");
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+    }
+}
+
+#[test]
 fn boulder_movement_checkpoints_resume_to_the_atomic_body() {
     use crate::SpriteMoveXYCheckpoint as C;
     for checkpoint in [

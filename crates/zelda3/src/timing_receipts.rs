@@ -801,6 +801,14 @@ pub enum MainLoopInterruption {
         slot: u8,
         stage: SpriteTileCollisionStage,
     },
+    /// `Lanmola_Draw` stopped inside its graphics/history prologue after
+    /// `completed_stores` of its five stores (graphics angle, then the trail
+    /// direction, z, y and x bytes); the subtype2 increment, the segment
+    /// drawing and the Lanmola body remain pending.
+    SpriteMainLanmolaDrawPrefix {
+        slot: u8,
+        completed_stores: u8,
+    },
     /// `Sprite_TrinexxD_Draw` (from `Sprite_Trinexx_FinalPhase`) stopped in
     /// body segment `segment` after `stage` of its eight per-segment steps
     /// (damage check, OAM pointer, OAM ext pointer, OAM flags, flashing
@@ -1041,6 +1049,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainTrinexxDeathExplosionSpawn { .. }
                 | Self::SpriteMainTrinexxFinalPhaseTileCollision { .. }
                 | Self::SpriteMainHelmasaurHardHatTileCollision { .. }
+                | Self::SpriteMainLanmolaDrawPrefix { .. }
                 | Self::SpriteMainTrinexxFinalPhaseDraw { .. }
                 | Self::SpriteMainAfterAntfairySubtype2Increment(_)
                 | Self::SpriteMainAfterLanmolaSubtype2Increment(_)
@@ -1179,6 +1188,10 @@ pub enum SpriteMainProgress {
     HelmasaurHardHatTileCollision {
         slot: u8,
         stage: SpriteTileCollisionStage,
+    },
+    LanmolaDrawPrefix {
+        slot: u8,
+        completed_stores: u8,
     },
     TrinexxFinalPhaseDraw {
         slot: u8,
