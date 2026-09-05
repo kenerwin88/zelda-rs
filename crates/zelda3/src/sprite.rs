@@ -3219,6 +3219,21 @@ impl ZeldaState {
                 return;
             }
             if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot: k as u8 })
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(nmi_slices, 0);
+                let boundary = self.sprite_main_cpu_boundary.unwrap();
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert!((0xd8..=0xe6).contains(&self.sprite_slot_view(k).sprite_type()));
+                self.sprite_timers_and_oam(k);
+                self.sprite_active_main(k);
+                self.sprite_main_cpu_boundary = None;
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                return;
+            }
+            if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::BonkItemGraphicsEntered(k as u8))
             {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
@@ -4114,6 +4129,13 @@ impl ZeldaState {
                 assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
                 assert_eq!(self.sprite_slot_view(interrupted_slot).sprite_type(), 0x45);
                 self.guard_update_body_graphics(interrupted_slot);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
+                self.sprite_absorbable_after_horizontal_lookup(interrupted_slot);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterTimerDecrements {
@@ -10250,6 +10272,10 @@ impl ZeldaState {
             self.sprite_check_for_tile_in_direction_horizontal(k, 2);
         }
 
+        self.sprite_check_tile_collision_after_directions(k);
+    }
+
+    pub(super) fn sprite_check_tile_collision_after_directions(&mut self, k: usize) {
         if sign8(self.sprite_slot_view(k).flags5()) || self.sprite_slot_view(k).z() != 0 {
             return;
         }

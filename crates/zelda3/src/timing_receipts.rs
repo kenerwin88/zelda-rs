@@ -870,6 +870,7 @@ pub enum MainLoopInterruption {
         slot: u8,
         active_call: u8,
     },
+    SpriteMainAbsorbableHorizontalTileLookup(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -933,6 +934,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAfterLanmolaSubtype2Increment(_)
                 | Self::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
                 | Self::SpriteMainHogSpearBodyGraphicsPending(_)
+                | Self::SpriteMainAbsorbableHorizontalTileLookup(_)
                 | Self::SpriteMainInitializePrepPending(_)
                 | Self::SpriteMainGuardPrepPatrolDelay { .. }
                 | Self::SpriteMainGuardPrepTileCollisionReturned { .. }
@@ -1088,6 +1090,7 @@ pub enum SpriteMainProgress {
         slot: u8,
         active_call: u8,
     },
+    AbsorbableHorizontalTileLookup(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

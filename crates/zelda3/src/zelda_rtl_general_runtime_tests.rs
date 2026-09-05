@@ -19451,6 +19451,39 @@ fn hog_spear_body_boundary_keeps_both_increments_without_replaying_movement() {
 }
 
 #[test]
+fn absorbable_horizontal_lookup_keeps_movement_and_defers_bounce_suffix() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(9);
+    state.set_submodule(0);
+    state.follower_link_state_mut().set_position(0x300, 0x300);
+    state.garnish_state_mut().set_sprcoll_x_size(0x1000);
+    state.garnish_state_mut().set_sprcoll_y_size(0x1000);
+    {
+        let mut sprite = state.sprite_slot_view_mut(0);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0xd9);
+        sprite.set_x(0x80);
+        sprite.set_y(0x80);
+        sprite.set_z(1);
+        sprite.set_x_velocity(24);
+        sprite.set_y_velocity(0xf0);
+    }
+    let mut atomic = state.clone();
+    atomic.sprite_absorbable_main(0);
+    state.sprite_main_cpu_boundary =
+        Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot: 0 });
+    state.sprite_absorbable_main(0);
+    assert_eq!(state.sprite_slot_view(0).x(), 0x81);
+    assert_eq!(state.sprite_slot_view(0).x_subpixel(), 0x80);
+    assert_eq!(state.sprite_slot_view(0).y(), 0x7f);
+    assert_eq!(state.sprite_slot_view(0).z_velocity(), 0);
+    state.sprite_main_cpu_boundary = None;
+    state.sprite_absorbable_after_horizontal_lookup(0);
+    assert_eq!(state.game_state, atomic.game_state);
+    assert_eq!(state.ram, atomic.ram);
+}
+
+#[test]
 fn antfairy_sprite_main_boundary_commits_every_source_reached_increment() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);
