@@ -1628,7 +1628,9 @@ impl SpriteMainExecutionTracker {
 
     fn observe_initialize_prep_pending(&mut self, event: &RawTraceEvent) -> Result<(), String> {
         let pc = event.pc.map(|pc| pc & 0xff_ffff);
-        let initializer_dispatch = matches!(pc, Some(0x06_8654 | 0x06_8657))
+        // FireBar's private prep entry is still before its first INC store;
+        // the initializer has already published properties and state 9.
+        let initializer_dispatch = matches!(pc, Some(0x06_8654 | 0x06_8657 | 0x06_91b4))
             || (pc == Some(0x00_8781)
                 && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x06_865a));
         if !initializer_dispatch || self.timers_and_oam_dispatch_state != Some(8) {
@@ -10103,6 +10105,13 @@ mod tests {
         event.return_address = Some(0x068659);
         execution.observe_initialize_prep_pending(&event).unwrap();
         assert_eq!(execution.initialize_prep_pending, None);
+        event.pc = Some(0x06_91b4);
+        event.return_address = Some(0x00_83a6);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::InitializePrepPending(1)
+        );
     }
 
     #[test]
