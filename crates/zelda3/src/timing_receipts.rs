@@ -1577,6 +1577,8 @@ pub enum OverworldSpriteReloadProgress {
     /// The generation returned, but its mirror-warp caller is suspended in
     /// interactive cleanup before this slot's pickup test and type clear.
     GenerationReturnedAtInteractiveCleanup { slot: u8 },
+    /// The current pickup test returned; its object-type clear is pending.
+    GenerationReturnedAtInteractiveTypeClear { slot: u8 },
 }
 
 /// Source-level completion state for the first save-menu text initialization.

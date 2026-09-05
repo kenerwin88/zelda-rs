@@ -2057,6 +2057,33 @@ fn interactive_cleanup_keeps_current_slot_live_until_pickup_test() {
 }
 
 #[test]
+fn interactive_cleanup_type_clear_preserves_completed_pickup_test() {
+    for slot in 0..6 {
+        let mut state = ZeldaState::new();
+        for i in 0..6 {
+            state.ancilla_slot_view_mut(i).set_ancilla_type(0x2c);
+        }
+        state
+            .follower_link_state_mut()
+            .set_ancilla_pickup_flag(slot + 1);
+        let mut atomic = state.clone();
+        atomic.ancilla_terminate_select_interactives(0);
+        state.ancilla_interactive_cleanup_before_type_clear(slot);
+        assert_eq!(
+            state.game_state.player.follower_link.ancilla_pickup_flag(),
+            0
+        );
+        assert_eq!(
+            state.ancilla_slot_view(usize::from(slot)).ancilla_type(),
+            0x2c
+        );
+        state.ancilla_interactive_cleanup_at_type_clear(slot);
+        assert_eq!(state.game_state, atomic.game_state);
+        assert_eq!(state.ram, atomic.ram);
+    }
+}
+
+#[test]
 fn whirlpool_bird_travel_reload_retains_the_first_reset_generation() {
     let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")

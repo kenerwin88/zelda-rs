@@ -3822,6 +3822,22 @@ impl ZeldaState {
     pub(super) fn ancilla_interactive_cleanup_after_pickup(&mut self, slot: u8) {
         assert!(slot < 6);
         self.ancilla_interactive_cleanup_slot_finish(usize::from(slot));
+        self.ancilla_interactive_cleanup_after_current_slot(slot);
+    }
+
+    pub(super) fn ancilla_interactive_cleanup_before_type_clear(&mut self, slot: u8) {
+        self.ancilla_interactive_cleanup_before_pickup(slot);
+        assert!(self.ancilla_interactive_cleanup_pickup_test(usize::from(slot)));
+    }
+
+    pub(super) fn ancilla_interactive_cleanup_at_type_clear(&mut self, slot: u8) {
+        assert!(slot < 6);
+        self.ancilla_slot_view_mut(usize::from(slot))
+            .set_ancilla_type(0);
+        self.ancilla_interactive_cleanup_after_current_slot(slot);
+    }
+
+    fn ancilla_interactive_cleanup_after_current_slot(&mut self, slot: u8) {
         let mut ignored_y = 0;
         for i in (0..usize::from(slot)).rev() {
             self.ancilla_interactive_cleanup_slot_prefix(i, &mut ignored_y);
@@ -3844,17 +3860,19 @@ impl ZeldaState {
     }
 
     fn ancilla_interactive_cleanup_slot_finish(&mut self, i: usize) {
+        if self.ancilla_interactive_cleanup_pickup_test(i) {
+            self.ancilla_slot_view_mut(i).set_ancilla_type(0);
+        }
+    }
+
+    fn ancilla_interactive_cleanup_pickup_test(&mut self, i: usize) -> bool {
         if sign8(self.game_state.player.follower_link.state_bits()) {
-            if i + 1 != self.game_state.player.follower_link.ancilla_pickup_flag() as usize {
-                let value = 0;
-                self.ancilla_slot_view_mut(i).set_ancilla_type(value);
-            }
+            i + 1 != self.game_state.player.follower_link.ancilla_pickup_flag() as usize
         } else {
             if i + 1 == self.game_state.player.follower_link.ancilla_pickup_flag() as usize {
                 self.follower_link_state_mut().clear_ancilla_pickup_flag();
             }
-            let value = 0;
-            self.ancilla_slot_view_mut(i).set_ancilla_type(value);
+            true
         }
     }
 

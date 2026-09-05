@@ -2836,6 +2836,11 @@ impl ZeldaState {
         self.ancilla_interactive_cleanup_before_pickup(slot);
     }
 
+    pub(super) fn begin_mirror_warp_interactive_type_clear(&mut self, slot: u8) {
+        self.link_item_reset_from_overworld_things();
+        self.ancilla_interactive_cleanup_before_type_clear(slot);
+    }
+
     fn mirror_warp_finish_animation_after_portal(&mut self) {
         self.set_pending_nmi_subroutine(12);
         self.set_core_update_disable_flag(12);
@@ -3042,6 +3047,12 @@ impl ZeldaState {
             | Module09LongLoadStep::Module15MirrorWarpSpriteLoadTail => {}
             Module09LongLoadStep::MirrorWarpInteractiveCleanup { slot, .. } => {
                 self.ancilla_interactive_cleanup_after_pickup(slot);
+                self.dungeon_reset_player_after_interactive_cleanup();
+                self.mirror_warp_finish_after_player_reset();
+                self.mirror_warp_finish_animation_after_portal();
+            }
+            Module09LongLoadStep::MirrorWarpInteractiveTypeClear { slot, .. } => {
+                self.ancilla_interactive_cleanup_at_type_clear(slot);
                 self.dungeon_reset_player_after_interactive_cleanup();
                 self.mirror_warp_finish_after_player_reset();
                 self.mirror_warp_finish_animation_after_portal();

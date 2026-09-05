@@ -3470,7 +3470,7 @@ impl HostFrameWindow {
         // Ancilla_TerminateSelectInteractives, immediately before the
         // non-carried-object pickup test. GenerationReturned supplies the
         // enclosing reload provenance; module/submodule identifies its caller.
-        if returned.pc == 0x09_ac9c
+        if matches!(returned.pc, 0x09_ac9c | 0x09_aca6)
             && ((returned.main == 9 && returned.sub == 0x23)
                 || (returned.main == 0x15 && matches!(returned.sub, 3 | 4)))
         {
@@ -3487,8 +3487,12 @@ impl HostFrameWindow {
                     )
                 {
                     *receipt = OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
-                        OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
-                            slot,
+                        if returned.pc == 0x09_aca6 {
+                            OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear { slot }
+                        } else {
+                            OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
+                                slot,
+                            }
                         },
                     );
                     found = true;
@@ -12862,6 +12866,32 @@ mod tests {
         assert!(receipts.contains(
             &OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
                 OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { slot: 4 }
+            )
+        ));
+        assert!(!receipts.contains(
+            &OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturned
+            )
+        ));
+    }
+
+    #[test]
+    fn mirror_type_clear_boundary_defers_portal_spawn() {
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame_with_sub("entry", 1, 9, 0x23)).unwrap();
+        let mut returned = frame_with_sub("return", 1, 9, 0x23);
+        returned.pc = Some(0x09_aca6);
+        returned.x = Some(1);
+        host.observe(&returned).unwrap();
+        let mut receipts = vec![
+            OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturned,
+            ),
+        ];
+        host.finish(&mut receipts, None, true).unwrap();
+        assert!(receipts.contains(
+            &OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear { slot: 1 }
             )
         ));
         assert!(!receipts.contains(

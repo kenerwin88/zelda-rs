@@ -9525,6 +9525,10 @@ pub(super) enum Module09LongLoadStep {
         slot: u8,
         module15: bool,
     },
+    MirrorWarpInteractiveTypeClear {
+        slot: u8,
+        module15: bool,
+    },
 }
 
 impl Module09LongLoadStep {
@@ -9547,6 +9551,7 @@ impl Module09LongLoadStep {
                 | Self::Module15MirrorWarpSpriteLoadTail
                 | Self::Module15ReloadSheetsAfterMessage
                 | Self::MirrorWarpInteractiveCleanup { module15: true, .. }
+                | Self::MirrorWarpInteractiveTypeClear { module15: true, .. }
         )
     }
 
@@ -21049,6 +21054,7 @@ impl ZeldaState {
                     progress,
                     crate::OverworldSpriteReloadProgress::GenerationReturned
                         | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { .. }
+                        | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear { .. }
                 )
             })
             .count()
@@ -21062,8 +21068,11 @@ impl ZeldaState {
         // the resumed loop advances to the second.
         if overworld_sprite_progress
             .iter()
-            .any(|progress| match progress {
+            .any(|progress| {
+                match progress {
                 crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
+                    slot,
+                } | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear {
                     slot,
                 } => *slot >= 6,
                 crate::OverworldSpriteReloadProgress::PresencePublished
@@ -21075,6 +21084,7 @@ impl ZeldaState {
                     slot,
                     sprite_type,
                 } => *block >= 0x1000 || *slot >= 16 || *sprite_type >= 0xf3,
+            }
             })
         {
             return Err(OriginalTimingReceiptInstallError::InvalidOverworldSpriteReloadProgress);
@@ -27600,6 +27610,8 @@ impl ZeldaState {
                 crate::OverworldSpriteReloadProgress::GenerationReturned
                 | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
                     ..
+                } | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear {
+                    ..
                 } => {
                     deferred_overworld_load_overlays_sprite_reload_active
                         || matches!(
@@ -28096,7 +28108,8 @@ impl ZeldaState {
                     self.set_bg2_x(bg2_h);
                 }
                 progress @ (crate::OverworldSpriteReloadProgress::GenerationReturned
-                | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { .. }) => {
+                | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { .. }
+                | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear { .. }) => {
                     if let Some(GameWorkContinuation::FinishFluteMenuSelectedScreen {
                         step: FluteMenuSelectedScreenStep::OverworldReloadScan,
                     }) = self.game_execution_scheduler.current_work()
@@ -28152,6 +28165,9 @@ impl ZeldaState {
                         let tail = if let crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { slot } = progress {
                             self.begin_mirror_warp_interactive_cleanup(slot);
                             Module09LongLoadStep::MirrorWarpInteractiveCleanup { slot, module15: step.caller_is_module15() }
+                        } else if let crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear { slot } = progress {
+                            self.begin_mirror_warp_interactive_type_clear(slot);
+                            Module09LongLoadStep::MirrorWarpInteractiveTypeClear { slot, module15: step.caller_is_module15() }
                         } else {
                             self.complete_mirror_warp_after_sprite_generation_return();
                             tail
