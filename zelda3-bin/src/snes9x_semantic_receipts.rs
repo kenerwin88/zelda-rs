@@ -4364,7 +4364,13 @@ impl Snes9xOracleSemanticTrace {
         match event.event.as_str() {
             "pc" => {
                 let pc = event.pc.ok_or("Snes9x PC receipt omitted PC")? & 0x00ff_ffff;
-                if pc == 0x02_824d && (event.main, event.sub) == (Some(5), Some(0)) {
+                if pc == 0x02_824d
+                    && (event.main, event.sub) == (Some(5), Some(0))
+                    && event.return_address.map(|pc| pc & 0xffffff) == Some(0x00_8059)
+                {
+                    // Module05 tail-enters PreDungeon under the game-loop
+                    // dispatcher. Starting-point selection also sets main=5,
+                    // but calls this body from its own $02:85AD return.
                     receipts.push(OriginalTimingSemanticReceipt::SelectedGameEntranceReturned);
                 }
                 if pc == DUNGEON_RESET_SPRITES_RETURN_PC {
@@ -9613,16 +9619,22 @@ mod tests {
 
     #[test]
     fn selected_game_entrance_return_requires_its_module05_caller() {
-        for main in [5, 7] {
+        for (main, caller, expected) in [
+            (5, Some(0x00_8059), true),
+            (7, Some(0x00_8059), false),
+            (5, Some(0x02_85ad), false),
+            (5, None, false),
+        ] {
             let mut source = empty_semantic_tracker();
             let mut receipts = Vec::new();
             let mut event = raw("pc", Some(0x02_824d), None, None);
             event.main = Some(main);
             event.sub = Some(0);
+            event.return_address = caller;
             source.consume_event(event, &mut receipts).unwrap();
             assert_eq!(
                 receipts,
-                if main == 5 {
+                if expected {
                     vec![OriginalTimingSemanticReceipt::SelectedGameEntranceReturned]
                 } else {
                     vec![]
