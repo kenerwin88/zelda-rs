@@ -14169,8 +14169,6 @@ impl ZeldaState {
             self.copy_bg1_live_to_ppu_copy();
         }
 
-        self.sprite_dungeon_draw_all_push_blocks();
-        self.replay_trace_ram_watch("module07-after-draw-push-blocks");
         let sprite_return = DungeonSpriteMainReturn {
             bg2_x: bg2x,
             bg2_y: bg2y,
@@ -14178,6 +14176,17 @@ impl ZeldaState {
             bg1_y: bg1y_restore,
             link_oam: None,
         };
+        if self.take_original_timing_dungeon_push_blocks_pending() {
+            self.game_execution_scheduler.schedule_work(
+                GameWorkContinuation::FinishDungeonPushBlocks {
+                    dungeon: sprite_return,
+                },
+                1,
+            );
+            return;
+        }
+        self.sprite_dungeon_draw_all_push_blocks();
+        self.replay_trace_ram_watch("module07-after-draw-push-blocks");
         self.run_module07_sprite_main_caller(sprite_return);
     }
 

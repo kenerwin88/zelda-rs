@@ -19809,6 +19809,54 @@ fn absorbable_vertical_lookup_keeps_movement_and_defers_bounce_suffix() {
 }
 
 #[test]
+fn dungeon_push_block_checkpoint_preserves_the_common_callers_scroll_locals() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(2);
+    state.set_subsubmodule(2);
+    state.set_bg2_h_copy2(0x1010);
+    state.set_bg2_v_copy2(0x2020);
+    state.set_bg1_h_copy2(0x3030);
+    state.set_bg1_v_copy2(0x4040);
+    state.set_bg1_x_offset(3);
+    state.set_bg1_y_offset(5);
+    let mut atomic = state.clone();
+    let old_slots = state.game_state.sprites.sprite_slots.clone();
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        1,
+        0,
+        vec![OriginalTimingSemanticReceipt::DungeonPushBlocksPending],
+    ));
+    state.complete_module07_dungeon_after_submodule();
+    assert_eq!(state.game_state.sprites.sprite_slots, old_slots);
+    let Some(GameWorkContinuation::FinishDungeonPushBlocks { dungeon }) =
+        state.game_execution_scheduler.current_work()
+    else {
+        panic!("push-block source caller was not retained");
+    };
+    assert_eq!(
+        (dungeon.bg2_x, dungeon.bg2_y, dungeon.bg1_x, dungeon.bg1_y),
+        (0x1010, 0x2020, 0x3030, 0x4040)
+    );
+    assert_eq!(
+        state.game_state.display.ppu_scroll_copy.bg2_h_copy2(),
+        0x1013
+    );
+    assert!(!state.original_timing_dungeon_push_blocks_pending());
+    state
+        .game_execution_scheduler
+        .advance_work_one_nmi_slice_with_authoritative_completion(true);
+    state.original_timing_owner = atomic.original_timing_owner.clone();
+    state.original_timing_semantic_receipts = None;
+    state.sprite_dungeon_draw_all_push_blocks();
+    state.run_module07_sprite_main_caller(dungeon);
+    atomic.complete_module07_dungeon_after_submodule();
+    assert_eq!(state.game_state, atomic.game_state);
+    assert_eq!(state.ram, atomic.ram);
+}
+
+#[test]
 fn swamola_segment_draw_resumes_without_repeating_history_or_oam_steps() {
     for (velocity, y) in [(8, 0x80), (0xf8, 0x80), (8, 0x500), (0xf8, 0x500)] {
         for segment in 0..4u8 {

@@ -1862,6 +1862,9 @@ pub enum OriginalTimingSemanticReceipt {
     /// Save-and-quit's intro-memory initialization returned; palette/reset
     /// work remains inside the suspended Death_Func31 caller.
     SaveQuitIntroMemoryReturned,
+    /// Module 7 reached its push-block draw call after saving and applying
+    /// the caller's scroll values; drawing and Sprite_Main remain pending.
+    DungeonPushBlocksPending,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

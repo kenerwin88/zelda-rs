@@ -462,6 +462,7 @@ impl ScheduledGameWork {
                     | ItemReceiptGraphicsContinuation::ResumeAncillaItemReceipt { .. },
             } | GameWorkContinuation::FinishDungeonSupertileTransition { .. }
                 | GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn
+                | GameWorkContinuation::FinishDungeonPushBlocks { .. }
                 | GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn
                 | GameWorkContinuation::FinishNmiPrepareSpritesCallerReturn { .. }
                 | GameWorkContinuation::FinishModule09LinkOamCallerReturn { .. }

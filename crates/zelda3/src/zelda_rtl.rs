@@ -9057,6 +9057,9 @@ enum GameWorkContinuation {
     /// its second `DecodeAnimatedSpriteTile_variable` call. Only that decode,
     /// the submodule advance, and the Module09 caller suffix remain pending.
     FinishOverworldSpecialExitMosaicSecondDecode,
+    FinishDungeonPushBlocks {
+        dungeon: DungeonSpriteMainReturn,
+    },
     /// Death_Func15 has disabled sprites and entered the reset workspace
     /// clear. Death counters and the save/continue caller remain suspended.
     FinishGameOverDeathAfterSpriteReset {
@@ -9162,6 +9165,7 @@ impl GameWorkContinuation {
         matches!(
             self,
             Self::FinishDungeonAfterSubmoduleCallerReturn
+                | Self::FinishDungeonPushBlocks { .. }
                 | Self::FinishOverworldSpotlightBuild { .. }
                 | Self::FinishOverworldSpotlightGoalResetTable { .. }
                 | Self::FinishGameOverSpotlightBuild { .. }
@@ -9234,6 +9238,7 @@ impl GameWorkContinuation {
     const fn scheduled_caller_return_expected_sprite_main_claims(self) -> Option<usize> {
         match self {
             Self::FinishDungeonAfterSubmoduleCallerReturn
+            | Self::FinishDungeonPushBlocks { .. }
             | Self::FinishWorldMapAmbientMap8
             | Self::FinishOverworldAuxGraphics
             | Self::FinishOverworldMosaicSpriteGraphics
@@ -9321,6 +9326,7 @@ impl GameWorkContinuation {
         matches!(
             self,
             Self::FinishDungeonAfterSubmoduleCallerReturn
+                | Self::FinishDungeonPushBlocks { .. }
                 | Self::FinishDungeonPostSpriteMainCallerReturn
                 | Self::FinishModule09LinkOamCallerReturn { .. }
                 | Self::FinishNmiPrepareSpritesCallerReturn { .. }
@@ -23597,6 +23603,7 @@ impl ZeldaState {
                     // Module0B/$24 consumes these staged source checkpoints
                     // from its suspended animated-sprite decode continuation.
                     | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored
+                    | OriginalTimingSemanticReceipt::DungeonPushBlocksPending
                     | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned
                     | OriginalTimingSemanticReceipt::DungeonFallingFadeInPaletteDirectionToggled
                     // Module0F's entry call can return inside a fresh
@@ -27826,6 +27833,59 @@ impl ZeldaState {
             }
         });
         published
+    }
+
+    pub(super) fn original_timing_dungeon_push_blocks_pending(&self) -> bool {
+        matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && self
+                .original_timing_semantic_receipts
+                .as_ref()
+                .is_some_and(|receipts| {
+                    receipts
+                        .semantic
+                        .contains(&OriginalTimingSemanticReceipt::DungeonPushBlocksPending)
+                })
+    }
+
+    pub(super) fn take_original_timing_dungeon_push_blocks_pending(&mut self) -> bool {
+        if !self.original_timing_dungeon_push_blocks_pending() {
+            return false;
+        }
+        let receipts = self.original_timing_semantic_receipts.as_mut().unwrap();
+        let before = receipts.semantic.len();
+        receipts
+            .semantic
+            .retain(|receipt| *receipt != OriginalTimingSemanticReceipt::DungeonPushBlocksPending);
+        assert_eq!(
+            before - receipts.semantic.len(),
+            1,
+            "push-block checkpoint replayed"
+        );
+        true
+    }
+
+    pub(super) fn resume_dungeon_push_blocks_caller(&mut self, dungeon: DungeonSpriteMainReturn) {
+        let owns_return_claim = self
+            .original_timing_sprite_main_return_claims_remaining
+            .is_none()
+            && self.original_timing_owes_sprite_main_return();
+        if owns_return_claim {
+            self.begin_original_timing_sprite_main_return_claim_scope(1);
+        }
+        self.sprite_dungeon_draw_all_push_blocks();
+        self.run_module07_sprite_main_caller(dungeon);
+        if owns_return_claim {
+            self.finish_original_timing_sprite_main_return_claim_scope();
+        }
+        if self.game_execution_scheduler.is_idle() {
+            // The outer host timeline can consume the suffix receipt before
+            // this saved caller runs. Its validated completion fact survives.
+            if self.original_timing_host_iteration_uninterrupted {
+                self.retire_or_run_main_loop_common_suffix_after_module_return();
+            } else {
+                self.retire_or_defer_main_loop_common_suffix_by_wire();
+            }
+        }
     }
 
     fn take_original_timing_overworld_special_exit_mosaic_restored(&mut self) -> bool {
@@ -38400,6 +38460,9 @@ impl ZeldaState {
                 self.dungeon_quadrant_cpu_continuation_active = false;
                 self.prepare_dungeon_cpu_advance_after_returned_main_wait();
             }
+            GameWorkContinuation::FinishDungeonPushBlocks { dungeon } => {
+                self.resume_dungeon_push_blocks_caller(dungeon);
+            }
             GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn => {
                 let retains_goal_caller_return = self.dungeon_landing_goal_display_handoff
                     == DungeonLandingGoalDisplayHandoff::RetainCallerReturn;
@@ -44496,6 +44559,7 @@ impl ZeldaState {
                     || self.original_timing_owes_sprite_main_progress()
                     || self.original_timing_cached_sprite_execution_progress().is_some()
                     || self.original_timing_dungeon_reset_sprites_progress_pending()
+                    || self.original_timing_dungeon_push_blocks_pending()
                     || authoritative_scheduled_caller_nmi_timeline.is_some_and(|timeline| {
                         timeline.progress == crate::MainLoopProgress::CallStackContinued
                             && module_cpu_phase_from_main_loop_interruption(
@@ -45824,6 +45888,15 @@ impl ZeldaState {
                                 .dungeon_room_load_cpu_schedule
                                 .take()
                                 .expect("room-load CPU schedule must survive auxiliary graphics");
+                            if self.original_timing_dungeon_push_blocks_pending() {
+                                assert_eq!(supertile_wire_claims, 0, "push-block entry precedes Sprite_Main");
+                                self.complete_module07_02_01_after_auxiliary_sprite_graphics();
+                                self.dungeon_room_load_module_suffix_nmi_slices = 0;
+                                self.complete_module07_dungeon_after_submodule();
+                                assert!(matches!(self.game_execution_scheduler.current_work(),
+                                    Some(GameWorkContinuation::FinishDungeonPushBlocks { .. })));
+                                return;
+                            }
                             self.complete_module07_02_01_before_dungeon_reset_sprites();
                             let progress = self.take_original_timing_dungeon_reset_sprites_progress();
                             let progressed_sprite_main_boundary =
@@ -47634,6 +47707,9 @@ impl ZeldaState {
                     if authoritative_scheduled_caller_return_timeline.is_some() {
                         self.retire_or_run_main_loop_common_suffix_after_module_return();
                     }
+                }
+                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonPushBlocks { dungeon }) => {
+                    self.resume_dungeon_push_blocks_caller(dungeon);
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonCachedSpriteMain {
                     boundary,

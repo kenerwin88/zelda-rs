@@ -4351,6 +4351,9 @@ impl Snes9xOracleSemanticTrace {
                 spotlight_lower_cursor_at_return,
                 &mut receipts,
             )?;
+            if dungeon_push_blocks_pending(returned_event) {
+                receipts.push(OriginalTimingSemanticReceipt::DungeonPushBlocksPending);
+            }
             if publish_pre_dungeon_sprite_reset_progress(
                 returned_event,
                 OriginalTimingBoundary::HostReturn,
@@ -7942,6 +7945,14 @@ fn dungeon_load_single_sprite_write_progress(
     Ok(Some((slot, checkpoint)))
 }
 
+fn dungeon_push_blocks_pending(event: &RawTraceEvent) -> bool {
+    // PHB/PHK/PLB and the first block-index read have completed. The saved
+    // DB byte precedes Module 7's near return bytes on the native stack.
+    event.pc.map(|pc| pc & 0xff_ffff) == Some(0x07_f0b2)
+        && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x88_3d00)
+        && event.main == Some(7)
+}
+
 fn dungeon_reset_sprites_caller_progress(
     event: &RawTraceEvent,
 ) -> Option<DungeonResetSpritesCpuProgress> {
@@ -11286,6 +11297,19 @@ mod tests {
                 completed_bytes: 1344,
             },
         );
+    }
+
+    #[test]
+    fn push_block_checkpoint_requires_the_module07_caller() {
+        let mut event = raw("frame", Some(0x07_f0b2), None, None);
+        event.main = Some(7);
+        event.return_address = Some(0x88_3d00);
+        assert!(dungeon_push_blocks_pending(&event));
+        event.return_address = Some(0x88_3e00);
+        assert!(!dungeon_push_blocks_pending(&event));
+        event.return_address = Some(0x88_3d00);
+        event.main = Some(9);
+        assert!(!dungeon_push_blocks_pending(&event));
     }
 
     #[test]
