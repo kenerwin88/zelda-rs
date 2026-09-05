@@ -2057,6 +2057,32 @@ fn interactive_cleanup_keeps_current_slot_live_until_pickup_test() {
 }
 
 #[test]
+fn save_quit_intro_memory_return_does_not_repeat_initialization() {
+    let asset_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../zelda3_assets.dat");
+    let mut atomic = ZeldaState::new();
+    atomic.assets = Some(AssetPack::parse(&std::fs::read(asset_path).unwrap()).unwrap());
+    atomic.set_main_module(0x17);
+    atomic.set_submodule(1);
+    atomic.save_quit_reset_hold = true;
+    let mut staged = atomic.clone();
+    atomic.death_func15_save_quit_reset_state_before_dungeon_info_clear();
+    staged.death_func31_through_intro_memory();
+    assert_eq!(
+        (
+            staged.game_state.frame.main_module,
+            staged.game_state.frame.submodule
+        ),
+        (0x17, 2)
+    );
+    let disable = staged.ram[0x13];
+    staged.death_func15_save_quit_reset_state_before_dungeon_info_clear();
+    assert_eq!(staged.ram[0x13], disable);
+    assert_eq!(staged.game_state, atomic.game_state);
+    assert_eq!(staged.ram, atomic.ram);
+}
+
+#[test]
 fn interactive_cleanup_type_clear_preserves_completed_pickup_test() {
     for slot in 0..6 {
         let mut state = ZeldaState::new();

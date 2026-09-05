@@ -1394,6 +1394,7 @@ enum OriginalTimingIntroMemoryDarkenPlan {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum OriginalTimingSaveQuitResetPlan {
     Nonterminal(OriginalTimingNonterminalContinuationPlan),
+    IntroMemoryReturned(OriginalTimingNonterminalContinuationPlan),
     ResetStatePublished(OriginalTimingNonterminalContinuationPlan),
     /// The ROM masks NMI during the reset's song-bank upload: the host
     /// carries a bare `CallStackContinued` with no NMI lifecycle at all
@@ -25317,9 +25318,37 @@ impl ZeldaState {
         );
         assert!(
             self.intro_poly_thread_initialization_phase == 0
-                || self.save_quit_reset_state_published,
+                || self.save_quit_reset_state_published
+                || (self.intro_poly_thread_initialization_phase == 3
+                    && (
+                        self.game_state.frame.main_module,
+                        self.game_state.frame.submodule
+                    ) == (0x17, 2)),
             "the save-quit reset caller overlaps the suspended intro poly thread",
         );
+        if self
+            .original_timing_semantic_receipts
+            .as_ref()
+            .is_some_and(|receipts| {
+                receipts
+                    .semantic
+                    .contains(&OriginalTimingSemanticReceipt::SaveQuitIntroMemoryReturned)
+            })
+        {
+            assert_eq!(
+                (
+                    self.game_state.frame.main_module,
+                    self.game_state.frame.submodule
+                ),
+                (0x17, 1)
+            );
+            return Some(OriginalTimingSaveQuitResetPlan::IntroMemoryReturned(
+                self.original_timing_nonterminal_continuation_plan_with_receipt_before_progress(
+                    Some(OriginalTimingSemanticReceipt::SaveQuitIntroMemoryReturned),
+                )
+                .expect("save-quit intro-memory return lost its continued-call owner"),
+            ));
+        }
         let reset_state_published =
             self.original_timing_semantic_receipts
                 .as_ref()
@@ -40964,6 +40993,17 @@ impl ZeldaState {
                             );
                             state.death_func15_save_quit_reset_state_before_dungeon_info_clear();
                             state.save_quit_reset_state_published = true;
+                        },
+                    );
+                }
+                OriginalTimingSaveQuitResetPlan::IntroMemoryReturned(plan) => {
+                    self.execute_original_timing_nonterminal_continuation(
+                        plan, input, oam_dma_source.as_deref(), |state| {
+                            let receipts = state.original_timing_semantic_receipts.as_mut().unwrap();
+                            let before = receipts.semantic.len();
+                            receipts.semantic.retain(|receipt| *receipt != OriginalTimingSemanticReceipt::SaveQuitIntroMemoryReturned);
+                            assert_eq!(before - receipts.semantic.len(), 1);
+                            state.death_func31_through_intro_memory();
                         },
                     );
                 }

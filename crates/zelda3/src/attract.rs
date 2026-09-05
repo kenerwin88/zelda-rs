@@ -296,8 +296,16 @@ impl ZeldaState {
     }
 
     pub(super) fn death_func31(&mut self) {
+        self.death_func31_through_intro_memory();
+        self.death_func31_after_intro_memory();
+    }
+
+    pub(super) fn death_func31_through_intro_memory(&mut self) {
         self.increment_core_update_disable_flag();
         self.intro_initialize_memory_darken();
+    }
+
+    pub(super) fn death_func31_after_intro_memory(&mut self) {
         self.overworld_load_all_palettes();
         self.set_bg3_v_copy2_low(0);
         self.set_mode7_center_y(0);

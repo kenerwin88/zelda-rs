@@ -2215,7 +2215,17 @@ impl ZeldaState {
     /// The save-quit reset prefix through the last scroll store immediately
     /// before the source begins clearing `save_dung_info`.
     pub(super) fn death_func15_save_quit_reset_state_before_dungeon_info_clear(&mut self) {
-        self.death_func31();
+        if self.save_quit_reset_hold
+            && (
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule,
+            ) == (0x17, 2)
+        {
+            // The source intro-memory return already published this stage.
+            self.death_func31_after_intro_memory();
+        } else {
+            self.death_func31();
+        }
         self.clear_restart_check_flag();
         self.clear_game_over_check_flag();
         self.set_queued_music_control(0);

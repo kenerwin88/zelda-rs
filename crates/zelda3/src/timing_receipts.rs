@@ -1830,6 +1830,9 @@ pub enum OriginalTimingSemanticReceipt {
     /// The selected-game caller returned from Dungeon_LoadEntrance.
     SelectedGameEntranceReturned,
     DungeonFallingFadeInPaletteDirectionToggled,
+    /// Save-and-quit's intro-memory initialization returned; palette/reset
+    /// work remains inside the suspended Death_Func31 caller.
+    SaveQuitIntroMemoryReturned,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

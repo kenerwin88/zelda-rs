@@ -4594,6 +4594,9 @@ impl Snes9xOracleSemanticTrace {
                             event.main, event.sub, event.subsub,
                         ));
                     }
+                    receipts.retain(|receipt| {
+                        *receipt != OriginalTimingSemanticReceipt::SaveQuitIntroMemoryReturned
+                    });
                     receipts.push(OriginalTimingSemanticReceipt::SaveQuitResetStatePublished);
                 }
                 if pc == FILE_SELECT_GRAPHICS_LOW_WRAM_CLEAR_RETURN_PC
@@ -5312,6 +5315,18 @@ impl Snes9xOracleSemanticTrace {
                     receipts.push(
                         OriginalTimingSemanticReceipt::DungeonFallingEntranceProgress(progress),
                     );
+                }
+                if pc == 0x0c_c25b
+                    && address == 0x11
+                    && event.return_address == Some(0x0c_f0e8)
+                    && event.main == Some(0x17)
+                {
+                    if event.sub != Some(1) || event.value != Some(2) {
+                        return Err(
+                            "save-quit intro-memory return has the wrong submodule advance".into(),
+                        );
+                    }
+                    receipts.push(OriginalTimingSemanticReceipt::SaveQuitIntroMemoryReturned);
                 }
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
@@ -12984,6 +12999,37 @@ mod tests {
             ),
         ));
         assert!(!tracker.overworld_load_overlays_sprite_reload_active);
+    }
+
+    #[test]
+    fn save_quit_intro_return_is_superseded_by_terminal_reset_state() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        let mut event = raw("wram-write", Some(0x0c_c25b), None, None);
+        event.address = Some(0x11);
+        event.value = Some(2);
+        event.main = Some(0x17);
+        event.sub = Some(1);
+        event.return_address = Some(0x0c_f0e8);
+        tracker.consume_event(event, &mut receipts).unwrap();
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SaveQuitIntroMemoryReturned]
+        );
+        let mut returned = raw(
+            "pc",
+            Some(SAVE_QUIT_RESET_DUNGEON_INFO_CLEAR_ENTRY_PC),
+            None,
+            None,
+        );
+        returned.main = Some(0);
+        returned.sub = Some(10);
+        returned.subsub = Some(10);
+        tracker.consume_event(returned, &mut receipts).unwrap();
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SaveQuitResetStatePublished]
+        );
     }
 
     #[test]
