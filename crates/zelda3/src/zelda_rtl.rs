@@ -1369,6 +1369,7 @@ enum OriginalTimingNonterminalReceiptPlacement {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct OriginalTimingBeginSelectedGameLoadPlan {
+    entrance_scroll_published: bool,
     semantic: Vec<OriginalTimingSemanticReceipt>,
     timeline: OriginalTimingMainLoopTimeline,
     nmi: OriginalTimingNmiPhaseClassification,
@@ -12808,6 +12809,9 @@ pub struct ZeldaState {
     /// loader reaches its return host.
     #[serde(skip)]
     pending_overworld_sprite_reload_slots: Option<SpriteSlotsState>,
+    /// Native entrance selection retained across its vertical-scroll stores.
+    #[serde(skip)]
+    pending_selected_game_entrance: Option<(usize, bool)>,
     /// Native loader publications in source order. A later allocation may
     /// reuse a slot before the scan returns, so the final array is insufficient.
     #[serde(skip)]
@@ -19482,6 +19486,7 @@ impl ZeldaState {
             save_quit_reset_writes_applied: false,
             pending_module09_frame_advance: None,
             pending_overworld_sprite_reload_slots: None,
+            pending_selected_game_entrance: None,
             pending_overworld_sprite_activations: None,
             overworld_proximity_scan_saved_scroll: None,
             intro_poly_thread_initialization_phase: 0,
@@ -19804,6 +19809,7 @@ impl ZeldaState {
             self.dialogue_vwf_handler_completed_at_endpoint = false;
             self.pending_module09_frame_advance = None;
             self.pending_overworld_sprite_reload_slots = None;
+            self.pending_selected_game_entrance = None;
             self.pending_overworld_sprite_activations = None;
             self.intro_poly_thread_initialization_phase = 0;
             self.attract_init_graphics_phase = 0;
@@ -24170,6 +24176,16 @@ impl ZeldaState {
                 OriginalTimingSemanticReceipt::NmiHandlerCompleted,
             ]
         };
+        let entrance_scroll_published =
+            semantic.contains(&OriginalTimingSemanticReceipt::SelectedGameEntranceScrollPublished);
+        if entrance_scroll_published {
+            assert!(
+                trailing_held,
+                "entrance scroll checkpoint requires its trailing NMI"
+            );
+            expected_semantic
+                .push(OriginalTimingSemanticReceipt::SelectedGameEntranceScrollPublished);
+        }
         if trailing_held {
             expected_semantic.push(OriginalTimingSemanticReceipt::NmiAccepted(
                 NmiUpdateGate::LatchHeld,
@@ -24206,6 +24222,7 @@ impl ZeldaState {
         );
 
         Some(OriginalTimingBeginSelectedGameLoadPlan {
+            entrance_scroll_published,
             semantic,
             timeline,
             nmi,
@@ -40090,6 +40107,9 @@ impl ZeldaState {
                             plan.semantic,
                             "pre-dungeon-audio authority changed before consumption",
                         );
+                        self.original_timing_semantic_receipts.as_mut().unwrap().semantic.retain(|receipt| {
+                            *receipt != OriginalTimingSemanticReceipt::SelectedGameEntranceScrollPublished
+                        });
                         let timeline = self
                             .take_original_timing_uninterrupted_main_loop_timeline(
                                 crate::MainLoopProgress::CallStackContinued,
@@ -40111,6 +40131,9 @@ impl ZeldaState {
                         .assert_no_unclaimed_dialogue_text_dma();
                         self.begin_selected_game_load_pre_dungeon_audio(plan.destination);
                         self.game_execution_scheduler = startup_scheduler_probe;
+                        if plan.entrance_scroll_published {
+                            self.begin_selected_game_entrance_scroll_prefix();
+                        }
                         if !plan.nmi.publication_pending_at_exit {
                             self.complete_pending_selected_game_load_entry_room_load();
                         }

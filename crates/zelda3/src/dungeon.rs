@@ -123,6 +123,11 @@ impl ZeldaState {
     }
 
     pub(super) fn Dungeon_LoadEntrance(&mut self) {
+        let selection = self.dungeon_load_entrance_before_fields();
+        self.dungeon_load_entrance_after_selection(selection, false);
+    }
+
+    fn dungeon_load_entrance_before_fields(&mut self) -> (usize, bool) {
         self.set_indoor_flag(1);
         if self.game_state.system_signals.game_over_check_flag() != 0 {
             self.clear_game_over_check_flag();
@@ -168,7 +173,30 @@ impl ZeldaState {
                 .which_starting_point() as usize;
             let entrance = self.asset_u8(44, i);
             self.set_which_entrance(entrance as u16);
-            self.dungeon_load_entrance_fields(i, &STARTING_POINT_ASSETS);
+            (i, true)
+        } else {
+            (
+                self.game_state.world.region.which_entrance() as usize,
+                false,
+            )
+        }
+    }
+
+    fn dungeon_load_entrance_after_selection(
+        &mut self,
+        (i, starting): (usize, bool),
+        scroll_published: bool,
+    ) {
+        let assets = if starting {
+            &STARTING_POINT_ASSETS
+        } else {
+            &ENTRANCE_DATA_ASSETS
+        };
+        if !scroll_published {
+            self.dungeon_load_entrance_room_and_scroll(i, assets);
+        }
+        let room = self.dungeon_load_entrance_fields_after_scroll(i, assets);
+        if starting {
             self.follower_link_state_mut().set_facing(2);
             self.follower_link_state_mut().clear_doorway_state();
             let queued_music_control = self.asset_u8(45, i);
@@ -178,8 +206,6 @@ impl ZeldaState {
             }
             self.clear_restart_check_flag();
         } else {
-            let i = self.game_state.world.region.which_entrance() as usize;
-            let room = self.dungeon_load_entrance_fields(i, &ENTRANCE_DATA_ASSETS);
             self.dungeon_object_tracking_mut()
                 .set_big_rock_starting_address(0);
             self.follower_link_state_mut()
@@ -234,16 +260,25 @@ impl ZeldaState {
         self.memorized_tile_mut().clear_entry_addresses();
     }
 
-    fn dungeon_load_entrance_fields(&mut self, i: usize, assets: &EntranceAssetSet) -> u16 {
+    fn dungeon_load_entrance_room_and_scroll(&mut self, i: usize, assets: &EntranceAssetSet) {
         let room = self.asset_u16(assets.rooms, i);
         self.set_dungeon_room(room);
         self.dungeon_room_tracking_mut().set_room_index2_word(room);
 
         let scroll_y = self.asset_u16(assets.scroll_y, i);
-        self.set_bg1_v_copy(scroll_y);
-        self.set_bg2_v_copy(scroll_y);
         self.set_bg1_y(scroll_y);
         self.set_bg2_y(scroll_y);
+    }
+
+    fn dungeon_load_entrance_fields_after_scroll(
+        &mut self,
+        i: usize,
+        assets: &EntranceAssetSet,
+    ) -> u16 {
+        let room = self.asset_u16(assets.rooms, i);
+        let scroll_y = self.asset_u16(assets.scroll_y, i);
+        self.set_bg1_v_copy(scroll_y);
+        self.set_bg2_v_copy(scroll_y);
 
         let scroll_x = self.asset_u16(assets.scroll_x, i);
         self.set_bg1_h_copy(scroll_x);
@@ -13435,6 +13470,27 @@ impl ZeldaState {
     }
 
     pub(super) fn module_pre_dungeon_initial_entrance(&mut self) {
+        if let Some(selection) = self.pending_selected_game_entrance.take() {
+            self.dungeon_load_entrance_after_selection(selection, true);
+            return;
+        }
+        self.module_pre_dungeon_before_initial_entrance();
+        self.Dungeon_LoadEntrance();
+    }
+
+    pub(super) fn begin_selected_game_entrance_scroll_prefix(&mut self) {
+        assert!(self.pending_selected_game_entrance.is_none());
+        self.module_pre_dungeon_before_initial_entrance();
+        let selection = self.dungeon_load_entrance_before_fields();
+        assert!(
+            selection.1,
+            "starting-point source checkpoint reached an ordinary entrance"
+        );
+        self.dungeon_load_entrance_room_and_scroll(selection.0, &STARTING_POINT_ASSETS);
+        self.pending_selected_game_entrance = Some(selection);
+    }
+
+    fn module_pre_dungeon_before_initial_entrance(&mut self) {
         self.set_dungeon_room(0);
         self.dungeon_room_tracking_mut()
             .set_previous_room_index_word(0);
@@ -13442,7 +13498,6 @@ impl ZeldaState {
         self.dungeon_savegame_state_mut()
             .clear_savegame_state_high();
         self.clear_agahnim_palette_settings(12);
-        self.Dungeon_LoadEntrance();
     }
 
     pub(super) fn module_pre_dungeon_after_entrance_prefix(&mut self) {

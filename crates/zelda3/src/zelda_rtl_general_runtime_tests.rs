@@ -495,6 +495,50 @@ fn probe_entrance_asset_pack(entrance_index: usize, room: u16) -> AssetPack {
     AssetPack::from_data_ranges(data, ranges)
 }
 
+#[test]
+fn selected_game_entrance_scroll_suspends_before_display_mirrors() {
+    let make_state = || {
+        let mut state = ZeldaState::new();
+        let mut data = Vec::new();
+        let mut ranges = vec![(0, 0); 56];
+        for index in 28..=55 {
+            let mut bytes = vec![0; 128];
+            if index == 28 {
+                write_le_u16(&mut bytes, 0, 0x104);
+            }
+            if index == 31 {
+                write_le_u16(&mut bytes, 0, 0x2110);
+            }
+            put_test_asset(&mut data, &mut ranges, index, bytes);
+        }
+        state.assets = Some(AssetPack::from_data_ranges(data, ranges));
+        state.ram[RESTART_CHECK_FLAG] = 1;
+        state.sync_native_game_state_from_ram();
+        state.set_bg2_v_copy(0x1234);
+        state
+    };
+    let mut atomic = make_state();
+    atomic.module_pre_dungeon_initial_entrance();
+    let mut staged = make_state();
+    staged.begin_selected_game_entrance_scroll_prefix();
+    assert_eq!(
+        staged.game_state.dungeon.room_tracking.room_index2_word(),
+        0x104
+    );
+    assert_eq!(
+        staged.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+        0x2110
+    );
+    assert_eq!(
+        staged.game_state.display.ppu_scroll_copy.bg2_v_copy(),
+        0x1234
+    );
+    assert!(staged.pending_selected_game_entrance.is_some());
+    staged.module_pre_dungeon_initial_entrance();
+    assert!(staged.pending_selected_game_entrance.is_none());
+    assert_eq!(staged.ram, atomic.ram);
+}
+
 fn probe_overworld_asset_pack(screen: usize) -> AssetPack {
     let mut data = Vec::new();
     let mut ranges = vec![(0, 0); 109];

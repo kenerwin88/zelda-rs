@@ -5096,6 +5096,12 @@ impl Snes9xOracleSemanticTrace {
                 }
             }
             "nmi" => {
+                if event.pc == Some(0x02_dc76)
+                    && matches!((event.main, event.sub), (Some(5), Some(0)))
+                {
+                    receipts
+                        .push(OriginalTimingSemanticReceipt::SelectedGameEntranceScrollPublished);
+                }
                 if let Some(progress) = credits_scene_load_boundary_progress(
                     &event,
                     OriginalTimingBoundary::NmiAccepted,

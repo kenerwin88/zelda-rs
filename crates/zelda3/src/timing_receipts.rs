@@ -1721,6 +1721,9 @@ pub enum OriginalTimingSemanticReceipt {
     FileSelectGraphicsLowWramClearProgress(FileSelectGraphicsLowWramClearProgress),
     /// The same source loop completed all of WRAM `$0d00-$0fff`.
     FileSelectGraphicsLowWramCleared,
+    /// Starting-point entrance has published its room and working vertical
+    /// scroll, before copying that scroll to the NMI display mirrors.
+    SelectedGameEntranceScrollPublished,
     /// `Main_ShowTextMessage` returned inside Module05's Message destination.
     /// Module 14 and submodule 2 are now observable, while palette loading and
     /// Module05's final Module1B publication remain in the suspended caller.
