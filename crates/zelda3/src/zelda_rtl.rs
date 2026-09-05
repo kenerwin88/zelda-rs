@@ -9686,7 +9686,11 @@ enum GameWorkContinuation {
     /// Module 7's Dungeon_PushBlock_Handler loop resumes from the saved misc
     /// object index; the scroll copies, push-block drawing and Sprite_Main
     /// follow in the same resumed tail.
-    FinishDungeonPushBlockHandler,
+    FinishDungeonPushBlockHandler {
+        /// The interrupted handler loop still has misc objects to run before
+        /// the tail (false: the handler returned before the interruption).
+        handler_pending: bool,
+    },
     /// Death_Func15 has disabled sprites and entered the reset workspace
     /// clear. Death counters and the save/continue caller remain suspended.
     FinishGameOverDeathAfterSpriteReset {
@@ -9793,7 +9797,7 @@ impl GameWorkContinuation {
             self,
             Self::FinishDungeonAfterSubmoduleCallerReturn
                 | Self::FinishDungeonPushBlocks { .. }
-                | Self::FinishDungeonPushBlockHandler
+                | Self::FinishDungeonPushBlockHandler { .. }
                 | Self::FinishOverworldSpotlightBuild { .. }
                 | Self::FinishOverworldSpotlightGoalResetTable { .. }
                 | Self::FinishGameOverSpotlightBuild { .. }
@@ -9867,7 +9871,7 @@ impl GameWorkContinuation {
         match self {
             Self::FinishDungeonAfterSubmoduleCallerReturn
             | Self::FinishDungeonPushBlocks { .. }
-            | Self::FinishDungeonPushBlockHandler
+            | Self::FinishDungeonPushBlockHandler { .. }
             | Self::FinishWorldMapAmbientMap8
             | Self::FinishOverworldAuxGraphics
             | Self::FinishOverworldMosaicSpriteGraphics
@@ -9956,7 +9960,7 @@ impl GameWorkContinuation {
             self,
             Self::FinishDungeonAfterSubmoduleCallerReturn
                 | Self::FinishDungeonPushBlocks { .. }
-                | Self::FinishDungeonPushBlockHandler
+                | Self::FinishDungeonPushBlockHandler { .. }
                 | Self::FinishDungeonPostSpriteMainCallerReturn
                 | Self::FinishModule09LinkOamCallerReturn { .. }
                 | Self::FinishNmiPrepareSpritesCallerReturn { .. }
@@ -24239,6 +24243,7 @@ impl ZeldaState {
                     | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicRestored
                     | OriginalTimingSemanticReceipt::DungeonPushBlocksPending
                     | OriginalTimingSemanticReceipt::DungeonPushBlocksInProgress { .. }
+                    | OriginalTimingSemanticReceipt::DungeonPushBlocksHandled
                     | OriginalTimingSemanticReceipt::Module09FinalScrollPairPending
                     | OriginalTimingSemanticReceipt::OverworldSpecialExitMosaicReturned
                     | OriginalTimingSemanticReceipt::DungeonFallingFadeInPaletteDirectionToggled
@@ -28534,9 +28539,41 @@ impl ZeldaState {
         Some(next_index)
     }
 
+    /// Module 7's push-block handler returned before this host's boundary
+    /// and OrientLampLightCone stored nothing yet.
+    pub(super) fn original_timing_dungeon_push_blocks_handled(&self) -> bool {
+        matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && self
+                .original_timing_semantic_receipts
+                .as_ref()
+                .is_some_and(|receipts| {
+                    receipts
+                        .semantic
+                        .contains(&OriginalTimingSemanticReceipt::DungeonPushBlocksHandled)
+                })
+    }
+
+    pub(super) fn take_original_timing_dungeon_push_blocks_handled(&mut self) -> bool {
+        if !self.original_timing_dungeon_push_blocks_handled() {
+            return false;
+        }
+        let receipts = self.original_timing_semantic_receipts.as_mut().unwrap();
+        let before = receipts.semantic.len();
+        receipts
+            .semantic
+            .retain(|receipt| *receipt != OriginalTimingSemanticReceipt::DungeonPushBlocksHandled);
+        assert_eq!(
+            before - receipts.semantic.len(),
+            1,
+            "one host may return from Dungeon_PushBlock_Handler once"
+        );
+        true
+    }
+
     /// `FinishDungeonPushBlockHandler`: finish the interrupted loop from the
-    /// saved misc object index, then the Module 7 tail that follows it.
-    pub(super) fn resume_dungeon_push_block_handler(&mut self) {
+    /// saved misc object index when it is still pending, then the Module 7
+    /// tail that follows it.
+    pub(super) fn resume_dungeon_push_block_handler(&mut self, handler_pending: bool) {
         let owns_return_claim = self
             .original_timing_sprite_main_return_claims_remaining
             .is_none()
@@ -28544,8 +28581,10 @@ impl ZeldaState {
         if owns_return_claim {
             self.begin_original_timing_sprite_main_return_claim_scope(1);
         }
-        self.dungeon_push_block_handler();
-        self.replay_trace_ram_watch("module07-after-push-blocks");
+        if handler_pending {
+            self.dungeon_push_block_handler();
+            self.replay_trace_ram_watch("module07-after-push-blocks");
+        }
         self.complete_module07_dungeon_after_push_block_handler(true);
         if owns_return_claim {
             self.finish_original_timing_sprite_main_return_claim_scope();
@@ -39382,8 +39421,8 @@ impl ZeldaState {
             GameWorkContinuation::FinishDungeonPushBlocks { dungeon } => {
                 self.resume_dungeon_push_blocks_caller(dungeon);
             }
-            GameWorkContinuation::FinishDungeonPushBlockHandler => {
-                self.resume_dungeon_push_block_handler();
+            GameWorkContinuation::FinishDungeonPushBlockHandler { handler_pending } => {
+                self.resume_dungeon_push_block_handler(handler_pending);
             }
             GameWorkContinuation::FinishDungeonAfterSubmoduleCallerReturn => {
                 let retains_goal_caller_return = self.dungeon_landing_goal_display_handoff
@@ -45569,6 +45608,7 @@ impl ZeldaState {
                     || self.original_timing_dungeon_reset_sprites_progress_pending()
                     || self.original_timing_dungeon_push_blocks_pending()
                     || self.original_timing_dungeon_push_blocks_in_progress().is_some()
+                    || self.original_timing_dungeon_push_blocks_handled()
                     || authoritative_scheduled_caller_nmi_timeline.is_some_and(|timeline| {
                         timeline.progress == crate::MainLoopProgress::CallStackContinued
                             && module_cpu_phase_from_main_loop_interruption(
@@ -46899,6 +46939,7 @@ impl ZeldaState {
                                 .expect("room-load CPU schedule must survive auxiliary graphics");
                             if self.original_timing_dungeon_push_blocks_pending()
                                 || self.original_timing_dungeon_push_blocks_in_progress().is_some()
+                                || self.original_timing_dungeon_push_blocks_handled()
                             {
                                 assert_eq!(supertile_wire_claims, 0, "push-block entry precedes Sprite_Main");
                                 self.complete_module07_02_01_after_auxiliary_sprite_graphics();
@@ -46906,7 +46947,7 @@ impl ZeldaState {
                                 self.complete_module07_dungeon_after_submodule();
                                 assert!(matches!(self.game_execution_scheduler.current_work(),
                                     Some(GameWorkContinuation::FinishDungeonPushBlocks { .. }
-                                        | GameWorkContinuation::FinishDungeonPushBlockHandler)));
+                                        | GameWorkContinuation::FinishDungeonPushBlockHandler { .. })));
                                 return;
                             }
                             self.complete_module07_02_01_before_dungeon_reset_sprites();
@@ -48723,8 +48764,10 @@ impl ZeldaState {
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonPushBlocks { dungeon }) => {
                     self.resume_dungeon_push_blocks_caller(dungeon);
                 }
-                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonPushBlockHandler) => {
-                    self.resume_dungeon_push_block_handler();
+                GameWorkStep::Complete(GameWorkContinuation::FinishDungeonPushBlockHandler {
+                    handler_pending,
+                }) => {
+                    self.resume_dungeon_push_block_handler(handler_pending);
                 }
                 GameWorkStep::Complete(GameWorkContinuation::FinishDungeonCachedSpriteMain {
                     boundary,

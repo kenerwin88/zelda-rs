@@ -2028,6 +2028,10 @@ pub enum OriginalTimingSemanticReceipt {
     DungeonPushBlocksInProgress {
         next_index: u16,
     },
+    /// Module 7's Dungeon_PushBlock_Handler returned and OrientLampLightCone
+    /// was entered but has stored nothing; the lamp cone, scroll copies,
+    /// drawing and Sprite_Main remain pending.
+    DungeonPushBlocksHandled,
     /// Module09 has applied three saved scroll pairs; BG1 vertical and
     /// the ensuing Sprite_Main call remain in its native caller frame.
     Module09FinalScrollPairPending,

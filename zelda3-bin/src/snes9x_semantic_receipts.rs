@@ -5710,6 +5710,9 @@ impl Snes9xOracleSemanticTrace {
                     next_index,
                 });
             }
+            if dungeon_push_blocks_handled(returned_event) {
+                receipts.push(OriginalTimingSemanticReceipt::DungeonPushBlocksHandled);
+            }
             if publish_pre_dungeon_sprite_reset_progress(
                 returned_event,
                 OriginalTimingBoundary::HostReturn,
@@ -7457,6 +7460,9 @@ impl Snes9xOracleSemanticTrace {
                     receipts.push(OriginalTimingSemanticReceipt::DungeonPushBlocksInProgress {
                         next_index,
                     });
+                }
+                if dungeon_push_blocks_handled(&event) {
+                    receipts.push(OriginalTimingSemanticReceipt::DungeonPushBlocksHandled);
                 }
                 if let Some(progress) = credits_scene_load_boundary_progress(
                     &event,
@@ -9682,6 +9688,18 @@ fn dungeon_push_blocks_in_progress(event: &RawTraceEvent) -> Option<u16> {
         0x01_d820 | 0x01_d823 => Some(y),
         _ => None,
     }
+}
+
+/// A boundary in OrientLampLightCone's guard ($00:F566..F570, JSL'd from
+/// Module07_Dungeon at $02:87E1 right after Dungeon_PushBlock_Handler): the
+/// handler has returned and nothing of the lamp cone or scroll copies ran.
+fn dungeon_push_blocks_handled(event: &RawTraceEvent) -> bool {
+    event.main == Some(7)
+        && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x02_87e4)
+        && matches!(
+            event.pc.map(|pc| pc & 0xff_ffff),
+            Some(0x00_f566 | 0x00_f567 | 0x00_f56a | 0x00_f56c | 0x00_f56e | 0x00_f570)
+        )
 }
 
 fn dungeon_reset_sprites_caller_progress(
@@ -14103,6 +14121,19 @@ mod tests {
                 completed_bytes: 1344,
             },
         );
+    }
+
+    #[test]
+    fn push_block_handled_checkpoint_sits_in_the_lamp_cone_guard() {
+        let mut event = raw("nmi", Some(0x00_f56a), Some(10), None);
+        event.main = Some(7);
+        event.return_address = Some(0x02_87e4);
+        assert!(dungeon_push_blocks_handled(&event));
+        event.pc = Some(0x00_f572);
+        assert!(!dungeon_push_blocks_handled(&event));
+        event.pc = Some(0x00_f56a);
+        event.return_address = Some(0x02_87e5);
+        assert!(!dungeon_push_blocks_handled(&event));
     }
 
     #[test]

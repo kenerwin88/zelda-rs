@@ -14104,12 +14104,27 @@ impl ZeldaState {
                 // run the misc objects it completed and park the remainder of
                 // the loop with the Module 7 tail behind it.
                 self.dungeon_push_block_handler_until(next_index);
-                self.game_execution_scheduler
-                    .schedule_work(GameWorkContinuation::FinishDungeonPushBlockHandler, 1);
+                self.game_execution_scheduler.schedule_work(
+                    GameWorkContinuation::FinishDungeonPushBlockHandler {
+                        handler_pending: true,
+                    },
+                    1,
+                );
                 return;
             }
             self.dungeon_push_block_handler();
             self.replay_trace_ram_watch("module07-after-push-blocks");
+            if self.take_original_timing_dungeon_push_blocks_handled() {
+                // The wire's boundary fell right after the handler returned
+                // (inside OrientLampLightCone's guard): park the tail.
+                self.game_execution_scheduler.schedule_work(
+                    GameWorkContinuation::FinishDungeonPushBlockHandler {
+                        handler_pending: false,
+                    },
+                    1,
+                );
+                return;
+            }
         }
         self.complete_module07_dungeon_after_push_block_handler(runs_push_block_handler);
     }
