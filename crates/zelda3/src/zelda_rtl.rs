@@ -30620,6 +30620,32 @@ impl ZeldaState {
         self.stage_dialogue_scroll_completion_after_return(completed_scanout);
     }
 
+    /// Return from RenderText and Module0E before the common sprite-preparation
+    /// suffix. That suffix may itself suspend after the scroll has returned.
+    fn complete_module0e_dialogue_scroll_before_common_suffix(&mut self) {
+        assert_eq!(self.game_state.frame.main_module, 0x0e);
+        assert!(self.dialogue_scroll_is_copying_remaining_pixels());
+        let passes = self.take_terminal_dialogue_scroll_pixel_passes();
+        let completion_timing = self
+            .finish_dialogue_scroll_remaining_pixels_with_main_loop_receipt(
+                crate::MainLoopProgress::CallStackContinued,
+            );
+        assert_eq!(
+            completion_timing,
+            DialogueScrollCompletionTiming::AfterReturnBoundary
+        );
+        if self.render_text_scroll_pixels(passes) {
+            let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos();
+            self.messaging_state_mut()
+                .set_dialogue_msg_read_pos(read_pos.wrapping_add(1));
+        }
+        self.finish_dialogue_character_render_call();
+        self.complete_module0e_interface_after_run();
+        self.finish_dialogue_scroll_return();
+        let completed_scanout = self.dialogue_text_scanout_from_render_buffer();
+        self.stage_dialogue_scroll_completion_after_return(completed_scanout);
+    }
+
     fn stage_dialogue_scroll_completion_after_return(
         &mut self,
         completed_scanout: DialogueTextScanout,
@@ -42535,33 +42561,7 @@ impl ZeldaState {
                         // Module0E callers return, and the completion stages
                         // after the return boundary. The shared executor owns
                         // the suffix and any trailing acceptance.
-                        let completion_timing = state
-                            .finish_dialogue_scroll_remaining_pixels_with_main_loop_receipt(
-                                crate::MainLoopProgress::CallStackContinued,
-                            );
-                        assert_eq!(
-                            completion_timing,
-                            DialogueScrollCompletionTiming::AfterReturnBoundary,
-                            "a Continued scroll terminal must complete after its return boundary",
-                        );
-                        let passes = state.take_terminal_dialogue_scroll_pixel_passes();
-                        let command_done = state.render_text_scroll_pixels(passes);
-                        if command_done {
-                            let read_pos =
-                                state.game_state.messaging.runtime.dialogue_msg_read_pos();
-                            state
-                                .messaging_state_mut()
-                                .set_dialogue_msg_read_pos(read_pos.wrapping_add(1));
-                        }
-                        state.finish_dialogue_character_render_call();
-                        state.complete_module0e_interface_after_run();
-                        // The same host also proves the caller return, so the
-                        // separate return-only slice is folded in here: retire
-                        // the scroll return and stage its completed text
-                        // generation at the return boundary.
-                        state.finish_dialogue_scroll_return();
-                        let completed_scanout = state.dialogue_text_scanout_from_render_buffer();
-                        state.stage_dialogue_scroll_completion_after_return(completed_scanout);
+                        state.complete_module0e_dialogue_scroll_before_common_suffix();
                     }
                 },
             );
@@ -48736,6 +48736,12 @@ impl ZeldaState {
                     // again, so the catch-up hold must not outlive this host.
                     self.dialogue_fast_forward_hold_active = false;
                 }
+                if self.dialogue_scroll_is_copying_remaining_pixels() {
+                    // The source has returned from the slow copy before
+                    // entering NMI_PrepareSprites. Finish that caller first;
+                    // only the extended-OAM suffix remains suspended below.
+                    self.complete_module0e_dialogue_scroll_before_common_suffix();
+                }
                 self.nmi_prepare_sprites_through_extended_oam_packing(next_group_start);
                 assert_eq!(
                     self.pending_main_loop_common_suffix.replace(
@@ -53542,38 +53548,58 @@ impl ZeldaState {
         // is not proof: both a carried handler and an acceptance completed in
         // this sequence must publish the exact BG3 DMA receipt before the
         // dialogue state machine advances.
-        let publishes_staged_dialogue_completion = matches!(
+        let has_staged_dialogue_completion = matches!(
             self.dialogue_scroll_phase(),
             DialogueScrollPhase::CompletionStagedAfterSnapshot
                 | DialogueScrollPhase::CompletionStagedAfterFrozenScanout
-        )
-        .then(|| {
-            if completion_owner == OriginalTimingNmiHandlerCompletionOwner::PendingAtSequenceEntry {
-                assert_eq!(
-                    self.original_timing_pending_nmi_update_gate,
-                    Some(NmiUpdateGate::Open),
-                    "a staged dialogue completion requires its carried Open NMI",
-                );
-            }
-            assert_eq!(
-                self.original_timing_expected_nmi_update_gates.first(),
-                Some(&NmiUpdateGate::Open),
-                "a staged dialogue completion disagrees with its installed Open-NMI authority",
+        );
+        let staged_dialogue_waits_for_caller = has_staged_dialogue_completion
+            && self.original_timing_expected_nmi_update_gates.first()
+                == Some(&NmiUpdateGate::LatchHeld);
+        if staged_dialogue_waits_for_caller {
+            // RenderText can return before NMI_PrepareSprites finishes its
+            // extended-OAM packing. The completed CPU text stays staged
+            // through that Held handler; only the caller's later latch clear
+            // permits an Open NMI to publish the BG3 DMA.
+            assert!(
+                self.pending_main_loop_common_suffix.is_some(),
+                "staged dialogue cannot wait on a Held NMI without its suspended caller"
             );
             assert!(
+                self.game_state.display.nmi_update_is_latched(),
+                "a suspended dialogue caller must retain its native NMI latch"
+            );
+        }
+        let publishes_staged_dialogue_completion =
+            (has_staged_dialogue_completion && !staged_dialogue_waits_for_caller).then(|| {
+                if completion_owner
+                    == OriginalTimingNmiHandlerCompletionOwner::PendingAtSequenceEntry
+                {
+                    assert_eq!(
+                        self.original_timing_pending_nmi_update_gate,
+                        Some(NmiUpdateGate::Open),
+                        "a staged dialogue completion requires its carried Open NMI",
+                    );
+                }
+                assert_eq!(
+                    self.original_timing_expected_nmi_update_gates.first(),
+                    Some(&NmiUpdateGate::Open),
+                    "a staged dialogue completion disagrees with its installed Open-NMI authority",
+                );
+                assert!(
                 !self.game_state.display.nmi_update_is_latched(),
                 "a staged dialogue completion cannot publish while the native NMI latch is held",
             );
-            assert_eq!(
-                self.game_state.display.pending_nmi_subroutine, 2,
-                "a staged dialogue completion requires the source BG3 text-DMA subroutine",
-            );
-            assert_eq!(
-                self.game_state.display.core_update_disable_flag, 2,
-                "a staged dialogue completion requires the source BG3 text-DMA disable state",
-            );
-            true
-        });
+                assert_eq!(
+                    self.game_state.display.pending_nmi_subroutine, 2,
+                    "a staged dialogue completion requires the source BG3 text-DMA subroutine",
+                );
+                assert_eq!(
+                    self.game_state.display.core_update_disable_flag, 2,
+                    "a staged dialogue completion requires the source BG3 text-DMA disable state",
+                );
+                true
+            });
         let acceptance_ppu_registers = (completion_owner
             == OriginalTimingNmiHandlerCompletionOwner::PendingAtSequenceEntry)
             .then(|| {

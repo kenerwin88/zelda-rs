@@ -28835,6 +28835,107 @@ fn live_scroll_preserves_the_caller_through_two_two_one_source_copies() {
 }
 
 #[test]
+fn scroll_return_precedes_a_suspended_extended_oam_suffix() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.rom_reset_frame_delay = 0;
+    state.initialized = true;
+    state.set_animated_tile_data_source_address(0xa680);
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.messaging_state_mut().set_module(1);
+    state.messaging_state_mut().set_text_render_state(3);
+    state.messaging_state_mut().set_dialogue_scroll_speed(4);
+    state
+        .messaging_text_mut()
+        .load_decoded_dialogue(&[TEXT_COMMAND_START_US + 12]);
+    state.capture_display_snapshot();
+    state.begin_dialogue_scroll(
+        DialogueTextGeneration::PublishedDisplay,
+        DialogueScrollCompletionTiming::AfterReturnBoundary,
+    );
+    assert!(!state.render_text_scroll_pixels(2));
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.pending_main_loop_common_suffix =
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+    state.original_timing_nmi_publication_pending = true;
+    state.original_timing_pending_nmi_update_gate = Some(NmiUpdateGate::LatchHeld);
+    state.latch_nmi_update();
+    state
+        .install_original_timing_host_receipts(
+            OriginalTimingHostReceipts::new(
+                179852,
+                0,
+                vec![
+                    OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                    OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                    OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                        crate::MainLoopInterruption::SpritePreparationExtendedOamPacking {
+                            next_group_start: 20,
+                        },
+                    ),
+                    OriginalTimingSemanticReceipt::MainLoopProgress(
+                        crate::MainLoopProgress::CallStackContinued,
+                    ),
+                ],
+            )
+            .with_dialogue_scroll_progress(vec![
+                crate::DialogueScrollProgressReceipt {
+                    entered: false,
+                    completed_pixel_passes: 3,
+                    returned: true,
+                },
+            ]),
+        )
+        .unwrap();
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.dialogue_scroll_cpu_is_idle());
+    assert_eq!(state.pending_main_loop_common_suffix, Some(MainLoopCommonSuffixContinuation::ResumeSpritePreparationExtendedOamPackingAndClearNmiLatch { next_group_start: 20 }));
+    assert_eq!(
+        state
+            .game_state
+            .messaging
+            .dialogue_source_offset
+            .bank_offset_low_nibble(),
+        5
+    );
+    assert!(state.game_state.display.nmi_update_is_latched());
+    assert!(state.original_timing_semantic_receipts.is_none());
+    // The carried Held handler cannot publish the staged text. The source
+    // finishes packing and clears the latch before accepting the Open NMI.
+    state
+        .install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            179853,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    crate::MainLoopProgress::CallStackContinued,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+            ],
+        ))
+        .unwrap();
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.pending_main_loop_common_suffix.is_none());
+    assert_eq!(
+        state.original_timing_pending_nmi_update_gate,
+        Some(NmiUpdateGate::Open)
+    );
+    assert!(!state.game_state.display.nmi_update_is_latched());
+    assert_eq!(
+        state
+            .game_state
+            .messaging
+            .dialogue_source_offset
+            .bank_offset_low_nibble(),
+        5
+    );
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
 fn vwf_endpoint_preflights_the_following_source_scroll_before_mutation() {
     let mut state = ZeldaState::new();
     state.set_main_module(14);
