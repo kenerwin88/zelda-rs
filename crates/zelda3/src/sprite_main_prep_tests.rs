@@ -157,6 +157,49 @@ fn standard_guard_parry_checkpoint_keeps_the_second_body_pending() {
 }
 
 #[test]
+fn standard_guard_patrol_checkpoint_restores_initializer_after_each_nested_call() {
+    // The patrol delay check follows movement but precedes the timer and
+    // animation updates in each of the initializer's two active calls.
+    fn configured() -> Box<ZeldaState> {
+        let mut state = fresh_state();
+        state.set_main_module(9);
+        state.set_indoor_flag(0);
+        state.set_submodule(0x25);
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state
+            .oam_state_mut()
+            .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+        let mut sprite = state.sprite_slot_view_mut(10);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x41);
+        sprite.set_x(0x80);
+        sprite.set_y(0x80);
+        sprite.set_deflection_bits(0x20);
+        state
+    }
+    let mut atomic = configured();
+    atomic.sprite_prep_standard_guard(10);
+    for active_call in 1..=2 {
+        let mut staged = configured();
+        let continuation = staged.sprite_prep_standard_guard_until_patrol_delay(10, active_call);
+        assert_eq!(staged.sprite_slot_view(10).subtype2(), active_call - 1);
+        assert_eq!(staged.game_state.frame.submodule, 0);
+        assert_eq!(staged.sprite_slot_view(10).ai_state(), 1);
+        assert_eq!(staged.sprite_slot_view(10).delay_main(), 111 + active_call);
+        assert_eq!(staged.sprite_slot_view(10).deflection_bits(), 0x90);
+        staged.complete_sprite_prep_standard_guard_after_patrol_delay(
+            10,
+            active_call,
+            continuation,
+        );
+        assert_eq!(staged.game_state, atomic.game_state);
+        assert_eq!(staged.ram, atomic.ram);
+        assert_eq!(staged.game_state.frame.submodule, 0x25);
+        assert_eq!(staged.sprite_slot_view(10).deflection_bits(), 0x20);
+    }
+}
+
+#[test]
 fn simple_sprite_prep_offsets_and_flags_match_c() {
     let mut s = fresh_state();
     let k = 2;

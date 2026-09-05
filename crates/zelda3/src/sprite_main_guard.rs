@@ -764,6 +764,12 @@ impl ZeldaState {
     }
 
     fn guard_main_after_parry(&mut self, k: usize) {
+        if self.guard_main_after_parry_until_ai(k) {
+            self.guard_main_ai(k);
+        }
+    }
+
+    fn guard_main_after_parry_until_ai(&mut self, k: usize) -> bool {
         let dmg_link = self.sprite_check_damage_to_link_for_guard(k);
         let alert = self.game_state.sprites.system.alert_flag() != 0;
         if (dmg_link || alert) && self.sprite_slot_view(k).ai_state() < 3 {
@@ -774,7 +780,7 @@ impl ZeldaState {
             self.guard_set_timer_and_assert_tile_hit_box(k, 0x80);
         }
         if self.sprite_return_if_recoiling_for_guard(k) {
-            return;
+            return false;
         }
         if (self.sprite_slot_view(k).subtype() & 7) < 5 {
             if self.sprite_slot_view(k).wall_collision() == 0 {
@@ -788,6 +794,23 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_g(0);
         }
 
+        true
+    }
+
+    pub(super) fn guard_main_until_patrol_delay(&mut self, k: usize) {
+        let (graphics, direction) = self.guard_main_animation(k);
+        self.sprite_slot_view_mut(k).set_graphics(graphics);
+        self.sprite_slot_view_mut(k).set_direction(direction);
+        assert_ne!(self.sprite_slot_view(k).state(), 5);
+        assert!(!self.sprite_return_if_inactive_for_guard(k));
+        self.guard_parry_sword_attacks_for_guard(k);
+        assert!(self.guard_main_after_parry_until_ai(k));
+        assert_eq!(self.sprite_slot_view(k).ai_state(), 1);
+        self.sprite_guard_send_out_probe(k);
+        assert!((self.sprite_slot_view(k).subtype() & 7) < 5);
+    }
+
+    fn guard_main_ai(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_zero_velocity_xy_for_guard(k);
@@ -820,26 +843,7 @@ impl ZeldaState {
                     self.guard_shoot_probe_and_stuff(k);
                     return;
                 }
-                if self.sprite_slot_view(k).delay_main() == 0 {
-                    self.sprite_zero_velocity_xy_for_guard(k);
-                    let mut sprite = self.sprite_slot_view_mut(k);
-                    sprite.set_ai_state(2);
-                    sprite.set_delay_main(160);
-                    return;
-                }
-                if (self.sprite_slot_view(k).subtype2() & 1) == 0 {
-                    self.sprite_slot_view_mut(k).increment_delay_main();
-                }
-                if (self.sprite_slot_view(k).wall_collision() & 0xf) != 0 {
-                    self.sprite_slot_view_mut(k).xor_direction(1);
-                    self.guard_set_glance_to12(k);
-                }
-                let dir = self.sprite_slot_view(k).direction() as usize & 3;
-                let mut sprite = self.sprite_slot_view_mut(k);
-                sprite.set_x_velocity(SOLDIER_X_VELOCITY_BY_DIRECTION[dir] as u8);
-                sprite.set_y_velocity(SOLDIER_Y_VELOCITY_BY_DIRECTION[dir] as u8);
-                sprite.set_head_direction(dir as u8);
-                self.guard_tick_and_update_body(k);
+                self.guard_patrol_after_delay_load(k);
             }
             2 => {
                 self.sprite_zero_velocity_xy_for_guard(k);
@@ -880,6 +884,30 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    pub(super) fn guard_patrol_after_delay_load(&mut self, k: usize) {
+        assert_eq!(self.sprite_slot_view(k).ai_state(), 1);
+        if self.sprite_slot_view(k).delay_main() == 0 {
+            self.sprite_zero_velocity_xy_for_guard(k);
+            let mut sprite = self.sprite_slot_view_mut(k);
+            sprite.set_ai_state(2);
+            sprite.set_delay_main(160);
+            return;
+        }
+        if (self.sprite_slot_view(k).subtype2() & 1) == 0 {
+            self.sprite_slot_view_mut(k).increment_delay_main();
+        }
+        if (self.sprite_slot_view(k).wall_collision() & 0xf) != 0 {
+            self.sprite_slot_view_mut(k).xor_direction(1);
+            self.guard_set_glance_to12(k);
+        }
+        let dir = self.sprite_slot_view(k).direction() as usize & 3;
+        let mut sprite = self.sprite_slot_view_mut(k);
+        sprite.set_x_velocity(SOLDIER_X_VELOCITY_BY_DIRECTION[dir] as u8);
+        sprite.set_y_velocity(SOLDIER_Y_VELOCITY_BY_DIRECTION[dir] as u8);
+        sprite.set_head_direction(dir as u8);
+        self.guard_tick_and_update_body(k);
     }
 
     // ------------------------------------------------------------------

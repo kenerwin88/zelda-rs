@@ -364,6 +364,34 @@ impl ZeldaState {
         }
     }
 
+    pub(super) fn sprite_prep_standard_guard_until_patrol_delay(
+        &mut self,
+        k: usize,
+        active_call: u8,
+    ) -> u8 {
+        assert!((1..=2).contains(&active_call));
+        assert!(self.sprite_prep_standard_guard_before_trooper(k));
+        let saved_submodule = self.sprite_prep_trooper_and_archer_soldier_prefix(k);
+        for _ in 1..active_call {
+            self.sprite_active_main(k);
+        }
+        self.guard_main_until_patrol_delay(k);
+        saved_submodule
+    }
+
+    pub(super) fn complete_sprite_prep_standard_guard_after_patrol_delay(
+        &mut self,
+        k: usize,
+        active_call: u8,
+        saved_submodule: u8,
+    ) {
+        self.guard_patrol_after_delay_load(k);
+        for _ in active_call..2 {
+            self.sprite_active_main(k);
+        }
+        self.sprite_prep_trooper_and_archer_soldier_suffix(k, saved_submodule);
+    }
+
     pub(super) fn complete_sprite_prep_standard_guard_after_parry_hitbox(
         &mut self,
         k: usize,
