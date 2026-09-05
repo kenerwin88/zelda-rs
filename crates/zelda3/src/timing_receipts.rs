@@ -888,6 +888,7 @@ pub enum MainLoopInterruption {
     /// Recurring Module0F finished its iris table and radius update, before
     /// the control clears and Link/OAM caller suffix.
     DungeonExitSpotlightTableCompleted,
+    SpriteMainAbsorbableVerticalTileLookup(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -956,6 +957,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
                 | Self::SpriteMainHogSpearBodyGraphicsPending(_)
                 | Self::SpriteMainAbsorbableHorizontalTileLookup(_)
+                | Self::SpriteMainAbsorbableVerticalTileLookup(_)
                 | Self::SpriteMainPengatorSlidePending(_)
                 | Self::SpriteMainAntifairyBouncePending(_)
                 | Self::SpriteMainKholdstareDamagePending(_)
@@ -1125,6 +1127,7 @@ pub enum SpriteMainProgress {
     KholdstareDamagePending(u8),
     AfterMainTimerDecrement(u8),
     AfterZeroHitTimerClear(u8),
+    AbsorbableVerticalTileLookup(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

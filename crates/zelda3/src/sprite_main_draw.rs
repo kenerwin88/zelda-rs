@@ -7484,14 +7484,20 @@ impl ZeldaState {
         }
         self.sprite_move_z(k);
         self.sprite_move_xy(k);
-        if self.sprite_main_cpu_boundary
-            == Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot: k as u8 })
+        if matches!(self.sprite_main_cpu_boundary,
+            Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot }) if slot == k as u8)
         {
             assert_eq!(self.sprite_slot_view(k).delay_aux3(), 0);
             assert!(self.game_state.world.location.is_outdoors());
             assert_eq!(self.game_state.dungeon.room_load.header_collision(), 0);
             assert_eq!(self.sprite_slot_view(k).flags2() & 0x20, 0);
             self.sprite_slot_view_mut(k).set_wall_collision(0);
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot: k as u8 })
+            {
+                assert_ne!(self.sprite_slot_view(k).y_velocity(), 0);
+                return;
+            }
             if self.sprite_slot_view(k).y_velocity() != 0 {
                 self.sprite_check_for_tile_in_direction_vertical(
                     k,
@@ -7510,6 +7516,24 @@ impl ZeldaState {
             self.sprite_bounce_off_wall(k);
         }
         self.sprite_absorbable_after_collision(k);
+    }
+
+    pub(super) fn sprite_absorbable_after_vertical_lookup(&mut self, k: usize) {
+        self.sprite_check_for_tile_in_direction_vertical(
+            k,
+            if sign8(self.sprite_slot_view(k).y_velocity()) {
+                0
+            } else {
+                1
+            },
+        );
+        if self.sprite_slot_view(k).x_velocity() != 0 {
+            self.sprite_absorbable_after_horizontal_lookup(k);
+        } else {
+            self.sprite_check_tile_collision_after_directions(k);
+            self.sprite_bounce_off_wall(k);
+            self.sprite_absorbable_after_collision(k);
+        }
     }
 
     pub(super) fn sprite_absorbable_after_horizontal_lookup(&mut self, k: usize) {

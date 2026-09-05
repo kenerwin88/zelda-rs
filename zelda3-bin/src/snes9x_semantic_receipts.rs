@@ -944,6 +944,7 @@ struct SpriteMainExecutionTracker {
     hog_spear_body_graphics_pending: Option<u8>,
     absorbable_body_active: bool,
     absorbable_horizontal_lookup: Option<u8>,
+    absorbable_vertical_lookup: Option<u8>,
     pengator_slide_pending: Option<u8>,
     antifairy_bounce_pending: Option<u8>,
     kholdstare_subtype_decremented: bool,
@@ -1089,15 +1090,34 @@ impl SpriteMainExecutionTracker {
         Ok(())
     }
 
-    fn observe_absorbable_horizontal_lookup(
-        &mut self,
-        event: &RawTraceEvent,
-    ) -> Result<(), String> {
-        if self.absorbable_body_active
+    fn observe_absorbable_tile_lookup(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        // Sprite_CheckTileProperty's JSR reaches the attribute leaf before
+        // any tile-dependent effects. X is still the owning sprite here.
+        let attribute_entry = event.pc.map(|pc| pc & 0xff_ffff) == Some(0x06_e883)
             && event
-                .pc
-                .is_some_and(|pc| (0x00_882e..0x00_8888).contains(&(pc & 0xff_ffff)))
-            && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x06_e8cd)
+                .return_address
+                .is_some_and(|address| address & 0xffff == 0xe7a0)
+            && self.current_slot.map(u16::from) == event.x;
+        let attribute_lookup = event
+            .pc
+            .is_some_and(|pc| (0x00_882e..0x00_8888).contains(&(pc & 0xff_ffff)))
+            && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x06_e8cd);
+        if self.absorbable_body_active
+            && (attribute_entry
+                || attribute_lookup
+                || (event
+                    .pc
+                    .is_some_and(|pc| (0x06_e775..=0x06_e782).contains(&(pc & 0xff_ffff)))
+                    && event
+                        .return_address
+                        .is_some_and(|address| address & 0xffff == 0xe5f0)
+                    && self.current_slot.map(u16::from) == event.x))
+            && event.y.is_some_and(|y| matches!(y & 7, 0 | 2))
+        {
+            self.absorbable_vertical_lookup = self.current_slot;
+        }
+        if self.absorbable_body_active
+            && (attribute_entry || attribute_lookup)
             && event.y.is_some_and(|y| matches!(y & 7, 4 | 6))
         {
             let slot = self
@@ -2209,6 +2229,10 @@ impl SpriteMainExecutionTracker {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::AbsorbableHorizontalTileLookup(slot);
         }
+        if let Some(slot) = self.absorbable_vertical_lookup {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::AbsorbableVerticalTileLookup(slot);
+        }
         if let Some(slot) = self.pengator_slide_pending {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::PengatorSlidePending(slot);
@@ -2551,6 +2575,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::AbsorbableHorizontalTileLookup(slot) => {
                 MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(slot)
+            }
+            SpriteMainProgress::AbsorbableVerticalTileLookup(slot) => {
+                MainLoopInterruption::SpriteMainAbsorbableVerticalTileLookup(slot)
             }
             SpriteMainProgress::PengatorSlidePending(slot) => {
                 MainLoopInterruption::SpriteMainPengatorSlidePending(slot)
@@ -4207,7 +4234,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_guard_prep_weapon_flags_pending(returned_event)?;
                 execution.observe_guard_animation_checkpoint(returned_event)?;
                 execution.observe_hog_spear_body_graphics_pending(returned_event)?;
-                execution.observe_absorbable_horizontal_lookup(returned_event)?;
+                execution.observe_absorbable_tile_lookup(returned_event)?;
                 execution.observe_pengator_slide_pending(returned_event)?;
                 execution.observe_antifairy_bounce_pending(returned_event)?;
                 execution.observe_kholdstare_damage_pending(returned_event)?;
@@ -4870,6 +4897,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.hog_spear_body_graphics_pending = None;
                             execution.absorbable_body_active = false;
                             execution.absorbable_horizontal_lookup = None;
+                            execution.absorbable_vertical_lookup = None;
                             execution.pengator_slide_pending = None;
                             execution.antifairy_bounce_pending = None;
                             execution.kholdstare_subtype_decremented = false;
@@ -4923,6 +4951,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.hog_spear_body_graphics_pending = None;
                             execution.absorbable_body_active = false;
                             execution.absorbable_horizontal_lookup = None;
+                            execution.absorbable_vertical_lookup = None;
                             execution.pengator_slide_pending = None;
                             execution.antifairy_bounce_pending = None;
                             execution.kholdstare_subtype_decremented = false;
@@ -4969,6 +4998,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.hog_spear_body_graphics_pending = None;
                         execution.absorbable_body_active = false;
                         execution.absorbable_horizontal_lookup = None;
+                        execution.absorbable_vertical_lookup = None;
                         execution.pengator_slide_pending = None;
                         execution.antifairy_bounce_pending = None;
                         execution.kholdstare_subtype_decremented = false;
@@ -5334,7 +5364,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
-                    execution.observe_absorbable_horizontal_lookup(&event)?;
+                    execution.observe_absorbable_tile_lookup(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_antifairy_bounce_pending(&event)?;
                     execution.observe_kholdstare_damage_pending(&event)?;
@@ -5826,7 +5856,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
-                    execution.observe_absorbable_horizontal_lookup(&event)?;
+                    execution.observe_absorbable_tile_lookup(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_antifairy_bounce_pending(&event)?;
                     execution.observe_kholdstare_damage_pending(&event)?;
@@ -7603,6 +7633,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(slot) => {
                     Some(SpriteMainProgress::AbsorbableHorizontalTileLookup(slot))
                 }
+                MainLoopInterruption::SpriteMainAbsorbableVerticalTileLookup(slot) => {
+                    Some(SpriteMainProgress::AbsorbableVerticalTileLookup(slot))
+                }
                 MainLoopInterruption::SpriteMainPengatorSlidePending(slot) => {
                     Some(SpriteMainProgress::PengatorSlidePending(slot))
                 }
@@ -8604,6 +8637,7 @@ mod tests {
             hog_spear_body_graphics_pending: None,
             absorbable_body_active: false,
             absorbable_horizontal_lookup: None,
+            absorbable_vertical_lookup: None,
             pengator_slide_pending: None,
             antifairy_bounce_pending: None,
             kholdstare_subtype_decremented: false,
@@ -10525,6 +10559,7 @@ mod tests {
         execution.hog_spear_body_graphics_pending = None;
         execution.absorbable_body_active = false;
         execution.absorbable_horizontal_lookup = None;
+        execution.absorbable_vertical_lookup = None;
         execution.pengator_slide_pending = None;
         execution.antifairy_bounce_pending = None;
         execution.kholdstare_subtype_decremented = false;
@@ -10605,23 +10640,43 @@ mod tests {
         let mut event = raw("nmi", Some(0x00_8872), Some(170), None);
         event.return_address = Some(0x06_e8cd);
         event.y = Some(6);
-        execution
-            .observe_absorbable_horizontal_lookup(&event)
-            .unwrap();
+        execution.observe_absorbable_tile_lookup(&event).unwrap();
         assert_eq!(
             execution.progress(),
             SpriteMainProgress::AbsorbableHorizontalTileLookup(3)
         );
         execution.absorbable_horizontal_lookup = None;
+        execution.absorbable_vertical_lookup = None;
         execution.pengator_slide_pending = None;
         execution.antifairy_bounce_pending = None;
         execution.kholdstare_subtype_decremented = false;
         execution.kholdstare_damage_pending = None;
         event.y = Some(0);
-        execution
-            .observe_absorbable_horizontal_lookup(&event)
-            .unwrap();
+        execution.observe_absorbable_tile_lookup(&event).unwrap();
         assert_eq!(execution.absorbable_horizontal_lookup, None);
+        assert_eq!(execution.absorbable_vertical_lookup, Some(3));
+        execution.absorbable_vertical_lookup = None;
+        event.pc = Some(0x06_e782);
+        event.return_address = Some(0x03_e5f0);
+        event.x = Some(3);
+        event.y = Some(8);
+        execution.observe_absorbable_tile_lookup(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::AbsorbableVerticalTileLookup(3)
+        );
+        execution.absorbable_vertical_lookup = None;
+        event.return_address = Some(0x03_e5f1);
+        execution.observe_absorbable_tile_lookup(&event).unwrap();
+        assert_eq!(execution.absorbable_vertical_lookup, None);
+        event.pc = Some(0x06_e883);
+        event.return_address = Some(0xba_e7a0);
+        event.y = Some(14);
+        execution.observe_absorbable_tile_lookup(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::AbsorbableHorizontalTileLookup(3)
+        );
     }
 
     #[test]
@@ -13720,6 +13775,7 @@ mod tests {
             hog_spear_body_graphics_pending: None,
             absorbable_body_active: false,
             absorbable_horizontal_lookup: None,
+            absorbable_vertical_lookup: None,
             pengator_slide_pending: None,
             antifairy_bounce_pending: None,
             kholdstare_subtype_decremented: false,
@@ -13797,6 +13853,7 @@ mod tests {
             hog_spear_body_graphics_pending: None,
             absorbable_body_active: false,
             absorbable_horizontal_lookup: None,
+            absorbable_vertical_lookup: None,
             pengator_slide_pending: None,
             antifairy_bounce_pending: None,
             kholdstare_subtype_decremented: false,

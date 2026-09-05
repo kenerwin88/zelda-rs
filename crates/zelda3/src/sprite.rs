@@ -3222,8 +3222,8 @@ impl ZeldaState {
                 self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
                 return;
             }
-            if self.sprite_main_cpu_boundary
-                == Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot: k as u8 })
+            if matches!(self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot }) if slot == k as u8)
             {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
@@ -4289,6 +4289,13 @@ impl ZeldaState {
                 self.sprite_system_mut().set_cur_object_index(slot);
                 assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
                 self.sprite_absorbable_after_horizontal_lookup(interrupted_slot);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
+                self.sprite_absorbable_after_vertical_lookup(interrupted_slot);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::PengatorSlidePending { slot } => {
