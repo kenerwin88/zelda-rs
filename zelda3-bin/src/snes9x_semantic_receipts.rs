@@ -6779,6 +6779,35 @@ fn publish_pre_dungeon_sprite_reset_progress(
 ) -> Result<bool, String> {
     let pc = event.pc.map(|pc| pc & 0x00ff_ffff);
     let return_address = event.return_address.map(|address| address & 0x00ff_ffff);
+    // Sprite_ResetAll's JSL return identifies the shared disable loop.
+    // At DEX the current slot's STZ has completed; BPL follows that DEX.
+    if event.main == Some(6)
+        && return_address == Some(0x09_c451)
+        && matches!(pc, Some(0x09_c234 | 0x09_c235))
+    {
+        let x = event.x.ok_or("Sprite_ResetAll disable loop omitted X")?;
+        let slot = if pc == Some(0x09_c234) {
+            x
+        } else {
+            (x as u8).wrapping_add(1) as u16
+        };
+        if slot >= 16 {
+            return Err("Sprite_ResetAll disable loop has invalid slot".into());
+        }
+        receipts.retain(|r| {
+            !matches!(
+                r,
+                OriginalTimingSemanticReceipt::PreDungeonSpriteDisableThrough { .. }
+            )
+        });
+        receipts.push(
+            OriginalTimingSemanticReceipt::PreDungeonSpriteDisableThrough {
+                slot: slot as u8,
+                boundary,
+            },
+        );
+        return Ok(true);
+    }
     let pre_dungeon_caller = return_address == Some(MODULE_PRE_DUNGEON_AFTER_SPRITE_RESET_PC);
     let bird_travel_caller = matches!((event.main, event.sub), (Some(0x0e), Some(0x0a)))
         && matches!(
@@ -9362,6 +9391,40 @@ mod tests {
                 .mini_moldorm_ai_pending,
             None
         );
+    }
+
+    #[test]
+    fn pre_dungeon_disable_loop_keeps_its_sprite_reset_owner() {
+        let mut event = raw("nmi", Some(0x09_c234), Some(4), None);
+        event.main = Some(6);
+        event.return_address = Some(0x09_c451);
+        let mut receipts = Vec::new();
+        assert!(publish_pre_dungeon_sprite_reset_progress(
+            &event,
+            OriginalTimingBoundary::NmiAccepted,
+            false,
+            &mut receipts
+        )
+        .unwrap());
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::PreDungeonSpriteDisableThrough {
+                    slot: 4,
+                    boundary: OriginalTimingBoundary::NmiAccepted
+                }
+            ]
+        );
+        event.return_address = Some(0x09_c146);
+        receipts.clear();
+        assert!(!publish_pre_dungeon_sprite_reset_progress(
+            &event,
+            OriginalTimingBoundary::NmiAccepted,
+            false,
+            &mut receipts
+        )
+        .unwrap());
+        assert!(receipts.is_empty());
     }
     #[test]
     fn happiness_pond_rupee_decoder_entry_becomes_a_typed_partial_slot_checkpoint() {

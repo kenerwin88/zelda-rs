@@ -20037,6 +20037,31 @@ fn mini_moldorm_ai_dispatch_retains_movement_without_replaying_it() {
 }
 
 #[test]
+fn sprite_disable_resumes_after_each_exact_state_clear() {
+    for slot in 0..16 {
+        let mut state = ZeldaState::new();
+        for k in 0..16 {
+            state.sprite_slot_view_mut(k).set_state(9);
+        }
+        let mut atomic = state.clone();
+        atomic.sprite_disable_all();
+        state.apply_sprite_disable_actions_through(
+            None,
+            crate::DungeonSpriteDisableCpuProgress::SpriteStatesThrough { slot },
+        );
+        for k in 0..16 {
+            assert_eq!(
+                state.sprite_slot_view(k).state(),
+                if k >= usize::from(slot) { 0 } else { 9 }
+            );
+        }
+        state.complete_sprite_disable_after_states(slot);
+        assert_eq!(state.game_state, atomic.game_state);
+        assert_eq!(state.ram, atomic.ram);
+    }
+}
+
+#[test]
 fn super_bomb_purchase_pays_once_before_suspended_follower_graphics() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);

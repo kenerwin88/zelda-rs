@@ -1893,6 +1893,10 @@ pub enum OriginalTimingSemanticReceipt {
     /// Module09 has applied three saved scroll pairs; BG1 vertical and
     /// the ensuing Sprite_Main call remain in its native caller frame.
     Module09FinalScrollPairPending,
+    PreDungeonSpriteDisableThrough {
+        slot: u8,
+        boundary: OriginalTimingBoundary,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

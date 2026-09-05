@@ -8872,6 +8872,7 @@ enum PreDungeonSpriteResetContinuation {
     DungeonResetSprites(crate::DungeonResetSpritesCpuProgress),
     SpriteResetAllCompleted,
     DungeonResetSpritesCompleted,
+    SpriteDisableAllThrough(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23723,6 +23724,7 @@ impl ZeldaState {
             if matches!(
                 receipt,
                 OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(_)
+                    | OriginalTimingSemanticReceipt::PreDungeonSpriteDisableThrough { .. }
                     | OriginalTimingSemanticReceipt::SpriteResetAllProgress(_)
                     | OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(_)
                     // Module07/$16 consumes this source X/bank cursor when it
@@ -30901,6 +30903,41 @@ impl ZeldaState {
         true
     }
 
+    fn apply_pre_dungeon_sprite_disable_prefix(&mut self, slot: u8) {
+        assert!(slot < 16);
+        let work = self
+            .game_execution_scheduler
+            .current_work()
+            .expect("pre-dungeon disable requires a caller");
+        let GameWorkContinuation::FinishPreDungeonEntranceLoad { sprite_reset } = work else {
+            panic!("pre-dungeon disable reached another caller");
+        };
+        let prior = match sprite_reset {
+            PreDungeonSpriteResetContinuation::Pending => {
+                self.complete_module_pre_dungeon_before_sprite_reset();
+                None
+            }
+            PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(previous) => {
+                assert!(
+                    slot < previous,
+                    "pre-dungeon disable prefix did not advance"
+                );
+                Some(crate::DungeonSpriteDisableCpuProgress::SpriteStatesThrough { slot: previous })
+            }
+            _ => panic!("pre-dungeon disable reached a completed source stage"),
+        };
+        self.apply_sprite_disable_actions_through(
+            prior,
+            crate::DungeonSpriteDisableCpuProgress::SpriteStatesThrough { slot },
+        );
+        self.game_execution_scheduler.refine_scheduled_work(
+            work,
+            GameWorkContinuation::FinishPreDungeonEntranceLoad {
+                sprite_reset: PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(slot),
+            },
+        );
+    }
+
     fn apply_pre_dungeon_sprite_reset_progress(&mut self, receipt: SpriteResetAllProgressReceipt) {
         // A host may return either after the source call has advanced into
         // `Sprite_ResetAll_noDisable`, or at the NMI which interrupted that
@@ -30909,7 +30946,14 @@ impl ZeldaState {
         // the interrupt.
         match receipt.progress {
             SpriteResetAllProgress::SpriteDisableAllCompleted => {
-                self.complete_module_pre_dungeon_through_sprite_disable_all()
+                if let Some(GameWorkContinuation::FinishPreDungeonEntranceLoad {
+                    sprite_reset: PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(slot),
+                }) = self.game_execution_scheduler.current_work()
+                {
+                    self.complete_sprite_disable_after_states(slot);
+                } else {
+                    self.complete_module_pre_dungeon_through_sprite_disable_all();
+                }
             }
         }
         assert!(
@@ -30931,7 +30975,13 @@ impl ZeldaState {
             panic!("pre-dungeon Dungeon_ResetSprites progress reached the wrong work kind");
         };
         match sprite_reset {
-            PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted => {
+            PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted
+            | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_) => {
+                if let PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(slot) =
+                    sprite_reset
+                {
+                    self.complete_sprite_disable_after_states(slot);
+                }
                 // The source returned from Sprite_ResetAll_noDisable before it
                 // entered Dungeon_ResetSprites. Publish that intervening tail
                 // once, then the exact prefix of the new room's sprite load.
@@ -30962,6 +31012,10 @@ impl ZeldaState {
         match progress {
             PreDungeonSpriteResetContinuation::Pending => {
                 self.complete_module_pre_dungeon_before_return_suffix();
+            }
+            PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(slot) => {
+                self.complete_sprite_disable_after_states(slot);
+                self.complete_module_pre_dungeon_after_sprite_disable_all();
             }
             PreDungeonSpriteResetContinuation::NotApplicable => {
                 panic!("a non-dungeon destination cannot resume Module_PreDungeon Sprite_ResetAll")
@@ -43702,10 +43756,31 @@ impl ZeldaState {
                     | GameWorkContinuation::FinishPreDungeonSongBankTransfer
             )
         );
+        let mut pre_dungeon_disable_prefix = None;
+        if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
+            receipts.semantic.retain(|receipt| {
+                if let OriginalTimingSemanticReceipt::PreDungeonSpriteDisableThrough {
+                    slot, ..
+                } = receipt
+                {
+                    assert!(
+                        pre_dungeon_disable_prefix.replace(*slot).is_none(),
+                        "duplicate pre-dungeon disable prefix"
+                    );
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        if let Some(slot) = pre_dungeon_disable_prefix {
+            self.apply_pre_dungeon_sprite_disable_prefix(slot);
+        }
         let pre_dungeon_sprite_reset_is_pending = matches!(
             self.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::FinishPreDungeonEntranceLoad {
-                sprite_reset: PreDungeonSpriteResetContinuation::Pending,
+                sprite_reset: PreDungeonSpriteResetContinuation::Pending
+                    | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_),
             })
         );
         if !pre_dungeon_work_is_active {

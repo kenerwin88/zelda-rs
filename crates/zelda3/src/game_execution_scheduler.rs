@@ -1471,7 +1471,11 @@ impl GameExecutionScheduler {
         else {
             return false;
         };
-        if *sprite_reset != PreDungeonSpriteResetContinuation::Pending {
+        if !matches!(
+            *sprite_reset,
+            PreDungeonSpriteResetContinuation::Pending
+                | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_)
+        ) {
             return false;
         }
         *sprite_reset = match progress {
@@ -1494,6 +1498,7 @@ impl GameExecutionScheduler {
         };
         *sprite_reset = match *sprite_reset {
             PreDungeonSpriteResetContinuation::Pending
+            | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_)
             | PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted => {
                 PreDungeonSpriteResetContinuation::SpriteResetAllCompleted
             }
@@ -1523,6 +1528,7 @@ impl GameExecutionScheduler {
         if !matches!(
             *sprite_reset,
             PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted
+                | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_)
                 | PreDungeonSpriteResetContinuation::DungeonResetSprites(_)
         ) {
             return false;

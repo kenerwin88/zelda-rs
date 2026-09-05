@@ -13614,7 +13614,7 @@ impl ZeldaState {
         self.sprite_reset_all_no_disable();
     }
 
-    fn complete_module_pre_dungeon_before_sprite_reset(&mut self) {
+    pub(super) fn complete_module_pre_dungeon_before_sprite_reset(&mut self) {
         self.Dungeon_LoadAndDrawRoom();
         self.Dungeon_LoadCustomTileAttr();
 

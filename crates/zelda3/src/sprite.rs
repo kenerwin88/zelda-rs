@@ -1478,7 +1478,7 @@ impl ZeldaState {
         }
     }
 
-    fn apply_sprite_disable_actions_through(
+    pub(super) fn apply_sprite_disable_actions_through(
         &mut self,
         completed: Option<DungeonSpriteDisableCpuProgress>,
         target: DungeonSpriteDisableCpuProgress,
@@ -1511,6 +1511,14 @@ impl ZeldaState {
                 _ => unreachable!("Sprite_DisableAll action ordinal is bounded"),
             }
         }
+    }
+
+    pub(super) fn complete_sprite_disable_after_states(&mut self, slot: u8) {
+        self.apply_sprite_disable_actions_through(
+            Some(DungeonSpriteDisableCpuProgress::SpriteStatesThrough { slot }),
+            DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared,
+        );
+        self.sprite_disable_all_after_limit_instance();
     }
 
     fn sprite_disable_all_after_limit_instance(&mut self) {
