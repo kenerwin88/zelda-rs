@@ -24793,7 +24793,7 @@ fn mark_selected_game_load_sprite_disable_all_completed(state: &mut ZeldaState) 
     assert_eq!(
         state
             .game_execution_scheduler
-            .advance_selected_game_load_after_pre_dungeon_audio_from_source(
+            .advance_selected_game_load_from_source(
                 Some(crate::SpriteResetAllProgress::SpriteDisableAllCompleted),
                 false,
             ),
@@ -25119,26 +25119,80 @@ fn pre_dungeon_audio_boundary_rejects_malformed_nmi_order_before_mutation() {
 }
 
 #[test]
+fn dark_world_selected_load_waits_past_the_compatibility_audio_boundary() {
+    let mut state = live_selected_game_load_state_before_pre_dungeon_audio();
+    state.game_execution_scheduler.reset();
+    state
+        .game_execution_scheduler
+        .schedule_selected_game_load(SelectedGameLoadDestination::DarkWorldOverworld);
+    for _ in 1..SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES {
+        assert_eq!(
+            state.game_execution_scheduler.advance_startup_sequence(),
+            Some(StartupSequenceStep::SelectedGameLoadWaiting)
+        );
+    }
+    let remaining = state
+        .game_execution_scheduler
+        .selected_game_load_remaining_nmi_slices();
+    state
+        .install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            422632,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    crate::MainLoopProgress::CallStackContinued,
+                ),
+            ],
+        ))
+        .unwrap();
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert_eq!(state.game_state.frame.main_module, 5);
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .selected_game_load_after_pre_dungeon_audio_sprite_reset(),
+        None
+    );
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .selected_game_load_remaining_nmi_slices(),
+        remaining
+    );
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .is_none_or(|receipts| receipts.semantic.is_empty()));
+    for _ in 0..100 {
+        assert_eq!(
+            state
+                .game_execution_scheduler
+                .advance_selected_game_load_from_source(None, false),
+            Some(StartupSequenceStep::SelectedGameLoadWaiting)
+        );
+    }
+    assert_eq!(
+        state
+            .game_execution_scheduler
+            .selected_game_load_remaining_nmi_slices(),
+        remaining
+    );
+}
+
+#[test]
 fn terminal_dark_world_overworld_load_returns_without_pre_dungeon_audio() {
     let mut state = live_selected_game_load_state_before_pre_dungeon_audio();
     state.game_execution_scheduler.reset();
     // The dark-world overworld reload after a dark-world death returns directly
-    // from Module05 to Module08 (route host 422632). It never enters
+    // from Module05 to Module08. It never enters
     // Module_PreDungeon and therefore owns neither its audio prefix nor its
     // nested Sprite_ResetAll call.
     state
         .game_execution_scheduler
         .schedule_selected_game_load(SelectedGameLoadDestination::DarkWorldOverworld);
-    for _ in 0..SELECTED_GAME_LOAD_BEFORE_PRE_DUNGEON_AUDIO_NMI_SLICES {
-        let step = state.game_execution_scheduler.advance_startup_sequence();
-        assert!(matches!(
-            step,
-            Some(
-                StartupSequenceStep::SelectedGameLoadWaiting
-                    | StartupSequenceStep::BeginPreDungeonAudio
-            )
-        ));
-    }
     state.set_vertical_irq_trigger(0x7b);
     state.set_ambient_sound_effect(3);
     state

@@ -804,14 +804,32 @@ impl SelectedGameLoadContinuation {
         StartupSequenceStep::SelectedGameLoadWaiting
     }
 
-    /// Advance the post-boundary selected-load caller from exact source facts.
+    /// Advance the selected-load caller from exact source facts.
     /// Numeric counts are compatibility state only; live execution enters
-    /// this phase from typed source receipts.
-    fn advance_after_pre_dungeon_audio_from_source(
+    /// the dungeon phase from typed source receipts. The dark-world caller
+    /// has no pre-dungeon boundary and waits directly for its own return.
+    fn advance_from_source(
         &mut self,
         progress: Option<SpriteResetAllProgress>,
         completes_caller: bool,
     ) -> StartupSequenceStep {
+        if matches!(
+            self,
+            Self::BeforePreDungeonAudio {
+                destination: SelectedGameLoadDestination::DarkWorldOverworld,
+                ..
+            }
+        ) {
+            assert!(
+                progress.is_none(),
+                "dark-world selected load cannot own Sprite_ResetAll"
+            );
+            return if completes_caller {
+                StartupSequenceStep::CompleteSelectedGameLoad
+            } else {
+                StartupSequenceStep::SelectedGameLoadWaiting
+            };
+        }
         let Self::AfterPreDungeonAudio {
             entry_room_load_pending,
             sprite_reset,
@@ -1300,14 +1318,14 @@ impl GameExecutionScheduler {
         continuation.mark_entry_room_load_completed();
     }
 
-    pub(super) fn advance_selected_game_load_after_pre_dungeon_audio_from_source(
+    pub(super) fn advance_selected_game_load_from_source(
         &mut self,
         progress: Option<SpriteResetAllProgress>,
         completes_caller: bool,
     ) -> Option<StartupSequenceStep> {
         let step = match self.continuation.as_mut()? {
             GameExecutionContinuation::SelectedGameLoad(continuation) => {
-                continuation.advance_after_pre_dungeon_audio_from_source(progress, completes_caller)
+                continuation.advance_from_source(progress, completes_caller)
             }
             _ => return None,
         };

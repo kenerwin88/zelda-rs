@@ -23552,13 +23552,16 @@ impl ZeldaState {
         {
             return None;
         }
-        let sprite_reset = self
-            .game_execution_scheduler
-            .selected_game_load_after_pre_dungeon_audio_sprite_reset()?;
         let destination = self
             .game_execution_scheduler
-            .selected_game_load_destination()
-            .expect("selected-game reset phase lost its frozen destination");
+            .selected_game_load_destination()?;
+        let sprite_reset = self
+            .game_execution_scheduler
+            .selected_game_load_after_pre_dungeon_audio_sprite_reset()
+            .or_else(|| {
+                (destination == SelectedGameLoadDestination::DarkWorldOverworld)
+                    .then_some(PreDungeonSpriteResetContinuation::NotApplicable)
+            })?;
         assert!(
             matches!(
                 (destination, sprite_reset),
@@ -23638,7 +23641,7 @@ impl ZeldaState {
             scheduler_after_transition.mark_selected_game_load_entry_room_load_completed();
         }
         let step = scheduler_after_transition
-            .advance_selected_game_load_after_pre_dungeon_audio_from_source(
+            .advance_selected_game_load_from_source(
                 progress_for_transition.map(|receipt| receipt.progress),
                 terminal_timeline.is_some(),
             )
@@ -24109,11 +24112,9 @@ impl ZeldaState {
             .selected_game_load_destination()
             .expect("pre-dungeon-audio boundary lost its frozen destination");
         if destination != SelectedGameLoadDestination::Dungeon {
-            // No pre-dungeon audio exists on these routes: Module05 returns at
-            // this boundary (`original_timing_message_selected_game_load_terminal_plan`),
-            // into Module1B for the Message destination and into
-            // Module08_PreOverworld for the dark-world overworld reload (route
-            // host 422632, save-and-continue after a dark-world death).
+            // These destinations have no pre-dungeon audio boundary. Their
+            // source publication/return plans own the caller independently
+            // of the compatibility decompression count.
             return None;
         }
         let timeline = self
@@ -38355,6 +38356,7 @@ impl ZeldaState {
         };
         if self.rom_startup_timing()
             && matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
+            && selected_game_load_plan.is_none()
             && self
                 .game_execution_scheduler
                 .selected_game_load_destination()
