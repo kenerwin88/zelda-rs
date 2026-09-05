@@ -19617,6 +19617,43 @@ fn spiral_room_initializer_completes_from_consumed_sprite_main_return_authority(
 }
 
 #[test]
+fn spiral_background_return_retires_its_already_consumed_suffix_authority() {
+    let mut state = spiral_cpu_test_state(4, injected_dungeon_cpu_schedule(3, 0));
+    state.initialized = true;
+    state.rom_reset_frame_delay = 0;
+    state.set_animated_tile_data_source_address(1);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.latch_nmi_update();
+    state.original_timing_expected_nmi_update_gates = vec![NmiUpdateGate::LatchHeld];
+    state.pending_main_loop_common_suffix =
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishDungeonSupertileTransition {
+            work: DungeonSupertileTransitionWork::SpiralBgCharacters34,
+        },
+        3,
+    );
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        13_627,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+            OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+            OriginalTimingSemanticReceipt::SpriteMainReturned,
+            OriginalTimingSemanticReceipt::MainLoopProgress(
+                crate::MainLoopProgress::CallStackContinued,
+            ),
+            OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+        ],
+    ));
+    state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
+    assert_eq!(state.game_state.frame.subsubmodule, 5);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert!(state.pending_main_loop_common_suffix.is_none());
+    assert!(!state.game_state.display.nmi_update_is_latched());
+}
+
+#[test]
 fn dungeon_quadrant_hold_uses_the_dma_latched_resident_oam_without_copying_it() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();

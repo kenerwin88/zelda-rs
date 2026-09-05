@@ -45658,7 +45658,13 @@ impl ZeldaState {
                         | DungeonSupertileTransitionWork::FallingBgCharacters34 => {
                             self.increment_subsubmodule();
                             self.complete_module07_dungeon_after_submodule();
-                            self.retire_or_defer_main_loop_common_suffix_by_wire();
+                            if authoritative_scheduled_caller_return_timeline.is_some() {
+                                // The validated timeline already consumed the
+                                // suffix receipt before this native caller ran.
+                                self.retire_or_run_main_loop_common_suffix_after_module_return();
+                            } else {
+                                self.retire_or_defer_main_loop_common_suffix_by_wire();
+                            }
                         }
                         DungeonSupertileTransitionWork::FallingSpriteGraphics => {
                             self.complete_dungeon_transition_load_sprite_gfx();
@@ -45666,7 +45672,11 @@ impl ZeldaState {
                             // Sprite_Main can suspend again while initializing
                             // a newly loaded slot. Its caller still owns the
                             // common suffix until the source return arrives.
-                            self.retire_or_defer_main_loop_common_suffix_by_wire();
+                            if authoritative_scheduled_caller_return_timeline.is_some() {
+                                self.retire_or_run_main_loop_common_suffix_after_module_return();
+                            } else {
+                                self.retire_or_defer_main_loop_common_suffix_by_wire();
+                            }
                         }
                         DungeonSupertileTransitionWork::SpiralSpriteGraphics => {
                             self.complete_dungeon_transition_load_sprite_gfx();
