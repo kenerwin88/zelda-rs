@@ -45465,7 +45465,22 @@ impl ZeldaState {
                         authoritative_scheduled_caller_return_timeline
                             .as_ref()
                             .map(|(_, _, claims)| *claims)
-                            .unwrap_or(0)
+                            .unwrap_or_else(|| {
+                                // Falling graphics can return through Sprite_Main
+                                // and suspend later in the HUD. That loop owns
+                                // its return even while the common suffix is
+                                // still pending; a terminal caller timeline is
+                                // not required to consume this source fact.
+                                if work == DungeonSupertileTransitionWork::FallingSpriteGraphics {
+                                    self.original_timing_semantic_receipts.as_ref().map(|receipts| {
+                                        receipts.semantic().iter().filter(|receipt| {
+                                            **receipt == OriginalTimingSemanticReceipt::SpriteMainReturned
+                                        }).count()
+                                    }).unwrap_or(0)
+                                } else {
+                                    0
+                                }
+                            })
                     };
                     if supertile_wire_claims != 0 {
                         self.begin_original_timing_sprite_main_return_claim_scope(
