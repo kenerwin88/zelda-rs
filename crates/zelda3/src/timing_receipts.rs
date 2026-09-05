@@ -1642,6 +1642,8 @@ pub enum OverworldSpriteReloadProgress {
     GenerationReturnedAtInteractiveTypeClear { slot: u8 },
     /// The mirror portal owns a dynamic spawn suspended in its property reset.
     GenerationReturnedAtPortalReset { slot: u8, completed_stores: u8 },
+    /// The reset returned; the mirror portal's property-table loads remain in flight.
+    GenerationReturnedAtPortalLoadProperties { slot: u8, completed_stores: u8 },
 }
 
 /// Source-level completion state for the first save-menu text initialization.

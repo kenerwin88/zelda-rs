@@ -3503,6 +3503,7 @@ enum SpotlightCallCompletion {
 struct HostFrameWindow {
     mirror_portal_spawn_slot: Option<u8>,
     mirror_portal_reset_progress: Option<u8>,
+    mirror_portal_load_progress: Option<u8>,
     entry: Option<HostFrameState>,
     returned: Option<HostFrameState>,
     vwf_nmi_observed: bool,
@@ -3661,6 +3662,23 @@ impl HostFrameWindow {
             }
             self.mirror_portal_spawn_slot = Some(slot);
         }
+        if event.event == "nmi-resume" {
+            self.mirror_portal_load_progress = None;
+        }
+        if event.event == "nmi"
+            || event.event == "frame" && event.stage.as_deref() == Some("return")
+        {
+            if let Some(slot) = self.mirror_portal_spawn_slot {
+                if event.x == Some(u16::from(slot)) && event.return_address == Some(0xa60f09) {
+                    if let Some(completed) = event
+                        .pc
+                        .and_then(sprite_prep_load_properties_completed_stores)
+                    {
+                        self.mirror_portal_load_progress = Some(completed);
+                    }
+                }
+            }
+        }
         if event.event == "frame"
             && event.stage.as_deref() == Some("return")
             && event.return_address == Some(SPRITE_PREP_LOAD_PROPERTIES_AFTER_RESET_RETURN_ADDRESS)
@@ -3816,6 +3834,26 @@ impl HostFrameWindow {
             receipts.push(OriginalTimingSemanticReceipt::Module09FinalScrollPairPending);
         }
         // A portal reset belongs to the spawn proven by its private caller.
+        if let Some(completed_stores) = self.mirror_portal_load_progress {
+            let slot = self
+                .mirror_portal_spawn_slot
+                .expect("portal property load has a spawn owner");
+            let receipt = receipts
+                .iter_mut()
+                .find(|receipt| {
+                    **receipt
+                        == OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                            OverworldSpriteReloadProgress::GenerationReturned,
+                        )
+                })
+                .ok_or("mirror portal property load omitted its enclosing generation return")?;
+            *receipt = OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturnedAtPortalLoadProperties {
+                    slot,
+                    completed_stores,
+                },
+            );
+        }
         if let Some(completed_stores) = self.mirror_portal_reset_progress {
             let slot = self
                 .mirror_portal_spawn_slot
@@ -14262,6 +14300,51 @@ mod tests {
                 OverworldSpriteReloadProgress::GenerationReturned
             )
         ));
+    }
+
+    #[test]
+    fn mirror_portal_property_load_is_owned_by_the_suspended_spawn() {
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame_with_sub("entry", 1, 9, 0x23)).unwrap();
+        let mut spawn = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC),
+            Some(0xff),
+            None,
+        );
+        spawn.y = Some(15);
+        spawn.return_address = Some(0x09_afa5);
+        spawn.address = Some(SPRITE_TYPE_BASE + 15);
+        spawn.value = Some(0x6c);
+        host.observe(&spawn).unwrap();
+        let mut nmi = raw("nmi", Some(0x0d_b844), Some(15), None);
+        nmi.return_address = Some(0xa60f09);
+        host.observe(&nmi).unwrap();
+        assert_eq!(host.mirror_portal_load_progress, Some(5));
+        let mut returned = frame_with_sub("return", 1, 9, 0x23);
+        returned.pc = Some(0x0080c9);
+        host.observe(&returned).unwrap();
+        let mut receipts = vec![
+            OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturned,
+            ),
+        ];
+        host.finish(&mut receipts, None, true).unwrap();
+        assert!(receipts.contains(
+            &OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturnedAtPortalLoadProperties {
+                    slot: 15,
+                    completed_stores: 5
+                }
+            )
+        ));
+        nmi.event = "nmi-resume".into();
+        let mut resumed_host = HostFrameWindow {
+            mirror_portal_load_progress: Some(5),
+            ..Default::default()
+        };
+        resumed_host.observe(&nmi).unwrap();
+        assert_eq!(resumed_host.mirror_portal_load_progress, None);
     }
 
     #[test]

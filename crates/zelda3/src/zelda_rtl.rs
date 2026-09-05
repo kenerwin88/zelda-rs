@@ -9787,6 +9787,11 @@ pub(super) enum Module09LongLoadStep {
         completed_stores: u8,
         module15: bool,
     },
+    MirrorWarpPortalLoadProperties {
+        slot: u8,
+        completed_stores: u8,
+        module15: bool,
+    },
 }
 
 impl Module09LongLoadStep {
@@ -9811,6 +9816,7 @@ impl Module09LongLoadStep {
                 | Self::MirrorWarpInteractiveCleanup { module15: true, .. }
                 | Self::MirrorWarpInteractiveTypeClear { module15: true, .. }
                 | Self::MirrorWarpPortalReset { module15: true, .. }
+                | Self::MirrorWarpPortalLoadProperties { module15: true, .. }
         )
     }
 
@@ -21298,6 +21304,7 @@ impl ZeldaState {
                         | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { .. }
                         | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear { .. }
                         | crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset { .. }
+                        | crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalLoadProperties { .. }
                 )
             })
             .count()
@@ -21314,6 +21321,7 @@ impl ZeldaState {
             .any(|progress| {
                 match progress {
                 crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset { slot, completed_stores } => *slot >= 16 || *completed_stores > 40,
+                crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalLoadProperties { slot, completed_stores } => *slot >= 16 || *completed_stores > 10,
                 crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
                     slot,
                 } | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear {
@@ -27929,6 +27937,7 @@ impl ZeldaState {
                 }
                 crate::OverworldSpriteReloadProgress::GenerationReturned
                 | crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset { .. }
+                | crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalLoadProperties { .. }
                 | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
                     ..
                 } | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear {
@@ -28483,6 +28492,7 @@ impl ZeldaState {
                 }
                 progress @ (crate::OverworldSpriteReloadProgress::GenerationReturned
                 | crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset { .. }
+                | crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalLoadProperties { .. }
                 | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { .. }
                 | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear { .. }) => {
                     if let Some(GameWorkContinuation::FinishFluteMenuSelectedScreen {
@@ -28540,6 +28550,9 @@ impl ZeldaState {
                         let tail = if let crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset { slot, completed_stores } = progress {
                             self.begin_mirror_warp_portal_reset(slot, completed_stores);
                             Module09LongLoadStep::MirrorWarpPortalReset { slot, completed_stores, module15: step.caller_is_module15() }
+                        } else if let crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalLoadProperties { slot, completed_stores } = progress {
+                            self.begin_mirror_warp_portal_load_properties(slot, completed_stores);
+                            Module09LongLoadStep::MirrorWarpPortalLoadProperties { slot, completed_stores, module15: step.caller_is_module15() }
                         } else if let crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { slot } = progress {
                             self.begin_mirror_warp_interactive_cleanup(slot);
                             Module09LongLoadStep::MirrorWarpInteractiveCleanup { slot, module15: step.caller_is_module15() }

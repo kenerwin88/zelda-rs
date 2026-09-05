@@ -506,6 +506,30 @@ fn mirror_portal_reset_preserves_coordinates_until_the_spawn_returns() {
 }
 
 #[test]
+fn mirror_portal_load_properties_preserves_coordinates_until_the_spawn_returns() {
+    for completed_stores in 0..=10 {
+        let setup = || {
+            let mut s = fresh_state();
+            s.sprite_slot_view_mut(15).set_x(0x0078);
+            s.sprite_slot_view_mut(15).set_y(0x137c);
+            s.sprite_slot_view_mut(15).set_ai_state(8);
+            s.sprite_slot_view_mut(15).set_direction(1);
+            s.set_bird_travel_destination(15, 0x0128, 0x0d28);
+            s
+        };
+        let mut resumed = setup();
+        let mut atomic = setup();
+        resumed.sprite_begin_mirror_portal_load_properties(15, completed_stores);
+        assert_eq!(resumed.sprite_get_x(15), 0x0078);
+        assert_eq!(resumed.sprite_get_y(15), 0x137c);
+        resumed.sprite_resume_mirror_portal_load_properties(15, completed_stores);
+        atomic.sprite_initialize_mirror_portal();
+        assert_eq!(resumed.game_state, atomic.game_state);
+        assert_eq!(resumed.ram, atomic.ram);
+    }
+}
+
+#[test]
 fn dungeon_load_single_sprite_preserves_c_tmp_counter_side_effect() {
     let mut s = fresh_state();
     s.dungeon_room_tracking_mut().set_room_index2_word(0x004a);
