@@ -938,6 +938,7 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     guard_prep_parry_hitbox: Option<(u8, u8)>,
     guard_prep_patrol_delay: Option<(u8, u8)>,
+    guard_prep_tile_collision_return: Option<(u8, u8)>,
     #[serde(default)]
     guard_animation_checkpoint: Option<(u8, zelda3::GuardAnimationCheckpoint)>,
     hog_spear_body_graphics_pending: Option<u8>,
@@ -1035,6 +1036,32 @@ impl SpriteMainExecutionTracker {
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.guard_prep_patrol_delay = Some((slot, self.initialize_active_main_calls));
+        Ok(())
+    }
+
+    fn observe_guard_prep_tile_collision_return(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        if !matches!(
+            event.pc.map(|pc| pc & 0xff_ffff),
+            Some(0x06_e49d | 0x06_e4a0)
+        ) || event.return_address.map(|pc| pc & 0xff_ffff) != Some(0x05_b890)
+            || self.timers_and_oam_dispatch_state != Some(8)
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("guard tile-collision checkpoint has no current slot")?;
+        if event.x != Some(u16::from(slot)) || !(1..=2).contains(&self.initialize_active_main_calls)
+        {
+            return Err("guard tile-collision checkpoint lacks initializer call authority".into());
+        }
+        self.initialize_prep_pending = None;
+        self.initialize_reset_properties = None;
+        self.initialize_load_properties = None;
+        self.guard_prep_tile_collision_return = Some((slot, self.initialize_active_main_calls));
         Ok(())
     }
 
@@ -1966,6 +1993,10 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::GuardPrepWeaponFlagsPending(slot);
         }
+        if let Some((slot, active_call)) = self.guard_prep_tile_collision_return {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::GuardPrepTileCollisionReturned { slot, active_call };
+        }
         if let Some((slot, active_call)) = self.guard_prep_patrol_delay {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::GuardPrepPatrolDelay { slot, active_call };
@@ -2257,6 +2288,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::GuardPrepPatrolDelay { slot, active_call } => {
                 MainLoopInterruption::SpriteMainGuardPrepPatrolDelay { slot, active_call }
+            }
+            SpriteMainProgress::GuardPrepTileCollisionReturned { slot, active_call } => {
+                MainLoopInterruption::SpriteMainGuardPrepTileCollisionReturned { slot, active_call }
             }
             SpriteMainProgress::GuardPrepParryHitbox { slot, active_call } => {
                 MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call }
@@ -3875,6 +3909,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_hog_spear_body_graphics_pending(returned_event)?;
                 execution.observe_guard_prep_parry_hitbox(returned_event)?;
                 execution.observe_guard_prep_patrol_delay(returned_event)?;
+                execution.observe_guard_prep_tile_collision_return(returned_event)?;
                 execution.observe_fire_debirando_spawn_boundary(returned_event)?;
                 execution.observe_master_sword_light_beam_spawn_boundary(returned_event)?;
                 execution.observe_bari_before_random(returned_event)?;
@@ -4485,6 +4520,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.initialize_active_main_calls = 0;
                             execution.guard_prep_parry_hitbox = None;
                             execution.guard_prep_patrol_delay = None;
+                            execution.guard_prep_tile_collision_return = None;
                             execution.guard_animation_checkpoint = None;
                             execution.hog_spear_body_graphics_pending = None;
                             execution.initialize_prep_pending = None;
@@ -4526,6 +4562,7 @@ impl Snes9xOracleSemanticTrace {
                         if let Some(execution) = self.sprite_main_execution.as_mut() {
                             execution.guard_prep_parry_hitbox = None;
                             execution.guard_prep_patrol_delay = None;
+                            execution.guard_prep_tile_collision_return = None;
                             execution.guard_animation_checkpoint = None;
                             execution.hog_spear_body_graphics_pending = None;
                             execution.initialize_prep_pending = None;
@@ -4565,6 +4602,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.initialize_active_main_calls = 0;
                         execution.guard_prep_parry_hitbox = None;
                         execution.guard_prep_patrol_delay = None;
+                        execution.guard_prep_tile_collision_return = None;
                         execution.guard_animation_checkpoint = None;
                         execution.hog_spear_body_graphics_pending = None;
                         execution.initialize_prep_pending = None;
@@ -5402,6 +5440,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_fire_debirando_spawn_boundary(&event)?;
                     execution.observe_guard_prep_parry_hitbox(&event)?;
                     execution.observe_guard_prep_patrol_delay(&event)?;
+                    execution.observe_guard_prep_tile_collision_return(&event)?;
                     execution.observe_bari_before_random(&event)?;
                     execution.observe_main_and_aux1_timer_decrements(&event)?;
                     execution.observe_primary_timer_decrements(&event)?;
@@ -7100,6 +7139,10 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainGuardPrepPatrolDelay { slot, active_call } => {
                     Some(SpriteMainProgress::GuardPrepPatrolDelay { slot, active_call })
                 }
+                MainLoopInterruption::SpriteMainGuardPrepTileCollisionReturned {
+                    slot,
+                    active_call,
+                } => Some(SpriteMainProgress::GuardPrepTileCollisionReturned { slot, active_call }),
                 MainLoopInterruption::SpriteMainInitializePrepPending(slot) => {
                     Some(SpriteMainProgress::InitializePrepPending(slot))
                 }
@@ -8037,6 +8080,7 @@ mod tests {
             initialize_active_main_calls: 0,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
+            guard_prep_tile_collision_return: None,
             guard_animation_checkpoint: None,
             hog_spear_body_graphics_pending: None,
             initialize_prep_pending: None,
@@ -9717,6 +9761,51 @@ mod tests {
             .observe_hog_spear_body_graphics_pending(&event)
             .unwrap();
         assert_eq!(execution.hog_spear_body_graphics_pending, None);
+    }
+
+    #[test]
+    fn guard_initializer_tile_collision_requires_its_nested_call_and_wrapper() {
+        let mut tracker = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        tracker
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        tracker
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(13), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let execution = tracker.sprite_main_execution.as_mut().unwrap();
+        execution.timers_and_oam_dispatch_state = Some(8);
+        let mut event = raw("frame", Some(0x06_e49d), Some(13), None);
+        event.return_address = Some(0x05_b890);
+        for active_call in 1..=2 {
+            execution.initialize_active_main_calls = active_call;
+            execution
+                .observe_guard_prep_tile_collision_return(&event)
+                .unwrap();
+            assert_eq!(
+                execution.progress(),
+                SpriteMainProgress::GuardPrepTileCollisionReturned {
+                    slot: 13,
+                    active_call
+                }
+            );
+        }
+        execution.initialize_active_main_calls = 0;
+        assert!(execution
+            .observe_guard_prep_tile_collision_return(&event)
+            .is_err());
+        event.return_address = Some(0);
+        execution.guard_prep_tile_collision_return = None;
+        execution
+            .observe_guard_prep_tile_collision_return(&event)
+            .unwrap();
+        assert_eq!(execution.guard_prep_tile_collision_return, None);
     }
 
     #[test]
@@ -12702,6 +12791,7 @@ mod tests {
             initialize_active_main_calls: 0,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
+            guard_prep_tile_collision_return: None,
             guard_animation_checkpoint: None,
             hog_spear_body_graphics_pending: None,
             initialize_prep_pending: None,
@@ -12768,6 +12858,7 @@ mod tests {
             initialize_active_main_calls: 0,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
+            guard_prep_tile_collision_return: None,
             guard_animation_checkpoint: None,
             hog_spear_body_graphics_pending: None,
             initialize_prep_pending: None,

@@ -5065,6 +5065,11 @@ enum SpriteMainCpuBoundary {
     InitializePrepPending {
         slot: u8,
     },
+    GuardPrepTileCollisionReturned {
+        slot: u8,
+        active_call: u8,
+        saved_submodule: Option<u8>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5338,6 +5343,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::GuardPrepPatrolDelay {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::GuardPrepTileCollisionReturned {
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::GuardAnimation {
@@ -5704,6 +5712,17 @@ fn sprite_main_cpu_boundary_from_interruption(
                 saved_submodule: None,
             })
         }
+        crate::MainLoopInterruption::SpriteMainGuardPrepTileCollisionReturned {
+            slot,
+            active_call,
+        } => {
+            assert!(slot < 16 && (1..=2).contains(&active_call));
+            Some(SpriteMainCpuBoundary::GuardPrepTileCollisionReturned {
+                slot,
+                active_call,
+                saved_submodule: None,
+            })
+        }
         crate::MainLoopInterruption::SpriteMainInitializePrepPending(slot) => {
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::InitializePrepPending { slot })
@@ -5793,6 +5812,10 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainInitializePrepPending(slot)
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => slot < 16,
         crate::MainLoopInterruption::SpriteMainGuardPrepPatrolDelay { slot, active_call }
+        | crate::MainLoopInterruption::SpriteMainGuardPrepTileCollisionReturned {
+            slot,
+            active_call,
+        }
         | crate::MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call } => {
             slot < 16 && active_call >= 1 && active_call <= 2
         }
@@ -5935,6 +5958,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::InitializePrepPending(slot)
         | crate::SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => slot < 16,
         crate::SpriteMainProgress::GuardPrepPatrolDelay { slot, active_call }
+        | crate::SpriteMainProgress::GuardPrepTileCollisionReturned { slot, active_call }
         | crate::SpriteMainProgress::GuardPrepParryHitbox { slot, active_call } => {
             slot < 16 && active_call >= 1 && active_call <= 2
         }
@@ -6318,6 +6342,14 @@ fn sprite_main_cpu_boundary_from_progress(
                 saved_submodule: None,
             }
         }
+        crate::SpriteMainProgress::GuardPrepTileCollisionReturned { slot, active_call } => {
+            assert!(slot < 16 && (1..=2).contains(&active_call));
+            SpriteMainCpuBoundary::GuardPrepTileCollisionReturned {
+                slot,
+                active_call,
+                saved_submodule: None,
+            }
+        }
         crate::SpriteMainProgress::InitializePrepPending(slot) => {
             assert!(slot < 16);
             SpriteMainCpuBoundary::InitializePrepPending { slot }
@@ -6415,6 +6447,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(_)
         | crate::MainLoopInterruption::SpriteMainGuardPrepParryHitbox { .. }
         | crate::MainLoopInterruption::SpriteMainGuardPrepPatrolDelay { .. }
+        | crate::MainLoopInterruption::SpriteMainGuardPrepTileCollisionReturned { .. }
         | crate::MainLoopInterruption::SpriteMainGuardAnimation { .. }
         | crate::MainLoopInterruption::SpriteMainMiniMoldormHistory { .. } => {
             unreachable!()
@@ -6625,6 +6658,18 @@ fn same_sprite_main_source_checkpoint(
                 active_call: right_call,
                 ..
             },
+        )
+        | (
+            SpriteMainCpuBoundary::GuardPrepTileCollisionReturned {
+                slot: left_slot,
+                active_call: left_call,
+                ..
+            },
+            SpriteMainCpuBoundary::GuardPrepTileCollisionReturned {
+                slot: right_slot,
+                active_call: right_call,
+                ..
+            },
         ) => left_slot == right_slot && left_call == right_call,
         (
             SpriteMainCpuBoundary::GuardAnimation {
@@ -6725,6 +6770,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending { slot, .. }
         | SpriteMainCpuBoundary::GuardPrepParryHitbox { slot, .. }
         | SpriteMainCpuBoundary::GuardPrepPatrolDelay { slot, .. }
+        | SpriteMainCpuBoundary::GuardPrepTileCollisionReturned { slot, .. }
         | SpriteMainCpuBoundary::GuardAnimation { slot, .. }
         | SpriteMainCpuBoundary::MiniMoldormHistory { slot, .. } => 2 * (16 - slot) - 1,
         SpriteMainCpuBoundary::AfterWallmasterResetPrefix(slot) => 2 * (16 - slot) - 1,

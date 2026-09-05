@@ -770,6 +770,14 @@ impl ZeldaState {
     }
 
     fn guard_main_after_parry_until_ai(&mut self, k: usize) -> bool {
+        if !self.guard_main_after_parry_through_collision(k) {
+            return false;
+        }
+        self.guard_main_after_collision_before_ai(k);
+        true
+    }
+
+    fn guard_main_after_parry_through_collision(&mut self, k: usize) -> bool {
         let dmg_link = self.sprite_check_damage_to_link_for_guard(k);
         let alert = self.game_state.sprites.system.alert_flag() != 0;
         if (dmg_link || alert) && self.sprite_slot_view(k).ai_state() < 3 {
@@ -790,11 +798,29 @@ impl ZeldaState {
         } else {
             self.sprite_move_xy(k);
         }
+        true
+    }
+
+    fn guard_main_after_collision_before_ai(&mut self, k: usize) {
         if self.sprite_slot_view(k).ai_state() != 4 {
             self.sprite_slot_view_mut(k).set_g(0);
         }
+    }
 
-        true
+    pub(super) fn guard_main_until_tile_collision_return(&mut self, k: usize) {
+        let (graphics, direction) = self.guard_main_animation(k);
+        self.sprite_slot_view_mut(k).set_graphics(graphics);
+        self.sprite_slot_view_mut(k).set_direction(direction);
+        assert_ne!(self.sprite_slot_view(k).state(), 5);
+        assert!(!self.sprite_return_if_inactive_for_guard(k));
+        self.guard_parry_sword_attacks_for_guard(k);
+        assert!((self.sprite_slot_view(k).subtype() & 7) < 5);
+        assert!(self.guard_main_after_parry_through_collision(k));
+    }
+
+    pub(super) fn guard_main_after_tile_collision_return(&mut self, k: usize) {
+        self.guard_main_after_collision_before_ai(k);
+        self.guard_main_ai(k);
     }
 
     pub(super) fn guard_main_until_patrol_delay(&mut self, k: usize) {

@@ -866,6 +866,10 @@ pub enum MainLoopInterruption {
     /// Generic properties and state promotion completed; type-specific prep
     /// has not begun in the initializer's jump-table caller.
     SpriteMainInitializePrepPending(u8),
+    SpriteMainGuardPrepTileCollisionReturned {
+        slot: u8,
+        active_call: u8,
+    },
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -931,6 +935,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainHogSpearBodyGraphicsPending(_)
                 | Self::SpriteMainInitializePrepPending(_)
                 | Self::SpriteMainGuardPrepPatrolDelay { .. }
+                | Self::SpriteMainGuardPrepTileCollisionReturned { .. }
                 | Self::SpriteMainWishPondTossedItemGraphicsStarted(_)
                 | Self::SpriteMainGuardPrepWeaponFlagsPending(_)
                 | Self::SpriteMainGuardPrepParryHitbox { .. }
@@ -1079,6 +1084,10 @@ pub enum SpriteMainProgress {
         active_call: u8,
     },
     InitializePrepPending(u8),
+    GuardPrepTileCollisionReturned {
+        slot: u8,
+        active_call: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

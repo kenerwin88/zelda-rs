@@ -2999,6 +2999,35 @@ impl ZeldaState {
                     return;
                 }
             }
+            if let Some(SpriteMainCpuBoundary::GuardPrepTileCollisionReturned {
+                slot,
+                active_call,
+                saved_submodule: None,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    self.sprite_main_cpu_boundary = None;
+                    assert_eq!(self.sprite_slot_view(k).state(), 8);
+                    assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x41);
+                    self.sprite_timers_and_oam(k);
+                    self.sprite_module_initialize_properties(k);
+                    let saved_submodule =
+                        self.sprite_prep_standard_guard_until_tile_collision_return(k, active_call);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::GuardPrepTileCollisionReturned {
+                            slot,
+                            active_call,
+                            saved_submodule: Some(saved_submodule),
+                        },
+                        nmi_slices,
+                        caller,
+                    );
+                    return;
+                }
+            }
             if let Some(SpriteMainCpuBoundary::GuardAnimation {
                 slot,
                 checkpoint,
@@ -4403,6 +4432,14 @@ impl ZeldaState {
                 self.complete_sprite_main_after_interrupted_slot(k);
             }
             SpriteMainCpuBoundary::GuardPrepPatrolDelay { saved_submodule: None, .. } => unreachable!("guard patrol checkpoint lost its saved initializer submodule"),
+            SpriteMainCpuBoundary::GuardPrepTileCollisionReturned { slot, active_call, saved_submodule: Some(saved_submodule) } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                self.complete_sprite_prep_standard_guard_after_tile_collision_return(k, active_call, saved_submodule);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::GuardPrepTileCollisionReturned { saved_submodule: None, .. } => unreachable!("guard patrol checkpoint lost its saved initializer submodule"),
             SpriteMainCpuBoundary::GuardAnimation { slot, continuation: Some(continuation), .. } => {
                 let k = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
