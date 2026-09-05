@@ -5053,6 +5053,9 @@ enum SpriteMainCpuBoundary {
         checkpoint: crate::GuardAnimationCheckpoint,
         continuation: Option<GuardAnimationContinuation>,
     },
+    HogSpearBodyGraphicsPending {
+        slot: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5317,6 +5320,7 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment {
             slot: active_slot,
         }
+        | SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: active_slot }
         | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
             slot: active_slot, ..
         }
@@ -5679,6 +5683,10 @@ fn sprite_main_cpu_boundary_from_interruption(
             );
             Some(SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot })
         }
+        crate::MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot })
+        }
         crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => {
             assert!(
                 slot < 16,
@@ -5756,6 +5764,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(
             slot,
         )
+        | crate::MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(slot)
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => slot < 16,
         crate::MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call } => {
             slot < 16 && active_call >= 1 && active_call <= 2
@@ -5895,6 +5904,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AfterAntfairySubtype2Increment(slot)
         | crate::SpriteMainProgress::AfterLanmolaSubtype2Increment(slot)
         | crate::SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot)
+        | crate::SpriteMainProgress::HogSpearBodyGraphicsPending(slot)
         | crate::SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => slot < 16,
         crate::SpriteMainProgress::GuardPrepParryHitbox { slot, active_call } => {
             slot < 16 && active_call >= 1 && active_call <= 2
@@ -6271,6 +6281,10 @@ fn sprite_main_cpu_boundary_from_progress(
             );
             SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot }
         }
+        crate::SpriteMainProgress::HogSpearBodyGraphicsPending(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot }
+        }
         crate::SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => {
             assert!(
                 slot < 16,
@@ -6355,6 +6369,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
+        | crate::MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(_)
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(_)
         | crate::MainLoopInterruption::SpriteMainGuardPrepParryHitbox { .. }
         | crate::MainLoopInterruption::SpriteMainGuardAnimation { .. }
@@ -6433,6 +6448,10 @@ fn same_sprite_main_source_checkpoint(
         | (
             SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot: left },
             SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot: right },
+        )
+        | (
+            SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: left },
+            SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: right },
         ) => left == right,
         (
             SpriteMainCpuBoundary::InitializeResetProperties {
@@ -6642,6 +6661,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AfterAntfairySubtype2Increment { slot, .. }
         | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot, .. }
         | SpriteMainCpuBoundary::AfterHelmasaurHardHatBeetleSubtype2Increment { slot }
+        | SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot }
         | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending { slot, .. }
         | SpriteMainCpuBoundary::GuardPrepParryHitbox { slot, .. }
         | SpriteMainCpuBoundary::GuardAnimation { slot, .. }

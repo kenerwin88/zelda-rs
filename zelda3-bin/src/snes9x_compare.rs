@@ -77,7 +77,8 @@ const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
 // Schema 80 recognizes Death_Func15's suspended Sprite_ResetAll caller.
 // Schema 81 binds spotlight loop-test X to the event-local source cursor.
 // Schema 82 recognizes the spotlight beam wait before projection begins.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 82;
+// Schema 83 retains Hog Spear Man before the body graphics store.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 83;
 
 // Source instructions which sample APUI00 while waiting for an item fanfare
 // to end. These adapter-only PCs become backend-neutral sample offsets before
@@ -15061,7 +15062,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 82);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 83);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None

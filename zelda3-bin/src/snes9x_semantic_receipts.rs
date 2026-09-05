@@ -939,6 +939,7 @@ struct SpriteMainExecutionTracker {
     guard_prep_parry_hitbox: Option<(u8, u8)>,
     #[serde(default)]
     guard_animation_checkpoint: Option<(u8, zelda3::GuardAnimationCheckpoint)>,
+    hog_spear_body_graphics_pending: Option<u8>,
     #[serde(default)]
     guard_animation_pose_slot: Option<u8>,
     #[serde(default)]
@@ -1129,6 +1130,29 @@ impl SpriteMainExecutionTracker {
             ));
         }
         self.guard_prep_weapon_flags_pending_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_hog_spear_body_graphics_pending(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        // JSR $05:CC38 enters the shared animation helper. Its raw two-byte
+        // return is CC3A; the third stack byte belongs to the enclosing caller.
+        if !event
+            .pc
+            .is_some_and(|pc| (0x05_c457..=0x05_c46c).contains(&(pc & 0xff_ffff)))
+            || event.return_address.map(|pc| pc & 0xffff) != Some(0xcc3a)
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Hog Spear body endpoint has no active slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err("Hog Spear body endpoint disagrees with its active slot".into());
+        }
+        self.hog_spear_body_graphics_pending = Some(slot);
         Ok(())
     }
 
@@ -1870,6 +1894,10 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot);
         }
+        if let Some(slot) = self.hog_spear_body_graphics_pending {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::HogSpearBodyGraphicsPending(slot);
+        }
         if let Some((slot, checkpoint)) = self.guard_animation_checkpoint {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::GuardAnimation { slot, checkpoint };
@@ -2151,6 +2179,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::AfterLanmolaSubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(slot)
+            }
+            SpriteMainProgress::HogSpearBodyGraphicsPending(slot) => {
+                MainLoopInterruption::SpriteMainHogSpearBodyGraphicsPending(slot)
             }
             SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(slot)
@@ -3744,6 +3775,7 @@ impl Snes9xOracleSemanticTrace {
             if let Some(execution) = self.sprite_main_execution.as_mut() {
                 execution.observe_guard_prep_weapon_flags_pending(returned_event)?;
                 execution.observe_guard_animation_checkpoint(returned_event)?;
+                execution.observe_hog_spear_body_graphics_pending(returned_event)?;
                 execution.observe_guard_prep_parry_hitbox(returned_event)?;
                 execution.observe_fire_debirando_spawn_boundary(returned_event)?;
                 execution.observe_master_sword_light_beam_spawn_boundary(returned_event)?;
@@ -4354,6 +4386,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.initialize_active_main_calls = 0;
                             execution.guard_prep_parry_hitbox = None;
                             execution.guard_animation_checkpoint = None;
+                            execution.hog_spear_body_graphics_pending = None;
                             execution.guard_animation_pose_slot = None;
                             execution.guard_prep_weapon_flags_pending_slot = None;
                             execution.mini_moldorm_history = None;
@@ -4392,6 +4425,7 @@ impl Snes9xOracleSemanticTrace {
                         if let Some(execution) = self.sprite_main_execution.as_mut() {
                             execution.guard_prep_parry_hitbox = None;
                             execution.guard_animation_checkpoint = None;
+                            execution.hog_spear_body_graphics_pending = None;
                             execution.guard_animation_pose_slot = None;
                             if execution.timers_and_oam_dispatch_state == Some(8) {
                                 execution.initialize_active_main_calls = execution
@@ -4428,6 +4462,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.initialize_active_main_calls = 0;
                         execution.guard_prep_parry_hitbox = None;
                         execution.guard_animation_checkpoint = None;
+                        execution.hog_spear_body_graphics_pending = None;
                         execution.guard_animation_pose_slot = None;
                         execution.guard_prep_weapon_flags_pending_slot = None;
                         execution.mini_moldorm_history = None;
@@ -4770,6 +4805,7 @@ impl Snes9xOracleSemanticTrace {
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
+                    execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_fire_debirando_spawn_write(&event)?;
                     execution.observe_master_sword_light_beam_spawn_write(&event)?;
                     execution.observe_antfairy_subtype2_increment(&event)?;
@@ -5257,6 +5293,7 @@ impl Snes9xOracleSemanticTrace {
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
+                    execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_fire_debirando_spawn_boundary(&event)?;
                     execution.observe_guard_prep_parry_hitbox(&event)?;
                     execution.observe_bari_before_random(&event)?;
@@ -7884,6 +7921,7 @@ mod tests {
             initialize_active_main_calls: 0,
             guard_prep_parry_hitbox: None,
             guard_animation_checkpoint: None,
+            hog_spear_body_graphics_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
@@ -9475,6 +9513,34 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn hog_spear_animation_endpoint_requires_the_exact_two_byte_caller() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(13), None),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        let execution = source.sprite_main_execution.as_mut().unwrap();
+        let mut event = raw("frame", Some(0x05c469), Some(13), None);
+        event.return_address = Some(0xc8cc3a);
+        execution
+            .observe_hog_spear_body_graphics_pending(&event)
+            .unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::HogSpearBodyGraphicsPending(13)
+        );
+        execution.hog_spear_body_graphics_pending = None;
+        event.return_address = Some(0xc8cc3b);
+        execution
+            .observe_hog_spear_body_graphics_pending(&event)
+            .unwrap();
+        assert_eq!(execution.hog_spear_body_graphics_pending, None);
     }
 
     #[test]
@@ -12434,6 +12500,7 @@ mod tests {
             initialize_active_main_calls: 0,
             guard_prep_parry_hitbox: None,
             guard_animation_checkpoint: None,
+            hog_spear_body_graphics_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
@@ -12497,6 +12564,7 @@ mod tests {
             initialize_active_main_calls: 0,
             guard_prep_parry_hitbox: None,
             guard_animation_checkpoint: None,
+            hog_spear_body_graphics_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,

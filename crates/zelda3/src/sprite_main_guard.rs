@@ -947,6 +947,10 @@ impl ZeldaState {
     // }
     pub(super) fn guard_tick_and_update_body(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).increment_subtype2();
+        self.guard_update_body_graphics(k);
+    }
+
+    pub(super) fn guard_update_body_graphics(&mut self, k: usize) {
         let sprite = self.sprite_slot_view(k);
         let t =
             (sprite.direction() as usize).wrapping_mul(4) + ((sprite.subtype2() as usize >> 3) & 3);

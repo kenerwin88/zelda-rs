@@ -19242,6 +19242,63 @@ fn forwarded_sprite_main_interruption_proves_spiral_caller_resumed() {
 }
 
 #[test]
+fn hog_spear_body_boundary_keeps_both_increments_without_replaying_movement() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(9);
+    state.set_submodule(0);
+    state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    state
+        .oam_state_mut()
+        .set_current_extended_pointer(BYTEWISE_EXTENDED_OAM as u16);
+    state.follower_link_state_mut().set_position(0x00c0, 0x00c0);
+    {
+        let mut sprite = state.sprite_slot_view_mut(0);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x45);
+        sprite.set_x(0x0040);
+        sprite.set_y(0x0080);
+        sprite.set_subtype2(6);
+        sprite.set_graphics(0);
+        sprite.set_x_velocity(16);
+    }
+    let mut atomic = state.clone();
+    atomic.sprite_main();
+    state.arm_sprite_main_cpu_continuation(
+        SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: 0 },
+        1,
+        SpriteMainCpuCaller::DungeonModule07,
+    );
+    state.sprite_main();
+    assert_eq!(state.sprite_slot_view(0).subtype2(), 8);
+    assert_eq!(state.sprite_slot_view(0).graphics(), 0);
+    let x = state.sprite_slot_view(0).x();
+    let y = state.sprite_slot_view(0).y();
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishSpriteMain {
+            boundary: SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: 0 },
+            ..
+        })
+    ));
+    state.guard_update_body_graphics(0);
+    assert_eq!(state.sprite_slot_view(0).subtype2(), 8);
+    assert_eq!(state.sprite_slot_view(0).x(), x);
+    assert_eq!(state.sprite_slot_view(0).y(), y);
+    assert_eq!(
+        state.sprite_slot_view(0).graphics(),
+        atomic.sprite_slot_view(0).graphics()
+    );
+    assert_eq!(
+        state.sprite_slot_view(0).x(),
+        atomic.sprite_slot_view(0).x()
+    );
+    assert_eq!(
+        state.sprite_slot_view(0).y(),
+        atomic.sprite_slot_view(0).y()
+    );
+}
+
+#[test]
 fn antfairy_sprite_main_boundary_commits_every_source_reached_increment() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);

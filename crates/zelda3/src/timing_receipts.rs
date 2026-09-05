@@ -854,6 +854,9 @@ pub enum MainLoopInterruption {
         slot: u8,
         checkpoint: GuardAnimationCheckpoint,
     },
+    /// Hog Spear Man completed its active body and both subtype increments;
+    /// the shared animation helper's graphics store remains pending.
+    SpriteMainHogSpearBodyGraphicsPending(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -916,6 +919,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAfterAntfairySubtype2Increment(_)
                 | Self::SpriteMainAfterLanmolaSubtype2Increment(_)
                 | Self::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
+                | Self::SpriteMainHogSpearBodyGraphicsPending(_)
                 | Self::SpriteMainWishPondTossedItemGraphicsStarted(_)
                 | Self::SpriteMainGuardPrepWeaponFlagsPending(_)
                 | Self::SpriteMainGuardPrepParryHitbox { .. }
@@ -1058,6 +1062,7 @@ pub enum SpriteMainProgress {
         slot: u8,
         checkpoint: GuardAnimationCheckpoint,
     },
+    HogSpearBodyGraphicsPending(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

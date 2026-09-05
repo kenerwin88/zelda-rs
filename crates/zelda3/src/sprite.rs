@@ -3131,6 +3131,23 @@ impl ZeldaState {
                 return;
             }
             if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: k as u8 })
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(nmi_slices, 0);
+                let boundary = self.sprite_main_cpu_boundary.take().unwrap();
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x45);
+                self.sprite_timers_and_oam(k);
+                assert!(
+                    self.hog_spear_man_through_body_increments(k),
+                    "source Hog Spear body checkpoint did not reach its animation helper"
+                );
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                return;
+            }
+            if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::BonkItemGraphicsEntered(k as u8))
             {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
@@ -4011,6 +4028,14 @@ impl ZeldaState {
                     0x13 | 0x26
                 ));
                 self.helmasaur_hard_hat_beetle_common_after_subtype2_increment(interrupted_slot);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).sprite_type(), 0x45);
+                self.guard_update_body_graphics(interrupted_slot);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::AfterTimerDecrements {

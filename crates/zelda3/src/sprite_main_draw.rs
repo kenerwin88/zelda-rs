@@ -11045,14 +11045,20 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_45_HogSpearMan(int k) {  // 85cbe0
     pub(super) fn sprite_45_hog_spear_man(&mut self, k: usize) {
+        if self.hog_spear_man_through_body_increments(k) {
+            self.guard_update_body_graphics(k);
+        }
+    }
+
+    pub(super) fn hog_spear_man_through_body_increments(&mut self, k: usize) -> bool {
         self.guard_handle_all_animation(k);
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
         self.bolt_guard_trigger_chase_theme(k);
         self.guard_parry_sword_attacks(k);
         if self.sprite_return_if_recoiling(k) {
-            return;
+            return false;
         }
         if self.sprite_slot_view(k).wall_collision() == 0 {
             self.sprite_move_xy(k);
@@ -11069,7 +11075,8 @@ impl ZeldaState {
             self.guard_apply_speed_in_direction(k);
         }
         self.sprite_slot_view_mut(k).add_subtype2(1);
-        self.guard_tick_and_update_body(k);
+        self.sprite_slot_view_mut(k).increment_subtype2();
+        true
     }
 
     // -----------------------------------------------------------------------
