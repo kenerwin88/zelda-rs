@@ -4361,6 +4361,7 @@ impl Snes9xOracleSemanticTrace {
                     Some(
                         MainLoopInterruption::LinkActualVelocity { .. }
                             | MainLoopInterruption::LinkActualVelocityCompleted
+                            | MainLoopInterruption::DungeonExitSpotlightTableCompleted
                             | MainLoopInterruption::LinkPositionBeforeCoordinates
                             | MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                             | MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
@@ -6830,6 +6831,11 @@ fn main_loop_interruption_for_source_state(
     sub: Option<u8>,
     x: Option<u16>,
 ) -> Option<MainLoopInterruption> {
+    // SEP/PLB/RTL tail after the radius/goal test. Module0F/$01 still
+    // identifies the recurring non-goal caller; its control clears follow.
+    if main == Some(0x0f) && sub == Some(1) && matches!(pc, 0x00_f423 | 0x00_f425 | 0x00_f426) {
+        return Some(MainLoopInterruption::DungeonExitSpotlightTableCompleted);
+    }
     if main == Some(0x0f) && sub == Some(1) && pc == MODULE0F_AFTER_SUBMODULE_DISPATCH_PC {
         return Some(MainLoopInterruption::DungeonExitSpotlightAfterSubmodule);
     }
@@ -14002,6 +14008,24 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn recurring_spotlight_table_tail_retains_control_and_link_caller() {
+        for pc in [0x00_f423, 0x00_f425, 0x00_f426] {
+            assert_eq!(
+                main_loop_interruption_for_source_state(pc, Some(0x0f), Some(1), Some(0)),
+                Some(MainLoopInterruption::DungeonExitSpotlightTableCompleted)
+            );
+            assert_ne!(
+                main_loop_interruption_for_source_state(pc, Some(0x0f), Some(0), Some(0)),
+                Some(MainLoopInterruption::DungeonExitSpotlightTableCompleted)
+            );
+            assert_ne!(
+                main_loop_interruption_for_source_state(pc, Some(6), Some(0), Some(0)),
+                Some(MainLoopInterruption::DungeonExitSpotlightTableCompleted)
+            );
+        }
     }
 
     #[test]

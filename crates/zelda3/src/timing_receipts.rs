@@ -885,6 +885,9 @@ pub enum MainLoopInterruption {
     /// Both actual velocity components are stored; airborne defaults and
     /// position integration remain pending in Link_HandleVelocity.
     LinkActualVelocityCompleted,
+    /// Recurring Module0F finished its iris table and radius update, before
+    /// the control clears and Link/OAM caller suffix.
+    DungeonExitSpotlightTableCompleted,
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.

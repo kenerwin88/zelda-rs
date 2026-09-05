@@ -22344,6 +22344,71 @@ fn interrupted_spotlight_suffix_matches_c_writes_and_stages_the_rom_receipt() {
 }
 
 #[test]
+fn spotlight_table_completion_defers_control_clears_and_link_movement() {
+    fn configured() -> ZeldaState {
+        let mut state = ZeldaState::new();
+        state.set_main_module(0x0f);
+        state.set_submodule(1);
+        state.set_indoor_flag(0);
+        state.follower_link_state_mut().set_x(1272);
+        state.follower_link_state_mut().set_y(1012);
+        state
+            .follower_link_state_mut()
+            .set_direction_and_last_direction(8);
+        state.set_bg2_h_copy2(1152);
+        state.set_bg2_v_copy2(786);
+        state.set_spotlight_window_radius(126);
+        state.set_spotlight_window_state(0);
+        state.activate_nmi_thread();
+        state.request_polyhedral_nmi_update();
+        state
+    }
+    let mut atomic = configured();
+    assert_eq!(
+        atomic.spotlight_configure_table_and_control(false),
+        (false, false)
+    );
+    atomic.module0f_spotlight_close_link_and_oam();
+
+    let mut resumed = configured();
+    let build = resumed.begin_iris_spotlight_configure_table_at_progress(
+        crate::SpotlightTableBuildProgress {
+            completed_iterations: 0,
+            checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeIterationInitialization,
+        },
+    );
+    resumed.complete_dungeon_exit_spotlight_build_until_control(
+        build,
+        false,
+        SpotlightIteration::closing(SpotlightIterationPhase::WholeTable),
+    );
+    assert_eq!(resumed.ram[0x12a], 1);
+    assert_eq!(resumed.ram[0x1f0c], 0xff);
+    assert_eq!(resumed.game_state.player.follower_link.y(), 1012);
+    assert_eq!(
+        resumed.game_state.display.spotlight_hdma.window_radius(),
+        119
+    );
+    assert!(matches!(
+        resumed.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishDungeonExitSpotlightControl { .. })
+    ));
+    resumed.complete_dungeon_exit_spotlight_control();
+    let Some(GameWorkStep::Complete(GameWorkContinuation::FinishDungeonExitSpotlightControl {
+        iteration,
+    })) = resumed
+        .game_execution_scheduler
+        .advance_work_one_nmi_slice()
+    else {
+        panic!("control suffix did not retain its continuation");
+    };
+    resumed.complete_dungeon_exit_spotlight_link_and_oam(iteration, true);
+    assert_eq!(resumed.game_execution_scheduler.current_work(), None);
+    assert_eq!(resumed.ram, atomic.ram);
+    assert_eq!(resumed.game_state, atomic.game_state);
+}
+
+#[test]
 fn semantic_spotlight_circle_checkpoint_resumes_to_the_atomic_c_endpoint() {
     fn source_state() -> ZeldaState {
         let mut state = ZeldaState::new();

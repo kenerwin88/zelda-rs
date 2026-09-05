@@ -491,6 +491,7 @@ impl ScheduledGameWork {
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkVelocity { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { .. }
+                | GameWorkContinuation::FinishDungeonExitSpotlightControl { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel { .. }
                 | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterCoordinateLow { .. }
@@ -525,6 +526,7 @@ impl ScheduledGameWork {
                 iteration, ..
             }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { iteration }
+            | GameWorkContinuation::FinishDungeonExitSpotlightControl { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
                 iteration,
@@ -571,6 +573,7 @@ impl ScheduledGameWork {
                 iteration, ..
             }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkAndOam { iteration }
+            | GameWorkContinuation::FinishDungeonExitSpotlightControl { iteration }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovement { iteration, .. }
             | GameWorkContinuation::FinishDungeonExitSpotlightLinkMovementAfterSubpixel {
                 iteration,

@@ -3535,6 +3535,19 @@ impl ZeldaState {
             ) {
                 return;
             }
+            if self.take_original_timing_main_loop_interruption(
+                crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted,
+            ) {
+                assert!(
+                    !self.IrisSpotlight_ConfigureTable(),
+                    "recurring table checkpoint cannot cross its goal transition"
+                );
+                self.game_execution_scheduler.schedule_work(
+                    GameWorkContinuation::FinishDungeonExitSpotlightControl { iteration },
+                    1,
+                );
+                return;
+            }
             let (caller_interrupted, _) = self.spotlight_configure_table_and_control(true);
             if caller_interrupted {
                 self.schedule_dungeon_exit_spotlight_goal_caller(iteration);
@@ -4002,13 +4015,49 @@ impl ZeldaState {
         }
     }
 
+    pub(super) fn complete_dungeon_exit_spotlight_build_until_control(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        projection_completed: bool,
+        iteration: SpotlightIteration,
+    ) {
+        let reached_goal = if projection_completed {
+            self.complete_iris_spotlight_configure_table_after_projection()
+        } else {
+            self.complete_iris_spotlight_configure_table(table_build)
+        };
+        assert!(
+            !reached_goal,
+            "recurring table checkpoint cannot cross its goal transition"
+        );
+        self.game_execution_scheduler.schedule_work(
+            GameWorkContinuation::FinishDungeonExitSpotlightControl { iteration },
+            1,
+        );
+    }
+
+    pub(super) fn complete_dungeon_exit_spotlight_control(&mut self) {
+        assert_eq!(
+            (
+                self.game_state.frame.main_module,
+                self.game_state.frame.submodule
+            ),
+            (0x0f, 1)
+        );
+        assert!(!self.complete_spotlight_configure_table_and_control_after_table(0x0f, false));
+    }
+
     pub(super) fn complete_dungeon_exit_spotlight_link_and_oam(
         &mut self,
         iteration: SpotlightIteration,
+        caller_returned_in_host: bool,
     ) {
         // The source NMI preceded the first caller-suffix instruction, so
         // resume both the speed/ripple prefix and its velocity/LinkOAM tail.
         self.module0f_spotlight_close_link_and_oam();
+        if caller_returned_in_host {
+            return;
+        }
         if iteration.prepares_main_loop_sprites_before_second_nmi() {
             self.nmi_prepare_sprites_for_main_loop_once();
             self.clear_nmi_update_latch();
