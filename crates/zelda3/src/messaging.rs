@@ -3589,13 +3589,21 @@ impl ZeldaState {
         self.dungeon_map_mut().clear_current_floor_high();
         let mut scroll_draw_offset = self.game_state.dungeon_map_display.scroll_draw_offset();
         if (self.game_state.player.follower_link.joypad1h_last() & 8) != 0 {
-            if r2.wrapping_sub(1) == self.game_state.dungeon_map_display.dungmap_cur_floor_byte() {
+            if u16::from(r2).wrapping_sub(1)
+                == self.game_state.dungeon_map_display.dungmap_cur_floor()
+            {
                 return;
             }
-            self.increment_dungeon_map_current_floor_byte();
+            let floor = self
+                .game_state
+                .dungeon_map_display
+                .dungmap_cur_floor()
+                .wrapping_add(1);
+            self.set_dungeon_map_current_floor(floor);
             scroll_draw_offset = scroll_draw_offset.wrapping_sub(0x300) & 0x0fff;
         } else {
-            if (!r3).wrapping_add(1) == self.game_state.dungeon_map_display.dungmap_cur_floor_byte()
+            // $0A:E9F1 complements the low byte, then INC A twice: 1-r3.
+            if (!r3).wrapping_add(2) == self.game_state.dungeon_map_display.dungmap_cur_floor_byte()
             {
                 return;
             }
@@ -3624,7 +3632,12 @@ impl ZeldaState {
         self.set_dungeon_map_scroll_target_y(target);
         if x == 0 {
             scroll_draw_offset = scroll_draw_offset.wrapping_sub(0x300) & 0x0fff;
-            self.increment_dungeon_map_current_floor_byte();
+            let floor = self
+                .game_state
+                .dungeon_map_display
+                .dungmap_cur_floor()
+                .wrapping_add(1);
+            self.set_dungeon_map_current_floor(floor);
         }
         self.set_dungeon_map_scroll_draw_offset(scroll_draw_offset);
         self.set_pending_nmi_subroutine(8);

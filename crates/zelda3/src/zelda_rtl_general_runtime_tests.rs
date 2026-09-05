@@ -17985,6 +17985,68 @@ fn dungeon_map_room_drawing_without_a_source_return_remains_suspended_for_every_
 }
 
 #[test]
+fn dungeon_map_floor_selection_respects_every_source_lower_bound() {
+    // Every scrollable dungeon's lower bound from the source floor table.
+    for (palace, bottom) in [
+        (0, 0u8),
+        (2, 0xfe),
+        (6, 0),
+        (8, 1),
+        (10, 0xff),
+        (14, 0xff),
+        (18, 0xfa),
+        (20, 1),
+        (22, 0xff),
+        (24, 0xfe),
+        (26, 0),
+    ] {
+        let mut state = ZeldaState::new();
+        state.save_progress_mut().set_palace_index_x2(palace);
+        state.set_dungeon_map_current_floor(0xa500 | u16::from(bottom));
+        state.follower_link_state_mut().set_joypad1h_last(4);
+        state.set_bg2_y(0x240);
+        state.DungeonMap_HandleMovementInput();
+        assert_eq!(
+            state.game_state.dungeon_map_display.dungmap_cur_floor(),
+            u16::from(bottom)
+        );
+        assert_eq!(
+            state
+                .game_state
+                .dungeon_map_display
+                .dungmap_floor_scroll_step(),
+            0
+        );
+        assert_eq!(
+            state.game_state.display.ppu_scroll_copy.bg2_v_copy2(),
+            0x240
+        );
+    }
+}
+
+#[test]
+fn dungeon_map_floor_selection_uses_word_increments_across_byte_wrap() {
+    for (floor, input, expected) in [(0xff, 8, 0x100), (1, 4, 0)] {
+        let mut state = ZeldaState::new();
+        state.save_progress_mut().set_palace_index_x2(2);
+        state.set_dungeon_map_current_floor(floor);
+        state.follower_link_state_mut().set_joypad1h_last(input);
+        state.DungeonMap_HandleFloorSelect();
+        assert_eq!(
+            state.game_state.dungeon_map_display.dungmap_cur_floor(),
+            expected
+        );
+        assert_eq!(
+            state
+                .game_state
+                .dungeon_map_display
+                .dungmap_floor_scroll_step(),
+            1
+        );
+    }
+}
+
+#[test]
 fn dungeon_map_room_drawing_consumes_same_host_iteration_return_without_room_selector() {
     for room in [0x41, 0x72] {
         let mut expected = ZeldaState::new();
