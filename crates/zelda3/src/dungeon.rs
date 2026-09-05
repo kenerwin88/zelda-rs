@@ -11789,7 +11789,7 @@ impl ZeldaState {
         // translated caller across measured NMI slices (route host 92533).
         if self.game_state.frame.main_module == 7 {
             let work = match self.game_state.frame.submodule {
-                7 => Some(DungeonSupertileTransitionWork::FallingSpriteGraphics),
+                6 | 7 => Some(DungeonSupertileTransitionWork::FallingSpriteGraphics),
                 0x0e | 0x15 => Some(DungeonSupertileTransitionWork::SpiralSpriteGraphics),
                 _ => None,
             };
@@ -12329,7 +12329,9 @@ impl ZeldaState {
         self.set_core_update_disable_flag(9);
         if self.game_state.frame.main_module == 7 {
             let work = match self.game_state.frame.submodule {
-                7 => Some(DungeonSupertileTransitionWork::FallingBgCharacters34),
+                // Fat stairs and falling transitions call the same helper;
+                // neither caller may advance while its conversion is suspended.
+                6 | 7 => Some(DungeonSupertileTransitionWork::FallingBgCharacters34),
                 0x0e => Some(DungeonSupertileTransitionWork::SpiralBgCharacters34),
                 _ => None,
             };

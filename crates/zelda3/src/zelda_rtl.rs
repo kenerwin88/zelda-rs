@@ -29423,7 +29423,7 @@ impl ZeldaState {
             // ($0e) and warp-pad ($15) transitions.
             debug_assert!(matches!(self.game_state.frame.submodule, 0x0e | 0x15));
         } else if work == DungeonSupertileTransitionWork::FallingSpriteGraphics {
-            debug_assert_eq!(self.game_state.frame.submodule, 7);
+            debug_assert!(matches!(self.game_state.frame.submodule, 6 | 7));
             debug_assert_eq!(self.game_state.frame.subsubmodule, 5);
         } else if matches!(
             work,
@@ -29434,7 +29434,7 @@ impl ZeldaState {
         ) {
             debug_assert_eq!(self.game_state.frame.submodule, 0x0e);
         } else if work == DungeonSupertileTransitionWork::FallingBgCharacters34 {
-            debug_assert_eq!(self.game_state.frame.submodule, 7);
+            debug_assert!(matches!(self.game_state.frame.submodule, 6 | 7));
             debug_assert_eq!(self.game_state.frame.subsubmodule, 3);
         } else if matches!(
             work,
@@ -45610,28 +45610,15 @@ impl ZeldaState {
                         | DungeonSupertileTransitionWork::FallingBgCharacters34 => {
                             self.increment_subsubmodule();
                             self.complete_module07_dungeon_after_submodule();
-                            if self.pending_main_loop_common_suffix.is_some() {
-                                // The source-proven caller return already
-                                // carries the shared suffix; retire its owner.
-                                self.complete_pending_main_loop_common_suffix_after_module_return();
-                            } else {
-                                if self.pending_main_loop_common_suffix.is_some() {
-                                    self.complete_pending_main_loop_common_suffix_after_module_return();
-                                } else {
-                                    self.nmi_prepare_sprites();
-                                    self.clear_nmi_update_latch();
-                                }
-                            }
+                            self.retire_or_defer_main_loop_common_suffix_by_wire();
                         }
                         DungeonSupertileTransitionWork::FallingSpriteGraphics => {
                             self.complete_dungeon_transition_load_sprite_gfx();
                             self.complete_module07_dungeon_after_submodule();
-                            if self.pending_main_loop_common_suffix.is_some() {
-                                self.complete_pending_main_loop_common_suffix_after_module_return();
-                            } else {
-                                self.nmi_prepare_sprites();
-                                self.clear_nmi_update_latch();
-                            }
+                            // Sprite_Main can suspend again while initializing
+                            // a newly loaded slot. Its caller still owns the
+                            // common suffix until the source return arrives.
+                            self.retire_or_defer_main_loop_common_suffix_by_wire();
                         }
                         DungeonSupertileTransitionWork::SpiralSpriteGraphics => {
                             self.complete_dungeon_transition_load_sprite_gfx();

@@ -2115,6 +2115,27 @@ fn link_oam_equipment_checkpoint_retains_stair_y_until_drawing_returns() {
 }
 
 #[test]
+fn fat_stair_background_conversion_retains_its_caller_step() {
+    // ROM host402680 stops at $00:DF92 inside PrepTransAuxGfx; the shared
+    // Module07/$06 step3 caller has not reached its subsubmodule increment.
+    for submodule in [6, 7] {
+        let mut state = ZeldaState::new();
+        state.set_rom_startup_timing(true);
+        state.set_main_module(7);
+        state.set_submodule(submodule);
+        state.set_subsubmodule(3);
+        state.DungeonTransition_TriggerBGC34UpdateAndAdvance();
+        assert_eq!(state.game_state.frame.subsubmodule, 3);
+        assert_eq!(
+            state.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDungeonSupertileTransition {
+                work: DungeonSupertileTransitionWork::FallingBgCharacters34
+            })
+        );
+    }
+}
+
+#[test]
 fn live_mirror_warp_reload_retains_and_restores_source_scan_locals() {
     let mut state = ZeldaState::new();
     state.original_timing_owner = OriginalTimingOwnerState::Live;
