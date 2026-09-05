@@ -951,6 +951,9 @@ struct SpriteMainExecutionTracker {
     /// The last traced `$0FB6` store: Sprite_TrinexxD_Draw's segment counter
     /// while its loop runs.
     trinexx_d_draw_counter: Option<u8>,
+    /// The active slot began Sprite_TrinexxD_Draw's body loop (`STA $0FB6`
+    /// of 0 at $1D:AF91) this run.
+    trinexx_d_draw_active: Option<u8>,
     trinexx_final_phase_draw: Option<(u8, u8, u8)>,
     sidenexx_neck_target: Option<(u8, u8)>,
     trinexx_front_part: Option<(u8, u8)>,
@@ -1044,6 +1047,7 @@ struct SpriteMainExecutionTracker {
     king_zora_flippers_graphics_slot: Option<u8>,
     happiness_pond_rupee_graphics_slot: Option<u8>,
     catfish_medallion_graphics_slot: Option<u8>,
+    waterfall_gt_cutscene_graphics_slot: Option<u8>,
     #[serde(default)]
     bonk_item_graphics_slot: Option<u8>,
     #[serde(default)]
@@ -1908,6 +1912,9 @@ impl SpriteMainExecutionTracker {
         if event.event == "wram-write" {
             if event.address == Some(0x0fb6) {
                 self.trinexx_d_draw_counter = event.value;
+                if event.pc == Some(0x1d_af94) && event.value == Some(0) {
+                    self.trinexx_d_draw_active = self.current_slot;
+                }
             }
             return Ok(());
         }
@@ -1918,6 +1925,40 @@ impl SpriteMainExecutionTracker {
         let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
             return Ok(());
         };
+        // SpriteDraw_SingleLarge ($06:DBF0 wrapper, $06:DC10 body) called
+        // from the loop's $1D:B05C JSL for a body segment: its wrapper
+        // pushes, the pending prep JSR, and Sprite_PrepOamCoordOrDoubleRet's
+        // in-bounds body ($06:E41E..E485, only the pause clear and scratch)
+        // all leave the segment's draw pending. The segment comes from the
+        // traced `$0FB6` counter because the prep helper clobbers Y.
+        if let Some(active) = self.trinexx_d_draw_active {
+            if self.current_slot == Some(active) {
+                let ret24 = event.return_address.map(|r| r & 0x00ff_ffff);
+                let draw_pending = match pc {
+                    0x06_dbf0 => ret24 == Some(0x1d_b05f) && event.stack4 == Some(0xd9),
+                    0x06_dbf1 | 0x06_dbf3 => ret24 == Some(0xb0_5f1d) && event.stack4 == Some(0x1d),
+                    0x06_dbf2 => ret24 == Some(0x5f_1d06) && event.stack4 == Some(0xb0),
+                    0x06_dc10 | 0x06_dc13 | 0x06_dc15 => {
+                        ret24 == Some(0x1d_dbf5) && event.stack4 == Some(0x5f)
+                    }
+                    0x06_e41e..=0x06_e485 => ret24 == Some(0xf5_dc12) && event.stack4 == Some(0xdb),
+                    _ => false,
+                };
+                if draw_pending {
+                    if event.x != Some(u16::from(active)) {
+                        return Err("Trinexx segment draw prep has the wrong active slot".into());
+                    }
+                    let segment = self
+                        .trinexx_d_draw_counter
+                        .ok_or("Trinexx segment draw prep has no traced counter")?;
+                    if segment >= 24 {
+                        return Err("Trinexx segment draw prep has an invalid counter".into());
+                    }
+                    self.trinexx_final_phase_draw = Some((active, segment, 7));
+                    return Ok(());
+                }
+            }
+        }
         if !(0x1d_af94..=0x1d_b078).contains(&pc)
             && !(0x1d_b560..=0x1d_b586).contains(&pc)
             && !(0x1d_b079..=0x1d_b0c7).contains(&pc)
@@ -3185,6 +3226,14 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::CatfishMedallionGraphicsStarted(slot);
         }
+        if let Some(slot) = self.waterfall_gt_cutscene_graphics_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "GT cutscene graphics publication outlived its active sprite slot",
+            );
+            return SpriteMainProgress::WaterfallGtCutsceneGraphicsStarted(slot);
+        }
         if let Some(slot) = self.bonk_item_graphics_slot {
             assert_eq!(
                 self.current_slot,
@@ -3565,6 +3614,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::CatfishMedallionGraphicsStarted(slot) => {
                 MainLoopInterruption::SpriteMainCatfishMedallionGraphicsStarted(slot)
+            }
+            SpriteMainProgress::WaterfallGtCutsceneGraphicsStarted(slot) => {
+                MainLoopInterruption::SpriteMainWaterfallGtCutsceneGraphicsStarted(slot)
             }
             SpriteMainProgress::AfterSingleSmallDrawPosition(slot) => {
                 MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
@@ -6152,6 +6204,20 @@ impl Snes9xOracleSemanticTrace {
                     execution.catfish_medallion_graphics_slot = Some(slot);
                 }
                 if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
+                    && event.return_address.map(|pc| pc & 0x00ff_ffff) == Some(0x09_9bd5)
+                {
+                    // AncillaAdd_GTCutscene ($09:9B83) decodes the cutscene
+                    // graphics after killing the waterfall trigger sprites.
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Snes9x entered GT cutscene graphics outside Sprite_Main")?;
+                    let slot = execution
+                        .current_slot
+                        .ok_or("Snes9x entered GT cutscene graphics before a sprite slot")?;
+                    execution.waterfall_gt_cutscene_graphics_slot = Some(slot);
+                }
+                if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
                     && event.return_address.map(|pc| pc & 0x00ff_ffff)
                         == Some(BONK_ITEM_GRAPHICS_RETURN_ADDRESS)
                 {
@@ -6301,6 +6367,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.king_zora_flippers_graphics_slot = None;
                             execution.happiness_pond_rupee_graphics_slot = None;
                             execution.catfish_medallion_graphics_slot = None;
+                            execution.waterfall_gt_cutscene_graphics_slot = None;
                             execution.bonk_item_graphics_slot = None;
                             execution.single_small_draw_position_slot = None;
                             execution.probe_after_oam_coordinates_slot = None;
@@ -6321,6 +6388,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.trinexx_final_phase_case0 = None;
                             execution.trinexx_final_phase_tile_collision = None;
                             execution.trinexx_d_draw_counter = None;
+                            execution.trinexx_d_draw_active = None;
                             execution.trinexx_final_phase_draw = None;
                             execution.sidenexx_neck_target = None;
                             execution.trinexx_front_part = None;
@@ -6458,6 +6526,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.king_zora_flippers_graphics_slot = None;
                         execution.happiness_pond_rupee_graphics_slot = None;
                         execution.catfish_medallion_graphics_slot = None;
+                        execution.waterfall_gt_cutscene_graphics_slot = None;
                         execution.bonk_item_graphics_slot = None;
                         execution.single_small_draw_position_slot = None;
                         execution.probe_after_oam_coordinates_slot = None;
@@ -10327,6 +10396,7 @@ mod tests {
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
             trinexx_d_draw_counter: None,
+            trinexx_d_draw_active: None,
             trinexx_final_phase_draw: None,
             sidenexx_neck_target: None,
             trinexx_front_part: None,
@@ -10391,6 +10461,7 @@ mod tests {
             king_zora_flippers_graphics_slot: None,
             happiness_pond_rupee_graphics_slot: None,
             catfish_medallion_graphics_slot: None,
+            waterfall_gt_cutscene_graphics_slot: None,
             bonk_item_graphics_slot: None,
             wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,
@@ -10692,6 +10763,42 @@ mod tests {
         let mut inside = raw("nmi", Some(0x1d_b0aa), Some(0), None);
         inside.y = Some(4);
         assert!(tracker.observe_trinexx_final_phase_draw(&inside).is_err());
+        // The single-large prep helper is only attributed once the loop's
+        // `$0FB6 = 0` store proved this slot is inside Sprite_TrinexxD_Draw.
+        let mut prep = raw("frame", Some(0x06_e423), Some(0), None);
+        prep.y = Some(0);
+        prep.return_address = Some(0xf5_dc12);
+        prep.stack4 = Some(0xdb);
+        tracker.observe_trinexx_final_phase_draw(&prep).unwrap();
+        assert_eq!(tracker.trinexx_final_phase_draw, None);
+        let mut start = raw("wram-write", Some(0x1d_af94), Some(0), Some(0x0fb6));
+        start.value = Some(0);
+        tracker.observe_trinexx_final_phase_draw(&start).unwrap();
+        let mut advance = raw("wram-write", Some(0x1d_b06d), Some(0), Some(0x0fb6));
+        advance.value = Some(2);
+        tracker.observe_trinexx_final_phase_draw(&advance).unwrap();
+        tracker.observe_trinexx_final_phase_draw(&prep).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxFinalPhaseDraw {
+                slot: 0,
+                segment: 2,
+                stage: 7,
+            }
+        );
+        let mut wrapper = raw("frame", Some(0x06_dbf0), Some(0), None);
+        wrapper.y = Some(2);
+        wrapper.return_address = Some(0x1d_b05f);
+        wrapper.stack4 = Some(0xd9);
+        tracker.observe_trinexx_final_phase_draw(&wrapper).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxFinalPhaseDraw {
+                slot: 0,
+                segment: 2,
+                stage: 7,
+            }
+        );
         head.stack4 = Some(0xc2);
         assert!(tracker.observe_trinexx_final_phase_draw(&head).is_err());
     }
@@ -11216,6 +11323,36 @@ mod tests {
                 .sprite_main_execution
                 .map(|execution| execution.interruption()),
             Some(MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(14)),
+        );
+    }
+
+    #[test]
+    fn gt_cutscene_decode_becomes_a_waterfall_graphics_checkpoint() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(13), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut decode = raw(
+            "pc",
+            Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC),
+            Some(255),
+            None,
+        );
+        decode.return_address = Some(0x09_9bd5);
+        source.consume_event(decode, &mut receipts).unwrap();
+        assert_eq!(
+            source.sprite_main_execution.as_ref().unwrap().progress(),
+            SpriteMainProgress::WaterfallGtCutsceneGraphicsStarted(13)
         );
     }
 
@@ -16863,6 +17000,7 @@ mod tests {
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
             trinexx_d_draw_counter: None,
+            trinexx_d_draw_active: None,
             trinexx_final_phase_draw: None,
             sidenexx_neck_target: None,
             trinexx_front_part: None,
@@ -16927,6 +17065,7 @@ mod tests {
             king_zora_flippers_graphics_slot: None,
             happiness_pond_rupee_graphics_slot: None,
             catfish_medallion_graphics_slot: None,
+            waterfall_gt_cutscene_graphics_slot: None,
             bonk_item_graphics_slot: None,
             wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,
@@ -16971,6 +17110,7 @@ mod tests {
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
             trinexx_d_draw_counter: None,
+            trinexx_d_draw_active: None,
             trinexx_final_phase_draw: None,
             sidenexx_neck_target: None,
             trinexx_front_part: None,
@@ -17035,6 +17175,7 @@ mod tests {
             king_zora_flippers_graphics_slot: None,
             happiness_pond_rupee_graphics_slot: None,
             catfish_medallion_graphics_slot: None,
+            waterfall_gt_cutscene_graphics_slot: None,
             bonk_item_graphics_slot: None,
             wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,

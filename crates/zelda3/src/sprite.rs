@@ -3352,6 +3352,24 @@ impl ZeldaState {
                 return;
             }
             if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(
+                    k as u8,
+                ))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(nmi_slices, 0);
+                self.sprite_main_cpu_boundary = None;
+                self.sprite_timers_and_oam(k);
+                self.waterfall_before_gt_cutscene_graphics(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(k as u8),
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(
                     k as u8,
                 ))
@@ -5247,6 +5265,10 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             }
             SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot) => {
                 self.sidenexx_after_head_draw_setup(usize::from(slot));
+                self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
+            }
+            SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(slot) => {
+                self.complete_waterfall_gt_cutscene_graphics(usize::from(slot));
                 self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
             }
             SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(slot) => {

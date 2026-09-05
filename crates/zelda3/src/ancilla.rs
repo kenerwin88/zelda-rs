@@ -3097,6 +3097,17 @@ impl ZeldaState {
     }
 
     pub(super) fn ancilla_add_gt_cutscene(&mut self) {
+        if let Some(k) = self.ancilla_add_gt_cutscene_before_graphics() {
+            self.DecodeAnimatedSpriteTile_variable(0x28);
+            self.ancilla_add_gt_cutscene_after_graphics(k);
+        }
+    }
+
+    /// `AncillaAdd_GTCutscene` up to its `DecodeAnimatedSpriteTile_variable`
+    /// call: the guards, sparkle termination, the cutscene ancilla, the
+    /// waterfall-sprite kills and the sparkle phase fill. Returns the added
+    /// ancilla slot when the decode is reached.
+    pub(super) fn ancilla_add_gt_cutscene_before_graphics(&mut self) -> Option<usize> {
         if self
             .game_state
             .player
@@ -3106,18 +3117,16 @@ impl ZeldaState {
             || self.game_state.inventory.player_resources.crystal_flags() & 0x7f != 0x7f
             || self.game_state.world.overworld.event_info.event_info(0x43) & 0x20 != 0
         {
-            return;
+            return None;
         }
 
         self.ancilla_terminate_sparkle_objects_for_ancilla();
 
         if self.ancilla_add_check_for_presence(0x43) {
-            return;
+            return None;
         }
 
-        let Some(k) = self.ancilla_add_ancilla(0x43, 4) else {
-            return;
-        };
+        let k = self.ancilla_add_ancilla(0x43, 4)?;
 
         for i in (0..=15).rev() {
             if self.sprite_slot_view(i).sprite_type() == 0x37 {
@@ -3129,7 +3138,12 @@ impl ZeldaState {
         for i in (0..=0x17).rev() {
             self.tower_seal_sparkle_mut(i).set_phase(0xff);
         }
-        self.DecodeAnimatedSpriteTile_variable(0x28);
+        Some(k)
+    }
+
+    /// `AncillaAdd_GTCutscene` after its `DecodeAnimatedSpriteTile_variable`
+    /// call, for the cutscene ancilla `k` it added.
+    pub(super) fn ancilla_add_gt_cutscene_after_graphics(&mut self, k: usize) {
         self.set_sp6r_indoors(4);
         self.select_overworld_aux_palette_offset();
         self.palette_load_sprite_environment_dungeon();

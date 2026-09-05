@@ -5165,6 +5165,7 @@ enum SpriteMainCpuBoundary {
     },
     CatfishMedallionGraphicsStarted(u8),
     TrinexxHeadDrawSetup(u8),
+    WaterfallGtCutsceneGraphicsStarted(u8),
     TrinexxBreathTileCollisionReturned(u8),
     TrinexxHeadDraw {
         slot: u8,
@@ -5451,6 +5452,7 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::TrinexxHeadDrawSetup(active_slot)
+        | SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(active_slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics {
@@ -5804,6 +5806,15 @@ fn sprite_main_cpu_boundary_from_interruption(
                 "source Trinexx medallion graphics receipt used invalid slot {slot}"
             );
             Some(SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot))
+        }
+        crate::MainLoopInterruption::SpriteMainWaterfallGtCutsceneGraphicsStarted(slot) => {
+            assert!(
+                slot < 16,
+                "source Waterfall GT cutscene graphics receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(
+                slot,
+            ))
         }
         crate::MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot) => {
             assert!(
@@ -6209,6 +6220,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainCatfishMedallionGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(slot)
+        | crate::MainLoopInterruption::SpriteMainWaterfallGtCutsceneGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot)
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(slot)
@@ -6408,6 +6420,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::HappinessPondRupeeGraphicsStarted(slot)
         | crate::SpriteMainProgress::CatfishMedallionGraphicsStarted(slot)
         | crate::SpriteMainProgress::TrinexxHeadDrawSetup(slot)
+        | crate::SpriteMainProgress::WaterfallGtCutsceneGraphicsStarted(slot)
         | crate::SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot)
         | crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot)
         | crate::SpriteMainProgress::AfterSingleSmallDrawPosition(slot)
@@ -6742,6 +6755,13 @@ fn sprite_main_cpu_boundary_from_progress(
                 "source Trinexx medallion graphics progress used invalid slot {slot}"
             );
             SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot)
+        }
+        crate::SpriteMainProgress::WaterfallGtCutsceneGraphicsStarted(slot) => {
+            assert!(
+                slot < 16,
+                "source Waterfall GT cutscene graphics progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(slot)
         }
         crate::SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot) => {
             assert!(
@@ -7117,6 +7137,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainCatfishMedallionGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(_)
+        | crate::MainLoopInterruption::SpriteMainWaterfallGtCutsceneGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(_)
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(_)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(_)
@@ -7560,6 +7581,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(slot)
         | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(slot)
         | SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot)
+        | SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(slot)
         | SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics { slot, .. }
@@ -8185,12 +8207,14 @@ fn sprite_main_in_flight_checkpoint_advances(
     match (held, next) {
         (
             SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(completed_slot)
-            | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(completed_slot),
+            | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(completed_slot)
+            | SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(completed_slot),
             SpriteMainCpuBoundary::AfterTimersAndOam { slot, .. },
         ) => slot < completed_slot,
         (
             SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(completed_slot)
-            | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(completed_slot),
+            | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(completed_slot)
+            | SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(completed_slot),
             SpriteMainCpuBoundary::AfterSlot(slot),
         ) => slot <= completed_slot,
         (
@@ -40683,7 +40707,27 @@ impl ZeldaState {
                         .take_original_timing_sprite_main_progress()
                         .expect("restated Sprite_Main checkpoint disappeared");
                     match (held_sprite_main_boundary, restated, continuation) {
+                                                (
+                            Some(SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(completed_slot)),
+                            SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
+                            GameWorkContinuation::FinishSpriteMain { caller, .. },
+                        ) if slot < completed_slot => {
+                            self.complete_waterfall_gt_cutscene_graphics(usize::from(completed_slot));
+                            let boundary = self.advance_sprite_main_after_slot_to_after_timers(completed_slot, slot);
+                            continuation = GameWorkContinuation::FinishSpriteMain { boundary, caller };
+                        }
                         (
+                            Some(SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(completed_slot)),
+                            SpriteMainCpuBoundary::AfterSlot(slot),
+                            GameWorkContinuation::FinishSpriteMain { caller, .. },
+                        ) if slot <= completed_slot => {
+                            self.complete_waterfall_gt_cutscene_graphics(usize::from(completed_slot));
+                            if slot < completed_slot {
+                                self.advance_sprite_main_after_slot_boundary(completed_slot, slot);
+                            }
+                            continuation = GameWorkContinuation::FinishSpriteMain { boundary: restated, caller };
+                        }
+(
                             Some(SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(completed_slot) | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(completed_slot)),
                             SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
                             GameWorkContinuation::FinishSpriteMain { caller, .. },
@@ -44661,6 +44705,23 @@ impl ZeldaState {
                         | SpriteMainCpuBoundary::Module09FinalScrollPairPending,
                         SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
                     ) => self.advance_sprite_main_before_first_slot_to_after_timers_and_oam(slot),
+                    (
+                        SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(completed_slot),
+                        SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
+                    ) if slot < completed_slot => {
+                        self.complete_waterfall_gt_cutscene_graphics(usize::from(completed_slot));
+                        self.advance_sprite_main_after_slot_to_after_timers(completed_slot, slot)
+                    }
+                    (
+                        SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(completed_slot),
+                        SpriteMainCpuBoundary::AfterSlot(slot),
+                    ) if slot <= completed_slot => {
+                        self.complete_waterfall_gt_cutscene_graphics(usize::from(completed_slot));
+                        if slot < completed_slot {
+                            self.advance_sprite_main_after_slot_boundary(completed_slot, slot);
+                        }
+                        refined_boundary
+                    }
                     (
                         SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(completed_slot)
                         | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(completed_slot),

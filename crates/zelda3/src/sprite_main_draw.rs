@@ -5946,6 +5946,35 @@ impl ZeldaState {
         }
     }
 
+    /// `Waterfall` on screen $43 up to `AncillaAdd_GTCutscene`'s graphics
+    /// decode: the cutscene ancilla was added, every waterfall sprite (this
+    /// one included) killed and the sparkle phases filled.
+    pub(super) fn waterfall_before_gt_cutscene_graphics(&mut self, k: usize) {
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x37);
+        assert_eq!(self.sprite_slot_view(k).subtype2(), 0);
+        assert!(!self.sprite_return_if_inactive(k));
+        assert!(
+            self.sprite_check_damage_to_link_same_layer(k),
+            "GT cutscene graphics entry requires Link touching the waterfall"
+        );
+        assert_eq!(
+            self.game_state.world.location.overworld_screen_index(),
+            0x43
+        );
+        assert!(
+            self.ancilla_add_gt_cutscene_before_graphics().is_some(),
+            "GT cutscene graphics entry requires the cutscene ancilla"
+        );
+    }
+
+    pub(super) fn complete_waterfall_gt_cutscene_graphics(&mut self, _k: usize) {
+        self.DecodeAnimatedSpriteTile_variable(0x28);
+        let ancilla = (0..5)
+            .find(|&i| self.ancilla_slot_view(i).ancilla_type() == 0x43)
+            .expect("GT cutscene graphics completion requires its cutscene ancilla");
+        self.ancilla_add_gt_cutscene_after_graphics(ancilla);
+    }
+
     // -----------------------------------------------------------------------
     // void Sprite_37_Waterfall(int k) {  // 86c03a
     pub(super) fn sprite_37_waterfall(&mut self, k: usize) {
