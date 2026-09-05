@@ -1972,7 +1972,13 @@ impl SpriteMainExecutionTracker {
         // the initializer has already published properties and state 9.
         let initializer_dispatch = matches!(pc, Some(0x06_8654 | 0x06_8657 | 0x06_91b4))
             || (pc == Some(0x00_8781)
-                && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x06_865a));
+                && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x06_865a))
+            // JumpTableLocal has popped its inline-table return and loaded
+            // the prep target. The remaining stack belongs to the state-8
+            // dispatch in Sprite_ExecuteSingle; LDY $03 and JML [$00] remain.
+            || (pc == Some(0x00_8797)
+                && event.return_address == Some(0x00_83a6)
+                && event.y.is_some_and(|index| index & 1 == 1 && index <= 0x1e5));
         if !initializer_dispatch || self.timers_and_oam_dispatch_state != Some(8) {
             return Ok(());
         }
@@ -11399,6 +11405,18 @@ mod tests {
             execution.progress(),
             SpriteMainProgress::InitializePrepPending(1)
         );
+        execution.initialize_prep_pending = None;
+        event.pc = Some(0x00_8797);
+        event.y = Some(0xb5);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::InitializePrepPending(1)
+        );
+        execution.initialize_prep_pending = None;
+        event.return_address = Some(0x00_83a5);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(execution.initialize_prep_pending, None);
     }
 
     #[test]
