@@ -6435,9 +6435,12 @@ impl Snes9xOracleSemanticTrace {
         // Entering the proximity scan proves the preceding presence load
         // returned, whether this interval ends at NMI or at retro_run's
         // frame boundary. No sprite need have been activated yet.
-        let suspended = (self.overworld_load_overlays_sprite_reload_active
-            || (event.main == Some(8) && event.sub == Some(0))
-            || (event.main == Some(9) && matches!(event.sub, Some(4 | 0x12))))
+        // Sprite_Main also calls the proximity helpers. Its active call owns
+        // those statements; unchanged Module09/$04 bytes do not prove reload.
+        let suspended = self.sprite_main_execution.is_none()
+            && (self.overworld_load_overlays_sprite_reload_active
+                || (event.main == Some(8) && event.sub == Some(0))
+                || (event.main == Some(9) && matches!(event.sub, Some(4 | 0x12))))
             && event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
                 (OVERWORLD_SPRITE_SCAN_START_PC..OVERWORLD_SPRITE_SCAN_END_PC).contains(&pc)
             });
@@ -6468,7 +6471,8 @@ impl Snes9xOracleSemanticTrace {
         let source_owns_reload_publication = self.overworld_load_overlays_sprite_reload_active
             || matches!((event.main, event.sub), (Some(8), Some(0)))
             || matches!((event.main, event.sub), (Some(9), Some(4 | 0x12)));
-        if !source_owns_reload_publication
+        if self.sprite_main_execution.is_some()
+            || !source_owns_reload_publication
             || !(OVERWORLD_LOAD_SINGLE_SPRITE_START_PC..OVERWORLD_LOAD_SINGLE_SPRITE_END_PC)
                 .contains(&pc)
         {
@@ -13610,6 +13614,29 @@ mod tests {
             ],
         );
         assert!(!tracker.overworld_load_overlays_sprite_reload_active);
+    }
+
+    #[test]
+    fn sprite_main_proximity_helper_does_not_publish_reload_authority() {
+        let mut source = empty_semantic_tracker();
+        source.sprite_main_execution = Some(SpriteMainExecutionTracker::default());
+        let mut event = raw("nmi", Some(0x09_c5fc), Some(0), None);
+        event.main = Some(9);
+        event.sub = Some(4);
+        event.bg2_h = Some(0x08a8);
+        let mut receipts = Vec::new();
+        assert!(!source.publish_overworld_presence_at_scan_boundary(&event, &mut receipts));
+        assert!(receipts.is_empty());
+        source.sprite_main_execution = None;
+        assert!(source.publish_overworld_presence_at_scan_boundary(&event, &mut receipts));
+        assert_eq!(
+            receipts,
+            vec![
+                OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                    OverworldSpriteReloadProgress::PresencePublished
+                )
+            ]
+        );
     }
 
     #[test]
