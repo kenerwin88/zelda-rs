@@ -7404,9 +7404,20 @@ fn main_loop_interruption_for_source_state(
     if main == Some(0x0f) && sub == Some(1) && pc == MODULE0F_AFTER_SUBMODULE_DISPATCH_PC {
         return Some(MainLoopInterruption::DungeonExitSpotlightAfterSubmodule);
     }
-    if main == Some(0x0f) && sub == Some(1) && x == Some(0) && (0x07_e359..=0x07_e361).contains(&pc)
+    if main == Some(0x0f)
+        && sub == Some(1)
+        && matches!(x, Some(0 | 1))
+        && (0x07_e359..=0x07_e361).contains(&pc)
     {
-        return Some(MainLoopInterruption::LinkActualVelocityCompleted);
+        // STA $27,x has returned. Only scratch-mask shifts precede DEX:
+        // X=1 proves the horizontal component, X=0 proves both components.
+        return Some(if x == Some(1) {
+            MainLoopInterruption::LinkActualVelocity {
+                horizontal_resolved: Some(true),
+            }
+        } else {
+            MainLoopInterruption::LinkActualVelocityCompleted
+        });
     }
     if main == Some(0x12) && sub == Some(0) {
         if let Some(completed_stores) = game_over_iris_palette_completed_stores(pc, x?) {
@@ -15333,14 +15344,16 @@ mod tests {
 
     #[test]
     fn host_boundary_after_actual_x_velocity_retains_the_pending_y_component() {
-        for pc in [0x07_e359, 0x07_e35f, 0x07_e361] {
+        for pc in [0x07_e359, 0x07_e35d, 0x07_e35f, 0x07_e361] {
             assert_eq!(
                 main_loop_interruption_for_source_state(pc, Some(0x0f), Some(1), Some(0)),
                 Some(MainLoopInterruption::LinkActualVelocityCompleted),
             );
-            assert_ne!(
+            assert_eq!(
                 main_loop_interruption_for_source_state(pc, Some(0x0f), Some(1), Some(1)),
-                Some(MainLoopInterruption::LinkActualVelocityCompleted),
+                Some(MainLoopInterruption::LinkActualVelocity {
+                    horizontal_resolved: Some(true)
+                }),
             );
         }
         assert_eq!(
