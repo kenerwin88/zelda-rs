@@ -4350,6 +4350,7 @@ impl ZeldaState {
                         | SpriteMainCpuBoundary::AfterActiveCuccoX { slot, .. }
                         | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel { slot, .. }
                         | SpriteMainCpuBoundary::MasterSwordLightBeamMovement { slot, .. }
+                        | SpriteMainCpuBoundary::BoulderMovement { slot, .. }
                         | SpriteMainCpuBoundary::BuzzblobAfterXSubpixel { slot, .. }
                         | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn { slot, .. }
                         | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }
@@ -5125,6 +5126,22 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             } => unreachable!(
                 "source master-sword movement boundary did not bind to native coordinate results"
             ),
+            SpriteMainCpuBoundary::BoulderMovement {
+                slot,
+                checkpoint,
+                continuation: Some(continuation),
+            } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.complete_boulder_movement(k, checkpoint, continuation);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::BoulderMovement {
+                continuation: None,
+                ..
+            } => unreachable!(
+                "source Boulder movement boundary did not bind to native coordinate results"
+            ),
             SpriteMainCpuBoundary::BuzzblobAfterXSubpixel { slot, pending: Some((x_low, x_high)) } => {
                 let k = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
@@ -5884,6 +5901,70 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
         let moved = position.wrapping_add(delta);
         self.sprite_slot_view_mut(k).set_x_subpixel(moved as u8);
         ((moved >> 8) as u8, (moved >> 16) as u8)
+    }
+
+    /// Runs `Sprite_MoveXY` through `checkpoint` on the interrupted host and
+    /// returns the coordinate bytes the resumed call still has to publish.
+    pub(super) fn sprite_move_xy_through_checkpoint(
+        &mut self,
+        k: usize,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+    ) -> SpriteMoveXYContinuation {
+        let mut continuation = SpriteMoveXYContinuation::default();
+        match checkpoint {
+            crate::SpriteMoveXYCheckpoint::BeforeMovement => {}
+            crate::SpriteMoveXYCheckpoint::AfterXSubpixel => {
+                (continuation.x_low, continuation.x_high) = self.sprite_move_x_through_subpixel(k);
+            }
+            crate::SpriteMoveXYCheckpoint::AfterXLow => {
+                (continuation.x_low, continuation.x_high) = self.sprite_move_x_through_subpixel(k);
+                self.sprite_slot_view_mut(k).set_x_low(continuation.x_low);
+            }
+            crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_x(k),
+            crate::SpriteMoveXYCheckpoint::AfterYSubpixel => {
+                (continuation.y_low, continuation.y_high) =
+                    self.sprite_move_xy_through_y_subpixel(k);
+            }
+            crate::SpriteMoveXYCheckpoint::AfterYLow => {
+                (continuation.y_low, continuation.y_high) =
+                    self.sprite_move_xy_through_y_subpixel(k);
+                self.sprite_slot_view_mut(k).set_y_low(continuation.y_low);
+            }
+            crate::SpriteMoveXYCheckpoint::AfterYHigh => self.sprite_move_xy(k),
+        }
+        continuation
+    }
+
+    /// Finishes `Sprite_MoveXY` from `checkpoint` with the bytes bound by
+    /// `sprite_move_xy_through_checkpoint`.
+    pub(super) fn sprite_move_xy_from_checkpoint(
+        &mut self,
+        k: usize,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+        continuation: SpriteMoveXYContinuation,
+    ) {
+        match checkpoint {
+            crate::SpriteMoveXYCheckpoint::BeforeMovement => self.sprite_move_xy(k),
+            crate::SpriteMoveXYCheckpoint::AfterXSubpixel => {
+                self.complete_sprite_move_x_after_subpixel(
+                    k,
+                    continuation.x_low,
+                    continuation.x_high,
+                );
+                self.sprite_move_y(k);
+            }
+            crate::SpriteMoveXYCheckpoint::AfterXLow => {
+                self.sprite_slot_view_mut(k).set_x_high(continuation.x_high);
+                self.sprite_move_y(k);
+            }
+            crate::SpriteMoveXYCheckpoint::AfterXHigh => self.sprite_move_y(k),
+            crate::SpriteMoveXYCheckpoint::AfterYSubpixel => self
+                .complete_sprite_move_y_after_subpixel(k, continuation.y_low, continuation.y_high),
+            crate::SpriteMoveXYCheckpoint::AfterYLow => {
+                self.sprite_slot_view_mut(k).set_y_high(continuation.y_high)
+            }
+            crate::SpriteMoveXYCheckpoint::AfterYHigh => {}
+        }
     }
 
     pub(super) fn complete_sprite_move_x_after_subpixel(

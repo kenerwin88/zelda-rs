@@ -868,6 +868,13 @@ pub enum MainLoopInterruption {
         slot: u8,
         checkpoint: SpriteMoveXYCheckpoint,
     },
+    /// An indoor Boulder ($C2) published its OAM flags, ran `Sprite_MoveZ`,
+    /// and reached the named `Sprite_MoveXY` assignment; the remaining
+    /// movement and its frame-gated damage/tile-collision suffix are pending.
+    SpriteMainBoulderMovement {
+        slot: u8,
+        checkpoint: SpriteMoveXYCheckpoint,
+    },
     /// A type-$62 master-sword light beam completed movement, entered its
     /// frame-gated replacement spawn, selected `spawned_slot`, and published
     /// the named source mutation. The remainder of the shared dynamic-spawn
@@ -1067,6 +1074,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainGuardAnimation { .. }
                 | Self::SpriteMainMiniMoldormHistory { .. }
                 | Self::SpriteMainMasterSwordLightBeamMovement { .. }
+                | Self::SpriteMainBoulderMovement { .. }
                 | Self::SpriteMainMasterSwordLightBeamSpawn { .. }
         )
     }
@@ -1204,6 +1212,10 @@ pub enum SpriteMainProgress {
     /// Keep new checkpoint variants at the end: progress receipts are
     /// checkpoint-serialized.
     MasterSwordLightBeamMovement {
+        slot: u8,
+        checkpoint: SpriteMoveXYCheckpoint,
+    },
+    BoulderMovement {
         slot: u8,
         checkpoint: SpriteMoveXYCheckpoint,
     },

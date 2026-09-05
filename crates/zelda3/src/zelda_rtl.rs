@@ -4891,6 +4891,13 @@ enum SpriteMainCpuBoundary {
         checkpoint: crate::SpriteMoveXYCheckpoint,
         continuation: Option<SpriteMoveXYContinuation>,
     },
+    /// An indoor Boulder entered `Sprite_MoveXYZ`; its Z move ran and the
+    /// XY coordinate bytes are bound natively before parking.
+    BoulderMovement {
+        slot: u8,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+        continuation: Option<SpriteMoveXYContinuation>,
+    },
     /// The same light beam has completed movement and published a prefix of
     /// its frame-gated replacement `Sprite_SpawnDynamically` call.
     MasterSwordLightBeamSpawn {
@@ -5440,6 +5447,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
             slot: active_slot, ..
         }
+        | SpriteMainCpuBoundary::BoulderMovement {
+            slot: active_slot, ..
+        }
         | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
             slot: active_slot, ..
         }
@@ -5715,6 +5725,17 @@ fn sprite_main_cpu_boundary_from_interruption(
                 "source master-sword movement used invalid slot {slot}"
             );
             Some(SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                slot,
+                checkpoint,
+                continuation: None,
+            })
+        }
+        crate::MainLoopInterruption::SpriteMainBoulderMovement { slot, checkpoint } => {
+            assert!(
+                slot < 16,
+                "source Boulder movement used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::BoulderMovement {
                 slot,
                 checkpoint,
                 continuation: None,
@@ -6283,6 +6304,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
             slot,
             checkpoint: _,
         } => slot < 16,
+        crate::MainLoopInterruption::SpriteMainBoulderMovement { slot, .. } => slot < 16,
         crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamSpawn {
             slot,
             spawned_slot,
@@ -6533,6 +6555,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
             slot,
             checkpoint: _,
         } => slot < 16,
+        crate::SpriteMainProgress::BoulderMovement { slot, .. } => slot < 16,
         crate::SpriteMainProgress::MasterSwordLightBeamSpawn {
             slot,
             spawned_slot,
@@ -6674,6 +6697,17 @@ fn sprite_main_cpu_boundary_from_progress(
                 "source master-sword movement used invalid slot {slot}"
             );
             SpriteMainCpuBoundary::MasterSwordLightBeamMovement {
+                slot,
+                checkpoint,
+                continuation: None,
+            }
+        }
+        crate::SpriteMainProgress::BoulderMovement { slot, checkpoint } => {
+            assert!(
+                slot < 16,
+                "source Boulder movement used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::BoulderMovement {
                 slot,
                 checkpoint,
                 continuation: None,
@@ -7151,6 +7185,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterCuccoSubtypeIncrements { .. }
         | crate::MainLoopInterruption::SpriteMainAfterCuccoGraphicsPublication { .. }
         | crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamMovement { .. }
+        | crate::MainLoopInterruption::SpriteMainBoulderMovement { .. }
         | crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamSpawn { .. }
         | crate::MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(_)
@@ -7551,6 +7586,18 @@ fn same_sprite_main_source_checkpoint(
             },
         ) => left_slot == right_slot && left_checkpoint == right_checkpoint,
         (
+            SpriteMainCpuBoundary::BoulderMovement {
+                slot: left_slot,
+                checkpoint: left_checkpoint,
+                ..
+            },
+            SpriteMainCpuBoundary::BoulderMovement {
+                slot: right_slot,
+                checkpoint: right_checkpoint,
+                ..
+            },
+        ) => left_slot == right_slot && left_checkpoint == right_checkpoint,
+        (
             SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
                 slot: left_slot,
                 spawned_slot: left_spawned,
@@ -7604,6 +7651,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AfterActiveCuccoX { slot, .. }
         | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel { slot, .. }
         | SpriteMainCpuBoundary::MasterSwordLightBeamMovement { slot, .. }
+        | SpriteMainCpuBoundary::BoulderMovement { slot, .. }
         | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn { slot, .. }
         | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }
         | SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements { slot, .. }
@@ -31262,11 +31310,11 @@ impl ZeldaState {
         // CPU phase (LinkOam) within this host; the Sprite_Main return is then
         // owned by that continuation timeline rather than owed separately
         // (route host 1509192, spiral room $5d initialization).
-        let continued_into_module_tail = self
-            .original_timing_main_loop_interruption()
-            .is_some_and(|interruption| {
-                module_cpu_phase_from_main_loop_interruption(interruption).is_some()
-            });
+        let continued_into_module_tail =
+            self.original_timing_main_loop_interruption()
+                .is_some_and(|interruption| {
+                    module_cpu_phase_from_main_loop_interruption(interruption).is_some()
+                });
         self.original_timing_owes_sprite_main_return()
             || self.original_timing_owes_sprite_main_progress()
             || interrupted_in_sprite_main

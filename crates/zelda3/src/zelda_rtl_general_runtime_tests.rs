@@ -19072,6 +19072,52 @@ fn trinexx_final_phase_draw_checkpoints_resume_to_the_atomic_draw() {
 }
 
 #[test]
+fn boulder_movement_checkpoints_resume_to_the_atomic_body() {
+    use crate::SpriteMoveXYCheckpoint as C;
+    for checkpoint in [
+        C::BeforeMovement,
+        C::AfterXSubpixel,
+        C::AfterXLow,
+        C::AfterXHigh,
+        C::AfterYSubpixel,
+        C::AfterYLow,
+        C::AfterYHigh,
+    ] {
+        let mut state = ZeldaState::new();
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state.game_state.world.location.set_indoor_flag(1);
+        state.sprite_slot_view_mut(12).set_sprite_type(0xc2);
+        state.sprite_slot_view_mut(12).set_state(9);
+        state.sprite_slot_view_mut(12).set_x_velocity(0xe4);
+        state.sprite_slot_view_mut(12).set_y_velocity(0xe4);
+        state.sprite_slot_view_mut(12).set_z_velocity(0xf0);
+        state.sprite_slot_view_mut(12).set_x_low(0x2a);
+        state.sprite_slot_view_mut(12).set_x_high(0x18);
+        state.sprite_slot_view_mut(12).set_y_low(0x4a);
+        state.sprite_slot_view_mut(12).set_y_high(0x0d);
+        state.sprite_slot_view_mut(12).set_x_subpixel(0x80);
+        let mut atomic = state.clone();
+        atomic.sprite_c2_boulder(12);
+        state.sprite_main_cpu_boundary = Some(SpriteMainCpuBoundary::BoulderMovement {
+            slot: 12,
+            checkpoint,
+            continuation: None,
+        });
+        state.sprite_c2_boulder(12);
+        let Some(SpriteMainCpuBoundary::BoulderMovement {
+            continuation: Some(continuation),
+            ..
+        }) = state.sprite_main_cpu_boundary.take()
+        else {
+            panic!("Boulder movement boundary did not bind its continuation");
+        };
+        state.complete_boulder_movement(12, checkpoint, continuation);
+        assert_eq!(state.ram, atomic.ram, "{checkpoint:?}");
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+    }
+}
+
+#[test]
 fn helmasaur_hard_hat_tile_collision_checkpoints_resume_to_the_atomic_body() {
     use crate::SpriteTileCollisionStage as S;
     for (x_velocity, y_velocity) in [(0xfdu8, 0xffu8), (0x10, 0), (0, 0x10)] {

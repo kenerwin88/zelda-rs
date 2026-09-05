@@ -489,6 +489,8 @@ const ACTIVE_CUCCO_MOVEMENT_CALL_PC: u32 = 0x06_a628;
 // caller from the many other users of the shared movement helper.
 const MASTER_SWORD_LIGHT_BEAM_MOVEMENT_CALL_PC: u32 = 0x05_8af3;
 const SPRITE_X_SUBPIXEL_BASE: u16 = 0x0d70;
+const SPRITE_OAM_FLAGS_BASE: u16 = 0x0f50;
+const SPRITE_Z_BASE: u16 = 0x0f70;
 const SPRITE_X_LOW_BASE: u16 = 0x0d10;
 const SPRITE_X_HIGH_BASE: u16 = 0x0d30;
 const SPRITE_Y_SUBPIXEL_BASE: u16 = 0x0d60;
@@ -973,6 +975,10 @@ struct SpriteMainExecutionTracker {
     trinexx_segment_counter: Option<u8>,
     trinexx_head_draw_setup: Option<u8>,
     trinexx_breath_tile_collision: Option<u8>,
+    /// The active slot's type handler returned into the bank-$1D dispatcher
+    /// wrapper ($1D:C21A) or its $06:BFF4 trampoline; only returns remain
+    /// before Sprite_Main's slot loop, so the slot is complete.
+    handler_returned_slot: Option<u8>,
     /// The active slot ran `Sprite_Trinexx_FinalPhase` state 0's `--sprite_A`
     /// store ($1D:AE77) this run.
     trinexx_final_phase_case0: Option<u8>,
@@ -1067,6 +1073,10 @@ struct SpriteMainExecutionTracker {
     active_cucco_y_subpixel: Option<(u8, u8)>,
     #[serde(default)]
     master_sword_light_beam_movement: Option<(u8, u8)>,
+    /// An indoor Boulder's `Sprite_MoveXYZ`: the active slot, the count of
+    /// published `Sprite_MoveXY` coordinate stores, and whether `Sprite_MoveZ`
+    /// stored its result.
+    boulder_movement: Option<(u8, u8, bool)>,
     #[serde(default)]
     master_sword_light_beam_spawn: Option<(u8, u8, SpriteDynamicSpawnProgress)>,
     #[serde(default)]
@@ -2205,6 +2215,39 @@ impl SpriteMainExecutionTracker {
             return Err("Helmasaur/Hardhat tile collision has the wrong active slot".into());
         }
         self.helmasaur_hard_hat_tile_collision = Some((slot, stage));
+        Ok(())
+    }
+
+    fn observe_sprite_handler_returned(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if !matches!(event.event.as_str(), "nmi" | "frame") {
+            return Ok(());
+        }
+        self.handler_returned_slot = None;
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        // SpriteActive_Main dispatches bank-$1D handlers through the $06:BFF4
+        // trampoline (JSL $1D:C21A: PHB/PHK/PLB, JSR C222, PLB, RTL). At the
+        // wrapper's PLB/RTL the handler has returned; the trampoline's RTS
+        // then returns to Sprite_ExecuteSingle.
+        let returned = match pc {
+            0x1d_c220 | 0x1d_c221 => {
+                event.return_address.map(|r| r & 0x00ff_ffff) == Some(0x06_bff7)
+                    && event.stack4 == Some(0xa6)
+            }
+            0x06_bff7 => event.return_address.map(|r| r & 0xffff) == Some(0x84a6),
+            _ => false,
+        };
+        if !returned {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("sprite handler returned outside an active slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err("sprite handler return has the wrong active slot".into());
+        }
+        self.handler_returned_slot = Some(slot);
         Ok(())
     }
 
@@ -3410,6 +3453,10 @@ impl SpriteMainExecutionTracker {
                 stage,
             };
         }
+        if let Some(slot) = self.handler_returned_slot {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::AfterSlot(slot);
+        }
         if let Some(slot) = self.trinexx_head_draw_setup {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::TrinexxHeadDrawSetup(slot);
@@ -3526,6 +3573,28 @@ impl SpriteMainExecutionTracker {
                 spawned_slot,
                 progress,
             };
+        }
+        if let Some((slot, checkpoint_ordinal, z_done)) = self.boulder_movement {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Boulder movement outlived its active sprite slot",
+            );
+            assert!(
+                z_done,
+                "Boulder movement boundary inside Sprite_MoveZ is not modeled",
+            );
+            let checkpoint = match checkpoint_ordinal {
+                0 => SpriteMoveXYCheckpoint::BeforeMovement,
+                1 => SpriteMoveXYCheckpoint::AfterXSubpixel,
+                2 => SpriteMoveXYCheckpoint::AfterXLow,
+                3 => SpriteMoveXYCheckpoint::AfterXHigh,
+                4 => SpriteMoveXYCheckpoint::AfterYSubpixel,
+                5 => SpriteMoveXYCheckpoint::AfterYLow,
+                6 => SpriteMoveXYCheckpoint::AfterYHigh,
+                count => panic!("invalid Boulder movement store count {count}"),
+            };
+            return SpriteMainProgress::BoulderMovement { slot, checkpoint };
         }
         if let Some((slot, checkpoint_ordinal)) = self.master_sword_light_beam_movement {
             assert_eq!(
@@ -3679,6 +3748,9 @@ impl SpriteMainExecutionTracker {
             },
             SpriteMainProgress::MasterSwordLightBeamMovement { slot, checkpoint } => {
                 MainLoopInterruption::SpriteMainMasterSwordLightBeamMovement { slot, checkpoint }
+            }
+            SpriteMainProgress::BoulderMovement { slot, checkpoint } => {
+                MainLoopInterruption::SpriteMainBoulderMovement { slot, checkpoint }
             }
             SpriteMainProgress::MasterSwordLightBeamSpawn {
                 slot,
@@ -5652,6 +5724,7 @@ impl Snes9xOracleSemanticTrace {
                 if self.nmi_resume_targets.is_empty() {
                     execution.observe_trinexx_head_draw(returned_event)?;
                     execution.observe_trinexx_breath_tile_collision(returned_event)?;
+                    execution.observe_sprite_handler_returned(returned_event)?;
                     execution.observe_trinexx_final_phase_tile_collision(returned_event)?;
                     execution.observe_helmasaur_hard_hat_tile_collision(returned_event)?;
                     execution.observe_trinexx_final_phase_draw(returned_event)?;
@@ -6274,6 +6347,16 @@ impl Snes9xOracleSemanticTrace {
                         execution.mini_moldorm_ai_pending = None;
                     }
                 }
+                if pc == 0x06_e4ab {
+                    if let Some(execution) = self.sprite_main_execution.as_mut() {
+                        if execution
+                            .boulder_movement
+                            .is_some_and(|(slot, ..)| event.x == Some(u16::from(slot)))
+                        {
+                            execution.boulder_movement = None;
+                        }
+                    }
+                }
                 if pc == 0x06_e4ab
                     && event
                         .return_address
@@ -6482,6 +6565,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.active_cucco_x_publications = 0;
                             execution.active_cucco_y_subpixel = None;
                             execution.master_sword_light_beam_movement = None;
+                            execution.boulder_movement = None;
                             execution.master_sword_light_beam_spawn = None;
                             execution.cucco_helper_ordinal = 0;
                             execution.big_key_drop_graphics_slot = None;
@@ -6506,6 +6590,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.trinexx_segment_counter = None;
                             execution.trinexx_head_draw_setup = None;
                             execution.trinexx_breath_tile_collision = None;
+                            execution.handler_returned_slot = None;
                             execution.trinexx_final_phase_case0 = None;
                             execution.trinexx_final_phase_tile_collision = None;
                             execution.helmasaur_hard_hat_tile_collision = None;
@@ -6558,6 +6643,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.observe_buzzblob_movement(&event)?;
                             execution.observe_trinexx_head_draw(&event)?;
                             execution.observe_trinexx_breath_tile_collision(&event)?;
+                            execution.observe_sprite_handler_returned(&event)?;
                             execution.observe_trinexx_final_phase_tile_collision(&event)?;
                             execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
                             execution.observe_trinexx_final_phase_draw(&event)?;
@@ -6643,6 +6729,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.active_cucco_x_publications = 0;
                         execution.active_cucco_y_subpixel = None;
                         execution.master_sword_light_beam_movement = None;
+                        execution.boulder_movement = None;
                         execution.master_sword_light_beam_spawn = None;
                         execution.cucco_helper_ordinal = 0;
                         execution.big_key_drop_graphics_slot = None;
@@ -7025,6 +7112,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_buzzblob_movement(&event)?;
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
+                    execution.observe_sprite_handler_returned(&event)?;
                     execution.observe_trinexx_final_phase_tile_collision(&event)?;
                     execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
                     execution.observe_trinexx_final_phase_draw(&event)?;
@@ -7102,6 +7190,62 @@ impl Snes9xOracleSemanticTrace {
                                 );
                             }
                             execution.active_cucco_y_subpixel = Some((slot, helper_ordinal));
+                        }
+                    }
+                    // Sprite_C2_Boulder (indoors) stores its OAM flags right
+                    // before Sprite_MoveXYZ; the Z result and the six XY
+                    // coordinate stores then follow in source order.
+                    if pc == 0x1d_cfe8 {
+                        let slot = execution
+                            .current_slot
+                            .ok_or("Snes9x published Boulder OAM flags before a sprite slot")?;
+                        if event.x != Some(u16::from(slot))
+                            || address != SPRITE_OAM_FLAGS_BASE + u16::from(slot)
+                        {
+                            return Err(format!(
+                                "Snes9x Boulder OAM flags publication disagreed on slot {slot}: x={:?}, address=${address:04x}",
+                                event.x,
+                            ));
+                        }
+                        execution.boulder_movement = Some((slot, 0, false));
+                    }
+                    if let Some((slot, checkpoint_ordinal, z_done)) =
+                        execution.boulder_movement.as_mut()
+                    {
+                        let slot = *slot;
+                        if address == SPRITE_Z_BASE + u16::from(slot)
+                            && event.x == Some(u16::from(slot))
+                        {
+                            *z_done = true;
+                        }
+                        let expected = [
+                            SPRITE_X_SUBPIXEL_BASE,
+                            SPRITE_X_LOW_BASE,
+                            SPRITE_X_HIGH_BASE,
+                            SPRITE_Y_SUBPIXEL_BASE,
+                            SPRITE_Y_LOW_BASE,
+                            SPRITE_Y_HIGH_BASE,
+                        ];
+                        let movement_addresses = expected.map(|base| base + u16::from(slot));
+                        if let Some(index) = movement_addresses
+                            .iter()
+                            .position(|&candidate| candidate == address)
+                        {
+                            let next_ordinal = match (*checkpoint_ordinal, index) {
+                                (0, 0) => 1,
+                                (1, 1) => 2,
+                                (2, 2) => 3,
+                                (0 | 3, 3) => 4,
+                                (4, 4) => 5,
+                                (5, 5) => 6,
+                                _ => {
+                                    return Err(format!(
+                                        "Snes9x Boulder movement stores were out of source order: checkpoint={} address=${address:04x}",
+                                        *checkpoint_ordinal,
+                                    ));
+                                }
+                            };
+                            *checkpoint_ordinal = next_ordinal;
                         }
                     }
                     if let Some((slot, checkpoint_ordinal)) =
@@ -7539,6 +7683,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_buzzblob_movement(&event)?;
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
+                    execution.observe_sprite_handler_returned(&event)?;
                     execution.observe_trinexx_final_phase_tile_collision(&event)?;
                     execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
                     execution.observe_trinexx_final_phase_draw(&event)?;
@@ -10559,6 +10704,7 @@ mod tests {
             trinexx_segment_counter: None,
             trinexx_head_draw_setup: None,
             trinexx_breath_tile_collision: None,
+            handler_returned_slot: None,
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
             helmasaur_hard_hat_tile_collision: None,
@@ -10622,6 +10768,7 @@ mod tests {
             active_cucco_x_publications: 0,
             active_cucco_y_subpixel: None,
             master_sword_light_beam_movement: None,
+            boulder_movement: None,
             master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
@@ -14124,6 +14271,46 @@ mod tests {
     }
 
     #[test]
+    fn bank_1d_dispatcher_return_completes_the_active_slot() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(4);
+        let mut event = raw("nmi", Some(0x1d_c221), Some(4), None);
+        event.return_address = Some(0x06_bff7);
+        event.stack4 = Some(0xa6);
+        tracker.observe_sprite_handler_returned(&event).unwrap();
+        assert_eq!(tracker.progress(), SpriteMainProgress::AfterSlot(4));
+        let mut event = raw("frame", Some(0x06_bff7), Some(4), None);
+        event.return_address = Some(0x00_84a6);
+        tracker.observe_sprite_handler_returned(&event).unwrap();
+        assert_eq!(tracker.progress(), SpriteMainProgress::AfterSlot(4));
+        event.return_address = Some(0x00_84a7);
+        tracker.observe_sprite_handler_returned(&event).unwrap();
+        assert_eq!(tracker.handler_returned_slot, None);
+    }
+
+    #[test]
+    fn boulder_movement_tracker_counts_source_stores_after_the_z_move() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(12);
+        tracker.boulder_movement = Some((12, 0, true));
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::BoulderMovement {
+                slot: 12,
+                checkpoint: SpriteMoveXYCheckpoint::BeforeMovement,
+            }
+        );
+        tracker.boulder_movement = Some((12, 3, true));
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::BoulderMovement {
+                slot: 12,
+                checkpoint: SpriteMoveXYCheckpoint::AfterXHigh,
+            }
+        );
+    }
+
+    #[test]
     fn push_block_handled_checkpoint_sits_in_the_lamp_cone_guard() {
         let mut event = raw("nmi", Some(0x00_f56a), Some(10), None);
         event.main = Some(7);
@@ -17271,6 +17458,7 @@ mod tests {
             trinexx_segment_counter: None,
             trinexx_head_draw_setup: None,
             trinexx_breath_tile_collision: None,
+            handler_returned_slot: None,
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
             helmasaur_hard_hat_tile_collision: None,
@@ -17334,6 +17522,7 @@ mod tests {
             active_cucco_x_publications: 0,
             active_cucco_y_subpixel: None,
             master_sword_light_beam_movement: None,
+            boulder_movement: None,
             master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
@@ -17382,6 +17571,7 @@ mod tests {
             trinexx_segment_counter: None,
             trinexx_head_draw_setup: None,
             trinexx_breath_tile_collision: None,
+            handler_returned_slot: None,
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
             helmasaur_hard_hat_tile_collision: None,
@@ -17445,6 +17635,7 @@ mod tests {
             active_cucco_x_publications: 0,
             active_cucco_y_subpixel: None,
             master_sword_light_beam_movement: None,
+            boulder_movement: None,
             master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,

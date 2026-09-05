@@ -2662,7 +2662,32 @@ impl ZeldaState {
         }
         let value = (self.game_state.frame.frame_counter << 2) & 0xc0;
         self.sprite_slot_view_mut(k).set_oam_flags(value);
+        if let Some(SpriteMainCpuBoundary::BoulderMovement {
+            slot,
+            checkpoint,
+            continuation: None,
+        }) = self.sprite_main_cpu_boundary
+        {
+            if usize::from(slot) == k {
+                // Sprite_MoveXYZ: the Z move completed before the source
+                // boundary; bind the XY bytes through the checkpoint and park.
+                self.sprite_move_z(k);
+                let continuation = self.sprite_move_xy_through_checkpoint(k, checkpoint);
+                self.sprite_main_cpu_boundary = Some(SpriteMainCpuBoundary::BoulderMovement {
+                    slot,
+                    checkpoint,
+                    continuation: Some(continuation),
+                });
+                return;
+            }
+        }
         self.sprite_move_xyz(k);
+        self.boulder_indoors_after_movement(k);
+    }
+
+    /// `Sprite_C2_Boulder` (indoors) after `Sprite_MoveXYZ`: the frame-gated
+    /// Link damage check and tile-collision kill.
+    fn boulder_indoors_after_movement(&mut self, k: usize) {
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 3) != 0 {
             return;
         }
@@ -2678,6 +2703,19 @@ impl ZeldaState {
         if self.sprite_check_tile_collision(k) != 0 {
             self.sprite_slot_view_mut(k).set_state(0);
         }
+    }
+
+    pub(super) fn complete_boulder_movement(
+        &mut self,
+        k: usize,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+        continuation: SpriteMoveXYContinuation,
+    ) {
+        assert_eq!(self.sprite_slot_view(k).state(), 9);
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xc2);
+        assert!(self.game_state.world.location.is_indoors());
+        self.sprite_move_xy_from_checkpoint(k, checkpoint, continuation);
+        self.boulder_indoors_after_movement(k);
     }
 
     // void Boulder_OutdoorsMain(int k) {  // 9dd02a
