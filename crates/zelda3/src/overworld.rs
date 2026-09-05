@@ -1070,6 +1070,7 @@ impl ZeldaState {
         assert!(
             self.active_module09_sprite_main_return
                 .replace(Module09ItemReceiptCallerReturn {
+                    link_oam: None,
                     scroll: caller,
                     rain_already_published,
                     after_sprite_main: Module09AfterSpriteMain::Ordinary,
@@ -1130,13 +1131,14 @@ impl ZeldaState {
         {
             return;
         }
-        let caller = self
+        let mut caller = self
             .active_module09_sprite_main_return
             .take()
             .expect("Module 9 Sprite_Main return frame was lost");
         if let Some(boundary) = self.take_forwarded_original_timing_main_loop_interruption(
             crate::MainLoopInterruption::LinkOam,
         ) {
+            self.publish_module09_link_oam_prefix(&mut caller);
             // C has restored none of Module09's four stack-local scroll values
             // yet: the next call is LinkOam_Main, where the source accepted
             // the host's trailing NMI. Preserve that caller frame and resume
@@ -1154,7 +1156,7 @@ impl ZeldaState {
             }
             return;
         }
-        self.complete_module09_after_sprite_main(caller.scroll);
+        self.complete_module09_after_sprite_main(caller);
     }
 
     pub(super) fn begin_module09_sprite_main(&mut self) -> Module09SpriteMainReturn {
@@ -1183,17 +1185,60 @@ impl ZeldaState {
         }
     }
 
-    fn complete_module09_after_sprite_main(&mut self, caller: Module09SpriteMainReturn) {
+    fn publish_module09_link_oam_prefix(&mut self, caller: &mut Module09ItemReceiptCallerReturn) {
+        let mut progress = None;
+        if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
+            receipts.semantic.retain(|receipt| {
+                if let crate::OriginalTimingSemanticReceipt::LinkOamStairProgress(stage) = *receipt
+                {
+                    assert!(
+                        progress.replace(stage).is_none(),
+                        "Module09 LinkOam prefix replayed"
+                    );
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        let Some(progress) = progress else {
+            return;
+        };
+        assert!(caller.link_oam.is_none());
+        assert!(matches!(self.game_state.frame.submodule, 18 | 19));
+        self.set_bg2_x(caller.scroll.bg2_x);
+        self.set_bg2_y(caller.scroll.bg2_y);
+        self.set_bg1_x(caller.scroll.bg1_x);
+        self.set_bg1_y(caller.scroll.bg1_y);
+        caller.link_oam = Some(match progress {
+            crate::LinkOamStairProgress::PoseSelected => self.link_oam_after_pose_selection(),
+            crate::LinkOamStairProgress::EquipmentSelection => self.link_oam_before_equipment(),
+            crate::LinkOamStairProgress::BodySelection => {
+                let continuation = self.link_oam_before_equipment();
+                self.link_oam_before_body(continuation)
+            }
+            crate::LinkOamStairProgress::ShadowSelection => {
+                let continuation = self.link_oam_before_equipment();
+                self.link_oam_before_shadow(continuation)
+            }
+        });
+    }
+
+    fn complete_module09_after_sprite_main(&mut self, caller: Module09ItemReceiptCallerReturn) {
         self.replay_trace_ram_watch("module09-after-sprite-main");
 
-        self.set_bg2_x(caller.bg2_x);
-        self.set_bg2_y(caller.bg2_y);
-        self.set_bg1_x(caller.bg1_x);
-        self.set_bg1_y(caller.bg1_y);
+        self.set_bg2_x(caller.scroll.bg2_x);
+        self.set_bg2_y(caller.scroll.bg2_y);
+        self.set_bg1_x(caller.scroll.bg1_x);
+        self.set_bg1_y(caller.scroll.bg1_y);
         self.replay_trace_ram_watch("module09-after-scroll-restore");
 
         self.replay_trace_ram_watch("module09-before-link-oam");
-        self.link_oam_main();
+        if let Some(continuation) = caller.link_oam {
+            self.link_oam_after_equipment(continuation);
+        } else {
+            self.link_oam_main();
+        }
         self.replay_trace_ram_watch("module09-after-link-oam");
         self.hud_refill_logic();
         self.replay_trace_ram_watch("module09-after-refill");
@@ -1206,7 +1251,7 @@ impl ZeldaState {
         &mut self,
         caller: Module09ItemReceiptCallerReturn,
     ) {
-        self.complete_module09_after_sprite_main(caller.scroll);
+        self.complete_module09_after_sprite_main(caller);
         if !caller.rain_already_published {
             self.OverworldOverlay_HandleRain();
             self.replay_trace_ram_watch("module09-after-rain");

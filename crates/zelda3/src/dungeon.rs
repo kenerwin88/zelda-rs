@@ -14230,6 +14230,10 @@ impl ZeldaState {
                         let continuation = self.link_oam_before_equipment();
                         self.link_oam_before_body(continuation)
                     }
+                    crate::LinkOamStairProgress::ShadowSelection => {
+                        let continuation = self.link_oam_before_equipment();
+                        self.link_oam_before_shadow(continuation)
+                    }
                 });
             }
             self.active_dungeon_sprite_main_return = Some(sprite_return);

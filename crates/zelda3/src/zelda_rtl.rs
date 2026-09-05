@@ -5165,6 +5165,7 @@ struct Module09SpriteMainReturn {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Module09ItemReceiptCallerReturn {
+    link_oam: Option<player_oam::LinkOamEquipmentContinuation>,
     scroll: Module09SpriteMainReturn,
     /// Some Module09 loaders publish the rain overlay before their suspended
     /// Sprite_Main caller returns. Ordinary player control publishes it after.
@@ -22515,7 +22516,7 @@ impl ZeldaState {
         assert!(stair_progress.len() <= 1, "LinkOam stair progress replayed");
         if let Some(receipt) = stair_progress.first() {
             assert_eq!(interruption, crate::MainLoopInterruption::LinkOam);
-            assert_eq!(self.game_state.frame.main_module, 7);
+            assert!(matches!(self.game_state.frame.main_module, 7 | 9));
             assert!(
                 matches!(self.game_state.frame.submodule, 18 | 19),
                 "stair drawing receipt reached an unrelated fresh caller"
@@ -37834,6 +37835,7 @@ impl ZeldaState {
                         SpriteMainCpuCaller::WorldMapOverlayReload { module09 } => {
                             self.complete_module09_link_oam_caller_return(
                                 Module09ItemReceiptCallerReturn {
+                                    link_oam: None,
                                     scroll: module09,
                                     rain_already_published: false,
                                     after_sprite_main: Module09AfterSpriteMain::Ordinary,
@@ -41220,7 +41222,10 @@ impl ZeldaState {
         // A fresh dungeon iteration consumes its drawing prefix in the
         // concrete Sprite_Main caller. Only a scheduled predecessor owns the
         // early extraction used by the long room-loading continuation below.
-        if self.game_execution_scheduler.current_work().is_some() {
+        if matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDungeonSupertileTransition { .. })
+        ) {
             if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
                 receipts.semantic.retain(|receipt| {
                     if let OriginalTimingSemanticReceipt::LinkOamStairProgress(progress) = *receipt
@@ -47925,6 +47930,7 @@ impl ZeldaState {
                                     .schedule_cpu_timed_work_resuming_after_current_trailing_nmi(
                                         GameWorkContinuation::FinishModule09LinkOamCallerReturn {
                                             caller: Module09ItemReceiptCallerReturn {
+                                                link_oam: None,
                                                 scroll: module09,
                                                 rain_already_published: false,
                                                 after_sprite_main:
@@ -53528,6 +53534,10 @@ impl ZeldaState {
                 crate::LinkOamStairProgress::BodySelection => {
                     let continuation = self.link_oam_before_equipment();
                     self.link_oam_before_body(continuation)
+                }
+                crate::LinkOamStairProgress::ShadowSelection => {
+                    let continuation = self.link_oam_before_equipment();
+                    self.link_oam_before_shadow(continuation)
                 }
             });
             self.active_dungeon_sprite_main_return = Some(sprite_return);

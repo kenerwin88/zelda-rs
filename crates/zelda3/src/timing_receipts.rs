@@ -1786,6 +1786,7 @@ pub enum LinkOamStairProgress {
     PoseSelected,
     EquipmentSelection,
     BodySelection,
+    ShadowSelection,
 }
 
 /// One source interruption temporarily owned by a translated C caller during

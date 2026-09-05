@@ -19484,6 +19484,24 @@ fn absorbable_horizontal_lookup_keeps_movement_and_defers_bounce_suffix() {
 }
 
 #[test]
+fn overworld_link_shadow_checkpoint_restores_the_temporary_stair_y() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(9);
+    state.set_submodule(18);
+    state.follower_link_state_mut().set_position(0x80, 0x80);
+    state.follower_link_state_mut().set_animation_step(1);
+    let mut atomic = state.clone();
+    atomic.link_oam_main();
+    let continuation = state.link_oam_before_equipment();
+    let continuation = state.link_oam_before_shadow(continuation);
+    assert_eq!(state.game_state.player.follower_link.y(), 0x7e);
+    state.link_oam_after_equipment(continuation);
+    assert_eq!(state.game_state.player.follower_link.y(), 0x80);
+    assert_eq!(state.game_state, atomic.game_state);
+    assert_eq!(state.ram, atomic.ram);
+}
+
+#[test]
 fn antfairy_sprite_main_boundary_commits_every_source_reached_increment() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);
@@ -21424,6 +21442,7 @@ fn bottle_vendor_suffix_waits_for_the_live_source_call_return_receipt() {
     state.rom_startup_timing = true;
     state.original_timing_owner = OriginalTimingOwnerState::Live;
     state.active_module09_sprite_main_return = Some(Module09ItemReceiptCallerReturn {
+        link_oam: None,
         scroll: Module09SpriteMainReturn {
             bg2_x: 0x1111,
             bg2_y: 0x2222,
@@ -21499,6 +21518,7 @@ fn bottle_vendor_suffix_waits_for_the_live_source_call_return_receipt() {
             assert_eq!(
                 module09,
                 Module09ItemReceiptCallerReturn {
+                    link_oam: None,
                     scroll: Module09SpriteMainReturn {
                         bg2_x: 0x1111,
                         bg2_y: 0x2222,

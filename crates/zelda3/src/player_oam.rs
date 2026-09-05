@@ -22,6 +22,7 @@ pub(super) struct LinkOamEquipmentContinuation {
     animation_offset: u8,
     initial_banks_pending: bool,
     equipment_complete: bool,
+    weapons_complete: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -2488,6 +2489,7 @@ impl ZeldaState {
             animation_offset: rt,
             initial_banks_pending: true,
             equipment_complete: false,
+            weapons_complete: false,
         }
     }
 
@@ -2595,6 +2597,18 @@ impl ZeldaState {
         &mut self,
         continuation: LinkOamEquipmentContinuation,
     ) -> LinkOamEquipmentContinuation {
+        let continuation = if continuation.weapons_complete {
+            continuation
+        } else {
+            self.link_oam_before_shadow(continuation)
+        };
+        self.link_oam_shadow_and_body_selection(continuation)
+    }
+
+    pub(super) fn link_oam_before_shadow(
+        &mut self,
+        continuation: LinkOamEquipmentContinuation,
+    ) -> LinkOamEquipmentContinuation {
         assert!(
             !continuation.equipment_complete,
             "Link equipment prefix replayed"
@@ -2610,9 +2624,9 @@ impl ZeldaState {
             scratch_0_var,
             oam_priority_value,
             sort_sprites_offset_into_oam_buffer,
-            handler_state,
+            handler_state: _,
             r2,
-            mut r4loc,
+            r4loc,
             link_palette_bits_of_oam,
             ..
         } = continuation;
@@ -2738,6 +2752,28 @@ impl ZeldaState {
             }
         }
 
+        LinkOamEquipmentContinuation {
+            weapons_complete: true,
+            ..continuation
+        }
+    }
+
+    fn link_oam_shadow_and_body_selection(
+        &mut self,
+        continuation: LinkOamEquipmentContinuation,
+    ) -> LinkOamEquipmentContinuation {
+        let LinkOamEquipmentContinuation {
+            xcoord,
+            ycoord,
+            scratch_0_var,
+            oam_priority_value: _,
+            sort_sprites_offset_into_oam_buffer,
+            handler_state,
+            r2,
+            mut r4loc,
+            link_palette_bits_of_oam,
+            ..
+        } = continuation;
         if self.game_state.player.follower_link.visibility_status() != 12
             && handler_state != PLAYER_HANDLER_STATE_ASLEEP_IN_BED
         {
