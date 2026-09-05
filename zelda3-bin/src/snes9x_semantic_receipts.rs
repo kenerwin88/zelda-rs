@@ -3387,6 +3387,8 @@ enum SpotlightCallCompletion {
 
 #[derive(Default)]
 struct HostFrameWindow {
+    mirror_portal_spawn_slot: Option<u8>,
+    mirror_portal_reset_progress: Option<u8>,
     entry: Option<HostFrameState>,
     returned: Option<HostFrameState>,
     vwf_nmi_observed: bool,
@@ -3528,6 +3530,35 @@ impl HostFrameWindow {
         &mut self,
         event: &RawTraceEvent,
     ) -> Result<Option<MainLoopCompletionProof>, String> {
+        if event.event == "wram-write"
+            && event.pc == Some(SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC)
+            && event.return_address == Some(0x09_afa5)
+        {
+            let slot = event
+                .y
+                .filter(|slot| *slot < 16)
+                .ok_or("mirror portal spawn omitted its selected slot")?
+                as u8;
+            if event.x != Some(0xff)
+                || event.value != Some(0x6c)
+                || event.address != Some(SPRITE_TYPE_BASE + u16::from(slot))
+            {
+                return Err("mirror portal spawn disagreed with its source caller".into());
+            }
+            self.mirror_portal_spawn_slot = Some(slot);
+        }
+        if event.event == "frame"
+            && event.stage.as_deref() == Some("return")
+            && event.return_address == Some(SPRITE_PREP_LOAD_PROPERTIES_AFTER_RESET_RETURN_ADDRESS)
+        {
+            if let Some(slot) = self.mirror_portal_spawn_slot {
+                if event.x == Some(u16::from(slot)) {
+                    self.mirror_portal_reset_progress = event
+                        .pc
+                        .and_then(sprite_prep_reset_properties_completed_stores);
+                }
+            }
+        }
         if event.event == "pc"
             && event.pc.map(|pc| pc & 0x00ff_ffff)
                 == Some(OVERWORLD_LOAD_OVERLAYS_SPRITE_RELOAD_ENTRY_PC)
@@ -3663,6 +3694,27 @@ impl HostFrameWindow {
                 "Snes9x frame receipt run changed within one host call: {} -> {}",
                 entry.run, returned.run
             ));
+        }
+        // A portal reset belongs to the spawn proven by its private caller.
+        if let Some(completed_stores) = self.mirror_portal_reset_progress {
+            let slot = self
+                .mirror_portal_spawn_slot
+                .expect("portal reset has a spawn owner");
+            let receipt = receipts
+                .iter_mut()
+                .find(|receipt| {
+                    **receipt
+                        == OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                            OverworldSpriteReloadProgress::GenerationReturned,
+                        )
+                })
+                .ok_or("mirror portal reset omitted its enclosing generation return")?;
+            *receipt = OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset {
+                    slot,
+                    completed_stores,
+                },
+            );
         }
         // Ancilla_TerminateSelectInteractives, immediately before the
         // non-carried-object pickup test. GenerationReturned supplies the
@@ -13558,6 +13610,46 @@ mod tests {
             ],
         );
         assert!(!tracker.overworld_load_overlays_sprite_reload_active);
+    }
+
+    #[test]
+    fn mirror_portal_reset_requires_the_private_spawn_caller() {
+        for caller in [0x09_afa5, 0x06_8b5f] {
+            let mut host = HostFrameWindow::default();
+            host.observe(&frame_with_sub("entry", 1, 9, 0x23)).unwrap();
+            let mut spawn = raw(
+                "wram-write",
+                Some(SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC),
+                Some(0xff),
+                Some(15),
+            );
+            spawn.return_address = Some(caller);
+            spawn.y = Some(15);
+            spawn.address = Some(SPRITE_TYPE_BASE + 15);
+            spawn.value = Some(0x6c);
+            host.observe(&spawn).unwrap();
+            let mut returned = frame_with_sub("return", 1, 9, 0x23);
+            returned.pc = Some(0x0d_b889);
+            returned.x = Some(15);
+            returned.return_address = Some(SPRITE_PREP_LOAD_PROPERTIES_AFTER_RESET_RETURN_ADDRESS);
+            host.observe(&returned).unwrap();
+            let mut receipts = vec![
+                OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                    OverworldSpriteReloadProgress::GenerationReturned,
+                ),
+            ];
+            host.finish(&mut receipts, None, true).unwrap();
+            let expected = if caller == 0x09_afa5 {
+                OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset {
+                    slot: 15,
+                    completed_stores: 8,
+                }
+            } else {
+                OverworldSpriteReloadProgress::GenerationReturned
+            };
+            assert!(receipts
+                .contains(&OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(expected)));
+        }
     }
 
     #[test]

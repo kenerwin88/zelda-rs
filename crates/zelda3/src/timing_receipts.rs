@@ -1617,6 +1617,8 @@ pub enum OverworldSpriteReloadProgress {
     GenerationReturnedAtInteractiveCleanup { slot: u8 },
     /// The current pickup test returned; its object-type clear is pending.
     GenerationReturnedAtInteractiveTypeClear { slot: u8 },
+    /// The mirror portal owns a dynamic spawn suspended in its property reset.
+    GenerationReturnedAtPortalReset { slot: u8, completed_stores: u8 },
 }
 
 /// Source-level completion state for the first save-menu text initialization.

@@ -1384,6 +1384,13 @@ impl ZeldaState {
     //   sprite_ignore_projectile[j] = 1;
     // }
     pub(super) fn sprite_initialize_mirror_portal(&mut self) {
+        self.sprite_remove_mirror_portals();
+        let mut info = SpriteSpawnInfo::default();
+        let j = self.sprite_spawn_dynamically(0xff, 0x6c, &mut info).max(0) as usize;
+        self.sprite_finish_mirror_portal(j);
+    }
+
+    fn sprite_remove_mirror_portals(&mut self) {
         for k in (0..=15usize).rev() {
             if self.sprite_slot_view(k).state() != 0
                 && self.sprite_slot_view(k).sprite_type() == 0x6c
@@ -1392,13 +1399,35 @@ impl ZeldaState {
                 self.sprite_slot_view_mut(k).set_state(value);
             }
         }
+    }
 
-        let mut info = SpriteSpawnInfo::default();
-        let mut j = self.sprite_spawn_dynamically(0xff, 0x6c, &mut info);
-        if j < 0 {
-            j = 0;
-        }
-        let ju = j as usize;
+    pub(super) fn sprite_begin_mirror_portal_reset(&mut self, slot: u8, completed_stores: u8) {
+        self.sprite_remove_mirror_portals();
+        let selected = (0..16)
+            .rev()
+            .find(|&k| self.sprite_slot_view(k).state() == 0)
+            .expect("source portal spawn requires a free slot");
+        assert_eq!(selected, usize::from(slot));
+        self.sprite_spawn_dynamically_selected_prefix(
+            0xff,
+            0x6c,
+            &mut SpriteSpawnInfo::default(),
+            selected,
+            crate::SpriteDynamicSpawnProgress::ResetProperties { completed_stores },
+        );
+    }
+
+    pub(super) fn sprite_resume_mirror_portal_reset(&mut self, slot: u8, completed_stores: u8) {
+        self.sprite_spawn_dynamically_selected_from(
+            0xff,
+            &mut SpriteSpawnInfo::default(),
+            usize::from(slot),
+            crate::SpriteDynamicSpawnProgress::ResetProperties { completed_stores },
+        );
+        self.sprite_finish_mirror_portal(usize::from(slot));
+    }
+
+    fn sprite_finish_mirror_portal(&mut self, ju: usize) {
         let bird = self
             .game_state
             .world

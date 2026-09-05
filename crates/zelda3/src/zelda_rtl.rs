@@ -9695,6 +9695,11 @@ pub(super) enum Module09LongLoadStep {
         slot: u8,
         module15: bool,
     },
+    MirrorWarpPortalReset {
+        slot: u8,
+        completed_stores: u8,
+        module15: bool,
+    },
 }
 
 impl Module09LongLoadStep {
@@ -9718,6 +9723,7 @@ impl Module09LongLoadStep {
                 | Self::Module15ReloadSheetsAfterMessage
                 | Self::MirrorWarpInteractiveCleanup { module15: true, .. }
                 | Self::MirrorWarpInteractiveTypeClear { module15: true, .. }
+                | Self::MirrorWarpPortalReset { module15: true, .. }
         )
     }
 
@@ -21221,6 +21227,7 @@ impl ZeldaState {
                     crate::OverworldSpriteReloadProgress::GenerationReturned
                         | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { .. }
                         | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear { .. }
+                        | crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset { .. }
                 )
             })
             .count()
@@ -21236,6 +21243,7 @@ impl ZeldaState {
             .iter()
             .any(|progress| {
                 match progress {
+                crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset { slot, completed_stores } => *slot >= 16 || *completed_stores > 40,
                 crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
                     slot,
                 } | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear {
@@ -27832,6 +27840,7 @@ impl ZeldaState {
                             ))
                 }
                 crate::OverworldSpriteReloadProgress::GenerationReturned
+                | crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset { .. }
                 | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
                     ..
                 } | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear {
@@ -28385,6 +28394,7 @@ impl ZeldaState {
                     self.set_bg2_x(bg2_h);
                 }
                 progress @ (crate::OverworldSpriteReloadProgress::GenerationReturned
+                | crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset { .. }
                 | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { .. }
                 | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear { .. }) => {
                     if let Some(GameWorkContinuation::FinishFluteMenuSelectedScreen {
@@ -28439,7 +28449,10 @@ impl ZeldaState {
                         // cleanup, preserve that inner continuation before
                         // publishing the portal or animation tail.
                         self.publish_deferred_module09_sprite_slots_at_reload_return();
-                        let tail = if let crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { slot } = progress {
+                        let tail = if let crate::OverworldSpriteReloadProgress::GenerationReturnedAtPortalReset { slot, completed_stores } = progress {
+                            self.begin_mirror_warp_portal_reset(slot, completed_stores);
+                            Module09LongLoadStep::MirrorWarpPortalReset { slot, completed_stores, module15: step.caller_is_module15() }
+                        } else if let crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { slot } = progress {
                             self.begin_mirror_warp_interactive_cleanup(slot);
                             Module09LongLoadStep::MirrorWarpInteractiveCleanup { slot, module15: step.caller_is_module15() }
                         } else if let crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveTypeClear { slot } = progress {
