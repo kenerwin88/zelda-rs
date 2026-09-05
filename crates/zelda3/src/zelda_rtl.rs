@@ -8929,6 +8929,7 @@ enum PreDungeonSpriteResetContinuation {
     SpriteResetAllCompleted,
     DungeonResetSpritesCompleted,
     SpriteDisableAllThrough(u8),
+    GarnishDisableThrough(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23775,6 +23776,7 @@ impl ZeldaState {
                 receipt,
                 OriginalTimingSemanticReceipt::CachedSpriteExecutionProgress(_)
                     | OriginalTimingSemanticReceipt::PreDungeonSpriteDisableThrough { .. }
+                    | OriginalTimingSemanticReceipt::PreDungeonGarnishDisableThrough { .. }
                     | OriginalTimingSemanticReceipt::SpriteResetAllProgress(_)
                     | OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(_)
                     // Module07/$16 consumes this source X/bank cursor when it
@@ -31035,6 +31037,54 @@ impl ZeldaState {
         progress
     }
 
+    fn apply_pre_dungeon_garnish_disable_prefix(&mut self, slot: u8) {
+        assert!(slot <= 30);
+        let work = self
+            .game_execution_scheduler
+            .current_work()
+            .expect("garnish disable requires a caller");
+        let GameWorkContinuation::FinishPreDungeonEntranceLoad { sprite_reset } = work else {
+            panic!("garnish disable reached another caller");
+        };
+        let prior = match sprite_reset {
+            PreDungeonSpriteResetContinuation::Pending => {
+                self.complete_module_pre_dungeon_before_sprite_reset();
+                self.apply_sprite_disable_actions_through(
+                    None,
+                    crate::DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared,
+                );
+                self.sprite_disable_all_before_garnish_clear();
+                30
+            }
+            PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(previous) => {
+                self.apply_sprite_disable_actions_through(
+                    Some(
+                        crate::DungeonSpriteDisableCpuProgress::SpriteStatesThrough {
+                            slot: previous,
+                        },
+                    ),
+                    crate::DungeonSpriteDisableCpuProgress::SpriteLimitInstanceCleared,
+                );
+                self.sprite_disable_all_before_garnish_clear();
+                30
+            }
+            PreDungeonSpriteResetContinuation::GarnishDisableThrough(previous) => {
+                assert!(slot < previous, "garnish clear did not advance");
+                previous
+            }
+            _ => panic!("garnish clear reached a completed source stage"),
+        };
+        for k in (usize::from(slot)..usize::from(prior)).rev() {
+            self.garnish_slot_view_mut(k).set_garnish_type(0);
+        }
+        self.game_execution_scheduler.refine_scheduled_work(
+            work,
+            GameWorkContinuation::FinishPreDungeonEntranceLoad {
+                sprite_reset: PreDungeonSpriteResetContinuation::GarnishDisableThrough(slot),
+            },
+        );
+    }
+
     fn apply_pre_dungeon_sprite_disable_prefix(&mut self, slot: u8) {
         assert!(slot < 16);
         let work = self
@@ -31083,6 +31133,11 @@ impl ZeldaState {
                 }) = self.game_execution_scheduler.current_work()
                 {
                     self.complete_sprite_disable_after_states(slot);
+                } else if let Some(GameWorkContinuation::FinishPreDungeonEntranceLoad {
+                    sprite_reset: PreDungeonSpriteResetContinuation::GarnishDisableThrough(slot),
+                }) = self.game_execution_scheduler.current_work()
+                {
+                    self.complete_sprite_disable_garnish_clear(slot);
                 } else {
                     self.complete_module_pre_dungeon_through_sprite_disable_all();
                 }
@@ -31108,11 +31163,16 @@ impl ZeldaState {
         };
         match sprite_reset {
             PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted
-            | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_) => {
+            | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_)
+            | PreDungeonSpriteResetContinuation::GarnishDisableThrough(_) => {
                 if let PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(slot) =
                     sprite_reset
                 {
                     self.complete_sprite_disable_after_states(slot);
+                }
+                if let PreDungeonSpriteResetContinuation::GarnishDisableThrough(slot) = sprite_reset
+                {
+                    self.complete_sprite_disable_garnish_clear(slot);
                 }
                 // The source returned from Sprite_ResetAll_noDisable before it
                 // entered Dungeon_ResetSprites. Publish that intervening tail
@@ -31147,6 +31207,10 @@ impl ZeldaState {
             }
             PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(slot) => {
                 self.complete_sprite_disable_after_states(slot);
+                self.complete_module_pre_dungeon_after_sprite_disable_all();
+            }
+            PreDungeonSpriteResetContinuation::GarnishDisableThrough(slot) => {
+                self.complete_sprite_disable_garnish_clear(slot);
                 self.complete_module_pre_dungeon_after_sprite_disable_all();
             }
             PreDungeonSpriteResetContinuation::NotApplicable => {
@@ -43865,6 +43929,7 @@ impl ZeldaState {
             )
         );
         let mut pre_dungeon_disable_prefix = None;
+        let mut pre_dungeon_garnish_prefix = None;
         if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
             receipts.semantic.retain(|receipt| {
                 if let OriginalTimingSemanticReceipt::PreDungeonSpriteDisableThrough {
@@ -43876,6 +43941,16 @@ impl ZeldaState {
                         "duplicate pre-dungeon disable prefix"
                     );
                     false
+                } else if let OriginalTimingSemanticReceipt::PreDungeonGarnishDisableThrough {
+                    slot,
+                    ..
+                } = receipt
+                {
+                    assert!(
+                        pre_dungeon_garnish_prefix.replace(*slot).is_none(),
+                        "duplicate garnish disable prefix"
+                    );
+                    false
                 } else {
                     true
                 }
@@ -43884,11 +43959,15 @@ impl ZeldaState {
         if let Some(slot) = pre_dungeon_disable_prefix {
             self.apply_pre_dungeon_sprite_disable_prefix(slot);
         }
+        if let Some(slot) = pre_dungeon_garnish_prefix {
+            self.apply_pre_dungeon_garnish_disable_prefix(slot);
+        }
         let pre_dungeon_sprite_reset_is_pending = matches!(
             self.game_execution_scheduler.current_work(),
             Some(GameWorkContinuation::FinishPreDungeonEntranceLoad {
                 sprite_reset: PreDungeonSpriteResetContinuation::Pending
-                    | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_),
+                    | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_)
+                    | PreDungeonSpriteResetContinuation::GarnishDisableThrough(_),
             })
         );
         if !pre_dungeon_work_is_active {

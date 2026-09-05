@@ -1914,6 +1914,11 @@ pub enum OriginalTimingSemanticReceipt {
         slot: u8,
         boundary: OriginalTimingBoundary,
     },
+    /// Sprite_ResetAll's disable call cleared garnish slots 29 through slot.
+    PreDungeonGarnishDisableThrough {
+        slot: u8,
+        boundary: OriginalTimingBoundary,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

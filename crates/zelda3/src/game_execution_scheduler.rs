@@ -1475,6 +1475,7 @@ impl GameExecutionScheduler {
             *sprite_reset,
             PreDungeonSpriteResetContinuation::Pending
                 | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_)
+                | PreDungeonSpriteResetContinuation::GarnishDisableThrough(_)
         ) {
             return false;
         }
@@ -1499,6 +1500,7 @@ impl GameExecutionScheduler {
         *sprite_reset = match *sprite_reset {
             PreDungeonSpriteResetContinuation::Pending
             | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_)
+            | PreDungeonSpriteResetContinuation::GarnishDisableThrough(_)
             | PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted => {
                 PreDungeonSpriteResetContinuation::SpriteResetAllCompleted
             }
@@ -1529,6 +1531,7 @@ impl GameExecutionScheduler {
             *sprite_reset,
             PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted
                 | PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(_)
+                | PreDungeonSpriteResetContinuation::GarnishDisableThrough(_)
                 | PreDungeonSpriteResetContinuation::DungeonResetSprites(_)
         ) {
             return false;

@@ -1556,6 +1556,11 @@ impl ZeldaState {
     }
 
     fn sprite_disable_all_after_limit_instance(&mut self) {
+        self.sprite_disable_all_before_garnish_clear();
+        self.complete_sprite_disable_garnish_clear(30);
+    }
+
+    pub(super) fn sprite_disable_all_before_garnish_clear(&mut self) {
         self.sprite_battle_mut().clear_item_drop_counter();
         self.archery_game_mut().clear_hit_counter();
         self.archery_game_mut().set_arrows_left(0);
@@ -1573,7 +1578,11 @@ impl ZeldaState {
         for k in (0..8).rev() {
             self.overlord_slot_view_mut(k).clear();
         }
-        for k in (0..30).rev() {
+    }
+
+    pub(super) fn complete_sprite_disable_garnish_clear(&mut self, remaining: u8) {
+        assert!(remaining <= 30);
+        for k in (0..usize::from(remaining)).rev() {
             let value = 0;
             self.garnish_slot_view_mut(k).set_garnish_type(value);
         }

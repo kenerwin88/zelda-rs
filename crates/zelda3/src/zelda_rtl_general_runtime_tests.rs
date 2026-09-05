@@ -18965,6 +18965,39 @@ fn every_sprite_disable_receipt_prefix_resumes_to_the_atomic_c_endpoint() {
 }
 
 #[test]
+fn pre_dungeon_garnish_clear_publishes_only_completed_descending_stores() {
+    let mut state = ZeldaState::new();
+    for k in 0..30 {
+        state.garnish_slot_view_mut(k).set_garnish_type(7);
+    }
+    let mut atomic = state.clone();
+    atomic.sprite_disable_all();
+    state.game_execution_scheduler.schedule_work(
+        GameWorkContinuation::FinishPreDungeonEntranceLoad {
+            sprite_reset: PreDungeonSpriteResetContinuation::SpriteDisableAllThrough(0),
+        },
+        4,
+    );
+    state.apply_pre_dungeon_garnish_disable_prefix(30);
+    assert!(state.ram[0x1f800..0x1f81e].iter().all(|&v| v == 7));
+    state.apply_pre_dungeon_garnish_disable_prefix(15);
+    assert!(state.ram[0x1f800..0x1f80f].iter().all(|&v| v == 7));
+    assert!(state.ram[0x1f80f..0x1f81e].iter().all(|&v| v == 0));
+    state.apply_pre_dungeon_sprite_reset_progress(SpriteResetAllProgressReceipt {
+        progress: SpriteResetAllProgress::SpriteDisableAllCompleted,
+        boundary: OriginalTimingBoundary::HostReturn,
+    });
+    assert_eq!(state.ram, atomic.ram);
+    assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+    assert_eq!(
+        state.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishPreDungeonEntranceLoad {
+            sprite_reset: PreDungeonSpriteResetContinuation::SpriteDisableAllCompleted,
+        })
+    );
+}
+
+#[test]
 fn every_dungeon_reset_caller_prefix_resumes_to_the_atomic_c_endpoint() {
     for progress in [
         DungeonResetSpritesCpuProgress::LoadStarted,

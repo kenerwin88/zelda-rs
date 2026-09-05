@@ -3307,6 +3307,8 @@ struct RawTraceEvent {
     #[serde(default)]
     stack1: Option<u8>,
     #[serde(default)]
+    stack4: Option<u8>,
+    #[serde(default)]
     a: Option<u16>,
     #[serde(default)]
     main: Option<u8>,
@@ -6932,6 +6934,35 @@ fn publish_pre_dungeon_sprite_reset_progress(
     let pc = event.pc.map(|pc| pc & 0x00ff_ffff);
     let return_address = event.return_address.map(|address| address & 0x00ff_ffff);
     // Sprite_ResetAll's JSL return identifies the shared disable loop.
+    if event.main == Some(6)
+        && return_address == Some(0x09_c451)
+        // The next stack byte belongs to Sprite_ResetAll's outer JSL.
+        // Module_PreDungeon returns to $02:834B; the spotlight goal caller
+        // also publishes module 6 before resetting but has return low byte $22.
+        && event.stack4 == Some(MODULE_PRE_DUNGEON_AFTER_SPRITE_RESET_PC as u8)
+        && matches!(pc, Some(0x09_c288 | 0x09_c28c | 0x09_c28d))
+    {
+        let x = event.x.ok_or("Sprite_ResetAll garnish loop omitted X")? as u8;
+        let slot = if pc == Some(0x09_c28c) {
+            x
+        } else {
+            x.wrapping_add(1)
+        };
+        if slot > 30 {
+            return Err("Sprite_ResetAll garnish loop has invalid clear cursor".into());
+        }
+        receipts.retain(|r| {
+            !matches!(
+                r,
+                OriginalTimingSemanticReceipt::PreDungeonSpriteDisableThrough { .. }
+                    | OriginalTimingSemanticReceipt::PreDungeonGarnishDisableThrough { .. }
+            )
+        });
+        receipts.push(
+            OriginalTimingSemanticReceipt::PreDungeonGarnishDisableThrough { slot, boundary },
+        );
+        return Ok(true);
+    }
     // At DEX the current slot's STZ has completed; BPL follows that DEX.
     if event.main == Some(6)
         && return_address == Some(0x09_c451)
@@ -9598,6 +9629,48 @@ mod tests {
         )
         .unwrap());
         assert!(receipts.is_empty());
+    }
+
+    #[test]
+    fn pre_dungeon_garnish_loop_keeps_its_reset_owner_and_store_cursor() {
+        for (pc, x, slot) in [
+            (0x09_c288, 29, 30),
+            (0x09_c288, 14, 15),
+            (0x09_c28c, 14, 14),
+            (0x09_c28d, 13, 14),
+            (0x09_c28d, 255, 0),
+        ] {
+            let mut event = raw("nmi", Some(pc), Some(x), None);
+            event.main = Some(6);
+            event.return_address = Some(0x09_c451);
+            event.stack4 = Some(0x4b);
+            let mut receipts = Vec::new();
+            assert!(publish_pre_dungeon_sprite_reset_progress(
+                &event,
+                OriginalTimingBoundary::NmiAccepted,
+                false,
+                &mut receipts
+            )
+            .unwrap());
+            assert_eq!(
+                receipts,
+                vec![
+                    OriginalTimingSemanticReceipt::PreDungeonGarnishDisableThrough {
+                        slot,
+                        boundary: OriginalTimingBoundary::NmiAccepted
+                    }
+                ]
+            );
+            event.stack4 = Some(0x22);
+            receipts.clear();
+            assert!(!publish_pre_dungeon_sprite_reset_progress(
+                &event,
+                OriginalTimingBoundary::NmiAccepted,
+                false,
+                &mut receipts
+            )
+            .unwrap());
+        }
     }
 
     #[test]
@@ -12598,6 +12671,7 @@ mod tests {
             s: matches!(event, "nmi" | "nmi-resume").then_some(0x01ff),
             return_address: None,
             stack1: None,
+            stack4: None,
             a: None,
             main: None,
             sub: None,
@@ -12833,6 +12907,7 @@ mod tests {
             s: Some(0x01ff),
             return_address: None,
             stack1: None,
+            stack4: None,
             a: None,
             main: Some(main),
             sub: Some(0),
