@@ -21420,10 +21420,10 @@ impl ZeldaState {
                 OriginalTimingReceiptInstallError::DuplicateRescuedMaidenTilemapClearProgress,
             );
         }
-        if rescued_maiden_clear_progress.iter().any(|progress| {
-            progress.completed_stores > 8192
-                || progress.boundary != OriginalTimingBoundary::NmiAccepted
-        }) {
+        if rescued_maiden_clear_progress
+            .iter()
+            .any(|progress| progress.completed_stores > 8192)
+        {
             return Err(
                 OriginalTimingReceiptInstallError::InvalidRescuedMaidenTilemapClearProgress,
             );
@@ -41812,11 +41812,6 @@ impl ZeldaState {
             if let Some(progress) =
                 self.take_original_timing_rescued_maiden_tilemap_clear_progress()
             {
-                assert_eq!(
-                    progress.boundary,
-                    OriginalTimingBoundary::NmiAccepted,
-                    "a rescued-maiden clear refinement requires its accepting NMI",
-                );
                 assert!(
                     progress.completed_stores >= completed_stores,
                     "rescued-maiden clear progress moved backward: {completed_stores} -> {}",

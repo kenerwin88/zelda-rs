@@ -4364,6 +4364,14 @@ impl Snes9xOracleSemanticTrace {
                     progress,
                 ));
             }
+            if let Some(progress) = rescued_maiden_tilemap_clear_progress(
+                returned_event,
+                OriginalTimingBoundary::HostReturn,
+            )? {
+                receipts.push(
+                    OriginalTimingSemanticReceipt::RescuedMaidenTilemapClearProgress(progress),
+                );
+            }
             if let Some(progress) = triforce_room_case2_palette_progress(
                 returned_event,
                 OriginalTimingBoundary::HostReturn,
@@ -6229,7 +6237,10 @@ impl Snes9xOracleSemanticTrace {
                         OriginalTimingSemanticReceipt::DungeonFallingFadeInPaletteDirectionToggled,
                     );
                 }
-                if let Some(progress) = rescued_maiden_tilemap_clear_progress(&event)? {
+                if let Some(progress) = rescued_maiden_tilemap_clear_progress(
+                    &event,
+                    OriginalTimingBoundary::NmiAccepted,
+                )? {
                     receipts.push(
                         OriginalTimingSemanticReceipt::RescuedMaidenTilemapClearProgress(progress),
                     );
@@ -7025,11 +7036,9 @@ fn dungeon_falling_entrance_progress(
 
 fn rescued_maiden_tilemap_clear_progress(
     event: &RawTraceEvent,
+    boundary: OriginalTimingBoundary,
 ) -> Result<Option<RescuedMaidenTilemapClearProgressReceipt>, String> {
-    let pc = event
-        .pc
-        .ok_or("Snes9x NMI receipt omitted interrupted PC")?
-        & 0x00ff_ffff;
+    let pc = event.pc.ok_or("Snes9x tilemap-clear boundary omitted PC")? & 0x00ff_ffff;
     let next_store = match pc {
         RESCUED_MAIDEN_TILEMAP_CLEAR_FIRST_STORE_PC => Some(0),
         RESCUED_MAIDEN_TILEMAP_CLEAR_SECOND_STORE_PC => Some(1),
@@ -7100,7 +7109,7 @@ fn rescued_maiden_tilemap_clear_progress(
     }
     Ok(Some(RescuedMaidenTilemapClearProgressReceipt {
         completed_stores,
-        boundary: OriginalTimingBoundary::NmiAccepted,
+        boundary,
     }))
 }
 
@@ -11393,6 +11402,27 @@ mod tests {
         event.sub = Some(0x17);
         event.subsub = Some(0);
         assert!(source.consume_event(event, &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn rescued_maiden_host_return_preserves_the_incomplete_store_loop() {
+        let mut event = raw(
+            "frame",
+            Some(RESCUED_MAIDEN_TILEMAP_CLEAR_SIXTH_STORE_PC),
+            Some(0x03b4),
+            None,
+        );
+        event.main = Some(7);
+        event.sub = Some(0x18);
+        event.subsub = Some(0);
+        assert_eq!(
+            rescued_maiden_tilemap_clear_progress(&event, OriginalTimingBoundary::HostReturn)
+                .unwrap(),
+            Some(RescuedMaidenTilemapClearProgressReceipt {
+                completed_stores: 3797,
+                boundary: OriginalTimingBoundary::HostReturn,
+            }),
+        );
     }
 
     #[test]

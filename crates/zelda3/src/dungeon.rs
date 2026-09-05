@@ -12178,19 +12178,18 @@ impl ZeldaState {
                 if let Some(progress) =
                     self.take_original_timing_rescued_maiden_tilemap_clear_progress()
                 {
-                    assert_eq!(
-                        progress.boundary,
-                        crate::OriginalTimingBoundary::NmiAccepted,
-                        "rescued-maiden tilemap progress requires its interrupting NMI",
-                    );
                     self.apply_rescued_maiden_tilemap_clear_stores(0, progress.completed_stores);
-                    self.game_execution_scheduler
-                        .schedule_cpu_timed_work_returning_on_later_host(
-                            GameWorkContinuation::FinishRescuedMaidenTilemapClear {
-                                completed_stores: progress.completed_stores,
-                            },
-                            1,
-                        );
+                    let work = GameWorkContinuation::FinishRescuedMaidenTilemapClear {
+                        completed_stores: progress.completed_stores,
+                    };
+                    match progress.boundary {
+                        crate::OriginalTimingBoundary::NmiAccepted => self
+                            .game_execution_scheduler
+                            .schedule_cpu_timed_work_returning_on_later_host(work, 1),
+                        crate::OriginalTimingBoundary::HostReturn => {
+                            self.game_execution_scheduler.schedule_work(work, 1);
+                        }
+                    }
                     return;
                 }
                 self.complete_rescued_maiden_tilemap_clear(0);

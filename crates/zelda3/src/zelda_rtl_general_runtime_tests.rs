@@ -18455,45 +18455,50 @@ fn rescued_maiden_tilemap_clear_resumes_from_the_exact_source_store() {
 
 #[test]
 fn rescued_maiden_source_checkpoint_parks_the_real_module_caller() {
-    let mut state = ZeldaState::new();
-    state.original_timing_owner = OriginalTimingOwnerState::Live;
-    state.set_main_module(7);
-    state.set_submodule(0x18);
-    state.set_subsubmodule(0);
-    state.set_darkening_or_lightening_screen(0xff);
-    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
-        0,
-        0,
-        vec![
-            OriginalTimingSemanticReceipt::RescuedMaidenTilemapClearProgress(
-                crate::RescuedMaidenTilemapClearProgressReceipt {
-                    completed_stores: 3797,
-                    boundary: OriginalTimingBoundary::NmiAccepted,
-                },
-            ),
-        ],
-    ));
-    state.game_execution_scheduler.begin_host_frame();
-    state.game_execution_scheduler.begin_main_loop_iteration();
+    for boundary in [
+        OriginalTimingBoundary::NmiAccepted,
+        OriginalTimingBoundary::HostReturn,
+    ] {
+        let mut state = ZeldaState::new();
+        state.original_timing_owner = OriginalTimingOwnerState::Live;
+        state.set_main_module(7);
+        state.set_submodule(0x18);
+        state.set_subsubmodule(0);
+        state.set_darkening_or_lightening_screen(0xff);
+        state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::RescuedMaidenTilemapClearProgress(
+                    crate::RescuedMaidenTilemapClearProgressReceipt {
+                        completed_stores: 3797,
+                        boundary,
+                    },
+                ),
+            ],
+        ));
+        state.game_execution_scheduler.begin_host_frame();
+        state.game_execution_scheduler.begin_main_loop_iteration();
 
-    state.Module07_18_RescuedMaiden();
+        state.Module07_18_RescuedMaiden();
 
-    assert_eq!(state.game_state.frame.subsubmodule, 0);
-    assert_eq!(
-        state.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishRescuedMaidenTilemapClear {
-            completed_stores: 3797,
-        }),
-    );
-    assert!(state
-        .game_execution_scheduler
-        .work_suspends_translated_call_stack());
-    assert!(state
-        .original_timing_semantic_receipts
-        .as_ref()
-        .unwrap()
-        .semantic()
-        .is_empty());
+        assert_eq!(state.game_state.frame.subsubmodule, 0);
+        assert_eq!(
+            state.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishRescuedMaidenTilemapClear {
+                completed_stores: 3797,
+            }),
+        );
+        assert!(state
+            .game_execution_scheduler
+            .work_suspends_translated_call_stack());
+        assert!(state
+            .original_timing_semantic_receipts
+            .as_ref()
+            .unwrap()
+            .semantic()
+            .is_empty());
+    }
 }
 
 #[test]
