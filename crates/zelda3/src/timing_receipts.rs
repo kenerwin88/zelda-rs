@@ -908,6 +908,15 @@ pub enum MainLoopInterruption {
     },
     SpriteMainBuzzblobAfterXSubpixel(u8),
     SpriteMainCatfishMedallionGraphicsStarted(u8),
+    SpriteMainTrinexxHeadDrawSetup(u8),
+    SpriteMainTrinexxHeadDraw {
+        slot: u8,
+        segment: u8,
+    },
+    SpriteMainTrinexxHeadFrontPart {
+        slot: u8,
+        completed_stores: u8,
+    },
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -956,6 +965,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainBigKeyDropGraphicsStarted(_)
                 | Self::SpriteMainKingZoraFlippersGraphicsStarted(_)
                 | Self::SpriteMainCatfishMedallionGraphicsStarted(_)
+                | Self::SpriteMainTrinexxHeadDrawSetup(_)
                 | Self::SpriteMainHappinessPondRupeeGraphicsStarted(_)
                 | Self::SpriteMainAfterSingleSmallDrawPosition(_)
                 | Self::SpriteMainAfterWallmasterResetPrefix(_)
@@ -990,6 +1000,8 @@ impl MainLoopInterruption {
                 | Self::SpriteMainMiniMoldormAiPending(_)
                 | Self::SpriteMainVitreousPlayerDamagePending(_)
                 | Self::SpriteMainSwamolaSegmentDraw { .. }
+                | Self::SpriteMainTrinexxHeadDraw { .. }
+                | Self::SpriteMainTrinexxHeadFrontPart { .. }
                 | Self::SpriteMainPengatorSlidePending(_)
                 | Self::SpriteMainAntifairyBouncePending(_)
                 | Self::SpriteMainKholdstareDamagePending(_)
@@ -1176,6 +1188,15 @@ pub enum SpriteMainProgress {
     MiniMoldormAiPending(u8),
     BuzzblobAfterXSubpixel(u8),
     CatfishMedallionGraphicsStarted(u8),
+    TrinexxHeadDrawSetup(u8),
+    TrinexxHeadDraw {
+        slot: u8,
+        segment: u8,
+    },
+    TrinexxHeadFrontPart {
+        slot: u8,
+        completed_stores: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

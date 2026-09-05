@@ -19026,6 +19026,74 @@ fn pre_dungeon_garnish_clear_publishes_only_completed_descending_stores() {
 }
 
 #[test]
+fn trinexx_head_draw_checkpoint_keeps_coordinates_and_remaining_oam_stores() {
+    for segment in 1..9 {
+        let mut state = ZeldaState::new();
+        state.set_submodule(1);
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state.sprite_slot_view_mut(0).set_a(100);
+        state.sprite_slot_view_mut(0).set_c(100);
+        state.sprite_slot_view_mut(2).set_sprite_type(0xcd);
+        state.sprite_slot_view_mut(2).set_state(9);
+        state.sprite_slot_view_mut(2).set_subtype2(9);
+        for j in 18..27 {
+            state.cached_sprite_slot_mut(j).set_type_byte(40 + j as u8);
+            state.cached_sprite_slot_mut(j).set_y_high(30);
+        }
+        let mut atomic = state.clone();
+        atomic.sprite_sidenexx(2);
+        let draw = state.begin_sidenexx_head_draw_checkpoint(2, segment);
+        assert_eq!(state.sprite_get_x(2), atomic.sprite_get_x(2));
+        assert_eq!(state.sprite_get_y(2), atomic.sprite_get_y(2));
+        assert_eq!(draw.next_segment, segment);
+        assert_eq!(draw.oam, OAM_BUF + (usize::from(segment) + 4) * 4);
+        state.resume_sidenexx_head_draw(2, draw);
+        assert_eq!(state.ram, atomic.ram, "segment {segment}");
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+        assert_eq!(state.game_state.oam, atomic.game_state.oam);
+    }
+}
+
+#[test]
+fn trinexx_first_part_keeps_unwritten_oam_and_position_bytes_pending() {
+    for completed in 0..=29 {
+        let mut state = ZeldaState::new();
+        state.set_submodule(1);
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state.sprite_slot_view_mut(0).set_a(100);
+        state.sprite_slot_view_mut(0).set_c(100);
+        state.sprite_slot_view_mut(2).set_sprite_type(0xcd);
+        state.sprite_slot_view_mut(2).set_state(9);
+        state.sprite_slot_view_mut(2).set_subtype2(9);
+        for j in 18..27 {
+            state.cached_sprite_slot_mut(j).set_type_byte(40 + j as u8);
+            state.cached_sprite_slot_mut(j).set_y_high(30);
+        }
+        let mut atomic = state.clone();
+        atomic.sprite_sidenexx(2);
+        let draw = state.begin_sidenexx_front_part_checkpoint(2, completed);
+        if completed <= 25 {
+            assert_eq!(
+                state.sprite_slot_view(2).x_low(),
+                state.sprite_slot_view(2).a()
+            );
+            assert_eq!(
+                state.sprite_slot_view(2).y_low(),
+                state.sprite_slot_view(2).c()
+            );
+        }
+        if completed == 19 {
+            assert_eq!(state.game_state.oam.extended_byte(3), 0);
+            assert_eq!(state.ram[OAM_BUF + 15], atomic.ram[OAM_BUF + 15]);
+        }
+        state.resume_sidenexx_head_draw(2, draw);
+        assert_eq!(state.ram, atomic.ram, "first-part store {completed}");
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+        assert_eq!(state.game_state.oam, atomic.game_state.oam);
+    }
+}
+
+#[test]
 fn every_dungeon_reset_caller_prefix_resumes_to_the_atomic_c_endpoint() {
     for progress in [
         DungeonResetSpritesCpuProgress::LoadStarted,

@@ -717,6 +717,12 @@ impl ZeldaState {
 
     // void Sprite_Sidenexx(int k) {  // 9db8a7
     pub(super) fn sprite_sidenexx(&mut self, k: usize) {
+        self.sidenexx_before_head_draw(k);
+        self.trinexx_head_draw(k);
+        self.sidenexx_after_head_draw(k);
+    }
+
+    fn sidenexx_before_head_draw(&mut self, k: usize) {
         let idx = self.sprite_slot_view(k).sprite_type().wrapping_sub(0xcc) as usize;
         let xx = ((self.sprite_slot_view(0).b() as u16) << 8) | self.sprite_slot_view(0).a() as u16;
         let xx = xx.wrapping_add_signed(i16::from(TRINEXX_SIDE_HEAD_X_OFFSETS[idx]));
@@ -729,7 +735,9 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_c(yy as u8);
         self.sprite_slot_view_mut(k).set_g((yy >> 8) as u8);
         self.sprite_slot_view_mut(k).or_object_priority_bits(0x30);
-        self.trinexx_head_draw(k);
+    }
+
+    pub(super) fn sidenexx_after_head_draw(&mut self, k: usize) {
         if self.sprite_return_if_inactive_for_small_bosses(k) {
             return;
         }
@@ -896,6 +904,159 @@ impl ZeldaState {
 
     // void TrinexxHead_Draw(int k) {  // 9dbb70
     pub(super) fn trinexx_head_draw(&mut self, k: usize) {
+        if let Some(mut draw) = self.begin_trinexx_head_draw(k) {
+            let count = self.sprite_slot_view(k).subtype2();
+            self.trinexx_head_draw_segments(k, &mut draw, count);
+            self.finish_trinexx_head_draw(k);
+        }
+    }
+
+    pub(super) fn begin_sidenexx_head_draw_checkpoint(
+        &mut self,
+        k: usize,
+        segment: u8,
+    ) -> TrinexxHeadDrawContinuation {
+        assert!(matches!(
+            self.sprite_slot_view(k).sprite_type(),
+            0xcc | 0xcd
+        ));
+        assert_eq!(self.sprite_slot_view(k).e(), 0);
+        self.sidenexx_before_head_draw(k);
+        let mut draw = self
+            .begin_trinexx_head_draw(k)
+            .expect("Trinexx segment checkpoint requires visible head drawing");
+        self.trinexx_head_draw_segments(k, &mut draw, segment);
+        draw
+    }
+
+    pub(super) fn resume_sidenexx_head_draw(
+        &mut self,
+        k: usize,
+        mut draw: TrinexxHeadDrawContinuation,
+    ) {
+        if let Some((completed, x_delta, y_delta)) = draw.front_part.take() {
+            self.trinexx_head_first_part_stores(k, &draw, x_delta, y_delta, completed, 29);
+            draw.oam += 20;
+            draw.next_segment = 1;
+            self.temp_counter_mut().set(1);
+            self.sprite_workspace_mut().set_shared_scratch_a(20);
+        }
+        let count = self.sprite_slot_view(k).subtype2();
+        self.trinexx_head_draw_segments(k, &mut draw, count);
+        self.finish_trinexx_head_draw(k);
+        self.sidenexx_after_head_draw(k);
+    }
+
+    pub(super) fn begin_sidenexx_front_part_checkpoint(
+        &mut self,
+        k: usize,
+        completed: u8,
+    ) -> TrinexxHeadDrawContinuation {
+        assert!(completed <= 29);
+        let mut draw = self.begin_sidenexx_head_draw_checkpoint(k, 0);
+        let head = self.cached_sprite_slot(k * 9);
+        let angle = if k == 2 {
+            u16::from(head.type_byte())
+        } else {
+            0x100u16.wrapping_add(u16::from(0u8.wrapping_sub(head.type_byte())))
+        };
+        let radius = head.y_high();
+        let x_delta = trinexx_head_sin(angle, radius) as u8;
+        let y_delta = trinexx_head_sin(angle.wrapping_add(0x80), radius) as u8;
+        self.draw_scratch_position_mut()
+            .set_low_position(x_delta, y_delta);
+        self.trinexx_head_first_part_stores(k, &draw, x_delta, y_delta, 0, completed);
+        draw.front_part = Some((completed, x_delta, y_delta));
+        draw
+    }
+
+    fn trinexx_head_first_part_stores(
+        &mut self,
+        k: usize,
+        draw: &TrinexxHeadDrawContinuation,
+        x_delta: u8,
+        y_delta: u8,
+        from: u8,
+        end: u8,
+    ) {
+        assert!(from <= end && end <= 29);
+        for action in from..end {
+            if action < 25 {
+                let m = usize::from(action / 5);
+                let oam = draw.oam + m * 4;
+                match action % 5 {
+                    0 => {
+                        let x = draw.info_x.wrapping_add(u16::from(x_delta)) as u8;
+                        self.sprite_workspace_mut().set_current_sprite_x_low(x);
+                        self.oam_state_mut().set_entry_x(
+                            oam,
+                            x.wrapping_add(TRINEXX_HEAD_FRONT_PART_X_OFFSETS[m] as u8),
+                        );
+                    }
+                    1 => {
+                        let y = draw.info_y.wrapping_add(u16::from(y_delta)) as u8;
+                        self.sprite_workspace_mut().set_current_sprite_y_low(y);
+                        let y = y
+                            .wrapping_add(TRINEXX_HEAD_FRONT_PART_Y_OFFSETS[m] as u8)
+                            .wrapping_add(if m == 4 {
+                                self.sprite_slot_view(k).subtype()
+                            } else {
+                                0
+                            });
+                        self.oam_state_mut().set_entry_y(oam, y);
+                    }
+                    2 => self
+                        .oam_state_mut()
+                        .set_entry_char(oam, TRINEXX_HEAD_FRONT_PART_CHARS[m]),
+                    3 => self
+                        .oam_state_mut()
+                        .set_entry_flags(oam, draw.info_flags | TRINEXX_HEAD_FRONT_PART_FLAGS[m]),
+                    4 => self
+                        .oam_state_mut()
+                        .set_extended_byte((oam - OAM_BUF) / 4, 2),
+                    _ => unreachable!(),
+                }
+            } else {
+                self.sprite_workspace_mut().set_shared_scratch_a(20);
+                let base_x = (u16::from(self.sprite_slot_view(k).b()) << 8)
+                    | u16::from(self.sprite_slot_view(k).a());
+                let base_y = (u16::from(self.sprite_slot_view(k).g()) << 8)
+                    | u16::from(self.sprite_slot_view(k).c());
+                let x = base_x.wrapping_add_signed(i16::from(x_delta as i8));
+                let y = base_y.wrapping_add_signed(i16::from(y_delta as i8));
+                match action {
+                    25 => self.sprite_slot_view_mut(k).set_x_low(x as u8),
+                    26 => self.sprite_slot_view_mut(k).set_x_high((x >> 8) as u8),
+                    27 => self.sprite_slot_view_mut(k).set_y_low(y as u8),
+                    28 => self.sprite_slot_view_mut(k).set_y_high((y >> 8) as u8),
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
+    pub(super) fn sidenexx_head_draw_setup(&mut self, k: usize) {
+        assert!(matches!(self.sprite_slot_view(k).sprite_type(), 0xcc | 0xcd));
+        assert_eq!(self.sprite_slot_view(k).e(), 0);
+        self.sidenexx_before_head_draw(k);
+        self.publish_trinexx_head_position(k);
+    }
+
+    pub(super) fn sidenexx_after_head_draw_setup(&mut self, k: usize) {
+        if let Some(mut draw) = self.prepare_trinexx_head_draw(k) {
+            let count = self.sprite_slot_view(k).subtype2();
+            self.trinexx_head_draw_segments(k, &mut draw, count);
+            self.finish_trinexx_head_draw(k);
+        }
+        self.sidenexx_after_head_draw(k);
+    }
+
+    fn begin_trinexx_head_draw(&mut self, k: usize) -> Option<TrinexxHeadDrawContinuation> {
+        self.publish_trinexx_head_position(k);
+        self.prepare_trinexx_head_draw(k)
+    }
+
+    fn publish_trinexx_head_position(&mut self, k: usize) {
         {
             let value = self.sprite_slot_view(k).a();
             self.sprite_slot_view_mut(k).set_x_low(value);
@@ -913,12 +1074,40 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_y_high(value);
         }
         self.sprite_get16_bit_coords(k);
+    }
+
+    fn prepare_trinexx_head_draw(&mut self, k: usize) -> Option<TrinexxHeadDrawContinuation> {
         let Some((info_x, info_y, info_flags)) = self.sprite_prep_oam_coord_or_double_ret(k) else {
-            return;
+            return None;
         };
-        let mut oam = self.game_state.oam.current_pointer_usize();
-        let count = usize::from(self.sprite_slot_view(k).subtype2());
-        for i in 0..count {
+        self.temp_counter_mut().set(0);
+        self.sprite_workspace_mut().set_shared_scratch_a(0);
+        Some(TrinexxHeadDrawContinuation {
+            info_x,
+            info_y,
+            info_flags,
+            oam: self.game_state.oam.current_pointer_usize(),
+            next_segment: 0,
+            front_part: None,
+        })
+    }
+
+    fn trinexx_head_draw_segments(
+        &mut self,
+        k: usize,
+        draw: &mut TrinexxHeadDrawContinuation,
+        end: u8,
+    ) {
+        assert!(draw.next_segment <= end && end <= self.sprite_slot_view(k).subtype2());
+        let TrinexxHeadDrawContinuation {
+            info_x,
+            info_y,
+            info_flags,
+            mut oam,
+            next_segment,
+            ..
+        } = *draw;
+        for i in usize::from(next_segment)..usize::from(end) {
             let j = i + k * 9;
             let cached_head = self.cached_sprite_slot(j);
             let angle = if k != 2 {
@@ -933,37 +1122,10 @@ impl ZeldaState {
                 .set_low_position(x_delta, y_delta);
 
             if i == 0 {
-                for m in 0..5 {
-                    let current_x = info_x.wrapping_add(u16::from(x_delta)) as u8;
-                    self.sprite_workspace_mut()
-                        .set_current_sprite_x_low(current_x);
-                    let x = current_x.wrapping_add(TRINEXX_HEAD_FRONT_PART_X_OFFSETS[m] as u8);
-                    let current_y = info_y.wrapping_add(u16::from(y_delta)) as u8;
-                    self.sprite_workspace_mut()
-                        .set_current_sprite_y_low(current_y);
-                    let y = current_y
-                        .wrapping_add(TRINEXX_HEAD_FRONT_PART_Y_OFFSETS[m] as u8)
-                        .wrapping_add(if m == 4 {
-                            self.sprite_slot_view(k).subtype()
-                        } else {
-                            0
-                        });
-                    self.set_oam_plain_for_small_bosses(
-                        oam,
-                        x,
-                        y,
-                        TRINEXX_HEAD_FRONT_PART_CHARS[m],
-                        info_flags | TRINEXX_HEAD_FRONT_PART_FLAGS[m],
-                        2,
-                    );
-                    oam += 4;
-                }
-                let base_x = ((self.sprite_slot_view(k).b() as u16) << 8)
-                    | self.sprite_slot_view(k).a() as u16;
-                let base_y = ((self.sprite_slot_view(k).g() as u16) << 8)
-                    | self.sprite_slot_view(k).c() as u16;
-                self.sprite_set_x(k, base_x.wrapping_add(x_delta as i8 as i16 as u16));
-                self.sprite_set_y(k, base_y.wrapping_add(y_delta as i8 as i16 as u16));
+                let mut first = *draw;
+                first.oam = oam;
+                self.trinexx_head_first_part_stores(k, &first, x_delta, y_delta, 0, 29);
+                oam += 20;
             } else {
                 let x = info_x.wrapping_add(u16::from(x_delta)) as u8;
                 let y = info_y.wrapping_add(u16::from(y_delta)) as u8;
@@ -973,6 +1135,14 @@ impl ZeldaState {
                 oam += 4;
             }
         }
+        draw.oam = oam;
+        draw.next_segment = end;
+        self.temp_counter_mut().set(end);
+        self.sprite_workspace_mut()
+            .set_shared_scratch_a(if end == 0 { 0 } else { end * 4 + 16 });
+    }
+
+    fn finish_trinexx_head_draw(&mut self, k: usize) {
         let subtype = self.sprite_slot_view(k).subtype2();
         self.temp_counter_mut().set(subtype);
         let scratch = self

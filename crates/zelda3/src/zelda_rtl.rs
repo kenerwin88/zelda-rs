@@ -5142,6 +5142,27 @@ enum SpriteMainCpuBoundary {
         pending: Option<(u8, u8)>,
     },
     CatfishMedallionGraphicsStarted(u8),
+    TrinexxHeadDrawSetup(u8),
+    TrinexxHeadDraw {
+        slot: u8,
+        segment: u8,
+        continuation: Option<TrinexxHeadDrawContinuation>,
+    },
+    TrinexxHeadFrontPart {
+        slot: u8,
+        completed_stores: u8,
+        continuation: Option<TrinexxHeadDrawContinuation>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct TrinexxHeadDrawContinuation {
+    info_x: u16,
+    info_y: u16,
+    info_flags: u8,
+    oam: usize,
+    next_segment: u8,
+    front_part: Option<(u8, u8, u8)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5384,6 +5405,7 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(active_slot)
+        | SpriteMainCpuBoundary::TrinexxHeadDrawSetup(active_slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics {
             slot: active_slot, ..
@@ -5439,6 +5461,12 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::MiniMoldormAiPending { slot: active_slot }
         | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot: active_slot }
         | SpriteMainCpuBoundary::SwamolaSegmentDraw {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::TrinexxHeadDraw {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::TrinexxHeadFrontPart {
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::PengatorSlidePending { slot: active_slot }
@@ -5712,6 +5740,13 @@ fn sprite_main_cpu_boundary_from_interruption(
             );
             Some(SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(slot))
         }
+        crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(slot) => {
+            assert!(
+                slot < 16,
+                "source Trinexx medallion graphics receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot))
+        }
         crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot) => {
             assert!(
                 slot < 16,
@@ -5942,6 +5977,25 @@ fn sprite_main_cpu_boundary_from_interruption(
             assert!(slot < 16 && segment < 4);
             Some(SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, segment })
         }
+        crate::MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment } => {
+            assert!(slot < 16 && segment < 9);
+            Some(SpriteMainCpuBoundary::TrinexxHeadDraw {
+                slot,
+                segment,
+                continuation: None,
+            })
+        }
+        crate::MainLoopInterruption::SpriteMainTrinexxHeadFrontPart {
+            slot,
+            completed_stores,
+        } => {
+            assert!(slot < 16 && completed_stores <= 29);
+            Some(SpriteMainCpuBoundary::TrinexxHeadFrontPart {
+                slot,
+                completed_stores,
+                continuation: None,
+            })
+        }
         crate::MainLoopInterruption::SpriteMainPengatorSlidePending(slot) => {
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::PengatorSlidePending { slot })
@@ -6012,6 +6066,13 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         crate::MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment } => {
             slot < 16 && segment < 4
         }
+        crate::MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment } => {
+            slot < 16 && segment < 9
+        }
+        crate::MainLoopInterruption::SpriteMainTrinexxHeadFrontPart {
+            slot,
+            completed_stores,
+        } => slot < 16 && completed_stores <= 29,
         crate::MainLoopInterruption::SpriteMainBeforeFirstSlot => true,
         crate::MainLoopInterruption::SpriteMainAfterSlot(slot)
         | crate::MainLoopInterruption::SpriteMainAfterTimersAndOam(slot)
@@ -6027,6 +6088,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainCatfishMedallionGraphicsStarted(slot)
+        | crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(slot)
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(slot)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(slot)
@@ -6190,6 +6252,11 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
 const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool {
     match progress {
         crate::SpriteMainProgress::SwamolaSegmentDraw { slot, segment } => slot < 16 && segment < 4,
+        crate::SpriteMainProgress::TrinexxHeadDraw { slot, segment } => slot < 16 && segment < 9,
+        crate::SpriteMainProgress::TrinexxHeadFrontPart {
+            slot,
+            completed_stores,
+        } => slot < 16 && completed_stores <= 29,
         crate::SpriteMainProgress::BeforeFirstSlot => true,
         crate::SpriteMainProgress::AfterSlot(slot)
         | crate::SpriteMainProgress::AfterTimersAndOam(slot)
@@ -6205,6 +6272,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot)
         | crate::SpriteMainProgress::HappinessPondRupeeGraphicsStarted(slot)
         | crate::SpriteMainProgress::CatfishMedallionGraphicsStarted(slot)
+        | crate::SpriteMainProgress::TrinexxHeadDrawSetup(slot)
         | crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot)
         | crate::SpriteMainProgress::AfterSingleSmallDrawPosition(slot)
         | crate::SpriteMainProgress::ZazakAfterGraphics(slot)
@@ -6521,6 +6589,13 @@ fn sprite_main_cpu_boundary_from_progress(
             );
             SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(slot)
         }
+        crate::SpriteMainProgress::TrinexxHeadDrawSetup(slot) => {
+            assert!(
+                slot < 16,
+                "source Trinexx medallion graphics progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot)
+        }
         crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot) => {
             assert!(
                 slot < 16,
@@ -6736,6 +6811,25 @@ fn sprite_main_cpu_boundary_from_progress(
             assert!(slot < 16 && segment < 4);
             SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, segment }
         }
+        crate::SpriteMainProgress::TrinexxHeadDraw { slot, segment } => {
+            assert!(slot < 16 && segment < 9);
+            SpriteMainCpuBoundary::TrinexxHeadDraw {
+                slot,
+                segment,
+                continuation: None,
+            }
+        }
+        crate::SpriteMainProgress::TrinexxHeadFrontPart {
+            slot,
+            completed_stores,
+        } => {
+            assert!(slot < 16 && completed_stores <= 29);
+            SpriteMainCpuBoundary::TrinexxHeadFrontPart {
+                slot,
+                completed_stores,
+                continuation: None,
+            }
+        }
         crate::SpriteMainProgress::PengatorSlidePending(slot) => {
             assert!(slot < 16);
             SpriteMainCpuBoundary::PengatorSlidePending { slot }
@@ -6824,6 +6918,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainCatfishMedallionGraphicsStarted(_)
+        | crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(_)
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(_)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(_)
         | crate::MainLoopInterruption::SpriteMainWallmasterResetClear { .. }
@@ -6852,6 +6947,8 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainMiniMoldormAiPending(_)
         | crate::MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(_)
         | crate::MainLoopInterruption::SpriteMainSwamolaSegmentDraw { .. }
+        | crate::MainLoopInterruption::SpriteMainTrinexxHeadDraw { .. }
+        | crate::MainLoopInterruption::SpriteMainTrinexxHeadFrontPart { .. }
         | crate::MainLoopInterruption::SpriteMainPengatorSlidePending(_)
         | crate::MainLoopInterruption::SpriteMainAntifairyBouncePending(_)
         | crate::MainLoopInterruption::SpriteMainKholdstareDamagePending(_)
@@ -6932,6 +7029,30 @@ fn same_sprite_main_source_checkpoint(
                 ..
             },
         ) => left == right && left_caller == right_caller && left_stage == right_stage,
+        (
+            SpriteMainCpuBoundary::TrinexxHeadDraw {
+                slot: left,
+                segment: left_segment,
+                ..
+            },
+            SpriteMainCpuBoundary::TrinexxHeadDraw {
+                slot: right,
+                segment: right_segment,
+                ..
+            },
+        ) => left == right && left_segment == right_segment,
+        (
+            SpriteMainCpuBoundary::TrinexxHeadFrontPart {
+                slot: left,
+                completed_stores: a,
+                ..
+            },
+            SpriteMainCpuBoundary::TrinexxHeadFrontPart {
+                slot: right,
+                completed_stores: b,
+                ..
+            },
+        ) => left == right && a == b,
         (
             SpriteMainCpuBoundary::AfterSingleSmallDrawPosition { slot: left, .. },
             SpriteMainCpuBoundary::AfterSingleSmallDrawPosition { slot: right, .. },
@@ -7187,6 +7308,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot)
         | SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(slot)
         | SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(slot)
+        | SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics { slot, .. }
         | SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(slot)
@@ -7216,6 +7338,8 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::MiniMoldormAiPending { slot }
         | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot }
         | SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, .. }
+        | SpriteMainCpuBoundary::TrinexxHeadDraw { slot, .. }
+        | SpriteMainCpuBoundary::TrinexxHeadFrontPart { slot, .. }
         | SpriteMainCpuBoundary::PengatorSlidePending { slot }
         | SpriteMainCpuBoundary::AntifairyBouncePending { slot }
         | SpriteMainCpuBoundary::KholdstareDamagePending { slot }

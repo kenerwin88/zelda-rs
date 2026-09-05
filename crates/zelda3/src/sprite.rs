@@ -3246,6 +3246,24 @@ impl ZeldaState {
                 );
                 return;
             }
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::TrinexxHeadDrawSetup(
+                    k as u8,
+                ))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(nmi_slices, 0);
+                self.sprite_main_cpu_boundary = None;
+                self.sprite_timers_and_oam(k);
+                self.sidenexx_head_draw_setup(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::TrinexxHeadDrawSetup(k as u8),
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
             if matches!(
                 self.sprite_main_cpu_boundary,
                 Some(SpriteMainCpuBoundary::AfterAntfairySubtype2Increment {
@@ -3424,6 +3442,58 @@ impl ZeldaState {
                     self.sprite_main_cpu_boundary = None;
                     let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
                     self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                    return;
+                }
+            }
+            if let Some(SpriteMainCpuBoundary::TrinexxHeadDraw {
+                slot,
+                segment,
+                continuation: None,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    assert_eq!(self.sprite_slot_view(k).state(), 9);
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    self.sprite_timers_and_oam(k);
+                    self.sprite_main_cpu_boundary = None;
+                    let draw = self.begin_sidenexx_head_draw_checkpoint(k, segment);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::TrinexxHeadDraw {
+                            slot,
+                            segment,
+                            continuation: Some(draw),
+                        },
+                        nmi_slices,
+                        caller,
+                    );
+                    return;
+                }
+            }
+            if let Some(SpriteMainCpuBoundary::TrinexxHeadFrontPart {
+                slot,
+                completed_stores,
+                continuation: None,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    assert_eq!(self.sprite_slot_view(k).state(), 9);
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    self.sprite_timers_and_oam(k);
+                    self.sprite_main_cpu_boundary = None;
+                    let draw = self.begin_sidenexx_front_part_checkpoint(k, completed_stores);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::TrinexxHeadFrontPart {
+                            slot,
+                            completed_stores,
+                            continuation: Some(draw),
+                        },
+                        nmi_slices,
+                        caller,
+                    );
                     return;
                 }
             }
@@ -4584,6 +4654,15 @@ impl ZeldaState {
                 self.sprite_cf_swamola_after_draw(k);
                 self.complete_sprite_main_after_interrupted_slot(k);
             }
+            SpriteMainCpuBoundary::TrinexxHeadDraw { slot, continuation: Some(draw), .. }
+            | SpriteMainCpuBoundary::TrinexxHeadFrontPart { slot, continuation: Some(draw), .. } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.resume_sidenexx_head_draw(k, draw);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::TrinexxHeadDraw { continuation: None, .. }
+            | SpriteMainCpuBoundary::TrinexxHeadFrontPart { continuation: None, .. } => unreachable!("Trinexx draw continuation lost its source locals"),
             SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot } => {
                 let interrupted_slot = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
@@ -4983,6 +5062,10 @@ impl ZeldaState {
             }
             SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(slot) => {
                 self.complete_catfish_medallion_graphics(usize::from(slot));
+                self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
+            }
+            SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot) => {
+                self.sidenexx_after_head_draw_setup(usize::from(slot));
                 self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
             }
             SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {

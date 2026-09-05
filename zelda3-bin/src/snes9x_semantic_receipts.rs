@@ -939,6 +939,8 @@ struct SpriteMainExecutionTracker {
     initialize_active_main_calls: u8,
     hog_spear_active_body: bool,
     buzzblob_movement: Option<(u8, bool)>,
+    trinexx_head_draw: Option<(u8, u8)>,
+    trinexx_front_part: Option<(u8, u8)>,
     #[serde(default)]
     guard_prep_parry_hitbox: Option<(u8, u8)>,
     guard_prep_patrol_delay: Option<(u8, u8)>,
@@ -1494,6 +1496,80 @@ impl SpriteMainExecutionTracker {
             return Err("Hog Spear body endpoint disagrees with its active slot".into());
         }
         self.hog_spear_body_graphics_pending = Some(slot);
+        Ok(())
+    }
+
+    fn observe_trinexx_head_draw(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if !matches!(event.event.as_str(), "nmi" | "frame") {
+            return Ok(());
+        }
+        self.trinexx_head_draw = None;
+        self.trinexx_front_part = None;
+        if matches!(
+            event.pc,
+            Some(0x1d_bce0 | 0x1d_bce1 | 0x1d_bce2 | 0x1d_bce3 | 0x1d_bce4 | 0x1d_bce6 | 0x1d_bce8)
+        ) {
+            let slot = self
+                .current_slot
+                .ok_or("Trinexx first-part drawing omitted its active slot")?;
+            let entry = event
+                .x
+                .filter(|&x| x < 5)
+                .ok_or("Trinexx first-part drawing has an invalid entry")?
+                as u8;
+            let y = entry * 4 + 3;
+            // PHY, PHX and the local JSR return to $1D:BC39 retain the
+            // OAM byte index and active sprite above the drawing caller.
+            if event.return_address != Some(0x39_0000 | (u32::from(slot) << 8) | u32::from(y))
+                || event.stack4 != Some(0xbc)
+            {
+                return Err("Trinexx first-part drawing has the wrong source stack".into());
+            }
+            self.trinexx_front_part = Some((
+                slot,
+                entry * 5 + if event.pc == Some(0x1d_bce8) { 5 } else { 4 },
+            ));
+            return Ok(());
+        }
+
+        if event.pc == Some(0x1d_bc7c) {
+            let slot = self
+                .current_slot
+                .ok_or("Trinexx neck loop omitted its active slot")?;
+            if event.x != Some(u16::from(slot))
+                || event.return_address.map(|r| r & 0xffff) != Some(0xb8dc)
+            {
+                return Err("Trinexx neck loop has the wrong active slot or caller".into());
+            }
+            // INC $0FB5, LDA $0FB5, CMP subtype2 and the loop branch have
+            // completed. A retains the next segment at the pending JMP.
+            let segment = event.a.ok_or("Trinexx neck loop omitted its counter")? as u8;
+            if segment == 0 || segment >= 9 {
+                return Err("Trinexx neck loop has an invalid counter".into());
+            }
+            self.trinexx_head_draw = Some((slot, segment));
+            return Ok(());
+        }
+        if event.pc != Some(0x1d_bbcf) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Trinexx neck calculation omitted its active slot")?;
+        // PHX saved the active slot above TrinexxHead_Draw's local JSR
+        // return. Y is the cached neck index while X holds a sine-table index.
+        if event.return_address != Some(0xb8_dc00 | u32::from(slot)) {
+            return Err("Trinexx neck calculation has the wrong saved slot or caller".into());
+        }
+        let cursor = event
+            .y
+            .ok_or("Trinexx neck calculation omitted its segment cursor")?;
+        let segment = cursor
+            .checked_sub(u16::from(slot) * 9)
+            .filter(|&i| i < 9)
+            .ok_or("Trinexx neck calculation has an invalid segment cursor")?
+            as u8;
+        self.trinexx_head_draw = Some((slot, segment));
         Ok(())
     }
 
@@ -2520,6 +2596,17 @@ impl SpriteMainExecutionTracker {
         if let Some(slot) = self.swamola_head_draw {
             return SpriteMainProgress::SwamolaHeadDraw(slot);
         }
+        if let Some((slot, completed_stores)) = self.trinexx_front_part {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::TrinexxHeadFrontPart {
+                slot,
+                completed_stores,
+            };
+        }
+        if let Some((slot, segment)) = self.trinexx_head_draw {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::TrinexxHeadDraw { slot, segment };
+        }
         if let Some((slot, segment)) = self.swamola_segment_draw {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::SwamolaSegmentDraw { slot, segment };
@@ -2925,6 +3012,16 @@ impl SpriteMainExecutionTracker {
             SpriteMainProgress::SwamolaSegmentDraw { slot, segment } => {
                 MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment }
             }
+            SpriteMainProgress::TrinexxHeadDraw { slot, segment } => {
+                MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment }
+            }
+            SpriteMainProgress::TrinexxHeadFrontPart {
+                slot,
+                completed_stores,
+            } => MainLoopInterruption::SpriteMainTrinexxHeadFrontPart {
+                slot,
+                completed_stores,
+            },
             SpriteMainProgress::PengatorSlidePending(slot) => {
                 MainLoopInterruption::SpriteMainPengatorSlidePending(slot)
             }
@@ -4686,6 +4783,11 @@ impl Snes9xOracleSemanticTrace {
             if let Some(execution) = self.sprite_main_execution.as_mut() {
                 execution.observe_guard_prep_weapon_flags_pending(returned_event)?;
                 execution.observe_buzzblob_movement(returned_event)?;
+                // A host ending inside NMI has not advanced the interrupted
+                // drawing caller. Retain its precise checkpoint until resume.
+                if self.nmi_resume_targets.is_empty() {
+                    execution.observe_trinexx_head_draw(returned_event)?;
+                }
                 execution.observe_guard_animation_checkpoint(returned_event)?;
                 execution.observe_hog_spear_body_graphics_pending(returned_event)?;
                 execution.observe_absorbable_tile_lookup(returned_event)?;
@@ -5506,6 +5608,8 @@ impl Snes9xOracleSemanticTrace {
                         if let Some(execution) = self.sprite_main_execution.as_mut() {
                             execution.hog_spear_active_body = false;
                             execution.buzzblob_movement = None;
+                            execution.trinexx_head_draw = None;
+                            execution.trinexx_front_part = None;
                             execution.guard_prep_parry_hitbox = None;
                             execution.guard_prep_patrol_delay = None;
                             execution.guard_prep_tile_collision_return = None;
@@ -5548,6 +5652,7 @@ impl Snes9xOracleSemanticTrace {
                     0x05_cbe0 | 0x06_d8e2 | 0x06_d8e5 => {
                         if let Some(execution) = self.sprite_main_execution.as_mut() {
                             execution.observe_buzzblob_movement(&event)?;
+                            execution.observe_trinexx_head_draw(&event)?;
                             execution.observe_guard_animation_checkpoint(&event)?;
                         }
                     }
@@ -6007,6 +6112,7 @@ impl Snes9xOracleSemanticTrace {
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_buzzblob_movement(&event)?;
+                    execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_tile_lookup(&event)?;
@@ -6504,6 +6610,7 @@ impl Snes9xOracleSemanticTrace {
                 if let Some(execution) = self.sprite_main_execution.as_mut() {
                     execution.observe_guard_prep_weapon_flags_pending(&event)?;
                     execution.observe_buzzblob_movement(&event)?;
+                    execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_tile_lookup(&event)?;
@@ -8403,6 +8510,16 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment } => {
                     Some(SpriteMainProgress::SwamolaSegmentDraw { slot, segment })
                 }
+                MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment } => {
+                    Some(SpriteMainProgress::TrinexxHeadDraw { slot, segment })
+                }
+                MainLoopInterruption::SpriteMainTrinexxHeadFrontPart {
+                    slot,
+                    completed_stores,
+                } => Some(SpriteMainProgress::TrinexxHeadFrontPart {
+                    slot,
+                    completed_stores,
+                }),
                 MainLoopInterruption::SpriteMainPengatorSlidePending(slot) => {
                     Some(SpriteMainProgress::PengatorSlidePending(slot))
                 }
@@ -9407,6 +9524,8 @@ mod tests {
             initialize_active_main_calls: 0,
             hog_spear_active_body: false,
             buzzblob_movement: None,
+            trinexx_head_draw: None,
+            trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
             guard_prep_tile_collision_return: None,
@@ -9671,6 +9790,57 @@ mod tests {
             )
             .unwrap());
         }
+    }
+
+    #[test]
+    fn trinexx_front_part_checkpoint_proves_flags_written_and_extension_pending() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(2);
+        let mut event = raw("frame", Some(0x1d_bce0), Some(3), None);
+        event.y = Some(15);
+        event.return_address = Some(0x39_020f);
+        event.stack4 = Some(0xbc);
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadFrontPart {
+                slot: 2,
+                completed_stores: 19
+            }
+        );
+        event.stack4 = Some(0xbb);
+        assert!(tracker.observe_trinexx_head_draw(&event).is_err());
+    }
+
+    #[test]
+    fn trinexx_neck_checkpoint_uses_saved_slot_and_cached_segment_index() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(2);
+        let mut event = raw("frame", Some(0x1d_bbcf), Some(232), None);
+        event.return_address = Some(0xb8_dc02);
+        event.y = Some(22);
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadDraw {
+                slot: 2,
+                segment: 4
+            }
+        );
+        event.return_address = Some(0xb8_dc01);
+        assert!(tracker.observe_trinexx_head_draw(&event).is_err());
+        event.pc = Some(0x1d_bc7c);
+        event.x = Some(2);
+        event.a = Some(5);
+        event.return_address = Some(0x1f_b8dc);
+        tracker.observe_trinexx_head_draw(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::TrinexxHeadDraw {
+                slot: 2,
+                segment: 5
+            }
+        );
     }
 
     #[test]
@@ -15385,6 +15555,8 @@ mod tests {
             initialize_active_main_calls: 0,
             hog_spear_active_body: false,
             buzzblob_movement: None,
+            trinexx_head_draw: None,
+            trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
             guard_prep_tile_collision_return: None,
@@ -15482,6 +15654,8 @@ mod tests {
             initialize_active_main_calls: 0,
             hog_spear_active_body: false,
             buzzblob_movement: None,
+            trinexx_head_draw: None,
+            trinexx_front_part: None,
             guard_prep_parry_hitbox: None,
             guard_prep_patrol_delay: None,
             guard_prep_tile_collision_return: None,
