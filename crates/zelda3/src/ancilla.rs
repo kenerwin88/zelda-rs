@@ -3267,11 +3267,22 @@ impl ZeldaState {
     }
 
     pub(super) fn add_happiness_pond_rupees(&mut self, arg: u8) {
-        let Some(_) = self.ancilla_add_simple(0x42, 9) else {
+        if !self.add_happiness_pond_rupees_before_graphics() {
             return;
+        }
+        self.DecodeAnimatedSpriteTile_variable(0x24);
+        self.add_happiness_pond_rupees_after_graphics(arg);
+    }
+
+    pub(super) fn add_happiness_pond_rupees_before_graphics(&mut self) -> bool {
+        let Some(_) = self.ancilla_add_simple(0x42, 9) else {
+            return false;
         };
         self.set_sound_effect_2_with_link_pan(0x13);
-        self.DecodeAnimatedSpriteTile_variable(0x24);
+        true
+    }
+
+    pub(super) fn add_happiness_pond_rupees_after_graphics(&mut self, arg: u8) {
         self.follower_link_state_mut().enter_item_hold_pose();
 
         for i in 0..10 {

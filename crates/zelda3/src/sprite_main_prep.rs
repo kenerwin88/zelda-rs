@@ -2783,6 +2783,49 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_delay_main(255);
     }
 
+    pub(super) fn sprite_happiness_pond_before_rupee_graphics(&mut self, k: usize) -> bool {
+        assert_eq!(self.sprite_slot_view(k).a(), 0);
+        assert_eq!(self.sprite_slot_view(k).b(), 0);
+        assert_eq!(self.sprite_slot_view(k).ai_state(), 3);
+        let _ = self.sprite_prep_oam_coord_or_double_ret(k);
+        self.wish_pond2_draw(k);
+        assert!(!self.sprite_return_if_inactive(k));
+        self.happiness_pond_pay_rupees(k);
+        self.add_happiness_pond_rupees_before_graphics()
+    }
+
+    pub(super) fn complete_happiness_pond_rupee_graphics(&mut self, k: usize) {
+        self.DecodeAnimatedSpriteTile_variable(0x24);
+        self.add_happiness_pond_rupees_after_graphics(self.sprite_slot_view(k).head_direction());
+        self.happiness_pond_after_rupees(k);
+    }
+
+    fn happiness_pond_pay_rupees(&mut self, k: usize) {
+        self.sprite_slot_view_mut(k).set_delay_main(80);
+        let i = self.sprite_slot_view(k).direction();
+        let rupees = self
+            .game_state
+            .inventory
+            .player_resources
+            .rupees_goal()
+            .wrapping_sub(i as u16);
+        self.player_resources_mut().set_rupees_goal(rupees);
+        self.player_resources_mut().add_rupees_to_pond(i);
+    }
+
+    fn happiness_pond_after_rupees(&mut self, k: usize) {
+        let pond = self.game_state.inventory.player_resources.rupees_in_pond();
+        if pond >= 100 {
+            self.player_resources_mut().subtract_pond_reward_threshold();
+            self.sprite_slot_view_mut(k).set_ai_state(5);
+            return;
+        }
+        let pond = self.game_state.inventory.player_resources.rupees_in_pond();
+        self.dialogue_number_mut()
+            .set_low_pair((pond / 10) * 16 + (pond % 10));
+        self.sprite_slot_view_mut(k).set_ai_state(4);
+    }
+
     pub(super) fn sprite_happiness_pond(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
@@ -2838,26 +2881,9 @@ impl ZeldaState {
                 }
             }
             3 => {
-                self.sprite_slot_view_mut(k).set_delay_main(80);
-                let i = self.sprite_slot_view(k).direction();
-                let rupees = self
-                    .game_state
-                    .inventory
-                    .player_resources
-                    .rupees_goal()
-                    .wrapping_sub(i as u16);
-                self.player_resources_mut().set_rupees_goal(rupees);
-                let pond = self.player_resources_mut().add_rupees_to_pond(i);
+                self.happiness_pond_pay_rupees(k);
                 self.add_happiness_pond_rupees(self.sprite_slot_view(k).head_direction());
-                if pond >= 100 {
-                    self.player_resources_mut().subtract_pond_reward_threshold();
-                    self.sprite_slot_view_mut(k).set_ai_state(5);
-                    return;
-                }
-                let pond = self.game_state.inventory.player_resources.rupees_in_pond();
-                self.dialogue_number_mut()
-                    .set_low_pair((pond / 10) * 16 + (pond % 10));
-                self.sprite_slot_view_mut(k).set_ai_state(4);
+                self.happiness_pond_after_rupees(k);
             }
             4 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {

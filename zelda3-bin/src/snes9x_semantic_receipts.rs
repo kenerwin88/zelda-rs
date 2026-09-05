@@ -1023,6 +1023,7 @@ struct SpriteMainExecutionTracker {
     big_key_drop_graphics_slot: Option<u8>,
     #[serde(default)]
     king_zora_flippers_graphics_slot: Option<u8>,
+    happiness_pond_rupee_graphics_slot: Option<u8>,
     #[serde(default)]
     bonk_item_graphics_slot: Option<u8>,
     #[serde(default)]
@@ -2380,6 +2381,22 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot);
         }
+        if let Some(slot) = self.happiness_pond_rupee_graphics_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Happiness Pond rupee graphics publication outlived its active sprite slot",
+            );
+            assert_eq!(
+                self.cucco_animation_slot, None,
+                "one sprite slot published two incompatible partial checkpoints",
+            );
+            assert_eq!(
+                self.cucco_subtype_increments, None,
+                "one sprite slot published two incompatible partial checkpoints",
+            );
+            return SpriteMainProgress::HappinessPondRupeeGraphicsStarted(slot);
+        }
         if let Some(slot) = self.bonk_item_graphics_slot {
             assert_eq!(
                 self.current_slot,
@@ -2709,6 +2726,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot) => {
                 MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(slot)
+            }
+            SpriteMainProgress::HappinessPondRupeeGraphicsStarted(slot) => {
+                MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(slot)
             }
             SpriteMainProgress::AfterSingleSmallDrawPosition(slot) => {
                 MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
@@ -5144,6 +5164,17 @@ impl Snes9xOracleSemanticTrace {
                     execution.king_zora_flippers_graphics_slot = Some(slot);
                 }
                 if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
+                    && event.return_address.map(|pc| pc & 0x00ff_ffff) == Some(0x09_8b05)
+                {
+                    let execution = self.sprite_main_execution.as_mut().ok_or(
+                        "Snes9x entered Happiness Pond rupee graphics outside Sprite_Main",
+                    )?;
+                    let slot = execution.current_slot.ok_or(
+                        "Snes9x entered Happiness Pond rupee graphics before a sprite slot",
+                    )?;
+                    execution.happiness_pond_rupee_graphics_slot = Some(slot);
+                }
+                if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
                     && event.return_address.map(|pc| pc & 0x00ff_ffff)
                         == Some(BONK_ITEM_GRAPHICS_RETURN_ADDRESS)
                 {
@@ -5289,6 +5320,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.cucco_helper_ordinal = 0;
                             execution.big_key_drop_graphics_slot = None;
                             execution.king_zora_flippers_graphics_slot = None;
+                            execution.happiness_pond_rupee_graphics_slot = None;
                             execution.bonk_item_graphics_slot = None;
                             execution.single_small_draw_position_slot = None;
                             execution.probe_after_oam_coordinates_slot = None;
@@ -5418,6 +5450,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.cucco_helper_ordinal = 0;
                         execution.big_key_drop_graphics_slot = None;
                         execution.king_zora_flippers_graphics_slot = None;
+                        execution.happiness_pond_rupee_graphics_slot = None;
                         execution.bonk_item_graphics_slot = None;
                         execution.single_small_draw_position_slot = None;
                         execution.probe_after_oam_coordinates_slot = None;
@@ -9165,6 +9198,7 @@ mod tests {
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
+            happiness_pond_rupee_graphics_slot: None,
             bonk_item_graphics_slot: None,
             wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,
@@ -9262,6 +9296,46 @@ mod tests {
                 .sprite_main_execution
                 .map(|execution| execution.interruption()),
             Some(MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(14)),
+        );
+    }
+    #[test]
+    fn happiness_pond_rupee_decoder_entry_becomes_a_typed_partial_slot_checkpoint() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(14), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut graphics_entry = raw(
+            "pc",
+            Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC),
+            Some(4),
+            None,
+        );
+        graphics_entry.return_address = Some(0x09_8b05);
+        source.consume_event(graphics_entry, &mut receipts).unwrap();
+
+        source.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
+
+        assert_eq!(
+            receipts,
+            vec![OriginalTimingSemanticReceipt::SpriteMainProgressed(
+                SpriteMainProgress::HappinessPondRupeeGraphicsStarted(14),
+            )],
+        );
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .map(|execution| execution.interruption()),
+            Some(MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(14)),
         );
     }
 
@@ -14790,6 +14864,7 @@ mod tests {
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
+            happiness_pond_rupee_graphics_slot: None,
             bonk_item_graphics_slot: None,
             wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,
@@ -14882,6 +14957,7 @@ mod tests {
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
+            happiness_pond_rupee_graphics_slot: None,
             bonk_item_graphics_slot: None,
             wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,

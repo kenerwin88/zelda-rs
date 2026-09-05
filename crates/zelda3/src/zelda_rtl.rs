@@ -5133,6 +5133,7 @@ enum SpriteMainCpuBoundary {
         slot: u8,
     },
     Module09FinalScrollPairPending,
+    HappinessPondRupeeGraphicsStarted(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5372,6 +5373,7 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         }
         | SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(active_slot)
+        | SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics {
             slot: active_slot, ..
@@ -5680,6 +5682,15 @@ fn sprite_main_cpu_boundary_from_interruption(
             );
             Some(SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot))
         }
+        crate::MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(slot) => {
+            assert!(
+                slot < 16,
+                "source Happiness Pond rupee graphics receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(
+                slot,
+            ))
+        }
         crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot) => {
             assert!(
                 slot < 16,
@@ -5982,6 +5993,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainAfterThrowableSceneryStateClear(slot)
         | crate::MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(slot)
+        | crate::MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(slot)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(slot)
@@ -6155,6 +6167,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AfterThrowableSceneryStateClear(slot)
         | crate::SpriteMainProgress::BigKeyDropGraphicsStarted(slot)
         | crate::SpriteMainProgress::KingZoraFlippersGraphicsStarted(slot)
+        | crate::SpriteMainProgress::HappinessPondRupeeGraphicsStarted(slot)
         | crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot)
         | crate::SpriteMainProgress::AfterSingleSmallDrawPosition(slot)
         | crate::SpriteMainProgress::ZazakAfterGraphics(slot)
@@ -6455,6 +6468,13 @@ fn sprite_main_cpu_boundary_from_progress(
             );
             SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot)
         }
+        crate::SpriteMainProgress::HappinessPondRupeeGraphicsStarted(slot) => {
+            assert!(
+                slot < 16,
+                "source Happiness Pond rupee graphics progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(slot)
+        }
         crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot) => {
             assert!(
                 slot < 16,
@@ -6745,6 +6765,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamSpawn { .. }
         | crate::MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(_)
+        | crate::MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(_)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(_)
         | crate::MainLoopInterruption::SpriteMainWallmasterResetClear { .. }
@@ -7099,6 +7120,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements { slot, .. }
         | SpriteMainCpuBoundary::BigKeyDropGraphicsStarted(slot)
         | SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot)
+        | SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(slot)
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics { slot, .. }
         | SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(slot)
@@ -7713,6 +7735,14 @@ fn sprite_main_in_flight_checkpoint_advances(
         }
     };
     match (held, next) {
+        (
+            SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(completed_slot),
+            SpriteMainCpuBoundary::AfterTimersAndOam { slot, .. },
+        ) => slot < completed_slot,
+        (
+            SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(completed_slot),
+            SpriteMainCpuBoundary::AfterSlot(slot),
+        ) => slot <= completed_slot,
         (
             SpriteMainCpuBoundary::FollowerGraphics {
                 slot,
@@ -39987,6 +40017,26 @@ impl ZeldaState {
                         .expect("restated Sprite_Main checkpoint disappeared");
                     match (held_sprite_main_boundary, restated, continuation) {
                         (
+                            Some(SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(completed_slot)),
+                            SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
+                            GameWorkContinuation::FinishSpriteMain { caller, .. },
+                        ) if slot < completed_slot => {
+                            self.complete_happiness_pond_rupee_graphics(usize::from(completed_slot));
+                            let boundary = self.advance_sprite_main_after_slot_to_after_timers(completed_slot, slot);
+                            continuation = GameWorkContinuation::FinishSpriteMain { boundary, caller };
+                        }
+                        (
+                            Some(SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(completed_slot)),
+                            SpriteMainCpuBoundary::AfterSlot(slot),
+                            GameWorkContinuation::FinishSpriteMain { caller, .. },
+                        ) if slot <= completed_slot => {
+                            self.complete_happiness_pond_rupee_graphics(usize::from(completed_slot));
+                            if slot < completed_slot {
+                                self.advance_sprite_main_after_slot_boundary(completed_slot, slot);
+                            }
+                            continuation = GameWorkContinuation::FinishSpriteMain { boundary: restated, caller };
+                        }
+                        (
                             Some(SpriteMainCpuBoundary::BeforeFirstSlot),
                             SpriteMainCpuBoundary::AfterSlot(newly_completed_slot),
                             GameWorkContinuation::FinishSpriteMain { caller, .. },
@@ -43935,6 +43985,23 @@ impl ZeldaState {
                         | SpriteMainCpuBoundary::Module09FinalScrollPairPending,
                         SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
                     ) => self.advance_sprite_main_before_first_slot_to_after_timers_and_oam(slot),
+                    (
+                        SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(completed_slot),
+                        SpriteMainCpuBoundary::AfterTimersAndOam { slot, state: None },
+                    ) if slot < completed_slot => {
+                        self.complete_happiness_pond_rupee_graphics(usize::from(completed_slot));
+                        self.advance_sprite_main_after_slot_to_after_timers(completed_slot, slot)
+                    }
+                    (
+                        SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(completed_slot),
+                        SpriteMainCpuBoundary::AfterSlot(slot),
+                    ) if slot <= completed_slot => {
+                        self.complete_happiness_pond_rupee_graphics(usize::from(completed_slot));
+                        if slot < completed_slot {
+                            self.advance_sprite_main_after_slot_boundary(completed_slot, slot);
+                        }
+                        refined_boundary
+                    }
                     (
                         SpriteMainCpuBoundary::FollowerGraphics {
                             slot,
@@ -55524,6 +55591,7 @@ mod original_timing_receipt_validation_tests {
             },
             I::SpriteMainBigKeyDropGraphicsStarted(16),
             I::SpriteMainKingZoraFlippersGraphicsStarted(16),
+            I::SpriteMainHappinessPondRupeeGraphicsStarted(16),
             I::SpriteMainItemReceiptGraphicsStarted(16),
             I::SpriteMainAfterCuccoSubtypeIncrements {
                 slot: 15,
@@ -55564,6 +55632,7 @@ mod original_timing_receipt_validation_tests {
             },
             I::SpriteMainBigKeyDropGraphicsStarted(15),
             I::SpriteMainKingZoraFlippersGraphicsStarted(15),
+            I::SpriteMainHappinessPondRupeeGraphicsStarted(15),
             I::SpriteMainItemReceiptGraphicsStarted(15),
         ] {
             assert_install_accepted(OriginalTimingSemanticReceipt::MainLoopInterrupted(
@@ -55723,6 +55792,7 @@ mod original_timing_receipt_validation_tests {
             },
             P::BigKeyDropGraphicsStarted(16),
             P::KingZoraFlippersGraphicsStarted(16),
+            P::HappinessPondRupeeGraphicsStarted(16),
             P::AfterCuccoSubtypeIncrements {
                 slot: 15,
                 helper_ordinal: 0,
@@ -55762,6 +55832,7 @@ mod original_timing_receipt_validation_tests {
             },
             P::BigKeyDropGraphicsStarted(15),
             P::KingZoraFlippersGraphicsStarted(15),
+            P::HappinessPondRupeeGraphicsStarted(15),
         ] {
             assert_install_accepted(OriginalTimingSemanticReceipt::SpriteMainProgressed(
                 progress,

@@ -20042,6 +20042,74 @@ fn super_bomb_purchase_pays_once_before_suspended_follower_graphics() {
 }
 
 #[test]
+fn happiness_pond_payment_precedes_graphics_and_is_not_replayed() {
+    for contribution in [5, 100] {
+        let mut state = ZeldaState::new();
+        state.set_main_module(7);
+        state.set_submodule(0);
+        state.set_dungeon_room(21);
+        state.follower_link_state_mut().set_position(0x80, 0x80);
+        state.player_resources_mut().set_rupees_goal(300);
+        {
+            let mut sprite = state.sprite_slot_view_mut(5);
+            sprite.set_state(9);
+            sprite.set_sprite_type(0x72);
+            sprite.set_ai_state(3);
+            sprite.set_direction(contribution);
+            sprite.set_head_direction(0);
+            sprite.set_x(0x80);
+            sprite.set_y(0x80);
+        }
+        let mut atomic = state.clone();
+        atomic.sprite_72_fairy_pond(5);
+        assert!(state.sprite_happiness_pond_before_rupee_graphics(5));
+        assert_eq!(state.sprite_slot_view(5).delay_main(), 80);
+        assert_eq!(state.sprite_slot_view(5).ai_state(), 3);
+        assert_eq!(
+            state.game_state.inventory.player_resources.rupees_goal(),
+            300 - u16::from(contribution)
+        );
+        state.complete_happiness_pond_rupee_graphics(5);
+        assert_eq!(state.game_state, atomic.game_state);
+        assert_eq!(state.ram, atomic.ram);
+    }
+}
+
+#[test]
+fn returned_sprite_call_advances_only_lower_slots_to_timer_boundary() {
+    assert!(sprite_main_in_flight_checkpoint_advances(
+        SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(5),
+        SpriteMainCpuBoundary::AfterTimersAndOam {
+            slot: 3,
+            state: None
+        },
+    ));
+    assert!(!sprite_main_in_flight_checkpoint_advances(
+        SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(5),
+        SpriteMainCpuBoundary::AfterTimersAndOam {
+            slot: 5,
+            state: None
+        },
+    ));
+    let mut state = ZeldaState::new();
+    for slot in [3, 5] {
+        let mut sprite = state.sprite_slot_view_mut(slot);
+        sprite.set_state(9);
+        sprite.set_delay_main(80);
+    }
+    let boundary = state.advance_sprite_main_after_slot_to_after_timers(5, 3);
+    assert_eq!(
+        boundary,
+        SpriteMainCpuBoundary::AfterTimersAndOam {
+            slot: 3,
+            state: Some(9)
+        }
+    );
+    assert_eq!(state.sprite_slot_view(5).delay_main(), 80);
+    assert_eq!(state.sprite_slot_view(3).delay_main(), 79);
+}
+
+#[test]
 fn purple_chest_follower_graphics_retains_the_deleted_sprite_prefix() {
     let mut state = ZeldaState::new();
     state.set_main_module(9);

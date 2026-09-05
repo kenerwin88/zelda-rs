@@ -2697,7 +2697,18 @@ impl ZeldaState {
         slot: u8,
     ) -> SpriteMainCpuBoundary {
         self.resume_sprite_main_before_first_slot_prefix();
-        for completed_slot in ((slot + 1)..16).rev() {
+        self.advance_sprite_main_after_slot_to_after_timers(16, slot)
+    }
+
+    /// Advance only the descending slot delta after an already returned call.
+    /// The destination dispatch state precedes its timer/OAM helper.
+    pub(super) fn advance_sprite_main_after_slot_to_after_timers(
+        &mut self,
+        completed_slot: u8,
+        slot: u8,
+    ) -> SpriteMainCpuBoundary {
+        assert!(slot < completed_slot && completed_slot <= 16);
+        for completed_slot in ((slot + 1)..completed_slot).rev() {
             self.sprite_system_mut()
                 .set_cur_object_index(completed_slot);
             self.sprite_execute_single(usize::from(completed_slot));
@@ -3120,6 +3131,33 @@ impl ZeldaState {
                         slot: k as u8,
                         state: Some(state),
                     },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(
+                    k as u8,
+                ))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "Happiness Pond rupee graphics continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x72);
+                assert_eq!(self.sprite_slot_view(k).ai_state(), 3);
+                self.sprite_timers_and_oam(k);
+                assert!(
+                    self.sprite_happiness_pond_before_rupee_graphics(k),
+                    "source Happiness Pond rupee boundary requires the live purchase-completion path",
+                );
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(k as u8),
                     nmi_slices,
                     caller,
                 );
@@ -4764,6 +4802,10 @@ impl ZeldaState {
             SpriteMainCpuBoundary::KingZoraFlippersGraphicsStarted(slot) => {
                 let slot = usize::from(slot);
                 self.DecodeAnimatedSpriteTile_variable(0x11);
+                self.complete_sprite_main_after_interrupted_slot(slot);
+            }            SpriteMainCpuBoundary::HappinessPondRupeeGraphicsStarted(slot) => {
+                let slot = usize::from(slot);
+                self.complete_happiness_pond_rupee_graphics(slot);
                 self.complete_sprite_main_after_interrupted_slot(slot);
             }
             SpriteMainCpuBoundary::AfterZeldaFollowerGraphics {
