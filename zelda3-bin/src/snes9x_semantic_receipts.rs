@@ -5705,6 +5705,11 @@ impl Snes9xOracleSemanticTrace {
             if dungeon_push_blocks_pending(returned_event) {
                 receipts.push(OriginalTimingSemanticReceipt::DungeonPushBlocksPending);
             }
+            if let Some(next_index) = dungeon_push_blocks_in_progress(returned_event) {
+                receipts.push(OriginalTimingSemanticReceipt::DungeonPushBlocksInProgress {
+                    next_index,
+                });
+            }
             if publish_pre_dungeon_sprite_reset_progress(
                 returned_event,
                 OriginalTimingBoundary::HostReturn,
@@ -7445,6 +7450,13 @@ impl Snes9xOracleSemanticTrace {
                 {
                     receipts
                         .push(OriginalTimingSemanticReceipt::SelectedGameEntranceScrollPublished);
+                }
+                // An NMI accepted inside Dungeon_PushBlock_Handler's loop names
+                // the misc object the resumed handler continues from.
+                if let Some(next_index) = dungeon_push_blocks_in_progress(&event) {
+                    receipts.push(OriginalTimingSemanticReceipt::DungeonPushBlocksInProgress {
+                        next_index,
+                    });
                 }
                 if let Some(progress) = credits_scene_load_boundary_progress(
                     &event,
@@ -9651,6 +9663,25 @@ fn dungeon_push_blocks_pending(event: &RawTraceEvent) -> bool {
     event.pc.map(|pc| pc & 0xff_ffff) == Some(0x07_f0b2)
         && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x88_3d00)
         && event.main == Some(7)
+}
+
+/// A boundary inside Dungeon_PushBlock_Handler's loop ($01:D7C8..D823), JSL'd
+/// from Module07_Dungeon ($02:87B2). Y holds the misc object word offset of
+/// the entry being examined; at the two INCs and the reload it has been
+/// processed, at the loop test Y already holds the advanced offset. Only the
+/// loop's own level is modeled: entries whose handling was interrupted
+/// inside RoomDraw/PushBlock helpers keep the fail-closed default.
+fn dungeon_push_blocks_in_progress(event: &RawTraceEvent) -> Option<u16> {
+    if event.main != Some(7) || event.return_address.map(|pc| pc & 0xff_ffff) != Some(0x02_87b5) {
+        return None;
+    }
+    let y = event.y?;
+    match event.pc.map(|pc| pc & 0xff_ffff)? {
+        0x01_d7c8 | 0x01_d7cb => Some(y),
+        0x01_d815 | 0x01_d818 | 0x01_d81b | 0x01_d81d => Some(y.wrapping_add(2)),
+        0x01_d820 | 0x01_d823 => Some(y),
+        _ => None,
+    }
 }
 
 fn dungeon_reset_sprites_caller_progress(
@@ -14072,6 +14103,25 @@ mod tests {
                 completed_bytes: 1344,
             },
         );
+    }
+
+    #[test]
+    fn push_block_loop_checkpoint_names_the_next_misc_object() {
+        let mut event = raw("nmi", Some(0x01_d818), Some(10), None);
+        event.main = Some(7);
+        event.y = Some(6);
+        event.return_address = Some(0x02_87b5);
+        assert_eq!(dungeon_push_blocks_in_progress(&event), Some(8));
+        event.pc = Some(0x01_d7c8);
+        assert_eq!(dungeon_push_blocks_in_progress(&event), Some(6));
+        event.pc = Some(0x01_d823);
+        event.y = Some(8);
+        assert_eq!(dungeon_push_blocks_in_progress(&event), Some(8));
+        event.pc = Some(0x01_d7d2);
+        assert_eq!(dungeon_push_blocks_in_progress(&event), None);
+        event.pc = Some(0x01_d818);
+        event.return_address = Some(0x02_87b6);
+        assert_eq!(dungeon_push_blocks_in_progress(&event), None);
     }
 
     #[test]

@@ -14092,15 +14092,36 @@ impl ZeldaState {
             self.replay_reopened_lamp_prompt = false;
         }
 
-        if !self
+        let runs_push_block_handler = !self
             .game_state
             .enhanced_features
             .has(FEATURE_MISC_BUG_FIXES_DUNGEON)
-            || self.game_state.frame.main_module == 7
-        {
+            || self.game_state.frame.main_module == 7;
+        if runs_push_block_handler {
             self.dungeon_object_tracking_mut().clear_misc_object_index();
+            if let Some(next_index) = self.take_original_timing_dungeon_push_blocks_in_progress() {
+                // The wire's host boundary fell inside Dungeon_PushBlock_Handler:
+                // run the misc objects it completed and park the remainder of
+                // the loop with the Module 7 tail behind it.
+                self.dungeon_push_block_handler_until(next_index);
+                self.game_execution_scheduler
+                    .schedule_work(GameWorkContinuation::FinishDungeonPushBlockHandler, 1);
+                return;
+            }
             self.dungeon_push_block_handler();
             self.replay_trace_ram_watch("module07-after-push-blocks");
+        }
+        self.complete_module07_dungeon_after_push_block_handler(runs_push_block_handler);
+    }
+
+    /// Module07_Dungeon after Dungeon_PushBlock_Handler: the submodule-0
+    /// room maintenance, the lamp cone and scroll copies, then push-block
+    /// drawing and the Sprite_Main caller (or the parked draw work).
+    pub(super) fn complete_module07_dungeon_after_push_block_handler(
+        &mut self,
+        runs_push_block_handler: bool,
+    ) {
+        if runs_push_block_handler {
             if self.game_state.frame.submodule == 0 {
                 self.graphics_load_chr_half_slot();
                 self.dungeon_handle_camera();
@@ -14646,8 +14667,15 @@ impl ZeldaState {
     }
 
     pub(super) fn dungeon_push_block_handler(&mut self) {
+        self.dungeon_push_block_handler_until(u16::MAX);
+    }
+
+    /// Dungeon_PushBlock_Handler's loop while the misc object word offset is
+    /// below `limit`; the source loop is `limit == u16::MAX`.
+    pub(super) fn dungeon_push_block_handler_until(&mut self, limit: u16) {
         while self.game_state.dungeon.object_tracking.misc_object_index()
             != self.game_state.dungeon.torch.torches_start_index()
+            && self.game_state.dungeon.object_tracking.misc_object_index() < limit
         {
             let obj = self.game_state.dungeon.object_tracking.misc_object_index();
             let k = usize::from(obj >> 1);

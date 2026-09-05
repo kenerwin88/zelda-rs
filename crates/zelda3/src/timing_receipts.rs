@@ -2022,6 +2022,12 @@ pub enum OriginalTimingSemanticReceipt {
     /// Module 7 reached its push-block draw call after saving and applying
     /// the caller's scroll values; drawing and Sprite_Main remain pending.
     DungeonPushBlocksPending,
+    /// Module 7's Dungeon_PushBlock_Handler loop was interrupted: the misc
+    /// objects before word offset `next_index` have run; the rest of the loop,
+    /// the scroll copies, drawing and Sprite_Main remain pending.
+    DungeonPushBlocksInProgress {
+        next_index: u16,
+    },
     /// Module09 has applied three saved scroll pairs; BG1 vertical and
     /// the ensuing Sprite_Main call remain in its native caller frame.
     Module09FinalScrollPairPending,
