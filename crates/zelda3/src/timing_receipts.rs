@@ -889,6 +889,7 @@ pub enum MainLoopInterruption {
     /// the control clears and Link/OAM caller suffix.
     DungeonExitSpotlightTableCompleted,
     SpriteMainAbsorbableVerticalTileLookup(u8),
+    SpriteMainAbsorbableVerticalTileAttributeLoaded(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -958,6 +959,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainHogSpearBodyGraphicsPending(_)
                 | Self::SpriteMainAbsorbableHorizontalTileLookup(_)
                 | Self::SpriteMainAbsorbableVerticalTileLookup(_)
+                | Self::SpriteMainAbsorbableVerticalTileAttributeLoaded(_)
                 | Self::SpriteMainPengatorSlidePending(_)
                 | Self::SpriteMainAntifairyBouncePending(_)
                 | Self::SpriteMainKholdstareDamagePending(_)
@@ -1128,6 +1130,7 @@ pub enum SpriteMainProgress {
     AfterMainTimerDecrement(u8),
     AfterZeroHitTimerClear(u8),
     AbsorbableVerticalTileLookup(u8),
+    AbsorbableVerticalTileAttributeLoaded(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

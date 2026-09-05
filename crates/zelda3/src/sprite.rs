@@ -3223,7 +3223,7 @@ impl ZeldaState {
                 return;
             }
             if matches!(self.sprite_main_cpu_boundary,
-                Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot }) if slot == k as u8)
+                Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot }) if slot == k as u8)
             {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
@@ -4296,6 +4296,13 @@ impl ZeldaState {
                 self.sprite_system_mut().set_cur_object_index(slot);
                 assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
                 self.sprite_absorbable_after_vertical_lookup(interrupted_slot);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
+                self.sprite_absorbable_after_vertical_attribute_loaded(interrupted_slot);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::PengatorSlidePending { slot } => {
@@ -8623,47 +8630,7 @@ impl ZeldaState {
         }
         let j = (j >> 1) as usize;
 
-        let mut x;
-        let y;
-        let in_bounds;
-        if self.game_state.world.location.is_indoors() {
-            x = (self
-                .game_state
-                .sprites
-                .workspace
-                .current_sprite_x()
-                .wrapping_add(8)
-                & 0x01ff)
-                .wrapping_add(SPRITE_CHECK_TILE_PROPERTY_FUNC5_X[j] as i16 as u16)
-                .wrapping_sub(8);
-            y = (self
-                .game_state
-                .sprites
-                .workspace
-                .current_sprite_y()
-                .wrapping_add(8)
-                & 0x01ff)
-                .wrapping_add(SPRITE_CHECK_TILE_PROPERTY_FUNC5_Y[j] as i16 as u16)
-                .wrapping_sub(8);
-            in_bounds = x < 0x0200 && y < 0x0200;
-        } else {
-            x = self
-                .game_state
-                .sprites
-                .workspace
-                .current_sprite_x()
-                .wrapping_add(SPRITE_CHECK_TILE_PROPERTY_FUNC5_X[j] as i16 as u16);
-            y = self
-                .game_state
-                .sprites
-                .workspace
-                .current_sprite_y()
-                .wrapping_add(SPRITE_CHECK_TILE_PROPERTY_FUNC5_Y[j] as i16 as u16);
-            in_bounds = x.wrapping_sub(self.game_state.sprites.garnish_runtime.sprcoll_x_word())
-                < self.game_state.sprites.garnish_runtime.sprcoll_x_size()
-                && y.wrapping_sub(self.game_state.sprites.garnish_runtime.sprcoll_y_word())
-                    < self.game_state.sprites.garnish_runtime.sprcoll_y_size();
-        }
+        let (mut x, y, in_bounds) = self.sprite_tile_property_coordinates(j);
         if !in_bounds {
             if trace_tile_matches {
                 eprintln!(
@@ -8708,6 +8675,55 @@ impl ZeldaState {
                 SPRITE_CHECK_TILE_PROPERTY_SPRITE_TILE_ATTR_SIMPLIFIED[usize::from(b)] as u8
             );
         }
+        self.sprite_classify_tile_property(k, x, y, b)
+    }
+
+    fn sprite_tile_property_coordinates(&self, j: usize) -> (u16, u16, bool) {
+        let x;
+        let y;
+        let in_bounds;
+        if self.game_state.world.location.is_indoors() {
+            x = (self
+                .game_state
+                .sprites
+                .workspace
+                .current_sprite_x()
+                .wrapping_add(8)
+                & 0x01ff)
+                .wrapping_add(SPRITE_CHECK_TILE_PROPERTY_FUNC5_X[j] as i16 as u16)
+                .wrapping_sub(8);
+            y = (self
+                .game_state
+                .sprites
+                .workspace
+                .current_sprite_y()
+                .wrapping_add(8)
+                & 0x01ff)
+                .wrapping_add(SPRITE_CHECK_TILE_PROPERTY_FUNC5_Y[j] as i16 as u16)
+                .wrapping_sub(8);
+            in_bounds = x < 0x0200 && y < 0x0200;
+        } else {
+            x = self
+                .game_state
+                .sprites
+                .workspace
+                .current_sprite_x()
+                .wrapping_add(SPRITE_CHECK_TILE_PROPERTY_FUNC5_X[j] as i16 as u16);
+            y = self
+                .game_state
+                .sprites
+                .workspace
+                .current_sprite_y()
+                .wrapping_add(SPRITE_CHECK_TILE_PROPERTY_FUNC5_Y[j] as i16 as u16);
+            in_bounds = x.wrapping_sub(self.game_state.sprites.garnish_runtime.sprcoll_x_word())
+                < self.game_state.sprites.garnish_runtime.sprcoll_x_size()
+                && y.wrapping_sub(self.game_state.sprites.garnish_runtime.sprcoll_y_word())
+                    < self.game_state.sprites.garnish_runtime.sprcoll_y_size();
+        }
+        (x, y, in_bounds)
+    }
+
+    fn sprite_classify_tile_property(&mut self, k: usize, x: u16, y: u16, b: u8) -> bool {
         if self.sprite_slot_view(k).deflection_bits() & 8 != 0 {
             let a = SPRITE_CHECK_TILE_PROPERTY_SIMPLIFIED_TILE_ATTR[usize::from(b)];
             if a == 4 {
@@ -8772,6 +8788,39 @@ impl ZeldaState {
         true
     }
 
+    pub(super) fn sprite_vertical_tile_attribute_loaded(&mut self, k: usize) {
+        let direction = if sign8(self.sprite_slot_view(k).y_velocity()) {
+            0
+        } else {
+            1
+        };
+        let j = usize::from((self.sprite_slot_view(k).flags() & 0xf0) >> 2) + direction;
+        let (mut x, y, in_bounds) = self.sprite_tile_property_coordinates(j);
+        assert!(
+            in_bounds,
+            "source tile attribute publication requires an in-bounds lookup"
+        );
+        self.sprite_get_tile_attribute(k, &mut x, y);
+    }
+
+    pub(super) fn sprite_vertical_collision_after_attribute_loaded(&mut self, k: usize) {
+        let direction = if sign8(self.sprite_slot_view(k).y_velocity()) {
+            0
+        } else {
+            1
+        };
+        let j = usize::from((self.sprite_slot_view(k).flags() & 0xf0) >> 2) + direction;
+        let (mut x, y, in_bounds) = self.sprite_tile_property_coordinates(j);
+        assert!(in_bounds);
+        if self.game_state.world.location.is_outdoors() {
+            x >>= 3;
+        }
+        let tile_type = self.game_state.sprites.workspace.tile_type();
+        if self.sprite_classify_tile_property(k, x, y, tile_type) {
+            self.sprite_apply_vertical_tile_collision(k, direction as i32);
+        }
+    }
+
     // void Sprite_CheckForTileInDirection_horizontal(int k, int yy) {  // 86e5b8
     //   ...see sprite.c...
     // }
@@ -8802,6 +8851,10 @@ impl ZeldaState {
             return;
         }
 
+        self.sprite_apply_vertical_tile_collision(k, yy);
+    }
+
+    fn sprite_apply_vertical_tile_collision(&mut self, k: usize, yy: i32) {
         let idx = (yy as usize) & 3;
         self.sprite_slot_view_mut(k).or_wall_collision(
             SPRITE_CHECK_FOR_TILE_IN_DIRECTION_VERTICAL_SPRITE_TILE_DIRECTION_BITS[idx],

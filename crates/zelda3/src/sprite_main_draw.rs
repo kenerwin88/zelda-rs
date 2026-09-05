@@ -7485,13 +7485,23 @@ impl ZeldaState {
         self.sprite_move_z(k);
         self.sprite_move_xy(k);
         if matches!(self.sprite_main_cpu_boundary,
-            Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot }) if slot == k as u8)
+            Some(SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot } | SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot }) if slot == k as u8)
         {
             assert_eq!(self.sprite_slot_view(k).delay_aux3(), 0);
             assert!(self.game_state.world.location.is_outdoors());
             assert_eq!(self.game_state.dungeon.room_load.header_collision(), 0);
             assert_eq!(self.sprite_slot_view(k).flags2() & 0x20, 0);
             self.sprite_slot_view_mut(k).set_wall_collision(0);
+            if self.sprite_main_cpu_boundary
+                == Some(
+                    SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot: k as u8 },
+                )
+            {
+                assert_ne!(self.sprite_slot_view(k).y_velocity(), 0);
+                self.sprite_vertical_tile_attribute_loaded(k);
+                return;
+            }
+
             if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::AbsorbableVerticalTileLookup { slot: k as u8 })
             {
@@ -7527,6 +7537,15 @@ impl ZeldaState {
                 1
             },
         );
+        self.sprite_absorbable_after_vertical_collision(k);
+    }
+
+    pub(super) fn sprite_absorbable_after_vertical_attribute_loaded(&mut self, k: usize) {
+        self.sprite_vertical_collision_after_attribute_loaded(k);
+        self.sprite_absorbable_after_vertical_collision(k);
+    }
+
+    fn sprite_absorbable_after_vertical_collision(&mut self, k: usize) {
         if self.sprite_slot_view(k).x_velocity() != 0 {
             self.sprite_absorbable_after_horizontal_lookup(k);
         } else {
