@@ -1265,7 +1265,9 @@ impl SpriteMainExecutionTracker {
             event.pc.map(|pc| pc & 0x00ff_ffff),
             Some(
                 0x05_cbaa
-                | 0x05_cb86
+                | 0x05_cb86..=0x05_cb8c
+                | 0x05_c711
+                | 0x05_c713
                 | 0x05_c717
                 | 0x05_c719
                 | 0x05_c71c
@@ -1273,7 +1275,9 @@ impl SpriteMainExecutionTracker {
                 | 0x05_ca29
                 | 0x05_ca43..=0x05_ca4b
                 | 0x05_ca6b
-                | 0x05_ca93..=0x05_ca9f,
+                | 0x05_ca71
+                | 0x05_ca74
+                | 0x05_ca77..=0x05_ca9f,
             )
         ) || self.timers_and_oam_dispatch_state != Some(9)
             || self.guard_animation_pose_slot != self.current_slot
@@ -1292,13 +1296,21 @@ impl SpriteMainExecutionTracker {
                 Some((slot, zelda3::GuardAnimationCheckpoint::HeadExtendedPending));
             return Ok(());
         }
-        if matches!(event.pc, Some(0x05_c717 | 0x05_c719 | 0x05_c71c)) {
-            if event.y != Some(2) {
+        if matches!(
+            event.pc,
+            Some(0x05_c711 | 0x05_c713 | 0x05_c717 | 0x05_c719 | 0x05_c71c)
+        ) {
+            let expected_y = if matches!(event.pc, Some(0x05_c711 | 0x05_c713)) {
+                1
+            } else {
+                2
+            };
+            if event.y != Some(expected_y) {
                 return Err("guard head flags checkpoint has an invalid OAM cursor".into());
             }
             self.guard_animation_checkpoint = Some((
                 slot,
-                if event.pc == Some(0x05_c717) {
+                if matches!(event.pc, Some(0x05_c711 | 0x05_c713 | 0x05_c717)) {
                     zelda3::GuardAnimationCheckpoint::HeadCharacterPending
                 } else {
                     zelda3::GuardAnimationCheckpoint::HeadFlagsPending
@@ -1325,12 +1337,15 @@ impl SpriteMainExecutionTracker {
             Some(0x05_ca6b) if x < 112 && x & 1 == 0 && y & 3 == 1 => Stage::BodyCoordinates {
                 entry: ((x >> 1) & 3) as u8,
             },
-            Some(0x05_ca93..=0x05_ca9f) if x < 56 && matches!(y & 3, 2 | 3) => {
+            Some(0x05_ca71 | 0x05_ca74) if x < 56 && y & 3 == 1 => Stage::BodyCoordinates {
+                entry: (x & 3) as u8,
+            },
+            Some(0x05_ca77..=0x05_ca9f) if x < 56 && matches!(y & 3, 2 | 3) => {
                 Stage::BodyFlagsPending {
                     entry: (x & 3) as u8,
                 }
             }
-            Some(0x05_cb86) if x < 56 && x & 1 == 0 && y & 3 == 0 => {
+            Some(0x05_cb86..=0x05_cb8c) if x < 56 && x & 1 == 0 && y & 3 == 0 => {
                 Stage::WeaponBeforeCoordinates {
                     entry: ((x >> 1) & 1) as u8,
                 }
@@ -9524,6 +9539,19 @@ mod tests {
     fn guard_draw_cursors_distinguish_body_and_weapon_store_prefixes() {
         use zelda3::GuardAnimationCheckpoint as Stage;
         for (pc, x, y, expected) in [
+            (0x05_c711, 0, 1, Stage::HeadCharacterPending),
+            (0x05_c713, 0, 1, Stage::HeadCharacterPending),
+            (0x05_ca71, 33, 13, Stage::BodyCoordinates { entry: 1 }),
+            (0x05_ca74, 33, 13, Stage::BodyCoordinates { entry: 1 }),
+            (0x05_ca77, 35, 6, Stage::BodyFlagsPending { entry: 3 }),
+            (0x05_ca8e, 34, 10, Stage::BodyFlagsPending { entry: 2 }),
+            (0x05_ca91, 34, 10, Stage::BodyFlagsPending { entry: 2 }),
+            (
+                0x05_cb8c,
+                32,
+                24,
+                Stage::WeaponBeforeCoordinates { entry: 0 },
+            ),
             (0x05_c721, 0, 3, Stage::HeadExtendedPending),
             (0x05_c724, 0, 3, Stage::HeadExtendedPending),
             (0x05_c725, 0, 0, Stage::HeadExtendedPending),
