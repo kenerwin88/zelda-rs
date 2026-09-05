@@ -290,6 +290,11 @@ impl ZeldaState {
                 self.set_birdtravel_status(8);
                 self.clear_bird_travel_stop_status(1);
                 self.FluteMenu_LoadSelectedScreen();
+                if self.flute_menu_selected_screen_scheduled() {
+                    // The source load spans hosts; its caller suffix and
+                    // this module's LinkOam_Main run when it returns.
+                    return;
+                }
                 self.LoadOWMusicIfNeeded();
                 self.set_music_control(9);
             }

@@ -8634,11 +8634,16 @@ fn publish_pre_dungeon_sprite_reset_progress(
         return Ok(true);
     }
     let pre_dungeon_caller = return_address == Some(MODULE_PRE_DUNGEON_AFTER_SPRITE_RESET_PC);
-    let bird_travel_caller = matches!((event.main, event.sub), (Some(0x0e), Some(0x0a)))
-        && matches!(
-            return_address,
-            Some(BIRD_TRAVEL_AFTER_INITIAL_SPRITE_RESET_PC | SPRITE_RELOAD_AFTER_DISABLE_PC)
-        );
+    // Module18_GanonEmerges' pyramid-area load (state 3) runs the same
+    // FluteMenu_LoadSelectedScreen stack under main module $18 (route host
+    // 1547878).
+    let bird_travel_caller = matches!(
+        (event.main, event.sub),
+        (Some(0x0e), Some(0x0a)) | (Some(0x18), Some(0))
+    ) && matches!(
+        return_address,
+        Some(BIRD_TRAVEL_AFTER_INITIAL_SPRITE_RESET_PC | SPRITE_RELOAD_AFTER_DISABLE_PC)
+    );
     let pre_overworld_caller = source_overworld_reload_active
         && matches!((event.main, event.sub), (Some(8), Some(0)))
         && return_address == Some(SPRITE_RELOAD_AFTER_DISABLE_PC);

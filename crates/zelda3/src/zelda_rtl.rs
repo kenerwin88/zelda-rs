@@ -30749,10 +30749,28 @@ impl ZeldaState {
         true
     }
 
+    /// `FluteMenu_LoadSelectedScreen`'s two source callers: the bird-travel
+    /// menu (Module0E/$0A state 7) and Module18_GanonEmerges' pyramid-area
+    /// load (state 3), which shares the whole synchronous load stack.
+    fn flute_menu_selected_screen_caller_is_active(&self) -> bool {
+        let frame = &self.game_state.frame;
+        (frame.main_module == 0x0e && frame.submodule == 0x0a)
+            || (frame.main_module == 0x18
+                && frame.submodule == 0
+                && self.overworld_map_state() == 3)
+    }
+
+    /// Whether the selected-screen load parked its caller on this host.
+    pub(super) fn flute_menu_selected_screen_scheduled(&self) -> bool {
+        matches!(
+            self.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishFluteMenuSelectedScreen { .. })
+        )
+    }
+
     pub(super) fn begin_original_timing_flute_menu_selected_screen(&mut self) -> bool {
         if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live)
-            || self.game_state.frame.main_module != 0x0e
-            || self.game_state.frame.submodule != 0x0a
+            || !self.flute_menu_selected_screen_caller_is_active()
             || self.game_execution_scheduler.current_work().is_some()
         {
             return false;
@@ -46792,6 +46810,14 @@ impl ZeldaState {
                         "the flute selected-screen caller returned before its sprite reload",
                     );
                     self.FluteMenu_LoadSelectedScreenAfterTransport();
+                    if self.game_state.frame.main_module == 0x18 {
+                        // Module18_GanonEmerges state 3 finishes its caller
+                        // suffix and the module's LinkOam_Main on the
+                        // returning host.
+                        self.LoadOWMusicIfNeeded();
+                        self.set_music_control(9);
+                        self.link_oam_main();
+                    }
                     if self.pending_main_loop_common_suffix.is_some() {
                         self.complete_pending_main_loop_common_suffix_after_module_return();
                     } else {
