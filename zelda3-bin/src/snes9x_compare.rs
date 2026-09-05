@@ -75,7 +75,8 @@ const LIVE_ORACLE_RNG_TRACE_ARTIFACT: &str = "oracle-rom-random.jsonl";
 // Schema 78 carries source scroll entry, completed pixel-copy passes, and return.
 // Schema 79 retains the VWF endpoint when a carried NMI resumes its glyph.
 // Schema 80 recognizes Death_Func15's suspended Sprite_ResetAll caller.
-const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 80;
+// Schema 81 binds spotlight loop-test X to the event-local source cursor.
+const ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA: u32 = 81;
 
 // Source instructions which sample APUI00 while waiting for an item fanfare
 // to end. These adapter-only PCs become backend-neutral sample offsets before
@@ -15059,7 +15060,7 @@ pub(crate) mod tests {
 
     #[test]
     fn address_bearing_obj_cache_rejects_old_or_malformed_abi() {
-        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 80);
+        assert_eq!(super::ORIGINAL_TIMING_HOST_RECEIPT_SCHEMA, 81);
         assert_eq!(
             decode_snes9x_presented_obj_tiles(|_, _| None).unwrap(),
             None

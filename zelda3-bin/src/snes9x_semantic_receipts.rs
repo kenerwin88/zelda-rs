@@ -5942,17 +5942,24 @@ fn spotlight_table_build_progress(
         // the observed value; do not assume X always owns one particular
         // local cursor.
         let mut matched = None;
-        // Pass 1: store-retained values. The ROM's store guard compares the
-        // DOUBLED cursor against #$01C0: rows at index 224..239 are skipped
-        // by the loop (the epilogue clears them separately), so X is
-        // reloaded only for cursors below 224.
+        // The same X can encode a visible row offset OR the circle helper's
+        // quantized index on a later clipped row. Bind candidates to the
+        // event-local r6 before interpreting X; never prefer a visible store
+        // merely because its numeric offset matches (source host 428504).
         for completed_iterations in 0..total_iterations {
             let upper_cursor = initial_upper_cursor.wrapping_add(completed_iterations);
             let lower_cursor = initial_lower_cursor.wrapping_sub(completed_iterations);
+            if spotlight_lower_cursor.is_some_and(|cursor| cursor != lower_cursor) {
+                continue;
+            }
             let retained_x = if lower_cursor < 224 {
                 Some(lower_cursor * 2)
             } else if upper_cursor < 224 {
                 Some(upper_cursor * 2)
+            } else if radius != 0 && completed_iterations >= iterations_before_iris {
+                let active_iterations = completed_iterations - iterations_before_iris;
+                let pending_circle_input = radius.saturating_sub(active_iterations);
+                Some(((u32::from(pending_circle_input) << 8) / u32::from(radius) >> 1) as u16)
             } else {
                 None
             };
@@ -5962,35 +5969,8 @@ fn spotlight_table_build_progress(
                     .is_some()
                 {
                     return Err(format!(
-                        "Snes9x spotlight loop-test X {observed_x} maps to multiple source iterations",
+                        "Snes9x spotlight loop-test X {observed_x} maps to multiple source iterations without a unique source cursor",
                     ));
-                }
-            }
-        }
-        // Pass 2: when no visible store reloaded X for the observed value,
-        // both rows were clipped and X retains the circle helper's
-        // quantized table index `t = ((input << 8) / radius) >> 1` from
-        // `$00:F4CC`'s TAX (route frame 111852, X = 13 at input 11 of
-        // radius 105).
-        if matched.is_none() && radius != 0 {
-            for completed_iterations in iterations_before_iris..total_iterations {
-                let upper_cursor = initial_upper_cursor.wrapping_add(completed_iterations);
-                let lower_cursor = initial_lower_cursor.wrapping_sub(completed_iterations);
-                if lower_cursor < 224 || upper_cursor < 224 {
-                    continue;
-                }
-                let active_iterations = completed_iterations - iterations_before_iris;
-                let pending_circle_input = radius.saturating_sub(active_iterations);
-                let helper_index = (u32::from(pending_circle_input) << 8) / u32::from(radius) >> 1;
-                if helper_index as u16 == observed_x {
-                    if matched
-                        .replace((completed_iterations, upper_cursor, lower_cursor))
-                        .is_some()
-                    {
-                        return Err(format!(
-                            "Snes9x spotlight loop-test helper index {observed_x} maps to multiple clipped source iterations",
-                        ));
-                    }
                 }
             }
         }
@@ -13988,6 +13968,32 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn clipped_spotlight_helper_index_cannot_alias_an_earlier_visible_row() {
+        // At $F396, X=10 is the circle helper index for input8/radius98,
+        // not the byte offset of visible row5. r6=246 binds this event to232.
+        let mut event = raw("nmi", Some(0x00f396), Some(10), None);
+        event.main = Some(0x0f);
+        event.sub = Some(1);
+        event.link_y = Some(8692);
+        event.bg2_v = Some(8465);
+        event.spotlight_radius = Some(98);
+        event.spotlight_var4_low = Some(7);
+        event.spotlight_lower_cursor = Some(246);
+        assert_eq!(
+            spotlight_table_build_progress(&event, None, None).unwrap(),
+            Some(SpotlightTableBuildProgress {
+                completed_iterations: 232,
+                checkpoint: SpotlightTableBuildCheckpoint::BeforeLoopCompletionTest {
+                    upper_cursor: 232,
+                    lower_cursor: 246,
+                },
+            })
+        );
+        event.spotlight_lower_cursor = None;
+        assert!(spotlight_table_build_progress(&event, None, None).is_err());
     }
 
     #[test]
