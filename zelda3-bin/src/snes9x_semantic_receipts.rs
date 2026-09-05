@@ -2654,6 +2654,7 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     cache_write_progress: Option<CacheWriteProgress>,
     normal_load_ordinal: Option<u16>,
     pending_reset_progress: Option<DungeonResetSpritesCpuProgress>,
+    last_host_return_reset_progress: Option<DungeonResetSpritesCpuProgress>,
     cached_sprite_execution: Option<CachedSpriteExecutionTracker>,
     overworld_presence_published: bool,
     overworld_sprite_activation: Option<OverworldSpriteActivationTracker>,
@@ -2695,6 +2696,8 @@ pub(crate) struct Snes9xOracleSemanticTraceCheckpoint {
     cache_write_progress: Option<CacheWriteProgress>,
     normal_load_ordinal: Option<u16>,
     pending_reset_progress: Option<DungeonResetSpritesCpuProgress>,
+    #[serde(default)]
+    last_host_return_reset_progress: Option<DungeonResetSpritesCpuProgress>,
     cached_sprite_execution: Option<CachedSpriteExecutionTracker>,
     overworld_presence_published: bool,
     overworld_sprite_activation: Option<OverworldSpriteActivationTracker>,
@@ -3646,6 +3649,7 @@ impl Snes9xOracleSemanticTrace {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -3693,6 +3697,7 @@ impl Snes9xOracleSemanticTrace {
             cache_write_progress: self.cache_write_progress,
             normal_load_ordinal: self.normal_load_ordinal,
             pending_reset_progress: self.pending_reset_progress,
+            last_host_return_reset_progress: self.last_host_return_reset_progress,
             cached_sprite_execution: self.cached_sprite_execution,
             overworld_presence_published: self.overworld_presence_published,
             overworld_sprite_activation: self.overworld_sprite_activation,
@@ -3757,6 +3762,7 @@ impl Snes9xOracleSemanticTrace {
         self.cache_write_progress = checkpoint.cache_write_progress;
         self.normal_load_ordinal = checkpoint.normal_load_ordinal;
         self.pending_reset_progress = checkpoint.pending_reset_progress;
+        self.last_host_return_reset_progress = checkpoint.last_host_return_reset_progress;
         self.cached_sprite_execution = checkpoint.cached_sprite_execution;
         self.overworld_presence_published = checkpoint.overworld_presence_published;
         self.overworld_sprite_activation = checkpoint.overworld_sprite_activation;
@@ -4246,7 +4252,19 @@ impl Snes9xOracleSemanticTrace {
         receipts: &mut Vec<OriginalTimingSemanticReceipt>,
         boundary: OriginalTimingBoundary,
     ) {
+        let prior_host_return = self.last_host_return_reset_progress.take();
         if let Some(progress) = self.pending_reset_progress.take() {
+            // A leading NMI can land in the same non-mutating source range
+            // already published at host return. That is a restatement, not
+            // a native continuation transition. Genuine new progress survives.
+            if boundary == OriginalTimingBoundary::NmiAccepted
+                && prior_host_return == Some(progress)
+            {
+                return;
+            }
+            if boundary == OriginalTimingBoundary::HostReturn {
+                self.last_host_return_reset_progress = Some(progress);
+            }
             receipts.push(OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(
                 DungeonResetSpritesProgressReceipt { progress, boundary },
             ));
@@ -4351,6 +4369,7 @@ impl Snes9xOracleSemanticTrace {
                 }
                 if pc == DUNGEON_RESET_SPRITES_RETURN_PC {
                     self.pending_reset_progress = None;
+                    self.last_host_return_reset_progress = None;
                     self.cache_write_progress = None;
                     self.normal_load_ordinal = None;
                 }
@@ -10766,6 +10785,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -11101,6 +11121,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -12210,6 +12231,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -12686,6 +12708,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -12743,6 +12766,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -12909,6 +12933,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -13223,6 +13248,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -13266,6 +13292,7 @@ mod tests {
                 cache_write_progress: None,
                 normal_load_ordinal: None,
                 pending_reset_progress: None,
+                last_host_return_reset_progress: None,
                 cached_sprite_execution: None,
                 overworld_presence_published: false,
                 overworld_sprite_activation: None,
@@ -13313,6 +13340,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -13470,6 +13498,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -13603,6 +13632,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -13685,6 +13715,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -13763,6 +13794,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -13975,6 +14007,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -14053,6 +14086,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -14126,6 +14160,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -14338,6 +14373,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -14400,6 +14436,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -14463,6 +14500,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -14514,6 +14552,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -14581,6 +14620,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -14715,6 +14755,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -14819,6 +14860,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -14866,6 +14908,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15086,6 +15129,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: Some(DungeonResetSpritesCpuProgress::SpritesDisabled),
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15166,6 +15210,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15241,6 +15286,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15295,6 +15341,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15346,6 +15393,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15408,6 +15456,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15543,6 +15592,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15641,6 +15691,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15789,6 +15840,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15861,6 +15913,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -15958,6 +16011,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -16018,6 +16072,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -16201,6 +16256,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -16295,6 +16351,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -16345,6 +16402,35 @@ mod tests {
     }
 
     #[test]
+    fn leading_nmi_does_not_republish_the_same_reset_checkpoint() {
+        let progress = DungeonResetSpritesCpuProgress::RoomHistorySearchStarted;
+        let mut tracker = empty_semantic_tracker();
+        tracker.pending_reset_progress = Some(progress);
+        let mut first_host = Vec::new();
+        tracker.flush_reset_progress(&mut first_host, OriginalTimingBoundary::HostReturn);
+        assert_eq!(first_host.len(), 1);
+        let checkpoint = tracker.checkpoint();
+        let mut resumed = empty_semantic_tracker();
+        resumed.restore_checkpoint(checkpoint).unwrap();
+        resumed.pending_reset_progress = Some(progress);
+        let mut next_host = Vec::new();
+        resumed.flush_reset_progress(&mut next_host, OriginalTimingBoundary::NmiAccepted);
+        assert!(next_host.is_empty());
+
+        tracker.pending_reset_progress = Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin);
+        tracker.flush_reset_progress(&mut next_host, OriginalTimingBoundary::NmiAccepted);
+        assert_eq!(
+            next_host,
+            vec![OriginalTimingSemanticReceipt::DungeonResetSpritesProgress(
+                DungeonResetSpritesProgressReceipt {
+                    progress: DungeonResetSpritesCpuProgress::LoadBeforeOrigin,
+                    boundary: OriginalTimingBoundary::NmiAccepted,
+                },
+            )]
+        );
+    }
+
+    #[test]
     fn sprite_disable_progress_refines_across_host_return_then_nmi() {
         let mut tracker = Snes9xOracleSemanticTrace {
             path: PathBuf::new(),
@@ -16352,6 +16438,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -16459,6 +16546,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -16529,6 +16617,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: Some(0),
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
@@ -16597,6 +16686,7 @@ mod tests {
             cache_write_progress: None,
             normal_load_ordinal: None,
             pending_reset_progress: None,
+            last_host_return_reset_progress: None,
             cached_sprite_execution: None,
             overworld_presence_published: false,
             overworld_sprite_activation: None,
