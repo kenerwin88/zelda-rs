@@ -247,6 +247,10 @@ const IRIS_SPOTLIGHT_LOWER_CURSOR_DECREMENT_PC: u32 = 0x00f39e;
 // is therefore the same backend-neutral checkpoint as entering the next
 // iteration, with one additional completed iteration.
 const IRIS_SPOTLIGHT_NEXT_ITERATION_PC: u32 = 0x00f3a0;
+// The completed row loop polls the beam counter before copying its table.
+// No projection word is stored at any instruction in this wait loop.
+const IRIS_SPOTLIGHT_BEAM_WAIT_PCS: [u32; 6] =
+    [0x00f3a3, 0x00f3a6, 0x00f3a9, 0x00f3ac, 0x00f3af, 0x00f3b2];
 // Source memcpy at $00:f3b4..$00:f3c4 copies 224 words from
 // `hdma_table_dynamic` to `hdma_table_unused`. These are the only instruction
 // boundaries within that loop; the adapter converts X into a copied-word
@@ -5704,11 +5708,14 @@ fn spotlight_table_build_progress(
     let before_circle_iteration_prefix = pc.is_some_and(|pc| {
         (IRIS_SPOTLIGHT_ITERATION_VALUE_LOAD_PC..IRIS_SPOTLIGHT_CIRCLE_VALUE_CALL_PC).contains(&pc)
     });
+    let before_projection_beam_wait =
+        pc.is_some_and(|pc| IRIS_SPOTLIGHT_BEAM_WAIT_PCS.contains(&pc));
     if !inside_circle_value
         && !before_circle_iteration_prefix
         && !after_circle_value_before_upper_write
         && !after_upper_table_write
         && !before_loop_completion_test
+        && !before_projection_beam_wait
         && !matches!(
             pc,
             Some(
@@ -6007,6 +6014,7 @@ fn spotlight_table_build_progress(
         (completed_iterations, checkpoint)
     } else {
         let copied_bytes = match pc.expect("recognized spotlight copy PC") {
+            _ if before_projection_beam_wait => 0,
             IRIS_SPOTLIGHT_COPY_INIT_PC => 0,
             IRIS_SPOTLIGHT_COPY_LOAD_PC | IRIS_SPOTLIGHT_COPY_STORE_PC => event
                 .x
@@ -13968,6 +13976,25 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn spotlight_beam_wait_has_completed_rows_but_no_projection_words() {
+        for pc in IRIS_SPOTLIGHT_BEAM_WAIT_PCS {
+            let mut event = raw("nmi", Some(pc), Some(178), None);
+            event.main = Some(0x10);
+            event.sub = Some(1);
+            event.link_y = Some(2838);
+            event.bg2_v = Some(2761);
+            event.spotlight_radius = Some(119);
+            assert_eq!(
+                spotlight_table_build_progress(&event, None, None).unwrap(),
+                Some(SpotlightTableBuildProgress {
+                    completed_iterations: 136,
+                    checkpoint: SpotlightTableBuildCheckpoint::ProjectionCopy { copied_words: 0 },
+                })
+            );
+        }
     }
 
     #[test]
