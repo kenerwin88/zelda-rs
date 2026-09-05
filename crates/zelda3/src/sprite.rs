@@ -3398,6 +3398,36 @@ impl ZeldaState {
             }
             if matches!(
                 self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterZeroHitTimerClear {
+                    slot,
+                    state: None,
+                }) if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "main timer decrement continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                let state = self.sprite_slot_view(k).state();
+                assert_ne!(
+                    state, 0,
+                    "source main timer decrement boundary requires an active sprite slot",
+                );
+                self.sprite_timers_and_oam_through_zero_hit_timer_clear(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterZeroHitTimerClear {
+                        slot: k as u8,
+                        state: Some(state),
+                    },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
                 Some(SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { slot, state: None })
                     if slot == k as u8
             ) {
@@ -4366,6 +4396,23 @@ impl ZeldaState {
                     "source main timer decrement boundary did not bind to the saved native dispatch state"
                 )
             }
+            SpriteMainCpuBoundary::AfterZeroHitTimerClear {
+                slot,
+                state: Some(state),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.sprite_slot_view_mut(interrupted_slot).set_object_priority(0);
+                self.sprite_timers_and_oam_after_hit_through_timer_decrements(interrupted_slot);
+                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterZeroHitTimerClear { state: None, .. } => {
+                unreachable!(
+                    "source main timer decrement boundary did not bind to the saved native dispatch state"
+                )
+            }
             SpriteMainCpuBoundary::BariBeforeRandom(slot) => {
                 let interrupted_slot = usize::from(slot);
                 assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
@@ -5041,6 +5088,12 @@ impl ZeldaState {
     fn sprite_timers_and_oam_through_main_and_aux1_timer_decrements(&mut self, k: usize) {
         self.sprite_timers_and_oam_through_main_timer_decrement(k);
         self.sprite_timers_and_oam_aux1_timer_decrement(k);
+    }
+
+    fn sprite_timers_and_oam_through_zero_hit_timer_clear(&mut self, k: usize) {
+        self.sprite_timers_and_oam_through_primary_timer_decrements(k);
+        assert_eq!(self.sprite_slot_view(k).hit_timer() & 0x7f, 0);
+        self.sprite_slot_view_mut(k).set_hit_timer(0);
     }
 
     fn sprite_timers_and_oam_through_main_timer_decrement(&mut self, k: usize) {

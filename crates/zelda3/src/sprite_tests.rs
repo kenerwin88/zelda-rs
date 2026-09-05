@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn zero_hit_timer_clear_does_not_publish_priority_early() {
+    for hit_timer in [0, 0x80] {
+        let mut atomic = ZeldaState::new();
+        {
+            let mut sprite = atomic.sprite_slot_view_mut(0);
+            sprite.set_state(9);
+            sprite.set_delay_main(30);
+            sprite.set_delay_aux4(7);
+            sprite.set_hit_timer(hit_timer);
+            sprite.set_object_priority(0x36);
+        }
+        let mut staged = atomic.clone();
+        atomic.sprite_timers_and_oam(0);
+        staged.sprite_timers_and_oam_through_zero_hit_timer_clear(0);
+        assert_eq!(staged.sprite_slot_view(0).hit_timer(), 0);
+        assert_eq!(staged.sprite_slot_view(0).object_priority(), 0x36);
+        assert_eq!(staged.sprite_slot_view(0).delay_main(), 29);
+        assert_eq!(staged.sprite_slot_view(0).delay_aux4(), 7);
+        staged.sprite_slot_view_mut(0).set_object_priority(0);
+        staged.sprite_timers_and_oam_after_hit_through_timer_decrements(0);
+        staged.sprite_timers_and_oam_after_timer_decrements(0);
+        assert_eq!(staged.ram, atomic.ram);
+    }
+}
+
+#[test]
 fn main_timer_boundary_leaves_auxiliary_countdowns_pending() {
     for (paused, main) in [(false, 30), (false, 0), (true, 30)] {
         let mut atomic = ZeldaState::new();

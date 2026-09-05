@@ -980,6 +980,7 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     main_and_aux1_timer_decrements_slot: Option<u8>,
     main_timer_decrement_slot: Option<u8>,
+    zero_hit_timer_clear_slot: Option<u8>,
     #[serde(default)]
     bari_before_random_slot: Option<u8>,
     #[serde(default)]
@@ -1556,6 +1557,27 @@ impl SpriteMainExecutionTracker {
             ));
         }
         self.main_timer_decrement_slot = Some(slot);
+        Ok(())
+    }
+
+    fn observe_zero_hit_timer_clear(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if !event
+            .pc
+            .map(|pc| pc & 0x00ff_ffff)
+            .is_some_and(|pc| (0x06_8499..0x06_849c).contains(&pc))
+        {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Snes9x completed main sprite timer decrements before a sprite slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err(format!(
+                "Snes9x main sprite timer decrement boundary disagreed on slot: tracker={slot}, x={:?}",
+                event.x,
+            ));
+        }
+        self.zero_hit_timer_clear_slot = Some(slot);
         Ok(())
     }
 
@@ -2327,6 +2349,14 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::AfterHitTimer(slot);
         }
+        if let Some(slot) = self.zero_hit_timer_clear_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "main timer decrement boundary outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AfterZeroHitTimerClear(slot);
+        }
         if let Some(slot) = self.primary_timer_decrements_slot {
             assert_eq!(
                 self.current_slot,
@@ -2378,6 +2408,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::AfterMainTimerDecrement(slot) => {
                 MainLoopInterruption::SpriteMainAfterMainTimerDecrement(slot)
+            }
+            SpriteMainProgress::AfterZeroHitTimerClear(slot) => {
+                MainLoopInterruption::SpriteMainAfterZeroHitTimerClear(slot)
             }
             SpriteMainProgress::BariBeforeRandom(slot) => {
                 MainLoopInterruption::SpriteMainBariBeforeRandom(slot)
@@ -4181,6 +4214,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_bari_before_random(returned_event)?;
                 execution.observe_main_and_aux1_timer_decrements(returned_event)?;
                 execution.observe_main_timer_decrement(returned_event)?;
+                execution.observe_zero_hit_timer_clear(returned_event)?;
                 execution.observe_primary_timer_decrements(returned_event)?;
                 execution.observe_hit_timer(returned_event)?;
                 execution.observe_timer_decrements(returned_event)?;
@@ -4845,6 +4879,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.timer_decrements_slot = None;
                             execution.primary_timer_decrements_slot = None;
                             execution.main_timer_decrement_slot = None;
+                            execution.zero_hit_timer_clear_slot = None;
                             execution.main_and_aux1_timer_decrements_slot = None;
                             execution.hit_timer_slot = None;
                             execution.bari_before_random_slot = None;
@@ -4943,6 +4978,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.timer_decrements_slot = None;
                         execution.primary_timer_decrements_slot = None;
                         execution.main_timer_decrement_slot = None;
+                        execution.zero_hit_timer_clear_slot = None;
                         execution.main_and_aux1_timer_decrements_slot = None;
                         execution.hit_timer_slot = None;
                         execution.bari_before_random_slot = None;
@@ -5779,6 +5815,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_bari_before_random(&event)?;
                     execution.observe_main_and_aux1_timer_decrements(&event)?;
                     execution.observe_main_timer_decrement(&event)?;
+                    execution.observe_zero_hit_timer_clear(&event)?;
                     execution.observe_primary_timer_decrements(&event)?;
                     execution.observe_hit_timer(&event)?;
                     execution.observe_timer_decrements(&event)?;
@@ -7411,6 +7448,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainAfterMainTimerDecrement(slot) => {
                     Some(SpriteMainProgress::AfterMainTimerDecrement(slot))
                 }
+                MainLoopInterruption::SpriteMainAfterZeroHitTimerClear(slot) => {
+                    Some(SpriteMainProgress::AfterZeroHitTimerClear(slot))
+                }
                 MainLoopInterruption::SpriteMainAfterActiveCuccoX {
                     slot,
                     helper_ordinal,
@@ -8388,6 +8428,29 @@ mod tests {
     }
 
     #[test]
+    fn zero_hit_timer_clear_precedes_priority_store() {
+        for pc in 0x06_8499..0x06_849c {
+            let mut execution = SpriteMainExecutionTracker {
+                current_slot: Some(12),
+                last_completed_slot: Some(13),
+                primary_timer_decrements_slot: Some(12),
+                ..Default::default()
+            };
+            execution
+                .observe_zero_hit_timer_clear(&raw("nmi", Some(pc), Some(12), None))
+                .unwrap();
+            assert_eq!(
+                execution.progress(),
+                SpriteMainProgress::AfterZeroHitTimerClear(12)
+            );
+            execution
+                .observe_hit_timer(&raw("nmi", Some(0x06_849c), Some(12), None))
+                .unwrap();
+            assert_eq!(execution.progress(), SpriteMainProgress::AfterHitTimer(12));
+        }
+    }
+
+    #[test]
     fn nmi_inside_aux1_load_publishes_only_main_countdown() {
         let mut execution = SpriteMainExecutionTracker {
             current_slot: Some(12),
@@ -8396,6 +8459,7 @@ mod tests {
         };
         let nmi = raw("nmi", Some(0x06_8429), Some(12), None);
         execution.observe_main_timer_decrement(&nmi).unwrap();
+        execution.observe_zero_hit_timer_clear(&nmi).unwrap();
         assert_eq!(
             execution.progress(),
             SpriteMainProgress::AfterMainTimerDecrement(12)
@@ -8513,6 +8577,7 @@ mod tests {
             hit_timer_slot: None,
             main_and_aux1_timer_decrements_slot: None,
             main_timer_decrement_slot: None,
+            zero_hit_timer_clear_slot: None,
             bari_before_random_slot: None,
             throwable_scenery_state_clear_slot: None,
             cucco_subtype_increments: None,
@@ -13540,6 +13605,7 @@ mod tests {
             hit_timer_slot: None,
             main_and_aux1_timer_decrements_slot: None,
             main_timer_decrement_slot: None,
+            zero_hit_timer_clear_slot: None,
             bari_before_random_slot: None,
             throwable_scenery_state_clear_slot: None,
             cucco_subtype_increments: None,
@@ -13616,6 +13682,7 @@ mod tests {
             hit_timer_slot: None,
             main_and_aux1_timer_decrements_slot: None,
             main_timer_decrement_slot: None,
+            zero_hit_timer_clear_slot: None,
             bari_before_random_slot: None,
             throwable_scenery_state_clear_slot: None,
             cucco_subtype_increments: None,
