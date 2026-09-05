@@ -20219,6 +20219,32 @@ fn fresh_overworld_iris_goal_retains_its_partial_reset() {
 }
 
 #[test]
+fn completed_spotlight_entry_does_not_schedule_a_second_return() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.set_main_module(0x0f);
+    state.set_submodule(0);
+    state.follower_link_state_mut().set_position(100, 584);
+    state.set_bg2_v_copy2(360);
+    state.set_spotlight_window_state(0);
+    state.set_spotlight_window_radius(126);
+    let iteration =
+        SpotlightIteration::closing(SpotlightIterationPhase::CloseEntryBeforeTablePublication);
+    let table = state.begin_iris_spotlight_configure_table(0);
+    let mut deferred = state.clone();
+    deferred.complete_dungeon_exit_spotlight_entry(table, iteration);
+    state.complete_dungeon_exit_spotlight_entry_returned(table, iteration);
+    assert_eq!(state.game_state, deferred.game_state);
+    assert_eq!(state.ram, deferred.ram);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert!(matches!(
+        deferred.game_execution_scheduler.current_work(),
+        Some(GameWorkContinuation::FinishSpotlightIteration { .. })
+    ));
+}
+
+#[test]
 fn super_bomb_purchase_pays_once_before_suspended_follower_graphics() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);

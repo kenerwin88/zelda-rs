@@ -4181,6 +4181,17 @@ impl ZeldaState {
         }
     }
 
+    /// The wire reached the shared suffix in this host. Complete the same
+    /// entry body and Link/OAM caller without scheduling another iteration return.
+    pub(super) fn complete_dungeon_exit_spotlight_entry_returned(
+        &mut self,
+        table_build: SpotlightTableBuildContinuation,
+        iteration: SpotlightIteration,
+    ) {
+        self.complete_dungeon_exit_spotlight_entry_before_link(table_build, iteration);
+        self.module0f_spotlight_close_link_and_oam();
+    }
+
     fn complete_dungeon_exit_spotlight_entry_before_link(
         &mut self,
         table_build: SpotlightTableBuildContinuation,

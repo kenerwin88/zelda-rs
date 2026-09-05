@@ -42156,6 +42156,16 @@ impl ZeldaState {
             .take_or_defer_original_timing_dungeon_exit_spotlight_entry_returned(
                 authoritative_dungeon_exit_spotlight_entry_is_active,
             );
+        let authoritative_dungeon_exit_spotlight_entry_iteration_returned =
+            authoritative_dungeon_exit_spotlight_entry_is_active
+                && self
+                    .original_timing_semantic_receipts
+                    .as_ref()
+                    .is_some_and(|receipts| {
+                        receipts
+                            .semantic()
+                            .contains(&OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted)
+                    });
         // A suspended scheduled caller owns whichever common suffix phase the
         // source reached before returning this host. Without such a caller,
         // SpritePreparation belongs to the translated module's own
@@ -48103,7 +48113,8 @@ impl ZeldaState {
                                 iteration,
                                 LinkActualVelocityCheckpoint::AfterBoth,
                             );
-                        }                        Some(crate::MainLoopInterruption::LinkVelocityClearProgress { completed }) => {
+                        }
+                        Some(crate::MainLoopInterruption::LinkVelocityClearProgress { completed }) => {
                             self.complete_dungeon_exit_spotlight_entry_until_link_actual_velocity(
                                 table_build,
                                 iteration,
@@ -48136,11 +48147,17 @@ impl ZeldaState {
                             );
                         }
                         None => {
-                            self.complete_dungeon_exit_spotlight_entry(table_build, iteration);
+                            if authoritative_dungeon_exit_spotlight_entry_iteration_returned {
+                                self.complete_dungeon_exit_spotlight_entry_returned(table_build, iteration);
+                            } else {
+                                self.complete_dungeon_exit_spotlight_entry(table_build, iteration);
+                            }
                         }
                         _ => unreachable!("filtered entry Link interruption changed"),
                     }
-                    if authoritative_scheduled_caller_return_timeline.is_some() {
+                    if authoritative_scheduled_caller_return_timeline.is_some()
+                        || authoritative_dungeon_exit_spotlight_entry_iteration_returned
+                    {
                         // The wire's terminal return proves the shared
                         // ZeldaRunGameLoop suffix completes inside this host
                         // (route host 39630).
