@@ -5,12 +5,35 @@ fn calculate_sfx_pan(x: u16) -> u8 {
     ZeldaState::calculate_sfx_pan_with_scroll(x, 0)
 }
 
-// Source pointers selected by the ROM's three LoadSongBank entry points at
-// $80:8901, $80:8913, and $80:8925. The extracted sound-bank assets describe
+// Runtime source pointers selected by the ROM's LoadSongBank entry points at
+// $80:8913, $80:8925, and $80:8931. The intro entry at $80:8901 also uploads
+// the resident driver and samples; it is not the runtime overworld bank.
+// The extracted sound-bank assets describe
 // the final SPC RAM image and may normalize block order or trailing zeroes;
 // the CPU<->SPC upload protocol must retain the original stream byte-for-byte
 // because block lengths and order determine its acknowledgment timing.
-const SONG_BANK_UPLOAD_STREAM_SNES_ADDRS: [u32; 3] = [0x19_8000, 0x1b_8000, 0x1a_9ef5];
+const SONG_BANK_UPLOAD_STREAM_SNES_ADDRS: [u32; 3] = [0x1a_9ef5, 0x1b_8000, 0x1a_d380];
+
+#[test]
+#[ignore = "requires the local pinned Zelda ROM"]
+fn runtime_song_bank_streams_follow_the_rom_loader_pointers() {
+    let rom = std::fs::read(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../saves/zelda3.sfc"),
+    )
+    .expect("read the local pinned Zelda ROM");
+    for (asset, entry) in [0x8913usize, 0x8925, 0x8931].into_iter().enumerate() {
+        // Each source loader writes its 24-bit stream pointer into $00-$02.
+        let code = &rom[entry & 0x7fff..];
+        assert_eq!(&code[..4], &[0xa9, code[1], 0x85, 0x00]);
+        assert_eq!(&code[4..8], &[0xa9, code[5], 0x85, 0x01]);
+        assert_eq!(code[8], 0xa9);
+        let pointer = u32::from(code[1]) | (u32::from(code[5]) << 8) | (u32::from(code[9]) << 16);
+        assert_eq!(SONG_BANK_UPLOAD_STREAM_SNES_ADDRS[asset], pointer);
+        let offset = ((pointer >> 16) as usize) * 0x8000 + (pointer as usize & 0x7fff);
+        // Runtime streams update music data, not the resident SPC program.
+        assert_eq!(&rom[offset + 2..offset + 4], &[0x00, 0xd0]);
+    }
+}
 
 // Static lookup tables ported from misc.c.
 const RECEIVE_ITEM_OAM_EXT_SIZES: [u8; 76] = [
