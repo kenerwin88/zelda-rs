@@ -12980,8 +12980,19 @@ impl ZeldaState {
     }
 
     pub(super) fn helmasaur_hard_hat_beetle_common_after_subtype2_increment(&mut self, k: usize) {
-        if self.sprite_return_if_recoiling(k) {
+        if !self.helmasaur_hard_hat_until_tile_collision(k) {
             return;
+        }
+        self.sprite_check_tile_collision(k);
+        self.helmasaur_hard_hat_after_tile_collision(k);
+    }
+
+    /// `HelmasaurHardHatBeetleCommon` after its subtype2 increment up to
+    /// `Sprite_CheckTileCollision`: the recoil return, Link damage and the
+    /// wall-collision-gated movement. Returns `false` on the recoil return.
+    fn helmasaur_hard_hat_until_tile_collision(&mut self, k: usize) -> bool {
+        if self.sprite_return_if_recoiling(k) {
+            return false;
         }
         self.sprite_check_damage_to_and_from_link(k);
         if (self.sprite_slot_view(k).wall_collision() & 15) != 0 {
@@ -12994,7 +13005,12 @@ impl ZeldaState {
         } else {
             self.sprite_move_xy(k);
         }
-        self.sprite_check_tile_collision(k);
+        true
+    }
+
+    /// `HelmasaurHardHatBeetleCommon` after `Sprite_CheckTileCollision`: the
+    /// periodic speed targeting and the velocity steps.
+    fn helmasaur_hard_hat_after_tile_collision(&mut self, k: usize) {
         if (((k as u8) ^ self.game_state.frame.frame_counter) & 31) == 0 {
             let pt = self.sprite_project_speed_towards_link(k, self.sprite_slot_view(k).a());
             let value = pt.y;
@@ -13025,6 +13041,40 @@ impl ZeldaState {
             .x_velocity()
             .wrapping_add(if sign8(dx) { 1 } else { 0xff });
         self.sprite_slot_view_mut(k).set_x_velocity(value);
+    }
+
+    /// Runs the Helmasaur/Hardhat body on the interrupted host through
+    /// `Sprite_CheckTileCollision` stage `stage`.
+    pub(super) fn begin_helmasaur_hard_hat_tile_collision_checkpoint(
+        &mut self,
+        k: usize,
+        stage: crate::SpriteTileCollisionStage,
+    ) {
+        let reached_increment = match self.sprite_slot_view(k).sprite_type() {
+            0x13 => self.sprite_13_mini_helmasaur_through_subtype2_increment(k),
+            0x26 => self.sprite_26_hardhat_beetle_through_subtype2_increment(k),
+            sprite_type => panic!(
+                "Helmasaur/Hardhat tile-collision checkpoint used sprite type ${sprite_type:02x}"
+            ),
+        };
+        assert!(
+            reached_increment,
+            "Helmasaur/Hardhat tile-collision checkpoint requires an active sprite"
+        );
+        assert!(
+            self.helmasaur_hard_hat_until_tile_collision(k),
+            "Helmasaur/Hardhat tile-collision checkpoint requires a non-recoiling sprite"
+        );
+        self.sprite_check_tile_collision_until_stage(k, stage);
+    }
+
+    pub(super) fn resume_helmasaur_hard_hat_tile_collision(
+        &mut self,
+        k: usize,
+        stage: crate::SpriteTileCollisionStage,
+    ) {
+        self.sprite_check_tile_collision_from_stage(k, stage);
+        self.helmasaur_hard_hat_after_tile_collision(k);
     }
 
     // -----------------------------------------------------------------------

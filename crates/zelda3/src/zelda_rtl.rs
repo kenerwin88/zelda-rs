@@ -5028,6 +5028,11 @@ enum SpriteMainCpuBoundary {
         slot: u8,
         probes_completed: bool,
     },
+    /// `HelmasaurHardHatBeetleCommon` stopped inside `Sprite_CheckTileCollision`.
+    HelmasaurHardHatTileCollision {
+        slot: u8,
+        stage: crate::SpriteTileCollisionStage,
+    },
     /// `Sprite_TrinexxD_Draw` stopped in body segment `segment` after
     /// `stage` of its per-segment steps.
     TrinexxFinalPhaseDraw {
@@ -5488,6 +5493,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::TrinexxFinalPhaseTileCollision {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::HelmasaurHardHatTileCollision {
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::TrinexxFinalPhaseDraw {
@@ -5967,6 +5975,10 @@ fn sprite_main_cpu_boundary_from_interruption(
                 probes_completed,
             })
         }
+        crate::MainLoopInterruption::SpriteMainHelmasaurHardHatTileCollision { slot, stage } => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::HelmasaurHardHatTileCollision { slot, stage })
+        }
         crate::MainLoopInterruption::SpriteMainTrinexxFinalPhaseDraw {
             slot,
             segment,
@@ -6304,6 +6316,9 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         crate::MainLoopInterruption::SpriteMainTrinexxFinalPhaseTileCollision { slot, .. } => {
             slot < 16
         }
+        crate::MainLoopInterruption::SpriteMainHelmasaurHardHatTileCollision { slot, .. } => {
+            slot < 16
+        }
         crate::MainLoopInterruption::SpriteMainTrinexxFinalPhaseDraw {
             slot,
             segment,
@@ -6482,6 +6497,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
             progress,
         } => slot < 16 && spawned_slot < 16 && valid_dynamic_spawn_progress(progress),
         crate::SpriteMainProgress::TrinexxFinalPhaseTileCollision { slot, .. } => slot < 16,
+        crate::SpriteMainProgress::HelmasaurHardHatTileCollision { slot, .. } => slot < 16,
         crate::SpriteMainProgress::TrinexxFinalPhaseDraw {
             slot,
             segment,
@@ -6902,6 +6918,10 @@ fn sprite_main_cpu_boundary_from_progress(
                 probes_completed,
             }
         }
+        crate::SpriteMainProgress::HelmasaurHardHatTileCollision { slot, stage } => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::HelmasaurHardHatTileCollision { slot, stage }
+        }
         crate::SpriteMainProgress::TrinexxFinalPhaseDraw {
             slot,
             segment,
@@ -7152,6 +7172,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainFireDebirandoSpawn { .. }
         | crate::MainLoopInterruption::SpriteMainTrinexxDeathExplosionSpawn { .. }
         | crate::MainLoopInterruption::SpriteMainTrinexxFinalPhaseTileCollision { .. }
+        | crate::MainLoopInterruption::SpriteMainHelmasaurHardHatTileCollision { .. }
         | crate::MainLoopInterruption::SpriteMainTrinexxFinalPhaseDraw { .. }
         | crate::MainLoopInterruption::SpriteMainAfterAntfairySubtype2Increment(_)
         | crate::MainLoopInterruption::SpriteMainAfterLanmolaSubtype2Increment(_)
@@ -7363,6 +7384,16 @@ fn same_sprite_main_source_checkpoint(
                 ..
             },
         ) => left == right && left_segment == right_segment && left_stage == right_stage,
+        (
+            SpriteMainCpuBoundary::HelmasaurHardHatTileCollision {
+                slot: left,
+                stage: left_stage,
+            },
+            SpriteMainCpuBoundary::HelmasaurHardHatTileCollision {
+                slot: right,
+                stage: right_stage,
+            },
+        ) => left == right && left_stage == right_stage,
         (
             SpriteMainCpuBoundary::TrinexxFinalPhaseTileCollision {
                 slot: left,
@@ -7597,6 +7628,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::FireDebirandoSpawn { slot, .. }
         | SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn { slot, .. }
         | SpriteMainCpuBoundary::TrinexxFinalPhaseTileCollision { slot, .. }
+        | SpriteMainCpuBoundary::HelmasaurHardHatTileCollision { slot, .. }
         | SpriteMainCpuBoundary::TrinexxFinalPhaseDraw { slot, .. }
         | SpriteMainCpuBoundary::AfterAntfairySubtype2Increment { slot, .. }
         | SpriteMainCpuBoundary::AfterLanmolaSubtype2Increment { slot, .. }

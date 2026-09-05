@@ -25,7 +25,8 @@ use zelda3::{
     SpotlightTableBuildCheckpoint, SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt,
     SpriteDynamicSpawnProgress, SpriteFollowerGraphicsCaller, SpriteInitializeResetPropertiesPhase,
     SpriteMainProgress, SpriteMoveXYCheckpoint, SpriteResetAllProgress,
-    SpriteResetAllProgressReceipt, TriforceRoomCase2PaletteProgressReceipt,
+    SpriteResetAllProgressReceipt, SpriteTileCollisionStage,
+    TriforceRoomCase2PaletteProgressReceipt,
 };
 
 const TRACE_PATH_ENV: &str = "ZELDA3_SNES9X_TRACE";
@@ -600,6 +601,34 @@ const SPRITE_PREP_MINI_MOLDORM_HISTORY_END_PC: u32 = 0x1df2a5;
 const SPRITE_PREP_FIRE_DEBIRANDO_TYPE_STORE_PC: u32 = 0x068b43;
 const SPRITE_PREP_FIRE_DEBIRANDO_SPAWN_RETURN_ADDRESS: u32 = 0x068b5f;
 const SPRITE_SPAWN_DYNAMICALLY_ENTRY_PC: u32 = 0x1df65d;
+/// `SpritePrep_Main`'s per-type jump table ($06:865B, indexed by sprite type):
+/// the first instruction of every type-specific prep routine. A host that
+/// returns at one of these under Sprite_ExecuteSingle's return has published
+/// the properties and state 9 but none of the prep.
+const SPRITE_PREP_ENTRY_PCS: [u16; 256] = [
+    0x8969, 0x897e, 0x8873, 0x0000, 0x8859, 0x8873, 0x8859, 0x886d, 0x8f71, 0x8f8a, 0x8f71, 0x8873,
+    0x8873, 0x8873, 0x8873, 0x8910, 0x8873, 0x8873, 0x8873, 0x9151, 0x8bc4, 0x8ef2, 0x8cde, 0x8873,
+    0x89d3, 0x8991, 0x8a79, 0x8873, 0x8b12, 0x8ba7, 0x9064, 0x8d7f, 0x8873, 0x8b34, 0x8873, 0x8b1c,
+    0x8b1c, 0x9043, 0x9122, 0x8873, 0x8c9e, 0x8cc1, 0x8ba7, 0x8dfd, 0x8dda, 0x8ba7, 0x9075, 0x8ba7,
+    0x8ba7, 0x8de0, 0x8ba7, 0x8bcf, 0xc026, 0xc030, 0x8ba7, 0x8ba7, 0x8873, 0x8d59, 0x8dda, 0x8cf2,
+    0x8ba7, 0x886e, 0x8873, 0x8873, 0x891b, 0x8fd6, 0x8fd6, 0x8fd6, 0x9001, 0x9001, 0x9001, 0x9001,
+    0x9001, 0x9001, 0x9001, 0x8b81, 0x8fa7, 0x8fb0, 0x8b08, 0x8b0c, 0x8873, 0x8f6c, 0x8f0f, 0x8f3f,
+    0x8f95, 0x8fa2, 0x8fc9, 0x8f4d, 0x8873, 0x8ec1, 0x8ed2, 0x8e85, 0x8e85, 0x8e4f, 0x8e53, 0x8e42,
+    0x8e46, 0x8873, 0x8e30, 0x8b4a, 0x8b3e, 0x8ba2, 0x8b93, 0x8b93, 0x8b93, 0x8b93, 0x8873, 0x8873,
+    0x8873, 0x8878, 0x88aa, 0x888e, 0x91ae, 0x8de9, 0x8ba7, 0xbfe5, 0xc05d, 0x8ba7, 0xc06c, 0x8ef2,
+    0x8dd1, 0x916e, 0x9195, 0x91ae, 0x8b2e, 0x8f9d, 0x91b4, 0x91b4, 0x91ae, 0x91ae, 0x9248, 0x91af,
+    0x91af, 0x91ae, 0x8e6b, 0x91ae, 0x922f, 0x91ae, 0x91d7, 0x91ae, 0x91f1, 0x91fa, 0x91ae, 0x91e8,
+    0x91ae, 0x91ae, 0x91c5, 0x9107, 0x8873, 0x8b03, 0x8b03, 0x8b03, 0x8b03, 0x8873, 0x8fb0, 0x8873,
+    0x8af3, 0x8af0, 0x8bb2, 0x8bab, 0x8bab, 0x90cc, 0x90fa, 0x90f0, 0x8f08, 0x90d5, 0x90d5, 0x90e0,
+    0x89d8, 0x89d8, 0x899b, 0x924d, 0x916e, 0xbff9, 0x8873, 0x8873, 0x8873, 0x8873, 0x9175, 0x90d6,
+    0x8a59, 0x89df, 0x8d46, 0x899c, 0x8873, 0x8a51, 0x8cd5, 0x8bf1, 0x8ba7, 0x894d, 0x88fd, 0x8873,
+    0x892c, 0x893b, 0x8873, 0x8901, 0x8873, 0x8ba7, 0x8ba7, 0x88df, 0x8dc6, 0x8d94, 0x8dc1, 0x91ba,
+    0x91ba, 0x91ba, 0x88c7, 0x88c0, 0x8873, 0x8873, 0x8ba7, 0x91dc, 0x8ba7, 0x8bbf, 0x88cf, 0x88cf,
+    0x916a, 0x916a, 0x916a, 0x916a, 0x916a, 0x916a, 0x916a, 0x916a, 0x916a, 0x916a, 0x916a, 0x915c,
+    0x9262, 0x924e, 0x9174, 0xc07b, 0xc085, 0xc094, 0xc09e, 0xc0a8, 0x850f, 0x8873, 0x8841, 0x8873,
+    0x8873, 0x8873, 0x8854, 0x00bd, 0x180d, 0x0369, 0x009d, 0xbd0d, 0x0d10, 0x6918, 0x9d08, 0x0d10,
+    0x2260, 0xf25a, 0x6005, 0x8ead,
+];
 const SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC: u32 = 0x1df66f;
 const SPRITE_SPAWN_DYNAMICALLY_STATE_STORE_PC: u32 = 0x1df674;
 const SPRITE_SPAWN_DYNAMICALLY_IDENTITY_STORE_PC: u32 = 0x1df6b8;
@@ -948,6 +977,7 @@ struct SpriteMainExecutionTracker {
     /// store ($1D:AE77) this run.
     trinexx_final_phase_case0: Option<u8>,
     trinexx_final_phase_tile_collision: Option<(u8, bool)>,
+    helmasaur_hard_hat_tile_collision: Option<(u8, SpriteTileCollisionStage)>,
     /// The last traced `$0FB6` store: Sprite_TrinexxD_Draw's segment counter
     /// while its loop runs.
     trinexx_d_draw_counter: Option<u8>,
@@ -2113,6 +2143,71 @@ impl SpriteMainExecutionTracker {
         Ok(())
     }
 
+    fn observe_helmasaur_hard_hat_tile_collision(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        if !matches!(event.event.as_str(), "nmi" | "frame") {
+            return Ok(());
+        }
+        self.helmasaur_hard_hat_tile_collision = None;
+        let Some(slot) = self.helmasaur_hard_hat_beetle_subtype2_increment_slot else {
+            return Ok(());
+        };
+        if self.current_slot != Some(slot) {
+            return Ok(());
+        }
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        if !(0x06_e4a8..=0x06_e8fd).contains(&pc) {
+            return Ok(());
+        }
+        let ret24 = event.return_address.map(|r| r & 0x00ff_ffff);
+        // The tile-property tail PHXs around its table lookups ($06:E7A8,
+        // $06:E812), so a boundary there sees one pushed byte above the
+        // expected return bytes.
+        let shape = |ret: u32, stack4: u8| {
+            (ret24 == Some(ret) && event.stack4 == Some(stack4))
+                || (ret24.map(|r| r >> 8) == Some(ret & 0xffff)
+                    && event.stack4 == Some((ret >> 16) as u8))
+        };
+        // HelmasaurHardHatBeetleCommon JSRs Sprite_CheckTileCollision2 directly
+        // from $06:A48E under Sprite_ExecuteSingle's return: [$A491, $83A6].
+        // The single-layer helper JSRs the vertical probe at $06:E501 ([$E503])
+        // and the horizontal probe at $06:E50E ([$E510]); each wrapper JSRs
+        // Sprite_CheckTileInDirection ([$E5F0] / [$E5BA]) whose shared tail
+        // JSRs GetTileAttribute at $06:E79D ([$E7A0]); the `$68` property
+        // probe is JSR'd at $06:E532 ([$E534]).
+        use SpriteTileCollisionStage as S;
+        let base = shape(0xa6_a491, 0x83);
+        let stage = match pc {
+            0x06_e4ab if base => S::Entered,
+            0x06_e4a8 | 0x06_e4ae..=0x06_e4b6 | 0x06_e4db..=0x06_e501 if base => S::Cleared,
+            0x06_e5ee..=0x06_e5f9 if shape(0x91_e503, 0xa4) => S::Cleared,
+            0x06_e72f..=0x06_e882 if shape(0x03_e5f0, 0xe5) => S::Cleared,
+            0x06_e883..=0x06_e8fd if shape(0xf0_e7a0, 0xe5) => S::Cleared,
+            0x06_e504..=0x06_e50e if base => S::VerticalProbeDone,
+            0x06_e5b8..=0x06_e5c3 if shape(0x91_e510, 0xa4) => S::VerticalProbeDone,
+            0x06_e72f..=0x06_e882 if shape(0x10_e5ba, 0xe5) => S::VerticalProbeDone,
+            0x06_e883..=0x06_e8fd if shape(0xba_e7a0, 0xe5) => S::VerticalProbeDone,
+            0x06_e511 | 0x06_e525..=0x06_e532 if base => S::ProbesCompleted,
+            0x06_e73c..=0x06_e882 if shape(0x91_e534, 0xa4) => S::ProbesCompleted,
+            0x06_e883..=0x06_e8fd if shape(0x34_e7a0, 0xe5) => S::ProbesCompleted,
+            _ => {
+                return Err(format!(
+                    "Helmasaur/Hardhat tile collision stopped at an unmodeled boundary ${pc:06x} ret={ret24:?} stack4={:?}",
+                    event.stack4
+                ))
+            }
+        };
+        if event.x != Some(u16::from(slot)) {
+            return Err("Helmasaur/Hardhat tile collision has the wrong active slot".into());
+        }
+        self.helmasaur_hard_hat_tile_collision = Some((slot, stage));
+        Ok(())
+    }
+
     fn observe_sidenexx_neck_target(&mut self, event: &RawTraceEvent) -> Result<(), String> {
         if !matches!(event.event.as_str(), "nmi" | "frame") {
             return Ok(());
@@ -2660,13 +2755,23 @@ impl SpriteMainExecutionTracker {
         // FireBar's private prep entry is still before its first INC store;
         // the initializer has already published properties and state 9.
         let initializer_dispatch = matches!(pc, Some(0x06_8654 | 0x06_8657 | 0x06_91b4))
+            // The dispatched prep routine's first instruction, reached by
+            // JumpTableLocal's JML with Sprite_ExecuteSingle's frame on top.
+            || (pc.is_some_and(|pc| {
+                pc >> 16 == 0x06 && SPRITE_PREP_ENTRY_PCS.contains(&((pc & 0xffff) as u16))
+            }) && event.return_address == Some(0x00_83a6))
             || (pc == Some(0x00_8781)
                 && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x06_865a))
             // JumpTableLocal has popped its inline-table return and loaded
             // the prep target. The remaining stack belongs to the state-8
             // dispatch in Sprite_ExecuteSingle; LDY $03 and JML [$00] remain.
+            // Sprite_ExecuteSingle's own state dispatch reaches the same
+            // instruction with the same stack: its loaded target is
+            // SpriteModule_Initialize ($06:864D) and nothing of the
+            // initializer has run, so that boundary stays after timers/OAM.
             || (pc == Some(0x00_8797)
                 && event.return_address == Some(0x00_83a6)
+                && event.a != Some(0x864d)
                 && event.y.is_some_and(|index| index & 1 == 1 && index <= 0x1e5));
         if !initializer_dispatch || self.timers_and_oam_dispatch_state != Some(8) {
             return Ok(());
@@ -3145,6 +3250,10 @@ impl SpriteMainExecutionTracker {
                 "Lanmola subtype2 publication outlived its active sprite slot",
             );
             return SpriteMainProgress::AfterLanmolaSubtype2Increment(slot);
+        }
+        if let Some((slot, stage)) = self.helmasaur_hard_hat_tile_collision {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::HelmasaurHardHatTileCollision { slot, stage };
         }
         if let Some(slot) = self.helmasaur_hard_hat_beetle_subtype2_increment_slot {
             assert_eq!(
@@ -3779,6 +3888,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(slot)
+            }
+            SpriteMainProgress::HelmasaurHardHatTileCollision { slot, stage } => {
+                MainLoopInterruption::SpriteMainHelmasaurHardHatTileCollision { slot, stage }
             }
             SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => {
                 MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot)
@@ -5541,6 +5653,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_trinexx_head_draw(returned_event)?;
                     execution.observe_trinexx_breath_tile_collision(returned_event)?;
                     execution.observe_trinexx_final_phase_tile_collision(returned_event)?;
+                    execution.observe_helmasaur_hard_hat_tile_collision(returned_event)?;
                     execution.observe_trinexx_final_phase_draw(returned_event)?;
                     execution.observe_sidenexx_neck_target(returned_event)?;
                 }
@@ -6387,6 +6500,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.trinexx_breath_tile_collision = None;
                             execution.trinexx_final_phase_case0 = None;
                             execution.trinexx_final_phase_tile_collision = None;
+                            execution.helmasaur_hard_hat_tile_collision = None;
                             execution.trinexx_d_draw_counter = None;
                             execution.trinexx_d_draw_active = None;
                             execution.trinexx_final_phase_draw = None;
@@ -6437,6 +6551,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.observe_trinexx_head_draw(&event)?;
                             execution.observe_trinexx_breath_tile_collision(&event)?;
                             execution.observe_trinexx_final_phase_tile_collision(&event)?;
+                            execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
                             execution.observe_trinexx_final_phase_draw(&event)?;
                             execution.observe_sidenexx_neck_target(&event)?;
                             execution.observe_guard_animation_checkpoint(&event)?;
@@ -6903,6 +7018,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
                     execution.observe_trinexx_final_phase_tile_collision(&event)?;
+                    execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
                     execution.observe_trinexx_final_phase_draw(&event)?;
                     execution.observe_sidenexx_neck_target(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
@@ -7406,6 +7522,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
                     execution.observe_trinexx_final_phase_tile_collision(&event)?;
+                    execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
                     execution.observe_trinexx_final_phase_draw(&event)?;
                     execution.observe_sidenexx_neck_target(&event)?;
                     execution.observe_guard_animation_checkpoint(&event)?;
@@ -10395,6 +10512,7 @@ mod tests {
             trinexx_breath_tile_collision: None,
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
+            helmasaur_hard_hat_tile_collision: None,
             trinexx_d_draw_counter: None,
             trinexx_d_draw_active: None,
             trinexx_final_phase_draw: None,
@@ -10801,6 +10919,52 @@ mod tests {
         );
         head.stack4 = Some(0xc2);
         assert!(tracker.observe_trinexx_final_phase_draw(&head).is_err());
+    }
+
+    #[test]
+    fn helmasaur_hard_hat_tile_collision_checkpoints_follow_the_probe_stack() {
+        use SpriteTileCollisionStage as S;
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(0);
+        let mut event = raw("frame", Some(0x06_e812), Some(0), None);
+        event.return_address = Some(0x03_e5f0);
+        event.stack4 = Some(0xe5);
+        tracker
+            .observe_helmasaur_hard_hat_tile_collision(&event)
+            .unwrap();
+        assert_eq!(tracker.helmasaur_hard_hat_tile_collision, None);
+        tracker.helmasaur_hard_hat_beetle_subtype2_increment_slot = Some(0);
+        for (pc, ret, stack4, stage) in [
+            (0x06_e4ab, 0xa6_a491, 0x83, S::Entered),
+            (0x06_e4ae, 0xa6_a491, 0x83, S::Cleared),
+            (0x06_e501, 0xa6_a491, 0x83, S::Cleared),
+            (0x06_e812, 0x03_e5f0, 0xe5, S::Cleared),
+            (0x06_e890, 0xf0_e7a0, 0xe5, S::Cleared),
+            (0x06_e50e, 0xa6_a491, 0x83, S::VerticalProbeDone),
+            (0x06_e5b8, 0x91_e510, 0xa4, S::VerticalProbeDone),
+            (0x06_e812, 0x10_e5ba, 0xe5, S::VerticalProbeDone),
+            (0x06_e532, 0xa6_a491, 0x83, S::ProbesCompleted),
+            (0x06_e890, 0x34_e7a0, 0xe5, S::ProbesCompleted),
+            (0x06_e813, 0xe5_f000, 0x03, S::Cleared),
+        ] {
+            let mut event = raw("frame", Some(pc), Some(0), None);
+            event.return_address = Some(ret);
+            event.stack4 = Some(stack4);
+            tracker
+                .observe_helmasaur_hard_hat_tile_collision(&event)
+                .unwrap();
+            assert_eq!(
+                tracker.progress(),
+                SpriteMainProgress::HelmasaurHardHatTileCollision { slot: 0, stage },
+                "{pc:#x}"
+            );
+        }
+        let mut event = raw("frame", Some(0x06_e5fc), Some(0), None);
+        event.return_address = Some(0x91_e503);
+        event.stack4 = Some(0xa4);
+        assert!(tracker
+            .observe_helmasaur_hard_hat_tile_collision(&event)
+            .is_err());
     }
 
     #[test]
@@ -13177,6 +13341,35 @@ mod tests {
         event.return_address = Some(0x00_83a5);
         execution.observe_initialize_prep_pending(&event).unwrap();
         assert_eq!(execution.initialize_prep_pending, None);
+        // Any type's prep routine entry under Sprite_ExecuteSingle's return is
+        // the same checkpoint.
+        for entry in [0x06_91ae, 0x06_91ba, 0x06_91c5] {
+            execution.initialize_prep_pending = None;
+            event.pc = Some(entry);
+            event.return_address = Some(0x00_83a6);
+            execution.observe_initialize_prep_pending(&event).unwrap();
+            assert_eq!(
+                execution.progress(),
+                SpriteMainProgress::InitializePrepPending(1),
+                "{entry:#x}"
+            );
+        }
+        event.pc = Some(0x00_8797);
+        event.y = Some(0xb5);
+        // Sprite_ExecuteSingle's state-8 dispatch shares the jump-table
+        // instruction and stack but targets SpriteModule_Initialize itself.
+        execution.initialize_prep_pending = None;
+        event.return_address = Some(0x00_83a6);
+        event.y = Some(17);
+        event.a = Some(0x864d);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(execution.initialize_prep_pending, None);
+        event.a = Some(0x8d2c);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::InitializePrepPending(1)
+        );
     }
 
     #[test]
@@ -16999,6 +17192,7 @@ mod tests {
             trinexx_breath_tile_collision: None,
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
+            helmasaur_hard_hat_tile_collision: None,
             trinexx_d_draw_counter: None,
             trinexx_d_draw_active: None,
             trinexx_final_phase_draw: None,
@@ -17109,6 +17303,7 @@ mod tests {
             trinexx_breath_tile_collision: None,
             trinexx_final_phase_case0: None,
             trinexx_final_phase_tile_collision: None,
+            helmasaur_hard_hat_tile_collision: None,
             trinexx_d_draw_counter: None,
             trinexx_d_draw_active: None,
             trinexx_final_phase_draw: None,

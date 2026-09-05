@@ -2995,6 +2995,29 @@ impl ZeldaState {
                     return;
                 }
             }
+            if let Some(SpriteMainCpuBoundary::HelmasaurHardHatTileCollision { slot, stage }) =
+                self.sprite_main_cpu_boundary
+            {
+                if slot == k as u8 {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    self.sprite_main_cpu_boundary = None;
+                    assert_eq!(self.sprite_slot_view(k).state(), 9);
+                    assert!(matches!(
+                        self.sprite_slot_view(k).sprite_type(),
+                        0x13 | 0x26
+                    ));
+                    self.sprite_timers_and_oam(k);
+                    self.begin_helmasaur_hard_hat_tile_collision_checkpoint(k, stage);
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(
+                        SpriteMainCpuBoundary::HelmasaurHardHatTileCollision { slot, stage },
+                        nmi_slices,
+                        caller,
+                    );
+                    return;
+                }
+            }
             if let Some(SpriteMainCpuBoundary::TrinexxFinalPhaseTileCollision {
                 slot,
                 probes_completed,
@@ -4633,6 +4656,14 @@ impl ZeldaState {
                 let continuation = continuation
                     .expect("Trinexx final-phase draw continuation lost its source locals");
                 self.resume_trinexx_final_phase_draw(k, segment, stage, continuation);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::HelmasaurHardHatTileCollision { slot, stage } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert!(matches!(self.sprite_slot_view(k).sprite_type(), 0x13 | 0x26));
+                self.resume_helmasaur_hard_hat_tile_collision(k, stage);
                 self.complete_sprite_main_after_interrupted_slot(k);
             }
 SpriteMainCpuBoundary::TrinexxFinalPhaseTileCollision {
@@ -11141,17 +11172,7 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     /// property probe and its consumers are left to
     /// `sprite_check_tile_collision_from_property_probe`.
     pub(super) fn sprite_check_tile_collision_until_property_probe(&mut self, k: usize) {
-        self.sprite_slot_view_mut(k).set_wall_collision(0);
-        assert!(
-            sign8(self.sprite_slot_view(k).flags4())
-                || self.game_state.dungeon.room_load.header_collision() == 0,
-            "tile-collision probe checkpoint requires the single-layer path"
-        );
-        assert_eq!(
-            self.sprite_slot_view(k).flags2() & 0x20,
-            0,
-            "tile-collision probe checkpoint requires the direction probes"
-        );
+        self.sprite_check_tile_collision_clear_for_direction_probes(k);
         if self.sprite_slot_view(k).y_velocity() != 0 {
             self.sprite_check_for_tile_in_direction_vertical(
                 k,
@@ -11177,6 +11198,77 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
     pub(super) fn sprite_check_tile_collision_from_property_probe(&mut self, k: usize) -> u8 {
         self.sprite_check_tile_collision_after_directions(k);
         self.sprite_slot_view(k).wall_collision()
+    }
+
+    /// `Sprite_CheckTileCollision2`'s wall-collision clear on the single-layer
+    /// direction-probe path that every checkpointed caller requires.
+    fn sprite_check_tile_collision_clear_for_direction_probes(&mut self, k: usize) {
+        self.sprite_slot_view_mut(k).set_wall_collision(0);
+        assert!(
+            sign8(self.sprite_slot_view(k).flags4())
+                || self.game_state.dungeon.room_load.header_collision() == 0,
+            "tile-collision probe checkpoint requires the single-layer path"
+        );
+        assert_eq!(
+            self.sprite_slot_view(k).flags2() & 0x20,
+            0,
+            "tile-collision probe checkpoint requires the direction probes"
+        );
+    }
+
+    /// Runs `Sprite_CheckTileCollision` through `stage` for a checkpointed
+    /// caller on the interrupted host.
+    pub(super) fn sprite_check_tile_collision_until_stage(
+        &mut self,
+        k: usize,
+        stage: crate::SpriteTileCollisionStage,
+    ) {
+        use crate::SpriteTileCollisionStage as S;
+        match stage {
+            S::Entered => {}
+            S::Cleared => self.sprite_check_tile_collision_clear_for_direction_probes(k),
+            S::VerticalProbeDone => {
+                self.sprite_check_tile_collision_clear_for_direction_probes(k);
+                if self.sprite_slot_view(k).y_velocity() != 0 {
+                    self.sprite_check_for_tile_in_direction_vertical(
+                        k,
+                        if sign8(self.sprite_slot_view(k).y_velocity()) {
+                            0
+                        } else {
+                            1
+                        },
+                    );
+                }
+            }
+            S::ProbesCompleted => self.sprite_check_tile_collision_until_property_probe(k),
+        }
+    }
+
+    /// Finishes `Sprite_CheckTileCollision` from `stage` on resume and returns
+    /// the wall-collision byte the caller consumes.
+    pub(super) fn sprite_check_tile_collision_from_stage(
+        &mut self,
+        k: usize,
+        stage: crate::SpriteTileCollisionStage,
+    ) -> u8 {
+        use crate::SpriteTileCollisionStage as S;
+        match stage {
+            S::Entered | S::Cleared => self.sprite_check_tile_collision(k),
+            S::VerticalProbeDone => {
+                if self.sprite_slot_view(k).x_velocity() != 0 {
+                    self.sprite_check_for_tile_in_direction_horizontal(
+                        k,
+                        if sign8(self.sprite_slot_view(k).x_velocity()) {
+                            2
+                        } else {
+                            3
+                        },
+                    );
+                }
+                self.sprite_check_tile_collision_from_property_probe(k)
+            }
+            S::ProbesCompleted => self.sprite_check_tile_collision_from_property_probe(k),
+        }
     }
 
     // void Sprite_CheckTileCollision2(int k) {  // 86e4ab

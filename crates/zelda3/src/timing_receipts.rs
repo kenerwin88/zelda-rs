@@ -794,6 +794,13 @@ pub enum MainLoopInterruption {
         slot: u8,
         probes_completed: bool,
     },
+    /// `HelmasaurHardHatBeetleCommon` (Helmasaur $13 / Hardhat $26) stopped
+    /// inside its `Sprite_CheckTileCollision` call at `stage`; the movement
+    /// before it has run, the speed targeting after it is pending.
+    SpriteMainHelmasaurHardHatTileCollision {
+        slot: u8,
+        stage: SpriteTileCollisionStage,
+    },
     /// `Sprite_TrinexxD_Draw` (from `Sprite_Trinexx_FinalPhase`) stopped in
     /// body segment `segment` after `stage` of its eight per-segment steps
     /// (damage check, OAM pointer, OAM ext pointer, OAM flags, flashing
@@ -1026,6 +1033,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainFireDebirandoSpawn { .. }
                 | Self::SpriteMainTrinexxDeathExplosionSpawn { .. }
                 | Self::SpriteMainTrinexxFinalPhaseTileCollision { .. }
+                | Self::SpriteMainHelmasaurHardHatTileCollision { .. }
                 | Self::SpriteMainTrinexxFinalPhaseDraw { .. }
                 | Self::SpriteMainAfterAntfairySubtype2Increment(_)
                 | Self::SpriteMainAfterLanmolaSubtype2Increment(_)
@@ -1159,6 +1167,10 @@ pub enum SpriteMainProgress {
     TrinexxFinalPhaseTileCollision {
         slot: u8,
         probes_completed: bool,
+    },
+    HelmasaurHardHatTileCollision {
+        slot: u8,
+        stage: SpriteTileCollisionStage,
     },
     TrinexxFinalPhaseDraw {
         slot: u8,
@@ -1341,6 +1353,21 @@ pub enum SpriteDynamicSpawnProgress {
     DirectionPublished,
     DieActionCleared,
     SubtypeCleared,
+}
+
+/// Where a host boundary fell inside `Sprite_CheckTileCollision` on the
+/// single-layer path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum SpriteTileCollisionStage {
+    /// The wall-collision clear is still pending.
+    Entered,
+    /// The wall-collision byte is cleared and no direction probe finished.
+    Cleared,
+    /// The vertical probe (when the vertical velocity is nonzero) finished;
+    /// the horizontal probe or the tile-property probe is pending.
+    VerticalProbeDone,
+    /// Both direction probes finished; the `$68` property probe is pending.
+    ProbesCompleted,
 }
 
 /// Source-level dialogue work completed by one host interval.

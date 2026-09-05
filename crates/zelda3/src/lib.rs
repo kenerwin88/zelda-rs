@@ -61,7 +61,7 @@ pub use timing_receipts::{
     SpotlightTableBuildProgress, SpotlightTableBuildProgressReceipt, SpriteDynamicSpawnProgress,
     SpriteFollowerGraphicsCaller, SpriteInitializeResetPropertiesPhase, SpriteMainProgress,
     SpriteMoveXYCheckpoint, SpriteResetAllProgress, SpriteResetAllProgressReceipt,
-    TriforceRoomCase2PaletteProgressReceipt,
+    SpriteTileCollisionStage, TriforceRoomCase2PaletteProgressReceipt,
 };
 pub use zelda3_dialogue as dialogue_ir;
 pub use zelda_rtl::{

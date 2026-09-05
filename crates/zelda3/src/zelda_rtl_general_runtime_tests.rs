@@ -19072,6 +19072,41 @@ fn trinexx_final_phase_draw_checkpoints_resume_to_the_atomic_draw() {
 }
 
 #[test]
+fn helmasaur_hard_hat_tile_collision_checkpoints_resume_to_the_atomic_body() {
+    use crate::SpriteTileCollisionStage as S;
+    for (x_velocity, y_velocity) in [(0xfdu8, 0xffu8), (0x10, 0), (0, 0x10)] {
+        for stage in [
+            S::Entered,
+            S::Cleared,
+            S::VerticalProbeDone,
+            S::ProbesCompleted,
+        ] {
+            let mut state = ZeldaState::new();
+            state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+            state.sprite_slot_view_mut(0).set_sprite_type(0x26);
+            state.sprite_slot_view_mut(0).set_state(9);
+            state.sprite_slot_view_mut(0).set_x_velocity(x_velocity);
+            state.sprite_slot_view_mut(0).set_y_velocity(y_velocity);
+            state.sprite_slot_view_mut(0).set_x_low(0x1e);
+            state.sprite_slot_view_mut(0).set_x_high(0x19);
+            state.sprite_slot_view_mut(0).set_y_low(0x95);
+            state.sprite_slot_view_mut(0).set_y_high(0x12);
+            state.sprite_slot_view_mut(0).set_subtype2(0xd2);
+            state.sprite_slot_view_mut(0).set_a(0x10);
+            let mut atomic = state.clone();
+            atomic.sprite_26_hardhat_beetle(0);
+            state.begin_helmasaur_hard_hat_tile_collision_checkpoint(0, stage);
+            state.resume_helmasaur_hard_hat_tile_collision(0, stage);
+            assert_eq!(
+                state.ram, atomic.ram,
+                "{x_velocity:#x}/{y_velocity:#x} {stage:?}"
+            );
+            assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+        }
+    }
+}
+
+#[test]
 fn trinexx_final_phase_tile_collision_checkpoints_resume_to_the_atomic_phase() {
     for (probes_completed, x_velocity, y_velocity) in [
         (false, 31u8, 0u8),
