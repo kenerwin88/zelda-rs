@@ -257,6 +257,12 @@ impl ZeldaState {
 
     // void Sprite_99_Pengator(int k) {  // 9ea196
     pub(super) fn sprite_99_pengator(&mut self, k: usize) {
+        if self.pengator_before_ai(k) {
+            self.pengator_after_movement(k);
+        }
+    }
+
+    pub(super) fn pengator_before_ai(&mut self, k: usize) -> bool {
         let value = self.sprite_slot_view(k).a().wrapping_add(
             PENGATOR_GRAPHICS_BY_DIRECTION[usize::from(self.sprite_slot_view(k).direction())],
         );
@@ -270,10 +276,10 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_y_velocity(0);
         }
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
         if self.sprite_return_if_recoiling(k) {
-            return;
+            return false;
         }
         self.sprite_check_damage_to_and_from_link(k);
         self.sprite_move_xyz(k);
@@ -283,7 +289,10 @@ impl ZeldaState {
             self.sprite_slot_view_mut(k).set_z(0);
         }
         self.sprite_check_tile_collision(k);
+        true
+    }
 
+    pub(super) fn pengator_after_movement(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 let value = self.sprite_direction_to_face_link(k, None);

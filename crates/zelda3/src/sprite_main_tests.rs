@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn pengator_slide_continuation_does_not_repeat_movement() {
+    let mut atomic = ZeldaState::new();
+    atomic.set_main_module(9);
+    atomic.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    atomic.sprite_set_x(6, 0x40);
+    atomic.sprite_set_y(6, 0x50);
+    {
+        let mut sprite = atomic.sprite_slot_view_mut(6);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x99);
+        sprite.set_ai_state(3);
+        sprite.set_f(0);
+        sprite.set_wall_collision(0);
+        // Keep the fixture's tile collision from applying its one-pixel
+        // position correction, so movement replay is directly observable.
+        sprite.set_subtype(5);
+        sprite.set_y_velocity(0xf0);
+        sprite.set_z(32);
+    }
+    let mut staged = atomic.clone();
+    atomic.sprite_99_pengator(6);
+    assert!(staged.pengator_before_ai(6));
+    assert_eq!(staged.sprite_slot_view(6).y_low(), 0x4f);
+    assert_eq!(staged.sprite_slot_view(6).ai_state(), 3);
+    staged.pengator_after_movement(6);
+    assert_eq!(staged.sprite_slot_view(6).y_low(), 0x4f);
+    assert_eq!(staged.ram, atomic.ram);
+}
+
+#[test]
 fn active_guard_weapon_coordinates_hold_pose_until_the_draw_returns() {
     use crate::GuardAnimationCheckpoint as Stage;
     let mut checkpoints = vec![

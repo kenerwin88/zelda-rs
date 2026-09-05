@@ -944,6 +944,7 @@ struct SpriteMainExecutionTracker {
     hog_spear_body_graphics_pending: Option<u8>,
     absorbable_body_active: bool,
     absorbable_horizontal_lookup: Option<u8>,
+    pengator_slide_pending: Option<u8>,
     initialize_prep_pending: Option<u8>,
     #[serde(default)]
     guard_animation_pose_slot: Option<u8>,
@@ -1022,6 +1023,22 @@ struct SpriteMainExecutionTracker {
 }
 
 impl SpriteMainExecutionTracker {
+    fn observe_pengator_slide_pending(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        // Pengator_Slide has only tested the sparkle cadence and Z; its first
+        // RNG call and every slide-specific persistent store remain pending.
+        if !matches!(event.pc, Some(0x1e_a271..=0x1e_a279)) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Pengator slide lost its active slot")?;
+        if event.x != Some(u16::from(slot)) || self.timers_and_oam_dispatch_state != Some(9) {
+            return Err("Pengator slide checkpoint disagrees with its active caller".into());
+        }
+        self.pengator_slide_pending = Some(slot);
+        Ok(())
+    }
+
     fn observe_absorbable_horizontal_lookup(
         &mut self,
         event: &RawTraceEvent,
@@ -2090,6 +2107,10 @@ impl SpriteMainExecutionTracker {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::AbsorbableHorizontalTileLookup(slot);
         }
+        if let Some(slot) = self.pengator_slide_pending {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::PengatorSlidePending(slot);
+        }
         if let Some((slot, checkpoint)) = self.guard_animation_checkpoint {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::GuardAnimation { slot, checkpoint };
@@ -2406,6 +2427,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::AbsorbableHorizontalTileLookup(slot) => {
                 MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(slot)
+            }
+            SpriteMainProgress::PengatorSlidePending(slot) => {
+                MainLoopInterruption::SpriteMainPengatorSlidePending(slot)
             }
             SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(slot)
@@ -4049,6 +4073,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_guard_animation_checkpoint(returned_event)?;
                 execution.observe_hog_spear_body_graphics_pending(returned_event)?;
                 execution.observe_absorbable_horizontal_lookup(returned_event)?;
+                execution.observe_pengator_slide_pending(returned_event)?;
                 execution.observe_guard_prep_parry_hitbox(returned_event)?;
                 execution.observe_guard_prep_patrol_delay(returned_event)?;
                 execution.observe_guard_prep_tile_collision_return(returned_event)?;
@@ -4701,6 +4726,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.hog_spear_body_graphics_pending = None;
                             execution.absorbable_body_active = false;
                             execution.absorbable_horizontal_lookup = None;
+                            execution.pengator_slide_pending = None;
                             execution.initialize_prep_pending = None;
                             execution.guard_animation_pose_slot = None;
                             execution.guard_prep_weapon_flags_pending_slot = None;
@@ -4747,6 +4773,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.hog_spear_body_graphics_pending = None;
                             execution.absorbable_body_active = false;
                             execution.absorbable_horizontal_lookup = None;
+                            execution.pengator_slide_pending = None;
                             execution.initialize_prep_pending = None;
                             execution.guard_animation_pose_slot = None;
                             if execution.timers_and_oam_dispatch_state == Some(8) {
@@ -4789,6 +4816,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.hog_spear_body_graphics_pending = None;
                         execution.absorbable_body_active = false;
                         execution.absorbable_horizontal_lookup = None;
+                        execution.pengator_slide_pending = None;
                         execution.initialize_prep_pending = None;
                         execution.guard_animation_pose_slot = None;
                         execution.guard_prep_weapon_flags_pending_slot = None;
@@ -5136,6 +5164,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_horizontal_lookup(&event)?;
+                    execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_fire_debirando_spawn_write(&event)?;
                     execution.observe_master_sword_light_beam_spawn_write(&event)?;
                     execution.observe_antfairy_subtype2_increment(&event)?;
@@ -5625,6 +5654,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_guard_animation_checkpoint(&event)?;
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_horizontal_lookup(&event)?;
+                    execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_fire_debirando_spawn_boundary(&event)?;
                     execution.observe_guard_prep_parry_hitbox(&event)?;
                     execution.observe_guard_prep_patrol_delay(&event)?;
@@ -7354,6 +7384,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(slot) => {
                     Some(SpriteMainProgress::AbsorbableHorizontalTileLookup(slot))
                 }
+                MainLoopInterruption::SpriteMainPengatorSlidePending(slot) => {
+                    Some(SpriteMainProgress::PengatorSlidePending(slot))
+                }
                 MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call } => {
                     Some(SpriteMainProgress::GuardPrepParryHitbox { slot, active_call })
                 }
@@ -8296,6 +8329,7 @@ mod tests {
             hog_spear_body_graphics_pending: None,
             absorbable_body_active: false,
             absorbable_horizontal_lookup: None,
+            pengator_slide_pending: None,
             initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
@@ -9518,6 +9552,24 @@ mod tests {
     }
 
     #[test]
+    fn pengator_slide_entry_proves_movement_before_the_sparkle_rng() {
+        let mut tracker = SpriteMainExecutionTracker {
+            current_slot: Some(6),
+            timers_and_oam_dispatch_state: Some(9),
+            ..Default::default()
+        };
+        let mut event = raw("nmi", Some(0x1e_a279), None, None);
+        event.x = Some(6);
+        tracker.observe_pengator_slide_pending(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::PengatorSlidePending(6)
+        );
+        event.x = Some(5);
+        assert!(tracker.observe_pengator_slide_pending(&event).is_err());
+    }
+
+    #[test]
     fn guard_draw_return_retains_pose_without_requiring_a_pose_store() {
         let mut tracker = SpriteMainExecutionTracker {
             current_slot: Some(10),
@@ -10108,6 +10160,7 @@ mod tests {
         execution.hog_spear_body_graphics_pending = None;
         execution.absorbable_body_active = false;
         execution.absorbable_horizontal_lookup = None;
+        execution.pengator_slide_pending = None;
         execution.initialize_prep_pending = None;
         event.return_address = Some(0xc8cc3b);
         execution
@@ -10192,6 +10245,7 @@ mod tests {
             SpriteMainProgress::AbsorbableHorizontalTileLookup(3)
         );
         execution.absorbable_horizontal_lookup = None;
+        execution.pengator_slide_pending = None;
         event.y = Some(0);
         execution
             .observe_absorbable_horizontal_lookup(&event)
@@ -13207,6 +13261,7 @@ mod tests {
             hog_spear_body_graphics_pending: None,
             absorbable_body_active: false,
             absorbable_horizontal_lookup: None,
+            pengator_slide_pending: None,
             initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
@@ -13278,6 +13333,7 @@ mod tests {
             hog_spear_body_graphics_pending: None,
             absorbable_body_active: false,
             absorbable_horizontal_lookup: None,
+            pengator_slide_pending: None,
             initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
