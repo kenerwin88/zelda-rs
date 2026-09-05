@@ -3757,6 +3757,15 @@ impl ZeldaState {
                                 "source follower-graphics progress requires the chest's follower transition");
                             None
                         }
+                        crate::SpriteFollowerGraphicsCaller::SuperBomb => {
+                            assert_eq!(self.sprite_slot_view(k).state(), 9);
+                            assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xb5);
+                            assert_eq!(self.sprite_slot_view(k).subtype2(), 2);
+                            self.sprite_timers_and_oam(k);
+                            assert!(self.sprite_bomb_shop_super_bomb_before_follower_graphics(k),
+                                "source follower graphics requires a successful super-bomb purchase");
+                            None
+                        }
                     };
                     self.apply_follower_graphics_progress(None, stage);
                     let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
@@ -4760,6 +4769,10 @@ impl ZeldaState {
                     crate::SpriteFollowerGraphicsCaller::PurpleChest => {
                         assert_eq!(saved_follower_indicator, None);
                         self.sprite_become_follower(slot);
+                    }
+                    crate::SpriteFollowerGraphicsCaller::SuperBomb => {
+                        assert_eq!(saved_follower_indicator, None);
+                        self.sprite_bomb_shop_super_bomb_after_follower_graphics(slot);
                     }
                     crate::SpriteFollowerGraphicsCaller::OldMan => {
                         let reset_follower_after_graphics = saved_follower_indicator

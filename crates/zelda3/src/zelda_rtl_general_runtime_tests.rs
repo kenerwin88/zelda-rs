@@ -19924,6 +19924,43 @@ fn swamola_segment_draw_resumes_without_repeating_history_or_oam_steps() {
 }
 
 #[test]
+fn super_bomb_purchase_pays_once_before_suspended_follower_graphics() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(7);
+    state.set_submodule(0);
+    state.follower_link_state_mut().set_position(0x80, 0x80);
+    state.follower_link_state_mut().set_filtered_joypad_l(0x80);
+    state.player_resources_mut().set_rupees_goal(300);
+    {
+        let mut sprite = state.sprite_slot_view_mut(14);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0xb5);
+        sprite.set_subtype2(2);
+        sprite.set_x(0x80);
+        sprite.set_y(0x80);
+    }
+    state.sprite_prep_load_properties(14);
+    state.sprite_slot_view_mut(14).set_subtype2(2);
+    let mut atomic = state.clone();
+    atomic.sprite_bomb_shop_super_bomb(14);
+    assert!(state.sprite_bomb_shop_super_bomb_before_follower_graphics(14));
+    assert_eq!(
+        state.game_state.inventory.player_resources.rupees_goal(),
+        200
+    );
+    assert_eq!(state.game_state.sprites.follower_runtime.indicator(), 13);
+    assert_eq!(state.sprite_slot_view(14).state(), 9);
+    state.load_follower_graphics();
+    state.sprite_bomb_shop_super_bomb_after_follower_graphics(14);
+    assert_eq!(
+        state.game_state.inventory.player_resources.rupees_goal(),
+        200
+    );
+    assert_eq!(state.game_state, atomic.game_state);
+    assert_eq!(state.ram, atomic.ram);
+}
+
+#[test]
 fn purple_chest_follower_graphics_retains_the_deleted_sprite_prefix() {
     let mut state = ZeldaState::new();
     state.set_main_module(9);

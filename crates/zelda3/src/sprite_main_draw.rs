@@ -10046,9 +10046,19 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_BombShop_SuperBomb(int k) {  // 9ee1df
     pub(super) fn sprite_bomb_shop_super_bomb(&mut self, k: usize) {
+        if self.sprite_bomb_shop_super_bomb_before_follower_graphics(k) {
+            self.load_follower_graphics();
+            self.sprite_bomb_shop_super_bomb_after_follower_graphics(k);
+        }
+    }
+
+    pub(super) fn sprite_bomb_shop_super_bomb_before_follower_graphics(
+        &mut self,
+        k: usize,
+    ) -> bool {
         self.bomb_shop_entity_draw(k);
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
         self.sprite_behave_as_barrier(k);
         if self.shop_item_check_for_a_press(k) {
@@ -10057,13 +10067,16 @@ impl ZeldaState {
                 self.shop_item_play_beep(k);
             } else {
                 self.follower_state_mut().set_indicator(13);
-                self.load_follower_graphics();
-                self.sprite_become_follower(k);
-                let value = 0;
-                self.sprite_slot_view_mut(k).set_state(value);
-                self.sprite_show_message_unconditional(0x011a);
+                return true;
             }
         }
+        false
+    }
+
+    pub(super) fn sprite_bomb_shop_super_bomb_after_follower_graphics(&mut self, k: usize) {
+        self.sprite_become_follower(k);
+        self.sprite_slot_view_mut(k).set_state(0);
+        self.sprite_show_message_unconditional(0x011a);
     }
 
     // -----------------------------------------------------------------------

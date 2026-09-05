@@ -1432,6 +1432,8 @@ pub enum SpriteFollowerGraphicsCaller {
     OldMan,
     /// The purple chest's state-9 transition into follower 12.
     PurpleChest,
+    /// Bomb Shop purchase, after payment and before becoming follower 13.
+    SuperBomb,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

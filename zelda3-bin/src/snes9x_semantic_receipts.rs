@@ -4915,6 +4915,7 @@ impl Snes9xOracleSemanticTrace {
                         Some(SPRITE_PURPLE_CHEST_FOLLOWER_GRAPHICS_RETURN_PC) => {
                             Some(SpriteFollowerGraphicsCaller::PurpleChest)
                         }
+                        Some(0x1e_e201) => Some(SpriteFollowerGraphicsCaller::SuperBomb),
                         _ => None,
                     };
                 if pc == RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC
@@ -4952,7 +4953,11 @@ impl Snes9xOracleSemanticTrace {
                                     .follower_graphics
                                     .as_ref()
                                     .is_some_and(|(caller, _)| {
-                                        *caller == SpriteFollowerGraphicsCaller::PurpleChest
+                                        matches!(
+                                            *caller,
+                                            SpriteFollowerGraphicsCaller::PurpleChest
+                                                | SpriteFollowerGraphicsCaller::SuperBomb
+                                        )
                                     })
                             });
                     let valid_sheet = if purple_chest {
@@ -11710,6 +11715,40 @@ mod tests {
             execution.progress(),
             SpriteMainProgress::SwamolaHeadDrawCompleted(4)
         );
+    }
+
+    #[test]
+    fn super_bomb_purchase_owns_its_follower_graphics_sheet() {
+        let mut source = empty_semantic_tracker();
+        let mut execution = SpriteMainExecutionTracker::default();
+        execution.current_slot = Some(14);
+        source.sprite_main_execution = Some(execution);
+        let mut event = raw(
+            "pc",
+            Some(RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC),
+            Some(14),
+            None,
+        );
+        event.return_address = Some(0x1e_e201);
+        source.consume_event(event, &mut Vec::new()).unwrap();
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .as_ref()
+                .unwrap()
+                .follower_graphics
+                .unwrap()
+                .0,
+            SpriteFollowerGraphicsCaller::SuperBomb
+        );
+        let mut sheet = raw(
+            "pc",
+            Some(RESCUED_MAIDEN_FIRST_FOLLOWER_SHEET_ENTRY_PC),
+            Some(14),
+            None,
+        );
+        sheet.y = Some(0x58);
+        source.consume_event(sheet, &mut Vec::new()).unwrap();
     }
 
     #[test]
