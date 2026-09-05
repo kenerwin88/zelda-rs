@@ -5089,6 +5089,9 @@ enum SpriteMainCpuBoundary {
     AntifairyBouncePending {
         slot: u8,
     },
+    KholdstareDamagePending {
+        slot: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5364,6 +5367,7 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot: active_slot }
         | SpriteMainCpuBoundary::PengatorSlidePending { slot: active_slot }
         | SpriteMainCpuBoundary::AntifairyBouncePending { slot: active_slot }
+        | SpriteMainCpuBoundary::KholdstareDamagePending { slot: active_slot }
         | SpriteMainCpuBoundary::InitializePrepPending { slot: active_slot }
         | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
             slot: active_slot, ..
@@ -5789,6 +5793,10 @@ fn sprite_main_cpu_boundary_from_interruption(
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::AntifairyBouncePending { slot })
         }
+        crate::MainLoopInterruption::SpriteMainKholdstareDamagePending(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::KholdstareDamagePending { slot })
+        }
         crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => {
             assert!(
                 slot < 16,
@@ -5871,6 +5879,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(slot)
         | crate::MainLoopInterruption::SpriteMainPengatorSlidePending(slot)
         | crate::MainLoopInterruption::SpriteMainAntifairyBouncePending(slot)
+        | crate::MainLoopInterruption::SpriteMainKholdstareDamagePending(slot)
         | crate::MainLoopInterruption::SpriteMainInitializePrepPending(slot)
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => slot < 16,
         crate::MainLoopInterruption::SpriteMainWallmasterResetClear {
@@ -6025,6 +6034,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AbsorbableHorizontalTileLookup(slot)
         | crate::SpriteMainProgress::PengatorSlidePending(slot)
         | crate::SpriteMainProgress::AntifairyBouncePending(slot)
+        | crate::SpriteMainProgress::KholdstareDamagePending(slot)
         | crate::SpriteMainProgress::InitializePrepPending(slot)
         | crate::SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => slot < 16,
         crate::SpriteMainProgress::GuardPrepPatrolDelay { slot, active_call }
@@ -6461,6 +6471,10 @@ fn sprite_main_cpu_boundary_from_progress(
             assert!(slot < 16);
             SpriteMainCpuBoundary::AntifairyBouncePending { slot }
         }
+        crate::SpriteMainProgress::KholdstareDamagePending(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::KholdstareDamagePending { slot }
+        }
         crate::SpriteMainProgress::GuardPrepWeaponFlagsPending(slot) => {
             assert!(
                 slot < 16,
@@ -6551,6 +6565,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAbsorbableHorizontalTileLookup(_)
         | crate::MainLoopInterruption::SpriteMainPengatorSlidePending(_)
         | crate::MainLoopInterruption::SpriteMainAntifairyBouncePending(_)
+        | crate::MainLoopInterruption::SpriteMainKholdstareDamagePending(_)
         | crate::MainLoopInterruption::SpriteMainInitializePrepPending(_)
         | crate::MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(_)
         | crate::MainLoopInterruption::SpriteMainGuardPrepParryHitbox { .. }
@@ -6882,6 +6897,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AbsorbableHorizontalTileLookup { slot }
         | SpriteMainCpuBoundary::PengatorSlidePending { slot }
         | SpriteMainCpuBoundary::AntifairyBouncePending { slot }
+        | SpriteMainCpuBoundary::KholdstareDamagePending { slot }
         | SpriteMainCpuBoundary::InitializePrepPending { slot }
         | SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending { slot, .. }
         | SpriteMainCpuBoundary::GuardPrepParryHitbox { slot, .. }

@@ -946,6 +946,8 @@ struct SpriteMainExecutionTracker {
     absorbable_horizontal_lookup: Option<u8>,
     pengator_slide_pending: Option<u8>,
     antifairy_bounce_pending: Option<u8>,
+    kholdstare_subtype_decremented: bool,
+    kholdstare_damage_pending: Option<u8>,
     initialize_prep_pending: Option<u8>,
     #[serde(default)]
     guard_animation_pose_slot: Option<u8>,
@@ -1024,6 +1026,36 @@ struct SpriteMainExecutionTracker {
 }
 
 impl SpriteMainExecutionTracker {
+    fn observe_kholdstare_damage_pending(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        // DEC $0E80,X at $1E:9537 identifies Kholdstare's active body.
+        if event.event == "wram-write" && event.pc == Some(0x1e_953a) {
+            let slot = self
+                .current_slot
+                .ok_or("Kholdstare decrement lost its slot")?;
+            if event.x != Some(u16::from(slot))
+                || event.address != Some(0x0e80 + u16::from(slot))
+                || self.timers_and_oam_dispatch_state != Some(9)
+            {
+                return Err("Kholdstare decrement disagrees with its active caller".into());
+            }
+            self.kholdstare_subtype_decremented = true;
+        }
+        // CheckIfHitBoxesOverlap has pushed X and loaded its axis cursor.
+        // Beneath saved X, $F2D0 proves Sprite_CheckDamageFromLink's JSR.
+        // Its hitbox setup is local computation; no damage effect has run.
+        if self.kholdstare_subtype_decremented
+            && event.pc == Some(0x06_f839)
+            && event.return_address.map(|stack| stack >> 8) == Some(0xf2d0)
+        {
+            let slot = self.current_slot.ok_or("Kholdstare damage lost its slot")?;
+            if event.stack1 != Some(slot) || event.x != Some(1) {
+                return Err("Kholdstare hitbox checkpoint disagrees with its saved slot".into());
+            }
+            self.kholdstare_damage_pending = Some(slot);
+        }
+        Ok(())
+    }
+
     fn observe_antifairy_bounce_pending(&mut self, event: &RawTraceEvent) -> Result<(), String> {
         // Shared bounce entry belongs to Antifairy only under its own JSL.
         if event.pc != Some(0x1d_c778) || event.return_address != Some(0x06_a53e) {
@@ -2037,6 +2069,10 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::FireDebirandoBeforeSpawn(slot);
         }
+        if let Some(slot) = self.kholdstare_damage_pending {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::KholdstareDamagePending(slot);
+        }
         if let Some(slot) = self.antifairy_bounce_pending {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::AntifairyBouncePending(slot);
@@ -2455,6 +2491,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::AntifairyBouncePending(slot) => {
                 MainLoopInterruption::SpriteMainAntifairyBouncePending(slot)
+            }
+            SpriteMainProgress::KholdstareDamagePending(slot) => {
+                MainLoopInterruption::SpriteMainKholdstareDamagePending(slot)
             }
             SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(slot)
@@ -4100,6 +4139,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_absorbable_horizontal_lookup(returned_event)?;
                 execution.observe_pengator_slide_pending(returned_event)?;
                 execution.observe_antifairy_bounce_pending(returned_event)?;
+                execution.observe_kholdstare_damage_pending(returned_event)?;
                 execution.observe_guard_prep_parry_hitbox(returned_event)?;
                 execution.observe_guard_prep_patrol_delay(returned_event)?;
                 execution.observe_guard_prep_tile_collision_return(returned_event)?;
@@ -4754,8 +4794,8 @@ impl Snes9xOracleSemanticTrace {
                             execution.absorbable_horizontal_lookup = None;
                             execution.pengator_slide_pending = None;
                             execution.antifairy_bounce_pending = None;
-                            execution.antifairy_bounce_pending = None;
-                            execution.antifairy_bounce_pending = None;
+                            execution.kholdstare_subtype_decremented = false;
+                            execution.kholdstare_damage_pending = None;
                             execution.initialize_prep_pending = None;
                             execution.guard_animation_pose_slot = None;
                             execution.guard_prep_weapon_flags_pending_slot = None;
@@ -4804,8 +4844,8 @@ impl Snes9xOracleSemanticTrace {
                             execution.absorbable_horizontal_lookup = None;
                             execution.pengator_slide_pending = None;
                             execution.antifairy_bounce_pending = None;
-                            execution.antifairy_bounce_pending = None;
-                            execution.antifairy_bounce_pending = None;
+                            execution.kholdstare_subtype_decremented = false;
+                            execution.kholdstare_damage_pending = None;
                             execution.initialize_prep_pending = None;
                             execution.guard_animation_pose_slot = None;
                             if execution.timers_and_oam_dispatch_state == Some(8) {
@@ -4850,7 +4890,8 @@ impl Snes9xOracleSemanticTrace {
                         execution.absorbable_horizontal_lookup = None;
                         execution.pengator_slide_pending = None;
                         execution.antifairy_bounce_pending = None;
-                        execution.antifairy_bounce_pending = None;
+                        execution.kholdstare_subtype_decremented = false;
+                        execution.kholdstare_damage_pending = None;
                         execution.initialize_prep_pending = None;
                         execution.guard_animation_pose_slot = None;
                         execution.guard_prep_weapon_flags_pending_slot = None;
@@ -5200,6 +5241,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_absorbable_horizontal_lookup(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_antifairy_bounce_pending(&event)?;
+                    execution.observe_kholdstare_damage_pending(&event)?;
                     execution.observe_fire_debirando_spawn_write(&event)?;
                     execution.observe_master_sword_light_beam_spawn_write(&event)?;
                     execution.observe_antfairy_subtype2_increment(&event)?;
@@ -5691,6 +5733,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_absorbable_horizontal_lookup(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_antifairy_bounce_pending(&event)?;
+                    execution.observe_kholdstare_damage_pending(&event)?;
                     execution.observe_fire_debirando_spawn_boundary(&event)?;
                     execution.observe_guard_prep_parry_hitbox(&event)?;
                     execution.observe_guard_prep_patrol_delay(&event)?;
@@ -7436,6 +7479,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainAntifairyBouncePending(slot) => {
                     Some(SpriteMainProgress::AntifairyBouncePending(slot))
                 }
+                MainLoopInterruption::SpriteMainKholdstareDamagePending(slot) => {
+                    Some(SpriteMainProgress::KholdstareDamagePending(slot))
+                }
                 MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call } => {
                     Some(SpriteMainProgress::GuardPrepParryHitbox { slot, active_call })
                 }
@@ -8380,6 +8426,8 @@ mod tests {
             absorbable_horizontal_lookup: None,
             pengator_slide_pending: None,
             antifairy_bounce_pending: None,
+            kholdstare_subtype_decremented: false,
+            kholdstare_damage_pending: None,
             initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
@@ -9620,6 +9668,40 @@ mod tests {
     }
 
     #[test]
+    fn kholdstare_damage_checkpoint_requires_body_and_hitbox_caller() {
+        let mut tracker = SpriteMainExecutionTracker {
+            current_slot: Some(4),
+            timers_and_oam_dispatch_state: Some(9),
+            ..Default::default()
+        };
+        let mut endpoint = raw("frame", Some(0x06_f839), None, None);
+        endpoint.x = Some(1);
+        endpoint.stack1 = Some(4);
+        endpoint.return_address = Some(0xf2_d004);
+        tracker
+            .observe_kholdstare_damage_pending(&endpoint)
+            .unwrap();
+        assert_eq!(tracker.kholdstare_damage_pending, None);
+        let mut decrement = raw("wram-write", Some(0x1e_953a), None, None);
+        decrement.x = Some(4);
+        decrement.address = Some(0x0e84);
+        tracker
+            .observe_kholdstare_damage_pending(&decrement)
+            .unwrap();
+        tracker
+            .observe_kholdstare_damage_pending(&endpoint)
+            .unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::KholdstareDamagePending(4)
+        );
+        endpoint.stack1 = Some(3);
+        assert!(tracker
+            .observe_kholdstare_damage_pending(&endpoint)
+            .is_err());
+    }
+
+    #[test]
     fn antifairy_bounce_checkpoint_supersedes_draw_progress_for_its_caller_only() {
         let mut tracker = SpriteMainExecutionTracker {
             current_slot: Some(0),
@@ -10263,6 +10345,8 @@ mod tests {
         execution.absorbable_horizontal_lookup = None;
         execution.pengator_slide_pending = None;
         execution.antifairy_bounce_pending = None;
+        execution.kholdstare_subtype_decremented = false;
+        execution.kholdstare_damage_pending = None;
         execution.initialize_prep_pending = None;
         event.return_address = Some(0xc8cc3b);
         execution
@@ -10349,6 +10433,8 @@ mod tests {
         execution.absorbable_horizontal_lookup = None;
         execution.pengator_slide_pending = None;
         execution.antifairy_bounce_pending = None;
+        execution.kholdstare_subtype_decremented = false;
+        execution.kholdstare_damage_pending = None;
         event.y = Some(0);
         execution
             .observe_absorbable_horizontal_lookup(&event)
@@ -13366,6 +13452,8 @@ mod tests {
             absorbable_horizontal_lookup: None,
             pengator_slide_pending: None,
             antifairy_bounce_pending: None,
+            kholdstare_subtype_decremented: false,
+            kholdstare_damage_pending: None,
             initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
@@ -13439,6 +13527,8 @@ mod tests {
             absorbable_horizontal_lookup: None,
             pengator_slide_pending: None,
             antifairy_bounce_pending: None,
+            kholdstare_subtype_decremented: false,
+            kholdstare_damage_pending: None,
             initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,

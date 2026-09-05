@@ -738,9 +738,15 @@ impl ZeldaState {
 
     // void Sprite_A2_Kholdstare(int k) {  // 9e9518
     pub(super) fn sprite_a2_kholdstare(&mut self, k: usize) {
+        if self.kholdstare_before_ai(k) {
+            self.kholdstare_after_movement(k);
+        }
+    }
+
+    pub(super) fn kholdstare_before_ai(&mut self, k: usize) -> bool {
         self.kholdstare_draw(k);
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
         if self.sprite_slot_view(k).ai_state() < 2 {
             self.kholdstare_spawn_puff_cloud_garnish(k);
@@ -749,7 +755,7 @@ impl ZeldaState {
             }
         }
         if self.sprite_return_if_recoiling(k) {
-            return;
+            return false;
         }
 
         self.sprite_slot_view_mut(k).decrement_subtype2();
@@ -766,6 +772,10 @@ impl ZeldaState {
         }
 
         self.sprite_move_xy(k);
+        true
+    }
+
+    pub(super) fn kholdstare_after_movement(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_check_damage_to_and_from_link(k);

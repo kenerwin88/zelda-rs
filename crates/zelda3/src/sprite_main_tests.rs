@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn kholdstare_damage_continuation_preserves_completed_movement() {
+    let mut atomic = ZeldaState::new();
+    atomic.set_main_module(9);
+    atomic.set_frame_counter(1);
+    atomic.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    atomic.sprite_set_x(0, 0x40);
+    atomic.sprite_set_y(0, 0x50);
+    {
+        let mut sprite = atomic.sprite_slot_view_mut(0);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0xa2);
+        sprite.set_ai_state(1);
+        sprite.set_delay_main(20);
+        sprite.set_subtype2(8);
+        sprite.set_x_velocity(6);
+        sprite.set_y_velocity(0xfa);
+    }
+    let mut staged = atomic.clone();
+    atomic.sprite_a2_kholdstare(0);
+    assert!(staged.kholdstare_before_ai(0));
+    assert_eq!(staged.sprite_slot_view(0).subtype2(), 7);
+    assert_eq!(staged.sprite_slot_view(0).x_subpixel(), 0x60);
+    assert_eq!(staged.sprite_slot_view(0).y_subpixel(), 0xa0);
+    assert_eq!(staged.sprite_slot_view(0).x_velocity(), 6);
+    staged.kholdstare_after_movement(0);
+    assert_eq!(staged.sprite_slot_view(0).subtype2(), 7);
+    assert_eq!(staged.ram, atomic.ram);
+}
+
+#[test]
 fn antifairy_bounce_continuation_preserves_movement_and_animation_prefix() {
     let mut atomic = ZeldaState::new();
     atomic.set_main_module(9);
