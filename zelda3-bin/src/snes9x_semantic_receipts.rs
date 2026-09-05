@@ -4130,6 +4130,7 @@ impl Snes9xOracleSemanticTrace {
             self.consume_event(event, &mut receipts)?;
         }
         if let Some(returned_event) = returned_event.as_ref() {
+            self.publish_overworld_presence_at_scan_boundary(returned_event, &mut receipts);
             if returned_event.pc.map(|pc| pc & 0xffffff) == Some(0x02_d987)
                 && (returned_event.main, returned_event.sub) == (Some(5), Some(0))
             {
@@ -5878,15 +5879,9 @@ impl Snes9xOracleSemanticTrace {
                 } else if let Some(progress) = dungeon_reset_sprites_caller_progress(&event) {
                     self.pending_reset_progress = Some(progress);
                 }
-                let overworld_sprite_scan_suspended = (self
-                    .overworld_load_overlays_sprite_reload_active
-                    || (event.main == Some(8) && event.sub == Some(0))
-                    || (event.main == Some(9) && matches!(event.sub, Some(4 | 0x12))))
-                    && event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
-                        (OVERWORLD_SPRITE_SCAN_START_PC..OVERWORLD_SPRITE_SCAN_END_PC).contains(&pc)
-                    });
+                let overworld_sprite_scan_suspended =
+                    self.publish_overworld_presence_at_scan_boundary(&event, receipts);
                 if overworld_sprite_scan_suspended {
-                    self.publish_overworld_presence(receipts);
                     receipts.push(
                         OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
                             OverworldSpriteReloadProgress::ProximityScanSuspended {
@@ -6042,6 +6037,26 @@ impl Snes9xOracleSemanticTrace {
             ));
         }
         Ok(false)
+    }
+
+    fn publish_overworld_presence_at_scan_boundary(
+        &mut self,
+        event: &RawTraceEvent,
+        receipts: &mut Vec<OriginalTimingSemanticReceipt>,
+    ) -> bool {
+        // Entering the proximity scan proves the preceding presence load
+        // returned, whether this interval ends at NMI or at retro_run's
+        // frame boundary. No sprite need have been activated yet.
+        let suspended = (self.overworld_load_overlays_sprite_reload_active
+            || (event.main == Some(8) && event.sub == Some(0))
+            || (event.main == Some(9) && matches!(event.sub, Some(4 | 0x12))))
+            && event.pc.map(|pc| pc & 0x00ff_ffff).is_some_and(|pc| {
+                (OVERWORLD_SPRITE_SCAN_START_PC..OVERWORLD_SPRITE_SCAN_END_PC).contains(&pc)
+            });
+        if suspended {
+            self.publish_overworld_presence(receipts);
+        }
+        suspended
     }
 
     fn publish_overworld_presence(&mut self, receipts: &mut Vec<OriginalTimingSemanticReceipt>) {
@@ -13265,6 +13280,37 @@ mod tests {
 
         assert!(receipts.is_empty());
         assert!(tracker.overworld_sprite_activation.is_none());
+    }
+
+    #[test]
+    fn host_return_inside_flute_scan_publishes_presence_before_scan_progress() {
+        let mut tracker = empty_semantic_tracker();
+        tracker.overworld_load_overlays_sprite_reload_active = true;
+        let mut host = HostFrameWindow::default();
+        host.overworld_load_overlays_sprite_reload_active = true;
+        host.observe(&frame_with_sub("entry", 1, 0x0e, 0x0a))
+            .unwrap();
+        let mut returned = frame_with_sub("return", 1, 0x0e, 0x0a);
+        returned.pc = Some(0x09_c723);
+        returned.bg2_h = Some(128);
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        assert!(tracker.publish_overworld_presence_at_scan_boundary(&returned, &mut receipts));
+        host.finish(&mut receipts, None, true).unwrap();
+        assert_eq!(
+            &receipts[..2],
+            &[
+                OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                    OverworldSpriteReloadProgress::PresencePublished
+                ),
+                OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                    OverworldSpriteReloadProgress::ProximityScanSuspended { bg2_h: 128 }
+                ),
+            ]
+        );
+        let mut later = Vec::new();
+        assert!(tracker.publish_overworld_presence_at_scan_boundary(&returned, &mut later));
+        assert!(later.is_empty());
     }
 
     #[test]
