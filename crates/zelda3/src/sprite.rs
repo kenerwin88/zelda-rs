@@ -4419,6 +4419,7 @@ impl ZeldaState {
                         | SpriteMainCpuBoundary::MasterSwordLightBeamMovement { slot, .. }
                         | SpriteMainCpuBoundary::BoulderMovement { slot, .. }
                         | SpriteMainCpuBoundary::ZoraFireballMovement { slot, .. }
+                        | SpriteMainCpuBoundary::AgahnimMotionBlurSpawn { slot, .. }
                         | SpriteMainCpuBoundary::BuzzblobAfterXSubpixel { slot, .. }
                         | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn { slot, .. }
                         | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }
@@ -4768,6 +4769,24 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 assert_eq!(self.sprite_slot_view(interrupted_slot).sprite_type(), 0xcb);
                 assert_eq!(self.sprite_slot_view(spawned).sprite_type(), 0);
                 self.resume_trinexx_death_explosion_spawn(interrupted_slot, spawned, progress);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AgahnimMotionBlurSpawn {
+                slot,
+                spawned_slot,
+                progress,
+                bound,
+            } => {
+                let interrupted_slot = usize::from(slot);
+                let spawned = usize::from(spawned_slot);
+                assert!(
+                    bound,
+                    "source Agahnim motion-blur spawn boundary did not bind on the interrupted host"
+                );
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
+                assert_eq!(self.sprite_slot_view(spawned).sprite_type(), 0xc1);
+                self.resume_agahnim_motion_blur_spawn(interrupted_slot, spawned, progress);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
             }
             SpriteMainCpuBoundary::FireDebirandoSpawn {

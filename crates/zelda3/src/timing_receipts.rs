@@ -786,6 +786,15 @@ pub enum MainLoopInterruption {
         spawned_slot: u8,
         progress: SpriteDynamicSpawnProgress,
     },
+    /// An Agahnim (or cutscene Agahnim) ran `Sprite_Agahnim_ApplyMotionBlur`
+    /// and its type-$C1 afterimage spawn published the named shared-helper
+    /// mutation into `spawned_slot`; the rest of the spawn, the afterimage
+    /// setup, and the caller's suffix are pending.
+    SpriteMainAgahnimMotionBlurSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: SpriteDynamicSpawnProgress,
+    },
     /// `Sprite_Trinexx_FinalPhase` state 0 entered `Sprite_CheckTileCollision`.
     /// With `probes_completed` the wall-collision byte was cleared and the
     /// single-layer direction probes ran; the tile-property probe, its
@@ -1065,6 +1074,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainFireDebirandoBeforeSpawn(_)
                 | Self::SpriteMainFireDebirandoSpawn { .. }
                 | Self::SpriteMainTrinexxDeathExplosionSpawn { .. }
+                | Self::SpriteMainAgahnimMotionBlurSpawn { .. }
                 | Self::SpriteMainTrinexxFinalPhaseTileCollision { .. }
                 | Self::SpriteMainHelmasaurHardHatTileCollision { .. }
                 | Self::SpriteMainLanmolaDrawPrefix { .. }
@@ -1196,6 +1206,11 @@ pub enum SpriteMainProgress {
     /// The dying Trinexx body's explosion spawn selected `spawned_slot` and
     /// published the source statements named by `progress`.
     TrinexxDeathExplosionSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: SpriteDynamicSpawnProgress,
+    },
+    AgahnimMotionBlurSpawn {
         slot: u8,
         spawned_slot: u8,
         progress: SpriteDynamicSpawnProgress,

@@ -5035,6 +5035,15 @@ enum SpriteMainCpuBoundary {
         spawned_slot: u8,
         progress: crate::SpriteDynamicSpawnProgress,
     },
+    /// Agahnim's afterimage spawn (`Sprite_Agahnim_ApplyMotionBlur`) reached
+    /// the named `Sprite_SpawnDynamically` publication; `bound` records that
+    /// the handler ran its prefix and published it on the interrupted host.
+    AgahnimMotionBlurSpawn {
+        slot: u8,
+        spawned_slot: u8,
+        progress: crate::SpriteDynamicSpawnProgress,
+        bound: bool,
+    },
     /// `Sprite_Trinexx_FinalPhase` state 0 stopped inside
     /// `Sprite_CheckTileCollision`, after the direction probes when
     /// `probes_completed`.
@@ -5527,6 +5536,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
+            slot: active_slot, ..
+        }
+        | SpriteMainCpuBoundary::AgahnimMotionBlurSpawn {
             slot: active_slot, ..
         }
         | SpriteMainCpuBoundary::TrinexxFinalPhaseTileCollision {
@@ -6045,6 +6057,20 @@ fn sprite_main_cpu_boundary_from_interruption(
                 progress,
             })
         }
+        crate::MainLoopInterruption::SpriteMainAgahnimMotionBlurSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => {
+            assert!(slot < 16 && spawned_slot < 16);
+            assert!(valid_dynamic_spawn_progress(progress));
+            Some(SpriteMainCpuBoundary::AgahnimMotionBlurSpawn {
+                slot,
+                spawned_slot,
+                progress,
+                bound: false,
+            })
+        }
         crate::MainLoopInterruption::SpriteMainTrinexxFinalPhaseTileCollision {
             slot,
             probes_completed,
@@ -6407,6 +6433,11 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
             spawned_slot,
             progress,
         } => slot < 16 && spawned_slot < 16 && valid_dynamic_spawn_progress(progress),
+        crate::MainLoopInterruption::SpriteMainAgahnimMotionBlurSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => slot < 16 && spawned_slot < 16 && valid_dynamic_spawn_progress(progress),
         crate::MainLoopInterruption::SpriteMainTrinexxFinalPhaseTileCollision { slot, .. } => {
             slot < 16
         }
@@ -6592,6 +6623,11 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
             progress,
         } => slot < 16 && spawned_slot < 16 && valid_dynamic_spawn_progress(progress),
         crate::SpriteMainProgress::TrinexxDeathExplosionSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => slot < 16 && spawned_slot < 16 && valid_dynamic_spawn_progress(progress),
+        crate::SpriteMainProgress::AgahnimMotionBlurSpawn {
             slot,
             spawned_slot,
             progress,
@@ -7054,6 +7090,20 @@ fn sprite_main_cpu_boundary_from_progress(
                 progress,
             }
         }
+        crate::SpriteMainProgress::AgahnimMotionBlurSpawn {
+            slot,
+            spawned_slot,
+            progress,
+        } => {
+            assert!(slot < 16 && spawned_slot < 16);
+            assert!(valid_dynamic_spawn_progress(progress));
+            SpriteMainCpuBoundary::AgahnimMotionBlurSpawn {
+                slot,
+                spawned_slot,
+                progress,
+                bound: false,
+            }
+        }
         crate::SpriteMainProgress::TrinexxFinalPhaseTileCollision {
             slot,
             probes_completed,
@@ -7331,6 +7381,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainFireDebirandoBeforeSpawn(_)
         | crate::MainLoopInterruption::SpriteMainFireDebirandoSpawn { .. }
         | crate::MainLoopInterruption::SpriteMainTrinexxDeathExplosionSpawn { .. }
+        | crate::MainLoopInterruption::SpriteMainAgahnimMotionBlurSpawn { .. }
         | crate::MainLoopInterruption::SpriteMainTrinexxFinalPhaseTileCollision { .. }
         | crate::MainLoopInterruption::SpriteMainHelmasaurHardHatTileCollision { .. }
         | crate::MainLoopInterruption::SpriteMainLanmolaDrawPrefix { .. }
@@ -7604,6 +7655,24 @@ fn same_sprite_main_source_checkpoint(
                 && left_progress == right_progress
         }
         (
+            SpriteMainCpuBoundary::AgahnimMotionBlurSpawn {
+                slot: left_slot,
+                spawned_slot: left_spawned,
+                progress: left_progress,
+                ..
+            },
+            SpriteMainCpuBoundary::AgahnimMotionBlurSpawn {
+                slot: right_slot,
+                spawned_slot: right_spawned,
+                progress: right_progress,
+                ..
+            },
+        ) => {
+            left_slot == right_slot
+                && left_spawned == right_spawned
+                && left_progress == right_progress
+        }
+        (
             SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel {
                 slot: left_slot,
                 helper_ordinal: left_helper,
@@ -7838,6 +7907,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::FireDebirandoBeforeSpawn(slot)
         | SpriteMainCpuBoundary::FireDebirandoSpawn { slot, .. }
         | SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn { slot, .. }
+        | SpriteMainCpuBoundary::AgahnimMotionBlurSpawn { slot, .. }
         | SpriteMainCpuBoundary::TrinexxFinalPhaseTileCollision { slot, .. }
         | SpriteMainCpuBoundary::HelmasaurHardHatTileCollision { slot, .. }
         | SpriteMainCpuBoundary::LanmolaDrawPrefix { slot, .. }
@@ -28763,9 +28833,7 @@ impl ZeldaState {
         };
         if let Some(index) = receipts.semantic.iter().position(|receipt| {
             *receipt
-                == OriginalTimingSemanticReceipt::DungeonPushBlocksInProgress {
-                    next_index: cursor,
-                }
+                == OriginalTimingSemanticReceipt::DungeonPushBlocksInProgress { next_index: cursor }
         }) {
             receipts.semantic.remove(index);
         }

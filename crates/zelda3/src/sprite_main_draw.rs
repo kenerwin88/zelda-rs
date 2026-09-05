@@ -2133,21 +2133,76 @@ impl ZeldaState {
         if self.game_state.frame.frame_counter & 3 != 0 {
             return -1;
         }
+        if let Some(SpriteMainCpuBoundary::AgahnimMotionBlurSpawn {
+            slot,
+            spawned_slot,
+            progress,
+            bound: false,
+        }) = self.sprite_main_cpu_boundary
+        {
+            if usize::from(slot) == k {
+                // The source host stopped inside this spawn's shared helper:
+                // publish through the checkpoint and park; the resumed host
+                // finishes the spawn, the afterimage setup, and the caller's
+                // suffix (which sees no spawned slot on this host).
+                let mut info = SpriteSpawnInfo::default();
+                self.sprite_spawn_dynamically_selected_prefix(
+                    k,
+                    0xc1,
+                    &mut info,
+                    usize::from(spawned_slot),
+                    progress,
+                );
+                self.sprite_main_cpu_boundary =
+                    Some(SpriteMainCpuBoundary::AgahnimMotionBlurSpawn {
+                        slot,
+                        spawned_slot,
+                        progress,
+                        bound: true,
+                    });
+                return -1;
+            }
+        }
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically(k, 0xc1, &mut info);
         if j >= 0 {
-            let ju = j as usize;
-            self.sprite_set_spawned_coordinates(ju, &info);
-            let value = self.sprite_slot_view(k).graphics();
-            self.sprite_slot_view_mut(ju).set_graphics(value);
-            let value = 32;
-            self.sprite_slot_view_mut(ju).set_delay_main(value);
-            let value = 32;
-            self.sprite_slot_view_mut(ju).set_ignore_projectile(value);
-            let value = 32;
-            self.sprite_slot_view_mut(ju).set_c(value);
+            self.agahnim_motion_blur_after_spawn(k, j as usize, &info);
         }
         j
+    }
+
+    /// `Sprite_Agahnim_ApplyMotionBlur` after its spawn selected `j`.
+    fn agahnim_motion_blur_after_spawn(&mut self, k: usize, ju: usize, info: &SpriteSpawnInfo) {
+        self.sprite_set_spawned_coordinates(ju, info);
+        let value = self.sprite_slot_view(k).graphics();
+        self.sprite_slot_view_mut(ju).set_graphics(value);
+        let value = 32;
+        self.sprite_slot_view_mut(ju).set_delay_main(value);
+        let value = 32;
+        self.sprite_slot_view_mut(ju).set_ignore_projectile(value);
+        let value = 32;
+        self.sprite_slot_view_mut(ju).set_c(value);
+    }
+
+    /// Resumes an Agahnim motion-blur spawn from `progress`: the rest of the
+    /// shared spawn helper, the afterimage setup, and the clone-dash caller's
+    /// `sprite_oam_flags[j] = 4` (Sprite_7A_Agahnim state 7 with a running
+    /// anim clock is the only caller that reads the spawned slot).
+    pub(super) fn resume_agahnim_motion_blur_spawn(
+        &mut self,
+        k: usize,
+        spawned: usize,
+        progress: crate::SpriteDynamicSpawnProgress,
+    ) {
+        let mut info = SpriteSpawnInfo::default();
+        self.sprite_spawn_dynamically_selected_from(k, &mut info, spawned, progress);
+        self.agahnim_motion_blur_after_spawn(k, spawned, &info);
+        if self.sprite_slot_view(k).sprite_type() == 0x7a
+            && self.sprite_slot_view(k).ai_state() == 7
+            && self.sprite_slot_view(k).anim_clock() != 0
+        {
+            self.sprite_slot_view_mut(spawned).set_oam_flags(4);
+        }
     }
 
     pub(super) fn agahnim_perform_attack(&mut self, k: usize) {

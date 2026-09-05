@@ -19171,6 +19171,61 @@ fn lanmola_draw_prefix_stores_keep_flat_trail_bytes_past_the_moldorm_model() {
 }
 
 #[test]
+fn agahnim_motion_blur_spawn_checkpoints_resume_to_the_atomic_body() {
+    use crate::SpriteDynamicSpawnProgress as P;
+    for progress in [
+        P::TypePublished,
+        P::StatePublished,
+        P::ResetProperties {
+            completed_stores: 3,
+        },
+        P::LoadProperties {
+            completed_stores: 2,
+        },
+        P::IdentityPublished,
+        P::FloorPublished,
+        P::DirectionPublished,
+        P::DieActionCleared,
+        P::SubtypeCleared,
+    ] {
+        let mut state = ZeldaState::new();
+        state.game_state.world.location.set_indoor_flag(1);
+        state.game_state.frame.frame_counter = 248;
+        state.sprite_slot_view_mut(1).set_sprite_type(0x7a);
+        state.sprite_slot_view_mut(1).set_state(9);
+        state.sprite_slot_view_mut(1).set_ai_state(7);
+        state.sprite_slot_view_mut(1).set_anim_clock(1);
+        state.sprite_slot_view_mut(1).set_graphics(2);
+        state.sprite_slot_view_mut(1).set_x_low(0xb6);
+        state.sprite_slot_view_mut(1).set_x_high(0x1a);
+        state.sprite_slot_view_mut(1).set_y_low(0xaa);
+        state.sprite_slot_view_mut(1).set_y_high(0x01);
+        // Every other slot but 3 is busy so both runs spawn into slot 3.
+        for slot in (0..16).filter(|slot| *slot != 1 && *slot != 3) {
+            state.sprite_slot_view_mut(slot).set_state(9);
+        }
+        let mut atomic = state.clone();
+        let j = atomic.sprite_agahnim_apply_motion_blur(1);
+        assert_eq!(j, 3);
+        atomic.sprite_slot_view_mut(3).set_oam_flags(4);
+        state.sprite_main_cpu_boundary = Some(SpriteMainCpuBoundary::AgahnimMotionBlurSpawn {
+            slot: 1,
+            spawned_slot: 3,
+            progress,
+            bound: false,
+        });
+        assert_eq!(state.sprite_agahnim_apply_motion_blur(1), -1);
+        assert!(matches!(
+            state.sprite_main_cpu_boundary.take(),
+            Some(SpriteMainCpuBoundary::AgahnimMotionBlurSpawn { bound: true, .. })
+        ));
+        state.resume_agahnim_motion_blur_spawn(1, 3, progress);
+        assert_eq!(state.ram, atomic.ram, "{progress:?}");
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+    }
+}
+
+#[test]
 fn initialize_prep_move_y_checkpoints_resume_to_the_atomic_body() {
     use crate::SpriteMoveXYCheckpoint as C;
     for sprite_type in [0x8au8, 0xd3] {

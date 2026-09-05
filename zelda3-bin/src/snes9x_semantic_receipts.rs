@@ -1107,6 +1107,9 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     fire_debirando_spawn: Option<(u8, u8, SpriteDynamicSpawnProgress)>,
     trinexx_death_spawn: Option<(u8, u8, SpriteDynamicSpawnProgress)>,
+    /// `Sprite_Agahnim_ApplyMotionBlur`'s type-$C1 afterimage spawn in
+    /// flight: parent slot, spawned slot, and the shared-helper progress.
+    agahnim_motion_blur_spawn: Option<(u8, u8, SpriteDynamicSpawnProgress)>,
     #[serde(default)]
     antfairy_subtype2_increment_slot: Option<u8>,
     #[serde(default)]
@@ -3205,6 +3208,57 @@ impl SpriteMainExecutionTracker {
         )
     }
 
+    fn observe_agahnim_motion_blur_spawn_write(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        let pc = event.pc.ok_or("Snes9x WRAM write omitted PC")? & 0x00ff_ffff;
+        let address = event.address.ok_or("Snes9x WRAM write omitted address")?;
+        // Sprite_Agahnim_ApplyMotionBlur ($1D:D392) JSLs the spawn helper
+        // from $1D:D39B with type $C1; the JSL return names the caller.
+        if pc == SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC
+            && event.return_address.map(|r| r & 0x00ff_ffff) == Some(0x1d_d39f)
+        {
+            let slot = self
+                .current_slot
+                .ok_or("Snes9x spawned an Agahnim afterimage before a sprite slot")?;
+            let spawned_slot = u8::try_from(
+                event
+                    .y
+                    .ok_or("Snes9x Agahnim afterimage type write omitted slot Y")?,
+            )
+            .map_err(|_| "Snes9x Agahnim afterimage slot exceeded one byte")?;
+            if event.x != Some(u16::from(slot))
+                || spawned_slot >= 16
+                || address != SPRITE_TYPE_BASE + u16::from(spawned_slot)
+                || event.value != Some(0xc1)
+            {
+                return Err(format!(
+                    "Snes9x Agahnim afterimage type publication disagreed: parent={slot}, x={:?}, spawned={spawned_slot}, address=${address:04x}, value={:?}",
+                    event.x, event.value,
+                ));
+            }
+            self.agahnim_motion_blur_spawn = Some((
+                slot,
+                spawned_slot,
+                SpriteDynamicSpawnProgress::TypePublished,
+            ));
+            return Ok(());
+        }
+        observe_dynamic_spawn_progress_write(
+            &mut self.agahnim_motion_blur_spawn,
+            event,
+            "Agahnim afterimage",
+        )
+    }
+
+    fn observe_agahnim_motion_blur_spawn_boundary(
+        &mut self,
+        event: &RawTraceEvent,
+    ) -> Result<(), String> {
+        observe_dynamic_spawn_progress_boundary(&mut self.agahnim_motion_blur_spawn, event)
+    }
+
     fn observe_trinexx_death_spawn_boundary(
         &mut self,
         event: &RawTraceEvent,
@@ -3448,6 +3502,18 @@ impl SpriteMainExecutionTracker {
                 "Trinexx explosion dynamic spawn outlived its active sprite slot",
             );
             return SpriteMainProgress::TrinexxDeathExplosionSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            };
+        }
+        if let Some((slot, spawned_slot, progress)) = self.agahnim_motion_blur_spawn {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Agahnim afterimage spawn outlived its active sprite slot",
+            );
+            return SpriteMainProgress::AgahnimMotionBlurSpawn {
                 slot,
                 spawned_slot,
                 progress,
@@ -4118,6 +4184,15 @@ impl SpriteMainExecutionTracker {
                 spawned_slot,
                 progress,
             } => MainLoopInterruption::SpriteMainTrinexxDeathExplosionSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            },
+            SpriteMainProgress::AgahnimMotionBlurSpawn {
+                slot,
+                spawned_slot,
+                progress,
+            } => MainLoopInterruption::SpriteMainAgahnimMotionBlurSpawn {
                 slot,
                 spawned_slot,
                 progress,
@@ -6019,6 +6094,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_guard_prep_tile_collision_return(returned_event)?;
                 execution.observe_fire_debirando_spawn_boundary(returned_event)?;
                 execution.observe_trinexx_death_spawn_boundary(returned_event)?;
+                execution.observe_agahnim_motion_blur_spawn_boundary(returned_event)?;
                 execution.observe_master_sword_light_beam_spawn_boundary(returned_event)?;
                 execution.observe_bari_before_random(returned_event)?;
                 execution.observe_main_and_aux1_timer_decrements(returned_event)?;
@@ -6832,6 +6908,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.fire_debirando_before_spawn_slot = None;
                             execution.fire_debirando_spawn = None;
                             execution.trinexx_death_spawn = None;
+                            execution.agahnim_motion_blur_spawn = None;
                             execution.antfairy_subtype2_increment_slot = None;
                             execution.lanmola_subtype2_increment_slot = None;
                             execution.lanmola_draw_prefix = None;
@@ -7003,6 +7080,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.fire_debirando_before_spawn_slot = None;
                         execution.fire_debirando_spawn = None;
                         execution.trinexx_death_spawn = None;
+                        execution.agahnim_motion_blur_spawn = None;
                         execution.antfairy_subtype2_increment_slot = None;
                         execution.lanmola_subtype2_increment_slot = None;
                         execution.lanmola_draw_prefix = None;
@@ -7426,6 +7504,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_kholdstare_damage_pending(&event)?;
                     execution.observe_fire_debirando_spawn_write(&event)?;
                     execution.observe_trinexx_death_spawn_write(&event)?;
+                    execution.observe_agahnim_motion_blur_spawn_write(&event)?;
                     execution.observe_master_sword_light_beam_spawn_write(&event)?;
                     execution.observe_antfairy_subtype2_increment(&event)?;
                     execution.observe_lanmola_subtype2_increment(&event)?;
@@ -8076,6 +8155,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_kholdstare_damage_pending(&event)?;
                     execution.observe_fire_debirando_spawn_boundary(&event)?;
                     execution.observe_trinexx_death_spawn_boundary(&event)?;
+                    execution.observe_agahnim_motion_blur_spawn_boundary(&event)?;
                     execution.observe_guard_prep_parry_hitbox(&event)?;
                     execution.observe_guard_prep_patrol_delay(&event)?;
                     execution.observe_guard_prep_tile_collision_return(&event)?;
@@ -9947,6 +10027,15 @@ fn retire_resumed_main_loop_interruption(
                     spawned_slot,
                     progress,
                 }),
+                MainLoopInterruption::SpriteMainAgahnimMotionBlurSpawn {
+                    slot,
+                    spawned_slot,
+                    progress,
+                } => Some(SpriteMainProgress::AgahnimMotionBlurSpawn {
+                    slot,
+                    spawned_slot,
+                    progress,
+                }),
                 MainLoopInterruption::SpriteMainGuardPrepWeaponFlagsPending(slot) => {
                     Some(SpriteMainProgress::GuardPrepWeaponFlagsPending(slot))
                 }
@@ -11137,6 +11226,7 @@ mod tests {
             fire_debirando_before_spawn_slot: None,
             fire_debirando_spawn: None,
             trinexx_death_spawn: None,
+            agahnim_motion_blur_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
             lanmola_draw_prefix: None,
@@ -13883,6 +13973,59 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn agahnim_motion_blur_spawn_tracker_follows_the_shared_helper() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(1);
+        let mut store = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_FIRST_TYPE_STORE_PC),
+            Some(1),
+            Some(SPRITE_TYPE_BASE + 3),
+        );
+        store.y = Some(3);
+        store.value = Some(0xc1);
+        store.return_address = Some(0x1dd39f);
+        tracker
+            .observe_agahnim_motion_blur_spawn_write(&store)
+            .unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::AgahnimMotionBlurSpawn {
+                slot: 1,
+                spawned_slot: 3,
+                progress: SpriteDynamicSpawnProgress::TypePublished,
+            }
+        );
+        let mut state = raw(
+            "wram-write",
+            Some(SPRITE_SPAWN_DYNAMICALLY_STATE_STORE_PC),
+            Some(1),
+            Some(SPRITE_STATE_BASE + 3),
+        );
+        state.y = Some(3);
+        state.value = Some(9);
+        tracker
+            .observe_agahnim_motion_blur_spawn_write(&state)
+            .unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::AgahnimMotionBlurSpawn {
+                slot: 1,
+                spawned_slot: 3,
+                progress: SpriteDynamicSpawnProgress::StatePublished,
+            }
+        );
+        // Another caller's spawn of the same type is not the checkpoint.
+        let mut other = SpriteMainExecutionTracker::default();
+        other.current_slot = Some(1);
+        store.return_address = Some(0x1dd2a0);
+        other
+            .observe_agahnim_motion_blur_spawn_write(&store)
+            .unwrap();
+        assert_eq!(other.agahnim_motion_blur_spawn, None);
     }
 
     #[test]
@@ -18079,6 +18222,7 @@ mod tests {
             fire_debirando_before_spawn_slot: None,
             fire_debirando_spawn: None,
             trinexx_death_spawn: None,
+            agahnim_motion_blur_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
             lanmola_draw_prefix: None,
@@ -18196,6 +18340,7 @@ mod tests {
             fire_debirando_before_spawn_slot: None,
             fire_debirando_spawn: None,
             trinexx_death_spawn: None,
+            agahnim_motion_blur_spawn: None,
             antfairy_subtype2_increment_slot: None,
             lanmola_subtype2_increment_slot: None,
             lanmola_draw_prefix: None,
