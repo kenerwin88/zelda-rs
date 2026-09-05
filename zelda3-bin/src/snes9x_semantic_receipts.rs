@@ -3141,6 +3141,12 @@ impl HostFrameWindow {
             && entry.main == 14
             && returned.main == 14
             && entry.frame_counter == returned.frame_counter
+            // A completed enclosing caller supersedes the intermediate VWF
+            // decoder endpoint. Stopping at that endpoint would omit the
+            // terminal command body (including WAIT/END countdown stores).
+            && !receipts.iter().any(|receipt| {
+                matches!(receipt, OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted)
+            })
         {
             let message_read_position = dialogue_message_read_position
                 .ok_or("Snes9x dialogue continuation omitted its semantic message read position")?;
@@ -10844,6 +10850,29 @@ mod tests {
         assert!(
             !receipts.contains(&OriginalTimingSemanticReceipt::MainLoopIterationReturnedToWait,)
         );
+    }
+
+    #[test]
+    fn dialogue_terminal_caller_supersedes_the_decoder_endpoint() {
+        // Cold host 20440 resumes a glyph at $0E:CC2F, executes END's
+        // countdown decrement, returns through the common suffix, and enters
+        // the next NMI. The read cursor remains 108 at the END command.
+        let mut host = HostFrameWindow::default();
+        let mut entry = frame_with_sub("entry", 440, 14, 2);
+        entry.pc = Some(0x0e_cc2e);
+        host.observe(&entry).unwrap();
+        host.observe(&raw("nmi", Some(0x0e_cc2f), None, None))
+            .unwrap();
+        let mut returned = frame_with_sub("return", 440, 14, 2);
+        returned.pc = Some(0x00_80c9);
+        host.observe(&returned).unwrap();
+        let terminal = vec![
+            OriginalTimingSemanticReceipt::MainLoopProgress(MainLoopProgress::CallStackContinued),
+            OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+        ];
+        let mut receipts = terminal.clone();
+        host.finish(&mut receipts, Some(108), true).unwrap();
+        assert_eq!(receipts, terminal);
     }
 
     #[test]
