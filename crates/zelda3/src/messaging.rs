@@ -5661,20 +5661,31 @@ impl ZeldaState {
         }
     }
 
+    pub(super) fn begin_live_dialogue_scroll_after_vwf_endpoint(&mut self) {
+        let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos() as usize;
+        let (_, command, _) = self.text_decode_cmd(
+            self.game_state.messaging.decoded_text.byte(read_pos),
+            self.game_state.messaging.decoded_text.next_byte(read_pos),
+        );
+        assert_eq!(
+            command, TEXT_CMD_SCROLL,
+            "source scroll entry did not follow the native VWF decoder endpoint"
+        );
+        assert!(self.dialogue_scroll_cpu_is_idle());
+        assert!(self.dialogue_live_message_read_position_target.is_none());
+        assert!(
+            !self.RenderText_Draw_Scroll(0),
+            "a suspended source scroll entry cannot complete the text line"
+        );
+        assert!(!self.dialogue_scroll_cpu_is_idle());
+    }
+
     pub(super) fn RenderText_Draw_Scroll(&mut self, cycles_before_vblank: u32) -> bool {
-        // ROM ground truth (instrumented Snes9x oracle, intro telepathy,
-        // scroll speed 4): one scroll call drains `scroll_speed + 1` pixel
-        // passes, but the buffer copy is slow enough that the caller spans
-        // THREE hardware frames. The first slice copies 2 pixels; the next
-        // copies the remaining 3 and reaches $0e:c9f9/$0e:c9fc after that
-        // frame's NMI; the third is the return suffix that publishes sprites
-        // and clears the software NMI latch (WRAM 0x1cdf advances 2,3,0).
-        // The trailing pixel that completes the 16-pixel line is a cheap
-        // one-frame call. Model the two continuations in
-        // `zelda_run_game_loop`/`run_frame_internal`. Not modeling
-        // the lag left rust's frame counter 6 frames ahead per line scroll,
-        // phase-shifting every `& 3`-gated effect after the message (the
-        // post-dialogue COLDATA fade diverged for 350 frames).
+        // One source call drains at most `scroll_speed + 1` pixel passes.
+        // Live timing publishes the actual copy boundaries: ordinary entry
+        // can span 2+2+1 passes, while entry after a VWF glyph can span 2+3.
+        // The caller stays suspended until the source RTS, independently of
+        // the number of copies completed in any particular host.
         let group = u16::from(self.game_state.messaging.runtime.dialogue_scroll_speed()) + 1;
         let nibble_before = u16::from(
             self.game_state
@@ -5684,6 +5695,31 @@ impl ZeldaState {
                 & 0x0f,
         );
         let remaining_in_line = 16u16.saturating_sub(nibble_before);
+        if let Some(progress) = self.take_original_timing_dialogue_scroll_progress(true) {
+            if self.rom_startup_timing() && self.triforce_room_poly_thread_is_active() {
+                self.triforce_room_scroll_this_iteration = true;
+            }
+            let copies = u16::from(progress.completed_pixel_passes);
+            assert!(
+                copies <= group.min(remaining_in_line),
+                "source scroll copies exceed the native call's remaining work"
+            );
+            if !progress.returned {
+                self.begin_dialogue_scroll(
+                    DialogueTextGeneration::PublishedDisplay,
+                    DialogueScrollCompletionTiming::AfterReturnBoundary,
+                );
+            }
+            let line_completed = self.render_text_scroll_pixels(copies);
+            return line_completed && progress.returned;
+        }
+        assert!(
+            !matches!(
+                self.original_timing_owner,
+                crate::zelda_rtl::OriginalTimingOwnerState::Live
+            ),
+            "live dialogue scroll entry requires its source copy/return receipt"
+        );
         if self.rom_startup_timing() && self.triforce_room_poly_thread_is_active() {
             // Under the Triforce room's V-IRQ thread the main loop owns only
             // the lines from the IRQ to vblank; the whole call runs here and
@@ -5709,26 +5745,6 @@ impl ZeldaState {
             // remaining line synchronously so the native cursor can reach
             // the published endpoint (route host 46822).
             return self.render_text_scroll_pixels(remaining_in_line);
-        }
-        if matches!(
-            self.original_timing_owner,
-            crate::zelda_rtl::OriginalTimingOwnerState::Live
-        ) && self
-            .original_timing_semantic_receipts
-            .as_ref()
-            .is_some_and(|receipts| {
-                receipts.semantic().iter().any(|receipt| {
-                    *receipt
-                        == crate::zelda_rtl::OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted
-                })
-            })
-        {
-            // The live host's wire proves the shared ZeldaRunGameLoop suffix
-            // completes inside this host, which a blocked multi-frame copy
-            // cannot allow: this scroll call drains its group and returns
-            // in-frame (route host 20771). The wire receipt supersedes the
-            // entry-time lag estimate.
-            return self.render_text_scroll_pixels(group.min(remaining_in_line));
         }
         // Copy slices retain the published display. CPU/vblank headroom only
         // decides whether the caller finishes before the next boundary or

@@ -28510,24 +28510,33 @@ fn early_dialogue_completion_state(pending_subroutine: u8) -> ZeldaState {
     state.set_core_update_disable_flag(2);
     state.original_timing_owner = OriginalTimingOwnerState::Live;
     state
-        .install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
-            1,
-            0,
-            vec![
-                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
-                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
-                OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
-                    high: 0,
-                    low: 0,
-                    high_filtered: 0,
-                    low_filtered: 0,
-                }),
-                OriginalTimingSemanticReceipt::MainLoopProgress(
-                    crate::MainLoopProgress::IterationStarted,
-                ),
-                OriginalTimingSemanticReceipt::SpriteMainReturned,
-            ],
-        ))
+        .install_original_timing_host_receipts(
+            OriginalTimingHostReceipts::new(
+                1,
+                0,
+                vec![
+                    OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+                    OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                    OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+                        high: 0,
+                        low: 0,
+                        high_filtered: 0,
+                        low_filtered: 0,
+                    }),
+                    OriginalTimingSemanticReceipt::MainLoopProgress(
+                        crate::MainLoopProgress::IterationStarted,
+                    ),
+                    OriginalTimingSemanticReceipt::SpriteMainReturned,
+                ],
+            )
+            .with_dialogue_scroll_progress(vec![
+                crate::DialogueScrollProgressReceipt {
+                    entered: false,
+                    completed_pixel_passes: 3,
+                    returned: true,
+                },
+            ]),
+        )
         .unwrap();
     state
 }
@@ -28764,6 +28773,135 @@ fn dialogue_scroll_machine_has_closed_hardware_boundary_sequences() {
     );
 }
 
+#[test]
+fn live_scroll_preserves_the_caller_through_two_two_one_source_copies() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.messaging_state_mut().set_module(1);
+    state.messaging_state_mut().set_text_render_state(3);
+    state.messaging_state_mut().set_dialogue_scroll_speed(4);
+    for index in 0..crate::PresentedDialogueText::WORD_COUNT {
+        state.set_messaging_render_buffer_word(index, index as u16);
+    }
+    let mut atomic = state.clone();
+    assert!(!atomic.render_text_scroll_pixels(5));
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    let install = |state: &mut ZeldaState, entered, copies, returned| {
+        state.original_timing_semantic_receipts = Some(
+            OriginalTimingHostReceipts::new(0, 0, vec![]).with_dialogue_scroll_progress(vec![
+                crate::DialogueScrollProgressReceipt {
+                    entered,
+                    completed_pixel_passes: copies,
+                    returned,
+                },
+            ]),
+        );
+    };
+    install(&mut state, true, 2, false);
+    assert!(!state.RenderText_Draw_Scroll(0));
+    assert!(!state.dialogue_scroll_cpu_is_idle());
+    install(&mut state, false, 2, false);
+    state.zelda_run_game_loop_body_with_dialogue_text_dma(
+        Some(crate::MainLoopProgress::CallStackContinued),
+        &mut None,
+        None,
+        None,
+    );
+    assert!(state.dialogue_scroll_is_copying_remaining_pixels());
+    assert_eq!(
+        state.game_state.messaging.runtime.dialogue_msg_read_pos(),
+        0
+    );
+    install(&mut state, false, 1, true);
+    state.zelda_run_game_loop_body_with_dialogue_text_dma(
+        Some(crate::MainLoopProgress::CallStackContinued),
+        &mut None,
+        None,
+        None,
+    );
+    assert_eq!(
+        state.dialogue_scroll_phase(),
+        DialogueScrollPhase::ReturnOnly
+    );
+    assert_eq!(
+        state.game_state.messaging.render_buffer,
+        atomic.game_state.messaging.render_buffer
+    );
+    assert_eq!(
+        state.game_state.messaging.dialogue_source_offset,
+        atomic.game_state.messaging.dialogue_source_offset
+    );
+}
+
+#[test]
+fn vwf_endpoint_preflights_the_following_source_scroll_before_mutation() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(14);
+    state.set_submodule(2);
+    state.messaging_state_mut().set_module(1);
+    state.messaging_state_mut().set_text_render_state(3);
+    state.messaging_state_mut().set_dialogue_scroll_speed(4);
+    state
+        .messaging_text_mut()
+        .load_decoded_dialogue(&[TEXT_COMMAND_START_US + 12]);
+    state.dialogue_fast_forward_hold_active = true;
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_semantic_receipts = Some(
+        OriginalTimingHostReceipts::new(
+            0,
+            0,
+            vec![OriginalTimingSemanticReceipt::DialogueExecutionProgress(
+                crate::DialogueExecutionProgress::ResumedRenderingWithoutMainIteration {
+                    message_read_position: 0,
+                },
+            )],
+        )
+        .with_dialogue_scroll_progress(vec![crate::DialogueScrollProgressReceipt {
+            entered: true,
+            completed_pixel_passes: 2,
+            returned: false,
+        }]),
+    );
+    let before = state.original_timing_semantic_receipts.clone();
+    let transition = state.original_timing_suspended_vwf_endpoint_transition_plan(0, false);
+    assert_eq!(state.original_timing_semantic_receipts, before);
+    assert!(state.dialogue_scroll_cpu_is_idle());
+
+    let mut invalid = state.clone();
+    invalid
+        .original_timing_semantic_receipts
+        .as_mut()
+        .unwrap()
+        .dialogue_scroll_progress[0]
+        .completed_pixel_passes = 6;
+    let invalid_receipts = invalid.original_timing_semantic_receipts.clone();
+    let invalid_buffer = invalid.game_state.messaging.render_buffer.clone();
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        invalid.original_timing_suspended_vwf_endpoint_transition_plan(0, false);
+    }))
+    .is_err());
+    assert_eq!(invalid.original_timing_semantic_receipts, invalid_receipts);
+    assert_eq!(invalid.game_state.messaging.render_buffer, invalid_buffer);
+    assert!(invalid.dialogue_scroll_cpu_is_idle());
+
+    state.complete_original_timing_suspended_vwf_endpoint(0, false, transition);
+    assert!(state.dialogue_scroll_is_copying_remaining_pixels());
+    assert!(!state.dialogue_fast_forward_hold_active);
+    assert_eq!(
+        state.game_state.messaging.runtime.dialogue_msg_read_pos(),
+        0
+    );
+    assert_eq!(
+        state
+            .game_state
+            .messaging
+            .dialogue_source_offset
+            .bank_offset_low_nibble(),
+        2
+    );
+}
+
 fn return_only_dialogue_state_before_run2508() -> ZeldaState {
     let mut state = ZeldaState::new();
     state.set_rom_startup_timing(true);
@@ -28849,6 +28987,11 @@ fn run2509_dialogue_receipts() -> OriginalTimingHostReceipts {
             OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
         ],
     )
+    .with_dialogue_scroll_progress(vec![crate::DialogueScrollProgressReceipt {
+        entered: true,
+        completed_pixel_passes: 2,
+        returned: false,
+    }])
 }
 
 #[test]

@@ -40,7 +40,7 @@ pub use timing_receipts::{
     CachedSpriteExecutionBodyProgress, CachedSpriteExecutionProgress,
     CachedSpriteExecutionProgressReceipt, CreditsEndSequence32ProgressReceipt,
     CreditsSceneLoadProgress, CreditsSceneLoadProgressReceipt, DesertPrayerIrisProgress,
-    DialogueExecutionProgress, DungeonFallingEntranceProgress,
+    DialogueExecutionProgress, DialogueScrollProgressReceipt, DungeonFallingEntranceProgress,
     DungeonPegAttributeFlipProgressReceipt, DungeonResetSpritesProgressReceipt,
     FileSelectGraphicsLowWramClearProgress, GuardAnimationCheckpoint, ItemReceiptGraphicsCaller,
     ItemReceiptGraphicsProgressReceipt, JoypadPublication, LinkOamStairProgress,

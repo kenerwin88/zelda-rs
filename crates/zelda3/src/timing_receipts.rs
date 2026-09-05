@@ -1786,6 +1786,17 @@ impl ForwardMainLoopInterruptionError {
     }
 }
 
+/// Source progress of one RenderText scroll call during a host interval.
+/// Each pass denotes a completed native pixel-copy operation, not oracle
+/// buffer contents or an absolute scroll-position value. Multiple calls in
+/// one host retain their source order as separate receipts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DialogueScrollProgressReceipt {
+    pub entered: bool,
+    pub completed_pixel_passes: u8,
+    pub returned: bool,
+}
+
 /// One timing-authority result for exactly one upcoming host call.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OriginalTimingHostReceipts {
@@ -1803,6 +1814,8 @@ pub struct OriginalTimingHostReceipts {
     /// authoritative for the value observed at that point.
     #[serde(default)]
     pub(crate) song_end_poll_native_sample_offsets: Vec<u16>,
+    #[serde(default)]
+    pub(crate) dialogue_scroll_progress: Vec<DialogueScrollProgressReceipt>,
     /// One interruption temporarily forwarded by the host-timeline owner to
     /// the translated C caller during this same dispatch. The serialized
     /// oracle stream remains the ordered `NmiAccepted`/`MainLoopInterrupted`
@@ -1837,6 +1850,7 @@ impl OriginalTimingHostReceipts {
             semantic,
             nmi_acceptance_ppu_register_operands: Vec::new(),
             song_end_poll_native_sample_offsets: Vec::new(),
+            dialogue_scroll_progress: Vec::new(),
             forwarded_main_loop_interruption: None,
             presented_animated_bg_tiles: None,
             presented_cgram: None,
@@ -1864,6 +1878,14 @@ impl OriginalTimingHostReceipts {
 
     pub fn with_song_end_poll_native_sample_offsets(mut self, offsets: Vec<u16>) -> Self {
         self.song_end_poll_native_sample_offsets = offsets;
+        self
+    }
+
+    pub fn with_dialogue_scroll_progress(
+        mut self,
+        progress: Vec<DialogueScrollProgressReceipt>,
+    ) -> Self {
+        self.dialogue_scroll_progress = progress;
         self
     }
 

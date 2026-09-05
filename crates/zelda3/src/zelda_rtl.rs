@@ -28674,6 +28674,12 @@ impl ZeldaState {
         // semantic control fact has been consumed by its native owner. Input,
         // host-call ordering, and duplicate facts remain fail-closed at
         // installation.
+        assert!(
+            self.original_timing_semantic_receipts
+                .as_ref()
+                .is_none_or(|receipts| receipts.dialogue_scroll_progress.is_empty()),
+            "source dialogue scroll operations were not consumed by their native caller"
+        );
         self.original_timing_semantic_receipts = None;
         self.original_timing_host_dispatch_active = false;
         self.original_timing_host_iteration_uninterrupted = false;
@@ -30504,6 +30510,54 @@ impl ZeldaState {
             .begin_scroll(frozen_scanout, completion_timing);
     }
 
+    fn original_timing_dialogue_scroll_progress(
+        &self,
+    ) -> Option<crate::DialogueScrollProgressReceipt> {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return None;
+        }
+        self.original_timing_semantic_receipts
+            .as_ref()?
+            .dialogue_scroll_progress
+            .first()
+            .copied()
+    }
+
+    fn take_original_timing_dialogue_scroll_progress(
+        &mut self,
+        entered: bool,
+    ) -> Option<crate::DialogueScrollProgressReceipt> {
+        let progress = self.original_timing_dialogue_scroll_progress()?;
+        assert_eq!(
+            progress.entered, entered,
+            "dialogue scroll receipt reached the wrong native call stage"
+        );
+        assert!(
+            progress.completed_pixel_passes <= 16,
+            "dialogue scroll receipt exceeds a text line"
+        );
+        self.original_timing_semantic_receipts
+            .as_mut()
+            .unwrap()
+            .dialogue_scroll_progress
+            .remove(0);
+        Some(progress)
+    }
+
+    fn take_terminal_dialogue_scroll_pixel_passes(&mut self) -> u16 {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return 3;
+        }
+        let progress = self
+            .take_original_timing_dialogue_scroll_progress(false)
+            .expect("a source-completed scroll requires its pixel-copy/return receipt");
+        assert!(
+            progress.returned,
+            "a terminal scroll caller cannot precede its copy return"
+        );
+        u16::from(progress.completed_pixel_passes)
+    }
+
     fn finish_dialogue_scroll_remaining_pixels(&mut self) -> DialogueScrollCompletionTiming {
         self.dialogue_scroll_machine_mut()
             .finish_remaining_pixels(None)
@@ -30553,7 +30607,8 @@ impl ZeldaState {
             DialogueScrollCompletionTiming::AfterReturnBoundary,
             "a Continued victory-module scroll must complete after its return boundary",
         );
-        let command_done = self.render_text_scroll_pixels(3);
+        let passes = self.take_terminal_dialogue_scroll_pixel_passes();
+        let command_done = self.render_text_scroll_pixels(passes);
         if command_done {
             let read_pos = self.game_state.messaging.runtime.dialogue_msg_read_pos();
             self.messaging_state_mut()
@@ -42489,7 +42544,8 @@ impl ZeldaState {
                             DialogueScrollCompletionTiming::AfterReturnBoundary,
                             "a Continued scroll terminal must complete after its return boundary",
                         );
-                        let command_done = state.render_text_scroll_pixels(3);
+                        let passes = state.take_terminal_dialogue_scroll_pixel_passes();
+                        let command_done = state.render_text_scroll_pixels(passes);
                         if command_done {
                             let read_pos =
                                 state.game_state.messaging.runtime.dialogue_msg_read_pos();
@@ -52174,6 +52230,24 @@ impl ZeldaState {
             assert!(!probe.dialogue_fast_forward_hold_pending);
             assert_eq!(probe.dialogue_live_message_read_position_target, None);
         }
+        if probe
+            .original_timing_dialogue_scroll_progress()
+            .is_some_and(|progress| progress.entered)
+        {
+            assert!(
+                !current_glyph_started,
+                "a source scroll entry cannot retain an active glyph"
+            );
+            assert_eq!(
+                probe.game_state.messaging.runtime.dialogue_msg_read_pos(),
+                message_read_position
+            );
+            // Validate the next source call on this disposable native state,
+            // before the real endpoint or scroll receipt can be consumed.
+            probe.dialogue_fast_forward_hold_pending = false;
+            probe.dialogue_live_message_read_position_target = None;
+            probe.begin_live_dialogue_scroll_after_vwf_endpoint();
+        }
         transition
     }
 
@@ -52322,6 +52396,21 @@ impl ZeldaState {
         if transition.advanced_native_vwf() {
             self.dialogue_fast_forward_hold_pending = false;
             self.dialogue_live_message_read_position_target = None;
+        }
+        if self
+            .original_timing_dialogue_scroll_progress()
+            .is_some_and(|progress| progress.entered)
+        {
+            assert!(
+                !current_glyph_started,
+                "a VWF glyph and its following scroll cannot both own the source endpoint"
+            );
+            assert_eq!(
+                self.game_state.messaging.runtime.dialogue_msg_read_pos(),
+                message_read_position
+            );
+            self.begin_live_dialogue_scroll_after_vwf_endpoint();
+            self.dialogue_fast_forward_hold_active = false;
         }
     }
 
@@ -52686,7 +52775,22 @@ impl ZeldaState {
             // NMI. Phase 1 is consumed separately by run_frame_internal as a
             // return-only slice so its NMI stays before the game-loop suffix.
             debug_assert!(self.dialogue_scroll_is_copying_remaining_pixels());
-            let passes = 3;
+            let passes = if matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+                let Some(progress) = self.take_original_timing_dialogue_scroll_progress(false)
+                else {
+                    // A host spent entirely in the suspended NMI handler has
+                    // no source scroll-copy operation to publish.
+                    return;
+                };
+                let passes = u16::from(progress.completed_pixel_passes);
+                if !progress.returned {
+                    self.render_text_scroll_pixels(passes);
+                    return;
+                }
+                passes
+            } else {
+                3
+            };
             // The entry-time cycle estimate is only a fallback for translated-only
             // execution. A Live timing owner directly reports whether this source
             // host returned through ZeldaRunGameLoop and began another iteration;

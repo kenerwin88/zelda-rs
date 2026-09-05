@@ -32,6 +32,59 @@ const TRACE_PATH_ENV: &str = "ZELDA3_SNES9X_TRACE";
 const TRACE_EVENTS_ENV: &str = "ZELDA3_SNES9X_TRACE_EVENTS";
 const TRACE_WRAM_ENV: &str = "ZELDA3_SNES9X_TRACE_WRAM";
 const TRACE_PCS_ENV: &str = "ZELDA3_SNES9X_TRACE_PCS";
+const DIALOGUE_SCROLL_ENTRY_PC: u32 = 0x0e_cfe2;
+const DIALOGUE_SCROLL_PIXEL_COMPLETED_PC: u32 = 0x0e_d088;
+const DIALOGUE_SCROLL_RETURN_PC: u32 = 0x0e_d0c2;
+
+#[derive(Default)]
+struct DialogueScrollHostWindow {
+    completed: Vec<zelda3::DialogueScrollProgressReceipt>,
+    active: Option<zelda3::DialogueScrollProgressReceipt>,
+}
+
+impl DialogueScrollHostWindow {
+    fn observe(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        if event.event == "pc" {
+            match pc {
+                DIALOGUE_SCROLL_ENTRY_PC => {
+                    if self.active.is_some() {
+                        return Err("Snes9x reentered an active dialogue scroll call".to_string());
+                    }
+                    self.active = Some(zelda3::DialogueScrollProgressReceipt {
+                        entered: true,
+                        ..Default::default()
+                    });
+                }
+                DIALOGUE_SCROLL_PIXEL_COMPLETED_PC => {
+                    let progress = self.active.get_or_insert_with(Default::default);
+                    if progress.completed_pixel_passes == 16 {
+                        return Err(
+                            "Snes9x dialogue scroll exceeded one line in one call".to_string()
+                        );
+                    }
+                    progress.completed_pixel_passes += 1;
+                }
+                DIALOGUE_SCROLL_RETURN_PC => {
+                    let mut progress = self.active.take().unwrap_or_default();
+                    progress.returned = true;
+                    self.completed.push(progress);
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(mut self) -> Vec<zelda3::DialogueScrollProgressReceipt> {
+        if let Some(progress) = self.active {
+            self.completed.push(progress);
+        }
+        self.completed
+    }
+}
 const REQUIRED_TRACE_EVENTS: &[&str] = &["frame", "nmi", "nmi-resume", "wram", "rom-rng", "pc"];
 
 const FRAME_COUNTER: u16 = 0x001a;
@@ -2404,6 +2457,7 @@ pub(crate) struct Snes9xOracleSemanticTrace {
     /// Host-local acceptance operands drained with the ordered receipt vector.
     /// They never enter the cross-host semantic decoder checkpoint.
     host_nmi_ppu_register_operands: Vec<NmiPpuRegisterOperands>,
+    host_dialogue_scroll_progress: Vec<zelda3::DialogueScrollProgressReceipt>,
 }
 
 const SEMANTIC_TRACE_CHECKPOINT_SCHEMA: u32 = 19;
@@ -3279,7 +3333,7 @@ impl Snes9xOracleSemanticTrace {
                         "058af3", "0684eb", "069271", "06a628", "06a724", "06b9cc", "06b9d0",
                         "0799ad", "079a0b", "008225", "0082c7", "00d4ed", "09c499", "09c4aa",
                         "09c173", "09f63f", "09f825", "0ffdc3", "00d423", "00e75c", "00e766",
-                        "00d44c",
+                        "00d44c", "0ecfe2", "0ed088", "0ed0c2",
                     ],
                 ),
             );
@@ -3352,6 +3406,7 @@ impl Snes9xOracleSemanticTrace {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         })
     }
 
@@ -3483,6 +3538,9 @@ impl Snes9xOracleSemanticTrace {
         if !self.host_nmi_ppu_register_operands.is_empty() {
             return Err("prior Snes9x host NMI acceptance operands were not consumed".to_string());
         }
+        if !self.host_dialogue_scroll_progress.is_empty() {
+            return Err("prior Snes9x dialogue scroll progress was not consumed".to_string());
+        }
         let mut file = File::open(&self.path).map_err(|error| {
             format!(
                 "open Snes9x semantic trace {}: {error}",
@@ -3499,6 +3557,7 @@ impl Snes9xOracleSemanticTrace {
         let mut line = String::new();
         let mut receipts = Vec::new();
         let mut host_frame = HostFrameWindow::default();
+        let mut dialogue_scroll = DialogueScrollHostWindow::default();
         host_frame.overworld_load_overlays_sprite_reload_active =
             self.overworld_load_overlays_sprite_reload_active;
         let zelda_run_game_loop_call_active_at_entry = self.zelda_run_game_loop_call_active;
@@ -3524,6 +3583,7 @@ impl Snes9xOracleSemanticTrace {
             if event.event == "frame" && event.stage.as_deref() == Some("return") {
                 returned_event = Some(event.clone());
             }
+            dialogue_scroll.observe(&event)?;
             let main_loop_started = main_loop_started_by_event(&event);
             if main_loop_started && self.zelda_run_game_loop_call_active {
                 return Err(
@@ -3730,6 +3790,7 @@ impl Snes9xOracleSemanticTrace {
         // adapter.
         self.flush_host_boundary_progress(&mut receipts, OriginalTimingBoundary::HostReturn);
         self.flush_item_receipt_progress(&mut receipts);
+        self.host_dialogue_scroll_progress = dialogue_scroll.finish();
         host_frame.finish(
             &mut receipts,
             dialogue_message_read_position,
@@ -3904,6 +3965,12 @@ impl Snes9xOracleSemanticTrace {
 
     pub(crate) fn take_host_nmi_ppu_register_operands(&mut self) -> Vec<NmiPpuRegisterOperands> {
         std::mem::take(&mut self.host_nmi_ppu_register_operands)
+    }
+
+    pub(crate) fn take_host_dialogue_scroll_progress(
+        &mut self,
+    ) -> Vec<zelda3::DialogueScrollProgressReceipt> {
+        std::mem::take(&mut self.host_dialogue_scroll_progress)
     }
 
     fn flush_reset_progress(
@@ -10108,6 +10175,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         }
     }
 
@@ -10442,6 +10510,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -10850,6 +10919,99 @@ mod tests {
         assert!(
             !receipts.contains(&OriginalTimingSemanticReceipt::MainLoopIterationReturnedToWait,)
         );
+    }
+
+    #[test]
+    fn dialogue_scroll_copy_counts_follow_source_hosts_until_return() {
+        // Source hosts 20765-20767 finish the same five-pass call as 2+2+1.
+        // The third host alone reaches the scroll RTS. Register values are
+        // deliberately absent: this receipt counts source operations only.
+        for (entered, copies, returned) in [(true, 2, false), (false, 2, false), (false, 1, true)] {
+            let mut host = DialogueScrollHostWindow::default();
+            if entered {
+                host.observe(&raw("pc", Some(DIALOGUE_SCROLL_ENTRY_PC), None, None))
+                    .unwrap();
+            }
+            for _ in 0..copies {
+                host.observe(&raw(
+                    "pc",
+                    Some(DIALOGUE_SCROLL_PIXEL_COMPLETED_PC),
+                    None,
+                    None,
+                ))
+                .unwrap();
+            }
+            if returned {
+                host.observe(&raw("pc", Some(DIALOGUE_SCROLL_RETURN_PC), None, None))
+                    .unwrap();
+            }
+            assert_eq!(
+                host.finish(),
+                vec![zelda3::DialogueScrollProgressReceipt {
+                    entered,
+                    completed_pixel_passes: copies,
+                    returned,
+                }]
+            );
+        }
+    }
+
+    #[test]
+    fn dialogue_scroll_observation_does_not_invent_a_completed_copy() {
+        let mut host = DialogueScrollHostWindow::default();
+        host.observe(&raw(
+            "frame",
+            Some(DIALOGUE_SCROLL_PIXEL_COMPLETED_PC),
+            None,
+            None,
+        ))
+        .unwrap();
+        host.observe(&raw(
+            "nmi",
+            Some(DIALOGUE_SCROLL_PIXEL_COMPLETED_PC),
+            None,
+            None,
+        ))
+        .unwrap();
+        assert!(host.finish().is_empty());
+    }
+
+    #[test]
+    fn dialogue_scroll_calls_keep_their_order_within_one_host() {
+        let mut host = DialogueScrollHostWindow::default();
+        host.observe(&raw(
+            "pc",
+            Some(DIALOGUE_SCROLL_PIXEL_COMPLETED_PC),
+            None,
+            None,
+        ))
+        .unwrap();
+        host.observe(&raw("pc", Some(DIALOGUE_SCROLL_RETURN_PC), None, None))
+            .unwrap();
+        host.observe(&raw("pc", Some(DIALOGUE_SCROLL_ENTRY_PC), None, None))
+            .unwrap();
+        assert_eq!(
+            host.finish(),
+            vec![
+                zelda3::DialogueScrollProgressReceipt {
+                    entered: false,
+                    completed_pixel_passes: 1,
+                    returned: true
+                },
+                zelda3::DialogueScrollProgressReceipt {
+                    entered: true,
+                    completed_pixel_passes: 0,
+                    returned: false
+                },
+            ]
+        );
+        let mut duplicate = DialogueScrollHostWindow::default();
+        duplicate
+            .observe(&raw("pc", Some(DIALOGUE_SCROLL_ENTRY_PC), None, None))
+            .unwrap();
+        assert!(duplicate
+            .observe(&raw("pc", Some(DIALOGUE_SCROLL_ENTRY_PC), None, None))
+            .is_err());
     }
 
     #[test]
@@ -11421,6 +11583,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         let slot = 13u8;
@@ -11870,6 +12033,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         let slot = 13u8;
@@ -11926,6 +12090,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         for _ in 0..2 {
@@ -12091,6 +12256,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -12388,6 +12554,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -12430,6 +12597,7 @@ mod tests {
                 nmi_resume_targets: Vec::new(),
                 synthesized_nmi_resume: None,
                 host_nmi_ppu_register_operands: Vec::new(),
+                host_dialogue_scroll_progress: Vec::new(),
             };
             let mut event = raw("nmi", Some(pc), None, None);
             event.main = Some(0x0f);
@@ -12476,6 +12644,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut event = raw(
             "nmi",
@@ -12632,6 +12801,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut event = raw("nmi", Some(IRIS_SPOTLIGHT_CIRCLE_VALUE_CALL_PC), None, None);
         event.a = Some(30);
@@ -12764,6 +12934,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         // The source loop loads t=126, decrements spotlight_var4 to 125, then
         // enters the pure circle helper. The authoritative frame-40977 NMI is
@@ -12845,6 +13016,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut host = HostFrameWindow::default();
         let mut entry = frame_with_sub("entry", 3186, 0x0f, 0);
@@ -12922,6 +13094,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut host = HostFrameWindow::default();
         let mut entry = frame_with_sub("entry", 3192, 0x0f, 1);
@@ -13133,6 +13306,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut host = HostFrameWindow::default();
         let mut entry = frame_with_sub("entry", 9931, 0x0f, 1);
@@ -13210,6 +13384,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut host = HostFrameWindow::default();
         let mut entry = frame_with_sub("entry", 7309, 0x10, 1);
@@ -13287,6 +13462,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut returned = frame_with_sub("return", 3186, 0x0f, 0);
         returned.pc = Some(0x0d_a38c);
@@ -13493,6 +13669,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut interrupted = raw(
             "nmi",
@@ -13554,6 +13731,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut event = raw(
             "nmi",
@@ -13616,6 +13794,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         // Pinned run 2327 is inside the same pure helper, but the enclosing
         // source caller is Module 7's dungeon-landing spotlight. That caller
@@ -13666,6 +13845,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         // At $f3be the absolute,X store at $f3bb has completed with X=$0138.
         // Bytes 0..=$0139, or 157 words, are therefore already published.
@@ -13732,6 +13912,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut event = raw(
             "nmi",
@@ -13820,6 +14001,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut event = raw(
             "nmi",
@@ -13923,6 +14105,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut event = raw(
             "nmi",
@@ -13969,6 +14152,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         // At $f3bb the long load is complete, but the absolute,X store has
         // not executed. X=$011e therefore denotes exactly 143 copied words.
@@ -14147,6 +14331,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         // Pinned Snes9x frame 48,536 accepts NMI at $09:c47b inside
         // Sprite_ResetAll_noDisable with the innermost return address $02:834b,
@@ -14226,6 +14411,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -14300,6 +14486,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -14353,6 +14540,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -14403,6 +14591,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -14464,6 +14653,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
 
@@ -14598,6 +14788,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
 
         let receipts = tracker.read_after_host_call(None, None, None).unwrap();
@@ -14695,6 +14886,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
 
         let receipts = tracker.read_after_host_call(None, None, None).unwrap();
@@ -14842,6 +15034,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
 
         let receipts = tracker.read_after_host_call(None, None, None).unwrap();
@@ -14913,6 +15106,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         for &base in &CACHED_SPRITE_LIVE_FIELDS[..4] {
@@ -15009,6 +15203,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         tracker
@@ -15068,6 +15263,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         tracker
@@ -15250,6 +15446,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         for &(field, base) in &CACHE_FIELD_WRITES[..=6] {
@@ -15343,6 +15540,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         tracker
@@ -15399,6 +15597,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut first_host = Vec::new();
         tracker
@@ -15505,6 +15704,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         for line in include_str!(
@@ -15574,6 +15774,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         tracker
@@ -15641,6 +15842,7 @@ mod tests {
             nmi_resume_targets: Vec::new(),
             synthesized_nmi_resume: None,
             host_nmi_ppu_register_operands: Vec::new(),
+            host_dialogue_scroll_progress: Vec::new(),
         };
         let mut receipts = Vec::new();
         tracker
