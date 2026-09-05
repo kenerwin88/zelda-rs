@@ -9856,9 +9856,16 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_B4_PurpleChest(int k) {  // 9ee0dd
     pub(super) fn sprite_b4_purple_chest(&mut self, k: usize) {
+        if self.sprite_b4_purple_chest_before_follower_graphics(k) {
+            self.load_follower_graphics();
+            self.sprite_become_follower(k);
+        }
+    }
+
+    pub(super) fn sprite_b4_purple_chest_before_follower_graphics(&mut self, k: usize) -> bool {
         self.sprite_draw_single_large(k);
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
         if self.sprite_slot_view(k).ai_state() == 0 {
             if self.sprite_show_message_on_contact(k, 0x0116) & 0x100 != 0
@@ -9871,9 +9878,9 @@ impl ZeldaState {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
             self.follower_state_mut().set_indicator(12);
-            self.load_follower_graphics();
-            self.sprite_become_follower(k);
+            return true;
         }
+        false
     }
 
     // -----------------------------------------------------------------------

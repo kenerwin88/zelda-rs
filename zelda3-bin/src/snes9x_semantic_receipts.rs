@@ -136,6 +136,7 @@ const SPRITE_PREP_BLIND_MAIDEN_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x06_89c2;
 const SPRITE_PREP_ZELDA_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x05_ebf5;
 const SPRITE_BLIND_MAIDEN_BODY_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x1e_e8ea;
 const SPRITE_PREP_OLD_MAN_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x1e_e925;
+const SPRITE_PURPLE_CHEST_FOLLOWER_GRAPHICS_RETURN_PC: u32 = 0x1e_e10a;
 // `Sprite_Zazak_Main`'s animation publication. The write event proves the
 // current slot's source-selected graphics byte committed before the boundary.
 const SPRITE_ZAZAK_GRAPHICS_STORE_PC: u32 = 0x1e_91fb;
@@ -4695,6 +4696,9 @@ impl Snes9xOracleSemanticTrace {
                         Some(SPRITE_PREP_OLD_MAN_FOLLOWER_GRAPHICS_RETURN_PC) => {
                             Some(SpriteFollowerGraphicsCaller::OldMan)
                         }
+                        Some(SPRITE_PURPLE_CHEST_FOLLOWER_GRAPHICS_RETURN_PC) => {
+                            Some(SpriteFollowerGraphicsCaller::PurpleChest)
+                        }
                         _ => None,
                     };
                 if pc == RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC
@@ -4724,7 +4728,23 @@ impl Snes9xOracleSemanticTrace {
                             .as_ref()
                             .is_some_and(|execution| execution.follower_graphics.is_some()))
                 {
-                    if event.y != Some(0x66) && event.y != Some(0x64) {
+                    let purple_chest =
+                        self.sprite_main_execution
+                            .as_ref()
+                            .is_some_and(|execution| {
+                                execution
+                                    .follower_graphics
+                                    .as_ref()
+                                    .is_some_and(|(caller, _)| {
+                                        *caller == SpriteFollowerGraphicsCaller::PurpleChest
+                                    })
+                            });
+                    let valid_sheet = if purple_chest {
+                        event.y == Some(0x58)
+                    } else {
+                        matches!(event.y, Some(0x64 | 0x66))
+                    };
+                    if !valid_sheet {
                         return Err(format!(
                             "Snes9x rescued-maiden first follower sheet used unexpected asset {:?}",
                             event.y,
@@ -11120,6 +11140,44 @@ mod tests {
                 completed_bytes: 1344,
             },
         );
+    }
+
+    #[test]
+    fn purple_chest_follower_graphics_uses_its_exact_body_caller() {
+        let mut source = empty_semantic_tracker();
+        let mut execution = SpriteMainExecutionTracker::default();
+        execution.current_slot = Some(8);
+        source.sprite_main_execution = Some(execution);
+        let mut event = raw(
+            "pc",
+            Some(RESCUED_MAIDEN_LOAD_FOLLOWER_GRAPHICS_ENTRY_PC),
+            Some(8),
+            None,
+        );
+        event.return_address = Some(SPRITE_PURPLE_CHEST_FOLLOWER_GRAPHICS_RETURN_PC);
+        source.consume_event(event, &mut Vec::new()).unwrap();
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .as_ref()
+                .unwrap()
+                .follower_graphics
+                .unwrap()
+                .0,
+            SpriteFollowerGraphicsCaller::PurpleChest
+        );
+        let mut sheet = raw(
+            "pc",
+            Some(RESCUED_MAIDEN_FIRST_FOLLOWER_SHEET_ENTRY_PC),
+            Some(8),
+            None,
+        );
+        sheet.y = Some(0x58);
+        source
+            .consume_event(sheet.clone(), &mut Vec::new())
+            .unwrap();
+        sheet.y = Some(0x66);
+        assert!(source.consume_event(sheet, &mut Vec::new()).is_err());
     }
 
     #[test]

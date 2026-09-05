@@ -19809,6 +19809,31 @@ fn absorbable_vertical_lookup_keeps_movement_and_defers_bounce_suffix() {
 }
 
 #[test]
+fn purple_chest_follower_graphics_retains_the_deleted_sprite_prefix() {
+    let mut state = ZeldaState::new();
+    state.set_main_module(9);
+    state.set_submodule(0);
+    state.follower_link_state_mut().set_position(0x80, 0x80);
+    {
+        let mut sprite = state.sprite_slot_view_mut(8);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0xb4);
+        sprite.set_ai_state(1);
+        sprite.set_x(0x80);
+        sprite.set_y(0x80);
+    }
+    let mut atomic = state.clone();
+    atomic.sprite_b4_purple_chest(8);
+    assert!(state.sprite_b4_purple_chest_before_follower_graphics(8));
+    assert_eq!(state.sprite_slot_view(8).state(), 0);
+    assert_eq!(state.game_state.sprites.follower_runtime.indicator(), 12);
+    state.load_follower_graphics();
+    state.sprite_become_follower(8);
+    assert_eq!(state.game_state, atomic.game_state);
+    assert_eq!(state.ram, atomic.ram);
+}
+
+#[test]
 fn absorbable_loaded_attribute_keeps_movement_and_defers_bounce_suffix() {
     let mut state = ZeldaState::new();
     state.set_main_module(9);

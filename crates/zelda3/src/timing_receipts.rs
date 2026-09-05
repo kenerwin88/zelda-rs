@@ -1406,6 +1406,8 @@ pub enum SpriteFollowerGraphicsCaller {
     BlindMaidenBody,
     /// `SpritePrep_OldMan`'s state-8 initialization call.
     OldMan,
+    /// The purple chest's state-9 transition into follower 12.
+    PurpleChest,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
