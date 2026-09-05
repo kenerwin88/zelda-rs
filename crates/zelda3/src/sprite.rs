@@ -3256,6 +3256,23 @@ impl ZeldaState {
                 return;
             }
             if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::AntifairyBouncePending { slot: k as u8 })
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(nmi_slices, 0);
+                let boundary = self.sprite_main_cpu_boundary.take().unwrap();
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x15);
+                self.sprite_timers_and_oam(k);
+                assert!(
+                    self.antifairy_before_bounce(k),
+                    "source Antifairy bounce requires its active movement prefix"
+                );
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                return;
+            }
+            if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::BonkItemGraphicsEntered(k as u8))
             {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
@@ -4203,6 +4220,14 @@ impl ZeldaState {
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x99);
                 assert_eq!(self.sprite_slot_view(k).ai_state(), 3);
                 self.pengator_after_movement(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::AntifairyBouncePending { slot } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0x15);
+                self.sprite_bounce_from_tile_collision(k);
                 self.complete_sprite_main_after_interrupted_slot(k);
             }
             SpriteMainCpuBoundary::AfterTimerDecrements {

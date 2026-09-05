@@ -12786,8 +12786,19 @@ impl ZeldaState {
     }
 
     fn sprite_15_antifairy_after_draw(&mut self, k: usize) {
+        if self.antifairy_after_draw_before_bounce(k) {
+            self.sprite_bounce_from_tile_collision(k);
+        }
+    }
+
+    pub(super) fn antifairy_before_bounce(&mut self, k: usize) -> bool {
+        self.sprite_draw_antfairy(k);
+        self.antifairy_after_draw_before_bounce(k)
+    }
+
+    fn antifairy_after_draw_before_bounce(&mut self, k: usize) -> bool {
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
         if self.sprite_check_damage_to_link(k) && self.sprite_slot_view(k).delay_main() == 0 {
             let value = 16;
@@ -12801,7 +12812,7 @@ impl ZeldaState {
             }
         }
         self.sprite_move_xy(k);
-        self.sprite_bounce_from_tile_collision(k);
+        true
     }
 
     // -----------------------------------------------------------------------

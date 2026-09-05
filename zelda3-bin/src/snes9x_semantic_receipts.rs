@@ -945,6 +945,7 @@ struct SpriteMainExecutionTracker {
     absorbable_body_active: bool,
     absorbable_horizontal_lookup: Option<u8>,
     pengator_slide_pending: Option<u8>,
+    antifairy_bounce_pending: Option<u8>,
     initialize_prep_pending: Option<u8>,
     #[serde(default)]
     guard_animation_pose_slot: Option<u8>,
@@ -1023,6 +1024,21 @@ struct SpriteMainExecutionTracker {
 }
 
 impl SpriteMainExecutionTracker {
+    fn observe_antifairy_bounce_pending(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        // Shared bounce entry belongs to Antifairy only under its own JSL.
+        if event.pc != Some(0x1d_c778) || event.return_address != Some(0x06_a53e) {
+            return Ok(());
+        }
+        let slot = self
+            .current_slot
+            .ok_or("Antifairy bounce lost its active slot")?;
+        if event.x != Some(u16::from(slot)) || self.timers_and_oam_dispatch_state != Some(9) {
+            return Err("Antifairy bounce checkpoint disagrees with its active caller".into());
+        }
+        self.antifairy_bounce_pending = Some(slot);
+        Ok(())
+    }
+
     fn observe_pengator_slide_pending(&mut self, event: &RawTraceEvent) -> Result<(), String> {
         // Pengator_Slide has only tested the sparkle cadence and Z; its first
         // RNG call and every slide-specific persistent store remain pending.
@@ -2021,6 +2037,10 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::FireDebirandoBeforeSpawn(slot);
         }
+        if let Some(slot) = self.antifairy_bounce_pending {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::AntifairyBouncePending(slot);
+        }
         if let Some(slot) = self.antfairy_subtype2_increment_slot {
             assert_eq!(
                 self.current_slot,
@@ -2432,6 +2452,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::PengatorSlidePending(slot) => {
                 MainLoopInterruption::SpriteMainPengatorSlidePending(slot)
+            }
+            SpriteMainProgress::AntifairyBouncePending(slot) => {
+                MainLoopInterruption::SpriteMainAntifairyBouncePending(slot)
             }
             SpriteMainProgress::AfterHelmasaurHardHatBeetleSubtype2Increment(slot) => {
                 MainLoopInterruption::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(slot)
@@ -4076,6 +4099,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_hog_spear_body_graphics_pending(returned_event)?;
                 execution.observe_absorbable_horizontal_lookup(returned_event)?;
                 execution.observe_pengator_slide_pending(returned_event)?;
+                execution.observe_antifairy_bounce_pending(returned_event)?;
                 execution.observe_guard_prep_parry_hitbox(returned_event)?;
                 execution.observe_guard_prep_patrol_delay(returned_event)?;
                 execution.observe_guard_prep_tile_collision_return(returned_event)?;
@@ -4729,6 +4753,9 @@ impl Snes9xOracleSemanticTrace {
                             execution.absorbable_body_active = false;
                             execution.absorbable_horizontal_lookup = None;
                             execution.pengator_slide_pending = None;
+                            execution.antifairy_bounce_pending = None;
+                            execution.antifairy_bounce_pending = None;
+                            execution.antifairy_bounce_pending = None;
                             execution.initialize_prep_pending = None;
                             execution.guard_animation_pose_slot = None;
                             execution.guard_prep_weapon_flags_pending_slot = None;
@@ -4776,6 +4803,9 @@ impl Snes9xOracleSemanticTrace {
                             execution.absorbable_body_active = false;
                             execution.absorbable_horizontal_lookup = None;
                             execution.pengator_slide_pending = None;
+                            execution.antifairy_bounce_pending = None;
+                            execution.antifairy_bounce_pending = None;
+                            execution.antifairy_bounce_pending = None;
                             execution.initialize_prep_pending = None;
                             execution.guard_animation_pose_slot = None;
                             if execution.timers_and_oam_dispatch_state == Some(8) {
@@ -4819,6 +4849,8 @@ impl Snes9xOracleSemanticTrace {
                         execution.absorbable_body_active = false;
                         execution.absorbable_horizontal_lookup = None;
                         execution.pengator_slide_pending = None;
+                        execution.antifairy_bounce_pending = None;
+                        execution.antifairy_bounce_pending = None;
                         execution.initialize_prep_pending = None;
                         execution.guard_animation_pose_slot = None;
                         execution.guard_prep_weapon_flags_pending_slot = None;
@@ -5167,6 +5199,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_horizontal_lookup(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
+                    execution.observe_antifairy_bounce_pending(&event)?;
                     execution.observe_fire_debirando_spawn_write(&event)?;
                     execution.observe_master_sword_light_beam_spawn_write(&event)?;
                     execution.observe_antfairy_subtype2_increment(&event)?;
@@ -5657,6 +5690,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_horizontal_lookup(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
+                    execution.observe_antifairy_bounce_pending(&event)?;
                     execution.observe_fire_debirando_spawn_boundary(&event)?;
                     execution.observe_guard_prep_parry_hitbox(&event)?;
                     execution.observe_guard_prep_patrol_delay(&event)?;
@@ -7389,6 +7423,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainPengatorSlidePending(slot) => {
                     Some(SpriteMainProgress::PengatorSlidePending(slot))
                 }
+                MainLoopInterruption::SpriteMainAntifairyBouncePending(slot) => {
+                    Some(SpriteMainProgress::AntifairyBouncePending(slot))
+                }
                 MainLoopInterruption::SpriteMainGuardPrepParryHitbox { slot, active_call } => {
                     Some(SpriteMainProgress::GuardPrepParryHitbox { slot, active_call })
                 }
@@ -8332,6 +8369,7 @@ mod tests {
             absorbable_body_active: false,
             absorbable_horizontal_lookup: None,
             pengator_slide_pending: None,
+            antifairy_bounce_pending: None,
             initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
@@ -9572,6 +9610,29 @@ mod tests {
     }
 
     #[test]
+    fn antifairy_bounce_checkpoint_supersedes_draw_progress_for_its_caller_only() {
+        let mut tracker = SpriteMainExecutionTracker {
+            current_slot: Some(0),
+            timers_and_oam_dispatch_state: Some(9),
+            antfairy_subtype2_increment_slot: Some(0),
+            ..Default::default()
+        };
+        let mut event = raw("nmi", Some(0x1d_c778), None, None);
+        event.x = Some(0);
+        event.return_address = Some(0x06_a53d);
+        tracker.observe_antifairy_bounce_pending(&event).unwrap();
+        assert_eq!(tracker.antifairy_bounce_pending, None);
+        event.return_address = Some(0x06_a53e);
+        tracker.observe_antifairy_bounce_pending(&event).unwrap();
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::AntifairyBouncePending(0)
+        );
+        event.x = Some(1);
+        assert!(tracker.observe_antifairy_bounce_pending(&event).is_err());
+    }
+
+    #[test]
     fn guard_draw_return_retains_pose_without_requiring_a_pose_store() {
         let mut tracker = SpriteMainExecutionTracker {
             current_slot: Some(10),
@@ -10170,6 +10231,7 @@ mod tests {
         execution.absorbable_body_active = false;
         execution.absorbable_horizontal_lookup = None;
         execution.pengator_slide_pending = None;
+        execution.antifairy_bounce_pending = None;
         execution.initialize_prep_pending = None;
         event.return_address = Some(0xc8cc3b);
         execution
@@ -10255,6 +10317,7 @@ mod tests {
         );
         execution.absorbable_horizontal_lookup = None;
         execution.pengator_slide_pending = None;
+        execution.antifairy_bounce_pending = None;
         event.y = Some(0);
         execution
             .observe_absorbable_horizontal_lookup(&event)
@@ -13271,6 +13334,7 @@ mod tests {
             absorbable_body_active: false,
             absorbable_horizontal_lookup: None,
             pengator_slide_pending: None,
+            antifairy_bounce_pending: None,
             initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
@@ -13343,6 +13407,7 @@ mod tests {
             absorbable_body_active: false,
             absorbable_horizontal_lookup: None,
             pengator_slide_pending: None,
+            antifairy_bounce_pending: None,
             initialize_prep_pending: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,

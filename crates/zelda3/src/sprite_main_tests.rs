@@ -1,6 +1,31 @@
 use super::*;
 
 #[test]
+fn antifairy_bounce_continuation_preserves_movement_and_animation_prefix() {
+    let mut atomic = ZeldaState::new();
+    atomic.set_main_module(9);
+    atomic.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    atomic.sprite_set_x(0, 0x40);
+    atomic.sprite_set_y(0, 0x50);
+    {
+        let mut sprite = atomic.sprite_slot_view_mut(0);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0x15);
+        sprite.set_x_velocity(0xf0);
+        sprite.set_y_velocity(0xf0);
+    }
+    let mut staged = atomic.clone();
+    atomic.sprite_15_antifairy(0);
+    assert!(staged.antifairy_before_bounce(0));
+    assert_eq!(staged.sprite_slot_view(0).x_low(), 0x3f);
+    assert_eq!(staged.sprite_slot_view(0).y_low(), 0x4f);
+    assert_eq!(staged.sprite_slot_view(0).subtype2(), 1);
+    staged.sprite_bounce_from_tile_collision(0);
+    assert_eq!(staged.sprite_slot_view(0).subtype2(), 1);
+    assert_eq!(staged.ram, atomic.ram);
+}
+
+#[test]
 fn pengator_slide_continuation_does_not_repeat_movement() {
     let mut atomic = ZeldaState::new();
     atomic.set_main_module(9);
