@@ -22460,18 +22460,33 @@ impl ZeldaState {
             );
             expected_semantic.push(**receipt);
         }
-        if interruption == crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
-            && semantic.iter().any(|receipt| {
-                matches!(
-                    receipt,
-                    OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned
-                )
-            })
-        {
+        if matches!(
+            interruption,
+            crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
+                | crate::MainLoopInterruption::LinkActualVelocity { .. }
+                | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
+                | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
+                | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
+                | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
+                | crate::MainLoopInterruption::LinkOam
+        ) && semantic.iter().any(|receipt| {
+            matches!(
+                receipt,
+                OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned
+            )
+        }) {
+            assert_eq!(
+                (
+                    self.game_state.frame.main_module,
+                    self.game_state.frame.submodule
+                ),
+                (0x0f, 0),
+                "spotlight entry return reached an unrelated fresh caller"
+            );
             // The submodule-return fact and the following interruption are
             // two views of the same exact source ordering: the entry call
-            // returned, then vblank stopped its Module0F caller before the
-            // Link suffix. The pre-entry owner consumes the return token
+            // returned, then the host stopped its Module0F caller before or
+            // inside the Link suffix. The pre-entry owner consumes the return token
             // after this immutable preflight.
             expected_semantic
                 .push(OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned);

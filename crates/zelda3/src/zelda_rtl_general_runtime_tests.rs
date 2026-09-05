@@ -7127,6 +7127,48 @@ fn fresh_stair_link_oam_progress_requires_its_source_caller() {
 }
 
 #[test]
+fn fresh_spotlight_entry_return_coexists_with_its_link_velocity_checkpoint() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(0x0f);
+    state.set_submodule(0);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_expected_nmi_update_gates = vec![NmiUpdateGate::Open];
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        520749,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+            OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+            OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+                high: 8,
+                low: 0,
+                high_filtered: 0,
+                low_filtered: 0,
+            }),
+            OriginalTimingSemanticReceipt::MainLoopProgress(
+                crate::MainLoopProgress::IterationStarted,
+            ),
+            OriginalTimingSemanticReceipt::SpriteMainReturned,
+            OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                crate::MainLoopInterruption::LinkActualVelocity {
+                    horizontal_resolved: Some(true),
+                },
+            ),
+            OriginalTimingSemanticReceipt::DungeonExitSpotlightEntryReturned,
+        ],
+    ));
+    assert!(state
+        .original_timing_interrupted_idle_main_loop_plan()
+        .is_some());
+    state.set_submodule(1);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || state.original_timing_interrupted_idle_main_loop_plan()
+    ))
+    .is_err());
+}
+
+#[test]
 fn live_sprite_main_call_stack_holds_then_advances_only_the_observed_slot_delta() {
     let mut state = ZeldaState::new();
     state.restore_live_rom_timing_after_checkpoint();
