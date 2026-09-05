@@ -7991,6 +7991,16 @@ fn live_module09_link_oam_boundary_resumes_to_the_atomic_c_endpoint() {
 
     resumed.complete_module09_overworld_after_submodule();
 
+    // LinkOam's interrupt occurs after the caller restored all four stack
+    // locals. The NMI register mirrors still include the screen-shake offset.
+    let scroll = &resumed.game_state.display.ppu_scroll_copy;
+    assert_eq!(scroll.bg2_h_copy2(), 0x1010);
+    assert_eq!(scroll.bg2_v_copy2(), 0x2020);
+    assert_eq!(scroll.bg1_h_copy2(), 0x3030);
+    assert_eq!(scroll.bg1_v_copy2(), 0x4040);
+    assert_eq!(scroll.bg2_h_copy(), 0x1013);
+    assert_eq!(scroll.bg2_v_copy(), 0x2025);
+
     let continuation = resumed
         .game_execution_scheduler
         .take_after_current_trailing_nmi()

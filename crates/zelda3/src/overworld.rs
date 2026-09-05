@@ -1167,8 +1167,8 @@ impl ZeldaState {
             crate::MainLoopInterruption::LinkOam,
         ) {
             self.publish_module09_link_oam_prefix(&mut caller);
-            // C has restored none of Module09's four stack-local scroll values
-            // yet: the next call is LinkOam_Main, where the source accepted
+            // Module09 restored its four stack-local scroll values before
+            // entering LinkOam_Main, where the source accepted
             // the host's trailing NMI. Preserve that caller frame and resume
             // the whole LinkOam/HUD/rain suffix after the interrupt. This is
             // the same semantic continuation used by the longer world-map
@@ -1235,6 +1235,12 @@ impl ZeldaState {
     }
 
     fn publish_module09_link_oam_prefix(&mut self, caller: &mut Module09ItemReceiptCallerReturn) {
+        // These stores precede every LinkOam_Main entry, including ordinary
+        // callers which have no more specific Link/OAM progress receipt.
+        self.set_bg2_x(caller.scroll.bg2_x);
+        self.set_bg2_y(caller.scroll.bg2_y);
+        self.set_bg1_x(caller.scroll.bg1_x);
+        self.set_bg1_y(caller.scroll.bg1_y);
         let mut progress = None;
         if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
             receipts.semantic.retain(|receipt| {
@@ -1255,10 +1261,6 @@ impl ZeldaState {
         };
         assert!(caller.link_oam.is_none());
         assert!(matches!(self.game_state.frame.submodule, 18 | 19));
-        self.set_bg2_x(caller.scroll.bg2_x);
-        self.set_bg2_y(caller.scroll.bg2_y);
-        self.set_bg1_x(caller.scroll.bg1_x);
-        self.set_bg1_y(caller.scroll.bg1_y);
         caller.link_oam = Some(match progress {
             crate::LinkOamStairProgress::PoseSelected => self.link_oam_after_pose_selection(),
             crate::LinkOamStairProgress::EquipmentSelection => self.link_oam_before_equipment(),
