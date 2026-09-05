@@ -28889,6 +28889,11 @@ impl ZeldaState {
             self.take_original_timing_dungeon_push_blocks_restatement(cursor);
             self.dungeon_push_block_handler();
             self.replay_trace_ram_watch("module07-after-push-blocks");
+        } else {
+            // The resumed host restates the handler's completed return at
+            // the head of its vector (cold route host 924429); the handler
+            // already ran on the interrupted host.
+            let _ = self.take_original_timing_dungeon_push_blocks_handled();
         }
         self.complete_module07_dungeon_after_push_block_handler(true);
         if owns_return_claim {
@@ -43880,6 +43885,7 @@ impl ZeldaState {
                                 | OriginalTimingSemanticReceipt::CreditsSceneLoadProgress(_)
                                 | OriginalTimingSemanticReceipt::CreditsEndSequence32Progress(_)
                                 | OriginalTimingSemanticReceipt::DungeonPushBlocksInProgress { .. }
+                                | OriginalTimingSemanticReceipt::DungeonPushBlocksHandled
                         ) {
                             expected_semantic.insert(index.min(expected_semantic.len()), *receipt);
                         }
