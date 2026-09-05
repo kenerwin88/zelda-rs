@@ -20707,27 +20707,10 @@ impl ZeldaState {
     /// replaceable, Zelda-level receipt vocabulary.
     pub fn install_original_timing_host_receipts(
         &mut self,
-        mut receipts: OriginalTimingHostReceipts,
+        receipts: OriginalTimingHostReceipts,
     ) -> Result<(), OriginalTimingReceiptInstallError> {
         if !self.rom_startup_timing {
             return Err(OriginalTimingReceiptInstallError::TimingDisabled);
-        }
-        if !matches!(
-            self.game_execution_scheduler.current_work(),
-            Some(GameWorkContinuation::FinishOverworldSpotlightBuild { .. })
-        ) {
-            // Only a resumed opening-iris Build splits its goal transition at
-            // IrisSpotlight_ResetTable. An atomic native iteration has already
-            // run the reset when the wire's later NMI lands inside it (route
-            // host 104155); that boundary is informational there.
-            receipts.semantic.retain(|receipt| {
-                !matches!(
-                    receipt,
-                    OriginalTimingSemanticReceipt::MainLoopInterrupted(
-                        crate::MainLoopInterruption::SpotlightGoalResetTable { .. }
-                    )
-                )
-            });
         }
         record_recent_host_receipt_vector(format!(
             "host_call={} gates={:?} pub_pending={} fc={:02x} frame={:02x}/{:02x}/{:02x} work={:?} semantic={:?}",
@@ -22745,6 +22728,7 @@ impl ZeldaState {
                             | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                             | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
                             | crate::MainLoopInterruption::GameOverIrisGoalPaletteFill { .. }
+                            | crate::MainLoopInterruption::SpotlightGoalResetTable { .. }
                             | crate::MainLoopInterruption::DesertPrayerIris { .. }
                             | crate::MainLoopInterruption::DesertPrayerPaletteFilterBeforeColor { .. }
                     )
@@ -42212,6 +42196,7 @@ impl ZeldaState {
                             | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
                             | crate::MainLoopInterruption::LinkPositionAfterCoordinates { .. }
                             | crate::MainLoopInterruption::GameOverIrisGoalPaletteFill { .. }
+                            | crate::MainLoopInterruption::SpotlightGoalResetTable { .. }
                             | crate::MainLoopInterruption::DesertPrayerIris { .. }
                             | crate::MainLoopInterruption::DesertPrayerPaletteFilterBeforeColor { .. }
                     )

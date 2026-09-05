@@ -9441,6 +9441,31 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn overworld_iris_reset_host_return_preserves_partial_stores() {
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x00_f43e, Some(0x10), Some(1), Some(42)),
+            Some(MainLoopInterruption::SpotlightGoalResetTable {
+                completed_stores: 75
+            })
+        );
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame_with_sub("entry", 1, 0x10, 1)).unwrap();
+        let mut returned = frame_with_sub("return", 1, 0x10, 1);
+        returned.pc = Some(0x00_f43e);
+        returned.x = Some(42);
+        host.observe(&returned).unwrap();
+        let mut receipts = Vec::new();
+        host.finish(&mut receipts, None, true).unwrap();
+        assert!(
+            receipts.contains(&OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                MainLoopInterruption::SpotlightGoalResetTable {
+                    completed_stores: 75
+                }
+            ))
+        );
+    }
     #[test]
     fn happiness_pond_rupee_decoder_entry_becomes_a_typed_partial_slot_checkpoint() {
         let mut source = empty_semantic_tracker();

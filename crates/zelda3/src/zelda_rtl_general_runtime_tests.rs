@@ -20181,6 +20181,44 @@ fn dungeon_caller_owns_sprite_return_while_common_suffix_remains_held() {
 }
 
 #[test]
+fn fresh_overworld_iris_goal_retains_its_partial_reset() {
+    let mut state = ZeldaState::new();
+    state.set_rom_startup_timing(true);
+    state.set_main_module(0x10);
+    state.set_submodule(1);
+    state.set_saved_module_for_menu(9);
+    state.set_spotlight_window_radius(119);
+    state.set_spotlight_window_state(2);
+    state.follower_link_state_mut().set_position(120, 140);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    let phase = crate::MainLoopInterruption::SpotlightGoalResetTable {
+        completed_stores: 75,
+    };
+    state
+        .install_original_timing_host_receipts(OriginalTimingHostReceipts::new(
+            1212391,
+            0,
+            vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(phase)],
+        ))
+        .unwrap();
+    assert_eq!(state.original_timing_main_loop_interruption(), Some(phase));
+    state.Module10_SpotlightOpen();
+    assert_eq!(state.game_state.frame.main_module, 0x10);
+    assert_eq!(state.game_state.frame.submodule, 1);
+    assert!(matches!(
+        state.game_execution_scheduler.current_work(),
+        Some(
+            GameWorkContinuation::FinishOverworldSpotlightGoalResetTable {
+                completed_stores: 75,
+                ..
+            }
+        )
+    ));
+    state.complete_overworld_spotlight_goal_reset_table(75);
+    assert_eq!(state.game_state.frame.main_module, 9);
+}
+
+#[test]
 fn super_bomb_purchase_pays_once_before_suspended_follower_graphics() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);

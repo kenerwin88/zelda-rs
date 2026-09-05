@@ -3311,6 +3311,27 @@ impl ZeldaState {
         };
         let iteration = SpotlightIteration::opening_from_rom_cpu_plan(cpu_plan);
         self.sprite_main();
+        if let Some(
+            interruption
+            @ crate::MainLoopInterruption::SpotlightGoalResetTable { completed_stores },
+        ) = self.original_timing_main_loop_interruption()
+        {
+            assert_eq!(self.game_state.frame.submodule, 1);
+            assert!(
+                live_table_progress.is_none(),
+                "a reset checkpoint supersedes its table build"
+            );
+            assert!(self.take_original_timing_main_loop_interruption(interruption));
+            let table_build = self.begin_iris_spotlight_configure_table(usize::MAX);
+            assert!(self.complete_overworld_spotlight_build(
+                table_build,
+                OverworldSpotlightBuildPhase::Recurring,
+                false,
+                iteration,
+                Some(completed_stores),
+            ));
+            return;
+        }
         if let Some(receipt) = live_table_progress {
             let phase = if self.game_state.frame.submodule == 0 {
                 self.spotlight_internal_before_table(0, 2);
