@@ -38287,8 +38287,10 @@ impl ZeldaState {
             .as_ref()
             .filter(|(step, _, _)| *step == StartupSequenceStep::FileSelectWaiting)
             .map(|_| {
-                self.original_timing_nonterminal_continuation_plan_with_receipt_before_progress(
-                    file_select_low_wram_publication.map(|publication| match publication {
+                self.original_timing_nonterminal_continuation_plan_with_receipt(
+                    file_select_low_wram_publication
+                        .map(|publication| {
+                            match publication {
                         OriginalTimingFileSelectLowWramPublication::Progress(progress) => {
                             OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramClearProgress(
                                 progress,
@@ -38297,7 +38299,30 @@ impl ZeldaState {
                         OriginalTimingFileSelectLowWramPublication::Complete => {
                             OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared
                         }
-                    }),
+                    }
+                        })
+                        .map(|receipt| {
+                            let semantic = &self
+                                .original_timing_semantic_receipts
+                                .as_ref()
+                                .unwrap()
+                                .semantic;
+                            let index = semantic
+                                .iter()
+                                .position(|candidate| *candidate == receipt)
+                                .unwrap();
+                            let placement = if matches!(
+                                semantic.get(index + 1),
+                                Some(OriginalTimingSemanticReceipt::NmiAccepted(
+                                    NmiUpdateGate::LatchHeld
+                                ))
+                            ) {
+                                OriginalTimingNonterminalReceiptPlacement::BeforeTrailingAcceptance
+                            } else {
+                                OriginalTimingNonterminalReceiptPlacement::BeforeProgress
+                            };
+                            (receipt, placement)
+                        }),
                 )
                 .expect("live nonterminal file-select graphics lost its continued-call owner")
             });

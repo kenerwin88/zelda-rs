@@ -24272,6 +24272,27 @@ fn live_file_select_waiting_publishes_only_the_committed_low_wram_clear_prefix()
 }
 
 #[test]
+fn file_select_low_wram_clear_precedes_its_trailing_held_acceptance() {
+    // Cold pinned-ROM host1019: [Held, Handler, ClearReturned, Held, Continued].
+    let mut state = live_file_select_waiting_state(false, true, 0, 1019);
+    state.ram[0x0d00..0x1000].fill(0x5a);
+    state.game_state.sprites.sprite_slots = SpriteSlotsState::load_from_ram(&state.ram);
+    state
+        .original_timing_semantic_receipts
+        .as_mut()
+        .unwrap()
+        .semantic
+        .insert(
+            2,
+            OriginalTimingSemanticReceipt::FileSelectGraphicsLowWramCleared,
+        );
+    state.run_frame_internal(0, crate::RUN_MAIN);
+    assert!(state.ram[0x0d00..0x1000].iter().all(|byte| *byte == 0));
+    assert!(state.original_timing_nmi_publication_pending);
+    assert!(state.original_timing_semantic_receipts.is_none());
+}
+
+#[test]
 fn live_file_select_waiting_rejects_bad_gate_snapshot_or_phase_before_mutation() {
     for malformed in ["wrong-gate", "closed-carry", "resume-module"] {
         let mut state = live_file_select_waiting_state(
