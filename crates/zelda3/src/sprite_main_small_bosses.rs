@@ -232,6 +232,14 @@ impl ZeldaState {
     // void Sprite_Trinexx_FinalPhase(int k) {  // 9dadb5
     //   ... (see header comment block for full body).
     pub(super) fn sprite_trinexx_final_phase(&mut self, k: usize) {
+        if self.trinexx_final_phase_prefix(k) {
+            self.trinexx_final_phase_switch(k);
+        }
+    }
+
+    /// `Sprite_Trinexx_FinalPhase` up to its AI-state switch. Returns `false`
+    /// on the inactive and dying returns.
+    fn trinexx_final_phase_prefix(&mut self, k: usize) -> bool {
         let x_vel = self.sprite_slot_view(k).x_velocity() as i8;
         let y_vel = self.sprite_slot_view(k).y_velocity() as i8;
         let j_init = self.sprite_convert_velocity_to_angle_for_small_bosses(x_vel, y_vel) >> 1;
@@ -247,7 +255,7 @@ impl ZeldaState {
 
         self.sprite_trinexxd_draw_for_small_bosses(k);
         if self.sprite_return_if_inactive_for_small_bosses(k) {
-            return;
+            return false;
         }
         if (self.sprite_slot_view(k).ai_state() as i8).is_negative() {
             let t = self.sprite_slot_view(k).delay_main();
@@ -262,7 +270,7 @@ impl ZeldaState {
                     self.sprite_make_boss_explosion_for_small_bosses(k);
                 }
             }
-            return;
+            return false;
         }
         if (self.game_state.frame.frame_counter & 7) == 0 {
             self.sprite_sfx_queue_sfx3_with_pan(k, 0x31);
@@ -282,24 +290,15 @@ impl ZeldaState {
         }
         self.sprite_move_xy_for_small_bosses(k);
         self.sprite_check_damage_to_and_from_link_for_small_bosses(k);
+        true
+    }
+
+    fn trinexx_final_phase_switch(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
-                self.sprite_slot_view_mut(k).decrement_a();
-                if self.sprite_slot_view(k).a() == 0 {
-                    self.sprite_slot_view_mut(k).set_ai_state(1);
-                    self.sprite_slot_view_mut(k).set_delay_main(192);
-                }
-                self.sprite_get_16bit_coords_for_small_bosses(k);
-                if self.sprite_check_tile_collision_for_small_bosses(k) {
-                    let direction = (self.sprite_slot_view(k).direction().wrapping_add(1)) & 3;
-                    self.sprite_slot_view_mut(k).set_direction(direction);
-                    self.sprite_slot_view_mut(k).set_delay_aux1(8);
-                }
-                let j2 = (self.sprite_slot_view(k).direction() & 3) as usize;
-                self.sprite_slot_view_mut(k)
-                    .set_x_velocity(TRINEXX_FINAL_PHASE_X_VELOCITIES[j2] as u8);
-                self.sprite_slot_view_mut(k)
-                    .set_y_velocity(TRINEXX_FINAL_PHASE_Y_VELOCITIES[j2] as u8);
+                self.trinexx_final_phase_case0_until_tile_collision(k);
+                let hit = self.sprite_check_tile_collision_for_small_bosses(k);
+                self.trinexx_final_phase_case0_after_tile_collision(k, hit);
             }
             1 => {
                 if (self.game_state.frame.frame_counter & 1) == 0 {
@@ -309,6 +308,62 @@ impl ZeldaState {
             }
             _ => {}
         }
+    }
+
+    fn trinexx_final_phase_case0_until_tile_collision(&mut self, k: usize) {
+        self.sprite_slot_view_mut(k).decrement_a();
+        if self.sprite_slot_view(k).a() == 0 {
+            self.sprite_slot_view_mut(k).set_ai_state(1);
+            self.sprite_slot_view_mut(k).set_delay_main(192);
+        }
+        self.sprite_get_16bit_coords_for_small_bosses(k);
+    }
+
+    fn trinexx_final_phase_case0_after_tile_collision(&mut self, k: usize, hit: bool) {
+        if hit {
+            let direction = (self.sprite_slot_view(k).direction().wrapping_add(1)) & 3;
+            self.sprite_slot_view_mut(k).set_direction(direction);
+            self.sprite_slot_view_mut(k).set_delay_aux1(8);
+        }
+        let j2 = (self.sprite_slot_view(k).direction() & 3) as usize;
+        self.sprite_slot_view_mut(k)
+            .set_x_velocity(TRINEXX_FINAL_PHASE_X_VELOCITIES[j2] as u8);
+        self.sprite_slot_view_mut(k)
+            .set_y_velocity(TRINEXX_FINAL_PHASE_Y_VELOCITIES[j2] as u8);
+    }
+
+    /// Runs `Sprite_Trinexx_FinalPhase` state 0 on the interrupted host up
+    /// to `Sprite_CheckTileCollision`, and through its direction probes when
+    /// `probes_completed`.
+    pub(super) fn begin_trinexx_final_phase_tile_collision_checkpoint(
+        &mut self,
+        k: usize,
+        probes_completed: bool,
+    ) {
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xcb);
+        assert_ne!(self.overlord_slot_view(0).x_high(), 0);
+        assert!(
+            self.trinexx_final_phase_prefix(k),
+            "Trinexx final-phase tile-collision checkpoint requires an active body"
+        );
+        assert_eq!(self.sprite_slot_view(k).ai_state(), 0);
+        self.trinexx_final_phase_case0_until_tile_collision(k);
+        if probes_completed {
+            self.sprite_check_tile_collision_until_property_probe(k);
+        }
+    }
+
+    pub(super) fn resume_trinexx_final_phase_tile_collision(
+        &mut self,
+        k: usize,
+        probes_completed: bool,
+    ) {
+        let wall_collision = if probes_completed {
+            self.sprite_check_tile_collision_from_property_probe(k)
+        } else {
+            self.sprite_check_tile_collision(k)
+        };
+        self.trinexx_final_phase_case0_after_tile_collision(k, wall_collision != 0);
     }
 
     // void Sprite_Trinexx_CheckDamageToFlashingSegment(int k) {  // 9db079

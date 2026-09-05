@@ -786,6 +786,14 @@ pub enum MainLoopInterruption {
         spawned_slot: u8,
         progress: SpriteDynamicSpawnProgress,
     },
+    /// `Sprite_Trinexx_FinalPhase` state 0 entered `Sprite_CheckTileCollision`.
+    /// With `probes_completed` the wall-collision byte was cleared and the
+    /// single-layer direction probes ran; the tile-property probe, its
+    /// consumers and the direction/velocity update remain pending.
+    SpriteMainTrinexxFinalPhaseTileCollision {
+        slot: u8,
+        probes_completed: bool,
+    },
     /// `SpriteDraw_Antfairy` published its leading subtype2 increment, but
     /// the animation/draw suffix, caller-specific active body, current-slot
     /// return, and lower `Sprite_Main` slots remain pending.
@@ -1005,6 +1013,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainFireDebirandoBeforeSpawn(_)
                 | Self::SpriteMainFireDebirandoSpawn { .. }
                 | Self::SpriteMainTrinexxDeathExplosionSpawn { .. }
+                | Self::SpriteMainTrinexxFinalPhaseTileCollision { .. }
                 | Self::SpriteMainAfterAntfairySubtype2Increment(_)
                 | Self::SpriteMainAfterLanmolaSubtype2Increment(_)
                 | Self::SpriteMainAfterHelmasaurHardHatBeetleSubtype2Increment(_)
@@ -1133,6 +1142,10 @@ pub enum SpriteMainProgress {
         slot: u8,
         spawned_slot: u8,
         progress: SpriteDynamicSpawnProgress,
+    },
+    TrinexxFinalPhaseTileCollision {
+        slot: u8,
+        probes_completed: bool,
     },
     /// The current active slot completed `SpriteDraw_Antfairy`'s leading
     /// subtype2 increment. Its draw/body suffix and lower slots are pending.

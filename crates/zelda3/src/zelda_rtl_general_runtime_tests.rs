@@ -19026,6 +19026,40 @@ fn pre_dungeon_garnish_clear_publishes_only_completed_descending_stores() {
 }
 
 #[test]
+fn trinexx_final_phase_tile_collision_checkpoints_resume_to_the_atomic_phase() {
+    for (probes_completed, x_velocity, y_velocity) in [
+        (false, 31u8, 0u8),
+        (true, 31, 0),
+        (true, 0, 0xe1),
+        (true, 0, 31),
+    ] {
+        let mut state = ZeldaState::new();
+        state.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+        state.overlord_slot_view_mut(0).increment_x_high();
+        state.sprite_slot_view_mut(0).set_sprite_type(0xcb);
+        state.sprite_slot_view_mut(0).set_state(9);
+        state.sprite_slot_view_mut(0).set_a(5);
+        state.sprite_slot_view_mut(0).set_x_velocity(x_velocity);
+        state.sprite_slot_view_mut(0).set_y_velocity(y_velocity);
+        state.sprite_slot_view_mut(0).set_x_low(0x23);
+        state.sprite_slot_view_mut(0).set_x_high(8);
+        state.sprite_slot_view_mut(0).set_y_low(0xb4);
+        state.sprite_slot_view_mut(0).set_y_high(0x15);
+        state.sprite_slot_view_mut(0).set_subtype2(0x40);
+        let mut atomic = state.clone();
+        atomic.sprite_trinexx_final_phase(0);
+        state.begin_trinexx_final_phase_tile_collision_checkpoint(0, probes_completed);
+        assert_eq!(state.sprite_slot_view(0).a(), 4);
+        state.resume_trinexx_final_phase_tile_collision(0, probes_completed);
+        assert_eq!(
+            state.ram, atomic.ram,
+            "probes {probes_completed} {x_velocity} {y_velocity}"
+        );
+        assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+    }
+}
+
+#[test]
 fn trinexx_death_explosion_spawn_checkpoints_resume_to_the_atomic_explosion() {
     use crate::SpriteDynamicSpawnProgress as P;
     for progress in [
