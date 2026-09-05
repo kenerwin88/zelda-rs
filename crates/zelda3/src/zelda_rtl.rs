@@ -6105,6 +6105,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
         | crate::MainLoopInterruption::LinkActualVelocity { .. }
         | crate::MainLoopInterruption::LinkActualVelocityCompleted
+        | crate::MainLoopInterruption::LinkVelocityClearProgress { .. }
         | crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted
         | crate::MainLoopInterruption::LinkPositionBeforeCoordinates => true,
         crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }
@@ -6822,6 +6823,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
         | crate::MainLoopInterruption::LinkActualVelocity { .. }
         | crate::MainLoopInterruption::LinkActualVelocityCompleted
+        | crate::MainLoopInterruption::LinkVelocityClearProgress { .. }
         | crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted
         | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
         | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
@@ -8737,6 +8739,7 @@ pub(super) struct LinkMovePositionReturn {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct LinkActualVelocityReturn {
     pending_speed_index: Option<u8>,
+    completed_clear_stores: u8,
     pending_actual_x: Option<u8>,
     pending_actual_y: Option<u8>,
 }
@@ -8747,6 +8750,7 @@ pub(super) enum LinkActualVelocityCheckpoint {
     BeforeX,
     BeforeY,
     AfterBoth,
+    Clearing { completed: u8 },
 }
 
 impl From<Option<bool>> for LinkActualVelocityCheckpoint {
@@ -22734,6 +22738,7 @@ impl ZeldaState {
                             | crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
                             | crate::MainLoopInterruption::LinkActualVelocity { .. }
                             | crate::MainLoopInterruption::LinkActualVelocityCompleted
+                            | crate::MainLoopInterruption::LinkVelocityClearProgress { .. }
                             | crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted
                             | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
                             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
@@ -22972,6 +22977,7 @@ impl ZeldaState {
             crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
                 | crate::MainLoopInterruption::LinkActualVelocity { .. }
                 | crate::MainLoopInterruption::LinkActualVelocityCompleted
+                | crate::MainLoopInterruption::LinkVelocityClearProgress { .. }
                 | crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted
                 | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
                 | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
@@ -25949,6 +25955,7 @@ impl ZeldaState {
             crate::MainLoopInterruption::LinkOam
             | crate::MainLoopInterruption::LinkActualVelocity { .. }
             | crate::MainLoopInterruption::LinkActualVelocityCompleted
+            | crate::MainLoopInterruption::LinkVelocityClearProgress { .. }
             | crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted
             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
             | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
@@ -26247,6 +26254,18 @@ impl ZeldaState {
                     projection_completed,
                     iteration,
                     LinkActualVelocityCheckpoint::AfterBoth,
+                );
+                assert!(matches!(
+                    cpu_probe.game_execution_scheduler.current_work(),
+                    Some(GameWorkContinuation::FinishDungeonExitSpotlightActualVelocity { .. })
+                ));
+            }
+            crate::MainLoopInterruption::LinkVelocityClearProgress { completed } => {
+                cpu_probe.complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
+                    table_build,
+                    projection_completed,
+                    iteration,
+                    LinkActualVelocityCheckpoint::Clearing { completed },
                 );
                 assert!(matches!(
                     cpu_probe.game_execution_scheduler.current_work(),
@@ -42101,6 +42120,7 @@ impl ZeldaState {
                             | crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
                             | crate::MainLoopInterruption::LinkActualVelocity { .. }
                             | crate::MainLoopInterruption::LinkActualVelocityCompleted
+                            | crate::MainLoopInterruption::LinkVelocityClearProgress { .. }
                             | crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted
                             | crate::MainLoopInterruption::LinkPositionBeforeCoordinates
                             | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
@@ -48044,6 +48064,7 @@ impl ZeldaState {
                                     interruption,
                                     crate::MainLoopInterruption::LinkActualVelocity { .. }
                                     | crate::MainLoopInterruption::LinkActualVelocityCompleted
+                                    | crate::MainLoopInterruption::LinkVelocityClearProgress { .. }
                                     | crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted
                                         |
                                     crate::MainLoopInterruption::LinkPositionAfterSubpixel {
@@ -48068,6 +48089,12 @@ impl ZeldaState {
                                 table_build,
                                 iteration,
                                 LinkActualVelocityCheckpoint::AfterBoth,
+                            );
+                        }                        Some(crate::MainLoopInterruption::LinkVelocityClearProgress { completed }) => {
+                            self.complete_dungeon_exit_spotlight_entry_until_link_actual_velocity(
+                                table_build,
+                                iteration,
+                                LinkActualVelocityCheckpoint::Clearing { completed },
                             );
                         }
                         Some(crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass }) => {
@@ -48123,6 +48150,7 @@ impl ZeldaState {
                                 interruption,
                                 crate::MainLoopInterruption::LinkActualVelocity { .. }
                                 | crate::MainLoopInterruption::LinkActualVelocityCompleted
+                                | crate::MainLoopInterruption::LinkVelocityClearProgress { .. }
                                 | crate::MainLoopInterruption::DungeonExitSpotlightTableCompleted
                                     | crate::MainLoopInterruption::LinkPositionAfterSubpixel { .. }
                                     | crate::MainLoopInterruption::LinkPositionAfterCoordinateLow { .. }
@@ -48156,6 +48184,12 @@ impl ZeldaState {
                                     projection_completed,
                                     iteration,
                                     LinkActualVelocityCheckpoint::AfterBoth,
+                                ),                            crate::MainLoopInterruption::LinkVelocityClearProgress { completed } => self
+                                .complete_dungeon_exit_spotlight_build_until_link_actual_velocity(
+                                    table_build,
+                                    projection_completed,
+                                    iteration,
+                                    LinkActualVelocityCheckpoint::Clearing { completed },
                                 ),
                             crate::MainLoopInterruption::LinkPositionAfterSubpixel { pass } => self
                                 .complete_dungeon_exit_spotlight_build_until_link_position_partial(

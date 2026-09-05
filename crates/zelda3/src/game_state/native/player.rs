@@ -6032,6 +6032,30 @@ impl<'a> NativeFollowerLinkBridgeMut<'a> {
         self.debug_assert_matches_ram();
     }
 
+    /// Link_HandleVelocity's four STZ stores in source order ($27,$28,$68,$69).
+    pub(crate) fn clear_velocity_selection_store(&mut self, store: u8) {
+        match store {
+            0 => {
+                self.state.actual_y_velocity = 0;
+                self.ram[LINK_ACTUAL_Y_VELOCITY] = 0;
+            }
+            1 => {
+                self.state.actual_x_velocity = 0;
+                self.ram[LINK_ACTUAL_X_VELOCITY] = 0;
+            }
+            2 => {
+                self.state.y_page_movement_delta = 0;
+                self.ram[LINK_Y_PAGE_MOVEMENT_DELTA] = 0;
+            }
+            3 => {
+                self.state.x_page_movement_delta = 0;
+                self.ram[LINK_X_PAGE_MOVEMENT_DELTA] = 0;
+            }
+            _ => panic!("velocity-selection clear store is outside the source sequence"),
+        }
+        self.debug_assert_matches_ram();
+    }
+
     pub(crate) fn clear_actual_velocity_and_page_movement_deltas(&mut self) {
         self.state.clear_actual_velocity_and_page_movement_deltas();
         self.ram[LINK_ACTUAL_X_VELOCITY] = 0;

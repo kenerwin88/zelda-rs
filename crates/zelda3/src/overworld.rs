@@ -3647,6 +3647,12 @@ impl ZeldaState {
                 assert!(self.take_original_timing_main_loop_interruption(interruption));
                 Some(LinkActualVelocityCheckpoint::from(horizontal_resolved))
             }
+            Some(
+                interruption @ crate::MainLoopInterruption::LinkVelocityClearProgress { completed },
+            ) => {
+                assert!(self.take_original_timing_main_loop_interruption(interruption));
+                Some(LinkActualVelocityCheckpoint::Clearing { completed })
+            }
             Some(crate::MainLoopInterruption::LinkActualVelocityCompleted) => {
                 assert!(self.take_original_timing_main_loop_interruption(
                     crate::MainLoopInterruption::LinkActualVelocityCompleted

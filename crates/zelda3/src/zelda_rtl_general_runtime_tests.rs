@@ -14685,12 +14685,19 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
             .follower_link_state_mut()
             .set_direction_and_last_direction(direction);
         state.follower_link_state_mut().set_actual_y_velocity(0x14);
+        state.follower_link_state_mut().set_actual_x_velocity(0x43);
+        state
+            .follower_link_state_mut()
+            .set_page_movement_deltas(7, 9);
         state
     }
 
     // Original ROM $07:E2DE (host 340155) has cleared velocity but has
     // not adjusted speed; $07:E346 reaches the later per-axis loop.
     for checkpoint in [
+        LinkActualVelocityCheckpoint::Clearing { completed: 1 },
+        LinkActualVelocityCheckpoint::Clearing { completed: 2 },
+        LinkActualVelocityCheckpoint::Clearing { completed: 3 },
         LinkActualVelocityCheckpoint::BeforeSelection,
         LinkActualVelocityCheckpoint::BeforeX,
         LinkActualVelocityCheckpoint::BeforeY,
@@ -14708,6 +14715,9 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
                 0,
                 vec![OriginalTimingSemanticReceipt::MainLoopInterrupted(
                     match checkpoint {
+                        LinkActualVelocityCheckpoint::Clearing { completed } => {
+                            crate::MainLoopInterruption::LinkVelocityClearProgress { completed }
+                        }
                         LinkActualVelocityCheckpoint::AfterBoth => {
                             crate::MainLoopInterruption::LinkActualVelocityCompleted
                         }
@@ -14735,11 +14745,31 @@ fn live_spotlight_actual_velocity_boundaries_do_not_replay_velocity_selection() 
                     LinkActualVelocityCheckpoint::BeforeY | LinkActualVelocityCheckpoint::AfterBoth
                 ) {
                     atomic.game_state.player.follower_link.actual_x_velocity()
+                } else if checkpoint == (LinkActualVelocityCheckpoint::Clearing { completed: 1 }) {
+                    0x43
                 } else {
                     0
                 },
                 "only a source-completed horizontal pass may publish its velocity",
             );
+            if let LinkActualVelocityCheckpoint::Clearing { completed } = checkpoint {
+                assert_eq!(
+                    resumed
+                        .game_state
+                        .player
+                        .follower_link
+                        .y_page_movement_delta(),
+                    if completed >= 3 { 0 } else { 7 }
+                );
+                assert_eq!(
+                    resumed
+                        .game_state
+                        .player
+                        .follower_link
+                        .x_page_movement_delta(),
+                    9
+                );
+            }
             assert_eq!(
                 resumed.game_state.player.follower_link.actual_y_velocity(),
                 if checkpoint == LinkActualVelocityCheckpoint::AfterBoth {

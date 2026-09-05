@@ -903,6 +903,9 @@ pub enum MainLoopInterruption {
     SpriteMainMoblinAttributeLoaded(u8),
     SpriteMainHappinessPondRupeeGraphicsStarted(u8),
     SpriteMainMiniMoldormAiPending(u8),
+    LinkVelocityClearProgress {
+        completed: u8,
+    },
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.

@@ -1861,9 +1861,25 @@ impl ZeldaState {
         checkpoint: impl Into<LinkActualVelocityCheckpoint>,
     ) -> Option<LinkActualVelocityReturn> {
         let checkpoint = checkpoint.into();
-        let speed_index = self.link_handle_velocity_until_velocity_cleared()?;
-        if checkpoint == LinkActualVelocityCheckpoint::BeforeSelection {
+        let completed_clear_stores = match checkpoint {
+            LinkActualVelocityCheckpoint::Clearing { completed } => {
+                assert!((1..4).contains(&completed));
+                completed
+            }
+            _ => 4,
+        };
+        let speed_index = self.link_handle_velocity_before_velocity_clear()?;
+        for store in 0..completed_clear_stores {
+            self.follower_link_state_mut()
+                .clear_velocity_selection_store(store);
+        }
+        if matches!(
+            checkpoint,
+            LinkActualVelocityCheckpoint::BeforeSelection
+                | LinkActualVelocityCheckpoint::Clearing { .. }
+        ) {
             return Some(LinkActualVelocityReturn {
+                completed_clear_stores,
                 pending_speed_index: Some(speed_index),
                 pending_actual_x: None,
                 pending_actual_y: None,
@@ -1897,6 +1913,7 @@ impl ZeldaState {
             }
         }
         Some(LinkActualVelocityReturn {
+            completed_clear_stores,
             pending_speed_index: None,
             pending_actual_x,
             pending_actual_y,
@@ -1909,6 +1926,10 @@ impl ZeldaState {
         &mut self,
         velocity_return: LinkActualVelocityReturn,
     ) -> Option<LinkMovePositionReturn> {
+        for store in velocity_return.completed_clear_stores..4 {
+            self.follower_link_state_mut()
+                .clear_velocity_selection_store(store);
+        }
         if let Some(speed_index) = velocity_return.pending_speed_index {
             let (direction, velocity) =
                 self.link_handle_velocity_after_velocity_cleared(speed_index);
@@ -1950,6 +1971,13 @@ impl ZeldaState {
     }
 
     fn link_handle_velocity_until_velocity_cleared(&mut self) -> Option<u8> {
+        let speed_index = self.link_handle_velocity_before_velocity_clear()?;
+        self.follower_link_state_mut()
+            .clear_actual_velocity_and_page_movement_deltas();
+        Some(speed_index)
+    }
+
+    fn link_handle_velocity_before_velocity_clear(&mut self) -> Option<u8> {
         let old_x = self.game_state.player.follower_link.x();
         let old_y = self.game_state.player.follower_link.y();
 
@@ -2012,8 +2040,6 @@ impl ZeldaState {
             }
         };
 
-        self.follower_link_state_mut()
-            .clear_actual_velocity_and_page_movement_deltas();
         Some(speed_index)
     }
 

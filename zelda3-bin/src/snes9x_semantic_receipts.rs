@@ -4720,6 +4720,7 @@ impl Snes9xOracleSemanticTrace {
                     Some(
                         MainLoopInterruption::LinkActualVelocity { .. }
                             | MainLoopInterruption::LinkActualVelocityCompleted
+                            | MainLoopInterruption::LinkVelocityClearProgress { .. }
                             | MainLoopInterruption::DungeonExitSpotlightTableCompleted
                             | MainLoopInterruption::LinkPositionBeforeCoordinates
                             | MainLoopInterruption::LinkPositionAfterSubpixel { .. }
@@ -7421,6 +7422,10 @@ fn main_loop_interruption_for_source_state(
         Some(MainLoopInterruption::LinkActualVelocity {
             horizontal_resolved: Some(x == Some(0)),
         })
+    } else if main == Some(0x0f) && sub == Some(1) && (0x07_e2cc..0x07_e2d2).contains(&pc) {
+        Some(MainLoopInterruption::LinkVelocityClearProgress {
+            completed: ((pc - 0x07_e2ca) / 2) as u8,
+        })
     } else if main == Some(0x0f) && sub == Some(1) && (0x07_e2d2..0x07_e2e8).contains(&pc) {
         // All four STZ stores ($27, $28, $68, $69) have completed.
         // Direction indexing is call-local; the next stateful branch starts
@@ -9425,6 +9430,16 @@ mod tests {
         )
         .unwrap());
         assert!(receipts.is_empty());
+    }
+
+    #[test]
+    fn link_velocity_clear_receipt_counts_completed_source_stores() {
+        for (pc, completed) in [(0x07_e2cc, 1), (0x07_e2ce, 2), (0x07_e2d0, 3)] {
+            assert_eq!(
+                main_loop_interruption_for_source_state(pc, Some(0x0f), Some(1), None),
+                Some(MainLoopInterruption::LinkVelocityClearProgress { completed })
+            );
+        }
     }
     #[test]
     fn happiness_pond_rupee_decoder_entry_becomes_a_typed_partial_slot_checkpoint() {
