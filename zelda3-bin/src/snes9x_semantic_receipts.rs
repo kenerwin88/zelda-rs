@@ -1027,6 +1027,7 @@ struct SpriteMainExecutionTracker {
     #[serde(default)]
     king_zora_flippers_graphics_slot: Option<u8>,
     happiness_pond_rupee_graphics_slot: Option<u8>,
+    catfish_medallion_graphics_slot: Option<u8>,
     #[serde(default)]
     bonk_item_graphics_slot: Option<u8>,
     #[serde(default)]
@@ -2459,6 +2460,22 @@ impl SpriteMainExecutionTracker {
             );
             return SpriteMainProgress::HappinessPondRupeeGraphicsStarted(slot);
         }
+        if let Some(slot) = self.catfish_medallion_graphics_slot {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Catfish medallion rupee graphics publication outlived its active sprite slot",
+            );
+            assert_eq!(
+                self.cucco_animation_slot, None,
+                "one sprite slot published two incompatible partial checkpoints",
+            );
+            assert_eq!(
+                self.cucco_subtype_increments, None,
+                "one sprite slot published two incompatible partial checkpoints",
+            );
+            return SpriteMainProgress::CatfishMedallionGraphicsStarted(slot);
+        }
         if let Some(slot) = self.bonk_item_graphics_slot {
             assert_eq!(
                 self.current_slot,
@@ -2798,6 +2815,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::HappinessPondRupeeGraphicsStarted(slot) => {
                 MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(slot)
+            }
+            SpriteMainProgress::CatfishMedallionGraphicsStarted(slot) => {
+                MainLoopInterruption::SpriteMainCatfishMedallionGraphicsStarted(slot)
             }
             SpriteMainProgress::AfterSingleSmallDrawPosition(slot) => {
                 MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
@@ -5311,6 +5331,18 @@ impl Snes9xOracleSemanticTrace {
                     execution.happiness_pond_rupee_graphics_slot = Some(slot);
                 }
                 if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
+                    && event.return_address.map(|pc| pc & 0x00ff_ffff) == Some(0x1d_e1a6)
+                {
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Snes9x entered Catfish medallion graphics outside Sprite_Main")?;
+                    let slot = execution
+                        .current_slot
+                        .ok_or("Snes9x entered Catfish medallion graphics before a sprite slot")?;
+                    execution.catfish_medallion_graphics_slot = Some(slot);
+                }
+                if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
                     && event.return_address.map(|pc| pc & 0x00ff_ffff)
                         == Some(BONK_ITEM_GRAPHICS_RETURN_ADDRESS)
                 {
@@ -5458,6 +5490,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.big_key_drop_graphics_slot = None;
                             execution.king_zora_flippers_graphics_slot = None;
                             execution.happiness_pond_rupee_graphics_slot = None;
+                            execution.catfish_medallion_graphics_slot = None;
                             execution.bonk_item_graphics_slot = None;
                             execution.single_small_draw_position_slot = None;
                             execution.probe_after_oam_coordinates_slot = None;
@@ -5598,6 +5631,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.big_key_drop_graphics_slot = None;
                         execution.king_zora_flippers_graphics_slot = None;
                         execution.happiness_pond_rupee_graphics_slot = None;
+                        execution.catfish_medallion_graphics_slot = None;
                         execution.bonk_item_graphics_slot = None;
                         execution.single_small_draw_position_slot = None;
                         execution.probe_after_oam_coordinates_slot = None;
@@ -9401,6 +9435,7 @@ mod tests {
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
             happiness_pond_rupee_graphics_slot: None,
+            catfish_medallion_graphics_slot: None,
             bonk_item_graphics_slot: None,
             wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,
@@ -9637,6 +9672,50 @@ mod tests {
                 .sprite_main_execution
                 .map(|execution| execution.interruption()),
             Some(MainLoopInterruption::SpriteMainHappinessPondRupeeGraphicsStarted(14)),
+        );
+    }
+
+    #[test]
+    fn catfish_medallion_decode_preserves_the_spawning_caller_slot() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+                &mut receipts,
+            )
+            .unwrap();
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(11), None),
+                &mut receipts,
+            )
+            .unwrap();
+        let mut decode = raw(
+            "pc",
+            Some(DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC),
+            Some(11),
+            None,
+        );
+        decode.return_address = Some(0x1d_e1a6);
+        source.consume_event(decode, &mut receipts).unwrap();
+        assert_eq!(
+            source.sprite_main_execution.as_ref().unwrap().progress(),
+            SpriteMainProgress::CatfishMedallionGraphicsStarted(11)
+        );
+        source
+            .consume_event(
+                raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(10), None),
+                &mut receipts,
+            )
+            .unwrap();
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .as_ref()
+                .unwrap()
+                .catfish_medallion_graphics_slot,
+            None
         );
     }
 
@@ -15290,6 +15369,7 @@ mod tests {
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
             happiness_pond_rupee_graphics_slot: None,
+            catfish_medallion_graphics_slot: None,
             bonk_item_graphics_slot: None,
             wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,
@@ -15386,6 +15466,7 @@ mod tests {
             big_key_drop_graphics_slot: None,
             king_zora_flippers_graphics_slot: None,
             happiness_pond_rupee_graphics_slot: None,
+            catfish_medallion_graphics_slot: None,
             bonk_item_graphics_slot: None,
             wish_pond_tossed_item_graphics_slot: None,
             single_small_draw_position_slot: None,

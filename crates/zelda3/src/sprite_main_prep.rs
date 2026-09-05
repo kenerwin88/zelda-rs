@@ -1427,6 +1427,12 @@ impl ZeldaState {
     }
 
     pub(super) fn catfish_regurgitate_medallion(&mut self, k: usize) {
+        if self.catfish_regurgitate_medallion_before_graphics(k) {
+            self.DecodeAnimatedSpriteTile_variable(0x1c);
+        }
+    }
+
+    pub(super) fn catfish_regurgitate_medallion_before_graphics(&mut self, k: usize) -> bool {
         let mut info = SpriteSpawnInfo::default();
         let j = self.sprite_spawn_dynamically(k, 0xc0, &mut info);
         if j >= 0 {
@@ -1439,8 +1445,9 @@ impl ZeldaState {
             self.sprite_slot_view_mut(j).set_flags2(0x83);
             self.sprite_slot_view_mut(j).set_flags3(0x58);
             self.sprite_slot_view_mut(j).set_oam_flags(0x58 & 0x0f);
-            self.DecodeAnimatedSpriteTile_variable(0x1c);
+            return true;
         }
+        false
     }
 
     pub(super) fn sprite_spawn_water_splash(&mut self, k: usize) -> i32 {

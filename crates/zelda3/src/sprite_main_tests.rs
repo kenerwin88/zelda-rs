@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn catfish_medallion_spawn_is_visible_before_its_graphics_decode() {
+    let mut atomic = ZeldaState::new();
+    atomic.set_main_module(9);
+    atomic.set_submodule(0);
+    atomic.oam_state_mut().set_current_pointer(OAM_BUF as u16);
+    {
+        let mut sprite = atomic.sprite_slot_view_mut(11);
+        sprite.set_state(9);
+        sprite.set_sprite_type(0xc0);
+        sprite.set_ai_state(3);
+        sprite.set_delay_main(80);
+        sprite.set_x(0x40);
+        sprite.set_y(0x50);
+    }
+    let mut staged = atomic.clone();
+    atomic.catfish_big_fish(11);
+    staged.catfish_before_medallion_graphics(11);
+    assert_eq!(staged.sprite_slot_view(15).state(), 9);
+    assert_eq!(staged.sprite_slot_view(15).x_velocity(), 24);
+    assert_eq!(staged.sprite_slot_view(11).graphics(), 0);
+    staged.complete_catfish_medallion_graphics(11);
+    assert_eq!(staged.game_state, atomic.game_state);
+    assert_eq!(staged.ram, atomic.ram);
+}
+
+#[test]
 fn catfish_splash_carry_controls_the_conversation_table_overread() {
     for (indoors, exhausted, expected) in [(false, false, 0xbd), (true, false, 0), (false, true, 0)]
     {

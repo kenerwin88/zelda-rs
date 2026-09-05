@@ -3219,6 +3219,24 @@ impl ZeldaState {
                 );
                 return;
             }
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(
+                    k as u8,
+                ))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(nmi_slices, 0);
+                self.sprite_main_cpu_boundary = None;
+                self.sprite_timers_and_oam(k);
+                self.catfish_before_medallion_graphics(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(k as u8),
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
             if matches!(
                 self.sprite_main_cpu_boundary,
                 Some(SpriteMainCpuBoundary::AfterAntfairySubtype2Increment {
@@ -4953,6 +4971,10 @@ impl ZeldaState {
                 let slot = usize::from(slot);
                 self.DecodeAnimatedSpriteTile_variable(0x0e);
                 self.complete_sprite_main_after_interrupted_slot(slot);
+            }
+            SpriteMainCpuBoundary::CatfishMedallionGraphicsStarted(slot) => {
+                self.complete_catfish_medallion_graphics(usize::from(slot));
+                self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
             }
             SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
                 slot,

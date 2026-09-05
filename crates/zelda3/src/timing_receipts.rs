@@ -907,6 +907,7 @@ pub enum MainLoopInterruption {
         completed: u8,
     },
     SpriteMainBuzzblobAfterXSubpixel(u8),
+    SpriteMainCatfishMedallionGraphicsStarted(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -954,6 +955,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAfterCuccoGraphicsPublication { .. }
                 | Self::SpriteMainBigKeyDropGraphicsStarted(_)
                 | Self::SpriteMainKingZoraFlippersGraphicsStarted(_)
+                | Self::SpriteMainCatfishMedallionGraphicsStarted(_)
                 | Self::SpriteMainHappinessPondRupeeGraphicsStarted(_)
                 | Self::SpriteMainAfterSingleSmallDrawPosition(_)
                 | Self::SpriteMainAfterWallmasterResetPrefix(_)
@@ -1173,6 +1175,7 @@ pub enum SpriteMainProgress {
     HappinessPondRupeeGraphicsStarted(u8),
     MiniMoldormAiPending(u8),
     BuzzblobAfterXSubpixel(u8),
+    CatfishMedallionGraphicsStarted(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

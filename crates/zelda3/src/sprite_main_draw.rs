@@ -870,7 +870,28 @@ impl ZeldaState {
         }
     }
 
-    // -----------------------------------------------------------------------
+    /// The successful medallion spawn precedes its shared graphics decode.
+    pub(super) fn catfish_before_medallion_graphics(&mut self, k: usize) {
+        assert_eq!(self.sprite_slot_view(k).state(), 9);
+        assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xc0);
+        assert_eq!(self.sprite_slot_view(k).a(), 0);
+        assert_eq!(self.sprite_slot_view(k).ai_state(), 3);
+        assert_eq!(self.sprite_slot_view(k).delay_main(), 80);
+        assert_eq!(self.game_state.inventory.items.quake(), 0);
+        self.great_catfish_draw(k);
+        assert!(!self.sprite_return_if_inactive(k));
+        assert!(
+            self.catfish_regurgitate_medallion_before_graphics(k),
+            "Catfish source graphics entry requires a successful native medallion spawn"
+        );
+    }
+
+    pub(super) fn complete_catfish_medallion_graphics(&mut self, k: usize) {
+        self.DecodeAnimatedSpriteTile_variable(0x1c);
+        self.sprite_slot_view_mut(k)
+            .set_graphics(CATFISH_BIG_FISH_CONVERSATE_GFX[80 >> 3]);
+    }
+
     // void Sprite_Catfish_SplashOfWater(int k) {  // 9de37d
     pub(super) fn sprite_catfish_splash_of_water(&mut self, k: usize) {
         if self.sprite_slot_view(k).delay_main() == 0 {
