@@ -3252,13 +3252,22 @@ impl ZeldaState {
                 return;
             }
             if matches!(self.sprite_main_cpu_boundary,
-                Some(SpriteMainCpuBoundary::VitreousDamagePending { slot } | SpriteMainCpuBoundary::VitreousAiPending { slot } | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot }) if slot == k as u8)
+                Some(SpriteMainCpuBoundary::MoblinAttributeLoaded { slot } | SpriteMainCpuBoundary::MoblinCollisionGeometry { slot } | SpriteMainCpuBoundary::VitreousDamagePending { slot } | SpriteMainCpuBoundary::VitreousAiPending { slot } | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot }) if slot == k as u8)
             {
                 let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
                 assert_ne!(nmi_slices, 0);
                 let boundary = self.sprite_main_cpu_boundary.unwrap();
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
-                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xbd);
+                let expected_type = if matches!(
+                    boundary,
+                    SpriteMainCpuBoundary::MoblinCollisionGeometry { .. }
+                        | SpriteMainCpuBoundary::MoblinAttributeLoaded { .. }
+                ) {
+                    0x12
+                } else {
+                    0xbd
+                };
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), expected_type);
                 self.sprite_timers_and_oam(k);
                 self.sprite_active_main(k);
                 self.sprite_main_cpu_boundary = None;
@@ -4396,6 +4405,19 @@ impl ZeldaState {
                 assert_eq!(self.sprite_slot_view(k).state(), 9);
                 assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xbd);
                 self.vitreous_after_damage_checkpoint(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::MoblinCollisionGeometry { slot } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.sprite_check_tile_collision_single_layer(k);
+                self.moblin_after_tile_collision(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::MoblinAttributeLoaded { slot } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.moblin_after_loaded_vertical_attribute(k);
                 self.complete_sprite_main_after_interrupted_slot(k);
             }
             SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot } => {

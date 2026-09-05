@@ -950,6 +950,9 @@ struct SpriteMainExecutionTracker {
     absorbable_vertical_attribute_loaded: Option<u8>,
     swamola_segment: Option<u8>,
     vitreous_minions_seen: bool,
+    moblin_collision_started: bool,
+    moblin_collision_geometry: Option<u8>,
+    moblin_attribute_loaded: Option<u8>,
     vitreous_player_damage_pending: Option<u8>,
     vitreous_ai_pending: Option<u8>,
     vitreous_damage_pending: Option<u8>,
@@ -1119,6 +1122,52 @@ impl SpriteMainExecutionTracker {
         }
         self.pengator_slide_pending = Some(slot);
         Ok(())
+    }
+
+    fn observe_moblin_collision_geometry(&mut self, event: &RawTraceEvent) {
+        // PHX preserves the slot above the vertical probe's JSR return.
+        // The attribute is published; classification has no effects yet.
+        if self.moblin_collision_started
+            && event.pc == Some(0x06_e818)
+            && event
+                .return_address
+                .is_some_and(|stack| stack >> 8 == 0xe5f0 && self.current_slot == Some(stack as u8))
+        {
+            self.moblin_attribute_loaded = self.current_slot;
+        }
+        // First downward tile probe: only local outdoor coordinates exist;
+        // the caller has moved and cleared wallcoll, but no tile is read yet.
+        let geometry = event
+            .pc
+            .is_some_and(|pc| (0x06_e773..=0x06_e795).contains(&pc))
+            && event
+                .return_address
+                .is_some_and(|stack| stack & 0xffff == 0xe5f0)
+            && self.current_slot.map(u16::from) == event.x;
+        let direction_setup = event
+            .pc
+            .is_some_and(|pc| (0x06_e72f..0x06_e73c).contains(&pc))
+            && event
+                .return_address
+                .is_some_and(|stack| stack & 0xffff == 0xe5f0)
+            && self.current_slot.map(u16::from) == event.x
+            && event.y == Some(1);
+        // The outdoor attribute lookup has returned, but STA sprite_tiletype
+        // is pending. PHY/PHX preserve direction and slot above JSR $E7A0.
+        let attribute_pending = matches!(event.pc, Some(0x06_e8ce | 0x06_e8d0))
+            && event.return_address.is_some_and(|stack| {
+                stack & 0xff00ff == 0xa00002 && self.current_slot == Some((stack >> 8) as u8)
+            });
+        let attribute_lookup = event
+            .pc
+            .is_some_and(|pc| (0x00_882e..0x00_8888).contains(&pc))
+            && event.return_address == Some(0x06_e8cd);
+        if self.moblin_collision_started
+            && (direction_setup
+                || ((geometry || attribute_pending || attribute_lookup) && event.y == Some(2)))
+        {
+            self.moblin_collision_geometry = self.current_slot;
+        }
     }
 
     fn observe_vitreous_damage_pending(&mut self, event: &RawTraceEvent) {
@@ -2357,6 +2406,12 @@ impl SpriteMainExecutionTracker {
         if let Some(slot) = self.vitreous_player_damage_pending {
             return SpriteMainProgress::VitreousPlayerDamagePending(slot);
         }
+        if let Some(slot) = self.moblin_attribute_loaded {
+            return SpriteMainProgress::MoblinAttributeLoaded(slot);
+        }
+        if let Some(slot) = self.moblin_collision_geometry {
+            return SpriteMainProgress::MoblinCollisionGeometry(slot);
+        }
         if let Some(slot) = self.vitreous_damage_pending {
             return SpriteMainProgress::VitreousDamagePending(slot);
         }
@@ -2736,6 +2791,12 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::SwamolaHeadDrawCompleted(slot) => {
                 MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(slot)
+            }
+            SpriteMainProgress::MoblinAttributeLoaded(slot) => {
+                MainLoopInterruption::SpriteMainMoblinAttributeLoaded(slot)
+            }
+            SpriteMainProgress::MoblinCollisionGeometry(slot) => {
+                MainLoopInterruption::SpriteMainMoblinCollisionGeometry(slot)
             }
             SpriteMainProgress::VitreousDamagePending(slot) => {
                 MainLoopInterruption::SpriteMainVitreousDamagePending(slot)
@@ -4044,7 +4105,7 @@ impl Snes9xOracleSemanticTrace {
                         "058af3", "0684eb", "069271", "06a628", "06a724", "06b9cc", "06b9d0",
                         "0799ad", "079a0b", "008225", "0082c7", "00d4ed", "09c499", "09c4aa",
                         "09c173", "09f63f", "09f825", "0ffdc3", "00d423", "00e75c", "00e766",
-                        "00d44c", "0ecfe2", "0ed088", "0ed0c2", "06d051", "02824d",
+                        "00d44c", "06e4ab", "0ecfe2", "0ed088", "0ed0c2", "06d051", "02824d",
                     ],
                 ),
             );
@@ -4467,6 +4528,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_absorbable_tile_lookup(returned_event)?;
                 execution.observe_swamola_segment_draw(returned_event)?;
                 execution.observe_vitreous_damage_pending(returned_event);
+                execution.observe_moblin_collision_geometry(returned_event);
                 execution.observe_dispatch_trampoline_return(returned_event)?;
                 execution.observe_pengator_slide_pending(returned_event)?;
                 execution.observe_antifairy_bounce_pending(returned_event)?;
@@ -5048,6 +5110,20 @@ impl Snes9xOracleSemanticTrace {
                         );
                     }
                 }
+                if pc == 0x06_e4ab
+                    && event
+                        .return_address
+                        .is_some_and(|stack| stack & 0xffff == 0x98f5)
+                {
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Moblin collision has no Sprite_Main owner")?;
+                    if execution.current_slot.map(u16::from) != event.x {
+                        return Err("Moblin collision disagrees with its active slot".into());
+                    }
+                    execution.moblin_collision_started = true;
+                }
                 if pc == DECODE_ANIMATED_SPRITE_TILE_ENTRY_PC
                     && event.return_address.map(|pc| pc & 0x00ff_ffff)
                         == Some(ZORA_FLIPPERS_GRAPHICS_RETURN_ADDRESS)
@@ -5160,6 +5236,9 @@ impl Snes9xOracleSemanticTrace {
                             execution.absorbable_vertical_lookup = None;
                             execution.absorbable_vertical_attribute_loaded = None;
                             execution.dispatch_trampoline_return = None;
+                            execution.moblin_collision_started = false;
+                            execution.moblin_attribute_loaded = None;
+                            execution.moblin_collision_geometry = None;
                             execution.vitreous_minions_seen = false;
                             execution.vitreous_player_damage_pending = None;
                             execution.vitreous_ai_pending = None;
@@ -5225,6 +5304,9 @@ impl Snes9xOracleSemanticTrace {
                             execution.absorbable_vertical_lookup = None;
                             execution.absorbable_vertical_attribute_loaded = None;
                             execution.dispatch_trampoline_return = None;
+                            execution.moblin_collision_started = false;
+                            execution.moblin_attribute_loaded = None;
+                            execution.moblin_collision_geometry = None;
                             execution.vitreous_minions_seen = false;
                             execution.vitreous_player_damage_pending = None;
                             execution.vitreous_ai_pending = None;
@@ -5283,6 +5365,9 @@ impl Snes9xOracleSemanticTrace {
                         execution.absorbable_vertical_lookup = None;
                         execution.absorbable_vertical_attribute_loaded = None;
                         execution.dispatch_trampoline_return = None;
+                        execution.moblin_collision_started = false;
+                        execution.moblin_attribute_loaded = None;
+                        execution.moblin_collision_geometry = None;
                         execution.vitreous_minions_seen = false;
                         execution.vitreous_player_damage_pending = None;
                         execution.vitreous_ai_pending = None;
@@ -5704,6 +5789,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_absorbable_tile_lookup(&event)?;
                     execution.observe_swamola_segment_draw(&event)?;
                     execution.observe_vitreous_damage_pending(&event);
+                    execution.observe_moblin_collision_geometry(&event);
                     execution.observe_dispatch_trampoline_return(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_antifairy_bounce_pending(&event)?;
@@ -6199,6 +6285,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_absorbable_tile_lookup(&event)?;
                     execution.observe_swamola_segment_draw(&event)?;
                     execution.observe_vitreous_damage_pending(&event);
+                    execution.observe_moblin_collision_geometry(&event);
                     execution.observe_dispatch_trampoline_return(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_antifairy_bounce_pending(&event)?;
@@ -7995,6 +8082,12 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(slot) => {
                     Some(SpriteMainProgress::SwamolaHeadDrawCompleted(slot))
                 }
+                MainLoopInterruption::SpriteMainMoblinAttributeLoaded(slot) => {
+                    Some(SpriteMainProgress::MoblinAttributeLoaded(slot))
+                }
+                MainLoopInterruption::SpriteMainMoblinCollisionGeometry(slot) => {
+                    Some(SpriteMainProgress::MoblinCollisionGeometry(slot))
+                }
                 MainLoopInterruption::SpriteMainVitreousDamagePending(slot) => {
                     Some(SpriteMainProgress::VitreousDamagePending(slot))
                 }
@@ -9021,6 +9114,9 @@ mod tests {
             swamola_segment: None,
             dispatch_trampoline_return: None,
             vitreous_minions_seen: false,
+            moblin_collision_started: false,
+            moblin_collision_geometry: None,
+            moblin_attribute_loaded: None,
             vitreous_player_damage_pending: None,
             vitreous_ai_pending: None,
             vitreous_damage_pending: None,
@@ -10952,6 +11048,9 @@ mod tests {
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
         execution.dispatch_trampoline_return = None;
+        execution.moblin_collision_started = false;
+        execution.moblin_attribute_loaded = None;
+        execution.moblin_collision_geometry = None;
         execution.vitreous_minions_seen = false;
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
@@ -11050,6 +11149,9 @@ mod tests {
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
         execution.dispatch_trampoline_return = None;
+        execution.moblin_collision_started = false;
+        execution.moblin_attribute_loaded = None;
+        execution.moblin_collision_geometry = None;
         execution.vitreous_minions_seen = false;
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
@@ -11070,6 +11172,9 @@ mod tests {
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
         execution.dispatch_trampoline_return = None;
+        execution.moblin_collision_started = false;
+        execution.moblin_attribute_loaded = None;
+        execution.moblin_collision_geometry = None;
         execution.vitreous_minions_seen = false;
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
@@ -11091,6 +11196,9 @@ mod tests {
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
         execution.dispatch_trampoline_return = None;
+        execution.moblin_collision_started = false;
+        execution.moblin_attribute_loaded = None;
+        execution.moblin_collision_geometry = None;
         execution.vitreous_minions_seen = false;
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
@@ -11112,6 +11220,9 @@ mod tests {
         );
         execution.absorbable_vertical_attribute_loaded = None;
         execution.dispatch_trampoline_return = None;
+        execution.moblin_collision_started = false;
+        execution.moblin_attribute_loaded = None;
+        execution.moblin_collision_geometry = None;
         execution.vitreous_minions_seen = false;
         execution.vitreous_player_damage_pending = None;
         execution.vitreous_ai_pending = None;
@@ -11714,6 +11825,66 @@ mod tests {
         assert_eq!(
             execution.progress(),
             SpriteMainProgress::SwamolaHeadDrawCompleted(4)
+        );
+    }
+
+    #[test]
+    fn moblin_geometry_requires_its_collision_call_and_vertical_probe() {
+        let mut execution = SpriteMainExecutionTracker::default();
+        execution.current_slot = Some(11);
+        let mut event = raw("nmi", Some(0x06_e790), Some(11), None);
+        event.y = Some(2);
+        event.return_address = Some(0x03_e5f0);
+        execution.observe_moblin_collision_geometry(&event);
+        assert_eq!(execution.moblin_collision_geometry, None);
+        execution.moblin_collision_started = true;
+        execution.observe_moblin_collision_geometry(&event);
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::MoblinCollisionGeometry(11)
+        );
+        execution.moblin_attribute_loaded = None;
+        execution.moblin_collision_geometry = None;
+        event.return_address = Some(0x03_e5f1);
+        execution.observe_moblin_collision_geometry(&event);
+        assert_eq!(execution.moblin_collision_geometry, None);
+        event.pc = Some(0x06_e8d0);
+        event.x = Some(139);
+        event.return_address = Some(0xa0_0b02);
+        execution.observe_moblin_collision_geometry(&event);
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::MoblinCollisionGeometry(11)
+        );
+        event.pc = Some(0x06_e818);
+        event.x = Some(72);
+        event.y = Some(72);
+        event.return_address = Some(0xe5_f00b);
+        execution.observe_moblin_collision_geometry(&event);
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::MoblinAttributeLoaded(11)
+        );
+        execution.moblin_attribute_loaded = None;
+        event.pc = Some(0x00_8850);
+        execution.moblin_collision_geometry = None;
+        event.x = Some(1454);
+        event.y = Some(2);
+        event.return_address = Some(0x06_e8cd);
+        execution.observe_moblin_collision_geometry(&event);
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::MoblinCollisionGeometry(11)
+        );
+        event.pc = Some(0x06_e72f);
+        execution.moblin_collision_geometry = None;
+        event.x = Some(11);
+        event.y = Some(1);
+        event.return_address = Some(0x03_e5f0);
+        execution.observe_moblin_collision_geometry(&event);
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::MoblinCollisionGeometry(11)
         );
     }
 
@@ -14550,6 +14721,9 @@ mod tests {
             swamola_segment: None,
             dispatch_trampoline_return: None,
             vitreous_minions_seen: false,
+            moblin_collision_started: false,
+            moblin_collision_geometry: None,
+            moblin_attribute_loaded: None,
             vitreous_player_damage_pending: None,
             vitreous_ai_pending: None,
             vitreous_damage_pending: None,
@@ -14639,6 +14813,9 @@ mod tests {
             swamola_segment: None,
             dispatch_trampoline_return: None,
             vitreous_minions_seen: false,
+            moblin_collision_started: false,
+            moblin_collision_geometry: None,
+            moblin_attribute_loaded: None,
             vitreous_player_damage_pending: None,
             vitreous_ai_pending: None,
             vitreous_damage_pending: None,

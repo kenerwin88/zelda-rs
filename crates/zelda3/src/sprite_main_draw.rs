@@ -15669,16 +15669,66 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_12_Moblin(int k) {  // 8698e4
     pub(super) fn sprite_12_moblin(&mut self, k: usize) {
-        self.moblin_draw(k);
-        if self.sprite_return_if_inactive(k) {
+        let attribute_loaded = self.sprite_main_cpu_boundary
+            == Some(SpriteMainCpuBoundary::MoblinAttributeLoaded { slot: k as u8 });
+        let checkpoint = attribute_loaded
+            || self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::MoblinCollisionGeometry { slot: k as u8 });
+        if !self.moblin_before_tile_collision(k) {
+            assert!(
+                !checkpoint,
+                "Moblin collision checkpoint did not reach its source call"
+            );
             return;
         }
-        if self.sprite_return_if_recoiling(k) {
+        if checkpoint {
+            assert!(self.game_state.world.location.is_outdoors());
+            assert_eq!(self.sprite_slot_view(k).flags2() & 0x20, 0);
+            assert!(
+                self.sprite_slot_view(k).flags4() & 0x80 != 0
+                    || self.game_state.dungeon.room_load.header_collision() == 0
+            );
+            assert!(
+                self.sprite_slot_view(k).y_velocity() != 0
+                    && self.sprite_slot_view(k).y_velocity() < 0x80
+            );
+            self.sprite_slot_view_mut(k).set_wall_collision(0);
+            if attribute_loaded {
+                self.sprite_vertical_tile_attribute_loaded(k);
+            }
             return;
+        }
+        let _ = self.sprite_check_tile_collision(k);
+        self.moblin_after_tile_collision(k);
+    }
+
+    pub(super) fn moblin_before_tile_collision(&mut self, k: usize) -> bool {
+        self.moblin_draw(k);
+        if self.sprite_return_if_inactive(k) {
+            return false;
+        }
+        if self.sprite_return_if_recoiling(k) {
+            return false;
         }
         self.sprite_check_damage_to_and_from_link(k);
         self.sprite_move_xy(k);
-        let _ = self.sprite_check_tile_collision(k);
+        true
+    }
+
+    pub(super) fn moblin_after_loaded_vertical_attribute(&mut self, k: usize) {
+        self.sprite_vertical_collision_after_attribute_loaded(k);
+        let velocity = self.sprite_slot_view(k).x_velocity();
+        if velocity != 0 {
+            self.sprite_check_for_tile_in_direction_horizontal(
+                k,
+                if sign8(velocity) { 2 } else { 3 },
+            );
+        }
+        self.sprite_check_tile_collision_after_directions(k);
+        self.moblin_after_tile_collision(k);
+    }
+
+    pub(super) fn moblin_after_tile_collision(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 if self.sprite_slot_view(k).delay_main() == 0 {

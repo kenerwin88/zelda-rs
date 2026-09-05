@@ -19924,6 +19924,49 @@ fn swamola_segment_draw_resumes_without_repeating_history_or_oam_steps() {
 }
 
 #[test]
+fn moblin_collision_geometry_preserves_movement_before_tile_effects() {
+    for (velocity, attribute_loaded) in [(16, false), (32, false), (16, true), (32, true)] {
+        let mut state = ZeldaState::new();
+        state.set_main_module(9);
+        state.set_submodule(0);
+        state.follower_link_state_mut().set_position(0x10, 0x10);
+        state.garnish_state_mut().set_sprcoll_x_size(0x1000);
+        state.garnish_state_mut().set_sprcoll_y_size(0x1000);
+        {
+            let mut sprite = state.sprite_slot_view_mut(11);
+            sprite.set_state(9);
+            sprite.set_sprite_type(0x12);
+            sprite.set_x(0x80);
+            sprite.set_y(0x80);
+            sprite.set_y_velocity(velocity);
+            sprite.set_ai_state(1);
+            sprite.set_delay_main(32);
+            sprite.set_wall_collision(0xff);
+        }
+        let mut atomic = state.clone();
+        atomic.sprite_12_moblin(11);
+        state.sprite_main_cpu_boundary = Some(if attribute_loaded {
+            SpriteMainCpuBoundary::MoblinAttributeLoaded { slot: 11 }
+        } else {
+            SpriteMainCpuBoundary::MoblinCollisionGeometry { slot: 11 }
+        });
+        state.sprite_12_moblin(11);
+        assert_eq!(state.sprite_get_y(11), 0x80 + u16::from(velocity / 16));
+        assert_eq!(state.sprite_slot_view(11).wall_collision(), 0);
+        state.sprite_main_cpu_boundary = None;
+        if attribute_loaded {
+            state.moblin_after_loaded_vertical_attribute(11);
+        } else {
+            state.sprite_check_tile_collision_single_layer(11);
+            state.moblin_after_tile_collision(11);
+        }
+        assert_eq!(state.game_state, atomic.game_state);
+        assert_eq!(state.ram, atomic.ram);
+        assert_eq!(state.get_random_number(), atomic.get_random_number());
+    }
+}
+
+#[test]
 fn super_bomb_purchase_pays_once_before_suspended_follower_graphics() {
     let mut state = ZeldaState::new();
     state.set_main_module(7);

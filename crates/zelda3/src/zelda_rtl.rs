@@ -5126,6 +5126,12 @@ enum SpriteMainCpuBoundary {
     VitreousPlayerDamagePending {
         slot: u8,
     },
+    MoblinCollisionGeometry {
+        slot: u8,
+    },
+    MoblinAttributeLoaded {
+        slot: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5409,6 +5415,8 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot: active_slot }
         | SpriteMainCpuBoundary::SwamolaHeadDraw { slot: active_slot }
         | SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot: active_slot }
+        | SpriteMainCpuBoundary::MoblinAttributeLoaded { slot: active_slot }
+        | SpriteMainCpuBoundary::MoblinCollisionGeometry { slot: active_slot }
         | SpriteMainCpuBoundary::VitreousDamagePending { slot: active_slot }
         | SpriteMainCpuBoundary::VitreousAiPending { slot: active_slot }
         | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot: active_slot }
@@ -5865,6 +5873,14 @@ fn sprite_main_cpu_boundary_from_interruption(
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot })
         }
+        crate::MainLoopInterruption::SpriteMainMoblinAttributeLoaded(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::MoblinAttributeLoaded { slot })
+        }
+        crate::MainLoopInterruption::SpriteMainMoblinCollisionGeometry(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::MoblinCollisionGeometry { slot })
+        }
         crate::MainLoopInterruption::SpriteMainVitreousDamagePending(slot) => {
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::VitreousDamagePending { slot })
@@ -5982,6 +5998,8 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainAbsorbableVerticalTileAttributeLoaded(slot)
         | crate::MainLoopInterruption::SpriteMainSwamolaHeadDraw(slot)
         | crate::MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(slot)
+        | crate::MainLoopInterruption::SpriteMainMoblinAttributeLoaded(slot)
+        | crate::MainLoopInterruption::SpriteMainMoblinCollisionGeometry(slot)
         | crate::MainLoopInterruption::SpriteMainVitreousDamagePending(slot)
         | crate::MainLoopInterruption::SpriteMainVitreousAiPending(slot)
         | crate::MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(slot)
@@ -6149,6 +6167,8 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AbsorbableVerticalTileAttributeLoaded(slot)
         | crate::SpriteMainProgress::SwamolaHeadDraw(slot)
         | crate::SpriteMainProgress::SwamolaHeadDrawCompleted(slot)
+        | crate::SpriteMainProgress::MoblinAttributeLoaded(slot)
+        | crate::SpriteMainProgress::MoblinCollisionGeometry(slot)
         | crate::SpriteMainProgress::VitreousDamagePending(slot)
         | crate::SpriteMainProgress::VitreousAiPending(slot)
         | crate::SpriteMainProgress::VitreousPlayerDamagePending(slot)
@@ -6613,6 +6633,14 @@ fn sprite_main_cpu_boundary_from_progress(
             assert!(slot < 16);
             SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot }
         }
+        crate::SpriteMainProgress::MoblinAttributeLoaded(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::MoblinAttributeLoaded { slot }
+        }
+        crate::SpriteMainProgress::MoblinCollisionGeometry(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::MoblinCollisionGeometry { slot }
+        }
         crate::SpriteMainProgress::VitreousDamagePending(slot) => {
             assert!(slot < 16);
             SpriteMainCpuBoundary::VitreousDamagePending { slot }
@@ -6735,6 +6763,8 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAbsorbableVerticalTileAttributeLoaded(_)
         | crate::MainLoopInterruption::SpriteMainSwamolaHeadDraw(_)
         | crate::MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(_)
+        | crate::MainLoopInterruption::SpriteMainMoblinAttributeLoaded(_)
+        | crate::MainLoopInterruption::SpriteMainMoblinCollisionGeometry(_)
         | crate::MainLoopInterruption::SpriteMainVitreousDamagePending(_)
         | crate::MainLoopInterruption::SpriteMainVitreousAiPending(_)
         | crate::MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(_)
@@ -7087,6 +7117,8 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot }
         | SpriteMainCpuBoundary::SwamolaHeadDraw { slot }
         | SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot }
+        | SpriteMainCpuBoundary::MoblinAttributeLoaded { slot }
+        | SpriteMainCpuBoundary::MoblinCollisionGeometry { slot }
         | SpriteMainCpuBoundary::VitreousDamagePending { slot }
         | SpriteMainCpuBoundary::VitreousAiPending { slot }
         | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot }
