@@ -7337,6 +7337,12 @@ fn dungeon_reset_sprites_caller_progress(
     event: &RawTraceEvent,
 ) -> Option<DungeonResetSpritesCpuProgress> {
     let pc = event.pc? & 0x00ff_ffff;
+    // The history rotation has finished. CMP #$ffff / BEQ skips the
+    // evicted-room death-mask clear for an empty history entry, leaving no
+    // gameplay writes before Dungeon_LoadSprites starts reading its pointer.
+    if matches!(pc, 0x09_c163 | 0x09_c166) && event.a == Some(0xffff) {
+        return Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin);
+    }
     // First Dungeon_LoadSingleSprite call, after its two INYs and type
     // read, before either the marker branch or normal-slot publication.
     if (0x09_c32b..0x09_c330).contains(&pc) && event.y == Some(3) {
@@ -10085,6 +10091,16 @@ mod tests {
 
     #[test]
     fn dungeon_reset_caller_pc_maps_to_the_last_published_source_statement() {
+        for pc in [0x09_c163, 0x09_c166] {
+            let mut event = raw("nmi", Some(pc), None, None);
+            event.a = Some(0xffff);
+            assert_eq!(
+                dungeon_reset_sprites_caller_progress(&event),
+                Some(DungeonResetSpritesCpuProgress::LoadBeforeOrigin)
+            );
+            event.a = Some(0x0123);
+            assert_eq!(dungeon_reset_sprites_caller_progress(&event), None);
+        }
         let cases = [
             (
                 DUNGEON_RESET_SPRITES_AFTER_DISABLE_PC,
