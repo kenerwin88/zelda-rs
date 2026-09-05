@@ -1228,15 +1228,50 @@ impl ZeldaState {
 
     // void Sprite_BD_Vitreous(int k) {  // 9de4c8
     pub(super) fn sprite_bd_vitreous(&mut self, k: usize) {
+        if !self.vitreous_before_damage(k) {
+            return;
+        }
+        if self.sprite_main_cpu_boundary
+            == Some(SpriteMainCpuBoundary::VitreousDamagePending { slot: k as u8 })
+        {
+            return;
+        }
+        self.vitreous_after_damage_checkpoint(k);
+    }
+
+    pub(super) fn vitreous_before_damage(&mut self, k: usize) -> bool {
         if self.sprite_slot_view(k).delay_aux4() != 0 {
             self.sprite_slot_view_mut(k).set_graphics(3);
         }
         self.vitreous_draw(k);
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
         self.vitreous_set_minions_forth(k);
-        self.sprite_check_damage_to_and_from_link(k);
+        true
+    }
+
+    pub(super) fn vitreous_after_damage_checkpoint(&mut self, k: usize) {
+        self.sprite_check_damage_from_link(k);
+        if self.sprite_main_cpu_boundary
+            == Some(SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot: k as u8 })
+        {
+            return;
+        }
+        self.vitreous_after_player_damage_checkpoint(k);
+    }
+
+    pub(super) fn vitreous_after_player_damage_checkpoint(&mut self, k: usize) {
+        self.sprite_check_damage_to_link(k);
+        if self.sprite_main_cpu_boundary
+            == Some(SpriteMainCpuBoundary::VitreousAiPending { slot: k as u8 })
+        {
+            return;
+        }
+        self.vitreous_ai_after_damage(k);
+    }
+
+    pub(super) fn vitreous_ai_after_damage(&mut self, k: usize) {
         match self.sprite_slot_view(k).ai_state() {
             0 => {
                 self.sprite_workspace_mut()

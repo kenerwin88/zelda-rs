@@ -109,6 +109,67 @@ fn vitreous_set_minions_forth_rolls_back_when_minion_busy() {
 }
 
 #[test]
+fn vitreous_damage_checkpoint_does_not_repeat_minion_selection() {
+    for cadence in [63, 71] {
+        for minion_state in [0, 2] {
+            let mut state = fresh_state();
+            state.set_main_module(7);
+            state.set_submodule(0);
+            state.set_indoor_flag(1);
+            {
+                let mut sprite = state.sprite_slot_view_mut(0);
+                sprite.set_state(9);
+                sprite.set_sprite_type(0xbd);
+                sprite.set_subtype2(cadence);
+                sprite.set_x(0x80);
+                sprite.set_y(0x80);
+                sprite.set_a(5);
+                sprite.set_g(9);
+            }
+            for slot in 5..=13 {
+                state.sprite_slot_view_mut(slot).set_ai_state(minion_state);
+            }
+            state.sprite_get16_bit_coords(0);
+            let mut atomic = state.clone();
+            let mut ai_checkpoint = state.clone();
+            let mut player_checkpoint = state.clone();
+            atomic.sprite_bd_vitreous(0);
+            player_checkpoint.sprite_main_cpu_boundary =
+                Some(SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot: 0 });
+            player_checkpoint.sprite_bd_vitreous(0);
+            player_checkpoint.sprite_main_cpu_boundary = None;
+            player_checkpoint.vitreous_after_player_damage_checkpoint(0);
+            assert_eq!(player_checkpoint.game_state, atomic.game_state);
+            assert_eq!(player_checkpoint.ram, atomic.ram);
+            ai_checkpoint.sprite_main_cpu_boundary =
+                Some(SpriteMainCpuBoundary::VitreousAiPending { slot: 0 });
+            ai_checkpoint.sprite_bd_vitreous(0);
+            assert_eq!(ai_checkpoint.sprite_slot_view(0).a(), 5);
+            ai_checkpoint.sprite_main_cpu_boundary = None;
+            ai_checkpoint.vitreous_ai_after_damage(0);
+            assert_eq!(ai_checkpoint.game_state, atomic.game_state);
+            assert_eq!(ai_checkpoint.ram, atomic.ram);
+            state.sprite_main_cpu_boundary =
+                Some(SpriteMainCpuBoundary::VitreousDamagePending { slot: 0 });
+            state.sprite_bd_vitreous(0);
+            assert_eq!(state.sprite_slot_view(0).ai_state(), 0);
+            assert_eq!(state.sprite_slot_view(0).a(), 5);
+            let expected = if cadence == 63 && minion_state != 0 {
+                63
+            } else {
+                cadence + 1
+            };
+            assert_eq!(state.sprite_slot_view(0).subtype2(), expected);
+            state.sprite_main_cpu_boundary = None;
+            state.vitreous_after_damage_checkpoint(0);
+            assert_eq!(state.game_state, atomic.game_state);
+            assert_eq!(state.ram, atomic.ram);
+            assert_eq!(state.get_random_number(), atomic.get_random_number());
+        }
+    }
+}
+
+#[test]
 fn generate_iceball_spawns_at_link_when_counter_wraps() {
     let mut s = fresh_state();
     let k = 1;

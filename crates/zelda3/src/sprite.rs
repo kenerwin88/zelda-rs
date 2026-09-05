@@ -3222,6 +3222,21 @@ impl ZeldaState {
                 self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
                 return;
             }
+            if matches!(self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::VitreousDamagePending { slot } | SpriteMainCpuBoundary::VitreousAiPending { slot } | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot }) if slot == k as u8)
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(nmi_slices, 0);
+                let boundary = self.sprite_main_cpu_boundary.unwrap();
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xbd);
+                self.sprite_timers_and_oam(k);
+                self.sprite_active_main(k);
+                self.sprite_main_cpu_boundary = None;
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                return;
+            }
             if let Some(
                 boundary @ (SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, .. }
                 | SpriteMainCpuBoundary::SwamolaHeadDraw { slot }
@@ -4324,6 +4339,26 @@ impl ZeldaState {
                 assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
                 self.sprite_absorbable_after_vertical_lookup(interrupted_slot);
                 self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.vitreous_after_player_damage_checkpoint(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::VitreousAiPending { slot } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.vitreous_ai_after_damage(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::VitreousDamagePending { slot } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                assert_eq!(self.sprite_slot_view(k).sprite_type(), 0xbd);
+                self.vitreous_after_damage_checkpoint(k);
+                self.complete_sprite_main_after_interrupted_slot(k);
             }
             SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot } => {
                 let k = usize::from(slot);

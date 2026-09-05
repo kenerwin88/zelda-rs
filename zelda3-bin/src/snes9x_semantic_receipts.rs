@@ -930,6 +930,7 @@ struct OverworldSpriteActivationTracker {
 struct SpriteMainExecutionTracker {
     current_slot: Option<u8>,
     last_completed_slot: Option<u8>,
+    dispatch_trampoline_return: Option<u8>,
     #[serde(default)]
     timers_and_oam_slot: Option<u8>,
     #[serde(default)]
@@ -948,6 +949,10 @@ struct SpriteMainExecutionTracker {
     absorbable_vertical_lookup: Option<u8>,
     absorbable_vertical_attribute_loaded: Option<u8>,
     swamola_segment: Option<u8>,
+    vitreous_minions_seen: bool,
+    vitreous_player_damage_pending: Option<u8>,
+    vitreous_ai_pending: Option<u8>,
+    vitreous_damage_pending: Option<u8>,
     swamola_head_prepared: bool,
     swamola_head_draw_completed: Option<u8>,
     swamola_head_draw: Option<u8>,
@@ -1036,6 +1041,25 @@ struct SpriteMainExecutionTracker {
 }
 
 impl SpriteMainExecutionTracker {
+    fn observe_dispatch_trampoline_return(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        // SpriteActive4_Trampoline returned from its long dispatcher. Its
+        // remaining RTS reaches Sprite_Main's slot return without any store.
+        if event.pc.map(|pc| pc & 0xff_ffff) == Some(0x06_bff8)
+            && event
+                .return_address
+                .is_some_and(|address| address & 0xffff == 0x83a6)
+        {
+            let slot = self
+                .current_slot
+                .ok_or("sprite trampoline return has no active slot")?;
+            if event.x != Some(u16::from(slot)) {
+                return Err("sprite trampoline return disagrees with active slot".into());
+            }
+            self.dispatch_trampoline_return = Some(slot);
+        }
+        Ok(())
+    }
+
     fn observe_kholdstare_damage_pending(&mut self, event: &RawTraceEvent) -> Result<(), String> {
         // DEC $0E80,X at $1E:9537 identifies Kholdstare's active body.
         if event.event == "wram-write" && event.pc == Some(0x1e_953a) {
@@ -1095,6 +1119,52 @@ impl SpriteMainExecutionTracker {
         }
         self.pengator_slide_pending = Some(slot);
         Ok(())
+    }
+
+    fn observe_vitreous_damage_pending(&mut self, event: &RawTraceEvent) {
+        // The shared pair returned from damage-from-Link and entered the
+        // damage-to-Link leaf, before that leaf's first persistent effect.
+        if self.vitreous_minions_seen
+            && event.pc.map(|pc| pc & 0xff_ffff) == Some(0x06_f145)
+            && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x1d_f126)
+            && self.current_slot.map(u16::from) == event.x
+        {
+            self.vitreous_player_damage_pending = self.current_slot;
+        }
+        // The long jump-table helper popped the low return byte into Y;
+        // bank/high bytes remain on the stack, proving Vitreous's AI dispatch.
+        if self.vitreous_minions_seen
+            && event.pc.map(|pc| pc & 0xff_ffff) == Some(0x00_8788)
+            && event.y == Some(0xe4)
+            && event
+                .return_address
+                .is_some_and(|stack| stack & 0xffff == 0x1de4)
+            && self.current_slot.map(u16::from) == event.x
+        {
+            self.vitreous_ai_pending = self.current_slot;
+        }
+        // The minion cadence call returned and the shared damage wrapper
+        // only pushed DB. Both damage directions and Vitreous AI are pending.
+        let entry = event.pc.map(|pc| pc & 0xff_ffff) == Some(0x06_f2ab)
+            && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0xc2_141d);
+        // Sprite_SetupHitBox has only computed local hitbox coordinates.
+        // Saved Y precedes the damage caller's JSR return $F2CD on the stack.
+        let hitbox = event.pc.map(|pc| pc & 0xff_ffff) == Some(0x06_f82d)
+            && event.return_address.map(|stack| stack >> 8) == Some(0xf2cd);
+        // Player_SetupActionHitBox computes only local geometry. Before PHX
+        // the caller slot is in X; afterward it is the saved stack byte.
+        let action_hitbox = event
+            .pc
+            .is_some_and(|pc| (0x06_f5e0..0x06_f645).contains(&(pc & 0xff_ffff)))
+            && event.return_address.is_some_and(|stack| {
+                (stack & 0xffff == 0xf2ca && self.current_slot.map(u16::from) == event.x)
+                    || (stack >> 8 == 0xf2ca && self.current_slot == Some(stack as u8))
+            });
+        if self.vitreous_minions_seen
+            && (((entry || hitbox) && self.current_slot.map(u16::from) == event.x) || action_hitbox)
+        {
+            self.vitreous_damage_pending = self.current_slot;
+        }
     }
 
     fn observe_swamola_segment_draw(&mut self, event: &RawTraceEvent) -> Result<(), String> {
@@ -2053,6 +2123,10 @@ impl SpriteMainExecutionTracker {
     }
 
     fn progress(self) -> SpriteMainProgress {
+        if let Some(slot) = self.dispatch_trampoline_return {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::AfterSlot(slot);
+        }
         if let Some((caller, tracker)) = self.follower_graphics {
             let slot = self
                 .current_slot
@@ -2276,6 +2350,15 @@ impl SpriteMainExecutionTracker {
         if let Some(slot) = self.hog_spear_body_graphics_pending {
             assert_eq!(self.current_slot, Some(slot));
             return SpriteMainProgress::HogSpearBodyGraphicsPending(slot);
+        }
+        if let Some(slot) = self.vitreous_ai_pending {
+            return SpriteMainProgress::VitreousAiPending(slot);
+        }
+        if let Some(slot) = self.vitreous_player_damage_pending {
+            return SpriteMainProgress::VitreousPlayerDamagePending(slot);
+        }
+        if let Some(slot) = self.vitreous_damage_pending {
+            return SpriteMainProgress::VitreousDamagePending(slot);
         }
         if let Some(slot) = self.swamola_head_draw_completed {
             return SpriteMainProgress::SwamolaHeadDrawCompleted(slot);
@@ -2653,6 +2736,15 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::SwamolaHeadDrawCompleted(slot) => {
                 MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(slot)
+            }
+            SpriteMainProgress::VitreousDamagePending(slot) => {
+                MainLoopInterruption::SpriteMainVitreousDamagePending(slot)
+            }
+            SpriteMainProgress::VitreousAiPending(slot) => {
+                MainLoopInterruption::SpriteMainVitreousAiPending(slot)
+            }
+            SpriteMainProgress::VitreousPlayerDamagePending(slot) => {
+                MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(slot)
             }
             SpriteMainProgress::SwamolaSegmentDraw { slot, segment } => {
                 MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment }
@@ -4314,6 +4406,8 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_hog_spear_body_graphics_pending(returned_event)?;
                 execution.observe_absorbable_tile_lookup(returned_event)?;
                 execution.observe_swamola_segment_draw(returned_event)?;
+                execution.observe_vitreous_damage_pending(returned_event);
+                execution.observe_dispatch_trampoline_return(returned_event)?;
                 execution.observe_pengator_slide_pending(returned_event)?;
                 execution.observe_antifairy_bounce_pending(returned_event)?;
                 execution.observe_kholdstare_damage_pending(returned_event)?;
@@ -5000,6 +5094,11 @@ impl Snes9xOracleSemanticTrace {
                             execution.absorbable_horizontal_lookup = None;
                             execution.absorbable_vertical_lookup = None;
                             execution.absorbable_vertical_attribute_loaded = None;
+                            execution.dispatch_trampoline_return = None;
+                            execution.vitreous_minions_seen = false;
+                            execution.vitreous_player_damage_pending = None;
+                            execution.vitreous_ai_pending = None;
+                            execution.vitreous_damage_pending = None;
                             execution.swamola_segment = None;
                             execution.swamola_head_prepared = false;
                             execution.swamola_head_draw_completed = None;
@@ -5060,6 +5159,11 @@ impl Snes9xOracleSemanticTrace {
                             execution.absorbable_horizontal_lookup = None;
                             execution.absorbable_vertical_lookup = None;
                             execution.absorbable_vertical_attribute_loaded = None;
+                            execution.dispatch_trampoline_return = None;
+                            execution.vitreous_minions_seen = false;
+                            execution.vitreous_player_damage_pending = None;
+                            execution.vitreous_ai_pending = None;
+                            execution.vitreous_damage_pending = None;
                             execution.swamola_segment = None;
                             execution.swamola_head_prepared = false;
                             execution.swamola_head_draw_completed = None;
@@ -5113,6 +5217,11 @@ impl Snes9xOracleSemanticTrace {
                         execution.absorbable_horizontal_lookup = None;
                         execution.absorbable_vertical_lookup = None;
                         execution.absorbable_vertical_attribute_loaded = None;
+                        execution.dispatch_trampoline_return = None;
+                        execution.vitreous_minions_seen = false;
+                        execution.vitreous_player_damage_pending = None;
+                        execution.vitreous_ai_pending = None;
+                        execution.vitreous_damage_pending = None;
                         execution.swamola_segment = None;
                         execution.swamola_head_prepared = false;
                         execution.swamola_head_draw_completed = None;
@@ -5445,6 +5554,19 @@ impl Snes9xOracleSemanticTrace {
             "wram-write" => {
                 let pc = event.pc.ok_or("Snes9x WRAM write omitted PC")? & 0x00ff_ffff;
                 let address = event.address.ok_or("Snes9x WRAM write omitted address")?;
+                if pc == 0x1d_e5dd {
+                    let execution = self
+                        .sprite_main_execution
+                        .as_mut()
+                        .ok_or("Vitreous minion cadence outside Sprite_Main")?;
+                    let slot = execution
+                        .current_slot
+                        .ok_or("Vitreous minion cadence lost slot")?;
+                    if event.x != Some(u16::from(slot)) || address != 0x0e80 + u16::from(slot) {
+                        return Err("Vitreous cadence disagrees with source slot".into());
+                    }
+                    execution.vitreous_minions_seen = true;
+                }
                 if pc == 0x1d_9f88 {
                     let execution = self
                         .sprite_main_execution
@@ -5516,6 +5638,8 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_tile_lookup(&event)?;
                     execution.observe_swamola_segment_draw(&event)?;
+                    execution.observe_vitreous_damage_pending(&event);
+                    execution.observe_dispatch_trampoline_return(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_antifairy_bounce_pending(&event)?;
                     execution.observe_kholdstare_damage_pending(&event)?;
@@ -6009,6 +6133,8 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_hog_spear_body_graphics_pending(&event)?;
                     execution.observe_absorbable_tile_lookup(&event)?;
                     execution.observe_swamola_segment_draw(&event)?;
+                    execution.observe_vitreous_damage_pending(&event);
+                    execution.observe_dispatch_trampoline_return(&event)?;
                     execution.observe_pengator_slide_pending(&event)?;
                     execution.observe_antifairy_bounce_pending(&event)?;
                     execution.observe_kholdstare_damage_pending(&event)?;
@@ -7799,6 +7925,15 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(slot) => {
                     Some(SpriteMainProgress::SwamolaHeadDrawCompleted(slot))
                 }
+                MainLoopInterruption::SpriteMainVitreousDamagePending(slot) => {
+                    Some(SpriteMainProgress::VitreousDamagePending(slot))
+                }
+                MainLoopInterruption::SpriteMainVitreousAiPending(slot) => {
+                    Some(SpriteMainProgress::VitreousAiPending(slot))
+                }
+                MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(slot) => {
+                    Some(SpriteMainProgress::VitreousPlayerDamagePending(slot))
+                }
                 MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment } => {
                     Some(SpriteMainProgress::SwamolaSegmentDraw { slot, segment })
                 }
@@ -8814,6 +8949,11 @@ mod tests {
             absorbable_vertical_lookup: None,
             absorbable_vertical_attribute_loaded: None,
             swamola_segment: None,
+            dispatch_trampoline_return: None,
+            vitreous_minions_seen: false,
+            vitreous_player_damage_pending: None,
+            vitreous_ai_pending: None,
+            vitreous_damage_pending: None,
             swamola_head_prepared: false,
             swamola_head_draw_completed: None,
             swamola_head_draw: None,
@@ -10741,6 +10881,11 @@ mod tests {
         execution.absorbable_horizontal_lookup = None;
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
+        execution.dispatch_trampoline_return = None;
+        execution.vitreous_minions_seen = false;
+        execution.vitreous_player_damage_pending = None;
+        execution.vitreous_ai_pending = None;
+        execution.vitreous_damage_pending = None;
         execution.swamola_segment = None;
         execution.swamola_head_prepared = false;
         execution.swamola_head_draw_completed = None;
@@ -10834,6 +10979,11 @@ mod tests {
         execution.absorbable_horizontal_lookup = None;
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
+        execution.dispatch_trampoline_return = None;
+        execution.vitreous_minions_seen = false;
+        execution.vitreous_player_damage_pending = None;
+        execution.vitreous_ai_pending = None;
+        execution.vitreous_damage_pending = None;
         execution.swamola_segment = None;
         execution.swamola_head_prepared = false;
         execution.swamola_head_draw_completed = None;
@@ -10849,6 +10999,11 @@ mod tests {
         assert_eq!(execution.absorbable_vertical_lookup, Some(3));
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
+        execution.dispatch_trampoline_return = None;
+        execution.vitreous_minions_seen = false;
+        execution.vitreous_player_damage_pending = None;
+        execution.vitreous_ai_pending = None;
+        execution.vitreous_damage_pending = None;
         execution.swamola_segment = None;
         execution.swamola_head_prepared = false;
         execution.swamola_head_draw_completed = None;
@@ -10865,6 +11020,11 @@ mod tests {
         );
         execution.absorbable_vertical_lookup = None;
         execution.absorbable_vertical_attribute_loaded = None;
+        execution.dispatch_trampoline_return = None;
+        execution.vitreous_minions_seen = false;
+        execution.vitreous_player_damage_pending = None;
+        execution.vitreous_ai_pending = None;
+        execution.vitreous_damage_pending = None;
         execution.swamola_segment = None;
         execution.swamola_head_prepared = false;
         execution.swamola_head_draw_completed = None;
@@ -10881,6 +11041,11 @@ mod tests {
             SpriteMainProgress::AbsorbableVerticalTileAttributeLoaded(3)
         );
         execution.absorbable_vertical_attribute_loaded = None;
+        execution.dispatch_trampoline_return = None;
+        execution.vitreous_minions_seen = false;
+        execution.vitreous_player_damage_pending = None;
+        execution.vitreous_ai_pending = None;
+        execution.vitreous_damage_pending = None;
         execution.swamola_segment = None;
         execution.swamola_head_prepared = false;
         execution.swamola_head_draw_completed = None;
@@ -11310,6 +11475,106 @@ mod tests {
         event.return_address = Some(0x88_3d00);
         event.main = Some(9);
         assert!(!dungeon_push_blocks_pending(&event));
+    }
+
+    #[test]
+    fn vitreous_damage_checkpoint_requires_its_minion_caller() {
+        let mut source = empty_semantic_tracker();
+        source.sprite_main_execution = Some(SpriteMainExecutionTracker::default());
+        source.sprite_main_execution.as_mut().unwrap().current_slot = Some(0);
+        let mut returned = raw("frame", Some(0x06_f2ab), Some(0), None);
+        returned.return_address = Some(0xc2_141d);
+        source
+            .sprite_main_execution
+            .as_mut()
+            .unwrap()
+            .observe_vitreous_damage_pending(&returned);
+        assert_eq!(
+            source
+                .sprite_main_execution
+                .as_ref()
+                .unwrap()
+                .vitreous_damage_pending,
+            None
+        );
+        let mut write = raw("wram-write", Some(0x1d_e5dd), Some(0), None);
+        write.address = Some(0x0e80);
+        write.value = Some(72);
+        source.consume_event(write, &mut Vec::new()).unwrap();
+        let execution = source.sprite_main_execution.as_mut().unwrap();
+        execution.observe_vitreous_damage_pending(&returned);
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::VitreousDamagePending(0)
+        );
+        execution.vitreous_player_damage_pending = None;
+        execution.vitreous_ai_pending = None;
+        execution.vitreous_damage_pending = None;
+        returned.return_address = Some(0xc2_151d);
+        execution.observe_vitreous_damage_pending(&returned);
+        assert_eq!(execution.vitreous_damage_pending, None);
+        returned.pc = Some(0x06_f82d);
+        returned.return_address = Some(0xf2_cd01);
+        execution.observe_vitreous_damage_pending(&returned);
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::VitreousDamagePending(0)
+        );
+        execution.vitreous_damage_pending = None;
+        returned.pc = Some(0x06_f5e3);
+        returned.return_address = Some(0xaf_f2ca);
+        execution.observe_vitreous_damage_pending(&returned);
+        assert_eq!(execution.vitreous_damage_pending, Some(0));
+        execution.vitreous_damage_pending = None;
+        returned.pc = Some(0x06_f600);
+        returned.x = Some(9);
+        returned.return_address = Some(0xf2_ca00);
+        execution.observe_vitreous_damage_pending(&returned);
+        assert_eq!(execution.vitreous_damage_pending, Some(0));
+        execution.vitreous_damage_pending = None;
+        returned.pc = Some(0x06_f645);
+        execution.observe_vitreous_damage_pending(&returned);
+        assert_eq!(execution.vitreous_damage_pending, None);
+        returned.x = Some(0);
+        returned.pc = Some(0x00_8788);
+        returned.y = Some(0xe4);
+        returned.return_address = Some(0x1f_1de4);
+        execution.observe_vitreous_damage_pending(&returned);
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::VitreousAiPending(0)
+        );
+        execution.vitreous_ai_pending = None;
+        returned.pc = Some(0x06_f145);
+        returned.return_address = Some(0x1d_f126);
+        execution.observe_vitreous_damage_pending(&returned);
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::VitreousPlayerDamagePending(0)
+        );
+    }
+
+    #[test]
+    fn dispatcher_rts_supersedes_body_progress_only_for_the_slot_loop_caller() {
+        for slot in [0, 1, 15] {
+            let mut execution = SpriteMainExecutionTracker {
+                current_slot: Some(slot),
+                timers_and_oam_slot: Some(slot),
+                timers_and_oam_dispatch_state: Some(9),
+                ..Default::default()
+            };
+            let mut event = raw("nmi", Some(0x06_bff8), Some(u16::from(slot)), None);
+            event.return_address = Some(0x0083a5);
+            execution
+                .observe_dispatch_trampoline_return(&event)
+                .unwrap();
+            assert_eq!(execution.dispatch_trampoline_return, None);
+            event.return_address = Some(0x0083a6);
+            execution
+                .observe_dispatch_trampoline_return(&event)
+                .unwrap();
+            assert_eq!(execution.progress(), SpriteMainProgress::AfterSlot(slot));
+        }
     }
 
     #[test]
@@ -14095,6 +14360,11 @@ mod tests {
             absorbable_vertical_lookup: None,
             absorbable_vertical_attribute_loaded: None,
             swamola_segment: None,
+            dispatch_trampoline_return: None,
+            vitreous_minions_seen: false,
+            vitreous_player_damage_pending: None,
+            vitreous_ai_pending: None,
+            vitreous_damage_pending: None,
             swamola_head_prepared: false,
             swamola_head_draw_completed: None,
             swamola_head_draw: None,
@@ -14179,6 +14449,11 @@ mod tests {
             absorbable_vertical_lookup: None,
             absorbable_vertical_attribute_loaded: None,
             swamola_segment: None,
+            dispatch_trampoline_return: None,
+            vitreous_minions_seen: false,
+            vitreous_player_damage_pending: None,
+            vitreous_ai_pending: None,
+            vitreous_damage_pending: None,
             swamola_head_prepared: false,
             swamola_head_draw_completed: None,
             swamola_head_draw: None,

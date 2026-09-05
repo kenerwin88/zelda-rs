@@ -5117,6 +5117,15 @@ enum SpriteMainCpuBoundary {
         slot: u8,
         segment: u8,
     },
+    VitreousDamagePending {
+        slot: u8,
+    },
+    VitreousAiPending {
+        slot: u8,
+    },
+    VitreousPlayerDamagePending {
+        slot: u8,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -5400,6 +5409,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot: active_slot }
         | SpriteMainCpuBoundary::SwamolaHeadDraw { slot: active_slot }
         | SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot: active_slot }
+        | SpriteMainCpuBoundary::VitreousDamagePending { slot: active_slot }
+        | SpriteMainCpuBoundary::VitreousAiPending { slot: active_slot }
+        | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot: active_slot }
         | SpriteMainCpuBoundary::SwamolaSegmentDraw {
             slot: active_slot, ..
         }
@@ -5853,6 +5865,18 @@ fn sprite_main_cpu_boundary_from_interruption(
             assert!(slot < 16);
             Some(SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot })
         }
+        crate::MainLoopInterruption::SpriteMainVitreousDamagePending(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::VitreousDamagePending { slot })
+        }
+        crate::MainLoopInterruption::SpriteMainVitreousAiPending(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::VitreousAiPending { slot })
+        }
+        crate::MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(slot) => {
+            assert!(slot < 16);
+            Some(SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot })
+        }
         crate::MainLoopInterruption::SpriteMainSwamolaSegmentDraw { slot, segment } => {
             assert!(slot < 16 && segment < 4);
             Some(SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, segment })
@@ -5958,6 +5982,9 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainAbsorbableVerticalTileAttributeLoaded(slot)
         | crate::MainLoopInterruption::SpriteMainSwamolaHeadDraw(slot)
         | crate::MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(slot)
+        | crate::MainLoopInterruption::SpriteMainVitreousDamagePending(slot)
+        | crate::MainLoopInterruption::SpriteMainVitreousAiPending(slot)
+        | crate::MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(slot)
         | crate::MainLoopInterruption::SpriteMainPengatorSlidePending(slot)
         | crate::MainLoopInterruption::SpriteMainAntifairyBouncePending(slot)
         | crate::MainLoopInterruption::SpriteMainKholdstareDamagePending(slot)
@@ -6122,6 +6149,9 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::AbsorbableVerticalTileAttributeLoaded(slot)
         | crate::SpriteMainProgress::SwamolaHeadDraw(slot)
         | crate::SpriteMainProgress::SwamolaHeadDrawCompleted(slot)
+        | crate::SpriteMainProgress::VitreousDamagePending(slot)
+        | crate::SpriteMainProgress::VitreousAiPending(slot)
+        | crate::SpriteMainProgress::VitreousPlayerDamagePending(slot)
         | crate::SpriteMainProgress::PengatorSlidePending(slot)
         | crate::SpriteMainProgress::AntifairyBouncePending(slot)
         | crate::SpriteMainProgress::KholdstareDamagePending(slot)
@@ -6583,6 +6613,18 @@ fn sprite_main_cpu_boundary_from_progress(
             assert!(slot < 16);
             SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot }
         }
+        crate::SpriteMainProgress::VitreousDamagePending(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::VitreousDamagePending { slot }
+        }
+        crate::SpriteMainProgress::VitreousAiPending(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::VitreousAiPending { slot }
+        }
+        crate::SpriteMainProgress::VitreousPlayerDamagePending(slot) => {
+            assert!(slot < 16);
+            SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot }
+        }
         crate::SpriteMainProgress::SwamolaSegmentDraw { slot, segment } => {
             assert!(slot < 16 && segment < 4);
             SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, segment }
@@ -6693,6 +6735,9 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAbsorbableVerticalTileAttributeLoaded(_)
         | crate::MainLoopInterruption::SpriteMainSwamolaHeadDraw(_)
         | crate::MainLoopInterruption::SpriteMainSwamolaHeadDrawCompleted(_)
+        | crate::MainLoopInterruption::SpriteMainVitreousDamagePending(_)
+        | crate::MainLoopInterruption::SpriteMainVitreousAiPending(_)
+        | crate::MainLoopInterruption::SpriteMainVitreousPlayerDamagePending(_)
         | crate::MainLoopInterruption::SpriteMainSwamolaSegmentDraw { .. }
         | crate::MainLoopInterruption::SpriteMainPengatorSlidePending(_)
         | crate::MainLoopInterruption::SpriteMainAntifairyBouncePending(_)
@@ -7042,6 +7087,9 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AbsorbableVerticalTileAttributeLoaded { slot }
         | SpriteMainCpuBoundary::SwamolaHeadDraw { slot }
         | SpriteMainCpuBoundary::SwamolaHeadDrawCompleted { slot }
+        | SpriteMainCpuBoundary::VitreousDamagePending { slot }
+        | SpriteMainCpuBoundary::VitreousAiPending { slot }
+        | SpriteMainCpuBoundary::VitreousPlayerDamagePending { slot }
         | SpriteMainCpuBoundary::SwamolaSegmentDraw { slot, .. }
         | SpriteMainCpuBoundary::PengatorSlidePending { slot }
         | SpriteMainCpuBoundary::AntifairyBouncePending { slot }

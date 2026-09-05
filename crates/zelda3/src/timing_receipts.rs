@@ -896,6 +896,9 @@ pub enum MainLoopInterruption {
         slot: u8,
         segment: u8,
     },
+    SpriteMainVitreousDamagePending(u8),
+    SpriteMainVitreousAiPending(u8),
+    SpriteMainVitreousPlayerDamagePending(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -968,6 +971,9 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAbsorbableVerticalTileAttributeLoaded(_)
                 | Self::SpriteMainSwamolaHeadDraw(_)
                 | Self::SpriteMainSwamolaHeadDrawCompleted(_)
+                | Self::SpriteMainVitreousDamagePending(_)
+                | Self::SpriteMainVitreousAiPending(_)
+                | Self::SpriteMainVitreousPlayerDamagePending(_)
                 | Self::SpriteMainSwamolaSegmentDraw { .. }
                 | Self::SpriteMainPengatorSlidePending(_)
                 | Self::SpriteMainAntifairyBouncePending(_)
@@ -1146,6 +1152,9 @@ pub enum SpriteMainProgress {
         slot: u8,
         segment: u8,
     },
+    VitreousDamagePending(u8),
+    VitreousAiPending(u8),
+    VitreousPlayerDamagePending(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
