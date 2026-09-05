@@ -1086,6 +1086,10 @@ struct SpriteMainExecutionTracker {
     kholdstare_subtype_decremented: bool,
     kholdstare_damage_pending: Option<u8>,
     initialize_prep_pending: Option<u8>,
+    /// A state-8 prep (`SpritePrep_Spike` / `SpritePrep_RockStal`) stopped
+    /// inside its `Sprite_MoveY` (or at the velocity clear after it) with the
+    /// named assignment completed.
+    initialize_prep_move_y: Option<(u8, SpriteMoveXYCheckpoint)>,
     #[serde(default)]
     guard_animation_pose_slot: Option<u8>,
     #[serde(default)]
@@ -1451,6 +1455,7 @@ impl SpriteMainExecutionTracker {
             return Err("guard patrol checkpoint lacks initializer call authority".into());
         }
         self.initialize_prep_pending = None;
+        self.initialize_prep_move_y = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.guard_prep_patrol_delay = Some((slot, self.initialize_active_main_calls));
@@ -1477,6 +1482,7 @@ impl SpriteMainExecutionTracker {
             return Err("guard tile-collision checkpoint lacks initializer call authority".into());
         }
         self.initialize_prep_pending = None;
+        self.initialize_prep_move_y = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.guard_prep_tile_collision_return = Some((slot, self.initialize_active_main_calls));
@@ -1503,6 +1509,7 @@ impl SpriteMainExecutionTracker {
             );
         }
         self.initialize_prep_pending = None;
+        self.initialize_prep_move_y = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.guard_prep_weapon_flags_pending_slot = None;
@@ -1573,6 +1580,7 @@ impl SpriteMainExecutionTracker {
             ));
         }
         self.initialize_prep_pending = None;
+        self.initialize_prep_move_y = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.mini_moldorm_history = Some((slot, completed_stores));
@@ -2936,7 +2944,63 @@ impl SpriteMainExecutionTracker {
             SpriteInitializeResetPropertiesPhase::InitialPropertyLoad
         };
         self.initialize_prep_pending = None;
+        self.initialize_prep_move_y = None;
         self.initialize_reset_properties = Some((slot, phase, completed_stores));
+        Ok(())
+    }
+
+    /// `SpritePrep_Spike` ($06:91D7) / `SpritePrep_RockStal` ($06:91DC) set
+    /// their velocities, `JSR Sprite_MoveY` from $06:91E1 (pushed return
+    /// $91E3), then clear y_vel at $06:91E4. The interrupted PC alone names
+    /// which `Sprite_MoveY` assignments completed.
+    fn observe_initialize_prep_move_y(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        // The trailing `frame` event of an interrupted host reports the NMI
+        // handler's PC, so only the `nmi` event carries the boundary.
+        if event.event != "nmi" {
+            return Ok(());
+        }
+        self.initialize_prep_move_y = None;
+        if self.timers_and_oam_dispatch_state != Some(8) {
+            return Ok(());
+        }
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return Ok(());
+        };
+        let ret16 = event.return_address.map(|r| r & 0xffff);
+        let ret16_over_php = event.return_address.map(|r| (r >> 8) & 0xffff);
+        let checkpoint = match pc {
+            0x06_e93e..=0x06_e94b if ret16 == Some(0x91e3) => {
+                SpriteMoveXYCheckpoint::BeforeMovement
+            }
+            0x06_e94e..=0x06_e951 if ret16 == Some(0x91e3) => {
+                SpriteMoveXYCheckpoint::AfterYSubpixel
+            }
+            // PHP at $06:E951 holds P above the return until PLP at $06:E958.
+            0x06_e952..=0x06_e958 if ret16_over_php == Some(0x91e3) => {
+                SpriteMoveXYCheckpoint::AfterYSubpixel
+            }
+            0x06_e959..=0x06_e961 if ret16 == Some(0x91e3) => {
+                SpriteMoveXYCheckpoint::AfterYSubpixel
+            }
+            0x06_e964..=0x06_e968 if ret16 == Some(0x91e3) => SpriteMoveXYCheckpoint::AfterYLow,
+            0x06_e96b if ret16 == Some(0x91e3) => SpriteMoveXYCheckpoint::AfterYHigh,
+            // RTS done; STZ y_vel pending under Sprite_ExecuteSingle's frame.
+            0x06_91e4 if event.return_address == Some(0x00_83a6) => {
+                SpriteMoveXYCheckpoint::AfterYHigh
+            }
+            _ => return Ok(()),
+        };
+        let slot = self
+            .current_slot
+            .ok_or("state-8 prep Sprite_MoveY boundary has no active slot")?;
+        if event.x != Some(u16::from(slot)) {
+            return Err("state-8 prep Sprite_MoveY boundary disagrees with its active slot".into());
+        }
+        self.initialize_prep_pending = None;
+        self.initialize_prep_move_y = None;
+        self.initialize_reset_properties = None;
+        self.initialize_load_properties = None;
+        self.initialize_prep_move_y = Some((slot, checkpoint));
         Ok(())
     }
 
@@ -2978,6 +3042,7 @@ impl SpriteMainExecutionTracker {
             return Err("sprite initializer dispatch disagrees with its active slot".into());
         }
         self.initialize_prep_pending = None;
+        self.initialize_prep_move_y = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.initialize_prep_pending = Some(slot);
@@ -3015,6 +3080,7 @@ impl SpriteMainExecutionTracker {
             SpriteInitializeResetPropertiesPhase::InitialPropertyLoad
         };
         self.initialize_prep_pending = None;
+        self.initialize_prep_move_y = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = Some((slot, phase, completed_stores));
         Ok(())
@@ -3041,6 +3107,7 @@ impl SpriteMainExecutionTracker {
             ));
         }
         self.initialize_prep_pending = None;
+        self.initialize_prep_move_y = None;
         self.initialize_reset_properties = None;
         self.initialize_load_properties = None;
         self.fire_debirando_before_spawn_slot = Some(slot);
@@ -3385,6 +3452,10 @@ impl SpriteMainExecutionTracker {
                 spawned_slot,
                 progress,
             };
+        }
+        if let Some((slot, checkpoint)) = self.initialize_prep_move_y {
+            assert_eq!(self.current_slot, Some(slot));
+            return SpriteMainProgress::InitializePrepMoveY { slot, checkpoint };
         }
         if let Some(slot) = self.initialize_prep_pending {
             assert_eq!(self.current_slot, Some(slot));
@@ -3936,6 +4007,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::BoulderMovement { slot, checkpoint } => {
                 MainLoopInterruption::SpriteMainBoulderMovement { slot, checkpoint }
+            }
+            SpriteMainProgress::InitializePrepMoveY { slot, checkpoint } => {
+                MainLoopInterruption::SpriteMainInitializePrepMoveY { slot, checkpoint }
             }
             SpriteMainProgress::MasterSwordLightBeamSpawn {
                 slot,
@@ -5958,6 +6032,7 @@ impl Snes9xOracleSemanticTrace {
                 execution.observe_initialize_reset_properties(returned_event)?;
                 execution.observe_initialize_load_properties(returned_event)?;
                 execution.observe_initialize_prep_pending(returned_event)?;
+                execution.observe_initialize_prep_move_y(returned_event)?;
                 execution.observe_fire_debirando_before_spawn(returned_event)?;
                 execution.observe_zazak_graphics(returned_event)?;
                 execution.observe_wallmaster_reset_prefix(returned_event)?;
@@ -6747,6 +6822,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.kholdstare_subtype_decremented = false;
                             execution.kholdstare_damage_pending = None;
                             execution.initialize_prep_pending = None;
+                            execution.initialize_prep_move_y = None;
                             execution.guard_animation_pose_slot = None;
                             execution.guard_prep_weapon_flags_pending_slot = None;
                             execution.mini_moldorm_history = None;
@@ -6839,6 +6915,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.kholdstare_subtype_decremented = false;
                             execution.kholdstare_damage_pending = None;
                             execution.initialize_prep_pending = None;
+                            execution.initialize_prep_move_y = None;
                             execution.guard_animation_pose_slot = None;
                             if execution.timers_and_oam_dispatch_state == Some(8) {
                                 execution.initialize_active_main_calls = execution
@@ -6916,6 +6993,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.kholdstare_subtype_decremented = false;
                         execution.kholdstare_damage_pending = None;
                         execution.initialize_prep_pending = None;
+                        execution.initialize_prep_move_y = None;
                         execution.guard_animation_pose_slot = None;
                         execution.guard_prep_weapon_flags_pending_slot = None;
                         execution.mini_moldorm_history = None;
@@ -8013,6 +8091,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_initialize_reset_properties(&event)?;
                     execution.observe_initialize_load_properties(&event)?;
                     execution.observe_initialize_prep_pending(&event)?;
+                    execution.observe_initialize_prep_move_y(&event)?;
                     execution.observe_fire_debirando_before_spawn(&event)?;
                     execution.observe_zazak_graphics(&event)?;
                     execution.observe_wallmaster_reset_prefix(&event)?;
@@ -9940,6 +10019,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainZoraFireballMovement { slot, checkpoint } => {
                     Some(SpriteMainProgress::ZoraFireballMovement { slot, checkpoint })
                 }
+                MainLoopInterruption::SpriteMainInitializePrepMoveY { slot, checkpoint } => {
+                    Some(SpriteMainProgress::InitializePrepMoveY { slot, checkpoint })
+                }
                 MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment } => {
                     Some(SpriteMainProgress::TrinexxHeadDraw { slot, segment })
                 }
@@ -11045,6 +11127,7 @@ mod tests {
             kholdstare_subtype_decremented: false,
             kholdstare_damage_pending: None,
             initialize_prep_pending: None,
+            initialize_prep_move_y: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
@@ -13800,6 +13883,57 @@ mod tests {
                 ),
             ],
         );
+    }
+
+    #[test]
+    fn initializer_prep_move_y_boundaries_name_the_completed_assignment() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(6), None),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        let execution = source.sprite_main_execution.as_mut().unwrap();
+        execution.timers_and_oam_dispatch_state = Some(8);
+        // f1525509: STA y_high pending inside Sprite_MoveY from SpritePrep_Spike.
+        let mut event = raw("nmi", Some(0x06_e968), Some(6), None);
+        event.return_address = Some(0xa691e3);
+        execution.observe_initialize_prep_move_y(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::InitializePrepMoveY {
+                slot: 6,
+                checkpoint: SpriteMoveXYCheckpoint::AfterYLow,
+            }
+        );
+        event.pc = Some(0x06_e955);
+        event.return_address = Some(0x91e330);
+        execution.observe_initialize_prep_move_y(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::InitializePrepMoveY {
+                slot: 6,
+                checkpoint: SpriteMoveXYCheckpoint::AfterYSubpixel,
+            }
+        );
+        event.pc = Some(0x06_91e4);
+        event.return_address = Some(0x00_83a6);
+        execution.observe_initialize_prep_move_y(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::InitializePrepMoveY {
+                slot: 6,
+                checkpoint: SpriteMoveXYCheckpoint::AfterYHigh,
+            }
+        );
+        // Sprite_MoveY from a state-9 handler is not the prep checkpoint.
+        execution.timers_and_oam_dispatch_state = Some(9);
+        event.pc = Some(0x06_e968);
+        event.return_address = Some(0xa691e3);
+        execution.observe_initialize_prep_move_y(&event).unwrap();
+        assert_eq!(execution.initialize_prep_move_y, None);
     }
 
     #[test]
@@ -17935,6 +18069,7 @@ mod tests {
             kholdstare_subtype_decremented: false,
             kholdstare_damage_pending: None,
             initialize_prep_pending: None,
+            initialize_prep_move_y: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,
@@ -18051,6 +18186,7 @@ mod tests {
             kholdstare_subtype_decremented: false,
             kholdstare_damage_pending: None,
             initialize_prep_pending: None,
+            initialize_prep_move_y: None,
             guard_animation_pose_slot: None,
             guard_prep_weapon_flags_pending_slot: None,
             mini_moldorm_history: None,

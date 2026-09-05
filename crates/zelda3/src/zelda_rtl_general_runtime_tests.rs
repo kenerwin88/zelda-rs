@@ -19171,6 +19171,35 @@ fn lanmola_draw_prefix_stores_keep_flat_trail_bytes_past_the_moldorm_model() {
 }
 
 #[test]
+fn initialize_prep_move_y_checkpoints_resume_to_the_atomic_body() {
+    use crate::SpriteMoveXYCheckpoint as C;
+    for sprite_type in [0x8au8, 0xd3] {
+        for checkpoint in [
+            C::BeforeMovement,
+            C::AfterYSubpixel,
+            C::AfterYLow,
+            C::AfterYHigh,
+        ] {
+            let mut state = ZeldaState::new();
+            state.game_state.world.location.set_indoor_flag(1);
+            state.sprite_slot_view_mut(6).set_sprite_type(sprite_type);
+            state.sprite_slot_view_mut(6).set_state(8);
+            state.sprite_slot_view_mut(6).set_x_low(0x40);
+            state.sprite_slot_view_mut(6).set_x_high(0x1a);
+            state.sprite_slot_view_mut(6).set_y_low(0xa0);
+            state.sprite_slot_view_mut(6).set_y_high(0x06);
+            let mut atomic = state.clone();
+            atomic.sprite_module_initialize(6);
+            state.sprite_module_initialize_properties(6);
+            let continuation = state.sprite_prep_move_y_through_checkpoint(6, checkpoint);
+            state.sprite_prep_move_y_from_checkpoint(6, checkpoint, continuation);
+            assert_eq!(state.ram, atomic.ram, "{sprite_type:#x} {checkpoint:?}");
+            assert_eq!(state.game_state.sprites, atomic.game_state.sprites);
+        }
+    }
+}
+
+#[test]
 fn laser_eye_draw_prologue_checkpoint_resumes_to_the_atomic_body() {
     for (head_direction, ai_state) in [(16u8, 0u8), (0, 0), (16, 1)] {
         let mut state = ZeldaState::new();

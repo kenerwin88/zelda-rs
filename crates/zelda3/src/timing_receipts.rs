@@ -883,6 +883,14 @@ pub enum MainLoopInterruption {
         slot: u8,
         checkpoint: SpriteMoveXYCheckpoint,
     },
+    /// A state-8 initializer published its properties and state 9, and the
+    /// type's prep (`SpritePrep_Spike` / `SpritePrep_RockStal`) reached the
+    /// named `Sprite_MoveY` assignment; the rest of the move and the
+    /// velocity clear are pending.
+    SpriteMainInitializePrepMoveY {
+        slot: u8,
+        checkpoint: SpriteMoveXYCheckpoint,
+    },
     /// A type-$62 master-sword light beam completed movement, entered its
     /// frame-gated replacement spawn, selected `spawned_slot`, and published
     /// the named source mutation. The remainder of the shared dynamic-spawn
@@ -1094,6 +1102,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainMiniMoldormHistory { .. }
                 | Self::SpriteMainMasterSwordLightBeamMovement { .. }
                 | Self::SpriteMainBoulderMovement { .. }
+                | Self::SpriteMainInitializePrepMoveY { .. }
                 | Self::SpriteMainMasterSwordLightBeamSpawn { .. }
         )
     }
@@ -1239,6 +1248,10 @@ pub enum SpriteMainProgress {
         checkpoint: SpriteMoveXYCheckpoint,
     },
     BoulderMovement {
+        slot: u8,
+        checkpoint: SpriteMoveXYCheckpoint,
+    },
+    InitializePrepMoveY {
         slot: u8,
         checkpoint: SpriteMoveXYCheckpoint,
     },

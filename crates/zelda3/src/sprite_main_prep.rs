@@ -4699,6 +4699,58 @@ impl ZeldaState {
         self.sprite_slot_view_mut(k).set_y_velocity(0);
     }
 
+    /// `SpritePrep_Spike` / `SpritePrep_RockStal` through the named
+    /// `Sprite_MoveY` assignment on the interrupted host; returns the y_low /
+    /// y_high bytes the resumed host still has to publish.
+    pub(super) fn sprite_prep_move_y_through_checkpoint(
+        &mut self,
+        k: usize,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+    ) -> (u8, u8) {
+        match self.sprite_slot_view(k).sprite_type() {
+            0x8a => self.sprite_slot_view_mut(k).set_x_velocity(32),
+            0xd3 => {}
+            other => panic!("state-8 prep Sprite_MoveY checkpoint on type {other:#04x}"),
+        }
+        self.sprite_slot_view_mut(k).set_y_velocity((-16i8) as u8);
+        match checkpoint {
+            crate::SpriteMoveXYCheckpoint::BeforeMovement => (0, 0),
+            crate::SpriteMoveXYCheckpoint::AfterYSubpixel => self.sprite_move_y_through_subpixel(k),
+            crate::SpriteMoveXYCheckpoint::AfterYLow => {
+                let (y_low, y_high) = self.sprite_move_y_through_subpixel(k);
+                self.sprite_slot_view_mut(k).set_y_low(y_low);
+                (y_low, y_high)
+            }
+            crate::SpriteMoveXYCheckpoint::AfterYHigh => {
+                self.sprite_move_y(k);
+                (0, 0)
+            }
+            other => panic!("state-8 prep Sprite_MoveY checkpoint {other:?} is not a Y assignment"),
+        }
+    }
+
+    /// Finishes the prep from `checkpoint` with the bytes bound by
+    /// `sprite_prep_move_y_through_checkpoint`.
+    pub(super) fn sprite_prep_move_y_from_checkpoint(
+        &mut self,
+        k: usize,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+        (y_low, y_high): (u8, u8),
+    ) {
+        match checkpoint {
+            crate::SpriteMoveXYCheckpoint::BeforeMovement => self.sprite_move_y(k),
+            crate::SpriteMoveXYCheckpoint::AfterYSubpixel => {
+                self.complete_sprite_move_y_after_subpixel(k, y_low, y_high)
+            }
+            crate::SpriteMoveXYCheckpoint::AfterYLow => {
+                self.sprite_slot_view_mut(k).set_y_high(y_high)
+            }
+            crate::SpriteMoveXYCheckpoint::AfterYHigh => {}
+            other => panic!("state-8 prep Sprite_MoveY checkpoint {other:?} is not a Y assignment"),
+        }
+        self.sprite_slot_view_mut(k).set_y_velocity(0);
+    }
+
     pub(super) fn sprite_prep_blob(&mut self, k: usize) {
         self.sprite_slot_view_mut(k).set_graphics(4);
         self.sprite_prep_ignore_projectiles(k);

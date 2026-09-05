@@ -4898,6 +4898,13 @@ enum SpriteMainCpuBoundary {
         checkpoint: crate::SpriteMoveXYCheckpoint,
         continuation: Option<SpriteMoveXYContinuation>,
     },
+    /// A state-8 prep (`SpritePrep_Spike` / `SpritePrep_RockStal`) entered
+    /// `Sprite_MoveY`; the pending y_low/y_high bytes are bound natively.
+    InitializePrepMoveY {
+        slot: u8,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+        continuation: Option<(u8, u8)>,
+    },
     /// The same light beam has completed movement and published a prefix of
     /// its frame-gated replacement `Sprite_SpawnDynamically` call.
     MasterSwordLightBeamSpawn {
@@ -5463,6 +5470,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::BoulderMovement {
             slot: active_slot, ..
         }
+        | SpriteMainCpuBoundary::InitializePrepMoveY {
+            slot: active_slot, ..
+        }
         | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
             slot: active_slot, ..
         }
@@ -5756,6 +5766,17 @@ fn sprite_main_cpu_boundary_from_interruption(
                 "source Boulder movement used invalid slot {slot}"
             );
             Some(SpriteMainCpuBoundary::BoulderMovement {
+                slot,
+                checkpoint,
+                continuation: None,
+            })
+        }
+        crate::MainLoopInterruption::SpriteMainInitializePrepMoveY { slot, checkpoint } => {
+            assert!(
+                slot < 16,
+                "source state-8 prep Sprite_MoveY used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::InitializePrepMoveY {
                 slot,
                 checkpoint,
                 continuation: None,
@@ -6355,6 +6376,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
             checkpoint: _,
         } => slot < 16,
         crate::MainLoopInterruption::SpriteMainBoulderMovement { slot, .. } => slot < 16,
+        crate::MainLoopInterruption::SpriteMainInitializePrepMoveY { slot, .. } => slot < 16,
         crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamSpawn {
             slot,
             spawned_slot,
@@ -6616,6 +6638,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
             checkpoint: _,
         } => slot < 16,
         crate::SpriteMainProgress::BoulderMovement { slot, .. } => slot < 16,
+        crate::SpriteMainProgress::InitializePrepMoveY { slot, .. } => slot < 16,
         crate::SpriteMainProgress::MasterSwordLightBeamSpawn {
             slot,
             spawned_slot,
@@ -6768,6 +6791,17 @@ fn sprite_main_cpu_boundary_from_progress(
                 "source Boulder movement used invalid slot {slot}"
             );
             SpriteMainCpuBoundary::BoulderMovement {
+                slot,
+                checkpoint,
+                continuation: None,
+            }
+        }
+        crate::SpriteMainProgress::InitializePrepMoveY { slot, checkpoint } => {
+            assert!(
+                slot < 16,
+                "source state-8 prep Sprite_MoveY used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::InitializePrepMoveY {
                 slot,
                 checkpoint,
                 continuation: None,
@@ -7274,6 +7308,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainAfterCuccoGraphicsPublication { .. }
         | crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamMovement { .. }
         | crate::MainLoopInterruption::SpriteMainBoulderMovement { .. }
+        | crate::MainLoopInterruption::SpriteMainInitializePrepMoveY { .. }
         | crate::MainLoopInterruption::SpriteMainMasterSwordLightBeamSpawn { .. }
         | crate::MainLoopInterruption::SpriteMainBigKeyDropGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainKingZoraFlippersGraphicsStarted(_)
@@ -7699,6 +7734,18 @@ fn same_sprite_main_source_checkpoint(
             },
         ) => left_slot == right_slot && left_checkpoint == right_checkpoint,
         (
+            SpriteMainCpuBoundary::InitializePrepMoveY {
+                slot: left_slot,
+                checkpoint: left_checkpoint,
+                ..
+            },
+            SpriteMainCpuBoundary::InitializePrepMoveY {
+                slot: right_slot,
+                checkpoint: right_checkpoint,
+                ..
+            },
+        ) => left_slot == right_slot && left_checkpoint == right_checkpoint,
+        (
             SpriteMainCpuBoundary::ZoraFireballMovement {
                 slot: left_slot,
                 checkpoint: left_checkpoint,
@@ -7765,6 +7812,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel { slot, .. }
         | SpriteMainCpuBoundary::MasterSwordLightBeamMovement { slot, .. }
         | SpriteMainCpuBoundary::BoulderMovement { slot, .. }
+        | SpriteMainCpuBoundary::InitializePrepMoveY { slot, .. }
         | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn { slot, .. }
         | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }
         | SpriteMainCpuBoundary::AfterCuccoSubtypeIncrements { slot, .. }
@@ -28703,6 +28751,26 @@ impl ZeldaState {
         Some(next_index)
     }
 
+    /// Consume a `DungeonPushBlocksInProgress` receipt that merely restates
+    /// the resumed loop's own cursor. A later, genuine re-interruption of the
+    /// same host names a greater index and stays in the vector.
+    pub(super) fn take_original_timing_dungeon_push_blocks_restatement(&mut self, cursor: u16) {
+        if !matches!(self.original_timing_owner, OriginalTimingOwnerState::Live) {
+            return;
+        }
+        let Some(receipts) = self.original_timing_semantic_receipts.as_mut() else {
+            return;
+        };
+        if let Some(index) = receipts.semantic.iter().position(|receipt| {
+            *receipt
+                == OriginalTimingSemanticReceipt::DungeonPushBlocksInProgress {
+                    next_index: cursor,
+                }
+        }) {
+            receipts.semantic.remove(index);
+        }
+    }
+
     /// Module 7's push-block handler returned before this host's boundary
     /// and OrientLampLightCone stored nothing yet.
     pub(super) fn original_timing_dungeon_push_blocks_handled(&self) -> bool {
@@ -28746,6 +28814,11 @@ impl ZeldaState {
             self.begin_original_timing_sprite_main_return_claim_scope(1);
         }
         if handler_pending {
+            // The resumed host restates the interrupting boundary at the head
+            // of its vector (route host 1526914); the loop cursor already
+            // sits there, so the restatement carries no new work.
+            let cursor = self.game_state.dungeon.object_tracking.misc_object_index();
+            self.take_original_timing_dungeon_push_blocks_restatement(cursor);
             self.dungeon_push_block_handler();
             self.replay_trace_ram_watch("module07-after-push-blocks");
         }
@@ -43663,10 +43736,11 @@ impl ZeldaState {
                     expected_semantic.push(OriginalTimingSemanticReceipt::PreDungeonModuleReturned);
                 }
                 {
-                    // A reset, cached-sprite, spotlight, or peg-loop
-                    // refinement claim is consumed by the resumed body itself;
-                    // this lane only pins it at its exact wire position (route
-                    // hosts 29550, 31288, and 712708).
+                    // A reset, cached-sprite, spotlight, peg-loop, or
+                    // push-block refinement claim is consumed by the resumed
+                    // body itself; this lane only pins it at its exact wire
+                    // position (route hosts 29550, 31288, 712708, and
+                    // 1526914).
                     let semantic_actual = self
                         .original_timing_semantic_receipts
                         .as_ref()
@@ -43683,6 +43757,7 @@ impl ZeldaState {
                                 | OriginalTimingSemanticReceipt::DungeonPegAttributeFlipProgress(_)
                                 | OriginalTimingSemanticReceipt::CreditsSceneLoadProgress(_)
                                 | OriginalTimingSemanticReceipt::CreditsEndSequence32Progress(_)
+                                | OriginalTimingSemanticReceipt::DungeonPushBlocksInProgress { .. }
                         ) {
                             expected_semantic.insert(index.min(expected_semantic.len()), *receipt);
                         }

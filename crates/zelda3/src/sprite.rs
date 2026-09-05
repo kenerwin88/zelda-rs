@@ -3574,6 +3574,30 @@ impl ZeldaState {
                 self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
                 return;
             }
+            if let Some(SpriteMainCpuBoundary::InitializePrepMoveY {
+                slot,
+                checkpoint,
+                continuation: None,
+            }) = self.sprite_main_cpu_boundary
+            {
+                if usize::from(slot) == k {
+                    let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                    assert_ne!(nmi_slices, 0);
+                    assert_eq!(self.sprite_slot_view(k).state(), 8);
+                    self.sprite_timers_and_oam(k);
+                    self.sprite_module_initialize_properties(k);
+                    let continuation = self.sprite_prep_move_y_through_checkpoint(k, checkpoint);
+                    let boundary = SpriteMainCpuBoundary::InitializePrepMoveY {
+                        slot,
+                        checkpoint,
+                        continuation: Some(continuation),
+                    };
+                    self.sprite_main_cpu_boundary = None;
+                    let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                    self.schedule_sprite_main_cpu_continuation(boundary, nmi_slices, caller);
+                    return;
+                }
+            }
             if self.sprite_main_cpu_boundary
                 == Some(SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot: k as u8 })
             {
@@ -4851,6 +4875,23 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 self.sprite_module_initialize_after_properties(k);
                 self.complete_sprite_main_after_interrupted_slot(k);
             }
+            SpriteMainCpuBoundary::InitializePrepMoveY {
+                slot,
+                checkpoint,
+                continuation: Some(continuation),
+            } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                assert_eq!(self.sprite_slot_view(k).state(), 9);
+                self.sprite_prep_move_y_from_checkpoint(k, checkpoint, continuation);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::InitializePrepMoveY {
+                continuation: None,
+                ..
+            } => unreachable!(
+                "source state-8 prep Sprite_MoveY boundary did not bind to native coordinate results"
+            ),
             SpriteMainCpuBoundary::HogSpearBodyGraphicsPending { slot } => {
                 let interrupted_slot = usize::from(slot);
                 self.sprite_system_mut().set_cur_object_index(slot);
