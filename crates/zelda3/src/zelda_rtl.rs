@@ -42055,6 +42055,24 @@ impl ZeldaState {
             false
         };
         let sprite_reset_all_work = self.game_execution_scheduler.current_work();
+        if matches!(
+            sprite_reset_all_work,
+            Some(GameWorkContinuation::FinishGameOverDeathAfterSpriteReset { .. })
+        ) {
+            assert!(matches!(
+                self.original_timing_owner,
+                OriginalTimingOwnerState::Live
+            ));
+            // The accepting NMI may restate the completed disable in the same
+            // host that returns from ResetAll and Death_Func15. Consume it
+            // while its caller is still scheduled, before return retirement.
+            if let Some(receipt) = self.take_original_timing_sprite_reset_all_progress() {
+                assert_eq!(
+                    receipt.progress,
+                    crate::SpriteResetAllProgress::SpriteDisableAllCompleted
+                );
+            }
+        }
         let flute_menu_sprite_reset_is_active = matches!(
             sprite_reset_all_work,
             Some(GameWorkContinuation::FinishFluteMenuSelectedScreen {
@@ -44744,9 +44762,6 @@ impl ZeldaState {
                 Some(GameWorkStep::Complete(*expected_work))
             } else if matches!(self.game_execution_scheduler.current_work(), Some(GameWorkContinuation::FinishGameOverDeathAfterSpriteReset { .. })) {
                 assert!(matches!(self.original_timing_owner, OriginalTimingOwnerState::Live));
-                if let Some(receipt) = self.take_original_timing_sprite_reset_all_progress() {
-                    assert_eq!(receipt.progress, crate::SpriteResetAllProgress::SpriteDisableAllCompleted);
-                }
                 self.game_execution_scheduler.advance_work_one_nmi_slice_with_authoritative_completion(false)
             } else if matches!(
                 self.game_execution_scheduler.current_work(),

@@ -2401,7 +2401,10 @@ fn terminal_cached_restore_keeps_its_backup_until_pre_nmi_stores_publish() {
 #[test]
 fn death_restart_keeps_room_module_and_counters_until_sprite_reset_returns() {
     let mut state = ZeldaState::new();
-    state.set_rom_startup_timing(true);
+    state.restore_live_rom_timing_after_checkpoint();
+    state.initialized = true;
+    state.rom_reset_frame_delay = 0;
+    state.set_animated_tile_data_source_address(1);
     state.set_main_module(0x12);
     state.set_submodule(9);
     state.set_subsubmodule(0);
@@ -2462,10 +2465,35 @@ fn death_restart_keeps_room_module_and_counters_until_sprite_reset_returns() {
     assert!(state
         .game_execution_scheduler
         .work_suspends_translated_call_stack());
-    state
-        .game_execution_scheduler
-        .advance_work_one_nmi_slice_with_authoritative_completion(true);
-    state.complete_game_over_death_after_sprite_reset(true);
+    state.latch_nmi_update();
+    state.original_timing_expected_nmi_update_gates = vec![NmiUpdateGate::LatchHeld];
+    state.pending_main_loop_common_suffix =
+        Some(MainLoopCommonSuffixContinuation::PrepareSpritesAndClearNmiLatch);
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        422611,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::SpriteResetAllProgress(SpriteResetAllProgressReceipt {
+                progress: SpriteResetAllProgress::SpriteDisableAllCompleted,
+                boundary: OriginalTimingBoundary::NmiAccepted,
+            }),
+            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+            OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+            OriginalTimingSemanticReceipt::MainLoopProgress(
+                crate::MainLoopProgress::CallStackContinued,
+            ),
+            OriginalTimingSemanticReceipt::MainLoopCommonSuffixCompleted,
+        ],
+    ));
+    state.run_frame_internal_after_original_timing(0, crate::RUN_MAIN);
+    assert!(state.game_execution_scheduler.is_idle());
+    assert!(state
+        .original_timing_semantic_receipts
+        .as_ref()
+        .unwrap()
+        .semantic
+        .iter()
+        .all(|r| !matches!(r, OriginalTimingSemanticReceipt::SpriteResetAllProgress(_))));
     assert_eq!(
         (
             state.game_state.frame.main_module,
