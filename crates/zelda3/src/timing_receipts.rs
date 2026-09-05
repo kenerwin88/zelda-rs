@@ -1792,6 +1792,11 @@ pub enum OriginalTimingSemanticReceipt {
     /// LinkOam_Main reached a source checkpoint while its temporary stair
     /// coordinate is live. The remaining drawing suffix owns its restoration.
     LinkOamStairProgress(LinkOamStairProgress),
+    /// Dungeon_LoadEntrance finished its backup/reset prefix, before choosing
+    /// the entrance table or publishing the new room and Link placement.
+    SelectedGameEntranceBeforeSelection,
+    /// The selected-game caller returned from Dungeon_LoadEntrance.
+    SelectedGameEntranceReturned,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

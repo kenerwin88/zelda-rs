@@ -3590,7 +3590,7 @@ impl Snes9xOracleSemanticTrace {
                         "058af3", "0684eb", "069271", "06a628", "06a724", "06b9cc", "06b9d0",
                         "0799ad", "079a0b", "008225", "0082c7", "00d4ed", "09c499", "09c4aa",
                         "09c173", "09f63f", "09f825", "0ffdc3", "00d423", "00e75c", "00e766",
-                        "00d44c", "0ecfe2", "0ed088", "0ed0c2", "06d051",
+                        "00d44c", "0ecfe2", "0ed088", "0ed0c2", "06d051", "02824d",
                     ],
                 ),
             );
@@ -3922,6 +3922,11 @@ impl Snes9xOracleSemanticTrace {
             self.consume_event(event, &mut receipts)?;
         }
         if let Some(returned_event) = returned_event.as_ref() {
+            if returned_event.pc.map(|pc| pc & 0xffffff) == Some(0x02_d987)
+                && (returned_event.main, returned_event.sub) == (Some(5), Some(0))
+            {
+                receipts.push(OriginalTimingSemanticReceipt::SelectedGameEntranceBeforeSelection);
+            }
             if let Some(progress) = file_select_graphics_low_wram_clear_progress(returned_event)? {
                 publish_file_select_graphics_low_wram_clear_progress(&mut receipts, progress);
             }
@@ -4341,6 +4346,9 @@ impl Snes9xOracleSemanticTrace {
         match event.event.as_str() {
             "pc" => {
                 let pc = event.pc.ok_or("Snes9x PC receipt omitted PC")? & 0x00ff_ffff;
+                if pc == 0x02_824d && (event.main, event.sub) == (Some(5), Some(0)) {
+                    receipts.push(OriginalTimingSemanticReceipt::SelectedGameEntranceReturned);
+                }
                 if pc == DUNGEON_RESET_SPRITES_RETURN_PC {
                     self.pending_reset_progress = None;
                     self.cache_write_progress = None;
@@ -9571,6 +9579,26 @@ mod tests {
                         SpriteMainProgress::AfterHitTimer(0),
                     ),
                 ],
+            );
+        }
+    }
+
+    #[test]
+    fn selected_game_entrance_return_requires_its_module05_caller() {
+        for main in [5, 7] {
+            let mut source = empty_semantic_tracker();
+            let mut receipts = Vec::new();
+            let mut event = raw("pc", Some(0x02_824d), None, None);
+            event.main = Some(main);
+            event.sub = Some(0);
+            source.consume_event(event, &mut receipts).unwrap();
+            assert_eq!(
+                receipts,
+                if main == 5 {
+                    vec![OriginalTimingSemanticReceipt::SelectedGameEntranceReturned]
+                } else {
+                    vec![]
+                }
             );
         }
     }

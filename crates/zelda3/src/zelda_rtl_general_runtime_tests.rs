@@ -539,6 +539,28 @@ fn selected_game_entrance_scroll_suspends_before_display_mirrors() {
     assert_eq!(staged.ram, atomic.ram);
 }
 
+#[test]
+fn selected_game_entrance_before_selection_preserves_link_until_the_source_return() {
+    let mut staged = ZeldaState::new();
+    staged.assets = Some(probe_entrance_asset_pack(0, 0x59));
+    staged.set_dungeon_room(0x10);
+    staged
+        .follower_link_state_mut()
+        .set_position(0x1353, 0x058b);
+    let mut atomic = staged.clone();
+    atomic.module_pre_dungeon_initial_entrance();
+    staged.begin_selected_game_entrance_before_selection();
+    assert_eq!(
+        staged.game_state.dungeon.room_tracking.room_index2_word(),
+        0
+    );
+    assert_eq!(staged.game_state.player.follower_link.x(), 0x1353);
+    assert_eq!(staged.game_state.player.follower_link.y(), 0x058b);
+    staged.module_pre_dungeon_initial_entrance();
+    assert_eq!(staged.game_state, atomic.game_state);
+    assert_eq!(staged.ram, atomic.ram);
+}
+
 fn probe_overworld_asset_pack(screen: usize) -> AssetPack {
     let mut data = Vec::new();
     let mut ranges = vec![(0, 0); 109];

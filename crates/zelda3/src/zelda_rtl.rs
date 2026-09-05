@@ -1371,6 +1371,8 @@ enum OriginalTimingNonterminalReceiptPlacement {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct OriginalTimingBeginSelectedGameLoadPlan {
     entrance_scroll_published: bool,
+    entrance_before_selection: bool,
+    entrance_returned: bool,
     semantic: Vec<OriginalTimingSemanticReceipt>,
     timeline: OriginalTimingMainLoopTimeline,
     nmi: OriginalTimingNmiPhaseClassification,
@@ -13033,7 +13035,7 @@ pub struct ZeldaState {
     pending_overworld_sprite_reload_slots: Option<SpriteSlotsState>,
     /// Native entrance selection retained across its vertical-scroll stores.
     #[serde(skip)]
-    pending_selected_game_entrance: Option<(usize, bool)>,
+    pending_selected_game_entrance: Option<dungeon::SelectedGameEntranceContinuation>,
     /// Native loader publications in source order. A later allocation may
     /// reuse a slot before the scan returns, so the final array is insufficient.
     #[serde(skip)]
@@ -23683,6 +23685,21 @@ impl ZeldaState {
                 ));
             }
         }
+        if semantic.contains(&OriginalTimingSemanticReceipt::SelectedGameEntranceReturned) {
+            assert!(self
+                .game_execution_scheduler
+                .selected_game_load_pending_entry_room_load()
+                .is_some());
+            let insertion = expected_semantic.len()
+                - usize::from(matches!(
+                    expected_semantic.last(),
+                    Some(OriginalTimingSemanticReceipt::NmiAccepted(_))
+                ));
+            expected_semantic.insert(
+                insertion,
+                OriginalTimingSemanticReceipt::SelectedGameEntranceReturned,
+            );
+        }
         expected_semantic.push(OriginalTimingSemanticReceipt::MainLoopProgress(
             crate::MainLoopProgress::CallStackContinued,
         ));
@@ -23832,14 +23849,17 @@ impl ZeldaState {
         let mut scheduler_before_transition = self.game_execution_scheduler;
         scheduler_before_transition.begin_host_frame();
         let mut scheduler_after_transition = scheduler_before_transition;
-        // Any source checkpoint after Module_PreDungeon's audio prefix is
+        // The entrance return or a later reset/caller-return checkpoint is
         // ordered after Dungeon_LoadEntrance. Retire that nested owner on the
         // scheduler probe before applying Sprite_ResetAll or caller-return
         // progress; execution performs the corresponding native room load
         // before installing this final scheduler state.
         let completes_entry_room_load = scheduler_after_transition
             .selected_game_load_pending_entry_room_load()
-            .is_some();
+            .is_some()
+            && (progress_receipt.is_some()
+                || terminal_timeline.is_some()
+                || semantic.contains(&OriginalTimingSemanticReceipt::SelectedGameEntranceReturned));
         if completes_entry_room_load {
             scheduler_after_transition.mark_selected_game_load_entry_room_load_completed();
         }
@@ -24428,10 +24448,22 @@ impl ZeldaState {
             expected_semantic
                 .push(OriginalTimingSemanticReceipt::SelectedGameEntranceScrollPublished);
         }
+        let entrance_before_selection =
+            semantic.contains(&OriginalTimingSemanticReceipt::SelectedGameEntranceBeforeSelection);
+        let entrance_returned =
+            semantic.contains(&OriginalTimingSemanticReceipt::SelectedGameEntranceReturned);
+        assert!(!(entrance_before_selection && (entrance_scroll_published || entrance_returned)));
+        if entrance_returned {
+            expected_semantic.push(OriginalTimingSemanticReceipt::SelectedGameEntranceReturned);
+        }
         if trailing_held {
             expected_semantic.push(OriginalTimingSemanticReceipt::NmiAccepted(
                 NmiUpdateGate::LatchHeld,
             ));
+        }
+        if entrance_before_selection {
+            expected_semantic
+                .push(OriginalTimingSemanticReceipt::SelectedGameEntranceBeforeSelection);
         }
         expected_semantic.push(OriginalTimingSemanticReceipt::MainLoopProgress(
             crate::MainLoopProgress::CallStackContinued,
@@ -24465,6 +24497,8 @@ impl ZeldaState {
 
         Some(OriginalTimingBeginSelectedGameLoadPlan {
             entrance_scroll_published,
+            entrance_before_selection,
+            entrance_returned,
             semantic,
             timeline,
             nmi,
@@ -40370,6 +40404,7 @@ impl ZeldaState {
                                     input,
                                     oam_dma_source.as_deref(),
                                     |state| {
+                                        state.original_timing_semantic_receipts.as_mut().unwrap().semantic.retain(|receipt| *receipt != OriginalTimingSemanticReceipt::SelectedGameEntranceReturned);
                                         if plan.completes_entry_room_load {
                                             state.complete_pending_selected_game_load_entry_room_load();
                                         }
@@ -40455,7 +40490,7 @@ impl ZeldaState {
                             "pre-dungeon-audio authority changed before consumption",
                         );
                         self.original_timing_semantic_receipts.as_mut().unwrap().semantic.retain(|receipt| {
-                            *receipt != OriginalTimingSemanticReceipt::SelectedGameEntranceScrollPublished
+                            !matches!(receipt, OriginalTimingSemanticReceipt::SelectedGameEntranceScrollPublished | OriginalTimingSemanticReceipt::SelectedGameEntranceBeforeSelection | OriginalTimingSemanticReceipt::SelectedGameEntranceReturned)
                         });
                         let timeline = self
                             .take_original_timing_uninterrupted_main_loop_timeline(
@@ -40481,7 +40516,10 @@ impl ZeldaState {
                         if plan.entrance_scroll_published {
                             self.begin_selected_game_entrance_scroll_prefix();
                         }
-                        if !plan.nmi.publication_pending_at_exit {
+                        if plan.entrance_before_selection {
+                            self.begin_selected_game_entrance_before_selection();
+                        }
+                        if plan.entrance_returned {
                             self.complete_pending_selected_game_load_entry_room_load();
                         }
                         // The room-load then accepts another held NMI at the

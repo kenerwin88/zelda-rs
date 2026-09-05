@@ -13,6 +13,12 @@ use crate::zelda_rtl::sprite::SpriteSpawnInfo;
 mod dungeon_shared;
 use dungeon_shared::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(super) enum SelectedGameEntranceContinuation {
+    BeforeSelection,
+    AfterScroll { selection: (usize, bool) },
+}
+
 impl ZeldaState {
     pub fn parity_probe_direct_entrance(&mut self, entrance_index: u16) -> u16 {
         self.set_which_entrance(entrance_index);
@@ -128,6 +134,11 @@ impl ZeldaState {
     }
 
     fn dungeon_load_entrance_before_fields(&mut self) -> (usize, bool) {
+        self.dungeon_load_entrance_before_selection();
+        self.dungeon_load_entrance_select()
+    }
+
+    fn dungeon_load_entrance_before_selection(&mut self) {
         self.set_indoor_flag(1);
         if self.game_state.system_signals.game_over_check_flag() != 0 {
             self.clear_game_over_check_flag();
@@ -162,7 +173,9 @@ impl ZeldaState {
         self.set_bg1_y_offset(0);
         self.set_bg1_x_offset(0);
         self.clear_game_over_check_flag();
+    }
 
+    fn dungeon_load_entrance_select(&mut self) -> (usize, bool) {
         if self.game_state.sprites.follower_runtime.indicator_word() == 4
             || self.game_state.system_signals.restart_check_flag() != 0
         {
@@ -13473,8 +13486,14 @@ impl ZeldaState {
     }
 
     pub(super) fn module_pre_dungeon_initial_entrance(&mut self) {
-        if let Some(selection) = self.pending_selected_game_entrance.take() {
-            self.dungeon_load_entrance_after_selection(selection, true);
+        if let Some(continuation) = self.pending_selected_game_entrance.take() {
+            let (selection, scroll_published) = match continuation {
+                SelectedGameEntranceContinuation::BeforeSelection => {
+                    (self.dungeon_load_entrance_select(), false)
+                }
+                SelectedGameEntranceContinuation::AfterScroll { selection } => (selection, true),
+            };
+            self.dungeon_load_entrance_after_selection(selection, scroll_published);
             return;
         }
         self.module_pre_dungeon_before_initial_entrance();
@@ -13490,7 +13509,16 @@ impl ZeldaState {
             "starting-point source checkpoint reached an ordinary entrance"
         );
         self.dungeon_load_entrance_room_and_scroll(selection.0, &STARTING_POINT_ASSETS);
-        self.pending_selected_game_entrance = Some(selection);
+        self.pending_selected_game_entrance =
+            Some(SelectedGameEntranceContinuation::AfterScroll { selection });
+    }
+
+    pub(super) fn begin_selected_game_entrance_before_selection(&mut self) {
+        assert!(self.pending_selected_game_entrance.is_none());
+        self.module_pre_dungeon_before_initial_entrance();
+        self.dungeon_load_entrance_before_selection();
+        self.pending_selected_game_entrance =
+            Some(SelectedGameEntranceContinuation::BeforeSelection);
     }
 
     fn module_pre_dungeon_before_initial_entrance(&mut self) {
