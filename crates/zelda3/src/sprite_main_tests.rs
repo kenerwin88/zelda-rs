@@ -7,6 +7,7 @@ fn active_guard_weapon_coordinates_hold_pose_until_the_draw_returns() {
         Stage::HeadCharacterPending,
         Stage::HeadFlagsPending,
         Stage::DrawReturned,
+        Stage::HeadExtendedPending,
     ];
     for entry in 0..4 {
         checkpoints.extend([

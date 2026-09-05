@@ -1127,6 +1127,7 @@ pub enum GuardAnimationCheckpoint {
     },
     /// Guard_Animate returned; the caller has not restored its saved pose.
     DrawReturned,
+    HeadExtendedPending,
 }
 
 impl GuardAnimationCheckpoint {
@@ -1135,6 +1136,7 @@ impl GuardAnimationCheckpoint {
             self,
             Self::HeadCharacterPending
                 | Self::DrawReturned
+                | Self::HeadExtendedPending
                 | Self::HeadFlagsPending
                 | Self::WeaponCoordinates { entry: 0 | 1 }
                 | Self::WeaponBeforeCoordinates { entry: 0 | 1 }

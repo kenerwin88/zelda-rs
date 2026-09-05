@@ -1265,13 +1265,14 @@ impl SpriteMainExecutionTracker {
             event.pc.map(|pc| pc & 0x00ff_ffff),
             Some(
                 0x05_cbaa
-                    | 0x05_cb86
-                    | 0x05_c717
-                    | 0x05_c719
-                    | 0x05_c71c
-                    | 0x05_ca29
-                    | 0x05_ca6b
-                    | 0x05_ca93..=0x05_ca9f
+                | 0x05_cb86
+                | 0x05_c717
+                | 0x05_c719
+                | 0x05_c71c
+                | 0x05_c721..=0x05_c729
+                | 0x05_ca29
+                | 0x05_ca6b
+                | 0x05_ca93..=0x05_ca9f,
             )
         ) || self.timers_and_oam_dispatch_state != Some(9)
             || self.guard_animation_pose_slot != self.current_slot
@@ -1281,6 +1282,15 @@ impl SpriteMainExecutionTracker {
         let slot = self
             .current_slot
             .ok_or("guard weapon checkpoint has no active slot")?;
+        if matches!(event.pc, Some(0x05_c721..=0x05_c729)) {
+            let expected_y = if event.pc.unwrap() <= 0x05_c724 { 3 } else { 0 };
+            if event.y != Some(expected_y) {
+                return Err("guard head extended checkpoint has an invalid OAM cursor".into());
+            }
+            self.guard_animation_checkpoint =
+                Some((slot, zelda3::GuardAnimationCheckpoint::HeadExtendedPending));
+            return Ok(());
+        }
         if matches!(event.pc, Some(0x05_c717 | 0x05_c719 | 0x05_c71c)) {
             if event.y != Some(2) {
                 return Err("guard head flags checkpoint has an invalid OAM cursor".into());
@@ -9506,6 +9516,10 @@ mod tests {
     fn guard_draw_cursors_distinguish_body_and_weapon_store_prefixes() {
         use zelda3::GuardAnimationCheckpoint as Stage;
         for (pc, x, y, expected) in [
+            (0x05_c721, 0, 3, Stage::HeadExtendedPending),
+            (0x05_c724, 0, 3, Stage::HeadExtendedPending),
+            (0x05_c725, 0, 0, Stage::HeadExtendedPending),
+            (0x05_c729, 0, 0, Stage::HeadExtendedPending),
             (0x05_c717, 0, 2, Stage::HeadCharacterPending),
             (0x05_ca9e, 35, 6, Stage::BodyFlagsPending { entry: 3 }),
             (0x05_ca29, 33, 12, Stage::BodyBeforeEntry { entry: 1 }),

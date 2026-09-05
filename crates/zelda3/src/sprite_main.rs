@@ -140,6 +140,15 @@ impl ZeldaState {
             }
             Stage::HeadCharacterPending => return self.guard_animation_until_head_stage(k, false),
             Stage::HeadFlagsPending => return self.guard_animation_until_head_flags(k),
+            Stage::HeadExtendedPending => {
+                let mut continuation = self.guard_animation_until_head_flags(k);
+                let head = self.sprite_slot_view(k).head_direction() as usize;
+                let addr = self.game_state.oam.current_pointer_usize();
+                self.oam_state_mut()
+                    .set_entry_flags(addr, SOLDIER_DRAW1_FLAGS[head] | continuation.poc_flags);
+                continuation.checkpoint = checkpoint;
+                return continuation;
+            }
             Stage::WeaponCoordinates { entry } => {
                 return self.guard_animation_until_weapon_coordinates(k, entry)
             }
@@ -199,7 +208,9 @@ impl ZeldaState {
         let head = self.sprite_slot_view(k).head_direction() as usize;
         let addr = self.game_state.oam.current_pointer_usize();
         let mut oam = self.oam_state_mut();
-        oam.set_entry_flags(addr, SOLDIER_DRAW1_FLAGS[head] | continuation.poc_flags);
+        if continuation.checkpoint != crate::GuardAnimationCheckpoint::HeadExtendedPending {
+            oam.set_entry_flags(addr, SOLDIER_DRAW1_FLAGS[head] | continuation.poc_flags);
+        }
         oam.set_extended_byte(
             (addr - OAM_BUF) / 4,
             2 | ((continuation.poc_x >> 8) as u8 & 1),
@@ -288,7 +299,7 @@ impl ZeldaState {
         let flags3 = sprite.flags3();
         use crate::GuardAnimationCheckpoint as Stage;
         match continuation.checkpoint {
-            Stage::HeadCharacterPending | Stage::HeadFlagsPending => {
+            Stage::HeadCharacterPending | Stage::HeadFlagsPending | Stage::HeadExtendedPending => {
                 if continuation.checkpoint == Stage::HeadCharacterPending {
                     let head = self.sprite_slot_view(k).head_direction() as usize;
                     let addr = self.game_state.oam.current_pointer_usize();
