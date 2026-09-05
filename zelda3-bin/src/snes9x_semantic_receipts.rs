@@ -6576,6 +6576,15 @@ fn main_loop_interruption_for_source_state(
         })
     } else if main == Some(0x0f)
         && sub == Some(1)
+        && x == Some(0)
+        && (0x07_e3a4..=0x07_e3af).contains(&pc)
+    {
+        // The loop has advanced to Y, but its first subpixel store has not
+        // executed. This is exactly the existing completed-X checkpoint;
+        // scratch arithmetic between the passes does not publish gameplay.
+        Some(MainLoopInterruption::LinkPositionAfterCoordinates { pass: 2 })
+    } else if main == Some(0x0f)
+        && sub == Some(1)
         && (pc == MODULE0F_LINK_VELOCITY_CALL_PC
             || (LINK_VELOCITY_BEFORE_STATE_BRANCH_START_PC
                 ..LINK_VELOCITY_BEFORE_STATE_BRANCH_END_PC)
@@ -13429,6 +13438,24 @@ mod tests {
         );
         event.y = Some(6);
         assert_eq!(dungeon_reset_sprites_caller_progress(&event), None);
+    }
+
+    #[test]
+    fn pending_y_subpixel_store_retains_the_completed_x_pass() {
+        for pc in [0x07_e3a4, 0x07_e3af] {
+            assert_eq!(
+                main_loop_interruption_for_source_state(pc, Some(0x0f), Some(1), Some(0)),
+                Some(MainLoopInterruption::LinkPositionAfterCoordinates { pass: 2 })
+            );
+        }
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x07_e3af, Some(0x0f), Some(1), Some(2)),
+            None
+        );
+        assert_eq!(
+            main_loop_interruption_for_source_state(0x07_e3af, Some(7), Some(1), Some(0)),
+            None
+        );
     }
 
     #[test]
