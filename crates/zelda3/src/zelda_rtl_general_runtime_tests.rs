@@ -5380,43 +5380,77 @@ fn run4786_link_oam_completes_the_build_before_run4787_finishes_its_suffix() {
 
 #[test]
 fn recurring_spotlight_build_binds_an_entry_recheckpoint_before_handler_completion() {
-    let mut state = run4786_spotlight_build_link_oam_state();
-    let progress = crate::SpotlightTableBuildProgress {
-        completed_iterations: 105,
-        checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeIterationInitialization,
-    };
-    state.original_timing_expected_nmi_update_gates =
-        vec![NmiUpdateGate::LatchHeld, NmiUpdateGate::LatchHeld];
-    state.original_timing_expected_nmi_ppu_register_operands = vec![None, None];
-    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
-        4_786,
-        0,
-        vec![
-            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
-            OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
-                crate::SpotlightTableBuildProgressReceipt {
-                    progress,
-                    boundary: OriginalTimingBoundary::NmiAccepted,
+    for advances_upper_cursor in [false, true] {
+        let mut state = run4786_spotlight_build_link_oam_state();
+        let mut progress = crate::SpotlightTableBuildProgress {
+            completed_iterations: 105,
+            checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeIterationInitialization,
+        };
+        if advances_upper_cursor {
+            let work = state.game_execution_scheduler.current_work().unwrap();
+            let GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+                table_build,
+                projection_completed,
+                iteration,
+            } = work
+            else {
+                unreachable!()
+            };
+            let source = crate::SpotlightTableBuildProgress {
+                completed_iterations: 105,
+                checkpoint: crate::SpotlightTableBuildCheckpoint::BeforeLoopCompletionTest {
+                    upper_cursor: table_build.upper_cursor,
+                    lower_cursor: table_build.lower_cursor,
                 },
-            ),
-            OriginalTimingSemanticReceipt::NmiHandlerCompleted,
-            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
-            OriginalTimingSemanticReceipt::MainLoopInterrupted(
-                crate::MainLoopInterruption::LinkOam,
-            ),
-            OriginalTimingSemanticReceipt::MainLoopProgress(
-                crate::MainLoopProgress::CallStackContinued,
-            ),
-        ],
-    ));
+            };
+            let table_build = state.begin_iris_spotlight_configure_table_at_progress(source);
+            progress.checkpoint =
+                crate::SpotlightTableBuildCheckpoint::BeforeLowerCursorDecrement {
+                    upper_cursor: table_build.upper_cursor.wrapping_add(1),
+                    lower_cursor: table_build.lower_cursor,
+                };
+            state.game_execution_scheduler.refine_scheduled_work(
+                work,
+                GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+                    table_build,
+                    projection_completed,
+                    iteration,
+                },
+            );
+        }
+        state.original_timing_expected_nmi_update_gates =
+            vec![NmiUpdateGate::LatchHeld, NmiUpdateGate::LatchHeld];
+        state.original_timing_expected_nmi_ppu_register_operands = vec![None, None];
+        state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+            4_786,
+            0,
+            vec![
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::SpotlightTableBuildProgress(
+                    crate::SpotlightTableBuildProgressReceipt {
+                        progress,
+                        boundary: OriginalTimingBoundary::NmiAccepted,
+                    },
+                ),
+                OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+                OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+                OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                    crate::MainLoopInterruption::LinkOam,
+                ),
+                OriginalTimingSemanticReceipt::MainLoopProgress(
+                    crate::MainLoopProgress::CallStackContinued,
+                ),
+            ],
+        ));
 
-    state.run_frame_internal(0, crate::RUN_MAIN);
+        state.run_frame_internal(0, crate::RUN_MAIN);
 
-    assert!(matches!(
-        state.game_execution_scheduler.current_work(),
-        Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { .. })
-    ));
-    assert!(state.original_timing_semantic_receipts.is_none());
+        assert!(matches!(
+            state.game_execution_scheduler.current_work(),
+            Some(GameWorkContinuation::FinishDungeonExitSpotlightLinkOam { .. })
+        ));
+        assert!(state.original_timing_semantic_receipts.is_none());
+    }
 }
 
 #[test]

@@ -8999,6 +8999,37 @@ pub(super) struct SpotlightTableBuildContinuation {
 }
 
 impl SpotlightTableBuildContinuation {
+    fn advance_local_cursor_to(mut self, progress: SpotlightTableBuildProgress) -> Self {
+        if self.source_progress == Some(progress) {
+            return self;
+        }
+        self.assert_recheckpoint_not_behind(progress);
+        let source = self.source_progress.unwrap();
+        assert_eq!(source.completed_iterations, progress.completed_iterations);
+        assert!(matches!(
+            source.checkpoint,
+            crate::SpotlightTableBuildCheckpoint::BeforeLoopCompletionTest { .. }
+        ));
+        let crate::SpotlightTableBuildCheckpoint::BeforeLowerCursorDecrement {
+            upper_cursor,
+            lower_cursor,
+        } = progress.checkpoint
+        else {
+            panic!("spotlight cursor advancement requires the source upper-cursor increment");
+        };
+        assert!(self.pending_loop_completion_test && !self.completed);
+        assert_ne!(self.upper_cursor, self.vertical_center);
+        self.pending_loop_completion_test = false;
+        self.upper_cursor = self.upper_cursor.wrapping_add(1);
+        self.pending_lower_cursor_decrement = true;
+        assert_eq!(
+            (self.upper_cursor, self.lower_cursor),
+            (upper_cursor, lower_cursor)
+        );
+        self.source_progress = Some(progress);
+        self
+    }
+
     fn assert_recheckpointed_at(self, progress: SpotlightTableBuildProgress) {
         assert_eq!(
             self.source_progress,
@@ -25249,7 +25280,7 @@ impl ZeldaState {
         }
         let work = self.game_execution_scheduler.current_work()?;
         let GameWorkContinuation::FinishDungeonExitSpotlightBuild {
-            table_build,
+            mut table_build,
             projection_completed,
             iteration,
         } = work
@@ -25371,7 +25402,7 @@ impl ZeldaState {
                 crate::OriginalTimingBoundary::NmiAccepted,
                 "a recurring spotlight Build-LinkOam re-checkpoint must ride an accepting NMI",
             );
-            table_build.assert_recheckpointed_at(claim.progress);
+            table_build = table_build.advance_local_cursor_to(claim.progress);
             let last_acceptance = semantic[..checkpoint_index]
                 .iter()
                 .rposition(|receipt| {
@@ -25506,6 +25537,11 @@ impl ZeldaState {
         // The semantic LinkOam boundary supersedes only the replaceable
         // scheduler estimate.  Prove the exact stored C continuation can run
         // to that boundary before the live Held handler publishes anything.
+        let work = GameWorkContinuation::FinishDungeonExitSpotlightBuild {
+            table_build,
+            projection_completed,
+            iteration,
+        };
         let mut cpu_probe = self.clone();
         cpu_probe.game_execution_scheduler = scheduler_after_completion;
         let suffix_before = cpu_probe.pending_main_loop_common_suffix;
