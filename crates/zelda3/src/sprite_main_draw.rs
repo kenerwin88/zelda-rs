@@ -178,6 +178,14 @@ impl ZeldaState {
     // -----------------------------------------------------------------------
     // void Sprite_Fireball(int k) {  // 859683
     pub(super) fn sprite_fireball(&mut self, k: usize) {
+        if self.sprite_fireball_until_after_movement(k) {
+            self.sprite_fireball_after_movement(k);
+        }
+    }
+
+    /// `Sprite_Fireball` through its `Sprite_MoveXY`; returns `false` on the
+    /// inactive return and the Link-damage kill.
+    pub(super) fn sprite_fireball_until_after_movement(&mut self, k: usize) -> bool {
         let value = self.sprite_slot_view(k).e();
 
         self.sprite_slot_view_mut(k).set_ignore_projectile(value);
@@ -186,15 +194,51 @@ impl ZeldaState {
         }
         self.sprite_draw_single_small(k);
         if self.sprite_return_if_inactive(k) {
-            return;
+            return false;
         }
         self.fireball_spawn_trail_garnish(k);
         if self.sprite_check_damage_to_link(k) {
             let value = 0;
             self.sprite_slot_view_mut(k).set_state(value);
-            return;
+            return false;
+        }
+        if let Some(SpriteMainCpuBoundary::ZoraFireballMovement {
+            slot,
+            checkpoint,
+            continuation: None,
+        }) = self.sprite_main_cpu_boundary
+        {
+            if usize::from(slot) == k {
+                // Bind the Sprite_MoveXY bytes through the source checkpoint
+                // and park; the resumed host publishes the rest.
+                let continuation = self.sprite_move_xy_through_checkpoint(k, checkpoint);
+                self.sprite_main_cpu_boundary = Some(SpriteMainCpuBoundary::ZoraFireballMovement {
+                    slot,
+                    checkpoint,
+                    continuation: Some(continuation),
+                });
+                return false;
+            }
         }
         self.sprite_move_xy(k);
+        true
+    }
+
+    /// Resumes `Sprite_Fireball` from a `Sprite_MoveXY` checkpoint with the
+    /// bytes bound by `sprite_fireball_until_after_movement`.
+    pub(super) fn complete_zora_fireball_movement(
+        &mut self,
+        k: usize,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+        continuation: SpriteMoveXYContinuation,
+    ) {
+        self.sprite_move_xy_from_checkpoint(k, checkpoint, continuation);
+        self.sprite_fireball_after_movement(k);
+    }
+
+    /// `Sprite_Fireball` after `Sprite_MoveXY`: the frame-gated tile
+    /// collision kill and the shield-reflect check.
+    pub(super) fn sprite_fireball_after_movement(&mut self, k: usize) {
         if self.game_state.world.location.is_indoors()
             && self.sprite_slot_view(k).delay_aux1() == 0
             && (((k as u8) ^ self.game_state.frame.frame_counter) & 3) == 0

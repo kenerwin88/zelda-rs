@@ -961,6 +961,13 @@ pub enum MainLoopInterruption {
     SpriteMainTrinexxHeadDrawSetup(u8),
     SpriteMainWaterfallGtCutsceneGraphicsStarted(u8),
     SpriteMainTrinexxBreathTileCollisionReturned(u8),
+    /// A Zora fireball (`Sprite_Fireball`) reached the named `Sprite_MoveXY`
+    /// assignment; the remaining movement, its frame-gated tile-collision
+    /// kill, and the shield-reflect check are pending.
+    SpriteMainZoraFireballMovement {
+        slot: u8,
+        checkpoint: SpriteMoveXYCheckpoint,
+    },
     SpriteMainTrinexxHeadDraw {
         slot: u8,
         segment: u8,
@@ -1029,6 +1036,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainTrinexxHeadDrawSetup(_)
                 | Self::SpriteMainWaterfallGtCutsceneGraphicsStarted(_)
                 | Self::SpriteMainTrinexxBreathTileCollisionReturned(_)
+                | Self::SpriteMainZoraFireballMovement { .. }
                 | Self::SpriteMainHappinessPondRupeeGraphicsStarted(_)
                 | Self::SpriteMainAfterSingleSmallDrawPosition(_)
                 | Self::SpriteMainAfterWallmasterResetPrefix(_)
@@ -1289,6 +1297,10 @@ pub enum SpriteMainProgress {
     TrinexxHeadDrawSetup(u8),
     WaterfallGtCutsceneGraphicsStarted(u8),
     TrinexxBreathTileCollisionReturned(u8),
+    ZoraFireballMovement {
+        slot: u8,
+        checkpoint: SpriteMoveXYCheckpoint,
+    },
     TrinexxHeadDraw {
         slot: u8,
         segment: u8,

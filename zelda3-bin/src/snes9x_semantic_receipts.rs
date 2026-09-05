@@ -1080,6 +1080,10 @@ struct SpriteMainExecutionTracker {
     /// published `Sprite_MoveXY` coordinate stores, and whether `Sprite_MoveZ`
     /// stored its result.
     boulder_movement: Option<(u8, u8, bool)>,
+    /// A Zora fireball (`Sprite_Fireball`) in the active slot, its completed
+    /// `Sprite_MoveXY` coordinate stores in source order, and whether the
+    /// movement is known complete (the tile-collision entry followed it).
+    zora_fireball: Option<(u8, u8, bool)>,
     #[serde(default)]
     master_sword_light_beam_spawn: Option<(u8, u8, SpriteDynamicSpawnProgress)>,
     #[serde(default)]
@@ -3647,6 +3651,24 @@ impl SpriteMainExecutionTracker {
                 progress,
             };
         }
+        if let Some((slot, checkpoint_ordinal, moved)) = self.zora_fireball {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "Zora fireball movement outlived its active sprite slot",
+            );
+            let checkpoint = match (checkpoint_ordinal, moved) {
+                (_, true) | (6, false) => SpriteMoveXYCheckpoint::AfterYHigh,
+                (0, false) => SpriteMoveXYCheckpoint::BeforeMovement,
+                (1, false) => SpriteMoveXYCheckpoint::AfterXSubpixel,
+                (2, false) => SpriteMoveXYCheckpoint::AfterXLow,
+                (3, false) => SpriteMoveXYCheckpoint::AfterXHigh,
+                (4, false) => SpriteMoveXYCheckpoint::AfterYSubpixel,
+                (5, false) => SpriteMoveXYCheckpoint::AfterYLow,
+                (count, _) => panic!("invalid Zora fireball movement store count {count}"),
+            };
+            return SpriteMainProgress::ZoraFireballMovement { slot, checkpoint };
+        }
         if let Some((slot, checkpoint_ordinal, z_done)) = self.boulder_movement {
             assert_eq!(
                 self.current_slot,
@@ -3999,6 +4021,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot) => {
                 MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot)
+            }
+            SpriteMainProgress::ZoraFireballMovement { slot, checkpoint } => {
+                MainLoopInterruption::SpriteMainZoraFireballMovement { slot, checkpoint }
             }
             SpriteMainProgress::TrinexxHeadDraw { slot, segment } => {
                 MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment }
@@ -6435,6 +6460,14 @@ impl Snes9xOracleSemanticTrace {
                             .is_some_and(|(slot, ..)| event.x == Some(u16::from(slot)))
                         {
                             execution.boulder_movement = None;
+                            execution.zora_fireball = None;
+                        }
+                        if let Some((slot, _, moved)) = execution.zora_fireball.as_mut() {
+                            if event.x == Some(u16::from(*slot)) {
+                                // The fireball's frame-gated tile collision
+                                // follows its movement.
+                                *moved = true;
+                            }
                         }
                     }
                 }
@@ -6648,6 +6681,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.active_cucco_y_subpixel = None;
                             execution.master_sword_light_beam_movement = None;
                             execution.boulder_movement = None;
+                            execution.zora_fireball = None;
                             execution.master_sword_light_beam_spawn = None;
                             execution.cucco_helper_ordinal = 0;
                             execution.big_key_drop_graphics_slot = None;
@@ -6814,6 +6848,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.active_cucco_y_subpixel = None;
                         execution.master_sword_light_beam_movement = None;
                         execution.boulder_movement = None;
+                        execution.zora_fireball = None;
                         execution.master_sword_light_beam_spawn = None;
                         execution.cucco_helper_ordinal = 0;
                         execution.big_key_drop_graphics_slot = None;
@@ -7275,6 +7310,61 @@ impl Snes9xOracleSemanticTrace {
                                 );
                             }
                             execution.active_cucco_y_subpixel = Some((slot, helper_ordinal));
+                        }
+                    }
+                    // Sprite_Fireball ($05:9683) stores sprite_ignore_projectile
+                    // first; its bank-$05 Sprite_MoveXY copy stores y_high at
+                    // $05:FA2D last.
+                    if pc == 0x05_9686 {
+                        let slot = execution.current_slot.ok_or(
+                            "Snes9x published a fireball's projectile flag before a sprite slot",
+                        )?;
+                        if event.x != Some(u16::from(slot)) || address != 0x0ba0 + u16::from(slot) {
+                            return Err(format!(
+                                "Snes9x fireball projectile-flag publication disagreed on slot {slot}: x={:?}, address=${address:04x}",
+                                event.x,
+                            ));
+                        }
+                        execution.zora_fireball = Some((slot, 0, false));
+                    }
+                    if let Some((slot, checkpoint_ordinal, _)) = execution.zora_fireball.as_mut() {
+                        let slot = *slot;
+                        let expected = [
+                            SPRITE_X_SUBPIXEL_BASE,
+                            SPRITE_X_LOW_BASE,
+                            SPRITE_X_HIGH_BASE,
+                            SPRITE_Y_SUBPIXEL_BASE,
+                            SPRITE_Y_LOW_BASE,
+                            SPRITE_Y_HIGH_BASE,
+                        ];
+                        let movement_addresses = expected.map(|base| base + u16::from(slot));
+                        // The bank-$05 Sprite_MoveX copy indexes the low byte
+                        // with X = slot + 16, so match on address alone.
+                        if let Some(index) = movement_addresses
+                            .iter()
+                            .position(|&candidate| candidate == address)
+                        {
+                            let next_ordinal = match (*checkpoint_ordinal, index) {
+                                (0, 0) => 1,
+                                (1, 1) => 2,
+                                (2, 2) => 3,
+                                (0 | 3, 3) => 4,
+                                (4, 4) => 5,
+                                (5, 5) => 6,
+                                _ => {
+                                    return Err(format!(
+                                        "Snes9x Zora fireball movement stores were out of source order: checkpoint={} address=${address:04x}",
+                                        *checkpoint_ordinal,
+                                    ));
+                                }
+                            };
+                            *checkpoint_ordinal = next_ordinal;
+                        }
+                        if address == SPRITE_STATE_BASE + u16::from(slot) && event.value == Some(0)
+                        {
+                            // The fireball killed itself; nothing of its
+                            // body remains to checkpoint.
+                            execution.zora_fireball = None;
                         }
                     }
                     // Sprite_C2_Boulder (indoors) stores its OAM flags right
@@ -9722,6 +9812,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot) => {
                     Some(SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot))
                 }
+                MainLoopInterruption::SpriteMainZoraFireballMovement { slot, checkpoint } => {
+                    Some(SpriteMainProgress::ZoraFireballMovement { slot, checkpoint })
+                }
                 MainLoopInterruption::SpriteMainTrinexxHeadDraw { slot, segment } => {
                     Some(SpriteMainProgress::TrinexxHeadDraw { slot, segment })
                 }
@@ -10856,6 +10949,7 @@ mod tests {
             active_cucco_y_subpixel: None,
             master_sword_light_beam_movement: None,
             boulder_movement: None,
+            zora_fireball: None,
             master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
@@ -14408,6 +14502,36 @@ mod tests {
     }
 
     #[test]
+    fn zora_fireball_tracker_maps_source_stores_to_move_xy_checkpoints() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(13);
+        tracker.zora_fireball = Some((13, 0, false));
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::ZoraFireballMovement {
+                slot: 13,
+                checkpoint: SpriteMoveXYCheckpoint::BeforeMovement,
+            }
+        );
+        tracker.zora_fireball = Some((13, 1, false));
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::ZoraFireballMovement {
+                slot: 13,
+                checkpoint: SpriteMoveXYCheckpoint::AfterXSubpixel,
+            }
+        );
+        tracker.zora_fireball = Some((13, 3, true));
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::ZoraFireballMovement {
+                slot: 13,
+                checkpoint: SpriteMoveXYCheckpoint::AfterYHigh,
+            }
+        );
+    }
+
+    #[test]
     fn boulder_movement_tracker_counts_source_stores_after_the_z_move() {
         let mut tracker = SpriteMainExecutionTracker::default();
         tracker.current_slot = Some(12);
@@ -17643,6 +17767,7 @@ mod tests {
             active_cucco_y_subpixel: None,
             master_sword_light_beam_movement: None,
             boulder_movement: None,
+            zora_fireball: None,
             master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
@@ -17757,6 +17882,7 @@ mod tests {
             active_cucco_y_subpixel: None,
             master_sword_light_beam_movement: None,
             boulder_movement: None,
+            zora_fireball: None,
             master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,

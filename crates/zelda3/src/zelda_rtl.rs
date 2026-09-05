@@ -5184,6 +5184,13 @@ enum SpriteMainCpuBoundary {
     TrinexxHeadDrawSetup(u8),
     WaterfallGtCutsceneGraphicsStarted(u8),
     TrinexxBreathTileCollisionReturned(u8),
+    /// A Zora fireball entered `Sprite_MoveXY`; its coordinate bytes are
+    /// bound natively before parking.
+    ZoraFireballMovement {
+        slot: u8,
+        checkpoint: crate::SpriteMoveXYCheckpoint,
+        continuation: Option<SpriteMoveXYContinuation>,
+    },
     TrinexxHeadDraw {
         slot: u8,
         segment: u8,
@@ -5474,6 +5481,9 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::TrinexxHeadDrawSetup(active_slot)
         | SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(active_slot)
+        | SpriteMainCpuBoundary::ZoraFireballMovement {
+            slot: active_slot, ..
+        }
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics {
             slot: active_slot, ..
@@ -5861,6 +5871,17 @@ fn sprite_main_cpu_boundary_from_interruption(
             Some(SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(
                 slot,
             ))
+        }
+        crate::MainLoopInterruption::SpriteMainZoraFireballMovement { slot, checkpoint } => {
+            assert!(
+                slot < 16,
+                "source Zora fireball movement used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::ZoraFireballMovement {
+                slot,
+                checkpoint,
+                continuation: None,
+            })
         }
         crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot) => {
             assert!(
@@ -6273,6 +6294,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(slot)
         | crate::MainLoopInterruption::SpriteMainWaterfallGtCutsceneGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot)
+        | crate::MainLoopInterruption::SpriteMainZoraFireballMovement { slot, .. }
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(slot)
         | crate::MainLoopInterruption::SpriteMainItemReceiptGraphicsStarted(slot)
@@ -6481,6 +6503,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::TrinexxHeadDrawSetup(slot)
         | crate::SpriteMainProgress::WaterfallGtCutsceneGraphicsStarted(slot)
         | crate::SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot)
+        | crate::SpriteMainProgress::ZoraFireballMovement { slot, .. }
         | crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot)
         | crate::SpriteMainProgress::AfterSingleSmallDrawPosition(slot)
         | crate::SpriteMainProgress::ZazakAfterGraphics(slot)
@@ -6845,6 +6868,17 @@ fn sprite_main_cpu_boundary_from_progress(
                 "source Trinexx breath tile-collision progress used invalid slot {slot}"
             );
             SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(slot)
+        }
+        crate::SpriteMainProgress::ZoraFireballMovement { slot, checkpoint } => {
+            assert!(
+                slot < 16,
+                "source Zora fireball movement used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::ZoraFireballMovement {
+                slot,
+                checkpoint,
+                continuation: None,
+            }
         }
         crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot) => {
             assert!(
@@ -7230,6 +7264,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(_)
         | crate::MainLoopInterruption::SpriteMainWaterfallGtCutsceneGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(_)
+        | crate::MainLoopInterruption::SpriteMainZoraFireballMovement { .. }
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(_)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(_)
         | crate::MainLoopInterruption::SpriteMainWallmasterResetClear { .. }
@@ -7645,6 +7680,18 @@ fn same_sprite_main_source_checkpoint(
             },
         ) => left_slot == right_slot && left_checkpoint == right_checkpoint,
         (
+            SpriteMainCpuBoundary::ZoraFireballMovement {
+                slot: left_slot,
+                checkpoint: left_checkpoint,
+                ..
+            },
+            SpriteMainCpuBoundary::ZoraFireballMovement {
+                slot: right_slot,
+                checkpoint: right_checkpoint,
+                ..
+            },
+        ) => left_slot == right_slot && left_checkpoint == right_checkpoint,
+        (
             SpriteMainCpuBoundary::MasterSwordLightBeamSpawn {
                 slot: left_slot,
                 spawned_slot: left_spawned,
@@ -7709,6 +7756,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot)
         | SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(slot)
         | SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(slot)
+        | SpriteMainCpuBoundary::ZoraFireballMovement { slot, .. }
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics { slot, .. }
         | SpriteMainCpuBoundary::BeforeZeldaFollowerGraphics(slot)

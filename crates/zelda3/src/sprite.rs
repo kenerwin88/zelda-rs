@@ -4375,6 +4375,7 @@ impl ZeldaState {
                         | SpriteMainCpuBoundary::AfterActiveCuccoYSubpixel { slot, .. }
                         | SpriteMainCpuBoundary::MasterSwordLightBeamMovement { slot, .. }
                         | SpriteMainCpuBoundary::BoulderMovement { slot, .. }
+                        | SpriteMainCpuBoundary::ZoraFireballMovement { slot, .. }
                         | SpriteMainCpuBoundary::BuzzblobAfterXSubpixel { slot, .. }
                         | SpriteMainCpuBoundary::MasterSwordLightBeamSpawn { slot, .. }
                         | SpriteMainCpuBoundary::AfterCuccoFleeMovement { slot, .. }
@@ -5357,6 +5358,22 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
                 self.trinexx_breath_after_tile_collision(usize::from(slot));
                 self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
             }
+                        SpriteMainCpuBoundary::ZoraFireballMovement {
+                slot,
+                checkpoint,
+                continuation: Some(continuation),
+            } => {
+                let k = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.complete_zora_fireball_movement(k, checkpoint, continuation);
+                self.complete_sprite_main_after_interrupted_slot(k);
+            }
+            SpriteMainCpuBoundary::ZoraFireballMovement {
+                continuation: None,
+                ..
+            } => unreachable!(
+                "source Zora fireball movement boundary did not bind to native coordinate results"
+            ),
             SpriteMainCpuBoundary::GuardPrepWeaponFlagsPending {
                 slot,
                 continuation: Some(continuation),
