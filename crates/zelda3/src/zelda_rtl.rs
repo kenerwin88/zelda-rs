@@ -41929,36 +41929,11 @@ impl ZeldaState {
             // scheduled; the native model executes that same body inside the
             // schedule-owned completion. The claim corroborates the source
             // statement this Continued host reached.
-            let sprite_main_returned = self.take_original_timing_sprite_main_returned();
-            // The wire can likewise restate that Sprite_Main is entered but
-            // has not run a slot yet (route host 24251). The schedule-owned
-            // completion executes the whole body, so the entry checkpoint is
-            // a corroborative no-op. A mid-slot boundary stays on the bus
-            // for its real refining owner.
-            let restates_entry_checkpoint = self
-                .original_timing_semantic_receipts
-                .as_ref()
-                .is_some_and(|receipts| {
-                    receipts.semantic().iter().any(|receipt| {
-                        matches!(
-                            receipt,
-                            OriginalTimingSemanticReceipt::SpriteMainProgressed(
-                                crate::SpriteMainProgress::BeforeFirstSlot,
-                            )
-                        )
-                    })
-                });
-            if restates_entry_checkpoint {
-                let entry_boundary = self
-                    .take_original_timing_sprite_main_progress()
-                    .expect("restated Sprite_Main entry checkpoint disappeared");
-                assert_eq!(
-                    entry_boundary,
-                    SpriteMainCpuBoundary::BeforeFirstSlot,
-                    "a supertile-transition Continued host restated a mid-slot Sprite_Main checkpoint",
-                );
-            }
-            sprite_main_returned
+            // Entry and mid-slot checkpoints belong to the native caller
+            // which refines its schedule below. Even BeforeFirstSlot proves
+            // its preceding graphics/reset calls have returned; consuming it
+            // here would strand that caller inside the preceding operation.
+            self.take_original_timing_sprite_main_returned()
         } else {
             false
         };
