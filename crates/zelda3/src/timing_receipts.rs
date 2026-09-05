@@ -880,6 +880,7 @@ pub enum MainLoopInterruption {
     SpriteMainPengatorSlidePending(u8),
     SpriteMainAntifairyBouncePending(u8),
     SpriteMainKholdstareDamagePending(u8),
+    SpriteMainAfterMainTimerDecrement(u8),
 }
 
 /// Persistent source progress within `DesertPrayer_BuildIrisHDMATable`.
@@ -935,6 +936,7 @@ impl MainLoopInterruption {
                 | Self::SpriteMainAfterPrimaryTimerDecrements(_)
                 | Self::SpriteMainAfterHitTimer(_)
                 | Self::SpriteMainAfterMainAndAux1TimerDecrements(_)
+                | Self::SpriteMainAfterMainTimerDecrement(_)
                 | Self::SpriteMainBonkItemGraphicsStarted(_)
                 | Self::SpriteMainProbeAfterOamCoordinates(_)
                 | Self::SpriteMainInitializeResetProperties { .. }
@@ -1113,6 +1115,7 @@ pub enum SpriteMainProgress {
     PengatorSlidePending(u8),
     AntifairyBouncePending(u8),
     KholdstareDamagePending(u8),
+    AfterMainTimerDecrement(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

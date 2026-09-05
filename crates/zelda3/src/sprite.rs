@@ -3368,6 +3368,36 @@ impl ZeldaState {
             }
             if matches!(
                 self.sprite_main_cpu_boundary,
+                Some(SpriteMainCpuBoundary::AfterMainTimerDecrement {
+                    slot,
+                    state: None,
+                }) if slot == k as u8
+            ) {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(
+                    nmi_slices, 0,
+                    "main timer decrement continuation requires a measured NMI phase",
+                );
+                self.sprite_main_cpu_boundary = None;
+                let state = self.sprite_slot_view(k).state();
+                assert_ne!(
+                    state, 0,
+                    "source main timer decrement boundary requires an active sprite slot",
+                );
+                self.sprite_timers_and_oam_through_main_timer_decrement(k);
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::AfterMainTimerDecrement {
+                        slot: k as u8,
+                        state: Some(state),
+                    },
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
+            if matches!(
+                self.sprite_main_cpu_boundary,
                 Some(SpriteMainCpuBoundary::AfterPrimaryTimerDecrements { slot, state: None })
                     if slot == k as u8
             ) {
@@ -4316,6 +4346,26 @@ impl ZeldaState {
                     "source main/aux1 timer decrement boundary did not bind to the saved native dispatch state"
                 )
             }
+            SpriteMainCpuBoundary::AfterMainTimerDecrement {
+                slot,
+                state: Some(state),
+            } => {
+                let interrupted_slot = usize::from(slot);
+                self.sprite_system_mut().set_cur_object_index(slot);
+                self.sprite_timers_and_oam_aux1_timer_decrement(interrupted_slot);
+                self.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(
+                    interrupted_slot,
+                );
+                self.sprite_timers_and_oam_after_primary_through_timer_decrements(interrupted_slot);
+                self.sprite_timers_and_oam_after_timer_decrements(interrupted_slot);
+                self.sprite_execute_single_after_timers(interrupted_slot, state);
+                self.complete_sprite_main_after_interrupted_slot(interrupted_slot);
+            }
+            SpriteMainCpuBoundary::AfterMainTimerDecrement { state: None, .. } => {
+                unreachable!(
+                    "source main timer decrement boundary did not bind to the saved native dispatch state"
+                )
+            }
             SpriteMainCpuBoundary::BariBeforeRandom(slot) => {
                 let interrupted_slot = usize::from(slot);
                 assert_eq!(self.sprite_slot_view(interrupted_slot).state(), 9);
@@ -4989,6 +5039,11 @@ impl ZeldaState {
     }
 
     fn sprite_timers_and_oam_through_main_and_aux1_timer_decrements(&mut self, k: usize) {
+        self.sprite_timers_and_oam_through_main_timer_decrement(k);
+        self.sprite_timers_and_oam_aux1_timer_decrement(k);
+    }
+
+    fn sprite_timers_and_oam_through_main_timer_decrement(&mut self, k: usize) {
         let x = self.sprite_get_x(k);
         let y = self.sprite_get_y(k);
         self.sprite_workspace_mut().set_current_sprite_x(x);
@@ -5010,6 +5065,11 @@ impl ZeldaState {
                 let value = self.sprite_slot_view(k).delay_main().wrapping_sub(1);
                 self.sprite_slot_view_mut(k).set_delay_main(value);
             }
+        }
+    }
+
+    fn sprite_timers_and_oam_aux1_timer_decrement(&mut self, k: usize) {
+        if (self.game_state.frame.submodule | self.game_state.frame.modal_pause_flag) == 0 {
             if self.sprite_slot_view(k).delay_aux1() != 0 {
                 let value = self.sprite_slot_view(k).delay_aux1().wrapping_sub(1);
                 self.sprite_slot_view_mut(k).set_delay_aux1(value);

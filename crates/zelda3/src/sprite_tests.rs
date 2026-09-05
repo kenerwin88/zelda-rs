@@ -1,5 +1,36 @@
 use super::*;
 
+#[test]
+fn main_timer_boundary_leaves_auxiliary_countdowns_pending() {
+    for (paused, main) in [(false, 30), (false, 0), (true, 30)] {
+        let mut atomic = ZeldaState::new();
+        atomic.set_submodule(u8::from(paused));
+        {
+            let mut sprite = atomic.sprite_slot_view_mut(0);
+            sprite.set_state(9);
+            sprite.set_delay_main(main);
+            sprite.set_delay_aux1(17);
+            sprite.set_delay_aux2(13);
+            sprite.set_delay_aux3(9);
+        }
+        let mut staged = atomic.clone();
+        atomic.sprite_timers_and_oam(0);
+        staged.sprite_timers_and_oam_through_main_timer_decrement(0);
+        assert_eq!(
+            staged.sprite_slot_view(0).delay_main(),
+            if paused { main } else { main.saturating_sub(1) }
+        );
+        assert_eq!(staged.sprite_slot_view(0).delay_aux1(), 17);
+        assert_eq!(staged.sprite_slot_view(0).delay_aux2(), 13);
+        assert_eq!(staged.sprite_slot_view(0).delay_aux3(), 9);
+        staged.sprite_timers_and_oam_aux1_timer_decrement(0);
+        staged.sprite_timers_and_oam_after_main_and_aux1_through_primary_timer_decrements(0);
+        staged.sprite_timers_and_oam_after_primary_through_timer_decrements(0);
+        staged.sprite_timers_and_oam_after_timer_decrements(0);
+        assert_eq!(staged.ram, atomic.ram);
+    }
+}
+
 fn fresh_state() -> Box<ZeldaState> {
     Box::new(ZeldaState::new())
 }
