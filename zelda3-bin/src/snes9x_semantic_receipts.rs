@@ -1235,6 +1235,17 @@ impl SpriteMainExecutionTracker {
     }
 
     fn observe_guard_animation_checkpoint(&mut self, event: &RawTraceEvent) -> Result<(), String> {
+        if event.pc == Some(0x05_c243) && self.timers_and_oam_dispatch_state == Some(9) {
+            let slot = self
+                .current_slot
+                .ok_or("guard draw return has no current slot")?;
+            if event.x != Some(u16::from(slot)) {
+                return Err("guard draw return disagreed with its active caller".into());
+            }
+            self.guard_animation_checkpoint =
+                Some((slot, zelda3::GuardAnimationCheckpoint::DrawReturned));
+            return Ok(());
+        }
         if event.event == "wram-write"
             && event.pc == Some(0x05_c240)
             && self.timers_and_oam_dispatch_state == Some(9)
@@ -9471,6 +9482,24 @@ mod tests {
             tracker.guard_animation_checkpoint,
             Some((11, zelda3::GuardAnimationCheckpoint::HeadFlagsPending))
         );
+    }
+
+    #[test]
+    fn guard_draw_return_retains_pose_without_requiring_a_pose_store() {
+        let mut tracker = SpriteMainExecutionTracker {
+            current_slot: Some(10),
+            timers_and_oam_dispatch_state: Some(9),
+            ..Default::default()
+        };
+        let mut event = raw("nmi", Some(0x05_c243), None, None);
+        event.x = Some(10);
+        tracker.observe_guard_animation_checkpoint(&event).unwrap();
+        assert_eq!(
+            tracker.guard_animation_checkpoint,
+            Some((10, zelda3::GuardAnimationCheckpoint::DrawReturned))
+        );
+        event.x = Some(9);
+        assert!(tracker.observe_guard_animation_checkpoint(&event).is_err());
     }
 
     #[test]

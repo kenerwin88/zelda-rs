@@ -126,6 +126,18 @@ impl ZeldaState {
     ) -> GuardAnimationContinuation {
         use crate::GuardAnimationCheckpoint as Stage;
         match checkpoint {
+            Stage::DrawReturned => {
+                let (graphics, direction) = self.guard_main_prepare_animation_pose(k);
+                self.guard_handle_all_animation(k);
+                return GuardAnimationContinuation {
+                    graphics,
+                    direction,
+                    checkpoint,
+                    poc_x: 0,
+                    poc_y: 0,
+                    poc_flags: 0,
+                };
+            }
             Stage::HeadCharacterPending => return self.guard_animation_until_head_stage(k, false),
             Stage::HeadFlagsPending => return self.guard_animation_until_head_flags(k),
             Stage::WeaponCoordinates { entry } => {
@@ -254,6 +266,10 @@ impl ZeldaState {
         k: usize,
         continuation: GuardAnimationContinuation,
     ) {
+        if continuation.checkpoint == crate::GuardAnimationCheckpoint::DrawReturned {
+            self.guard_main_after_animation(k, continuation.graphics, continuation.direction);
+            return;
+        }
         if matches!(
             continuation.checkpoint,
             crate::GuardAnimationCheckpoint::WeaponCoordinates { .. }
@@ -325,7 +341,7 @@ impl ZeldaState {
                 }
                 self.guard_animate_weapon(k, &poc);
             }
-            Stage::WeaponCoordinates { .. } => unreachable!(),
+            Stage::WeaponCoordinates { .. } | Stage::DrawReturned => unreachable!(),
         }
         if flags3 & 0x10 != 0 {
             self.sprite_draw_shadow_custom_attract(

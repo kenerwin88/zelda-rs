@@ -1110,11 +1110,23 @@ pub enum SpriteMainProgress {
 pub enum GuardAnimationCheckpoint {
     HeadCharacterPending,
     HeadFlagsPending,
-    WeaponCoordinates { entry: u8 },
-    BodyBeforeEntry { entry: u8 },
-    BodyCoordinates { entry: u8 },
-    BodyFlagsPending { entry: u8 },
-    WeaponBeforeCoordinates { entry: u8 },
+    WeaponCoordinates {
+        entry: u8,
+    },
+    BodyBeforeEntry {
+        entry: u8,
+    },
+    BodyCoordinates {
+        entry: u8,
+    },
+    BodyFlagsPending {
+        entry: u8,
+    },
+    WeaponBeforeCoordinates {
+        entry: u8,
+    },
+    /// Guard_Animate returned; the caller has not restored its saved pose.
+    DrawReturned,
 }
 
 impl GuardAnimationCheckpoint {
@@ -1122,6 +1134,7 @@ impl GuardAnimationCheckpoint {
         matches!(
             self,
             Self::HeadCharacterPending
+                | Self::DrawReturned
                 | Self::HeadFlagsPending
                 | Self::WeaponCoordinates { entry: 0 | 1 }
                 | Self::WeaponBeforeCoordinates { entry: 0 | 1 }

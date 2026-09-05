@@ -3,7 +3,11 @@ use super::*;
 #[test]
 fn active_guard_weapon_coordinates_hold_pose_until_the_draw_returns() {
     use crate::GuardAnimationCheckpoint as Stage;
-    let mut checkpoints = vec![Stage::HeadCharacterPending, Stage::HeadFlagsPending];
+    let mut checkpoints = vec![
+        Stage::HeadCharacterPending,
+        Stage::HeadFlagsPending,
+        Stage::DrawReturned,
+    ];
     for entry in 0..4 {
         checkpoints.extend([
             Stage::BodyBeforeEntry { entry },
