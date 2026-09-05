@@ -492,6 +492,16 @@ const ACTIVE_CUCCO_MOVEMENT_CALL_PC: u32 = 0x06_a628;
 const MASTER_SWORD_LIGHT_BEAM_MOVEMENT_CALL_PC: u32 = 0x05_8af3;
 const SPRITE_X_SUBPIXEL_BASE: u16 = 0x0d70;
 const SPRITE_OAM_FLAGS_BASE: u16 = 0x0f50;
+const SPRITE_OBJECT_PRIORITY_BASE: u16 = 0x0b89;
+
+/// PCs that belong to `LaserEye_Draw` after its prologue stores: the rest
+/// of the draw routine, `Sprite_DrawMultiple` ($05:DF6C..$05:E012) and
+/// `Sprite_PrepOamCoord*` ($06:E416..$06:E4AA).
+fn laser_eye_draw_in_flight_pc(pc: u32) -> bool {
+    (0x1e_a71f..=0x1e_a741).contains(&pc)
+        || (0x05_df6c..=0x05_e012).contains(&pc)
+        || (0x06_e416..=0x06_e4aa).contains(&pc)
+}
 const SPRITE_Z_BASE: u16 = 0x0f70;
 const SPRITE_X_LOW_BASE: u16 = 0x0d10;
 const SPRITE_X_HIGH_BASE: u16 = 0x0d30;
@@ -609,6 +619,58 @@ const SPRITE_SPAWN_DYNAMICALLY_ENTRY_PC: u32 = 0x1df65d;
 /// the first instruction of every type-specific prep routine. A host that
 /// returns at one of these under Sprite_ExecuteSingle's return has published
 /// the properties and state 9 but none of the prep.
+/// State-8 prep entries in bank $06 that are a single `JSL` into another
+/// bank whose target begins `PHB; PHK; PLB` (the ROM's `_bounce` shape):
+/// `(entry, trampoline)`. Nothing of the prep has run until the instruction
+/// after `PLB`, so a boundary anywhere in the trampoline prologue is still
+/// the pending-prep checkpoint.
+const SPRITE_PREP_BOUNCE_TRAMPOLINES: [(u16, u32); 14] = [
+    (0x8854, 0x05_f25a),
+    (0x886e, 0x05_e675),
+    (0x8b03, 0x1e_a4e7),
+    (0x8ba2, 0x05_8192),
+    (0xbfe5, 0x05_da29),
+    (0xbff9, 0x1e_e8f1),
+    (0xc026, 0x05_e675),
+    (0xc030, 0x05_e675),
+    (0xc05d, 0x05_e88e),
+    (0xc06c, 0x05_ebc7),
+    (0xc07b, 0x05_ee4b),
+    (0xc094, 0x05_f521),
+    (0xc09e, 0x05_ef01),
+    (0xc0a8, 0x05_ef01),
+];
+
+/// Whether `pc` sits in a state-8 prep bounce trampoline's `PHB; PHK; PLB`
+/// prologue (the next real instruction pending) with the bank-$06 `JSL`
+/// return (`entry + 3`, the JSL's last byte) where the trampoline's pushes
+/// leave it.
+fn sprite_prep_bounce_pending(pc: u32, return_address: Option<u32>, stack4: Option<u8>) -> bool {
+    let Some(return_address) = return_address else {
+        return false;
+    };
+    SPRITE_PREP_BOUNCE_TRAMPOLINES
+        .iter()
+        .any(|&(entry, trampoline)| {
+            let rtl_return = u32::from(entry) + 3;
+            match pc.checked_sub(trampoline) {
+                // PHB pending: the JSL return sits on top.
+                Some(0) => return_address & 0x00ff_ffff == 0x06_0000 | rtl_return,
+                // PHK pending (B pushed) or the post-PLB instruction pending
+                // (K popped back into B).
+                Some(1) | Some(3) => {
+                    (return_address >> 8) & 0xffff == rtl_return && stack4 == Some(0x06)
+                }
+                // PLB pending: K and B sit above the return.
+                Some(2) => {
+                    (return_address >> 16) & 0xff == rtl_return & 0xff
+                        && stack4 == Some((rtl_return >> 8) as u8)
+                }
+                _ => false,
+            }
+        })
+}
+
 const SPRITE_PREP_ENTRY_PCS: [u16; 256] = [
     0x8969, 0x897e, 0x8873, 0x0000, 0x8859, 0x8873, 0x8859, 0x886d, 0x8f71, 0x8f8a, 0x8f71, 0x8873,
     0x8873, 0x8873, 0x8873, 0x8910, 0x8873, 0x8873, 0x8873, 0x9151, 0x8bc4, 0x8ef2, 0x8cde, 0x8873,
@@ -1084,6 +1146,9 @@ struct SpriteMainExecutionTracker {
     /// `Sprite_MoveXY` coordinate stores in source order, and whether the
     /// movement is known complete (the tile-collision entry followed it).
     zora_fireball: Option<(u8, u8, bool)>,
+    /// A laser eye (`Sprite_95_LaserEyeLeft`) whose `LaserEye_Draw` prologue
+    /// stored the object priority; its `Sprite_DrawMultiple` is in flight.
+    laser_eye_draw_prologue: Option<u8>,
     #[serde(default)]
     master_sword_light_beam_spawn: Option<(u8, u8, SpriteDynamicSpawnProgress)>,
     #[serde(default)]
@@ -2258,6 +2323,18 @@ impl SpriteMainExecutionTracker {
         Ok(())
     }
 
+    fn observe_laser_eye_draw_prologue(&mut self, event: &RawTraceEvent) {
+        if !matches!(event.event.as_str(), "nmi" | "frame") {
+            return;
+        }
+        let Some(pc) = event.pc.map(|pc| pc & 0x00ff_ffff) else {
+            return;
+        };
+        if self.laser_eye_draw_prologue.is_some() && !laser_eye_draw_in_flight_pc(pc) {
+            self.laser_eye_draw_prologue = None;
+        }
+    }
+
     fn observe_lanmola_draw_prefix(&mut self, event: &RawTraceEvent) -> Result<(), String> {
         if !matches!(event.event.as_str(), "nmi" | "frame") {
             return Ok(());
@@ -2875,6 +2952,11 @@ impl SpriteMainExecutionTracker {
             }) && event.return_address == Some(0x00_83a6))
             || (pc == Some(0x00_8781)
                 && event.return_address.map(|pc| pc & 0xff_ffff) == Some(0x06_865a))
+            // The prep entry was a `JSL` into a `_bounce` trampoline whose
+            // PHB/PHK/PLB prologue has not reached the prep body.
+            || pc.is_some_and(|pc| {
+                sprite_prep_bounce_pending(pc, event.return_address, event.stack4)
+            })
             // JumpTableLocal has popped its inline-table return and loaded
             // the prep target. The remaining stack belongs to the state-8
             // dispatch in Sprite_ExecuteSingle; LDY $03 and JML [$00] remain.
@@ -3651,6 +3733,14 @@ impl SpriteMainExecutionTracker {
                 progress,
             };
         }
+        if let Some(slot) = self.laser_eye_draw_prologue {
+            assert_eq!(
+                self.current_slot,
+                Some(slot),
+                "laser eye draw prologue outlived its active sprite slot",
+            );
+            return SpriteMainProgress::LaserEyeDrawPrologue(slot);
+        }
         if let Some((slot, checkpoint_ordinal, moved)) = self.zora_fireball {
             assert_eq!(
                 self.current_slot,
@@ -4021,6 +4111,9 @@ impl SpriteMainExecutionTracker {
             }
             SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot) => {
                 MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot)
+            }
+            SpriteMainProgress::LaserEyeDrawPrologue(slot) => {
+                MainLoopInterruption::SpriteMainLaserEyeDrawPrologue(slot)
             }
             SpriteMainProgress::ZoraFireballMovement { slot, checkpoint } => {
                 MainLoopInterruption::SpriteMainZoraFireballMovement { slot, checkpoint }
@@ -5830,6 +5923,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_trinexx_head_draw(returned_event)?;
                     execution.observe_trinexx_breath_tile_collision(returned_event)?;
                     execution.observe_lanmola_draw_prefix(returned_event)?;
+                    execution.observe_laser_eye_draw_prologue(returned_event);
                     execution.observe_sprite_handler_returned(returned_event)?;
                     execution.observe_trinexx_final_phase_tile_collision(returned_event)?;
                     execution.observe_helmasaur_hard_hat_tile_collision(returned_event)?;
@@ -6461,6 +6555,7 @@ impl Snes9xOracleSemanticTrace {
                         {
                             execution.boulder_movement = None;
                             execution.zora_fireball = None;
+                            execution.laser_eye_draw_prologue = None;
                         }
                         if let Some((slot, _, moved)) = execution.zora_fireball.as_mut() {
                             if event.x == Some(u16::from(*slot)) {
@@ -6682,6 +6777,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.master_sword_light_beam_movement = None;
                             execution.boulder_movement = None;
                             execution.zora_fireball = None;
+                            execution.laser_eye_draw_prologue = None;
                             execution.master_sword_light_beam_spawn = None;
                             execution.cucco_helper_ordinal = 0;
                             execution.big_key_drop_graphics_slot = None;
@@ -6760,6 +6856,7 @@ impl Snes9xOracleSemanticTrace {
                             execution.observe_trinexx_head_draw(&event)?;
                             execution.observe_trinexx_breath_tile_collision(&event)?;
                             execution.observe_lanmola_draw_prefix(&event)?;
+                            execution.observe_laser_eye_draw_prologue(&event);
                             execution.observe_sprite_handler_returned(&event)?;
                             execution.observe_trinexx_final_phase_tile_collision(&event)?;
                             execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
@@ -6849,6 +6946,7 @@ impl Snes9xOracleSemanticTrace {
                         execution.master_sword_light_beam_movement = None;
                         execution.boulder_movement = None;
                         execution.zora_fireball = None;
+                        execution.laser_eye_draw_prologue = None;
                         execution.master_sword_light_beam_spawn = None;
                         execution.cucco_helper_ordinal = 0;
                         execution.big_key_drop_graphics_slot = None;
@@ -7232,6 +7330,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
                     execution.observe_lanmola_draw_prefix(&event)?;
+                    execution.observe_laser_eye_draw_prologue(&event);
                     execution.observe_sprite_handler_returned(&event)?;
                     execution.observe_trinexx_final_phase_tile_collision(&event)?;
                     execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
@@ -7311,6 +7410,28 @@ impl Snes9xOracleSemanticTrace {
                             }
                             execution.active_cucco_y_subpixel = Some((slot, helper_ordinal));
                         }
+                    }
+                    // LaserEye_Draw ($1E:A708) stores the object priority
+                    // right before its Sprite_DrawMultiple; any store from
+                    // outside the draw helpers means the handler moved on.
+                    if execution.laser_eye_draw_prologue.is_some()
+                        && !laser_eye_draw_in_flight_pc(pc)
+                    {
+                        execution.laser_eye_draw_prologue = None;
+                    }
+                    if pc == 0x1e_a71f {
+                        let slot = execution.current_slot.ok_or(
+                            "Snes9x published a laser eye's object priority before a sprite slot",
+                        )?;
+                        if event.x != Some(u16::from(slot))
+                            || address != SPRITE_OBJECT_PRIORITY_BASE + u16::from(slot)
+                        {
+                            return Err(format!(
+                                "Snes9x laser eye object-priority publication disagreed on slot {slot}: x={:?}, address=${address:04x}",
+                                event.x,
+                            ));
+                        }
+                        execution.laser_eye_draw_prologue = Some(slot);
                     }
                     // Sprite_Fireball ($05:9683) stores sprite_ignore_projectile
                     // first; its bank-$05 Sprite_MoveXY copy stores y_high at
@@ -7859,6 +7980,7 @@ impl Snes9xOracleSemanticTrace {
                     execution.observe_trinexx_head_draw(&event)?;
                     execution.observe_trinexx_breath_tile_collision(&event)?;
                     execution.observe_lanmola_draw_prefix(&event)?;
+                    execution.observe_laser_eye_draw_prologue(&event);
                     execution.observe_sprite_handler_returned(&event)?;
                     execution.observe_trinexx_final_phase_tile_collision(&event)?;
                     execution.observe_helmasaur_hard_hat_tile_collision(&event)?;
@@ -9812,6 +9934,9 @@ fn retire_resumed_main_loop_interruption(
                 MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot) => {
                     Some(SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot))
                 }
+                MainLoopInterruption::SpriteMainLaserEyeDrawPrologue(slot) => {
+                    Some(SpriteMainProgress::LaserEyeDrawPrologue(slot))
+                }
                 MainLoopInterruption::SpriteMainZoraFireballMovement { slot, checkpoint } => {
                     Some(SpriteMainProgress::ZoraFireballMovement { slot, checkpoint })
                 }
@@ -10950,6 +11075,7 @@ mod tests {
             master_sword_light_beam_movement: None,
             boulder_movement: None,
             zora_fireball: None,
+            laser_eye_draw_prologue: None,
             master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
@@ -13677,6 +13803,62 @@ mod tests {
     }
 
     #[test]
+    fn initializer_dispatch_accepts_bounce_trampoline_prologues() {
+        let mut source = empty_semantic_tracker();
+        let mut receipts = Vec::new();
+        for event in [
+            raw("pc", Some(SPRITE_MAIN_ENTRY_PC), None, None),
+            raw("pc", Some(SPRITE_EXECUTE_SINGLE_ENTRY_PC), Some(4), None),
+        ] {
+            source.consume_event(event, &mut receipts).unwrap();
+        }
+        let execution = source.sprite_main_execution.as_mut().unwrap();
+        execution.timers_and_oam_dispatch_state = Some(8);
+        // SpritePrep_LaserEye_bounce ($06:8B03 JSL $1E:A4E7), interrupted
+        // with the JSR pending after PHB/PHK/PLB (f1520004).
+        let mut event = raw("nmi", Some(0x1e_a4ea), Some(4), None);
+        event.return_address = Some(0x8b0606);
+        event.stack4 = Some(0x06);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::InitializePrepPending(4)
+        );
+        // PHB pending right after the JSL.
+        execution.initialize_prep_pending = None;
+        event.pc = Some(0x1e_a4e7);
+        event.return_address = Some(0x06_8b06);
+        event.stack4 = None;
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::InitializePrepPending(4)
+        );
+        // PLB pending with K above B.
+        execution.initialize_prep_pending = None;
+        event.pc = Some(0x1e_a4e9);
+        event.return_address = Some(0x06_061e);
+        event.stack4 = Some(0x8b);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(
+            execution.progress(),
+            SpriteMainProgress::InitializePrepPending(4)
+        );
+        // A different caller's return is not the prep checkpoint.
+        execution.initialize_prep_pending = None;
+        event.pc = Some(0x1e_a4ea);
+        event.return_address = Some(0x8b0706);
+        event.stack4 = Some(0x06);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(execution.initialize_prep_pending, None);
+        // The prep body itself is past the trampoline.
+        event.pc = Some(0x1e_a4f1);
+        event.return_address = Some(0x8b0606);
+        execution.observe_initialize_prep_pending(&event).unwrap();
+        assert_eq!(execution.initialize_prep_pending, None);
+    }
+
+    #[test]
     fn initializer_dispatch_jump_table_requires_its_source_caller() {
         let mut source = empty_semantic_tracker();
         let mut receipts = Vec::new();
@@ -14499,6 +14681,21 @@ mod tests {
         event.return_address = Some(0x00_84a7);
         tracker.observe_sprite_handler_returned(&event).unwrap();
         assert_eq!(tracker.handler_returned_slot, None);
+    }
+
+    #[test]
+    fn laser_eye_draw_prologue_tracker_reports_the_pending_draw() {
+        let mut tracker = SpriteMainExecutionTracker::default();
+        tracker.current_slot = Some(8);
+        tracker.laser_eye_draw_prologue = Some(8);
+        assert_eq!(
+            tracker.progress(),
+            SpriteMainProgress::LaserEyeDrawPrologue(8)
+        );
+        tracker.observe_laser_eye_draw_prologue(&raw("nmi", Some(0x05_dfa9), Some(0x0884), None));
+        assert_eq!(tracker.laser_eye_draw_prologue, Some(8));
+        tracker.observe_laser_eye_draw_prologue(&raw("nmi", Some(0x1e_a5af), Some(8), None));
+        assert_eq!(tracker.laser_eye_draw_prologue, None);
     }
 
     #[test]
@@ -17768,6 +17965,7 @@ mod tests {
             master_sword_light_beam_movement: None,
             boulder_movement: None,
             zora_fireball: None,
+            laser_eye_draw_prologue: None,
             master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,
@@ -17883,6 +18081,7 @@ mod tests {
             master_sword_light_beam_movement: None,
             boulder_movement: None,
             zora_fireball: None,
+            laser_eye_draw_prologue: None,
             master_sword_light_beam_spawn: None,
             cucco_animation_slot: None,
             big_key_drop_graphics_slot: None,

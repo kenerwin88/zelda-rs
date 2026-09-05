@@ -5184,6 +5184,7 @@ enum SpriteMainCpuBoundary {
     TrinexxHeadDrawSetup(u8),
     WaterfallGtCutsceneGraphicsStarted(u8),
     TrinexxBreathTileCollisionReturned(u8),
+    LaserEyeDrawPrologue(u8),
     /// A Zora fireball entered `Sprite_MoveXY`; its coordinate bytes are
     /// bound natively before parking.
     ZoraFireballMovement {
@@ -5481,6 +5482,7 @@ fn direct_item_receipt_slot_pairs_with_boundary(slot: u8, boundary: SpriteMainCp
         | SpriteMainCpuBoundary::TrinexxHeadDrawSetup(active_slot)
         | SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(active_slot)
         | SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(active_slot)
+        | SpriteMainCpuBoundary::LaserEyeDrawPrologue(active_slot)
         | SpriteMainCpuBoundary::ZoraFireballMovement {
             slot: active_slot, ..
         }
@@ -5871,6 +5873,13 @@ fn sprite_main_cpu_boundary_from_interruption(
             Some(SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(
                 slot,
             ))
+        }
+        crate::MainLoopInterruption::SpriteMainLaserEyeDrawPrologue(slot) => {
+            assert!(
+                slot < 16,
+                "source Trinexx breath tile-collision receipt used invalid slot {slot}"
+            );
+            Some(SpriteMainCpuBoundary::LaserEyeDrawPrologue(slot))
         }
         crate::MainLoopInterruption::SpriteMainZoraFireballMovement { slot, checkpoint } => {
             assert!(
@@ -6294,6 +6303,7 @@ const fn valid_sprite_main_interruption(interruption: crate::MainLoopInterruptio
         | crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(slot)
         | crate::MainLoopInterruption::SpriteMainWaterfallGtCutsceneGraphicsStarted(slot)
         | crate::MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(slot)
+        | crate::MainLoopInterruption::SpriteMainLaserEyeDrawPrologue(slot)
         | crate::MainLoopInterruption::SpriteMainZoraFireballMovement { slot, .. }
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(slot)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(slot)
@@ -6503,6 +6513,7 @@ const fn valid_sprite_main_progress(progress: crate::SpriteMainProgress) -> bool
         | crate::SpriteMainProgress::TrinexxHeadDrawSetup(slot)
         | crate::SpriteMainProgress::WaterfallGtCutsceneGraphicsStarted(slot)
         | crate::SpriteMainProgress::TrinexxBreathTileCollisionReturned(slot)
+        | crate::SpriteMainProgress::LaserEyeDrawPrologue(slot)
         | crate::SpriteMainProgress::ZoraFireballMovement { slot, .. }
         | crate::SpriteMainProgress::WishPondTossedItemGraphicsStarted(slot)
         | crate::SpriteMainProgress::AfterSingleSmallDrawPosition(slot)
@@ -6868,6 +6879,13 @@ fn sprite_main_cpu_boundary_from_progress(
                 "source Trinexx breath tile-collision progress used invalid slot {slot}"
             );
             SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(slot)
+        }
+        crate::SpriteMainProgress::LaserEyeDrawPrologue(slot) => {
+            assert!(
+                slot < 16,
+                "source Trinexx breath tile-collision progress used invalid slot {slot}"
+            );
+            SpriteMainCpuBoundary::LaserEyeDrawPrologue(slot)
         }
         crate::SpriteMainProgress::ZoraFireballMovement { slot, checkpoint } => {
             assert!(
@@ -7264,6 +7282,7 @@ const fn module_cpu_phase_from_main_loop_interruption(
         | crate::MainLoopInterruption::SpriteMainTrinexxHeadDrawSetup(_)
         | crate::MainLoopInterruption::SpriteMainWaterfallGtCutsceneGraphicsStarted(_)
         | crate::MainLoopInterruption::SpriteMainTrinexxBreathTileCollisionReturned(_)
+        | crate::MainLoopInterruption::SpriteMainLaserEyeDrawPrologue(_)
         | crate::MainLoopInterruption::SpriteMainZoraFireballMovement { .. }
         | crate::MainLoopInterruption::SpriteMainAfterSingleSmallDrawPosition(_)
         | crate::MainLoopInterruption::SpriteMainAfterWallmasterResetPrefix(_)
@@ -7756,6 +7775,7 @@ const fn sprite_main_cpu_boundary_order(boundary: SpriteMainCpuBoundary) -> u8 {
         | SpriteMainCpuBoundary::TrinexxHeadDrawSetup(slot)
         | SpriteMainCpuBoundary::WaterfallGtCutsceneGraphicsStarted(slot)
         | SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(slot)
+        | SpriteMainCpuBoundary::LaserEyeDrawPrologue(slot)
         | SpriteMainCpuBoundary::ZoraFireballMovement { slot, .. }
         | SpriteMainCpuBoundary::ItemReceiptGraphicsStarted(slot)
         | SpriteMainCpuBoundary::WishPondTossedItemGraphics { slot, .. }

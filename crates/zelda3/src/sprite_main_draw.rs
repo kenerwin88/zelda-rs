@@ -7846,12 +7846,23 @@ impl ZeldaState {
     //   Three tiles selected by direction and active beam blink state.
     // }
     pub(super) fn laser_eye_draw(&mut self, k: usize) {
+        self.laser_eye_draw_prologue(k);
+        self.laser_eye_draw_multiple(k);
+    }
+
+    /// `LaserEye_Draw` before its `Sprite_DrawMultiple`: the graphics and
+    /// object-priority stores.
+    pub(super) fn laser_eye_draw_prologue(&mut self, k: usize) {
         if self.sprite_slot_view(k).head_direction() != 0 {
             let value = u8::from(self.sprite_slot_view(k).delay_aux4() == 0);
             self.sprite_slot_view_mut(k).set_graphics(value);
         }
         let value = 0x30;
         self.sprite_slot_view_mut(k).set_object_priority(value);
+    }
+
+    /// `LaserEye_Draw`'s `Sprite_DrawMultiple`.
+    pub(super) fn laser_eye_draw_multiple(&mut self, k: usize) {
         let base = (usize::from(self.sprite_slot_view(k).graphics())
             + usize::from(self.sprite_slot_view(k).direction()) * 2)
             * 3;

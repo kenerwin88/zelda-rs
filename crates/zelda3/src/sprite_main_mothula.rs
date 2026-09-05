@@ -3713,11 +3713,25 @@ impl ZeldaState {
 
     // void Sprite_95_LaserEyeLeft(int k) {  // 9ea541
     pub(super) fn sprite_95_laser_eye_left(&mut self, k: usize) {
+        if self.sprite_95_laser_eye_until_draw_prologue(k) {
+            self.sprite_95_laser_eye_after_draw_prologue(k);
+        }
+    }
+
+    /// `Sprite_95_LaserEyeLeft` through `LaserEye_Draw`'s prologue stores;
+    /// returns `false` when the slot ran the beam variant instead.
+    pub(super) fn sprite_95_laser_eye_until_draw_prologue(&mut self, k: usize) -> bool {
         if self.sprite_slot_view(k).a() != 0 {
             self.sprite_laser_beam(k);
-            return;
+            return false;
         }
-        self.laser_eye_draw(k);
+        self.laser_eye_draw_prologue(k);
+        true
+    }
+
+    /// `Sprite_95_LaserEyeLeft` from `LaserEye_Draw`'s `Sprite_DrawMultiple`.
+    pub(super) fn sprite_95_laser_eye_after_draw_prologue(&mut self, k: usize) {
+        self.laser_eye_draw_multiple(k);
         if self.sprite_return_if_inactive(k) {
             return;
         }

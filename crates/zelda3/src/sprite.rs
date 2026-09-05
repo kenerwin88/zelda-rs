@@ -3437,6 +3437,25 @@ impl ZeldaState {
                 );
                 return;
             }
+            if self.sprite_main_cpu_boundary
+                == Some(SpriteMainCpuBoundary::LaserEyeDrawPrologue(k as u8))
+            {
+                let nmi_slices = std::mem::take(&mut self.sprite_main_cpu_nmi_slices);
+                assert_ne!(nmi_slices, 0);
+                self.sprite_main_cpu_boundary = None;
+                self.sprite_timers_and_oam(k);
+                assert!(
+                    self.sprite_95_laser_eye_until_draw_prologue(k),
+                    "LaserEye draw prologue checkpoint requires the eye variant"
+                );
+                let caller = std::mem::take(&mut self.sprite_main_cpu_caller);
+                self.schedule_sprite_main_cpu_continuation(
+                    SpriteMainCpuBoundary::LaserEyeDrawPrologue(k as u8),
+                    nmi_slices,
+                    caller,
+                );
+                return;
+            }
             if matches!(
                 self.sprite_main_cpu_boundary,
                 Some(SpriteMainCpuBoundary::AfterAntfairySubtype2Increment {
@@ -5356,6 +5375,10 @@ SpriteMainCpuBoundary::TrinexxDeathExplosionSpawn {
             }
             SpriteMainCpuBoundary::TrinexxBreathTileCollisionReturned(slot) => {
                 self.trinexx_breath_after_tile_collision(usize::from(slot));
+                self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
+            }
+            SpriteMainCpuBoundary::LaserEyeDrawPrologue(slot) => {
+                self.sprite_95_laser_eye_after_draw_prologue(usize::from(slot));
                 self.complete_sprite_main_after_interrupted_slot(usize::from(slot));
             }
                         SpriteMainCpuBoundary::ZoraFireballMovement {
