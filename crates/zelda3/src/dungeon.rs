@@ -14140,6 +14140,38 @@ impl ZeldaState {
             .expect("Module 7 sprite return frame must remain active");
         self.replay_trace_ram_watch("module07-after-sprite-main");
         if std::mem::take(&mut self.dungeon_post_sprite_main_return_pending) {
+            let mut sprite_return = sprite_return;
+            let mut stair_progress = None;
+            if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
+                receipts.semantic.retain(|receipt| {
+                    if let OriginalTimingSemanticReceipt::LinkOamStairProgress(progress) = *receipt
+                    {
+                        assert!(stair_progress.is_none(), "stair drawing prefix replayed");
+                        stair_progress = Some(progress);
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+            if let Some(progress) = stair_progress {
+                self.set_bg2_x(sprite_return.bg2_x);
+                self.set_bg2_y(sprite_return.bg2_y);
+                self.set_bg1_x(sprite_return.bg1_x);
+                self.set_bg1_y(sprite_return.bg1_y);
+                sprite_return.link_oam = Some(match progress {
+                    crate::LinkOamStairProgress::PoseSelected => {
+                        self.link_oam_after_pose_selection()
+                    }
+                    crate::LinkOamStairProgress::EquipmentSelection => {
+                        self.link_oam_before_equipment()
+                    }
+                    crate::LinkOamStairProgress::BodySelection => {
+                        let continuation = self.link_oam_before_equipment();
+                        self.link_oam_before_body(continuation)
+                    }
+                });
+            }
             self.active_dungeon_sprite_main_return = Some(sprite_return);
             self.game_execution_scheduler.schedule_work(
                 GameWorkContinuation::FinishDungeonPostSpriteMainCallerReturn,

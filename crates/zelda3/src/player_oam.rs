@@ -21,6 +21,7 @@ pub(super) struct LinkOamEquipmentContinuation {
     pose: u8,
     animation_offset: u8,
     initial_banks_pending: bool,
+    equipment_complete: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -2486,6 +2487,7 @@ impl ZeldaState {
             pose: yt,
             animation_offset: rt,
             initial_banks_pending: true,
+            equipment_complete: false,
         }
     }
 
@@ -2589,15 +2591,20 @@ impl ZeldaState {
         continuation
     }
 
-    pub(super) fn link_oam_after_equipment(&mut self, continuation: LinkOamEquipmentContinuation) {
+    pub(super) fn link_oam_before_body(
+        &mut self,
+        continuation: LinkOamEquipmentContinuation,
+    ) -> LinkOamEquipmentContinuation {
+        assert!(
+            !continuation.equipment_complete,
+            "Link equipment prefix replayed"
+        );
         let continuation = if continuation.initial_banks_pending {
             self.link_oam_initial_sprite_banks(continuation)
         } else {
             continuation
         };
         let LinkOamEquipmentContinuation {
-            y_coord_backup,
-            submodule,
             xcoord,
             ycoord,
             scratch_0_var,
@@ -2809,6 +2816,35 @@ impl ZeldaState {
             }
         }
 
+        let j = kLinkDmaGraphicsIndices[r2] as usize;
+        self.follower_link_state_mut()
+            .set_link_dma_graphics_index_word((j as u16) * 2);
+        LinkOamEquipmentContinuation {
+            r4loc,
+            equipment_complete: true,
+            ..continuation
+        }
+    }
+
+    pub(super) fn link_oam_after_equipment(&mut self, continuation: LinkOamEquipmentContinuation) {
+        let continuation = if continuation.equipment_complete {
+            continuation
+        } else {
+            self.link_oam_before_body(continuation)
+        };
+        let LinkOamEquipmentContinuation {
+            y_coord_backup,
+            submodule,
+            xcoord,
+            ycoord,
+            scratch_0_var,
+            oam_priority_value,
+            sort_sprites_offset_into_oam_buffer,
+            r2,
+            r4loc,
+            link_palette_bits_of_oam,
+            ..
+        } = continuation;
         let oam_pos = ((if scratch_0_var {
             kLinkBody_oam_index_1[r4loc]
         } else {
@@ -2817,8 +2853,6 @@ impl ZeldaState {
             + sort_sprites_offset_into_oam_buffer)
             >> 2) as usize;
         let j = kLinkDmaGraphicsIndices[r2] as usize;
-        self.follower_link_state_mut()
-            .set_link_dma_graphics_index_word((j as u16) * 2);
         if self.game_state.player.follower_link.visibility_status() != 12 {
             let zcoord = self.game_state.player.follower_link.z_for_oam();
             let sp = kLinkSpriteBodys[j];

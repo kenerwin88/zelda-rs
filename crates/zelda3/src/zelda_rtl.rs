@@ -22336,6 +22336,25 @@ impl ZeldaState {
         expected_semantic.push(OriginalTimingSemanticReceipt::MainLoopInterrupted(
             interruption,
         ));
+        let stair_progress = semantic
+            .iter()
+            .filter(|receipt| {
+                matches!(
+                    receipt,
+                    OriginalTimingSemanticReceipt::LinkOamStairProgress(_)
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(stair_progress.len() <= 1, "LinkOam stair progress replayed");
+        if let Some(receipt) = stair_progress.first() {
+            assert_eq!(interruption, crate::MainLoopInterruption::LinkOam);
+            assert_eq!(self.game_state.frame.main_module, 7);
+            assert!(
+                matches!(self.game_state.frame.submodule, 18 | 19),
+                "stair drawing receipt reached an unrelated fresh caller"
+            );
+            expected_semantic.push(**receipt);
+        }
         if interruption == crate::MainLoopInterruption::DungeonExitSpotlightAfterSubmodule
             && semantic.iter().any(|receipt| {
                 matches!(
@@ -40869,19 +40888,25 @@ impl ZeldaState {
         let authoritative_overworld_map_quadrants_published =
             self.take_original_timing_overworld_map_quadrants_published();
         let mut authoritative_link_oam_equipment_prefix = None;
-        if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
-            receipts.semantic.retain(|receipt| {
-                if let OriginalTimingSemanticReceipt::LinkOamStairProgress(progress) = *receipt {
-                    assert!(
-                        authoritative_link_oam_equipment_prefix.is_none(),
-                        "LinkOam prefix replayed"
-                    );
-                    authoritative_link_oam_equipment_prefix = Some(progress);
-                    false
-                } else {
-                    true
-                }
-            });
+        // A fresh dungeon iteration consumes its drawing prefix in the
+        // concrete Sprite_Main caller. Only a scheduled predecessor owns the
+        // early extraction used by the long room-loading continuation below.
+        if self.game_execution_scheduler.current_work().is_some() {
+            if let Some(receipts) = self.original_timing_semantic_receipts.as_mut() {
+                receipts.semantic.retain(|receipt| {
+                    if let OriginalTimingSemanticReceipt::LinkOamStairProgress(progress) = *receipt
+                    {
+                        assert!(
+                            authoritative_link_oam_equipment_prefix.is_none(),
+                            "LinkOam prefix replayed"
+                        );
+                        authoritative_link_oam_equipment_prefix = Some(progress);
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
         }
         if authoritative_link_oam_equipment_prefix.is_some() {
             assert!(
@@ -53137,6 +53162,10 @@ impl ZeldaState {
             sprite_return.link_oam = Some(match progress {
                 crate::LinkOamStairProgress::PoseSelected => self.link_oam_after_pose_selection(),
                 crate::LinkOamStairProgress::EquipmentSelection => self.link_oam_before_equipment(),
+                crate::LinkOamStairProgress::BodySelection => {
+                    let continuation = self.link_oam_before_equipment();
+                    self.link_oam_before_body(continuation)
+                }
             });
             self.active_dungeon_sprite_main_return = Some(sprite_return);
         }

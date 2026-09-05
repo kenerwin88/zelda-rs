@@ -1746,6 +1746,7 @@ pub enum OriginalTimingSemanticReceipt {
 pub enum LinkOamStairProgress {
     PoseSelected,
     EquipmentSelection,
+    BodySelection,
 }
 
 /// One source interruption temporarily owned by a translated C caller during

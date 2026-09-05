@@ -2090,12 +2090,18 @@ fn link_oam_equipment_checkpoint_retains_stair_y_until_drawing_returns() {
             };
             let mut atomic = setup();
             atomic.link_oam_main();
-            for pose_only in [false, true] {
+            // Includes ROM host359918 at $0D:A992, before body drawing.
+            for stage in 0..3 {
                 let mut staged = setup();
-                let continuation = if pose_only {
+                let continuation = if stage == 0 {
                     staged.link_oam_after_pose_selection()
                 } else {
                     staged.link_oam_before_equipment()
+                };
+                let continuation = if stage == 2 {
+                    staged.link_oam_before_body(continuation)
+                } else {
+                    continuation
                 };
                 let offset = [0u16, 2, 3, 0, 2, 3][animation_step as usize];
                 assert_eq!(staged.game_state.player.follower_link.y(), 0x0812 - offset);
@@ -6686,6 +6692,50 @@ fn fresh_dungeon_iteration_forwards_link_oam_timeline_to_the_caller_owner() {
         .original_timing_semantic_receipts
         .as_ref()
         .is_some_and(|receipts| receipts.semantic().is_empty()));
+}
+
+#[test]
+fn fresh_stair_link_oam_progress_requires_its_source_caller() {
+    let mut state = ZeldaState::new();
+    state.restore_live_rom_timing_after_checkpoint();
+    state.set_main_module(7);
+    state.set_submodule(18);
+    state.original_timing_owner = OriginalTimingOwnerState::Live;
+    state.original_timing_expected_nmi_update_gates =
+        vec![NmiUpdateGate::Open, NmiUpdateGate::LatchHeld];
+    state.original_timing_semantic_receipts = Some(OriginalTimingHostReceipts::new(
+        359918,
+        0,
+        vec![
+            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::Open),
+            OriginalTimingSemanticReceipt::NmiHandlerCompleted,
+            OriginalTimingSemanticReceipt::JoypadPublication(JoypadPublication {
+                high: 0,
+                low: 0,
+                high_filtered: 0,
+                low_filtered: 0,
+            }),
+            OriginalTimingSemanticReceipt::MainLoopProgress(
+                crate::MainLoopProgress::IterationStarted,
+            ),
+            OriginalTimingSemanticReceipt::SpriteMainReturned,
+            OriginalTimingSemanticReceipt::NmiAccepted(NmiUpdateGate::LatchHeld),
+            OriginalTimingSemanticReceipt::MainLoopInterrupted(
+                crate::MainLoopInterruption::LinkOam,
+            ),
+            OriginalTimingSemanticReceipt::LinkOamStairProgress(
+                crate::LinkOamStairProgress::BodySelection,
+            ),
+        ],
+    ));
+    assert!(state
+        .original_timing_interrupted_idle_main_loop_plan()
+        .is_some());
+    state.set_submodule(2);
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || state.original_timing_interrupted_idle_main_loop_plan()
+    ))
+    .is_err());
 }
 
 #[test]

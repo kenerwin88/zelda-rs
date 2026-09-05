@@ -6139,6 +6139,8 @@ fn link_oam_stair_progress(pc: u32, sub: Option<u8>) -> Option<zelda3::LinkOamSt
         // both optional sprite banks have not run yet.
         0x0d_a47e => Some(zelda3::LinkOamStairProgress::PoseSelected),
         0x0d_a61a => Some(zelda3::LinkOamStairProgress::EquipmentSelection),
+        // Link DMA index is stored; body coordinates and OAM remain pending.
+        0x0d_a992 => Some(zelda3::LinkOamStairProgress::BodySelection),
         _ => None,
     }
 }
@@ -11065,6 +11067,10 @@ mod tests {
 
     #[test]
     fn link_oam_equipment_selector_publishes_its_native_prefix() {
+        assert_eq!(
+            link_oam_stair_progress(0x0d_a992, Some(18)),
+            Some(zelda3::LinkOamStairProgress::BodySelection)
+        );
         assert_eq!(
             link_oam_stair_progress(0x0d_a47e, Some(18)),
             Some(zelda3::LinkOamStairProgress::PoseSelected)
