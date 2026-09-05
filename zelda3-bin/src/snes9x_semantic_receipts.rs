@@ -3144,6 +3144,37 @@ impl HostFrameWindow {
                 entry.run, returned.run
             ));
         }
+        // Ancilla_TerminateSelectInteractives, immediately before the
+        // non-carried-object pickup test. GenerationReturned supplies the
+        // enclosing reload provenance; module/submodule identifies its caller.
+        if returned.pc == 0x09_ac9c
+            && ((returned.main == 9 && returned.sub == 0x23)
+                || (returned.main == 0x15 && matches!(returned.sub, 3 | 4)))
+        {
+            let slot = returned
+                .x
+                .filter(|slot| *slot < 6)
+                .ok_or("Snes9x interactive cleanup omitted its valid ancilla slot")?
+                as u8;
+            let mut found = false;
+            for receipt in receipts.iter_mut() {
+                if *receipt
+                    == OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                        OverworldSpriteReloadProgress::GenerationReturned,
+                    )
+                {
+                    *receipt = OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                        OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
+                            slot,
+                        },
+                    );
+                    found = true;
+                }
+            }
+            if !found {
+                return Err("Snes9x mirror cleanup checkpoint lacks its generation return".into());
+            }
+        }
         let overworld_sprite_scan_suspended = (OVERWORLD_SPRITE_SCAN_START_PC
             ..OVERWORLD_SPRITE_SCAN_END_PC)
             .contains(&returned.pc)
@@ -11936,6 +11967,32 @@ mod tests {
             ],
         );
         assert!(!tracker.overworld_load_overlays_sprite_reload_active);
+    }
+
+    #[test]
+    fn mirror_cleanup_boundary_retains_generation_return_and_pending_slot() {
+        let mut host = HostFrameWindow::default();
+        host.observe(&frame_with_sub("entry", 1, 9, 0x23)).unwrap();
+        let mut returned = frame_with_sub("return", 1, 9, 0x23);
+        returned.pc = Some(0x09_ac9c);
+        returned.x = Some(4);
+        host.observe(&returned).unwrap();
+        let mut receipts = vec![
+            OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturned,
+            ),
+        ];
+        host.finish(&mut receipts, None, true).unwrap();
+        assert!(receipts.contains(
+            &OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { slot: 4 }
+            )
+        ));
+        assert!(!receipts.contains(
+            &OriginalTimingSemanticReceipt::OverworldSpriteReloadProgress(
+                OverworldSpriteReloadProgress::GenerationReturned
+            )
+        ));
     }
 
     #[test]

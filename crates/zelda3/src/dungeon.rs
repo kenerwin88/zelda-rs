@@ -368,7 +368,10 @@ impl ZeldaState {
 
     pub(super) fn Dungeon_ResetTorchBackgroundAndPlayerInner(&mut self) {
         self.ancilla_terminate_select_interactives(0);
+        self.dungeon_reset_player_after_interactive_cleanup();
+    }
 
+    pub(super) fn dungeon_reset_player_after_interactive_cleanup(&mut self) {
         if self.game_state.player.follower_link.is_running()
             && !self
                 .game_state

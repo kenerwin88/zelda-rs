@@ -9282,6 +9282,10 @@ pub(super) enum Module09LongLoadStep {
     /// overlay-selection prefixes are live, while `LoadOverworldOverlay` and
     /// the enclosing Module09 caller remain suspended.
     LoadOverlays2Overlay,
+    MirrorWarpInteractiveCleanup {
+        slot: u8,
+        module15: bool,
+    },
 }
 
 impl Module09LongLoadStep {
@@ -9303,6 +9307,7 @@ impl Module09LongLoadStep {
                 | Self::Module15MirrorWarpSpriteLoadReload
                 | Self::Module15MirrorWarpSpriteLoadTail
                 | Self::Module15ReloadSheetsAfterMessage
+                | Self::MirrorWarpInteractiveCleanup { module15: true, .. }
         )
     }
 
@@ -20804,6 +20809,7 @@ impl ZeldaState {
                 matches!(
                     progress,
                     crate::OverworldSpriteReloadProgress::GenerationReturned
+                        | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { .. }
                 )
             })
             .count()
@@ -20818,6 +20824,9 @@ impl ZeldaState {
         if overworld_sprite_progress
             .iter()
             .any(|progress| match progress {
+                crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
+                    slot,
+                } => *slot >= 6,
                 crate::OverworldSpriteReloadProgress::PresencePublished
                 | crate::OverworldSpriteReloadProgress::ReloadReturned
                 | crate::OverworldSpriteReloadProgress::GenerationReturned
@@ -27301,7 +27310,10 @@ impl ZeldaState {
                                 })
                             ))
                 }
-                crate::OverworldSpriteReloadProgress::GenerationReturned => {
+                crate::OverworldSpriteReloadProgress::GenerationReturned
+                | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup {
+                    ..
+                } => {
                     deferred_overworld_load_overlays_sprite_reload_active
                         || matches!(
                             current_work,
@@ -27796,7 +27808,8 @@ impl ZeldaState {
                     }
                     self.set_bg2_x(bg2_h);
                 }
-                crate::OverworldSpriteReloadProgress::GenerationReturned => {
+                progress @ (crate::OverworldSpriteReloadProgress::GenerationReturned
+                | crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { .. }) => {
                     if let Some(GameWorkContinuation::FinishFluteMenuSelectedScreen {
                         step: FluteMenuSelectedScreenStep::OverworldReloadScan,
                     }) = self.game_execution_scheduler.current_work()
@@ -27845,11 +27858,17 @@ impl ZeldaState {
                         // completed generation now, but leave every mutation
                         // after the enclosing mirror-warp caller returns under
                         // its independently observed Sprite_Main/terminal
-                        // boundary. The straight-line mirror tail itself runs
-                        // before that boundary and owns the portal publication
-                        // in this host.
+                        // boundary. If the source stops inside interactive
+                        // cleanup, preserve that inner continuation before
+                        // publishing the portal or animation tail.
                         self.publish_deferred_module09_sprite_slots_at_reload_return();
-                        self.complete_mirror_warp_after_sprite_generation_return();
+                        let tail = if let crate::OverworldSpriteReloadProgress::GenerationReturnedAtInteractiveCleanup { slot } = progress {
+                            self.begin_mirror_warp_interactive_cleanup(slot);
+                            Module09LongLoadStep::MirrorWarpInteractiveCleanup { slot, module15: step.caller_is_module15() }
+                        } else {
+                            self.complete_mirror_warp_after_sprite_generation_return();
+                            tail
+                        };
                         self.game_execution_scheduler.refine_scheduled_work(
                             GameWorkContinuation::FinishModule09LongLoad { step },
                             GameWorkContinuation::FinishModule09LongLoad { step: tail },

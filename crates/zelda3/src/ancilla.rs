@@ -3801,31 +3801,64 @@ impl ZeldaState {
 
     pub(super) fn ancilla_terminate_select_interactives(&mut self, mut y: u8) -> u8 {
         for i in (0..=5).rev() {
-            if self.ancilla_slot_view(i).ancilla_type() == 0x3e {
-                y = i as u8;
-            } else if self.ancilla_slot_view(i).ancilla_type() == 0x2c {
-                self.dungeon_environment_mut()
-                    .clear_somaria_block_switch_counter();
-                if self.game_state.player.follower_link.defense_flags() & 0x80 != 0 {
-                    self.follower_link_state_mut().clear_defense_flags();
-                    self.follower_link_state_mut().set_speed_setting(0);
-                }
-            }
+            self.ancilla_interactive_cleanup_slot_prefix(i, &mut y);
+            self.ancilla_interactive_cleanup_slot_finish(i);
+        }
+        self.ancilla_interactive_cleanup_finish();
+        y
+    }
 
-            if sign8(self.game_state.player.follower_link.state_bits()) {
-                if i + 1 != self.game_state.player.follower_link.ancilla_pickup_flag() as usize {
-                    let value = 0;
-                    self.ancilla_slot_view_mut(i).set_ancilla_type(value);
-                }
-            } else {
-                if i + 1 == self.game_state.player.follower_link.ancilla_pickup_flag() as usize {
-                    self.follower_link_state_mut().clear_ancilla_pickup_flag();
-                }
+    pub(super) fn ancilla_interactive_cleanup_before_pickup(&mut self, slot: u8) {
+        assert!(slot < 6);
+        let mut ignored_y = 0;
+        for i in (usize::from(slot)..=5).rev() {
+            self.ancilla_interactive_cleanup_slot_prefix(i, &mut ignored_y);
+            if i != usize::from(slot) {
+                self.ancilla_interactive_cleanup_slot_finish(i);
+            }
+        }
+    }
+
+    pub(super) fn ancilla_interactive_cleanup_after_pickup(&mut self, slot: u8) {
+        assert!(slot < 6);
+        self.ancilla_interactive_cleanup_slot_finish(usize::from(slot));
+        let mut ignored_y = 0;
+        for i in (0..usize::from(slot)).rev() {
+            self.ancilla_interactive_cleanup_slot_prefix(i, &mut ignored_y);
+            self.ancilla_interactive_cleanup_slot_finish(i);
+        }
+        self.ancilla_interactive_cleanup_finish();
+    }
+
+    fn ancilla_interactive_cleanup_slot_prefix(&mut self, i: usize, y: &mut u8) {
+        if self.ancilla_slot_view(i).ancilla_type() == 0x3e {
+            *y = i as u8;
+        } else if self.ancilla_slot_view(i).ancilla_type() == 0x2c {
+            self.dungeon_environment_mut()
+                .clear_somaria_block_switch_counter();
+            if self.game_state.player.follower_link.defense_flags() & 0x80 != 0 {
+                self.follower_link_state_mut().clear_defense_flags();
+                self.follower_link_state_mut().set_speed_setting(0);
+            }
+        }
+    }
+
+    fn ancilla_interactive_cleanup_slot_finish(&mut self, i: usize) {
+        if sign8(self.game_state.player.follower_link.state_bits()) {
+            if i + 1 != self.game_state.player.follower_link.ancilla_pickup_flag() as usize {
                 let value = 0;
                 self.ancilla_slot_view_mut(i).set_ancilla_type(value);
             }
+        } else {
+            if i + 1 == self.game_state.player.follower_link.ancilla_pickup_flag() as usize {
+                self.follower_link_state_mut().clear_ancilla_pickup_flag();
+            }
+            let value = 0;
+            self.ancilla_slot_view_mut(i).set_ancilla_type(value);
         }
+    }
 
+    fn ancilla_interactive_cleanup_finish(&mut self) {
         if self.game_state.player.follower_link.position_mode_has(0x10) {
             self.follower_link_state_mut().set_incapacitated_timer(0);
             self.follower_link_state_mut().clear_position_mode();
@@ -3849,7 +3882,6 @@ impl ZeldaState {
             self.follower_link_state_mut().clear_position_mode_bits(4);
             self.follower_link_state_mut().clear_hookshot_interlock();
         }
-        y
     }
 
     pub(super) fn ancilla_allocate_oam_from_region_a_or_d_or_f(

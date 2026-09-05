@@ -2014,6 +2014,27 @@ fn live_whirlpool_load_overlays_consumes_reload_return_before_overlay_phase() {
 }
 
 #[test]
+fn interactive_cleanup_keeps_current_slot_live_until_pickup_test() {
+    for slot in 0..6 {
+        let mut state = ZeldaState::new();
+        for i in 0..6 {
+            state.ancilla_slot_view_mut(i).set_ancilla_type(0x2c);
+        }
+        let mut atomic = state.clone();
+        atomic.ancilla_terminate_select_interactives(0);
+        state.ancilla_interactive_cleanup_before_pickup(slot);
+        for i in 0..6 {
+            assert_eq!(
+                state.ancilla_slot_view(i).ancilla_type(),
+                if i > usize::from(slot) { 0 } else { 0x2c }
+            );
+        }
+        state.ancilla_interactive_cleanup_after_pickup(slot);
+        assert_eq!(state.game_state, atomic.game_state);
+    }
+}
+
+#[test]
 fn whirlpool_bird_travel_reload_retains_the_first_reset_generation() {
     let asset_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")

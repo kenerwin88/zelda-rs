@@ -1519,6 +1519,9 @@ pub enum OverworldSpriteReloadProgress {
     /// mutation, while the replaceable timing authority owns only when the
     /// suspended call returned.
     ReloadReturned,
+    /// The generation returned, but its mirror-warp caller is suspended in
+    /// interactive cleanup before this slot's pickup test and type clear.
+    GenerationReturnedAtInteractiveCleanup { slot: u8 },
 }
 
 /// Source-level completion state for the first save-menu text initialization.
